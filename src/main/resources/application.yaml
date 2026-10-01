@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: scm
+  profiles:
+    # 默认激活 local，会叠加读取 application-local.yaml（不进 git，放真实连接信息）
+    # 部署时用环境变量 SPRING_PROFILES_ACTIVE=prod 覆盖
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  datasource:
+    # 真实值在 application-local.yaml 里，这里只放占位，提交到 git 的文件里不能出现密码
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 5          # 开发阶段够用，连的是远程库，连接数别开大
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+
+server:
+  port: 8080
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true      # 列 create_time -> 字段 createTime
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl   # 开发阶段把 SQL 打到控制台，上线要删
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto                         # 主键由数据库 IDENTITY 生成
+      logic-delete-field: deleted           # 逻辑删除：所有查询自动加 deleted = false
+      logic-delete-value: true
+      logic-not-delete-value: false
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

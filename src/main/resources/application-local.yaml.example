@@ -1,0 +1,4 @@
+# 复制成 application-local.yaml 并填真实值；application-local.yaml 已在 .gitignore 里，不会进 git
+DB_URL: jdbc:postgresql://<服务器IP>:5432/lingmao
+DB_USER: lingmao
+DB_PASSWORD: <密码>
