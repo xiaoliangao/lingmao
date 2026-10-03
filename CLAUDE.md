@@ -10,4 +10,4 @@
 - 跑：IDEA 运行 `ScmApplication`（用户用 8080）；执行者检查用 `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=18080`，**不要杀 8080**
 - 测：`mvn -q test`；Swagger：`/swagger-ui.html`
 - 建表：只加 `src/main/resources/db/migration/V<n>__*.sql`，不改已执行的
-- 约定细则：`~/yyy/repo/projects/lingmao/docs/04-后端架构讲解.md` §5
+- 约定细则：`~/yyy/repo/projects/lingmao/docs/讲解/P1-单表CRUD-字典类型样板.md` §5
