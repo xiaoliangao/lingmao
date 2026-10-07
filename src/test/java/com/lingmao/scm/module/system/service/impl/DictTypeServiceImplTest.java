@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.DictTypeSaveReq;
 import com.lingmao.scm.module.system.entity.DictType;
+import com.lingmao.scm.module.system.mapper.DictDataMapper;
 import com.lingmao.scm.module.system.mapper.DictTypeMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +30,9 @@ class DictTypeServiceImplTest {
 
     @Mock
     private DictTypeMapper dictTypeMapper;
+
+    @Mock
+    private DictDataMapper dictDataMapper;
 
     @InjectMocks
     private DictTypeServiceImpl dictTypeService;
@@ -57,6 +61,57 @@ class DictTypeServiceImplTest {
         Long id = dictTypeService.create(req("season"));
 
         assertThat(id).isEqualTo(42L);
+    }
+
+    @Test
+    void delete_hasData_throwsAndNotDelete() {
+        // ① 造一个"数据库里已经有的"类型
+        DictType season = new DictType();
+        season.setId(1L);
+        season.setCode("season");
+
+        // ② 规定：按 id 1 查类型，查到的就是上面这个 season
+        when(dictTypeMapper.selectById(1L)).thenReturn(season);
+
+        // ③ 规定：它下面有数据
+        when(dictDataMapper.exists(any())).thenReturn(true);
+
+        // ④ 断言：调用删除，抛出业务异常，信息里有"不能删除"
+        assertThatThrownBy(() -> dictTypeService.delete(1L))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("不能删除");
+
+        // ⑤ 断言：删除语句从来没发出去
+        verify(dictTypeMapper, never()).deleteById(1L);
+    }
+
+    /** 规则：类型下有数据时，不能改编码，也不能发出 update */
+    @Test
+    void update_codeChangedWithData_throwsAndNotUpdate() {
+        DictType season = new DictType();
+        season.setId(1L);
+        season.setCode("season");                       // 数据库里的旧 code
+        when(dictTypeMapper.selectById(1L)).thenReturn(season);
+        when(dictDataMapper.exists(any())).thenReturn(true);  // 下面有数据
+
+        assertThatThrownBy(() -> dictTypeService.update(1L, req("season2")))   // 想把 code 改成 season2
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("不能修改编码");
+        verify(dictTypeMapper, never()).updateById(any(DictType.class));
+    }
+
+    /** 规则：code 没变（只改名称），照常放行 */
+    @Test
+    void update_onlyNameChanged_ok() {
+        DictType season = new DictType();
+        season.setId(1L);
+        season.setCode("season");
+        when(dictTypeMapper.selectById(1L)).thenReturn(season);
+
+        dictTypeService.update(1L, req("season"));
+
+        verify(dictDataMapper, never()).exists(any());            // ← 新加：code 没变，根本不该去查数据
+        verify(dictTypeMapper).updateById(any(DictType.class));
     }
 
     /** 规则：查不到抛业务异常，code 是 404，前端据此提示"不存在"而不是"服务器错误"。 */
