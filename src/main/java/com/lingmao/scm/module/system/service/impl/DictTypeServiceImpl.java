@@ -77,7 +77,7 @@ public class DictTypeServiceImpl implements DictTypeService {
     @Transactional
     public void delete(Long id) {
         DictType entity = getById(id);
-        ensureNoData(entity.getCode(),"还有数据不能删除");
+        ensureNoData(entity.getCode(), "该类型下还有字典数据，不能删除");
         dictTypeMapper.deleteById(id);           // 有 @TableLogic，实际执行的是 UPDATE ... SET deleted = true
     }
 
