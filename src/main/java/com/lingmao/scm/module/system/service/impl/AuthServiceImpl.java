@@ -26,6 +26,9 @@ public class AuthServiceImpl implements AuthService {
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             throw new BizException("用户名或密码错误");
         }
+        if (user.getStatus() != 1){
+            throw new BizException("账号已停用");
+        }
         return jwtUtil.createToken(user.getId());
     }
 }
