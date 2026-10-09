@@ -11,3 +11,4 @@
 - 测：`mvn -q test`；Swagger：`/swagger-ui.html`
 - 建表：只加 `src/main/resources/db/migration/V<n>__*.sql`，不改已执行的
 - 约定细则：`~/yyy/repo/projects/lingmao/讲义/2026-10-01-00字典类型样板.md` §5
+- `docs/讲义/`：每天讲义的副本，**原件在 `~/yyy/repo/projects/lingmao/讲义/`**。只改原件，改完再同步过来（`rsync -a --exclude _模板.md --exclude .DS_Store <原件目录>/ docs/讲义/`），以「文档:」前缀单独提交。本仓库是公开的：同步前查一遍有没有服务器地址、密钥、需求里的真实客户数据
