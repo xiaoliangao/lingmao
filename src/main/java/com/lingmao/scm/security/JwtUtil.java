@@ -1,5 +1,6 @@
 package com.lingmao.scm.security;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -10,7 +11,6 @@ import javax.crypto.SecretKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
-import java.util.UUID;
 
 @Component
 public class JwtUtil {
@@ -28,15 +28,24 @@ public class JwtUtil {
         this.ttl = ttl;
     }
 
-    /** 给某个用户签发 token */
-    public String createToken(Long userId) {
+    /** 给某个用户签发 token，jti 是这张 token 的编号 */
+    public String createToken(Long userId, String jti) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
-                .id(UUID.randomUUID().toString())
+                .id(jti)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(ttl)))
                 .signWith(key)
                 .compact();
+    }
+
+    /** 验签并取出内容。签名不对、已过期、格式不对，都会抛 JwtException */
+    public Claims parse(String token) {
+        return Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

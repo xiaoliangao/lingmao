@@ -3,13 +3,18 @@ package com.lingmao.scm.module.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.LoginReq;
+import com.lingmao.scm.module.system.dto.UserInfoV0;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.service.AuthService;
 import com.lingmao.scm.security.JwtUtil;
+import com.lingmao.scm.security.LoginSessionStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +23,7 @@ public class AuthServiceImpl implements AuthService {
     private final SysUserMapper sysUserMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final LoginSessionStore loginSessionStore;
 
     @Override
     public String login(LoginReq req) {
@@ -29,6 +35,22 @@ public class AuthServiceImpl implements AuthService {
         if (user.getStatus() != 1){
             throw new BizException("账号已停用");
         }
-        return jwtUtil.createToken(user.getId());
+        String jti = UUID.randomUUID().toString();
+        loginSessionStore.save(jti,user.getId());
+        return jwtUtil.createToken(user.getId(),jti);
+    }
+
+    @Override
+    public UserInfoV0 me(Long userId){
+        SysUser user = sysUserMapper.selectById(userId);
+        if(user == null){
+            throw new BizException(404,"用户不存在" + userId);
+        }
+        return new UserInfoV0(user.getId(), user.getUsername(), user.getNickname());
+    }
+
+    @Override
+    public void logout(String jti){
+        loginSessionStore.remove(jti);
     }
 }

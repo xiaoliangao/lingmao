@@ -4,6 +4,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.service.DictTypeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -24,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 注意本项目出错时 HTTP 状态码仍是 200，错误放在 R 的 code 里，所以断言的是 $.code 而不是 status()。
  */
 @WebMvcTest(DictTypeController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class DictTypeControllerTest {
 
     @Autowired
