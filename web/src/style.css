@@ -1,0 +1,31 @@
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f5f7fa;
+}
+
+/* 列表页的通用布局：搜索栏 + 工具栏 + 表格 + 分页 */
+.page {
+  padding: 16px;
+}
+
+.page-card {
+  background: #fff;
+  border-radius: 4px;
+  padding: 16px;
+}
+
+.toolbar {
+  margin-bottom: 12px;
+}
+
+.pagination {
+  margin-top: 12px;
+  justify-content: flex-end;
+}
