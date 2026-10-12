@@ -57,6 +57,6 @@ lingmao:
   jwt:
     secret: ${JWT_SECRET}          # 签名密钥，真实值在 application-local.yaml（服务器上在 .env），不进 git
     ttl: 2h                        # token 有效期
-  init-admin-password: ${INIT_ADMIN_PASSWORD:}
+  init-admin-password: ${INIT_ADMIN_PASSWORD:}   # 初始管理员密码；库里已有 admin 时不用
   upload:
-    dir: ${UPLOAD_DIR:./uploads}   # 上传文件存放目录；开发时在项目下的 uploads/（不进 git），生产挂载到容器外   # 初始管理员密码；库里已有 admin 时不用
+    dir: ${UPLOAD_DIR:./uploads}   # 上传文件存放目录；开发时在项目下的 uploads/（不进 git），生产挂载到容器外

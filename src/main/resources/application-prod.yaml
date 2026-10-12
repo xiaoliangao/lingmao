@@ -1,0 +1,17 @@
+# 生产环境：SPRING_PROFILES_ACTIVE=prod 时叠加在 application.yaml 上面
+# 连接信息、密钥全部来自环境变量（服务器 /opt/lingmao/.env → deploy/docker-compose.app.yml），这里一个都不写
+
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 10         # 应用和数据库在同一台机器上，比开发时多开一点
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl   # 生产不把每条 SQL 打到控制台
+
+springdoc:
+  api-docs:
+    enabled: false                  # 生产不开放接口文档
+  swagger-ui:
+    enabled: false

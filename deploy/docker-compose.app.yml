@@ -1,0 +1,59 @@
+# 应用部分：后端 app + 前端 web（Nginx）
+# 和服务器上的 /opt/lingmao/docker-compose.yml（PostgreSQL、Redis）合起来用。/opt/lingmao/.env 里有
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.app.yml
+# 所以在 /opt/lingmao 下执行 docker compose ... 会自动读两个文件，看成一个项目
+# 这个文件由 deploy.sh 每次发版时传上去，改它要改仓库里的这一份。它不含任何密钥，${...} 都来自 .env
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"                # 日志文件最大 10MB，最多留 3 个，不会把磁盘写满
+    max-file: "3"
+
+services:
+  app:
+    build: ./app
+    image: lingmao-app
+    container_name: lingmao-app
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/lingmao_prod     # postgres 是服务名，容器之间按服务名互相访问
+      DB_USER: lingmao_prod
+      DB_PASSWORD: ${LINGMAO_PROD_DB_PASSWORD:?在 .env 里配置}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${LINGMAO_REDIS_PASSWORD:?在 .env 里配置}
+      REDIS_DB: "1"                                             # 开发用 0 号库，生产用 1 号库
+      JWT_SECRET: ${LINGMAO_PROD_JWT_SECRET:?在 .env 里配置}
+      INIT_ADMIN_PASSWORD: ${LINGMAO_PROD_ADMIN_PASSWORD:?在 .env 里配置}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - ./uploads:/data/uploads                                 # 上传的文件放在容器外面，重建容器不会丢
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  web:
+    image: nginx:1.30-alpine
+    container_name: lingmao-web
+    restart: unless-stopped
+    ports:
+      - "${LINGMAO_WEB_PORT:?在 .env 里配置}:80"                # 对外只开这一个端口；app 不开端口，只能经过 Nginx 访问
+    volumes:
+      - ./web/dist:/usr/share/nginx/html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          memory: 64M
