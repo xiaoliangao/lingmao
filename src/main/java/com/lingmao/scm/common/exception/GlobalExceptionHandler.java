@@ -6,6 +6,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -38,6 +39,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public R<Void> handleAccessDenied(AccessDeniedException e) {
         return R.fail(403, "没有权限");
+    }
+
+    /** 上传的文件超过大小限制（application.yaml 里的 spring.servlet.multipart.max-file-size） */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public R<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        return R.fail(400, "文件太大，最大 10MB");
     }
 
     /** 访问了不存在的路径 */

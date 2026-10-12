@@ -3,7 +3,9 @@ package com.lingmao.scm.module.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.module.system.cache.DictCache;
 import com.lingmao.scm.module.system.dto.DictDataQuery;
+import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
 import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.entity.DictType;
@@ -26,6 +28,7 @@ public class DictDataServiceImpl implements DictDataService {
     //为什么用 final：注入后就不能再被改掉；而且忘了注入，编译时就会报错，不会等到运行时才空指针。
     private final DictDataMapper dictDataMapper;
     private final DictTypeMapper dictTypeMapper;
+    private final DictCache dictCache;
 
     @Override
     public PageResult<DictData> page(DictDataQuery query) {
@@ -54,12 +57,19 @@ public class DictDataServiceImpl implements DictDataService {
     }
 
     @Override
-    public List<DictData> listByType(String typeCode) {
-        return dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
-                .eq(DictData::getTypeCode, typeCode)
-                .eq(DictData::getStatus, 1)
-                .orderByAsc(DictData::getSort)
-                .orderByAsc(DictData::getId));
+    public List<DictOption> listByType(String typeCode) {
+        List<DictOption> cached = dictCache.get(typeCode);
+        if (cached != null) {
+            return cached;
+        }
+        List<DictOption> options = dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
+                        .eq(DictData::getTypeCode, typeCode)
+                        .eq(DictData::getStatus, 1)
+                        .orderByAsc(DictData::getSort)
+                        .orderByAsc(DictData::getId))
+                .stream().map(d -> new DictOption(d.getLabel(), d.getValue())).toList();
+        dictCache.put(typeCode, options);
+        return options;
     }
 
     @Override
@@ -70,6 +80,7 @@ public class DictDataServiceImpl implements DictDataService {
         DictData entity = new DictData();
         BeanUtils.copyProperties(req, entity);
         dictDataMapper.insert(entity);
+        dictCache.evictAfterCommit(req.getTypeCode());
         return entity.getId();
     }
 
@@ -79,15 +90,18 @@ public class DictDataServiceImpl implements DictDataService {
         DictData entity = getById(id);
         ensureTypeExists(req.getTypeCode());
         ensureValueUnique(req.getTypeCode(), req.getValue(), id);
+        String oldTypeCode = entity.getTypeCode();
         BeanUtils.copyProperties(req, entity);
         dictDataMapper.updateById(entity);
+        dictCache.evictAfterCommit(oldTypeCode, req.getTypeCode());
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
-        getById(id);
+        DictData entity = getById(id);
         dictDataMapper.deleteById(id);
+        dictCache.evictAfterCommit(entity.getTypeCode());
     }
 
     private void ensureTypeExists(String typeCode) {

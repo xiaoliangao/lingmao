@@ -36,3 +36,6 @@ build/
 application-local.yaml
 application-local.yml
 .env
+
+### 上传的文件 ###
+uploads/

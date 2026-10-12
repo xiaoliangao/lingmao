@@ -40,6 +40,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // 上传的文件：<img> 标签不会带 token，所以不要求登录；文件名是随机 UUID，猜不到
+                        .requestMatchers("/files/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint(this::writeUnauthorized))
                 .addFilterBefore(new JwtAuthFilter(jwtUtil, loginSessionStore, permissionService),

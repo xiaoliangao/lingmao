@@ -1,7 +1,9 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.module.system.cache.DictCache;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
+import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.mapper.DictDataMapper;
 import com.lingmao.scm.module.system.mapper.DictTypeMapper;
@@ -10,6 +12,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,6 +31,9 @@ class DictDataServiceImplTest {
 
     @Mock
     private DictTypeMapper dictTypeMapper;
+
+    @Mock
+    private DictCache dictCache;
 
     @InjectMocks
     private DictDataServiceImpl dictDataService;
@@ -87,5 +94,49 @@ class DictDataServiceImplTest {
         req.setLabel("春季");
         req.setValue(value);
         return req;
+    }
+
+    /** 规则：缓存里有，直接返回，不查库 */
+    @Test
+    void listByType_cacheHit_noDbQuery() {
+        List<DictOption> cached = List.of(new DictOption("春季", "1"));
+        when(dictCache.get("season")).thenReturn(cached);
+
+        assertThat(dictDataService.listByType("season")).isEqualTo(cached);
+        verify(dictDataMapper, never()).selectList(any());
+    }
+
+    /** 规则：缓存里没有，查库，只取 label 和 value，再放进缓存 */
+    @Test
+    void listByType_cacheMiss_queriesAndCaches() {
+        DictData spring = new DictData();
+        spring.setLabel("春季");
+        spring.setValue("1");
+        when(dictCache.get("season")).thenReturn(null);
+        when(dictDataMapper.selectList(any())).thenReturn(List.of(spring));
+
+        List<DictOption> options = dictDataService.listByType("season");
+
+        assertThat(options).containsExactly(new DictOption("春季", "1"));
+        verify(dictCache).put("season", options);
+    }
+
+    /** 规则：把一条数据从 season 挪到 color，两个类型的缓存都要删 */
+    @Test
+    void update_typeChanged_evictsOldAndNewType() {
+        DictData old = new DictData();
+        old.setId(5L);
+        old.setTypeCode("season");
+        when(dictDataMapper.selectById(5L)).thenReturn(old);
+        when(dictTypeMapper.exists(any())).thenReturn(true);
+        when(dictDataMapper.exists(any())).thenReturn(false);
+        DictDataSaveReq req = new DictDataSaveReq();
+        req.setTypeCode("color");
+        req.setLabel("红色");
+        req.setValue("red");
+
+        dictDataService.update(5L, req);
+
+        verify(dictCache).evictAfterCommit("season", "color");
     }
 }

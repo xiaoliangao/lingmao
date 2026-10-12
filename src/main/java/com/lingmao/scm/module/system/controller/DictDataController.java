@@ -5,6 +5,7 @@ import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.DictDataQuery;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
+import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.service.DictDataService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,7 +41,7 @@ public class DictDataController {
 
     @Operation(summary = "按类型取启用的选项（下拉框用，不分页）")
     @GetMapping("/by-type/{typeCode}")
-    public R<List<DictData>> listByType(@PathVariable("typeCode") String typeCode) {
+    public R<List<DictOption>> listByType(@PathVariable("typeCode") String typeCode) {
         return R.ok(dictDataService.listByType(typeCode));
     }
 

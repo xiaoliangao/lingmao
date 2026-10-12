@@ -1,6 +1,6 @@
 package com.lingmao.scm.module.system.controller;
 
-import com.lingmao.scm.module.system.entity.DictData;
+import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,10 +46,7 @@ class DictDataControllerTest {
     /** 规则：by-type 路径接对了，Service 返回的列表原样放进 R 的 data */
     @Test
     void listByType_returnsListInData() throws Exception {
-        DictData spring = new DictData();
-        spring.setLabel("春季");
-        spring.setValue("1");
-        when(dictDataService.listByType("season")).thenReturn(List.of(spring));
+        when(dictDataService.listByType("season")).thenReturn(List.of(new DictOption("春季", "1")));
 
         mockMvc.perform(get("/api/dict-data/by-type/season"))
                 .andExpect(jsonPath("$.code").value(0))
