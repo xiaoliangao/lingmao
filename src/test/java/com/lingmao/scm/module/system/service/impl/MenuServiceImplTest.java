@@ -7,10 +7,12 @@ import com.lingmao.scm.module.system.mapper.SysMenuMapper;
 import com.lingmao.scm.module.system.mapper.SysRoleMenuMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -67,6 +69,43 @@ class MenuServiceImplTest {
                 .isInstanceOf(BizException.class)
                 .hasMessage("按钮必须填权限标识");
         verify(sysMenuMapper, never()).insert(any(SysMenu.class));
+    }
+
+    /** 规则：管理后台目录下面新建的菜单，也属于管理后台。请求里传了 false 也不算数 */
+    @Test
+    void create_underAdminOnlyParent_inheritsAdminOnly() {
+        SysMenu parent = menu(1L, 0L);
+        parent.setAdminOnly(true);
+        when(sysMenuMapper.selectById(1L)).thenReturn(parent);
+        MenuSaveReq req = new MenuSaveReq();
+        req.setParentId(1L);
+        req.setName("系统配置");
+        req.setType(SysMenu.TYPE_MENU);
+        req.setPath("config");
+        req.setComponent("system/config/index");
+        req.setAdminOnly(false);
+
+        menuService.create(req);
+
+        ArgumentCaptor<SysMenu> saved = ArgumentCaptor.forClass(SysMenu.class);
+        verify(sysMenuMapper).insert(saved.capture());
+        assertThat(saved.getValue().getAdminOnly()).isTrue();
+    }
+
+    /** 规则：下面还有菜单的目录，不能在管理后台和工作台之间移动（不然下级的标记就和它对不上了） */
+    @Test
+    void update_switchSideWithChildren_throwsAndNotUpdate() {
+        SysMenu dir = menu(1L, 0L);
+        dir.setAdminOnly(true);
+        when(sysMenuMapper.selectById(1L)).thenReturn(dir);
+        when(sysMenuMapper.exists(any())).thenReturn(true);
+        MenuSaveReq req = dirReq(0L);
+        req.setAdminOnly(false);
+
+        assertThatThrownBy(() -> menuService.update(1L, req))
+                .isInstanceOf(BizException.class)
+                .hasMessage("下面还有菜单，不能在管理后台和工作台之间移动");
+        verify(sysMenuMapper, never()).updateById(any(SysMenu.class));
     }
 
     private MenuSaveReq dirReq(Long parentId) {

@@ -27,4 +27,6 @@ public class SysMenu extends BaseEntity {
     private Integer sort;
     private Boolean visible;
     private Integer status;
+    /** true：管理后台的菜单，只有超级管理员能用，不能分配给别的角色（V7） */
+    private Boolean adminOnly;
 }

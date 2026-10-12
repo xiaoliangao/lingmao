@@ -42,4 +42,7 @@ public class MenuSaveReq {
     private Boolean visible = true;
 
     private Integer status = 1;
+
+    /** 只对顶层目录有效：true 表示这个目录属于管理后台。下级菜单一律跟着上级走，传了也不看 */
+    private Boolean adminOnly = false;
 }

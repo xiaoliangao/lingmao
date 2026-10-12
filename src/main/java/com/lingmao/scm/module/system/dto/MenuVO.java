@@ -19,6 +19,7 @@ public record MenuVO(Long id,
                      Integer sort,
                      Boolean visible,
                      Integer status,
+                     Boolean adminOnly,
                      List<MenuVO> children) {
 
     /**
@@ -36,7 +37,7 @@ public record MenuVO(Long id,
         return byParent.getOrDefault(parentId, List.of()).stream()
                 .map(m -> new MenuVO(m.getId(), m.getParentId(), m.getName(), m.getType(), m.getPath(),
                         m.getComponent(), m.getPerms(), m.getIcon(), m.getSort(), m.getVisible(), m.getStatus(),
-                        children(m.getId(), byParent)))
+                        m.getAdminOnly(), children(m.getId(), byParent)))
                 .toList();
     }
 }

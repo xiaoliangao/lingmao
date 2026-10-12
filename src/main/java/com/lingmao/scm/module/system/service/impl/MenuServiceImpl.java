@@ -46,9 +46,10 @@ public class MenuServiceImpl implements MenuService {
     @Transactional
     public Long create(MenuSaveReq req) {
         checkFields(req);
-        ensureParentExists(req.getParentId());
+        SysMenu parent = getParent(req.getParentId());
         SysMenu menu = new SysMenu();
         BeanUtils.copyProperties(req, menu);
+        menu.setAdminOnly(adminOnlyOf(parent, req));
         sysMenuMapper.insert(menu);
         return menu.getId();
     }
@@ -58,19 +59,28 @@ public class MenuServiceImpl implements MenuService {
     public void update(Long id, MenuSaveReq req) {
         SysMenu menu = getById(id);
         checkFields(req);
-        ensureParentExists(req.getParentId());
+        SysMenu parent = getParent(req.getParentId());
         ensureNotOwnDescendant(id, req.getParentId());
+        boolean wasAdminOnly = Boolean.TRUE.equals(menu.getAdminOnly());
+        boolean adminOnly = adminOnlyOf(parent, req);
+        if (adminOnly != wasAdminOnly && hasChildren(id)) {
+            throw new BizException("下面还有菜单，不能在管理后台和工作台之间移动");
+        }
         BeanUtils.copyProperties(req, menu);
+        menu.setAdminOnly(adminOnly);
         sysMenuMapper.updateById(menu);
+        if (adminOnly && !wasAdminOnly) {
+            // 移进了管理后台：以前分给其他角色的关联收回
+            sysRoleMenuMapper.delete(new LambdaQueryWrapper<SysRoleMenu>()
+                    .eq(SysRoleMenu::getMenuId, id));
+        }
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
         getById(id);
-        boolean hasChildren = sysMenuMapper.exists(new LambdaQueryWrapper<SysMenu>()
-                .eq(SysMenu::getParentId, id));
-        if (hasChildren) {
+        if (hasChildren(id)) {
             throw new BizException("有下级菜单，不能删除");
         }
         sysMenuMapper.deleteById(id);
@@ -92,10 +102,26 @@ public class MenuServiceImpl implements MenuService {
         }
     }
 
-    private void ensureParentExists(Long parentId) {
-        if (parentId != 0 && sysMenuMapper.selectById(parentId) == null) {
+    /** 顶层（parentId = 0）返回 null；上级不存在就报错 */
+    private SysMenu getParent(Long parentId) {
+        if (parentId == 0) {
+            return null;
+        }
+        SysMenu parent = sysMenuMapper.selectById(parentId);
+        if (parent == null) {
             throw new BizException("上级菜单不存在: " + parentId);
         }
+        return parent;
+    }
+
+    /** 属于管理后台还是工作台：顶层目录看请求里的 adminOnly，下级一律跟着上级 */
+    private boolean adminOnlyOf(SysMenu parent, MenuSaveReq req) {
+        return parent == null ? Boolean.TRUE.equals(req.getAdminOnly()) : Boolean.TRUE.equals(parent.getAdminOnly());
+    }
+
+    private boolean hasChildren(Long id) {
+        return sysMenuMapper.exists(new LambdaQueryWrapper<SysMenu>()
+                .eq(SysMenu::getParentId, id));
     }
 
     /** 从新上级开始一路往上找，找到了自己，说明新上级是自己或自己的下级 */

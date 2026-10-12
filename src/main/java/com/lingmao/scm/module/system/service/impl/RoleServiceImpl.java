@@ -113,6 +113,12 @@ public class RoleServiceImpl implements RoleService {
             if (found != distinctIds.size()) {
                 throw new BizException("有菜单不存在或已删除");
             }
+            boolean hasAdminOnly = sysMenuMapper.exists(new LambdaQueryWrapper<SysMenu>()
+                    .in(SysMenu::getId, distinctIds)
+                    .eq(SysMenu::getAdminOnly, true));
+            if (hasAdminOnly) {
+                throw new BizException("管理后台的菜单只给超级管理员，不能分配给角色");
+            }
         }
         sysRoleMenuMapper.delete(new LambdaQueryWrapper<SysRoleMenu>()
                 .eq(SysRoleMenu::getRoleId, id));
