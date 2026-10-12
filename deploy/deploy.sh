@@ -22,7 +22,11 @@ trap 'rm -rf "$BUILD"' EXIT
 git archive HEAD | tar -x -C "$BUILD"
 
 echo "== 后端：打包并跑单元测试（ScmApplicationTests 要连真实数据库，跳过）"
-(cd "$BUILD" && mvn -q package -Dtest='!ScmApplicationTests' -Dsurefire.failIfNoSpecifiedTests=false)
+if ! (cd "$BUILD" && mvn -q package -Dtest='!ScmApplicationTests' -Dsurefire.failIfNoSpecifiedTests=false > "$BUILD/mvn.log" 2>&1); then
+  tail -60 "$BUILD/mvn.log"
+  echo "打包或测试失败，没有发布"
+  exit 1
+fi
 cp "$BUILD"/target/scm-*.jar "$BUILD/app.jar"
 
 echo "== 前端：类型检查并打包"
@@ -30,15 +34,17 @@ echo "== 前端：类型检查并打包"
 echo "$COMMIT" > "$BUILD/web/dist/version.txt"
 
 echo "== 服务器准备（密钥、目录、生产库，已有的跳过）"
-rsync -az "$BUILD/deploy/server-init.sh" "$DEPLOY_HOST:$REMOTE/"
+rsync -rlptz "$BUILD/deploy/server-init.sh" "$DEPLOY_HOST:$REMOTE/"
 ssh "$DEPLOY_HOST" "bash $REMOTE/server-init.sh"
 
 echo "== 上传"
-rsync -az "$BUILD/deploy/docker-compose.app.yml" "$DEPLOY_HOST:$REMOTE/"
-rsync -az "$BUILD/deploy/Dockerfile" "$BUILD/app.jar" "$DEPLOY_HOST:$REMOTE/app/"
-rsync -az "$BUILD/deploy/nginx.conf" "$DEPLOY_HOST:$REMOTE/web/"
+# -rlptz：和 -a 一样，但不带本机的属主、属组（服务器上统一归 root）
+sync_to() { rsync -rlptz "$@"; }
+sync_to "$BUILD/deploy/docker-compose.app.yml" "$DEPLOY_HOST:$REMOTE/"
+sync_to "$BUILD/deploy/Dockerfile" "$BUILD/app.jar" "$DEPLOY_HOST:$REMOTE/app/"
+sync_to "$BUILD/deploy/nginx.conf" "$DEPLOY_HOST:$REMOTE/web/"
 # --delay-updates：全部传完再一起换上；--delete-after：换完再删旧文件。传到一半时用户打开的仍是完整的旧版本
-rsync -az --delay-updates --delete-after "$BUILD/web/dist/" "$DEPLOY_HOST:$REMOTE/web/dist/"
+sync_to --delay-updates --delete-after "$BUILD/web/dist/" "$DEPLOY_HOST:$REMOTE/web/dist/"
 
 echo "== 重建镜像、重启 app 和 web（--no-deps：不动 PostgreSQL、Redis）"
 ssh "$DEPLOY_HOST" "cd $REMOTE && docker compose build --quiet app && docker compose up -d --no-deps app && docker compose up -d --no-deps --force-recreate web && docker image prune -f --filter label=project=lingmao > /dev/null"

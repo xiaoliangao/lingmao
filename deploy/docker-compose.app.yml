@@ -42,7 +42,8 @@ services:
           memory: 512M
 
   web:
-    image: nginx:1.30-alpine
+    # 不用 alpine 版：新的 alpine 镜像在这台服务器的老内核（CentOS 7，3.10）上写不了 pid 文件，起不来
+    image: nginx:1.30
     container_name: lingmao-web
     restart: unless-stopped
     ports:
