@@ -7,8 +7,12 @@ import com.lingmao.scm.module.system.dto.UserCreateReq;
 import com.lingmao.scm.module.system.dto.UserQuery;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.dto.UserVO;
+import com.lingmao.scm.module.system.entity.SysRole;
 import com.lingmao.scm.module.system.entity.SysUser;
+import com.lingmao.scm.module.system.entity.SysUserRole;
+import com.lingmao.scm.module.system.mapper.SysRoleMapper;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
+import com.lingmao.scm.module.system.mapper.SysUserRoleMapper;
 import com.lingmao.scm.module.system.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -24,6 +29,8 @@ public class UserServiceImpl implements UserService {
 
     private final SysUserMapper sysUserMapper;
     private final PasswordEncoder passwordEncoder;
+    private final SysUserRoleMapper sysUserRoleMapper;
+    private final SysRoleMapper sysRoleMapper;
 
     @Override
     public PageResult<UserVO> page(UserQuery query) {
@@ -82,6 +89,33 @@ public class UserServiceImpl implements UserService {
         SysUser user = getEntity(id);
         user.setPassword(passwordEncoder.encode(password));
         sysUserMapper.updateById(user);
+    }
+
+    @Override
+    public List<Long> getRoleIds(Long id) {
+        getEntity(id);
+        return sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                        .eq(SysUserRole::getUserId, id))
+                .stream().map(SysUserRole::getRoleId).toList();
+    }
+
+    @Override
+    @Transactional
+    public void assignRoles(Long id, List<Long> roleIds) {
+        getEntity(id);
+        List<Long> distinctIds = roleIds.stream().distinct().toList();
+        if (!distinctIds.isEmpty()) {
+            Long found = sysRoleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
+                    .in(SysRole::getId, distinctIds));
+            if (found != distinctIds.size()) {
+                throw new BizException("有角色不存在或已删除");
+            }
+        }
+        sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
+                .eq(SysUserRole::getUserId, id));
+        if (!distinctIds.isEmpty()) {
+            sysUserRoleMapper.insert(distinctIds.stream().map(roleId -> new SysUserRole(id, roleId)).toList());
+        }
     }
 
     /** 查实体，不存在抛 404。只在本类里用，所以是 private，返回实体不返回 VO */

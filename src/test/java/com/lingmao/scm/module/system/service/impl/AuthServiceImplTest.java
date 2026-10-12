@@ -5,6 +5,7 @@ import com.lingmao.scm.module.system.dto.LoginReq;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
+import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -36,6 +40,9 @@ class AuthServiceImplTest {
 
     @Mock
     private LoginSessionStore loginSessionStore;
+
+    @Mock
+    private PermissionService permissionService;
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -117,12 +124,16 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void me_returnsUserInfoWithoutPassword(){
+    void me_returnsUserInfoWithoutPassword() {
         when(sysUserMapper.selectById(1L)).thenReturn(admin());
+        when(permissionService.loadRoleCodes(1L)).thenReturn(List.of("admin"));
+        when(permissionService.loadPermissions(1L)).thenReturn(Set.of("system:user:list"));
+        when(permissionService.loadMenuTree(1L)).thenReturn(List.of());
 
         UserInfoVO info = authService.me(1L);
 
-        assertThat(info).isEqualTo(new UserInfoVO(1L,"admin",null));
+        assertThat(info).isEqualTo(new UserInfoVO(1L, "admin", null,
+                List.of("admin"), Set.of("system:user:list"), List.of()));
     }
 
     @Test

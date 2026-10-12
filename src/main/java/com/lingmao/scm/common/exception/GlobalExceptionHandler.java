@@ -2,6 +2,7 @@ package com.lingmao.scm.common.exception;
 
 import com.lingmao.scm.common.result.R;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -31,6 +32,12 @@ public class GlobalExceptionHandler {
                 .map(f -> f.getField() + " " + f.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         return R.fail(400, msg);
+    }
+
+    /** 已登录，但没有这个接口的权限（@PreAuthorize 没通过） */
+    @ExceptionHandler(AccessDeniedException.class)
+    public R<Void> handleAccessDenied(AccessDeniedException e) {
+        return R.fail(403, "没有权限");
     }
 
     /** 访问了不存在的路径 */

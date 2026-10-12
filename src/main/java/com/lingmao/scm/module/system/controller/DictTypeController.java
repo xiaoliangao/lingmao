@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,24 +35,28 @@ public class DictTypeController {
 
     @Operation(summary = "分页查询")
     @GetMapping
+    @PreAuthorize("hasAuthority('system:dict:list')")
     public R<PageResult<DictType>> page(@Valid DictTypeQuery query) {
         return R.ok(dictTypeService.page(query));
     }
 
     @Operation(summary = "详情")
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('system:dict:list')")
     public R<DictType> get(@PathVariable("id") Long id) {
         return R.ok(dictTypeService.getById(id));
     }
 
     @Operation(summary = "新增，返回新 id")
     @PostMapping
+    @PreAuthorize("hasAuthority('system:dict:add')")
     public R<Long> create(@Valid @RequestBody DictTypeSaveReq req) {
         return R.ok(dictTypeService.create(req));
     }
 
     @Operation(summary = "修改")
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('system:dict:edit')")
     public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody DictTypeSaveReq req) {
         dictTypeService.update(id, req);
         return R.ok();
@@ -59,6 +64,7 @@ public class DictTypeController {
 
     @Operation(summary = "删除（逻辑删除）")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('system:dict:remove')")
     public R<Void> delete(@PathVariable("id") Long id) {
         dictTypeService.delete(id);
         return R.ok();

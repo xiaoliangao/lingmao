@@ -1,6 +1,7 @@
 package com.lingmao.scm.config;
 
 import com.lingmao.scm.common.result.R;
+import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtAuthFilter;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -9,6 +10,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.AuthenticationException;
@@ -19,12 +21,14 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
     private final LoginSessionStore loginSessionStore;
     private final JsonMapper jsonMapper;
+    private final PermissionService permissionService;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -38,7 +42,7 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint(this::writeUnauthorized))
-                .addFilterBefore(new JwtAuthFilter(jwtUtil, loginSessionStore),
+                .addFilterBefore(new JwtAuthFilter(jwtUtil, loginSessionStore, permissionService),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

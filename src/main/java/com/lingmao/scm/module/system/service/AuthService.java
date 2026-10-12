@@ -7,12 +7,12 @@ import com.lingmao.scm.module.system.dto.UserInfoVO;
 public interface AuthService {
 
     /**
-     * 登录成功返回 token；用户名或密码不对抛 BizException
+     * 登录成功返回 token；用户名或密码不对、账号停用都抛 BizException
      */
     String login(LoginReq req);
 
     /**
-     * 当前登录用户的信息
+     * 当前登录用户的信息：基本信息、角色、权限标识、侧边栏菜单
      */
     UserInfoVO me(Long userId);
 

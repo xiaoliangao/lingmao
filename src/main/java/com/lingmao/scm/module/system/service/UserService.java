@@ -6,6 +6,8 @@ import com.lingmao.scm.module.system.dto.UserQuery;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.dto.UserVO;
 
+import java.util.List;
+
 /** 用户管理：给管理员用的增删改查。和 AuthService（登录、当前用户）分开 */
 public interface UserService {
 
@@ -23,4 +25,10 @@ public interface UserService {
 
     /** 管理员把某个用户的密码重置成新密码 */
     void resetPassword(Long id, String password);
+
+    /** 用户的角色 id */
+    List<Long> getRoleIds(Long id);
+
+    /** 重新分配角色：先清空，再按 roleIds 写入 */
+    void assignRoles(Long id, List<Long> roleIds);
 }
