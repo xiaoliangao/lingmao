@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.IdsReq;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
@@ -52,6 +53,7 @@ public class UserController {
     @Operation(summary = "新增，返回新 id")
     @PostMapping
     @PreAuthorize("hasAuthority('system:user:add')")
+    @OperLog(module = "用户管理", action = "新增")
     public R<Long> create(@Valid @RequestBody UserCreateReq req) {
         return R.ok(userService.create(req));
     }
@@ -59,6 +61,7 @@ public class UserController {
     @Operation(summary = "修改昵称、手机号、状态")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('system:user:edit')")
+    @OperLog(module = "用户管理", action = "修改")
     public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody UserUpdateReq req) {
         userService.update(id, req);
         return R.ok();
@@ -67,6 +70,7 @@ public class UserController {
     @Operation(summary = "删除（逻辑删除），不能删自己")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('system:user:remove')")
+    @OperLog(module = "用户管理", action = "删除")
     public R<Void> delete(@PathVariable("id") Long id, @AuthenticationPrincipal LoginUser loginUser) {
         userService.delete(id, loginUser.userId());
         return R.ok();
@@ -75,6 +79,7 @@ public class UserController {
     @Operation(summary = "重置密码")
     @PostMapping("/{id}/reset-password")
     @PreAuthorize("hasAuthority('system:user:resetPwd')")
+    @OperLog(module = "用户管理", action = "重置密码")
     public R<Void> resetPassword(@PathVariable("id") Long id, @Valid @RequestBody UserPasswordReq req) {
         userService.resetPassword(id, req.getPassword());
         return R.ok();
@@ -90,6 +95,7 @@ public class UserController {
     @Operation(summary = "重新分配角色")
     @PutMapping("/{id}/roles")
     @PreAuthorize("hasAuthority('system:user:edit')")
+    @OperLog(module = "用户管理", action = "分配角色")
     public R<Void> assignRoles(@PathVariable("id") Long id, @Valid @RequestBody IdsReq req) {
         userService.assignRoles(id, req.getIds());
         return R.ok();

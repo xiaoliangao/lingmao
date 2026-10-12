@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.DictTypeQuery;
 import com.lingmao.scm.module.system.dto.DictTypeSaveReq;
@@ -50,6 +51,7 @@ public class DictTypeController {
     @Operation(summary = "新增，返回新 id")
     @PostMapping
     @PreAuthorize("hasAuthority('system:dict:add')")
+    @OperLog(module = "字典类型", action = "新增")
     public R<Long> create(@Valid @RequestBody DictTypeSaveReq req) {
         return R.ok(dictTypeService.create(req));
     }
@@ -57,6 +59,7 @@ public class DictTypeController {
     @Operation(summary = "修改")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('system:dict:edit')")
+    @OperLog(module = "字典类型", action = "修改")
     public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody DictTypeSaveReq req) {
         dictTypeService.update(id, req);
         return R.ok();
@@ -65,6 +68,7 @@ public class DictTypeController {
     @Operation(summary = "删除（逻辑删除）")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('system:dict:remove')")
+    @OperLog(module = "字典类型", action = "删除")
     public R<Void> delete(@PathVariable("id") Long id) {
         dictTypeService.delete(id);
         return R.ok();

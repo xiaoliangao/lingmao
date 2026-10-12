@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.controller;
 
+import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.LoginReq;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
@@ -22,6 +23,7 @@ public class AuthController {
 
     @Operation(summary = "登录，返回 token")
     @PostMapping("/login")
+    @OperLog(module = "认证", action = "登录")
     public R<String> login(@Valid @RequestBody LoginReq req) {
         return R.ok(authService.login(req));
     }
@@ -34,6 +36,7 @@ public class AuthController {
 
     @Operation(summary = "退出登录")
     @PostMapping("/logout")
+    @OperLog(module = "认证", action = "退出")
     public R<Void> logout(@AuthenticationPrincipal LoginUser loginUser){
         authService.logout(loginUser.jti());
 

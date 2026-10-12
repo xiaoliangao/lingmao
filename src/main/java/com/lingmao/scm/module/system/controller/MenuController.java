@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.controller;
 
+import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.MenuSaveReq;
 import com.lingmao.scm.module.system.dto.MenuVO;
@@ -46,6 +47,7 @@ public class MenuController {
     @Operation(summary = "新增，返回新 id")
     @PostMapping
     @PreAuthorize("hasAuthority('system:menu:add')")
+    @OperLog(module = "菜单管理", action = "新增")
     public R<Long> create(@Valid @RequestBody MenuSaveReq req) {
         return R.ok(menuService.create(req));
     }
@@ -53,6 +55,7 @@ public class MenuController {
     @Operation(summary = "修改")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('system:menu:edit')")
+    @OperLog(module = "菜单管理", action = "修改")
     public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody MenuSaveReq req) {
         menuService.update(id, req);
         return R.ok();
@@ -61,6 +64,7 @@ public class MenuController {
     @Operation(summary = "删除（有下级的不能删）")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('system:menu:remove')")
+    @OperLog(module = "菜单管理", action = "删除")
     public R<Void> delete(@PathVariable("id") Long id) {
         menuService.delete(id);
         return R.ok();

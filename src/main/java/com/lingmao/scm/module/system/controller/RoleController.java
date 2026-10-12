@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.IdsReq;
 import com.lingmao.scm.module.system.dto.RoleQuery;
@@ -55,6 +56,7 @@ public class RoleController {
     @Operation(summary = "新增，返回新 id")
     @PostMapping
     @PreAuthorize("hasAuthority('system:role:add')")
+    @OperLog(module = "角色管理", action = "新增")
     public R<Long> create(@Valid @RequestBody RoleSaveReq req) {
         return R.ok(roleService.create(req));
     }
@@ -62,6 +64,7 @@ public class RoleController {
     @Operation(summary = "修改")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('system:role:edit')")
+    @OperLog(module = "角色管理", action = "修改")
     public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody RoleSaveReq req) {
         roleService.update(id, req);
         return R.ok();
@@ -70,6 +73,7 @@ public class RoleController {
     @Operation(summary = "删除（已分配给用户的不能删）")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('system:role:remove')")
+    @OperLog(module = "角色管理", action = "删除")
     public R<Void> delete(@PathVariable("id") Long id) {
         roleService.delete(id);
         return R.ok();
@@ -85,6 +89,7 @@ public class RoleController {
     @Operation(summary = "重新分配菜单")
     @PutMapping("/{id}/menus")
     @PreAuthorize("hasAuthority('system:role:edit')")
+    @OperLog(module = "角色管理", action = "分配菜单")
     public R<Void> assignMenus(@PathVariable("id") Long id, @Valid @RequestBody IdsReq req) {
         roleService.assignMenus(id, req.getIds());
         return R.ok();

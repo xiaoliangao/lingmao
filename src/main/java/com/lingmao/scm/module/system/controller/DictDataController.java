@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.DictDataQuery;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
@@ -53,6 +54,7 @@ public class DictDataController {
     @Operation(summary = "新增，返回新 id")
     @PostMapping
     @PreAuthorize("hasAuthority('system:dict:add')")
+    @OperLog(module = "字典数据", action = "新增")
     public R<Long> create(@Valid @RequestBody DictDataSaveReq req) {
         return R.ok(dictDataService.create(req));
     }
@@ -60,6 +62,7 @@ public class DictDataController {
     @Operation(summary = "修改")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('system:dict:edit')")
+    @OperLog(module = "字典数据", action = "修改")
     public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody DictDataSaveReq req) {
         dictDataService.update(id, req);
         return R.ok();
@@ -68,6 +71,7 @@ public class DictDataController {
     @Operation(summary = "删除（逻辑删除）")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('system:dict:remove')")
+    @OperLog(module = "字典数据", action = "删除")
     public R<Void> delete(@PathVariable("id") Long id) {
         dictDataService.delete(id);
         return R.ok();
