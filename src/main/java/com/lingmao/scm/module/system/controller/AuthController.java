@@ -2,7 +2,7 @@ package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.LoginReq;
-import com.lingmao.scm.module.system.dto.UserInfoV0;
+import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.service.AuthService;
 import com.lingmao.scm.security.LoginUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,7 +28,7 @@ public class AuthController {
 
     @Operation(summary = "当前登录用户")
     @GetMapping("/me")
-    public R<UserInfoV0> me(@AuthenticationPrincipal LoginUser loginUser){
+    public R<UserInfoVO> me(@AuthenticationPrincipal LoginUser loginUser){
         return R.ok(authService.me(loginUser.userId()));
     }
 

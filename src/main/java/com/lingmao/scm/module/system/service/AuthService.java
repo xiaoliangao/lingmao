@@ -1,16 +1,23 @@
 package com.lingmao.scm.module.system.service;
 
 import com.lingmao.scm.module.system.dto.LoginReq;
-import com.lingmao.scm.module.system.dto.UserInfoV0;
+import com.lingmao.scm.module.system.dto.UserInfoVO;
 
-import java.util.List;
 
 public interface AuthService {
 
-    /** 登录成功返回 token；用户名或密码不对抛 BizException */
+    /**
+     * 登录成功返回 token；用户名或密码不对抛 BizException
+     */
     String login(LoginReq req);
 
-    UserInfoV0 me(Long userId);
+    /**
+     * 当前登录用户的信息
+     */
+    UserInfoVO me(Long userId);
 
+    /**
+     * 退出登录：让这张 token 立即失效
+     */
     void logout(String jti);
 }

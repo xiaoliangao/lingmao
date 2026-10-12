@@ -3,7 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.LoginReq;
-import com.lingmao.scm.module.system.dto.UserInfoV0;
+import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.service.AuthService;
@@ -13,7 +13,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -41,12 +40,12 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public UserInfoV0 me(Long userId){
+    public UserInfoVO me(Long userId){
         SysUser user = sysUserMapper.selectById(userId);
         if(user == null){
             throw new BizException(404,"用户不存在" + userId);
         }
-        return new UserInfoV0(user.getId(), user.getUsername(), user.getNickname());
+        return new UserInfoVO(user.getId(), user.getUsername(), user.getNickname());
     }
 
     @Override

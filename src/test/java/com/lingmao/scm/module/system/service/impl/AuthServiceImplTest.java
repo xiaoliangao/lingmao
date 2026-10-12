@@ -2,7 +2,7 @@ package com.lingmao.scm.module.system.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.LoginReq;
-import com.lingmao.scm.module.system.dto.UserInfoV0;
+import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.security.JwtUtil;
@@ -120,9 +120,9 @@ class AuthServiceImplTest {
     void me_returnsUserInfoWithoutPassword(){
         when(sysUserMapper.selectById(1L)).thenReturn(admin());
 
-        UserInfoV0 info = authService.me(1L);
+        UserInfoVO info = authService.me(1L);
 
-        assertThat(info).isEqualTo(new UserInfoV0(1L,"admin",null));
+        assertThat(info).isEqualTo(new UserInfoVO(1L,"admin",null));
     }
 
     @Test
