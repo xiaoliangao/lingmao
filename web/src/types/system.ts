@@ -27,6 +27,8 @@ export interface MenuNode {
   sort: number
   visible: boolean
   status: number
+  /** true：管理后台的菜单，只有超级管理员能用 */
+  adminOnly: boolean
   children: MenuNode[]
 }
 

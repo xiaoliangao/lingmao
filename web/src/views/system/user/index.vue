@@ -3,6 +3,9 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { roleApi, userApi } from '@/api/system'
 import type { Role, User } from '@/types/system'
+import PageHeader from '@/components/PageHeader.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import StatusTag from '@/components/StatusTag.vue'
 
 // ---------- 列表 ----------
 const query = reactive({ page: 1, size: 20, username: '', status: undefined as number | undefined })
@@ -24,6 +27,11 @@ async function load() {
 function search() {
   query.page = 1
   load()
+}
+
+function reset() {
+  Object.assign(query, { username: '', status: undefined })
+  search()
 }
 
 onMounted(load)
@@ -71,7 +79,7 @@ async function save() {
 
 // ---------- 删除、重置密码 ----------
 async function remove(row: User) {
-  await ElMessageBox.confirm(`确定删除用户 ${row.username}？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`删除后 ${row.username} 不能再登录。`, '删除用户', { confirmButtonText: '删除', type: 'warning' })
   await userApi.remove(row.id)
   ElMessage.success('已删除')
   load()
@@ -110,67 +118,67 @@ async function saveRoles() {
 
 <template>
   <div class="page">
-    <div class="page-card">
-      <el-form inline>
+    <PageHeader description="能登录系统的账号。停用以后马上就登不进来。">
+      <template #actions>
+        <el-button v-perm="'system:user:add'" type="primary" icon="Plus" @click="openCreate">新增用户</el-button>
+      </template>
+    </PageHeader>
+
+    <div class="panel">
+      <FilterBar @search="search" @reset="reset">
         <el-form-item label="用户名">
-          <el-input v-model="query.username" clearable placeholder="模糊搜索" @keyup.enter="search" />
+          <el-input v-model="query.username" clearable placeholder="输入一部分也行" />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="query.status" clearable placeholder="全部" style="width: 120px">
+          <el-select v-model="query.status" clearable placeholder="全部">
             <el-option label="启用" :value="1" />
             <el-option label="停用" :value="0" />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="search">查询</el-button>
-        </el-form-item>
-      </el-form>
+      </FilterBar>
 
-      <div class="toolbar">
-        <el-button v-perm="'system:user:add'" type="primary" icon="Plus" @click="openCreate">新增</el-button>
+      <div class="panel-body">
+        <el-table v-loading="loading" :data="list" empty-text="没有符合条件的用户">
+          <el-table-column prop="username" label="用户名" min-width="140" class-name="code" />
+          <el-table-column prop="nickname" label="昵称" min-width="120" />
+          <el-table-column prop="phone" label="手机号" min-width="130" class-name="num" />
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">
+              <StatusTag :tone="row.status === 1 ? 'done' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="createTime" label="创建时间" width="170" class-name="num" />
+          <el-table-column label="操作" width="290">
+            <template #default="{ row }">
+              <el-button v-perm="'system:user:edit'" link type="primary" @click="openEdit(row as User)">编辑</el-button>
+              <el-button v-perm="'system:user:edit'" link type="primary" @click="openRoles(row as User)">分配角色</el-button>
+              <el-button v-perm="'system:user:resetPwd'" link type="primary" @click="resetPassword(row as User)">重置密码</el-button>
+              <el-button v-perm="'system:user:remove'" link type="danger" @click="remove(row as User)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-pagination
+          v-model:current-page="query.page"
+          v-model:page-size="query.size"
+          class="pagination"
+          layout="total, sizes, prev, pager, next"
+          :total="total"
+          @change="load"
+        />
       </div>
-
-      <el-table v-loading="loading" :data="list" border>
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="username" label="用户名" />
-        <el-table-column prop="nickname" label="昵称" />
-        <el-table-column prop="phone" label="手机号" />
-        <el-table-column label="状态" width="80">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="170" />
-        <el-table-column label="操作" width="300">
-          <template #default="{ row }">
-            <el-button v-perm="'system:user:edit'" link type="primary" @click="openEdit(row as User)">编辑</el-button>
-            <el-button v-perm="'system:user:edit'" link type="primary" @click="openRoles(row as User)">分配角色</el-button>
-            <el-button v-perm="'system:user:resetPwd'" link type="primary" @click="resetPassword(row as User)">重置密码</el-button>
-            <el-button v-perm="'system:user:remove'" link type="danger" @click="remove(row as User)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.size"
-        class="pagination"
-        layout="total, sizes, prev, pager, next"
-        :total="total"
-        @change="load"
-      />
     </div>
 
     <el-dialog v-model="dialogVisible" :title="editingId === null ? '新增用户' : '编辑用户'" width="480px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" :disabled="editingId !== null" />
+          <el-input v-model="form.username" :disabled="editingId !== null" placeholder="登录用，3-32 位小写字母、数字、下划线" />
         </el-form-item>
         <el-form-item v-if="editingId === null" label="初始密码" prop="password">
           <el-input v-model="form.password" type="password" show-password />
         </el-form-item>
         <el-form-item label="昵称" prop="nickname">
-          <el-input v-model="form.nickname" />
+          <el-input v-model="form.nickname" placeholder="显示在页面右上角和日志里" />
         </el-form-item>
         <el-form-item label="手机号">
           <el-input v-model="form.phone" />
@@ -188,7 +196,7 @@ async function saveRoles() {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="roleDialogVisible" :title="`给 ${roleUser?.username} 分配角色`" width="420px">
+    <el-dialog v-model="roleDialogVisible" :title="`给 ${roleUser?.nickname ?? ''} 分配角色`" width="420px">
       <el-checkbox-group v-model="checkedRoleIds">
         <el-checkbox v-for="role in roleOptions" :key="role.id" :value="role.id">{{ role.name }}</el-checkbox>
       </el-checkbox-group>

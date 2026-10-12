@@ -9,6 +9,11 @@ export const useUserStore = defineStore('user', () => {
   const token = ref(getToken())
   const info = ref<UserInfo | null>(null)
   const perms = computed(() => new Set(info.value?.perms ?? []))
+  /** 超级管理员：能进管理后台 */
+  const isAdmin = computed(() => info.value?.roles.includes('admin') ?? false)
+  /** 工作台的菜单（业务功能）和管理后台的菜单，按顶层目录分开 */
+  const workbenchMenus = computed(() => (info.value?.menus ?? []).filter((m) => !m.adminOnly))
+  const adminMenus = computed(() => (info.value?.menus ?? []).filter((m) => m.adminOnly))
 
   async function login(username: string, password: string) {
     const newToken = await authApi.login(username, password)
@@ -35,5 +40,5 @@ export const useUserStore = defineStore('user', () => {
     return perms.value.has(perm)
   }
 
-  return { token, info, login, fetchMe, logout, hasPerm }
+  return { token, info, isAdmin, workbenchMenus, adminMenus, login, fetchMe, logout, hasPerm }
 })

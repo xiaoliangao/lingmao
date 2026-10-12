@@ -4,11 +4,16 @@ import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import * as ElementPlusIcons from '@element-plus/icons-vue'
 import 'element-plus/dist/index.css'
+// 数字、编码用的 Barlow，只要拉丁字符的 500、600 两个字重（打包进来，不从外网下载）
+import '@fontsource/barlow/latin-500.css'
+import '@fontsource/barlow/latin-600.css'
+// 设计令牌和全局样式放在 Element Plus 后面，才能覆盖它的变量
+import './styles/tokens.css'
+import './styles/base.css'
 import App from './App.vue'
 import router from './router'
 import { vPerm } from './directives/perm'
 import { ApiError } from './utils/request'
-import './style.css'
 
 const app = createApp(App)
 app.use(createPinia())

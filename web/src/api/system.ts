@@ -47,6 +47,8 @@ export interface MenuForm {
   sort: number
   visible: boolean
   status: number
+  /** 只对顶层目录有效：放在管理后台还是工作台 */
+  adminOnly?: boolean
 }
 
 export const menuApi = {

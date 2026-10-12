@@ -1,0 +1,121 @@
+/* 全局基础样式 + 所有页面共用的骨架。颜色、尺寸来自 tokens.css */
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--lm-font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--lm-ink);
+  background: var(--lm-greige);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 数量、金额、日期：等宽数字，上下行的数位对得齐 */
+.num {
+  font-family: var(--lm-font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 编码：单号、用户名、权限标识这类给人念、给人抄的字符串 */
+.code {
+  font-family: var(--lm-font-num);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.muted {
+  color: var(--lm-muted);
+}
+
+/* ---------- 页面骨架：标题行（PageHeader）+ 白色面板 ---------- */
+.page {
+  padding: 20px 24px 28px;
+}
+
+.panel {
+  background: var(--lm-paper);
+  border: 1px solid var(--lm-line);
+  border-radius: var(--lm-radius-panel);
+}
+
+.panel-body {
+  padding: 16px 20px 20px;
+}
+
+.pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+/* ---------- Element Plus 微调 ---------- */
+.el-table {
+  --el-table-header-bg-color: var(--lm-greige-2);
+  --el-table-header-text-color: var(--lm-muted);
+  --el-table-row-hover-bg-color: var(--lm-indigo-50);
+  --el-table-border-color: var(--lm-line-soft);
+}
+
+.el-table th.el-table__cell {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.el-table .el-table__cell {
+  padding: 10px 0;
+}
+
+.el-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.el-button + .el-button.is-link {
+  margin-left: 14px;
+}
+
+/* 键盘操作时能看清焦点在哪 */
+:focus-visible {
+  outline: 2px solid var(--lm-indigo-600);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- 外框：侧边栏 + 右边（顶栏 + 内容） ---------- */
+.shell {
+  display: flex;
+  height: 100%;
+}
+
+.shell-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shell-content {
+  flex: 1;
+  overflow: auto;
+}
+
+@media (max-width: 767px) {
+  .page {
+    padding: 16px 12px 24px;
+  }
+}

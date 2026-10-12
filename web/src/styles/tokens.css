@@ -1,0 +1,113 @@
+/*
+ * 设计令牌：颜色、字体、尺寸只在这里定义，页面里用变量，不写死。
+ *
+ * 配色取自植物染：靛蓝是主色，茜草红表示危险，栀子黄表示待处理（也是侧边栏的明线），苔绿表示完成；
+ * 底色是坯布灰（没漂白的布的颜色）。侧边栏是靛蓝斜纹布，当前菜单用金黄明线缝出来。
+ */
+:root {
+  /* 靛蓝 */
+  --lm-indigo-950: #142038;
+  --lm-indigo-900: #1b2a4a; /* 侧边栏底色 */
+  --lm-indigo-600: #2d4e8c; /* 主色：主按钮、链接、选中 */
+  --lm-indigo-50: #f1f4f9; /* 表格行悬停 */
+
+  /* 栀子黄：明线、待处理 */
+  --lm-stitch: #d9a23a; /* 只用在深色底上 */
+  --lm-pending-text: #8a5a00;
+  --lm-pending-bg: #fbf1da;
+  --lm-pending-line: #d9a23a;
+
+  /* 苔绿：完成、启用 */
+  --lm-done-text: #2e7350;
+  --lm-done-bg: #e6f1ea;
+  --lm-done-line: #b9d6c5;
+
+  /* 茜草红：危险、失败 */
+  --lm-danger-text: #b4392b;
+  --lm-danger-bg: #f8ebea;
+  --lm-danger-line: #e3b9b3;
+
+  /* 墨色文字与坯布底 */
+  --lm-ink: #1c2230;
+  --lm-ink-2: #3b4254;
+  --lm-muted: #5b6475;
+  --lm-faint: #8a909c; /* 只给占位符、禁用 */
+  --lm-line: #dcdfd7;
+  --lm-line-soft: #e8eae4;
+  --lm-paper: #ffffff;
+  --lm-greige: #eef0eb;
+  --lm-greige-2: #f6f7f3; /* 表头 */
+
+  /* 侧边栏 */
+  --lm-side-text: #c3cde0;
+  --lm-side-text-dim: #8c9ab6;
+  /* 斜纹：135° 的细线，像牛仔布的斜纹组织 */
+  --lm-twill: repeating-linear-gradient(135deg, rgb(255 255 255 / 3.5%) 0 1px, transparent 1px 5px);
+
+  /* 字体：中文用系统字体；数字、编码用 Barlow（只含拉丁字符，中文会自动落回系统字体） */
+  --lm-font: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Source Han Sans SC', system-ui, sans-serif;
+  --lm-font-num: 'Barlow', var(--lm-font);
+
+  /* 尺寸 */
+  --lm-side-width: 216px;
+  --lm-side-width-collapsed: 64px;
+  --lm-header-height: 48px;
+  --lm-radius: 4px;
+  --lm-radius-panel: 6px;
+
+  /* ---------- Element Plus 主题：把它的变量换成上面的颜色 ---------- */
+  --el-color-primary: #2d4e8c;
+  --el-color-primary-light-3: #6c83ae;
+  --el-color-primary-light-5: #96a6c6;
+  --el-color-primary-light-7: #c0cadc;
+  --el-color-primary-light-8: #d5dce8;
+  --el-color-primary-light-9: #eaedf4;
+  --el-color-primary-dark-2: #243e70;
+
+  --el-color-success: #2e7350;
+  --el-color-success-light-3: #6d9d84;
+  --el-color-success-light-5: #96b9a8;
+  --el-color-success-light-7: #c0d5ca;
+  --el-color-success-light-8: #d5e3dc;
+  --el-color-success-light-9: #eaf1ee;
+  --el-color-success-dark-2: #255c40;
+
+  --el-color-warning: #94660c;
+  --el-color-warning-light-3: #b49455;
+  --el-color-warning-light-5: #cab286;
+  --el-color-warning-light-7: #dfd1b6;
+  --el-color-warning-light-8: #eae0ce;
+  --el-color-warning-light-9: #f4f0e7;
+  --el-color-warning-dark-2: #76520a;
+
+  --el-color-danger: #b4392b;
+  --el-color-danger-light-3: #ca746b;
+  --el-color-danger-light-5: #da9c95;
+  --el-color-danger-light-7: #e8c4bf;
+  --el-color-danger-light-8: #f0d7d5;
+  --el-color-danger-light-9: #f8ebea;
+  --el-color-danger-dark-2: #902e22;
+
+  --el-color-info: #677083;
+  --el-color-info-light-3: #959ba8;
+  --el-color-info-light-5: #b3b8c1;
+  --el-color-info-light-7: #d1d4da;
+  --el-color-info-light-8: #e1e2e6;
+  --el-color-info-light-9: #f0f1f3;
+  --el-color-info-dark-2: #525a69;
+
+  --el-font-family: var(--lm-font);
+  --el-text-color-primary: var(--lm-ink);
+  --el-text-color-regular: var(--lm-ink-2);
+  --el-text-color-secondary: var(--lm-muted);
+  --el-text-color-placeholder: var(--lm-faint);
+  --el-border-color: var(--lm-line);
+  --el-border-color-light: var(--lm-line-soft);
+  --el-border-color-lighter: var(--lm-line-soft);
+  --el-border-color-extra-light: #f0f1ed;
+  --el-bg-color-page: var(--lm-greige);
+  --el-fill-color-light: var(--lm-greige-2);
+  --el-fill-color-lighter: #fafbf8;
+  --el-border-radius-base: var(--lm-radius);
+  --el-border-radius-small: 3px;
+}
