@@ -51,7 +51,12 @@ router.beforeEach(async (to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (!menuRoutesAdded) {
-    await store.fetchMe()
+    try {
+      await store.fetchMe()
+    } catch {
+      // 401 时拦截器已经在跳登录页，其他错误也弹过消息了，这一次跳转取消
+      return false
+    }
     addMenuRoutes(store.info?.menus ?? [])
     menuRoutesAdded = true
     // 这一次跳转是按加路由之前的表匹配的（菜单页会落到 404），按新表重新跳一次
