@@ -48,7 +48,7 @@ const rules: FormRules = {
   ],
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
-    { min: 6, max: 32, message: '密码长度 6-32', trigger: 'blur' },
+    { min: 8, max: 32, message: '密码长度 8-32 位', trigger: 'blur' },
   ],
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
 }
@@ -86,10 +86,10 @@ async function remove(row: User) {
 }
 
 async function resetPassword(row: User) {
-  const { value } = await ElMessageBox.prompt(`给 ${row.username} 设置新密码（6-32 位）`, '重置密码', {
+  const { value } = await ElMessageBox.prompt(`给 ${row.username} 设置新密码（8-32 位）`, '重置密码', {
     inputType: 'password',
-    inputPattern: /^.{6,32}$/,
-    inputErrorMessage: '密码长度 6-32',
+    inputPattern: /^.{8,32}$/,
+    inputErrorMessage: '密码长度 8-32 位',
   })
   await userApi.resetPassword(row.id, value)
   ElMessage.success('密码已重置')
@@ -175,7 +175,8 @@ async function saveRoles() {
           <el-input v-model="form.username" :disabled="editingId !== null" placeholder="登录用，3-32 位小写字母、数字、下划线" />
         </el-form-item>
         <el-form-item v-if="editingId === null" label="初始密码" prop="password">
-          <el-input v-model="form.password" type="password" show-password />
+          <!-- new-password：不让浏览器把管理员自己的登录密码自动填进来 -->
+          <el-input v-model="form.password" type="password" autocomplete="new-password" show-password placeholder="8-32 位" />
         </el-form-item>
         <el-form-item label="昵称" prop="nickname">
           <el-input v-model="form.nickname" placeholder="显示在页面右上角和日志里" />
