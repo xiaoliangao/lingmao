@@ -1,4 +1,4 @@
-import { http, request } from '@/utils/request'
+import { http, upload } from '@/utils/request'
 import type {
   DictData, DictOption, DictType, FileInfo, MenuNode, OperLog, PageResult, Role, User,
 } from '@/types/system'
@@ -92,9 +92,5 @@ export const logApi = {
 }
 
 export const fileApi = {
-  upload: (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    return request<FileInfo>({ url: '/api/files', method: 'post', data: form })
-  },
+  upload: (file: File) => upload<FileInfo>('/api/files', file),
 }
