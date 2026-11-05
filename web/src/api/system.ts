@@ -1,6 +1,6 @@
 import { http, request, upload } from '@/utils/request'
 import type {
-  DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, VersionInfo,
+  BackupStatus, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, VersionInfo,
 } from '@/types/system'
 
 export interface PageParams {
@@ -104,4 +104,9 @@ export const fileApi = {
 export const versionApi = {
   /** 不用登录。取不到不弹消息：页面上不显示版本号就是了 */
   get: () => request<VersionInfo>({ url: '/api/version', silent: true }),
+}
+
+export const backupApi = {
+  /** 只有超级管理员能调（别人 403）。取不到不弹消息：首页不显示备份情况就是了 */
+  status: () => request<BackupStatus>({ url: '/api/admin/backup-status', silent: true }),
 }

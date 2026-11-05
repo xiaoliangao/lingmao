@@ -110,3 +110,15 @@ export interface VersionInfo {
   /** 打包时间 "yyyy-MM-dd HH:mm:ss" */
   buildTime: string | null
 }
+
+/** 数据库备份的情况，只有超级管理员能取 */
+export interface BackupStatus {
+  /** 服务器上配了备份没有。本地开发没配，首页什么都不显示 */
+  configured: boolean
+  latestFile: string | null
+  /** 最近一次备份的时间 "yyyy-MM-dd HH:mm:ss"，一次都没备份过是 null */
+  latestTime: string | null
+  sizeBytes: number | null
+  /** 最近一次备份超过 36 小时了（一次都没有也算） */
+  stale: boolean
+}
