@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { useVersion } from '@/composables/useVersion'
 import { useUserStore } from '@/stores/user'
 import PasswordDialog from './PasswordDialog.vue'
 import { useSidebar } from './useSidebar'
@@ -13,6 +14,7 @@ const router = useRouter()
 const store = useUserStore()
 const { narrow, openDrawer } = useSidebar()
 const passwordVisible = ref(false)
+const { version, title: versionTitle } = useVersion()
 
 async function onCommand(command: string) {
   if (command === 'password') {
@@ -49,6 +51,8 @@ async function onCommand(command: string) {
           <el-dropdown-menu>
             <el-dropdown-item command="password">修改密码</el-dropdown-item>
             <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+            <!-- 版本号只给人看，不是菜单项：报问题时报这个 -->
+            <li v-if="version" class="version" role="presentation" :title="versionTitle">版本 {{ version }}</li>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -104,6 +108,16 @@ async function onCommand(command: string) {
 .user:hover {
   color: var(--lm-indigo-600);
   background: var(--lm-indigo-50);
+}
+
+.version {
+  margin-top: 6px;
+  padding: 8px 16px 2px;
+  font-size: 12px;
+  color: var(--lm-muted);
+  white-space: nowrap;
+  list-style: none;
+  border-top: 1px solid var(--lm-line-soft);
 }
 
 .menu-button {

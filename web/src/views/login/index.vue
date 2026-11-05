@@ -3,11 +3,13 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { APP_BRAND } from '@/config'
+import { useVersion } from '@/composables/useVersion'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
 const store = useUserStore()
+const { version, title: versionTitle } = useVersion()
 
 const formRef = ref<FormInstance>()
 const form = reactive({ username: '', password: '' })
@@ -67,6 +69,7 @@ if (store.token) {
         <el-button type="primary" native-type="submit" :loading="loading" class="submit">登录</el-button>
         <p class="hint">忘记密码请找管理员重置。</p>
       </el-form>
+      <p v-if="version" class="version" :title="versionTitle">版本 <span class="code">{{ version }}</span></p>
     </section>
   </div>
 </template>
@@ -162,11 +165,13 @@ if (store.token) {
 
 /* ---------- 右：表单 ---------- */
 .form-side {
+  position: relative;
   display: flex;
   flex: 1;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  /* 底下留出版本号的位置，窗口矮的时候也不会和表单叠在一起 */
+  padding: 24px 24px 56px;
   background: var(--lm-paper);
 }
 
@@ -189,6 +194,17 @@ h1 {
   margin: 16px 0 0;
   font-size: 13px;
   color: var(--lm-muted);
+}
+
+.version {
+  position: absolute;
+  right: 0;
+  bottom: 20px;
+  left: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--lm-muted);
+  text-align: center;
 }
 
 @media (width < 820px) {

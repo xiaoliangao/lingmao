@@ -103,3 +103,10 @@ export interface FileVO {
   /** 字节 */
   size: number
 }
+
+/** 后端的版本：发版时打进去的，本地开发时 version 是 "dev" */
+export interface VersionInfo {
+  version: string
+  /** 打包时间 "yyyy-MM-dd HH:mm:ss" */
+  buildTime: string | null
+}

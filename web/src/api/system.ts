@@ -1,6 +1,6 @@
-import { http, upload } from '@/utils/request'
+import { http, request, upload } from '@/utils/request'
 import type {
-  DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User,
+  DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, VersionInfo,
 } from '@/types/system'
 
 export interface PageParams {
@@ -99,4 +99,9 @@ export const logApi = {
 
 export const fileApi = {
   upload: (file: File) => upload<FileVO>('/api/files', file),
+}
+
+export const versionApi = {
+  /** 不用登录。取不到不弹消息：页面上不显示版本号就是了 */
+  get: () => request<VersionInfo>({ url: '/api/version', silent: true }),
 }
