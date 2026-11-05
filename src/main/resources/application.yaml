@@ -66,3 +66,5 @@ lingmao:
   init-admin-password: ${INIT_ADMIN_PASSWORD:}   # 初始管理员密码；库里已有 admin 时不用
   upload:
     dir: ${UPLOAD_DIR:./uploads}   # 上传文件存放目录；开发时在项目下的 uploads/（不进 git），生产挂载到容器外
+  backup:
+    dir: ${BACKUP_DIR:}            # 备份目录（部署包里只读挂载），管理后台据此显示最近备份；开发环境不配

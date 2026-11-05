@@ -1,5 +1,5 @@
 # 生产环境：SPRING_PROFILES_ACTIVE=prod 时叠加在 application.yaml 上面
-# 连接信息、密钥全部来自环境变量（服务器 /opt/lingmao/.env → deploy/docker-compose.app.yml），这里一个都不写
+# 连接信息、密钥全部来自环境变量（部署包安装目录的 .env → compose.yml），这里一个都不写
 
 spring:
   datasource:
@@ -15,3 +15,16 @@ springdoc:
     enabled: false                  # 生产不开放接口文档
   swagger-ui:
     enabled: false
+
+# 除了控制台（容器日志只留 30MB，几天就滚没了），再写一份日志文件：用户隔几天才报问题，也能按错误编号找到那次请求。
+# /data/logs 挂到安装目录的 logs/。今天的是 scm.log，以前的按天改名成 scm-2026-11-05.0.log（一天超过 100MB 再分 .1、.2），
+# 不压缩：grep <错误编号> logs/scm*.log 一条命令就能搜全部
+logging:
+  file:
+    name: /data/logs/scm.log
+  logback:
+    rollingpolicy:
+      file-name-pattern: /data/logs/scm-%d{yyyy-MM-dd}.%i.log
+      max-file-size: 100MB
+      max-history: 30               # 留 30 天
+      total-size-cap: 1GB           # 总量超过 1GB 先删最旧的

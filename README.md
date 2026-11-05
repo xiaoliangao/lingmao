@@ -20,4 +20,6 @@
 
 ## 部署
 
-由甲方那边部署：交付一套 Docker 部署包和部署手册（在做，见 [架构设计 §12](docs/架构设计.md)）。`deploy/` 里现在的脚本是给旧服务器写的，已经不用。
+由甲方那边部署：我们交付一套 Docker 部署包和[部署手册](deploy/package/部署手册.md)，设计见 [RFC 002](docs/rfc/002-交付部署包.md)。
+
+打包：`deploy/build-package.sh`（第一次安装加 `--full`），包在 `dist/`。
