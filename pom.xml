@@ -29,6 +29,8 @@
     <properties>
         <java.version>21</java.version>
         <jjwt.version>0.13.0</jjwt.version>
+        <!-- 发版的版本号：deploy/build-package.sh 打包时用 -Drelease.version=2026.11.14 传进来，平时是 dev。GET /api/version 返回它 -->
+        <release.version>dev</release.version>
     </properties>
     <dependencies>
         <dependency>
@@ -141,6 +143,19 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <!-- 生成 META-INF/build-info.properties（打包时间 build.time、版本号 build.release），Spring Boot 据此提供 BuildProperties -->
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                        <configuration>
+                            <additionalProperties>
+                                <release>${release.version}</release>
+                            </additionalProperties>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
