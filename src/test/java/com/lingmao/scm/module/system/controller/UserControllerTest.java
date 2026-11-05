@@ -40,7 +40,7 @@ class UserControllerTest {
                                 {"username": "zhangsan", "password": "123", "nickname": "张三"}
                                 """))
                 .andExpect(jsonPath("$.code").value(400))
-                .andExpect(jsonPath("$.msg").value("password 密码长度 6-32"));
+                .andExpect(jsonPath("$.msg").value("密码长度 6-32"));
 
         verify(userService, never()).create(any());
     }

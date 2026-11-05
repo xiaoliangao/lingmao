@@ -9,6 +9,6 @@ import java.util.List;
 @Data
 public class IdsReq {
 
-    @NotNull(message = "不能为空，全部取消请传 []")
+    @NotNull(message = "ids 不能为空，全部取消请传 []")
     private List<Long> ids;
 }

@@ -36,6 +36,12 @@ spring:
 server:
   port: 8080
 
+logging:
+  pattern:
+    # 每行日志带上这个请求的错误编号（TraceIdFilter 放进 MDC 的 traceId），如 [3f9a1c2e]；不在请求里的日志
+    # （启动、定时任务）这里是等宽的空白。Spring Boot 默认的控制台和文件日志格式里都留了这个位置，开发、生产都生效
+    correlation: "%correlationId{traceId(8)}"
+
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
   configuration:
