@@ -1,0 +1,10 @@
+# .env 里 SCM_WEB_MODE=https 时，compose.yml 的 web 服务叠加这里：HTTP、HTTPS 两个端口都开（HTTP 自动跳 HTTPS），
+# 用 nginx/https.conf，挂上证书目录 certs/。升级时会被覆盖，不要改这里（要改写 compose.override.yml）
+services:
+  web:
+    ports:
+      - "${SCM_HTTP_PORT:-80}:80"
+      - "${SCM_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/https.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./certs:/etc/nginx/certs:ro

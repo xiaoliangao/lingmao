@@ -1,0 +1,164 @@
+# SCM 的全部服务（RFC 002 §4）。配置和密钥在同目录的 .env 里，每一项的说明见 env.example。
+#
+# 升级时这个文件会被新版本覆盖，不要直接改。要改什么（加内存、换 Docker 网段、多挂一个目录……）写在同目录的
+# compose.override.yml 里：docker compose 会自动叠加它，升级也不会覆盖。
+#
+# 常用命令，都在安装目录里执行：
+#   sudo docker compose ps                      各服务的状态
+#   sudo docker compose logs --tail 100 app     应用最近的日志（更早的在 logs/ 下）
+#   sudo docker compose up -d                   改了 .env 以后让它生效
+#   sudo docker compose down                    全部停掉（数据不会删）
+name: scm
+
+# 容器日志滚动：每个 10MB、留 3 个，不会写满硬盘。应用的日志另外写在 logs/，留 30 天
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  # Nginx + 前端页面，唯一对外开端口的服务。/api 转给 app，/files 直接发上传目录里的文件
+  web:
+    # 按 SCM_WEB_MODE 叠加 web-http.yml 或 web-https.yml：两种模式开的端口、用的配置文件不一样
+    extends:
+      file: web-${SCM_WEB_MODE:-http}.yml
+      service: web
+    image: scm-web:${SCM_VERSION:?.env 里没有 SCM_VERSION}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      SCM_HTTPS_PORT: ${SCM_HTTPS_PORT:-443}
+      NGINX_ENVSUBST_FILTER: ^SCM_    # 配置模板里只替换 SCM_ 开头的变量，$host 这些 Nginx 自己的变量不动
+    volumes:
+      - ./nginx:/etc/nginx/scm:ro
+      - ./data/uploads:/data/uploads:ro
+    # 不依赖 app：应用重启、升级时 Nginx 照常在，/api 回"系统正在升级"，而不是连不上
+    mem_limit: 64m
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  app:
+    image: scm-app:${SCM_VERSION:?.env 里没有 SCM_VERSION}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:postgresql://postgres:5432/scm
+      DB_USER: scm
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?.env 里没有 POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?.env 里没有 REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?.env 里没有 JWT_SECRET}
+      INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD:-}
+      UPLOAD_DIR: /data/uploads
+      BACKUP_DIR: /backups
+    volumes:
+      - ./data/uploads:/data/uploads
+      - ./logs:/data/logs
+      - ./backups:/backups:ro           # 只读：管理后台显示最近一次备份的时间和大小
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s              # 等正在处理的请求做完再停
+    mem_limit: 1200m                    # 堆最多用 75%，见 deploy/app.Dockerfile
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/api/version"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 180s                # 第一次启动、升级时要执行数据库迁移
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      POSTGRES_USER: scm
+      POSTGRES_DB: scm
+      # 只在第一次启动、data/postgres 还是空的时候用来建库。之后改 .env 里的密码，数据库不认，应用就连不上了
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env 里没有 POSTGRES_PASSWORD}
+    # 按 4G 内存的机器调的（应用占 1.2G）。机器更大时可以在 compose.override.yml 里把 command 整个换掉
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=50
+      - -c
+      - random_page_cost=1.1            # 云硬盘都是 SSD
+      - -c
+      - timezone=Asia/Shanghai
+      - -c
+      - log_timezone=Asia/Shanghai
+      - -c
+      - log_min_duration_statement=1000 # 超过 1 秒的语句写进日志，慢了好查
+    shm_size: 256mb                     # Docker 默认只给 64MB，并行查询会不够用
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    stop_grace_period: 60s              # 让数据库正常关闭，不用下次启动时做恢复
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "scm", "-d", "scm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # 只放登录状态和缓存。不落盘：丢了大家重新登录一次就行（架构 §9）
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    user: redis                         # 镜像的启动脚本只在命令是 redis-server 时才切到 redis 用户，这里命令是 sh，直接指定
+    environment:
+      TZ: Asia/Shanghai
+      # redis-cli 自动用这个变量登录；redis-server 的密码也从它取，不写在命令行里（docker inspect 看命令行就看到了）
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?.env 里没有 REDIS_PASSWORD}
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDISCLI_AUTH" --save '' --appendonly no --maxmemory 96mb --maxmemory-policy allkeys-lru
+    mem_limit: 128m
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 每天定时备份数据库（scripts/backup-loop.sh），备份在 backups/ 下。复用 postgres 镜像：pg_dump 和数据库版本一致
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    command: ["bash", "/scripts/backup-loop.sh"]
+    environment:
+      TZ: Asia/Shanghai
+      PGHOST: postgres
+      PGUSER: scm
+      PGDATABASE: scm
+      PGPASSWORD: ${POSTGRES_PASSWORD:?.env 里没有 POSTGRES_PASSWORD}
+      BACKUP_TIME: ${BACKUP_TIME:-02:30}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      SCM_BACKUP_CONTAINER: "1"         # 告诉 backup.sh 它是在容器里执行的
+    volumes:
+      - ./backups:/backups
+      - ./scripts:/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+    logging: *logging

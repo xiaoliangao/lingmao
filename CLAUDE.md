@@ -58,11 +58,14 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认。确认以后
 
 ## 部署
 
-**甲方那边负责部署**（11-05 定）。我们交付一套 Docker 部署包（应用、Nginx、PostgreSQL、Redis）和部署手册；服务器、域名、HTTPS、备份的异地存放由部署方负责。部署包和手册的做法见 `docs/rfc/002-交付部署包.md`。
+**甲方那边负责部署**（11-05 定）。我们交付一套 Docker 部署包（应用、Nginx、PostgreSQL、Redis）和部署手册；服务器、域名、HTTPS、备份的异地存放由部署方负责。设计见 `docs/rfc/002-交付部署包.md`。
 
-`deploy/` 里现在的脚本是 10-12 给旧服务器写的，旧服务器 11-05 起不再给本项目用。交付包做好之前不要运行 `deploy.sh`。
+- 打包：`deploy/build-package.sh [版本] [--full] [--arch amd64|arm64]`，包在 `dist/`（gitignore）。要先启动 Docker、起本机开发库（导出 `openapi.json` 要起一次应用），工作区要干净（打的是 HEAD）。第一次安装给 `--full` 的完整包，之后每周给升级包。
+- 原样进包的文件在 `deploy/package/`：compose、Nginx 配置、安装 / 升级 / 备份 / 恢复脚本、`部署手册.md`。两个镜像是 `deploy/app.Dockerfile`、`deploy/web.Dockerfile`。
+- 部署手册给甲方 IT 看，在公开仓库里：不写任何地址、密钥和甲方的名字。改了部署包的行为，手册一起改。
+- 应用这边配合部署的：`GET /api/version`（不用登录，升级脚本靠它判断新版本起来没有）、`GET /api/admin/backup-status`（只给超级管理员，读 `BACKUP_DIR` 下最新的每日备份）；生产环境的日志另写一份到 `/data/logs/scm.log`（安装目录的 `logs/`，按天滚动、留 30 天）。
 
-备份脚本（每天 `pg_dump`，保留 7 天）随部署包交付；哪个环境里有了甲方的真实数据，哪个环境就要开备份（架构 §12.2）。
+部署包装好就每天自动备份（backup 容器，`pg_dump`，默认留 7 天，见架构 §12.2）；备份的异地存放由部署方做（手册第 5 节）。
 
 ## Git
 
