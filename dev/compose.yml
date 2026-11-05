@@ -1,0 +1,42 @@
+# 本机开发用的 PostgreSQL 和 Redis。只在本机用，交付部署不用这个文件。
+#
+# 起：    docker compose -f dev/compose.yml up -d
+# 停：    docker compose -f dev/compose.yml stop
+# 开发完彻底清理：
+#         docker compose -f dev/compose.yml down --rmi all   # 删容器和这两个镜像
+#         rm -rf dev/data                                  # 删数据
+#
+# 配置就是这个文件，数据在 dev/data/（不进 git），都在 SCM 目录里。
+# 端口只绑 127.0.0.1，别的机器连不上，所以 PostgreSQL 用 trust（不要密码），Redis 不设密码。
+# 端口用 5433、6380：本机 5432、55432 可能被别的 PostgreSQL 占着。
+name: scm-dev
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: scm-dev-postgres
+    environment:
+      POSTGRES_USER: scm
+      POSTGRES_DB: scm                  # 开发库；集成测试用的 scm_test 由 initdb/ 里的脚本建
+      POSTGRES_HOST_AUTH_METHOD: trust
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro   # 只在数据目录第一次初始化时执行
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "scm", "-d", "scm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: scm-dev-redis
+    # 只放登录态和字典缓存，丢了重新登录就行，所以不落盘，dev/data 里也没有它的文件
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6380:6379"
+    restart: unless-stopped

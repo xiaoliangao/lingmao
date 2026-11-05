@@ -41,6 +41,9 @@ deploy/deploy.local
 ### 上传的文件 ###
 uploads/
 
+### 本机开发环境的数据（dev/compose.yml） ###
+dev/data/
+
 ### 本机私有资料（甲方原件、服务器信息） ###
 CLAUDE.local.md
 docs/private/
