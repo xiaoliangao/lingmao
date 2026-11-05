@@ -1,13 +1,18 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { APP_NAME } from './src/config'
 
 // 开发时前端跑在 5173，/api 和 /files 转发给后端（默认 IDEA 里的 8080）
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const target = env.VITE_API_TARGET || 'http://localhost:8080'
   return {
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      // index.html 里的 %APP_NAME% 换成 src/config.ts 的系统名，名字只写一处
+      { name: 'app-name', transformIndexHtml: (html) => html.replaceAll('%APP_NAME%', APP_NAME) },
+    ],
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteComponent, type RouteRecordRaw } from 'vue-router'
 import WorkbenchLayout from '@/layout/WorkbenchLayout.vue'
+import { APP_NAME } from '@/config'
 import { useUserStore } from '@/stores/user'
 import type { MenuNode } from '@/types/system'
 import { joinPath } from '@/utils/path'
@@ -66,7 +67,8 @@ function addMenuRoutes(parentName: string, menus: MenuNode[], parentPath = '', g
 let menuRoutesAdded = false
 
 router.beforeEach(async (to) => {
-  document.title = `${(to.meta.title as string | undefined) ?? ''} - 领猫 SCM`
+  const title = to.meta.title as string | undefined
+  document.title = title ? `${title} - ${APP_NAME}` : APP_NAME
   if (to.meta.public) return true
   const store = useUserStore()
   if (!store.token) {

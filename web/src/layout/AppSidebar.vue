@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { APP_BRAND } from '@/config'
 import type { MenuNode } from '@/types/system'
 import { joinPath } from '@/utils/path'
 import SideMenuItem from './SideMenuItem.vue'
@@ -48,9 +49,9 @@ function go(path: string) {
   <div v-if="narrow && drawerOpen" class="backdrop" @click="closeDrawer" />
   <aside class="sidebar" :class="{ collapsed, drawer: narrow, open: drawerOpen }">
     <div class="brand">
-      <span class="brand-cn">领猫</span>
+      <span class="brand-cn">{{ APP_BRAND.cn }}</span>
       <template v-if="!collapsed">
-        <span class="brand-en">SCM</span>
+        <span v-if="APP_BRAND.en" class="brand-en">{{ APP_BRAND.en }}</span>
         <span v-if="area === 'admin'" class="brand-area">管理后台</span>
       </template>
     </div>

@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
+import { APP_BRAND } from '@/config'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -47,7 +48,9 @@ if (store.token) {
           </defs>
           <rect class="thread" x="7" y="7" width="306" height="174" rx="8" mask="url(#sew-mask)" />
         </svg>
-        <p class="mark"><span class="cn">领猫</span><span class="en">SCM</span></p>
+        <p class="mark">
+          <span class="cn">{{ APP_BRAND.cn }}</span><span v-if="APP_BRAND.en" class="en">{{ APP_BRAND.en }}</span>
+        </p>
         <p class="sub">采购　入库　库存</p>
       </div>
     </section>
