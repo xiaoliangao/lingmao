@@ -134,6 +134,13 @@
             <artifactId>spring-boot-starter-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- 架构测试（ArchitectureTest）：读编译好的类，检查包之间谁能用谁。项目跟着 Boot 4.1 用 JUnit 6，所以是 junit6 这个 -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit6</artifactId>
+            <version>1.5.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
