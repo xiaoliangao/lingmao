@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onActivated, ref } from 'vue'
+import { backupApi } from '@/api/system'
 import { useUserStore } from '@/stores/user'
+import { formatDateTime, formatFileSize } from '@/utils/format'
 import { joinPath } from '@/utils/path'
-import type { MenuNode } from '@/types/system'
+import type { BackupStatus, MenuNode } from '@/types/system'
 
 // 工作台首页：问候、待办、我能用的功能。名字给 keep-alive 用（见 stores/tabs.ts）
 defineOptions({ name: 'WorkbenchHome' })
@@ -43,14 +45,49 @@ const groups = computed(() =>
     )
     .filter((group) => group.pages.length > 0),
 )
+
+// ---------- 数据库备份：只有超级管理员看。停了要显眼，正常只留一行小字 ----------
+const backup = ref<BackupStatus | null>(null)
+
+// 首页一直开着（keep-alive），每次回到首页都重新取一次
+onActivated(async () => {
+  if (!store.isAdmin) return
+  try {
+    backup.value = await backupApi.status()
+  } catch {
+    // 取不到不打扰，下次回到首页再取
+  }
+})
+
+/** 备份停了：红色提示。没配备份（本地开发）或者备份正常时是空的 */
+const backupAlert = computed(() => {
+  const status = backup.value
+  if (!status?.configured || !status.stale) return ''
+  return status.latestTime
+    ? `最近一次备份是 ${formatDateTime(status.latestTime)}，已超过 36 小时，请联系部署人员检查备份`
+    : '还没有任何备份，请联系部署人员检查备份'
+})
+
+/** 备份正常：一行小字 */
+const backupLine = computed(() => {
+  const status = backup.value
+  if (!status?.configured || status.stale || !status.latestTime) return ''
+  const size = status.sizeBytes == null ? '' : `（${formatFileSize(status.sizeBytes)}）`
+  return `最近备份：${formatDateTime(status.latestTime)}${size}`
+})
 </script>
 
 <template>
   <div class="page home">
     <header class="hello">
-      <h1>{{ greeting }}，{{ store.info?.nickname }}</h1>
-      <p>{{ today }}</p>
+      <div>
+        <h1>{{ greeting }}，{{ store.info?.nickname }}</h1>
+        <p>{{ today }}</p>
+      </div>
+      <p v-if="backupLine" class="backup-line">{{ backupLine }}</p>
     </header>
+
+    <el-alert v-if="backupAlert" class="backup-alert" type="error" :title="backupAlert" :closable="false" show-icon />
 
     <div class="columns">
       <section class="panel block">
@@ -88,6 +125,11 @@ const groups = computed(() =>
 
 <style scoped>
 .hello {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  align-items: flex-end;
+  justify-content: space-between;
   margin-bottom: 20px;
 }
 
@@ -100,6 +142,14 @@ const groups = computed(() =>
 .hello p {
   margin: 4px 0 0;
   color: var(--lm-muted);
+}
+
+.hello .backup-line {
+  font-size: 12px;
+}
+
+.backup-alert {
+  margin-bottom: 16px;
 }
 
 .columns {

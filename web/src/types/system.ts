@@ -93,8 +93,32 @@ export interface OperLog {
   createTime: string
 }
 
-export interface FileInfo {
+/** 上传成功返回的文件 */
+export interface FileVO {
   url: string
+  /** 长边 320px 的缩略图，只有 jpg、png 有，其他为 null。显示列表时用它，没有就用 url */
+  thumbUrl: string | null
+  /** 原来的文件名 */
   name: string
+  /** 字节 */
   size: number
+}
+
+/** 后端的版本：发版时打进去的，本地开发时 version 是 "dev" */
+export interface VersionInfo {
+  version: string
+  /** 打包时间 "yyyy-MM-dd HH:mm:ss" */
+  buildTime: string | null
+}
+
+/** 数据库备份的情况，只有超级管理员能取 */
+export interface BackupStatus {
+  /** 服务器上配了备份没有。本地开发没配，首页什么都不显示 */
+  configured: boolean
+  latestFile: string | null
+  /** 最近一次备份的时间 "yyyy-MM-dd HH:mm:ss"，一次都没备份过是 null */
+  latestTime: string | null
+  sizeBytes: number | null
+  /** 最近一次备份超过 36 小时了（一次都没有也算） */
+  stale: boolean
 }

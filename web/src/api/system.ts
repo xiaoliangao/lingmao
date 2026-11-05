@@ -1,6 +1,6 @@
-import { http, request } from '@/utils/request'
+import { http, request, upload } from '@/utils/request'
 import type {
-  DictData, DictOption, DictType, FileInfo, MenuNode, OperLog, PageResult, Role, User,
+  BackupStatus, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, VersionInfo,
 } from '@/types/system'
 
 export interface PageParams {
@@ -16,6 +16,12 @@ export const userApi = {
   resetPassword: (id: number, password: string) => http.post<void>(`/api/users/${id}/reset-password`, { password }),
   roleIds: (id: number) => http.get<number[]>(`/api/users/${id}/roles`),
   assignRoles: (id: number, ids: number[]) => http.put<void>(`/api/users/${id}/roles`, { ids }),
+  /**
+   * 下拉框选人（UserSelect）：启用的账号，按用户名搜，最多 20 个。
+   * 暂时借用户管理的列表接口：只有管理员有它的权限，也不能按昵称搜。要换成一个登录就能用、能按昵称搜的接口
+   */
+  search: (keyword: string) =>
+    http.get<PageResult<User>>('/api/users', { username: keyword || undefined, status: 1, page: 1, size: 20 }),
 }
 
 export interface RoleForm {
@@ -92,9 +98,15 @@ export const logApi = {
 }
 
 export const fileApi = {
-  upload: (file: File) => {
-    const form = new FormData()
-    form.append('file', file)
-    return request<FileInfo>({ url: '/api/files', method: 'post', data: form })
-  },
+  upload: (file: File) => upload<FileVO>('/api/files', file),
+}
+
+export const versionApi = {
+  /** 不用登录。取不到不弹消息：页面上不显示版本号就是了 */
+  get: () => request<VersionInfo>({ url: '/api/version', silent: true }),
+}
+
+export const backupApi = {
+  /** 只有超级管理员能调（别人 403）。取不到不弹消息：首页不显示备份情况就是了 */
+  status: () => request<BackupStatus>({ url: '/api/admin/backup-status', silent: true }),
 }

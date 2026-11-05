@@ -88,6 +88,15 @@
   --el-color-danger-light-9: #f8ebea;
   --el-color-danger-dark-2: #902e22;
 
+  /* 消息提示、提示框（ElMessage.error、el-alert type="error"）用的是 error 这一组，和 danger 一样是茜草红 */
+  --el-color-error: var(--el-color-danger);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+
   --el-color-info: #677083;
   --el-color-info-light-3: #959ba8;
   --el-color-info-light-5: #b3b8c1;

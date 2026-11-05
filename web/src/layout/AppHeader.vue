@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { useVersion } from '@/composables/useVersion'
 import { useUserStore } from '@/stores/user'
+import PasswordDialog from './PasswordDialog.vue'
 import { useSidebar } from './useSidebar'
 
 // 顶栏：左边由各区域自己放（工作台放页签，管理后台放位置），右边是切换区域和当前用户
@@ -10,9 +13,13 @@ defineProps<{ area: 'workbench' | 'admin' }>()
 const router = useRouter()
 const store = useUserStore()
 const { narrow, openDrawer } = useSidebar()
+const passwordVisible = ref(false)
+const { version, title: versionTitle } = useVersion()
 
 async function onCommand(command: string) {
-  if (command === 'logout') {
+  if (command === 'password') {
+    passwordVisible.value = true
+  } else if (command === 'logout') {
     await ElMessageBox.confirm('退出后需要重新登录。', '退出登录', { confirmButtonText: '退出登录', type: 'warning' })
     await store.logout()
     router.replace('/login')
@@ -42,11 +49,15 @@ async function onCommand(command: string) {
         </button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+            <el-dropdown-item command="password">修改密码</el-dropdown-item>
+            <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+            <!-- 版本号只给人看，不是菜单项：报问题时报这个 -->
+            <li v-if="version" class="version" role="presentation" :title="versionTitle">版本 {{ version }}</li>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
     </div>
+    <PasswordDialog v-model="passwordVisible" />
   </header>
 </template>
 
@@ -97,6 +108,16 @@ async function onCommand(command: string) {
 .user:hover {
   color: var(--lm-indigo-600);
   background: var(--lm-indigo-50);
+}
+
+.version {
+  margin-top: 6px;
+  padding: 8px 16px 2px;
+  font-size: 12px;
+  color: var(--lm-muted);
+  white-space: nowrap;
+  list-style: none;
+  border-top: 1px solid var(--lm-line-soft);
 }
 
 .menu-button {
