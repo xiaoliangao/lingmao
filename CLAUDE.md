@@ -44,6 +44,12 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认。确认以后
 
 - 两块区域：工作台 `/` 所有人，业务菜单 + 页签（keep-alive，页面组件按 `Menu<id>` 命名）；管理后台 `/admin` 只给超级管理员（后端 V7 `sys_menu.admin_only` 兜底）。业务菜单建在工作台的顶层目录下，页面文件还没做时自动显示"还没上线"。
 - 新页面套 `PageHeader` + `.panel` + `FilterBar` + `el-table`（不加 border）+ `StatusTag`（实线 = 定了，虚线 = 待处理或停用）。数字列 `class-name="num"`，编码列 `"code"`。
+- 公共件，用法写在各文件开头的注释里：
+  - 列表页用 `composables/useTable.ts`；导入用 `components/ImportDialog.vue`；多图用 `ImageUpload`。
+  - 字典下拉用 `DictSelect`，表格里显示字典文字用 `useDict(type).labelOf`；选人用 `UserSelect`。
+  - 数量、金额、单价、日期用 `utils/format.ts`；判断错误码用 `utils/errorCodes.ts` 里的名字，不写数字。
+  - 下载、上传用 `utils/request.ts` 的 `download`、`upload`。
+  - 系统名只在 `src/config.ts` 改。
 - 颜色只用 `web/src/styles/tokens.css` 的变量（植物染：靛蓝主色、茜红危险、栀黄待处理、苔绿完成、坯布灰底），不写死。
 - 文案：按钮写清楚做什么；删除确认要说后果，按钮就写"删除"；空表格要说明为什么空。
 - 原型 `docs/原型/index.html` 是给甲方看的样子，做真页面时照它的结构，用真组件重写。原型本身要改：改 `docs/原型/src/`，再跑 `docs/原型/build.sh`。
