@@ -7,6 +7,7 @@ import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
+import com.lingmao.scm.security.LoginFailCounter;
 import com.lingmao.scm.security.LoginSessionStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,34 +45,77 @@ class AuthServiceImplTest {
     @Mock
     private PermissionService permissionService;
 
+    @Mock
+    private LoginFailCounter loginFailCounter;
+
     @InjectMocks
     private AuthServiceImpl authService;
 
     /**
-     * 规则：用户名不存在，报“用户名或密码错误”，不签发 token
+     * 规则：用户名不存在，和密码错一样计数、一样提示还能试几次（不暴露用户名存不存在），不签发 token
      */
     @Test
     void login_userNotFound_throwsAndNoToken() {
         when(sysUserMapper.selectOne(any())).thenReturn(null);
+        when(loginFailCounter.recordFailure("nobody")).thenReturn(4);
 
         assertThatThrownBy(() -> authService.login(req("nobody", "123456")))
                 .isInstanceOf(BizException.class)
-                .hasMessage("用户名或密码错误");
+                .hasMessage("用户名或密码错误，还能试 4 次");
         verify(jwtUtil, never()).createToken(any(),any());
     }
 
     /**
-     * 规则：密码错，报同一句话，不签发 token
+     * 规则：密码错，记一次失败，提示还能试几次，不签发 token
      */
     @Test
     void login_wrongPassword_throwsAndNoToken() {
         when(sysUserMapper.selectOne(any())).thenReturn(admin());
         when(passwordEncoder.matches("wrong", "hashed")).thenReturn(false);
+        when(loginFailCounter.recordFailure("admin")).thenReturn(4);
 
         assertThatThrownBy(() -> authService.login(req("admin", "wrong")))
                 .isInstanceOf(BizException.class)
-                .hasMessage("用户名或密码错误");
+                .hasMessage("用户名或密码错误，还能试 4 次");
         verify(jwtUtil, never()).createToken(any(),any());
+    }
+
+    /**
+     * 规则：连续输错 5 次锁住；第 6 次密码对了也进不去，而且根本不去比对密码、不签发 token
+     */
+    @Test
+    void login_lockedAfterFiveFailures_rightPasswordRejected() {
+        when(loginFailCounter.isLocked("admin")).thenReturn(false, false, false, false, false, true);
+        when(loginFailCounter.recordFailure("admin")).thenReturn(4, 3, 2, 1, 0);
+        when(loginFailCounter.minutesLeft("admin")).thenReturn(15L);
+        when(sysUserMapper.selectOne(any())).thenReturn(admin());
+        when(passwordEncoder.matches("wrong", "hashed")).thenReturn(false);
+
+        for (int left = 4; left >= 1; left--) {
+            assertThatThrownBy(() -> authService.login(req("admin", "wrong")))
+                    .hasMessage("用户名或密码错误，还能试 " + left + " 次");
+        }
+        assertThatThrownBy(() -> authService.login(req("admin", "wrong")))
+                .hasMessage("用户名或密码错误，账号已锁定，请 15 分钟后再试");
+        assertThatThrownBy(() -> authService.login(req("admin", "right")))
+                .isInstanceOf(BizException.class)
+                .hasMessage("密码输错次数太多，账号已锁定，请 15 分钟后再试");
+
+        verify(passwordEncoder, never()).matches(eq("right"), anyString());
+        verify(jwtUtil, never()).createToken(any(), any());
+    }
+
+    /**
+     * 规则：登录成功，失败计数清零
+     */
+    @Test
+    void login_ok_clearsFailureCount() {
+        when(sysUserMapper.selectOne(any())).thenReturn(admin());
+        when(passwordEncoder.matches("right", "hashed")).thenReturn(true);
+
+        authService.login(req("admin", "right"));
+
+        verify(loginFailCounter).clear("admin");
     }
 
     /**
@@ -99,10 +143,11 @@ class AuthServiceImplTest {
         user.setStatus(0);
         when(sysUserMapper.selectOne(any())).thenReturn(user);
         when(passwordEncoder.matches("wrong", "hashed")).thenReturn(false);
+        when(loginFailCounter.recordFailure("admin")).thenReturn(4);
 
         assertThatThrownBy(() -> authService.login(req("admin", "wrong")))  // ④ 用错的密码去登录
                 .isInstanceOf(BizException.class)
-                .hasMessage("用户名或密码错误");                                    // ⑤ 期望被拒，提示是需求原文
+                .hasMessage("用户名或密码错误，还能试 4 次");                         // ⑤ 和普通的密码错一样
         verify(jwtUtil, never()).createToken(any(),any());
     }
 
@@ -141,6 +186,37 @@ class AuthServiceImplTest {
         authService.logout("jti-1");
 
         verify(loginSessionStore).remove("jti-1");
+    }
+
+    /**
+     * 规则：自己改密码，旧密码不对就拒绝（1000），不改库
+     */
+    @Test
+    void changePassword_wrongOldPassword_throwsAndNotUpdate() {
+        when(sysUserMapper.selectById(1L)).thenReturn(admin());
+        when(passwordEncoder.matches("wrong-old", "hashed")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.changePassword(1L, "wrong-old", "new-pass-123"))
+                .isInstanceOf(BizException.class)
+                .hasMessage("旧密码不对")
+                .extracting("code").isEqualTo(1000);
+        verify(sysUserMapper, never()).updateById(any(SysUser.class));
+    }
+
+    /**
+     * 规则：旧密码对，存进库的是新密码加密后的值
+     */
+    @Test
+    void changePassword_ok_savesEncodedNewPassword() {
+        SysUser user = admin();
+        when(sysUserMapper.selectById(1L)).thenReturn(user);
+        when(passwordEncoder.matches("right-old", "hashed")).thenReturn(true);
+        when(passwordEncoder.encode("new-pass-123")).thenReturn("encoded-new");
+
+        authService.changePassword(1L, "right-old", "new-pass-123");
+
+        assertThat(user.getPassword()).isEqualTo("encoded-new");
+        verify(sysUserMapper).updateById(user);
     }
 
     private SysUser admin() {

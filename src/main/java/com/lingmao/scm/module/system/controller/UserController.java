@@ -58,12 +58,13 @@ public class UserController {
         return R.ok(userService.create(req));
     }
 
-    @Operation(summary = "修改昵称、手机号、状态")
+    @Operation(summary = "修改昵称、手机号、状态，不能停用自己")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('system:user:edit')")
     @OperLog(module = "用户管理", action = "修改")
-    public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody UserUpdateReq req) {
-        userService.update(id, req);
+    public R<Void> update(@PathVariable("id") Long id, @Valid @RequestBody UserUpdateReq req,
+                          @AuthenticationPrincipal LoginUser loginUser) {
+        userService.update(id, req, loginUser.userId());
         return R.ok();
     }
 
@@ -92,12 +93,13 @@ public class UserController {
         return R.ok(userService.getRoleIds(id));
     }
 
-    @Operation(summary = "重新分配角色")
+    @Operation(summary = "重新分配角色，不能去掉自己的超级管理员角色")
     @PutMapping("/{id}/roles")
     @PreAuthorize("hasAuthority('system:user:edit')")
     @OperLog(module = "用户管理", action = "分配角色")
-    public R<Void> assignRoles(@PathVariable("id") Long id, @Valid @RequestBody IdsReq req) {
-        userService.assignRoles(id, req.getIds());
+    public R<Void> assignRoles(@PathVariable("id") Long id, @Valid @RequestBody IdsReq req,
+                               @AuthenticationPrincipal LoginUser loginUser) {
+        userService.assignRoles(id, req.getIds(), loginUser.userId());
         return R.ok();
     }
 }

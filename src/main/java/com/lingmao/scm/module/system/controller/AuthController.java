@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.controller;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.LoginReq;
+import com.lingmao.scm.module.system.dto.PasswordChangeReq;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.service.AuthService;
 import com.lingmao.scm.security.LoginUser;
@@ -40,6 +41,15 @@ public class AuthController {
     public R<Void> logout(@AuthenticationPrincipal LoginUser loginUser){
         authService.logout(loginUser.jti());
 
+        return R.ok();
+    }
+
+    @Operation(summary = "改自己的密码（登录了就能改，不要额外的权限）")
+    @PutMapping("/password")
+    @OperLog(module = "认证", action = "改密码")
+    public R<Void> changePassword(@AuthenticationPrincipal LoginUser loginUser,
+                                  @Valid @RequestBody PasswordChangeReq req) {
+        authService.changePassword(loginUser.userId(), req.getOldPassword(), req.getNewPassword());
         return R.ok();
     }
 }

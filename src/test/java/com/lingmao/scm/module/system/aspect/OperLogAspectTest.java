@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.aspect;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
+import com.lingmao.scm.module.system.dto.PasswordChangeReq;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
 import com.lingmao.scm.module.system.entity.SysOperLog;
 import com.lingmao.scm.module.system.mapper.SysOperLogMapper;
@@ -59,6 +60,22 @@ class OperLogAspectTest {
                 .doesNotContain("123456");
     }
 
+    /** 规则：名字里含 password 的字段都打码，不分大小写：改密码的 oldPassword、newPassword 也不能明文进日志 */
+    @Test
+    void passwordLikeFields_allMasked() {
+        PasswordChangeReq req = new PasswordChangeReq();
+        req.setOldPassword("old-pass-111");
+        req.setNewPassword("new-pass-222");
+
+        proxy.changePassword(req);
+
+        ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
+        verify(sysOperLogMapper).insert(saved.capture());
+        assertThat(saved.getValue().getParams())
+                .contains("\"oldPassword\":\"******\"").contains("\"newPassword\":\"******\"")
+                .doesNotContain("old-pass-111").doesNotContain("new-pass-222");
+    }
+
     /** 规则：业务失败也记，success=false，带上原因；异常照样抛给调用方 */
     @Test
     void failure_savesLogAndRethrows() {
@@ -99,6 +116,10 @@ class OperLogAspectTest {
         @OperLog(module = "用户管理", action = "新增")
         public Long fail() {
             throw new BizException("用户名已存在: zhangsan");
+        }
+
+        @OperLog(module = "认证", action = "改密码")
+        public void changePassword(PasswordChangeReq req) {
         }
     }
 }

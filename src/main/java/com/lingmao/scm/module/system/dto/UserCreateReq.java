@@ -14,7 +14,7 @@ public class UserCreateReq {
     private String username;
 
     @NotBlank(message = "密码不能为空")
-    @Size(min = 6, max = 32, message = "密码长度 6-32")
+    @Size(min = 8, max = 32, message = "密码长度 8-32 位")
     private String password;
 
     @NotBlank(message = "昵称不能为空")

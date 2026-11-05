@@ -29,6 +29,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -120,13 +121,16 @@ public class OperLogAspect {
         return json.length() > MAX_PARAMS_LENGTH ? json.substring(0, MAX_PARAMS_LENGTH) + "…" : json;
     }
 
-    /** 递归找名字叫 password 的字段，值换成 ****** */
+    /**
+     * 递归找名字里含 password 的字段（不分大小写），值换成 ******。
+     * 不只看名字等于 password 的：改密码的 oldPassword、newPassword 也是密码，只认 password 的话它们会明文进日志
+     */
     private void maskPasswords(JsonNode node) {
         if (node instanceof ObjectNode object) {
             List<String> names = new ArrayList<>();
             object.properties().forEach(entry -> names.add(entry.getKey()));
             for (String name : names) {
-                if ("password".equalsIgnoreCase(name)) {
+                if (name.toLowerCase(Locale.ROOT).contains("password")) {
                     object.put(name, "******");
                 } else {
                     maskPasswords(object.get(name));

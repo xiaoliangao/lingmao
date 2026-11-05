@@ -14,6 +14,7 @@ import com.lingmao.scm.module.system.mapper.SysRoleMapper;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.mapper.SysUserRoleMapper;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.LoginFailCounter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final SysUserRoleMapper sysUserRoleMapper;
     private final SysRoleMapper sysRoleMapper;
+    private final LoginFailCounter loginFailCounter;
 
     @Override
     public PageResult<UserVO> page(UserQuery query) {
@@ -65,7 +67,11 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void update(Long id, UserUpdateReq req) {
+    public void update(Long id, UserUpdateReq req, Long currentUserId) {
+        // 停用自己：这次保存一完成自己就进不来了，唯一的管理员这么做就再没人能管（bug 008）
+        if (Objects.equals(id, currentUserId) && Objects.equals(req.getStatus(), 0)) {
+            throw new BizException("不能停用自己");
+        }
         SysUser user = getEntity(id);
         user.setNickname(req.getNickname());
         user.setPhone(req.getPhone());
@@ -89,6 +95,8 @@ public class UserServiceImpl implements UserService {
         SysUser user = getEntity(id);
         user.setPassword(passwordEncoder.encode(password));
         sysUserMapper.updateById(user);
+        // 他可能就是输错被锁住了才来找管理员：重置以后马上能用新密码登录
+        loginFailCounter.clear(user.getUsername());
     }
 
     @Override
@@ -101,9 +109,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void assignRoles(Long id, List<Long> roleIds) {
+    public void assignRoles(Long id, List<Long> roleIds, Long currentUserId) {
         getEntity(id);
         List<Long> distinctIds = roleIds.stream().distinct().toList();
+        if (Objects.equals(id, currentUserId)) {
+            ensureKeepsOwnAdmin(id, distinctIds);
+        }
         if (!distinctIds.isEmpty()) {
             Long found = sysRoleMapper.selectCount(new LambdaQueryWrapper<SysRole>()
                     .in(SysRole::getId, distinctIds));
@@ -115,6 +126,24 @@ public class UserServiceImpl implements UserService {
                 .eq(SysUserRole::getUserId, id));
         if (!distinctIds.isEmpty()) {
             sysUserRoleMapper.insert(distinctIds.stream().map(roleId -> new SysUserRole(id, roleId)).toList());
+        }
+    }
+
+    /**
+     * 不能去掉自己的超级管理员角色：唯一的超级管理员把自己的去掉，就再没人能进管理后台（bug 008）。
+     * 去掉别人的可以；自己本来就不是超级管理员的，不受影响
+     */
+    private void ensureKeepsOwnAdmin(Long userId, List<Long> roleIds) {
+        SysRole admin = sysRoleMapper.selectOne(new LambdaQueryWrapper<SysRole>()
+                .eq(SysRole::getCode, SysRole.ADMIN_CODE));
+        if (admin == null || roleIds.contains(admin.getId())) {
+            return;
+        }
+        boolean isAdmin = sysUserRoleMapper.exists(new LambdaQueryWrapper<SysUserRole>()
+                .eq(SysUserRole::getUserId, userId)
+                .eq(SysUserRole::getRoleId, admin.getId()));
+        if (isAdmin) {
+            throw new BizException("不能去掉自己的超级管理员角色");
         }
     }
 
