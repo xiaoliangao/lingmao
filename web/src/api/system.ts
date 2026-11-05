@@ -1,6 +1,6 @@
 import { http, upload } from '@/utils/request'
 import type {
-  DictData, DictOption, DictType, FileInfo, MenuNode, OperLog, PageResult, Role, User,
+  DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User,
 } from '@/types/system'
 
 export interface PageParams {
@@ -92,5 +92,5 @@ export const logApi = {
 }
 
 export const fileApi = {
-  upload: (file: File) => upload<FileInfo>('/api/files', file),
+  upload: (file: File) => upload<FileVO>('/api/files', file),
 }

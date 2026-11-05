@@ -93,8 +93,13 @@ export interface OperLog {
   createTime: string
 }
 
-export interface FileInfo {
+/** 上传成功返回的文件 */
+export interface FileVO {
   url: string
+  /** 长边 320px 的缩略图，只有 jpg、png 有，其他为 null。显示列表时用它，没有就用 url */
+  thumbUrl: string | null
+  /** 原来的文件名 */
   name: string
+  /** 字节 */
   size: number
 }
