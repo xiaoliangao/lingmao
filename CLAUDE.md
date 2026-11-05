@@ -10,7 +10,7 @@
 
 上线节奏（PRD §2.4）：11-14、11-21、11-28 各发一版，12-01 一期上线；12 月做二期，每周发一版。
 
-PRD 是 v0.1，§2 分期和 §12 待决问题等甲方确认。甲方答复了就改 PRD，在"变更记录"里加一行；没答复的按默认做法做。
+PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认。确认以后的顺序（用户 11-05 定）：更新架构文档、写 RFC，再出计划和接口设计，然后写代码。甲方答复了就改 PRD，在"变更记录"里加一行；没答复的按默认做法做。
 
 ## 分工（2026-11-05 起）
 
@@ -32,7 +32,7 @@ PRD 是 v0.1，§2 分期和 §12 待决问题等甲方确认。甲方答复了�
 - 返回体 `R`，错误码 0 / 400 / 401 / 403 / 404 / 500 / 1xxx（业务错误，如库存不足）。分页 data 是 `{ list, total }`。
 - 时间列 `TIMESTAMPTZ` ↔ `OffsetDateTime`，JSON 东八区。数量、单价、金额用 `NUMERIC`（PRD §7.3），不用浮点。
 - 逻辑删除 `deleted`；唯一约束用部分索引 `WHERE deleted = false`。
-- Flyway：只加 `V<n>__*.sql`，已执行的一个字都不改。**11-14 起生产库就有甲方的真实数据，从那时起迁移只增不删、不改列类型**。
+- Flyway：只加 `V<n>__*.sql`，已执行的一个字都不改。**哪个环境里有了甲方的真实数据，从那时起迁移只增不删、不改列类型**。
 - 路径用复数名词；动作用 `POST /api/xxx/{id}/audit` 这种。
 - 单号用 `common/seq/SerialNoGenerator`：前缀 + yyyyMMdd + 4 位流水。
 - 单据：状态转换集中校验（允许的转换表），不写散落的 if；审核过账在一个事务里（改状态、改库存、写日志、回写源单）；库存用条件更新防并发（PRD §7.3）。
@@ -49,21 +49,24 @@ PRD 是 v0.1，§2 分期和 §12 待决问题等甲方确认。甲方答复了�
 
 ## 运行与测试
 
+- **本机开发环境**（11-05 起，不再连服务器）：`docker compose -f dev/compose.yml up -d` 起 PostgreSQL 16（`127.0.0.1:5433`，开发库 `scm`、集成测试库 `scm_test`）和 Redis 7（`127.0.0.1:6380`），都没有密码、只绑本机。数据在 `dev/data/`（gitignore）。开发完清理：`docker compose -f dev/compose.yml down --rmi all && rm -rf dev/data`。连接配置在 `application-local.yaml`，模板是 `.example`。
 - 用户在 IDEA 里跑应用，占 8080 端口。**绝不杀 8080**。Claude 自己起服务用 `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=18080`，只杀 18080。Swagger 在 `/swagger-ui.html`。
-- 跑测试：`mvn -q test -Dtest='!ScmApplicationTests' -Dsurefire.failIfNoSpecifiedTests=false`。不排除 `ScmApplicationTests` 的话，它会连开发库，把还没提交的新迁移执行掉；之后迁移文件一改，校验和对不上，应用就起不来。
-- 新迁移先在独立 schema 里跑通：`DB_URL` 加 `?currentSchema=scratch`，再设 `spring.flyway.schemas: scratch`；跑完 `DROP SCHEMA scratch CASCADE`。
+- 跑测试：`mvn -q test -Dtest='!ScmApplicationTests' -Dsurefire.failIfNoSpecifiedTests=false`。不排除 `ScmApplicationTests` 的话，它会连开发库 `scm`，把还没提交的新迁移执行掉；之后迁移文件一改，校验和对不上，应用就起不来。
+- 新迁移先在 `scm_test` 里跑通（`DB_URL` 换成 `.../scm_test`），跑完重建它：`docker exec scm-dev-postgres psql -U scm -d scm -c 'DROP DATABASE scm_test' -c 'CREATE DATABASE scm_test'`。开发库 `scm` 里有用户自己的数据，不在上面试。
 - 测写操作（POST/PUT/DELETE）只用临时数据，测完物理删除；用户的数据只发 GET。
 - 前端：`cd web && pnpm install && pnpm dev`。
 
 ## 部署
 
-`./deploy/deploy.sh` 一条命令发布 HEAD：git archive → `mvn package`（跑单测）→ `pnpm build` → 服务器 `server-init.sh` → rsync → 重建 app、重启 web → 等就绪后打印版本号（`/version.txt` 可查）。生产用独立的库和 Redis 库号，生产密钥只在服务器上。服务器细节见 `CLAUDE.local.md`。
+**甲方那边负责部署**（11-05 定）。我们交付一套 Docker 部署包（应用、Nginx、PostgreSQL、Redis）和部署手册；服务器、域名、HTTPS、备份的异地存放由部署方负责。部署包和手册的做法写在交付 RFC 里（PRD 确认后写）。
 
-11-14 前必须加上数据库备份（那天起生产库有甲方的真实数据）：每天 `pg_dump`，保留 7 天；每次发版前再备一次（架构 §12.2）。
+`deploy/` 里现在的脚本是 10-12 给旧服务器写的，旧服务器 11-05 起不再给本项目用。交付包做好之前不要运行 `deploy.sh`。
+
+备份脚本（每天 `pg_dump`，保留 7 天）随部署包交付；哪个环境里有了甲方的真实数据，哪个环境就要开备份（架构 §12.2）。
 
 ## Git
 
-- GitHub `xiaoliangao/lingmao`，直接提交 main，不 force push。
+- GitHub `xiaoliangao/lingmao`，直接提交 main，提交后推送（用户 11-05 定）；不 force push。
 - 提交前缀：「功能:」「页面:」「修复:」「框架:」「部署:」「文档:」。
 - 提交前先看 `git status`：工作区里有用户的改动时，只 `git commit -- <自己的文件>`。
 - **仓库是公开的**。提交前 grep 一遍：服务器地址和端口、密钥、真实账号的密码哈希、甲方的企业名称和联系方式、真实价格和供应商。甲方给的原件和其他私有资料放 `docs/private/`（gitignore）。
