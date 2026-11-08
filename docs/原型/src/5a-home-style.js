@@ -28,32 +28,106 @@ TODOS.push(() => {
   ]
 })
 
+// 首页：按角色看的仪表盘。数字卡片点进去就是筛好的列表；图表的前几周是演示用的历史数
+const HIST_ORDER = [1180, 860, 1420, 990, 1630, 1210, 1880, 1350, 1560, 2120, 1740]
+const HIST_RET = [640, 920, 780, 1150, 1020, 1310, 990, 1460, 1280, 1390, 1610]
+const CAT_COLORS = ['#2d4e8c', '#d9a23a', '#2e7350', '#b4392b', '#6c83ae', '#8a909c', '#b49a6a', '#5b6475', '#96b9a8', '#c9b37e']
+function weekly(rows, dateOf, qtyOf, hist) {
+  const end = toD(clock.today), weeks = hist.length + 1
+  const out = hist.map((v) => v), lbl = []
+  for (let i = 0; i < weeks; i++) { const d = new Date(end); d.setDate(d.getDate() - (weeks - 1 - i) * 7); lbl.push(`${d.getMonth() + 1}/${d.getDate()}`) }
+  out.push(0)
+  rows.forEach((r) => { const k = weeks - 1 - Math.floor(diffDays(clock.today, dateOf(r)) / 7); if (k >= 0 && k < weeks) out[k] += qtyOf(r) })
+  return { lbl, out }
+}
 route('/', {
   setup() {
-    const todos = computed(() => TODOS.flatMap((f) => f()).filter((x) => x.n > 0))
-    const week = computed(() => db.productions.filter(prodLive).filter((p) => daysLeft(expectDue(p)) <= 7).sort((a, b) => expectDue(a).localeCompare(expectDue(b))))
+    const hour = new Date().getHours()
+    const hi = hour < 11 ? '上午好' : hour < 14 ? '中午好' : hour < 19 ? '下午好' : '晚上好'
     const d = toD(clock.today)
-    const today = `${d.getMonth() + 1} 月 ${d.getDate()} 日 星期${'日一二三四五六'[d.getDay()]}`
-    return { todos, week, today }
+    const today = `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 星期${'日一二三四五六'[d.getDay()]}`
+    const live = computed(() => db.productions.filter(prodLive))
+    const risk = computed(() => live.value.map((p) => ({ p, r: prodRisk(p) })))
+    const kpi = computed(() => {
+      const lo = db.orders.filter(orderLive), smp = db.samples || []
+      const arr = arrivals()
+      return {
+        dev: { n: db.styles.filter((s) => s.status !== '停用').length, sub: [['打样中', smp.filter((x) => x.status === '开发中').length, '/samples'], ['资料包草稿', db.techpacks.filter((t) => t.status === '草稿').length, '/styles?tp=草稿'], ['样衣', smp.length, '/samples']] },
+        ord: { n: sum(lo, orderQty), c: lo.length, sub: [['待审核', db.orders.filter((o) => o.status === '待审核').length, '/orders?s=待审核'], ['待排单', lo.filter((o) => orderSched(o) === 0).length, '/orders?f=待排单'], ['变更待审', db.changes.filter((c) => c.status === '待审核').length, '/changes']] },
+        prd: { n: sum(live.value, prodQty), c: live.value.length, sub: [['已逾期', risk.value.filter((x) => x.r.late).length, '/production?f=late'], ['节点延期', risk.value.filter((x) => x.r.node).length, '/production?f=node'], ['未关异常', risk.value.filter((x) => x.r.issue).length, '/production?f=issue']] },
+        mat: { n: arr.length, sub: [['到料逾期', arr.filter((a) => a.risk === 'late').length, '/arrivals?f=late'], ['采购待审', db.purchases.filter((p) => p.status === '待审核').length, '/purchases?s=待审核'], ['算料待确认', db.mrps.filter((m) => m.status === '草稿').length, '/mrp']] },
+      }
+    })
+    const trend = computed(() => {
+      const a = weekly(db.orders.filter((o) => o.status !== '已取消'), (o) => o.date, orderQty, HIST_ORDER)
+      const b = weekly(db.returns, (r) => r.date, (r) => sum(r.lines, (l) => l.qty), HIST_RET)
+      return { labels: a.lbl, series: [{ t: '下单件数', c: '#2d4e8c', v: a.out }, { t: '回货件数', c: '#d9a23a', v: b.out }] }
+    })
+    const cats = computed(() => {
+      const acc = {}
+      live.value.forEach((p) => { const c = catOf(style(p.style)?.cat).name; acc[c] = (acc[c] || 0) + prodQty(p) - prodRet(p) })
+      return Object.entries(acc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([t, v], i) => ({ t, v, c: CAT_COLORS[i % CAT_COLORS.length] }))
+    })
+    // 待办：具体到单据
+    const todo = computed(() => {
+      const g = []
+      const audit = [
+        ...db.orders.filter((o) => o.status === '待审核').map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}`, to: '/orders/' + o.no, img: orderStyles(o)[0] })),
+        ...db.purchases.filter((p) => p.status === '待审核').map((p) => ({ t: '采购单 ' + p.no, sub: `${supName(p.supplier)} · ¥${fm(poAmt(p)).replace('¥', '')}`, to: '/purchases/' + p.no, img: p.lines[0]?.sku })),
+        ...db.productions.filter((p) => p.status === '待审核').map((p) => ({ t: '加工单 ' + p.no, sub: `${supName(p.factory)} · ${fq(prodQty(p))} 件`, to: '/production/' + p.no, img: p.style })),
+        ...db.changes.filter((c) => c.status === '待审核').map((c) => ({ t: '变更单 ' + c.no, sub: `订单 ${c.order}`, to: '/orders/' + c.order + '?tab=changes', img: order(c.order) && orderStyles(order(c.order))[0] })),
+      ]
+      if (audit.length) g.push({ tag: '待审核', tone: 'pending', items: audit })
+      const late = risk.value.filter((x) => x.r.late || x.r.node).map(({ p, r }) => ({ t: `${p.no} ${styleName(p.style)}`, sub: `${supName(p.factory)} · ${r.late ? '交期 ' + fd(expectDue(p)) + ' 已过' : '节点「' + (curNode(p)?.name || '') + '」延期'}`, to: '/production/' + p.no, img: p.style }))
+      if (late.length) g.push({ tag: '生产延期', tone: 'bad', items: late })
+      const arr = arrivals().filter((a) => a.risk === 'late').map((a) => ({ t: `${skuName(a.l.sku)} 还差 ${fq(rnd(a.l.qty - a.l.received, 3))} ${unitOf(a.l.sku)}`, sub: `${a.p.no} · ${supName(a.p.supplier)} · 应到 ${fd(a.date)}`, to: '/purchases/' + a.p.no, img: a.l.sku }))
+      if (arr.length) g.push({ tag: '到料逾期', tone: 'bad', items: arr })
+      const sch = db.orders.filter((o) => orderLive(o) && orderSched(o) === 0).map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}`, to: '/orders/' + o.no, img: orderStyles(o)[0] }))
+      if (sch.length) g.push({ tag: '待排单', tone: 'pending', items: sch })
+      const iss = live.value.flatMap((p) => (p.issues || []).filter((x) => x.status === '待处理').map((x) => ({ t: `${x.type}：${x.desc}`, sub: `${p.no} · ${userName(x.by)} 上报于 ${fd(x.at)}`, to: '/production/' + p.no, img: p.style })))
+      if (iss.length) g.push({ tag: '异常待处理', tone: 'ring', items: iss })
+      return g
+    })
+    const others = computed(() => TODOS.flatMap((f) => f()).filter((x) => x.n > 0))
+    const doing = computed(() => live.value.slice().sort((a, b) => expectDue(a).localeCompare(expectDue(b))).slice(0, 6))
+    const quick = [['新建订单', 'file', '/orders?new=1'], ['新建款式', 'shirt', '/styles'], ['算料', 'sigma', '/mrp'], ['到料跟踪', 'truck', '/arrivals'], ['生产看板', 'grid', '/board'], ['库存', 'package', '/stock'], ['手机报工', 'phone', '/mobile'], ['意见汇总', 'list', '/feedback']]
+    return { hi, today, kpi, trend, cats, todo, others, doing, quick }
   },
-  template: `<div>
-    <Head t="首页"/>
-    <div class="page narrow">
-      <div class="h1">{{ today }}</div>
-      <div class="h2">待办</div>
-      <div class="list" data-c="待办">
-        <a v-for="x in todos" :key="x.t" :href="'#' + x.to"><Ico :n="x.i" :s="15" class="dim"/>{{ x.t }}<span class="n" :class="x.tone">{{ x.n }}</span><Ico n="right" :s="14" class="dim"/></a>
-        <div v-if="!todos.length" class="li dim">没有待办</div>
-      </div>
-      <div class="h2">7 天内交货的加工单</div>
-      <div data-c="本周交期">
-        <Tbl inset flat :rows="week" link @row="p => go('/production/' + p.no)" empty="7 天内没有要交的加工单" :cols="[
-          { k: 'style', t: '款式' }, { k: 'factory', t: '加工厂', f: p => supName(p.factory) }, { k: 'qty', t: '数量', c: 'num', f: p => prodQty(p) },
-          { k: 'ret', t: '回货' }, { k: 'due', t: '交期', f: p => fd(expectDue(p)) }, { k: 'left', t: '' }]">
-          <template #style="{ r }"><span class="row"><Thumb :code="r.style" :s="26"/><span class="code">{{ r.style }}</span><span class="mut">{{ styleName(r.style) }}</span></span></template>
-          <template #ret="{ r }"><Prog :a="prodRet(r)" :b="prodQty(r)"/></template>
-          <template #left="{ r }"><Days :d="expectDue(r)" :warn="7"/></template>
-        </Tbl>
+  template: `<div class="dash">
+    <div class="dash-hi"><div><h1>{{ hi }}，{{ me().name }}</h1><p>{{ today }} · {{ me().role }} · {{ db.companies[0].name }}</p></div>
+      <div class="acts"><a class="btn" href="#/styles"><Ico n="shirt" :s="14"/>款式库</a><a class="btn pri" href="#/orders?new=1"><Ico n="plus" :s="14"/>新建订单</a></div></div>
+    <div class="dgrid">
+      <section class="panel" style="grid-column:span 3" data-c="首页：开发概况"><h3><span class="ico"><Ico n="scissors" :s="15"/></span>开发</h3>
+        <div class="pb kpi"><a class="big" href="#/styles"><b>{{ kpi.dev.n }}</b><small>款在售在开发</small></a><a v-for="x in kpi.dev.sub" :key="x[0]" :href="'#' + x[2]"><b>{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+      <section class="panel" style="grid-column:span 3" data-c="首页：订单概况"><h3><span class="ico"><Ico n="file" :s="15"/></span>订单</h3>
+        <div class="pb kpi"><a class="big" href="#/orders"><b>{{ fq(kpi.ord.n) }}</b><small>件在手 · {{ kpi.ord.c }} 张单</small></a><a v-for="x in kpi.ord.sub" :key="x[0]" :href="'#' + x[2]"><b :class="{ amber: x[1] }">{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+      <section class="panel" style="grid-column:span 3" data-c="首页：生产概况"><h3><span class="ico"><Ico n="factory" :s="15"/></span>生产</h3>
+        <div class="pb kpi"><a class="big" href="#/board"><b>{{ fq(kpi.prd.n) }}</b><small>件在制 · {{ kpi.prd.c }} 张加工单</small></a><a v-for="x in kpi.prd.sub" :key="x[0]" :href="'#' + x[2]"><b :class="{ red: x[1] }">{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+      <section class="panel" style="grid-column:span 3" data-c="首页：物料概况"><h3><span class="ico"><Ico n="truck" :s="15"/></span>物料</h3>
+        <div class="pb kpi"><a class="big" href="#/arrivals"><b>{{ kpi.mat.n }}</b><small>行物料在途</small></a><a v-for="x in kpi.mat.sub" :key="x[0]" :href="'#' + x[2]"><b :class="{ red: x[0] === '到料逾期' && x[1], amber: x[0] !== '到料逾期' && x[1] }">{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+
+      <section class="panel" style="grid-column:span 8" data-c="首页：下单与回货趋势"><h3>下单与回货<span class="acts dim" style="font-size:12px">近 12 周 · 件</span></h3>
+        <div class="pb"><AreaChart :series="trend.series" :labels="trend.labels" :h="230"/></div></section>
+      <section class="panel" style="grid-column:span 4" data-c="首页：在制品类"><h3>在制品类<span class="acts dim" style="font-size:12px">未回货件数</span></h3>
+        <div class="pb" style="display:grid;place-items:center"><Donut :items="cats" unit=" 件" :s="140"/><div v-if="!cats.length" class="empty">没有在做的加工单</div></div></section>
+
+      <section class="panel" style="grid-column:span 7" data-c="待办"><h3>待办<span class="acts"><span class="pill">{{ todo.reduce((a, g) => a + g.items.length, 0) }} 件</span></span></h3>
+        <div class="pb">
+          <div v-for="g in todo" :key="g.tag" class="todo-g"><header><St :s="g.tone === 'pending' ? '待处理' : g.tone === 'bad' ? '不合格' : '已审核'" :t="g.tag"/>{{ g.items.length }}</header>
+            <a v-for="x in g.items.slice(0, 4)" :key="x.to + x.t" class="todo-i" :href="'#' + x.to"><Thumb v-if="x.img" :code="x.img" :s="34"/><div class="col"><span class="ell">{{ x.t }}</span><small class="ell">{{ x.sub }}</small></div><Ico n="right" :s="14" class="dim"/></a></div>
+          <div v-if="!todo.length" class="empty">手上没有要处理的单据</div>
+          <div v-if="others.length" class="chips" style="margin-top:12px"><a v-for="x in others" :key="x.t" class="chip" :href="'#' + x.to">{{ x.t }}<b :class="x.tone">{{ x.n }}</b></a></div>
+        </div></section>
+      <div style="grid-column:span 5;display:flex;flex-direction:column;gap:12px">
+        <section class="panel" data-c="本周交期"><h3>在做的加工单<span class="acts"><a class="btn sm ghost" href="#/board">看板<Ico n="right" :s="12"/></a></span></h3>
+          <div class="pb" style="padding-top:4px;padding-bottom:4px">
+            <a v-for="p in doing" :key="p.no" class="row" style="padding:9px 0;border-bottom:1px solid var(--line)" :href="'#/production/' + p.no">
+              <Thumb :code="p.style" :s="38"/><div class="col" style="flex:1;min-width:0"><span class="ell"><span class="code">{{ p.no }}</span></span><small class="dim ell">{{ styleName(p.style) }} · {{ supName(p.factory) }}</small></div>
+              <Prog :a="prodRet(p)" :b="prodQty(p)"/><span style="width:72px;text-align:right"><Days :d="expectDue(p)" :warn="7"/></span></a>
+            <div v-if="!doing.length" class="empty">没有在做的加工单</div>
+          </div></section>
+        <section class="panel" data-c="快捷入口"><h3>快捷入口</h3>
+          <div class="pb quick"><a v-for="q in quick" :key="q[0]" :href="'#' + q[2]"><i><Ico :n="q[1]" :s="18"/></i>{{ q[0] }}</a></div></section>
       </div>
     </div>
   </div>`,
@@ -81,9 +155,9 @@ route('/styles', {
     </div>
     <div v-if="s.view === 'grid'" class="cards" data-c="款式图卡">
       <div v-for="x in rows" :key="x.code" class="card" @click="go('/styles/' + x.code)">
-        <div class="pic"><Thumb :code="x.code" :s="120"/></div>
+        <div class="pic"><Thumb :code="x.code" :s="176"/><St :s="x.status"/></div>
         <div class="meta">
-          <div class="row"><span class="code">{{ x.code }}</span><span style="flex:1"></span><St :s="x.status" t=""/></div>
+          <div class="row"><span class="code">{{ x.code }}</span><span style="flex:1"></span><span class="dim" style="font-size:12px">{{ fm(x.tagPrice) }}</span></div>
           <div>{{ x.name }}</div>
           <div class="row g4"><Sw v-for="c in x.colors" :key="c" :c="c" :n="false"/><span class="dim" style="margin-left:4px;font-size:12px">{{ x.year }} {{ db.seasons.find(z => z.code === x.season).name }}</span></div>
         </div>
@@ -157,7 +231,7 @@ route('/styles/:code', {
     </Head>
     <div class="detail">
       <div class="body">
-        <div class="title"><Thumb :code="s.code" :s="44"/>{{ s.name }}<St :s="s.status"/></div>
+        <div class="title">{{ s.name }}<St :s="s.status"/></div>
         <div class="sub"><span>{{ catOf(s.cat).path }} / {{ catOf(s.cat).name }}</span><span>{{ season(s) }} · {{ s.wave }}</span><span class="row g4"><Sw v-for="c in s.colors" :key="c" :c="c" :n="false"/></span></div>
         <div v-if="unmatched.length" class="banner" data-c="未配料提示"><Ico n="alert"/>新颜色 {{ unmatched.map(colorName).join('、') }} 还没配料，订单不能下这个颜色<button class="btn sm" @click="tab = 'tp'">去资料包</button></div>
         <Tabs v-model="tab" :items="[['tp', '资料包'], ['sku', '颜色尺码', s.skus.length], ['orders', '订单', orders.length]]"/>
@@ -178,6 +252,7 @@ route('/styles/:code', {
         </section>
       </div>
       <aside class="aside" data-c="款式属性">
+        <Gallery :code="s.code" :colors="s.colors"/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>风格</dt><dd>{{ s.tag }}</dd>
@@ -236,7 +311,7 @@ comp('TechPack', {
             <template v-for="(r, i) in tp.bom" :key="i">
               <tr class="link" @click="open = open === i ? null : i">
                 <td class="dim">{{ i + 1 }}</td><td>{{ r.part }}</td>
-                <td><div>{{ mat(r.mat).name }}</div></td>
+                <td><div class="row"><Thumb :code="r.sku || Object.values(r.map || {})[0] || r.mat" :s="30"/>{{ mat(r.mat).name }}</div></td>
                 <td><span v-if="r.mode === '固定'">{{ skuOf(r.sku)?.color ? colorName(skuOf(r.sku).color) : '—' }}{{ skuOf(r.sku)?.spec ? ' ' + skuOf(r.sku).spec : '' }}</span>
                   <span v-else class="row g4"><span class="dim">随款色</span><template v-for="c in s.colors" :key="c"><Sw v-if="r.map[c]" :c="skuOf(r.map[c])?.color" :n="false"/><span v-else class="flag red">缺</span></template></span></td>
                 <td class="num">{{ useText(r) }} <span class="dim">{{ mat(r.mat).unit }}</span></td>
@@ -273,7 +348,7 @@ comp('TechPack', {
       <div v-if="view === 'color'" data-c="按颜色展开">
         <Seg v-model="byColor" :items="s.colors.map(c => [c, colorName(c)])" style="margin-bottom:12px"/>
         <table class="tbl inset flat"><thead><tr><th>部位</th><th>物料</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th>来源</th></tr></thead>
-          <tbody><tr v-for="(r, i) in tp.bom" :key="i"><td>{{ r.part }}</td><td>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</td>
+          <tbody><tr v-for="(r, i) in tp.bom" :key="i"><td>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
             <td v-for="z in sizes" :key="z" class="num">{{ fq(rowUse(r, z)) }}</td><td class="mut">{{ r.src }}</td></tr></tbody></table>
       </div>
 

@@ -640,6 +640,16 @@ function seed() {
     createStyle({ code: '27CK002', name: '直筒西裤', cat: 'K', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['HE', 'ZQ'], tagPrice: 459, cost: 160, factory: 'GYS0005', status: '启用' })
     createStyle({ code: '27CT003', name: '基础圆领 T 恤', cat: 'T', year: 2027, season: 'C', wave: '第 2 波', tag: '休闲', colors: ['BB', 'HE'], tagPrice: 199, factory: 'GYS0004' })
   })
+  // 只有款式档案、还没下过单的款，让款式库像个样子
+  as('u4', '2026-09-15', () => {
+    createStyle({ code: '26DY009', name: '短款羽绒服', cat: 'Y', year: 2026, season: 'D', wave: '第 2 波', tag: '通勤', colors: ['HE', 'MB', 'JH'], tagPrice: 1299, cost: 520, factory: 'GYS0004', status: '启用' })
+    createStyle({ code: '26QK015', name: '阔腿休闲裤', cat: 'K', year: 2026, season: 'Q', wave: '第 3 波', tag: '休闲', colors: ['KQ', 'HE'], tagPrice: 399, cost: 140, factory: 'GYS0005', status: '启用' })
+    createStyle({ code: '27CC004', name: '垂感长袖衬衫', cat: 'C', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['BB', 'WL'], tagPrice: 359, cost: 128, factory: 'GYS0004', status: '启用' })
+    createStyle({ code: '27CR005', name: 'A 字半身裙', cat: 'R', year: 2027, season: 'C', wave: '第 2 波', tag: '通勤', colors: ['HE', 'KQ'], tagPrice: 329, cost: 110, factory: 'GYS0005', status: '启用' })
+    createStyle({ code: '27CL006', name: '收腰连衣裙', cat: 'L', year: 2027, season: 'C', wave: '第 2 波', tag: '约会', colors: ['JH', 'ZQ'], tagPrice: 599, cost: 210, factory: 'GYS0004' })
+    createStyle({ code: '27CW007', name: '短款针织开衫', cat: 'W', year: 2027, season: 'C', wave: '第 1 波', tag: '轻松', colors: ['YM', 'MB'], tagPrice: 459, cost: 165, factory: 'GYS0004', status: '启用' })
+    createStyle({ code: '25DS011', name: '男式连帽卫衣', cat: 'S', year: 2025, season: 'D', wave: '第 1 波', tag: '运动', gender: '男', sizeGroup: 'M4', colors: ['ZQ', 'HE'], tagPrice: 429, cost: 118, factory: 'GYS0004', status: '停用' })
+  })
   const labels = [label('BX0001', { part: '主唛' }), label('BX0002', { part: '洗唛' }), label('BP0001', { part: '吊牌' }), label('BD0001', { part: '包装袋' })]
   const thread = { part: '缝纫线', mat: 'FX0002', mode: '固定', sku: 'FX0002', um: '统一', use: 0.3, loss: 0, src: '工厂自备' }
   const cf001 = (m) => [

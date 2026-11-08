@@ -71,7 +71,7 @@ route('/production/:no', {
       <div class="body">
         <Upstream :d="x"/>
         <div v-for="i in openIssues" :key="i.id" class="banner red" data-c="异常提示"><Ico n="alert"/>{{ i.type }}：{{ i.desc }}<span v-if="i.newDate" class="mut">（预计交期 {{ fd(i.newDate) }}）</span><button class="btn sm" @click="tab = 'issues'">去处理</button></div>
-        <div class="title"><Thumb :code="x.style" :s="40"/>{{ supName(x.factory) }}<St :s="x.status"/></div>
+        <div class="title">{{ supName(x.factory) }}<St :s="x.status"/></div>
         <div class="sub"><a class="code" :href="'#/styles/' + x.style">{{ x.style }}</a><span>{{ styleName(x.style) }}</span><span>{{ x.mode }}</span><span>{{ prodQty(x) }} 件</span><span>交期 {{ fd(expectDue(x)) }}</span><Days v-if="prodLive(x)" :d="expectDue(x)" :warn="7"/></div>
         <Tabs v-model="tab" :items="[['nodes', '进度'], ['lines', '明细'], ['mat', '领料', docs.length], ['issues', '异常', x.issues.length], ['rets', '回货', rets.length]]"/>
         <section v-if="tab === 'nodes'" data-c="进度节点">
@@ -86,7 +86,7 @@ route('/production/:no', {
         </section>
         <section v-if="tab === 'lines'" data-c="加工明细"><Matrix :st="x.style" :model-value="qtyMap" ro :colors="[...new Set(x.lines.map(l => l.color))]" :sub="sub"/></section>
         <section v-if="tab === 'mat'" data-c="领料">
-          <Tbl inset flat :rows="issuePlan(x)" empty="资料包里没有要发给工厂的料" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku) }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
+          <Tbl inset flat :rows="issuePlan(x)" empty="资料包里没有要发给工厂的料" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
             { k: 'need', t: '应领', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'issued', t: '已领', c: 'num', f: r => fq(r.issued) }, { k: 'suggest', t: '还差', c: 'num' }, { k: 'avail', t: '主料仓库存', c: 'num', f: r => fq(r.avail) }]">
             <template #suggest="{ r }"><span :class="{ amber: r.suggest > 0 }">{{ r.suggest > 0 ? fq(r.suggest) : '领齐' }}</span></template></Tbl>
           <div class="sec"><h3>领料单</h3><Tbl inset flat :rows="docs" link @row="d => go('/stock-docs/' + d.no)" empty="还没领过料" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'n', t: '物料', f: d => d.lines.length + ' 种' }, { k: 'status', t: '状态' }]"><template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
@@ -103,6 +103,7 @@ route('/production/:no', {
         </section>
       </div>
       <aside class="aside" data-c="加工单属性">
+        <Gallery :code="x.style" :colors="[...new Set(x.lines.map(l => l.color))]"/>
         <dl class="props">
           <dt>订单</dt><dd><a class="code" :href="'#/orders/' + x.order">{{ x.order }}</a></dd>
           <dt>资料包</dt><dd>V{{ x.ver }}</dd>
@@ -177,7 +178,7 @@ comp('ProdIssueMat', {
   template: `<Modal :t="'领料 ' + p.no" :w="720" @close="$emit('close')">
     <p class="mut" style="margin-bottom:10px">主料仓 → {{ whName(factoryWh(p.factory)?.code) }}</p>
     <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th>物权</th><th class="num">还差</th><th class="num">主料仓库存</th><th class="num" style="width:120px">本次领</th></tr></thead>
-      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td>{{ skuName(r.sku) }}</td><td :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
+      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/>{{ skuName(r.sku) }}</span></td><td :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: r.avail < r.qty }">{{ fq(r.avail) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
         <tr v-if="!rows.length"><td colspan="5" class="empty">资料包里没有要发给工厂的料</td></tr></tbody></table>
     <label v-if="over" class="f" style="margin-top:12px">超领原因<input class="inp" v-model="reason"></label>

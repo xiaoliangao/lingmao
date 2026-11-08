@@ -84,6 +84,8 @@ comp('NotFound', {
   template: `<div><Head t="没有这个页面"/><div class="empty">链接不对，或者这张单是刷新前新建的（原型刷新后数据回到初始）。<p style="margin-top:16px"><a class="btn" href="#/">回首页</a></p></div></div>`,
 })
 
+const navOf = (k) => NAV.flatMap((g) => g.items).find((x) => x.k === k)
+
 const Shell = {
   setup() {
     const pal = reactive({ open: false })
@@ -97,16 +99,30 @@ const Shell = {
       else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c' && !escStack.length) fbUi.open = !fbUi.open
     }
     onMounted(() => window.addEventListener('keydown', onKey))
-    watch(() => nav.seq, () => { if (main.value) main.value.scrollTop = 0; fbUi.focus = null })
+    // 页签：一个模块一个，记住这个模块最后停在哪一页
+    const tabs = reactive([{ k: 'home', to: '/' }])
+    watch(() => nav.seq, () => {
+      if (main.value) main.value.scrollTop = 0
+      fbUi.focus = null
+      const k = mod.value
+      if (!k) return
+      const qs = new URLSearchParams(nav.query).toString(), to = nav.path + (qs ? '?' + qs : '')
+      const t = tabs.find((x) => x.k === k)
+      t ? (t.to = to) : tabs.push({ k, to })
+      if (tabs.length > 10) tabs.splice(tabs.findIndex((x, i) => i && x.k !== k), 1)
+    }, { immediate: true })
+    function closeTab(i) { const [t] = tabs.splice(i, 1); if (t.k === mod.value) go(tabs[Math.max(0, i - 1)].to) }
+    const tabTitle = (k) => (k === 'feedback' ? '意见汇总' : navOf(k)?.t || k)
     const fbCount = computed(() => fb.items.length || '')
-    return { pal, main, mod, closed, toggle, fbCount }
+    const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
+    return { pal, main, mod, closed, toggle, fbCount, tabs, closeTab, tabTitle, todoCount }
   },
   template: `<div class="app">
     <aside class="side" data-c="侧边栏">
-      <div class="ws"><i>织</i><span>织间服饰</span></div>
-      <button class="find" @click="pal.open = true"><Ico n="search" :s="14"/><span>搜索</span><kbd>⌘K</kbd></button>
+      <div class="ws"><b>SCM</b><span>织间服饰</span></div>
+      <button class="find" @click="pal.open = true"><Ico n="search" :s="14"/><span>搜菜单、单号、款号</span><kbd>⌘K</kbd></button>
       <nav><div v-for="g in NAV" :key="g.g || 'top'" class="grp">
-        <b v-if="g.g" @click="toggle(g.g)">{{ g.g }}</b>
+        <b v-if="g.g" :class="{ shut: closed[g.g] }" @click="toggle(g.g)">{{ g.g }}<Ico n="down" :s="13"/></b>
         <template v-if="!closed[g.g]"><a v-for="it in g.items" :key="it.k" class="nav-i" :class="{ on: it.k === mod }" :href="'#' + it.to"><Ico :n="it.i"/><span>{{ it.t }}</span></a></template>
       </div></nav>
       <div class="side-foot">
@@ -114,7 +130,17 @@ const Shell = {
         <a class="nav-i" :class="{ on: mod === 'feedback' }" href="#/feedback"><Ico n="list"/><span>意见汇总</span></a>
       </div>
     </aside>
-    <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params"/><NotFound v-else/></main>
+    <div class="work">
+      <header class="topbar">
+        <div class="ptabs"><a v-for="(t, i) in tabs" :key="t.k" class="ptab" :class="{ on: t.k === mod }" :href="'#' + t.to">{{ tabTitle(t.k) }}<span v-if="i" class="x" @click.prevent.stop="closeTab(i)"><Ico n="x" :s="12"/></span></a></div>
+        <div class="tb-right">
+          <button class="btn ghost icon" title="搜索 ⌘K" @click="pal.open = true"><Ico n="search"/></button>
+          <a class="btn ghost icon" title="待办" href="#/"><Ico n="bell"/><span v-if="todoCount" class="dot">{{ todoCount > 99 ? '99+' : todoCount }}</span></a>
+          <div class="me"><i>{{ me().name[0] }}</i><span>{{ me().name }}</span><small>{{ me().role }}</small></div>
+        </div>
+      </header>
+      <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet"/><NotFound v-else class="sheet"/></main>
+    </div>
     <FeedbackPanel v-if="fbUi.open"/>
     <Pins v-if="fbUi.open"/>
     <Picker v-if="fbUi.picking"/>
@@ -127,6 +153,7 @@ const app = Vue.createApp(Shell)
 Object.entries(COMPONENTS).forEach(([n, c]) => app.component(n, c))
 Object.assign(app.config.globalProperties, G, { NAV, me, fb, fbUi })
 app.config.errorHandler = (e) => showErr(e)
+document.body.insertAdjacentHTML('afterbegin', PIC_DEFS)
 parseHash()
 app.mount('#app')
 

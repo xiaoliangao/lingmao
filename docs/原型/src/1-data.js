@@ -57,13 +57,16 @@ const db = reactive({
   ],
   seasons: [{ code: 'C', name: '春' }, { code: 'X', name: '夏' }, { code: 'Q', name: '秋' }, { code: 'D', name: '冬' }],
   categories: [
-    { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'coat' },
-    { code: 'J', name: '夹克', path: '女装 / 外套', shape: 'top' },
-    { code: 'T', name: 'T 恤', path: '女装 / 上衣', shape: 'top' },
-    { code: 'W', name: '针织衫', path: '女装 / 上衣', shape: 'top' },
-    { code: 'S', name: '卫衣', path: '女装 / 上衣', shape: 'top' },
+    { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'trench' },
+    { code: 'J', name: '夹克', path: '女装 / 外套', shape: 'jacket' },
+    { code: 'Y', name: '羽绒服', path: '女装 / 外套', shape: 'puffer' },
+    { code: 'T', name: 'T 恤', path: '女装 / 上衣', shape: 'tee' },
+    { code: 'C', name: '衬衫', path: '女装 / 上衣', shape: 'shirt' },
+    { code: 'W', name: '针织衫', path: '女装 / 上衣', shape: 'knit' },
+    { code: 'S', name: '卫衣', path: '女装 / 上衣', shape: 'hoodie' },
     { code: 'K', name: '裤装', path: '女装 / 下装', shape: 'pants' },
-    { code: 'L', name: '连衣裙', path: '女装 / 裙装', shape: 'coat' },
+    { code: 'R', name: '半身裙', path: '女装 / 裙装', shape: 'skirt' },
+    { code: 'L', name: '连衣裙', path: '女装 / 裙装', shape: 'dress' },
   ],
   materialCategories: [
     { code: 'ML', name: '梭织', parent: '面料' }, { code: 'MZ', name: '针织', parent: '面料' },
@@ -145,7 +148,7 @@ const userName = (id) => db.users.find((u) => u.id === id)?.name || '—'
 const colorOf = (c) => db.colors.find((x) => x.code === c) || { code: c, name: c || '—', hex: 'transparent' }
 const colorName = (c) => (c ? colorOf(c).name : '—')
 const sizesOf = (gid) => db.sizeGroups.find((g) => g.id === gid)?.sizes || []
-const catOf = (c) => db.categories.find((x) => x.code === c) || { code: c, name: c, shape: 'top' }
+const catOf = (c) => db.categories.find((x) => x.code === c) || { code: c, name: c, shape: 'tee' }
 const sup = (c) => db.suppliers.find((s) => s.code === c)
 const supName = (c) => sup(c)?.short || c || '—'
 const cust = (c) => db.customers.find((x) => x.code === c)

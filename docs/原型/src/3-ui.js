@@ -103,6 +103,7 @@ const ICONS = {
   trash: 'M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
   camera: 'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z M15 13a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
+  bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.94 1.94 0 0 0 3.4 0',
   link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
 }
 comp('Ico', {
@@ -111,7 +112,7 @@ comp('Ico', {
   template: `<svg :width="s" :height="s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="ICONS[n]"/></svg>`,
 })
 
-/* ---------- 状态：实线 = 定了，虚线 = 等人处理，半圆 = 进行中，实心勾 = 完成 ---------- */
+/* ---------- 状态标签：实线 = 定了，虚线 = 等人处理；靛蓝实底 = 进行中，绿 = 完成，红 = 拉黑 / 不合格 ---------- */
 const ST_KIND = {
   dashed: ['草稿', '待准入', '停用', '无', '未开始', '待开始', '待推送', '未领料', '未到料', '未算料', '待对账', '未开票'],
   pending: ['待审核', '待评审', '待处理', '待检', '待确认', '已驳回', '需改版', '待派单', '待收款', '待付款'],
@@ -122,27 +123,23 @@ const ST_KIND = {
   x: ['已作废', '已取消', '黑名单', '已淘汰', '不合格', '让步接收'],
 }
 const stKind = (s) => Object.keys(ST_KIND).find((k) => ST_KIND[k].includes(s)) || 'ring'
+// t="" 时只出一个小圆点（图卡角上用）
 comp('St', {
   props: { s: String, t: String },
-  setup: (p) => ({ k: computed(() => stKind(p.s)) }),
-  template: `<span class="st"><svg width="14" height="14" viewBox="0 0 14 14">
-    <circle v-if="k==='dashed'||k==='pending'" cx="7" cy="7" r="5.5" fill="none" :stroke="k==='pending'?'var(--amber)':'var(--fg-3)'" stroke-width="1.5" stroke-dasharray="2.2 2"/>
-    <circle v-else-if="k==='ring'" cx="7" cy="7" r="5.5" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
-    <g v-else-if="k==='half'"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--amber)" stroke-width="1.5"/><path d="M7 3.5a3.5 3.5 0 0 1 0 7z" fill="var(--amber)"/></g>
-    <g v-else-if="k==='done'||k==='closed'"><circle cx="7" cy="7" r="6" :fill="k==='done'?'var(--green)':'var(--fg-3)'"/><path d="m4.3 7.2 1.8 1.8 3.6-3.8" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></g>
-    <g v-else><circle cx="7" cy="7" r="6" :fill="s==='黑名单'||s==='不合格'?'var(--red)':'var(--fg-3)'"/><path d="m5 5 4 4m0-4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></g>
-  </svg>{{ t ?? s }}</span>`,
+  setup: (p) => ({ k: computed(() => (['黑名单', '不合格'].includes(p.s) ? 'bad' : stKind(p.s))) }),
+  template: `<span class="st" :class="['k-' + k, { dot: t === '' }]" :title="t === '' ? s : null">{{ t === '' ? '' : t ?? s }}</span>`,
 })
 
-/* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本 }]；单元格可用 #k 插槽改写 ---------- */
+/* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本, img: row => 款号/SKU（前面带小图） }]；单元格可用 #k 插槽改写 ---------- */
 comp('Tbl', {
   props: { rows: Array, cols: Array, link: Boolean, empty: String, inset: Boolean, flat: Boolean, sel: Function },
   emits: ['row'],
   template: `<table class="tbl" :class="{ inset, flat }">
+    <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条</caption>
     <thead><tr><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
     <tbody>
       <tr v-for="(r, i) in rows" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
-        <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i">{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</slot></td>
+        <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
       </tr>
       <tr v-if="!rows.length"><td :colspan="cols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
     </tbody>
@@ -201,23 +198,7 @@ comp('More', {
     <div v-if="open" class="pop" style="right:0;top:32px"><button v-for="it in items" :key="it.t" :class="{ danger: it.danger }" @click="open = false; it.fn()">{{ it.t }}</button></div></span>`,
 })
 
-/* ---------- 款图、色块、日期、进度 ---------- */
-const SHAPES = {
-  top: 'M8.5 3.5 4 5.5 2.5 10l3 1.2 1-2v11.3h11V9.2l1 2 3-1.2L20 5.5l-4.5-2c-.4 1.5-1.9 2.5-3.5 2.5s-3.1-1-3.5-2.5z',
-  coat: 'M8.5 2.5 4.5 4.5 3 11l2.5.8.8-2.5v12.2h11.4V9.3l.8 2.5L21 11l-1.5-6.5-4-2L12 7z',
-  pants: 'M6.5 2.5h11l1.2 19h-4.5L12 9.5l-2.2 12H5.3z',
-}
-comp('Thumb', {
-  props: { code: String, s: { type: Number, default: 32 }, color: String },
-  setup(p) {
-    const info = computed(() => {
-      const st = style(p.code) || db.samples?.find((x) => x.no === p.code)
-      return { d: SHAPES[catOf(st?.cat).shape] || SHAPES.top, fill: colorOf(p.color || st?.colors?.[0]).hex }
-    })
-    return { info }
-  },
-  template: `<span class="thumb" :style="{ width: s + 'px', height: s + 'px' }"><svg :width="s * 0.72" :height="s * 0.72" viewBox="0 0 24 24"><path :d="info.d" :fill="info.fill"/></svg></span>`,
-})
+/* ---------- 色块、日期、进度（款图在 3b-pics.js） ---------- */
 comp('Sw', {
   props: { c: String, n: { type: Boolean, default: true } },
   template: `<span class="sw"><i :style="{ background: colorOf(c).hex }"></i><template v-if="n">{{ colorName(c) }}</template></span>`,
@@ -235,6 +216,50 @@ comp('Prog', {
   props: { a: Number, b: Number },
   setup: (p) => ({ pct: computed(() => fpct(p.a, p.b)) }),
   template: `<span class="prog" :class="{ done: pct >= 100 }"><b><i :style="{ width: pct + '%' }"></i></b>{{ pct }}%</span>`,
+})
+/* ---------- 图表（首页、报表）：面积图 series = [{ t, c: 颜色, v: [数] }]，labels = x 轴；环形图 items = [{ t, v, c }] ---------- */
+const smooth = (pts) => pts.reduce((d, [x, y], i) => {
+  if (!i) return `M${x},${y}`
+  const [x0, y0] = pts[i - 1], cx = (x0 + x) / 2
+  return d + `C${cx},${y0} ${cx},${y} ${x},${y}`
+}, '')
+comp('AreaChart', {
+  props: { series: Array, labels: Array, h: { type: Number, default: 200 } },
+  setup(p) {
+    const W = 600, L = 40, R = 8, T = 10, B = 22
+    const g = computed(() => {
+      const max = Math.max(1, ...p.series.flatMap((s) => s.v))
+      const step = 10 ** Math.floor(Math.log10(max)), top = Math.ceil(max / step) * step
+      const n = p.labels.length, H = p.h
+      const x = (i) => L + ((W - L - R) * i) / Math.max(1, n - 1), y = (v) => T + (H - T - B) * (1 - v / top)
+      const ticks = [0, 1, 2, 3, 4].map((k) => ({ v: (top * k) / 4, y: y((top * k) / 4) }))
+      const lines = p.series.map((s) => { const pts = s.v.map((v, i) => [x(i), y(v)]); const d = smooth(pts); return { ...s, d, area: d + `L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z` } })
+      const every = Math.ceil(n / 8)
+      return { H, ticks, lines, xs: p.labels.map((t, i) => ({ t, x: x(i), show: i % every === 0 || i === n - 1 })) }
+    })
+    const fmtK = (v) => (v >= 10000 ? rnd(v / 10000, 1) + '万' : fq(v))
+    return { g, W, L, fmtK }
+  },
+  template: `<div class="chart"><svg :viewBox="'0 0 ' + W + ' ' + g.H" width="100%" :height="g.H" preserveAspectRatio="none">
+      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - 8" :y1="t.y" :y2="t.y" stroke="var(--line)" stroke-dasharray="3 3"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
+      <g v-for="s in g.lines" :key="s.t"><path :d="s.area" :fill="s.c" fill-opacity=".14"/><path :d="s.d" fill="none" :stroke="s.c" stroke-width="2"/></g>
+      <text v-for="x in g.xs.filter(z => z.show)" :key="x.t" :x="x.x" :y="g.H - 6" text-anchor="middle">{{ x.t }}</text>
+    </svg><div class="legend"><span v-for="s in series" :key="s.t"><i :style="{ background: s.c }"></i>{{ s.t }}</span></div></div>`,
+})
+comp('Donut', {
+  props: { items: Array, s: { type: Number, default: 150 }, unit: { type: String, default: '' } },
+  setup(p) {
+    const segs = computed(() => {
+      const tot = sum(p.items, (x) => x.v) || 1, C = 2 * Math.PI * 40
+      let acc = 0
+      return { tot, list: p.items.map((x) => { const len = (x.v / tot) * C; const s = { ...x, dash: `${Math.max(0, len - 1.2)} ${C}`, off: -acc, pct: Math.round((x.v / tot) * 100) }; acc += len; return s }) }
+    })
+    return { segs }
+  },
+  template: `<div class="row" style="gap:20px;align-items:center"><svg :width="s" :height="s" viewBox="0 0 100 100" style="transform:rotate(-90deg)">
+      <circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-sunken)" stroke-width="14"/>
+      <circle v-for="x in segs.list" :key="x.t" cx="50" cy="50" r="40" fill="none" :stroke="x.c" stroke-width="14" :stroke-dasharray="x.dash" :stroke-dashoffset="x.off"/></svg>
+    <div class="col" style="gap:7px;flex:1;min-width:0;font-size:12.5px"><div v-for="x in segs.list" :key="x.t" class="row"><i :style="{ background: x.c, width: '10px', height: '10px', borderRadius: '2px', display: 'inline-block' }"></i><span class="ell" style="flex:1">{{ x.t }}</span><span class="num mut">{{ fq(x.v) }}{{ unit }}</span><span class="num dim" style="width:34px">{{ x.pct }}%</span></div></div></div>`,
 })
 comp('Nodes', {
   props: { p: Object },

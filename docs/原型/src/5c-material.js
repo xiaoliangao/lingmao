@@ -97,7 +97,7 @@ route('/mrp/:no', {
           <tbody>
             <tr v-for="i in buy" :key="i" :class="{ sel: picked.includes(i) }">
               <td><input type="checkbox" :checked="picked.includes(i)" :disabled="!open || m.rows[i].purQty <= m.rows[i].converted" @change="toggle(i)" style="accent-color:var(--accent)"></td>
-              <td>{{ skuName(m.rows[i].sku) }}</td>
+              <td><span class="row"><Thumb :code="m.rows[i].sku" :s="32"/>{{ skuName(m.rows[i].sku) }}</span></td>
               <td><select v-if="edit" class="sel" style="height:26px" v-model="m.rows[i].supplier"><option v-for="s in suppliersFor()" :key="s.code" :value="s.code">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select><template v-else>{{ supName(m.rows[i].supplier) }}</template></td>
               <td class="num">{{ fq(m.rows[i].need) }} <span class="dim">{{ unitOf(m.rows[i].sku) }}</span></td>
               <td class="num">{{ fq(m.rows[i].avail) }}</td>
@@ -112,10 +112,10 @@ route('/mrp/:no', {
           </tbody>
         </table></div>
       <div class="sec" data-c="待客户提供" v-if="idx('客供').length"><h3>待客户提供</h3>
-        <Tbl inset flat :rows="idx('客供').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku) }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }]">
+        <Tbl inset flat :rows="idx('客供').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }]">
           <template #gap="{ r }"><span :class="{ red: r.net > 0 }">{{ r.net > 0 ? fq(r.net) : '够了' }}</span></template></Tbl></div>
       <div class="sec" data-c="工厂自备" v-if="idx('工厂自备').length"><h3>工厂自备</h3>
-        <Tbl inset flat :rows="idx('工厂自备').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
+        <Tbl inset flat :rows="idx('工厂自备').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
       <div class="sec"><h3>操作记录</h3><Log :items="m.log"/></div>
     </div>
   </div><NotFound v-else/>`,
@@ -135,7 +135,7 @@ route('/purchases', {
     <div data-c="采购单列表">
       <Tbl :rows="rows" link @row="p => go('/purchases/' + p.no)" empty="没有符合条件的采购单" :cols="[
         { k: 'no', t: '采购单号', c: 'code' }, { k: 'sup', t: '供应商' }, { k: 'type', t: '类型' },
-        { k: 'mat', t: '物料', f: p => skuName(p.lines[0].sku) + (p.lines.length > 1 ? ' 等 ' + p.lines.length + ' 种' : '') },
+        { k: 'mat', t: '物料', f: p => skuName(p.lines[0].sku) + (p.lines.length > 1 ? ' 等 ' + p.lines.length + ' 种' : ''), img: p => p.lines[0].sku },
         { k: 'amt', t: '金额', c: 'num', f: p => fm(poAmt(p)) }, { k: 'due', t: '交期', f: p => fd(p.due) }, { k: 'recv', t: '到货' },
         { k: 'buyer', t: '采购员', f: p => userName(p.buyer) }, { k: 'status', t: '状态' }]">
         <template #sup="{ r }">{{ supName(r.supplier) }}<span v-if="sup(r.supplier).status !== '合作中'" class="flag red" style="margin-left:6px">{{ sup(r.supplier).status }}</span></template>
@@ -219,7 +219,7 @@ route('/purchases/:no', {
         <div class="sub"><span>{{ po.type }}</span><span>{{ fm(poAmt(po)) }}</span><span>交期 {{ fd(po.due) }}</span><span>送到 {{ whName(po.wh) }}</span></div>
         <section data-c="采购明细">
           <Tbl inset flat :rows="po.lines" :cols="[
-            { k: 'sku', t: '物料', f: l => skuName(l.sku) }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
+            { k: 'sku', t: '物料', f: l => skuName(l.sku), img: l => l.sku }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
             { k: 'qty', t: '数量', c: 'num', f: l => fq(l.qty) + ' ' + purUnit(l.sku) }, { k: 'price', t: '单价', c: 'num', f: l => fm(l.price) },
             { k: 'amt', t: '金额', c: 'num', f: l => fm(l.qty * l.price) }, { k: 'recv', t: '已入库', c: 'num', f: l => fq(l.received) },
             { k: 'left', t: '未入库', c: 'num', f: l => fq(Math.max(0, l.qty - l.received)) }, { k: 'exp', t: '预计到货' }, { k: 'src', t: '来源', c: 'code', f: srcText }]">
@@ -268,7 +268,7 @@ comp('PurchaseReceive', {
       <label v-else class="f full">退货原因<input class="inp" v-model="f.reason"></label>
     </div>
     <table class="tbl inset flat" data-c="入库数量"><thead><tr><th>物料</th><th class="num">{{ recv ? '未入库' : '已入库' }}</th><th class="num" style="width:120px">本次</th><th v-if="recv" style="width:120px">缸号</th></tr></thead>
-      <tbody><tr v-for="x in lines" :key="x.i"><td>{{ skuName(po.lines[x.i].sku) }}</td>
+      <tbody><tr v-for="x in lines" :key="x.i"><td><span class="row"><Thumb :code="po.lines[x.i].sku" :s="30"/>{{ skuName(po.lines[x.i].sku) }}</span></td>
         <td class="num">{{ fq(recv ? Math.max(0, po.lines[x.i].qty - po.lines[x.i].received) : po.lines[x.i].received - po.lines[x.i].returned) }} <span class="dim">{{ purUnit(po.lines[x.i].sku) }}</span></td>
         <td><input class="inp cell num" type="number" v-model.number="x.qty"></td><td v-if="recv"><input class="inp cell" v-model="x.lot"></td></tr></tbody></table>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ recv ? '入库并过账' : '退货并过账' }}</button></template>
@@ -289,7 +289,7 @@ route('/arrivals', {
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
     <div data-c="到料列表">
       <Tbl :rows="rows" empty="没有该到没到的料" :cols="[
-        { k: 'po', t: '采购单', c: 'code' }, { k: 'sup', t: '供应商', f: x => supName(x.p.supplier) }, { k: 'sku', t: '物料', f: x => skuName(x.l.sku) },
+        { k: 'po', t: '采购单', c: 'code' }, { k: 'sup', t: '供应商', f: x => supName(x.p.supplier) }, { k: 'sku', t: '物料', f: x => skuName(x.l.sku), img: x => x.l.sku },
         { k: 'src', t: '订单 / 款', c: 'code', f: x => srcText(x.l) }, { k: 'qty', t: '采购', c: 'num', f: x => fq(x.l.qty) },
         { k: 'recv', t: '已到', c: 'num', f: x => fq(x.l.received) }, { k: 'left', t: '未到', c: 'num', f: x => fq(rnd(x.l.qty - x.l.received, 3)) + ' ' + purUnit(x.l.sku) },
         { k: 'due', t: '交期', f: x => fd(x.l.due || x.p.due) }, { k: 'exp', t: '预计到货' }, { k: 'days', t: '' }, { k: 'note', t: '跟进', w: '220px' }]">
@@ -320,7 +320,7 @@ route('/stock-docs', {
     <div data-c="出入库列表">
       <Tbl :rows="rows" link @row="d => go('/stock-docs/' + d.no)" empty="没有符合条件的单据" :cols="[
         { k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'flow', t: '出仓 → 入仓' }, { k: 'partner', t: '往来', f: partnerName },
-        { k: 'src', t: '源单', c: 'code', f: d => d.src || '—' }, { k: 'mat', t: '物料', f: d => skuName(d.lines[0].sku) + (d.lines.length > 1 ? ' 等 ' + d.lines.length + ' 种' : '') },
+        { k: 'src', t: '源单', c: 'code', f: d => d.src || '—' }, { k: 'mat', t: '物料', f: d => skuName(d.lines[0].sku) + (d.lines.length > 1 ? ' 等 ' + d.lines.length + ' 种' : ''), img: d => d.lines[0].sku },
         { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'status', t: '状态' }]">
         <template #flow="{ r }"><span class="mut">{{ r.from ? whName(r.from) : '' }}<template v-if="r.from && r.to"> → </template>{{ r.to ? whName(r.to) : '' }}</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
@@ -376,7 +376,7 @@ route('/stock-docs/:no', {
         <div class="title">{{ d.type }}<St :s="d.status"/></div>
         <div class="sub"><span v-if="d.from || d.to">{{ d.from ? whName(d.from) : partnerName(d) }} → {{ d.to ? whName(d.to) : partnerName(d) }}</span><span>{{ fd(d.date) }}</span></div>
         <section data-c="出入库明细">
-          <Tbl inset flat :rows="d.lines" :cols="[{ k: 'sku', t: '物料', f: l => skuName(l.sku) }, { k: 'code', t: 'SKU', c: 'code', f: l => l.sku }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
+          <Tbl inset flat :rows="d.lines" :cols="[{ k: 'sku', t: '物料', f: l => skuName(l.sku), img: l => l.sku }, { k: 'code', t: 'SKU', c: 'code', f: l => l.sku }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
             { k: 'qty', t: '数量', c: 'num', f: l => fq(l.qty) + ' ' + unitOf(l.sku) }, { k: 'pq', t: '采购单位', c: 'num', f: l => l.purQty != null && matOfSku(l.sku).factor !== 1 ? fq(l.purQty) + ' ' + matOfSku(l.sku).purUnit : '' },
             { k: 'lot', t: '缸号', f: l => l.lot || '—' }, { k: 'have', t: '出仓库存', c: 'num', f: l => d.from && d.status === '草稿' ? fq(stockQty(d.from, l.sku, l.owner)) : '' }]"/>
         </section>
@@ -425,14 +425,14 @@ route('/stock', {
     </div>
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存" :cols="[
-        { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku) },
+        { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku },
         { k: 'owner', t: '物权' }, { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '安全库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
         <template #owner="{ r }"><span :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</span></template>
         <template #qty="{ r }"><span :class="{ red: safety(r.sku) && r.qty < safety(r.sku) }">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
       </Tbl>
     </div>
     <div v-if="s.view === '按物料'" data-c="库存汇总">
-      <Tbl :rows="summary" empty="没有库存" :cols="[{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku) }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
+      <Tbl :rows="summary" empty="没有库存" :cols="[{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
         { k: 'mat', t: '物料仓', c: 'num', f: r => fq(r.mat) }, { k: 'fac', t: '工厂仓', c: 'num', f: r => fq(r.fac) }, { k: 'all', t: '合计', c: 'num', f: r => fq(r.mat + r.fac) + ' ' + unitOf(r.sku) }]"/>
     </div>
     <div v-if="s.view === '日志'" data-c="库存日志"><StockLogTable :rows="logs"/></div>

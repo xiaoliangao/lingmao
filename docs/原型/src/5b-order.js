@@ -192,7 +192,7 @@ comp('OrderAudit', {
       <div v-for="x in info.packs" :key="x.style" class="row" style="height:30px"><Thumb :code="x.style" :s="22"/><span class="code">{{ x.style }}</span>
         <St v-if="x.tp" s="已生效" :t="'V' + x.tp.ver + ' 审核后锁定'"/><span v-else class="flag red">资料包没生效，不能审</span></div></div>
     <div class="sec" data-c="评审：齐料参考"><h3>缺口最大的料</h3>
-      <Tbl inset flat :rows="info.short" empty="现有库存够用" :cols="[{ k: 'sku', t: '物料', f: x => skuName(x.sku) }, { k: 'need', t: '需求', c: 'num', f: x => fq(x.need) + ' ' + unitOf(x.sku) }, { k: 'avail', t: '可用', c: 'num', f: x => fq(x.avail) }, { k: 'gap', t: '缺口', c: 'num', f: x => fq(x.gap) }, { k: 'lead', t: '采购周期', c: 'num', f: x => matOfSku(x.sku).lead + ' 天' }]">
+      <Tbl inset flat :rows="info.short" empty="现有库存够用" :cols="[{ k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'need', t: '需求', c: 'num', f: x => fq(x.need) + ' ' + unitOf(x.sku) }, { k: 'avail', t: '可用', c: 'num', f: x => fq(x.avail) }, { k: 'gap', t: '缺口', c: 'num', f: x => fq(x.gap) }, { k: 'lead', t: '采购周期', c: 'num', f: x => matOfSku(x.sku).lead + ' 天' }]">
         <template #gap="{ r }"><span class="red">{{ fq(r.gap) }}</span></template></Tbl></div>
     <div class="sec" data-c="评审：工厂负荷"><h3>默认加工厂在手</h3>
       <div v-for="x in info.loads" :key="x.factory" class="row" style="height:28px"><span>{{ supName(x.factory) }}</span><span style="flex:1"></span><span class="mut">在制 {{ x.qty.toLocaleString() }} 件</span></div></div>

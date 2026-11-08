@@ -5,63 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SCM 原型</title>
 <style>
-/* 颜色、字号都在这里定。页面里只用变量，不写死颜色。 */
+/* 颜色和真页面 web/src/styles/tokens.css 同一套（植物染）：靛蓝主色、茜红危险、栀黄待处理、苔绿完成、坯布灰底。
+   页面里只用变量，不写死颜色。 */
 :root {
   --bg: #ffffff;
-  --bg-side: #f6f6f7;
-  --bg-sunken: #f6f6f7;
-  --bg-hover: rgba(0, 0, 0, 0.035);
-  --bg-active: rgba(0, 0, 0, 0.06);
-  --line: #ececef;
-  --line-strong: #dcdce1;
-  --fg: #1d1d1f;
-  --fg-2: #5f5f67;
-  --fg-3: #9c9ca4;
-  --accent: #5e6ad2;
+  --bg-page: #eef0eb;      /* 坯布灰：页面底 */
+  --bg-sunken: #f6f7f3;    /* 表头、侧栏卡片 */
+  --bg-hover: #f1f4f9;     /* 靛蓝 50：行悬停 */
+  --bg-active: #e4e9f2;
+  --line: #e3e5de;
+  --line-strong: #cfd3ca;
+  --fg: #1c2230;
+  --fg-2: #5b6475;
+  --fg-3: #8a909c;
+  --accent: #2d4e8c;
+  --accent-2: #243e70;
   --accent-fg: #ffffff;
-  --accent-bg: rgba(94, 106, 210, 0.1);
-  --red: #e5484d;
-  --red-bg: rgba(229, 72, 77, 0.09);
-  --amber: #d9930d;
-  --amber-bg: rgba(242, 166, 13, 0.12);
-  --green: #30a46c;
-  --green-bg: rgba(48, 164, 108, 0.1);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 40px rgba(0, 0, 0, 0.14);
-  --r: 6px;
-  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --accent-bg: #eaedf4;
+  --red: #b4392b;
+  --red-bg: #f8ebea;
+  --red-line: #e3b9b3;
+  --amber: #94660c;
+  --amber-bg: #fbf1da;
+  --amber-line: #d9a23a;
+  --green: #2e7350;
+  --green-bg: #e6f1ea;
+  --green-line: #b9d6c5;
+  --side: #1b2a4a;
+  --side-2: #142038;
+  --side-fg: #c3cde0;
+  --side-dim: #8c9ab6;
+  --stitch: #d9a23a;
+  --twill: repeating-linear-gradient(135deg, rgb(255 255 255 / 3.5%) 0 1px, transparent 1px 5px);
+  --shadow: 0 1px 2px rgba(28, 34, 48, 0.06), 0 10px 32px rgba(28, 34, 48, 0.16);
+  --shadow-sm: 0 1px 2px rgba(28, 34, 48, 0.05), 0 2px 8px rgba(28, 34, 48, 0.05);
+  --r: 4px;
+  --mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
   color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161618;
-    --bg-side: #1c1c1f;
-    --bg-sunken: #1f1f22;
-    --bg-hover: rgba(255, 255, 255, 0.04);
-    --bg-active: rgba(255, 255, 255, 0.075);
-    --line: #2a2a2e;
-    --line-strong: #38383d;
-    --fg: #ededef;
-    --fg-2: #a3a3ab;
-    --fg-3: #6e6e76;
-    --accent: #7c86e8;
-    --accent-bg: rgba(124, 134, 232, 0.16);
-    --red: #f2555a;
-    --red-bg: rgba(242, 85, 90, 0.14);
-    --amber: #f0a92b;
-    --amber-bg: rgba(240, 169, 43, 0.14);
-    --green: #3dbb7e;
-    --green-bg: rgba(61, 187, 126, 0.14);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 48px rgba(0, 0, 0, 0.5);
-    color-scheme: dark;
-  }
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  background: var(--bg);
+  background: var(--bg-page);
   color: var(--fg);
-  font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; text-decoration: none; }
@@ -69,125 +57,163 @@ button, input, select, textarea { font: inherit; color: inherit; }
 h1, h2, h3, p { margin: 0; }
 svg { flex: none; }
 ::selection { background: var(--accent-bg); }
-
-/* ---------- 外框 ---------- */
-.app { display: flex; height: 100vh; overflow: hidden; }
-.side {
-  width: 220px; flex: none; background: var(--bg-side); border-right: 1px solid var(--line);
-  display: flex; flex-direction: column; padding: 10px 8px;
-}
-.side nav { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; margin: 0 -8px; padding: 0 8px; }
-.side nav::-webkit-scrollbar { display: none; }
-.ws { display: flex; align-items: center; gap: 8px; padding: 4px 8px 10px; font-weight: 600; }
-.ws i { width: 20px; height: 20px; border-radius: 5px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-style: normal; font-size: 11px; }
-.side .find {
-  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; margin-bottom: 6px;
-  border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--bg); color: var(--fg-3); cursor: pointer; text-align: left;
-}
-.side .find span { flex: 1; }
-kbd { font: 11px var(--mono); color: var(--fg-3); }
-.grp { margin-top: 10px; }
-.grp > b { display: flex; align-items: center; padding: 0 8px 2px; font-size: 11.5px; font-weight: 500; color: var(--fg-3); cursor: pointer; user-select: none; }
-.nav-i {
-  display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: var(--r);
-  color: var(--fg-2); cursor: pointer; white-space: nowrap;
-}
-.nav-i:hover { background: var(--bg-hover); color: var(--fg); }
-.nav-i.on { background: var(--bg-active); color: var(--fg); font-weight: 500; }
-.nav-i svg { color: var(--fg-3); }
-.nav-i.on svg { color: var(--fg); }
-.nav-i .n { margin-left: auto; font-size: 11.5px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
-.side-foot { padding-top: 8px; margin-top: 4px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 5px; border: 3px solid var(--bg); }
+::-webkit-scrollbar-thumb { background: #c9cdc3; border-radius: 5px; border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-.main { flex: 1; min-width: 0; overflow-y: auto; position: relative; }
+/* ---------- 外框：靛蓝斜纹侧栏 + 顶部页签 + 灰底上的白纸 ---------- */
+.app { display: flex; height: 100vh; overflow: hidden; }
+.side {
+  width: 216px; flex: none; display: flex; flex-direction: column;
+  background: var(--twill), var(--side); color: var(--side-fg);
+}
+.ws { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 18px; flex: none; }
+.ws b { font: 700 18px/1 'Avenir Next', 'Helvetica Neue', sans-serif; letter-spacing: 0.06em; color: var(--stitch); }
+.ws span { color: #fff; font-size: 13px; letter-spacing: 0.04em; }
+.side .find {
+  display: flex; align-items: center; gap: 8px; height: 30px; margin: 0 12px 6px; padding: 0 10px; flex: none;
+  border: 1px solid rgb(255 255 255 / 8%); border-radius: var(--r); background: rgb(255 255 255 / 6%); color: var(--side-dim); cursor: pointer; text-align: left;
+}
+.side .find:hover { background: rgb(255 255 255 / 10%); }
+.side .find span { flex: 1; }
+kbd { font: 11px var(--mono); color: inherit; opacity: 0.8; }
+.side nav { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 0 10px 10px; }
+.side nav::-webkit-scrollbar { display: none; }
+.grp { margin-top: 6px; }
+.grp > b { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; font-size: 12px; font-weight: 500; color: var(--side-dim); cursor: pointer; user-select: none; }
+.grp > b svg { margin-left: auto; transition: transform 0.15s; }
+.grp > b.shut svg { transform: rotate(-90deg); }
+.nav-i {
+  display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--r);
+  color: var(--side-fg); cursor: pointer; white-space: nowrap; border: 1px dashed transparent;
+}
+.nav-i svg { color: var(--side-dim); }
+.nav-i:hover { background: rgb(255 255 255 / 6%); color: #fff; }
+.nav-i.on { background: rgb(255 255 255 / 9%); color: #fff; font-weight: 600; border-color: var(--stitch); }
+.nav-i.on svg { color: var(--stitch); }
+.nav-i .n { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--stitch); color: var(--side-2); font-size: 11px; font-weight: 600; display: grid; place-items: center; }
+.nav-i .n:empty { display: none; }
+.side-foot { padding: 8px 10px 12px; border-top: 1px solid rgb(255 255 255 / 8%); display: flex; flex-direction: column; gap: 2px; flex: none; }
+
+.work { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { height: 44px; flex: none; display: flex; align-items: stretch; background: var(--bg); border-bottom: 1px solid var(--line); }
+.ptabs { flex: 1; min-width: 0; display: flex; overflow-x: auto; scrollbar-width: none; }
+.ptabs::-webkit-scrollbar { display: none; }
+.ptab {
+  position: relative; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 16px; border-right: 1px solid var(--line);
+  color: var(--fg-2); white-space: nowrap; cursor: pointer; font-size: 13px;
+}
+.ptab:hover { color: var(--fg); background: var(--bg-sunken); }
+.ptab.on { color: var(--fg); font-weight: 600; background: var(--bg); }
+.ptab.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
+.ptab .x { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 3px; color: var(--fg-3); visibility: hidden; }
+.ptab:hover .x, .ptab.on .x { visibility: visible; }
+.ptab .x:hover { background: var(--bg-active); color: var(--fg); }
+.tb-right { display: flex; align-items: center; gap: 4px; padding: 0 14px; }
+.tb-right .btn.ghost { position: relative; }
+.tb-right .dot { position: absolute; top: 3px; right: 2px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--red); color: #fff; font-size: 10px; font-weight: 600; display: grid; place-items: center; }
+.me { display: flex; align-items: center; gap: 8px; padding-left: 10px; margin-left: 6px; border-left: 1px solid var(--line); height: 24px; }
+.me i { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 600; }
+.me span { font-size: 12.5px; }
+.me small { color: var(--fg-3); font-size: 12px; }
+
+.main { flex: 1; min-height: 0; overflow-y: auto; position: relative; padding: 12px 14px 20px; }
+.sheet { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; min-height: 100%; box-shadow: var(--shadow-sm); }
+.sheet.dash { background: none; border: none; box-shadow: none; }
 
 /* ---------- 页头 / 工具条 ---------- */
 .head {
   position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
-  height: 48px; padding: 0 20px 0 24px; border-bottom: 1px solid var(--line); background: var(--bg);
+  height: 52px; padding: 0 16px 0 20px; border-bottom: 1px solid var(--line); background: var(--bg); border-radius: 6px 6px 0 0;
 }
-.crumb { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; }
-.crumb a { color: var(--fg-3); }
-.crumb a:hover { color: var(--fg); }
+.crumb { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 15px; }
+.crumb a { color: var(--fg-3); font-size: 13px; }
+.crumb a:hover { color: var(--accent); }
 .crumb b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crumb svg { color: var(--fg-3); }
-.head .acts { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.bar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.head .acts { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.bar { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .bar .sp { flex: 1; }
-.page { padding: 24px; }
-.narrow { max-width: 880px; margin: 0 auto; }
+.page { padding: 20px; }
+.narrow { max-width: 920px; margin: 0 auto; }
 
 /* ---------- 按钮 / 输入 ---------- */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 12px;
   border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--bg); color: var(--fg);
-  font-weight: 500; cursor: pointer; white-space: nowrap;
+  cursor: pointer; white-space: nowrap; transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
-.btn:hover { background: var(--bg-hover); }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn.pri { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-.btn.pri:hover { filter: brightness(1.06); }
+.btn.pri:hover { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--fg-2); }
-.btn.ghost:hover { background: var(--bg-hover); color: var(--fg); }
+.btn.ghost:hover { background: var(--bg-sunken); color: var(--fg); }
 .btn.danger { color: var(--red); }
-.btn.icon { width: 28px; padding: 0; }
+.btn.danger:hover { border-color: var(--red); }
+.btn.icon { width: 30px; padding: 0; }
 .btn.sm { height: 24px; padding: 0 8px; font-size: 12px; }
-.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.sm.icon { width: 24px; }
+.btn:disabled { opacity: 0.45; cursor: default; pointer-events: none; }
 .inp, .sel, textarea.inp {
   height: 30px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: var(--r);
   background: var(--bg); outline: none; min-width: 0;
 }
 textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertical; line-height: 1.5; }
-.inp:focus, .sel:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.inp:hover, .sel:hover { border-color: #b9beb3; }
+.inp:focus, .sel:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+.inp:disabled { background: var(--bg-sunken); color: var(--fg-2); }
 .inp.num { text-align: right; font-variant-numeric: tabular-nums; }
 .inp.cell { height: 26px; width: 100%; padding: 0 6px; }
 .inp.ghost { border-color: transparent; background: transparent; }
 .inp.ghost:hover { border-color: var(--line-strong); }
 .inp.ghost:focus { border-color: var(--accent); background: var(--bg); }
-.sel { padding-right: 24px; appearance: none; cursor: pointer;
+.sel { padding-right: 26px; appearance: none; cursor: pointer;
   background-image: linear-gradient(45deg, transparent 50%, var(--fg-3) 50%), linear-gradient(135deg, var(--fg-3) 50%, transparent 50%);
-  background-position: calc(100% - 13px) 13px, calc(100% - 9px) 13px; background-size: 4px 4px; background-repeat: no-repeat; }
+  background-position: calc(100% - 14px) 13px, calc(100% - 10px) 13px; background-size: 4px 4px; background-repeat: no-repeat; }
 .search { position: relative; display: flex; align-items: center; }
-.search svg { position: absolute; left: 8px; color: var(--fg-3); pointer-events: none; }
-.search .inp { padding-left: 28px; width: 220px; }
+.search svg { position: absolute; left: 9px; color: var(--fg-3); pointer-events: none; }
+.search .inp { padding-left: 30px; width: 240px; }
 .chk { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .chk input { accent-color: var(--accent); margin: 0; }
 
-/* 分段选择（视图切换） */
-.seg { display: inline-flex; gap: 2px; }
+/* 分段：状态筛选、视图切换 */
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r); overflow: hidden; background: var(--bg); }
 .seg button {
-  height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r); background: none;
+  height: 28px; padding: 0 12px; border: none; border-left: 1px solid var(--line-strong); background: none;
   color: var(--fg-2); cursor: pointer; white-space: nowrap;
 }
-.seg button:hover { color: var(--fg); background: var(--bg-hover); }
-.seg button.on { color: var(--fg); background: var(--bg); border-color: var(--line-strong); box-shadow: 0 1px 1px rgba(0,0,0,.03); }
-.seg button i { font-style: normal; color: var(--fg-3); margin-left: 5px; font-variant-numeric: tabular-nums; }
+.seg button:first-child { border-left: none; }
+.seg button:hover { color: var(--accent); }
+.seg button.on { color: #fff; background: var(--accent); }
+.seg button i { font-style: normal; opacity: 0.7; margin-left: 5px; font-variant-numeric: tabular-nums; }
 
 /* 页签 */
-.tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
-.tabs button { height: 36px; padding: 0; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--fg-2); cursor: pointer; }
-.tabs button:hover { color: var(--fg); }
-.tabs button.on { color: var(--fg); border-bottom-color: var(--fg); font-weight: 500; }
-.tabs button i { font-style: normal; color: var(--fg-3); margin-left: 4px; }
+.tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.tabs button { height: 40px; padding: 0; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--fg-2); cursor: pointer; font-size: 13.5px; }
+.tabs button:hover { color: var(--accent); }
+.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs button i { font-style: normal; color: var(--fg-3); margin-left: 4px; font-weight: 400; }
 
 /* ---------- 表格 ---------- */
 .tbl { width: 100%; border-collapse: collapse; }
 .tbl th {
-  height: 34px; padding: 0 10px; text-align: left; font-weight: 500; font-size: 12px; color: var(--fg-3);
-  border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 48px; background: var(--bg); z-index: 1;
+  height: 38px; padding: 0 10px; text-align: left; font-weight: 500; font-size: 12.5px; color: var(--fg-2);
+  background: var(--bg-sunken); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 52px; z-index: 1;
 }
 .tbl.flat th { position: static; }
-.tbl td { height: 40px; padding: 0 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-.tbl th:first-child, .tbl td:first-child { padding-left: 24px; }
-.tbl th:last-child, .tbl td:last-child { padding-right: 24px; }
-.tbl.inset th:first-child, .tbl.inset td:first-child { padding-left: 0; }
-.tbl.inset th:last-child, .tbl.inset td:last-child { padding-right: 0; }
+.tbl td { height: 46px; padding: 0 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl th:first-child, .tbl td:first-child { padding-left: 20px; }
+.tbl th:last-child, .tbl td:last-child { padding-right: 20px; }
+.tbl.inset th:first-child, .tbl.inset td:first-child { padding-left: 10px; }
+.tbl.inset th:last-child, .tbl.inset td:last-child { padding-right: 10px; }
+.tbl.inset { border: 1px solid var(--line); border-bottom: none; }
 .tbl tbody tr.link { cursor: pointer; }
-.tbl tbody tr.link:hover td { background: var(--bg-hover); }
+.tbl tbody tr:hover td { background: var(--bg-hover); }
+.tbl tr.link td:first-child .code, .tbl tr.link td.code:first-child { color: var(--accent); }
 .tbl tr.sel td { background: var(--accent-bg); }
-.tbl tfoot td { font-weight: 500; border-bottom: none; }
+.tbl tfoot td { font-weight: 600; background: var(--bg-sunken); }
+.tbl caption { caption-side: bottom; text-align: right; padding: 12px 20px; color: var(--fg-3); font-size: 12.5px; }
+.tbl caption b { color: var(--fg-2); font-weight: 500; margin: 0 2px; }
 .num { text-align: right !important; font-variant-numeric: tabular-nums; }
 .code { font-family: var(--mono); font-size: 12px; letter-spacing: -0.01em; }
 .mut { color: var(--fg-2); }
@@ -202,182 +228,236 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .col { display: flex; flex-direction: column; gap: 2px; }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------- 状态图标 ---------- */
-.st { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-2); white-space: nowrap; }
+/* ---------- 状态标签：实线 = 定了，虚线 = 等人处理 ---------- */
+.st {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid; border-radius: 3px;
+  font-size: 12px; font-weight: 400; white-space: nowrap; line-height: 1; vertical-align: middle;
+}
+.st.k-dashed { color: var(--fg-2); border-color: #b9beb3; border-style: dashed; background: var(--bg); }
+.st.k-pending { color: var(--amber); border-color: var(--amber-line); border-style: dashed; background: var(--amber-bg); }
+.st.k-ring { color: var(--accent); border-color: #c0cadc; background: var(--accent-bg); }
+.st.k-half { color: #fff; border-color: var(--accent); background: var(--accent); }
+.st.k-done { color: var(--green); border-color: var(--green-line); background: var(--green-bg); }
+.st.k-closed { color: var(--fg-2); border-color: var(--line-strong); background: var(--bg-sunken); }
+.st.k-x { color: var(--fg-3); border-color: var(--line-strong); background: var(--bg-sunken); text-decoration: line-through; }
+.st.k-bad { color: var(--red); border-color: var(--red-line); background: var(--red-bg); }
+.st.dot { width: 8px; height: 8px; padding: 0; border-radius: 50%; }
 .flag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
-.flag.red { color: var(--red); }
-.flag.amber { color: var(--amber); }
-.pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 10px; font-size: 11.5px; background: var(--bg-active); color: var(--fg-2); white-space: nowrap; }
-.pill.red { background: var(--red-bg); color: var(--red); }
-.pill.amber { background: var(--amber-bg); color: var(--amber); }
-.pill.green { background: var(--green-bg); color: var(--green); }
-.pill.blue { background: var(--accent-bg); color: var(--accent); }
+.flag.red { color: var(--red); font-weight: 500; }
+.flag.amber { color: var(--amber); font-weight: 500; }
+.pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 3px; font-size: 11.5px; background: var(--bg-sunken); border: 1px solid var(--line); color: var(--fg-2); white-space: nowrap; }
+.pill.red { background: var(--red-bg); border-color: var(--red-line); color: var(--red); }
+.pill.amber { background: var(--amber-bg); border-color: #ecd29a; color: var(--amber); }
+.pill.green { background: var(--green-bg); border-color: var(--green-line); color: var(--green); }
+.pill.blue { background: var(--accent-bg); border-color: #c0cadc; color: var(--accent); }
 
 /* 色块、款图 */
 .sw { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.sw i { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); display: inline-block; }
-.thumb { display: grid; place-items: center; border-radius: 6px; background: var(--bg-sunken); flex: none; }
-.thumb svg path { stroke: rgba(0,0,0,.18); stroke-width: .6; }
+.sw i { width: 12px; height: 12px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); display: inline-block; }
+.thumb { display: inline-grid; place-items: center; border-radius: 4px; flex: none; overflow: hidden; vertical-align: middle;
+  background: radial-gradient(circle at 50% 38%, #fbfbf8, #e6e8e1); box-shadow: inset 0 0 0 1px rgba(28,34,48,.06); }
 
 /* 进度 */
-.prog { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
-.prog b { width: 48px; height: 4px; border-radius: 2px; background: var(--bg-active); overflow: hidden; display: inline-block; }
-.prog b i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.prog { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.prog b { width: 64px; height: 6px; border-radius: 3px; background: var(--bg-active); overflow: hidden; display: inline-block; }
+.prog b i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .prog.done b i { background: var(--green); }
-.nodes { display: inline-flex; gap: 2px; }
-.nodes i { width: 14px; height: 6px; border-radius: 2px; background: var(--bg-active); }
+.nodes { display: inline-flex; gap: 3px; }
+.nodes i { width: 16px; height: 6px; border-radius: 1px; background: var(--bg-active); }
 .nodes i.done { background: var(--green); }
 .nodes i.run { background: var(--accent); }
 .nodes i.late { background: var(--red); }
-.nodes i.warn { background: var(--amber); }
+.nodes i.warn { background: var(--amber-line); }
 
 /* ---------- 详情页 ---------- */
-.detail { display: flex; min-height: calc(100vh - 48px); }
-.detail > .body { flex: 1; min-width: 0; padding: 24px 32px 48px; }
-.detail > .aside { width: 288px; flex: none; border-left: 1px solid var(--line); padding: 20px 20px 40px; }
-.title { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-.title .st { font-size: 13px; font-weight: 400; }
-.sub { color: var(--fg-2); margin-bottom: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.props { display: grid; grid-template-columns: 76px 1fr; gap: 9px 10px; margin: 0; font-size: 12.5px; }
+.detail { display: flex; min-height: calc(100vh - 44px - 32px - 52px); }
+.detail > .body { flex: 1; min-width: 0; padding: 20px 24px 40px; }
+.detail > .aside { width: 300px; flex: none; border-left: 1px solid var(--line); padding: 20px 20px 40px; background: #fbfbf9; border-radius: 0 0 6px 0; }
+.title { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.title .st { font-size: 12px; }
+.sub { color: var(--fg-2); margin-bottom: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.props { display: grid; grid-template-columns: 76px 1fr; gap: 10px 10px; margin: 0; font-size: 12.5px; }
 .props dt { color: var(--fg-3); }
 .props dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.aside h4 { margin: 22px 0 10px; font-size: 12px; font-weight: 500; color: var(--fg-3); }
+.aside h4 { margin: 24px 0 10px; font-size: 12.5px; font-weight: 600; color: var(--fg); padding-left: 8px; border-left: 3px solid var(--accent); line-height: 1.1; }
 .aside h4:first-child { margin-top: 0; }
 .sec { margin-top: 28px; }
-.sec > h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.sec > h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; padding-left: 9px; border-left: 3px solid var(--accent); line-height: 1.2; }
 .sec > h3 .acts { margin-left: auto; display: flex; gap: 6px; font-weight: 400; }
-.banner { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--r); background: var(--amber-bg); color: var(--fg); margin-bottom: 16px; }
-.banner.red { background: var(--red-bg); }
+.banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--r); background: var(--amber-bg); border: 1px solid #ecd29a; color: var(--fg); margin-bottom: 16px; }
+.banner > svg { color: var(--amber); }
+.banner.red { background: var(--red-bg); border-color: var(--red-line); }
+.banner.red > svg { color: var(--red); }
 .banner .btn { margin-left: auto; }
-.log { list-style: none; padding: 0; margin: 0; }
+.log { list-style: none; padding: 0; margin: 0; position: relative; }
 .log li { display: flex; gap: 10px; padding: 6px 0; font-size: 12.5px; color: var(--fg-2); }
 .log li span { color: var(--fg-3); width: 44px; flex: none; font-variant-numeric: tabular-nums; }
 
 /* 时间线（进度节点） */
 .tl { list-style: none; padding: 0; margin: 0; }
-.tl li { display: grid; grid-template-columns: 18px 72px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tl li { display: grid; grid-template-columns: 18px 72px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .tl li:last-child { border-bottom: none; }
-.tl .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--line-strong); justify-self: center; }
+.tl .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-strong); justify-self: center; background: var(--bg); }
 .tl .done .dot { background: var(--green); border-color: var(--green); }
-.tl .run .dot { border-color: var(--accent); }
+.tl .run .dot { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .tl .late .dot { border-color: var(--red); background: var(--red); }
-.tl .warn .dot { border-color: var(--amber); }
-.tl b { font-weight: 500; }
+.tl .warn .dot { border-color: var(--amber-line); }
+.tl b { font-weight: 600; }
 .tl small { color: var(--fg-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 
-/* 卡片网格（款式图卡、看板数字） */
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; padding: 20px 24px; }
-.card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; background: var(--bg); }
-.card:hover { border-color: var(--line-strong); }
-.card .pic { aspect-ratio: 1; display: grid; place-items: center; background: var(--bg-sunken); }
-.card .meta { padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); border-bottom: 1px solid var(--line); }
-.stat { padding: 16px 24px; border-right: 1px solid var(--line); cursor: pointer; }
-.stat:last-child { border-right: none; }
-.stat:hover { background: var(--bg-hover); }
-.stat.on { background: var(--bg-active); }
-.stat span { font-size: 12px; color: var(--fg-3); }
-.stat b { display: block; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin-top: 2px; }
-.stat b small { font-size: 12px; font-weight: 400; color: var(--fg-3); margin-left: 6px; }
+/* 卡片网格（款式图卡） */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; padding: 20px; }
+.card { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: var(--bg); transition: box-shadow 0.15s, border-color 0.15s; }
+.card:hover { border-color: #c0cadc; box-shadow: var(--shadow-sm), 0 6px 18px rgba(28,34,48,.08); }
+.card .pic { aspect-ratio: 1; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #fbfbf8, #e6e8e1); position: relative; }
+.card .pic .thumb { background: none; box-shadow: none; }
+.card .pic .st { position: absolute; top: 10px; right: 10px; }
+.card .meta { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); }
 
-/* 首页待办列表 */
+/* 数字卡片（看板筛选、首页） */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.stat { padding: 14px 16px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; background: var(--bg); transition: border-color 0.12s, box-shadow 0.12s; }
+.stat:hover { border-color: #c0cadc; }
+.stat.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-bg); }
+.stat span { font-size: 12.5px; color: var(--fg-2); }
+.stat b { display: block; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 4px; line-height: 1.2; }
+.stat b small { font-size: 12px; font-weight: 400; color: var(--fg-3); margin-left: 4px; }
+
+/* 待办列表 */
 .list { border-top: 1px solid var(--line); }
 .list > a, .list > .li { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .list > a:hover { background: var(--bg-hover); }
-.list .n { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 500; }
-.h2 { font-size: 13px; font-weight: 600; margin: 32px 0 8px; display: flex; align-items: center; gap: 8px; }
-.h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 8px 0 4px; }
+.list .n { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+.h2 { font-size: 14px; font-weight: 600; margin: 28px 0 10px; display: flex; align-items: center; gap: 8px; }
+.h1 { font-size: 22px; font-weight: 600; margin: 4px 0 4px; }
+
+/* ---------- 首页仪表盘 ---------- */
+.dash-hi { display: flex; align-items: flex-end; gap: 16px; padding: 6px 4px 14px; }
+.dash-hi h1 { font-size: 20px; font-weight: 600; }
+.dash-hi p { color: var(--fg-2); margin-top: 4px; }
+.dash-hi .acts { margin-left: auto; display: flex; gap: 8px; }
+.dgrid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+.panel { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow-sm); min-width: 0; display: flex; flex-direction: column; }
+.panel > h3 { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; font-size: 14px; font-weight: 600; border-bottom: 1px solid var(--line); flex: none; }
+.panel > h3 .ico { width: 26px; height: 26px; border-radius: 5px; display: grid; place-items: center; background: var(--accent-bg); color: var(--accent); }
+.panel > h3 .acts { margin-left: auto; font-weight: 400; display: flex; gap: 6px; align-items: center; }
+.panel > .pb { padding: 14px 16px; flex: 1; min-height: 0; }
+.kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 10px; }
+.kpi .big { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 6px; }
+.kpi .big b { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.kpi .big small { color: var(--fg-2); }
+.kpi .big em { font-style: normal; font-size: 12px; margin-left: 6px; }
+.kpi a > b { display: block; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi a > span { font-size: 12px; color: var(--fg-3); }
+.kpi .big > b { display: inline; font-size: 30px; }
+.kpi a:hover b { color: var(--accent); }
+.todo-g { margin-bottom: 14px; }
+.todo-g:last-child { margin-bottom: 0; }
+.todo-g > header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12.5px; color: var(--fg-2); }
+.todo-i { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 5px; margin-bottom: 6px; background: var(--bg); }
+.todo-i:hover { border-color: #c0cadc; background: var(--bg-hover); }
+.todo-i .col { flex: 1; min-width: 0; }
+.todo-i small { color: var(--fg-3); font-size: 12px; }
+.quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.quick a { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; border-radius: 6px; color: var(--fg-2); font-size: 12.5px; }
+.quick a:hover { background: var(--bg-hover); color: var(--accent); }
+.quick a i { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-bg); color: var(--accent); }
+.chart text { font-size: 10.5px; fill: var(--fg-3); font-family: inherit; }
+.legend { display: flex; gap: 14px; justify-content: center; font-size: 12px; color: var(--fg-2); margin-top: 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 
 /* 颜色 × 尺码矩阵 */
 .mx { border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.mx th, .mx td { height: 32px; padding: 0 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
-.mx th { font-weight: 500; font-size: 12px; color: var(--fg-3); }
-.mx th:first-child, .mx td:first-child { text-align: left; padding-left: 0; }
-.mx td.tot, .mx th.tot { color: var(--fg-2); font-weight: 500; }
+.mx th, .mx td { height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.mx th { font-weight: 500; font-size: 12px; color: var(--fg-2); background: var(--bg-sunken); }
+.mx th:first-child, .mx td:first-child { text-align: left; padding-left: 10px; }
+.mx td.tot, .mx th.tot { color: var(--fg); font-weight: 600; }
+.mx tfoot td { background: var(--bg-sunken); }
 .mx .inp.cell { width: 64px; text-align: right; }
 .mx small { display: block; font-size: 11px; color: var(--fg-3); line-height: 1.2; }
 
 /* ---------- 弹窗 / 菜单 / 提示 ---------- */
-.mask { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.28); display: grid; place-items: start center; padding: 9vh 16px 16px; overflow-y: auto; }
-.modal { width: 560px; max-width: 100%; background: var(--bg); border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--line); }
-.modal > header { display: flex; align-items: center; padding: 16px 20px 4px; font-size: 15px; font-weight: 600; }
+.mask { position: fixed; inset: 0; z-index: 40; background: rgba(20, 32, 56, 0.38); display: grid; place-items: start center; padding: 8vh 16px 16px; overflow-y: auto; }
+.modal { width: 560px; max-width: 100%; background: var(--bg); border-radius: 6px; box-shadow: var(--shadow); }
+.modal > header { display: flex; align-items: center; height: 52px; padding: 0 12px 0 20px; font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--line); }
 .modal > header .btn { margin-left: auto; }
-.modal > section { padding: 12px 20px 8px; max-height: 66vh; overflow-y: auto; }
-.modal > footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 12px 20px 16px; }
+.modal > section { padding: 16px 20px 12px; max-height: 66vh; overflow-y: auto; }
+.modal > footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: #fbfbf9; border-radius: 0 0 6px 6px; }
 .modal > footer .sp { flex: 1; }
-.form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
 .form .full { grid-column: 1 / -1; }
-.f { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--fg-2); min-width: 0; }
+.f { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--fg-2); min-width: 0; }
 .f > .inp, .f > .sel { width: 100%; font-size: 13px; color: var(--fg); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 13px; background: var(--bg); cursor: pointer; font-size: 12.5px; color: var(--fg-2); }
-.chip:hover { color: var(--fg); }
-.chip.on { border-color: var(--accent); background: var(--accent-bg); color: var(--fg); }
-.errs { margin: 8px 0 0; padding: 10px 12px 10px 28px; border-radius: var(--r); background: var(--red-bg); color: var(--fg); font-size: 12.5px; }
-.pop { position: absolute; z-index: 30; min-width: 160px; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
-.pop button { display: flex; width: 100%; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: none; background: none; border-radius: 5px; cursor: pointer; text-align: left; white-space: nowrap; }
-.pop button:hover { background: var(--bg-hover); }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--bg); cursor: pointer; font-size: 12.5px; color: var(--fg-2); }
+.chip:hover { color: var(--accent); border-color: var(--accent); }
+.chip.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.errs { margin: 0; padding: 10px 12px 10px 28px; border-radius: var(--r); background: var(--red-bg); border: 1px solid var(--red-line); color: var(--fg); font-size: 12.5px; }
+.pop { position: absolute; z-index: 30; min-width: 160px; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
+.pop button { display: flex; width: 100%; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: none; background: none; border-radius: 4px; cursor: pointer; text-align: left; white-space: nowrap; }
+.pop button:hover { background: var(--bg-hover); color: var(--accent); }
 .pop button.danger { color: var(--red); }
-.toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
-.toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); box-shadow: var(--shadow); font-size: 13px; max-width: 520px; }
-.toast.err { background: var(--red); color: #fff; }
-.toast a { font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.toasts { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 5px; background: var(--bg); color: var(--fg); border: 1px solid var(--green-line); border-left: 4px solid var(--green); box-shadow: var(--shadow); font-size: 13px; max-width: 560px; }
+.toast.err { border-color: var(--red-line); border-left-color: var(--red); }
+.toast a { color: var(--accent); font-weight: 600; cursor: pointer; }
 
 /* 命令面板 */
-.pal { width: 600px; max-width: 100%; background: var(--bg); border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--line); overflow: hidden; }
+.pal { width: 600px; max-width: 100%; background: var(--bg); border-radius: 8px; box-shadow: var(--shadow); overflow: hidden; }
 .pal input { width: 100%; height: 50px; padding: 0 18px; border: none; border-bottom: 1px solid var(--line); outline: none; background: none; font-size: 15px; }
 .pal ul { list-style: none; margin: 0; padding: 6px; max-height: 52vh; overflow-y: auto; }
-.pal li { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 6px; cursor: pointer; }
-.pal li.on { background: var(--bg-active); }
+.pal li { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 5px; cursor: pointer; }
+.pal li.on { background: var(--accent-bg); color: var(--accent); }
 .pal li span { color: var(--fg-3); margin-left: auto; font-size: 12px; }
 
 /* ---------- 意见 ---------- */
 .fb { width: 340px; flex: none; border-left: 1px solid var(--line); display: flex; flex-direction: column; background: var(--bg); }
-.fb > header { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.fb > header { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); font-weight: 600; flex: none; }
 .fb > header .pill { font-weight: 400; }
 .fb > header .btn { margin-left: auto; }
-.fb .compose { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.fb .compose { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; background: #fbfbf9; }
 .fb .compose textarea { width: 100%; }
 .fb .verdict { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .fb .verdict button { height: 30px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--bg); cursor: pointer; color: var(--fg-2); }
-.fb .verdict button.on { border-color: var(--accent); background: var(--accent-bg); color: var(--fg); font-weight: 500; }
+.fb .verdict button.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 600; }
 .fb .verdict button i { font-style: normal; color: var(--fg-3); margin-left: 4px; font-size: 11.5px; }
 .fb .items { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
 .fb .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .fb .item .who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-3); margin-bottom: 4px; }
-.fb .item .who b { color: var(--fg); font-weight: 500; }
+.fb .item .who b { color: var(--fg); font-weight: 600; }
 .fb .item .who button { margin-left: auto; border: none; background: none; color: var(--fg-3); cursor: pointer; padding: 0; }
 .fb .item p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .fb .item.hl { background: var(--accent-bg); margin: 0 -16px; padding: 12px 16px; }
-.pin-no { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-fg); font-size: 11px; font-weight: 600; font-style: normal; }
+.pin-no { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--stitch); color: var(--side-2); font-size: 11px; font-weight: 700; font-style: normal; }
 .pins { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
-.pins .pin-no { position: absolute; pointer-events: auto; cursor: pointer; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px var(--bg); }
+.pins .pin-no { position: absolute; pointer-events: auto; cursor: pointer; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px #fff, 0 2px 6px rgba(0,0,0,.25); }
 .picking { position: fixed; inset: 0; z-index: 35; cursor: crosshair; }
-.picking .hl { position: fixed; border: 2px solid var(--accent); border-radius: 6px; background: var(--accent-bg); pointer-events: none; }
-.picking .hl span { position: absolute; top: -24px; left: -2px; padding: 2px 8px; border-radius: 4px; background: var(--accent); color: var(--accent-fg); font-size: 12px; white-space: nowrap; }
+.picking .hl { position: fixed; border: 2px dashed var(--stitch); border-radius: 6px; background: rgba(217, 162, 58, 0.1); pointer-events: none; }
+.picking .hl span { position: absolute; top: -26px; left: -2px; padding: 2px 8px; border-radius: 4px; background: var(--side); color: #fff; font-size: 12px; white-space: nowrap; }
 .anchor-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); }
 
 /* 手机报工：手机外框 */
-.phone { width: 375px; height: 740px; margin: 24px auto; border: 1px solid var(--line-strong); border-radius: 36px; padding: 12px; background: var(--bg-side); box-shadow: var(--shadow); }
-.phone .scr { height: 100%; border-radius: 26px; background: var(--bg); overflow-y: auto; position: relative; }
-.phone .ph { position: sticky; top: 0; background: var(--bg); padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; z-index: 2; }
-.phone .pi { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.phone { width: 375px; height: 740px; margin: 24px auto; border-radius: 40px; padding: 12px; background: var(--side); box-shadow: var(--shadow); }
+.phone .scr { height: 100%; border-radius: 30px; background: var(--bg-page); overflow-y: auto; position: relative; }
+.phone .ph { position: sticky; top: 0; background: var(--accent); color: #fff; padding: 16px 16px 12px; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; z-index: 2; }
+.phone .ph .btn { color: #fff; }
+.phone .pi { display: flex; gap: 12px; padding: 12px 14px; margin: 8px 10px 0; border-radius: 8px; background: var(--bg); cursor: pointer; box-shadow: var(--shadow-sm); }
 .phone .pi:active { background: var(--bg-hover); }
 .phone .nodes-big { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 16px; }
-.phone .nodes-big button { height: 56px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 13px; }
+.phone .nodes-big button { height: 60px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 13px; }
 .phone .nodes-big button small { font-size: 11px; color: var(--fg-3); }
-.phone .nodes-big button.done { border-color: var(--green); color: var(--green); }
-.phone .nodes-big button.on { border-color: var(--accent); background: var(--accent-bg); }
-.phone .nodes-big button.late { border-color: var(--red); color: var(--red); }
+.phone .nodes-big button.done { border-color: var(--green-line); background: var(--green-bg); color: var(--green); }
+.phone .nodes-big button.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.phone .nodes-big button.late { border-color: var(--red-line); background: var(--red-bg); color: var(--red); }
 
 /* 看板 / 企划小方块 */
-.kanban { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 16px; padding: 20px 24px; }
-.kanban > div { background: var(--bg-sunken); border-radius: 10px; padding: 10px; min-height: 120px; }
-.kanban h4 { margin: 2px 4px 10px; font-size: 12px; font-weight: 500; color: var(--fg-2); }
-.kcard { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
-.kcard:hover { border-color: var(--line-strong); }
+.kanban { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 16px; padding: 20px; }
+.kanban > div { background: var(--bg-sunken); border: 1px solid var(--line); border-radius: 6px; padding: 10px; min-height: 120px; }
+.kanban h4 { margin: 2px 4px 10px; font-size: 13px; font-weight: 600; color: var(--fg); }
+.kcard { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; box-shadow: var(--shadow-sm); }
+.kcard:hover { border-color: #c0cadc; }
 .hbar { display: flex; align-items: center; gap: 8px; }
-.hbar b { height: 8px; border-radius: 4px; background: var(--accent); display: inline-block; min-width: 2px; }
+.hbar b { height: 8px; border-radius: 2px; background: var(--accent); display: inline-block; min-width: 2px; }
 .hbar.muted b { background: var(--line-strong); }
 
 /* 意见面板开着、屏幕又不够宽时，右侧属性栏挪到下面，表格不挤 */
@@ -385,17 +465,42 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
   .app:has(> .fb) .detail { flex-direction: column; }
   .app:has(> .fb) .detail > .aside { width: auto; border-left: none; border-top: 1px solid var(--line); }
 }
+/* 首页窄了（小屏或意见面板开着）：数字卡片两个一行，其余占满 */
+@media (max-width: 1280px) {
+  .dgrid > :nth-child(-n+4) { grid-column: span 6 !important; }
+  .dgrid > :nth-child(n+5) { grid-column: span 12 !important; }
+}
+@media (max-width: 1720px) {
+  .app:has(> .fb) .dgrid > :nth-child(-n+4) { grid-column: span 6 !important; }
+  .app:has(> .fb) .dgrid > :nth-child(n+5) { grid-column: span 12 !important; }
+}
 @media (max-width: 900px) {
   .side { width: 64px; }
   .side .nav-i span, .side .grp > b, .side .find span, .side kbd, .ws span, .nav-i .n { display: none; }
+  .ws { padding: 0; justify-content: center; }
   .detail { flex-direction: column; }
   .detail > .aside { width: auto; border-left: none; border-top: 1px solid var(--line); }
   .fb { position: fixed; right: 0; top: 0; bottom: 0; z-index: 30; box-shadow: var(--shadow); max-width: 100%; }
+  .me span, .me small { display: none; }
 }
 @media print {
-  .side, .fb, .head .acts, .bar { display: none !important; }
-  .main { overflow: visible; }
+  .side, .fb, .topbar, .head .acts, .bar { display: none !important; }
+  .main { overflow: visible; padding: 0; }
+  .sheet { border: none; box-shadow: none; }
 }
+
+/* 页面里的分类树（物料分类等）：借侧栏的结构，换成浅色 */
+.sheet .grp > b { height: 28px; padding: 0 10px; color: var(--fg-3); cursor: default; }
+.sheet .nav-i { height: 32px; color: var(--fg); border: none; gap: 8px; }
+.sheet .nav-i svg { color: var(--fg-3); }
+.sheet .nav-i:hover { background: var(--bg-hover); color: var(--accent); }
+.sheet .nav-i.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.sheet .nav-i .n { background: none; color: var(--fg-3); font-weight: 400; }
+
+.gallery { margin-bottom: 20px; }
+.gallery > .thumb { border-radius: 6px; }
+.gthumb { padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; line-height: 0; }
+.gthumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 </style>
 </head>
 <body>
@@ -472,13 +577,16 @@ const db = reactive({
   ],
   seasons: [{ code: 'C', name: '春' }, { code: 'X', name: '夏' }, { code: 'Q', name: '秋' }, { code: 'D', name: '冬' }],
   categories: [
-    { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'coat' },
-    { code: 'J', name: '夹克', path: '女装 / 外套', shape: 'top' },
-    { code: 'T', name: 'T 恤', path: '女装 / 上衣', shape: 'top' },
-    { code: 'W', name: '针织衫', path: '女装 / 上衣', shape: 'top' },
-    { code: 'S', name: '卫衣', path: '女装 / 上衣', shape: 'top' },
+    { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'trench' },
+    { code: 'J', name: '夹克', path: '女装 / 外套', shape: 'jacket' },
+    { code: 'Y', name: '羽绒服', path: '女装 / 外套', shape: 'puffer' },
+    { code: 'T', name: 'T 恤', path: '女装 / 上衣', shape: 'tee' },
+    { code: 'C', name: '衬衫', path: '女装 / 上衣', shape: 'shirt' },
+    { code: 'W', name: '针织衫', path: '女装 / 上衣', shape: 'knit' },
+    { code: 'S', name: '卫衣', path: '女装 / 上衣', shape: 'hoodie' },
     { code: 'K', name: '裤装', path: '女装 / 下装', shape: 'pants' },
-    { code: 'L', name: '连衣裙', path: '女装 / 裙装', shape: 'coat' },
+    { code: 'R', name: '半身裙', path: '女装 / 裙装', shape: 'skirt' },
+    { code: 'L', name: '连衣裙', path: '女装 / 裙装', shape: 'dress' },
   ],
   materialCategories: [
     { code: 'ML', name: '梭织', parent: '面料' }, { code: 'MZ', name: '针织', parent: '面料' },
@@ -560,7 +668,7 @@ const userName = (id) => db.users.find((u) => u.id === id)?.name || '—'
 const colorOf = (c) => db.colors.find((x) => x.code === c) || { code: c, name: c || '—', hex: 'transparent' }
 const colorName = (c) => (c ? colorOf(c).name : '—')
 const sizesOf = (gid) => db.sizeGroups.find((g) => g.id === gid)?.sizes || []
-const catOf = (c) => db.categories.find((x) => x.code === c) || { code: c, name: c, shape: 'top' }
+const catOf = (c) => db.categories.find((x) => x.code === c) || { code: c, name: c, shape: 'tee' }
 const sup = (c) => db.suppliers.find((s) => s.code === c)
 const supName = (c) => sup(c)?.short || c || '—'
 const cust = (c) => db.customers.find((x) => x.code === c)
@@ -1227,6 +1335,16 @@ function seed() {
     createStyle({ code: '27CK002', name: '直筒西裤', cat: 'K', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['HE', 'ZQ'], tagPrice: 459, cost: 160, factory: 'GYS0005', status: '启用' })
     createStyle({ code: '27CT003', name: '基础圆领 T 恤', cat: 'T', year: 2027, season: 'C', wave: '第 2 波', tag: '休闲', colors: ['BB', 'HE'], tagPrice: 199, factory: 'GYS0004' })
   })
+  // 只有款式档案、还没下过单的款，让款式库像个样子
+  as('u4', '2026-09-15', () => {
+    createStyle({ code: '26DY009', name: '短款羽绒服', cat: 'Y', year: 2026, season: 'D', wave: '第 2 波', tag: '通勤', colors: ['HE', 'MB', 'JH'], tagPrice: 1299, cost: 520, factory: 'GYS0004', status: '启用' })
+    createStyle({ code: '26QK015', name: '阔腿休闲裤', cat: 'K', year: 2026, season: 'Q', wave: '第 3 波', tag: '休闲', colors: ['KQ', 'HE'], tagPrice: 399, cost: 140, factory: 'GYS0005', status: '启用' })
+    createStyle({ code: '27CC004', name: '垂感长袖衬衫', cat: 'C', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['BB', 'WL'], tagPrice: 359, cost: 128, factory: 'GYS0004', status: '启用' })
+    createStyle({ code: '27CR005', name: 'A 字半身裙', cat: 'R', year: 2027, season: 'C', wave: '第 2 波', tag: '通勤', colors: ['HE', 'KQ'], tagPrice: 329, cost: 110, factory: 'GYS0005', status: '启用' })
+    createStyle({ code: '27CL006', name: '收腰连衣裙', cat: 'L', year: 2027, season: 'C', wave: '第 2 波', tag: '约会', colors: ['JH', 'ZQ'], tagPrice: 599, cost: 210, factory: 'GYS0004' })
+    createStyle({ code: '27CW007', name: '短款针织开衫', cat: 'W', year: 2027, season: 'C', wave: '第 1 波', tag: '轻松', colors: ['YM', 'MB'], tagPrice: 459, cost: 165, factory: 'GYS0004', status: '启用' })
+    createStyle({ code: '25DS011', name: '男式连帽卫衣', cat: 'S', year: 2025, season: 'D', wave: '第 1 波', tag: '运动', gender: '男', sizeGroup: 'M4', colors: ['ZQ', 'HE'], tagPrice: 429, cost: 118, factory: 'GYS0004', status: '停用' })
+  })
   const labels = [label('BX0001', { part: '主唛' }), label('BX0002', { part: '洗唛' }), label('BP0001', { part: '吊牌' }), label('BD0001', { part: '包装袋' })]
   const thread = { part: '缝纫线', mat: 'FX0002', mode: '固定', sku: 'FX0002', um: '统一', use: 0.3, loss: 0, src: '工厂自备' }
   const cf001 = (m) => [
@@ -1506,6 +1624,7 @@ const ICONS = {
   trash: 'M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
   camera: 'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z M15 13a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
+  bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.94 1.94 0 0 0 3.4 0',
   link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
 }
 comp('Ico', {
@@ -1514,7 +1633,7 @@ comp('Ico', {
   template: `<svg :width="s" :height="s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="ICONS[n]"/></svg>`,
 })
 
-/* ---------- 状态：实线 = 定了，虚线 = 等人处理，半圆 = 进行中，实心勾 = 完成 ---------- */
+/* ---------- 状态标签：实线 = 定了，虚线 = 等人处理；靛蓝实底 = 进行中，绿 = 完成，红 = 拉黑 / 不合格 ---------- */
 const ST_KIND = {
   dashed: ['草稿', '待准入', '停用', '无', '未开始', '待开始', '待推送', '未领料', '未到料', '未算料', '待对账', '未开票'],
   pending: ['待审核', '待评审', '待处理', '待检', '待确认', '已驳回', '需改版', '待派单', '待收款', '待付款'],
@@ -1525,27 +1644,23 @@ const ST_KIND = {
   x: ['已作废', '已取消', '黑名单', '已淘汰', '不合格', '让步接收'],
 }
 const stKind = (s) => Object.keys(ST_KIND).find((k) => ST_KIND[k].includes(s)) || 'ring'
+// t="" 时只出一个小圆点（图卡角上用）
 comp('St', {
   props: { s: String, t: String },
-  setup: (p) => ({ k: computed(() => stKind(p.s)) }),
-  template: `<span class="st"><svg width="14" height="14" viewBox="0 0 14 14">
-    <circle v-if="k==='dashed'||k==='pending'" cx="7" cy="7" r="5.5" fill="none" :stroke="k==='pending'?'var(--amber)':'var(--fg-3)'" stroke-width="1.5" stroke-dasharray="2.2 2"/>
-    <circle v-else-if="k==='ring'" cx="7" cy="7" r="5.5" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
-    <g v-else-if="k==='half'"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--amber)" stroke-width="1.5"/><path d="M7 3.5a3.5 3.5 0 0 1 0 7z" fill="var(--amber)"/></g>
-    <g v-else-if="k==='done'||k==='closed'"><circle cx="7" cy="7" r="6" :fill="k==='done'?'var(--green)':'var(--fg-3)'"/><path d="m4.3 7.2 1.8 1.8 3.6-3.8" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></g>
-    <g v-else><circle cx="7" cy="7" r="6" :fill="s==='黑名单'||s==='不合格'?'var(--red)':'var(--fg-3)'"/><path d="m5 5 4 4m0-4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></g>
-  </svg>{{ t ?? s }}</span>`,
+  setup: (p) => ({ k: computed(() => (['黑名单', '不合格'].includes(p.s) ? 'bad' : stKind(p.s))) }),
+  template: `<span class="st" :class="['k-' + k, { dot: t === '' }]" :title="t === '' ? s : null">{{ t === '' ? '' : t ?? s }}</span>`,
 })
 
-/* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本 }]；单元格可用 #k 插槽改写 ---------- */
+/* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本, img: row => 款号/SKU（前面带小图） }]；单元格可用 #k 插槽改写 ---------- */
 comp('Tbl', {
   props: { rows: Array, cols: Array, link: Boolean, empty: String, inset: Boolean, flat: Boolean, sel: Function },
   emits: ['row'],
   template: `<table class="tbl" :class="{ inset, flat }">
+    <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条</caption>
     <thead><tr><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
     <tbody>
       <tr v-for="(r, i) in rows" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
-        <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i">{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</slot></td>
+        <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
       </tr>
       <tr v-if="!rows.length"><td :colspan="cols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
     </tbody>
@@ -1604,23 +1719,7 @@ comp('More', {
     <div v-if="open" class="pop" style="right:0;top:32px"><button v-for="it in items" :key="it.t" :class="{ danger: it.danger }" @click="open = false; it.fn()">{{ it.t }}</button></div></span>`,
 })
 
-/* ---------- 款图、色块、日期、进度 ---------- */
-const SHAPES = {
-  top: 'M8.5 3.5 4 5.5 2.5 10l3 1.2 1-2v11.3h11V9.2l1 2 3-1.2L20 5.5l-4.5-2c-.4 1.5-1.9 2.5-3.5 2.5s-3.1-1-3.5-2.5z',
-  coat: 'M8.5 2.5 4.5 4.5 3 11l2.5.8.8-2.5v12.2h11.4V9.3l.8 2.5L21 11l-1.5-6.5-4-2L12 7z',
-  pants: 'M6.5 2.5h11l1.2 19h-4.5L12 9.5l-2.2 12H5.3z',
-}
-comp('Thumb', {
-  props: { code: String, s: { type: Number, default: 32 }, color: String },
-  setup(p) {
-    const info = computed(() => {
-      const st = style(p.code) || db.samples?.find((x) => x.no === p.code)
-      return { d: SHAPES[catOf(st?.cat).shape] || SHAPES.top, fill: colorOf(p.color || st?.colors?.[0]).hex }
-    })
-    return { info }
-  },
-  template: `<span class="thumb" :style="{ width: s + 'px', height: s + 'px' }"><svg :width="s * 0.72" :height="s * 0.72" viewBox="0 0 24 24"><path :d="info.d" :fill="info.fill"/></svg></span>`,
-})
+/* ---------- 色块、日期、进度（款图在 3b-pics.js） ---------- */
 comp('Sw', {
   props: { c: String, n: { type: Boolean, default: true } },
   template: `<span class="sw"><i :style="{ background: colorOf(c).hex }"></i><template v-if="n">{{ colorName(c) }}</template></span>`,
@@ -1638,6 +1737,50 @@ comp('Prog', {
   props: { a: Number, b: Number },
   setup: (p) => ({ pct: computed(() => fpct(p.a, p.b)) }),
   template: `<span class="prog" :class="{ done: pct >= 100 }"><b><i :style="{ width: pct + '%' }"></i></b>{{ pct }}%</span>`,
+})
+/* ---------- 图表（首页、报表）：面积图 series = [{ t, c: 颜色, v: [数] }]，labels = x 轴；环形图 items = [{ t, v, c }] ---------- */
+const smooth = (pts) => pts.reduce((d, [x, y], i) => {
+  if (!i) return `M${x},${y}`
+  const [x0, y0] = pts[i - 1], cx = (x0 + x) / 2
+  return d + `C${cx},${y0} ${cx},${y} ${x},${y}`
+}, '')
+comp('AreaChart', {
+  props: { series: Array, labels: Array, h: { type: Number, default: 200 } },
+  setup(p) {
+    const W = 600, L = 40, R = 8, T = 10, B = 22
+    const g = computed(() => {
+      const max = Math.max(1, ...p.series.flatMap((s) => s.v))
+      const step = 10 ** Math.floor(Math.log10(max)), top = Math.ceil(max / step) * step
+      const n = p.labels.length, H = p.h
+      const x = (i) => L + ((W - L - R) * i) / Math.max(1, n - 1), y = (v) => T + (H - T - B) * (1 - v / top)
+      const ticks = [0, 1, 2, 3, 4].map((k) => ({ v: (top * k) / 4, y: y((top * k) / 4) }))
+      const lines = p.series.map((s) => { const pts = s.v.map((v, i) => [x(i), y(v)]); const d = smooth(pts); return { ...s, d, area: d + `L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z` } })
+      const every = Math.ceil(n / 8)
+      return { H, ticks, lines, xs: p.labels.map((t, i) => ({ t, x: x(i), show: i % every === 0 || i === n - 1 })) }
+    })
+    const fmtK = (v) => (v >= 10000 ? rnd(v / 10000, 1) + '万' : fq(v))
+    return { g, W, L, fmtK }
+  },
+  template: `<div class="chart"><svg :viewBox="'0 0 ' + W + ' ' + g.H" width="100%" :height="g.H" preserveAspectRatio="none">
+      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - 8" :y1="t.y" :y2="t.y" stroke="var(--line)" stroke-dasharray="3 3"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
+      <g v-for="s in g.lines" :key="s.t"><path :d="s.area" :fill="s.c" fill-opacity=".14"/><path :d="s.d" fill="none" :stroke="s.c" stroke-width="2"/></g>
+      <text v-for="x in g.xs.filter(z => z.show)" :key="x.t" :x="x.x" :y="g.H - 6" text-anchor="middle">{{ x.t }}</text>
+    </svg><div class="legend"><span v-for="s in series" :key="s.t"><i :style="{ background: s.c }"></i>{{ s.t }}</span></div></div>`,
+})
+comp('Donut', {
+  props: { items: Array, s: { type: Number, default: 150 }, unit: { type: String, default: '' } },
+  setup(p) {
+    const segs = computed(() => {
+      const tot = sum(p.items, (x) => x.v) || 1, C = 2 * Math.PI * 40
+      let acc = 0
+      return { tot, list: p.items.map((x) => { const len = (x.v / tot) * C; const s = { ...x, dash: `${Math.max(0, len - 1.2)} ${C}`, off: -acc, pct: Math.round((x.v / tot) * 100) }; acc += len; return s }) }
+    })
+    return { segs }
+  },
+  template: `<div class="row" style="gap:20px;align-items:center"><svg :width="s" :height="s" viewBox="0 0 100 100" style="transform:rotate(-90deg)">
+      <circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-sunken)" stroke-width="14"/>
+      <circle v-for="x in segs.list" :key="x.t" cx="50" cy="50" r="40" fill="none" :stroke="x.c" stroke-width="14" :stroke-dasharray="x.dash" :stroke-dashoffset="x.off"/></svg>
+    <div class="col" style="gap:7px;flex:1;min-width:0;font-size:12.5px"><div v-for="x in segs.list" :key="x.t" class="row"><i :style="{ background: x.c, width: '10px', height: '10px', borderRadius: '2px', display: 'inline-block' }"></i><span class="ell" style="flex:1">{{ x.t }}</span><span class="num mut">{{ fq(x.v) }}{{ unit }}</span><span class="num dim" style="width:34px">{{ x.pct }}%</span></div></div></div>`,
 })
 comp('Nodes', {
   props: { p: Object },
@@ -1696,6 +1839,172 @@ expose({
   orderQty, orderAmt, orderStyles, orderSched, orderRet, scheduledQty, returnedQty, kitState, prodsOf, mrpsOf, describeChange,
   poQty, poAmt, poRecv, prodQty, prodRet, prodDef, prodAmt, prodRisk, expectDue, curNode, nodeState, issueState, stockDir,
   run, toast, ask, doAction, addStyleColor, orderLive, prodLive, isFactory, canUseSupplier, arrivals, issuePlan, toD,
+})
+</script>
+<script>/* 3b-pics.js */
+/* ============================================================
+ * 演示用的假图：款式画成平面款式图（按品类出形状、按颜色上色），物料画成布样 / 辅料小图。
+ * 都是 SVG 拼出来的，不联网。用法：<Thumb :code="款号 | 样衣号 | 物料编码 | SKU" :s="尺寸" :color="颜色代码"/>
+ * 渐变、纹理在 PIC_DEFS 里，由外框挂一次，所有图共用。
+ * ============================================================ */
+
+// 平面款式图：100 × 100。body = 衣身外轮廓；over = 叠在上面的块（领、腰头、腰带），dark 为 true 时压暗；
+// line = 缝线、口袋、门襟；dots = 纽扣 [x, y, r]
+const GARMENTS = {
+  tee: {
+    body: 'M36 14C40 19 60 19 64 14L82 21L93 39L81 45L76 38V92H24V38L19 45L7 39L18 21Z',
+    line: 'M36 14C40 21 60 21 64 14M38.5 15.3C42 19.8 58 19.8 61.5 15.3M24 87H76M80 42.5L91.5 37M20 42.5L8.5 37M29 16.7C27.5 25 25.5 31 24 38M71 16.7C72.5 25 74.5 31 76 38',
+  },
+  knit: {
+    body: 'M37 13C41 19 59 19 63 13L79 18C86 30 90 56 92 82L82 84C80 66 77 52 75 40L76 92H24L25 40C23 52 20 66 18 84L8 82C10 56 14 30 21 18Z',
+    line: 'M37 13C41 19 59 19 63 13M39.5 14.3C43 21.5 57 21.5 60.5 14.3M24.2 85H75.8M8.6 77.5L18.6 79.5M91.4 77.5L81.4 79.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+    rib: [24.5, 75.5, 85, 92],
+  },
+  hoodie: {
+    body: 'M37 13C41 19 59 19 63 13L79 18C86 30 90 56 92 82L82 84C80 66 77 52 75 40L76 92H24L25 40C23 52 20 66 18 84L8 82C10 56 14 30 21 18Z',
+    over: 'M35.5 16C32 6 40 1 50 1S68 6 64.5 16C60 23 40 23 35.5 16Z',
+    line: 'M40.5 16C43 24 57 24 59.5 16M46 22L45 34M54 22L55 34M33 63H67L70.5 81H29.5ZM24.2 85H75.8M8.6 77.5L18.6 79.5M91.4 77.5L81.4 79.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+    rib: [24.5, 75.5, 85, 92],
+  },
+  jacket: {
+    body: 'M37 9H63L79 15C85 29 89 51 91 73L81 75C79 60 77 48 75 39V85H25V39C23 48 21 60 19 75L9 73C11 51 15 29 21 15Z',
+    over: 'M37 9L44 22L50 15L56 22L63 9C57 12.5 43 12.5 37 9Z',
+    line: 'M50 15V85M25 79H75M30 33H44V45H30ZM56 33H70V45H56ZM30 37.5H44M56 37.5H70M29 15.5C27.5 23 26 31 25 39M71 15.5C72.5 23 74 31 75 39M10 68.5L19.6 70.5M90 68.5L80.4 70.5M48.6 24H51.4V29H48.6Z',
+  },
+  trench: {
+    body: 'M38 7H62L78 13C84 29 88 55 89 74L80 76C78 61 76 49 74 41L79 95H21L26 41C24 49 22 61 20 76L11 74C12 55 16 29 22 13Z',
+    over: 'M38 7L45 31L50 24L55 31L62 7C57 10 43 10 38 7Z',
+    band: 'M24.6 54H75.4L75.8 60.5H24.2Z',
+    line: 'M50 60.5V95M28.5 14C27.5 23 26.5 32 26 41M71.5 14C72.5 23 73.5 32 74 41M31 66L35 79M69 66L65 79M11.6 69L20.3 71M88.4 69L79.7 71M47 53H53V61.5H47Z',
+    dots: [[44, 36, 1.7], [56, 36, 1.7], [44, 46, 1.7], [56, 46, 1.7]],
+  },
+  pants: {
+    body: 'M28 7H72L78 94H56.5L50 33L43.5 94H22Z',
+    band: 'M28 7H72L72.5 13H27.5Z',
+    line: 'M50 13V28C47 29 46 26 46 23V13M29.5 14L35 27M70.5 14L65 27M38 16L33.5 94M62 16L66.5 94M33 7V13M44 7V13M56 7V13M67 7V13M23 89H43.9M56.1 89H77',
+  },
+  dress: {
+    body: 'M38 7C42 13 58 13 62 7L71 10L69 25L66 41L85 93H15L34 41L31 25L29 10Z',
+    line: 'M38 7C42 17 58 17 62 7M34 41H66M43 47L37 92M50 45V93M57 47L63 92M29 10C32 14 32.5 20 31 25M71 10C68 14 67.5 20 69 25',
+  },
+  shirt: {
+    body: 'M38 9H62L79 15C85 29 89 53 91 75L82 77C80 61 77 49 75 40V86C66 93 34 93 25 86V40C23 49 20 61 18 77L9 75C11 53 15 29 21 15Z',
+    over: 'M38 9L44 20L50 12.5L56 20L62 9C57 11.5 43 11.5 38 9Z',
+    line: 'M50 12.5V90M53 12.5V90M9.6 70.5L18.6 72.5M90.4 70.5L81.4 72.5M57 29H67V39H57ZM29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+    dots: [[51.5, 25, 1.1], [51.5, 36, 1.1], [51.5, 47, 1.1], [51.5, 58, 1.1], [51.5, 69, 1.1], [51.5, 80, 1.1]],
+  },
+  skirt: {
+    body: 'M32 10H68L85 88C64 93 36 93 15 88Z',
+    band: 'M32 10H68L68.9 16H31.1Z',
+    line: 'M41 16L33 90.5M50 16V91.5M59 16L67 90.5',
+  },
+  puffer: {
+    body: 'M37 9H63L80 15C87 29 91 51 92 73L81 75.5C79 60 77 48 75.5 39L76 87H24L24.5 39C23 48 21 60 19 75.5L8 73C9 51 13 29 20 15Z',
+    band: 'M37 3.5H63V10.5H37Z',
+    line: 'M50 3.5V87M24.4 29H75.6M24.3 43H75.7M24.2 57H75.8M24.1 71H75.9M12.5 36L23.5 34M10.5 50L22 49M9 64L20.5 63.5M76.5 34L87.5 36M78 49L89.5 50M79.5 63.5L91 64M9 68.5L20 70.5M91 68.5L80 70.5',
+  },
+}
+
+const PIC_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <radialGradient id="pg-bg" cx=".5" cy=".38" r=".8"><stop offset="0" stop-color="#fbfbf8"/><stop offset="1" stop-color="#e7e9e2"/></radialGradient>
+  <linearGradient id="pg-shade" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
+  <linearGradient id="pg-v" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".10"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+  <linearGradient id="pg-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".45" stop-color="#fff" stop-opacity=".38"/><stop offset=".55" stop-color="#fff" stop-opacity=".05"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+  <linearGradient id="pg-metal" x1="0" x2="1"><stop offset="0" stop-color="#8d7a4c"/><stop offset=".5" stop-color="#e4d29b"/><stop offset="1" stop-color="#8d7a4c"/></linearGradient>
+  <pattern id="pg-twill-d" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="3.2" stroke="#000" stroke-opacity=".13" stroke-width="1.1"/></pattern>
+  <pattern id="pg-twill-l" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="3.2" stroke="#fff" stroke-opacity=".10" stroke-width="1.1"/></pattern>
+  <pattern id="pg-knit-d" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#000" stroke-opacity=".14" stroke-width=".7"/></pattern>
+  <pattern id="pg-knit-l" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width=".7"/></pattern>
+  <filter id="pg-soft" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.2" stdDeviation="1.4" flood-color="#1c2230" flood-opacity=".16"/></filter>
+</defs></svg>`
+
+// 颜色深浅：深色布上的线用浅色，浅色布上的线用深色
+function hexLum(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '')
+  if (!m) return 1
+  const n = parseInt(m[1], 16)
+  return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255
+}
+const inkOn = (hex) => (hexLum(hex) < 0.45 ? 'rgba(255,255,255,.34)' : 'rgba(28,34,48,.30)')
+
+function garmentSvg(shape, hex) {
+  const g = GARMENTS[shape] || GARMENTS.tee
+  const ink = inkOn(hex), tex = hexLum(hex) < 0.45 ? 'l' : 'd'
+  const knit = ['knit', 'hoodie'].includes(shape)
+  const ribs = g.rib ? Array.from({ length: 18 }, (_, i) => { const x = g.rib[0] + ((g.rib[1] - g.rib[0]) * (i + 0.5)) / 18; return `M${x.toFixed(1)} ${g.rib[2]}V${g.rib[3]}` }).join('') : ''
+  return `<g filter="url(#pg-soft)"><path d="${g.body}" fill="${hex}"/>${g.over ? `<path d="${g.over}" fill="${hex}"/>` : ''}</g>
+    ${knit ? `<path d="${g.body}" fill="url(#pg-knit-${tex})"/>` : ''}
+    <path d="${g.body}" fill="url(#pg-shade)"/><path d="${g.body}" fill="url(#pg-v)"/>
+    ${g.band ? `<path d="${g.band}" fill="${hex}"/><path d="${g.band}" fill="#000" fill-opacity=".14"/>` : ''}
+    ${g.over ? `<path d="${g.over}" fill="url(#pg-shade)"/><path d="${g.over}" fill="none" stroke="${ink}" stroke-width=".7"/>` : ''}
+    <path d="${g.line}${ribs}" fill="none" stroke="${ink}" stroke-width=".7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${g.body}" fill="none" stroke="${ink}" stroke-width=".6" stroke-linejoin="round"/>
+    ${(g.dots || []).map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${ink}"/>`).join('')}`
+}
+
+// 物料：梭织 / 针织 / 里布画成叠起来的布样，辅料、包材各画各的
+function swatch(hex, fill) {
+  const tex = hexLum(hex) < 0.45 ? 'l' : 'd'
+  const front = 'M14 26H76L82 32V88H14Z', back = 'M24 12H86V74H82V32L76 26H24Z'
+  return `<g filter="url(#pg-soft)"><path d="${back}" fill="${hex}"/><path d="${front}" fill="${hex}"/></g>
+    <path d="${back}" fill="#000" fill-opacity=".14"/>
+    <path d="${front}" fill="url(#pg-${fill === 'knit' ? 'knit' : 'twill'}-${tex})"/>
+    ${fill === 'sheen' ? `<path d="${front}" fill="url(#pg-sheen)"/>` : `<path d="${front}" fill="url(#pg-shade)"/>`}
+    <path d="M76 26V32H82Z" fill="#fff" fill-opacity=".28"/>
+    <path d="${front}" fill="none" stroke="${inkOn(hex)}" stroke-width=".5"/>`
+}
+const MAT_DRAW = {
+  woven: (hex) => swatch(hex, 'twill'),
+  knit: (hex) => swatch(hex, 'knit'),
+  lining: (hex) => swatch(hex, 'sheen'),
+  zipper: (hex) => `<g filter="url(#pg-soft)"><rect x="37" y="6" width="26" height="88" rx="2" fill="${hex}"/></g><rect x="37" y="6" width="26" height="88" rx="2" fill="url(#pg-shade)"/>
+    ${Array.from({ length: 21 }, (_, i) => `<rect x="${i % 2 ? 50 : 46.5}" y="${10 + i * 3.7}" width="3.5" height="2.4" rx=".6" fill="url(#pg-metal)"/>`).join('')}
+    <path d="M44 24H56L55 40H45Z" fill="url(#pg-metal)" stroke="#6f6038" stroke-width=".5"/><rect x="47.5" y="40" width="5" height="12" rx="2.5" fill="url(#pg-metal)" stroke="#6f6038" stroke-width=".5"/>`,
+  button: (hex) => `<g filter="url(#pg-soft)"><circle cx="50" cy="50" r="31" fill="${hex}"/></g><circle cx="50" cy="50" r="31" fill="url(#pg-sheen)"/>
+    <circle cx="50" cy="50" r="23" fill="none" stroke="${inkOn(hex)}" stroke-width="1.6"/>
+    ${[[43, 43], [57, 43], [43, 57], [57, 57]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3.4" fill="#1c2230" fill-opacity=".55"/>`).join('')}`,
+  thread: (hex) => `<g filter="url(#pg-soft)"><path d="M36 12H64L71 84H29Z" fill="${hex}"/></g><path d="M36 12H64L71 84H29Z" fill="url(#pg-shade)"/>
+    ${Array.from({ length: 17 }, (_, i) => { const y = 16 + i * 4, d = ((y - 12) / 72) * 7; return `<path d="M${36 - d + 0.8} ${y}H${64 + d - 0.8}" stroke="${inkOn(hex)}" stroke-width=".5"/>` }).join('')}
+    <path d="M26 84H74V90C74 92 72 93 70 93H30C28 93 26 92 26 90Z" fill="#b8a27a"/><ellipse cx="50" cy="12" rx="14" ry="2.6" fill="#b8a27a"/>`,
+  label: () => `<g filter="url(#pg-soft)"><path d="M12 34H88V66H12Z" fill="#f7f4ec"/></g><path d="M12 34H20V66H12ZM80 34H88V66H80Z" fill="#000" fill-opacity=".06"/>
+    <text x="50" y="49" text-anchor="middle" font-size="9" font-weight="700" fill="#2d4e8c" font-family="Georgia,serif" letter-spacing="1.5">ZHIJIAN</text>
+    <path d="M32 56H68" stroke="#2d4e8c" stroke-opacity=".5" stroke-width="1.2"/><path d="M12 34H88V66H12Z" fill="none" stroke="#c9c3b3" stroke-width=".6"/>`,
+  tag: () => `<path d="M50 20C40 6 58 2 60 -2" fill="none" stroke="#7b6a4a" stroke-width="1"/>
+    <g filter="url(#pg-soft)"><path d="M36 12H64L72 22V92H28V22Z" fill="#d8c8aa"/></g><path d="M36 12H64L72 22V92H28V22Z" fill="url(#pg-shade)"/>
+    <circle cx="50" cy="21" r="3" fill="#fbfbf8" stroke="#a8936a"/><text x="50" y="44" text-anchor="middle" font-size="8" font-weight="700" fill="#1c2230" font-family="Georgia,serif" letter-spacing="1">ZHIJIAN</text>
+    <path d="M37 54H63M37 61H58M37 68H61" stroke="#1c2230" stroke-opacity=".35" stroke-width="1.4"/><path d="M37 78H63" stroke="#1c2230" stroke-opacity=".7" stroke-width="3" stroke-dasharray="1 1.2"/>`,
+  bag: () => `<g filter="url(#pg-soft)"><path d="M18 12H82V92H18Z" fill="#dfe8f0" fill-opacity=".85"/></g><path d="M18 22H82" stroke="#9fb3c8" stroke-width="1.6"/>
+    <path d="M28 30L44 84M40 30L50 62" stroke="#fff" stroke-opacity=".8" stroke-width="2.4" stroke-linecap="round"/><path d="M18 12H82V92H18Z" fill="none" stroke="#9fb3c8" stroke-width=".8"/>`,
+}
+const MAT_KIND = { MZ: 'knit', FL: 'zipper', FK: 'button', FX: 'thread', BX: 'label', BP: 'tag', BD: 'bag' }
+const matKind = (m) => (m.type === '里料' ? 'lining' : MAT_KIND[m.cat] || 'woven')
+
+// code 可以是款号、样衣号、物料编码、SKU；color 指定颜色时按它上色
+function picOf(code, color) {
+  const st = style(code) || (db.samples || []).find((x) => x.no === code)
+  if (st) return garmentSvg(catOf(st.cat).shape, colorOf(color || st.colors?.[0]).hex)
+  const m = mat(code) || matOfSku(code)
+  if (m) {
+    const c = color || skuOf(code)?.color || m.skus.find((k) => k.color)?.color
+    return MAT_DRAW[matKind(m)](c ? colorOf(c).hex : '#efe8da')
+  }
+  return garmentSvg('tee', '#d9dcd3')
+}
+const PIC_CACHE = new Map()
+const picSvg = (code, color) => { const k = code + '|' + (color || ''); if (!PIC_CACHE.has(k)) PIC_CACHE.set(k, picOf(code, color)); return PIC_CACHE.get(k) }
+
+comp('Thumb', {
+  props: { code: String, s: { type: Number, default: 32 }, color: String },
+  setup: (p) => ({ svg: computed(() => picSvg(p.code, p.color)) }),
+  template: `<span class="thumb" :style="{ width: s + 'px', height: s + 'px' }"><svg viewBox="0 0 100 100" width="100%" height="100%" v-html="svg"></svg></span>`,
+})
+
+/* 大图 + 各颜色的小图，点小图换颜色（款式、样衣、物料详情右侧） */
+comp('Gallery', {
+  props: { code: String, colors: Array, s: { type: Number, default: 258 } },
+  setup: (p) => ({ c: ref(p.colors?.[0]) }),
+  template: `<div class="gallery" data-c="图片"><Thumb :code="code" :color="c" :s="s"/>
+    <div v-if="colors && colors.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap"><button v-for="x in colors" :key="x" class="gthumb" :class="{ on: x === c }" :title="colorName(x)" @click="c = x"><Thumb :code="code" :color="x" :s="42"/></button></div></div>`,
 })
 </script>
 <script>/* 4-feedback.js */
@@ -1941,32 +2250,106 @@ TODOS.push(() => {
   ]
 })
 
+// 首页：按角色看的仪表盘。数字卡片点进去就是筛好的列表；图表的前几周是演示用的历史数
+const HIST_ORDER = [1180, 860, 1420, 990, 1630, 1210, 1880, 1350, 1560, 2120, 1740]
+const HIST_RET = [640, 920, 780, 1150, 1020, 1310, 990, 1460, 1280, 1390, 1610]
+const CAT_COLORS = ['#2d4e8c', '#d9a23a', '#2e7350', '#b4392b', '#6c83ae', '#8a909c', '#b49a6a', '#5b6475', '#96b9a8', '#c9b37e']
+function weekly(rows, dateOf, qtyOf, hist) {
+  const end = toD(clock.today), weeks = hist.length + 1
+  const out = hist.map((v) => v), lbl = []
+  for (let i = 0; i < weeks; i++) { const d = new Date(end); d.setDate(d.getDate() - (weeks - 1 - i) * 7); lbl.push(`${d.getMonth() + 1}/${d.getDate()}`) }
+  out.push(0)
+  rows.forEach((r) => { const k = weeks - 1 - Math.floor(diffDays(clock.today, dateOf(r)) / 7); if (k >= 0 && k < weeks) out[k] += qtyOf(r) })
+  return { lbl, out }
+}
 route('/', {
   setup() {
-    const todos = computed(() => TODOS.flatMap((f) => f()).filter((x) => x.n > 0))
-    const week = computed(() => db.productions.filter(prodLive).filter((p) => daysLeft(expectDue(p)) <= 7).sort((a, b) => expectDue(a).localeCompare(expectDue(b))))
+    const hour = new Date().getHours()
+    const hi = hour < 11 ? '上午好' : hour < 14 ? '中午好' : hour < 19 ? '下午好' : '晚上好'
     const d = toD(clock.today)
-    const today = `${d.getMonth() + 1} 月 ${d.getDate()} 日 星期${'日一二三四五六'[d.getDay()]}`
-    return { todos, week, today }
+    const today = `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 星期${'日一二三四五六'[d.getDay()]}`
+    const live = computed(() => db.productions.filter(prodLive))
+    const risk = computed(() => live.value.map((p) => ({ p, r: prodRisk(p) })))
+    const kpi = computed(() => {
+      const lo = db.orders.filter(orderLive), smp = db.samples || []
+      const arr = arrivals()
+      return {
+        dev: { n: db.styles.filter((s) => s.status !== '停用').length, sub: [['打样中', smp.filter((x) => x.status === '开发中').length, '/samples'], ['资料包草稿', db.techpacks.filter((t) => t.status === '草稿').length, '/styles?tp=草稿'], ['样衣', smp.length, '/samples']] },
+        ord: { n: sum(lo, orderQty), c: lo.length, sub: [['待审核', db.orders.filter((o) => o.status === '待审核').length, '/orders?s=待审核'], ['待排单', lo.filter((o) => orderSched(o) === 0).length, '/orders?f=待排单'], ['变更待审', db.changes.filter((c) => c.status === '待审核').length, '/changes']] },
+        prd: { n: sum(live.value, prodQty), c: live.value.length, sub: [['已逾期', risk.value.filter((x) => x.r.late).length, '/production?f=late'], ['节点延期', risk.value.filter((x) => x.r.node).length, '/production?f=node'], ['未关异常', risk.value.filter((x) => x.r.issue).length, '/production?f=issue']] },
+        mat: { n: arr.length, sub: [['到料逾期', arr.filter((a) => a.risk === 'late').length, '/arrivals?f=late'], ['采购待审', db.purchases.filter((p) => p.status === '待审核').length, '/purchases?s=待审核'], ['算料待确认', db.mrps.filter((m) => m.status === '草稿').length, '/mrp']] },
+      }
+    })
+    const trend = computed(() => {
+      const a = weekly(db.orders.filter((o) => o.status !== '已取消'), (o) => o.date, orderQty, HIST_ORDER)
+      const b = weekly(db.returns, (r) => r.date, (r) => sum(r.lines, (l) => l.qty), HIST_RET)
+      return { labels: a.lbl, series: [{ t: '下单件数', c: '#2d4e8c', v: a.out }, { t: '回货件数', c: '#d9a23a', v: b.out }] }
+    })
+    const cats = computed(() => {
+      const acc = {}
+      live.value.forEach((p) => { const c = catOf(style(p.style)?.cat).name; acc[c] = (acc[c] || 0) + prodQty(p) - prodRet(p) })
+      return Object.entries(acc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([t, v], i) => ({ t, v, c: CAT_COLORS[i % CAT_COLORS.length] }))
+    })
+    // 待办：具体到单据
+    const todo = computed(() => {
+      const g = []
+      const audit = [
+        ...db.orders.filter((o) => o.status === '待审核').map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}`, to: '/orders/' + o.no, img: orderStyles(o)[0] })),
+        ...db.purchases.filter((p) => p.status === '待审核').map((p) => ({ t: '采购单 ' + p.no, sub: `${supName(p.supplier)} · ¥${fm(poAmt(p)).replace('¥', '')}`, to: '/purchases/' + p.no, img: p.lines[0]?.sku })),
+        ...db.productions.filter((p) => p.status === '待审核').map((p) => ({ t: '加工单 ' + p.no, sub: `${supName(p.factory)} · ${fq(prodQty(p))} 件`, to: '/production/' + p.no, img: p.style })),
+        ...db.changes.filter((c) => c.status === '待审核').map((c) => ({ t: '变更单 ' + c.no, sub: `订单 ${c.order}`, to: '/orders/' + c.order + '?tab=changes', img: order(c.order) && orderStyles(order(c.order))[0] })),
+      ]
+      if (audit.length) g.push({ tag: '待审核', tone: 'pending', items: audit })
+      const late = risk.value.filter((x) => x.r.late || x.r.node).map(({ p, r }) => ({ t: `${p.no} ${styleName(p.style)}`, sub: `${supName(p.factory)} · ${r.late ? '交期 ' + fd(expectDue(p)) + ' 已过' : '节点「' + (curNode(p)?.name || '') + '」延期'}`, to: '/production/' + p.no, img: p.style }))
+      if (late.length) g.push({ tag: '生产延期', tone: 'bad', items: late })
+      const arr = arrivals().filter((a) => a.risk === 'late').map((a) => ({ t: `${skuName(a.l.sku)} 还差 ${fq(rnd(a.l.qty - a.l.received, 3))} ${unitOf(a.l.sku)}`, sub: `${a.p.no} · ${supName(a.p.supplier)} · 应到 ${fd(a.date)}`, to: '/purchases/' + a.p.no, img: a.l.sku }))
+      if (arr.length) g.push({ tag: '到料逾期', tone: 'bad', items: arr })
+      const sch = db.orders.filter((o) => orderLive(o) && orderSched(o) === 0).map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}`, to: '/orders/' + o.no, img: orderStyles(o)[0] }))
+      if (sch.length) g.push({ tag: '待排单', tone: 'pending', items: sch })
+      const iss = live.value.flatMap((p) => (p.issues || []).filter((x) => x.status === '待处理').map((x) => ({ t: `${x.type}：${x.desc}`, sub: `${p.no} · ${userName(x.by)} 上报于 ${fd(x.at)}`, to: '/production/' + p.no, img: p.style })))
+      if (iss.length) g.push({ tag: '异常待处理', tone: 'ring', items: iss })
+      return g
+    })
+    const others = computed(() => TODOS.flatMap((f) => f()).filter((x) => x.n > 0))
+    const doing = computed(() => live.value.slice().sort((a, b) => expectDue(a).localeCompare(expectDue(b))).slice(0, 6))
+    const quick = [['新建订单', 'file', '/orders?new=1'], ['新建款式', 'shirt', '/styles'], ['算料', 'sigma', '/mrp'], ['到料跟踪', 'truck', '/arrivals'], ['生产看板', 'grid', '/board'], ['库存', 'package', '/stock'], ['手机报工', 'phone', '/mobile'], ['意见汇总', 'list', '/feedback']]
+    return { hi, today, kpi, trend, cats, todo, others, doing, quick }
   },
-  template: `<div>
-    <Head t="首页"/>
-    <div class="page narrow">
-      <div class="h1">{{ today }}</div>
-      <div class="h2">待办</div>
-      <div class="list" data-c="待办">
-        <a v-for="x in todos" :key="x.t" :href="'#' + x.to"><Ico :n="x.i" :s="15" class="dim"/>{{ x.t }}<span class="n" :class="x.tone">{{ x.n }}</span><Ico n="right" :s="14" class="dim"/></a>
-        <div v-if="!todos.length" class="li dim">没有待办</div>
-      </div>
-      <div class="h2">7 天内交货的加工单</div>
-      <div data-c="本周交期">
-        <Tbl inset flat :rows="week" link @row="p => go('/production/' + p.no)" empty="7 天内没有要交的加工单" :cols="[
-          { k: 'style', t: '款式' }, { k: 'factory', t: '加工厂', f: p => supName(p.factory) }, { k: 'qty', t: '数量', c: 'num', f: p => prodQty(p) },
-          { k: 'ret', t: '回货' }, { k: 'due', t: '交期', f: p => fd(expectDue(p)) }, { k: 'left', t: '' }]">
-          <template #style="{ r }"><span class="row"><Thumb :code="r.style" :s="26"/><span class="code">{{ r.style }}</span><span class="mut">{{ styleName(r.style) }}</span></span></template>
-          <template #ret="{ r }"><Prog :a="prodRet(r)" :b="prodQty(r)"/></template>
-          <template #left="{ r }"><Days :d="expectDue(r)" :warn="7"/></template>
-        </Tbl>
+  template: `<div class="dash">
+    <div class="dash-hi"><div><h1>{{ hi }}，{{ me().name }}</h1><p>{{ today }} · {{ me().role }} · {{ db.companies[0].name }}</p></div>
+      <div class="acts"><a class="btn" href="#/styles"><Ico n="shirt" :s="14"/>款式库</a><a class="btn pri" href="#/orders?new=1"><Ico n="plus" :s="14"/>新建订单</a></div></div>
+    <div class="dgrid">
+      <section class="panel" style="grid-column:span 3" data-c="首页：开发概况"><h3><span class="ico"><Ico n="scissors" :s="15"/></span>开发</h3>
+        <div class="pb kpi"><a class="big" href="#/styles"><b>{{ kpi.dev.n }}</b><small>款在售在开发</small></a><a v-for="x in kpi.dev.sub" :key="x[0]" :href="'#' + x[2]"><b>{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+      <section class="panel" style="grid-column:span 3" data-c="首页：订单概况"><h3><span class="ico"><Ico n="file" :s="15"/></span>订单</h3>
+        <div class="pb kpi"><a class="big" href="#/orders"><b>{{ fq(kpi.ord.n) }}</b><small>件在手 · {{ kpi.ord.c }} 张单</small></a><a v-for="x in kpi.ord.sub" :key="x[0]" :href="'#' + x[2]"><b :class="{ amber: x[1] }">{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+      <section class="panel" style="grid-column:span 3" data-c="首页：生产概况"><h3><span class="ico"><Ico n="factory" :s="15"/></span>生产</h3>
+        <div class="pb kpi"><a class="big" href="#/board"><b>{{ fq(kpi.prd.n) }}</b><small>件在制 · {{ kpi.prd.c }} 张加工单</small></a><a v-for="x in kpi.prd.sub" :key="x[0]" :href="'#' + x[2]"><b :class="{ red: x[1] }">{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+      <section class="panel" style="grid-column:span 3" data-c="首页：物料概况"><h3><span class="ico"><Ico n="truck" :s="15"/></span>物料</h3>
+        <div class="pb kpi"><a class="big" href="#/arrivals"><b>{{ kpi.mat.n }}</b><small>行物料在途</small></a><a v-for="x in kpi.mat.sub" :key="x[0]" :href="'#' + x[2]"><b :class="{ red: x[0] === '到料逾期' && x[1], amber: x[0] !== '到料逾期' && x[1] }">{{ x[1] }}</b><span>{{ x[0] }}</span></a></div></section>
+
+      <section class="panel" style="grid-column:span 8" data-c="首页：下单与回货趋势"><h3>下单与回货<span class="acts dim" style="font-size:12px">近 12 周 · 件</span></h3>
+        <div class="pb"><AreaChart :series="trend.series" :labels="trend.labels" :h="230"/></div></section>
+      <section class="panel" style="grid-column:span 4" data-c="首页：在制品类"><h3>在制品类<span class="acts dim" style="font-size:12px">未回货件数</span></h3>
+        <div class="pb" style="display:grid;place-items:center"><Donut :items="cats" unit=" 件" :s="140"/><div v-if="!cats.length" class="empty">没有在做的加工单</div></div></section>
+
+      <section class="panel" style="grid-column:span 7" data-c="待办"><h3>待办<span class="acts"><span class="pill">{{ todo.reduce((a, g) => a + g.items.length, 0) }} 件</span></span></h3>
+        <div class="pb">
+          <div v-for="g in todo" :key="g.tag" class="todo-g"><header><St :s="g.tone === 'pending' ? '待处理' : g.tone === 'bad' ? '不合格' : '已审核'" :t="g.tag"/>{{ g.items.length }}</header>
+            <a v-for="x in g.items.slice(0, 4)" :key="x.to + x.t" class="todo-i" :href="'#' + x.to"><Thumb v-if="x.img" :code="x.img" :s="34"/><div class="col"><span class="ell">{{ x.t }}</span><small class="ell">{{ x.sub }}</small></div><Ico n="right" :s="14" class="dim"/></a></div>
+          <div v-if="!todo.length" class="empty">手上没有要处理的单据</div>
+          <div v-if="others.length" class="chips" style="margin-top:12px"><a v-for="x in others" :key="x.t" class="chip" :href="'#' + x.to">{{ x.t }}<b :class="x.tone">{{ x.n }}</b></a></div>
+        </div></section>
+      <div style="grid-column:span 5;display:flex;flex-direction:column;gap:12px">
+        <section class="panel" data-c="本周交期"><h3>在做的加工单<span class="acts"><a class="btn sm ghost" href="#/board">看板<Ico n="right" :s="12"/></a></span></h3>
+          <div class="pb" style="padding-top:4px;padding-bottom:4px">
+            <a v-for="p in doing" :key="p.no" class="row" style="padding:9px 0;border-bottom:1px solid var(--line)" :href="'#/production/' + p.no">
+              <Thumb :code="p.style" :s="38"/><div class="col" style="flex:1;min-width:0"><span class="ell"><span class="code">{{ p.no }}</span></span><small class="dim ell">{{ styleName(p.style) }} · {{ supName(p.factory) }}</small></div>
+              <Prog :a="prodRet(p)" :b="prodQty(p)"/><span style="width:72px;text-align:right"><Days :d="expectDue(p)" :warn="7"/></span></a>
+            <div v-if="!doing.length" class="empty">没有在做的加工单</div>
+          </div></section>
+        <section class="panel" data-c="快捷入口"><h3>快捷入口</h3>
+          <div class="pb quick"><a v-for="q in quick" :key="q[0]" :href="'#' + q[2]"><i><Ico :n="q[1]" :s="18"/></i>{{ q[0] }}</a></div></section>
       </div>
     </div>
   </div>`,
@@ -1994,9 +2377,9 @@ route('/styles', {
     </div>
     <div v-if="s.view === 'grid'" class="cards" data-c="款式图卡">
       <div v-for="x in rows" :key="x.code" class="card" @click="go('/styles/' + x.code)">
-        <div class="pic"><Thumb :code="x.code" :s="120"/></div>
+        <div class="pic"><Thumb :code="x.code" :s="176"/><St :s="x.status"/></div>
         <div class="meta">
-          <div class="row"><span class="code">{{ x.code }}</span><span style="flex:1"></span><St :s="x.status" t=""/></div>
+          <div class="row"><span class="code">{{ x.code }}</span><span style="flex:1"></span><span class="dim" style="font-size:12px">{{ fm(x.tagPrice) }}</span></div>
           <div>{{ x.name }}</div>
           <div class="row g4"><Sw v-for="c in x.colors" :key="c" :c="c" :n="false"/><span class="dim" style="margin-left:4px;font-size:12px">{{ x.year }} {{ db.seasons.find(z => z.code === x.season).name }}</span></div>
         </div>
@@ -2070,7 +2453,7 @@ route('/styles/:code', {
     </Head>
     <div class="detail">
       <div class="body">
-        <div class="title"><Thumb :code="s.code" :s="44"/>{{ s.name }}<St :s="s.status"/></div>
+        <div class="title">{{ s.name }}<St :s="s.status"/></div>
         <div class="sub"><span>{{ catOf(s.cat).path }} / {{ catOf(s.cat).name }}</span><span>{{ season(s) }} · {{ s.wave }}</span><span class="row g4"><Sw v-for="c in s.colors" :key="c" :c="c" :n="false"/></span></div>
         <div v-if="unmatched.length" class="banner" data-c="未配料提示"><Ico n="alert"/>新颜色 {{ unmatched.map(colorName).join('、') }} 还没配料，订单不能下这个颜色<button class="btn sm" @click="tab = 'tp'">去资料包</button></div>
         <Tabs v-model="tab" :items="[['tp', '资料包'], ['sku', '颜色尺码', s.skus.length], ['orders', '订单', orders.length]]"/>
@@ -2091,6 +2474,7 @@ route('/styles/:code', {
         </section>
       </div>
       <aside class="aside" data-c="款式属性">
+        <Gallery :code="s.code" :colors="s.colors"/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>风格</dt><dd>{{ s.tag }}</dd>
@@ -2149,7 +2533,7 @@ comp('TechPack', {
             <template v-for="(r, i) in tp.bom" :key="i">
               <tr class="link" @click="open = open === i ? null : i">
                 <td class="dim">{{ i + 1 }}</td><td>{{ r.part }}</td>
-                <td><div>{{ mat(r.mat).name }}</div></td>
+                <td><div class="row"><Thumb :code="r.sku || Object.values(r.map || {})[0] || r.mat" :s="30"/>{{ mat(r.mat).name }}</div></td>
                 <td><span v-if="r.mode === '固定'">{{ skuOf(r.sku)?.color ? colorName(skuOf(r.sku).color) : '—' }}{{ skuOf(r.sku)?.spec ? ' ' + skuOf(r.sku).spec : '' }}</span>
                   <span v-else class="row g4"><span class="dim">随款色</span><template v-for="c in s.colors" :key="c"><Sw v-if="r.map[c]" :c="skuOf(r.map[c])?.color" :n="false"/><span v-else class="flag red">缺</span></template></span></td>
                 <td class="num">{{ useText(r) }} <span class="dim">{{ mat(r.mat).unit }}</span></td>
@@ -2186,7 +2570,7 @@ comp('TechPack', {
       <div v-if="view === 'color'" data-c="按颜色展开">
         <Seg v-model="byColor" :items="s.colors.map(c => [c, colorName(c)])" style="margin-bottom:12px"/>
         <table class="tbl inset flat"><thead><tr><th>部位</th><th>物料</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th>来源</th></tr></thead>
-          <tbody><tr v-for="(r, i) in tp.bom" :key="i"><td>{{ r.part }}</td><td>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</td>
+          <tbody><tr v-for="(r, i) in tp.bom" :key="i"><td>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
             <td v-for="z in sizes" :key="z" class="num">{{ fq(rowUse(r, z)) }}</td><td class="mut">{{ r.src }}</td></tr></tbody></table>
       </div>
 
@@ -2436,7 +2820,7 @@ comp('OrderAudit', {
       <div v-for="x in info.packs" :key="x.style" class="row" style="height:30px"><Thumb :code="x.style" :s="22"/><span class="code">{{ x.style }}</span>
         <St v-if="x.tp" s="已生效" :t="'V' + x.tp.ver + ' 审核后锁定'"/><span v-else class="flag red">资料包没生效，不能审</span></div></div>
     <div class="sec" data-c="评审：齐料参考"><h3>缺口最大的料</h3>
-      <Tbl inset flat :rows="info.short" empty="现有库存够用" :cols="[{ k: 'sku', t: '物料', f: x => skuName(x.sku) }, { k: 'need', t: '需求', c: 'num', f: x => fq(x.need) + ' ' + unitOf(x.sku) }, { k: 'avail', t: '可用', c: 'num', f: x => fq(x.avail) }, { k: 'gap', t: '缺口', c: 'num', f: x => fq(x.gap) }, { k: 'lead', t: '采购周期', c: 'num', f: x => matOfSku(x.sku).lead + ' 天' }]">
+      <Tbl inset flat :rows="info.short" empty="现有库存够用" :cols="[{ k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'need', t: '需求', c: 'num', f: x => fq(x.need) + ' ' + unitOf(x.sku) }, { k: 'avail', t: '可用', c: 'num', f: x => fq(x.avail) }, { k: 'gap', t: '缺口', c: 'num', f: x => fq(x.gap) }, { k: 'lead', t: '采购周期', c: 'num', f: x => matOfSku(x.sku).lead + ' 天' }]">
         <template #gap="{ r }"><span class="red">{{ fq(r.gap) }}</span></template></Tbl></div>
     <div class="sec" data-c="评审：工厂负荷"><h3>默认加工厂在手</h3>
       <div v-for="x in info.loads" :key="x.factory" class="row" style="height:28px"><span>{{ supName(x.factory) }}</span><span style="flex:1"></span><span class="mut">在制 {{ x.qty.toLocaleString() }} 件</span></div></div>
@@ -2635,7 +3019,7 @@ route('/mrp/:no', {
           <tbody>
             <tr v-for="i in buy" :key="i" :class="{ sel: picked.includes(i) }">
               <td><input type="checkbox" :checked="picked.includes(i)" :disabled="!open || m.rows[i].purQty <= m.rows[i].converted" @change="toggle(i)" style="accent-color:var(--accent)"></td>
-              <td>{{ skuName(m.rows[i].sku) }}</td>
+              <td><span class="row"><Thumb :code="m.rows[i].sku" :s="32"/>{{ skuName(m.rows[i].sku) }}</span></td>
               <td><select v-if="edit" class="sel" style="height:26px" v-model="m.rows[i].supplier"><option v-for="s in suppliersFor()" :key="s.code" :value="s.code">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select><template v-else>{{ supName(m.rows[i].supplier) }}</template></td>
               <td class="num">{{ fq(m.rows[i].need) }} <span class="dim">{{ unitOf(m.rows[i].sku) }}</span></td>
               <td class="num">{{ fq(m.rows[i].avail) }}</td>
@@ -2650,10 +3034,10 @@ route('/mrp/:no', {
           </tbody>
         </table></div>
       <div class="sec" data-c="待客户提供" v-if="idx('客供').length"><h3>待客户提供</h3>
-        <Tbl inset flat :rows="idx('客供').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku) }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }]">
+        <Tbl inset flat :rows="idx('客供').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }]">
           <template #gap="{ r }"><span :class="{ red: r.net > 0 }">{{ r.net > 0 ? fq(r.net) : '够了' }}</span></template></Tbl></div>
       <div class="sec" data-c="工厂自备" v-if="idx('工厂自备').length"><h3>工厂自备</h3>
-        <Tbl inset flat :rows="idx('工厂自备').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
+        <Tbl inset flat :rows="idx('工厂自备').map(i => m.rows[i])" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
       <div class="sec"><h3>操作记录</h3><Log :items="m.log"/></div>
     </div>
   </div><NotFound v-else/>`,
@@ -2673,7 +3057,7 @@ route('/purchases', {
     <div data-c="采购单列表">
       <Tbl :rows="rows" link @row="p => go('/purchases/' + p.no)" empty="没有符合条件的采购单" :cols="[
         { k: 'no', t: '采购单号', c: 'code' }, { k: 'sup', t: '供应商' }, { k: 'type', t: '类型' },
-        { k: 'mat', t: '物料', f: p => skuName(p.lines[0].sku) + (p.lines.length > 1 ? ' 等 ' + p.lines.length + ' 种' : '') },
+        { k: 'mat', t: '物料', f: p => skuName(p.lines[0].sku) + (p.lines.length > 1 ? ' 等 ' + p.lines.length + ' 种' : ''), img: p => p.lines[0].sku },
         { k: 'amt', t: '金额', c: 'num', f: p => fm(poAmt(p)) }, { k: 'due', t: '交期', f: p => fd(p.due) }, { k: 'recv', t: '到货' },
         { k: 'buyer', t: '采购员', f: p => userName(p.buyer) }, { k: 'status', t: '状态' }]">
         <template #sup="{ r }">{{ supName(r.supplier) }}<span v-if="sup(r.supplier).status !== '合作中'" class="flag red" style="margin-left:6px">{{ sup(r.supplier).status }}</span></template>
@@ -2757,7 +3141,7 @@ route('/purchases/:no', {
         <div class="sub"><span>{{ po.type }}</span><span>{{ fm(poAmt(po)) }}</span><span>交期 {{ fd(po.due) }}</span><span>送到 {{ whName(po.wh) }}</span></div>
         <section data-c="采购明细">
           <Tbl inset flat :rows="po.lines" :cols="[
-            { k: 'sku', t: '物料', f: l => skuName(l.sku) }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
+            { k: 'sku', t: '物料', f: l => skuName(l.sku), img: l => l.sku }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
             { k: 'qty', t: '数量', c: 'num', f: l => fq(l.qty) + ' ' + purUnit(l.sku) }, { k: 'price', t: '单价', c: 'num', f: l => fm(l.price) },
             { k: 'amt', t: '金额', c: 'num', f: l => fm(l.qty * l.price) }, { k: 'recv', t: '已入库', c: 'num', f: l => fq(l.received) },
             { k: 'left', t: '未入库', c: 'num', f: l => fq(Math.max(0, l.qty - l.received)) }, { k: 'exp', t: '预计到货' }, { k: 'src', t: '来源', c: 'code', f: srcText }]">
@@ -2806,7 +3190,7 @@ comp('PurchaseReceive', {
       <label v-else class="f full">退货原因<input class="inp" v-model="f.reason"></label>
     </div>
     <table class="tbl inset flat" data-c="入库数量"><thead><tr><th>物料</th><th class="num">{{ recv ? '未入库' : '已入库' }}</th><th class="num" style="width:120px">本次</th><th v-if="recv" style="width:120px">缸号</th></tr></thead>
-      <tbody><tr v-for="x in lines" :key="x.i"><td>{{ skuName(po.lines[x.i].sku) }}</td>
+      <tbody><tr v-for="x in lines" :key="x.i"><td><span class="row"><Thumb :code="po.lines[x.i].sku" :s="30"/>{{ skuName(po.lines[x.i].sku) }}</span></td>
         <td class="num">{{ fq(recv ? Math.max(0, po.lines[x.i].qty - po.lines[x.i].received) : po.lines[x.i].received - po.lines[x.i].returned) }} <span class="dim">{{ purUnit(po.lines[x.i].sku) }}</span></td>
         <td><input class="inp cell num" type="number" v-model.number="x.qty"></td><td v-if="recv"><input class="inp cell" v-model="x.lot"></td></tr></tbody></table>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ recv ? '入库并过账' : '退货并过账' }}</button></template>
@@ -2827,7 +3211,7 @@ route('/arrivals', {
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
     <div data-c="到料列表">
       <Tbl :rows="rows" empty="没有该到没到的料" :cols="[
-        { k: 'po', t: '采购单', c: 'code' }, { k: 'sup', t: '供应商', f: x => supName(x.p.supplier) }, { k: 'sku', t: '物料', f: x => skuName(x.l.sku) },
+        { k: 'po', t: '采购单', c: 'code' }, { k: 'sup', t: '供应商', f: x => supName(x.p.supplier) }, { k: 'sku', t: '物料', f: x => skuName(x.l.sku), img: x => x.l.sku },
         { k: 'src', t: '订单 / 款', c: 'code', f: x => srcText(x.l) }, { k: 'qty', t: '采购', c: 'num', f: x => fq(x.l.qty) },
         { k: 'recv', t: '已到', c: 'num', f: x => fq(x.l.received) }, { k: 'left', t: '未到', c: 'num', f: x => fq(rnd(x.l.qty - x.l.received, 3)) + ' ' + purUnit(x.l.sku) },
         { k: 'due', t: '交期', f: x => fd(x.l.due || x.p.due) }, { k: 'exp', t: '预计到货' }, { k: 'days', t: '' }, { k: 'note', t: '跟进', w: '220px' }]">
@@ -2858,7 +3242,7 @@ route('/stock-docs', {
     <div data-c="出入库列表">
       <Tbl :rows="rows" link @row="d => go('/stock-docs/' + d.no)" empty="没有符合条件的单据" :cols="[
         { k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'flow', t: '出仓 → 入仓' }, { k: 'partner', t: '往来', f: partnerName },
-        { k: 'src', t: '源单', c: 'code', f: d => d.src || '—' }, { k: 'mat', t: '物料', f: d => skuName(d.lines[0].sku) + (d.lines.length > 1 ? ' 等 ' + d.lines.length + ' 种' : '') },
+        { k: 'src', t: '源单', c: 'code', f: d => d.src || '—' }, { k: 'mat', t: '物料', f: d => skuName(d.lines[0].sku) + (d.lines.length > 1 ? ' 等 ' + d.lines.length + ' 种' : ''), img: d => d.lines[0].sku },
         { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'status', t: '状态' }]">
         <template #flow="{ r }"><span class="mut">{{ r.from ? whName(r.from) : '' }}<template v-if="r.from && r.to"> → </template>{{ r.to ? whName(r.to) : '' }}</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
@@ -2914,7 +3298,7 @@ route('/stock-docs/:no', {
         <div class="title">{{ d.type }}<St :s="d.status"/></div>
         <div class="sub"><span v-if="d.from || d.to">{{ d.from ? whName(d.from) : partnerName(d) }} → {{ d.to ? whName(d.to) : partnerName(d) }}</span><span>{{ fd(d.date) }}</span></div>
         <section data-c="出入库明细">
-          <Tbl inset flat :rows="d.lines" :cols="[{ k: 'sku', t: '物料', f: l => skuName(l.sku) }, { k: 'code', t: 'SKU', c: 'code', f: l => l.sku }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
+          <Tbl inset flat :rows="d.lines" :cols="[{ k: 'sku', t: '物料', f: l => skuName(l.sku), img: l => l.sku }, { k: 'code', t: 'SKU', c: 'code', f: l => l.sku }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
             { k: 'qty', t: '数量', c: 'num', f: l => fq(l.qty) + ' ' + unitOf(l.sku) }, { k: 'pq', t: '采购单位', c: 'num', f: l => l.purQty != null && matOfSku(l.sku).factor !== 1 ? fq(l.purQty) + ' ' + matOfSku(l.sku).purUnit : '' },
             { k: 'lot', t: '缸号', f: l => l.lot || '—' }, { k: 'have', t: '出仓库存', c: 'num', f: l => d.from && d.status === '草稿' ? fq(stockQty(d.from, l.sku, l.owner)) : '' }]"/>
         </section>
@@ -2963,14 +3347,14 @@ route('/stock', {
     </div>
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存" :cols="[
-        { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku) },
+        { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku },
         { k: 'owner', t: '物权' }, { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '安全库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
         <template #owner="{ r }"><span :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</span></template>
         <template #qty="{ r }"><span :class="{ red: safety(r.sku) && r.qty < safety(r.sku) }">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
       </Tbl>
     </div>
     <div v-if="s.view === '按物料'" data-c="库存汇总">
-      <Tbl :rows="summary" empty="没有库存" :cols="[{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku) }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
+      <Tbl :rows="summary" empty="没有库存" :cols="[{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
         { k: 'mat', t: '物料仓', c: 'num', f: r => fq(r.mat) }, { k: 'fac', t: '工厂仓', c: 'num', f: r => fq(r.fac) }, { k: 'all', t: '合计', c: 'num', f: r => fq(r.mat + r.fac) + ' ' + unitOf(r.sku) }]"/>
     </div>
     <div v-if="s.view === '日志'" data-c="库存日志"><StockLogTable :rows="logs"/></div>
@@ -3064,7 +3448,7 @@ route('/production/:no', {
       <div class="body">
         <Upstream :d="x"/>
         <div v-for="i in openIssues" :key="i.id" class="banner red" data-c="异常提示"><Ico n="alert"/>{{ i.type }}：{{ i.desc }}<span v-if="i.newDate" class="mut">（预计交期 {{ fd(i.newDate) }}）</span><button class="btn sm" @click="tab = 'issues'">去处理</button></div>
-        <div class="title"><Thumb :code="x.style" :s="40"/>{{ supName(x.factory) }}<St :s="x.status"/></div>
+        <div class="title">{{ supName(x.factory) }}<St :s="x.status"/></div>
         <div class="sub"><a class="code" :href="'#/styles/' + x.style">{{ x.style }}</a><span>{{ styleName(x.style) }}</span><span>{{ x.mode }}</span><span>{{ prodQty(x) }} 件</span><span>交期 {{ fd(expectDue(x)) }}</span><Days v-if="prodLive(x)" :d="expectDue(x)" :warn="7"/></div>
         <Tabs v-model="tab" :items="[['nodes', '进度'], ['lines', '明细'], ['mat', '领料', docs.length], ['issues', '异常', x.issues.length], ['rets', '回货', rets.length]]"/>
         <section v-if="tab === 'nodes'" data-c="进度节点">
@@ -3079,7 +3463,7 @@ route('/production/:no', {
         </section>
         <section v-if="tab === 'lines'" data-c="加工明细"><Matrix :st="x.style" :model-value="qtyMap" ro :colors="[...new Set(x.lines.map(l => l.color))]" :sub="sub"/></section>
         <section v-if="tab === 'mat'" data-c="领料">
-          <Tbl inset flat :rows="issuePlan(x)" empty="资料包里没有要发给工厂的料" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku) }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
+          <Tbl inset flat :rows="issuePlan(x)" empty="资料包里没有要发给工厂的料" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
             { k: 'need', t: '应领', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'issued', t: '已领', c: 'num', f: r => fq(r.issued) }, { k: 'suggest', t: '还差', c: 'num' }, { k: 'avail', t: '主料仓库存', c: 'num', f: r => fq(r.avail) }]">
             <template #suggest="{ r }"><span :class="{ amber: r.suggest > 0 }">{{ r.suggest > 0 ? fq(r.suggest) : '领齐' }}</span></template></Tbl>
           <div class="sec"><h3>领料单</h3><Tbl inset flat :rows="docs" link @row="d => go('/stock-docs/' + d.no)" empty="还没领过料" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'n', t: '物料', f: d => d.lines.length + ' 种' }, { k: 'status', t: '状态' }]"><template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
@@ -3096,6 +3480,7 @@ route('/production/:no', {
         </section>
       </div>
       <aside class="aside" data-c="加工单属性">
+        <Gallery :code="x.style" :colors="[...new Set(x.lines.map(l => l.color))]"/>
         <dl class="props">
           <dt>订单</dt><dd><a class="code" :href="'#/orders/' + x.order">{{ x.order }}</a></dd>
           <dt>资料包</dt><dd>V{{ x.ver }}</dd>
@@ -3170,7 +3555,7 @@ comp('ProdIssueMat', {
   template: `<Modal :t="'领料 ' + p.no" :w="720" @close="$emit('close')">
     <p class="mut" style="margin-bottom:10px">主料仓 → {{ whName(factoryWh(p.factory)?.code) }}</p>
     <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th>物权</th><th class="num">还差</th><th class="num">主料仓库存</th><th class="num" style="width:120px">本次领</th></tr></thead>
-      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td>{{ skuName(r.sku) }}</td><td :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
+      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/>{{ skuName(r.sku) }}</span></td><td :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: r.avail < r.qty }">{{ fq(r.avail) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
         <tr v-if="!rows.length"><td colspan="5" class="empty">资料包里没有要发给工厂的料</td></tr></tbody></table>
     <label v-if="over" class="f" style="margin-top:12px">超领原因<input class="inp" v-model="reason"></label>
@@ -3316,7 +3701,7 @@ expose({ reportNode, issueMaterials, closeIssue, factoryWh, daysLeft2: (a, b) =>
  *   回货 → 待检 → 成品入库 → 发货 → 客户应收；采购入库、回货 → 供应商对账 → 付款
  * 名字都带前缀（smp / plan / cost / qc / fg / fin），免得和别的文件的全局名撞上。
  * ============================================================ */
-db.users.push({ id: 'u8', name: '沈冬', role: '版师', scope: '本人' })
+db.users.push({ id: 'u8', name: '沈冬', role: '开发', scope: '本人' }) // 版师，归在开发角色下
 ST_KIND.done.push('已核销')
 ST_KIND.dashed.push('未核销')
 const seasonName = (c) => db.seasons.find((x) => x.code === c)?.name || c
@@ -3609,7 +3994,7 @@ route('/samples/:no', {
     </Head>
     <div class="detail">
       <div class="body">
-        <div class="title"><Thumb :code="s.no" :s="44"/>{{ s.name }}<St :s="smpState(s)"/></div>
+        <div class="title">{{ s.name }}<St :s="smpState(s)"/></div>
         <div class="sub"><span>{{ catOf(s.cat).path }} / {{ catOf(s.cat).name }}</span><span>{{ s.year }} {{ seasonName(s.season) }} · {{ s.wave }}</span><span class="row g4"><Sw v-for="c in s.colors" :key="c" :c="c" :n="false"/></span></div>
         <section v-for="x in vers" :key="x.no" class="sec" :data-c="'第 ' + x.ver + ' 版'">
           <h3>第 {{ x.ver }} 版 · {{ x.type }}<span class="code dim" style="font-weight:400">{{ x.no }}</span><St :s="x.status"/></h3>
@@ -3627,6 +4012,7 @@ route('/samples/:no', {
         </section>
       </div>
       <aside class="aside" data-c="样衣属性">
+        <Gallery :code="s.no" :colors="s.colors"/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>来源</dt><dd>{{ s.source }}<template v-if="s.customer"> · {{ custName(s.customer) }}</template></dd>
@@ -4744,7 +5130,7 @@ route('/suppliers/:code', {
 
         <section v-if="tab === 'price'" data-c="询价记录">
           <Tbl inset flat :rows="prices" link @row="x => go('/purchases/' + x.no)" empty="还没从这家买过东西" :cols="[
-            { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'sku', t: '物料', f: x => skuName(x.sku) }, { k: 'no', t: '采购单', c: 'code' },
+            { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'no', t: '采购单', c: 'code' },
             { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) + ' ' + x.unit }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }]"/>
         </section>
       </div>
@@ -4888,7 +5274,7 @@ route('/customers/:code', {
         </section>
         <section v-if="tab === 'stock'" data-c="客供料库存">
           <Tbl inset flat :rows="stock" empty="这个客户没有放在我们这里的料" :cols="[
-            { k: 'w', t: '仓库', f: x => whName(x.w) }, { k: 'sku', t: '物料', f: x => skuName(x.sku) }, { k: 'code', t: 'SKU', c: 'code', f: x => x.sku },
+            { k: 'w', t: '仓库', f: x => whName(x.w) }, { k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'code', t: 'SKU', c: 'code', f: x => x.sku },
             { k: 'q', t: '数量', c: 'num', f: x => fq(x.q) + ' ' + unitOf(x.sku) }]"/>
         </section>
       </div>
@@ -4930,7 +5316,7 @@ route('/materials', {
         <div class="bar" data-c="筛选"><Seg v-model="s.st" :items="['启用', '停用', '全部']"/><span class="sp"></span><Search v-model="s.q"/></div>
         <div data-c="物料列表">
           <Tbl :rows="rows" link @row="m => go('/materials/' + m.code)" empty="这个分类下没有物料" :cols="[
-            { k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称' }, { k: 'type', t: '类型' }, { k: 'unit', t: '单位' },
+            { k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称', img: m => m.code }, { k: 'type', t: '类型' }, { k: 'unit', t: '单位' },
             { k: 'spec', t: '门幅 · 克重', f: m => m.width ? m.width + 'cm · ' + m.weight + 'g' : '—' }, { k: 'supplier', t: '默认供应商', f: m => supName(m.supplier) },
             { k: 'price', t: '参考单价', c: 'num', f: m => fm(m.price) + '/' + m.purUnit }, { k: 'skus', t: 'SKU', c: 'num', f: m => m.skus.length },
             { k: 'stock', t: '库存', c: 'num', f: m => fq(matStock(m)) + ' ' + m.unit }]">
@@ -5021,6 +5407,7 @@ route('/materials/:code', {
         </div>
       </div>
       <aside class="aside" data-c="物料属性">
+        <Gallery :code="m.code" :colors="[...new Set(m.skus.map(k => k.color).filter(Boolean))]"/>
         <dl class="props">
           <dt>库存单位</dt><dd>{{ m.unit }}</dd>
           <dt>采购单位</dt><dd>{{ m.purUnit }}<template v-if="m.purUnit !== m.unit"> · 1 {{ m.purUnit }} = {{ fq(m.factor) }} {{ m.unit }}</template></dd>
@@ -5317,6 +5704,8 @@ comp('NotFound', {
   template: `<div><Head t="没有这个页面"/><div class="empty">链接不对，或者这张单是刷新前新建的（原型刷新后数据回到初始）。<p style="margin-top:16px"><a class="btn" href="#/">回首页</a></p></div></div>`,
 })
 
+const navOf = (k) => NAV.flatMap((g) => g.items).find((x) => x.k === k)
+
 const Shell = {
   setup() {
     const pal = reactive({ open: false })
@@ -5330,16 +5719,30 @@ const Shell = {
       else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c' && !escStack.length) fbUi.open = !fbUi.open
     }
     onMounted(() => window.addEventListener('keydown', onKey))
-    watch(() => nav.seq, () => { if (main.value) main.value.scrollTop = 0; fbUi.focus = null })
+    // 页签：一个模块一个，记住这个模块最后停在哪一页
+    const tabs = reactive([{ k: 'home', to: '/' }])
+    watch(() => nav.seq, () => {
+      if (main.value) main.value.scrollTop = 0
+      fbUi.focus = null
+      const k = mod.value
+      if (!k) return
+      const qs = new URLSearchParams(nav.query).toString(), to = nav.path + (qs ? '?' + qs : '')
+      const t = tabs.find((x) => x.k === k)
+      t ? (t.to = to) : tabs.push({ k, to })
+      if (tabs.length > 10) tabs.splice(tabs.findIndex((x, i) => i && x.k !== k), 1)
+    }, { immediate: true })
+    function closeTab(i) { const [t] = tabs.splice(i, 1); if (t.k === mod.value) go(tabs[Math.max(0, i - 1)].to) }
+    const tabTitle = (k) => (k === 'feedback' ? '意见汇总' : navOf(k)?.t || k)
     const fbCount = computed(() => fb.items.length || '')
-    return { pal, main, mod, closed, toggle, fbCount }
+    const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
+    return { pal, main, mod, closed, toggle, fbCount, tabs, closeTab, tabTitle, todoCount }
   },
   template: `<div class="app">
     <aside class="side" data-c="侧边栏">
-      <div class="ws"><i>织</i><span>织间服饰</span></div>
-      <button class="find" @click="pal.open = true"><Ico n="search" :s="14"/><span>搜索</span><kbd>⌘K</kbd></button>
+      <div class="ws"><b>SCM</b><span>织间服饰</span></div>
+      <button class="find" @click="pal.open = true"><Ico n="search" :s="14"/><span>搜菜单、单号、款号</span><kbd>⌘K</kbd></button>
       <nav><div v-for="g in NAV" :key="g.g || 'top'" class="grp">
-        <b v-if="g.g" @click="toggle(g.g)">{{ g.g }}</b>
+        <b v-if="g.g" :class="{ shut: closed[g.g] }" @click="toggle(g.g)">{{ g.g }}<Ico n="down" :s="13"/></b>
         <template v-if="!closed[g.g]"><a v-for="it in g.items" :key="it.k" class="nav-i" :class="{ on: it.k === mod }" :href="'#' + it.to"><Ico :n="it.i"/><span>{{ it.t }}</span></a></template>
       </div></nav>
       <div class="side-foot">
@@ -5347,7 +5750,17 @@ const Shell = {
         <a class="nav-i" :class="{ on: mod === 'feedback' }" href="#/feedback"><Ico n="list"/><span>意见汇总</span></a>
       </div>
     </aside>
-    <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params"/><NotFound v-else/></main>
+    <div class="work">
+      <header class="topbar">
+        <div class="ptabs"><a v-for="(t, i) in tabs" :key="t.k" class="ptab" :class="{ on: t.k === mod }" :href="'#' + t.to">{{ tabTitle(t.k) }}<span v-if="i" class="x" @click.prevent.stop="closeTab(i)"><Ico n="x" :s="12"/></span></a></div>
+        <div class="tb-right">
+          <button class="btn ghost icon" title="搜索 ⌘K" @click="pal.open = true"><Ico n="search"/></button>
+          <a class="btn ghost icon" title="待办" href="#/"><Ico n="bell"/><span v-if="todoCount" class="dot">{{ todoCount > 99 ? '99+' : todoCount }}</span></a>
+          <div class="me"><i>{{ me().name[0] }}</i><span>{{ me().name }}</span><small>{{ me().role }}</small></div>
+        </div>
+      </header>
+      <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet"/><NotFound v-else class="sheet"/></main>
+    </div>
     <FeedbackPanel v-if="fbUi.open"/>
     <Pins v-if="fbUi.open"/>
     <Picker v-if="fbUi.picking"/>
@@ -5360,6 +5773,7 @@ const app = Vue.createApp(Shell)
 Object.entries(COMPONENTS).forEach(([n, c]) => app.component(n, c))
 Object.assign(app.config.globalProperties, G, { NAV, me, fb, fbUi })
 app.config.errorHandler = (e) => showErr(e)
+document.body.insertAdjacentHTML('afterbegin', PIC_DEFS)
 parseHash()
 app.mount('#app')
 

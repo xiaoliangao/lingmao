@@ -317,7 +317,7 @@ route('/suppliers/:code', {
 
         <section v-if="tab === 'price'" data-c="询价记录">
           <Tbl inset flat :rows="prices" link @row="x => go('/purchases/' + x.no)" empty="还没从这家买过东西" :cols="[
-            { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'sku', t: '物料', f: x => skuName(x.sku) }, { k: 'no', t: '采购单', c: 'code' },
+            { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'no', t: '采购单', c: 'code' },
             { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) + ' ' + x.unit }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }]"/>
         </section>
       </div>
@@ -461,7 +461,7 @@ route('/customers/:code', {
         </section>
         <section v-if="tab === 'stock'" data-c="客供料库存">
           <Tbl inset flat :rows="stock" empty="这个客户没有放在我们这里的料" :cols="[
-            { k: 'w', t: '仓库', f: x => whName(x.w) }, { k: 'sku', t: '物料', f: x => skuName(x.sku) }, { k: 'code', t: 'SKU', c: 'code', f: x => x.sku },
+            { k: 'w', t: '仓库', f: x => whName(x.w) }, { k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'code', t: 'SKU', c: 'code', f: x => x.sku },
             { k: 'q', t: '数量', c: 'num', f: x => fq(x.q) + ' ' + unitOf(x.sku) }]"/>
         </section>
       </div>
@@ -503,7 +503,7 @@ route('/materials', {
         <div class="bar" data-c="筛选"><Seg v-model="s.st" :items="['启用', '停用', '全部']"/><span class="sp"></span><Search v-model="s.q"/></div>
         <div data-c="物料列表">
           <Tbl :rows="rows" link @row="m => go('/materials/' + m.code)" empty="这个分类下没有物料" :cols="[
-            { k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称' }, { k: 'type', t: '类型' }, { k: 'unit', t: '单位' },
+            { k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称', img: m => m.code }, { k: 'type', t: '类型' }, { k: 'unit', t: '单位' },
             { k: 'spec', t: '门幅 · 克重', f: m => m.width ? m.width + 'cm · ' + m.weight + 'g' : '—' }, { k: 'supplier', t: '默认供应商', f: m => supName(m.supplier) },
             { k: 'price', t: '参考单价', c: 'num', f: m => fm(m.price) + '/' + m.purUnit }, { k: 'skus', t: 'SKU', c: 'num', f: m => m.skus.length },
             { k: 'stock', t: '库存', c: 'num', f: m => fq(matStock(m)) + ' ' + m.unit }]">
@@ -594,6 +594,7 @@ route('/materials/:code', {
         </div>
       </div>
       <aside class="aside" data-c="物料属性">
+        <Gallery :code="m.code" :colors="[...new Set(m.skus.map(k => k.color).filter(Boolean))]"/>
         <dl class="props">
           <dt>库存单位</dt><dd>{{ m.unit }}</dd>
           <dt>采购单位</dt><dd>{{ m.purUnit }}<template v-if="m.purUnit !== m.unit"> · 1 {{ m.purUnit }} = {{ fq(m.factor) }} {{ m.unit }}</template></dd>

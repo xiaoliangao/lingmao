@@ -5,7 +5,7 @@
  *   回货 → 待检 → 成品入库 → 发货 → 客户应收；采购入库、回货 → 供应商对账 → 付款
  * 名字都带前缀（smp / plan / cost / qc / fg / fin），免得和别的文件的全局名撞上。
  * ============================================================ */
-db.users.push({ id: 'u8', name: '沈冬', role: '版师', scope: '本人' })
+db.users.push({ id: 'u8', name: '沈冬', role: '开发', scope: '本人' }) // 版师，归在开发角色下
 ST_KIND.done.push('已核销')
 ST_KIND.dashed.push('未核销')
 const seasonName = (c) => db.seasons.find((x) => x.code === c)?.name || c
@@ -298,7 +298,7 @@ route('/samples/:no', {
     </Head>
     <div class="detail">
       <div class="body">
-        <div class="title"><Thumb :code="s.no" :s="44"/>{{ s.name }}<St :s="smpState(s)"/></div>
+        <div class="title">{{ s.name }}<St :s="smpState(s)"/></div>
         <div class="sub"><span>{{ catOf(s.cat).path }} / {{ catOf(s.cat).name }}</span><span>{{ s.year }} {{ seasonName(s.season) }} · {{ s.wave }}</span><span class="row g4"><Sw v-for="c in s.colors" :key="c" :c="c" :n="false"/></span></div>
         <section v-for="x in vers" :key="x.no" class="sec" :data-c="'第 ' + x.ver + ' 版'">
           <h3>第 {{ x.ver }} 版 · {{ x.type }}<span class="code dim" style="font-weight:400">{{ x.no }}</span><St :s="x.status"/></h3>
@@ -316,6 +316,7 @@ route('/samples/:no', {
         </section>
       </div>
       <aside class="aside" data-c="样衣属性">
+        <Gallery :code="s.no" :colors="s.colors"/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>来源</dt><dd>{{ s.source }}<template v-if="s.customer"> · {{ custName(s.customer) }}</template></dd>
