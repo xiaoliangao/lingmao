@@ -14,6 +14,20 @@ function nextNo(prefix) {
   return k + String(db.seq[k]).padStart(4, '0')
 }
 function act(doc, text) { (doc.log ||= []).push({ at: clock.today, who: userName(db.me), text }) }
+// 图片（款式、物料、样衣）和附件（单据）：整组换掉，操作记录里写加了 / 删了什么
+const PHOTO_TYPES = ['面料质量', '做工质量', '工艺问题'] // 这几类异常要带照片
+function setImages(o, list) {
+  const n0 = (o.images || []).length
+  o.images = list
+  act(o, `图片 ${n0} → ${list.length} 张${list.length ? '，主图 ' + list[0].name : ''}`)
+}
+function setFiles(o, list) {
+  const old = o.files || [], ids = new Set(list.map((x) => x.id)), was = new Set(old.map((x) => x.id))
+  const added = list.filter((x) => !was.has(x.id)), gone = old.filter((x) => !ids.has(x.id))
+  o.files = list
+  if (added.length) act(o, '加附件 ' + added.map((x) => x.name).join('、'))
+  if (gone.length) act(o, '删附件 ' + gone.map((x) => x.name).join('、'))
+}
 
 /* ---------- 状态流转表：动作 → [从哪些状态, 到什么状态] ---------- */
 const FLOWS = {
@@ -276,7 +290,7 @@ function createChange(o, f) {
   })
   if (errs.length) fail('变更不能提交', errs)
   const types = [items.length && '数量', due && '交期'].filter(Boolean)
-  const c = add(db.changes, { no: nextNo('BG'), order: o.no, types, items, due, reason: f.reason, party: f.party || '客户', fee: f.fee || '', date: clock.today, by: db.me, status: '待审核', log: [] })
+  const c = add(db.changes, { no: nextNo('BG'), order: o.no, types, items, due, reason: f.reason, party: f.party || '客户', fee: f.fee || '', files: f.files || [], date: clock.today, by: db.me, status: '待审核', log: [] })
   act(c, '提交')
   act(o, '提交变更单 ' + c.no)
   return c
@@ -435,6 +449,7 @@ function receivePurchase(p, f) {
     type: '采购入库', src: p.no, partner: p.supplier, to: f.wh || p.wh, supNo: f.supNo || '',
     lines: ls.map((x) => { const l = p.lines[x.i], m = matOfSku(l.sku); return { sku: l.sku, owner: l.owner, qty: rnd(x.qty * m.factor, 3), purQty: x.qty, price: l.price, lot: x.lot || '', poLine: x.i } }),
   })
+  if (f.files?.length) d.files = f.files
   postStockDoc(d)
   return d
 }
@@ -534,9 +549,9 @@ function reportNode(p, i, f) {
   const n = p.nodes[i]
   if (!f.as && !f.af) fail('开始、完成至少填一个')
   if (f.af && f.as && f.af < f.as) fail('完成时间不能早于开始时间')
-  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me })
+  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, photos: [...(n.photos || []), ...(f.photos || [])] })
   if (p.status === '已下单') p.status = '生产中'
-  act(p, `报进度：${n.name}${f.af ? '完成' : '开始'}${f.qty ? ' ' + f.qty + ' 件' : ''}`)
+  act(p, `报进度：${n.name}${f.af ? '完成' : '开始'}${f.qty ? ' ' + f.qty + ' 件' : ''}${f.photos?.length ? '，照片 ' + f.photos.length + ' 张' : ''}`)
   return p.nodes.slice(0, i).some((x) => !x.af) ? '前面还有节点没报完成' : null
 }
 const expectDue = (p) => p.expect || p.due
@@ -554,7 +569,8 @@ function prodRisk(p) {
 }
 function reportIssue(p, f) {
   if (!f.type || !f.desc) fail('类型、描述都要填')
-  const i = add(p.issues, { id: nextNo('YC'), type: f.type, desc: f.desc, newDate: f.newDate || null, party: f.party || '', status: '待处理', at: clock.today, by: db.me, measure: '' })
+  if (PHOTO_TYPES.includes(f.type) && !f.photos?.length) fail(`「${f.type}」要传至少一张照片`, ['拍问题部位，工厂和供应商对责任时要用'])
+  const i = add(p.issues, { id: nextNo('YC'), type: f.type, desc: f.desc, photos: f.photos || [], newDate: f.newDate || null, party: f.party || '', status: '待处理', at: clock.today, by: db.me, measure: '' })
   if (f.newDate) p.expect = f.newDate
   act(p, `上报异常：${f.type}${f.newDate ? '，预计交期改为 ' + fd(f.newDate) : ''}`)
   return i
@@ -623,7 +639,7 @@ function registerReturn(p, f) {
   if (!got.length) errs.push('至少登记一个数量')
   if (errs.length) fail('回货没登记上', errs)
   got.forEach(({ l, q, d }) => { l.ret += q; l.def += d })
-  const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d }) => ({ color: l.color, size: l.size, qty: q, def: d })), log: [] })
+  const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d }) => ({ color: l.color, size: l.size, qty: q, def: d })), photos: f.photos || [], log: [] })
   act(r, '登记')
   p.status = prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : '部分回货'
   act(p, `回货 ${r.no}：${sum(r.lines, (x) => x.qty)} 件，次品 ${sum(r.lines, (x) => x.def)}${p.status === '已完成' ? '，加工单完成' : ''}`)

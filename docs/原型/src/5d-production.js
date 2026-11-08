@@ -79,7 +79,7 @@ route('/production/:no', {
           <ul class="tl">
             <li v-for="(n, i) in x.nodes" :key="n.name" :class="nodeCls(n)" style="cursor:pointer" @click="report(i)">
               <span class="dot"></span><b>{{ n.name }}</b>
-              <div class="col"><small>计划 {{ fd(n.ps) }} – {{ fd(n.pf) }}</small><small v-if="n.as" :class="{ red: nodeCls(n) === 'late' }">实际 {{ fd(n.as) }} – {{ n.af ? fd(n.af) : '进行中' }}<template v-if="n.qty"> · {{ n.qty }} 件</template><template v-if="n.by"> · {{ userName(n.by) }}</template></small></div>
+              <div class="col"><small>计划 {{ fd(n.ps) }} – {{ fd(n.pf) }}</small><small v-if="n.as" :class="{ red: nodeCls(n) === 'late' }">实际 {{ fd(n.as) }} – {{ n.af ? fd(n.af) : '进行中' }}<template v-if="n.qty"> · {{ n.qty }} 件</template><template v-if="n.by"> · {{ userName(n.by) }}</template></small><Pics v-if="n.photos && n.photos.length" :model-value="n.photos" readonly :s="40" :limit="4" style="margin-top:4px" @click.stop/></div>
               <span><span v-if="nodeCls(n) === 'late'" class="flag red">{{ n.af ? '晚了 ' + -daysLeft2(n.pf, n.af) + ' 天' : '延期' }}</span><span v-else-if="nodeCls(n) === 'warn'" class="flag amber">临期</span><Ico v-else-if="n.af" n="check" :s="14" class="green"/></span>
             </li>
           </ul>
@@ -93,17 +93,18 @@ route('/production/:no', {
         </section>
         <section v-if="tab === 'issues'" data-c="异常">
           <Tbl inset flat :rows="x.issues" empty="没有异常" :cols="[{ k: 'type', t: '类型' }, { k: 'desc', t: '描述' }, { k: 'at', t: '上报', f: i => fd(i.at) + ' ' + userName(i.by) }, { k: 'newDate', t: '新交期', f: i => fd(i.newDate) }, { k: 'party', t: '责任方', f: i => i.party || '—' }, { k: 'measure', t: '处理措施', f: i => i.measure || '—' }, { k: 'status', t: '状态' }]">
-            <template #desc="{ r }"><span class="wrap">{{ r.desc }}</span></template>
+            <template #desc="{ r }"><span class="wrap">{{ r.desc }}</span><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="36" :limit="3" style="margin-top:4px"/></template>
             <template #status="{ r }"><span class="row"><St :s="r.status"/><button v-if="r.status !== '已关闭'" class="btn sm" @click="closing = r">关闭</button></span></template>
           </Tbl>
           <button v-if="prodLive(x)" class="btn ghost" style="margin-top:10px" @click="dlg = 'issue'"><Ico n="plus" :s="14"/>上报异常</button>
         </section>
         <section v-if="tab === 'rets'" data-c="回货">
-          <Tbl inset flat :rows="rets" empty="还没回货" :cols="[{ k: 'no', t: '回货单号', c: 'code' }, { k: 'date', t: '日期', f: r => fd(r.date) }, { k: 'qty', t: '回货', c: 'num', f: r => sum(r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: r => sum(r.lines, l => l.def) }, { k: 'logistics', t: '物流单号', c: 'code', f: r => r.logistics || '—' }]"/>
+          <Tbl inset flat :rows="rets" empty="还没回货" :cols="[{ k: 'no', t: '回货单号', c: 'code' }, { k: 'date', t: '日期', f: r => fd(r.date) }, { k: 'qty', t: '回货', c: 'num', f: r => sum(r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: r => sum(r.lines, l => l.def) }, { k: 'logistics', t: '物流单号', c: 'code', f: r => r.logistics || '—' }, { k: 'photos', t: '照片' }]">
+            <template #photos="{ r }"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="32" :limit="3"/><span v-else class="dim">—</span></template></Tbl>
         </section>
       </div>
       <aside class="aside" data-c="加工单属性">
-        <Gallery :code="x.style" :colors="[...new Set(x.lines.map(l => l.color))]"/>
+        <Gallery :code="x.style" :colors="[...new Set(x.lines.map(l => l.color))]" :owner="style(x.style)"/>
         <dl class="props">
           <dt>订单</dt><dd><a class="code" :href="'#/orders/' + x.order">{{ x.order }}</a></dd>
           <dt>资料包</dt><dd>V{{ x.ver }}</dd>
@@ -121,6 +122,7 @@ route('/production/:no', {
             <dt>回货</dt><dd>{{ prodRet(x) }} / {{ prodQty(x) }}<span v-if="prodDef(x)" class="dim"> · 次品 {{ prodDef(x) }}</span></dd>
           </template>
         </dl>
+        <DocFiles :doc="x"/>
         <h4>操作记录</h4><Log :items="x.log"/>
       </aside>
     </div>
@@ -140,8 +142,8 @@ comp('ProdReport', {
   emits: ['close'],
   setup(props, { emit }) {
     const cur = props.i ?? Math.max(0, props.p.nodes.findIndex((n) => !n.af))
-    const f = reactive({ i: cur, as: '', af: '', qty: null, note: '' })
-    watch(() => f.i, (i) => { const n = props.p.nodes[i]; Object.assign(f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note }) }, { immediate: true })
+    const f = reactive({ i: cur, as: '', af: '', qty: null, note: '', photos: [] })
+    watch(() => f.i, (i) => { const n = props.p.nodes[i]; Object.assign(f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }, { immediate: true })
     function ok() {
       const w = run(() => reportNode(props.p, f.i, { ...f }))
       if (w) { emit('close'); toast(typeof w === 'string' ? `已报，${w}` : `${props.p.nodes[f.i].name}已报`) }
@@ -154,8 +156,8 @@ comp('ProdReport', {
       <label class="f">实际开始<input class="inp" type="date" v-model="f.as"></label>
       <label class="f">实际完成<input class="inp" type="date" v-model="f.af"></label>
       <label class="f">数量（件）<input class="inp num" type="number" v-model.number="f.qty"></label>
-      <div class="f">照片<button class="btn" @click="toast('原型：手机上可以拍照，最多 9 张')"><Ico n="camera" :s="14"/>加照片</button></div>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
+      <div class="f full" data-c="报进度照片">照片<span v-if="p.nodes[f.i].photos && p.nodes[f.i].photos.length" class="dim" style="font-weight:400">（这个节点已经有 {{ p.nodes[f.i].photos.length }} 张，再传是追加）</span><Pics v-model="f.photos" :s="64" camera/></div>
     </div>
     <template #foot><button class="btn ghost" @click="f.af = ''">只报开始</button><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">提交</button></template>
   </Modal>`,
@@ -190,7 +192,7 @@ comp('ProdException', {
   props: { p: Object },
   emits: ['close', 'done'],
   setup(props, { emit }) {
-    const f = reactive({ type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(props.p), 5), party: '' })
+    const f = reactive({ type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(props.p), 5), party: '', photos: [] })
     function ok() { if (run(() => reportIssue(props.p, { ...f, newDate: f.impact ? f.newDate : null }))) { emit('close'); emit('done'); toast('异常已上报') } }
     return { f, ok }
   },
@@ -199,6 +201,7 @@ comp('ProdException', {
       <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.异常类型" :key="x">{{ x }}</option></select></label>
       <label class="f">责任方<select class="sel" v-model="f.party"><option value="">待定</option><option>我方</option><option>工厂</option><option>供应商</option><option>客户</option></select></label>
       <label class="f full">描述<textarea class="inp" v-model="f.desc"></textarea></label>
+      <div class="f full" data-c="异常照片">照片<span :class="PHOTO_TYPES.includes(f.type) ? 'red' : 'dim'" style="font-weight:400">{{ PHOTO_TYPES.includes(f.type) ? '（' + f.type + '必须传，拍问题部位）' : '（选填）' }}</span><Pics v-model="f.photos" :s="64" camera/></div>
       <label class="chk"><input type="checkbox" v-model="f.impact">影响交期</label>
       <label v-if="f.impact" class="f">预计新交期<input class="inp" type="date" v-model="f.newDate"></label>
     </div>
@@ -212,7 +215,7 @@ comp('ProdReturn', {
   setup(props, { emit }) {
     const qty = ref(Object.fromEntries(props.p.lines.map((l) => [l.color + '|' + l.size, Math.max(0, l.qty - l.ret)])))
     const def = ref({})
-    const f = reactive({ date: clock.today, logistics: '' })
+    const f = reactive({ date: clock.today, logistics: '', photos: [] })
     const colors = [...new Set(props.p.lines.map((l) => l.color))]
     const sub = (c, z) => { const l = props.p.lines.find((y) => y.color === c && y.size === z); return l ? `加工 ${l.qty} · 已回 ${l.ret}` : '' }
     function ok() {
@@ -226,6 +229,7 @@ comp('ProdReturn', {
     <div class="form" style="margin-bottom:14px"><label class="f">回货日期<input class="inp" type="date" v-model="f.date"></label><label class="f">物流单号<input class="inp" v-model="f.logistics"></label></div>
     <div class="sec" style="margin-top:0" data-c="回货数"><h3>回货数（含次品）</h3><Matrix :st="p.style" v-model="qty" :colors="colors" :sub="sub"/></div>
     <div class="sec" data-c="次品数"><h3>其中次品</h3><Matrix :st="p.style" v-model="def" :colors="colors"/></div>
+    <div class="sec" data-c="回货照片"><h3>照片<span class="dim" style="font-weight:400;font-size:12px">　次品、外箱、送货单，选填</span></h3><Pics v-model="f.photos" :s="64"/></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">登记</button></template>
   </Modal>`,
 })
@@ -272,10 +276,10 @@ route('/board', {
 /* ---------- 手机报工（跟单员；工厂视角要外部账号，三期） ---------- */
 route('/mobile', {
   setup() {
-    const s = reactive({ who: '跟单员', factory: 'GYS0004', no: null, node: null, f: { as: '', af: '', qty: null, note: '' } })
+    const s = reactive({ who: '跟单员', factory: 'GYS0004', no: null, node: null, f: { as: '', af: '', qty: null, note: '', photos: [] } })
     const list = computed(() => db.productions.filter(prodLive).filter((p) => (s.who === '跟单员' ? p.merch === 'u1' : p.factory === s.factory)).slice().sort(byRisk))
     const p = computed(() => production(s.no))
-    function pickNode(i) { const n = p.value.nodes[i]; s.node = i; Object.assign(s.f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note }) }
+    function pickNode(i) { const n = p.value.nodes[i]; s.node = i; Object.assign(s.f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }
     function submit() { const w = run(() => reportNode(p.value, s.node, { ...s.f })); if (w) { toast(`${p.value.nodes[s.node].name}已报，电脑上马上能看到`); s.node = null } }
     const back = () => { if (s.node != null) s.node = null; else s.no = null }
     return { s, list, p, pickNode, submit, back }
@@ -304,7 +308,7 @@ route('/mobile', {
             <label class="f">实际开始<input class="inp" type="date" v-model="s.f.as"></label>
             <label class="f">实际完成<input class="inp" type="date" v-model="s.f.af"></label>
             <label class="f">数量（件）<input class="inp num" type="number" v-model.number="s.f.qty"></label>
-            <button class="btn" style="height:44px" @click="toast('原型：调起相机，最多 9 张')"><Ico n="camera"/>拍照</button>
+            <div class="f">照片<Pics v-model="s.f.photos" :s="60" camera bare/></div>
             <label class="f">备注<textarea class="inp" v-model="s.f.note"></textarea></label>
             <button class="btn pri" style="height:44px" @click="submit">提交</button>
           </div>

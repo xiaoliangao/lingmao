@@ -181,6 +181,7 @@ function returnPurchase(p, lines) {
   const errs = ls.filter((x) => x.qty > p.lines[x.i].received - p.lines[x.i].returned + 0.0005).map((x) => `${skuName(p.lines[x.i].sku)}：最多能退 ${fq(p.lines[x.i].received - p.lines[x.i].returned)}`)
   if (errs.length) fail('退货数超过已入库', errs)
   const d = createStockDoc({ type: '采购退货', src: p.no, partner: p.supplier, from: p.wh, reason: lines.reason || '', lines: ls.map((x) => { const l = p.lines[x.i]; return { sku: l.sku, owner: l.owner, qty: rnd(x.qty * matOfSku(l.sku).factor, 3), price: l.price } }) })
+  if (lines.files?.length) d.files = lines.files
   postStockDoc(d)
   ls.forEach((x) => { p.lines[x.i].returned = rnd(p.lines[x.i].returned + x.qty, 3) })
   act(p, '退货 ' + d.no)
@@ -240,6 +241,7 @@ route('/purchases/:no', {
           <dt>结算</dt><dd>{{ po.settle }} · 税率 {{ po.tax }}</dd>
           <dt>主体</dt><dd>{{ db.companies.find(c => c.code === po.company).short }}</dd>
         </dl>
+        <DocFiles :doc="po"/>
         <h4>操作记录</h4><Log :items="po.log"/>
       </aside>
     </div>
@@ -253,10 +255,10 @@ comp('PurchaseReceive', {
   setup(p, { emit }) {
     const recv = p.mode === 'recv'
     const lines = reactive(p.po.lines.map((l, i) => ({ i, qty: recv ? rnd(Math.max(0, l.qty - l.received), 3) : 0, lot: '' })))
-    const f = reactive({ wh: p.po.wh, supNo: '', reason: '' })
+    const f = reactive({ wh: p.po.wh, supNo: '', reason: '', files: [] })
     const whs = computed(() => db.warehouses.filter((w) => w.type !== '成品仓'))
     function ok() {
-      const d = run(() => (recv ? receivePurchase(p.po, { lines, wh: f.wh, supNo: f.supNo }) : returnPurchase(p.po, Object.assign([...lines], { reason: f.reason }))))
+      const d = run(() => (recv ? receivePurchase(p.po, { lines, wh: f.wh, supNo: f.supNo, files: f.files }) : returnPurchase(p.po, Object.assign([...lines], { reason: f.reason, files: f.files }))))
       if (d?.no) { emit('close'); toast(`${d.no} 已过账，库存已更新`, ['打开', '/stock-docs/' + d.no]) }
     }
     return { recv, lines, f, whs, ok, purUnit }
@@ -271,6 +273,7 @@ comp('PurchaseReceive', {
       <tbody><tr v-for="x in lines" :key="x.i"><td><span class="row"><Thumb :code="po.lines[x.i].sku" :s="30"/>{{ skuName(po.lines[x.i].sku) }}</span></td>
         <td class="num">{{ fq(recv ? Math.max(0, po.lines[x.i].qty - po.lines[x.i].received) : po.lines[x.i].received - po.lines[x.i].returned) }} <span class="dim">{{ purUnit(po.lines[x.i].sku) }}</span></td>
         <td><input class="inp cell num" type="number" v-model.number="x.qty"></td><td v-if="recv"><input class="inp cell" v-model="x.lot"></td></tr></tbody></table>
+    <div class="sec" data-c="到货照片"><h3>{{ recv ? '送货单、到货照片' : '退货问题照片' }}<span class="dim" style="font-weight:400;font-size:12px">　选填，挂在{{ recv ? '入库单' : '退货单' }}的附件里</span></h3><Pics v-model="f.files" files :s="64" :tip="recv ? '拍送货单、外箱、布头标签；拖进来也行' : '拍问题部位、退货包装'"/></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ recv ? '入库并过账' : '退货并过账' }}</button></template>
   </Modal>`,
 })
@@ -392,6 +395,7 @@ route('/stock-docs/:no', {
           <dt v-if="d.reason">原因</dt><dd v-if="d.reason">{{ d.reason }}</dd>
           <dt>审核人</dt><dd>{{ d.auditor ? userName(d.auditor) : '—' }}</dd>
         </dl>
+        <DocFiles :doc="d"/>
         <h4>操作记录</h4><Log :items="d.log"/>
       </aside>
     </div>

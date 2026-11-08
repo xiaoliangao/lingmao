@@ -41,7 +41,7 @@ comp('OrderNew', {
   props: { st: String, customer: String },
   emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ type: '客户订单', customer: p.customer || 'KH0001', custNo: '', due: addDays(clock.today, 60), sales: 'u3', merch: 'u1', ship: '' })
+    const f = reactive({ type: '客户订单', customer: p.customer || 'KH0001', custNo: '', due: addDays(clock.today, 60), sales: 'u3', merch: 'u1', ship: '', files: [] })
     const blocks = reactive([])
     const pickable = computed(() => db.styles.filter((s) => s.status === '启用' && !blocks.some((b) => b.style === s.code)))
     const pick = ref('')
@@ -72,6 +72,7 @@ comp('OrderNew', {
       <Matrix :st="b.style" v-model="b.qty"/>
     </div>
     <div class="row" style="margin-top:16px"><select class="sel" v-model="pick" @change="addBlock(pick)" style="width:260px"><option value="">加一个款……</option><option v-for="s in pickable" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}{{ activeTp(s.code) ? '' : '（资料包未生效）' }}</option></select></div>
+    <div class="sec" data-c="订单附件"><h3>附件<span class="dim" style="font-weight:400;font-size:12px">　客户的订单、PO 截图、合同，选填</span></h3><Pics v-model="f.files" files :s="56" :max="20"/></div>
     <template #foot><span class="mut">{{ total }} 件<template v-if="amount"> · {{ fm(amount) }}</template></span><span class="sp"></span>
       <button class="btn" @click="save(false)">存草稿</button><button class="btn pri" @click="save(true)">提交审核</button></template>
   </Modal>`,
@@ -146,6 +147,7 @@ route('/orders/:no', {
         <section v-if="tab === 'changes'" data-c="变更记录">
           <Tbl inset flat :rows="changes" empty="没有变更" :cols="[{ k: 'no', t: '变更单号', c: 'code' }, { k: 'text', t: '改了什么', f: c => describeChange(c) }, { k: 'reason', t: '原因' }, { k: 'party', t: '责任方' }, { k: 'date', t: '日期', f: c => fd(c.date) }, { k: 'status', t: '状态' }]">
             <template #text="{ r }"><span class="wrap">{{ describeChange(r) }}</span></template>
+            <template #reason="{ r }"><span class="wrap">{{ r.reason }}</span><Pics v-if="r.files && r.files.length" :model-value="r.files" readonly :s="32" :limit="3" style="margin-top:4px"/></template>
             <template #status="{ r }"><span class="row"><St :s="r.status"/><template v-if="r.status === '待审核'"><button class="btn sm" @click="run(() => doAction('change', r, '驳回'))">驳回</button><button class="btn sm pri" @click="run(() => doAction('change', r, '审核')) && toast('变更已写回订单，下游单据已提示')">审核</button></template></span></template>
           </Tbl>
         </section>
@@ -168,6 +170,7 @@ route('/orders/:no', {
             <dt>回货</dt><dd>{{ orderRet(o) }} / {{ orderQty(o) }}</dd>
           </template>
         </dl>
+        <DocFiles :doc="o"/>
         <h4>操作记录</h4><Log :items="o.log"/>
       </aside>
     </div>
@@ -244,7 +247,7 @@ comp('OrderChange', {
   emits: ['close', 'done'],
   setup(p, { emit }) {
     const qty = reactive(Object.fromEntries(orderStyles(p.o).map((st) => [st, Object.fromEntries(p.o.lines.filter((l) => l.style === st).map((l) => [l.color + '|' + l.size, l.qty]))])))
-    const f = reactive({ due: p.o.due, reason: '', party: '客户', fee: '' })
+    const f = reactive({ due: p.o.due, reason: '', party: '客户', fee: '', files: [] })
     const colorsOf = (st) => [...new Set(p.o.lines.filter((l) => l.style === st).map((l) => l.color))]
     const sub = (st) => (c, z) => { const l = p.o.lines.find((x) => x.style === st && x.color === c && x.size === z); return l ? '原 ' + l.qty + ' · 已排 ' + scheduledQty(p.o, l) : '' }
     function ok() {
@@ -262,6 +265,7 @@ comp('OrderChange', {
       <label class="f">责任方<select class="sel" v-model="f.party"><option>客户</option><option>我方</option><option>工厂</option><option>供应商</option></select></label>
       <label class="f full">原因<input class="inp" v-model="f.reason"></label>
       <label class="f full">费用说明<input class="inp" v-model="f.fee" placeholder="如：客户承担已裁片损失"></label>
+      <div class="f full" data-c="变更附件">客户确认<Pics v-model="f.files" files :s="56" tip="客户的邮件、聊天截图；Ctrl+V 直接贴"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">提交变更</button></template>
   </Modal>`,

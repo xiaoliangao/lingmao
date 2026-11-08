@@ -183,14 +183,14 @@ route('/styles', {
 comp('StyleNew', {
   emits: ['close'],
   setup(_, { emit }) {
-    const f = reactive({ name: '', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', sizeGroup: 'W5', colors: [], tagPrice: null, factory: 'GYS0004', designer: db.me, source: '自主开发' })
+    const f = reactive({ name: '', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', sizeGroup: 'W5', colors: [], tagPrice: null, factory: 'GYS0004', designer: db.me, source: '自主开发', images: [] })
     const code = computed(() => { const p = String(f.year).slice(2) + f.season + f.cat; return p + String(db.styles.filter((s) => s.code.startsWith(p)).length + 1).padStart(3, '0') })
     const factories = computed(() => db.suppliers.filter((s) => isFactory(s) && s.status === '合作中'))
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
-    function save() { const s = run(() => createStyle({ ...f, colors: [...f.colors] })); if (s) { emit('close'); go('/styles/' + s.code); toast(`${s.code} 已建，生成 ${s.skus.length} 个 SKU`) } }
+    function save() { const s = run(() => createStyle({ ...f, colors: [...f.colors], images: [...f.images] })); if (s) { emit('close'); go('/styles/' + s.code); toast(`${s.code} 已建，生成 ${s.skus.length} 个 SKU`) } }
     return { f, code, factories, toggle, save }
   },
-  template: `<Modal t="新建款式" :w="600" @close="$emit('close')">
+  template: `<Modal t="新建款式" :w="640" @close="$emit('close')">
     <div class="form">
       <label class="f full">名称<input class="inp" v-model="f.name" placeholder="如：女式风衣"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
@@ -202,6 +202,7 @@ comp('StyleNew', {
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">默认加工厂<select class="sel" v-model="f.factory"><option v-for="s in factories" :key="s.code" :value="s.code">{{ s.short }}</option></select></label>
+      <div class="f full" data-c="款式图片">款式图片<Pics v-model="f.images" :colors="f.colors"/></div>
     </div>
     <template #foot><span class="dim" v-if="f.colors.length">{{ f.colors.length }} × {{ sizesOf(f.sizeGroup).length }} = {{ f.colors.length * sizesOf(f.sizeGroup).length }} 个 SKU</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建款式</button></template>
   </Modal>`,
@@ -252,7 +253,7 @@ route('/styles/:code', {
         </section>
       </div>
       <aside class="aside" data-c="款式属性">
-        <Gallery :code="s.code" :colors="s.colors"/>
+        <Gallery :code="s.code" :colors="s.colors" :owner="s" edit/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>风格</dt><dd>{{ s.tag }}</dd>
@@ -265,6 +266,7 @@ route('/styles/:code', {
           <dt>默认加工厂</dt><dd>{{ supName(s.factory) }}</dd>
           <dt>设计师</dt><dd>{{ userName(s.designer) }}</dd>
         </dl>
+        <DocFiles :doc="s"/>
         <h4>操作记录</h4><Log :items="s.log"/>
       </aside>
     </div>
@@ -399,8 +401,9 @@ comp('TechPack', {
       </div>
 
       <div v-if="view === 'ops'" data-c="工艺单">
-        <Tbl inset flat :rows="tp.ops" :cols="[{ k: 'cat', t: '类别' }, { k: 'name', t: '工序' }, { k: 'sec', t: '工时（秒）', c: 'num' }, { k: 'price', t: '工价', c: 'num', f: o => fm(o.price) }]" empty="还没有工序">
-          <template #foot><tr><td>合计</td><td></td><td class="num">{{ sum(tp.ops, o => o.sec) }}</td><td class="num">{{ fm(tpLabor(tp)) }}</td></tr></template>
+        <Tbl inset flat :rows="tp.ops" :cols="[{ k: 'cat', t: '类别' }, { k: 'name', t: '工序' }, { k: 'pics', t: '图示' }, { k: 'sec', t: '工时（秒）', c: 'num' }, { k: 'price', t: '工价', c: 'num', f: o => fm(o.price) }]" empty="还没有工序">
+          <template #pics="{ r }"><Pics v-if="edit" v-model="r.pics" :s="36" :max="3" bare/><Pics v-else-if="r.pics && r.pics.length" :model-value="r.pics" readonly :s="36"/><span v-else class="dim">—</span></template>
+          <template #foot><tr><td>合计</td><td></td><td></td><td class="num">{{ sum(tp.ops, o => o.sec) }}</td><td class="num">{{ fm(tpLabor(tp)) }}</td></tr></template>
         </Tbl>
       </div>
     </template>

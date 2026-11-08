@@ -145,6 +145,7 @@ const Shell = {
     <Pins v-if="fbUi.open"/>
     <Picker v-if="fbUi.picking"/>
     <Palette v-if="pal.open" @close="pal.open = false"/>
+    <PicViewer v-if="viewer.list"/>
     <ErrBox/><AskBox/><Toasts/>
   </div>`,
 }

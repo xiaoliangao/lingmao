@@ -14,7 +14,8 @@ function certInfo(s) {
 }
 function addCert(s, f) {
   if (!f.type || !f.until) fail('类型、有效期都要填')
-  s.certs.push({ type: f.type, until: f.until })
+  if (!f.file) fail('要传证照的照片或扫描件')
+  s.certs.push({ type: f.type, until: f.until, file: f.file })
   act(s, '上传' + f.type + '，有效期至 ' + f.until)
 }
 function unblockSupplier(s, reason) {
@@ -291,8 +292,9 @@ route('/suppliers/:code', {
         <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], ['docs', '往来单据', docs.length], ['perf', '绩效'], ['price', '询价记录', prices.length]]"/>
 
         <section v-if="tab === 'certs'" data-c="资质">
-          <Tbl inset flat :rows="s.certs" empty="还没传证照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件', f: () => '已上传' }]">
+          <Tbl inset flat :rows="s.certs" empty="还没传证照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件' }]">
             <template #left="{ r }"><Days :d="r.until" :warn="30"/></template>
+            <template #file="{ r }"><Pics v-if="r.file" :model-value="[r.file]" readonly :s="36"/><span v-else class="dim">没传</span></template>
           </Tbl>
           <button class="btn" style="margin-top:12px" @click="certAdd = true"><Ico n="plus" :s="14"/>加一份证照</button>
         </section>
@@ -364,15 +366,15 @@ comp('CertNew', {
   props: { s: Object },
   emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ type: '营业执照', until: '' })
-    function ok() { if (run(() => addCert(p.s, f))) emit('close') }
+    const f = reactive({ type: '营业执照', until: '', files: [] })
+    function ok() { if (run(() => addCert(p.s, { ...f, file: f.files[0] }))) emit('close') }
     return { f, ok }
   },
   template: `<Modal t="加一份证照" :w="440" @close="$emit('close')">
     <div class="form">
       <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in ['营业执照', '验厂报告', '环保证明', '其他']" :key="x">{{ x }}</option></select></label>
       <label class="f">有效期至<input class="inp" type="date" v-model="f.until"></label>
-      <label class="f full">文件<button class="btn" @click="toast('原型：这里会选文件上传')"><Ico n="upload" :s="14"/>选文件</button></label>
+      <div class="f full">照片或扫描件<Pics v-model="f.files" files :max="1" :s="64" tip="拍照、扫描件、PDF 都行；拖进来也可以"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">加上</button></template>
   </Modal>`,
@@ -472,6 +474,7 @@ route('/customers/:code', {
           <dt>电话</dt><dd>{{ c.phone || '—' }}</dd>
           <dt>结算</dt><dd>{{ c.settle }}{{ c.term ? ' · ' + c.term + ' 天' : '' }}</dd>
         </dl>
+        <DocFiles :doc="c"/>
         <h4>操作记录</h4><Log :items="c.log"/>
       </aside>
     </div>
@@ -520,7 +523,7 @@ comp('MaterialNew', {
   props: { cat: String },
   emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ cat: p.cat, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', supplier: 'GYS0001', supNo: '', price: null, moq: null, pack: 1, lead: 7, colors: [] })
+    const f = reactive({ cat: p.cat, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', supplier: 'GYS0001', supNo: '', price: null, moq: null, pack: 1, lead: 7, colors: [], images: [] })
     const code = computed(() => nextMatCode(f.cat))
     const sups = computed(() => db.suppliers.filter((s) => s.status === '合作中'))
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
@@ -528,7 +531,7 @@ comp('MaterialNew', {
     async function save() {
       const d = dupMaterial(f)
       if (d && !(await ask('可能重复', '可能和 ' + d.code + ' ' + d.name + ' 重复，确定新建？', '仍然新建'))) return
-      const m = run(() => createMaterial({ ...f, colors: [...f.colors] }))
+      const m = run(() => createMaterial({ ...f, colors: [...f.colors], images: [...f.images] }))
       if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
     }
     return { f, code, sups, toggle, save, MAT_TYPES }
@@ -552,6 +555,7 @@ comp('MaterialNew', {
       <label class="f">最小包装<input class="inp num" type="number" v-model.number="f.pack"></label>
       <label class="f">采购周期（天）<input class="inp num" type="number" v-model.number="f.lead"></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
+      <div class="f full" data-c="物料图片">物料图片<Pics v-model="f.images" :colors="f.colors" tip="布样、色卡、辅料实物都可以拍；给图标上颜色，按颜色出图"/></div>
     </div>
     <template #foot><span class="dim">{{ f.colors.length ? f.colors.length + ' 个 SKU：' + f.colors.map(c => code + '-' + c).join('、') : '不选颜色 = 1 个 SKU' }}</span><span class="sp"></span>
       <button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建物料</button></template>
@@ -581,7 +585,7 @@ route('/materials/:code', {
         <div class="sub"><span>{{ matCat(m.cat).parent }} / {{ matCat(m.cat).name }}</span><span>{{ m.type }}</span><span v-if="m.comp">{{ m.comp }}</span></div>
         <section data-c="物料SKU">
           <Tbl inset flat :rows="m.skus" :cols="[
-            { k: 'code', t: 'SKU', c: 'code' }, { k: 'color', t: '颜色' }, { k: 'spec', t: '规格', f: k => k.spec || '—' }, { k: 'supColor', t: '供应商色号', f: k => k.supColor || '—' },
+            { k: 'code', t: 'SKU', c: 'code', img: k => k.code }, { k: 'color', t: '颜色' }, { k: 'spec', t: '规格', f: k => k.spec || '—' }, { k: 'supColor', t: '供应商色号', f: k => k.supColor || '—' },
             { k: 'safety', t: '安全库存', c: 'num', f: k => k.safety ? fq(k.safety) : '—' },
             { k: 'wl', t: '物料仓', c: 'num', f: k => fq(skuStock(k.code, '物料仓')) }, { k: 'gc', t: '工厂仓', c: 'num', f: k => fq(skuStock(k.code, '工厂仓')) }]">
             <template #color="{ r }"><Sw v-if="r.color" :c="r.color"/><span v-else class="dim">—</span></template>
@@ -594,7 +598,7 @@ route('/materials/:code', {
         </div>
       </div>
       <aside class="aside" data-c="物料属性">
-        <Gallery :code="m.code" :colors="[...new Set(m.skus.map(k => k.color).filter(Boolean))]"/>
+        <Gallery :code="m.code" :colors="[...new Set(m.skus.map(k => k.color).filter(Boolean))]" :owner="m" edit/>
         <dl class="props">
           <dt>库存单位</dt><dd>{{ m.unit }}</dd>
           <dt>采购单位</dt><dd>{{ m.purUnit }}<template v-if="m.purUnit !== m.unit"> · 1 {{ m.purUnit }} = {{ fq(m.factor) }} {{ m.unit }}</template></dd>
@@ -607,6 +611,7 @@ route('/materials/:code', {
           <dt>最小包装</dt><dd>{{ fq(m.pack) }} {{ m.purUnit }}</dd>
           <dt>采购周期</dt><dd>{{ m.lead }} 天</dd>
         </dl>
+        <DocFiles :doc="m"/>
         <h4>操作记录</h4><Log :items="m.log"/>
       </aside>
     </div>

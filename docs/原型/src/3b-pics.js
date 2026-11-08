@@ -207,19 +207,52 @@ function picOf(code, color, back) {
 const PIC_CACHE = new Map()
 const picSvg = (code, color, back) => { const k = code + '|' + (color || '') + (back ? '|b' : ''); if (!PIC_CACHE.has(k)) PIC_CACHE.set(k, picOf(code, color, back)); return PIC_CACHE.get(k) }
 
+// 传过图的用照片：不指定颜色取主图，指定颜色取标了这个颜色的图，没有就退回画的图
+function photoOf(code, color) {
+  const g = garmentOf(code), m = g ? null : mat(code) || matOfSku(code)
+  const list = (g || m)?.images
+  if (!list?.length) return null
+  const c = color || (m && code !== m.code ? skuOf(code)?.color : null)
+  return c ? list.find((x) => x.color === c)?.src || null : list[0].src
+}
+
+// flat：一定用画的款式图（BOM 图、量法图）
 comp('Thumb', {
-  props: { code: String, s: { type: Number, default: 32 }, color: String, back: Boolean },
-  setup: (p) => ({ svg: computed(() => picSvg(p.code, p.color, p.back)) }),
-  template: `<span class="thumb" :style="{ width: s + 'px', height: s + 'px' }"><svg viewBox="0 0 100 100" width="100%" height="100%" v-html="svg"></svg></span>`,
+  props: { code: String, s: { type: Number, default: 32 }, color: String, back: Boolean, flat: Boolean },
+  setup: (p) => ({
+    photo: computed(() => (p.flat || p.back ? null : photoOf(p.code, p.color))),
+    svg: computed(() => picSvg(p.code, p.color, p.back)),
+  }),
+  template: `<span class="thumb" :class="{ photo }" :style="{ width: s + 'px', height: s + 'px' }"><img v-if="photo" :src="photo" alt=""><svg v-else viewBox="0 0 100 100" width="100%" height="100%" v-html="svg"></svg></span>`,
 })
 
-/* 大图 + 各颜色的小图，点小图换颜色；款式、样衣的大图右上角能切正面 / 背面（款式、样衣、物料详情右侧） */
+/* 详情右侧的图：传过的照片在前，画的款式图（按颜色）在后；款式图能切正面 / 背面。
+ * owner 给了就显示照片；edit 为 true 时下面有「传图片」 */
 comp('Gallery', {
-  props: { code: String, colors: Array, s: { type: Number, default: 258 } },
-  setup: (p) => ({ c: ref(p.colors?.[0]), b: ref(false), garment: computed(() => !!garmentOf(p.code)) }),
-  template: `<div class="gallery" data-c="图片"><div class="gbig"><Thumb :code="code" :color="c" :s="s" :back="b"/>
-    <div v-if="garment" class="gview"><button :class="{ on: !b }" @click="b = false">正面</button><button :class="{ on: b }" @click="b = true">背面</button></div></div>
-    <div v-if="colors && colors.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap"><button v-for="x in colors" :key="x" class="gthumb" :class="{ on: x === c }" :title="colorName(x)" @click="c = x"><Thumb :code="code" :color="x" :s="42"/></button></div></div>`,
+  props: { code: String, colors: Array, s: { type: Number, default: 258 }, owner: Object, edit: Boolean },
+  setup(p) {
+    const photos = computed(() => p.owner?.images || [])
+    const sel = ref(photos.value.length ? 0 : null) // 照片序号；null = 看画的图
+    const c = ref(p.colors?.[0]), b = ref(false), manage = ref(false)
+    watch(() => photos.value.length, (n) => { sel.value = n ? Math.min(sel.value ?? 0, n - 1) : null })
+    const flats = computed(() => (p.colors?.length ? p.colors : [undefined]))
+    const garment = computed(() => !!garmentOf(p.code))
+    const pickFlat = (x) => { sel.value = null; c.value = x }
+    return { photos, sel, c, b, manage, flats, garment, pickFlat }
+  },
+  template: `<div class="gallery" data-c="图片"><div class="gbig">
+      <span v-if="sel != null" class="thumb photo gphoto" :style="{ width: s + 'px', height: s + 'px' }" title="点开看大图" @click="viewPics(photos, sel)"><img :src="photos[sel].src" alt=""></span>
+      <Thumb v-else :code="code" :color="c" :s="s" :back="b" flat/>
+      <div v-if="sel == null && garment" class="gview"><button :class="{ on: !b }" @click="b = false">正面</button><button :class="{ on: b }" @click="b = true">背面</button></div>
+      <span v-if="sel == null && garment" class="gnote">款式图</span>
+      <span v-else-if="sel != null && photos[sel].color" class="gnote">{{ colorName(photos[sel].color) }}</span></div>
+    <div v-if="photos.length + flats.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap">
+      <button v-for="(x, i) in photos" :key="x.id" class="gthumb" :class="{ on: sel === i }" :title="x.name" @click="sel = i"><span class="thumb photo" style="width:42px;height:42px"><img :src="x.src" alt=""></span></button>
+      <button v-for="x in flats" :key="x || '-'" class="gthumb" :class="{ on: sel == null && x === c }" :title="(x ? colorName(x) : '') + (garment ? ' 款式图' : '')" @click="pickFlat(x)"><Thumb :code="code" :color="x" :s="42" flat/></button>
+    </div>
+    <button v-if="owner && edit" class="btn sm" style="margin-top:8px" @click="manage = true"><Ico n="camera" :s="13"/>{{ photos.length ? '管理图片（' + photos.length + ' 张）' : '传图片' }}</button>
+    <PicsEdit v-if="manage" :owner="owner" :colors="colors" :t="'图片 · ' + code" @close="manage = false"/>
+  </div>`,
 })
 
 /* ---------- 资料包的 BOM 图：正面、背面两张款式图上按 BOM 行号标出每种料用在哪 ----------
@@ -265,7 +298,7 @@ comp('BomFigure', {
     return { marks }
   },
   template: `<div class="bomfig"><div class="figs">
-    <div v-for="b in [false, true]" :key="b" class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" :back="b"/><span class="cap">{{ b ? '背面' : '正面' }}</span>
+    <div v-for="b in [false, true]" :key="b" class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" :back="b" flat/><span class="cap">{{ b ? '背面' : '正面' }}</span>
       <span v-for="m in marks.filter(m => !m.off && m.b === b)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span></div></div>
     <div v-if="marks.some(m => m.off)" class="off"><span v-for="m in marks.filter(m => m.off)" :key="m.i" class="mk-l" :class="{ on: hl === m.i }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)"><i>{{ m.i + 1 }}</i>{{ rows[m.i].part }}</span></div>
   </div>`,
@@ -307,7 +340,7 @@ comp('SpecFigure', {
     })
     return { dims, specLetter }
   },
-  template: `<div class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s"/>
+  template: `<div class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" flat/>
     <svg class="dims" viewBox="0 0 100 100"><g v-for="d in dims" :key="d.i" :class="{ on: hl === d.i }"><path class="halo" :d="d.line + d.heads"/><path class="ln" :d="d.line"/><path class="hd" :d="d.heads"/></g></svg>
     <span v-for="d in dims" :key="d.i" class="mk" :class="{ on: hl === d.i }" :style="{ left: d.lx + '%', top: d.ly + '%' }" @mouseenter="$emit('hover', d.i)">{{ specLetter(d.i) }}</span>
   </div>`,

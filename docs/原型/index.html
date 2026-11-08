@@ -256,6 +256,8 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .sw i { width: 12px; height: 12px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); display: inline-block; }
 .thumb { display: inline-grid; place-items: center; border-radius: 4px; flex: none; overflow: hidden; vertical-align: middle;
   background: radial-gradient(circle at 50% 38%, #fbfbf8, #e6e8e1); box-shadow: inset 0 0 0 1px rgba(28,34,48,.06); }
+.thumb.photo { background: var(--bg-sunken); }
+.thumb.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* 进度 */
 .prog { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
@@ -281,6 +283,7 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .props dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .aside h4 { margin: 24px 0 10px; font-size: 12.5px; font-weight: 600; color: var(--fg); padding-left: 8px; border-left: 3px solid var(--accent); line-height: 1.1; }
 .aside h4:first-child { margin-top: 0; }
+.aside .docfiles h4 { margin-top: 24px; }
 .sec { margin-top: 28px; }
 .sec > h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; padding-left: 9px; border-left: 3px solid var(--accent); line-height: 1.2; }
 .sec > h3 .acts { margin-left: auto; display: flex; gap: 6px; font-weight: 400; }
@@ -540,6 +543,46 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .gview { position: absolute; top: 8px; right: 8px; display: flex; line-height: 1.5; background: rgb(255 255 255 / 85%); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
 .gview button { border: 0; background: none; padding: 2px 9px; font: inherit; font-size: 12px; color: var(--fg-2); cursor: pointer; }
 .gview button.on { background: var(--accent); color: var(--accent-fg); }
+.gphoto { cursor: zoom-in; border-radius: 6px; }
+.gphoto img { object-fit: contain; background: #fff; }
+.gnote { position: absolute; left: 8px; bottom: 8px; line-height: 1.5; padding: 1px 7px; border-radius: 4px; font-size: 11px; color: var(--fg-2); background: rgb(255 255 255 / 85%); }
+
+/* 图片、附件上传（3c-upload.js）：图块 + 「加图片」块；拖进来时框变蓝 */
+.pics { outline: none; border-radius: 6px; }
+.pics:not(.ro):focus-visible, .pics.over { box-shadow: 0 0 0 2px var(--accent-bg), 0 0 0 3px var(--accent); }
+.pgrid { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.pic { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.pimg { position: relative; border-radius: 5px; overflow: hidden; cursor: zoom-in; background: var(--bg-sunken); box-shadow: inset 0 0 0 1px var(--line); }
+.pimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pic.file .pimg { cursor: pointer; }
+.pfile { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0 8px; height: 100%; padding: 0 10px; font-size: 12px; line-height: 1.35; }
+.pfile b { grid-row: span 2; min-width: 34px; padding: 3px 4px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 10px; text-align: center; }
+.pfile span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pfile small { color: var(--fg-3); }
+.ptag { position: absolute; left: 0; top: 0; padding: 1px 6px; border-radius: 0 0 5px 0; background: var(--accent); color: var(--accent-fg); font-size: 11px; line-height: 1.5; }
+.pops { position: absolute; right: 3px; top: 3px; display: none; gap: 3px; }
+.pic:hover .pops, .pic:focus-within .pops { display: flex; }
+.pops button { height: 20px; min-width: 20px; padding: 0 5px; border: 0; border-radius: 4px; background: rgb(20 32 56 / 72%); color: #fff; font: inherit; font-size: 11px; cursor: pointer; display: grid; place-items: center; }
+.pops button:hover { background: var(--red); }
+.pops button:first-child:not(:last-child):hover { background: var(--accent); }
+.pcolor { height: 22px; width: 100%; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 11px; color: var(--fg-2); background: var(--bg); }
+.pmore { display: grid; place-items: center; padding: 0 6px; border-radius: 5px; background: var(--bg-sunken); color: var(--fg-2); font-size: 12px; cursor: zoom-in; }
+.padd { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px dashed var(--line-strong); border-radius: 5px; background: var(--bg); color: var(--fg-2); font: inherit; font-size: 12px; cursor: pointer; }
+.padd:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.ptip { margin: 6px 0 0; font-size: 12px; color: var(--fg-3); }
+td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
+
+/* 看大图 */
+.viewer { position: fixed; inset: 0; z-index: 60; background: rgb(14 20 34 / 88%); display: grid; place-items: center; padding: 56px 72px 64px; }
+.viewer > img { max-width: calc(100vw - 144px); max-height: calc(100vh - 120px); object-fit: contain; border-radius: 4px; box-shadow: 0 10px 40px rgb(0 0 0 / 40%); background: #fff; }
+.vnav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; border-radius: 22px; background: rgb(255 255 255 / 14%); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.vnav:hover { background: rgb(255 255 255 / 26%); }
+.vnav.l { left: 16px; }
+.vnav.r { right: 16px; }
+.vbar { position: absolute; left: 0; right: 0; bottom: 0; height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 20px; color: #e8ecf3; font-size: 13px; }
+.vbar .sp { flex: 1; }
+.vbar .dim { color: #9aa6ba; }
+.vbar .btn { color: #e8ecf3; }
 </style>
 </head>
 <body>
@@ -765,6 +808,20 @@ function nextNo(prefix) {
   return k + String(db.seq[k]).padStart(4, '0')
 }
 function act(doc, text) { (doc.log ||= []).push({ at: clock.today, who: userName(db.me), text }) }
+// 图片（款式、物料、样衣）和附件（单据）：整组换掉，操作记录里写加了 / 删了什么
+const PHOTO_TYPES = ['面料质量', '做工质量', '工艺问题'] // 这几类异常要带照片
+function setImages(o, list) {
+  const n0 = (o.images || []).length
+  o.images = list
+  act(o, `图片 ${n0} → ${list.length} 张${list.length ? '，主图 ' + list[0].name : ''}`)
+}
+function setFiles(o, list) {
+  const old = o.files || [], ids = new Set(list.map((x) => x.id)), was = new Set(old.map((x) => x.id))
+  const added = list.filter((x) => !was.has(x.id)), gone = old.filter((x) => !ids.has(x.id))
+  o.files = list
+  if (added.length) act(o, '加附件 ' + added.map((x) => x.name).join('、'))
+  if (gone.length) act(o, '删附件 ' + gone.map((x) => x.name).join('、'))
+}
 
 /* ---------- 状态流转表：动作 → [从哪些状态, 到什么状态] ---------- */
 const FLOWS = {
@@ -1027,7 +1084,7 @@ function createChange(o, f) {
   })
   if (errs.length) fail('变更不能提交', errs)
   const types = [items.length && '数量', due && '交期'].filter(Boolean)
-  const c = add(db.changes, { no: nextNo('BG'), order: o.no, types, items, due, reason: f.reason, party: f.party || '客户', fee: f.fee || '', date: clock.today, by: db.me, status: '待审核', log: [] })
+  const c = add(db.changes, { no: nextNo('BG'), order: o.no, types, items, due, reason: f.reason, party: f.party || '客户', fee: f.fee || '', files: f.files || [], date: clock.today, by: db.me, status: '待审核', log: [] })
   act(c, '提交')
   act(o, '提交变更单 ' + c.no)
   return c
@@ -1186,6 +1243,7 @@ function receivePurchase(p, f) {
     type: '采购入库', src: p.no, partner: p.supplier, to: f.wh || p.wh, supNo: f.supNo || '',
     lines: ls.map((x) => { const l = p.lines[x.i], m = matOfSku(l.sku); return { sku: l.sku, owner: l.owner, qty: rnd(x.qty * m.factor, 3), purQty: x.qty, price: l.price, lot: x.lot || '', poLine: x.i } }),
   })
+  if (f.files?.length) d.files = f.files
   postStockDoc(d)
   return d
 }
@@ -1285,9 +1343,9 @@ function reportNode(p, i, f) {
   const n = p.nodes[i]
   if (!f.as && !f.af) fail('开始、完成至少填一个')
   if (f.af && f.as && f.af < f.as) fail('完成时间不能早于开始时间')
-  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me })
+  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, photos: [...(n.photos || []), ...(f.photos || [])] })
   if (p.status === '已下单') p.status = '生产中'
-  act(p, `报进度：${n.name}${f.af ? '完成' : '开始'}${f.qty ? ' ' + f.qty + ' 件' : ''}`)
+  act(p, `报进度：${n.name}${f.af ? '完成' : '开始'}${f.qty ? ' ' + f.qty + ' 件' : ''}${f.photos?.length ? '，照片 ' + f.photos.length + ' 张' : ''}`)
   return p.nodes.slice(0, i).some((x) => !x.af) ? '前面还有节点没报完成' : null
 }
 const expectDue = (p) => p.expect || p.due
@@ -1305,7 +1363,8 @@ function prodRisk(p) {
 }
 function reportIssue(p, f) {
   if (!f.type || !f.desc) fail('类型、描述都要填')
-  const i = add(p.issues, { id: nextNo('YC'), type: f.type, desc: f.desc, newDate: f.newDate || null, party: f.party || '', status: '待处理', at: clock.today, by: db.me, measure: '' })
+  if (PHOTO_TYPES.includes(f.type) && !f.photos?.length) fail(`「${f.type}」要传至少一张照片`, ['拍问题部位，工厂和供应商对责任时要用'])
+  const i = add(p.issues, { id: nextNo('YC'), type: f.type, desc: f.desc, photos: f.photos || [], newDate: f.newDate || null, party: f.party || '', status: '待处理', at: clock.today, by: db.me, measure: '' })
   if (f.newDate) p.expect = f.newDate
   act(p, `上报异常：${f.type}${f.newDate ? '，预计交期改为 ' + fd(f.newDate) : ''}`)
   return i
@@ -1374,7 +1433,7 @@ function registerReturn(p, f) {
   if (!got.length) errs.push('至少登记一个数量')
   if (errs.length) fail('回货没登记上', errs)
   got.forEach(({ l, q, d }) => { l.ret += q; l.def += d })
-  const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d }) => ({ color: l.color, size: l.size, qty: q, def: d })), log: [] })
+  const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d }) => ({ color: l.color, size: l.size, qty: q, def: d })), photos: f.photos || [], log: [] })
   act(r, '登记')
   p.status = prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : '部分回货'
   act(p, `回货 ${r.no}：${sum(r.lines, (x) => x.qty)} 件，次品 ${sum(r.lines, (x) => x.def)}${p.status === '已完成' ? '，加工单完成' : ''}`)
@@ -2127,19 +2186,52 @@ function picOf(code, color, back) {
 const PIC_CACHE = new Map()
 const picSvg = (code, color, back) => { const k = code + '|' + (color || '') + (back ? '|b' : ''); if (!PIC_CACHE.has(k)) PIC_CACHE.set(k, picOf(code, color, back)); return PIC_CACHE.get(k) }
 
+// 传过图的用照片：不指定颜色取主图，指定颜色取标了这个颜色的图，没有就退回画的图
+function photoOf(code, color) {
+  const g = garmentOf(code), m = g ? null : mat(code) || matOfSku(code)
+  const list = (g || m)?.images
+  if (!list?.length) return null
+  const c = color || (m && code !== m.code ? skuOf(code)?.color : null)
+  return c ? list.find((x) => x.color === c)?.src || null : list[0].src
+}
+
+// flat：一定用画的款式图（BOM 图、量法图）
 comp('Thumb', {
-  props: { code: String, s: { type: Number, default: 32 }, color: String, back: Boolean },
-  setup: (p) => ({ svg: computed(() => picSvg(p.code, p.color, p.back)) }),
-  template: `<span class="thumb" :style="{ width: s + 'px', height: s + 'px' }"><svg viewBox="0 0 100 100" width="100%" height="100%" v-html="svg"></svg></span>`,
+  props: { code: String, s: { type: Number, default: 32 }, color: String, back: Boolean, flat: Boolean },
+  setup: (p) => ({
+    photo: computed(() => (p.flat || p.back ? null : photoOf(p.code, p.color))),
+    svg: computed(() => picSvg(p.code, p.color, p.back)),
+  }),
+  template: `<span class="thumb" :class="{ photo }" :style="{ width: s + 'px', height: s + 'px' }"><img v-if="photo" :src="photo" alt=""><svg v-else viewBox="0 0 100 100" width="100%" height="100%" v-html="svg"></svg></span>`,
 })
 
-/* 大图 + 各颜色的小图，点小图换颜色；款式、样衣的大图右上角能切正面 / 背面（款式、样衣、物料详情右侧） */
+/* 详情右侧的图：传过的照片在前，画的款式图（按颜色）在后；款式图能切正面 / 背面。
+ * owner 给了就显示照片；edit 为 true 时下面有「传图片」 */
 comp('Gallery', {
-  props: { code: String, colors: Array, s: { type: Number, default: 258 } },
-  setup: (p) => ({ c: ref(p.colors?.[0]), b: ref(false), garment: computed(() => !!garmentOf(p.code)) }),
-  template: `<div class="gallery" data-c="图片"><div class="gbig"><Thumb :code="code" :color="c" :s="s" :back="b"/>
-    <div v-if="garment" class="gview"><button :class="{ on: !b }" @click="b = false">正面</button><button :class="{ on: b }" @click="b = true">背面</button></div></div>
-    <div v-if="colors && colors.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap"><button v-for="x in colors" :key="x" class="gthumb" :class="{ on: x === c }" :title="colorName(x)" @click="c = x"><Thumb :code="code" :color="x" :s="42"/></button></div></div>`,
+  props: { code: String, colors: Array, s: { type: Number, default: 258 }, owner: Object, edit: Boolean },
+  setup(p) {
+    const photos = computed(() => p.owner?.images || [])
+    const sel = ref(photos.value.length ? 0 : null) // 照片序号；null = 看画的图
+    const c = ref(p.colors?.[0]), b = ref(false), manage = ref(false)
+    watch(() => photos.value.length, (n) => { sel.value = n ? Math.min(sel.value ?? 0, n - 1) : null })
+    const flats = computed(() => (p.colors?.length ? p.colors : [undefined]))
+    const garment = computed(() => !!garmentOf(p.code))
+    const pickFlat = (x) => { sel.value = null; c.value = x }
+    return { photos, sel, c, b, manage, flats, garment, pickFlat }
+  },
+  template: `<div class="gallery" data-c="图片"><div class="gbig">
+      <span v-if="sel != null" class="thumb photo gphoto" :style="{ width: s + 'px', height: s + 'px' }" title="点开看大图" @click="viewPics(photos, sel)"><img :src="photos[sel].src" alt=""></span>
+      <Thumb v-else :code="code" :color="c" :s="s" :back="b" flat/>
+      <div v-if="sel == null && garment" class="gview"><button :class="{ on: !b }" @click="b = false">正面</button><button :class="{ on: b }" @click="b = true">背面</button></div>
+      <span v-if="sel == null && garment" class="gnote">款式图</span>
+      <span v-else-if="sel != null && photos[sel].color" class="gnote">{{ colorName(photos[sel].color) }}</span></div>
+    <div v-if="photos.length + flats.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap">
+      <button v-for="(x, i) in photos" :key="x.id" class="gthumb" :class="{ on: sel === i }" :title="x.name" @click="sel = i"><span class="thumb photo" style="width:42px;height:42px"><img :src="x.src" alt=""></span></button>
+      <button v-for="x in flats" :key="x || '-'" class="gthumb" :class="{ on: sel == null && x === c }" :title="(x ? colorName(x) : '') + (garment ? ' 款式图' : '')" @click="pickFlat(x)"><Thumb :code="code" :color="x" :s="42" flat/></button>
+    </div>
+    <button v-if="owner && edit" class="btn sm" style="margin-top:8px" @click="manage = true"><Ico n="camera" :s="13"/>{{ photos.length ? '管理图片（' + photos.length + ' 张）' : '传图片' }}</button>
+    <PicsEdit v-if="manage" :owner="owner" :colors="colors" :t="'图片 · ' + code" @close="manage = false"/>
+  </div>`,
 })
 
 /* ---------- 资料包的 BOM 图：正面、背面两张款式图上按 BOM 行号标出每种料用在哪 ----------
@@ -2185,7 +2277,7 @@ comp('BomFigure', {
     return { marks }
   },
   template: `<div class="bomfig"><div class="figs">
-    <div v-for="b in [false, true]" :key="b" class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" :back="b"/><span class="cap">{{ b ? '背面' : '正面' }}</span>
+    <div v-for="b in [false, true]" :key="b" class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" :back="b" flat/><span class="cap">{{ b ? '背面' : '正面' }}</span>
       <span v-for="m in marks.filter(m => !m.off && m.b === b)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span></div></div>
     <div v-if="marks.some(m => m.off)" class="off"><span v-for="m in marks.filter(m => m.off)" :key="m.i" class="mk-l" :class="{ on: hl === m.i }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)"><i>{{ m.i + 1 }}</i>{{ rows[m.i].part }}</span></div>
   </div>`,
@@ -2227,11 +2319,235 @@ comp('SpecFigure', {
     })
     return { dims, specLetter }
   },
-  template: `<div class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s"/>
+  template: `<div class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" flat/>
     <svg class="dims" viewBox="0 0 100 100"><g v-for="d in dims" :key="d.i" :class="{ on: hl === d.i }"><path class="halo" :d="d.line + d.heads"/><path class="ln" :d="d.line"/><path class="hd" :d="d.heads"/></g></svg>
     <span v-for="d in dims" :key="d.i" class="mk" :class="{ on: hl === d.i }" :style="{ left: d.lx + '%', top: d.ly + '%' }" @mouseenter="$emit('hover', d.i)">{{ specLetter(d.i) }}</span>
   </div>`,
 })
+</script>
+<script>/* 3c-upload.js */
+/* ============================================================
+ * 图片和附件（PRD §5.8；架构 §10.3）
+ * 加图三种方式：点「加图片」选文件、把文件拖进框里、点一下框再 Ctrl+V 粘贴截图。
+ * 图片在浏览器里压到长边 1600px、JPEG 0.8 再存；原型只存在内存里，刷新页面就没了。
+ * 第一张是主图；鼠标移到图上能「设为主图」「删除」；点图看大图（← → 翻页，Esc 关）。
+ * 用法：
+ *   <Pics v-model="f.images"/>                              多张图，默认最多 9 张
+ *   <Pics v-model="f.images" :colors="f.colors"/>            每张图能标颜色（订单、加工单里按颜色出图）
+ *   <Pics v-model="d.files" files/>                          附件：图片以外的文件也收，点了下载
+ *   <Pics v-model="f.photos" camera/>                       报工、异常：按钮写「拍照」，手机上点了可以选拍照或相册
+ *   <Pics :model-value="x.photos" readonly :s="28" :limit="3"/>   表格里只看
+ * ============================================================ */
+let picSeq = 0
+const PIC_MAX = 9
+const FILE_MAX = 10 * 1024 * 1024
+const isImg = (x) => /^data:image\//.test(x?.src || '')
+const extOf = (name) => (/\.([a-z0-9]{1,5})$/i.exec(name || '')?.[1] || '文件').toUpperCase()
+const fsize = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB')
+
+function readPic(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), img = new Image()
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight))
+      const c = document.createElement('canvas')
+      c.width = Math.max(1, Math.round(img.naturalWidth * k))
+      c.height = Math.max(1, Math.round(img.naturalHeight * k))
+      const g = c.getContext('2d')
+      g.fillStyle = '#fff' // 透明 PNG 转 JPEG 时底色用白的
+      g.fillRect(0, 0, c.width, c.height)
+      g.drawImage(img, 0, 0, c.width, c.height)
+      URL.revokeObjectURL(url)
+      const src = c.toDataURL('image/jpeg', 0.8)
+      resolve({ id: 'P' + ++picSeq, name: file.name || '截图.jpg', size: Math.round(src.length * 0.75), src, at: clock.today })
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`${file.name} 打不开，不是图片`)) }
+    img.src = url
+  })
+}
+function readFile(file) {
+  if (file.size > FILE_MAX) return Promise.reject(new Error(`${file.name} 超过 10MB`))
+  return new Promise((resolve) => {
+    const r = new FileReader()
+    r.onload = () => resolve({ id: 'P' + ++picSeq, name: file.name, size: file.size, src: r.result, at: clock.today })
+    r.readAsDataURL(file)
+  })
+}
+function downloadPic(x) {
+  const a = document.createElement('a')
+  a.href = x.src
+  a.download = x.name || '附件'
+  a.click()
+}
+
+/* ---------- 看大图 ---------- */
+const viewer = reactive({ list: null, i: 0 })
+function viewPics(list, i = 0) {
+  const imgs = (list || []).filter(isImg)
+  if (!imgs.length) return
+  viewer.list = imgs
+  viewer.i = Math.max(0, imgs.indexOf(list[i]))
+}
+comp('PicViewer', {
+  setup() {
+    useEsc(() => { viewer.list = null })
+    const cur = computed(() => viewer.list[viewer.i])
+    const step = (d) => { viewer.i = (viewer.i + d + viewer.list.length) % viewer.list.length }
+    const key = (e) => { if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1) }
+    onMounted(() => window.addEventListener('keydown', key))
+    onUnmounted(() => window.removeEventListener('keydown', key))
+    return { viewer, cur, step }
+  },
+  template: `<Teleport to="body"><div class="viewer" @mousedown.self="viewer.list = null">
+    <img :src="cur.src" :alt="cur.name">
+    <button v-if="viewer.list.length > 1" class="vnav l" title="上一张" @click="step(-1)"><Ico n="left" :s="22"/></button>
+    <button v-if="viewer.list.length > 1" class="vnav r" title="下一张" @click="step(1)"><Ico n="right" :s="22"/></button>
+    <div class="vbar"><span>{{ cur.name }}</span><span v-if="cur.color">{{ colorName(cur.color) }}</span><span v-if="cur.at" class="dim">{{ fd(cur.at) }}</span><span class="sp"></span>
+      <span>{{ viewer.i + 1 }} / {{ viewer.list.length }}</span><button class="btn ghost icon" title="下载" @click="downloadPic(cur)"><Ico n="download"/></button><button class="btn ghost icon" title="关闭（Esc）" @click="viewer.list = null"><Ico n="x"/></button></div>
+  </div></Teleport>`,
+})
+
+/* ---------- 上传框 ---------- */
+comp('Pics', {
+  props: {
+    modelValue: { type: Array, default: () => [] }, max: { type: Number, default: PIC_MAX }, s: { type: Number, default: 72 },
+    colors: Array, readonly: Boolean, files: Boolean, camera: Boolean, limit: Number, bare: Boolean, tip: String,
+  },
+  emits: ['update:modelValue'],
+  setup(p, { emit }) {
+    const over = ref(false), busy = ref(false), inp = ref(null)
+    const list = computed(() => p.modelValue || [])
+    const shown = computed(() => (p.limit ? list.value.slice(0, p.limit) : list.value))
+    const unit = p.files ? '个' : '张'
+    async function take(picked) {
+      const fs = [...picked].filter((f) => p.files || f.type.startsWith('image/'))
+      if (!fs.length) return toast(p.files ? '没有能加的文件' : '只能加图片（jpg、png……）', null, true)
+      const room = p.max - list.value.length
+      if (room <= 0) return toast(`最多 ${p.max} ${unit}`, null, true)
+      if (fs.length > room) toast(`最多 ${p.max} ${unit}，多出来的 ${fs.length - room} ${unit}没加`, null, true)
+      busy.value = true
+      const got = [], errs = []
+      for (const f of fs.slice(0, room)) {
+        try { got.push(await (f.type.startsWith('image/') ? readPic(f) : readFile(f))) } catch (e) { errs.push(e.message) }
+      }
+      busy.value = false
+      if (errs.length) toast(errs.join('；'), null, true)
+      if (got.length) emit('update:modelValue', [...list.value, ...got])
+    }
+    const pick = (e) => { take(e.target.files); e.target.value = '' }
+    const drop = (e) => { over.value = false; if (!p.readonly) take(e.dataTransfer.files) }
+    const paste = (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length && !p.readonly) { e.preventDefault(); take(fs) } }
+    const remove = (i) => emit('update:modelValue', list.value.filter((_, k) => k !== i))
+    const toFront = (i) => { const a = [...list.value]; a.unshift(...a.splice(i, 1)); emit('update:modelValue', a) }
+    const tag = (i, c) => emit('update:modelValue', list.value.map((x, k) => (k === i ? { ...x, color: c || undefined } : x)))
+    const open = (i) => { const x = list.value[i]; if (isImg(x)) viewPics(list.value, i); else downloadPic(x) }
+    const tipText = computed(() => p.tip ?? (p.files
+      ? '合同、报价单、截图都可以；拖进来也行，单个不超过 10MB'
+      : `拖进来、或点一下这里再 Ctrl+V 粘贴截图也行；最多 ${p.max} 张${p.max > 1 ? '，第一张是主图' : ''}`))
+    return { over, busy, inp, list, shown, take, pick, drop, paste, remove, toFront, tag, open, tipText, isImg, extOf, fsize }
+  },
+  template: `<div class="pics" :class="{ over, ro: readonly }" :tabindex="readonly ? null : 0" @paste="paste" @dragover.prevent="over = !readonly" @dragleave="over = false" @drop.prevent="drop">
+    <div class="pgrid">
+      <div v-for="(x, i) in shown" :key="x.id" class="pic" :class="{ file: !isImg(x) }" :style="{ width: (isImg(x) ? s : Math.max(s, 150)) + 'px' }">
+        <div class="pimg" :style="{ height: s + 'px' }" :title="x.name + (isImg(x) ? '（点开看大图）' : '（点了下载）')" @click="open(i)">
+          <img v-if="isImg(x)" :src="x.src" alt="">
+          <span v-else class="pfile"><b>{{ extOf(x.name) }}</b><span>{{ x.name }}</span><small v-if="x.size">{{ fsize(x.size) }}</small></span>
+          <span v-if="i === 0 && !files && !readonly && list.length > 1" class="ptag">主图</span>
+        </div>
+        <div v-if="!readonly" class="pops"><button v-if="i && !files" type="button" title="设为主图" @click="toFront(i)">主图</button><button type="button" title="删除" @click="remove(i)"><Ico n="x" :s="12"/></button></div>
+        <select v-if="colors && colors.length && !readonly" class="pcolor" :value="x.color || ''" @change="tag(i, $event.target.value)"><option value="">不分色</option><option v-for="c in colors" :key="c" :value="c">{{ colorName(c) }}</option></select>
+      </div>
+      <span v-if="limit && list.length > limit" class="pmore" :style="{ height: s + 'px', minWidth: s + 'px' }" @click="viewPics(list, limit)">+{{ list.length - limit }}</span>
+      <button v-if="!readonly && list.length < max" type="button" class="padd" :style="{ width: s + 'px', height: s + 'px' }" @click="inp.click()">
+        <Ico :n="files ? 'upload' : 'camera'" :s="s < 56 ? 15 : 18"/><span v-if="s >= 56">{{ busy ? '处理中…' : files ? '加附件' : camera ? '拍照' : '加图片' }}</span></button>
+    </div>
+    <input ref="inp" type="file" :accept="files ? null : 'image/*'" multiple hidden @change="pick">
+    <p v-if="!readonly && !bare" class="ptip">{{ tipText }}</p>
+  </div>`,
+})
+
+/* 款式、物料、样衣详情页：改图片（第一张是主图） */
+comp('PicsEdit', {
+  props: { owner: Object, colors: Array, t: String },
+  emits: ['close'],
+  setup(p, { emit }) {
+    const list = ref([...(p.owner.images || [])])
+    function save() { setImages(p.owner, list.value); emit('close'); toast('图片已保存') }
+    return { list, save }
+  },
+  template: `<Modal :t="t || '图片'" :w="660" @close="$emit('close')">
+    <Pics v-model="list" :colors="colors" :s="96"/>
+    <p v-if="colors && colors.length > 1" class="mut" style="margin-top:6px">给图标上颜色，订单、加工单里会按颜色出图；没标颜色的图只当主图用。</p>
+    <template #foot><span class="dim">{{ list.length }} 张</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">保存</button></template>
+  </Modal>`,
+})
+
+/* 单据附件（订单、采购单、加工单、出入库单详情右侧） */
+comp('DocFiles', {
+  props: { doc: Object },
+  template: `<div class="docfiles" data-c="附件"><h4>附件<span v-if="doc.files && doc.files.length" class="dim" style="font-weight:400"> {{ doc.files.length }}</span></h4>
+    <Pics :model-value="doc.files || []" files :s="56" :max="20" @update:model-value="v => setFiles(doc, v)"/></div>`,
+})
+
+expose({ viewer, viewPics, setImages, setFiles, PHOTO_TYPES })
+
+/* ---------- 演示数据用的"照片"：SVG 画的，像拍出来的样子 ----------
+ * kind：product 款式上身照（影棚底 + 衣架）/ fabric 布面特写 / defect 瑕疵特写（红圈标出来）/ cutting 裁床 / license 证照 */
+const PHOTO_DEFS = PIC_DEFS.match(/<defs>[\s\S]*<\/defs>/)[0]
+const svgUri = (w, h, body) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w * 8}" height="${h * 8}">${PHOTO_DEFS}${body}</svg>`)
+function fakePhoto(kind, a, b) {
+  if (kind === 'product') {
+    const st = garmentOf(a), hex = colorOf(b || st.colors[0]).hex
+    return svgUri(100, 120, `<defs><radialGradient id="ph-bg" cx=".5" cy=".3" r=".95"><stop offset="0" stop-color="#f7f5f0"/><stop offset="1" stop-color="#d6d3c9"/></radialGradient></defs>
+      <rect width="100" height="120" fill="url(#ph-bg)"/><rect y="104" width="100" height="16" fill="#cfcbc0" opacity=".55"/><ellipse cx="50" cy="111" rx="36" ry="2.6" fill="#000" opacity=".1"/>
+      <path d="M50 4.5c-2.6 0-3 3.2-.4 4.3.9.4.9 1.4.9 2.4V15" fill="none" stroke="#8d8d8d" stroke-width="1"/><path d="M29 22.5L50 14.5L71 22.5" fill="none" stroke="#7a6548" stroke-width="2.4" stroke-linecap="round"/>
+      <g transform="translate(0 13)">${garmentSvg(catOf(st.cat).shape, hex)}</g>`)
+  }
+  const hex = a || '#c8b48a', tex = hexLum(hex) < 0.45 ? 'l' : 'd'
+  const cloth = (w, h) => `<rect width="${w}" height="${h}" fill="${hex}"/><rect width="${w}" height="${h}" fill="url(#pg-twill-${tex})"/>
+    <path d="M-5 ${h * 0.3}C${w * 0.3} ${h * 0.2} ${w * 0.6} ${h * 0.5} ${w + 5} ${h * 0.35}V${h * 0.55}C${w * 0.6} ${h * 0.7} ${w * 0.3} ${h * 0.4} -5 ${h * 0.5}Z" fill="#fff" opacity=".09"/>
+    <path d="M-5 ${h * 0.75}C${w * 0.35} ${h * 0.6} ${w * 0.7} ${h * 0.9} ${w + 5} ${h * 0.7}V${h + 5}H-5Z" fill="#000" opacity=".1"/>
+    <rect width="${w}" height="${h}" fill="url(#pg-shade)"/>`
+  if (kind === 'fabric') return svgUri(100, 75, cloth(100, 75))
+  if (kind === 'defect') {
+    return svgUri(100, 75, `${cloth(100, 75)}<ellipse cx="56" cy="36" rx="9" ry="6" fill="#3a2a10" opacity=".28"/><ellipse cx="58" cy="35" rx="5" ry="3.5" fill="#3a2a10" opacity=".25"/>
+      <circle cx="57" cy="36" r="14" fill="none" stroke="#e0322a" stroke-width="1.6"/><path d="M68 26L80 15" stroke="#e0322a" stroke-width="1.2"/>
+      <rect x="72" y="7" width="24" height="10" rx="2" fill="#e0322a"/><text x="84" y="14.3" text-anchor="middle" font-size="6" fill="#fff" font-family="sans-serif">${b || '污渍'}</text>`)
+  }
+  if (kind === 'cutting') {
+    const layers = Array.from({ length: 9 }, (_, i) => `<path d="M14 ${52 - i * 2.2}H86L90 ${55 - i * 2.2}H10Z" fill="${hex}" stroke="#000" stroke-opacity=".12" stroke-width=".3"/>`).join('')
+    return svgUri(100, 75, `<rect width="100" height="75" fill="#e9e4d8"/><rect y="40" width="100" height="35" fill="#c9b796"/><rect y="40" width="100" height="35" fill="url(#pg-twill-d)" opacity=".5"/>
+      ${layers}<path d="M24 35C30 30 40 31 44 35M54 34C62 28 72 30 78 35" fill="none" stroke="#fff" stroke-width=".8" stroke-dasharray="1.5 1"/>
+      <rect x="62" y="20" width="4" height="16" rx="1" fill="#555"/><rect x="57" y="14" width="14" height="7" rx="1.5" fill="#777"/>`)
+  }
+  if (kind === 'license') {
+    return svgUri(100, 72, `<rect width="100" height="72" fill="#5c6670"/><g filter="url(#pg-soft)"><rect x="12" y="6" width="76" height="60" fill="#fbf8f0"/></g>
+      <rect x="15" y="9" width="70" height="54" fill="none" stroke="#c8a24a" stroke-width=".8"/><text x="50" y="21" text-anchor="middle" font-size="7" font-weight="700" fill="#a3221c" font-family="serif">${b || '营业执照'}</text>
+      ${[29, 34, 39, 44, 49].map((y) => `<path d="M22 ${y}H${y === 49 ? 50 : 66}" stroke="#666" stroke-width="1.1" opacity=".55"/>`).join('')}
+      <circle cx="70" cy="50" r="7.5" fill="none" stroke="#c8261d" stroke-width="1.2" opacity=".85"/><path d="M70 45.5L71.3 49.2H75.1L72 51.4L73.2 55L70 52.8L66.8 55L68 51.4L64.9 49.2H68.7Z" fill="#c8261d" opacity=".85"/>`)
+  }
+  return svgUri(100, 75, cloth(100, 75))
+}
+const demoPic = (kind, a, b, name, extra) => ({ id: 'P' + ++picSeq, name, src: fakePhoto(kind, a, b), at: '2026-09-15', ...extra })
+
+// 种子：几张示意照片，让列表、详情一打开就有图（款式主图按颜色、面料图、异常和报工照片、证照）
+;(() => {
+  const cf = style('27CF001')
+  if (cf) cf.images = cf.colors.map((c) => demoPic('product', cf.code, c, `${cf.code}-${colorName(c)}.jpg`, { color: c }))
+  ;['26DS021', '26QJ012', '26DY009'].forEach((code) => { const st = style(code); if (st) st.images = [demoPic('product', code, st.colors[0], code + '.jpg', { color: st.colors[0] })] })
+  const ml = mat('ML0012')
+  if (ml) ml.images = [...new Set(ml.skus.map((k) => k.color))].filter(Boolean).map((c) => demoPic('fabric', colorOf(c).hex, null, `${ml.name}-${colorName(c)}.jpg`, { color: c }))
+  const p2 = db.productions.find((p) => p.style === '26QJ012')
+  const cut = p2?.nodes.find((n) => n.name.includes('裁') && n.af)
+  if (cut) cut.photos = [demoPic('cutting', colorOf('HE').hex, null, '裁床.jpg', { at: cut.af })]
+  const p4 = db.productions.find((p) => p.style === '26DS021')
+  if (p4) {
+    const iss = as('u1', '2026-10-22', () => reportIssue(p4, { type: '面料质量', desc: '黑色大身有 3 卷布面污渍，挑出来约 40 件的料', party: '供应商', photos: [demoPic('defect', colorOf('HE').hex, '污渍', '布面污渍1.jpg'), demoPic('defect', colorOf('HE').hex, '污渍', '布面污渍2.jpg')] }))
+    as('u1', '2026-10-24', () => closeIssue(p4, iss, '供应商补发 3 卷，污渍布退回'))
+  }
+  const gs = sup('GYS0001')
+  if (gs?.certs?.[0]) gs.certs[0].file = demoPic('license', null, gs.certs[0].type, gs.certs[0].type + '.jpg')
+})()
 </script>
 <script>/* 4-feedback.js */
 /* ============================================================
@@ -2631,14 +2947,14 @@ route('/styles', {
 comp('StyleNew', {
   emits: ['close'],
   setup(_, { emit }) {
-    const f = reactive({ name: '', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', sizeGroup: 'W5', colors: [], tagPrice: null, factory: 'GYS0004', designer: db.me, source: '自主开发' })
+    const f = reactive({ name: '', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', sizeGroup: 'W5', colors: [], tagPrice: null, factory: 'GYS0004', designer: db.me, source: '自主开发', images: [] })
     const code = computed(() => { const p = String(f.year).slice(2) + f.season + f.cat; return p + String(db.styles.filter((s) => s.code.startsWith(p)).length + 1).padStart(3, '0') })
     const factories = computed(() => db.suppliers.filter((s) => isFactory(s) && s.status === '合作中'))
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
-    function save() { const s = run(() => createStyle({ ...f, colors: [...f.colors] })); if (s) { emit('close'); go('/styles/' + s.code); toast(`${s.code} 已建，生成 ${s.skus.length} 个 SKU`) } }
+    function save() { const s = run(() => createStyle({ ...f, colors: [...f.colors], images: [...f.images] })); if (s) { emit('close'); go('/styles/' + s.code); toast(`${s.code} 已建，生成 ${s.skus.length} 个 SKU`) } }
     return { f, code, factories, toggle, save }
   },
-  template: `<Modal t="新建款式" :w="600" @close="$emit('close')">
+  template: `<Modal t="新建款式" :w="640" @close="$emit('close')">
     <div class="form">
       <label class="f full">名称<input class="inp" v-model="f.name" placeholder="如：女式风衣"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
@@ -2650,6 +2966,7 @@ comp('StyleNew', {
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">默认加工厂<select class="sel" v-model="f.factory"><option v-for="s in factories" :key="s.code" :value="s.code">{{ s.short }}</option></select></label>
+      <div class="f full" data-c="款式图片">款式图片<Pics v-model="f.images" :colors="f.colors"/></div>
     </div>
     <template #foot><span class="dim" v-if="f.colors.length">{{ f.colors.length }} × {{ sizesOf(f.sizeGroup).length }} = {{ f.colors.length * sizesOf(f.sizeGroup).length }} 个 SKU</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建款式</button></template>
   </Modal>`,
@@ -2700,7 +3017,7 @@ route('/styles/:code', {
         </section>
       </div>
       <aside class="aside" data-c="款式属性">
-        <Gallery :code="s.code" :colors="s.colors"/>
+        <Gallery :code="s.code" :colors="s.colors" :owner="s" edit/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>风格</dt><dd>{{ s.tag }}</dd>
@@ -2713,6 +3030,7 @@ route('/styles/:code', {
           <dt>默认加工厂</dt><dd>{{ supName(s.factory) }}</dd>
           <dt>设计师</dt><dd>{{ userName(s.designer) }}</dd>
         </dl>
+        <DocFiles :doc="s"/>
         <h4>操作记录</h4><Log :items="s.log"/>
       </aside>
     </div>
@@ -2847,8 +3165,9 @@ comp('TechPack', {
       </div>
 
       <div v-if="view === 'ops'" data-c="工艺单">
-        <Tbl inset flat :rows="tp.ops" :cols="[{ k: 'cat', t: '类别' }, { k: 'name', t: '工序' }, { k: 'sec', t: '工时（秒）', c: 'num' }, { k: 'price', t: '工价', c: 'num', f: o => fm(o.price) }]" empty="还没有工序">
-          <template #foot><tr><td>合计</td><td></td><td class="num">{{ sum(tp.ops, o => o.sec) }}</td><td class="num">{{ fm(tpLabor(tp)) }}</td></tr></template>
+        <Tbl inset flat :rows="tp.ops" :cols="[{ k: 'cat', t: '类别' }, { k: 'name', t: '工序' }, { k: 'pics', t: '图示' }, { k: 'sec', t: '工时（秒）', c: 'num' }, { k: 'price', t: '工价', c: 'num', f: o => fm(o.price) }]" empty="还没有工序">
+          <template #pics="{ r }"><Pics v-if="edit" v-model="r.pics" :s="36" :max="3" bare/><Pics v-else-if="r.pics && r.pics.length" :model-value="r.pics" readonly :s="36"/><span v-else class="dim">—</span></template>
+          <template #foot><tr><td>合计</td><td></td><td></td><td class="num">{{ sum(tp.ops, o => o.sec) }}</td><td class="num">{{ fm(tpLabor(tp)) }}</td></tr></template>
         </Tbl>
       </div>
     </template>
@@ -2941,7 +3260,7 @@ comp('OrderNew', {
   props: { st: String, customer: String },
   emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ type: '客户订单', customer: p.customer || 'KH0001', custNo: '', due: addDays(clock.today, 60), sales: 'u3', merch: 'u1', ship: '' })
+    const f = reactive({ type: '客户订单', customer: p.customer || 'KH0001', custNo: '', due: addDays(clock.today, 60), sales: 'u3', merch: 'u1', ship: '', files: [] })
     const blocks = reactive([])
     const pickable = computed(() => db.styles.filter((s) => s.status === '启用' && !blocks.some((b) => b.style === s.code)))
     const pick = ref('')
@@ -2972,6 +3291,7 @@ comp('OrderNew', {
       <Matrix :st="b.style" v-model="b.qty"/>
     </div>
     <div class="row" style="margin-top:16px"><select class="sel" v-model="pick" @change="addBlock(pick)" style="width:260px"><option value="">加一个款……</option><option v-for="s in pickable" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}{{ activeTp(s.code) ? '' : '（资料包未生效）' }}</option></select></div>
+    <div class="sec" data-c="订单附件"><h3>附件<span class="dim" style="font-weight:400;font-size:12px">　客户的订单、PO 截图、合同，选填</span></h3><Pics v-model="f.files" files :s="56" :max="20"/></div>
     <template #foot><span class="mut">{{ total }} 件<template v-if="amount"> · {{ fm(amount) }}</template></span><span class="sp"></span>
       <button class="btn" @click="save(false)">存草稿</button><button class="btn pri" @click="save(true)">提交审核</button></template>
   </Modal>`,
@@ -3046,6 +3366,7 @@ route('/orders/:no', {
         <section v-if="tab === 'changes'" data-c="变更记录">
           <Tbl inset flat :rows="changes" empty="没有变更" :cols="[{ k: 'no', t: '变更单号', c: 'code' }, { k: 'text', t: '改了什么', f: c => describeChange(c) }, { k: 'reason', t: '原因' }, { k: 'party', t: '责任方' }, { k: 'date', t: '日期', f: c => fd(c.date) }, { k: 'status', t: '状态' }]">
             <template #text="{ r }"><span class="wrap">{{ describeChange(r) }}</span></template>
+            <template #reason="{ r }"><span class="wrap">{{ r.reason }}</span><Pics v-if="r.files && r.files.length" :model-value="r.files" readonly :s="32" :limit="3" style="margin-top:4px"/></template>
             <template #status="{ r }"><span class="row"><St :s="r.status"/><template v-if="r.status === '待审核'"><button class="btn sm" @click="run(() => doAction('change', r, '驳回'))">驳回</button><button class="btn sm pri" @click="run(() => doAction('change', r, '审核')) && toast('变更已写回订单，下游单据已提示')">审核</button></template></span></template>
           </Tbl>
         </section>
@@ -3068,6 +3389,7 @@ route('/orders/:no', {
             <dt>回货</dt><dd>{{ orderRet(o) }} / {{ orderQty(o) }}</dd>
           </template>
         </dl>
+        <DocFiles :doc="o"/>
         <h4>操作记录</h4><Log :items="o.log"/>
       </aside>
     </div>
@@ -3144,7 +3466,7 @@ comp('OrderChange', {
   emits: ['close', 'done'],
   setup(p, { emit }) {
     const qty = reactive(Object.fromEntries(orderStyles(p.o).map((st) => [st, Object.fromEntries(p.o.lines.filter((l) => l.style === st).map((l) => [l.color + '|' + l.size, l.qty]))])))
-    const f = reactive({ due: p.o.due, reason: '', party: '客户', fee: '' })
+    const f = reactive({ due: p.o.due, reason: '', party: '客户', fee: '', files: [] })
     const colorsOf = (st) => [...new Set(p.o.lines.filter((l) => l.style === st).map((l) => l.color))]
     const sub = (st) => (c, z) => { const l = p.o.lines.find((x) => x.style === st && x.color === c && x.size === z); return l ? '原 ' + l.qty + ' · 已排 ' + scheduledQty(p.o, l) : '' }
     function ok() {
@@ -3162,6 +3484,7 @@ comp('OrderChange', {
       <label class="f">责任方<select class="sel" v-model="f.party"><option>客户</option><option>我方</option><option>工厂</option><option>供应商</option></select></label>
       <label class="f full">原因<input class="inp" v-model="f.reason"></label>
       <label class="f full">费用说明<input class="inp" v-model="f.fee" placeholder="如：客户承担已裁片损失"></label>
+      <div class="f full" data-c="变更附件">客户确认<Pics v-model="f.files" files :s="56" tip="客户的邮件、聊天截图；Ctrl+V 直接贴"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">提交变更</button></template>
   </Modal>`,
@@ -3375,6 +3698,7 @@ function returnPurchase(p, lines) {
   const errs = ls.filter((x) => x.qty > p.lines[x.i].received - p.lines[x.i].returned + 0.0005).map((x) => `${skuName(p.lines[x.i].sku)}：最多能退 ${fq(p.lines[x.i].received - p.lines[x.i].returned)}`)
   if (errs.length) fail('退货数超过已入库', errs)
   const d = createStockDoc({ type: '采购退货', src: p.no, partner: p.supplier, from: p.wh, reason: lines.reason || '', lines: ls.map((x) => { const l = p.lines[x.i]; return { sku: l.sku, owner: l.owner, qty: rnd(x.qty * matOfSku(l.sku).factor, 3), price: l.price } }) })
+  if (lines.files?.length) d.files = lines.files
   postStockDoc(d)
   ls.forEach((x) => { p.lines[x.i].returned = rnd(p.lines[x.i].returned + x.qty, 3) })
   act(p, '退货 ' + d.no)
@@ -3434,6 +3758,7 @@ route('/purchases/:no', {
           <dt>结算</dt><dd>{{ po.settle }} · 税率 {{ po.tax }}</dd>
           <dt>主体</dt><dd>{{ db.companies.find(c => c.code === po.company).short }}</dd>
         </dl>
+        <DocFiles :doc="po"/>
         <h4>操作记录</h4><Log :items="po.log"/>
       </aside>
     </div>
@@ -3447,10 +3772,10 @@ comp('PurchaseReceive', {
   setup(p, { emit }) {
     const recv = p.mode === 'recv'
     const lines = reactive(p.po.lines.map((l, i) => ({ i, qty: recv ? rnd(Math.max(0, l.qty - l.received), 3) : 0, lot: '' })))
-    const f = reactive({ wh: p.po.wh, supNo: '', reason: '' })
+    const f = reactive({ wh: p.po.wh, supNo: '', reason: '', files: [] })
     const whs = computed(() => db.warehouses.filter((w) => w.type !== '成品仓'))
     function ok() {
-      const d = run(() => (recv ? receivePurchase(p.po, { lines, wh: f.wh, supNo: f.supNo }) : returnPurchase(p.po, Object.assign([...lines], { reason: f.reason }))))
+      const d = run(() => (recv ? receivePurchase(p.po, { lines, wh: f.wh, supNo: f.supNo, files: f.files }) : returnPurchase(p.po, Object.assign([...lines], { reason: f.reason, files: f.files }))))
       if (d?.no) { emit('close'); toast(`${d.no} 已过账，库存已更新`, ['打开', '/stock-docs/' + d.no]) }
     }
     return { recv, lines, f, whs, ok, purUnit }
@@ -3465,6 +3790,7 @@ comp('PurchaseReceive', {
       <tbody><tr v-for="x in lines" :key="x.i"><td><span class="row"><Thumb :code="po.lines[x.i].sku" :s="30"/>{{ skuName(po.lines[x.i].sku) }}</span></td>
         <td class="num">{{ fq(recv ? Math.max(0, po.lines[x.i].qty - po.lines[x.i].received) : po.lines[x.i].received - po.lines[x.i].returned) }} <span class="dim">{{ purUnit(po.lines[x.i].sku) }}</span></td>
         <td><input class="inp cell num" type="number" v-model.number="x.qty"></td><td v-if="recv"><input class="inp cell" v-model="x.lot"></td></tr></tbody></table>
+    <div class="sec" data-c="到货照片"><h3>{{ recv ? '送货单、到货照片' : '退货问题照片' }}<span class="dim" style="font-weight:400;font-size:12px">　选填，挂在{{ recv ? '入库单' : '退货单' }}的附件里</span></h3><Pics v-model="f.files" files :s="64" :tip="recv ? '拍送货单、外箱、布头标签；拖进来也行' : '拍问题部位、退货包装'"/></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ recv ? '入库并过账' : '退货并过账' }}</button></template>
   </Modal>`,
 })
@@ -3586,6 +3912,7 @@ route('/stock-docs/:no', {
           <dt v-if="d.reason">原因</dt><dd v-if="d.reason">{{ d.reason }}</dd>
           <dt>审核人</dt><dd>{{ d.auditor ? userName(d.auditor) : '—' }}</dd>
         </dl>
+        <DocFiles :doc="d"/>
         <h4>操作记录</h4><Log :items="d.log"/>
       </aside>
     </div>
@@ -3728,7 +4055,7 @@ route('/production/:no', {
           <ul class="tl">
             <li v-for="(n, i) in x.nodes" :key="n.name" :class="nodeCls(n)" style="cursor:pointer" @click="report(i)">
               <span class="dot"></span><b>{{ n.name }}</b>
-              <div class="col"><small>计划 {{ fd(n.ps) }} – {{ fd(n.pf) }}</small><small v-if="n.as" :class="{ red: nodeCls(n) === 'late' }">实际 {{ fd(n.as) }} – {{ n.af ? fd(n.af) : '进行中' }}<template v-if="n.qty"> · {{ n.qty }} 件</template><template v-if="n.by"> · {{ userName(n.by) }}</template></small></div>
+              <div class="col"><small>计划 {{ fd(n.ps) }} – {{ fd(n.pf) }}</small><small v-if="n.as" :class="{ red: nodeCls(n) === 'late' }">实际 {{ fd(n.as) }} – {{ n.af ? fd(n.af) : '进行中' }}<template v-if="n.qty"> · {{ n.qty }} 件</template><template v-if="n.by"> · {{ userName(n.by) }}</template></small><Pics v-if="n.photos && n.photos.length" :model-value="n.photos" readonly :s="40" :limit="4" style="margin-top:4px" @click.stop/></div>
               <span><span v-if="nodeCls(n) === 'late'" class="flag red">{{ n.af ? '晚了 ' + -daysLeft2(n.pf, n.af) + ' 天' : '延期' }}</span><span v-else-if="nodeCls(n) === 'warn'" class="flag amber">临期</span><Ico v-else-if="n.af" n="check" :s="14" class="green"/></span>
             </li>
           </ul>
@@ -3742,17 +4069,18 @@ route('/production/:no', {
         </section>
         <section v-if="tab === 'issues'" data-c="异常">
           <Tbl inset flat :rows="x.issues" empty="没有异常" :cols="[{ k: 'type', t: '类型' }, { k: 'desc', t: '描述' }, { k: 'at', t: '上报', f: i => fd(i.at) + ' ' + userName(i.by) }, { k: 'newDate', t: '新交期', f: i => fd(i.newDate) }, { k: 'party', t: '责任方', f: i => i.party || '—' }, { k: 'measure', t: '处理措施', f: i => i.measure || '—' }, { k: 'status', t: '状态' }]">
-            <template #desc="{ r }"><span class="wrap">{{ r.desc }}</span></template>
+            <template #desc="{ r }"><span class="wrap">{{ r.desc }}</span><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="36" :limit="3" style="margin-top:4px"/></template>
             <template #status="{ r }"><span class="row"><St :s="r.status"/><button v-if="r.status !== '已关闭'" class="btn sm" @click="closing = r">关闭</button></span></template>
           </Tbl>
           <button v-if="prodLive(x)" class="btn ghost" style="margin-top:10px" @click="dlg = 'issue'"><Ico n="plus" :s="14"/>上报异常</button>
         </section>
         <section v-if="tab === 'rets'" data-c="回货">
-          <Tbl inset flat :rows="rets" empty="还没回货" :cols="[{ k: 'no', t: '回货单号', c: 'code' }, { k: 'date', t: '日期', f: r => fd(r.date) }, { k: 'qty', t: '回货', c: 'num', f: r => sum(r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: r => sum(r.lines, l => l.def) }, { k: 'logistics', t: '物流单号', c: 'code', f: r => r.logistics || '—' }]"/>
+          <Tbl inset flat :rows="rets" empty="还没回货" :cols="[{ k: 'no', t: '回货单号', c: 'code' }, { k: 'date', t: '日期', f: r => fd(r.date) }, { k: 'qty', t: '回货', c: 'num', f: r => sum(r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: r => sum(r.lines, l => l.def) }, { k: 'logistics', t: '物流单号', c: 'code', f: r => r.logistics || '—' }, { k: 'photos', t: '照片' }]">
+            <template #photos="{ r }"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="32" :limit="3"/><span v-else class="dim">—</span></template></Tbl>
         </section>
       </div>
       <aside class="aside" data-c="加工单属性">
-        <Gallery :code="x.style" :colors="[...new Set(x.lines.map(l => l.color))]"/>
+        <Gallery :code="x.style" :colors="[...new Set(x.lines.map(l => l.color))]" :owner="style(x.style)"/>
         <dl class="props">
           <dt>订单</dt><dd><a class="code" :href="'#/orders/' + x.order">{{ x.order }}</a></dd>
           <dt>资料包</dt><dd>V{{ x.ver }}</dd>
@@ -3770,6 +4098,7 @@ route('/production/:no', {
             <dt>回货</dt><dd>{{ prodRet(x) }} / {{ prodQty(x) }}<span v-if="prodDef(x)" class="dim"> · 次品 {{ prodDef(x) }}</span></dd>
           </template>
         </dl>
+        <DocFiles :doc="x"/>
         <h4>操作记录</h4><Log :items="x.log"/>
       </aside>
     </div>
@@ -3789,8 +4118,8 @@ comp('ProdReport', {
   emits: ['close'],
   setup(props, { emit }) {
     const cur = props.i ?? Math.max(0, props.p.nodes.findIndex((n) => !n.af))
-    const f = reactive({ i: cur, as: '', af: '', qty: null, note: '' })
-    watch(() => f.i, (i) => { const n = props.p.nodes[i]; Object.assign(f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note }) }, { immediate: true })
+    const f = reactive({ i: cur, as: '', af: '', qty: null, note: '', photos: [] })
+    watch(() => f.i, (i) => { const n = props.p.nodes[i]; Object.assign(f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }, { immediate: true })
     function ok() {
       const w = run(() => reportNode(props.p, f.i, { ...f }))
       if (w) { emit('close'); toast(typeof w === 'string' ? `已报，${w}` : `${props.p.nodes[f.i].name}已报`) }
@@ -3803,8 +4132,8 @@ comp('ProdReport', {
       <label class="f">实际开始<input class="inp" type="date" v-model="f.as"></label>
       <label class="f">实际完成<input class="inp" type="date" v-model="f.af"></label>
       <label class="f">数量（件）<input class="inp num" type="number" v-model.number="f.qty"></label>
-      <div class="f">照片<button class="btn" @click="toast('原型：手机上可以拍照，最多 9 张')"><Ico n="camera" :s="14"/>加照片</button></div>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
+      <div class="f full" data-c="报进度照片">照片<span v-if="p.nodes[f.i].photos && p.nodes[f.i].photos.length" class="dim" style="font-weight:400">（这个节点已经有 {{ p.nodes[f.i].photos.length }} 张，再传是追加）</span><Pics v-model="f.photos" :s="64" camera/></div>
     </div>
     <template #foot><button class="btn ghost" @click="f.af = ''">只报开始</button><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">提交</button></template>
   </Modal>`,
@@ -3839,7 +4168,7 @@ comp('ProdException', {
   props: { p: Object },
   emits: ['close', 'done'],
   setup(props, { emit }) {
-    const f = reactive({ type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(props.p), 5), party: '' })
+    const f = reactive({ type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(props.p), 5), party: '', photos: [] })
     function ok() { if (run(() => reportIssue(props.p, { ...f, newDate: f.impact ? f.newDate : null }))) { emit('close'); emit('done'); toast('异常已上报') } }
     return { f, ok }
   },
@@ -3848,6 +4177,7 @@ comp('ProdException', {
       <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.异常类型" :key="x">{{ x }}</option></select></label>
       <label class="f">责任方<select class="sel" v-model="f.party"><option value="">待定</option><option>我方</option><option>工厂</option><option>供应商</option><option>客户</option></select></label>
       <label class="f full">描述<textarea class="inp" v-model="f.desc"></textarea></label>
+      <div class="f full" data-c="异常照片">照片<span :class="PHOTO_TYPES.includes(f.type) ? 'red' : 'dim'" style="font-weight:400">{{ PHOTO_TYPES.includes(f.type) ? '（' + f.type + '必须传，拍问题部位）' : '（选填）' }}</span><Pics v-model="f.photos" :s="64" camera/></div>
       <label class="chk"><input type="checkbox" v-model="f.impact">影响交期</label>
       <label v-if="f.impact" class="f">预计新交期<input class="inp" type="date" v-model="f.newDate"></label>
     </div>
@@ -3861,7 +4191,7 @@ comp('ProdReturn', {
   setup(props, { emit }) {
     const qty = ref(Object.fromEntries(props.p.lines.map((l) => [l.color + '|' + l.size, Math.max(0, l.qty - l.ret)])))
     const def = ref({})
-    const f = reactive({ date: clock.today, logistics: '' })
+    const f = reactive({ date: clock.today, logistics: '', photos: [] })
     const colors = [...new Set(props.p.lines.map((l) => l.color))]
     const sub = (c, z) => { const l = props.p.lines.find((y) => y.color === c && y.size === z); return l ? `加工 ${l.qty} · 已回 ${l.ret}` : '' }
     function ok() {
@@ -3875,6 +4205,7 @@ comp('ProdReturn', {
     <div class="form" style="margin-bottom:14px"><label class="f">回货日期<input class="inp" type="date" v-model="f.date"></label><label class="f">物流单号<input class="inp" v-model="f.logistics"></label></div>
     <div class="sec" style="margin-top:0" data-c="回货数"><h3>回货数（含次品）</h3><Matrix :st="p.style" v-model="qty" :colors="colors" :sub="sub"/></div>
     <div class="sec" data-c="次品数"><h3>其中次品</h3><Matrix :st="p.style" v-model="def" :colors="colors"/></div>
+    <div class="sec" data-c="回货照片"><h3>照片<span class="dim" style="font-weight:400;font-size:12px">　次品、外箱、送货单，选填</span></h3><Pics v-model="f.photos" :s="64"/></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">登记</button></template>
   </Modal>`,
 })
@@ -3921,10 +4252,10 @@ route('/board', {
 /* ---------- 手机报工（跟单员；工厂视角要外部账号，三期） ---------- */
 route('/mobile', {
   setup() {
-    const s = reactive({ who: '跟单员', factory: 'GYS0004', no: null, node: null, f: { as: '', af: '', qty: null, note: '' } })
+    const s = reactive({ who: '跟单员', factory: 'GYS0004', no: null, node: null, f: { as: '', af: '', qty: null, note: '', photos: [] } })
     const list = computed(() => db.productions.filter(prodLive).filter((p) => (s.who === '跟单员' ? p.merch === 'u1' : p.factory === s.factory)).slice().sort(byRisk))
     const p = computed(() => production(s.no))
-    function pickNode(i) { const n = p.value.nodes[i]; s.node = i; Object.assign(s.f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note }) }
+    function pickNode(i) { const n = p.value.nodes[i]; s.node = i; Object.assign(s.f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }
     function submit() { const w = run(() => reportNode(p.value, s.node, { ...s.f })); if (w) { toast(`${p.value.nodes[s.node].name}已报，电脑上马上能看到`); s.node = null } }
     const back = () => { if (s.node != null) s.node = null; else s.no = null }
     return { s, list, p, pickNode, submit, back }
@@ -3953,7 +4284,7 @@ route('/mobile', {
             <label class="f">实际开始<input class="inp" type="date" v-model="s.f.as"></label>
             <label class="f">实际完成<input class="inp" type="date" v-model="s.f.af"></label>
             <label class="f">数量（件）<input class="inp num" type="number" v-model.number="s.f.qty"></label>
-            <button class="btn" style="height:44px" @click="toast('原型：调起相机，最多 9 张')"><Ico n="camera"/>拍照</button>
+            <div class="f">照片<Pics v-model="s.f.photos" :s="60" camera bare/></div>
             <label class="f">备注<textarea class="inp" v-model="s.f.note"></textarea></label>
             <button class="btn pri" style="height:44px" @click="submit">提交</button>
           </div>
@@ -4059,7 +4390,7 @@ route('/plans', {
       <div v-for="c in cols" :key="c">
         <h4>{{ c }} <span class="dim">{{ tasks(c).length }}</span></h4>
         <div v-for="t in tasks(c)" :key="t.id" class="kcard" @click="s.task = t">
-          <div>{{ t.title }}</div>
+          <div class="row" style="align-items:flex-start"><span style="flex:1">{{ t.title }}</span><span v-if="t.images && t.images.length" class="thumb photo" style="width:40px;height:40px"><img :src="t.images[0].src" alt=""></span></div>
           <div class="row dim" style="font-size:12px;margin-top:6px">{{ catOf(t.cat).name }} · {{ userName(t.who) }}<span style="flex:1"></span><Days v-if="c !== '已完成'" :d="t.due"/><span v-else>{{ fd(t.due) }}</span></div>
         </div>
         <div v-if="!tasks(c).length" class="dim" style="padding:8px 4px;font-size:12px">没有任务</div>
@@ -4080,8 +4411,8 @@ route('/plans', {
 comp('PlanTaskNew', {
   emits: ['close'],
   setup(_, { emit }) {
-    const f = reactive({ title: '', cat: 'T', who: 'u4', due: addDays(clock.today, 14) })
-    const save = () => { if (run(() => planTaskNew({ ...f }))) emit('close') }
+    const f = reactive({ title: '', cat: 'T', who: 'u4', due: addDays(clock.today, 14), images: [] })
+    const save = () => { if (run(() => planTaskNew({ ...f, images: [...f.images] }))) emit('close') }
     return { f, save }
   },
   template: `<Modal t="新建开发任务" :w="460" @close="$emit('close')">
@@ -4090,6 +4421,7 @@ comp('PlanTaskNew', {
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
       <label class="f">负责人<select class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">截止<input class="inp" type="date" v-model="f.due"></label>
+      <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" tip="灵感图、竞品图、客户发来的款都可以；Ctrl+V 能直接贴截图"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建任务</button></template>
   </Modal>`,
@@ -4149,7 +4481,7 @@ function smpReview(s, f) {
   if (v.status !== '待评审') fail('送样以后才能评审')
   if (!f.result) fail('选一个结论')
   if (f.result !== '通过' && !f.note) fail('改版、淘汰要写意见')
-  v.review = { at: clock.today, by: f.by?.length ? [...f.by] : [db.me], result: f.result, note: f.note || '' }
+  v.review = { at: clock.today, by: f.by?.length ? [...f.by] : [db.me], result: f.result, note: f.note || '', photos: f.photos || [] }
   act(s, `第 ${v.ver} 版评审：${f.result}${f.note ? '，' + f.note : ''}`)
   if (f.result === '通过') { v.status = '已通过'; s.status = '已通过' }
   if (f.result === '淘汰') { v.status = '已淘汰'; s.status = '已淘汰' }
@@ -4158,7 +4490,7 @@ function smpReview(s, f) {
 function smpConvert(s, f) {
   if (s.status !== '已通过') fail('评审通过的样衣才能转大货')
   if (!f.factory) fail('要选默认加工厂')
-  const st = createStyle({ code: f.code || undefined, name: f.name || s.name, cat: s.cat, year: s.year, season: s.season, wave: s.wave, tag: s.tag, colors: [...s.colors], sizeGroup: s.sizeGroup, tagPrice: s.tagPrice, cost: s.estCost, factory: f.factory, source: s.source, customer: s.customer, custNo: s.custNo, designer: s.designer, sample: s.no })
+  const st = createStyle({ code: f.code || undefined, name: f.name || s.name, cat: s.cat, year: s.year, season: s.season, wave: s.wave, tag: s.tag, colors: [...s.colors], sizeGroup: s.sizeGroup, tagPrice: s.tagPrice, cost: s.estCost, factory: f.factory, source: s.source, customer: s.customer, custNo: s.custNo, designer: s.designer, sample: s.no, images: [...(s.images || [])] })
   Object.assign(s, { status: '已转大货', style: st.code, convertedAt: clock.today, convertedBy: db.me })
   act(s, '转大货 → ' + st.code)
   act(st, '由样衣 ' + s.no + ' 转大货')
@@ -4227,12 +4559,12 @@ route('/samples', {
 comp('SmpNew', {
   emits: ['close'],
   setup(_, { emit }) {
-    const f = reactive({ name: '', cat: 'T', year: 2027, season: 'C', colors: [], source: '自主开发', customer: '', tagPrice: null, need: addDays(clock.today, 10) })
+    const f = reactive({ name: '', cat: 'T', year: 2027, season: 'C', colors: [], source: '自主开发', customer: '', tagPrice: null, need: addDays(clock.today, 10), images: [] })
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
-    function save() { const s = run(() => smpNew({ ...f, colors: [...f.colors], customer: f.customer || null })); if (s?.no) { emit('close'); go('/samples/' + s.no) } }
+    function save() { const s = run(() => smpNew({ ...f, colors: [...f.colors], images: [...f.images], customer: f.customer || null })); if (s?.no) { emit('close'); go('/samples/' + s.no) } }
     return { f, toggle, save }
   },
-  template: `<Modal t="新建样衣" :w="580" @close="$emit('close')">
+  template: `<Modal t="新建样衣" :w="640" @close="$emit('close')">
     <div class="form">
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
@@ -4242,6 +4574,7 @@ comp('SmpNew', {
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
+      <div class="f full" data-c="样衣图片">图片<Pics v-model="f.images" :colors="f.colors" tip="设计稿、参考图、客户来样的照片；转大货时带到款式上"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建样衣</button></template>
   </Modal>`,
@@ -4281,10 +4614,11 @@ route('/samples/:no', {
               <span><Days v-if="!n.done && x.status === '打样中'" :d="n.plan" :warn="1"/></span></li>
           </ul>
           <p v-if="x.review" style="margin-top:10px"><b>评审{{ x.review.result }}</b><span v-if="x.review.note" class="mut">　{{ x.review.note }}</span><span class="dim">　{{ x.review.by.map(userName).join('、') }} · {{ fd(x.review.at) }}</span></p>
+          <Pics v-if="x.review && x.review.photos && x.review.photos.length" :model-value="x.review.photos" readonly :s="56" style="margin-top:6px"/>
         </section>
       </div>
       <aside class="aside" data-c="样衣属性">
-        <Gallery :code="s.no" :colors="s.colors"/>
+        <Gallery :code="s.no" :colors="s.colors" :owner="s" edit/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>来源</dt><dd>{{ s.source }}<template v-if="s.customer"> · {{ custName(s.customer) }}</template></dd>
@@ -4296,6 +4630,7 @@ route('/samples/:no', {
           <dt>预估成本</dt><dd>{{ fm(s.estCost) }}</dd>
           <template v-if="s.style"><dt>转大货</dt><dd><a class="code" :href="'#/styles/' + s.style">{{ s.style }}</a> · {{ fd(s.convertedAt) }}</dd></template>
         </dl>
+        <DocFiles :doc="s"/>
         <h4>操作记录</h4><Log :items="s.log"/>
       </aside>
     </div>
@@ -4344,7 +4679,7 @@ comp('SmpNodeReport', {
 comp('SmpReview', {
   props: { s: Object }, emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ result: '通过', note: '', by: [db.me] })
+    const f = reactive({ result: '通过', note: '', by: [db.me], photos: [] })
     const toggle = (u) => { const i = f.by.indexOf(u); i >= 0 ? f.by.splice(i, 1) : f.by.push(u) }
     function save() { if (run(() => smpReview(p.s, { ...f }))) { emit('close'); toast(f.result === '改版' ? '已生成下一版打样单' : '评审已记下') } }
     return { f, toggle, save }
@@ -4354,6 +4689,7 @@ comp('SmpReview', {
       <div class="f full">结论<Seg v-model="f.result" :items="['通过', '改版', '淘汰']"/></div>
       <label class="f full">意见<textarea class="inp" v-model="f.note"></textarea></label>
       <div class="f full">评审人<div class="chips"><button v-for="u in db.users" :key="u.id" class="chip" :class="{ on: f.by.includes(u.id) }" @click="toggle(u.id)">{{ u.name }}</button></div></div>
+      <div class="f full" data-c="评审照片">试穿、问题部位照片<Pics v-model="f.photos" :s="64" camera/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ f.result === '改版' ? '改版，生成下一版' : f.result }}</button></template>
   </Modal>`,
@@ -4587,7 +4923,8 @@ function qcInspect(item, f) {
   if (f.bad > f.sample) fail('不合格数不能大于抽检数')
   if (!f.result) fail('选一个结论')
   if (f.result !== '合格' && !f.note) fail('不合格、让步接收要写问题')
-  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', by: db.me })
+  if (f.result !== '合格' && !f.photos?.length) fail('不合格、让步接收要拍问题照片')
+  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', photos: f.photos || [], by: db.me })
 }
 const qcOf = (src) => db.qcs.find((q) => q.src === src)
 function qcSupplierStats() {
@@ -4601,7 +4938,7 @@ function qcSupplierStats() {
 // 种子：第一批回货验过（合格），两张面料入库验过（一张合格、一张让步接收）
 as('u1', '2026-11-02', () => { const r = db.returns[0]; if (r) qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 2, result: '合格' }) })
 as('u5', '2026-10-08', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0009'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 20, bad: 0, result: '合格' }) })
-as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，客户同意接收' }) })
+as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，客户同意接收', photos: [demoPic('defect', colorOf('KQ').hex, '色差', '色差对比.jpg')] }) })
 
 TODOS.push(() => [{ t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' }])
 
@@ -4634,7 +4971,7 @@ route('/qc', {
         { k: 'result', t: '结论' }, { k: 'note', t: '问题' }, { k: 'date', t: '日期', f: x => fd(x.date) }]">
         <template #src="{ r }"><a class="code" :href="'#' + r.to">{{ r.src }}</a></template>
         <template #result="{ r }"><St :s="r.result"/></template>
-        <template #note="{ r }"><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span></template>
+        <template #note="{ r }"><span class="row"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="28" :limit="2"/><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span></span></template>
       </Tbl>
     </div>
     <div v-if="s.tab === '质量'" data-c="供应商质量">
@@ -4653,7 +4990,7 @@ comp('QcInspect', {
   props: { item: Object }, emits: ['close'],
   setup(p, { emit }) {
     const a = qcAql(p.item.lot)
-    const f = reactive({ sample: a.n, bad: 0, result: '合格', note: '' })
+    const f = reactive({ sample: a.n, bad: 0, result: '合格', note: '', photos: [] })
     watch(() => f.bad, (b) => { if (f.result !== '让步接收') f.result = b > a.ac ? '不合格' : '合格' })
     function save() { const q = run(() => qcInspect(p.item, { ...f })); if (q?.no) { emit('close'); toast(`${q.no} ${q.result}`) } }
     return { a, f, save }
@@ -4665,6 +5002,7 @@ comp('QcInspect', {
       <label class="f">不合格数<input class="inp num" type="number" v-model.number="f.bad"></label>
       <div class="f full">结论<Seg v-model="f.result" :items="['合格', '不合格', '让步接收']"/></div>
       <label class="f full">问题<textarea class="inp" v-model="f.note"></textarea></label>
+      <div class="f full" data-c="验货照片">照片<span :class="f.result === '合格' ? 'dim' : 'red'" style="font-weight:400">{{ f.result === '合格' ? '（选填）' : '（' + f.result + '必须拍问题照片）' }}</span><Pics v-model="f.photos" :s="64" camera/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">记下结果</button></template>
   </Modal>`,
@@ -4993,6 +5331,7 @@ route('/finance/:no', {
           <dt>付款</dt><dd>{{ st.paidAt ? fd(st.paidAt) : '—' }}</dd>
           <dt>发票</dt><dd><template v-if="inv"><span class="code">{{ inv.no }}</span> <St :s="inv.status"/></template><template v-else>—</template></dd>
         </dl>
+        <DocFiles :doc="st"/>
         <h4>操作记录</h4><Log :items="st.log"/>
       </aside>
     </div>
@@ -5099,7 +5438,8 @@ function certInfo(s) {
 }
 function addCert(s, f) {
   if (!f.type || !f.until) fail('类型、有效期都要填')
-  s.certs.push({ type: f.type, until: f.until })
+  if (!f.file) fail('要传证照的照片或扫描件')
+  s.certs.push({ type: f.type, until: f.until, file: f.file })
   act(s, '上传' + f.type + '，有效期至 ' + f.until)
 }
 function unblockSupplier(s, reason) {
@@ -5376,8 +5716,9 @@ route('/suppliers/:code', {
         <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], ['docs', '往来单据', docs.length], ['perf', '绩效'], ['price', '询价记录', prices.length]]"/>
 
         <section v-if="tab === 'certs'" data-c="资质">
-          <Tbl inset flat :rows="s.certs" empty="还没传证照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件', f: () => '已上传' }]">
+          <Tbl inset flat :rows="s.certs" empty="还没传证照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件' }]">
             <template #left="{ r }"><Days :d="r.until" :warn="30"/></template>
+            <template #file="{ r }"><Pics v-if="r.file" :model-value="[r.file]" readonly :s="36"/><span v-else class="dim">没传</span></template>
           </Tbl>
           <button class="btn" style="margin-top:12px" @click="certAdd = true"><Ico n="plus" :s="14"/>加一份证照</button>
         </section>
@@ -5449,15 +5790,15 @@ comp('CertNew', {
   props: { s: Object },
   emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ type: '营业执照', until: '' })
-    function ok() { if (run(() => addCert(p.s, f))) emit('close') }
+    const f = reactive({ type: '营业执照', until: '', files: [] })
+    function ok() { if (run(() => addCert(p.s, { ...f, file: f.files[0] }))) emit('close') }
     return { f, ok }
   },
   template: `<Modal t="加一份证照" :w="440" @close="$emit('close')">
     <div class="form">
       <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in ['营业执照', '验厂报告', '环保证明', '其他']" :key="x">{{ x }}</option></select></label>
       <label class="f">有效期至<input class="inp" type="date" v-model="f.until"></label>
-      <label class="f full">文件<button class="btn" @click="toast('原型：这里会选文件上传')"><Ico n="upload" :s="14"/>选文件</button></label>
+      <div class="f full">照片或扫描件<Pics v-model="f.files" files :max="1" :s="64" tip="拍照、扫描件、PDF 都行；拖进来也可以"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">加上</button></template>
   </Modal>`,
@@ -5557,6 +5898,7 @@ route('/customers/:code', {
           <dt>电话</dt><dd>{{ c.phone || '—' }}</dd>
           <dt>结算</dt><dd>{{ c.settle }}{{ c.term ? ' · ' + c.term + ' 天' : '' }}</dd>
         </dl>
+        <DocFiles :doc="c"/>
         <h4>操作记录</h4><Log :items="c.log"/>
       </aside>
     </div>
@@ -5605,7 +5947,7 @@ comp('MaterialNew', {
   props: { cat: String },
   emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ cat: p.cat, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', supplier: 'GYS0001', supNo: '', price: null, moq: null, pack: 1, lead: 7, colors: [] })
+    const f = reactive({ cat: p.cat, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', supplier: 'GYS0001', supNo: '', price: null, moq: null, pack: 1, lead: 7, colors: [], images: [] })
     const code = computed(() => nextMatCode(f.cat))
     const sups = computed(() => db.suppliers.filter((s) => s.status === '合作中'))
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
@@ -5613,7 +5955,7 @@ comp('MaterialNew', {
     async function save() {
       const d = dupMaterial(f)
       if (d && !(await ask('可能重复', '可能和 ' + d.code + ' ' + d.name + ' 重复，确定新建？', '仍然新建'))) return
-      const m = run(() => createMaterial({ ...f, colors: [...f.colors] }))
+      const m = run(() => createMaterial({ ...f, colors: [...f.colors], images: [...f.images] }))
       if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
     }
     return { f, code, sups, toggle, save, MAT_TYPES }
@@ -5637,6 +5979,7 @@ comp('MaterialNew', {
       <label class="f">最小包装<input class="inp num" type="number" v-model.number="f.pack"></label>
       <label class="f">采购周期（天）<input class="inp num" type="number" v-model.number="f.lead"></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
+      <div class="f full" data-c="物料图片">物料图片<Pics v-model="f.images" :colors="f.colors" tip="布样、色卡、辅料实物都可以拍；给图标上颜色，按颜色出图"/></div>
     </div>
     <template #foot><span class="dim">{{ f.colors.length ? f.colors.length + ' 个 SKU：' + f.colors.map(c => code + '-' + c).join('、') : '不选颜色 = 1 个 SKU' }}</span><span class="sp"></span>
       <button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建物料</button></template>
@@ -5666,7 +6009,7 @@ route('/materials/:code', {
         <div class="sub"><span>{{ matCat(m.cat).parent }} / {{ matCat(m.cat).name }}</span><span>{{ m.type }}</span><span v-if="m.comp">{{ m.comp }}</span></div>
         <section data-c="物料SKU">
           <Tbl inset flat :rows="m.skus" :cols="[
-            { k: 'code', t: 'SKU', c: 'code' }, { k: 'color', t: '颜色' }, { k: 'spec', t: '规格', f: k => k.spec || '—' }, { k: 'supColor', t: '供应商色号', f: k => k.supColor || '—' },
+            { k: 'code', t: 'SKU', c: 'code', img: k => k.code }, { k: 'color', t: '颜色' }, { k: 'spec', t: '规格', f: k => k.spec || '—' }, { k: 'supColor', t: '供应商色号', f: k => k.supColor || '—' },
             { k: 'safety', t: '安全库存', c: 'num', f: k => k.safety ? fq(k.safety) : '—' },
             { k: 'wl', t: '物料仓', c: 'num', f: k => fq(skuStock(k.code, '物料仓')) }, { k: 'gc', t: '工厂仓', c: 'num', f: k => fq(skuStock(k.code, '工厂仓')) }]">
             <template #color="{ r }"><Sw v-if="r.color" :c="r.color"/><span v-else class="dim">—</span></template>
@@ -5679,7 +6022,7 @@ route('/materials/:code', {
         </div>
       </div>
       <aside class="aside" data-c="物料属性">
-        <Gallery :code="m.code" :colors="[...new Set(m.skus.map(k => k.color).filter(Boolean))]"/>
+        <Gallery :code="m.code" :colors="[...new Set(m.skus.map(k => k.color).filter(Boolean))]" :owner="m" edit/>
         <dl class="props">
           <dt>库存单位</dt><dd>{{ m.unit }}</dd>
           <dt>采购单位</dt><dd>{{ m.purUnit }}<template v-if="m.purUnit !== m.unit"> · 1 {{ m.purUnit }} = {{ fq(m.factor) }} {{ m.unit }}</template></dd>
@@ -5692,6 +6035,7 @@ route('/materials/:code', {
           <dt>最小包装</dt><dd>{{ fq(m.pack) }} {{ m.purUnit }}</dd>
           <dt>采购周期</dt><dd>{{ m.lead }} 天</dd>
         </dl>
+        <DocFiles :doc="m"/>
         <h4>操作记录</h4><Log :items="m.log"/>
       </aside>
     </div>
@@ -6037,6 +6381,7 @@ const Shell = {
     <Pins v-if="fbUi.open"/>
     <Picker v-if="fbUi.picking"/>
     <Palette v-if="pal.open" @close="pal.open = false"/>
+    <PicViewer v-if="viewer.list"/>
     <ErrBox/><AskBox/><Toasts/>
   </div>`,
 }

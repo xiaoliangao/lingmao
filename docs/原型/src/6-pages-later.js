@@ -91,7 +91,7 @@ route('/plans', {
       <div v-for="c in cols" :key="c">
         <h4>{{ c }} <span class="dim">{{ tasks(c).length }}</span></h4>
         <div v-for="t in tasks(c)" :key="t.id" class="kcard" @click="s.task = t">
-          <div>{{ t.title }}</div>
+          <div class="row" style="align-items:flex-start"><span style="flex:1">{{ t.title }}</span><span v-if="t.images && t.images.length" class="thumb photo" style="width:40px;height:40px"><img :src="t.images[0].src" alt=""></span></div>
           <div class="row dim" style="font-size:12px;margin-top:6px">{{ catOf(t.cat).name }} · {{ userName(t.who) }}<span style="flex:1"></span><Days v-if="c !== '已完成'" :d="t.due"/><span v-else>{{ fd(t.due) }}</span></div>
         </div>
         <div v-if="!tasks(c).length" class="dim" style="padding:8px 4px;font-size:12px">没有任务</div>
@@ -112,8 +112,8 @@ route('/plans', {
 comp('PlanTaskNew', {
   emits: ['close'],
   setup(_, { emit }) {
-    const f = reactive({ title: '', cat: 'T', who: 'u4', due: addDays(clock.today, 14) })
-    const save = () => { if (run(() => planTaskNew({ ...f }))) emit('close') }
+    const f = reactive({ title: '', cat: 'T', who: 'u4', due: addDays(clock.today, 14), images: [] })
+    const save = () => { if (run(() => planTaskNew({ ...f, images: [...f.images] }))) emit('close') }
     return { f, save }
   },
   template: `<Modal t="新建开发任务" :w="460" @close="$emit('close')">
@@ -122,6 +122,7 @@ comp('PlanTaskNew', {
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
       <label class="f">负责人<select class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">截止<input class="inp" type="date" v-model="f.due"></label>
+      <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" tip="灵感图、竞品图、客户发来的款都可以；Ctrl+V 能直接贴截图"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建任务</button></template>
   </Modal>`,
@@ -181,7 +182,7 @@ function smpReview(s, f) {
   if (v.status !== '待评审') fail('送样以后才能评审')
   if (!f.result) fail('选一个结论')
   if (f.result !== '通过' && !f.note) fail('改版、淘汰要写意见')
-  v.review = { at: clock.today, by: f.by?.length ? [...f.by] : [db.me], result: f.result, note: f.note || '' }
+  v.review = { at: clock.today, by: f.by?.length ? [...f.by] : [db.me], result: f.result, note: f.note || '', photos: f.photos || [] }
   act(s, `第 ${v.ver} 版评审：${f.result}${f.note ? '，' + f.note : ''}`)
   if (f.result === '通过') { v.status = '已通过'; s.status = '已通过' }
   if (f.result === '淘汰') { v.status = '已淘汰'; s.status = '已淘汰' }
@@ -190,7 +191,7 @@ function smpReview(s, f) {
 function smpConvert(s, f) {
   if (s.status !== '已通过') fail('评审通过的样衣才能转大货')
   if (!f.factory) fail('要选默认加工厂')
-  const st = createStyle({ code: f.code || undefined, name: f.name || s.name, cat: s.cat, year: s.year, season: s.season, wave: s.wave, tag: s.tag, colors: [...s.colors], sizeGroup: s.sizeGroup, tagPrice: s.tagPrice, cost: s.estCost, factory: f.factory, source: s.source, customer: s.customer, custNo: s.custNo, designer: s.designer, sample: s.no })
+  const st = createStyle({ code: f.code || undefined, name: f.name || s.name, cat: s.cat, year: s.year, season: s.season, wave: s.wave, tag: s.tag, colors: [...s.colors], sizeGroup: s.sizeGroup, tagPrice: s.tagPrice, cost: s.estCost, factory: f.factory, source: s.source, customer: s.customer, custNo: s.custNo, designer: s.designer, sample: s.no, images: [...(s.images || [])] })
   Object.assign(s, { status: '已转大货', style: st.code, convertedAt: clock.today, convertedBy: db.me })
   act(s, '转大货 → ' + st.code)
   act(st, '由样衣 ' + s.no + ' 转大货')
@@ -259,12 +260,12 @@ route('/samples', {
 comp('SmpNew', {
   emits: ['close'],
   setup(_, { emit }) {
-    const f = reactive({ name: '', cat: 'T', year: 2027, season: 'C', colors: [], source: '自主开发', customer: '', tagPrice: null, need: addDays(clock.today, 10) })
+    const f = reactive({ name: '', cat: 'T', year: 2027, season: 'C', colors: [], source: '自主开发', customer: '', tagPrice: null, need: addDays(clock.today, 10), images: [] })
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
-    function save() { const s = run(() => smpNew({ ...f, colors: [...f.colors], customer: f.customer || null })); if (s?.no) { emit('close'); go('/samples/' + s.no) } }
+    function save() { const s = run(() => smpNew({ ...f, colors: [...f.colors], images: [...f.images], customer: f.customer || null })); if (s?.no) { emit('close'); go('/samples/' + s.no) } }
     return { f, toggle, save }
   },
-  template: `<Modal t="新建样衣" :w="580" @close="$emit('close')">
+  template: `<Modal t="新建样衣" :w="640" @close="$emit('close')">
     <div class="form">
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
@@ -274,6 +275,7 @@ comp('SmpNew', {
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
+      <div class="f full" data-c="样衣图片">图片<Pics v-model="f.images" :colors="f.colors" tip="设计稿、参考图、客户来样的照片；转大货时带到款式上"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建样衣</button></template>
   </Modal>`,
@@ -313,10 +315,11 @@ route('/samples/:no', {
               <span><Days v-if="!n.done && x.status === '打样中'" :d="n.plan" :warn="1"/></span></li>
           </ul>
           <p v-if="x.review" style="margin-top:10px"><b>评审{{ x.review.result }}</b><span v-if="x.review.note" class="mut">　{{ x.review.note }}</span><span class="dim">　{{ x.review.by.map(userName).join('、') }} · {{ fd(x.review.at) }}</span></p>
+          <Pics v-if="x.review && x.review.photos && x.review.photos.length" :model-value="x.review.photos" readonly :s="56" style="margin-top:6px"/>
         </section>
       </div>
       <aside class="aside" data-c="样衣属性">
-        <Gallery :code="s.no" :colors="s.colors"/>
+        <Gallery :code="s.no" :colors="s.colors" :owner="s" edit/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
           <dt>来源</dt><dd>{{ s.source }}<template v-if="s.customer"> · {{ custName(s.customer) }}</template></dd>
@@ -328,6 +331,7 @@ route('/samples/:no', {
           <dt>预估成本</dt><dd>{{ fm(s.estCost) }}</dd>
           <template v-if="s.style"><dt>转大货</dt><dd><a class="code" :href="'#/styles/' + s.style">{{ s.style }}</a> · {{ fd(s.convertedAt) }}</dd></template>
         </dl>
+        <DocFiles :doc="s"/>
         <h4>操作记录</h4><Log :items="s.log"/>
       </aside>
     </div>
@@ -376,7 +380,7 @@ comp('SmpNodeReport', {
 comp('SmpReview', {
   props: { s: Object }, emits: ['close'],
   setup(p, { emit }) {
-    const f = reactive({ result: '通过', note: '', by: [db.me] })
+    const f = reactive({ result: '通过', note: '', by: [db.me], photos: [] })
     const toggle = (u) => { const i = f.by.indexOf(u); i >= 0 ? f.by.splice(i, 1) : f.by.push(u) }
     function save() { if (run(() => smpReview(p.s, { ...f }))) { emit('close'); toast(f.result === '改版' ? '已生成下一版打样单' : '评审已记下') } }
     return { f, toggle, save }
@@ -386,6 +390,7 @@ comp('SmpReview', {
       <div class="f full">结论<Seg v-model="f.result" :items="['通过', '改版', '淘汰']"/></div>
       <label class="f full">意见<textarea class="inp" v-model="f.note"></textarea></label>
       <div class="f full">评审人<div class="chips"><button v-for="u in db.users" :key="u.id" class="chip" :class="{ on: f.by.includes(u.id) }" @click="toggle(u.id)">{{ u.name }}</button></div></div>
+      <div class="f full" data-c="评审照片">试穿、问题部位照片<Pics v-model="f.photos" :s="64" camera/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ f.result === '改版' ? '改版，生成下一版' : f.result }}</button></template>
   </Modal>`,
@@ -619,7 +624,8 @@ function qcInspect(item, f) {
   if (f.bad > f.sample) fail('不合格数不能大于抽检数')
   if (!f.result) fail('选一个结论')
   if (f.result !== '合格' && !f.note) fail('不合格、让步接收要写问题')
-  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', by: db.me })
+  if (f.result !== '合格' && !f.photos?.length) fail('不合格、让步接收要拍问题照片')
+  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', photos: f.photos || [], by: db.me })
 }
 const qcOf = (src) => db.qcs.find((q) => q.src === src)
 function qcSupplierStats() {
@@ -633,7 +639,7 @@ function qcSupplierStats() {
 // 种子：第一批回货验过（合格），两张面料入库验过（一张合格、一张让步接收）
 as('u1', '2026-11-02', () => { const r = db.returns[0]; if (r) qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 2, result: '合格' }) })
 as('u5', '2026-10-08', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0009'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 20, bad: 0, result: '合格' }) })
-as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，客户同意接收' }) })
+as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，客户同意接收', photos: [demoPic('defect', colorOf('KQ').hex, '色差', '色差对比.jpg')] }) })
 
 TODOS.push(() => [{ t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' }])
 
@@ -666,7 +672,7 @@ route('/qc', {
         { k: 'result', t: '结论' }, { k: 'note', t: '问题' }, { k: 'date', t: '日期', f: x => fd(x.date) }]">
         <template #src="{ r }"><a class="code" :href="'#' + r.to">{{ r.src }}</a></template>
         <template #result="{ r }"><St :s="r.result"/></template>
-        <template #note="{ r }"><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span></template>
+        <template #note="{ r }"><span class="row"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="28" :limit="2"/><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span></span></template>
       </Tbl>
     </div>
     <div v-if="s.tab === '质量'" data-c="供应商质量">
@@ -685,7 +691,7 @@ comp('QcInspect', {
   props: { item: Object }, emits: ['close'],
   setup(p, { emit }) {
     const a = qcAql(p.item.lot)
-    const f = reactive({ sample: a.n, bad: 0, result: '合格', note: '' })
+    const f = reactive({ sample: a.n, bad: 0, result: '合格', note: '', photos: [] })
     watch(() => f.bad, (b) => { if (f.result !== '让步接收') f.result = b > a.ac ? '不合格' : '合格' })
     function save() { const q = run(() => qcInspect(p.item, { ...f })); if (q?.no) { emit('close'); toast(`${q.no} ${q.result}`) } }
     return { a, f, save }
@@ -697,6 +703,7 @@ comp('QcInspect', {
       <label class="f">不合格数<input class="inp num" type="number" v-model.number="f.bad"></label>
       <div class="f full">结论<Seg v-model="f.result" :items="['合格', '不合格', '让步接收']"/></div>
       <label class="f full">问题<textarea class="inp" v-model="f.note"></textarea></label>
+      <div class="f full" data-c="验货照片">照片<span :class="f.result === '合格' ? 'dim' : 'red'" style="font-weight:400">{{ f.result === '合格' ? '（选填）' : '（' + f.result + '必须拍问题照片）' }}</span><Pics v-model="f.photos" :s="64" camera/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">记下结果</button></template>
   </Modal>`,
@@ -1025,6 +1032,7 @@ route('/finance/:no', {
           <dt>付款</dt><dd>{{ st.paidAt ? fd(st.paidAt) : '—' }}</dd>
           <dt>发票</dt><dd><template v-if="inv"><span class="code">{{ inv.no }}</span> <St :s="inv.status"/></template><template v-else>—</template></dd>
         </dl>
+        <DocFiles :doc="st"/>
         <h4>操作记录</h4><Log :items="st.log"/>
       </aside>
     </div>

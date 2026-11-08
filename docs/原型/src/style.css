@@ -249,6 +249,8 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .sw i { width: 12px; height: 12px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); display: inline-block; }
 .thumb { display: inline-grid; place-items: center; border-radius: 4px; flex: none; overflow: hidden; vertical-align: middle;
   background: radial-gradient(circle at 50% 38%, #fbfbf8, #e6e8e1); box-shadow: inset 0 0 0 1px rgba(28,34,48,.06); }
+.thumb.photo { background: var(--bg-sunken); }
+.thumb.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* 进度 */
 .prog { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
@@ -274,6 +276,7 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .props dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .aside h4 { margin: 24px 0 10px; font-size: 12.5px; font-weight: 600; color: var(--fg); padding-left: 8px; border-left: 3px solid var(--accent); line-height: 1.1; }
 .aside h4:first-child { margin-top: 0; }
+.aside .docfiles h4 { margin-top: 24px; }
 .sec { margin-top: 28px; }
 .sec > h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; padding-left: 9px; border-left: 3px solid var(--accent); line-height: 1.2; }
 .sec > h3 .acts { margin-left: auto; display: flex; gap: 6px; font-weight: 400; }
@@ -533,3 +536,43 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .gview { position: absolute; top: 8px; right: 8px; display: flex; line-height: 1.5; background: rgb(255 255 255 / 85%); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
 .gview button { border: 0; background: none; padding: 2px 9px; font: inherit; font-size: 12px; color: var(--fg-2); cursor: pointer; }
 .gview button.on { background: var(--accent); color: var(--accent-fg); }
+.gphoto { cursor: zoom-in; border-radius: 6px; }
+.gphoto img { object-fit: contain; background: #fff; }
+.gnote { position: absolute; left: 8px; bottom: 8px; line-height: 1.5; padding: 1px 7px; border-radius: 4px; font-size: 11px; color: var(--fg-2); background: rgb(255 255 255 / 85%); }
+
+/* 图片、附件上传（3c-upload.js）：图块 + 「加图片」块；拖进来时框变蓝 */
+.pics { outline: none; border-radius: 6px; }
+.pics:not(.ro):focus-visible, .pics.over { box-shadow: 0 0 0 2px var(--accent-bg), 0 0 0 3px var(--accent); }
+.pgrid { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.pic { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.pimg { position: relative; border-radius: 5px; overflow: hidden; cursor: zoom-in; background: var(--bg-sunken); box-shadow: inset 0 0 0 1px var(--line); }
+.pimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pic.file .pimg { cursor: pointer; }
+.pfile { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0 8px; height: 100%; padding: 0 10px; font-size: 12px; line-height: 1.35; }
+.pfile b { grid-row: span 2; min-width: 34px; padding: 3px 4px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 10px; text-align: center; }
+.pfile span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pfile small { color: var(--fg-3); }
+.ptag { position: absolute; left: 0; top: 0; padding: 1px 6px; border-radius: 0 0 5px 0; background: var(--accent); color: var(--accent-fg); font-size: 11px; line-height: 1.5; }
+.pops { position: absolute; right: 3px; top: 3px; display: none; gap: 3px; }
+.pic:hover .pops, .pic:focus-within .pops { display: flex; }
+.pops button { height: 20px; min-width: 20px; padding: 0 5px; border: 0; border-radius: 4px; background: rgb(20 32 56 / 72%); color: #fff; font: inherit; font-size: 11px; cursor: pointer; display: grid; place-items: center; }
+.pops button:hover { background: var(--red); }
+.pops button:first-child:not(:last-child):hover { background: var(--accent); }
+.pcolor { height: 22px; width: 100%; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 11px; color: var(--fg-2); background: var(--bg); }
+.pmore { display: grid; place-items: center; padding: 0 6px; border-radius: 5px; background: var(--bg-sunken); color: var(--fg-2); font-size: 12px; cursor: zoom-in; }
+.padd { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px dashed var(--line-strong); border-radius: 5px; background: var(--bg); color: var(--fg-2); font: inherit; font-size: 12px; cursor: pointer; }
+.padd:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.ptip { margin: 6px 0 0; font-size: 12px; color: var(--fg-3); }
+td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
+
+/* 看大图 */
+.viewer { position: fixed; inset: 0; z-index: 60; background: rgb(14 20 34 / 88%); display: grid; place-items: center; padding: 56px 72px 64px; }
+.viewer > img { max-width: calc(100vw - 144px); max-height: calc(100vh - 120px); object-fit: contain; border-radius: 4px; box-shadow: 0 10px 40px rgb(0 0 0 / 40%); background: #fff; }
+.vnav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; border-radius: 22px; background: rgb(255 255 255 / 14%); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.vnav:hover { background: rgb(255 255 255 / 26%); }
+.vnav.l { left: 16px; }
+.vnav.r { right: 16px; }
+.vbar { position: absolute; left: 0; right: 0; bottom: 0; height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 20px; color: #e8ecf3; font-size: 13px; }
+.vbar .sp { flex: 1; }
+.vbar .dim { color: #9aa6ba; }
+.vbar .btn { color: #e8ecf3; }
