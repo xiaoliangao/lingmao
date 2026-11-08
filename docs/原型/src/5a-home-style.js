@@ -271,7 +271,7 @@ route('/styles/:code', {
   </div><NotFound v-else/>`,
 }, { mod: 'styles', t: (p) => '款式 ' + p.code })
 
-/* ---------- 资料包：版本、BOM、按颜色展开、工艺 ---------- */
+/* ---------- 资料包：版本、BOM（正背面款式图）、按颜色展开、尺寸表、工艺 ---------- */
 comp('TechPack', {
   props: { code: String },
   setup(p) {
@@ -291,7 +291,15 @@ comp('TechPack', {
     const hl = ref(0)
     const hover = (i) => { if (i != null) hl.value = i }
     const cur = computed(() => { const r = tp.value?.bom[hl.value] || tp.value?.bom[0]; return r && { i: tp.value.bom.indexOf(r), r, sku: rowSku(r, byColor.value) } })
-    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus, hl, hover, cur }
+    // 尺寸表：改基码或档差，其他码按档差重算；单独改别的码只改那一格
+    const sp = ref(0)
+    const base = computed(() => tp.value.spec.base)
+    const fcm = (v) => (v == null || v === '' || Number.isNaN(v) ? '—' : String(rnd(+v, 1)))
+    function setVal(r, z, v) { if (z === base.value) gradeRow(r, sizes.value, z, +v); else r.vals[z] = v === '' ? null : +v }
+    function setStep(r, v) { r.step = +v || 0; gradeRow(r, sizes.value, base.value, r.vals[base.value] || 0) }
+    function addSpec() { tp.value.spec.rows.push({ pt: '', how: '', tol: 0.5, step: 0, vals: {} }); sp.value = tp.value.spec.rows.length - 1 }
+    const stepText = (r) => { const d = [...new Set(sizes.value.slice(1).map((z, i) => rnd((r.vals[z] ?? 0) - (r.vals[sizes.value[i]] ?? 0), 1)))]; return d.join(' / ') }
+    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus, hl, hover, cur, sp, base, fcm, setVal, setStep, addSpec, stepText, specLetter }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">这个款还没有资料包<p style="margin-top:14px"><button class="btn pri" @click="create">建资料包</button></p></div>
@@ -299,16 +307,17 @@ comp('TechPack', {
       <div class="row" style="margin-bottom:14px" data-c="资料包版本">
         <Seg v-model="ver" :items="tps.map(t => [t.ver, 'V' + t.ver + (t.status === '已生效' ? ' 生效中' : t.status === '草稿' ? ' 草稿' : '')])"/>
         <span style="flex:1"></span>
-        <Seg v-model="view" :items="[['bom', 'BOM'], ['color', '按颜色'], ['ops', '工艺']]"/>
-        <button v-if="edit" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
+        <Seg v-model="view" :items="[['bom', 'BOM'], ['color', '按颜色'], ['spec', '尺寸表'], ['ops', '工艺']]"/>
+        <button v-if="edit && view === 'spec'" class="btn" @click="addSpec"><Ico n="plus" :s="14"/>加部位</button>
+        <button v-else-if="edit && view !== 'ops'" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
         <button v-if="edit" class="btn pri" @click="publish">生效</button>
         <button v-if="tp.status === '已生效'" class="btn" @click="revise">修订</button>
-        <button class="btn ghost icon" title="打印资料包" @click="toast('原型：这里会出可打印的资料包（款式信息、颜色尺码、按颜色展开的 BOM、工艺单）')"><Ico n="printer"/></button>
+        <button class="btn ghost icon" title="打印资料包" @click="toast('原型：这里会出可打印的资料包（正背面款式图、颜色尺码、按颜色展开的 BOM、尺寸表、工艺单）')"><Ico n="printer"/></button>
       </div>
       <div v-if="edit" style="margin-bottom:12px"><input class="inp" style="width:100%" v-model="tp.note" placeholder="本版说明：这版改了什么"></div>
       <p v-else-if="tp.note" class="mut" style="margin-bottom:12px">{{ tp.note }}</p>
 
-      <div v-if="view !== 'ops' && cur" class="bomtop" data-c="BOM 图">
+      <div v-if="(view === 'bom' || view === 'color') && cur" class="bomtop" data-c="BOM 图">
         <BomFigure :code="s.code" :color="byColor" :rows="tp.bom" :hl="cur.i" @hover="hover"/>
         <div class="matcard">
           <div class="row g4"><button v-for="c in s.colors" :key="c" class="gthumb" :class="{ on: c === byColor }" :title="colorName(c)" @click="byColor = c"><Thumb :code="s.code" :color="c" :s="34"/></button><span class="mut" style="margin-left:6px">{{ colorName(byColor) }}</span></div>
@@ -364,6 +373,29 @@ comp('TechPack', {
         <table class="tbl inset flat"><thead><tr><th>部位</th><th>物料</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th>来源</th></tr></thead>
           <tbody><tr v-for="(r, i) in tp.bom" :key="i" :class="{ sel: cur && cur.i === i }" @mouseenter="hover(i)"><td><span class="dim" style="margin-right:6px">{{ i + 1 }}</span>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
             <td v-for="z in sizes" :key="z" class="num">{{ fq(rowUse(r, z)) }}</td><td class="mut">{{ r.src }}</td></tr></tbody></table>
+      </div>
+
+      <div v-if="view === 'spec'" class="spectop" :class="{ wide: edit }">
+        <div class="figbox" data-c="量法图"><SpecFigure :code="s.code" :color="byColor" :rows="tp.spec.rows" :hl="sp" :s="250" @hover="i => sp = i"/>
+          <ul v-if="edit" class="tips"><li>单位 cm，基码 {{ base }}（压底色那列）</li><li>改基码或档差：其他码按档差重新放码</li><li>单独改某个码：只改那一格，档差那列会显示不均匀</li><li>部位名和图上的线对得上时，图上会画出量法</li></ul>
+          <span v-else class="dim" style="font-size:12px">单位 cm · 基码 {{ base }}</span></div>
+        <div class="spec" data-c="尺寸表">
+          <table class="tbl inset flat">
+            <thead><tr><th style="width:30px"></th><th>部位 / 量法</th><th v-for="z in sizes" :key="z" class="num" :class="{ base: z === base }">{{ z }}</th><th v-if="sizes.length > 1" class="num">档差</th><th class="num">公差 ±</th><th v-if="edit"></th></tr></thead>
+            <tbody>
+              <tr v-for="(r, i) in tp.spec.rows" :key="i" :class="{ sel: sp === i }" @mouseenter="sp = i">
+                <td><span class="mk-l" :class="{ on: sp === i }" style="padding:0 3px"><i>{{ specLetter(i) }}</i></span></td>
+                <td v-if="edit" style="padding-top:5px;padding-bottom:5px"><input class="inp cell txt" v-model="r.pt" placeholder="部位"><input class="inp cell txt" v-model="r.how" placeholder="怎么量"></td>
+                <td v-else>{{ r.pt }}<div class="how">{{ r.how }}</div></td>
+                <td v-for="z in sizes" :key="z" class="num" :class="{ base: z === base }"><input v-if="edit" class="inp cell num" :value="r.vals[z]" @change="setVal(r, z, $event.target.value)"><template v-else>{{ fcm(r.vals[z]) }}</template></td>
+                <td v-if="sizes.length > 1" class="num"><input v-if="edit" class="inp cell num" :value="r.step" @change="setStep(r, $event.target.value)"><span v-else class="mut">{{ stepText(r) }}</span></td>
+                <td class="num"><input v-if="edit" class="inp cell num" v-model.number="r.tol"><template v-else>{{ fcm(r.tol) }}</template></td>
+                <td v-if="edit" class="num"><button class="btn ghost icon sm" title="删除这一行" @click="tp.spec.rows.splice(i, 1)"><Ico n="trash" :s="13"/></button></td>
+              </tr>
+              <tr v-if="!tp.spec.rows.length"><td :colspan="sizes.length + 5" class="empty">还没有量体部位，点「加部位」</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div v-if="view === 'ops'" data-c="工艺单">

@@ -123,9 +123,22 @@ const rowCost = (r, sizes) => rnd(rowMidUse(r, sizes) * (1 + r.loss / 100) * uni
 const tpMaterialCost = (tp) => { const sz = sizesOf(style(tp.style).sizeGroup); return rnd(sum(tp.bom.filter((r) => r.src === '我方采购'), (r) => rowCost(r, sz)), 2) }
 const tpLabor = (tp) => rnd(sum(tp.ops, (o) => o.price), 2)
 
-function createTechpack(styleCode, bom, ops, note) {
+// 尺寸表：rows = [{ pt 部位, how 量法, tol 公差, step 档差, vals: { 尺码: cm } }]，从基码按档差往两边放
+function gradeRow(r, sizes, base, v) {
+  const bi = sizes.indexOf(base)
+  sizes.forEach((z, i) => { r.vals[z] = rnd(v + (i - bi) * r.step, 1) })
+}
+function specTemplate(styleCode) {
+  const s = style(styleCode), sizes = sizesOf(s.sizeGroup), base = baseSizeOf(s.sizeGroup)
+  return { base, rows: (SPEC_POINTS[catOf(s.cat).shape] || SPEC_POINTS.tee).map(([pt, how, v, step, tol]) => {
+    const r = { pt, how, tol, step, vals: {} }
+    gradeRow(r, sizes, base, v)
+    return r
+  }) }
+}
+function createTechpack(styleCode, bom, ops, note, spec) {
   const ver = (tpsOf(styleCode)[0]?.ver || 0) + 1
-  const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null, bom, ops, log: [] })
+  const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null, bom, ops, spec: spec || specTemplate(styleCode), log: [] })
   act(tp, ver === 1 ? '新建' : '由 V' + (ver - 1) + ' 修订')
   return tp
 }
@@ -139,6 +152,12 @@ function tpCheck(tp) {
     if (r.um === '统一' && !(r.use > 0)) errs.push(`第 ${i + 1} 行（${r.part}）：没有用量`)
     if (mat(r.mat)?.status === '停用') errs.push(`第 ${i + 1} 行：${mat(r.mat).name} 已停用`)
   })
+  if (!tp.spec.rows.length) errs.push('尺寸表还没填')
+  tp.spec.rows.forEach((r) => {
+    const miss = sizesOf(s.sizeGroup).filter((z) => !(r.vals[z] > 0))
+    if (!r.pt) errs.push('尺寸表有一行没写部位')
+    else if (miss.length) errs.push(`尺寸表「${r.pt}」：${miss.join('、')} 码没填`)
+  })
   return errs
 }
 function publishTp(tp) {
@@ -151,8 +170,8 @@ function publishTp(tp) {
 }
 function reviseTp(tp) {
   if (tpsOf(tp.style).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
-  const copy = JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops }))
-  return createTechpack(tp.style, copy.bom, copy.ops, '')
+  const copy = JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec }))
+  return createTechpack(tp.style, copy.bom, copy.ops, '', copy.spec)
 }
 
 /* ---------- 订单 ---------- */
@@ -687,7 +706,8 @@ function seed() {
   as('u4', '2026-10-20', () => {
     const v2 = reviseTp(activeTp('27CF001'))
     v2.bom[0].uses.M = 2.35
-    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）'
+    gradeRow(v2.spec.rows[0], sizesOf('W5'), 'M', 110)
+    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；衣长各码加长 2cm'
     publishTp(v2)
   })
   // 期初库存、客供料

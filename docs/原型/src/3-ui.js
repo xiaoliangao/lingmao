@@ -312,7 +312,7 @@ comp('Upstream', {
 
 expose({
   db, nav, go, ui, fd, fq, fm, fpct, sum, rnd, daysLeft, addDays, clock,
-  colorOf, colorName, sizesOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, unitOf,
+  colorOf, colorName, sizesOf, baseSizeOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, unitOf,
   style, styleName, userName, order, purchase, production, stockDoc, mrp, stockQty,
   can, actionsOf, tpsOf, activeTp, tpOf, tpState, rowSku, rowUse, rowCost, tpMaterialCost, tpLabor, unmatchedColors,
   orderQty, orderAmt, orderStyles, orderSched, orderRet, scheduledQty, returnedQty, kitState, prodsOf, mrpsOf, describeChange,

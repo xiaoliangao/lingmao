@@ -61,6 +61,63 @@ const GARMENTS = {
   },
 }
 
+// 背面款式图：后领口浅、没有门襟和前袋，加上后育克、后中缝、后袋这些背面才有的线
+const GARMENTS_BACK = {
+  tee: {
+    body: 'M36 14C40 16.5 60 16.5 64 14L82 21L93 39L81 45L76 38V92H24V38L19 45L7 39L18 21Z',
+    line: 'M37.5 15.6C41.5 18 58.5 18 62.5 15.6M24 87H76M80 42.5L91.5 37M20 42.5L8.5 37M29 16.7C27.5 25 25.5 31 24 38M71 16.7C72.5 25 74.5 31 76 38',
+  },
+  knit: {
+    body: 'M37 13C41 16 59 16 63 13L79 18C86 30 90 56 92 82L82 84C80 66 77 52 75 40L76 92H24L25 40C23 52 20 66 18 84L8 82C10 56 14 30 21 18Z',
+    line: 'M38.5 14.4C42.5 17.6 57.5 17.6 61.5 14.4M24.2 85H75.8M8.6 77.5L18.6 79.5M91.4 77.5L81.4 79.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+    rib: [24.5, 75.5, 85, 92],
+  },
+  hoodie: {
+    body: GARMENTS.hoodie.body,
+    over: 'M35 17C31 6 40 1 50 1S69 6 65 17C62 27 38 27 35 17Z',
+    line: 'M50 1.5V24.5M24.2 85H75.8M8.6 77.5L18.6 79.5M91.4 77.5L81.4 79.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+    rib: [24.5, 75.5, 85, 92],
+  },
+  jacket: {
+    body: GARMENTS.jacket.body,
+    over: 'M37 9C43 11.5 57 11.5 63 9L62.5 14.5C56.5 17 43.5 17 37.5 14.5Z',
+    line: 'M26.2 29C36 31.5 64 31.5 73.8 29M36 31.3L35 79M64 31.3L65 79M25 79H75M29 15.5C27.5 23 26 31 25 39M71 15.5C72.5 23 74 31 75 39M10 68.5L19.6 70.5M90 68.5L80.4 70.5',
+  },
+  trench: {
+    body: GARMENTS.trench.body,
+    over: 'M38 7C43 10 57 10 62 7L61.5 13C56 15.5 44 15.5 38.5 13Z',
+    band: GARMENTS.trench.band,
+    line: 'M27.8 20L27 30C38 33.5 62 33.5 73 30L72.2 20M50 14.5V54M50 60.5V95M53 76V95M50 76H53M28.5 14C27.5 23 26.5 32 26 41M71.5 14C72.5 23 73.5 32 74 41M11.6 69L20.3 71M88.4 69L79.7 71',
+  },
+  pants: {
+    body: GARMENTS.pants.body,
+    band: GARMENTS.pants.band,
+    line: 'M27.3 17L50 21L72.7 17M50 13V33M33 23.2H44V25H33ZM56 23.2H67V25H56ZM38 27L33.5 94M62 27L66.5 94M33 7V13M44 7V13M50 7V13M56 7V13M67 7V13M23 89H43.9M56.1 89H77',
+    dots: [[38.5, 22, 0.9], [61.5, 22, 0.9]],
+  },
+  dress: {
+    body: 'M38 7C42 9.5 58 9.5 62 7L71 10L69 25L66 41L85 93H15L34 41L31 25L29 10Z',
+    line: 'M50 8.9V93M34 41H66M42 23L43 38M58 23L57 38M43 47L37 92M57 47L63 92M29 10C32 14 32.5 20 31 25M71 10C68 14 67.5 20 69 25',
+    dots: [[50, 11, 0.9]],
+  },
+  shirt: {
+    body: GARMENTS.shirt.body,
+    over: 'M38 9C43 11.5 57 11.5 62 9L61.5 15C56 17.5 44 17.5 38.5 15Z',
+    line: 'M27.3 25C37 27 63 27 72.7 25M47 26.4V34M53 26.4V34M9.6 70.5L18.6 72.5M90.4 70.5L81.4 72.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+  },
+  skirt: {
+    body: GARMENTS.skirt.body,
+    band: GARMENTS.skirt.band,
+    line: 'M50 16V91.5M40 16L40.8 28M60 16L59.2 28M52.5 80V91.4M50 80H52.5',
+    dots: [[50, 18.5, 0.9]],
+  },
+  puffer: {
+    body: GARMENTS.puffer.body,
+    band: GARMENTS.puffer.band,
+    line: 'M24.4 29H75.6M24.3 43H75.7M24.2 57H75.8M24.1 71H75.9M24 83H76M12.5 36L23.5 34M10.5 50L22 49M9 64L20.5 63.5M76.5 34L87.5 36M78 49L89.5 50M79.5 63.5L91 64M9 68.5L20 70.5M91 68.5L80 70.5',
+  },
+}
+
 const PIC_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <radialGradient id="pg-bg" cx=".5" cy=".38" r=".8"><stop offset="0" stop-color="#fbfbf8"/><stop offset="1" stop-color="#e7e9e2"/></radialGradient>
   <linearGradient id="pg-shade" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
@@ -83,8 +140,8 @@ function hexLum(hex) {
 }
 const inkOn = (hex) => (hexLum(hex) < 0.45 ? 'rgba(255,255,255,.34)' : 'rgba(28,34,48,.30)')
 
-function garmentSvg(shape, hex) {
-  const g = GARMENTS[shape] || GARMENTS.tee
+function garmentSvg(shape, hex, back) {
+  const g = (back ? GARMENTS_BACK : GARMENTS)[shape] || GARMENTS.tee
   const ink = inkOn(hex), tex = hexLum(hex) < 0.45 ? 'l' : 'd'
   const knit = ['knit', 'hoodie'].includes(shape)
   const ribs = g.rib ? Array.from({ length: 18 }, (_, i) => { const x = g.rib[0] + ((g.rib[1] - g.rib[0]) * (i + 0.5)) / 18; return `M${x.toFixed(1)} ${g.rib[2]}V${g.rib[3]}` }).join('') : ''
@@ -135,10 +192,11 @@ const MAT_DRAW = {
 const MAT_KIND = { MZ: 'knit', FL: 'zipper', FK: 'button', FX: 'thread', BX: 'label', BP: 'tag', BD: 'bag' }
 const matKind = (m) => (m.type === '里料' ? 'lining' : MAT_KIND[m.cat] || 'woven')
 
-// code 可以是款号、样衣号、物料编码、SKU；color 指定颜色时按它上色
-function picOf(code, color) {
-  const st = style(code) || (db.samples || []).find((x) => x.no === code)
-  if (st) return garmentSvg(catOf(st.cat).shape, colorOf(color || st.colors?.[0]).hex)
+// code 可以是款号、样衣号、物料编码、SKU；color 指定颜色时按它上色；back 画背面（只对款式、样衣）
+const garmentOf = (code) => style(code) || (db.samples || []).find((x) => x.no === code)
+function picOf(code, color, back) {
+  const st = garmentOf(code)
+  if (st) return garmentSvg(catOf(st.cat).shape, colorOf(color || st.colors?.[0]).hex, back)
   const m = mat(code) || matOfSku(code)
   if (m) {
     const c = color || skuOf(code)?.color || m.skus.find((k) => k.color)?.color
@@ -147,53 +205,110 @@ function picOf(code, color) {
   return garmentSvg('tee', '#d9dcd3')
 }
 const PIC_CACHE = new Map()
-const picSvg = (code, color) => { const k = code + '|' + (color || ''); if (!PIC_CACHE.has(k)) PIC_CACHE.set(k, picOf(code, color)); return PIC_CACHE.get(k) }
+const picSvg = (code, color, back) => { const k = code + '|' + (color || '') + (back ? '|b' : ''); if (!PIC_CACHE.has(k)) PIC_CACHE.set(k, picOf(code, color, back)); return PIC_CACHE.get(k) }
 
 comp('Thumb', {
-  props: { code: String, s: { type: Number, default: 32 }, color: String },
-  setup: (p) => ({ svg: computed(() => picSvg(p.code, p.color)) }),
+  props: { code: String, s: { type: Number, default: 32 }, color: String, back: Boolean },
+  setup: (p) => ({ svg: computed(() => picSvg(p.code, p.color, p.back)) }),
   template: `<span class="thumb" :style="{ width: s + 'px', height: s + 'px' }"><svg viewBox="0 0 100 100" width="100%" height="100%" v-html="svg"></svg></span>`,
 })
 
-/* 大图 + 各颜色的小图，点小图换颜色（款式、样衣、物料详情右侧） */
+/* 大图 + 各颜色的小图，点小图换颜色；款式、样衣的大图右上角能切正面 / 背面（款式、样衣、物料详情右侧） */
 comp('Gallery', {
   props: { code: String, colors: Array, s: { type: Number, default: 258 } },
-  setup: (p) => ({ c: ref(p.colors?.[0]) }),
-  template: `<div class="gallery" data-c="图片"><Thumb :code="code" :color="c" :s="s"/>
+  setup: (p) => ({ c: ref(p.colors?.[0]), b: ref(false), garment: computed(() => !!garmentOf(p.code)) }),
+  template: `<div class="gallery" data-c="图片"><div class="gbig"><Thumb :code="code" :color="c" :s="s" :back="b"/>
+    <div v-if="garment" class="gview"><button :class="{ on: !b }" @click="b = false">正面</button><button :class="{ on: b }" @click="b = true">背面</button></div></div>
     <div v-if="colors && colors.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap"><button v-for="x in colors" :key="x" class="gthumb" :class="{ on: x === c }" :title="colorName(x)" @click="c = x"><Thumb :code="code" :color="x" :s="42"/></button></div></div>`,
 })
 
-/* ---------- 资料包的 BOM 图：款式图上按 BOM 行号标出每种料用在哪 ----------
- * BOM_SPOTS[形状][部位] = [x, y]（0–100，同款式图坐标）；没写坐标的部位（包装袋、缝纫线……）列在图下面 */
+/* ---------- 资料包的 BOM 图：正面、背面两张款式图上按 BOM 行号标出每种料用在哪 ----------
+ * BOM_SPOTS[形状][部位] = [x, y]（0–100，同款式图坐标）标在正面；BOM_BACK 里有的部位标在背面（主唛、洗唛缝在后领、侧缝里）。
+ * 两处都没写的部位（包装袋、缝纫线……）列在图下面 */
 const BOM_SPOTS = {
-  tee: { 大身: [50, 60], 领: [50, 17], 袖: [86, 32], 主唛: [50, 21], 洗唛: [28, 80], 吊牌: [70, 22] },
-  knit: { 大身: [50, 58], 领: [50, 16], 袖: [86, 55], 主唛: [50, 20], 洗唛: [29, 80], 吊牌: [69, 22], 纽扣: [50, 40] },
-  hoodie: { 大身: [50, 50], 领: [50, 19], 袖: [86, 55], 袋布: [50, 73], 拉链: [50, 40], 主唛: [42, 24], 洗唛: [29, 80], 吊牌: [69, 25] },
-  jacket: { 大身: [38, 62], 领: [42, 13], 袖: [86, 45], 拉链: [50, 58], 纽扣: [37, 37.5], 袋布: [63, 40], 里布: [58, 25], 主唛: [50, 17], 洗唛: [28, 74], 吊牌: [68, 18] },
-  trench: { 大身: [38, 78], 领: [44, 14], 袖: [84, 45], 纽扣: [44, 36], 织带: [62, 57], 袋布: [33, 72], 里布: [57, 21], 主唛: [50, 12], 洗唛: [27, 88], 吊牌: [68, 15] },
-  pants: { 大身: [38, 60], 织带: [64, 10], 拉链: [48, 22], 纽扣: [50, 10], 袋布: [33, 20], 主唛: [36, 10], 洗唛: [26, 40], 吊牌: [72, 16] },
-  dress: { 大身: [50, 66], 领: [50, 13], 拉链: [33, 32], 里布: [60, 78], 主唛: [50, 17], 洗唛: [33, 50], 吊牌: [64, 14] },
-  shirt: { 大身: [38, 62], 领: [44, 13], 袖: [86, 48], 纽扣: [51.5, 36], 袋布: [62, 34], 主唛: [50, 16], 洗唛: [28, 78], 吊牌: [68, 18] },
-  skirt: { 大身: [50, 60], 织带: [62, 13], 拉链: [36, 25], 纽扣: [50, 13], 里布: [64, 76], 主唛: [42, 13], 洗唛: [30, 60], 吊牌: [72, 18] },
-  puffer: { 大身: [38, 50], 领: [50, 7], 袖: [86, 45], 拉链: [50, 40], 纽扣: [44, 64], 里布: [58, 22], 主唛: [50, 14], 洗唛: [27, 80], 吊牌: [68, 16] },
+  tee: { 大身: [50, 60], 领: [50, 17], 袖: [86, 32], 吊牌: [70, 22] },
+  knit: { 大身: [50, 58], 领: [50, 16], 袖: [86, 55], 吊牌: [69, 22], 纽扣: [50, 40] },
+  hoodie: { 大身: [50, 50], 领: [50, 19], 袖: [86, 55], 袋布: [50, 73], 拉链: [50, 40], 吊牌: [69, 25] },
+  jacket: { 大身: [38, 62], 领: [42, 13], 袖: [86, 45], 拉链: [50, 58], 纽扣: [37, 37.5], 袋布: [63, 40], 里布: [58, 25], 吊牌: [68, 18] },
+  trench: { 大身: [38, 78], 领: [44, 14], 袖: [84, 45], 纽扣: [44, 36], 织带: [62, 57], 袋布: [33, 72], 里布: [57, 21], 吊牌: [68, 15] },
+  pants: { 大身: [38, 60], 织带: [64, 10], 拉链: [48, 22], 纽扣: [50, 10], 袋布: [33, 20], 吊牌: [72, 16] },
+  dress: { 大身: [50, 66], 领: [50, 13], 里布: [60, 78], 吊牌: [64, 14] },
+  shirt: { 大身: [38, 62], 领: [44, 13], 袖: [86, 48], 纽扣: [51.5, 36], 袋布: [62, 34], 吊牌: [68, 18] },
+  skirt: { 大身: [50, 60], 织带: [62, 13], 纽扣: [50, 13], 里布: [64, 76], 吊牌: [72, 18] },
+  puffer: { 大身: [38, 50], 领: [50, 7], 袖: [86, 45], 拉链: [50, 40], 纽扣: [44, 64], 里布: [58, 22], 吊牌: [68, 16] },
+}
+const BOM_BACK = {
+  tee: { 主唛: [50, 20.5], 洗唛: [27, 80] },
+  knit: { 主唛: [50, 20], 洗唛: [27, 80] },
+  hoodie: { 主唛: [50, 28.5], 洗唛: [28, 80] },
+  jacket: { 主唛: [50, 19], 洗唛: [28, 72] },
+  trench: { 主唛: [50, 18], 洗唛: [27, 86] },
+  pants: { 主唛: [50, 10], 洗唛: [27, 40] },
+  dress: { 主唛: [44, 12], 洗唛: [36, 50], 拉链: [50, 30] },
+  shirt: { 主唛: [50, 19.5], 洗唛: [28, 78] },
+  skirt: { 主唛: [42, 13], 洗唛: [30, 60], 拉链: [50, 28] },
+  puffer: { 主唛: [50, 14], 洗唛: [27, 78] },
 }
 comp('BomFigure', {
-  props: { code: String, color: String, rows: Array, hl: Number },
+  props: { code: String, color: String, rows: Array, hl: Number, s: { type: Number, default: 240 } },
   emits: ['hover'],
   setup(p) {
     const marks = computed(() => {
-      const spots = BOM_SPOTS[catOf(style(p.code)?.cat).shape] || BOM_SPOTS.tee, seen = {}
+      const shape = catOf(style(p.code)?.cat).shape, front = BOM_SPOTS[shape] || BOM_SPOTS.tee, back = BOM_BACK[shape] || BOM_BACK.tee, seen = {}
       return p.rows.map((r, i) => {
-        const at = spots[r.part]
+        const b = !!back[r.part], at = b ? back[r.part] : front[r.part]
         if (!at) return { i, off: true }
         const n = (seen[r.part] = (seen[r.part] || 0) + 1) - 1 // 同一部位第二行往右挪一点
-        return { i, x: at[0] + n * 6, y: at[1] }
+        return { i, b, x: at[0] + n * 6, y: at[1] }
       })
     })
     return { marks }
   },
-  template: `<div class="fig"><Thumb :code="code" :color="color" :s="280"/>
-    <span v-for="m in marks.filter(m => !m.off)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span>
+  template: `<div class="bomfig"><div class="figs">
+    <div v-for="b in [false, true]" :key="b" class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" :back="b"/><span class="cap">{{ b ? '背面' : '正面' }}</span>
+      <span v-for="m in marks.filter(m => !m.off && m.b === b)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span></div></div>
     <div v-if="marks.some(m => m.off)" class="off"><span v-for="m in marks.filter(m => m.off)" :key="m.i" class="mk-l" :class="{ on: hl === m.i }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)"><i>{{ m.i + 1 }}</i>{{ rows[m.i].part }}</span></div>
+  </div>`,
+})
+
+/* ---------- 尺寸表的量法图：正面款式图上画尺寸线，字母对应尺寸表的行 ----------
+ * SPEC_LINES[形状][部位] = [x1, y1, x2, y2, 字母位置 x?, y?]；没画线的部位只在表里有字母 */
+const SPEC_LINES = {
+  tee: { 衣长: [36, 14, 36, 92], 胸围: [24, 41, 76, 41], 肩宽: [29, 16.7, 71, 16.7], 袖长: [71, 16.7, 93, 39], 袖口: [94.1, 41.2, 82.1, 47.2], 下摆: [24, 95.5, 76, 95.5] },
+  knit: { 衣长: [37, 13, 37, 92], 胸围: [25, 43, 75, 43], 肩宽: [29, 15.5, 71, 15.5], 袖长: [71, 15.5, 92, 82], 袖口: [92.5, 84.5, 82.5, 86.5], 下摆: [24, 95.5, 76, 95.5] },
+  hoodie: { 衣长: [37, 13, 37, 92], 胸围: [25, 43, 75, 43], 肩宽: [29, 15.5, 71, 15.5, 58, 15.5], 袖长: [71, 15.5, 92, 82], 袖口: [92.5, 84.5, 82.5, 86.5], 下摆: [24, 95.5, 76, 95.5], 帽高: [36, 17, 46, 1.5] },
+  jacket: { 衣长: [37, 9, 37, 85], 胸围: [25, 47, 75, 47], 肩宽: [29, 15.5, 71, 15.5, 58, 15.5], 袖长: [71, 15.5, 91, 73], 袖口: [91.5, 75.5, 81.5, 77.5], 下摆: [25, 88.5, 75, 88.5] },
+  trench: { 衣长: [38, 7, 38, 95], 胸围: [26, 41.5, 74, 41.5], 肩宽: [28.5, 14, 71.5, 14, 58, 14], 袖长: [71.5, 14, 89, 74], 袖口: [89.5, 76.5, 80.5, 78.5], 腰围: [24.4, 57.3, 75.6, 57.3, 64, 57.3], 下摆: [21, 97.5, 79, 97.5] },
+  pants: { 腰围: [28, 10, 72, 10, 60, 10], 臀围: [26.8, 24, 73.2, 24, 63, 24], 前浪: [50, 7, 50, 33, 50, 18], 大腿围: [26.1, 36, 49.6, 36], 裤长: [82, 7, 82, 94], 脚口: [22, 97, 43.5, 97] },
+  dress: { 衣长: [38, 7, 38, 93], 胸围: [31.6, 28, 68.4, 28], 腰围: [34, 41, 66, 41], 肩宽: [29, 10, 71, 10], 腰节: [62, 7, 62, 41, 62, 20], 下摆: [15, 96.5, 85, 96.5] },
+  shirt: { 衣长: [38, 9, 38, 90], 胸围: [25, 43, 75, 43], 肩宽: [29, 15.5, 71, 15.5, 60, 15.5], 领围: [40, 6.5, 60, 6.5], 袖长: [71, 15.5, 91, 75], 袖口: [91.5, 77.5, 82.5, 79.5], 下摆: [25, 95, 75, 95] },
+  skirt: { 腰围: [32, 13, 68, 13], 臀围: [27.2, 32, 72.8, 32], 裙长: [72, 10, 89, 88], 下摆: [15, 95, 85, 95] },
+  puffer: { 衣长: [37, 9, 37, 87], 胸围: [24.5, 41.5, 75.5, 41.5], 肩宽: [28.5, 15, 71.5, 15, 58, 15], 领高: [66, 3.5, 66, 10.5, 71, 7], 袖长: [71.5, 15, 92, 73], 袖口: [92.5, 75.5, 81.5, 78], 下摆: [24, 90.5, 76, 90.5] },
+}
+const specLetter = (i) => String.fromCharCode(65 + i)
+// 一条尺寸线：两头画箭头
+function dimPath(x1, y1, x2, y2) {
+  const l = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / l, uy = (y2 - y1) / l, nx = -uy, ny = ux, a = 2.2, w = 0.9
+  const head = (x, y, d) => `M${x} ${y}L${(x + d * ux * a + nx * w).toFixed(2)} ${(y + d * uy * a + ny * w).toFixed(2)}L${(x + d * ux * a - nx * w).toFixed(2)} ${(y + d * uy * a - ny * w).toFixed(2)}Z`
+  return { line: `M${x1} ${y1}L${x2} ${y2}`, heads: head(x1, y1, 1) + head(x2, y2, -1) }
+}
+comp('SpecFigure', {
+  props: { code: String, color: String, rows: Array, hl: Number, s: { type: Number, default: 280 } },
+  emits: ['hover'],
+  setup(p) {
+    const dims = computed(() => {
+      const lines = SPEC_LINES[catOf(style(p.code)?.cat).shape] || SPEC_LINES.tee
+      return p.rows.map((r, i) => {
+        const d = lines[r.pt]
+        if (!d) return null
+        const [x1, y1, x2, y2, lx, ly] = d
+        return { i, ...dimPath(x1, y1, x2, y2), lx: lx ?? (x1 + x2) / 2, ly: ly ?? (y1 + y2) / 2 }
+      }).filter(Boolean)
+    })
+    return { dims, specLetter }
+  },
+  template: `<div class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s"/>
+    <svg class="dims" viewBox="0 0 100 100"><g v-for="d in dims" :key="d.i" :class="{ on: hl === d.i }"><path class="halo" :d="d.line + d.heads"/><path class="ln" :d="d.line"/><path class="hd" :d="d.heads"/></g></svg>
+    <span v-for="d in dims" :key="d.i" class="mk" :class="{ on: hl === d.i }" :style="{ left: d.lx + '%', top: d.ly + '%' }" @mouseenter="$emit('hover', d.i)">{{ specLetter(d.i) }}</span>
   </div>`,
 })

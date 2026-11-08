@@ -491,20 +491,45 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .sheet .nav-i .n { background: none; color: var(--fg-3); font-weight: 400; }
 
 .gallery { margin-bottom: 20px; }
-.gallery > .thumb { border-radius: 6px; }
+.gallery .gbig > .thumb { border-radius: 6px; }
 .gthumb { padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; line-height: 0; }
 .gthumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 /* 资料包 BOM 图：左边款式图标行号，右边是指着的那行料 */
-.bomtop { display: flex; gap: 20px; margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: radial-gradient(circle at 25% 45%, #fbfbf8, #eceee7); }
+.bomtop, .figbox { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: radial-gradient(circle at 25% 45%, #fbfbf8, #eceee7); }
+.figs { display: flex; gap: 6px; }
 .fig { position: relative; width: 280px; flex: none; }
-.fig > .thumb { background: none; box-shadow: none; }
+.fig > .thumb { display: grid; background: none; box-shadow: none; }
+.fig .cap { position: absolute; left: 6px; top: 2px; font-size: 11px; letter-spacing: 0.1em; color: var(--fg-3); }
 .mk { position: absolute; transform: translate(-50%, -50%); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.25); cursor: default; transition: transform 0.1s; }
 .mk.on { background: var(--stitch); color: var(--side-2); transform: translate(-50%, -50%) scale(1.3); z-index: 2; }
-.fig .off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.bomfig .off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .mk-l { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px 0 3px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); font-size: 12px; color: var(--fg-2); cursor: default; }
 .mk-l i { font-style: normal; min-width: 18px; height: 18px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
 .mk-l.on { border-color: var(--stitch); color: var(--fg); }
 .mk-l.on i { background: var(--stitch); color: var(--side-2); }
-.matcard { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 6px 4px; }
+.matcard { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 12px; padding: 6px 4px; }
 .matcard .props { grid-template-columns: 64px 1fr; }
+/* 尺寸表：左边量法图（尺寸线 + 字母），右边各码尺寸，基码那列压底色 */
+.dims { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 1; pointer-events: none; overflow: visible; }
+.dims .halo { fill: #fff; fill-opacity: 0.8; stroke: #fff; stroke-opacity: 0.8; stroke-width: 1.8; stroke-linejoin: round; }
+.dims .ln { fill: none; stroke: var(--accent); stroke-width: 0.55; }
+.dims .hd { fill: var(--accent); }
+.dims .on .ln { stroke: var(--amber); stroke-width: 0.9; }
+.dims .on .hd { fill: var(--amber); }
+.spectop { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.spectop .figbox { flex-direction: column; gap: 8px; margin-bottom: 0; }
+.spectop > .spec { flex: 1; min-width: 460px; overflow-x: auto; }
+.spectop.wide > .figbox { flex: 1 1 100%; flex-direction: row; align-items: center; }
+.spectop.wide > .spec { flex-basis: 100%; }
+.figbox .tips { margin: 0; padding-left: 18px; color: var(--fg-2); line-height: 1.9; }
+.spec .tbl th, .spec .tbl td { padding-left: 8px; padding-right: 8px; }
+.spec th.base, .spec td.base { background: var(--accent-bg); font-weight: 600; }
+.spec td .how { font-size: 12px; color: var(--fg-3); line-height: 1.3; }
+.spec .inp.cell { width: 50px; padding: 0 5px; text-align: right; }
+.spec .inp.cell.txt { display: block; width: 118px; text-align: left; }
+.spec .inp.cell.txt + .txt { margin-top: 3px; height: 22px; font-size: 12px; color: var(--fg-2); }
+.gbig { position: relative; line-height: 0; }
+.gview { position: absolute; top: 8px; right: 8px; display: flex; line-height: 1.5; background: rgb(255 255 255 / 85%); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.gview button { border: 0; background: none; padding: 2px 9px; font: inherit; font-size: 12px; color: var(--fg-2); cursor: pointer; }
+.gview button.on { background: var(--accent); color: var(--accent-fg); }

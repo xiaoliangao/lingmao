@@ -498,23 +498,48 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .sheet .nav-i .n { background: none; color: var(--fg-3); font-weight: 400; }
 
 .gallery { margin-bottom: 20px; }
-.gallery > .thumb { border-radius: 6px; }
+.gallery .gbig > .thumb { border-radius: 6px; }
 .gthumb { padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; line-height: 0; }
 .gthumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 /* 资料包 BOM 图：左边款式图标行号，右边是指着的那行料 */
-.bomtop { display: flex; gap: 20px; margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: radial-gradient(circle at 25% 45%, #fbfbf8, #eceee7); }
+.bomtop, .figbox { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: radial-gradient(circle at 25% 45%, #fbfbf8, #eceee7); }
+.figs { display: flex; gap: 6px; }
 .fig { position: relative; width: 280px; flex: none; }
-.fig > .thumb { background: none; box-shadow: none; }
+.fig > .thumb { display: grid; background: none; box-shadow: none; }
+.fig .cap { position: absolute; left: 6px; top: 2px; font-size: 11px; letter-spacing: 0.1em; color: var(--fg-3); }
 .mk { position: absolute; transform: translate(-50%, -50%); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.25); cursor: default; transition: transform 0.1s; }
 .mk.on { background: var(--stitch); color: var(--side-2); transform: translate(-50%, -50%) scale(1.3); z-index: 2; }
-.fig .off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.bomfig .off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .mk-l { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px 0 3px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); font-size: 12px; color: var(--fg-2); cursor: default; }
 .mk-l i { font-style: normal; min-width: 18px; height: 18px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
 .mk-l.on { border-color: var(--stitch); color: var(--fg); }
 .mk-l.on i { background: var(--stitch); color: var(--side-2); }
-.matcard { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 6px 4px; }
+.matcard { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 12px; padding: 6px 4px; }
 .matcard .props { grid-template-columns: 64px 1fr; }
+/* 尺寸表：左边量法图（尺寸线 + 字母），右边各码尺寸，基码那列压底色 */
+.dims { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 1; pointer-events: none; overflow: visible; }
+.dims .halo { fill: #fff; fill-opacity: 0.8; stroke: #fff; stroke-opacity: 0.8; stroke-width: 1.8; stroke-linejoin: round; }
+.dims .ln { fill: none; stroke: var(--accent); stroke-width: 0.55; }
+.dims .hd { fill: var(--accent); }
+.dims .on .ln { stroke: var(--amber); stroke-width: 0.9; }
+.dims .on .hd { fill: var(--amber); }
+.spectop { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.spectop .figbox { flex-direction: column; gap: 8px; margin-bottom: 0; }
+.spectop > .spec { flex: 1; min-width: 460px; overflow-x: auto; }
+.spectop.wide > .figbox { flex: 1 1 100%; flex-direction: row; align-items: center; }
+.spectop.wide > .spec { flex-basis: 100%; }
+.figbox .tips { margin: 0; padding-left: 18px; color: var(--fg-2); line-height: 1.9; }
+.spec .tbl th, .spec .tbl td { padding-left: 8px; padding-right: 8px; }
+.spec th.base, .spec td.base { background: var(--accent-bg); font-weight: 600; }
+.spec td .how { font-size: 12px; color: var(--fg-3); line-height: 1.3; }
+.spec .inp.cell { width: 50px; padding: 0 5px; text-align: right; }
+.spec .inp.cell.txt { display: block; width: 118px; text-align: left; }
+.spec .inp.cell.txt + .txt { margin-top: 3px; height: 22px; font-size: 12px; color: var(--fg-2); }
+.gbig { position: relative; line-height: 0; }
+.gview { position: absolute; top: 8px; right: 8px; display: flex; line-height: 1.5; background: rgb(255 255 255 / 85%); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.gview button { border: 0; background: none; padding: 2px 9px; font: inherit; font-size: 12px; color: var(--fg-2); cursor: pointer; }
+.gview button.on { background: var(--accent); color: var(--accent-fg); }
 </style>
 </head>
 <body>
@@ -585,9 +610,9 @@ const db = reactive({
     { code: 'JH', name: '酒红', hex: '#7b2c36', family: '红' },
   ],
   sizeGroups: [
-    { id: 'W5', name: '女装字母码', sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
-    { id: 'M4', name: '男装字母码', sizes: ['M', 'L', 'XL', 'XXL'] },
-    { id: 'F', name: '均码', sizes: ['F'] },
+    { id: 'W5', name: '女装字母码', sizes: ['S', 'M', 'L', 'XL', 'XXL'], base: 'M' },
+    { id: 'M4', name: '男装字母码', sizes: ['M', 'L', 'XL', 'XXL'], base: 'L' },
+    { id: 'F', name: '均码', sizes: ['F'], base: 'F' },
   ],
   seasons: [{ code: 'C', name: '春' }, { code: 'X', name: '夏' }, { code: 'Q', name: '秋' }, { code: 'D', name: '冬' }],
   categories: [
@@ -682,6 +707,8 @@ const userName = (id) => db.users.find((u) => u.id === id)?.name || '—'
 const colorOf = (c) => db.colors.find((x) => x.code === c) || { code: c, name: c || '—', hex: 'transparent' }
 const colorName = (c) => (c ? colorOf(c).name : '—')
 const sizesOf = (gid) => db.sizeGroups.find((g) => g.id === gid)?.sizes || []
+// 基码：尺寸表从这个码往两边放码；没设的取中间那个
+const baseSizeOf = (gid) => { const g = db.sizeGroups.find((x) => x.id === gid); return g?.base && g.sizes.includes(g.base) ? g.base : g?.sizes[Math.floor((g.sizes.length - 1) / 2)] }
 const catOf = (c) => db.categories.find((x) => x.code === c) || { code: c, name: c, shape: 'tee' }
 const sup = (c) => db.suppliers.find((s) => s.code === c)
 const supName = (c) => sup(c)?.short || c || '—'
@@ -705,6 +732,21 @@ const stockDoc = (no) => db.stockDocs.find((d) => d.no === no)
 const mrp = (no) => db.mrps.find((m) => m.no === no)
 const stockKey = (w, s, o) => `${w}|${s}|${o || '自有'}`
 const stockQty = (w, s, o) => db.stock[stockKey(w, s, o)] || 0
+
+/* ---------- 尺寸表模板：新建资料包时按品类形状带出常用部位 ----------
+ * [部位, 量法, 基码尺寸, 档差, 公差]，单位 cm；数值是女装 M 码的参考尺寸，演示用 */
+const SPEC_POINTS = {
+  tee: [['衣长', '肩颈点量到下摆', 64, 1, 1], ['胸围', '袖窿下 2cm 平量一周', 100, 4, 1.5], ['肩宽', '左右肩点直量', 44, 1.2, 0.8], ['袖长', '肩点量到袖口', 20, 0.5, 0.5], ['袖口', '平量一周', 34, 1.5, 0.5], ['下摆', '平量一周', 100, 4, 1.5]],
+  knit: [['衣长', '肩颈点量到下摆罗纹', 50, 1, 1], ['胸围', '袖窿下 2cm 平量一周', 96, 4, 1.5], ['肩宽', '左右肩点直量', 38, 1, 0.8], ['袖长', '肩点量到袖口罗纹', 57, 0.5, 1], ['袖口', '罗纹平量一周', 18, 1, 0.5], ['下摆', '罗纹平量一周', 82, 4, 1.5]],
+  hoodie: [['衣长', '肩颈点量到下摆罗纹', 66, 1.5, 1], ['胸围', '袖窿下 2cm 平量一周', 112, 4, 1.5], ['肩宽', '落肩，左右肩点直量', 52, 1.2, 1], ['袖长', '肩点量到袖口罗纹', 52, 1, 1], ['袖口', '罗纹平量一周', 20, 1, 0.5], ['下摆', '罗纹平量一周', 96, 4, 1.5], ['帽高', '颈侧点量到帽顶', 34, 0.5, 0.5]],
+  jacket: [['衣长', '肩颈点量到下摆', 60, 1.5, 1], ['胸围', '袖窿下 2cm 平量一周', 108, 4, 1.5], ['肩宽', '左右肩点直量', 42, 1.2, 0.8], ['袖长', '肩点量到袖口', 59, 1, 1], ['袖口', '平量一周', 26, 1, 0.5], ['下摆', '平量一周', 104, 4, 1.5]],
+  trench: [['衣长', '肩颈点量到下摆', 108, 2, 1.5], ['胸围', '袖窿下 2cm 平量一周', 104, 4, 1.5], ['肩宽', '左右肩点直量', 40, 1, 0.8], ['袖长', '肩点量到袖口', 60, 1, 1], ['袖口', '平量一周', 28, 1, 0.5], ['腰围', '腰带位平量一周', 96, 4, 1.5], ['下摆', '平量一周', 132, 4, 2]],
+  pants: [['腰围', '腰头平量一周', 68, 4, 1], ['臀围', '腰下 18cm 平量一周', 94, 4, 1.5], ['前浪', '含腰头', 26, 0.6, 0.5], ['大腿围', '裆下 2cm 平量一周', 56, 2.4, 1], ['裤长', '侧缝，含腰头', 98, 1, 1], ['脚口', '平量一周', 40, 1, 0.5]],
+  dress: [['衣长', '肩颈点量到下摆', 106, 1, 1], ['胸围', '袖窿下 2cm 平量一周', 88, 4, 1], ['腰围', '腰线平量一周', 70, 4, 1], ['肩宽', '左右肩点直量', 35, 1, 0.5], ['腰节', '肩颈点量到腰线', 38, 0.6, 0.5], ['下摆', '平量一周', 156, 4, 2]],
+  shirt: [['衣长', '肩颈点量到下摆', 68, 1.5, 1], ['胸围', '袖窿下 2cm 平量一周', 104, 4, 1.5], ['肩宽', '左右肩点直量', 40, 1.2, 0.8], ['领围', '扣好量一周', 38, 1, 0.5], ['袖长', '肩点量到袖口，含袖头', 58, 1, 1], ['袖口', '扣好平量一周', 22, 1, 0.5], ['下摆', '平量一周', 102, 4, 1.5]],
+  skirt: [['腰围', '腰头平量一周', 68, 4, 1], ['臀围', '腰下 18cm 平量一周', 94, 4, 1.5], ['裙长', '侧缝，含腰头', 70, 1, 1], ['下摆', '平量一周', 176, 4, 2]],
+  puffer: [['衣长', '肩颈点量到下摆', 62, 1.5, 1], ['胸围', '袖窿下 2cm 平量一周', 116, 4, 2], ['肩宽', '左右肩点直量', 46, 1.2, 1], ['领高', '后中量', 7, 0, 0.3], ['袖长', '肩点量到袖口', 62, 1, 1], ['袖口', '平量一周', 24, 1, 0.5], ['下摆', '平量一周', 110, 4, 2]],
+}
 </script>
 <script>/* 2-store.js */
 /* ============================================================
@@ -832,9 +874,22 @@ const rowCost = (r, sizes) => rnd(rowMidUse(r, sizes) * (1 + r.loss / 100) * uni
 const tpMaterialCost = (tp) => { const sz = sizesOf(style(tp.style).sizeGroup); return rnd(sum(tp.bom.filter((r) => r.src === '我方采购'), (r) => rowCost(r, sz)), 2) }
 const tpLabor = (tp) => rnd(sum(tp.ops, (o) => o.price), 2)
 
-function createTechpack(styleCode, bom, ops, note) {
+// 尺寸表：rows = [{ pt 部位, how 量法, tol 公差, step 档差, vals: { 尺码: cm } }]，从基码按档差往两边放
+function gradeRow(r, sizes, base, v) {
+  const bi = sizes.indexOf(base)
+  sizes.forEach((z, i) => { r.vals[z] = rnd(v + (i - bi) * r.step, 1) })
+}
+function specTemplate(styleCode) {
+  const s = style(styleCode), sizes = sizesOf(s.sizeGroup), base = baseSizeOf(s.sizeGroup)
+  return { base, rows: (SPEC_POINTS[catOf(s.cat).shape] || SPEC_POINTS.tee).map(([pt, how, v, step, tol]) => {
+    const r = { pt, how, tol, step, vals: {} }
+    gradeRow(r, sizes, base, v)
+    return r
+  }) }
+}
+function createTechpack(styleCode, bom, ops, note, spec) {
   const ver = (tpsOf(styleCode)[0]?.ver || 0) + 1
-  const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null, bom, ops, log: [] })
+  const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null, bom, ops, spec: spec || specTemplate(styleCode), log: [] })
   act(tp, ver === 1 ? '新建' : '由 V' + (ver - 1) + ' 修订')
   return tp
 }
@@ -848,6 +903,12 @@ function tpCheck(tp) {
     if (r.um === '统一' && !(r.use > 0)) errs.push(`第 ${i + 1} 行（${r.part}）：没有用量`)
     if (mat(r.mat)?.status === '停用') errs.push(`第 ${i + 1} 行：${mat(r.mat).name} 已停用`)
   })
+  if (!tp.spec.rows.length) errs.push('尺寸表还没填')
+  tp.spec.rows.forEach((r) => {
+    const miss = sizesOf(s.sizeGroup).filter((z) => !(r.vals[z] > 0))
+    if (!r.pt) errs.push('尺寸表有一行没写部位')
+    else if (miss.length) errs.push(`尺寸表「${r.pt}」：${miss.join('、')} 码没填`)
+  })
   return errs
 }
 function publishTp(tp) {
@@ -860,8 +921,8 @@ function publishTp(tp) {
 }
 function reviseTp(tp) {
   if (tpsOf(tp.style).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
-  const copy = JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops }))
-  return createTechpack(tp.style, copy.bom, copy.ops, '')
+  const copy = JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec }))
+  return createTechpack(tp.style, copy.bom, copy.ops, '', copy.spec)
 }
 
 /* ---------- 订单 ---------- */
@@ -1396,7 +1457,8 @@ function seed() {
   as('u4', '2026-10-20', () => {
     const v2 = reviseTp(activeTp('27CF001'))
     v2.bom[0].uses.M = 2.35
-    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）'
+    gradeRow(v2.spec.rows[0], sizesOf('W5'), 'M', 110)
+    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；衣长各码加长 2cm'
     publishTp(v2)
   })
   // 期初库存、客供料
@@ -1847,7 +1909,7 @@ comp('Upstream', {
 
 expose({
   db, nav, go, ui, fd, fq, fm, fpct, sum, rnd, daysLeft, addDays, clock,
-  colorOf, colorName, sizesOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, unitOf,
+  colorOf, colorName, sizesOf, baseSizeOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, unitOf,
   style, styleName, userName, order, purchase, production, stockDoc, mrp, stockQty,
   can, actionsOf, tpsOf, activeTp, tpOf, tpState, rowSku, rowUse, rowCost, tpMaterialCost, tpLabor, unmatchedColors,
   orderQty, orderAmt, orderStyles, orderSched, orderRet, scheduledQty, returnedQty, kitState, prodsOf, mrpsOf, describeChange,
@@ -1919,6 +1981,63 @@ const GARMENTS = {
   },
 }
 
+// 背面款式图：后领口浅、没有门襟和前袋，加上后育克、后中缝、后袋这些背面才有的线
+const GARMENTS_BACK = {
+  tee: {
+    body: 'M36 14C40 16.5 60 16.5 64 14L82 21L93 39L81 45L76 38V92H24V38L19 45L7 39L18 21Z',
+    line: 'M37.5 15.6C41.5 18 58.5 18 62.5 15.6M24 87H76M80 42.5L91.5 37M20 42.5L8.5 37M29 16.7C27.5 25 25.5 31 24 38M71 16.7C72.5 25 74.5 31 76 38',
+  },
+  knit: {
+    body: 'M37 13C41 16 59 16 63 13L79 18C86 30 90 56 92 82L82 84C80 66 77 52 75 40L76 92H24L25 40C23 52 20 66 18 84L8 82C10 56 14 30 21 18Z',
+    line: 'M38.5 14.4C42.5 17.6 57.5 17.6 61.5 14.4M24.2 85H75.8M8.6 77.5L18.6 79.5M91.4 77.5L81.4 79.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+    rib: [24.5, 75.5, 85, 92],
+  },
+  hoodie: {
+    body: GARMENTS.hoodie.body,
+    over: 'M35 17C31 6 40 1 50 1S69 6 65 17C62 27 38 27 35 17Z',
+    line: 'M50 1.5V24.5M24.2 85H75.8M8.6 77.5L18.6 79.5M91.4 77.5L81.4 79.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+    rib: [24.5, 75.5, 85, 92],
+  },
+  jacket: {
+    body: GARMENTS.jacket.body,
+    over: 'M37 9C43 11.5 57 11.5 63 9L62.5 14.5C56.5 17 43.5 17 37.5 14.5Z',
+    line: 'M26.2 29C36 31.5 64 31.5 73.8 29M36 31.3L35 79M64 31.3L65 79M25 79H75M29 15.5C27.5 23 26 31 25 39M71 15.5C72.5 23 74 31 75 39M10 68.5L19.6 70.5M90 68.5L80.4 70.5',
+  },
+  trench: {
+    body: GARMENTS.trench.body,
+    over: 'M38 7C43 10 57 10 62 7L61.5 13C56 15.5 44 15.5 38.5 13Z',
+    band: GARMENTS.trench.band,
+    line: 'M27.8 20L27 30C38 33.5 62 33.5 73 30L72.2 20M50 14.5V54M50 60.5V95M53 76V95M50 76H53M28.5 14C27.5 23 26.5 32 26 41M71.5 14C72.5 23 73.5 32 74 41M11.6 69L20.3 71M88.4 69L79.7 71',
+  },
+  pants: {
+    body: GARMENTS.pants.body,
+    band: GARMENTS.pants.band,
+    line: 'M27.3 17L50 21L72.7 17M50 13V33M33 23.2H44V25H33ZM56 23.2H67V25H56ZM38 27L33.5 94M62 27L66.5 94M33 7V13M44 7V13M50 7V13M56 7V13M67 7V13M23 89H43.9M56.1 89H77',
+    dots: [[38.5, 22, 0.9], [61.5, 22, 0.9]],
+  },
+  dress: {
+    body: 'M38 7C42 9.5 58 9.5 62 7L71 10L69 25L66 41L85 93H15L34 41L31 25L29 10Z',
+    line: 'M50 8.9V93M34 41H66M42 23L43 38M58 23L57 38M43 47L37 92M57 47L63 92M29 10C32 14 32.5 20 31 25M71 10C68 14 67.5 20 69 25',
+    dots: [[50, 11, 0.9]],
+  },
+  shirt: {
+    body: GARMENTS.shirt.body,
+    over: 'M38 9C43 11.5 57 11.5 62 9L61.5 15C56 17.5 44 17.5 38.5 15Z',
+    line: 'M27.3 25C37 27 63 27 72.7 25M47 26.4V34M53 26.4V34M9.6 70.5L18.6 72.5M90.4 70.5L81.4 72.5M29 15.5C27.5 24 26 32 25 40M71 15.5C72.5 24 74 32 75 40',
+  },
+  skirt: {
+    body: GARMENTS.skirt.body,
+    band: GARMENTS.skirt.band,
+    line: 'M50 16V91.5M40 16L40.8 28M60 16L59.2 28M52.5 80V91.4M50 80H52.5',
+    dots: [[50, 18.5, 0.9]],
+  },
+  puffer: {
+    body: GARMENTS.puffer.body,
+    band: GARMENTS.puffer.band,
+    line: 'M24.4 29H75.6M24.3 43H75.7M24.2 57H75.8M24.1 71H75.9M24 83H76M12.5 36L23.5 34M10.5 50L22 49M9 64L20.5 63.5M76.5 34L87.5 36M78 49L89.5 50M79.5 63.5L91 64M9 68.5L20 70.5M91 68.5L80 70.5',
+  },
+}
+
 const PIC_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <radialGradient id="pg-bg" cx=".5" cy=".38" r=".8"><stop offset="0" stop-color="#fbfbf8"/><stop offset="1" stop-color="#e7e9e2"/></radialGradient>
   <linearGradient id="pg-shade" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
@@ -1941,8 +2060,8 @@ function hexLum(hex) {
 }
 const inkOn = (hex) => (hexLum(hex) < 0.45 ? 'rgba(255,255,255,.34)' : 'rgba(28,34,48,.30)')
 
-function garmentSvg(shape, hex) {
-  const g = GARMENTS[shape] || GARMENTS.tee
+function garmentSvg(shape, hex, back) {
+  const g = (back ? GARMENTS_BACK : GARMENTS)[shape] || GARMENTS.tee
   const ink = inkOn(hex), tex = hexLum(hex) < 0.45 ? 'l' : 'd'
   const knit = ['knit', 'hoodie'].includes(shape)
   const ribs = g.rib ? Array.from({ length: 18 }, (_, i) => { const x = g.rib[0] + ((g.rib[1] - g.rib[0]) * (i + 0.5)) / 18; return `M${x.toFixed(1)} ${g.rib[2]}V${g.rib[3]}` }).join('') : ''
@@ -1993,10 +2112,11 @@ const MAT_DRAW = {
 const MAT_KIND = { MZ: 'knit', FL: 'zipper', FK: 'button', FX: 'thread', BX: 'label', BP: 'tag', BD: 'bag' }
 const matKind = (m) => (m.type === '里料' ? 'lining' : MAT_KIND[m.cat] || 'woven')
 
-// code 可以是款号、样衣号、物料编码、SKU；color 指定颜色时按它上色
-function picOf(code, color) {
-  const st = style(code) || (db.samples || []).find((x) => x.no === code)
-  if (st) return garmentSvg(catOf(st.cat).shape, colorOf(color || st.colors?.[0]).hex)
+// code 可以是款号、样衣号、物料编码、SKU；color 指定颜色时按它上色；back 画背面（只对款式、样衣）
+const garmentOf = (code) => style(code) || (db.samples || []).find((x) => x.no === code)
+function picOf(code, color, back) {
+  const st = garmentOf(code)
+  if (st) return garmentSvg(catOf(st.cat).shape, colorOf(color || st.colors?.[0]).hex, back)
   const m = mat(code) || matOfSku(code)
   if (m) {
     const c = color || skuOf(code)?.color || m.skus.find((k) => k.color)?.color
@@ -2005,54 +2125,111 @@ function picOf(code, color) {
   return garmentSvg('tee', '#d9dcd3')
 }
 const PIC_CACHE = new Map()
-const picSvg = (code, color) => { const k = code + '|' + (color || ''); if (!PIC_CACHE.has(k)) PIC_CACHE.set(k, picOf(code, color)); return PIC_CACHE.get(k) }
+const picSvg = (code, color, back) => { const k = code + '|' + (color || '') + (back ? '|b' : ''); if (!PIC_CACHE.has(k)) PIC_CACHE.set(k, picOf(code, color, back)); return PIC_CACHE.get(k) }
 
 comp('Thumb', {
-  props: { code: String, s: { type: Number, default: 32 }, color: String },
-  setup: (p) => ({ svg: computed(() => picSvg(p.code, p.color)) }),
+  props: { code: String, s: { type: Number, default: 32 }, color: String, back: Boolean },
+  setup: (p) => ({ svg: computed(() => picSvg(p.code, p.color, p.back)) }),
   template: `<span class="thumb" :style="{ width: s + 'px', height: s + 'px' }"><svg viewBox="0 0 100 100" width="100%" height="100%" v-html="svg"></svg></span>`,
 })
 
-/* 大图 + 各颜色的小图，点小图换颜色（款式、样衣、物料详情右侧） */
+/* 大图 + 各颜色的小图，点小图换颜色；款式、样衣的大图右上角能切正面 / 背面（款式、样衣、物料详情右侧） */
 comp('Gallery', {
   props: { code: String, colors: Array, s: { type: Number, default: 258 } },
-  setup: (p) => ({ c: ref(p.colors?.[0]) }),
-  template: `<div class="gallery" data-c="图片"><Thumb :code="code" :color="c" :s="s"/>
+  setup: (p) => ({ c: ref(p.colors?.[0]), b: ref(false), garment: computed(() => !!garmentOf(p.code)) }),
+  template: `<div class="gallery" data-c="图片"><div class="gbig"><Thumb :code="code" :color="c" :s="s" :back="b"/>
+    <div v-if="garment" class="gview"><button :class="{ on: !b }" @click="b = false">正面</button><button :class="{ on: b }" @click="b = true">背面</button></div></div>
     <div v-if="colors && colors.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap"><button v-for="x in colors" :key="x" class="gthumb" :class="{ on: x === c }" :title="colorName(x)" @click="c = x"><Thumb :code="code" :color="x" :s="42"/></button></div></div>`,
 })
 
-/* ---------- 资料包的 BOM 图：款式图上按 BOM 行号标出每种料用在哪 ----------
- * BOM_SPOTS[形状][部位] = [x, y]（0–100，同款式图坐标）；没写坐标的部位（包装袋、缝纫线……）列在图下面 */
+/* ---------- 资料包的 BOM 图：正面、背面两张款式图上按 BOM 行号标出每种料用在哪 ----------
+ * BOM_SPOTS[形状][部位] = [x, y]（0–100，同款式图坐标）标在正面；BOM_BACK 里有的部位标在背面（主唛、洗唛缝在后领、侧缝里）。
+ * 两处都没写的部位（包装袋、缝纫线……）列在图下面 */
 const BOM_SPOTS = {
-  tee: { 大身: [50, 60], 领: [50, 17], 袖: [86, 32], 主唛: [50, 21], 洗唛: [28, 80], 吊牌: [70, 22] },
-  knit: { 大身: [50, 58], 领: [50, 16], 袖: [86, 55], 主唛: [50, 20], 洗唛: [29, 80], 吊牌: [69, 22], 纽扣: [50, 40] },
-  hoodie: { 大身: [50, 50], 领: [50, 19], 袖: [86, 55], 袋布: [50, 73], 拉链: [50, 40], 主唛: [42, 24], 洗唛: [29, 80], 吊牌: [69, 25] },
-  jacket: { 大身: [38, 62], 领: [42, 13], 袖: [86, 45], 拉链: [50, 58], 纽扣: [37, 37.5], 袋布: [63, 40], 里布: [58, 25], 主唛: [50, 17], 洗唛: [28, 74], 吊牌: [68, 18] },
-  trench: { 大身: [38, 78], 领: [44, 14], 袖: [84, 45], 纽扣: [44, 36], 织带: [62, 57], 袋布: [33, 72], 里布: [57, 21], 主唛: [50, 12], 洗唛: [27, 88], 吊牌: [68, 15] },
-  pants: { 大身: [38, 60], 织带: [64, 10], 拉链: [48, 22], 纽扣: [50, 10], 袋布: [33, 20], 主唛: [36, 10], 洗唛: [26, 40], 吊牌: [72, 16] },
-  dress: { 大身: [50, 66], 领: [50, 13], 拉链: [33, 32], 里布: [60, 78], 主唛: [50, 17], 洗唛: [33, 50], 吊牌: [64, 14] },
-  shirt: { 大身: [38, 62], 领: [44, 13], 袖: [86, 48], 纽扣: [51.5, 36], 袋布: [62, 34], 主唛: [50, 16], 洗唛: [28, 78], 吊牌: [68, 18] },
-  skirt: { 大身: [50, 60], 织带: [62, 13], 拉链: [36, 25], 纽扣: [50, 13], 里布: [64, 76], 主唛: [42, 13], 洗唛: [30, 60], 吊牌: [72, 18] },
-  puffer: { 大身: [38, 50], 领: [50, 7], 袖: [86, 45], 拉链: [50, 40], 纽扣: [44, 64], 里布: [58, 22], 主唛: [50, 14], 洗唛: [27, 80], 吊牌: [68, 16] },
+  tee: { 大身: [50, 60], 领: [50, 17], 袖: [86, 32], 吊牌: [70, 22] },
+  knit: { 大身: [50, 58], 领: [50, 16], 袖: [86, 55], 吊牌: [69, 22], 纽扣: [50, 40] },
+  hoodie: { 大身: [50, 50], 领: [50, 19], 袖: [86, 55], 袋布: [50, 73], 拉链: [50, 40], 吊牌: [69, 25] },
+  jacket: { 大身: [38, 62], 领: [42, 13], 袖: [86, 45], 拉链: [50, 58], 纽扣: [37, 37.5], 袋布: [63, 40], 里布: [58, 25], 吊牌: [68, 18] },
+  trench: { 大身: [38, 78], 领: [44, 14], 袖: [84, 45], 纽扣: [44, 36], 织带: [62, 57], 袋布: [33, 72], 里布: [57, 21], 吊牌: [68, 15] },
+  pants: { 大身: [38, 60], 织带: [64, 10], 拉链: [48, 22], 纽扣: [50, 10], 袋布: [33, 20], 吊牌: [72, 16] },
+  dress: { 大身: [50, 66], 领: [50, 13], 里布: [60, 78], 吊牌: [64, 14] },
+  shirt: { 大身: [38, 62], 领: [44, 13], 袖: [86, 48], 纽扣: [51.5, 36], 袋布: [62, 34], 吊牌: [68, 18] },
+  skirt: { 大身: [50, 60], 织带: [62, 13], 纽扣: [50, 13], 里布: [64, 76], 吊牌: [72, 18] },
+  puffer: { 大身: [38, 50], 领: [50, 7], 袖: [86, 45], 拉链: [50, 40], 纽扣: [44, 64], 里布: [58, 22], 吊牌: [68, 16] },
+}
+const BOM_BACK = {
+  tee: { 主唛: [50, 20.5], 洗唛: [27, 80] },
+  knit: { 主唛: [50, 20], 洗唛: [27, 80] },
+  hoodie: { 主唛: [50, 28.5], 洗唛: [28, 80] },
+  jacket: { 主唛: [50, 19], 洗唛: [28, 72] },
+  trench: { 主唛: [50, 18], 洗唛: [27, 86] },
+  pants: { 主唛: [50, 10], 洗唛: [27, 40] },
+  dress: { 主唛: [44, 12], 洗唛: [36, 50], 拉链: [50, 30] },
+  shirt: { 主唛: [50, 19.5], 洗唛: [28, 78] },
+  skirt: { 主唛: [42, 13], 洗唛: [30, 60], 拉链: [50, 28] },
+  puffer: { 主唛: [50, 14], 洗唛: [27, 78] },
 }
 comp('BomFigure', {
-  props: { code: String, color: String, rows: Array, hl: Number },
+  props: { code: String, color: String, rows: Array, hl: Number, s: { type: Number, default: 240 } },
   emits: ['hover'],
   setup(p) {
     const marks = computed(() => {
-      const spots = BOM_SPOTS[catOf(style(p.code)?.cat).shape] || BOM_SPOTS.tee, seen = {}
+      const shape = catOf(style(p.code)?.cat).shape, front = BOM_SPOTS[shape] || BOM_SPOTS.tee, back = BOM_BACK[shape] || BOM_BACK.tee, seen = {}
       return p.rows.map((r, i) => {
-        const at = spots[r.part]
+        const b = !!back[r.part], at = b ? back[r.part] : front[r.part]
         if (!at) return { i, off: true }
         const n = (seen[r.part] = (seen[r.part] || 0) + 1) - 1 // 同一部位第二行往右挪一点
-        return { i, x: at[0] + n * 6, y: at[1] }
+        return { i, b, x: at[0] + n * 6, y: at[1] }
       })
     })
     return { marks }
   },
-  template: `<div class="fig"><Thumb :code="code" :color="color" :s="280"/>
-    <span v-for="m in marks.filter(m => !m.off)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span>
+  template: `<div class="bomfig"><div class="figs">
+    <div v-for="b in [false, true]" :key="b" class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s" :back="b"/><span class="cap">{{ b ? '背面' : '正面' }}</span>
+      <span v-for="m in marks.filter(m => !m.off && m.b === b)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span></div></div>
     <div v-if="marks.some(m => m.off)" class="off"><span v-for="m in marks.filter(m => m.off)" :key="m.i" class="mk-l" :class="{ on: hl === m.i }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)"><i>{{ m.i + 1 }}</i>{{ rows[m.i].part }}</span></div>
+  </div>`,
+})
+
+/* ---------- 尺寸表的量法图：正面款式图上画尺寸线，字母对应尺寸表的行 ----------
+ * SPEC_LINES[形状][部位] = [x1, y1, x2, y2, 字母位置 x?, y?]；没画线的部位只在表里有字母 */
+const SPEC_LINES = {
+  tee: { 衣长: [36, 14, 36, 92], 胸围: [24, 41, 76, 41], 肩宽: [29, 16.7, 71, 16.7], 袖长: [71, 16.7, 93, 39], 袖口: [94.1, 41.2, 82.1, 47.2], 下摆: [24, 95.5, 76, 95.5] },
+  knit: { 衣长: [37, 13, 37, 92], 胸围: [25, 43, 75, 43], 肩宽: [29, 15.5, 71, 15.5], 袖长: [71, 15.5, 92, 82], 袖口: [92.5, 84.5, 82.5, 86.5], 下摆: [24, 95.5, 76, 95.5] },
+  hoodie: { 衣长: [37, 13, 37, 92], 胸围: [25, 43, 75, 43], 肩宽: [29, 15.5, 71, 15.5, 58, 15.5], 袖长: [71, 15.5, 92, 82], 袖口: [92.5, 84.5, 82.5, 86.5], 下摆: [24, 95.5, 76, 95.5], 帽高: [36, 17, 46, 1.5] },
+  jacket: { 衣长: [37, 9, 37, 85], 胸围: [25, 47, 75, 47], 肩宽: [29, 15.5, 71, 15.5, 58, 15.5], 袖长: [71, 15.5, 91, 73], 袖口: [91.5, 75.5, 81.5, 77.5], 下摆: [25, 88.5, 75, 88.5] },
+  trench: { 衣长: [38, 7, 38, 95], 胸围: [26, 41.5, 74, 41.5], 肩宽: [28.5, 14, 71.5, 14, 58, 14], 袖长: [71.5, 14, 89, 74], 袖口: [89.5, 76.5, 80.5, 78.5], 腰围: [24.4, 57.3, 75.6, 57.3, 64, 57.3], 下摆: [21, 97.5, 79, 97.5] },
+  pants: { 腰围: [28, 10, 72, 10, 60, 10], 臀围: [26.8, 24, 73.2, 24, 63, 24], 前浪: [50, 7, 50, 33, 50, 18], 大腿围: [26.1, 36, 49.6, 36], 裤长: [82, 7, 82, 94], 脚口: [22, 97, 43.5, 97] },
+  dress: { 衣长: [38, 7, 38, 93], 胸围: [31.6, 28, 68.4, 28], 腰围: [34, 41, 66, 41], 肩宽: [29, 10, 71, 10], 腰节: [62, 7, 62, 41, 62, 20], 下摆: [15, 96.5, 85, 96.5] },
+  shirt: { 衣长: [38, 9, 38, 90], 胸围: [25, 43, 75, 43], 肩宽: [29, 15.5, 71, 15.5, 60, 15.5], 领围: [40, 6.5, 60, 6.5], 袖长: [71, 15.5, 91, 75], 袖口: [91.5, 77.5, 82.5, 79.5], 下摆: [25, 95, 75, 95] },
+  skirt: { 腰围: [32, 13, 68, 13], 臀围: [27.2, 32, 72.8, 32], 裙长: [72, 10, 89, 88], 下摆: [15, 95, 85, 95] },
+  puffer: { 衣长: [37, 9, 37, 87], 胸围: [24.5, 41.5, 75.5, 41.5], 肩宽: [28.5, 15, 71.5, 15, 58, 15], 领高: [66, 3.5, 66, 10.5, 71, 7], 袖长: [71.5, 15, 92, 73], 袖口: [92.5, 75.5, 81.5, 78], 下摆: [24, 90.5, 76, 90.5] },
+}
+const specLetter = (i) => String.fromCharCode(65 + i)
+// 一条尺寸线：两头画箭头
+function dimPath(x1, y1, x2, y2) {
+  const l = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / l, uy = (y2 - y1) / l, nx = -uy, ny = ux, a = 2.2, w = 0.9
+  const head = (x, y, d) => `M${x} ${y}L${(x + d * ux * a + nx * w).toFixed(2)} ${(y + d * uy * a + ny * w).toFixed(2)}L${(x + d * ux * a - nx * w).toFixed(2)} ${(y + d * uy * a - ny * w).toFixed(2)}Z`
+  return { line: `M${x1} ${y1}L${x2} ${y2}`, heads: head(x1, y1, 1) + head(x2, y2, -1) }
+}
+comp('SpecFigure', {
+  props: { code: String, color: String, rows: Array, hl: Number, s: { type: Number, default: 280 } },
+  emits: ['hover'],
+  setup(p) {
+    const dims = computed(() => {
+      const lines = SPEC_LINES[catOf(style(p.code)?.cat).shape] || SPEC_LINES.tee
+      return p.rows.map((r, i) => {
+        const d = lines[r.pt]
+        if (!d) return null
+        const [x1, y1, x2, y2, lx, ly] = d
+        return { i, ...dimPath(x1, y1, x2, y2), lx: lx ?? (x1 + x2) / 2, ly: ly ?? (y1 + y2) / 2 }
+      }).filter(Boolean)
+    })
+    return { dims, specLetter }
+  },
+  template: `<div class="fig" :style="{ width: s + 'px' }"><Thumb :code="code" :color="color" :s="s"/>
+    <svg class="dims" viewBox="0 0 100 100"><g v-for="d in dims" :key="d.i" :class="{ on: hl === d.i }"><path class="halo" :d="d.line + d.heads"/><path class="ln" :d="d.line"/><path class="hd" :d="d.heads"/></g></svg>
+    <span v-for="d in dims" :key="d.i" class="mk" :class="{ on: hl === d.i }" :style="{ left: d.lx + '%', top: d.ly + '%' }" @mouseenter="$emit('hover', d.i)">{{ specLetter(d.i) }}</span>
   </div>`,
 })
 </script>
@@ -2542,7 +2719,7 @@ route('/styles/:code', {
   </div><NotFound v-else/>`,
 }, { mod: 'styles', t: (p) => '款式 ' + p.code })
 
-/* ---------- 资料包：版本、BOM、按颜色展开、工艺 ---------- */
+/* ---------- 资料包：版本、BOM（正背面款式图）、按颜色展开、尺寸表、工艺 ---------- */
 comp('TechPack', {
   props: { code: String },
   setup(p) {
@@ -2562,7 +2739,15 @@ comp('TechPack', {
     const hl = ref(0)
     const hover = (i) => { if (i != null) hl.value = i }
     const cur = computed(() => { const r = tp.value?.bom[hl.value] || tp.value?.bom[0]; return r && { i: tp.value.bom.indexOf(r), r, sku: rowSku(r, byColor.value) } })
-    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus, hl, hover, cur }
+    // 尺寸表：改基码或档差，其他码按档差重算；单独改别的码只改那一格
+    const sp = ref(0)
+    const base = computed(() => tp.value.spec.base)
+    const fcm = (v) => (v == null || v === '' || Number.isNaN(v) ? '—' : String(rnd(+v, 1)))
+    function setVal(r, z, v) { if (z === base.value) gradeRow(r, sizes.value, z, +v); else r.vals[z] = v === '' ? null : +v }
+    function setStep(r, v) { r.step = +v || 0; gradeRow(r, sizes.value, base.value, r.vals[base.value] || 0) }
+    function addSpec() { tp.value.spec.rows.push({ pt: '', how: '', tol: 0.5, step: 0, vals: {} }); sp.value = tp.value.spec.rows.length - 1 }
+    const stepText = (r) => { const d = [...new Set(sizes.value.slice(1).map((z, i) => rnd((r.vals[z] ?? 0) - (r.vals[sizes.value[i]] ?? 0), 1)))]; return d.join(' / ') }
+    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus, hl, hover, cur, sp, base, fcm, setVal, setStep, addSpec, stepText, specLetter }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">这个款还没有资料包<p style="margin-top:14px"><button class="btn pri" @click="create">建资料包</button></p></div>
@@ -2570,16 +2755,17 @@ comp('TechPack', {
       <div class="row" style="margin-bottom:14px" data-c="资料包版本">
         <Seg v-model="ver" :items="tps.map(t => [t.ver, 'V' + t.ver + (t.status === '已生效' ? ' 生效中' : t.status === '草稿' ? ' 草稿' : '')])"/>
         <span style="flex:1"></span>
-        <Seg v-model="view" :items="[['bom', 'BOM'], ['color', '按颜色'], ['ops', '工艺']]"/>
-        <button v-if="edit" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
+        <Seg v-model="view" :items="[['bom', 'BOM'], ['color', '按颜色'], ['spec', '尺寸表'], ['ops', '工艺']]"/>
+        <button v-if="edit && view === 'spec'" class="btn" @click="addSpec"><Ico n="plus" :s="14"/>加部位</button>
+        <button v-else-if="edit && view !== 'ops'" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
         <button v-if="edit" class="btn pri" @click="publish">生效</button>
         <button v-if="tp.status === '已生效'" class="btn" @click="revise">修订</button>
-        <button class="btn ghost icon" title="打印资料包" @click="toast('原型：这里会出可打印的资料包（款式信息、颜色尺码、按颜色展开的 BOM、工艺单）')"><Ico n="printer"/></button>
+        <button class="btn ghost icon" title="打印资料包" @click="toast('原型：这里会出可打印的资料包（正背面款式图、颜色尺码、按颜色展开的 BOM、尺寸表、工艺单）')"><Ico n="printer"/></button>
       </div>
       <div v-if="edit" style="margin-bottom:12px"><input class="inp" style="width:100%" v-model="tp.note" placeholder="本版说明：这版改了什么"></div>
       <p v-else-if="tp.note" class="mut" style="margin-bottom:12px">{{ tp.note }}</p>
 
-      <div v-if="view !== 'ops' && cur" class="bomtop" data-c="BOM 图">
+      <div v-if="(view === 'bom' || view === 'color') && cur" class="bomtop" data-c="BOM 图">
         <BomFigure :code="s.code" :color="byColor" :rows="tp.bom" :hl="cur.i" @hover="hover"/>
         <div class="matcard">
           <div class="row g4"><button v-for="c in s.colors" :key="c" class="gthumb" :class="{ on: c === byColor }" :title="colorName(c)" @click="byColor = c"><Thumb :code="s.code" :color="c" :s="34"/></button><span class="mut" style="margin-left:6px">{{ colorName(byColor) }}</span></div>
@@ -2635,6 +2821,29 @@ comp('TechPack', {
         <table class="tbl inset flat"><thead><tr><th>部位</th><th>物料</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th>来源</th></tr></thead>
           <tbody><tr v-for="(r, i) in tp.bom" :key="i" :class="{ sel: cur && cur.i === i }" @mouseenter="hover(i)"><td><span class="dim" style="margin-right:6px">{{ i + 1 }}</span>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
             <td v-for="z in sizes" :key="z" class="num">{{ fq(rowUse(r, z)) }}</td><td class="mut">{{ r.src }}</td></tr></tbody></table>
+      </div>
+
+      <div v-if="view === 'spec'" class="spectop" :class="{ wide: edit }">
+        <div class="figbox" data-c="量法图"><SpecFigure :code="s.code" :color="byColor" :rows="tp.spec.rows" :hl="sp" :s="250" @hover="i => sp = i"/>
+          <ul v-if="edit" class="tips"><li>单位 cm，基码 {{ base }}（压底色那列）</li><li>改基码或档差：其他码按档差重新放码</li><li>单独改某个码：只改那一格，档差那列会显示不均匀</li><li>部位名和图上的线对得上时，图上会画出量法</li></ul>
+          <span v-else class="dim" style="font-size:12px">单位 cm · 基码 {{ base }}</span></div>
+        <div class="spec" data-c="尺寸表">
+          <table class="tbl inset flat">
+            <thead><tr><th style="width:30px"></th><th>部位 / 量法</th><th v-for="z in sizes" :key="z" class="num" :class="{ base: z === base }">{{ z }}</th><th v-if="sizes.length > 1" class="num">档差</th><th class="num">公差 ±</th><th v-if="edit"></th></tr></thead>
+            <tbody>
+              <tr v-for="(r, i) in tp.spec.rows" :key="i" :class="{ sel: sp === i }" @mouseenter="sp = i">
+                <td><span class="mk-l" :class="{ on: sp === i }" style="padding:0 3px"><i>{{ specLetter(i) }}</i></span></td>
+                <td v-if="edit" style="padding-top:5px;padding-bottom:5px"><input class="inp cell txt" v-model="r.pt" placeholder="部位"><input class="inp cell txt" v-model="r.how" placeholder="怎么量"></td>
+                <td v-else>{{ r.pt }}<div class="how">{{ r.how }}</div></td>
+                <td v-for="z in sizes" :key="z" class="num" :class="{ base: z === base }"><input v-if="edit" class="inp cell num" :value="r.vals[z]" @change="setVal(r, z, $event.target.value)"><template v-else>{{ fcm(r.vals[z]) }}</template></td>
+                <td v-if="sizes.length > 1" class="num"><input v-if="edit" class="inp cell num" :value="r.step" @change="setStep(r, $event.target.value)"><span v-else class="mut">{{ stepText(r) }}</span></td>
+                <td class="num"><input v-if="edit" class="inp cell num" v-model.number="r.tol"><template v-else>{{ fcm(r.tol) }}</template></td>
+                <td v-if="edit" class="num"><button class="btn ghost icon sm" title="删除这一行" @click="tp.spec.rows.splice(i, 1)"><Ico n="trash" :s="13"/></button></td>
+              </tr>
+              <tr v-if="!tp.spec.rows.length"><td :colspan="sizes.length + 5" class="empty">还没有量体部位，点「加部位」</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div v-if="view === 'ops'" data-c="工艺单">
@@ -5553,7 +5762,7 @@ route('/basics', {
           <div v-for="g in db.sizeGroups" :key="g.id" class="li" style="height:auto;padding:12px 4px;gap:14px">
             <b style="width:96px;font-weight:500">{{ g.name }}</b>
             <span class="chips"><span v-for="z in g.sizes" :key="z" class="chip" style="cursor:default">{{ z }}<Ico v-if="!sizeGroupUsed(g.id)" n="x" :s="11" style="cursor:pointer" @click="run(() => removeSize(g, z))"/></span></span>
-            <span class="dim" style="font-size:12px">{{ sizeGroupUsed(g.id) ? sizeGroupUsed(g.id) + ' 个款在用' : '' }}</span>
+            <span class="dim" style="font-size:12px">基码 {{ baseSizeOf(g.id) }}{{ sizeGroupUsed(g.id) ? ' · ' + sizeGroupUsed(g.id) + ' 个款在用' : '' }}</span>
             <span style="flex:1"></span>
             <input class="inp" style="width:72px" v-model="newSize[g.id]" @keydown.enter="addSize(g)">
             <button class="btn sm" @click="addSize(g)">{{ sizeGroupUsed(g.id) ? '追加尺码' : '加尺码' }}</button>

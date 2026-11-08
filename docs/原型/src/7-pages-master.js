@@ -677,7 +677,7 @@ route('/basics', {
           <div v-for="g in db.sizeGroups" :key="g.id" class="li" style="height:auto;padding:12px 4px;gap:14px">
             <b style="width:96px;font-weight:500">{{ g.name }}</b>
             <span class="chips"><span v-for="z in g.sizes" :key="z" class="chip" style="cursor:default">{{ z }}<Ico v-if="!sizeGroupUsed(g.id)" n="x" :s="11" style="cursor:pointer" @click="run(() => removeSize(g, z))"/></span></span>
-            <span class="dim" style="font-size:12px">{{ sizeGroupUsed(g.id) ? sizeGroupUsed(g.id) + ' 个款在用' : '' }}</span>
+            <span class="dim" style="font-size:12px">基码 {{ baseSizeOf(g.id) }}{{ sizeGroupUsed(g.id) ? ' · ' + sizeGroupUsed(g.id) + ' 个款在用' : '' }}</span>
             <span style="flex:1"></span>
             <input class="inp" style="width:72px" v-model="newSize[g.id]" @keydown.enter="addSize(g)">
             <button class="btn sm" @click="addSize(g)">{{ sizeGroupUsed(g.id) ? '追加尺码' : '加尺码' }}</button>
