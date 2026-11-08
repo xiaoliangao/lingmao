@@ -69,8 +69,8 @@ const PIC_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidde
   <linearGradient id="pg-metal" x1="0" x2="1"><stop offset="0" stop-color="#8d7a4c"/><stop offset=".5" stop-color="#e4d29b"/><stop offset="1" stop-color="#8d7a4c"/></linearGradient>
   <pattern id="pg-twill-d" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="3.2" stroke="#000" stroke-opacity=".13" stroke-width="1.1"/></pattern>
   <pattern id="pg-twill-l" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="3.2" stroke="#fff" stroke-opacity=".10" stroke-width="1.1"/></pattern>
-  <pattern id="pg-knit-d" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#000" stroke-opacity=".14" stroke-width=".7"/></pattern>
-  <pattern id="pg-knit-l" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width=".7"/></pattern>
+  <pattern id="pg-knit-d" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#000" stroke-opacity=".09" stroke-width=".7"/></pattern>
+  <pattern id="pg-knit-l" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width=".7"/></pattern>
   <filter id="pg-soft" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.2" stdDeviation="1.4" flood-color="#1c2230" flood-opacity=".16"/></filter>
 </defs></svg>`
 
@@ -161,4 +161,39 @@ comp('Gallery', {
   setup: (p) => ({ c: ref(p.colors?.[0]) }),
   template: `<div class="gallery" data-c="图片"><Thumb :code="code" :color="c" :s="s"/>
     <div v-if="colors && colors.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap"><button v-for="x in colors" :key="x" class="gthumb" :class="{ on: x === c }" :title="colorName(x)" @click="c = x"><Thumb :code="code" :color="x" :s="42"/></button></div></div>`,
+})
+
+/* ---------- 资料包的 BOM 图：款式图上按 BOM 行号标出每种料用在哪 ----------
+ * BOM_SPOTS[形状][部位] = [x, y]（0–100，同款式图坐标）；没写坐标的部位（包装袋、缝纫线……）列在图下面 */
+const BOM_SPOTS = {
+  tee: { 大身: [50, 60], 领: [50, 17], 袖: [86, 32], 主唛: [50, 21], 洗唛: [28, 80], 吊牌: [70, 22] },
+  knit: { 大身: [50, 58], 领: [50, 16], 袖: [86, 55], 主唛: [50, 20], 洗唛: [29, 80], 吊牌: [69, 22], 纽扣: [50, 40] },
+  hoodie: { 大身: [50, 50], 领: [50, 19], 袖: [86, 55], 袋布: [50, 73], 拉链: [50, 40], 主唛: [42, 24], 洗唛: [29, 80], 吊牌: [69, 25] },
+  jacket: { 大身: [38, 62], 领: [42, 13], 袖: [86, 45], 拉链: [50, 58], 纽扣: [37, 37.5], 袋布: [63, 40], 里布: [58, 25], 主唛: [50, 17], 洗唛: [28, 74], 吊牌: [68, 18] },
+  trench: { 大身: [38, 78], 领: [44, 14], 袖: [84, 45], 纽扣: [44, 36], 织带: [62, 57], 袋布: [33, 72], 里布: [57, 21], 主唛: [50, 12], 洗唛: [27, 88], 吊牌: [68, 15] },
+  pants: { 大身: [38, 60], 织带: [64, 10], 拉链: [48, 22], 纽扣: [50, 10], 袋布: [33, 20], 主唛: [36, 10], 洗唛: [26, 40], 吊牌: [72, 16] },
+  dress: { 大身: [50, 66], 领: [50, 13], 拉链: [33, 32], 里布: [60, 78], 主唛: [50, 17], 洗唛: [33, 50], 吊牌: [64, 14] },
+  shirt: { 大身: [38, 62], 领: [44, 13], 袖: [86, 48], 纽扣: [51.5, 36], 袋布: [62, 34], 主唛: [50, 16], 洗唛: [28, 78], 吊牌: [68, 18] },
+  skirt: { 大身: [50, 60], 织带: [62, 13], 拉链: [36, 25], 纽扣: [50, 13], 里布: [64, 76], 主唛: [42, 13], 洗唛: [30, 60], 吊牌: [72, 18] },
+  puffer: { 大身: [38, 50], 领: [50, 7], 袖: [86, 45], 拉链: [50, 40], 纽扣: [44, 64], 里布: [58, 22], 主唛: [50, 14], 洗唛: [27, 80], 吊牌: [68, 16] },
+}
+comp('BomFigure', {
+  props: { code: String, color: String, rows: Array, hl: Number },
+  emits: ['hover'],
+  setup(p) {
+    const marks = computed(() => {
+      const spots = BOM_SPOTS[catOf(style(p.code)?.cat).shape] || BOM_SPOTS.tee, seen = {}
+      return p.rows.map((r, i) => {
+        const at = spots[r.part]
+        if (!at) return { i, off: true }
+        const n = (seen[r.part] = (seen[r.part] || 0) + 1) - 1 // 同一部位第二行往右挪一点
+        return { i, x: at[0] + n * 6, y: at[1] }
+      })
+    })
+    return { marks }
+  },
+  template: `<div class="fig"><Thumb :code="code" :color="color" :s="280"/>
+    <span v-for="m in marks.filter(m => !m.off)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span>
+    <div v-if="marks.some(m => m.off)" class="off"><span v-for="m in marks.filter(m => m.off)" :key="m.i" class="mk-l" :class="{ on: hl === m.i }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)"><i>{{ m.i + 1 }}</i>{{ rows[m.i].part }}</span></div>
+  </div>`,
 })

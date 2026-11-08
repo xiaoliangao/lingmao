@@ -501,6 +501,20 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .gallery > .thumb { border-radius: 6px; }
 .gthumb { padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; line-height: 0; }
 .gthumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* 资料包 BOM 图：左边款式图标行号，右边是指着的那行料 */
+.bomtop { display: flex; gap: 20px; margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: radial-gradient(circle at 25% 45%, #fbfbf8, #eceee7); }
+.fig { position: relative; width: 280px; flex: none; }
+.fig > .thumb { background: none; box-shadow: none; }
+.mk { position: absolute; transform: translate(-50%, -50%); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.25); cursor: default; transition: transform 0.1s; }
+.mk.on { background: var(--stitch); color: var(--side-2); transform: translate(-50%, -50%) scale(1.3); z-index: 2; }
+.fig .off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mk-l { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px 0 3px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); font-size: 12px; color: var(--fg-2); cursor: default; }
+.mk-l i { font-style: normal; min-width: 18px; height: 18px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.mk-l.on { border-color: var(--stitch); color: var(--fg); }
+.mk-l.on i { background: var(--stitch); color: var(--side-2); }
+.matcard { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 6px 4px; }
+.matcard .props { grid-template-columns: 64px 1fr; }
 </style>
 </head>
 <body>
@@ -1913,8 +1927,8 @@ const PIC_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidde
   <linearGradient id="pg-metal" x1="0" x2="1"><stop offset="0" stop-color="#8d7a4c"/><stop offset=".5" stop-color="#e4d29b"/><stop offset="1" stop-color="#8d7a4c"/></linearGradient>
   <pattern id="pg-twill-d" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="3.2" stroke="#000" stroke-opacity=".13" stroke-width="1.1"/></pattern>
   <pattern id="pg-twill-l" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="3.2" stroke="#fff" stroke-opacity=".10" stroke-width="1.1"/></pattern>
-  <pattern id="pg-knit-d" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#000" stroke-opacity=".14" stroke-width=".7"/></pattern>
-  <pattern id="pg-knit-l" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width=".7"/></pattern>
+  <pattern id="pg-knit-d" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#000" stroke-opacity=".09" stroke-width=".7"/></pattern>
+  <pattern id="pg-knit-l" width="4" height="3.4" patternUnits="userSpaceOnUse"><path d="M0 0L2 3L4 0" fill="none" stroke="#fff" stroke-opacity=".07" stroke-width=".7"/></pattern>
   <filter id="pg-soft" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1.2" stdDeviation="1.4" flood-color="#1c2230" flood-opacity=".16"/></filter>
 </defs></svg>`
 
@@ -2005,6 +2019,41 @@ comp('Gallery', {
   setup: (p) => ({ c: ref(p.colors?.[0]) }),
   template: `<div class="gallery" data-c="图片"><Thumb :code="code" :color="c" :s="s"/>
     <div v-if="colors && colors.length > 1" class="row g4" style="margin-top:8px;flex-wrap:wrap"><button v-for="x in colors" :key="x" class="gthumb" :class="{ on: x === c }" :title="colorName(x)" @click="c = x"><Thumb :code="code" :color="x" :s="42"/></button></div></div>`,
+})
+
+/* ---------- 资料包的 BOM 图：款式图上按 BOM 行号标出每种料用在哪 ----------
+ * BOM_SPOTS[形状][部位] = [x, y]（0–100，同款式图坐标）；没写坐标的部位（包装袋、缝纫线……）列在图下面 */
+const BOM_SPOTS = {
+  tee: { 大身: [50, 60], 领: [50, 17], 袖: [86, 32], 主唛: [50, 21], 洗唛: [28, 80], 吊牌: [70, 22] },
+  knit: { 大身: [50, 58], 领: [50, 16], 袖: [86, 55], 主唛: [50, 20], 洗唛: [29, 80], 吊牌: [69, 22], 纽扣: [50, 40] },
+  hoodie: { 大身: [50, 50], 领: [50, 19], 袖: [86, 55], 袋布: [50, 73], 拉链: [50, 40], 主唛: [42, 24], 洗唛: [29, 80], 吊牌: [69, 25] },
+  jacket: { 大身: [38, 62], 领: [42, 13], 袖: [86, 45], 拉链: [50, 58], 纽扣: [37, 37.5], 袋布: [63, 40], 里布: [58, 25], 主唛: [50, 17], 洗唛: [28, 74], 吊牌: [68, 18] },
+  trench: { 大身: [38, 78], 领: [44, 14], 袖: [84, 45], 纽扣: [44, 36], 织带: [62, 57], 袋布: [33, 72], 里布: [57, 21], 主唛: [50, 12], 洗唛: [27, 88], 吊牌: [68, 15] },
+  pants: { 大身: [38, 60], 织带: [64, 10], 拉链: [48, 22], 纽扣: [50, 10], 袋布: [33, 20], 主唛: [36, 10], 洗唛: [26, 40], 吊牌: [72, 16] },
+  dress: { 大身: [50, 66], 领: [50, 13], 拉链: [33, 32], 里布: [60, 78], 主唛: [50, 17], 洗唛: [33, 50], 吊牌: [64, 14] },
+  shirt: { 大身: [38, 62], 领: [44, 13], 袖: [86, 48], 纽扣: [51.5, 36], 袋布: [62, 34], 主唛: [50, 16], 洗唛: [28, 78], 吊牌: [68, 18] },
+  skirt: { 大身: [50, 60], 织带: [62, 13], 拉链: [36, 25], 纽扣: [50, 13], 里布: [64, 76], 主唛: [42, 13], 洗唛: [30, 60], 吊牌: [72, 18] },
+  puffer: { 大身: [38, 50], 领: [50, 7], 袖: [86, 45], 拉链: [50, 40], 纽扣: [44, 64], 里布: [58, 22], 主唛: [50, 14], 洗唛: [27, 80], 吊牌: [68, 16] },
+}
+comp('BomFigure', {
+  props: { code: String, color: String, rows: Array, hl: Number },
+  emits: ['hover'],
+  setup(p) {
+    const marks = computed(() => {
+      const spots = BOM_SPOTS[catOf(style(p.code)?.cat).shape] || BOM_SPOTS.tee, seen = {}
+      return p.rows.map((r, i) => {
+        const at = spots[r.part]
+        if (!at) return { i, off: true }
+        const n = (seen[r.part] = (seen[r.part] || 0) + 1) - 1 // 同一部位第二行往右挪一点
+        return { i, x: at[0] + n * 6, y: at[1] }
+      })
+    })
+    return { marks }
+  },
+  template: `<div class="fig"><Thumb :code="code" :color="color" :s="280"/>
+    <span v-for="m in marks.filter(m => !m.off)" :key="m.i" class="mk" :class="{ on: hl === m.i }" :style="{ left: m.x + '%', top: m.y + '%' }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)">{{ m.i + 1 }}</span>
+    <div v-if="marks.some(m => m.off)" class="off"><span v-for="m in marks.filter(m => m.off)" :key="m.i" class="mk-l" :class="{ on: hl === m.i }" @mouseenter="$emit('hover', m.i)" @mouseleave="$emit('hover', null)"><i>{{ m.i + 1 }}</i>{{ rows[m.i].part }}</span></div>
+  </div>`,
 })
 </script>
 <script>/* 4-feedback.js */
@@ -2509,7 +2558,11 @@ comp('TechPack', {
     function publish() { if (run(() => publishTp(tp.value))) toast(`V${tp.value.ver} 已生效`) }
     function create() { const t = createTechpack(p.code, [], [], ''); ver.value = t.ver; adding.value = true }
     const matSkus = (r) => mat(r.mat).skus
-    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus }
+    // BOM 图：鼠标指到图上的号或表里的行，两边一起亮，右边显示这行料
+    const hl = ref(0)
+    const hover = (i) => { if (i != null) hl.value = i }
+    const cur = computed(() => { const r = tp.value?.bom[hl.value] || tp.value?.bom[0]; return r && { i: tp.value.bom.indexOf(r), r, sku: rowSku(r, byColor.value) } })
+    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus, hl, hover, cur }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">这个款还没有资料包<p style="margin-top:14px"><button class="btn pri" @click="create">建资料包</button></p></div>
@@ -2526,12 +2579,23 @@ comp('TechPack', {
       <div v-if="edit" style="margin-bottom:12px"><input class="inp" style="width:100%" v-model="tp.note" placeholder="本版说明：这版改了什么"></div>
       <p v-else-if="tp.note" class="mut" style="margin-bottom:12px">{{ tp.note }}</p>
 
+      <div v-if="view !== 'ops' && cur" class="bomtop" data-c="BOM 图">
+        <BomFigure :code="s.code" :color="byColor" :rows="tp.bom" :hl="cur.i" @hover="hover"/>
+        <div class="matcard">
+          <div class="row g4"><button v-for="c in s.colors" :key="c" class="gthumb" :class="{ on: c === byColor }" :title="colorName(c)" @click="byColor = c"><Thumb :code="s.code" :color="c" :s="34"/></button><span class="mut" style="margin-left:6px">{{ colorName(byColor) }}</span></div>
+          <div class="row" style="gap:14px;align-items:flex-start"><Thumb :code="cur.sku || cur.r.mat" :s="96"/>
+            <div class="col" style="gap:4px;min-width:0"><b style="font-size:15px">{{ cur.i + 1 }} · {{ cur.r.part }}</b><span>{{ cur.sku ? skuName(cur.sku) : mat(cur.r.mat).name }}</span><span v-if="!cur.sku" class="flag red">{{ colorName(byColor) }}还没配料</span><span v-else class="code dim">{{ cur.sku }}</span></div></div>
+          <dl class="props"><dt>用量</dt><dd>{{ useText(cur.r) }} {{ mat(cur.r.mat).unit }} · 损耗 {{ cur.r.loss }}%</dd><dt>来源</dt><dd :class="{ amber: cur.r.src === '客供' }">{{ cur.r.src }}</dd>
+            <dt>供应商</dt><dd>{{ supName(cur.r.supplier || mat(cur.r.mat).supplier) }}</dd><template v-if="cur.r.note"><dt>备注</dt><dd>{{ cur.r.note }}</dd></template></dl>
+        </div>
+      </div>
+
       <div v-if="view === 'bom'" data-c="BOM">
         <table class="tbl inset flat">
           <thead><tr><th style="width:28px">#</th><th>部位</th><th>物料</th><th>配色</th><th class="num">用量</th><th class="num">损耗</th><th>来源</th><th class="num">单件成本</th><th v-if="edit"></th></tr></thead>
           <tbody>
             <template v-for="(r, i) in tp.bom" :key="i">
-              <tr class="link" @click="open = open === i ? null : i">
+              <tr class="link" :class="{ sel: cur && cur.i === i }" @mouseenter="hover(i)" @click="open = open === i ? null : i">
                 <td class="dim">{{ i + 1 }}</td><td>{{ r.part }}</td>
                 <td><div class="row"><Thumb :code="r.sku || Object.values(r.map || {})[0] || r.mat" :s="30"/>{{ mat(r.mat).name }}</div></td>
                 <td><span v-if="r.mode === '固定'">{{ skuOf(r.sku)?.color ? colorName(skuOf(r.sku).color) : '—' }}{{ skuOf(r.sku)?.spec ? ' ' + skuOf(r.sku).spec : '' }}</span>
@@ -2568,9 +2632,8 @@ comp('TechPack', {
       </div>
 
       <div v-if="view === 'color'" data-c="按颜色展开">
-        <Seg v-model="byColor" :items="s.colors.map(c => [c, colorName(c)])" style="margin-bottom:12px"/>
         <table class="tbl inset flat"><thead><tr><th>部位</th><th>物料</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th>来源</th></tr></thead>
-          <tbody><tr v-for="(r, i) in tp.bom" :key="i"><td>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
+          <tbody><tr v-for="(r, i) in tp.bom" :key="i" :class="{ sel: cur && cur.i === i }" @mouseenter="hover(i)"><td><span class="dim" style="margin-right:6px">{{ i + 1 }}</span>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
             <td v-for="z in sizes" :key="z" class="num">{{ fq(rowUse(r, z)) }}</td><td class="mut">{{ r.src }}</td></tr></tbody></table>
       </div>
 

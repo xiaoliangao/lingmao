@@ -287,7 +287,11 @@ comp('TechPack', {
     function publish() { if (run(() => publishTp(tp.value))) toast(`V${tp.value.ver} 已生效`) }
     function create() { const t = createTechpack(p.code, [], [], ''); ver.value = t.ver; adding.value = true }
     const matSkus = (r) => mat(r.mat).skus
-    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus }
+    // BOM 图：鼠标指到图上的号或表里的行，两边一起亮，右边显示这行料
+    const hl = ref(0)
+    const hover = (i) => { if (i != null) hl.value = i }
+    const cur = computed(() => { const r = tp.value?.bom[hl.value] || tp.value?.bom[0]; return r && { i: tp.value.bom.indexOf(r), r, sku: rowSku(r, byColor.value) } })
+    return { s, tps, ver, tp, edit, view, byColor, open, adding, sizes, useText, revise, publish, create, matSkus, hl, hover, cur }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">这个款还没有资料包<p style="margin-top:14px"><button class="btn pri" @click="create">建资料包</button></p></div>
@@ -304,12 +308,23 @@ comp('TechPack', {
       <div v-if="edit" style="margin-bottom:12px"><input class="inp" style="width:100%" v-model="tp.note" placeholder="本版说明：这版改了什么"></div>
       <p v-else-if="tp.note" class="mut" style="margin-bottom:12px">{{ tp.note }}</p>
 
+      <div v-if="view !== 'ops' && cur" class="bomtop" data-c="BOM 图">
+        <BomFigure :code="s.code" :color="byColor" :rows="tp.bom" :hl="cur.i" @hover="hover"/>
+        <div class="matcard">
+          <div class="row g4"><button v-for="c in s.colors" :key="c" class="gthumb" :class="{ on: c === byColor }" :title="colorName(c)" @click="byColor = c"><Thumb :code="s.code" :color="c" :s="34"/></button><span class="mut" style="margin-left:6px">{{ colorName(byColor) }}</span></div>
+          <div class="row" style="gap:14px;align-items:flex-start"><Thumb :code="cur.sku || cur.r.mat" :s="96"/>
+            <div class="col" style="gap:4px;min-width:0"><b style="font-size:15px">{{ cur.i + 1 }} · {{ cur.r.part }}</b><span>{{ cur.sku ? skuName(cur.sku) : mat(cur.r.mat).name }}</span><span v-if="!cur.sku" class="flag red">{{ colorName(byColor) }}还没配料</span><span v-else class="code dim">{{ cur.sku }}</span></div></div>
+          <dl class="props"><dt>用量</dt><dd>{{ useText(cur.r) }} {{ mat(cur.r.mat).unit }} · 损耗 {{ cur.r.loss }}%</dd><dt>来源</dt><dd :class="{ amber: cur.r.src === '客供' }">{{ cur.r.src }}</dd>
+            <dt>供应商</dt><dd>{{ supName(cur.r.supplier || mat(cur.r.mat).supplier) }}</dd><template v-if="cur.r.note"><dt>备注</dt><dd>{{ cur.r.note }}</dd></template></dl>
+        </div>
+      </div>
+
       <div v-if="view === 'bom'" data-c="BOM">
         <table class="tbl inset flat">
           <thead><tr><th style="width:28px">#</th><th>部位</th><th>物料</th><th>配色</th><th class="num">用量</th><th class="num">损耗</th><th>来源</th><th class="num">单件成本</th><th v-if="edit"></th></tr></thead>
           <tbody>
             <template v-for="(r, i) in tp.bom" :key="i">
-              <tr class="link" @click="open = open === i ? null : i">
+              <tr class="link" :class="{ sel: cur && cur.i === i }" @mouseenter="hover(i)" @click="open = open === i ? null : i">
                 <td class="dim">{{ i + 1 }}</td><td>{{ r.part }}</td>
                 <td><div class="row"><Thumb :code="r.sku || Object.values(r.map || {})[0] || r.mat" :s="30"/>{{ mat(r.mat).name }}</div></td>
                 <td><span v-if="r.mode === '固定'">{{ skuOf(r.sku)?.color ? colorName(skuOf(r.sku).color) : '—' }}{{ skuOf(r.sku)?.spec ? ' ' + skuOf(r.sku).spec : '' }}</span>
@@ -346,9 +361,8 @@ comp('TechPack', {
       </div>
 
       <div v-if="view === 'color'" data-c="按颜色展开">
-        <Seg v-model="byColor" :items="s.colors.map(c => [c, colorName(c)])" style="margin-bottom:12px"/>
         <table class="tbl inset flat"><thead><tr><th>部位</th><th>物料</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th>来源</th></tr></thead>
-          <tbody><tr v-for="(r, i) in tp.bom" :key="i"><td>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
+          <tbody><tr v-for="(r, i) in tp.bom" :key="i" :class="{ sel: cur && cur.i === i }" @mouseenter="hover(i)"><td><span class="dim" style="margin-right:6px">{{ i + 1 }}</span>{{ r.part }}</td><td><span class="row"><Thumb :code="rowSku(r, byColor) || r.mat" :s="28"/>{{ rowSku(r, byColor) ? skuName(rowSku(r, byColor)) : '未配料' }}</span></td>
             <td v-for="z in sizes" :key="z" class="num">{{ fq(rowUse(r, z)) }}</td><td class="mut">{{ r.src }}</td></tr></tbody></table>
       </div>
 

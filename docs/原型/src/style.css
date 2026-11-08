@@ -494,3 +494,17 @@ textarea.inp { height: auto; min-height: 72px; padding: 8px 9px; resize: vertica
 .gallery > .thumb { border-radius: 6px; }
 .gthumb { padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; cursor: pointer; line-height: 0; }
 .gthumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+/* 资料包 BOM 图：左边款式图标行号，右边是指着的那行料 */
+.bomtop { display: flex; gap: 20px; margin-bottom: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 6px; background: radial-gradient(circle at 25% 45%, #fbfbf8, #eceee7); }
+.fig { position: relative; width: 280px; flex: none; }
+.fig > .thumb { background: none; box-shadow: none; }
+.mk { position: absolute; transform: translate(-50%, -50%); min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.25); cursor: default; transition: transform 0.1s; }
+.mk.on { background: var(--stitch); color: var(--side-2); transform: translate(-50%, -50%) scale(1.3); z-index: 2; }
+.fig .off { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mk-l { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px 0 3px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); font-size: 12px; color: var(--fg-2); cursor: default; }
+.mk-l i { font-style: normal; min-width: 18px; height: 18px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.mk-l.on { border-color: var(--stitch); color: var(--fg); }
+.mk-l.on i { background: var(--stitch); color: var(--side-2); }
+.matcard { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 6px 4px; }
+.matcard .props { grid-template-columns: 64px 1fr; }
