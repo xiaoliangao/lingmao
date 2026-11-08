@@ -14,6 +14,23 @@ function nextNo(prefix) {
   return k + String(db.seq[k]).padStart(4, '0')
 }
 function act(doc, text) { (doc.log ||= []).push({ at: clock.today, who: userName(db.me), text }) }
+// 新单据的主体公司：当前用户的默认主体（PRD §5.7），没设或停用了就取第一个启用的
+const myCompany = () => { const c = me()?.company; return db.companies.find((x) => x.code === c && x.status === '启用')?.code || db.companies.find((x) => x.status === '启用')?.code }
+// 单据上的业务员、跟单员、采购员默认填自己；自己不是这个角色就填这个角色的第一个人
+const roleUser = (role) => (me()?.role === role ? db.me : db.users.find((u) => u.role === role)?.id)
+/* 改档案、改草稿：fields = [[字段, 名字, 显示函数?]]，只改 f 里给了的字段；返回改了什么（"交期 11-20 → 11-25"），调用方没改动时报错、有改动时 act(doc, '改：' + …) */
+const showVal = (v, fmt) => (v == null || v === '' || (Array.isArray(v) && !v.length) ? '空' : fmt ? fmt(v) : Array.isArray(v) ? v.join('、') : v)
+const sameVal = (a, b) => JSON.stringify(a ?? '') === JSON.stringify(b ?? '')
+function applyFields(doc, f, fields) {
+  const ch = fields.filter(([k]) => k in f && !sameVal(f[k], doc[k])).map(([k, t, fmt]) => `${t} ${showVal(doc[k], fmt)} → ${showVal(f[k], fmt)}`)
+  fields.forEach(([k]) => { if (k in f) doc[k] = Array.isArray(f[k]) ? [...f[k]] : f[k] })
+  return ch
+}
+// 只有草稿能删（PRD §5.1），别的状态只能作废或结案
+function removeDraft(list, d) {
+  if (d.status !== '草稿') fail(`${d.no || d.code} 是「${d.status}」，只有草稿能删，其他状态只能作废或结案`)
+  list.splice(list.indexOf(d), 1)
+}
 // 图片（款式、物料、样衣）和附件（单据）：整组换掉，操作记录里写加了 / 删了什么
 const PHOTO_TYPES = ['面料质量', '做工质量', '工艺问题'] // 这几类异常要带照片
 function setImages(o, list) {
@@ -31,12 +48,12 @@ function setFiles(o, list) {
 
 /* ---------- 状态流转表：动作 → [从哪些状态, 到什么状态] ---------- */
 const FLOWS = {
-  order: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'], 结案: [['已审核', '生产中'], '已结案'], 作废: [['草稿', '待审核'], '已取消'] },
-  change: { 驳回: ['待审核', '已驳回'], 审核: ['待审核', '已审核'] },
+  order: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'], 结案: [['已审核', '生产中', '已完成'], '已结案'], 取消结案: ['已结案', '生产中'], 作废: [['草稿', '待审核'], '已取消'] },
+  change: { 驳回: ['待审核', '已驳回'], 重新提交: ['已驳回', '待审核'], 审核: ['待审核', '已审核'] },
   mrp: { 确认: ['草稿', '已确认'], 关闭: [['草稿', '已确认'], '已关闭'] },
-  purchase: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'], 结案: [['已审核', '部分到货'], '已结案'], 作废: [['草稿', '待审核'], '已作废'] },
+  purchase: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'], 结案: [['已审核', '部分到货', '已到齐'], '已结案'], 取消结案: ['已结案', '已审核'], 作废: [['草稿', '待审核'], '已作废'] },
   stock: { 审核: ['草稿', '已审核'], 反审核: ['已审核', '草稿'], 作废: ['草稿', '已作废'] },
-  production: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已下单'], 结案: [['已下单', '生产中', '部分回货'], '已结案'], 作废: [['草稿', '待审核'], '已作废'] },
+  production: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已下单'], 反审核: ['已下单', '草稿'], 结案: [['已下单', '生产中', '部分回货', '已完成'], '已结案'], 取消结案: ['已结案', '生产中'], 作废: [['草稿', '待审核'], '已作废'] },
   techpack: { 生效: ['草稿', '已生效'] },
   supplier: { 准入: ['待准入', '合作中'], 停用: ['合作中', '停用'], 启用: ['停用', '合作中'], 拉黑: [['待准入', '合作中', '停用'], '黑名单'], 解除黑名单: ['黑名单', '停用'] },
   style: { 启用: ['草稿', '启用'], 停用: ['启用', '停用'], 恢复: ['停用', '启用'] },
@@ -48,14 +65,25 @@ function move(kind, doc, a, note) {
   doc.status = FLOWS[kind][a][1]
   act(doc, a + (note ? '：' + note : ''))
 }
+/* 单据公共动作（PRD §5.1）：驳回要写原因；撤回只有制单人；结案记下从哪个状态结的，取消结案回到那里 */
+const creatorOf = (d) => d.log?.[0]?.who
+const rejectDoc = (kind) => (d, reason) => { if (!reason?.trim()) fail('要写驳回原因，制单人照着改'); move(kind, d, '驳回', reason.trim()) }
+const withdrawDoc = (kind) => (d) => { if (creatorOf(d) && creatorOf(d) !== userName(db.me)) fail(`只有制单人 ${creatorOf(d)} 能撤回`); move(kind, d, '撤回') }
+const closeDoc = (kind) => (d, note) => { const from = d.status; move(kind, d, '结案', note); d.closedFrom = from }
+const reopenDoc = (kind, back) => (d) => {
+  move(kind, d, '取消结案')
+  d.status = back(d)
+  delete d.closedFrom
+}
+const docRules = (kind, back) => ({ 驳回: rejectDoc(kind), 撤回: withdrawDoc(kind), 结案: closeDoc(kind), 取消结案: reopenDoc(kind, back) })
 /* 带额外规则的动作；没列在这里的直接 move */
 const RULES = {
-  order: { 提交: submitOrder, 反审核: unauditOrder },
-  purchase: { 反审核: unauditPurchase },
-  production: { 审核: auditProduction },
+  order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 反审核: unauditOrder },
+  purchase: { ...docRules('purchase', (p) => { p.status = '已审核'; refreshPoStatus(p); return p.status }), 反审核: unauditPurchase },
+  production: { ...docRules('production', (p) => (prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
   stock: { 审核: postStockDoc, 反审核: unpostStockDoc },
   techpack: { 生效: publishTp },
-  change: { 审核: auditChange },
+  change: { 驳回: rejectDoc('change'), 审核: auditChange },
   supplier: { 准入: admitSupplier },
 }
 function doAction(kind, doc, a, ...args) {
@@ -71,18 +99,32 @@ function canUseSupplier(code, purpose) {
   return purpose === '打样' ? ['待准入', '合作中'].includes(s.status) : s.status === '合作中'
 }
 const isFactory = (s) => s.cats.some((c) => c === '成衣厂' || c === '加工厂')
-function createSupplier(f) {
+// 编码流水：前缀 + 4 位，取现有最大号 + 1（删过的号不重用；导入时手填的老编码也不会撞）
+const nextCode = (prefix, list) => prefix + String(Math.max(0, ...list.filter((x) => x.code.startsWith(prefix)).map((x) => +x.code.slice(prefix.length) || 0)) + 1).padStart(4, '0')
+// 成衣厂、加工厂自动有一个工厂仓（PRD §6.1.6），名字跟着供应商简称
+function ensureFactoryWh(s) {
+  if (!isFactory(s) || factoryWh(s.code)) return null
+  let code = 'GC' + s.code.replace(/^GYS/, '')
+  if (wh(code)) code = nextCode('GC', db.warehouses)
+  return add(db.warehouses, { code, name: s.short + '仓', type: '工厂仓', factory: s.code, addr: s.addr || '', keeper: '', phone: s.phone || '', status: '启用' })
+}
+// f.code、f.status 给导入用（领猫里的老编码、合作状态原样带过来），新建页面不传
+function createSupplier({ imported, ...f }) {
   if (!f.short || !f.name) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
-  const code = 'GYS' + String(db.suppliers.length + 1).padStart(4, '0')
-  const s = add(db.suppliers, { code, level: 'B', settle: '月结', term: 30, tax: '13%', certs: [], admitted: null, ...f, status: '待准入', log: [] })
-  act(s, '新建')
-  if (isFactory(s) && !factoryWh(code)) add(db.warehouses, { code: 'GC' + code.slice(3), name: s.short + '仓', type: '工厂仓', factory: code, status: '启用' })
+  const code = (f.code || '').trim().toUpperCase() || nextCode('GYS', db.suppliers)
+  if (sup(code)) fail(`供应商编码 ${code} 已经有了`)
+  const st = f.status || '待准入'
+  const s = add(db.suppliers, { level: 'B', settle: '月结', term: 30, tax: '13%', invoice: '', goodAt: [], wechat: '', addr: '', bank: '', account: '', note: '', certs: [], admitted: null, ...f, code, status: st, log: [] })
+  if (st === '合作中' && !s.admitted) Object.assign(s, { admitted: clock.today, admittedBy: db.me })
+  act(s, imported ? '导入，状态「' + st + '」' : '新建')
+  ensureFactoryWh(s)
   return s
 }
 function admitSupplier(s) {
   move('supplier', s, '准入')
   s.admitted = clock.today
+  s.admittedBy = db.me
   return s.certs.some((c) => c.type === '营业执照') ? null : '还没传营业执照'
 }
 function openDocsOfSupplier(code) {
@@ -94,16 +136,24 @@ function openDocsOfSupplier(code) {
 function blacklistSupplier(s, reason) {
   if (!reason) fail('要写拉黑原因')
   move('supplier', s, '拉黑', reason)
-  s.blackReason = reason
+  Object.assign(s, { blackReason: reason, blackAt: clock.today, blackBy: db.me })
 }
 const expiringCerts = () => db.suppliers.flatMap((s) => s.certs.filter((c) => c.until && daysLeft(c.until) <= 30 && daysLeft(c.until) >= 0).map((c) => ({ s, c })))
 
 /* ---------- 款式 ---------- */
+// 默认款号：年份后两位 + 季节码 + 品类码 + 3 位流水（PRD §5.2）；接着这个前缀下最大的流水往后编，删过、手填过的号不会撞
+function nextStyleCode(year, season, cat) {
+  const prefix = String(year).slice(2) + season + cat
+  const n = Math.max(0, ...db.styles.filter((s) => s.code.startsWith(prefix)).map((s) => +s.code.slice(prefix.length) || 0))
+  return prefix + String(n + 1).padStart(3, '0')
+}
 function createStyle(f) {
-  if (!f.name) fail('款式名称要填')
+  if (!f.name?.trim()) fail('款式名称要填')
+  if (!f.cat) fail('要选品类')
+  if (!f.year || !f.season) fail('年份、季节要填')
   if (!f.colors?.length) fail('至少选一个颜色')
-  const prefix = String(f.year).slice(2) + f.season + f.cat
-  const code = f.code || prefix + String(db.styles.filter((s) => s.code.startsWith(prefix)).length + 1).padStart(3, '0')
+  const code = (f.code || '').trim().toUpperCase() || nextStyleCode(f.year, f.season, f.cat)
+  if (!/^[A-Z0-9-]{3,20}$/.test(code)) fail(`款号「${code}」只能用字母、数字和 -，3-20 位`)
   if (style(code)) fail(`款号 ${code} 已经有了`)
   const s = add(db.styles, { brand: '织间', gender: '女', source: '自主开发', wave: '第 1 波', tag: '通勤', designer: db.me, sizeGroup: 'W5', ...f, code, colors: [], skus: [], status: f.status || '草稿', log: [] })
   f.colors.forEach((c) => addStyleColor(s, c, true))
@@ -130,11 +180,14 @@ function unmatchedColors(s) {
 /* ---------- 资料包 ---------- */
 const rowSku = (r, color) => (r.mode === '固定' ? r.sku : r.map[color])
 const rowUse = (r, size) => (r.um === '统一' ? +r.use || 0 : +r.uses[size] || 0)
-const rowMidUse = (r, sizes) => (r.um === '统一' ? +r.use || 0 : +r.uses[sizes[Math.floor((sizes.length - 1) / 2)]] || 0)
-const unitPrice = (r) => { const m = mat(r.mat); return (r.price ?? m.price) / m.factor } // 折成库存单位
-const rowCost = (r, sizes) => rnd(rowMidUse(r, sizes) * (1 + r.loss / 100) * unitPrice(r), 2)
+// 单件成本按基码（女装 M）的用量算（PRD §6.4.2）；sizes 是尺码组的尺码，基码不在里面时取中间那个
+const rowMidUse = (r, sizes, base) => (r.um === '统一' ? +r.use || 0 : +r.uses[base && sizes.includes(base) ? base : sizes[Math.floor((sizes.length - 1) / 2)]] || 0)
+// 参考单价（每采购单位）：行上没改过就带物料 SKU 的单价，SKU 没单价用物料的参考单价（PRD §6.4.2）
+const rowRefPrice = (r) => { const k = r.mode === '固定' ? r.sku : Object.values(r.map || {}).find(Boolean); return (k ? skuPrice(k) : null) ?? mat(r.mat)?.price }
+const unitPrice = (r) => { const m = mat(r.mat); return (r.price ?? rowRefPrice(r)) / m.factor } // 折成库存单位
+const rowCost = (r, sizes, base) => rnd(rowMidUse(r, sizes, base) * (1 + r.loss / 100) * unitPrice(r), 2)
 // 只算我方采购的料：客供的料客户出，工厂自备的算在加工费里
-const tpMaterialCost = (tp) => { const sz = sizesOf(style(tp.style).sizeGroup); return rnd(sum(tp.bom.filter((r) => r.src === '我方采购'), (r) => rowCost(r, sz)), 2) }
+const tpMaterialCost = (tp) => { const g = style(tp.style).sizeGroup; return rnd(sum(tp.bom.filter((r) => r.src === '我方采购'), (r) => rowCost(r, sizesOf(g), baseSizeOf(g))), 2) }
 const tpLabor = (tp) => rnd(sum(tp.ops, (o) => o.price), 2)
 
 // 尺寸表：rows = [{ pt 部位, how 量法, tol 公差, step 档差, vals: { 尺码: cm } }]，从基码按档差往两边放
@@ -152,7 +205,8 @@ function specTemplate(styleCode) {
 }
 function createTechpack(styleCode, bom, ops, note, spec) {
   const ver = (tpsOf(styleCode)[0]?.ver || 0) + 1
-  const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null, bom, ops, spec: spec || specTemplate(styleCode), log: [] })
+  // req = 工艺单的整体要求（文字 + 插图）；ops 每行 { cat, name, req 工艺要求, pics, sec, price, note }
+  const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null, req: { text: '', pics: [] }, bom, ops, spec: spec || specTemplate(styleCode), log: [] })
   act(tp, ver === 1 ? '新建' : '由 V' + (ver - 1) + ' 修订')
   return tp
 }
@@ -165,13 +219,10 @@ function tpCheck(tp) {
     if (r.um === '分码') sizesOf(s.sizeGroup).forEach((z) => { if (!(r.uses[z] > 0)) errs.push(`第 ${i + 1} 行（${r.part}）：${z} 码没有用量`) })
     if (r.um === '统一' && !(r.use > 0)) errs.push(`第 ${i + 1} 行（${r.part}）：没有用量`)
     if (mat(r.mat)?.status === '停用') errs.push(`第 ${i + 1} 行：${mat(r.mat).name} 已停用`)
+    else [...new Set(r.mode === '固定' ? [r.sku] : s.colors.map((c) => r.map[c]))].filter(Boolean).forEach((k) => { if (skuOf(k)?.status === '停用') errs.push(`第 ${i + 1} 行：物料 SKU ${k} 已停用`) })
+    if (r.mode === '固定' && !r.sku) errs.push(`第 ${i + 1} 行（${r.part}）：没选物料 SKU`)
   })
-  if (!tp.spec.rows.length) errs.push('尺寸表还没填')
-  tp.spec.rows.forEach((r) => {
-    const miss = sizesOf(s.sizeGroup).filter((z) => !(r.vals[z] > 0))
-    if (!r.pt) errs.push('尺寸表有一行没写部位')
-    else if (miss.length) errs.push(`尺寸表「${r.pt}」：${miss.join('、')} 码没填`)
-  })
+  // 尺寸表是二期（PRD 04.05），一期生效不查它
   return errs
 }
 function publishTp(tp) {
@@ -184,8 +235,16 @@ function publishTp(tp) {
 }
 function reviseTp(tp) {
   if (tpsOf(tp.style).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
-  const copy = JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec }))
-  return createTechpack(tp.style, copy.bom, copy.ops, '', copy.spec)
+  const copy = JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec, req: tp.req || { text: '', pics: [] } }))
+  const t = createTechpack(tp.style, copy.bom, copy.ops, '', copy.spec)
+  Object.assign(t, { req: copy.req, util: tp.util })
+  return t
+}
+// 删掉草稿版本（修订出来不想要了）；生效过、作废了的版本只能看
+function removeTpDraft(tp) {
+  if (tp.status !== '草稿') fail(`V${tp.ver} 是「${tp.status}」，只有草稿版本能删`)
+  db.techpacks.splice(db.techpacks.indexOf(tp), 1)
+  act(style(tp.style), `删除资料包草稿 V${tp.ver}`)
 }
 
 /* ---------- 订单 ---------- */
@@ -198,16 +257,27 @@ const mrpsOf = (o) => db.mrps.filter((m) => m.orders.includes(o.no))
 const sumProdLine = (o, l, f) => sum(prodsOf(o).filter((p) => p.style === l.style).flatMap((p) => p.lines.filter((x) => x.color === l.color && x.size === l.size)), f)
 const scheduledQty = (o, l) => sumProdLine(o, l, (x) => x.qty)
 const returnedQty = (o, l) => sumProdLine(o, l, (x) => x.ret)
+// 作废的回货单不算数（统计、对账、看板都用这个）
+const liveReturns = () => db.returns.filter((r) => r.status !== '已作废')
 const orderSched = (o) => sum(o.lines, (l) => scheduledQty(o, l))
 const orderRet = (o) => sum(o.lines, (l) => returnedQty(o, l))
 const orderLive = (o) => ['已审核', '生产中'].includes(o.status)
 
+// 停用的 SKU（款式 SKU 停用了，或者整个颜色停用了）不能下单（PRD §6.2）
+function checkOrderLines(lines) {
+  const bad = lines.map((l) => {
+    const k = style(l.style)?.skus.find((x) => x.color === l.color && x.size === l.size)
+    return !k ? `${l.style}-${l.color}-${l.size} 已删除` : k.status === '停用' ? `${k.code} 已停用` : colorOf(l.color).status === '停用' ? `${k.code} 的颜色已停用` : ''
+  }).filter(Boolean)
+  if (bad.length) fail('停用或删掉的 SKU 不能下单', bad)
+}
 function createOrder(f) {
   const lines = (f.lines || []).filter((l) => l.qty > 0)
   if (!lines.length) fail('至少录一个数量')
-  if (f.type === '客户订单' && !f.customer) fail('客户订单要选客户')
+  checkOrderLines(lines)
+  if (f.type !== '自营备货' && !f.customer) fail(`${f.type || '客户订单'}要选客户`)
   if (!f.due) fail('客户交期要填')
-  const o = add(db.orders, { no: nextNo('DD'), company: 'ZJ', currency: '人民币', date: clock.today, commit: null, sales: 'u3', merch: 'u1', ship: '', custNo: '', ...f, lines: lines.map((l) => ({ ver: null, price: null, ...l })), status: '草稿', log: [] })
+  const o = add(db.orders, { no: nextNo('DD'), company: myCompany(), currency: '人民币', date: clock.today, commit: null, sales: roleUser('业务'), merch: roleUser('生产跟单'), ship: '', custNo: '', contract: '', brand: '', src: '手工', note: '', ...f, lines: lines.map((l) => ({ ver: null, price: null, ...l })), status: '草稿', log: [] })
   act(o, '新建')
   return o
 }
@@ -220,6 +290,7 @@ function submitOrder(o) {
     else unmatchedColors(s).forEach((col) => { if (o.lines.some((l) => l.style === c && l.color === col)) errs.push(`${c} 的 ${colorName(col)} 还没配料`) })
   })
   if (errs.length) fail('订单还不能提交', errs)
+  checkOrderLines(o.lines)
   move('order', o, '提交')
 }
 function auditOrder(o, commit) {
@@ -248,7 +319,7 @@ function reviewInfo(o) {
     loads: [...new Set(loads)].map((f) => ({ factory: f, qty: factoryLoad(f) })),
   }
 }
-const unitPriceOfSku = (s) => { const m = matOfSku(s); return m.price / m.factor }
+const unitPriceOfSku = (s) => skuPrice(s) / matOfSku(s).factor
 const factoryLoad = (f) => sum(db.productions.filter((p) => p.factory === f && ['已下单', '生产中', '部分回货'].includes(p.status)), (p) => prodQty(p) - prodRet(p))
 
 // 排单：blocks = [{ style, factory, mode, price, due, qty: { 'KQ|S': 80 } }]，一块生成一张加工单
@@ -275,36 +346,69 @@ function scheduleOrder(o, blocks) {
   return blocks.filter((b) => sum(Object.values(b.qty)) > 0).map((b) => createProduction(o, b))
 }
 
-// 订单变更：items = [{ k: '27CF001|KQ|M', to: 100 }]，due = 新客户交期
-function createChange(o, f) {
-  if (!orderLive(o)) fail('只有已审核的订单才走变更')
-  if (!f.reason) fail('要写变更原因')
+/* 订单变更（PRD §6.5.6）：f = { items: [{ k: '27CF001|KQ|M', to: 100 }]（数量；原来没有的颜色 = 配色配码）, due: 新客户交期,
+ *   prices: [{ style, to }] 单价, vers: [{ style, to }] 换资料包版本, cancel: true 取消订单 } */
+const orderDown = (o) => [...prodsOf(o).map((p) => p.no), ...mrpsOf(o).filter((m) => m.status !== '已关闭').map((m) => m.no)]
+function buildChange(o, f) {
+  if (!f.reason?.trim()) fail('要写变更原因')
+  if (f.cancel) {
+    if (orderDown(o).length) fail('订单已经有下游单据，先把它们作废或结案，再取消订单', orderDown(o))
+    return { types: ['取消订单'], cancel: true, items: [], due: null, prices: [], vers: [] }
+  }
   const items = (f.items || []).map((i) => { const l = o.lines.find((x) => lineKey(x) === i.k); return { k: i.k, label: i.k.replace(/\|/g, '-'), from: l ? l.qty : 0, to: +i.to || 0 } }).filter((i) => i.to !== i.from)
   const due = f.due && f.due !== o.due ? { from: o.due, to: f.due } : null
-  if (!items.length && !due) fail('没有改动')
+  const firstLine = (st) => o.lines.find((l) => l.style === st)
+  const prices = (f.prices || []).map((x) => ({ style: x.style, from: firstLine(x.style)?.price ?? null, to: x.to === '' || x.to == null ? null : +x.to })).filter((x) => x.to !== x.from)
+  const vers = (f.vers || []).map((x) => ({ style: x.style, from: firstLine(x.style)?.ver ?? null, to: +x.to || null })).filter((x) => x.to && x.to !== x.from)
+  if (!items.length && !due && !prices.length && !vers.length) fail('没有改动')
   const errs = []
   items.forEach((i) => {
     const l = o.lines.find((x) => lineKey(x) === i.k)
     const done = l ? scheduledQty(o, l) : 0
     if (i.to < done) errs.push(`${i.label}：已排产 ${done} 件，先调整加工单 ${prodsOf(o).filter((p) => p.style === l.style).map((p) => p.no).join('、')}`)
+    const [st, co] = i.k.split('|')
+    const ver = vers.find((v) => v.style === st)?.to ?? firstLine(st)?.ver, tp = tpOf(st, ver)
+    if (!l && tp?.bom.some((r) => r.mode === '随款色' && !r.map[co])) errs.push(`${st} 的${colorName(co)}在资料包 V${ver} 里没配料：先修订资料包并生效，这次变更把资料包一起换到新版本`)
   })
-  if (errs.length) fail('变更不能提交', errs)
-  const types = [items.length && '数量', due && '交期'].filter(Boolean)
-  const c = add(db.changes, { no: nextNo('BG'), order: o.no, types, items, due, reason: f.reason, party: f.party || '客户', fee: f.fee || '', files: f.files || [], date: clock.today, by: db.me, status: '待审核', log: [] })
+  vers.forEach((v) => { if (tpOf(v.style, v.to)?.status !== '已生效') errs.push(`${v.style} 的 V${v.to} 不是已生效的版本`) })
+  if (errs.length) fail('变更不能提交', [...new Set(errs)])
+  const types = [items.some((i) => i.from > 0) && '数量', items.some((i) => !i.from) && '配色配码', due && '交期', prices.length && '单价', vers.length && '资料包版本'].filter(Boolean)
+  return { types, cancel: false, items, due, prices, vers }
+}
+function createChange(o, f) {
+  if (!orderLive(o)) fail('只有已审核的订单才走变更')
+  const c = add(db.changes, { no: nextNo('BG'), order: o.no, ...buildChange(o, f), reason: f.reason.trim(), party: f.party || '客户', fee: f.fee || '', files: f.files || [], date: clock.today, by: db.me, status: '待审核', log: [] })
   act(c, '提交')
   act(o, '提交变更单 ' + c.no)
   return c
 }
-const describeChange = (c) => [...c.items.map((i) => `${i.label}：${i.from} → ${i.to}`), c.due && `客户交期：${fd(c.due.from)} → ${fd(c.due.to)}`].filter(Boolean).join('；')
-function auditChange(c) {
-  move('change', c, '审核')
+// 被驳回的变更单改了再提交
+function resubmitChange(c, f) {
   const o = order(c.order)
+  if (!orderLive(o)) fail(`订单现在是「${o.status}」，不能再变更`)
+  Object.assign(c, buildChange(o, f), { reason: f.reason.trim(), party: f.party || '客户', fee: f.fee || '', files: f.files || [] })
+  move('change', c, '重新提交')
+}
+const describeChange = (c) => [
+  c.cancel && '取消订单',
+  ...c.items.map((i) => `${i.label}：${i.from} → ${i.to}${i.from ? '' : '（新增）'}`),
+  c.due && `客户交期：${fd(c.due.from)} → ${fd(c.due.to)}`,
+  ...(c.prices || []).map((x) => `${x.style} 单价：${fm(x.from)} → ${fm(x.to)}`),
+  ...(c.vers || []).map((x) => `${x.style} 资料包：V${x.from} → V${x.to}`),
+].filter(Boolean).join('；')
+function auditChange(c) {
+  const o = order(c.order)
+  if (c.cancel && orderDown(o).length) fail('订单已经有下游单据，不能取消', orderDown(o))
+  move('change', c, '审核')
+  if (c.cancel) { o.status = '已取消'; act(o, `变更单 ${c.no} 生效：取消订单`); return }
   c.items.forEach((i) => {
     const l = o.lines.find((x) => lineKey(x) === i.k)
     if (l) l.qty = i.to
     else { const [st, co, sz] = i.k.split('|'); const ref = o.lines.find((x) => x.style === st); o.lines.push({ style: st, color: co, size: sz, qty: i.to, price: ref?.price ?? null, ver: ref?.ver ?? null }) }
   })
   if (c.due) o.due = c.due.to
+  for (const x of c.prices || []) o.lines.filter((l) => l.style === x.style).forEach((l) => { l.price = x.to })
+  for (const x of c.vers || []) o.lines.filter((l) => l.style === x.style).forEach((l) => { l.ver = x.to })
   const text = describeChange(c)
   act(o, `变更单 ${c.no} 生效：${text}`)
   const note = { no: c.no, order: o.no, at: clock.today, text }
@@ -315,7 +419,9 @@ function auditChange(c) {
 const upstreamPending = () => [...db.productions, ...db.mrps, ...db.purchases].filter((d) => d.upstream && !d.upstream.done)
 
 /* ---------- 算料 ---------- */
-// 毛需求 = Σ 订单 SKU 数 × 尺码用量；需求 = Σ 毛需求 ×（1 + 损耗）（备料比默认 0，PRD §4.3 的口径）。按 来源 + 物料 SKU + 物权 汇总
+// 毛需求 = Σ 订单 SKU 数 × 尺码用量；需求 = Σ 毛需求 ×（1 + 损耗）×（1 + 备料比）。按 来源 + 物料 SKU + 物权 汇总
+// 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %），默认 0，PRD §4.3 的例子就是 0
+const reserveOf = (sku) => +(db.reserve?.[matOfSku(sku)?.type] || 0)
 function calcNeeds(orderNos, useActive) {
   const acc = {}
   orderNos.map(order).forEach((o) => o.lines.forEach((l) => {
@@ -325,14 +431,14 @@ function calcNeeds(orderNos, useActive) {
       const sku = rowSku(r, l.color)
       if (!sku) return
       const owner = r.src === '客供' ? o.customer || '自有' : '自有'
-      const a = (acc[r.src + '|' + sku + '|' + owner] ||= { sku, owner, src: r.src, supplier: r.supplier || matOfSku(sku).supplier, price: r.price ?? matOfSku(sku).price, gross: 0, need: 0, orders: [], styles: [] })
+      const a = (acc[r.src + '|' + sku + '|' + owner] ||= { sku, owner, src: r.src, supplier: r.supplier || matOfSku(sku).supplier, price: r.price ?? skuPrice(sku), gross: 0, need: 0, orders: [], styles: [] })
       a.gross += l.qty * rowUse(r, l.size)
       a.need += l.qty * rowUse(r, l.size) * (1 + r.loss / 100)
       if (!a.orders.includes(o.no)) a.orders.push(o.no)
       if (!a.styles.includes(l.style)) a.styles.push(l.style)
     })
   }))
-  return Object.values(acc).map((a) => ({ ...a, gross: rnd(a.gross, 3), need: rnd(a.need, 3) }))
+  return Object.values(acc).map((a) => { const rv = reserveOf(a.sku); return { ...a, gross: rnd(a.gross, 3), need: rnd(a.need * (1 + rv / 100), 3), reserve: rv } })
 }
 const materialWhs = () => db.warehouses.filter((w) => w.type === '物料仓').map((w) => w.code)
 // 可用库存 = 物料仓同物权库存 − 其他已确认算料单还没领走的"本次使用库存"
@@ -365,12 +471,19 @@ function createMrp(orderNos) {
     const net = rnd(need - useStock, 3)
     return { ...a, need, avail, useStock, transit: transitQty(a.sku, a.owner), useTransit: 0, net, purQty: a.src === '我方采购' ? suggestPur(a.sku, net) : 0, converted: 0 }
   })
-  const m = add(db.mrps, { no, orders: [...orderNos], date: clock.today, status: '草稿', rows, upstream: null, log: [] })
+  const m = add(db.mrps, { no, company: myCompany(), orders: [...orderNos], date: clock.today, status: '草稿', rows, upstream: null, note: '', log: [] })
   act(m, '算料：' + orderNos.join('、'))
   return m
 }
-function updateMrpRow(r, field, v) {
+// 改本次用库存、本次用在途：重算净需求和建议采购；直接改建议采购量（特殊情况，PRD §6.6.1）不小于已转采购，记操作记录
+function updateMrpRow(r, field, v, m) {
   v = Math.max(0, +v || 0)
+  if (field === 'purQty') {
+    const was = r.purQty
+    r.purQty = Math.max(rnd(v, 3), r.converted)
+    if (m && r.purQty !== was) act(m, `改建议采购：${skuName(r.sku)} ${fq(was)} → ${fq(r.purQty)} ${matOfSku(r.sku).purUnit}`)
+    return
+  }
   if (field === 'useStock') r.useStock = Math.min(v, r.avail, r.need)
   if (field === 'useTransit') r.useTransit = v
   r.net = rnd(r.need - r.useStock - (r.useTransit || 0), 3)
@@ -393,15 +506,18 @@ function mrpToPurchases(m, idxs) {
   act(m, '生成采购单 ' + pos.map((p) => p.no).join('、'))
   return pos
 }
-// 齐料：订单关联算料单"我方采购"每一行，已入库 + 本次使用库存 ≥ 需求
+// 算料单某一行已入库多少（库存单位）：它和它的前身（重新算料换掉的旧单）生成的采购单行的已入库
+const mrpChain = (m) => (m ? [m.no, ...(m.prev ? mrpChain(mrp(m.prev.no)) : [])] : [])
+function mrpRecv(m, r) {
+  const nos = mrpChain(m)
+  return rnd(sum(db.purchases.flatMap((p) => p.lines).filter((l) => nos.includes(l.src?.mrp) && l.sku === r.sku && (l.owner || '自有') === r.owner), (l) => l.received * matOfSku(r.sku).factor), 3)
+}
+// 齐料：订单关联算料单"我方采购"每一行，已入库 + 本次使用库存 ≥ 需求；重新算料换掉的旧单不算
 function kitState(o) {
-  const ms = mrpsOf(o)
+  const ms = mrpsOf(o).filter((m) => !m.next)
   if (!ms.length) return { t: '未算料', k: 'none' }
   const rows = ms.flatMap((m) => m.rows.filter((r) => r.src === '我方采购').map((r) => ({ m, r })))
-  const ok = rows.filter(({ m, r }) => {
-    const recv = sum(db.purchases.flatMap((p) => p.lines).filter((l) => l.src?.mrp === m.no && l.sku === r.sku), (l) => l.received * matOfSku(r.sku).factor)
-    return recv + r.useStock >= r.need - 0.001
-  }).length
+  const ok = rows.filter(({ m, r }) => mrpRecv(m, r) + r.useStock >= r.need - 0.001).length
   if (ok === rows.length) return { t: '齐料', k: 'ok' }
   return ok ? { t: `部分到料 ${ok}/${rows.length}`, k: 'part' } : { t: '未到料', k: 'no' }
 }
@@ -416,9 +532,12 @@ function createPurchase(f) {
   if (!lines.length) fail('至少一行物料')
   const lead = Math.max(...lines.map((l) => matOfSku(l.sku).lead || 7))
   const s = sup(f.supplier)
+  // 交货日期默认 = 下单日 + 各行最长的采购周期（PRD §6.6.2）
+  const date = f.date || clock.today, due = f.due || addDays(date, lead)
+  if (due < date) fail('交货日期不能早于下单日期')
   const p = add(db.purchases, {
-    no: nextNo('CG'), company: 'ZJ', type: '订单采购', buyer: 'u2', wh: 'WL01', date: clock.today, due: addDays(clock.today, lead), settle: s.settle, tax: s.tax, upstream: null, ...f,
-    lines: lines.map((l) => ({ owner: '自有', due: null, expect: null, note: '', received: 0, returned: 0, src: null, ...l })), status: '草稿', log: [],
+    no: nextNo('CG'), company: myCompany(), type: '订单采购', buyer: roleUser('采购'), wh: 'WL01', settle: s.settle, tax: s.tax, taxIncl: true, note: '', upstream: null, ...f, date, due,
+    lines: lines.map((l) => ({ owner: '自有', due: null, expect: null, note: '', received: 0, returned: 0, src: null, ...l, price: l.price ?? skuPrice(l.sku) ?? null })), status: '草稿', log: [],
   })
   act(p, '新建')
   return p
@@ -434,11 +553,12 @@ function refreshPoStatus(p) {
   const ns = all ? '已到齐' : any ? '部分到货' : '已审核'
   if (ns !== p.status) { p.status = ns; act(p, ns) }
 }
-// lines = [{ i: 采购行号, qty: 采购单位数量, lot: 缸号 }]
+// lines = [{ i: 采购行号, qty: 采购单位数量, lot: 缸号, rolls: 卷数, note }]；date 是实际到货日期（第二天补录时填前一天，PRD §2.5）
 function receivePurchase(p, f) {
   if (!['已审核', '部分到货'].includes(p.status)) fail('采购单审核后才能入库')
   const ls = (f.lines || []).filter((x) => x.qty > 0)
   if (!ls.length) fail('至少收一行')
+  if (f.date && f.date < p.date) fail('入库日期不能早于下单日期 ' + fd(p.date))
   const errs = []
   ls.forEach((x) => {
     const l = p.lines[x.i], cap = rnd((l.qty - l.received) + l.qty * 0.05, 3)
@@ -446,8 +566,8 @@ function receivePurchase(p, f) {
   })
   if (errs.length) fail('超过可收数量（溢收 5%）', errs)
   const d = createStockDoc({
-    type: '采购入库', src: p.no, partner: p.supplier, to: f.wh || p.wh, supNo: f.supNo || '',
-    lines: ls.map((x) => { const l = p.lines[x.i], m = matOfSku(l.sku); return { sku: l.sku, owner: l.owner, qty: rnd(x.qty * m.factor, 3), purQty: x.qty, price: l.price, lot: x.lot || '', poLine: x.i } }),
+    type: '采购入库', src: p.no, partner: p.supplier, to: f.wh || p.wh, supNo: f.supNo || '', logistics: f.logistics || '', note: f.note || '', ...(f.date ? { date: f.date } : {}),
+    lines: ls.map((x) => { const l = p.lines[x.i], m = matOfSku(l.sku); return { sku: l.sku, owner: l.owner, qty: rnd(x.qty * m.factor, 3), purQty: x.qty, price: l.price, lot: x.lot || '', rolls: x.rolls || null, note: x.note || '', poLine: x.i } }),
   })
   if (f.files?.length) d.files = f.files
   postStockDoc(d)
@@ -462,15 +582,23 @@ function arrivals() {
 
 /* ---------- 库存单据 ---------- */
 const STOCK_TYPES = { 采购入库: 'RK', 客供入库: 'RK', 其他入库: 'RK', 领料: 'LL', 退料: 'LL', 调拨: 'DB', 采购退货: 'CK', 其他出库: 'CK' }
-function createStockDoc(f) {
+// 新建、改草稿都过这一遍（PRD §6.6.5 类型表），返回有数量的行
+function checkStockDoc(f) {
   const lines = (f.lines || []).filter((l) => l.sku && l.qty > 0)
   if (!lines.length) fail('至少一行物料')
   if (f.type === '客供入库' && !f.partner) fail('客供入库要选客户')
   if (['调拨', '领料', '退料'].includes(f.type) && (!f.from || !f.to)) fail('出仓、入仓都要选')
   if (f.from && f.from === f.to) fail('出仓和入仓不能是同一个')
+  if (['其他入库', '其他出库'].includes(f.type) && !f.reason) fail(f.type + '要选原因（期初、盘盈、盘亏、报废……）')
+  if (f.type === '退料' && (wh(f.from)?.type !== '工厂仓' || wh(f.to)?.type !== '物料仓')) fail('退料是工厂剩料退回：出仓选工厂仓，入仓选物料仓')
+  if (f.date && f.date > clock.today) fail('单据日期不能晚于今天')
+  return lines
+}
+function createStockDoc(f) {
+  const lines = checkStockDoc(f)
   const owner = f.type === '客供入库' ? f.partner : null
   const d = add(db.stockDocs, {
-    no: nextNo(STOCK_TYPES[f.type]), company: 'ZJ', src: '', from: null, to: null, partner: '', reason: '', date: clock.today, ...f,
+    no: nextNo(STOCK_TYPES[f.type]), company: myCompany(), src: '', from: null, to: null, partner: '', reason: '', logistics: '', note: '', date: clock.today, ...f,
     lines: lines.map((l) => ({ owner: owner || '自有', price: null, lot: '', ...l })), status: '草稿', log: [],
   })
   act(d, '新建')
@@ -493,6 +621,8 @@ function postStockDoc(d) {
   if (d.from) { const s = stockShortage(d.from, d.lines); if (s.length) fail('库存不够，没过账', s) }
   d.lines.forEach((l) => { if (d.from) changeStock(d.from, l, -l.qty, d); if (d.to) changeStock(d.to, l, l.qty, d) })
   if (d.type === '采购入库' && d.src) { const p = purchase(d.src); d.lines.forEach((l) => { p.lines[l.poLine].received = rnd(p.lines[l.poLine].received + l.purQty, 3) }); act(p, '入库 ' + d.no); refreshPoStatus(p) }
+  // 采购退货回写采购单的已退货（采购单位）
+  if (d.type === '采购退货' && d.src) { const p = purchase(d.src); d.lines.forEach((l) => { if (l.poLine != null) p.lines[l.poLine].returned = rnd(p.lines[l.poLine].returned + l.purQty, 3) }); act(p, '退货 ' + d.no) }
   move('stock', d, '审核')
   d.auditor = db.me
 }
@@ -504,6 +634,7 @@ function unpostStockDoc(d) {
     d.lines.forEach((l) => { p.lines[l.poLine].received = rnd(p.lines[l.poLine].received - l.purQty, 3) })
     if (['部分到货', '已到齐'].includes(p.status)) { p.status = '已审核'; refreshPoStatus(p) }
   }
+  if (d.type === '采购退货' && d.src) { const p = purchase(d.src); d.lines.forEach((l) => { if (l.poLine != null) p.lines[l.poLine].returned = rnd(p.lines[l.poLine].returned - l.purQty, 3) }); act(p, '退货单 ' + d.no + ' 反审核，已退货改回') }
   move('stock', d, '反审核')
 }
 const stockDir = (d) => (d.from && d.to ? '移' : d.to ? '入' : '出')
@@ -519,7 +650,7 @@ function createProduction(o, b) {
   const lines = s.colors.flatMap((c) => sizesOf(s.sizeGroup).map((z) => ({ color: c, size: z, qty: b.qty[c + '|' + z] || 0, ret: 0, def: 0 }))).filter((l) => l.qty > 0)
   const p = add(db.productions, {
     no: nextNo('JG'), company: o.company, order: o.no, style: b.style, ver: o.lines.find((l) => l.style === b.style)?.ver, factory: b.factory, mode: b.mode || '清加工',
-    price: +b.price, date: clock.today, due: b.due, expect: null, merch: o.merch, settle: sup(b.factory).settle, terms: '', status: '草稿', lines, nodes: [], issues: [], upstream: null, log: [],
+    price: +b.price, date: clock.today, due: b.due, expect: null, merch: b.merch || o.merch, settle: b.settle || sup(b.factory).settle, terms: b.terms || '', note: b.note || '', status: '草稿', lines, nodes: [], issues: [], upstream: null, log: [],
   })
   act(p, '由订单 ' + o.no + ' 排单生成')
   return p
@@ -536,6 +667,20 @@ function auditProduction(p) {
   const o = order(p.order)
   if (o?.status === '已审核') { o.status = '生产中'; act(o, '加工单 ' + p.no + ' 已下单') }
 }
+// 反审核：还没开工（没报进度、没领料、没回货、没异常）才行，节点计划清掉，订单没有别的在做的加工单就回到已审核
+function unauditProduction(p) {
+  const why = []
+  if (p.nodes.some((n) => n.as || n.af)) why.push('已经报过进度')
+  const issued = db.stockDocs.filter((d) => d.src === p.no && d.status === '已审核').map((d) => d.no)
+  if (issued.length) why.push('已经领过料：' + issued.join('、'))
+  if (prodRet(p)) why.push('已经回过货 ' + prodRet(p) + ' 件')
+  if (p.issues.length) why.push('已经上报过异常')
+  if (why.length) fail('加工单已经开工，不能反审核', why)
+  move('production', p, '反审核')
+  p.nodes = []
+  const o = order(p.order)
+  if (o?.status === '生产中' && !prodsOf(o).some(prodLive)) { o.status = '已审核'; act(o, '加工单 ' + p.no + ' 反审核，订单回到已审核') }
+}
 // 节点状态：done / late（延期）/ warn（临期）/ run / todo
 function nodeState(n) {
   if (n.af) return n.af > n.pf ? 'late' : 'done'
@@ -549,7 +694,9 @@ function reportNode(p, i, f) {
   const n = p.nodes[i]
   if (!f.as && !f.af) fail('开始、完成至少填一个')
   if (f.af && f.as && f.af < f.as) fail('完成时间不能早于开始时间')
-  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, photos: [...(n.photos || []), ...(f.photos || [])] })
+  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, at: clock.today, photos: [...(n.photos || []), ...(f.photos || [])] })
+  // 每次汇报留一条（谁、哪天报的、报了什么），节点字段只留最新的（PRD §7.2 prd_node_report）
+  n.reports = [...(n.reports || []), { at: clock.today, by: db.me, as: f.as || null, af: f.af || null, qty: f.qty ?? null, note: f.note || '', photos: f.photos?.length || 0 }]
   if (p.status === '已下单') p.status = '生产中'
   act(p, `报进度：${n.name}${f.af ? '完成' : '开始'}${f.qty ? ' ' + f.qty + ' 件' : ''}${f.photos?.length ? '，照片 ' + f.photos.length + ' 张' : ''}`)
   return p.nodes.slice(0, i).some((x) => !x.af) ? '前面还有节点没报完成' : null
@@ -569,16 +716,19 @@ function prodRisk(p) {
 }
 function reportIssue(p, f) {
   if (!f.type || !f.desc) fail('类型、描述都要填')
-  if (PHOTO_TYPES.includes(f.type) && !f.photos?.length) fail(`「${f.type}」要传至少一张照片`, ['拍问题部位，工厂和供应商对责任时要用'])
+  // PRD §6.7.4 字段表：描述、照片都必填（每种类型都要拍：问题部位、到货短缺、现场）
+  if (!f.photos?.length) fail(`「${f.type}」要传至少一张照片`, ['拍问题部位或现场情况，工厂和供应商对责任时要用'])
   const i = add(p.issues, { id: nextNo('YC'), type: f.type, desc: f.desc, photos: f.photos || [], newDate: f.newDate || null, party: f.party || '', status: '待处理', at: clock.today, by: db.me, measure: '' })
   if (f.newDate) p.expect = f.newDate
   act(p, `上报异常：${f.type}${f.newDate ? '，预计交期改为 ' + fd(f.newDate) : ''}`)
   return i
 }
-function closeIssue(p, i, measure) {
+// 关闭：处理措施必填；上报时没定的责任方可以这时补上（质量、绩效以后要用）
+function closeIssue(p, i, measure, party) {
   if (!measure) fail('关闭前要写处理措施')
+  if (party !== undefined && party !== i.party) i.party = party
   Object.assign(i, { measure, status: '已关闭', closedAt: clock.today, closedBy: db.me })
-  act(p, '关闭异常：' + i.type)
+  act(p, '关闭异常：' + i.type + (i.party ? '，责任方 ' + i.party : ''))
 }
 // 领料建议 = 加工数 × BOM 用量 ×（1 + 损耗）− 已领；只算我方采购和客供
 function issuePlan(p) {
@@ -597,7 +747,7 @@ function issuePlan(p) {
   return Object.values(acc).map((a) => {
     const issued = rnd(sum(docs.flatMap((d) => d.lines.filter((l) => l.sku === a.sku && l.owner === a.owner).map((l) => (d.type === '退料' ? -l.qty : l.qty)))), 3)
     const need = rnd(a.need, 3)
-    return { ...a, need, issued, suggest: Math.max(0, rnd(need - issued, 3)), avail: stockQty('WL01', a.sku, a.owner) }
+    return { ...a, need, issued, suggest: Math.max(0, rnd(need - issued, 3)), avail: rnd(sum(materialWhs(), (w) => stockQty(w, a.sku, a.owner)), 3) }
   })
 }
 function issueState(p) {
@@ -606,15 +756,17 @@ function issueState(p) {
   if (plan.every((r) => r.issued >= r.need - 0.001)) return '已领齐'
   return plan.some((r) => r.issued > 0) ? '部分领料' : '未领料'
 }
-function issueMaterials(p, lines) {
+// 领料：从选的物料仓（默认主料仓）发到加工厂的工厂仓
+function issueMaterials(p, lines, from = 'WL01') {
   if (!prodLive(p)) fail('加工单审核后才能领料')
   const fw = factoryWh(p.factory)
   if (!fw) fail('这个加工厂还没有工厂仓')
+  if (wh(from)?.type !== '物料仓') fail('领料要从物料仓发')
   const ls = lines.filter((l) => l.qty > 0)
   if (!ls.length) fail('至少领一行')
-  const short = stockShortage('WL01', ls)
+  const short = stockShortage(from, ls)
   if (short.length) fail('库存不够，没领成', short)
-  const d = createStockDoc({ type: '领料', src: p.no, from: 'WL01', to: fw.code, partner: p.factory, lines: ls })
+  const d = createStockDoc({ type: '领料', src: p.no, from, to: fw.code, partner: p.factory, lines: ls })
   postStockDoc(d)
   act(p, '领料 ' + d.no)
   // 订单的加工单都领齐了，算料单自动关闭，释放"本次使用库存"的占用
@@ -623,9 +775,10 @@ function issueMaterials(p, lines) {
     mrpsOf(o).filter((m) => m.status === '已确认').forEach((m) => { m.status = '已关闭'; act(m, '加工单都已领齐料，自动关闭') })
   return d
 }
-// 回货：lines = { 'KQ|S': { qty, def } }
+// 回货：lines = { 'KQ|S': { qty, def, note } }；wh 收货仓（成品仓，只记录）
 function registerReturn(p, f) {
   if (!prodLive(p)) fail('加工单审核后才能登记回货')
+  if (f.date && f.date > clock.today) fail('回货日期不能晚于今天')
   const errs = [], got = []
   p.lines.forEach((l) => {
     const x = f.lines[l.color + '|' + l.size]
@@ -634,12 +787,12 @@ function registerReturn(p, f) {
     if (d > q) errs.push(`${l.color}-${l.size}：次品数不能大于回货数`)
     const cap = Math.floor(l.qty * (1 + OVER))
     if (l.ret + q > cap) errs.push(`${p.style}-${l.color}-${l.size}：加工 ${l.qty} 件，已回 ${l.ret}，最多还能回 ${Math.max(0, cap - l.ret)} 件`)
-    got.push({ l, q, d })
+    got.push({ l, q, d, note: x?.note || '' })
   })
   if (!got.length) errs.push('至少登记一个数量')
   if (errs.length) fail('回货没登记上', errs)
   got.forEach(({ l, q, d }) => { l.ret += q; l.def += d })
-  const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d }) => ({ color: l.color, size: l.size, qty: q, def: d })), photos: f.photos || [], log: [] })
+  const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d, note }) => ({ color: l.color, size: l.size, qty: q, def: d, note })), photos: f.photos || [], by: db.me, status: '已登记', log: [] })
   act(r, '登记')
   p.status = prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : '部分回货'
   act(p, `回货 ${r.no}：${sum(r.lines, (x) => x.qty)} 件，次品 ${sum(r.lines, (x) => x.def)}${p.status === '已完成' ? '，加工单完成' : ''}`)
@@ -668,10 +821,13 @@ const label = (sku, extra) => ({ part: extra.part, mat: sku, mode: '固定', sku
 
 function seed() {
   as('u4', '2026-08-20', () => {
-    createStyle({ code: '26QJ012', name: '短款工装夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', source: '客户来样', customer: 'KH0002', custNo: 'NF-J2611', status: '启用' })
+    createStyle({ code: '26QJ012', name: '短款工装夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', source: '客户来样', customer: 'KH0002', custNo: 'NF-J2611', status: '启用',
+      patterner: 'u8', mainMat: 'ML0018', product: '夹克', comp: '65% 棉 35% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2026-09-25' })
     createStyle({ code: '26QW008', name: '圆领针织衫', cat: 'W', year: 2026, season: 'Q', wave: '第 3 波', tag: '通勤', colors: ['MB', 'HH'], tagPrice: 399, cost: 150, factory: 'GYS0004', status: '启用' })
-    createStyle({ code: '26DS021', name: '连帽卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', source: '客户来样', customer: 'KH0003', status: '启用' })
-    createStyle({ code: '27CF001', name: '女式风衣', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['KQ', 'ZQ', 'HE'], tagPrice: 899, cost: 330, factory: 'GYS0004', status: '启用' })
+    createStyle({ code: '26DS021', name: '连帽卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', source: '客户来样', customer: 'KH0003', status: '启用',
+      gender: '中性', mainMat: 'MZ0003', product: '卫衣', comp: '100% 棉', standard: 'FZ/T 73020-2019 针织休闲服装', safety: 'B 类' })
+    createStyle({ code: '27CF001', name: '女式风衣', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['KQ', 'ZQ', 'HE'], tagPrice: 899, cost: 330, factory: 'GYS0004', status: '启用',
+      series: '城市通勤', patterner: 'u8', mainMat: 'ML0012', product: '风衣', comp: '面料：100% 棉；里料：100% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2027-02-20', note: '大身面料对格，样衣已过客户确认' })
     createStyle({ code: '27CK002', name: '直筒西裤', cat: 'K', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['HE', 'ZQ'], tagPrice: 459, cost: 160, factory: 'GYS0005', status: '启用' })
     createStyle({ code: '27CT003', name: '基础圆领 T 恤', cat: 'T', year: 2027, season: 'C', wave: '第 2 波', tag: '休闲', colors: ['BB', 'HE'], tagPrice: 199, factory: 'GYS0004' })
   })
@@ -693,10 +849,12 @@ function seed() {
     { part: '纽扣', mat: 'FK0021', mode: '随款色', map: { KQ: 'FK0021-KQ', ZQ: 'FK0021-HE', HE: 'FK0021-HE' }, um: '统一', use: 8, loss: 2, src: '我方采购', supplier: 'GYS0002' },
     ...labels.map((x) => ({ ...x })), { ...thread },
   ]
-  const cfOps = [['裁剪', '裁剪', 180, 2.5], ['车缝', '做领、上领', 420, 6], ['车缝', '做袖、上袖', 480, 6.5], ['车缝', '前后片拼合、做门襟', 600, 9], ['车缝', '装里布', 420, 6], ['整烫', '整烫', 240, 3], ['后道', '钉扣、剪线、查衫', 240, 3], ['包装', '挂吊牌、折叠入袋', 120, 2]]
-  const ops = (a) => a.map(([cat, name, sec, price]) => ({ cat, name, sec, price }))
+  const cfOps = [['裁剪', '裁剪', 180, 2.5, '格子对齐后再开裁，左右前片对条对格'], ['车缝', '做领、上领', 420, 6, '领尖左右对称，止口 0.1cm 明线'], ['车缝', '做袖、上袖', 480, 6.5, '袖山吃势均匀，不起皱'], ['车缝', '前后片拼合、做门襟', 600, 9, '门襟顺直，不起涟'], ['车缝', '装里布', 420, 6, '里布下摆留 1cm 坐势'], ['整烫', '整烫', 240, 3, '面料不能烫出极光，垫布熨烫'], ['后道', '钉扣、剪线、查衫', 240, 3], ['包装', '挂吊牌、折叠入袋', 120, 2]]
+  const ops = (a) => a.map(([cat, name, sec, price, req]) => ({ cat, name, req: req || '', sec, price, note: '' }))
   as('u4', '2026-09-10', () => {
-    publishTp(createTechpack('27CF001', cf001(2.3), ops(cfOps)))
+    const cf = createTechpack('27CF001', cf001(2.3), ops(cfOps))
+    Object.assign(cf, { util: 84, req: { text: '缝份：大身 1cm，领、门襟 0.8cm\n针距：明线 3cm 12 针，暗线 3cm 13 针\n大身对条对格，左右前片、袖子格子对齐\n里布下摆比面布短 2cm，坐势 1cm', pics: [] } })
+    publishTp(cf)
     publishTp(createTechpack('26QJ012', [
       { part: '大身', mat: 'ML0018', mode: '随款色', map: { HE: 'ML0018-HE', KQ: 'ML0018-KQ' }, um: '分码', uses: SZ(1.85, 1.95, 2.05, 2.15, 2.25), loss: 3, src: '我方采购', supplier: 'GYS0001' },
       { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-60', um: '统一', use: 1, loss: 1, src: '我方采购', supplier: 'GYS0002' },
@@ -730,7 +888,7 @@ function seed() {
   as('u5', '2026-10-01', () => postStockDoc(createStockDoc({ type: '其他入库', reason: '期初', to: 'WL01', lines: [
     ['ML0012-KQ', 120], ['ML0012-ZQ', 60], ['ML0012-HE', 300], ['ML0015-MB', 80], ['FK0021-HE', 3000], ['FK0021-KQ', 1000], ['FL0031-HE-15', 300],
     ['BX0001', 3000], ['BX0002', 3000], ['BP0001', 2500], ['BD0001', 2500], ['FX0002', 200],
-  ].map(([sku, qty]) => ({ sku, qty, price: matOfSku(sku).price / matOfSku(sku).factor })) })))
+  ].map(([sku, qty]) => ({ sku, qty, price: skuPrice(sku) / matOfSku(sku).factor })) })))
   as('u5', '2026-10-28', () => postStockDoc(createStockDoc({ type: '客供入库', partner: 'KH0001', to: 'WL01', lines: [{ sku: 'ML0015-HE', qty: 200, lot: 'G2610-07' }] })))
 
   // 订单 1：北方某电商 卫衣 900 件，已逾期、部分回货
@@ -781,7 +939,12 @@ function seed() {
   as('u5', '2026-10-31', () => issueMaterials(p2, [{ sku: 'FL0031-HE-60', owner: '自有', qty: 300 }]))
   as('u1', '2026-11-03', () => reportNode(p2, 1, { as: '2026-10-30', af: '2026-11-03', qty: 502 }))
   as('u1', '2026-11-04', () => reportNode(p2, 2, { as: '2026-11-04' }))
-  as('u1', '2026-11-05', () => reportIssue(p2, { type: '缺料', desc: '拉链只到 300 条，剩下 205 件等拉链', newDate: '2026-11-22', party: '供应商' }))
+  // 异常要带照片（PRD §6.7.4）：缺料拍的是到货的拉链箱，SVG 画的示意图
+  const zipBox = '<rect width="100" height="75" fill="#d9d4c8"/><path d="M14 30h72v36H14z" fill="#b89263"/><path d="M14 30l8-10h56l8 10z" fill="#c9a576"/>'
+    + [0, 1, 2, 3, 4].map((i) => `<path d="M${22 + i * 13} 26v34" stroke="#2a2a2a" stroke-width="2.4"/><path d="M${22 + i * 13} 26v34" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="1 1.2"/>`).join('')
+    + '<rect x="58" y="54" width="26" height="9" rx="1.5" fill="#fff" opacity=".9"/><text x="71" y="60.6" text-anchor="middle" font-size="5.5" fill="#333" font-family="sans-serif">300 条</text>'
+  const zipPhoto = { id: 'P-seed-zip', name: '拉链到货.jpg', at: '2026-11-05', src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 75" width="800" height="600">${zipBox}</svg>`) }
+  as('u1', '2026-11-05', () => reportIssue(p2, { type: '缺料', desc: '拉链只到 300 条，剩下 205 件等拉链', newDate: '2026-11-22', party: '供应商', photos: [zipPhoto] }))
   p2.issues[0].status = '处理中'
 
   // 订单 3：自营备货 针织衫 600 件，包工包料，车缝临期

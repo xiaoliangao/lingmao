@@ -76,9 +76,15 @@ comp('ErrBox', {
     <template #foot><button class="btn pri" @click="ui.err = null">知道了</button></template></Modal>`,
 })
 comp('AskBox', {
-  setup() { const done = (v) => { ui.ask.resolve(v); ui.ask = null }; return { done } },
+  setup() {
+    // 带输入框的（askText）：确定返回写的字，取消返回 null
+    const done = (v) => { const x = ui.ask; x.resolve(x.input ? (v ? x.input.v.trim() : null) : v); ui.ask = null }
+    const blocked = computed(() => ui.ask?.input?.need && !ui.ask.input.v.trim())
+    return { done, blocked }
+  },
   template: `<Modal v-if="ui.ask" :t="ui.ask.title" :w="440" @close="done(false)"><p class="mut">{{ ui.ask.text }}</p>
-    <template #foot><button class="btn" @click="done(false)">取消</button><button class="btn pri" :style="ui.ask.danger ? 'background:var(--red);border-color:var(--red)' : ''" @click="done(true)">{{ ui.ask.ok }}</button></template></Modal>`,
+    <textarea v-if="ui.ask.input" class="inp" rows="3" style="width:100%;margin-top:10px;height:auto;padding:8px" v-model="ui.ask.input.v" :placeholder="ui.ask.input.ph" data-c="原因"></textarea>
+    <template #foot><button class="btn" @click="done(false)">取消</button><button class="btn pri" :disabled="blocked" :style="ui.ask.danger ? 'background:var(--red);border-color:var(--red)' : ''" @click="done(true)">{{ ui.ask.ok }}</button></template></Modal>`,
 })
 comp('NotFound', {
   template: `<div><Head t="没有这个页面"/><div class="empty">链接不对，或者这张单是刷新前新建的（原型刷新后数据回到初始）。<p style="margin-top:16px"><a class="btn" href="#/">回首页</a></p></div></div>`,
@@ -115,6 +121,7 @@ const Shell = {
     const tabTitle = (k) => (k === 'feedback' ? '意见汇总' : navOf(k)?.t || k)
     const fbCount = computed(() => fb.items.length || '')
     const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
+    watch(() => db.me, () => toast(`现在是 ${me().name}（${me().role}，数据范围：${roleOf(me().role).scope}）`))
     return { pal, main, mod, closed, toggle, fbCount, tabs, closeTab, tabTitle, todoCount }
   },
   template: `<div class="app">
@@ -123,7 +130,7 @@ const Shell = {
       <button class="find" @click="pal.open = true"><Ico n="search" :s="14"/><span>搜菜单、单号、款号</span><kbd>⌘K</kbd></button>
       <nav><div v-for="g in NAV" :key="g.g || 'top'" class="grp">
         <b v-if="g.g" :class="{ shut: closed[g.g] }" @click="toggle(g.g)">{{ g.g }}<Ico n="down" :s="13"/></b>
-        <template v-if="!closed[g.g]"><a v-for="it in g.items" :key="it.k" class="nav-i" :class="{ on: it.k === mod }" :href="'#' + it.to"><Ico :n="it.i"/><span>{{ it.t }}</span></a></template>
+        <template v-if="!closed[g.g]"><a v-for="it in g.items" :key="it.k" class="nav-i" :class="{ on: it.k === mod }" :href="'#' + it.to"><Ico :n="it.i"/><span>{{ it.t }}</span><span v-if="it.ph && it.ph !== '一期'" class="nav-ph" :title="it.ref">{{ it.ph }}</span></a></template>
       </div></nav>
       <div class="side-foot">
         <a class="nav-i" :class="{ on: fbUi.open }" @click="fbUi.open = !fbUi.open"><Ico n="msg"/><span>意见</span><span class="n">{{ fbCount }}</span></a>
@@ -136,7 +143,8 @@ const Shell = {
         <div class="tb-right">
           <button class="btn ghost icon" title="搜索 ⌘K" @click="pal.open = true"><Ico n="search"/></button>
           <a class="btn ghost icon" title="待办" href="#/"><Ico n="bell"/><span v-if="todoCount" class="dot">{{ todoCount > 99 ? '99+' : todoCount }}</span></a>
-          <div class="me"><i>{{ me().name[0] }}</i><span>{{ me().name }}</span><small>{{ me().role }}</small></div>
+          <label class="me" data-c="切换身份" title="原型专用：换成别的人，看不同角色的待办、数据范围、撤回和审批"><i>{{ me().name[0] }}</i>
+            <select v-model="db.me"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></select></label>
         </div>
       </header>
       <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet"/><NotFound v-else class="sheet"/></main>

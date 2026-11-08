@@ -50,6 +50,26 @@ function run(fn) { try { return fn() ?? true } catch (e) { showErr(e) } }
 function ask(title, text, ok = '确定', danger = false) {
   return new Promise((resolve) => { ui.ask = { title, text, ok, danger, resolve } })
 }
+// 要人写一句话（驳回原因……）：确定返回写的字，取消返回 null；need = 不写不让确定
+function askText(title, text, ph = '', ok = '确定', need = true) {
+  return new Promise((resolve) => { ui.ask = { title, text, ok, input: { ph, v: '', need }, resolve } })
+}
+/* 单据详情页的动作按钮都走这里（PRD §5.1）：驳回先问原因；作废、结案、反审核、取消结案先说后果再确认；成功弹提示
+ *   <button @click="docAct('purchase', po, a)">  done 可以是提示文字，或 (结果) => 文字 */
+const ACT_ASK = {
+  作废: ['作废后这张单只读，单号不再使用。', true],
+  结案: ['结案后不能再入库、回货、生成下游单据，只能看。有审核权限的人可以取消结案。', false],
+  反审核: ['回到草稿，改完要重新提交审核。', false],
+  取消结案: ['回到结案前的状态，可以继续执行。', false],
+}
+async function docAct(kind, d, a, done) {
+  let arg
+  if (a === '驳回') { arg = await askText('驳回 ' + (d.no || ''), '写清楚哪里要改，制单人会在操作记录里看到。', '驳回原因'); if (arg == null) return }
+  else if (ACT_ASK[a] && !(await ask(a + ' ' + (d.no || ''), ACT_ASK[a][0], a, ACT_ASK[a][1]))) return
+  const r = run(() => doAction(kind, d, a, arg))
+  if (r) toast(typeof done === 'function' ? done(r) : done || `${d.no || ''} ${a}了`)
+  return r
+}
 const SEARCH = [] // () => [{ t, sub, to, i }]
 const TODOS = [] //  () => [{ t, n, to, i, tone }]
 
@@ -130,15 +150,26 @@ comp('St', {
   template: `<span class="st" :class="['k-' + k, { dot: t === '' }]" :title="t === '' ? s : null">{{ t === '' ? '' : t ?? s }}</span>`,
 })
 
-/* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本, img: row => 款号/SKU（前面带小图） }]；单元格可用 #k 插槽改写 ---------- */
+/* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本, img: row => 款号/SKU（前面带小图） }]；单元格可用 #k 插槽改写
+ * 列表页（link、不是 inset）超过 20 条分页，每页 20 / 50 / 100（PRD §5.4） ---------- */
 comp('Tbl', {
   props: { rows: Array, cols: Array, link: Boolean, empty: String, inset: Boolean, flat: Boolean, sel: Function },
   emits: ['row'],
+  setup(p) {
+    const size = ref(20), cur = ref(1)
+    const paged = computed(() => p.link && !p.inset && p.rows.length > 20)
+    const pages = computed(() => Math.max(1, Math.ceil(p.rows.length / size.value)))
+    watch([() => p.rows.length, size], () => { if (cur.value > pages.value) cur.value = 1 })
+    const shown = computed(() => (paged.value ? p.rows.slice((cur.value - 1) * size.value, cur.value * size.value) : p.rows))
+    return { size, cur, paged, pages, shown }
+  },
   template: `<table class="tbl" :class="{ inset, flat }">
-    <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条</caption>
+    <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条<span v-if="paged" class="pager">
+      <select class="sel" v-model.number="size"><option v-for="n in [20, 50, 100]" :key="n" :value="n">{{ n }} 条/页</option></select>
+      <button class="btn sm" :disabled="cur <= 1" @click="cur--">上一页</button><span class="num">{{ cur }} / {{ pages }}</span><button class="btn sm" :disabled="cur >= pages" @click="cur++">下一页</button></span></caption>
     <thead><tr><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
     <tbody>
-      <tr v-for="(r, i) in rows" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
+      <tr v-for="(r, i) in shown" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
         <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
       </tr>
       <tr v-if="!rows.length"><td :colspan="cols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
@@ -147,11 +178,14 @@ comp('Tbl', {
   </table>`,
 })
 
+// 二期、待定模块的页头标出分期（侧边栏 NAV 上的 ph），甲方一眼看出哪些这次不上
+const PHASE_TIP = { 二期: '12 月每周发版时再做（PRD §2.2）', 待定: '甲方表里没标黄，等主线跑起来、甲方确认要不要做再排（PRD §2.5）' }
 comp('Head', {
   props: { t: String, back: Array },
+  setup: () => ({ ph: computed(() => { const it = navOf(nav.r?.mod); return it?.ph && it.ph !== '一期' ? it : null }), PHASE_TIP }),
   template: `<header class="head" data-c="页头"><div class="crumb">
       <template v-if="back"><a :href="'#' + back[1]">{{ back[0] }}</a><Ico n="right" :s="14"/></template>
-      <b>{{ t }}</b><slot name="title"/>
+      <b>{{ t }}</b><Phase v-if="ph" :p="ph.ph" :t="ph.ref + '：' + PHASE_TIP[ph.ph] + '。这里先给甲方看个样子'"/><slot name="title"/>
     </div><div class="acts"><slot/></div></header>`,
 })
 
@@ -169,9 +203,9 @@ comp('Tabs', {
   template: `<div class="tabs"><button v-for="it in list" :key="it.v" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<i v-if="it.n">{{ it.n }}</i></button></div>`,
 })
 comp('Search', {
-  props: { modelValue: String },
+  props: { modelValue: String, ph: { type: String, default: '搜索' } },
   emits: ['update:modelValue'],
-  template: `<label class="search"><Ico n="search" :s="14"/><input class="inp" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" placeholder="搜索"></label>`,
+  template: `<label class="search" :title="ph"><Ico n="search" :s="14"/><input class="inp" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" :placeholder="ph"></label>`,
 })
 
 comp('Modal', {
@@ -290,11 +324,13 @@ comp('Matrix', {
     const rowT = (c) => sum(zs.value, (z) => v(c, z))
     const colT = (z) => sum(cs.value, (c) => v(c, z))
     const all = computed(() => sum(cs.value, rowT))
-    return { cs, zs, v, set, paste, rowT, colT, all }
+    // 停用或删掉的 SKU 不能再填数；已经填了的照样显示，可以清掉
+    const off = (c, z) => !s.value.skus.some((k) => k.color === c && k.size === z && k.status !== '停用')
+    return { cs, zs, v, set, paste, rowT, colT, all, off }
   },
   template: `<table class="mx"><thead><tr><th></th><th v-for="z in zs" :key="z">{{ z }}</th><th class="tot">合计</th></tr></thead>
     <tbody><tr v-for="c in cs" :key="c"><td><Sw :c="c"/></td>
-      <td v-for="z in zs" :key="z"><input v-if="!ro" class="inp cell num" :value="v(c, z) || ''" @input="set(c, z, $event.target.value)" @paste="paste(c, z, $event)"><template v-else>{{ v(c, z) || '·' }}</template><small v-if="sub">{{ sub(c, z) }}</small></td>
+      <td v-for="z in zs" :key="z"><input v-if="!ro" class="inp cell num" :value="v(c, z) || ''" :disabled="off(c, z) && !v(c, z)" :title="off(c, z) ? '这个 SKU 停用或删掉了，不能下单' : null" @input="set(c, z, $event.target.value)" @paste="paste(c, z, $event)"><template v-else>{{ v(c, z) || '·' }}</template><small v-if="sub">{{ sub(c, z) }}</small></td>
       <td class="tot">{{ rowT(c) }}</td></tr></tbody>
     <tfoot><tr><td class="dim">合计</td><td v-for="z in zs" :key="z" class="tot">{{ colT(z) }}</td><td class="tot">{{ all }}</td></tr></tfoot></table>`,
 })
@@ -312,10 +348,103 @@ comp('Upstream', {
 
 expose({
   db, nav, go, ui, fd, fq, fm, fpct, sum, rnd, daysLeft, addDays, clock,
-  colorOf, colorName, sizesOf, baseSizeOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, unitOf,
+  colorOf, colorName, sizesOf, baseSizeOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, skuPrice, unitOf, me,
   style, styleName, userName, order, purchase, production, stockDoc, mrp, stockQty,
   can, actionsOf, tpsOf, activeTp, tpOf, tpState, rowSku, rowUse, rowCost, tpMaterialCost, tpLabor, unmatchedColors,
   orderQty, orderAmt, orderStyles, orderSched, orderRet, scheduledQty, returnedQty, kitState, prodsOf, mrpsOf, describeChange,
   poQty, poAmt, poRecv, prodQty, prodRet, prodDef, prodAmt, prodRisk, expectDue, curNode, nodeState, issueState, stockDir,
   run, toast, ask, doAction, addStyleColor, orderLive, prodLive, isFactory, canUseSupplier, arrivals, issuePlan, toD,
 })
+
+/* ---------- 列表筛选（PRD §5.4）：关键字一次查多个（空格隔开，任一命中）、日期范围、往来方、跟单员 ----------
+ *   const s = reactive({ q: '', flt: newFlt() })
+ *   <Filters v-model="s.flt" party="customer|supplier|factory" merch/>
+ *   rows.filter(x => matchQ(s.q, x.no, x.style) && passFlt(s.flt, { date: x.date, party: x.customer, merch: x.merch })) */
+const matchQ = (q, ...texts) => { const ks = (q || '').trim().toLowerCase().split(/\s+/).filter(Boolean); if (!ks.length) return true; const t = texts.join(' ').toLowerCase(); return ks.some((k) => t.includes(k)) }
+const newFlt = () => reactive({ from: '', to: '', party: '', merch: '' })
+const passFlt = (f, x) => (!f.from || (x.date || '') >= f.from) && (!f.to || (x.date || '') <= f.to) && (!f.party || x.party === f.party) && (!f.merch || x.merch === f.merch)
+// 数据范围（PRD §3.2）：本人 = 自己是制单人、业务员、跟单员、采购员或设计师的单据；角色是"全部"的也能切到"我的"
+const MINE_KEYS = ['sales', 'merch', 'buyer', 'designer']
+const isMine = (d) => !!d && (creatorOf(d) === me()?.name || MINE_KEYS.some((k) => d[k] === db.me))
+const ownOnly = () => roleOf(me()?.role).scope === '本人'
+const inScope = (mine, d, ...also) => !(ownOnly() || mine) || [d, ...also].some(isMine)
+comp('MineToggle', {
+  props: { modelValue: Boolean },
+  emits: ['update:modelValue'],
+  setup: () => ({ ownOnly }),
+  template: `<span v-if="ownOnly()" class="pill" data-c="数据范围" title="你的角色数据范围是「本人」：只列出你是制单人、业务员、跟单员或采购员的单据（系统设置 → 角色权限里改）">只看我的</span>
+    <Seg v-else data-c="数据范围" :modelValue="modelValue ? '我的' : '全部'" @update:modelValue="(v) => $emit('update:modelValue', v === '我的')" :items="['全部', '我的']"/>`,
+})
+comp('Filters', {
+  props: { modelValue: Object, party: String, merch: Boolean, label: { type: String, default: '日期' } },
+  setup(p) {
+    const parties = computed(() => (p.party === 'customer' ? db.customers.map((c) => [c.code, c.short]) : db.suppliers.filter((s) => p.party !== 'factory' || isFactory(s)).map((s) => [s.code, s.short])))
+    const any = computed(() => Object.values(p.modelValue).some(Boolean))
+    const clear = () => Object.assign(p.modelValue, { from: '', to: '', party: '', merch: '' })
+    return { parties, any, clear }
+  },
+  template: `<span class="flt" data-c="筛选：日期、往来方、跟单">
+    <span class="dim">{{ label }}</span><input class="inp" type="date" v-model="modelValue.from" :title="label + '从'"><span class="dim">–</span><input class="inp" type="date" v-model="modelValue.to" :title="label + '到'">
+    <select v-if="party" class="sel" v-model="modelValue.party"><option value="">{{ party === 'customer' ? '全部客户' : party === 'factory' ? '全部加工厂' : '全部供应商' }}</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></select>
+    <select v-if="merch" class="sel" v-model="modelValue.merch"><option value="">全部跟单员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select>
+    <button v-if="any" class="btn ghost sm" @click="clear">清空</button></span>`,
+})
+
+/* ---------- 单据单头的公共字段（PRD §5.1）：主体公司、制单、审核、备注；放在 <dl class="props"> 里 ---------- */
+const companyName = (c) => db.companies.find((x) => x.code === c)?.short || '—'
+comp('NoteEdit', {
+  props: { d: Object },
+  setup(p) {
+    const s = reactive({ on: false, v: '' })
+    const open = () => { s.v = p.d.note || ''; s.on = true }
+    const save = () => { const v = s.v.trim(); if (v !== (p.d.note || '')) { p.d.note = v; act(p.d, v ? '改备注：' + v : '清空备注') } s.on = false }
+    return { s, open, save }
+  },
+  template: `<span v-if="!s.on" class="row g4" style="align-items:flex-start"><span class="wrap">{{ d.note || '—' }}</span><a class="dim" style="cursor:pointer;font-size:12px;flex:none" @click="open">{{ d.note ? '改' : '写备注' }}</a></span>
+    <span v-else class="row g4"><input class="inp" style="height:26px" v-model="s.v" @keydown.enter="save" @keydown.esc.stop="s.on = false"><button class="btn sm" @click="save">好</button></span>`,
+})
+comp('DocMeta', {
+  props: { d: Object },
+  setup(p) {
+    const made = computed(() => p.d.log?.[0])
+    const aud = computed(() => !['草稿', '待审核'].includes(p.d.status) && [...(p.d.log || [])].reverse().find((x) => /^(审核|生效|确认)/.test(x.text)))
+    return { made, aud }
+  },
+  template: `<dt>主体公司</dt><dd>{{ companyName(d.company) }}</dd>
+    <dt>制单</dt><dd>{{ made ? made.who + ' · ' + fd(made.at) : '—' }}</dd>
+    <dt>审核</dt><dd>{{ aud ? aud.who + ' · ' + fd(aud.at) : '—' }}</dd>
+    <dt>备注</dt><dd><NoteEdit :d="d"/></dd>`,
+})
+// 主体公司下拉：只列启用的（已选的停用主体也留着，免得旧单据显示空）
+comp('CompanyPick', {
+  props: { modelValue: String },
+  emits: ['update:modelValue'],
+  template: `<select class="sel" :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><option v-for="c in db.companies.filter(x => x.status === '启用' || x.code === modelValue)" :key="c.code" :value="c.code">{{ c.short }}</option></select>`,
+})
+// 分期小标：页面上放了二期 / 待定的内容时标出来，免得甲方以为一期都有（PRD §2.2、§2.5）
+comp('Phase', {
+  props: { p: { type: String, default: '二期' }, t: String },
+  template: `<span class="phase" :title="t || (p + '再做，这里先给甲方看个样子')">{{ p }}</span>`,
+})
+
+/* ---------- 打印预览（采购单 §6.6.2、加工单 §6.7.1、资料包 §6.4.4）：抬头用主体公司的名称、地址、电话；点"打印"只打这张纸
+ *   <PrintSheet v-if="printing" t="采购单" :no="po.no" :company="po.company" @close="printing = false"> 单头 dl.sheet-meta、明细 table.sheet-tbl、签字 .sheet-sign </PrintSheet> */
+comp('PrintSheet', {
+  props: { t: String, no: String, company: String },
+  emits: ['close'],
+  setup(p, { emit }) {
+    useEsc(() => emit('close'))
+    const co = computed(() => db.companies.find((c) => c.code === p.company) || db.companies[0])
+    onMounted(() => document.body.classList.add('printing'))
+    onUnmounted(() => document.body.classList.remove('printing'))
+    return { co, print: () => window.print() }
+  },
+  template: `<Teleport to="body"><div class="print-root" :data-c="'打印预览：' + t">
+    <div class="print-bar"><b>打印预览</b><span class="dim">{{ t }} {{ no }}</span><span class="sp"></span><button class="btn" @click="$emit('close')">关闭</button><button class="btn pri" @click="print"><Ico n="printer" :s="14"/>打印</button></div>
+    <article class="psheet">
+      <header class="sheet-head"><div><b>{{ co.name }}</b><small>{{ co.addr || '—' }}　电话 {{ co.phone || '—' }}</small></div><div class="sheet-t">{{ t }}<small class="code">{{ no }}</small></div></header>
+      <slot/>
+    </article>
+  </div></Teleport>`,
+})
+expose({ matchQ, newFlt, passFlt, companyName, docAct, askText, myCompany, removeDraft, creatorOf, isMine, inScope, ownOnly })

@@ -5,7 +5,6 @@
  *   回货 → 待检 → 成品入库 → 发货 → 客户应收；采购入库、回货 → 供应商对账 → 付款
  * 名字都带前缀（smp / plan / cost / qc / fg / fin），免得和别的文件的全局名撞上。
  * ============================================================ */
-db.users.push({ id: 'u8', name: '沈冬', role: '开发', scope: '本人' }) // 版师，归在开发角色下
 ST_KIND.done.push('已核销')
 ST_KIND.dashed.push('未核销')
 const seasonName = (c) => db.seasons.find((x) => x.code === c)?.name || c
@@ -119,7 +118,7 @@ comp('PlanTaskNew', {
   template: `<Modal t="新建开发任务" :w="460" @close="$emit('close')">
     <div class="form">
       <label class="f full">内容<input class="inp" v-model="f.title"></label>
-      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
+      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
       <label class="f">负责人<select class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">截止<input class="inp" type="date" v-model="f.due"></label>
       <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" tip="灵感图、竞品图、客户发来的款都可以；Ctrl+V 能直接贴截图"/></div>
@@ -268,11 +267,11 @@ comp('SmpNew', {
   template: `<Modal t="新建样衣" :w="640" @close="$emit('close')">
     <div class="form">
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
-      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
-      <label class="f">季节<span class="row g4"><select class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></select><select class="sel" v-model="f.season"><option v-for="x in db.seasons" :key="x.code" :value="x.code">{{ x.name }}</option></select></span></label>
+      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
+      <label class="f">季节<span class="row g4"><select class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></select><select class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></span></label>
       <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option>客户来样</option><option>选款</option></select></label>
-      <label class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
-      <div class="f full">颜色<div class="chips"><button v-for="c in db.colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
+      <label class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <div class="f full">颜色<div class="chips"><button v-for="c in db.colors.filter(c => c.status !== '停用' || f.colors.includes(c.code))" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
       <div class="f full" data-c="样衣图片">图片<Pics v-model="f.images" :colors="f.colors" tip="设计稿、参考图、客户来样的照片；转大货时带到款式上"/></div>
@@ -532,10 +531,10 @@ route('/costing/:code', {
         <template v-else>
           <section v-if="tab === 'cost'" data-c="成本明细">
             <table class="tbl inset flat">
-              <thead><tr><th>部位</th><th>物料</th><th class="num">用量（{{ sizes[Math.floor((sizes.length - 1) / 2)] }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件</th></tr></thead>
+              <thead><tr><th>部位</th><th>物料</th><th class="num">用量（{{ baseSizeOf(s.sizeGroup) }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件</th></tr></thead>
               <tbody>
                 <tr v-for="(r, i) in c.tp.bom.filter(r => r.src !== '工厂自备')" :key="i"><td>{{ r.part }}</td><td>{{ mat(r.mat).name }}<span v-if="r.src === '客供'" class="amber">　客供</span></td>
-                  <td class="num">{{ fq(rowMidUse(r, sizes)) }} {{ mat(r.mat).unit }}</td><td class="num">{{ r.loss }}%</td><td class="num">{{ fm(unitPrice(r)) }}</td><td class="num">{{ r.src === '我方采购' ? fm(rowCost(r, sizes)) : '—' }}</td></tr>
+                  <td class="num">{{ fq(rowMidUse(r, sizes, baseSizeOf(s.sizeGroup))) }} {{ mat(r.mat).unit }}</td><td class="num">{{ r.loss }}%</td><td class="num">{{ fm(unitPrice(r)) }}</td><td class="num">{{ r.src === '我方采购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup))) : '—' }}</td></tr>
                 <tr><td>加工</td><td>工艺单 {{ c.tp.ops.length }} 道工序</td><td></td><td></td><td></td><td class="num">{{ fm(c.labor) }}</td></tr>
               </tbody>
               <tfoot><tr><td>料工合计</td><td></td><td></td><td></td><td></td><td class="num">{{ fm(c.mat + c.labor) }}</td></tr></tfoot>
@@ -615,7 +614,7 @@ db.qcs = []
 function qcPending() {
   const done = new Set(db.qcs.map((q) => q.src))
   return [
-    ...db.returns.filter((r) => !done.has(r.no)).map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: '/production/' + r.prod })),
+    ...liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: '/production/' + r.prod })),
     ...db.stockDocs.filter((d) => d.type === '采购入库' && d.status === '已审核' && !done.has(d.no)).map((d) => ({ kind: '来料检验', src: d.no, date: d.date, party: d.partner, what: d.lines.map((l) => skuName(l.sku)).join('、'), lot: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), unit: matOfSku(d.lines[0].sku)?.purUnit || '', to: '/stock-docs/' + d.no })),
   ].sort((a, b) => b.date.localeCompare(a.date))
 }
@@ -716,7 +715,7 @@ db.fgStock = {}
 db.shipments = []
 const fgKey = (st, c, z) => `${st}|${c}|${z}`
 const fgQty = (st, c, z) => db.fgStock[fgKey(st, c, z)] || 0
-const fgPending = () => { const done = new Set(db.fgIn.map((x) => x.ret)); return db.returns.filter((r) => !done.has(r.no)).map((r) => ({ r, qc: qcOf(r.no) })) }
+const fgPending = () => { const done = new Set(db.fgIn.map((x) => x.ret)); return liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ r, qc: qcOf(r.no) })) }
 function fgReceive(r) {
   const qc = qcOf(r.no)
   if (qc?.result === '不合格') fail('验货不合格，不能入成品仓', ['先返修，或者改成让步接收'])
@@ -866,11 +865,16 @@ function finPayables() {
     type: '采购入库', no: d.no, sup: d.partner, date: d.date, desc: d.lines.map((l) => skuName(l.sku)).join('、'),
     qty: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), amt: rnd(sum(d.lines, (l) => (l.purQty ?? l.qty) * (l.price || 0)), 2), deduct: 0,
   }))
-  const hh = db.returns.filter((r) => !billed.has(r.no)).map((r) => {
+  // 采购退货冲减应付：金额记负数
+  const th = db.stockDocs.filter((d) => d.type === '采购退货' && d.status === '已审核' && !billed.has(d.no)).map((d) => ({
+    type: '采购退货', no: d.no, sup: d.partner || purchase(d.src)?.supplier, date: d.date, desc: d.lines.map((l) => skuName(l.sku)).join('、'),
+    qty: -rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), amt: -rnd(sum(d.lines, (l) => (l.purQty ?? l.qty) * (l.price ?? purchase(d.src)?.lines[l.poLine]?.price ?? 0)), 2), deduct: 0,
+  }))
+  const hh = liveReturns().filter((r) => !billed.has(r.no)).map((r) => {
     const p = production(r.prod), q = sum(r.lines, (l) => l.qty), d = sum(r.lines, (l) => l.def)
     return { type: '回货', no: r.no, prod: r.prod, sup: r.factory, date: r.date, desc: `${r.style} ${styleName(r.style)}，次品 ${d}`, qty: q, amt: rnd(q * p.price, 2), deduct: rnd(d * p.price, 2) }
   })
-  return [...rk, ...hh]
+  return [...rk, ...th, ...hh]
 }
 function finGroups() {
   const g = {}
@@ -1044,7 +1048,7 @@ route('/finance/:no', {
 function rptOrders() {
   return db.orders.filter((o) => !['草稿', '待审核', '已取消'].includes(o.status)).map((o) => {
     const due = o.commit || o.due
-    const lastRet = db.returns.filter((r) => r.order === o.no).map((r) => r.date).sort().pop()
+    const lastRet = liveReturns().filter((r) => r.order === o.no).map((r) => r.date).sort().pop()
     const res = o.status === '已完成' ? (lastRet && lastRet > due ? '延期完成' : '准时完成') : clock.today > due ? '已延期' : '进行中'
     return { o, due, res, qty: orderQty(o), ret: orderRet(o) }
   })

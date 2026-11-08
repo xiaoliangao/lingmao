@@ -576,3 +576,85 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
 .vbar .sp { flex: 1; }
 .vbar .dim { color: #9aa6ba; }
 .vbar .btn { color: #e8ecf3; }
+
+/* 导入对话框：两步 + 拖放区 */
+.isteps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: flex; flex-direction: column; gap: 18px; }
+.isteps > li { position: relative; padding-left: 32px; counter-increment: st; display: flex; flex-direction: column; gap: 6px; }
+.isteps > li::before { content: counter(st); position: absolute; left: 0; top: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; display: grid; place-items: center; }
+.isteps p { margin: 0; font-size: 12.5px; }
+.idrop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px; border: 1px dashed var(--line-strong); border-radius: var(--r); background: var(--bg-sunken); color: var(--fg-2); text-align: center; cursor: pointer; }
+.idrop:hover, .idrop.over { border-color: var(--accent); color: var(--accent); }
+.idrop a { color: var(--accent); margin-left: 2px; }
+/* 列表筛选：日期范围、往来方、跟单员 */
+.flt { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }
+.flt .inp, .flt .sel { height: 28px; }
+.flt .inp[type=date] { width: 128px; }
+.flt .sel { max-width: 130px; }
+.tbl caption .pager { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; }
+.tbl caption .pager .sel { height: 24px; font-size: 12px; }
+/* 基础资料：说明文字、停用的行 */
+.tip { font-size: 12px; margin: 0 0 12px; }
+.list > .li.off { opacity: .55; }
+/* 分期小标 */
+.phase { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; margin-left: 6px; border: 1px dashed var(--amber-line); border-radius: 3px; color: var(--amber); background: var(--amber-bg); font-size: 11px; font-weight: 400; vertical-align: middle; white-space: nowrap; }
+/* 打印预览：A4 一张纸；打印时只留这张纸 */
+.print-root { position: fixed; inset: 0; z-index: 300; background: var(--bg-page); overflow: auto; }
+.print-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.psheet { width: 794px; min-height: 1123px; margin: 20px auto 40px; padding: 40px 48px; background: var(--bg); color: var(--fg); box-shadow: var(--shadow-sm); font-size: 12px; line-height: 1.6; }
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; padding-bottom: 10px; margin-bottom: 14px; border-bottom: 2px solid var(--fg); }
+.sheet-head b { display: block; font-size: 16px; }
+.sheet-head small { display: block; color: var(--fg-2); }
+.sheet-t { font-size: 20px; font-weight: 600; letter-spacing: .2em; text-align: right; }
+.sheet-t small { display: block; font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.sheet-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 16px; margin: 0 0 14px; }
+.sheet-meta div { display: flex; gap: 6px; }
+.sheet-meta dt { color: var(--fg-2); white-space: nowrap; }
+.sheet-meta dd { margin: 0; }
+.psheet h3 { font-size: 13px; margin: 18px 0 6px; }
+.sheet-tbl { width: 100%; border-collapse: collapse; }
+.sheet-tbl th, .sheet-tbl td { border: 1px solid var(--line-strong); padding: 4px 6px; text-align: left; vertical-align: top; }
+.sheet-tbl th { background: var(--bg-sunken); font-weight: 500; }
+.sheet-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sheet-tbl tfoot td { font-weight: 600; }
+.sheet-note { margin-top: 12px; color: var(--fg-2); white-space: pre-wrap; }
+.sheet-sign { display: flex; justify-content: space-between; gap: 20px; margin-top: 40px; }
+.sheet-sign span { flex: 1; border-top: 1px solid var(--fg-2); padding-top: 4px; color: var(--fg-2); }
+@media print {
+  body.printing > *:not(.print-root) { display: none !important; }
+  .print-root { position: static; background: none; overflow: visible; }
+  .print-bar { display: none; }
+  .psheet { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+}
+
+/* 顶栏切换身份 */
+.me select { border: none; background: transparent; color: var(--fg); font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 0; }
+.me select:focus { outline: 1px solid var(--accent); border-radius: 4px; }
+
+/* 款式、资料包：表单小标题、停用的 SKU 行、拖动排序、加颜色预览、版本信息、工艺单、资料包打印 */
+.form .fh { grid-column: 1 / -1; margin: 6px 0 -6px; font-size: 12px; font-weight: 600; color: var(--fg-2); }
+.tbl tr.off > td { opacity: .55; }
+.tbl tr.off > td:last-child { opacity: 1; }
+.grip { cursor: grab; color: var(--fg-3); user-select: none; letter-spacing: -2px; }
+.tbl tr.dragover > td { box-shadow: inset 0 2px 0 var(--accent); }
+.addprev { margin-top: 12px; padding: 10px 12px; background: var(--bg-sunken); border: 1px dashed var(--line-strong); border-radius: var(--r); }
+.tpmeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-bottom: 12px; font-size: 12.5px; color: var(--fg-2); }
+.tpreq { margin-bottom: 16px; }
+.tpreq textarea { width: 100%; height: auto; padding: 8px; margin-bottom: 8px; line-height: 1.6; }
+.tpreq .txt { white-space: pre-wrap; line-height: 1.7; }
+.tpp-top { display: flex; gap: 16px; align-items: flex-start; }
+.tpp-top .sheet-meta { flex: 1; }
+.tpp-pics { display: flex; gap: 6px; flex: none; }
+.tpp-imgs { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.tpp-imgs img { width: 56px; height: 56px; object-fit: cover; border: 1px solid var(--line); }
+.sheet-ctl { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--amber-bg); border: 1px dashed var(--amber-line); border-radius: var(--r); }
+.sheet-tbl td.code { font-size: 10.5px; }
+@media print { .sheet-ctl { display: none !important; } }
+.nav-i .nav-ph { margin-left: auto; padding: 0 4px; border: 1px dashed currentColor; border-radius: 3px; color: var(--side-dim); font-size: 10.5px; font-weight: 400; line-height: 15px; }
+/* 物料、生产：算料单单头三列、算料表不折行、节点汇报记录、回货备注、手机表单 */
+.props.wide { grid-template-columns: 76px 1fr 76px 1fr 76px 1fr; }
+.mrp-buy th { white-space: nowrap; }
+.tl-reps { margin-top: 4px; font-size: 12px; color: var(--fg-2); }
+.tl-reps summary { cursor: pointer; color: var(--fg-3); }
+.ret-notes summary { cursor: pointer; font-weight: 500; margin-bottom: 8px; }
+.phone .m-form { padding: 16px; gap: 12px; }
+.phone .m-issues { margin: 0 16px 12px; padding: 10px 12px; border-radius: 8px; background: var(--red-bg); border: 1px solid var(--red-line); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
