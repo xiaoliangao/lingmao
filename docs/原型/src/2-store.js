@@ -1212,8 +1212,9 @@ function selftest() {
   as('u2', clock.today, () => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', sku: 'ML0012-KQ', price: 19.5 }))
   ok('价格档案：卡其单独定 19.5，其他颜色还是 19', poDefaultPrice('GYS0001', 'ML0012-KQ') === 19.5 && poDefaultPrice('GYS0001', 'ML0012-ZQ') === 19, [poDefaultPrice('GYS0001', 'ML0012-KQ'), poDefaultPrice('GYS0001', 'ML0012-ZQ')])
   ok('价格档案：再调卡其不写原因被拦', as('u2', clock.today, () => err(() => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', sku: 'ML0012-KQ', price: 20 }))).includes('调价原因'))
-  ok('价格档案：跟单不能录物料价、采购不能录加工价，管理层只看（PRD §3.1）', as('u1', clock.today, () => err(() => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', price: 21, why: 'x' }))).includes('采购能录')
-    && as('u2', clock.today, () => err(() => recordPrice({ kind: '加工价', sup: 'GYS0004', style: '27CF001', mode: '清加工', price: 39, why: 'x' }))).includes('生产跟单能录') && as('u6', clock.today, () => !canEditPrice()))
+  ok('价格档案：跟单不能录物料价、采购不能录加工价，管理层两种都能录，仓管不能录（PRD §3.1）', as('u1', clock.today, () => err(() => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', price: 21, why: 'x' }))).includes('采购、管理层能录')
+    && as('u2', clock.today, () => err(() => recordPrice({ kind: '加工价', sup: 'GYS0004', style: '27CF001', mode: '清加工', price: 39, why: 'x' }))).includes('生产跟单、管理层能录')
+    && as('u6', clock.today, () => canEditPrice('物料价') && canEditPrice('加工价')) && as('u5', clock.today, () => !canEditPrice()))
   ok('加工价：锦程 × 27CF001 × 清加工 38，包工包料不带 38',curProcPrice('GYS0004', '27CF001', '清加工') === 38 && curProcPrice('GYS0004', '27CF001', '包工包料') == null)
   // 在途自动扣（§6.6.2）：27CF001 黑色 120 件，审核那张待审核的备货采购单（黑布 500 米，11-26 到）
   const ob = createOrder({ type: '自营备货', due: '2027-03-31', lines: ['S', 'M', 'L', 'XL', 'XXL'].map((z, i) => ({ style: '27CF001', color: 'HE', size: z, qty: [20, 30, 30, 20, 20][i] })) })

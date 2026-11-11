@@ -703,6 +703,10 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
 /* 上传工厂对账单：识别中的小圈 */
 .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 表格里要折行的列（调价原因、变更内容、工艺要求）：.tbl td 默认不折行，这里压过它 */
+.tbl td.wrap { white-space: normal; min-width: 140px; padding-top: 8px; padding-bottom: 8px; line-height: 1.5; }
+/* 列多的表放在窄的详情栏里时横向滚动，右边的按钮不被挤出去 */
+.xscroll { overflow-x: auto; }
 </style>
 </head>
 <body>
@@ -2154,8 +2158,9 @@ function selftest() {
   as('u2', clock.today, () => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', sku: 'ML0012-KQ', price: 19.5 }))
   ok('价格档案：卡其单独定 19.5，其他颜色还是 19', poDefaultPrice('GYS0001', 'ML0012-KQ') === 19.5 && poDefaultPrice('GYS0001', 'ML0012-ZQ') === 19, [poDefaultPrice('GYS0001', 'ML0012-KQ'), poDefaultPrice('GYS0001', 'ML0012-ZQ')])
   ok('价格档案：再调卡其不写原因被拦', as('u2', clock.today, () => err(() => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', sku: 'ML0012-KQ', price: 20 }))).includes('调价原因'))
-  ok('价格档案：跟单不能录物料价、采购不能录加工价，管理层只看（PRD §3.1）', as('u1', clock.today, () => err(() => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', price: 21, why: 'x' }))).includes('采购能录')
-    && as('u2', clock.today, () => err(() => recordPrice({ kind: '加工价', sup: 'GYS0004', style: '27CF001', mode: '清加工', price: 39, why: 'x' }))).includes('生产跟单能录') && as('u6', clock.today, () => !canEditPrice()))
+  ok('价格档案：跟单不能录物料价、采购不能录加工价，管理层两种都能录，仓管不能录（PRD §3.1）', as('u1', clock.today, () => err(() => recordPrice({ kind: '物料价', sup: 'GYS0001', mat: 'ML0012', price: 21, why: 'x' }))).includes('采购、管理层能录')
+    && as('u2', clock.today, () => err(() => recordPrice({ kind: '加工价', sup: 'GYS0004', style: '27CF001', mode: '清加工', price: 39, why: 'x' }))).includes('生产跟单、管理层能录')
+    && as('u6', clock.today, () => canEditPrice('物料价') && canEditPrice('加工价')) && as('u5', clock.today, () => !canEditPrice()))
   ok('加工价：锦程 × 27CF001 × 清加工 38，包工包料不带 38',curProcPrice('GYS0004', '27CF001', '清加工') === 38 && curProcPrice('GYS0004', '27CF001', '包工包料') == null)
   // 在途自动扣（§6.6.2）：27CF001 黑色 120 件，审核那张待审核的备货采购单（黑布 500 米，11-26 到）
   const ob = createOrder({ type: '自营备货', due: '2027-03-31', lines: ['S', 'M', 'L', 'XL', 'XXL'].map((z, i) => ({ style: '27CF001', color: 'HE', size: z, qty: [20, 30, 30, 20, 20][i] })) })
@@ -6614,9 +6619,9 @@ const priceKey = (x) => [x.kind, x.sup, x.mat || x.style, x.sku || x.mode || '']
 const priceWhat = (x) => (x.kind === '物料价' ? (x.sku ? skuName(x.sku) : mat(x.mat)?.name + ' · 所有颜色') : `${x.style} ${styleName(x.style)} · ${x.mode}`)
 const priceUnit = (x) => (x.kind === '物料价' ? mat(x.mat)?.purUnit : '件')
 const priceSrcLink = (no) => (no?.startsWith('CG') ? '#/purchases/' + no : no?.startsWith('JG') ? '#/production/' + no : null)
-// price:edit（PRD §3.1）：采购录物料价，生产跟单录加工价，其他人只看；不传 kind = 两种能录一种就算
-const PRICE_EDITOR = { 物料价: '采购', 加工价: '生产跟单' }
-const canEditPrice = (kind) => (kind ? [PRICE_EDITOR[kind]] : Object.values(PRICE_EDITOR)).includes(me()?.role)
+// price:edit（PRD §3.1）：采购录物料价，生产跟单录加工价，管理层两种都能录，其他人只看；不传 kind = 能录哪一种就算
+const PRICE_EDITOR = { 物料价: ['采购', '管理层'], 加工价: ['生产跟单', '管理层'] }
+const canEditPrice = (kind) => (kind ? PRICE_EDITOR[kind] || [] : Object.values(PRICE_EDITOR).flat()).includes(me()?.role)
 
 // 加一条（单据审核、种子用；人手录走 recordPrice）
 function addPrice(f) {
@@ -6626,7 +6631,7 @@ function addPrice(f) {
 // 直接录、调价（规则 5）：有上一条价时要写原因（第一次报价、给某个 SKU 单独定价可以不写）；和现价一样的不用录
 function recordPrice(f) {
   const k = f.kind
-  if (!canEditPrice(k)) fail(`你没有录${k}的权限：${PRICE_EDITOR[k] || '采购、生产跟单'}能录`)
+  if (!canEditPrice(k)) fail(`你没有录${k || '价格'}的权限：${(PRICE_EDITOR[k] || ['采购', '生产跟单', '管理层']).join('、')}能录`)
   if (!f.sup) fail(k === '加工价' ? '要选工厂' : '要选供应商')
   if (k === '物料价' && !f.mat) fail('要选物料')
   if (k === '加工价' && (!f.style || !f.mode)) fail('款式、加工方式都要选')
@@ -6640,10 +6645,19 @@ function recordPrice(f) {
 }
 // 录错了作废：留着、标作废，不参与取价
 function voidPrice(x, why) {
-  if (!canEditPrice(x.kind)) fail(`你没有改${x.kind}的权限：${PRICE_EDITOR[x.kind]}能改`)
+  if (!canEditPrice(x.kind)) fail(`你没有改${x.kind}的权限：${PRICE_EDITOR[x.kind].join('、')}能改`)
   if (x.void) fail('这条已经作废了')
   if (!why?.trim()) fail('要写作废原因')
   x.void = { by: db.me, at: clock.today, why: why.trim() }
+}
+// 成交记录：审核过的采购单行、加工单，一单一行（原来供应商详情的"询价记录"并进来了）。档案只记和现价不一样的价，这里每一单都列
+function dealsOf(q) {
+  const done = (d) => !['草稿', '待审核', '已作废'].includes(d.status)
+  const buys = db.purchases.filter((p) => done(p) && (!q.sup || p.supplier === q.sup)).flatMap((p) => p.lines.filter((l) => !q.mat || matOfSku(l.sku)?.code === q.mat)
+    .map((l) => ({ date: p.date, no: p.no, sup: p.supplier, what: skuName(l.sku), qty: l.qty, unit: matOfSku(l.sku)?.purUnit, price: l.price })))
+  const makes = q.mat ? [] : db.productions.filter((p) => done(p) && (!q.sup || p.factory === q.sup) && p.price > 0)
+    .map((p) => ({ date: p.date, no: p.no, sup: p.factory, what: `${p.style} ${styleName(p.style)} · ${p.mode}`, qty: prodQty(p), unit: '件', price: p.price }))
+  return [...buys, ...makes].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
 }
 const pricesOf = (q) => db.prices.filter((x) => (!q.sup || x.sup === q.sup) && (!q.mat || x.mat === q.mat) && (!q.style || x.style === q.style) && (!q.kind || x.kind === q.kind))
 
@@ -6808,6 +6822,7 @@ comp('PriceHistory', {
   props: { sup: String, mat: String, style: String },
   setup(p) {
     const s = reactive({ form: null, all: false })
+    const deals = computed(() => (p.style ? [] : dealsOf({ sup: p.sup, mat: p.mat })))
     const mine = computed(() => pricesOf({ sup: p.sup, mat: p.mat, style: p.style }))
     // 现价：每个（供应商 × 物料 / SKU）、（工厂 × 款式 × 加工方式）一行，带上一条和以后生效的
     const cur = computed(() => {
@@ -6819,6 +6834,7 @@ comp('PriceHistory', {
       }).sort((a, b) => (a.x.kind + a.x.sup + priceWhat(a.x) < b.x.kind + b.x.sup + priceWhat(b.x) ? -1 : 1))
     })
     const hist = computed(() => mine.value.slice().sort(byNewPrice))
+    const mixed = computed(() => new Set(mine.value.map((x) => x.kind)).size > 1) // 物料价、加工价都有才显示类型列
     const shown = computed(() => (s.all ? hist.value : hist.value.slice(0, 12)))
     const kindDefault = () => (p.style || (p.sup && isFactory(sup(p.sup))) ? '加工价' : '物料价')
     const newOne = () => { s.form = { kind: canEditPrice(kindDefault()) ? kindDefault() : Object.keys(PRICE_EDITOR).find((k) => canEditPrice(k)), sup: p.sup || '', mat: p.mat || '', style: p.style || '' } }
@@ -6828,16 +6844,16 @@ comp('PriceHistory', {
       if (why != null && run(() => voidPrice(x, why))) toast('作废了这条价格')
     }
     const pct = (a, b) => (a && b ? Math.round(((a - b) / b) * 1000) / 10 : null)
-    return { s, cur, hist, shown, newOne, adjust, drop, pct, canEditPrice }
+    return { s, cur, hist, mixed, shown, deals, newOne, adjust, drop, pct, canEditPrice }
   },
   template: `<section data-c="价格记录">
     <div class="row" style="margin-bottom:10px"><span class="dim" style="font-size:12px">现价 = 生效日期不晚于今天的最新一条。下采购单、排单默认带现价；单据上改了价要写原因，审核时自动记进来</span><span class="sp" style="flex:1"></span>
       <button v-if="canEditPrice()" class="btn" @click="newOne"><Ico n="plus" :s="14"/>录价格</button></div>
-    <table class="tbl inset flat" data-c="现价">
-      <thead><tr><th>类型</th><th v-if="!sup">{{ style ? '工厂' : '供应商' }}</th><th v-if="sup || !mat">{{ style ? '款式 · 加工方式' : '物料 / 款式' }}</th><th v-if="mat && !sup">SKU</th><th class="num">现价</th><th class="num">上一次</th><th>生效</th><th>调价原因</th><th>来源</th><th></th></tr></thead>
+    <div class="xscroll"><table class="tbl inset flat" data-c="现价">
+      <thead><tr><th v-if="mixed">类型</th><th v-if="!sup">{{ style ? '工厂' : '供应商' }}</th><th v-if="sup || !mat">{{ style ? '款式 · 加工方式' : '物料 / 款式' }}</th><th v-if="mat && !sup">SKU</th><th class="num">现价</th><th class="num">上一次</th><th>生效</th><th>调价原因</th><th>来源</th><th></th></tr></thead>
       <tbody>
         <tr v-for="c in cur" :key="c.x.id">
-          <td class="mut">{{ c.x.kind }}</td>
+          <td v-if="mixed" class="mut">{{ c.x.kind }}</td>
           <td v-if="!sup"><a :href="'#/suppliers/' + c.x.sup">{{ supName(c.x.sup) }}</a></td>
           <td v-if="sup || !mat">{{ priceWhat(c.x) }}</td>
           <td v-if="mat && !sup">{{ c.x.sku ? skuName(c.x.sku) : '所有颜色' }}</td>
@@ -6851,13 +6867,13 @@ comp('PriceHistory', {
         </tr>
         <tr v-if="!cur.length"><td colspan="10" class="empty">还没有价格记录：采购单、加工单审核时会自动记进来，也可以点「录价格」直接录供应商的报价</td></tr>
       </tbody>
-    </table>
+    </table></div>
     <div v-if="hist.length" class="sec" data-c="价格历史"><h3>历史<span class="dim" style="font-weight:400;font-size:12px">只增不改，录错的作废</span></h3>
-      <table class="tbl inset flat">
-        <thead><tr><th>生效日期</th><th>类型</th><th v-if="!sup">供应商 / 工厂</th><th>物料 / 款式</th><th class="num">单价</th><th>税率</th><th>调价原因</th><th>来源</th><th>记录</th><th></th></tr></thead>
+      <div class="xscroll"><table class="tbl inset flat">
+        <thead><tr><th>生效日期</th><th v-if="mixed">类型</th><th v-if="!sup">供应商 / 工厂</th><th>物料 / 款式</th><th class="num">单价</th><th>税率</th><th>调价原因</th><th>来源</th><th>记录</th><th></th></tr></thead>
         <tbody>
           <tr v-for="x in shown" :key="x.id" :class="{ off: x.void }">
-            <td>{{ fd(x.date) }}</td><td class="mut">{{ x.kind }}</td>
+            <td>{{ fd(x.date) }}</td><td v-if="mixed" class="mut">{{ x.kind }}</td>
             <td v-if="!sup">{{ supName(x.sup) }}</td>
             <td>{{ priceWhat(x) }}</td>
             <td class="num"><s v-if="x.void">{{ fm(x.price) }}</s><template v-else>{{ fm(x.price) }}</template><span class="dim">/{{ priceUnit(x) }}</span></td>
@@ -6868,8 +6884,13 @@ comp('PriceHistory', {
             <td class="num"><button v-if="!x.void && canEditPrice(x.kind)" class="btn ghost sm danger" @click="drop(x)">作废</button></td>
           </tr>
         </tbody>
-      </table>
+      </table></div>
       <p v-if="hist.length > 12" style="margin-top:8px"><button class="btn ghost sm" @click="s.all = !s.all">{{ s.all ? '收起' : '看全部 ' + hist.length + ' 条' }}</button></p>
+    </div>
+    <div v-if="!style" class="sec" data-c="成交记录"><h3>成交记录<span class="dim" style="font-weight:400;font-size:12px">审核过的采购单{{ mat ? '' : '、加工单' }}，一单一行，点开看单据</span></h3>
+      <Tbl inset flat :rows="deals" link @row="x => go(priceSrcLink(x.no).slice(1))" :empty="sup ? '还没有和这家审核过的采购单、加工单' : '还没有审核过的采购单买过它'" :cols="[
+        { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'no', t: '单号', c: 'code' }, ...(sup ? [] : [{ k: 'sup', t: '供应商', f: x => supName(x.sup) }]),
+        { k: 'what', t: '物料 / 款式' }, { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) + ' ' + (x.unit || '') }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }]"/>
     </div>
     <PriceForm v-if="s.form" :init="s.form" @close="s.form = null"/>
   </section>`,
@@ -7016,7 +7037,7 @@ route('/reorder', {
   </div>`,
 }, { mod: 'stock', t: '补货提醒' })
 
-expose({ curMatPrice, curProcPrice, curMatRec, curProcRec, pricesOf, priceWhat, priceUnit, priceSrcLink, recordPrice, voidPrice, canEditPrice, poPriceIssues, procPriceProblem,
+expose({ dealsOf, curMatPrice, curProcPrice, curMatRec, curProcRec, pricesOf, priceWhat, priceUnit, priceSrcLink, recordPrice, voidPrice, canEditPrice, poPriceIssues, procPriceProblem,
   tpCompare, carryDevTp, reorderRows, belowSafety, reorderToPurchases, reorderDrafts, poDefaultPrice, toProdTp, tpStage, tpName, transitRows, useTransitSplit, orderNeedDate, needDateOf })
 </script>
 <script>/* 6-pages-later.js */
@@ -8499,10 +8520,6 @@ function supplierPerf(code) {
     issues: sum(prods, (p) => p.issues.length),
   }
 }
-// 询价记录（12.06 待定）：先用采购单上的成交价
-const priceHistory = (code) => db.purchases.filter((p) => p.supplier === code && p.status !== '已作废')
-  .flatMap((p) => p.lines.map((l) => ({ date: p.date, no: p.no, sku: l.sku, price: l.price, qty: l.qty, unit: matOfSku(l.sku)?.purUnit })))
-  .sort((a, b) => b.date.localeCompare(a.date))
 
 /* ---------- 客户 ---------- */
 // f.code、f.status 给导入用（领猫里的老编码原样带过来）
@@ -8799,7 +8816,7 @@ Object.assign(db, {
     { m: '订单', v: ['看', '改', '看', '看', '—', '看', '审'] },
     { m: '排单、加工单', v: ['看', '看', '改', '看', '看', '看', '审'] },
     { m: '算料、采购单', v: ['—', '看', '看', '改', '看', '看', '审'] },
-    { m: '价格档案', v: ['看', '看', '改', '改', '—', '看', '看'] }, // price:edit：生产跟单改加工价、采购改物料价（canEditPrice）
+    { m: '价格档案', v: ['看', '看', '改', '改', '—', '看', '改'] }, // price:edit：生产跟单改加工价、采购改物料价、管理层都能改（canEditPrice）
     { m: '出入库、库存', v: ['—', '—', '看', '看', '审', '看', '看'] },
     { m: '进度、异常、回货', v: ['—', '看', '改', '看', '看', '—', '看'] },
     { m: '合同（待排期）', v: ['—', '—', '改', '改', '—', '看', '看'] }, // 跟单出加工合同、采购出采购合同；管理层管模板
@@ -8881,7 +8898,7 @@ SEARCH.push(() => [
 ])
 
 expose({
-  createSupplier, requestAdmit, approveAdmit, rejectAdmit, admitMissing, canAdmit, blacklistSupplier, unblockSupplier, openDocsOfSupplier, expiringCerts, certInfo, saveCert, removeCert, updateSupplier, removeSupplier, supplierDocs, supplierPerf, priceHistory,
+  createSupplier, requestAdmit, approveAdmit, rejectAdmit, admitMissing, canAdmit, blacklistSupplier, unblockSupplier, openDocsOfSupplier, expiringCerts, certInfo, saveCert, removeCert, updateSupplier, removeSupplier, supplierDocs, supplierPerf,
   createCustomer, updateCustomer, removeCustomer, customerStock, MAT_GROUPS, matCat, nextMatCode, dupMaterial, createMaterial, addMaterialSkus, setMaterialStatus, skuStock, matStock, matUsedBy,
   specCode, skuCodeOf, skuUsedBy, removeMatSku, toggleMatSku, setSkuImages, removeMaterial, roleOf, scopeOf, nextCode,
   matLockReason, updateMaterial, catUsed, matCatUsed, liveCats, liveMatCats, addCategory, addMatCategory, renameCat, removeCat, toggleCat,
@@ -8996,7 +9013,6 @@ route('/suppliers/:code', {
     const certAdd = ref(false), certEdit = ref(null), editing = ref(false)
     const docs = computed(() => supplierDocs(p.code))
     const perf = computed(() => supplierPerf(p.code))
-    const prices = computed(() => priceHistory(p.code))
     const contracts = computed(() => contractsOfSupplier(p.code))
     const miss = computed(() => (s.value?.status === '待准入' ? admitMissing(s.value) : []))
     const risk = computed(() => lastRisk(s.value))
@@ -9048,7 +9064,7 @@ route('/suppliers/:code', {
       can('supplier', s.value, '拉黑') && { t: '拉黑', danger: true, fn: () => { box.value = { mode: '拉黑' } } },
       { t: '删除', danger: true, fn: remove },
     ].filter(Boolean) : [])
-    return { s, tab, box, certAdd, certEdit, editing, docs, perf, prices, contracts, miss, risk, checks, newIds, more, delCert,
+    return { s, tab, box, certAdd, certEdit, editing, docs, perf, contracts, miss, risk, checks, newIds, more, delCert,
       apply, approve, reject, approveChange, rejectChange, withdrawChange, checkNow, ack }
   },
   template: `<div v-if="s">
@@ -9078,7 +9094,7 @@ route('/suppliers/:code', {
             <template v-else><button class="btn sm" @click="rejectChange">驳回</button><button class="btn sm pri" @click="approveChange">批准改动</button></template></div>
           <table class="ptbl"><tr v-for="i in s.pending.items" :key="i.k"><td>{{ i.t }}</td><td class="dim"><s>{{ showVal(i.from) }}</s></td><td>→ {{ showVal(i.to) }}</td></tr></table>
         </div>
-        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], { v: 'risk', t: '风险', n: riskNewItems(s).length, ph: '待排期' }, ['docs', '往来单据', docs.length], ['prices', '价格记录', pricesOf({ sup: s.code }).filter(x => !x.void).length], { v: 'contracts', t: '合同', n: contracts.length, ph: '待排期' }, ['perf', '绩效（待定）'], ['price', '询价记录（待定）', prices.length]]"/><PriceHistory v-if="tab === 'prices'" :sup="s.code" data-c="价格记录"/>
+        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], { v: 'risk', t: '风险', n: riskNewItems(s).length, ph: '待排期' }, ['docs', '往来单据', docs.length], ['prices', '价格记录', pricesOf({ sup: s.code }).filter(x => !x.void).length], { v: 'contracts', t: '合同', n: contracts.length, ph: '待排期' }, ['perf', '绩效（待定）']]"/><PriceHistory v-if="tab === 'prices'" :sup="s.code" data-c="价格记录"/>
 
         <section v-if="tab === 'certs'" data-c="资质">
           <Tbl inset flat :rows="s.certs" empty="还没传证照；申请准入要有营业执照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件' }, { k: 'note', t: '备注', f: c => c.note || '—' }, { k: 'act', t: '' }]">
@@ -9135,12 +9151,6 @@ route('/suppliers/:code', {
           </div>
         </section>
 
-        <section v-if="tab === 'price'" data-c="询价记录">
-          <p class="dim tip"><Phase p="待定"/> 询价比价（12.06）是待定模块。一期没有询价单，这里先列采购单上的成交价。</p>
-          <Tbl inset flat :rows="prices" link @row="x => go('/purchases/' + x.no)" empty="还没从这家买过东西" :cols="[
-            { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'no', t: '采购单', c: 'code' },
-            { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) + ' ' + x.unit }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }]"/>
-        </section>
       </div>
       <aside class="aside" data-c="供应商属性">
         <dl class="props">

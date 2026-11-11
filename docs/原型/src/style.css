@@ -696,3 +696,7 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
 /* 上传工厂对账单：识别中的小圈 */
 .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 表格里要折行的列（调价原因、变更内容、工艺要求）：.tbl td 默认不折行，这里压过它 */
+.tbl td.wrap { white-space: normal; min-width: 140px; padding-top: 8px; padding-bottom: 8px; line-height: 1.5; }
+/* 列多的表放在窄的详情栏里时横向滚动，右边的按钮不被挤出去 */
+.xscroll { overflow-x: auto; }

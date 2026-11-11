@@ -182,10 +182,6 @@ function supplierPerf(code) {
     issues: sum(prods, (p) => p.issues.length),
   }
 }
-// 询价记录（12.06 待定）：先用采购单上的成交价
-const priceHistory = (code) => db.purchases.filter((p) => p.supplier === code && p.status !== '已作废')
-  .flatMap((p) => p.lines.map((l) => ({ date: p.date, no: p.no, sku: l.sku, price: l.price, qty: l.qty, unit: matOfSku(l.sku)?.purUnit })))
-  .sort((a, b) => b.date.localeCompare(a.date))
 
 /* ---------- 客户 ---------- */
 // f.code、f.status 给导入用（领猫里的老编码原样带过来）
@@ -482,7 +478,7 @@ Object.assign(db, {
     { m: '订单', v: ['看', '改', '看', '看', '—', '看', '审'] },
     { m: '排单、加工单', v: ['看', '看', '改', '看', '看', '看', '审'] },
     { m: '算料、采购单', v: ['—', '看', '看', '改', '看', '看', '审'] },
-    { m: '价格档案', v: ['看', '看', '改', '改', '—', '看', '看'] }, // price:edit：生产跟单改加工价、采购改物料价（canEditPrice）
+    { m: '价格档案', v: ['看', '看', '改', '改', '—', '看', '改'] }, // price:edit：生产跟单改加工价、采购改物料价、管理层都能改（canEditPrice）
     { m: '出入库、库存', v: ['—', '—', '看', '看', '审', '看', '看'] },
     { m: '进度、异常、回货', v: ['—', '看', '改', '看', '看', '—', '看'] },
     { m: '合同（待排期）', v: ['—', '—', '改', '改', '—', '看', '看'] }, // 跟单出加工合同、采购出采购合同；管理层管模板
@@ -564,7 +560,7 @@ SEARCH.push(() => [
 ])
 
 expose({
-  createSupplier, requestAdmit, approveAdmit, rejectAdmit, admitMissing, canAdmit, blacklistSupplier, unblockSupplier, openDocsOfSupplier, expiringCerts, certInfo, saveCert, removeCert, updateSupplier, removeSupplier, supplierDocs, supplierPerf, priceHistory,
+  createSupplier, requestAdmit, approveAdmit, rejectAdmit, admitMissing, canAdmit, blacklistSupplier, unblockSupplier, openDocsOfSupplier, expiringCerts, certInfo, saveCert, removeCert, updateSupplier, removeSupplier, supplierDocs, supplierPerf,
   createCustomer, updateCustomer, removeCustomer, customerStock, MAT_GROUPS, matCat, nextMatCode, dupMaterial, createMaterial, addMaterialSkus, setMaterialStatus, skuStock, matStock, matUsedBy,
   specCode, skuCodeOf, skuUsedBy, removeMatSku, toggleMatSku, setSkuImages, removeMaterial, roleOf, scopeOf, nextCode,
   matLockReason, updateMaterial, catUsed, matCatUsed, liveCats, liveMatCats, addCategory, addMatCategory, renameCat, removeCat, toggleCat,
@@ -679,7 +675,6 @@ route('/suppliers/:code', {
     const certAdd = ref(false), certEdit = ref(null), editing = ref(false)
     const docs = computed(() => supplierDocs(p.code))
     const perf = computed(() => supplierPerf(p.code))
-    const prices = computed(() => priceHistory(p.code))
     const contracts = computed(() => contractsOfSupplier(p.code))
     const miss = computed(() => (s.value?.status === '待准入' ? admitMissing(s.value) : []))
     const risk = computed(() => lastRisk(s.value))
@@ -731,7 +726,7 @@ route('/suppliers/:code', {
       can('supplier', s.value, '拉黑') && { t: '拉黑', danger: true, fn: () => { box.value = { mode: '拉黑' } } },
       { t: '删除', danger: true, fn: remove },
     ].filter(Boolean) : [])
-    return { s, tab, box, certAdd, certEdit, editing, docs, perf, prices, contracts, miss, risk, checks, newIds, more, delCert,
+    return { s, tab, box, certAdd, certEdit, editing, docs, perf, contracts, miss, risk, checks, newIds, more, delCert,
       apply, approve, reject, approveChange, rejectChange, withdrawChange, checkNow, ack }
   },
   template: `<div v-if="s">
@@ -761,7 +756,7 @@ route('/suppliers/:code', {
             <template v-else><button class="btn sm" @click="rejectChange">驳回</button><button class="btn sm pri" @click="approveChange">批准改动</button></template></div>
           <table class="ptbl"><tr v-for="i in s.pending.items" :key="i.k"><td>{{ i.t }}</td><td class="dim"><s>{{ showVal(i.from) }}</s></td><td>→ {{ showVal(i.to) }}</td></tr></table>
         </div>
-        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], { v: 'risk', t: '风险', n: riskNewItems(s).length, ph: '待排期' }, ['docs', '往来单据', docs.length], ['prices', '价格记录', pricesOf({ sup: s.code }).filter(x => !x.void).length], { v: 'contracts', t: '合同', n: contracts.length, ph: '待排期' }, ['perf', '绩效（待定）'], ['price', '询价记录（待定）', prices.length]]"/><PriceHistory v-if="tab === 'prices'" :sup="s.code" data-c="价格记录"/>
+        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], { v: 'risk', t: '风险', n: riskNewItems(s).length, ph: '待排期' }, ['docs', '往来单据', docs.length], ['prices', '价格记录', pricesOf({ sup: s.code }).filter(x => !x.void).length], { v: 'contracts', t: '合同', n: contracts.length, ph: '待排期' }, ['perf', '绩效（待定）']]"/><PriceHistory v-if="tab === 'prices'" :sup="s.code" data-c="价格记录"/>
 
         <section v-if="tab === 'certs'" data-c="资质">
           <Tbl inset flat :rows="s.certs" empty="还没传证照；申请准入要有营业执照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件' }, { k: 'note', t: '备注', f: c => c.note || '—' }, { k: 'act', t: '' }]">
@@ -818,12 +813,6 @@ route('/suppliers/:code', {
           </div>
         </section>
 
-        <section v-if="tab === 'price'" data-c="询价记录">
-          <p class="dim tip"><Phase p="待定"/> 询价比价（12.06）是待定模块。一期没有询价单，这里先列采购单上的成交价。</p>
-          <Tbl inset flat :rows="prices" link @row="x => go('/purchases/' + x.no)" empty="还没从这家买过东西" :cols="[
-            { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'sku', t: '物料', f: x => skuName(x.sku), img: x => x.sku }, { k: 'no', t: '采购单', c: 'code' },
-            { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) + ' ' + x.unit }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }]"/>
-        </section>
       </div>
       <aside class="aside" data-c="供应商属性">
         <dl class="props">
