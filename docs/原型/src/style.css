@@ -700,3 +700,64 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
 .tbl td.wrap { white-space: normal; min-width: 140px; padding-top: 8px; padding-bottom: 8px; line-height: 1.5; }
 /* 列多的表放在窄的详情栏里时横向滚动，右边的按钮不被挤出去 */
 .xscroll { overflow-x: auto; }
+/* ---------- 业务流程（8-flow.js）：总览一条工序带，下面每段一条流程线 + 分步说明。一期实线靛蓝，二期栀黄虚线，待定和待排期灰虚线，结果苔绿 ---------- */
+.fl { max-width: 1180px; }
+.fl-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12.5px; color: var(--fg-2); }
+.fl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fl-k { width: 24px; height: 13px; border-radius: 3px; border: 1.5px solid var(--accent); background: var(--bg); }
+.fl-k.p2 { border: 1.5px dashed var(--amber-line); background: var(--amber-bg); }
+.fl-k.tbd { border: 1.5px dashed var(--fg-3); }
+.fl-k.end { border-color: var(--green); background: var(--green-bg); }
+.fl-sec { margin-top: 14px; padding: 18px 20px; display: grid; gap: 12px; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); scroll-margin-top: 12px; }
+.fl-sec h2 { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font-size: 16px; }
+.fl-no { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.fl-tag { padding: 0 7px; border: 1px solid var(--accent); border-radius: 3px; color: var(--accent); font-size: 12px; font-weight: 400; line-height: 20px; white-space: nowrap; }
+.fl-tag.p2 { border-style: dashed; border-color: var(--amber-line); color: var(--amber); background: var(--amber-bg); }
+.fl-tag.tbd { border-style: dashed; border-color: var(--fg-3); color: var(--fg-2); }
+.fl-menu { font-size: 12px; font-weight: 400; color: var(--fg-2); }
+.fl-strip { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+.fl-strip + .fl-strip { margin-top: 10px; }
+.fl-stage { position: relative; display: grid; gap: 4px; align-content: start; min-width: 0; padding: 10px 16px 10px 10px; border: 0; border-top: 3px solid var(--accent); background: var(--accent-bg); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.fl-stage + .fl-stage { margin-left: 10px; }
+.fl-stage::after { content: ""; position: absolute; top: 0; right: -10px; bottom: 0; width: 10px; background: var(--bg); clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.fl-stage:last-child::after { display: none; }
+.fl-stage.p2 { border-top: 3px dashed var(--amber-line); background: var(--amber-bg); }
+.fl-stage.tbd { border-top: 3px dashed var(--fg-3); background: var(--bg-sunken); }
+.fl-stage b { font-size: 14px; }
+.fl-stage:hover b { color: var(--accent); }
+.fl-stage ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 12.5px; color: var(--fg-2); }
+.fl-n { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); }
+.fl-spine { margin: 0; padding: 10px 12px; border-radius: var(--r); background: var(--bg-page); font-size: 13px; color: var(--fg-2); }
+.fl-spine b { color: var(--accent); }
+.fl-scroll { overflow-x: auto; }
+.fl-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px 0; margin: 0; padding: 0; list-style: none; }
+.fl-node { min-width: 0; max-width: 210px; border: 1.5px solid var(--accent); border-radius: var(--r); background: var(--bg); }
+.fl-node > * { display: grid; gap: 1px; height: 100%; padding: 7px 11px; color: inherit; text-decoration: none; }
+.fl-node > a b { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.fl-node > a:hover { background: var(--bg-hover); }
+.fl-node b { font-size: 13.5px; font-weight: 600; }
+.fl-node small { font-size: 12px; line-height: 1.5; color: var(--fg-2); }
+.fl-node.p2 { border-style: dashed; border-color: var(--amber-line); background: var(--amber-bg); }
+.fl-node.p2 b { color: var(--amber); }
+.fl-node.tbd { border-style: dashed; border-color: var(--fg-3); }
+.fl-node.end { border-color: var(--green); background: var(--green-bg); }
+.fl-node.end b { color: var(--green); }
+.fl-arr { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 40px; padding: 0 6px; font-size: 11.5px; line-height: 1.2; text-align: center; color: var(--fg-2); }
+.fl-arr::after { content: "→"; font-size: 18px; line-height: 1; color: var(--fg-3); }
+.fl-branch { display: flex; align-items: flex-start; gap: 8px; }
+.fl-lbl { flex: none; width: 52px; padding-top: 9px; font-size: 12px; color: var(--fg-2); }
+.fl-branch > .fl-scroll { flex: 1; min-width: 0; }
+.fl-loop { margin: 0; padding: 4px 10px; border-left: 3px solid var(--green); border-radius: 0 var(--r) var(--r) 0; background: var(--green-bg); font-size: 13px; color: var(--fg-2); }
+.fl-lead { margin: 0; font-size: 14px; font-weight: 600; }
+.fl-steps { display: grid; gap: 6px; max-width: 78ch; margin: 0; padding-left: 1.6em; font-size: 13.5px; line-height: 1.7; }
+.fl-steps li::marker { font-family: var(--mono); color: var(--accent); }
+.fl-note { max-width: 78ch; margin: 0; font-size: 13px; color: var(--fg-2); }
+.fl-note b { color: var(--fg); }
+.fl-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.fl-cols > div { min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); font-size: 13px; }
+.fl-cols b { display: block; margin-bottom: 2px; }
+@media (max-width: 900px) {
+  .fl-strip { grid-template-columns: 1fr; gap: 8px; }
+  .fl-stage + .fl-stage { margin-left: 0; }
+  .fl-stage::after { display: none; }
+}

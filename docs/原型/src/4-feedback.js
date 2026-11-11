@@ -47,7 +47,7 @@ function fbMarkdown() {
     const items = fb.items.filter((x) => x.mod === it.k)
     const vs = VERDICTS.map((v) => [v, verdictCount(it.k, v)]).filter(([, n]) => n)
     if (!items.length && !vs.length) return
-    lines.push(`## ${g.g ? g.g + ' / ' : ''}${it.t}（${it.ph}）`, ``)
+    lines.push(`## ${g.g ? g.g + ' / ' : ''}${it.t}${it.ph ? '（' + it.ph + '）' : ''}`, ``)
     if (vs.length) lines.push(`结论：${vs.map(([v, n]) => `${v} ${n}`).join(' · ')}（${Object.entries(fb.verdicts[it.k] || {}).map(([a, v]) => `${a || '未署名'}：${v}`).join('，')}）`, ``)
     items.forEach((x) => lines.push(`- 【${x.title}${x.anchor ? ' · ' + x.anchor : ''}】${x.text.replace(/\n/g, ' ')} —— ${x.author || '未署名'} ${fmtStamp(x.at)}（#${x.path}）`))
     lines.push(``)
@@ -191,7 +191,7 @@ route('/feedback', {
         <div class="list">
           <div v-for="it in g.items" :key="it.k" style="border-bottom:1px solid var(--line);padding:10px 4px">
             <div class="row"><Ico :n="it.i" :s="15"/><a :href="'#' + it.to" style="font-weight:500">{{ it.t }}</a>
-              <span class="pill" :class="{ amber: it.ph === '待定', blue: it.ph === '二期' }">{{ it.ph }}</span>
+              <span v-if="it.ph" class="pill" :class="{ amber: it.ph === '待定', blue: it.ph === '二期' }">{{ it.ph }}</span>
               <span class="dim" style="font-size:12px">{{ it.ref }}</span>
               <span style="flex:1"></span>
               <span v-for="[v, n] in it.vs.filter(x => x[1])" :key="v" class="pill" :class="{ green: v === '保留', red: v === '不需要', amber: v === '要改' }">{{ v }} {{ n }}</span>
