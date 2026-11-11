@@ -125,6 +125,7 @@ const ICONS = {
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
   bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.94 1.94 0 0 0 3.4 0',
   link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
+  pen: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
 }
 comp('Ico', {
   props: { n: String, s: { type: Number, default: 16 } },
@@ -135,10 +136,10 @@ comp('Ico', {
 /* ---------- 状态标签：实线 = 定了，虚线 = 等人处理；靛蓝实底 = 进行中，绿 = 完成，红 = 拉黑 / 不合格 ---------- */
 const ST_KIND = {
   dashed: ['草稿', '待准入', '停用', '无', '未开始', '待开始', '待推送', '未领料', '未到料', '未算料', '待对账', '未开票'],
-  pending: ['待审核', '待评审', '待处理', '待检', '待确认', '已驳回', '需改版', '待派单', '待收款', '待付款'],
+  pending: ['待审核', '待评审', '待处理', '待检', '待确认', '已驳回', '需改版', '待派单', '待收款', '待付款', '准入审批中', '待签回'],
   ring: ['已审核', '已下单', '合作中', '启用', '已生效', '已确认', '开发中', '已发送', '已开票'],
   half: ['部分到货', '生产中', '部分回货', '打样中', '进行中', '处理中', '部分领料', '部分付款', '部分收款', '部分发货'],
-  done: ['已完成', '已到齐', '已通过', '已转大货', '合格', '已付款', '已收款', '已推送', '已入库', '已发货', '已领齐', '齐料', '已对账'],
+  done: ['已完成', '已到齐', '已通过', '已转大货', '合格', '已付款', '已收款', '已推送', '已入库', '已发货', '已领齐', '齐料', '已对账', '已签回'],
   closed: ['已结案', '已关闭', '已作废版本'],
   x: ['已作废', '已取消', '黑名单', '已淘汰', '不合格', '让步接收'],
 }
@@ -179,7 +180,7 @@ comp('Tbl', {
 })
 
 // 二期、待定模块的页头标出分期（侧边栏 NAV 上的 ph），甲方一眼看出哪些这次不上
-const PHASE_TIP = { 二期: '12 月每周发版时再做（PRD §2.2）', 待定: '甲方表里没标黄，等主线跑起来、甲方确认要不要做再排（PRD §2.5）' }
+const PHASE_TIP = { 二期: '12 月每周发版时再做（PRD §2.2）', 待定: '甲方表里没标黄，等主线跑起来、甲方确认要不要做再排（PRD §2.5）', 待排期: '甲方 11-11 新提的，排期还没定' }
 comp('Head', {
   props: { t: String, back: Array },
   setup: () => ({ ph: computed(() => { const it = navOf(nav.r?.mod); return it?.ph && it.ph !== '一期' ? it : null }), PHASE_TIP }),
@@ -196,11 +197,12 @@ comp('Seg', {
   setup: (p) => ({ list: computed(() => normItems(p.items)) }),
   template: `<div class="seg"><button v-for="it in list" :key="it.v" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<i v-if="it.n != null">{{ it.n }}</i></button></div>`,
 })
+// 页签项可以是对象 { v, t, n, ph }：ph 是分期（二期 / 待排期……），标题旁边出分期小标
 comp('Tabs', {
   props: { modelValue: null, items: Array },
   emits: ['update:modelValue'],
-  setup: (p) => ({ list: computed(() => normItems(p.items)) }),
-  template: `<div class="tabs"><button v-for="it in list" :key="it.v" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<i v-if="it.n">{{ it.n }}</i></button></div>`,
+  setup: (p) => ({ list: computed(() => normItems(p.items)), PHASE_TIP }),
+  template: `<div class="tabs"><button v-for="it in list" :key="it.v" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<Phase v-if="it.ph" :p="it.ph" :t="it.ph + '：' + (PHASE_TIP[it.ph] || '')"/><i v-if="it.n">{{ it.n }}</i></button></div>`,
 })
 comp('Search', {
   props: { modelValue: String, ph: { type: String, default: '搜索' } },
@@ -347,7 +349,7 @@ comp('Upstream', {
 })
 
 expose({
-  db, nav, go, ui, fd, fq, fm, fpct, sum, rnd, daysLeft, addDays, clock,
+  db, nav, go, ui, fd, fq, fm, fpct, sum, rnd, daysLeft, addDays, clock, TRADE, DUE_T,
   colorOf, colorName, sizesOf, baseSizeOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, skuPrice, unitOf, me,
   style, styleName, userName, order, purchase, production, stockDoc, mrp, stockQty,
   can, actionsOf, tpsOf, activeTp, tpOf, tpState, rowSku, rowUse, rowCost, tpMaterialCost, tpLabor, unmatchedColors,

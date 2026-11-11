@@ -658,3 +658,41 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
 .ret-notes summary { cursor: pointer; font-weight: 500; margin-bottom: 8px; }
 .phone .m-form { padding: 16px; gap: 12px; }
 .phone .m-issues { margin: 0 16px 12px; padding: 10px 12px; border-radius: 8px; background: var(--red-bg); border: 1px solid var(--red-line); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+
+/* ---------- 甲方 11-11：供应商准入审批、企查查风险、合同 ---------- */
+.kmark { font-style: normal; font-size: 11px; color: var(--amber); margin-left: 6px; padding: 0 4px; border: 1px dashed var(--amber-line); border-radius: 3px; }
+.banner .sp, .riskhead .sp { flex: 1; }
+.banner.pend { display: block; }
+.banner.pend .row { display: flex; align-items: center; gap: 8px; }
+.banner.pend .row > svg { color: var(--amber); }
+.ptbl { margin: 8px 0 0 26px; border-collapse: collapse; font-size: 13px; }
+.ptbl td { padding: 2px 14px 2px 0; }
+.row.g8 { gap: 8px; }
+.riskhead { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-sunken); }
+.riskhead > div { display: flex; align-items: baseline; gap: 10px; }
+.riskhead b { font-size: 18px; font-weight: 600; }
+.ct-paper { max-height: 62vh; overflow: auto; padding: 28px 36px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); font-family: "Songti SC", "SimSun", serif; font-size: 13.5px; line-height: 1.85; color: var(--fg); }
+.detail .ct-paper { max-height: none; }
+.ct-paper.void { opacity: .55; }
+.ct-paper .ct-title { text-align: center; font-size: 20px; letter-spacing: 2px; margin: 0 0 14px; }
+.ct-paper p { margin: 0 0 4px; }
+.ct-paper .ct-v { border-bottom: 1px solid var(--line-strong); padding: 0 2px; }
+.ct-paper .ct-miss { color: var(--fg-3); }
+.ct-tbl { width: 100%; border-collapse: collapse; margin: 8px 0 10px; font-family: var(--mono); font-size: 12px; }
+.ct-tbl th, .ct-tbl td { border: 1px solid var(--line-strong); padding: 3px 6px; text-align: left; }
+.ct-tbl th { background: var(--bg-sunken); font-weight: 500; }
+.ct-tbl td.num { text-align: right; }
+.ct-tbl tfoot td { font-weight: 600; }
+.ct-srcview { font-family: var(--mono); font-size: 12.5px; line-height: 1.75; }
+.ct-ph { font-weight: 500; color: var(--accent); background: var(--accent-bg); border-radius: 3px; padding: 0 2px; }
+.ct-vars { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 18px; margin-top: 6px; }
+.ct-var { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.ct-var code { font-family: var(--mono); color: var(--accent); white-space: nowrap; }
+.ct-help { margin-top: 12px; font-size: 12.5px; }
+.ct-help summary { cursor: pointer; color: var(--fg-2); }
+.ct-src { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; height: auto; padding: 8px; }
+.ct-mini { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin-bottom: 4px; }
+.ct-mini.off a { text-decoration: line-through; color: var(--fg-3); }
+/* 上传工厂对账单：识别中的小圈 */
+.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

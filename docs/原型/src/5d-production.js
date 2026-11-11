@@ -6,18 +6,22 @@ const RISK_F = { late: '已逾期', node: '节点延期', near: '7 天内交货'
 const riskMatch = (p, f) => (f === 'upstream' ? p.upstream && !p.upstream.done : prodRisk(p)[f])
 const byRisk = (a, b) => prodRisk(b).score - prodRisk(a).score || expectDue(a).localeCompare(expectDue(b))
 const KIT_CLS = { ok: 'green', part: 'amber', no: 'red', none: 'dim' }
-const PARTIES = ['我方', '工厂', '供应商', '客户'] // 异常责任方
+// 异常责任方：和订单变更同一套（TRADE 关着时没有"客户"），默认"我方"（PRD §2.6、§6.7.4）；选填，上报时没定可以选"待定"，关闭时补上
+const PARTIES = CHANGE_PARTIES
+const PARTY0 = '我方'
 const brandOf = (p) => style(p.style)?.brand || order(p.order)?.brand || ''
 const TERMS_TPL = '次品率超过 3% 的部分按加工单价扣款；交期每延误一天扣加工费 0.5%；回货附送货单，写明加工单号、颜色、尺码、数量；剩料按领料单清点退回。'
 
 /* ---------- 加工单：改草稿、改节点计划、异常开始处理、回货作废 ---------- */
 const PROD_FIELDS = [['company', '主体', companyName], ['factory', '加工厂', supName], ['mode', '加工方式'], ['price', '单价', fm], ['due', '交期', fd],
-  ['merch', '生产跟单', userName], ['settle', '结算方式'], ['terms', '条款'], ['note', '备注']]
+  ['merch', '生产跟单', userName], ['settle', '结算方式'], ['terms', '条款'], ['priceWhy', '改价原因'], ['note', '备注']]
 function updateProduction(p, f) {
   if (p.status !== '草稿') fail('只有草稿能改；已提交的先撤回，或等审核人驳回')
   if (!canUseSupplier(f.factory, '生产')) fail(`${supName(f.factory)} 现在是「${sup(f.factory)?.status || '未选'}」，不能下加工单`)
   if (!(+f.price > 0)) fail('加工单价要填')
   if (!f.due) fail('交期要填')
+  const e = procPriceProblem({ factory: f.factory, style: p.style, mode: f.mode, price: +f.price, why: f.priceWhy }, p.date) // 和价格档案现价不一样要写改价原因
+  if (e) fail(e)
   const ch = applyFields(p, { ...f, price: +f.price }, PROD_FIELDS)
   if (!ch.length) fail('没有改动')
   act(p, '改：' + ch.join('；'))
@@ -150,6 +154,7 @@ route('/production/:no', {
     <Head :t="x.no" :back="['加工单', '/production']">
       <template v-if="x.status === '草稿'"><button class="btn" @click="dlg = 'edit'">编辑</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
       <template v-if="can('production', x, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核下单</button></template>
+      <button v-if="canGenContract('production', x)" class="btn" @click="dlg = 'contract'">生成合同</button>
       <template v-if="prodLive(x)"><button class="btn" @click="dlg = 'issueMat'">领料</button><button class="btn" @click="dlg = 'return'">登记回货</button><button class="btn pri" @click="report(null)">报进度</button></template>
       <More :items="more"/>
     </Head>
@@ -175,7 +180,7 @@ route('/production/:no', {
         </section>
         <section v-if="tab === 'lines'" data-c="加工明细"><Matrix :st="x.style" :model-value="qtyMap" ro :colors="colors" :sub="sub"/></section>
         <section v-if="tab === 'mat'" data-c="领料">
-          <Tbl inset flat :rows="issuePlan(x)" empty="资料包里没有要发给工厂的料" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
+          <Tbl inset flat :rows="issuePlan(x)" empty="资料包里没有要发给工厂的料" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
             { k: 'need', t: '应领', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'issued', t: '已领', c: 'num', f: r => fq(r.issued) }, { k: 'suggest', t: '还差', c: 'num' }, { k: 'avail', t: '物料仓库存', c: 'num', f: r => fq(r.avail) }]">
             <template #suggest="{ r }"><span :class="{ amber: r.suggest > 0 }">{{ r.suggest > 0 ? fq(r.suggest) : '领齐' }}</span></template></Tbl>
           <div class="sec"><h3>领料、退料单</h3><Tbl inset flat :rows="docs" link @row="d => go('/stock-docs/' + d.no)" empty="还没领过料" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'flow', t: '出仓 → 入仓', f: d => whName(d.from) + ' → ' + whName(d.to) }, { k: 'n', t: '物料', f: d => d.lines.length + ' 种' }, { k: 'status', t: '状态' }]"><template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
@@ -203,7 +208,7 @@ route('/production/:no', {
           <dt>资料包</dt><dd>V{{ x.ver }}</dd>
           <dt>加工厂</dt><dd><a :href="'#/suppliers/' + x.factory">{{ sup(x.factory).name }}</a></dd>
           <dt>加工方式</dt><dd>{{ x.mode }}</dd>
-          <dt>单价</dt><dd>{{ fm(x.price) }} / 件</dd>
+          <dt>单价</dt><dd>{{ fm(x.price) }} / 件<div v-if="x.priceWhy" class="amber" style="font-size:12px" title="和价格档案现价不一样，改价原因">改价：{{ x.priceWhy }}</div></dd>
           <dt>金额</dt><dd>{{ fm(prodAmt(x)) }}</dd>
           <dt>下单日期</dt><dd>{{ fd(x.date) }}</dd>
           <dt>交期</dt><dd>{{ fd(x.due) }}<span v-if="x.expect" class="amber"> → {{ fd(x.expect) }}</span></dd>
@@ -219,6 +224,7 @@ route('/production/:no', {
           <DocMeta :d="x"/>
         </dl>
         <DocFiles :doc="x"/>
+        <DocContracts kind="production" :d="x"/>
         <h4>操作记录</h4><Log :items="x.log"/>
       </aside>
     </div>
@@ -228,6 +234,7 @@ route('/production/:no', {
     <ProdReturn v-if="dlg === 'return'" :p="x" @close="dlg = ''" @done="tab = 'rets'"/>
     <ProdEdit v-if="dlg === 'edit'" :p="x" @close="dlg = ''"/>
     <ProdPlan v-if="dlg === 'plan'" :p="x" @close="dlg = ''"/>
+    <ContractGen v-if="dlg === 'contract'" kind="production" :d="x" @close="dlg = ''"/>
     <StockDocForm v-if="dlg === 'back'" type="退料" :init="backInit" @close="dlg = ''"/>
     <Modal v-if="closing" :t="'关闭异常：' + closing.i.type" :w="480" @close="closing = null">
       <div class="form">
@@ -270,15 +277,19 @@ comp('ProdEdit', {
     const setFactory = () => { f.settle = sup(f.factory)?.settle || f.settle }
     const addTerms = () => { f.terms = f.terms ? f.terms + '；' + TERMS_TPL : TERMS_TPL }
     function ok() { if (run(() => updateProduction(props.p, { ...f }))) { emit('close'); toast('已保存') } }
-    return { f, factories, setFactory, addTerms, ok }
+    // 加工价现价（价格档案：工厂 × 款式 × 加工方式）；改得和它不一样要写改价原因
+    const ref0 = computed(() => curProcPrice(f.factory, props.p.style, f.mode, props.p.date))
+    const off = computed(() => ref0.value != null && f.price !== '' && f.price != null && !samePrice(ref0.value, f.price))
+    return { f, factories, setFactory, addTerms, ok, ref0, off }
   },
   template: `<Modal :t="'改加工单 ' + p.no" :w="640" @close="$emit('close')">
     <div class="form" data-c="加工单单头">
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
       <label class="f">加工厂<select class="sel" v-model="f.factory" @change="setFactory"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select></label>
       <label class="f">加工方式<select class="sel" v-model="f.mode"><option v-for="v in db.dicts.加工方式" :key="v">{{ v }}</option></select></label>
-      <label class="f">加工单价（元 / 件）<input class="inp num" type="number" v-model.number="f.price"></label>
+      <label class="f">加工单价（元 / 件）<input class="inp num" type="number" v-model.number="f.price"><small class="dim">{{ ref0 != null ? '档案现价 ' + fm(ref0) : '档案里没有这家 × ' + f.mode + ' 的价，审核时记进去' }}</small></label>
       <label class="f">交期<input class="inp" type="date" v-model="f.due"></label>
+      <label v-if="off || f.priceWhy" class="f full">改价原因<input class="inp" v-model="f.priceWhy" placeholder="单价和档案现价不一样，写清楚为什么；审核时记进价格档案"></label>
       <label class="f">生产跟单<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select><small class="dim">手机报工里他能看到这张单</small></label>
       <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
       <div class="f full">条款<textarea class="inp" v-model="f.terms" placeholder="次品扣款、延期扣款、送货要求"></textarea><a class="dim" style="font-size:12px;cursor:pointer;align-self:flex-start" @click="addTerms">填常用条款</a></div>
@@ -358,11 +369,11 @@ comp('ProdIssueMat', {
       <label class="f">从哪个物料仓发<select class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
       <div class="f">发到<span style="line-height:32px">{{ whName(factoryWh(p.factory)?.code) }}</span></div>
     </div>
-    <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th>物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
-      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
+    <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th v-if="TRADE">物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
+      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td v-if="TRADE" :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
         <td class="num">{{ fq(r.need) }}</td><td class="num">{{ fq(r.issued) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: have(r) < r.qty }">{{ fq(have(r)) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
-        <tr v-if="!rows.length"><td colspan="7" class="empty">资料包里没有要发给工厂的料</td></tr></tbody></table>
+        <tr v-if="!rows.length"><td :colspan="TRADE ? 7 : 6" class="empty">资料包里没有要发给工厂的料</td></tr></tbody></table>
     <label v-if="over" class="f" style="margin-top:12px">超领原因<input class="inp" v-model="f.reason" placeholder="比如：裁剪损耗大，补 5 米"></label>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">领料并过账</button></template>
   </Modal>`,
@@ -372,7 +383,7 @@ comp('ProdException', {
   props: { p: Object },
   emits: ['close', 'done'],
   setup(props, { emit }) {
-    const f = reactive({ type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(props.p), 5), party: '', photos: [] })
+    const f = reactive({ type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(props.p), 5), party: PARTY0, photos: [] })
     function ok() { if (run(() => reportIssue(props.p, { ...f, newDate: f.impact ? f.newDate : null }))) { emit('close'); emit('done'); toast('异常已上报') } }
     return { f, ok, PARTIES }
   },
@@ -471,14 +482,14 @@ route('/board', {
 route('/mobile', {
   setup() {
     const s = reactive({ who: '跟单员', factory: 'GYS0004', no: null, node: null, issue: false, f: { as: '', af: '', qty: null, note: '', photos: [] },
-      e: { type: '缺料', desc: '', impact: false, newDate: '', party: '', photos: [] } })
+      e: { type: '缺料', desc: '', impact: false, newDate: '', party: PARTY0, photos: [] } })
     const list = computed(() => db.productions.filter(prodLive).filter((p) => (s.who === '跟单员' ? p.merch === 'u1' : p.factory === s.factory)).slice().sort(byRisk))
     const p = computed(() => production(s.no))
     const openIs = computed(() => (p.value ? p.value.issues.filter((i) => i.status !== '已关闭') : []))
     function pickNode(i) { const n = p.value.nodes[i]; s.node = i; Object.assign(s.f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }
     function submit() { const w = run(() => reportNode(p.value, s.node, { ...s.f })); if (w) { toast(`${p.value.nodes[s.node].name}已报，电脑上马上能看到`); s.node = null } }
     // 上报异常（PRD §6.7.3 第 3 条）：和电脑上同一套规则，照片必拍
-    function openIssue() { Object.assign(s.e, { type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(p.value), 5), party: '', photos: [] }); s.issue = true }
+    function openIssue() { Object.assign(s.e, { type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(p.value), 5), party: PARTY0, photos: [] }); s.issue = true }
     function submitIssue() { if (run(() => reportIssue(p.value, { ...s.e, newDate: s.e.impact ? s.e.newDate : null }))) { toast('异常已上报，电脑上马上能看到'); s.issue = false } }
     const back = () => { if (s.node != null) s.node = null; else if (s.issue) s.issue = false; else s.no = null }
     return { s, list, p, openIs, pickNode, submit, openIssue, submitIssue, back, PARTIES }

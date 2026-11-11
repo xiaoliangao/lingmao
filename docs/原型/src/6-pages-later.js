@@ -2,7 +2,7 @@
  * 二期 / 待定模块：企划（M02）、样衣（M03）、核价（M05）、质检（M09）、成品仓（M10）、对账（M11）、报表（13.06）
  * 都从主线单据"长"出来，不另起一套数据：
  *   样衣评审通过 → 转大货生成款式；资料包 + 物料报价 → 核价 → 订单毛利
- *   回货 → 待检 → 成品入库 → 发货 → 客户应收；采购入库、回货 → 供应商对账 → 付款
+ *   回货 → 待检 → 成品入库 → 发货（→ 客户应收，TRADE 开时才有）；采购入库、回货 → 供应商对账 → 付款
  * 名字都带前缀（smp / plan / cost / qc / fg / fin），免得和别的文件的全局名撞上。
  * ============================================================ */
 ST_KIND.done.push('已核销')
@@ -121,7 +121,7 @@ comp('PlanTaskNew', {
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
       <label class="f">负责人<select class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">截止<input class="inp" type="date" v-model="f.due"></label>
-      <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" tip="灵感图、竞品图、客户发来的款都可以；Ctrl+V 能直接贴截图"/></div>
+      <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" :tip="(TRADE ? '灵感图、竞品图、客户发来的款都可以' : '灵感图、竞品图都可以') + '；Ctrl+V 能直接贴截图'"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建任务</button></template>
   </Modal>`,
@@ -190,10 +190,11 @@ function smpReview(s, f) {
 function smpConvert(s, f) {
   if (s.status !== '已通过') fail('评审通过的样衣才能转大货')
   if (!f.factory) fail('要选默认加工厂')
-  const st = createStyle({ code: f.code || undefined, name: f.name || s.name, cat: s.cat, year: s.year, season: s.season, wave: s.wave, tag: s.tag, colors: [...s.colors], sizeGroup: s.sizeGroup, tagPrice: s.tagPrice, cost: s.estCost, factory: f.factory, source: s.source, customer: s.customer, custNo: s.custNo, designer: s.designer, sample: s.no, images: [...(s.images || [])] })
+  const st = createStyle({ code: f.code || undefined, big: f.big, name: f.name || s.name, cat: s.cat, year: s.year, season: s.season, wave: s.wave, tag: s.tag, colors: [...s.colors], sizeGroup: s.sizeGroup, tagPrice: s.tagPrice, cost: s.estCost, factory: f.factory, source: s.source, ...ifTrade({ customer: s.customer, custNo: s.custNo }), designer: s.designer, sample: s.no, images: [...(s.images || [])] })
   Object.assign(s, { status: '已转大货', style: st.code, convertedAt: clock.today, convertedBy: db.me })
   act(s, '转大货 → ' + st.code)
   act(st, '由样衣 ' + s.no + ' 转大货')
+  if (s.devBom) carryDevTp(st.code, s.devBom)
   return st
 }
 
@@ -218,7 +219,7 @@ db.samples = [
       { ver: 1, no: 'DY202610250001', type: '初样', way: '外部工厂', factory: 'GYS0005', qty: 2, need: '2026-11-08', reason: '', status: '打样中', nodes: smpSeedNodes('2026-11-08', [0, 0, 0, null, null]), review: null },
     ],
     log: [{ at: '2026-10-25', who: '许然', text: '新建' }] },
-  { no: 'YY26100002', name: '印花连衣裙', cat: 'L', year: 2027, season: 'X', wave: '第 2 波', tag: '休闲', colors: ['JH'], sizeGroup: 'W5', brand: '织间', source: '客户来样', customer: 'KH0001', custNo: 'HD-S27-D07', designer: 'u4', fabric: '印花雪纺，客户指定', tagPrice: 599, estCost: 290, status: '已淘汰', style: null,
+  { no: 'YY26100002', name: '印花连衣裙', cat: 'L', year: 2027, season: 'X', wave: '第 2 波', tag: '休闲', colors: ['JH'], sizeGroup: 'W5', brand: '织间', ...ifTrade({ source: '客户来样', customer: 'KH0001', custNo: 'HD-S27-D07', fabric: '印花雪纺，客户指定' }, { source: '选款', fabric: '印花雪纺' }), designer: 'u4', tagPrice: 599, estCost: 290, status: '已淘汰', style: null,
     vers: [
       { ver: 1, no: 'DY202610100001', type: '初样', way: '内部版房', maker: 'u8', qty: 1, need: '2026-10-22', reason: '', status: '已淘汰', nodes: smpSeedNodes('2026-10-22', [0, 1, 0, 0, 0]), review: { at: '2026-10-23', by: ['u4', 'u6'], result: '淘汰', note: '面料成本超目标 30%，印花效果一般' } },
     ],
@@ -228,6 +229,19 @@ db.samples = [
     log: [{ at: '2026-11-06', who: '许然', text: '新建' }] },
 ]
 if (style('27CF001')) style('27CF001').sample = 'YY26070003'
+// 样衣的研发 BOM（打样估价用）：转大货时带到款式上，复制成生产 BOM V1 草稿（§6.3.3、§6.4.1）
+{
+  const s = db.samples.find((x) => x.no === 'YY26100005')
+  if (s) s.devBom = {
+    bom: [
+      { part: '大身', mat: 'ML0018', mode: '随款色', map: { YM: 'ML0018-YM', HE: 'ML0018-HE' }, um: '分码', uses: SZ(1.5, 1.6, 1.7, 1.8, 1.9), loss: 3, src: '我方采购', supplier: 'GYS0001', price: 21.5 },
+      { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 6, loss: 2, src: '我方采购', supplier: 'GYS0002', price: 0.38 },
+      ...['BX0001', 'BX0002', 'BP0001', 'BD0001'].map((k, i) => label(k, { part: ['主唛', '洗唛', '吊牌', '包装袋'][i] })),
+    ],
+    ops: [{ cat: '车缝', name: '整件加工（估）', req: '', sec: 2800, price: 36, note: '按打样工厂口头报价估' }],
+    note: '打样估价：帆布按 21.5 估',
+  }
+}
 
 SEARCH.push(() => db.samples.map((s) => ({ t: s.no + ' ' + s.name, sub: '样衣', to: '/samples/' + s.no, i: 'scissors' })))
 TODOS.push(() => [{ t: '样衣待评审', n: db.samples.filter((s) => smpState(s) === '待评审').length, to: '/samples?s=待评审', i: 'scissors' }])
@@ -261,7 +275,7 @@ comp('SmpNew', {
   setup(_, { emit }) {
     const f = reactive({ name: '', cat: 'T', year: 2027, season: 'C', colors: [], source: '自主开发', customer: '', tagPrice: null, need: addDays(clock.today, 10), images: [] })
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
-    function save() { const s = run(() => smpNew({ ...f, colors: [...f.colors], images: [...f.images], customer: f.customer || null })); if (s?.no) { emit('close'); go('/samples/' + s.no) } }
+    function save() { const s = run(() => smpNew({ ...f, colors: [...f.colors], images: [...f.images], customer: (TRADE && f.customer) || null })); if (s?.no) { emit('close'); go('/samples/' + s.no) } }
     return { f, toggle, save }
   },
   template: `<Modal t="新建样衣" :w="640" @close="$emit('close')">
@@ -269,12 +283,12 @@ comp('SmpNew', {
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
       <label class="f">季节<span class="row g4"><select class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></select><select class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></span></label>
-      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option>客户来样</option><option>选款</option></select></label>
-      <label class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option v-if="TRADE">客户来样</option><option>选款</option></select></label>
+      <label v-if="TRADE" class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors.filter(c => c.status !== '停用' || f.colors.includes(c.code))" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
-      <div class="f full" data-c="样衣图片">图片<Pics v-model="f.images" :colors="f.colors" tip="设计稿、参考图、客户来样的照片；转大货时带到款式上"/></div>
+      <div class="f full" data-c="样衣图片">图片<Pics v-model="f.images" :colors="f.colors" :tip="(TRADE ? '设计稿、参考图、客户来样的照片' : '设计稿、参考图') + '；转大货时带到款式上'"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建样衣</button></template>
   </Modal>`,
@@ -321,13 +335,14 @@ route('/samples/:no', {
         <Gallery :code="s.no" :colors="s.colors" :owner="s" edit/>
         <dl class="props">
           <dt>品牌</dt><dd>{{ s.brand }}</dd>
-          <dt>来源</dt><dd>{{ s.source }}<template v-if="s.customer"> · {{ custName(s.customer) }}</template></dd>
-          <dt v-if="s.custNo">客户款号</dt><dd v-if="s.custNo" class="code">{{ s.custNo }}</dd>
+          <dt>来源</dt><dd>{{ s.source }}<template v-if="TRADE && s.customer"> · {{ custName(s.customer) }}</template></dd>
+          <dt v-if="TRADE && s.custNo">客户款号</dt><dd v-if="TRADE && s.custNo" class="code">{{ s.custNo }}</dd>
           <dt>设计师</dt><dd>{{ userName(s.designer) }}</dd>
           <dt>尺码组</dt><dd>{{ db.sizeGroups.find(g => g.id === s.sizeGroup).name }}</dd>
           <dt>面料</dt><dd>{{ s.fabric || '—' }}</dd>
           <dt>预估吊牌价</dt><dd>{{ fm(s.tagPrice) }}</dd>
           <dt>预估成本</dt><dd>{{ fm(s.estCost) }}</dd>
+          <dt>研发 BOM</dt><dd>{{ s.devBom ? s.devBom.bom.length + ' 行物料 · ' + s.devBom.ops.length + ' 道工序（转大货时复制成生产 BOM 草稿）' : '没有' }}</dd>
           <template v-if="s.style"><dt>转大货</dt><dd><a class="code" :href="'#/styles/' + s.style">{{ s.style }}</a> · {{ fd(s.convertedAt) }}</dd></template>
         </dl>
         <DocFiles :doc="s"/>
@@ -397,16 +412,19 @@ comp('SmpReview', {
 comp('SmpConvert', {
   props: { s: Object }, emits: ['close'],
   setup(p, { emit }) {
-    const auto = computed(() => { const x = String(p.s.year).slice(2) + p.s.season + p.s.cat; return x + String(db.styles.filter((s) => s.code.startsWith(x)).length + 1).padStart(3, '0') })
-    const f = reactive({ code: '', name: p.s.name, factory: 'GYS0004' })
+    const f = reactive({ code: '', name: p.s.name, big: liveBigCats()[0]?.code || '', factory: 'GYS0004' })
+    // 款号按新规则：大类 + 今天 + 样衣设计师的编号 + 流水；编不出来就提示，手填照样能转
+    const auto = computed(() => { try { return { code: nextStyleCode(f.big, p.s.designer) } } catch (e) { return { err: e.message + (e.list?.[0] ? '：' + e.list[0] : '') } } })
     const factories = computed(() => db.suppliers.filter((x) => isFactory(x) && x.status === '合作中'))
-    function save() { const st = run(() => smpConvert(p.s, { ...f })); if (st?.code) { emit('close'); go('/styles/' + st.code); toast(`${st.code} 已生成，${st.skus.length} 个 SKU，资料包还要建`) } }
+    function save() { const st = run(() => smpConvert(p.s, { ...f })); if (st?.code) { emit('close'); go('/styles/' + st.code); toast(`${st.code} 已生成，${st.skus.length} 个 SKU，` + (p.s.devBom ? '研发 BOM 已复制成生产 BOM V1 草稿，核对后发布' : '样衣没有研发 BOM，资料包还要建')) } }
     return { f, auto, factories, save }
   },
   template: `<Modal t="转大货" :w="460" @close="$emit('close')">
     <div class="form">
-      <label class="f">款号<input class="inp code" v-model="f.code" :placeholder="auto"></label>
-      <label class="f">名称<input class="inp" v-model="f.name"></label>
+      <label class="f">款号<input class="inp code" v-model="f.code" :placeholder="auto.code ? '不填自动编：' + auto.code : '编不出来，要手填'"></label>
+      <label class="f">大类<select class="sel" v-model="f.big"><option v-for="x in liveBigCats()" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></select></label>
+      <p v-if="!f.code.trim() && auto.err" class="f full amber" style="margin:0;font-size:12px">{{ auto.err }}</p>
+      <label class="f full">名称<input class="inp" v-model="f.name"></label>
       <label class="f full">默认加工厂<select class="sel" v-model="f.factory"><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></select></label>
     </div>
     <template #foot><span class="dim">{{ s.colors.length }} 色 × {{ sizesOf(s.sizeGroup).length }} 码</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">生成款式</button></template>
@@ -431,11 +449,8 @@ db.quotes = [
   { id: 'BJ12', mat: 'MZ0003', sup: 'GYS0001', price: 48.5, lead: 18, moq: 100, at: '2026-09-02' },
   { id: 'BJ13', mat: 'BX0001', sup: 'GYS0003', price: 0.18, lead: 7, moq: 2000, at: '2026-06-18', chosen: true },
 ]
-db.priceLog = [
-  { mat: 'ML0012', from: 19.2, to: 18.5, fromSup: 'GYS0001', sup: 'GYS0001', at: '2026-08-12', by: 'u2' },
-  { mat: 'FK0021', from: 0.38, to: 0.35, fromSup: 'GYS0002', sup: 'GYS0002', at: '2026-07-30', by: 'u2' },
-]
-const costTp = (code) => activeTp(code) || tpsOf(code)[0]
+// 调价记录不再单独记，都在价格档案里（§6.10，5e-price.js）；核价用生产 BOM，还没有就用研发 BOM 估
+const costTp = (code) => activeTp(code) || tpsOf(code)[0] || activeTp(code, '研发') || tpsOf(code, '研发')[0]
 function costDefaults(code) {
   const s = style(code)
   const prices = db.orders.filter((o) => o.status !== '已取消').flatMap((o) => o.lines).filter((l) => l.style === code && l.price).map((l) => l.price)
@@ -458,14 +473,14 @@ function costOf(code) {
 const costRate = (x) => (x == null ? '—' : Math.round(x * 1000) / 10 + '%')
 function quoteChoose(q) {
   if (!canUseSupplier(q.sup, '采购')) fail(`${supName(q.sup)} 现在是「${sup(q.sup).status}」，不能选`)
+  // 选定的报价记进价格档案（这家 × 物料，所有颜色），和现价一样就不记；物料的默认供应商换成这家
+  const cur = curMatRec(q.sup, q.mat, null)
+  if (!cur || !samePrice(cur.price, q.price)) recordPrice({ kind: '物料价', sup: q.sup, mat: q.mat, price: q.price, why: '选定报价 ' + q.id, src: q.id })
   db.quotes.filter((x) => x.mat === q.mat).forEach((x) => { x.chosen = false })
   q.chosen = true
   const m = mat(q.mat)
-  if (m.price !== q.price || m.supplier !== q.sup) {
-    db.priceLog.unshift({ mat: q.mat, from: m.price, to: q.price, fromSup: m.supplier, sup: q.sup, at: clock.today, by: db.me })
-    m.price = q.price
-    m.supplier = q.sup
-  }
+  m.price = q.price
+  m.supplier = q.sup
 }
 function quoteAdd(f) {
   if (!f.mat || !f.sup) fail('物料、供应商都要选')
@@ -484,7 +499,7 @@ route('/costing', {
     <div class="bar" data-c="筛选"><span class="sp"></span><Search v-model="s.q"/></div>
     <div data-c="核价列表">
       <Tbl :rows="rows" link @row="x => go('/costing/' + x.s.code)" empty="没有符合条件的款式" :cols="[
-        { k: 'code', t: '款式' }, { k: 'tp', t: '资料包', f: x => x.c ? 'V' + x.c.tp.ver + (x.c.tp.status === '已生效' ? '' : ' 草稿') : '—' },
+        { k: 'code', t: '款式' }, { k: 'tp', t: '资料包', f: x => x.c ? tpName(x.c.tp) + (x.c.tp.status === '已生效' ? '' : ' 草稿') : '—' },
         { k: 'mat', t: '物料', c: 'num', f: x => x.c ? fm(x.c.mat) : '—' }, { k: 'labor', t: '加工', c: 'num', f: x => x.c ? fm(x.c.labor) : '—' },
         { k: 'other', t: '其他', c: 'num', f: x => x.c ? fm(x.c.other) : '—' }, { k: 'total', t: '总成本', c: 'num' },
         { k: 'quote', t: '报价', c: 'num', f: x => x.c ? fm(x.c.quote) : '—' }, { k: 'rate', t: '毛利率', c: 'num' }]">
@@ -506,7 +521,7 @@ route('/costing/:code', {
     const sizes = computed(() => sizesOf(s.value.sizeGroup))
     const mats = computed(() => (c.value ? [...new Set(c.value.tp.bom.filter((r) => r.src !== '工厂自备').map((r) => r.mat))] : []))
     const quotesOf = (m) => db.quotes.filter((q) => q.mat === m).sort((a, b) => a.price - b.price)
-    const logOf = (m) => db.priceLog.filter((x) => x.mat === m)
+    const logOf = (m) => pricesOf({ kind: '物料价', mat: m }).filter((x) => !x.void).sort(byNewPrice).slice(0, 5)
     const lines = computed(() => db.orders.filter((o) => !['已取消', '草稿'].includes(o.status) && o.lines.some((l) => l.style === p.code)).map((o) => {
       const ls = o.lines.filter((l) => l.style === p.code)
       const qty = sum(ls, (l) => l.qty), price = ls[0].price
@@ -525,7 +540,7 @@ route('/costing/:code', {
     <div class="detail">
       <div class="body">
         <div class="title"><Thumb :code="s.code" :s="44"/>{{ s.name }}</div>
-        <div class="sub"><span v-if="c">资料包 V{{ c.tp.ver }}{{ c.tp.status === '已生效' ? '' : ' 草稿' }}</span><span>吊牌价 {{ fm(s.tagPrice) }}</span></div>
+        <div class="sub"><span v-if="c">资料包 {{ tpName(c.tp) }}{{ c.tp.status === '已生效' ? '' : ' 草稿' }}<template v-if="tpStage(c.tp) === '研发'">（还没有生产 BOM，按研发估）</template></span><span>吊牌价 {{ fm(s.tagPrice) }}</span></div>
         <Tabs v-model="tab" :items="[['cost', '成本'], ['quote', '询价比价'], ['margin', '订单毛利', lines.length]]"/>
         <div v-if="!c" class="empty">这个款还没有资料包，算不了成本<p style="margin-top:14px"><a class="btn" :href="'#/styles/' + s.code">去建资料包</a></p></div>
         <template v-else>
@@ -534,7 +549,7 @@ route('/costing/:code', {
               <thead><tr><th>部位</th><th>物料</th><th class="num">用量（{{ baseSizeOf(s.sizeGroup) }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件</th></tr></thead>
               <tbody>
                 <tr v-for="(r, i) in c.tp.bom.filter(r => r.src !== '工厂自备')" :key="i"><td>{{ r.part }}</td><td>{{ mat(r.mat).name }}<span v-if="r.src === '客供'" class="amber">　客供</span></td>
-                  <td class="num">{{ fq(rowMidUse(r, sizes, baseSizeOf(s.sizeGroup))) }} {{ mat(r.mat).unit }}</td><td class="num">{{ r.loss }}%</td><td class="num">{{ fm(unitPrice(r)) }}</td><td class="num">{{ r.src === '我方采购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup))) : '—' }}</td></tr>
+                  <td class="num">{{ fq(rowMidUse(r, sizes, baseSizeOf(s.sizeGroup))) }} {{ mat(r.mat).unit }}</td><td class="num">{{ r.loss }}%</td><td class="num">{{ fm(unitPrice(r, tpStage(c.tp))) }}</td><td class="num">{{ r.src === '我方采购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup), tpStage(c.tp))) : '—' }}</td></tr>
                 <tr><td>加工</td><td>工艺单 {{ c.tp.ops.length }} 道工序</td><td></td><td></td><td></td><td class="num">{{ fm(c.labor) }}</td></tr>
               </tbody>
               <tfoot><tr><td>料工合计</td><td></td><td></td><td></td><td></td><td class="num">{{ fm(c.mat + c.labor) }}</td></tr></tfoot>
@@ -549,12 +564,13 @@ route('/costing/:code', {
                 <template #sup="{ r }"><span class="row">{{ supName(r.sup) }}<St v-if="sup(r.sup).status !== '合作中'" :s="sup(r.sup).status"/></span></template>
                 <template #act="{ r }"><span v-if="r.chosen" class="row g4 green"><Ico n="check" :s="14"/>在用</span><button v-else-if="sup(r.sup).status === '合作中'" class="btn sm" @click="choose(r)">选这家</button></template>
               </Tbl>
-              <ul v-if="logOf(m).length" class="log" style="margin-top:8px"><li v-for="(x, i) in logOf(m)" :key="i"><span>{{ fd(x.at) }}</span><div>{{ userName(x.by) }} 调价 {{ fm(x.from) }} → {{ fm(x.to) }}<template v-if="x.fromSup !== x.sup">，{{ supName(x.fromSup) }} → {{ supName(x.sup) }}</template></div></li></ul>
+              <ul v-if="logOf(m).length" class="log" style="margin-top:8px"><li v-for="x in logOf(m)" :key="x.id"><span>{{ fd(x.date) }}</span><div>{{ supName(x.sup) }}<template v-if="x.sku"> · {{ skuName(x.sku) }}</template> {{ fm(x.price) }}<span class="dim">{{ x.why ? '　' + x.why : '' }}{{ x.src ? '　' + x.src : '' }}</span></div></li></ul>
+              <p v-if="logOf(m).length" class="dim" style="font-size:12px;margin-top:4px">价格档案里最近 5 条，全部在 <a :href="'#/materials/' + m">物料详情 › 价格记录</a></p>
             </div>
           </section>
           <section v-if="tab === 'margin'" data-c="订单毛利">
             <Tbl inset flat :rows="lines" link @row="x => go('/orders/' + x.o.no)" empty="这个款还没有审核过的订单" :cols="[
-              { k: 'no', t: '订单', c: 'code', f: x => x.o.no }, { k: 'cust', t: '客户', f: x => x.o.customer ? custName(x.o.customer) : x.o.type },
+              { k: 'no', t: '订单', c: 'code', f: x => x.o.no }, { k: 'cust', t: TRADE ? '客户' : '类型', f: x => custOrDash(x.o) },
               { k: 'qty', t: '数量', c: 'num' }, { k: 'price', t: '单价', c: 'num', f: x => x.price ? fm(x.price) : '—' },
               { k: 'net', t: '收入（不含税）', c: 'num', f: x => x.price ? fm(x.net) : '—' }, { k: 'cost', t: '成本', c: 'num', f: x => x.price ? fm(x.cost) : '—' },
               { k: 'margin', t: '毛利', c: 'num' }]">
@@ -638,7 +654,7 @@ function qcSupplierStats() {
 // 种子：第一批回货验过（合格），两张面料入库验过（一张合格、一张让步接收）
 as('u1', '2026-11-02', () => { const r = db.returns[0]; if (r) qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 2, result: '合格' }) })
 as('u5', '2026-10-08', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0009'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 20, bad: 0, result: '合格' }) })
-as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，客户同意接收', photos: [demoPic('defect', colorOf('KQ').hex, '色差', '色差对比.jpg')] }) })
+as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，' + ifTrade('客户同意接收', '开发确认能用'), photos: [demoPic('defect', colorOf('KQ').hex, '色差', '色差对比.jpg')] }) })
 
 TODOS.push(() => [{ t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' }])
 
@@ -750,14 +766,14 @@ function fgShip(o, f) {
 }
 function fgPush(d) { if (d.jst === '已推送') return; d.jst = '已推送'; d.pushedAt = clock.today; act(d, '推送聚水潭') }
 const fgOrders = () => db.orders.filter((o) => ['已审核', '生产中', '已完成'].includes(o.status) && o.lines.some((l) => fgQty(l.style, l.color, l.size) > 0))
-// 种子：第一批回货入库，部分发给客户
+// 种子：第一批回货入库，部分发货（卫衣那张订单）
 as('u5', '2026-11-02', () => { const r = db.returns[0]; if (r) fgPush(fgReceive(r)) })
 as('u5', '2026-11-03', () => {
-  const o = db.orders.find((x) => x.customer === 'KH0003')
+  const o = db.orders.find((x) => orderStyles(x).includes('26DS021'))
   if (o && fgQty('26DS021', 'HE', 'M')) fgShip(o, { logistics: 'SF1029385521', qty: { '26DS021|HE|S': 50, '26DS021|HE|M': 100, '26DS021|HE|L': 90, '26DS021|HE|XL': 40, '26DS021|HE|XXL': 20 } })
 })
 
-SEARCH.push(() => db.shipments.map((s) => ({ t: s.no + ' ' + custName(s.customer), sub: '发货单', to: '/fg?tab=发货', i: 'warehouse' })))
+SEARCH.push(() => db.shipments.map((s) => ({ t: s.no + ' ' + (TRADE ? custName(s.customer) : s.order), sub: '发货单', to: '/fg?tab=发货', i: 'warehouse' })))
 TODOS.push(() => [{ t: '回货待入成品仓', n: fgPending().filter((x) => x.qc?.result !== '不合格').length, to: '/fg', i: 'warehouse' }])
 
 route('/fg', {
@@ -767,7 +783,7 @@ route('/fg', {
     const stockStyles = computed(() => [...new Set(Object.entries(db.fgStock).filter(([, q]) => q > 0).map(([k]) => k.split('|')[0]))])
     const stockModel = (st) => Object.fromEntries(Object.entries(db.fgStock).filter(([k]) => k.startsWith(st + '|')).map(([k, q]) => [k.split('|').slice(1).join('|'), q]))
     const stockColors = (st) => style(st).colors.filter((c) => sizesOf(style(st).sizeGroup).some((z) => fgQty(st, c, z) > 0))
-    const jst = computed(() => [...db.fgIn.map((d) => ({ d, kind: '成品入库', party: supName(d.factory), qty: sum(d.lines, (l) => l.qty) })), ...db.shipments.map((d) => ({ d, kind: '发货', party: custName(d.customer), qty: sum(d.lines, (l) => l.qty) }))].sort((a, b) => b.d.date.localeCompare(a.d.date)))
+    const jst = computed(() => [...db.fgIn.map((d) => ({ d, kind: '成品入库', party: supName(d.factory), qty: sum(d.lines, (l) => l.qty) })), ...db.shipments.map((d) => ({ d, kind: '发货', party: TRADE ? custName(d.customer) : custOrDash(order(d.order)), qty: sum(d.lines, (l) => l.qty) }))].sort((a, b) => b.d.date.localeCompare(a.d.date)))
     const tabs = computed(() => [['待入库', '待入库', pend.value.length], ['库存', '库存'], ['发货', '发货', db.shipments.length], ['聚水潭', '聚水潭', jst.value.filter((x) => x.d.jst === '待推送').length || null]])
     function receive(r) { const d = run(() => fgReceive(r)); if (d?.no) toast(`${d.no} 入库 ${sum(d.lines, (l) => l.qty)} 件`) }
     const pushAll = () => { jst.value.forEach((x) => fgPush(x.d)); toast('已全部推送') }
@@ -798,7 +814,7 @@ route('/fg', {
     </div>
     <div v-if="s.tab === '发货'" data-c="发货单">
       <Tbl :rows="db.shipments.slice().reverse()" empty="还没有发过货" :cols="[
-        { k: 'no', t: '发货单', c: 'code' }, { k: 'order', t: '订单', c: 'code' }, { k: 'customer', t: '客户', f: x => custName(x.customer) },
+        { k: 'no', t: '发货单', c: 'code' }, { k: 'order', t: '订单', c: 'code' }, ...(TRADE ? [{ k: 'customer', t: '客户', f: x => custName(x.customer) }] : []),
         { k: 'qty', t: '件数', c: 'num', f: x => sum(x.lines, l => l.qty) }, { k: 'amt', t: '金额', c: 'num', f: x => fm(sum(x.lines, l => l.qty * (l.price || 0))) },
         { k: 'logistics', t: '物流单号', c: 'code', f: x => x.logistics || '—' }, { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'jst', t: '聚水潭' }]">
         <template #order="{ r }"><a class="code" :href="'#/orders/' + r.order">{{ r.order }}</a></template>
@@ -840,7 +856,7 @@ comp('FgShip', {
     <div v-if="!orders.length" class="empty">成品仓里没有能发的货</div>
     <template v-else>
       <div class="form" style="margin-bottom:16px">
-        <label class="f">订单<select class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ x.customer ? custName(x.customer) : x.type }}</option></select></label>
+        <label class="f">订单<select class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ custOrDash(x) }}</option></select></label>
         <label class="f">物流单号<input class="inp code" v-model="f.logistics"></label>
       </div>
       <div v-for="st in styles" :key="st" style="margin-bottom:16px">
@@ -905,7 +921,7 @@ function finVerify(inv) {
   if (due != null && Math.abs(due - inv.amt) > 0.01) fail(`发票金额 ${fm(inv.amt)} 和单据金额 ${fm(due)} 对不上`)
   inv.status = '已核销'
 }
-// 客户应收：按发货 × 订单单价，到期日 = 发货日 + 客户账期
+// 客户应收：按发货 × 订单单价，到期日 = 发货日 + 客户账期；页签只在 TRADE 开时有
 const finShipAmt = (sh) => rnd(sum(sh.lines, (l) => l.qty * (l.price || 0)), 2)
 function finReceivables() {
   return db.shipments.map((sh) => {
@@ -927,12 +943,146 @@ as('u7', '2026-11-02', () => {
   as('u7', '2026-11-05', () => finVerify(finInvoice({ no: 'FP00031876', dir: '收票', party: 'GYS0009', ref: s.no, amt: finAmt(s), rate: '13%' })))
 })
 
+/* ---------- 上传工厂对账单（对账 M11 待定）：识别成表格，和我方单据逐行比，差异写说明，再生成对账单 ----------
+ * 原型里识别结果是编的（照我方单据改几处）；真系统用 MinerU（自部署）或第三方 OCR API，agent 也能通过 MCP 调用同一个解析工具 */
+const OCR_NOTE = '原型里识别结果是编的；真系统用 MinerU（自部署）或第三方 OCR API，agent 也能通过 MCP 调用同一个解析工具'
+const OCR_CATS = { 一致: ['一致', 'green'], 不一致: ['数量或金额不一致', 'amber'], 对方有: ['对方有我方没有', 'red'], 我方有: ['我方有对方没有', 'red'] }
+// 我方这边：每张待对账单据一行（货款），有次品扣款的再单独一行（扣款，金额记负数）
+function ocrOurs(supCode, month) {
+  return finPayables().filter((x) => x.sup === supCode && finMonth(x.date) === month).flatMap((x) => {
+    const r = x.type === '回货' ? liveReturns().find((y) => y.no === x.no) : null
+    const base = { no: x.no, type: x.type, date: x.date, style: r?.style || '', supNo: db.stockDocs.find((d) => d.no === x.no)?.supNo || '', desc: r ? r.style + ' ' + styleName(r.style) : x.desc }
+    const rows = [{ ...base, k: '货款', qty: x.qty, price: x.qty ? rnd(x.amt / x.qty, 4) : 0, amt: x.amt }]
+    if (x.deduct) { const pr = production(x.prod)?.price || 0; rows.push({ ...base, k: '扣款', desc: '次品扣款', qty: -sum(r.lines, (l) => l.def), price: pr, amt: -x.deduct }) }
+    return rows
+  })
+}
+// 编一张工厂对账单：第 1 张照抄（连扣款），第 2 张按新单价算、没列扣款，再多一张我方没登记的送货
+function ocrFake(supCode, month) {
+  const ours = ocrOurs(supCode, month), goods = ours.filter((o) => o.k === '货款'), out = []
+  const theirNo = (o) => o.supNo || 'SH' + o.date.slice(5).replace('-', '')
+  goods.forEach((o, i) => {
+    const t = { date: o.date, no: theirNo(o), style: o.style, desc: o.desc, k: '货款', qty: o.qty, price: o.price, amt: o.amt }
+    if (i === 1) { t.price = rnd(o.price + (o.type === '回货' ? 2 : 0.5), 4); t.amt = rnd(t.qty * t.price, 2) }
+    out.push(t)
+    const d = ours.find((x) => x.k === '扣款' && x.no === o.no)
+    if (d && i === 0) out.push({ date: o.date, no: theirNo(o), style: o.style, desc: '次品扣款', k: '扣款', qty: d.qty, price: d.price, amt: d.amt })
+  })
+  const last = goods[goods.length - 1]
+  if (last) {
+    const date = [addDays(last.date, 3), finMonthEnd(month)].sort()[0], qty = last.type === '回货' ? 150 : Math.max(1, Math.round(last.qty * 0.3))
+    out.push({ date, no: 'SH' + date.slice(5).replace('-', ''), style: last.style, desc: last.desc, k: '货款', qty, price: last.price, amt: rnd(qty * last.price, 2) })
+  }
+  return out
+}
+// 比对：先按单号（我方单号、供应商送货单号）对，对不上再按日期（前后 3 天内）+ 款号对；同类（货款对货款、扣款对扣款）才对
+function ocrCompare(theirs, ours) {
+  const used = new Set(), hit = new Map()
+  const pick = (t, ok) => { let best = -1, bd = Infinity; ours.forEach((o, i) => { if (used.has(i) || o.k !== t.k) return; const d = ok(o, t); if (d != null && d < bd) { bd = d; best = i } }); return best }
+  const byNo = (o, t) => (t.no && (t.no === o.no || t.no === o.supNo) ? Math.abs(diffDays(t.date, o.date)) : null)
+  const byDay = (o, t) => { const d = Math.abs(diffDays(t.date, o.date)); return d <= 3 && (!t.style || !o.style || t.style === o.style) ? d : null }
+  ;[byNo, byDay].forEach((ok) => theirs.forEach((t, ti) => { if (hit.has(ti)) return; const i = pick(t, ok); if (i >= 0) { used.add(i); hit.set(ti, i) } }))
+  const out = theirs.map((t, ti) => {
+    const o = hit.has(ti) ? ours[hit.get(ti)] : null
+    if (!o) return { cat: '对方有', t, o: null, da: t.amt, note: '' }
+    const same = Math.abs(o.qty - t.qty) < 0.001 && Math.abs(o.amt - t.amt) < 0.005
+    return { cat: same ? '一致' : '不一致', t, o, dq: rnd(t.qty - o.qty, 3), da: rnd(t.amt - o.amt, 2), note: '' }
+  })
+  ours.forEach((o, i) => { if (!used.has(i)) out.push({ cat: '我方有', t: null, o, da: -o.amt, note: '' }) })
+  return out
+}
+// 按比对结果生成：金额按我方单据算；差异每处都要写说明（和工厂谈的结果），原件和识别结果挂在对账单上
+function ocrCreate(f) {
+  const miss = f.cmp.filter((x) => x.cat !== '一致' && !x.note?.trim())
+  if (miss.length) fail(`还有 ${miss.length} 处差异没写说明`, miss.map((x) => `${OCR_CATS[x.cat][0]}：${(x.t || x.o).desc} ${fd((x.t || x.o).date)}`))
+  const s = finCreate(f.sup, f.month)
+  const n = (c) => f.cmp.filter((x) => x.cat === c).length
+  s.files = f.files.map((x) => ({ ...x }))
+  s.ocr = { file: f.files[0]?.name || '', at: clock.today, rows: f.rows.map((x) => ({ ...x })), cmp: f.cmp.map((x) => ({ ...x, note: (x.note || '').trim() })), theirAmt: rnd(sum(f.rows, (x) => x.amt), 2) }
+  act(s, `按工厂对账单比对生成：一致 ${n('一致')} 行，差异 ${f.cmp.length - n('一致')} 处（都写了说明）`)
+  return s
+}
+// 没有文件时用的示例对账单（一张拍的纸质对账单）
+function ocrDemoFile() {
+  const ls = [26, 33, 40, 47, 54, 61, 68].map((y) => `<path d="M14 ${y}H86" stroke="#9a968c" stroke-width=".5"/>`).join('')
+  const src = svgUri(100, 130, `<rect width="100" height="130" fill="#6b7178"/><g filter="url(#pg-soft)"><rect x="8" y="6" width="84" height="118" fill="#fbf9f3" transform="rotate(-1.5 50 65)"/></g>
+    <g transform="rotate(-1.5 50 65)"><text x="50" y="18" text-anchor="middle" font-size="6" font-weight="700" fill="#333" font-family="sans-serif">对 账 单</text>${ls}
+    <path d="M30 26V68M48 26V68M62 26V68M75 26V68" stroke="#9a968c" stroke-width=".4"/><path d="M58 96h24" stroke="#555" stroke-width=".6"/>
+    <circle cx="74" cy="100" r="8" fill="none" stroke="#c8261d" stroke-width="1" opacity=".75"/></g>`)
+  return { id: 'OCR' + Date.now(), name: '工厂对账单-拍照.jpg', size: 486000, src, at: clock.today }
+}
+
 SEARCH.push(() => db.statements.map((s) => ({ t: s.no + ' ' + supName(s.sup) + ' ' + s.month, sub: '对账单', to: '/finance/' + s.no, i: 'receipt' })))
 TODOS.push(() => [{ t: '待生成的供应商对账单', n: finGroups().length, to: '/finance', i: 'receipt' }])
 
+// 上传工厂对账单：选供应商、月份、传照片或 PDF → 识别中 → 比对结果，差异写说明 → 按比对结果生成对账单
+comp('FinOcr', {
+  emits: ['close'],
+  setup(p, { emit }) {
+    const gs = finGroups(), g0 = gs.find((g) => isFactory(sup(g.sup))) || gs[0]
+    const f = reactive({ sup: g0?.sup || '', month: g0?.month || clock.today.slice(0, 7), files: [] })
+    const s = reactive({ step: 'form', rows: [], cmp: [], cat: '全部' })
+    const sups = computed(() => db.suppliers)
+    const months = computed(() => [...new Set([...gs.filter((g) => g.sup === f.sup).map((g) => g.month), clock.today.slice(0, 7), f.month])].sort().reverse())
+    const ours = computed(() => ocrOurs(f.sup, f.month))
+    const cats = computed(() => [['全部', '全部', s.cmp.length], ...Object.keys(OCR_CATS).map((k) => [k, OCR_CATS[k][0], s.cmp.filter((x) => x.cat === k).length])])
+    const shown = computed(() => s.cmp.filter((x) => s.cat === '全部' || x.cat === s.cat))
+    const tot = (side) => rnd(sum(s.cmp.filter((x) => x[side]), (x) => x[side].amt), 2)
+    function demo() { f.files = [ocrDemoFile()] }
+    function recognize() {
+      if (!f.sup) return toast('先选供应商', null, true)
+      if (!f.files.length) return toast('先传工厂的对账单：照片、扫描件或 PDF', null, true)
+      s.step = 'busy'
+      setTimeout(() => { s.rows = ocrFake(f.sup, f.month); s.cmp = ocrCompare(s.rows, ocrOurs(f.sup, f.month)); s.cat = '全部'; s.step = 'done' }, 900)
+    }
+    function save() {
+      const st = run(() => ocrCreate({ ...f, rows: s.rows, cmp: s.cmp }))
+      if (st?.no) { emit('close'); go('/finance/' + st.no); toast(`${st.no} 已生成，原件和比对结果挂在对账单上`) }
+    }
+    return { f, s, sups, months, ours, cats, shown, tot, demo, recognize, save, OCR_CATS, OCR_NOTE }
+  },
+  template: `<Modal t="上传工厂对账单" :w="s.step === 'done' ? 1080 : 520" @close="$emit('close')">
+    <template v-if="s.step !== 'done'">
+      <div class="form">
+        <label class="f">供应商<select class="sel" v-model="f.sup" :disabled="s.step === 'busy'"><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short || x.name }}</option></select></label>
+        <label class="f">月份<select class="sel" v-model="f.month" :disabled="s.step === 'busy'"><option v-for="m in months" :key="m" :value="m">{{ m }}</option></select></label>
+        <div class="f full">对账单原件<Pics v-model="f.files" files :max="5" :s="64" tip="工厂发来的对账单：拍照、扫描件、PDF、Excel 都行"/>
+          <a v-if="!f.files.length" href="javascript:;" style="font-size:12px" @click="demo">手边没有文件？用示例对账单</a></div>
+      </div>
+      <p class="mut" style="margin:4px 0 0">我方这个月待对账：{{ ours.filter(x => x.k === '货款').length }} 张单据，{{ fm(rnd(sum(ours, x => x.amt), 2)) }}</p>
+      <p v-if="s.step === 'busy'" class="row g8" data-c="识别中" style="margin-top:12px"><span class="spin"></span>识别中：读表格、对单号……</p>
+    </template>
+    <template v-else>
+      <div class="row g8" style="margin-bottom:10px"><Seg v-model="s.cat" :items="cats"/><span class="sp"></span>
+        <span class="mut">工厂合计 {{ fm(tot('t')) }} · 我方合计 {{ fm(tot('o')) }} · 差 <b :class="{ red: tot('t') !== tot('o') }">{{ fm(rnd(tot('t') - tot('o'), 2)) }}</b></span></div>
+      <table class="tbl inset flat" data-c="比对结果">
+        <thead><tr><th>结果</th><th>工厂对账单</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th><th>我方单据</th><th class="num">数量</th><th class="num">金额</th><th class="num">差额</th><th style="width:210px">说明</th></tr></thead>
+        <tbody>
+          <tr v-for="(x, i) in shown" :key="i">
+            <td><span :class="OCR_CATS[x.cat][1]">{{ OCR_CATS[x.cat][0] }}</span></td>
+            <template v-if="x.t"><td><div>{{ fd(x.t.date) }} <span class="code">{{ x.t.no }}</span></div><small class="dim">{{ x.t.desc }}</small></td><td class="num">{{ fq(x.t.qty) }}</td><td class="num">{{ fm(x.t.price) }}</td><td class="num">{{ fm(x.t.amt) }}</td></template>
+            <template v-else><td colspan="4" class="dim">工厂对账单上没有</td></template>
+            <template v-if="x.o"><td><div class="code">{{ x.o.no }}</div><small class="dim">{{ x.o.k === '扣款' ? '次品扣款' : fd(x.o.date) + ' ' + x.o.type }}</small></td><td class="num">{{ fq(x.o.qty) }}</td><td class="num">{{ fm(x.o.amt) }}</td></template>
+            <template v-else><td colspan="3" class="dim">我方没有这张单据</td></template>
+            <td class="num" :class="{ red: x.da }">{{ x.da ? fm(x.da) : '—' }}</td>
+            <td><input v-if="x.cat !== '一致'" class="inp cell" style="min-width:200px" v-model="x.note" :placeholder="x.cat === '不一致' ? '比如：按我方单价结，工厂认了' : x.cat === '对方有' ? '比如：回货还没登记，下月对' : '比如：扣款工厂没列，已电话确认'"><span v-else class="dim">—</span></td>
+          </tr>
+          <tr v-if="!shown.length"><td colspan="10" class="dim">{{ s.cmp.length ? '这一类没有' : '没识别出明细，换一张清楚的照片再试' }}</td></tr>
+        </tbody>
+      </table>
+      <p class="mut" style="margin:8px 0 0">对账单金额按我方单据算；有差异的每一行写清楚怎么处理（和工厂谈的结果），写完才能生成。原件和识别结果都挂在对账单上。</p>
+    </template>
+    <p class="dim" style="font-size:12px;margin:10px 0 0" data-c="识别说明">{{ OCR_NOTE }}</p>
+    <template #foot>
+      <template v-if="s.step === 'done'"><button class="btn" @click="s.step = 'form'">重新上传</button><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">按比对结果生成对账单</button></template>
+      <template v-else><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="s.step === 'busy'" @click="recognize">{{ s.step === 'busy' ? '识别中…' : '识别并比对' }}</button></template>
+    </template>
+  </Modal>`,
+})
+
 route('/finance', {
   setup() {
-    const s = reactive({ tab: nav.query.tab || '对账', inv: null })
+    const s = reactive({ tab: (!TRADE && nav.query.tab === '应收' ? '' : nav.query.tab) || '对账', inv: null, ocr: false })
     const groups = computed(finGroups)
     const stmts = computed(() => db.statements.slice().reverse())
     const recv = computed(finReceivables)
@@ -940,14 +1090,15 @@ route('/finance', {
       ...db.statements.filter((x) => ['草稿', '已发送', '已确认'].includes(x.status)).map((x) => ({ sup: x.sup, ref: x.no, to: '/finance/' + x.no, amt: finAmt(x), due: finDue(x), st: x.status })),
       ...groups.value.map((g) => ({ sup: g.sup, ref: g.items.length + ' 张单据未对账', to: null, amt: g.amt, due: addDays(finMonthEnd(g.month), sup(g.sup)?.term || 0), st: '待对账' })),
     ].sort((a, b) => a.due.localeCompare(b.due)))
-    const tabs = computed(() => [['对账', '供应商对账', groups.value.length || null], ['应收', '客户应收', recv.value.filter((x) => x.status !== '已收款').length || null], ['付款', '付款计划'], ['发票', '发票', db.invoices.length]])
+    const tabs = computed(() => [['对账', '供应商对账', groups.value.length || null], ...(TRADE ? [['应收', '客户应收', recv.value.filter((x) => x.status !== '已收款').length || null]] : []), ['付款', '付款计划'], ['发票', '发票', db.invoices.length]])
     function create(g) { const st = run(() => finCreate(g.sup, g.month)); if (st?.no) go('/finance/' + st.no) }
     function collect(x) { if (run(() => finReceive(x.sh, rnd(x.amt - x.got, 2)))) toast(`${x.sh.no} 收款 ${fm(x.amt - x.got)}`) }
     function bill(x) { if (run(() => finInvoice({ dir: '开票', party: x.sh.customer, ref: x.sh.no, amt: x.amt }))) toast('已登记开票') }
     return { s, groups, stmts, recv, plan, tabs, create, collect, bill }
   },
   template: `<div>
-    <Head t="对账"/>
+    <Head t="对账"><button v-if="s.tab === '对账'" class="btn" @click="s.ocr = true"><Ico n="upload" :s="14"/>上传工厂对账单</button></Head>
+    <FinOcr v-if="s.ocr" @close="s.ocr = false"/>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
     <div v-if="s.tab === '对账'">
       <div data-c="待对账">
@@ -966,7 +1117,7 @@ route('/finance', {
         </Tbl>
       </div>
     </div>
-    <div v-if="s.tab === '应收'" data-c="客户应收">
+    <div v-if="TRADE && s.tab === '应收'" data-c="客户应收">
       <Tbl :rows="recv" empty="还没有发货，没有应收" :cols="[
         { k: 'no', t: '发货单', c: 'code', f: x => x.sh.no }, { k: 'cust', t: '客户', f: x => custName(x.sh.customer) }, { k: 'order', t: '订单', c: 'code', f: x => x.sh.order },
         { k: 'amt', t: '应收', c: 'num', f: x => fm(x.amt) }, { k: 'got', t: '已收', c: 'num', f: x => fm(x.got) }, { k: 'due', t: '到期', f: x => fd(x.due) }, { k: 'left', t: '' },
@@ -1026,6 +1177,20 @@ route('/finance/:no', {
             <template #desc="{ r }"><span class="ell mut" style="max-width:300px;display:inline-block;vertical-align:middle">{{ r.desc }}</span></template>
             <template #foot><tr><td>合计</td><td></td><td></td><td></td><td></td><td class="num">{{ fm(sum(st.items, i => i.amt)) }}</td><td class="num">{{ sum(st.items, i => i.deduct) ? '−' + fm(sum(st.items, i => i.deduct)) : '—' }}</td></tr></template>
           </Tbl>
+        </section>
+        <section v-if="st.ocr" class="sec" data-c="工厂对账单比对">
+          <h3>工厂对账单比对<span class="dim" style="font-weight:400">{{ st.ocr.file }} · {{ fd(st.ocr.at) }} 识别 {{ st.ocr.rows.length }} 行 · 工厂合计 {{ fm(st.ocr.theirAmt) }}</span></h3>
+          <p class="row g8" style="margin:0 0 8px"><span v-for="(v, k) in OCR_CATS" :key="k" :class="v[1]">{{ v[0] }} {{ st.ocr.cmp.filter(x => x.cat === k).length }}</span></p>
+          <Tbl inset flat :rows="st.ocr.cmp.filter(x => x.cat !== '一致')" empty="和工厂的对账单完全一致" :cols="[
+            { k: 'cat', t: '结果' }, { k: 'their', t: '工厂对账单' }, { k: 'our', t: '我方单据' }, { k: 'da', t: '差额', c: 'num', f: x => fm(x.da) }, { k: 'note', t: '说明', c: 'wrap' }]">
+            <template #cat="{ r }"><span :class="OCR_CATS[r.cat][1]">{{ OCR_CATS[r.cat][0] }}</span></template>
+            <template #their="{ r }"><template v-if="r.t"><div>{{ fd(r.t.date) }} <span class="code">{{ r.t.no }}</span></div><small class="dim">{{ r.t.desc }} · {{ fq(r.t.qty) }} × {{ fm(r.t.price) }} = {{ fm(r.t.amt) }}</small></template><span v-else class="dim">没有</span></template>
+            <template #our="{ r }"><template v-if="r.o"><div class="code">{{ r.o.no }}</div><small class="dim">{{ r.o.k === '扣款' ? '次品扣款 · ' : '' }}{{ fq(r.o.qty) }} · {{ fm(r.o.amt) }}</small></template><span v-else class="dim">没有</span></template>
+          </Tbl>
+          <details style="margin-top:8px"><summary class="mut" style="cursor:pointer">识别结果（{{ st.ocr.rows.length }} 行）</summary>
+            <Tbl inset flat :rows="st.ocr.rows" :cols="[{ k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'no', t: '送货单号', c: 'code' }, { k: 'desc', t: '内容' }, { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }, { k: 'amt', t: '金额', c: 'num', f: x => fm(x.amt) }]"/>
+          </details>
+          <p class="dim" style="font-size:12px;margin-top:6px">{{ OCR_NOTE }}</p>
         </section>
       </div>
       <aside class="aside" data-c="对账单属性">
@@ -1088,7 +1253,7 @@ route('/reports', {
       <div class="h2" style="margin-top:0">订单交付<span class="dim" style="font-weight:400">已完成 {{ onTime.n }} 单，准时 {{ onTime.ok }}；进行中已延期 {{ onTime.late }}</span></div>
       <div data-c="订单交付">
         <Tbl inset flat :rows="orders" link @row="x => go('/orders/' + x.o.no)" empty="还没有审核过的订单" :cols="[
-          { k: 'no', t: '订单', c: 'code', f: x => x.o.no }, { k: 'cust', t: '客户', f: x => x.o.customer ? custName(x.o.customer) : x.o.type },
+          { k: 'no', t: '订单', c: 'code', f: x => x.o.no }, { k: 'cust', t: TRADE ? '客户' : '类型', f: x => custOrDash(x.o) },
           { k: 'qty', t: '数量', c: 'num' }, { k: 'ret', t: '回货' }, { k: 'due', t: '承诺交期', f: x => fd(x.due) }, { k: 'res', t: '交付' }]">
           <template #ret="{ r }"><Prog :a="r.ret" :b="r.qty"/></template>
           <template #res="{ r }"><span :class="{ red: r.res === '已延期' || r.res === '延期完成', green: r.res === '准时完成' }">{{ r.res }}</span></template>
@@ -1124,4 +1289,5 @@ route('/reports', {
 expose({
   seasonName, PLAN, planActual, smpCur, smpState, smpNode, smpWho, smpNodeState, costOf, costRate, rowMidUse, unitPrice,
   qcAql, qcOf, fgQty, fgPush, finAmt, finDue, finVerify, OVER,
+  OCR_CATS, OCR_NOTE, ocrOurs, ocrFake, ocrCompare, ocrCreate, ocrDemoFile, costTp,
 })

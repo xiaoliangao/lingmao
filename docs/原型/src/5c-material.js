@@ -101,7 +101,7 @@ comp('MrpNew', {
   },
   template: `<Modal t="选订单算料" :w="640" @close="$emit('close')">
     <Tbl inset flat :rows="live" :sel="o => picked.includes(o.no)" link @row="o => toggle(o.no)" empty="没有已审核的订单" :cols="[
-      { k: 'ck', t: '', w: '28px' }, { k: 'no', t: '订单号', c: 'code' }, { k: 'cust', t: '客户', f: custOrDash }, { k: 'styles', t: '款式', c: 'code', f: o => orderStyles(o).join(' ') },
+      { k: 'ck', t: '', w: '28px' }, { k: 'no', t: '订单号', c: 'code' }, { k: 'cust', t: TRADE ? '客户' : '类型', f: custOrDash }, { k: 'styles', t: '款式', c: 'code', f: o => orderStyles(o).join(' ') },
       { k: 'qty', t: '数量', c: 'num', f: o => orderQty(o) }, { k: 'mrp', t: '算过', f: o => mrpsOf(o).map(m => m.no).join(' ') || '—' }]">
       <template #ck="{ r }"><input type="checkbox" :checked="picked.includes(r.no)" style="accent-color:var(--accent)"></template>
     </Tbl>
@@ -123,7 +123,8 @@ route('/mrp/:no', {
     const suppliersFor = () => db.suppliers.filter((s) => s.cats.some((c) => ['面料商', '辅料商', '包材商'].includes(c)))
     const confirmer = computed(() => [...(m.value.log || [])].reverse().find((x) => x.text === '确认' || x.text.startsWith('确认')))
     const changed = computed(() => (m.value.prev ? m.value.prev.rows.filter((x) => x.d) : []))
-    const short = (r) => Math.max(0, rnd(r.need - r.useStock - mrpRecv(m.value, r), 3))
+    const short = (r) => Math.max(0, rnd(r.need - r.useStock - mrpRecv(m.value, r) - useTransitSplit(r).got, 3))
+    const tr = ref(null) // 点开看本次用在途用的是哪几张采购单、赶不上的在途
     const tot = computed(() => ({ amt: sum(buy.value, (r) => r.purQty * r.price), conv: sum(buy.value, (r) => r.converted * r.price) }))
     function toPo() {
       const idxs = m.value.rows.map((r, i) => (picked.includes(mrpKey(r)) ? i : -1)).filter((i) => i >= 0)
@@ -138,7 +139,7 @@ route('/mrp/:no', {
     async function close() { if (await ask('关闭 ' + m.value.no, '关闭后不能再生成采购单，"本次使用库存"的占用释放给别的算料单。', '关闭')) docAct('mrp', m.value, '关闭') }
     async function delRow(r) { if (await ask('删掉这一行', `${skuName(r.sku)} 不再算进这张单（比如这种料改由工厂自备）。删了要重新算料才回得来。`, '删除', true)) run(() => removeMrpRow(m.value, r)) }
     const more = computed(() => [{ t: '重新算料', fn: redo }, open.value && { t: '关闭', fn: close }].filter(Boolean))
-    return { m, rowsOf, buy, picked, toggle, open, edit, left, suppliersFor, confirmer, changed, short, tot, toPo, more, delRow, updateMrpRow, mrpKey, mrpRecv }
+    return { m, rowsOf, buy, picked, toggle, open, edit, left, suppliersFor, confirmer, changed, short, tr, tot, toPo, more, delRow, updateMrpRow, mrpKey, mrpRecv }
   },
   template: `<div v-if="m">
     <Head :t="m.no" :back="['算料', '/mrp']">
@@ -156,6 +157,7 @@ route('/mrp/:no', {
         <dt>制单</dt><dd>{{ m.log[0] ? m.log[0].who + ' · ' + fd(m.log[0].at) : '—' }}</dd>
         <dt>确认</dt><dd>{{ confirmer ? confirmer.who + ' · ' + fd(confirmer.at) : '—' }}</dd>
         <dt>备料比</dt><dd>{{ Object.entries(db.reserve).filter(x => x[1] > 0).map(x => x[0] + ' ' + x[1] + '%').join('、') || '都是 0' }}<span class="dim">（新算时用）</span></dd>
+        <dt>要料日期</dt><dd :title="'订单已排单取加工单裁剪的计划开始；没排单按承诺交期倒推。在途预计到货不晚于它才算赶得上'">{{ m.needDate ? fd(m.needDate) : '—' }}<span class="dim">（算的时候）</span></dd>
         <dt>备注</dt><dd style="grid-column:span 5"><NoteEdit :d="m"/></dd>
       </dl>
       <div v-if="m.prev" class="sec" data-c="和上一张对比"><h3>和上一张 <a class="code" :href="'#/mrp/' + m.prev.no">{{ m.prev.no }}</a> 比</h3>
@@ -165,9 +167,10 @@ route('/mrp/:no', {
       </div>
       <div class="sec" data-c="我方采购"><h3>我方采购<span class="acts dim" style="font-size:12px">预计金额 {{ fm(tot.amt) }}　已转采购 {{ fm(tot.conv) }}</span></h3>
         <div style="overflow-x:auto"><table class="tbl inset flat mrp-buy">
-          <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">毛需求</th><th class="num">需求</th><th class="num">可用库存</th><th class="num">本次用库存</th><th class="num">在途</th><th class="num">本次用在途</th><th class="num">净需求</th><th class="num">建议采购</th><th class="num">参考单价</th><th class="num">预计金额</th><th class="num">已转采购</th><th class="num">已入库</th><th v-if="edit" style="width:32px"></th></tr></thead>
+          <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">毛需求</th><th class="num">需求</th><th class="num">可用库存</th><th class="num">本次用库存</th><th class="num" title="交期赶得上要料日期的在途，去掉别的算料单占着的">可用在途</th><th class="num">本次用在途</th><th class="num" title="预计到货晚于要料日期，不扣">赶不上的在途</th><th class="num">净需求</th><th class="num">建议采购</th><th class="num">参考单价</th><th class="num">预计金额</th><th class="num">已转采购</th><th class="num">已入库</th><th v-if="edit" style="width:32px"></th></tr></thead>
           <tbody>
-            <tr v-for="r in buy" :key="mrpKey(r)" :class="{ sel: picked.includes(mrpKey(r)) }">
+            <template v-for="r in buy" :key="mrpKey(r)">
+            <tr :class="{ sel: picked.includes(mrpKey(r)) }">
               <td><input type="checkbox" :checked="picked.includes(mrpKey(r))" :disabled="!open || r.purQty <= r.converted" @change="toggle(r)" style="accent-color:var(--accent)"></td>
               <td><span class="row"><Thumb :code="r.sku" :s="32"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td>
               <td><select v-if="edit" class="sel" style="height:26px" v-model="r.supplier"><option v-for="s in suppliersFor()" :key="s.code" :value="s.code">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select><template v-else>{{ supName(r.supplier) }}</template></td>
@@ -175,22 +178,29 @@ route('/mrp/:no', {
               <td class="num" :title="'损耗' + (r.reserve ? '、备料比 ' + r.reserve + '%' : '') + '以后'">{{ fq(r.need) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
               <td class="num">{{ fq(r.avail) }}</td>
               <td class="num"><input v-if="edit" class="inp cell num ghost" style="width:80px" :value="r.useStock" @change="updateMrpRow(r, 'useStock', $event.target.value)"><template v-else>{{ fq(r.useStock) }}</template></td>
-              <td class="num dim">{{ fq(r.transit) }}</td>
-              <td class="num"><input v-if="edit" class="inp cell num ghost" style="width:80px" :value="r.useTransit || 0" @change="updateMrpRow(r, 'useTransit', $event.target.value)"><template v-else>{{ fq(r.useTransit || 0) }}</template></td>
+              <td class="num">{{ fq(r.availTransit || 0) }}</td>
+              <td class="num"><input v-if="edit" class="inp cell num ghost" style="width:80px" :value="r.useTransit || 0" @change="updateMrpRow(r, 'useTransit', $event.target.value)"><template v-else>{{ fq(r.useTransit || 0) }}</template>
+                <a v-if="r.transitUse?.length || r.transitLate?.length" class="dim" style="font-size:12px;margin-left:4px" @click="tr = tr === mrpKey(r) ? null : mrpKey(r)" title="看用的是哪几张采购单">{{ tr === mrpKey(r) ? '收起' : '明细' }}</a></td>
+              <td class="num"><span v-if="r.lateTransit" class="amber">{{ fq(r.lateTransit) }}</span><span v-else class="dim">—</span></td>
               <td class="num">{{ fq(r.net) }}</td>
               <td class="num"><input v-if="edit" class="inp cell num ghost" style="width:80px;font-weight:600" :value="r.purQty" @change="updateMrpRow(r, 'purQty', $event.target.value, m)"><b v-else>{{ fq(r.purQty) }}</b> <span class="dim">{{ purUnit(r.sku) }}</span></td>
               <td class="num">{{ fm(r.price) }}</td>
               <td class="num">{{ fm(r.purQty * r.price) }}</td>
               <td class="num">{{ r.converted ? fq(r.converted) : '—' }}</td>
-              <td class="num"><template v-if="r.converted || r.useStock"><span v-if="!short(r)" class="flag" style="color:var(--green)"><Ico n="check" :s="12"/>齐</span><span v-else :title="'还差 ' + fq(short(r)) + ' ' + unitOf(r.sku)">{{ fq(mrpRecv(m, r)) }} <span class="amber" style="font-size:12px">差 {{ fq(short(r)) }}</span></span></template><span v-else class="dim">—</span></td>
+              <td class="num"><template v-if="r.converted || r.useStock || r.useTransit"><span v-if="!short(r)" class="flag" style="color:var(--green)"><Ico n="check" :s="12"/>齐</span><span v-else :title="'还差 ' + fq(short(r)) + ' ' + unitOf(r.sku)">{{ fq(mrpRecv(m, r)) }} <span class="amber" style="font-size:12px">差 {{ fq(short(r)) }}</span></span></template><span v-else class="dim">—</span></td>
               <td v-if="edit"><button v-if="!r.converted" class="btn ghost icon sm" title="删掉这一行" @click="delRow(r)"><Ico n="x" :s="12"/></button></td>
             </tr>
-            <tr v-if="!buy.length"><td :colspan="edit ? 16 : 15" class="empty">资料包里没有我方采购的料</td></tr>
+            <tr v-if="tr === mrpKey(r)" data-c="在途明细"><td></td><td :colspan="edit ? 16 : 15" style="white-space:normal;padding:8px 0 12px">
+              <div v-if="r.transitUse?.length" class="mut" style="font-size:12.5px">本次用在途：<span v-for="u in r.transitUse" :key="u.po + u.i" style="margin-right:14px"><a class="code" :href="'#/purchases/' + u.po">{{ u.po }}</a> {{ purchase(u.po)?.type }} · 预计 {{ fd(u.date) }} 到 · 用 {{ fq(u.qty) }} {{ unitOf(r.sku) }}</span></div>
+              <div v-if="r.transitLate?.length" class="amber" style="font-size:12.5px;margin-top:4px">赶不上的在途（要料日期 {{ fd(m.needDate) }}，不扣）：<span v-for="u in r.transitLate" :key="u.po + u.i" style="margin-right:14px"><a class="code" :href="'#/purchases/' + u.po">{{ u.po }}</a> 预计 {{ fd(u.date) }} 到 · {{ fq(u.free) }} {{ unitOf(r.sku) }}</span></div>
+            </td></tr>
+            </template>
+            <tr v-if="!buy.length"><td :colspan="edit ? 17 : 16" class="empty">资料包里没有我方采购的料</td></tr>
           </tbody>
         </table></div>
-        <p class="dim" style="font-size:12px;margin-top:8px">毛需求 = 订单数 × 单件用量；需求 = 毛需求 ×（1 + 损耗）×（1 + 备料比）。在途只列出来参考，要用就填「本次用在途」。已入库按这张单（和重新算料前的旧单）生成的采购单算，加上本次用库存够了就是「齐」。</p>
+        <p class="dim" style="font-size:12px;margin-top:8px">毛需求 = 订单数 × 单件用量；需求 = 毛需求 ×（1 + 损耗）×（1 + 备料比）。可用 = 库存 + 交期赶得上要料日期的在途 − 别的算料单占着的：先下的备货采购还没到也自动扣，不会重复买；赶不上的在途单独列出来、不扣。本次用库存、本次用在途可以改小。已入库按这张单（和重新算料前的旧单）生成的采购单、本次用在途里到了货的算，加上本次用库存够了就是「齐」。</p>
       </div>
-      <div class="sec" data-c="待客户提供" v-if="rowsOf('客供').length"><h3>待客户提供</h3>
+      <div class="sec" data-c="待客户提供" v-if="TRADE && rowsOf('客供').length"><h3>待客户提供</h3>
         <Tbl inset flat :rows="rowsOf('客供')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }, { k: 'del', t: '' }]">
           <template #gap="{ r }"><span :class="{ red: r.net > 0 }">{{ r.net > 0 ? fq(r.net) : '够了' }}</span></template>
           <template #del="{ r }"><button v-if="edit" class="btn ghost icon sm" title="删掉这一行" @click="delRow(r)"><Ico n="x" :s="12"/></button></template></Tbl></div>
@@ -204,8 +214,8 @@ route('/mrp/:no', {
 
 /* ---------- 采购单 ---------- */
 const PO_FIELDS = [['company', '主体', companyName], ['supplier', '供应商', supName], ['type', '类型'], ['buyer', '采购员', userName], ['date', '下单日期', fd], ['due', '交货日期', fd],
-  ['wh', '交货地点', whName], ['settle', '结算方式'], ['tax', '税率'], ['taxIncl', '含税', (v) => (v ? '含税' : '不含税')], ['note', '备注']]
-const poLineSig = (l) => [l.sku, l.owner || '自有', l.qty, l.price, l.due || '', l.expect || ''].join('|')
+  ['wh', '交货地点', whName], ['settle', '结算方式'], ['tax', '税率'], ['taxIncl', '含税', (v) => (v ? '含税' : '不含税')], ['plan', '计划用于款号'], ['note', '备注']]
+const poLineSig = (l) => [l.sku, l.owner || '自有', l.qty, l.price, l.priceWhy || '', l.due || '', l.expect || ''].join('|')
 function updatePurchase(p, f) {
   if (p.status !== '草稿') fail('只有草稿能改；已提交的先撤回，或等审核人驳回')
   if (!canUseSupplier(f.supplier, '采购')) fail(`${supName(f.supplier)} 现在是「${sup(f.supplier)?.status || '未选'}」，不能下采购单`)
@@ -213,12 +223,14 @@ function updatePurchase(p, f) {
   if (!lines.length) fail('至少一行物料')
   if (!f.date || !f.due) fail('下单日期、交货日期都要填')
   if (f.due < f.date) fail('交货日期不能早于下单日期')
+  lines.forEach((l) => { if (l.price == null || l.price === '') l.price = poDefaultPrice(f.supplier, l.sku, f.date) })
+  checkPoPrices(f.supplier, f.date, lines) // 和档案现价不一样的行要写改价原因（5e-price.js）
   const ch = applyFields(p, f, PO_FIELDS)
   if (p.lines.map(poLineSig).join(';') !== lines.map(poLineSig).join(';')) {
     ch.push(p.lines.length === lines.length ? '明细：' + lines.filter((l, i) => poLineSig(l) !== poLineSig(p.lines[i])).map((l) => skuName(l.sku)).join('、') : `明细 ${p.lines.length} 行 → ${lines.length} 行`)
     // 算料生成的行改了数量或删了：算料单的"已转采购"跟着改，免得少买或重复买
     shiftMrp(p.lines, -1)
-    p.lines = lines.map((l) => ({ owner: '自有', due: null, expect: null, note: '', received: 0, returned: 0, src: null, ...l, price: l.price ?? skuPrice(l.sku) ?? null }))
+    p.lines = lines.map((l) => ({ owner: '自有', due: null, expect: null, note: '', priceWhy: '', received: 0, returned: 0, src: null, ...l }))
     shiftMrp(p.lines, 1, p.no + ' 改数量')
   }
   if (!ch.length) fail('没有改动')
@@ -306,15 +318,25 @@ comp('PurchaseForm', {
     const x = p.po
     const s0 = sup('GYS0001')
     const f = reactive(x
-      ? { ...Object.fromEntries(PO_FIELDS.map(([k]) => [k, x[k]])), lines: x.lines.map((l) => ({ sku: l.sku, owner: l.owner || '自有', qty: l.qty, price: l.price, due: l.due || '', expect: l.expect || '', src: l.src, note: l.note })) }
-      : { company: myCompany(), supplier: s0.code, type: '备货采购', buyer: s0.buyer || 'u2', date: clock.today, due: '', wh: 'WL01', settle: s0.settle, tax: s0.tax, taxIncl: true, note: '', files: [], lines: [{ sku: '', owner: '自有', qty: null, price: null, due: '', expect: '' }] })
+      ? { ...Object.fromEntries(PO_FIELDS.map(([k]) => [k, x[k]])), plan: [...(x.plan || [])], lines: x.lines.map((l) => ({ sku: l.sku, owner: l.owner || '自有', qty: l.qty, price: l.price, priceWhy: l.priceWhy || '', due: l.due || '', expect: l.expect || '', src: l.src, note: l.note })) }
+      : { company: myCompany(), supplier: s0.code, type: '备货采购', buyer: s0.buyer || 'u2', date: clock.today, due: '', wh: 'WL01', settle: s0.settle, tax: s0.tax, taxIncl: true, plan: [], note: '', files: [], lines: [{ sku: '', owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' }] })
     const sups = computed(() => db.suppliers.filter((s) => !isFactory(s)))
     const skus = computed(() => db.materials.filter((m) => m.status === '启用').flatMap((m) => m.skus.filter((k) => k.status !== '停用').map((k) => ({ code: k.code, t: skuName(k.code) + ' · ' + k.code, mine: m.supplier === f.supplier }))).sort((a, b) => b.mine - a.mine))
     const owners = computed(() => ['自有', ...db.customers.filter((c) => c.status === '启用').map((c) => c.code)])
     const lead = computed(() => Math.max(7, ...f.lines.filter((l) => l.sku).map((l) => matOfSku(l.sku).lead || 7)))
     const dueAuto = computed(() => addDays(f.date || clock.today, lead.value))
-    const setSku = (l) => { l.price = l.sku ? skuPrice(l.sku) ?? null : null }
-    const setSup = () => { const s = sup(f.supplier); f.settle = s.settle; f.tax = s.tax; if (s.buyer) f.buyer = s.buyer }
+    // 单价默认取价格档案里这家在下单日的现价，没有就带物料 SKU 单价（PRD §6.6.2）；换了供应商，没手改过的行跟着换
+    const dft = (l) => (l.sku ? poDefaultPrice(f.supplier, l.sku, f.date) : null)
+    const curOf = (l) => (l.sku ? curMatPrice(f.supplier, matOfSku(l.sku).code, l.sku, f.date) : null)
+    const off = (l) => curOf(l) != null && l.price != null && l.price !== '' && !samePrice(curOf(l), l.price) // 和档案现价不一样：要写改价原因
+    const was = new Map() // 行 → 上次带出来的默认价
+    const setSku = (l) => { l.price = dft(l); was.set(l, l.price) }
+    const setSup = () => {
+      const s = sup(f.supplier); f.settle = s.settle; f.tax = s.tax; if (s.buyer) f.buyer = s.buyer
+      f.lines.forEach((l) => { if (l.sku && (l.price == null || l.price === '' || l.price === was.get(l))) { l.price = dft(l); was.set(l, l.price) } })
+    }
+    const styles = computed(() => db.styles.filter((s) => s.status === '启用' && !f.plan.includes(s.code)))
+    const addPlan = (e) => { if (e.target.value) f.plan.push(e.target.value); e.target.value = '' }
     const amt = computed(() => sum(f.lines, (l) => (+l.qty || 0) * (+l.price || 0)))
     function ok() {
       const g = { ...f, due: f.due || dueAuto.value, lines: f.lines.map((l) => ({ ...l, due: l.due || null, expect: l.expect || null })) }
@@ -322,7 +344,7 @@ comp('PurchaseForm', {
       const po = run(() => createPurchase(g))
       if (po?.no) { emit('close'); go('/purchases/' + po.no) }
     }
-    return { x, f, sups, skus, owners, lead, dueAuto, setSku, setSup, amt, ok, purUnit }
+    return { x, f, sups, skus, owners, lead, dueAuto, setSku, setSup, curOf, off, styles, addPlan, amt, ok, purUnit }
   },
   template: `<Modal :t="x ? '改采购单 ' + x.no : '新建采购单'" :w="900" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(4,1fr)" data-c="采购单单头">
@@ -336,20 +358,26 @@ comp('PurchaseForm', {
       <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
       <label class="f">税率<select class="sel" v-model="f.tax"><option v-for="v in db.dicts.税率" :key="v">{{ v }}</option></select></label>
       <label class="f">是否含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
+      <div v-if="f.type === '备货采购'" class="f" style="grid-column:span 4" data-c="计划用于款号">计划用于款号<span class="row g4" style="flex-wrap:wrap;min-height:30px">
+        <span v-for="(c, i) in f.plan" :key="c" class="pill code">{{ c }} {{ styleName(c) }}<a style="margin-left:4px" title="去掉" @click="f.plan.splice(i, 1)">×</a></span>
+        <select class="sel" style="height:28px;width:200px" @change="addPlan"><option value="">{{ f.plan.length ? '再加一个款' : '选填：备的料打算给哪个款' }}</option><option v-for="s in styles" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}</option></select>
+        <small class="dim">只是备注：不给这个款预留，到了进公共库存，谁先算料谁用</small></span></div>
       <label class="f" style="grid-column:span 4">备注<input class="inp" v-model="f.note" placeholder="比如：面料每卷标缸号，随货带色卡"></label>
     </div>
-    <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:88px">单价</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
+    <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th v-if="TRADE" style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:96px">单价</th><th style="width:150px">改价原因</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
         <td><select class="sel" style="width:100%;height:28px" v-model="l.sku" @change="setSku(l)" :disabled="!!l.src"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select><small v-if="l.src" class="dim">来自算料单 {{ l.src.mrp }}</small></td>
-        <td><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
+        <td v-if="TRADE"><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? purUnit(l.sku) : ''"></td>
-        <td><input class="inp cell num" type="number" v-model.number="l.price"></td>
+        <td><input class="inp cell num" type="number" v-model.number="l.price" :class="{ amber: off(l) }"><small v-if="curOf(l) != null" class="dim" style="display:block;text-align:right;font-size:11px">档案 {{ fm(curOf(l)) }}</small></td>
+        <td><input v-if="off(l)" class="inp cell" style="width:100%" v-model="l.priceWhy" placeholder="改了单价要写原因"><span v-else class="dim">—</span></td>
         <td class="num">{{ l.qty && l.price ? fm(l.qty * l.price) : '—' }}</td>
         <td><input class="inp cell" type="date" v-model="l.due" title="不填用单头交货日期"></td>
         <td><input class="inp cell" type="date" v-model="l.expect"></td>
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
-      <tfoot><tr><td>合计 {{ f.lines.filter(l => l.sku).length }} 行</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td colspan="3"></td></tr></tfoot></table>
-    <button class="btn ghost" style="margin-top:8px" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, due: '', expect: '' })"><Ico n="plus" :s="14"/>加一行</button>
+      <tfoot><tr><td>合计 {{ f.lines.filter(l => l.sku).length }} 行</td><td v-if="TRADE"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td></td><td class="num">{{ fm(amt) }}</td><td colspan="3"></td></tr></tfoot></table>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' })"><Ico n="plus" :s="14"/>加一行</button>
+      <span class="dim" style="font-size:12px">单价默认取价格档案里这家的现价；改了价要写原因，审核时记进价格档案</span></div>
     <div v-if="!x" class="sec" data-c="采购单附件"><h3>附件<span class="dim" style="font-weight:400;font-size:12px">　选填：报价单、合同、色卡照片</span></h3><Pics v-model="f.files" files :s="56"/></div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
@@ -380,6 +408,7 @@ route('/purchases/:no', {
     <Head :t="po.no" :back="['采购', '/purchases']">
       <template v-if="po.status === '草稿'"><button class="btn" @click="dlg = 'edit'">编辑</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
       <template v-if="can('purchase', po, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核</button></template>
+      <button v-if="canGenContract('purchase', po)" class="btn" @click="dlg = 'contract'">生成合同</button>
       <button v-if="['已审核', '部分到货'].includes(po.status)" class="btn pri" @click="dlg = 'recv'">到货入库</button>
       <More :items="more"/>
     </Head>
@@ -391,11 +420,12 @@ route('/purchases/:no', {
         <div class="sub"><span>{{ po.type }}</span><span>{{ fm(poAmt(po)) }}</span><span>交期 {{ fd(po.due) }}</span><span>送到 {{ whName(po.wh) }}</span></div>
         <section data-c="采购明细">
           <Tbl inset flat :rows="po.lines" :cols="[
-            { k: 'sku', t: '物料' }, { k: 'supno', t: '供应商货号 · 色号', f: l => skuParts(l.sku).supNo + ' · ' + skuParts(l.sku).supColor }, { k: 'owner', t: '物权', f: l => l.owner && l.owner !== '自有' ? '代采 · ' + custName(l.owner) : '自有' },
+            { k: 'sku', t: '物料' }, { k: 'supno', t: '供应商货号 · 色号', f: l => skuParts(l.sku).supNo + ' · ' + skuParts(l.sku).supColor }, ...(TRADE ? [{ k: 'owner', t: '物权', f: l => l.owner && l.owner !== '自有' ? '代采 · ' + custName(l.owner) : '自有' }] : []),
             { k: 'qty', t: '数量', c: 'num', f: l => fq(l.qty) + ' ' + purUnit(l.sku) }, { k: 'price', t: '单价', c: 'num', f: l => fm(l.price) },
             { k: 'amt', t: '金额', c: 'num', f: l => fm(l.qty * l.price) }, { k: 'recv', t: '已入库', c: 'num', f: l => fq(l.received) }, { k: 'ret', t: '已退货', c: 'num', f: l => l.returned ? fq(l.returned) : '—' },
             { k: 'left', t: '未入库', c: 'num', f: l => fq(Math.max(0, l.qty - l.received)) }, { k: 'due', t: '行交期', f: l => l.due ? fd(l.due) : '同单头' }, { k: 'exp', t: '预计到货' }, { k: 'src', t: '来源', c: 'code' }]">
             <template #sku="{ r }"><span class="row"><Thumb :code="r.sku" :s="32"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></template>
+            <template #price="{ r }">{{ fm(r.price) }}<div v-if="r.priceWhy" class="amber" style="font-size:12px;white-space:normal" title="和价格档案现价不一样，改价原因">改价：{{ r.priceWhy }}</div></template>
             <template #exp="{ r }"><span v-if="r.received >= r.qty" class="dim">到齐</span><span v-else class="row g4">{{ fd(r.expect || r.due || po.due) }}<Days v-if="!['草稿','待审核','已结案','已作废'].includes(po.status)" :d="r.expect || r.due || po.due"/></span><div v-if="r.note" class="dim" style="font-size:12px">{{ r.note }}</div></template>
             <template #src="{ r }"><template v-if="r.src"><a v-if="r.src.mrp" :href="'#/mrp/' + r.src.mrp">{{ r.src.mrp }}</a><div class="dim" style="font-size:12px">{{ srcText(r) }}</div></template><span v-else class="dim">—</span></template>
             <template #foot><tr><td>合计 {{ po.lines.length }} 行</td><td></td><td></td><td class="num">{{ fq(poQty(po)) }}</td><td></td><td class="num">{{ fm(poAmt(po)) }}</td><td class="num">{{ fq(poRecv(po)) }}</td><td class="num">{{ fq(sum(po.lines, l => l.returned)) }}</td><td class="num">{{ fq(sum(po.lines, l => Math.max(0, l.qty - l.received))) }}</td><td colspan="3"></td></tr></template>
@@ -409,6 +439,7 @@ route('/purchases/:no', {
         <dl class="props">
           <dt>供应商</dt><dd><a :href="'#/suppliers/' + po.supplier">{{ sup(po.supplier).name }}</a></dd>
           <dt>采购类型</dt><dd>{{ po.type }}</dd>
+          <template v-if="po.plan?.length"><dt>计划用于</dt><dd><a v-for="c in po.plan" :key="c" class="code" :href="'#/styles/' + c" style="margin-right:6px">{{ c }}</a><div class="dim" style="font-size:12px">只是备注，不预留</div></dd></template>
           <dt>采购员</dt><dd>{{ userName(po.buyer) }}</dd>
           <dt>下单日期</dt><dd>{{ fd(po.date) }}</dd>
           <dt>交货日期</dt><dd>{{ fd(po.due) }}</dd>
@@ -420,11 +451,13 @@ route('/purchases/:no', {
           <DocMeta :d="po"/>
         </dl>
         <DocFiles :doc="po"/>
+        <DocContracts kind="purchase" :d="po"/>
         <h4>操作记录</h4><Log :items="po.log"/>
       </aside>
     </div>
     <PurchaseReceive v-if="dlg === 'recv' || dlg === 'return'" :po="po" :mode="dlg" @close="dlg = ''"/>
     <PurchaseForm v-if="dlg === 'edit'" :po="po" @close="dlg = ''"/>
+    <ContractGen v-if="dlg === 'contract'" kind="purchase" :d="po" @close="dlg = ''"/>
     <PrintSheet v-if="printing" t="采购单" :no="po.no" :company="po.company" @close="printing = false">
       <dl class="sheet-meta">
         <div><dt>供应商</dt><dd>{{ sup(po.supplier).name }}</dd></div><div><dt>联系人</dt><dd>{{ sup(po.supplier).contact || '—' }} {{ sup(po.supplier).phone || '' }}</dd></div><div><dt>采购类型</dt><dd>{{ po.type }}</dd></div>
@@ -484,8 +517,9 @@ route('/arrivals', {
     const s = reactive({ tab: nav.query.f || 'all', q: '', buyer: '', flt: newFlt() })
     const all = computed(() => arrivals().filter((x) => (!s.buyer || x.p.buyer === s.buyer) && passFlt(s.flt, { date: x.date, party: x.p.supplier })
       && matchQ(s.q, x.p.no, x.l.sku, skuName(x.l.sku), supName(x.p.supplier), srcText(x.l), x.l.src?.mrp || '')).sort((a, b) => a.left - b.left))
-    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length]])
-    const rows = computed(() => all.value.filter((x) => s.tab === 'all' || x.risk === s.tab))
+    // 赶不上开裁（PRD §6.6.3）：预计到货晚于要料日期（加工单裁剪的计划开始），采购交期没过也标出来
+    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length], ['cut', '赶不上开裁', all.value.filter((x) => x.cutLate > 0).length]])
+    const rows = computed(() => all.value.filter((x) => s.tab === 'all' || (s.tab === 'cut' ? x.cutLate > 0 : x.risk === s.tab)))
     return { s, tabs, rows, srcText, purUnit }
   },
   template: `<div>
@@ -498,7 +532,8 @@ route('/arrivals', {
         { k: 'po', t: '采购单', c: 'code' }, { k: 'sup', t: '供应商', f: x => supName(x.p.supplier) }, { k: 'sku', t: '物料' },
         { k: 'src', t: '订单 / 款', c: 'code', f: x => srcText(x.l) }, { k: 'qty', t: '采购', c: 'num', f: x => fq(x.l.qty) },
         { k: 'recv', t: '已到', c: 'num', f: x => fq(x.l.received) }, { k: 'left', t: '未到', c: 'num', f: x => fq(rnd(x.l.qty - x.l.received, 3)) + ' ' + purUnit(x.l.sku) },
-        { k: 'due', t: '交期', f: x => fd(x.l.due || x.p.due) }, { k: 'exp', t: '预计到货' }, { k: 'days', t: '' }, { k: 'note', t: '跟进', w: '220px' }]">
+        { k: 'due', t: '交期', f: x => fd(x.l.due || x.p.due) }, { k: 'exp', t: '预计到货' }, { k: 'days', t: '' }, { k: 'need', t: '要料日期' }, { k: 'note', t: '跟进', w: '220px' }]">
+        <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于加工单裁剪的计划开始">赶不上开裁，晚 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
         <template #po="{ r }"><a :href="'#/purchases/' + r.p.no">{{ r.p.no }}</a><div class="dim" style="font-size:12px">{{ userName(r.p.buyer) }}</div></template>
         <template #sku="{ r }"><span class="row"><Thumb :code="r.l.sku" :s="32"/><span class="col"><span>{{ skuName(r.l.sku) }}</span><small class="code dim">{{ r.l.sku }}</small></span></span></template>
         <template #exp="{ r }"><input class="inp cell ghost" type="date" style="width:130px" v-model="r.l.expect"></template>
@@ -510,7 +545,7 @@ route('/arrivals', {
 }, { mod: 'arrivals', t: '到料' })
 
 /* ---------- 出入库单 ---------- */
-const DOC_GROUPS = { 入库: ['采购入库', '客供入库', '其他入库'], 领料: ['领料', '退料'], 调拨: ['调拨'], 出库: ['采购退货', '其他出库'] }
+const DOC_GROUPS = { 入库: ['采购入库', ...(TRADE ? ['客供入库'] : []), '其他入库'], 领料: ['领料', '退料'], 调拨: ['调拨'], 出库: ['采购退货', '其他出库'] }
 const srcLink = (d) => (!d.src ? '' : d.src.startsWith('CG') ? '/purchases/' + d.src : d.src.startsWith('JG') ? '/production/' + d.src : '')
 const partnerName = (d) => (!d.partner ? '—' : d.partner.startsWith('KH') ? custName(d.partner) : supName(d.partner))
 const docQty = (d) => rnd(sum(d.lines, (l) => l.qty), 3)
@@ -545,11 +580,13 @@ route('/stock-docs', {
     const parties = computed(() => [...new Set(db.stockDocs.map((d) => d.partner).filter(Boolean))].map((c) => [c, partnerName({ partner: c })]))
     const rows = computed(() => scoped.value.filter((d) => (s.tab === '全部' || DOC_GROUPS[s.tab].includes(d.type)) && (!s.st || d.status === s.st) && (!s.wh || d.from === s.wh || d.to === s.wh) && (!s.party || d.partner === s.party)
       && passFlt(s.flt, { date: d.date }) && matchQ(s.q, d.no, d.type, d.src, d.supNo || '', d.logistics || '', ...d.lines.flatMap((l) => [l.sku, skuName(l.sku), l.lot || '']))).slice().reverse())
-    const news = ['客供入库', '其他入库', '调拨', '退料', '其他出库'].map((t) => ({ t, fn: () => { s.add = t } }))
-    return { s, tabs, parties, rows, news, partnerName }
+    // 手工新建的类型，第一个放在页头按钮上（TRADE 关着时没有客供入库）
+    const NEW_TYPES = [...(TRADE ? ['客供入库'] : []), '其他入库', '调拨', '退料', '其他出库']
+    const news = NEW_TYPES.map((t) => ({ t, fn: () => { s.add = t } }))
+    return { s, tabs, parties, rows, news, NEW_TYPES, partnerName }
   },
   template: `<div>
-    <Head t="出入库"><button class="btn pri" @click="s.add = '客供入库'"><Ico n="plus" :s="14"/>客供入库</button><More :items="news"/></Head>
+    <Head t="出入库"><button class="btn pri" @click="s.add = NEW_TYPES[0]"><Ico n="plus" :s="14"/>{{ NEW_TYPES[0] }}</button><More :items="news"/></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/>
       <select class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></select>
       <Filters v-model="s.flt"/>
@@ -620,17 +657,17 @@ comp('StockDocForm', {
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
     <p v-if="t === '退料'" class="dim" style="font-size:12px;margin-top:8px">退料：工厂剩料从工厂仓退回物料仓。挂上加工单，那张单的"已领"会扣掉这次退的。</p>
-    <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
+    <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="TRADE && t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
         <td><select class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select></td>
-        <td v-if="t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
+        <td v-if="TRADE && t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
         <td v-if="f.from" class="num dim">{{ have(l) == null ? '—' : fq(have(l)) }}</td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? unitOf(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price" title="元 / 库存单位"></td>
         <td class="num">{{ l.qty && l.price ? fm(l.qty * l.price) : '—' }}</td>
         <td><input class="inp cell" v-model="l.lot"></td><td><input class="inp cell num" type="number" v-model.number="l.rolls"></td><td><input class="inp cell" v-model="l.note"></td>
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
-      <tfoot><tr><td>合计</td><td v-if="t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
+      <tfoot><tr><td>合计</td><td v-if="TRADE && t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
     <button class="btn ghost" style="margin-top:8px" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, lot: '', rolls: null, note: '' })"><Ico n="plus" :s="14"/>加一行</button>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
@@ -656,12 +693,12 @@ route('/stock-docs/:no', {
         <div class="title">{{ d.type }}<St :s="d.status"/></div>
         <div class="sub"><span v-if="d.from || d.to">{{ d.from ? whName(d.from) : partnerName(d) }} → {{ d.to ? whName(d.to) : partnerName(d) }}</span><span>{{ fd(d.date) }}</span><span>{{ d.lines.length }} 种 · 金额 {{ fm(docAmt(d)) }}</span></div>
         <section data-c="出入库明细">
-          <Tbl inset flat :rows="d.lines" :cols="[{ k: 'sku', t: '物料', f: l => skuName(l.sku), img: l => l.sku }, { k: 'code', t: 'SKU', c: 'code', f: l => l.sku }, { k: 'owner', t: '物权', f: l => ownerName(l.owner) },
+          <Tbl inset flat :rows="d.lines" :cols="[{ k: 'sku', t: '物料', f: l => skuName(l.sku), img: l => l.sku }, { k: 'code', t: 'SKU', c: 'code', f: l => l.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: l => ownerName(l.owner) }] : []),
             { k: 'qty', t: '数量', c: 'num', f: l => fq(l.qty) + ' ' + unitOf(l.sku) }, { k: 'pq', t: '采购单位', c: 'num', f: l => l.purQty != null && matOfSku(l.sku).factor !== 1 ? fq(l.purQty) + ' ' + matOfSku(l.sku).purUnit : '' },
             { k: 'price', t: '单价', c: 'num', f: l => linePrice(l) == null ? '—' : fm(linePrice(l)) }, { k: 'amt', t: '金额', c: 'num', f: l => lineAmt(l) == null ? '—' : fm(lineAmt(l)) },
             { k: 'lot', t: '缸号', f: l => l.lot || '—' }, { k: 'rolls', t: '卷数', c: 'num', f: l => l.rolls || '—' }, { k: 'note', t: '备注', f: noteOf },
             { k: 'have', t: '出仓库存', c: 'num', f: l => d.from && d.status === '草稿' ? fq(stockQty(d.from, l.sku, l.owner)) : '' }]">
-            <template #foot><tr><td>合计</td><td></td><td></td><td class="num">{{ fq(docQty(d)) }}</td><td></td><td></td><td class="num">{{ fm(docAmt(d)) }}</td><td></td><td class="num">{{ sum(d.lines, l => l.rolls) || '—' }}</td><td></td><td></td></tr></template>
+            <template #foot><tr><td>合计</td><td></td><td v-if="TRADE"></td><td class="num">{{ fq(docQty(d)) }}</td><td></td><td></td><td class="num">{{ fm(docAmt(d)) }}</td><td></td><td class="num">{{ sum(d.lines, l => l.rolls) || '—' }}</td><td></td><td></td></tr></template>
           </Tbl>
           <p v-if="d.lines.some(l => l.purQty != null)" class="dim" style="font-size:12px;margin-top:8px">数量是库存单位；采购入库、退货的单价是采购单价折成库存单位，金额 = 采购数量 × 采购单价。</p>
         </section>
@@ -691,17 +728,17 @@ route('/stock-docs/:no', {
 // 期初库存导入（PRD §10）：同一个仓库的行合成一张「其他入库（期初）」直接过账
 IMPORTS.stock = {
   title: '导入期初库存', name: '期初库存',
-  note: '上线时把各仓现有的料导进来。一行一个 SKU + 仓库 + 物权；同一个仓库的行合成一张「其他入库（原因：期初）」并直接过账。',
+  note: `上线时把各仓现有的料导进来。一行一个 SKU + 仓库${TRADE ? ' + 物权' : ''}；同一个仓库的行合成一张「其他入库（原因：期初）」并直接过账。`,
   head: [{ k: 'date', t: '期初日期', type: 'date', def: () => clock.today }],
   cols: [
     { k: 'sku', t: '物料SKU编码', req: true, text: true, tip: '要是物料里已有的 SKU 编码', ex: 'ML0012-KQ', w: 16 },
     { k: 'wh', t: '仓库编码', req: true, text: true, tip: '物料仓或工厂仓的编码', ex: 'WL01', opts: () => nonFgWhs().map((w) => w.code) },
-    { k: 'owner', t: '物权', text: true, tip: '不填 = 自有；客供料填客户编码', ex: '自有' },
+    ...(TRADE ? [{ k: 'owner', t: '物权', text: true, tip: '不填 = 自有；客供料填客户编码', ex: '自有' }] : []), // TRADE 关着时全是自有
     { k: 'qty', t: '数量', req: true, num: true, tip: '库存单位（面料一般是米），最多 3 位小数', ex: 120 },
     { k: 'price', t: '单价', num: true, tip: '元 / 库存单位，以后算成本用；不填 = 物料 SKU 单价（没有就用参考单价）折成库存单位', ex: 18.5 },
     { k: 'lot', t: '缸号', text: true, tip: '选填', ex: 'G2610-07' },
   ],
-  example: () => [{ sku: 'ML0012-KQ', wh: 'WL01', owner: '自有', qty: 120, price: 18.5, lot: 'G2610-07' }, { sku: 'ML0015-HE', wh: 'WL01', owner: 'KH0001', qty: 200, price: '', lot: '' }, { sku: 'FK0021-HE', wh: 'GC0004', owner: '自有', qty: 800, price: 0.35, lot: '' }],
+  example: () => [{ sku: 'ML0012-KQ', wh: 'WL01', owner: '自有', qty: 120, price: 18.5, lot: 'G2610-07' }, { sku: 'ML0015-HE', wh: 'WL01', owner: ifTrade('KH0001', '自有'), qty: 200, price: '', lot: '' }, { sku: 'FK0021-HE', wh: 'GC0004', owner: '自有', qty: 800, price: 0.35, lot: '' }],
   check(rows, bad, head) {
     if (!head.date) bad('—', '期初日期', '要选期初日期')
     else if (head.date > clock.today) bad('—', '期初日期', '不能晚于今天')
@@ -712,7 +749,7 @@ IMPORTS.stock = {
       if (owner !== '自有' && !cust(owner)) { bad(r, '物权', `「${r.owner}」不是客户编码；自有的料不填或填「自有」`); continue }
       if (!(r.qty > 0)) { bad(r, '数量', '要大于 0'); continue }
       const key = [r.sku, r.wh, owner, r.lot].join('|')
-      if (seen.has(key)) { bad(r, '物料SKU编码', `和第 ${seen.get(key)} 行重复（同一个仓库、物权、缸号），合成一行再导`); continue }
+      if (seen.has(key)) { bad(r, '物料SKU编码', `和第 ${seen.get(key)} 行重复（同一个仓库、${TRADE ? '物权、' : ''}缸号），合成一行再导`); continue }
       seen.set(key, r._r)
       if (!groups.has(r.wh)) groups.set(r.wh, [])
       const ref = skuPrice(r.sku)
@@ -752,20 +789,20 @@ route('/stock', {
     const unitTxt = (r) => unitOf(r.sku)
     const XC = {
       明细: [{ k: 'w', t: '仓库', f: (r) => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuParts(r.sku).name }, { k: 'color', t: '颜色', f: (r) => skuParts(r.sku).color }, { k: 'spec', t: '规格', f: (r) => skuParts(r.sku).spec },
-        { k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }, { k: 'qty', t: '数量', f: (r) => rnd(r.qty, 3) }, { k: 'unit', t: '单位', f: unitTxt }, { k: 'safety', t: '安全库存', f: (r) => safety(r.sku) ?? '' }, { k: 'last', t: '最近变动', f: (r) => r.last || '' }],
-      按物料: [{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuName(r.sku) }, { k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }, { k: 'mat', t: '物料仓', f: (r) => rnd(r.mat, 3) }, { k: 'fac', t: '工厂仓', f: (r) => rnd(r.fac, 3) }, { k: 'all', t: '合计', f: (r) => rnd(r.mat + r.fac, 3) }, { k: 'unit', t: '单位', f: unitTxt }],
+        ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'qty', t: '数量', f: (r) => rnd(r.qty, 3) }, { k: 'unit', t: '单位', f: unitTxt }, { k: 'safety', t: '安全库存', f: (r) => safety(r.sku) ?? '' }, { k: 'last', t: '最近变动', f: (r) => r.last || '' }],
+      按物料: [{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuName(r.sku) }, ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'mat', t: '物料仓', f: (r) => rnd(r.mat, 3) }, { k: 'fac', t: '工厂仓', f: (r) => rnd(r.fac, 3) }, { k: 'all', t: '合计', f: (r) => rnd(r.mat + r.fac, 3) }, { k: 'unit', t: '单位', f: unitTxt }],
       日志: [{ k: 'at', t: '日期' }, { k: 'type', t: '类型' }, { k: 'no', t: '单号', c: 'code' }, { k: 'wh', t: '仓库', f: (x) => whName(x.wh) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (x) => skuName(x.sku) },
-        { k: 'owner', t: '物权', f: (x) => ownerName(x.owner) }, { k: 'delta', t: '变动' }, { k: 'bal', t: '结存' }, { k: 'lot', t: '缸号' }, { k: 'who', t: '操作人', f: (x) => userName(x.who) }],
+        ...(TRADE ? [{ k: 'owner', t: '物权', f: (x) => ownerName(x.owner) }] : []), { k: 'delta', t: '变动' }, { k: 'bal', t: '结存' }, { k: 'lot', t: '缸号' }, { k: 'who', t: '操作人', f: (x) => userName(x.who) }],
     }
     const xrows = computed(() => (s.view === '明细' ? rows.value : s.view === '按物料' ? summary.value : logs.value))
     return { s, whs, rows, summary, owners, logs, safety, XC, xrows, STOCK_TYPES }
   },
   template: `<div>
-    <Head t="库存"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
+    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于安全库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
       <select class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select>
-      <select class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
+      <select v-if="TRADE" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
       <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '日志']"/><Search v-model="s.q"/>
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>
@@ -774,13 +811,13 @@ route('/stock', {
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存。SKU、物料名、仓库都能搜，几个编码用空格隔开" :cols="[
         { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku },
-        { k: 'owner', t: '物权' }, { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '安全库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
+        ...(TRADE ? [{ k: 'owner', t: '物权' }] : []), { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '安全库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
         <template #owner="{ r }"><span :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</span></template>
-        <template #qty="{ r }"><span :class="{ red: safety(r.sku) && r.qty < safety(r.sku) }">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
+        <template #qty="{ r }"><span :class="{ amber: safety(r.sku) && wh(r.w).type === '物料仓' && belowSafety(r.sku) }" :title="safety(r.sku) && belowSafety(r.sku) ? '物料仓库存 + 在途 − 已被占用 低于安全库存，去补货提醒生成备货采购单' : null">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
       </Tbl>
     </div>
     <div v-if="s.view === '按物料'" data-c="库存汇总">
-      <Tbl :rows="summary" empty="没有库存" :cols="[{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'owner', t: '物权', f: r => ownerName(r.owner) },
+      <Tbl :rows="summary" empty="没有库存" :cols="[{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
         { k: 'mat', t: '物料仓', c: 'num', f: r => fq(r.mat) }, { k: 'fac', t: '工厂仓', c: 'num', f: r => fq(r.fac) }, { k: 'all', t: '合计', c: 'num', f: r => fq(r.mat + r.fac) + ' ' + unitOf(r.sku) }]"/>
     </div>
     <div v-if="s.view === '日志'" data-c="库存日志"><StockLogTable :rows="logs"/></div>
@@ -792,7 +829,7 @@ route('/stock', {
 comp('StockLogTable', {
   props: { rows: Array, inset: Boolean },
   template: `<Tbl :inset="inset" :flat="inset" :rows="rows" :link="!inset" empty="没有变动" :cols="[{ k: 'at', t: '日期', f: x => fd(x.at) }, { k: 'type', t: '类型' }, { k: 'no', t: '单号', c: 'code' },
-    { k: 'wh', t: '仓库', f: x => whName(x.wh) }, { k: 'sku', t: '物料', f: x => skuName(x.sku) }, { k: 'owner', t: '物权', f: x => ownerName(x.owner) },
+    { k: 'wh', t: '仓库', f: x => whName(x.wh) }, { k: 'sku', t: '物料', f: x => skuName(x.sku) }, ...(TRADE ? [{ k: 'owner', t: '物权', f: x => ownerName(x.owner) }] : []),
     { k: 'delta', t: '变动', c: 'num' }, { k: 'bal', t: '结存', c: 'num', f: x => fq(x.bal) }, { k: 'lot', t: '缸号', f: x => x.lot || '—' }, { k: 'who', t: '操作人', f: x => userName(x.who) }]" @row="x => go('/stock-docs/' + x.no)">
     <template #no="{ r }"><a :href="'#/stock-docs/' + r.no" @click.stop>{{ r.no }}</a></template>
     <template #delta="{ r }"><span :class="r.delta > 0 ? 'green' : 'red'">{{ r.delta > 0 ? '+' : '' }}{{ fq(r.delta) }}</span></template>

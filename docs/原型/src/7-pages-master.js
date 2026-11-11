@@ -1,5 +1,5 @@
 /* ============================================================
- * 资料：供应商、客户、物料、基础（颜色尺码、品类、仓库、主体、字典）；系统：设置
+ * 资料：供应商、客户（TRADE 开时才有入口）、物料、基础（颜色尺码、品类、仓库、主体、字典）；系统：设置
  * 改数据的函数在上面，页面在下面。供应商的准入 / 停用 / 拉黑走 2-store.js 的 FLOWS.supplier。
  * ============================================================ */
 
@@ -22,16 +22,120 @@ function saveCert(s, c, f) {
   act(s, '改证照 ' + c.type + '：' + ch.join('；'))
 }
 function removeCert(s, c) { s.certs.splice(s.certs.indexOf(c), 1); act(s, '删证照 ' + c.type + '（有效期至 ' + c.until + '）') }
-const SUP_FIELDS = [['name', '全称'], ['short', '简称'], ['cats', '分类'], ['goodAt', '擅长品类', (v) => v.map((c) => catOf(c).name).join('、')], ['level', '等级'], ['contact', '联系人'], ['phone', '电话'], ['wechat', '微信'], ['addr', '地址'],
+const SUP_FIELDS = [['name', '全称'], ['credit', '统一社会信用代码'], ['short', '简称'], ['cats', '分类'], ['goodAt', '擅长品类', (v) => v.map((c) => catOf(c).name).join('、')], ['level', '等级'], ['contact', '联系人'], ['phone', '电话'], ['wechat', '微信'], ['addr', '地址'],
   ['settle', '结算方式'], ['term', '账期'], ['tax', '税率'], ['invoice', '发票类型'], ['bank', '开户行'], ['account', '账号'], ['buyer', '负责采购员', userName], ['note', '备注']]
+/* 关键信息（甲方 11-11 反馈 1d）：准入过的供应商（合作中、停用、黑名单）改这几项先挂起成"待批改动"，另一个有审批权限的人批准才生效；
+ * 停用的也要批，免得"停用 → 改 → 再启用"绕过去。待准入的直接改（申请准入时一起审）；一家同时只能有一份待批改动。其他字段直接改 */
+const SUP_KEY = ['name', 'credit', 'settle', 'term', 'tax', 'invoice', 'bank', 'account']
+const supGated = (s) => !['待准入', '准入审批中'].includes(s.status)
+const supChangeText = (i) => `${i.t} ${showVal(i.from)} → ${showVal(i.to)}`
 function updateSupplier(s, f) {
+  if (s.status === '准入审批中') fail('准入审批中，资料不能改', ['要改先让审批人驳回，改好再申请'])
   if (!f.short?.trim() || !f.name?.trim()) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
-  const ch = applyFields(s, f, SUP_FIELDS)
-  if (!ch.length) fail('没有改动')
-  act(s, '改：' + ch.join('；'))
+  if ('credit' in f) { f.credit = normCredit(f.credit); checkCredit(f.credit, s) }
+  const gated = supGated(s) ? SUP_FIELDS.filter(([k]) => SUP_KEY.includes(k) && k in f && !sameVal(f[k], s[k])) : []
+  if (gated.length && s.pending) fail(`已经有一份待批改动（${userName(s.pending.by)} ${fd(s.pending.at)} 提的），先处理那份：批准、驳回或撤回以后再改`, s.pending.items.map(supChangeText))
+  const direct = { ...f }
+  gated.forEach(([k]) => delete direct[k])
+  const ch = applyFields(s, direct, SUP_FIELDS)
+  if (!ch.length && !gated.length) fail('没有改动')
+  if (ch.length) act(s, '改：' + ch.join('；'))
+  const msg = []
+  if (gated.length) {
+    s.pending = { items: gated.map(([k, t]) => ({ k, t, from: s[k] ?? '', to: f[k] })), by: db.me, at: clock.today }
+    act(s, '申请改关键信息（等审批）：' + s.pending.items.map(supChangeText).join('；'))
+    msg.push(gated.map(([, t]) => t).join('、') + '要另一个有审批权限的人批准才生效')
+  }
   const w = ensureFactoryWh(s)
-  return w ? '自动建了工厂仓「' + w.name + '」' : ''
+  if (w) msg.push('自动建了工厂仓「' + w.name + '」')
+  return msg.join('；')
+}
+function approveSupChange(s) {
+  const p = s.pending
+  if (!p) fail('没有待批的改动')
+  checkApprover(p.by, '这批改动')
+  const cr = p.items.find((i) => i.k === 'credit')
+  if (cr) checkCredit(cr.to, s)
+  p.items.forEach((i) => { s[i.k] = i.to })
+  s.pending = null
+  act(s, `批准改动（${userName(p.by)} ${fd(p.at)} 提的）：${p.items.map(supChangeText).join('；')}`)
+}
+function rejectSupChange(s, reason) {
+  const p = s.pending
+  if (!p) fail('没有待批的改动')
+  if (!reason?.trim()) fail('要写驳回原因，申请人照着改')
+  checkApprover(p.by, '这批改动')
+  s.pending = null
+  act(s, `驳回改动（${userName(p.by)} 提的）：${p.items.map(supChangeText).join('；')}。原因：${reason.trim()}`)
+}
+function withdrawSupChange(s) {
+  if (s.pending?.by !== db.me) fail('只有提改动的人能撤回')
+  act(s, '撤回改动：' + s.pending.items.map(supChangeText).join('；'))
+  s.pending = null
+}
+const supToApprove = () => db.suppliers.filter((s) => s.status === '准入审批中' || s.pending)
+
+/* ---------- 企查查风险（甲方 11-11 反馈 1a，排期待定） ----------
+ * 原型没有真接口：db.riskFeed 按信用代码列"企查查返回的"条目（类型、日期、内容）；{ fail } = 模拟查询失败。
+ * 真系统里由定时任务调企查查接口，或由 agent 通过 MCP 取数后写入；比对和提醒在系统里做。
+ * 等级按类型查字典（基础 › 字典「企查查高风险」「企查查关注」），都不在 = 提示；查的时候定下来存进快照，以后改字典不改历史。
+ * 每查一次存一份快照 s.riskChecks：时间、来源、结果、条目、比上次新增了哪些。合作中的有新增 → s.riskNew：详情顶部标红、进首页待办，点"已知悉"消掉。
+ * 按次收费：同一家一天只查一次（失败的不算）；查询失败不拦准入、不拦审批，只记一条"查询失败" */
+const RISK_LV = { 高: '高风险', 中: '关注', 低: '提示' }
+const riskLevelOf = (type) => (db.dicts.企查查高风险.includes(type) ? '高' : db.dicts.企查查关注.includes(type) ? '中' : '低')
+const riskResult = (items) => (items.some((x) => x.level === '高') ? '高风险' : items.some((x) => x.level === '中') ? '关注' : '无风险')
+const riskTone = (c) => (!c ? 'dim' : c.failed ? 'dim' : c.result === '高风险' ? 'red' : c.result === '关注' ? 'amber' : 'green')
+const lastRisk = (s) => s?.riskChecks?.filter((c) => !c.failed).at(-1) // 最近一次查成功的
+const riskToday = (s) => (lastRisk(s)?.at === clock.today ? lastRisk(s) : null)
+const riskNewItems = (s) => (s?.riskNew ? (lastRisk(s)?.items || []).filter((x) => s.riskNew.ids.includes(x.id)) : [])
+const cnDate = (d) => (d ? `${+d.slice(5, 7)} 月 ${+d.slice(8, 10)} 日` : '—')
+// auto = 定时复查，操作记录里记"系统"；今天查过就直接返回那次的结果（again = true），不再收一次费
+function riskCheck(s, why, auto) {
+  if (!s.credit) fail(`${s.short} 没填统一社会信用代码，查不了企查查`)
+  const done = riskToday(s)
+  if (done) return { ...done, again: true }
+  const log = (text) => (auto ? (s.log ||= []).push({ at: clock.today, who: '系统', text }) : act(s, text))
+  const feed = db.riskFeed[s.credit] || []
+  if (feed.fail) {
+    const c = { at: clock.today, src: '企查查', why, by: auto ? null : db.me, failed: true, result: '查询失败', note: feed.fail, items: [], added: [] }
+    ;(s.riskChecks ||= []).push(c)
+    log(`查企查查（${why}）失败：${feed.fail}；不影响准入和审批，可以晚点再查`)
+    return c
+  }
+  const items = feed.filter((x) => x.date <= clock.today).map((x) => ({ ...x, level: riskLevelOf(x.type) }))
+  const prev = lastRisk(s)
+  const added = prev ? items.filter((x) => !prev.items.some((y) => y.id === x.id)).map((x) => x.id) : []
+  const c = { at: clock.today, src: '企查查', why, by: auto ? null : db.me, result: riskResult(items), items, added }
+  ;(s.riskChecks ||= []).push(c)
+  if (added.length && s.status === '合作中') s.riskNew = { at: clock.today, ids: [...new Set([...(s.riskNew?.ids || []), ...added])] }
+  log(`查企查查（${why}）：${c.result}，${items.length} 条${added.length ? '，比上次新增 ' + added.length + ' 条' : ''}`)
+  return c
+}
+function weeklyRiskRun() {
+  db.suppliers.filter((s) => s.status === '合作中' && s.credit).forEach((s) => riskCheck(s, '每周复查', true))
+  db.riskRunAt = clock.today
+}
+function ackRisk(s) {
+  const xs = riskNewItems(s)
+  if (!xs.length) fail('没有要知悉的新增风险')
+  act(s, '已知悉新增风险：' + xs.map((x) => `${x.type}（${x.date}）`).join('、'))
+  s.riskNew = null
+}
+db.riskFeed = {
+  '91330400MA0000505X': [ // 华美服装厂：10-26 复查时只有一条行政处罚，10-29 新成了被执行人，11-02 复查查出来
+    { id: 'R01', type: '行政处罚', date: '2026-06-18', text: '消防设施未保持完好有效，罚款 5000 元，已履行' },
+    { id: 'R02', type: '被执行人', date: '2026-10-29', text: '承揽合同纠纷执行案，被执行标的约 18 万元，执行法院为某区人民法院' },
+  ],
+  '91320581MA0000808X': [ // 利源纺织（黑名单）
+    { id: 'R03', type: '失信被执行', date: '2026-08-03', text: '有履行能力而拒不履行生效法律文书，涉案金额约 46 万元' },
+    { id: 'R04', type: '经营异常', date: '2026-09-12', text: '未按规定报送年度报告' },
+  ],
+  '91330400MA0001010X': [ // 启明织带（申请准入中）
+    { id: 'R05', type: '经营异常', date: '2026-07-20', text: '通过登记的住所无法联系；9 月已移出经营异常名录' },
+    { id: 'R06', type: '股权出质', date: '2026-05-11', text: '股东以所持 30% 股权出质，质权人为某银行' },
+  ],
+  '91330483MA0000606X': { fail: '企查查接口超时' }, // 永兴制衣：模拟查询失败
 }
 // 被单据、物料、款式、资料包用过的不能删，只能停用（PRD §5.6）
 function removeSupplier(s) {
@@ -212,7 +316,7 @@ const liveMatCats = () => db.materialCategories.filter((c) => c.status !== '停�
 function addCategory(f) {
   const code = (f.code || '').trim().toUpperCase(), name = (f.name || '').trim(), path = (f.path || '').trim().replace(/\s*\/\s*/g, ' / ')
   if (!/^[^/]+ \/ [^/]+$/.test(path)) fail('上级写成「大类 / 中类」，如 女装 / 外套')
-  if (!/^[A-Z0-9]$/.test(code)) fail('品类编码是 1 位字母或数字，会进款号（如 F = 风衣）')
+  if (!/^[A-Z0-9]$/.test(code)) fail('品类编码是 1 位字母或数字（如 F = 风衣）')
   if (!name) fail('名称要填')
   if (db.categories.some((c) => c.code === code)) fail('编码 ' + code + ' 已经有了')
   if (db.categories.some((c) => c.path === path && c.name === name)) fail(path + ' 下已经有「' + name + '」')
@@ -238,16 +342,27 @@ function removeCat(list, c, used, what) {
   list.splice(list.indexOf(c), 1)
 }
 const toggleCat = (c) => { c.status = c.status === '停用' ? '启用' : '停用' }
-// 季节（PRD §6.1.2）：字典带 1 位编码，进款号（27CF001 里的 C）；用过的不能删、编码不能改，只能停用
+// 季节（PRD §6.1.2）：字典带 1 位编码；用过的不能删、编码不能改，只能停用。新款号不带季节码（甲方 11-11），老款号 27CF001 里的 C 是导入时的样子
 const seasonUsed = (c) => db.styles.filter((s) => s.season === c).length + db.materials.filter((m) => m.season === c).length + (db.samples || []).filter((x) => x.season === c).length
 const liveSeasons = (keep) => db.seasons.filter((x) => x.status !== '停用' || x.code === keep)
 function addSeason(f) {
   const code = (f.code || '').trim().toUpperCase(), name = (f.name || '').trim()
-  if (!/^[A-Z0-9]$/.test(code)) fail('季节编码是 1 位字母或数字，会进款号（如 C = 春）')
+  if (!/^[A-Z0-9]$/.test(code)) fail('季节编码是 1 位字母或数字（如 C = 春）')
   if (!name) fail('名称要填')
   if (db.seasons.some((x) => x.code === code)) fail('编码 ' + code + ' 已经有了')
   if (db.seasons.some((x) => x.name === name)) fail('已经有「' + name + '」')
   db.seasons.push({ code, name, status: '启用' })
+}
+// 款号大类（甲方 11-11 反馈 3）：2 位大写字母，是款号的头两位（FS 服饰、XZ 鞋子）；进过款号的不能删、编码不能改，只能停用
+const bigCatUsed = (c) => db.styles.filter((s) => s.big === c).length
+const liveBigCats = (keep) => db.bigCats.filter((x) => x.status !== '停用' || x.code === keep)
+function addBigCat(f) {
+  const code = (f.code || '').trim().toUpperCase(), name = (f.name || '').trim()
+  if (!/^[A-Z]{2}$/.test(code)) fail('大类编码是 2 位字母，是款号的头两位（如 FS = 服饰）')
+  if (!name) fail('名称要填')
+  if (db.bigCats.some((x) => x.code === code)) fail('编码 ' + code + ' 已经有了')
+  if (db.bigCats.some((x) => x.name === name)) fail('已经有「' + name + '」')
+  db.bigCats.push({ code, name, status: '启用' })
 }
 // 库存：type 不传 = 所有仓
 const skuStock = (sku, type) => rnd(sum(Object.entries(db.stock).filter(([k]) => { const [w, s] = k.split('|'); return s === sku && (!type || wh(w)?.type === type) }), ([, v]) => v), 3)
@@ -367,8 +482,10 @@ Object.assign(db, {
     { m: '订单', v: ['看', '改', '看', '看', '—', '看', '审'] },
     { m: '排单、加工单', v: ['看', '看', '改', '看', '看', '看', '审'] },
     { m: '算料、采购单', v: ['—', '看', '看', '改', '看', '看', '审'] },
+    { m: '价格档案', v: ['看', '看', '改', '改', '—', '看', '看'] }, // price:edit：生产跟单改加工价、采购改物料价（canEditPrice）
     { m: '出入库、库存', v: ['—', '—', '看', '看', '审', '看', '看'] },
     { m: '进度、异常、回货', v: ['—', '看', '改', '看', '看', '—', '看'] },
+    { m: '合同（待排期）', v: ['—', '—', '改', '改', '—', '看', '看'] }, // 跟单出加工合同、采购出采购合同；管理层管模板
   ],
   approvalRules: [
     { doc: '采购单', over: 50000, role: '管理层' },
@@ -385,12 +502,25 @@ const AUDITS = [
   { t: '采购单', p: 'purchase:audit', m: '算料、采购单', n: () => db.purchases.filter((p) => p.status === '待审核').length },
   { t: '加工单', p: 'production:audit', m: '排单、加工单', n: () => db.productions.filter((p) => p.status === '待审核').length },
   { t: '出入库单', p: 'stock:audit', m: '出入库、库存', n: () => db.stockDocs.filter((d) => d.status === '草稿').length },
-  { t: '供应商准入、拉黑', p: 'supplier:admit', m: '供应商', n: () => db.suppliers.filter((s) => s.status === '待准入').length },
+  { t: '供应商准入、关键信息改动', p: 'supplier:admit', m: '供应商', n: () => supToApprove().length },
 ]
 // 数据范围（PRD §3.2）挂在角色上：本人 = 只看制单人、跟单员、采购员、业务员是自己的单据
 const roleOf = (name) => db.roles.find((r) => r.name === name) || { name, scope: '全部' }
 const scopeOf = (uid) => roleOf(db.users.find((u) => u.id === uid)?.role).scope
 const auditRoles = (m) => { const row = db.perms.find((x) => x.m === m); return ROLES.filter((r, i) => row?.v[i] === '审') }
+/* 设计师编号（甲方 11-11 反馈 3）：2 位数字，进款号（FS2611080701 里的 07）。不能重号；进过款号就锁定（db.dnoUsed），
+ * 这个人的编号不能再改，这个号也不能给别人（老款号里的 07 永远指这个人）。没进过款号的可以改、可以清空 */
+const dnoLocked = (u) => !!u.dno && db.dnoUsed[u.dno] === u.id
+function setDesignerNo(u, v) {
+  v = String(v ?? '').trim()
+  if (v === (u.dno || '')) return
+  if (dnoLocked(u)) fail(`${u.name} 的设计师编号 ${u.dno} 已经进过款号，不能改`, ['老款号里的 ' + u.dno + ' 要一直对得上这个人'])
+  if (v && !/^\d{2}$/.test(v)) fail('设计师编号是 2 位数字，如 07')
+  const other = db.users.find((x) => x !== u && x.dno === v)
+  if (v && other) fail(`编号 ${v} 已经是 ${other.name} 的`)
+  if (v && db.dnoUsed[v] && db.dnoUsed[v] !== u.id) fail(`编号 ${v} 进过 ${userName(db.dnoUsed[v])} 的款号，不能给别人`)
+  u.dno = v
+}
 function cyclePerm(row, i) { row.v[i] = PERM_CYCLE[(PERM_CYCLE.indexOf(row.v[i]) + 1) % PERM_CYCLE.length] }
 // 操作日志：各单据的记录汇总，按时间倒序
 function allLogs() {
@@ -403,7 +533,8 @@ function allLogs() {
     ['加工单', db.productions, (d) => d.no, (d) => '/production/' + d.no],
     ['回货', db.returns, (d) => d.no, (d) => '/production/' + d.prod],
     ['供应商', db.suppliers, (d) => d.code, (d) => '/suppliers/' + d.code],
-    ['客户', db.customers, (d) => d.code, (d) => '/customers/' + d.code],
+    ['合同', db.contracts || [], (d) => d.no, (d) => '/contracts/' + d.no],
+    ...(TRADE ? [['客户', db.customers, (d) => d.code, (d) => '/customers/' + d.code]] : []),
     ['物料', db.materials, (d) => d.code, (d) => '/materials/' + d.code],
     ['款式', db.styles, (d) => d.code, (d) => '/styles/' + d.code],
     ['资料包', db.techpacks, (d) => d.style + ' V' + d.ver, (d) => '/styles/' + d.style],
@@ -413,20 +544,35 @@ function allLogs() {
     .sort((a, b) => b.at.localeCompare(a.at) || b.n - a.n)
 }
 
+/* ---------- 种子：供应商准入、改动审批、企查查（放在权限表后面，审批要查 auditRoles） ---------- */
+// 10-26（上周一）、11-02（本周一）各自动复查一次；华美服装厂这周查出一条新的"被执行人"，还没人点已知悉
+as('u6', '2026-10-26', weeklyRiskRun)
+as('u6', '2026-11-02', weeklyRiskRun)
+// 林舟 11-06 新建启明织带、补齐资料、申请准入（企查查"关注"），等管理层审批；11-07 给新雅包装改开户行、账号，挂起待批
+as('u2', '2026-11-06', () => {
+  const s = createSupplier({ name: '嘉兴启明织带有限公司', short: '启明织带', credit: '91330400MA0001010X', cats: ['辅料商'], level: 'B', contact: '沈经理', phone: '137****5210', addr: '嘉兴市某区某路 26 号',
+    settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', bank: '某银行嘉兴分行', account: '6222 **** **** 1010', buyer: 'u2', note: '织带、松紧带；样品 11-04 到了' })
+  saveCert(s, null, { type: '营业执照', until: '2036-05-31', file: demoPic('license', null, '营业执照', '营业执照.jpg') })
+  requestAdmit(s)
+})
+as('u2', '2026-11-07', () => { const s = sup('GYS0003'); updateSupplier(s, { name: s.name, short: s.short, cats: s.cats, bank: '某银行杭州分行', account: '6222 **** **** 3003' }) })
+
 SEARCH.push(() => [
   ...db.suppliers.map((s) => ({ t: s.code + ' ' + s.short, sub: '供应商 · ' + s.cats.join('、'), to: '/suppliers/' + s.code, i: 'store' })),
-  ...db.customers.map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
+  ...(TRADE ? db.customers : []).map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
   ...db.materials.map((m) => ({ t: m.code + ' ' + m.name, sub: '物料', to: '/materials/' + m.code, i: 'box' })),
 ])
 
 expose({
-  createSupplier, admitSupplier, blacklistSupplier, unblockSupplier, openDocsOfSupplier, expiringCerts, certInfo, saveCert, removeCert, updateSupplier, removeSupplier, supplierDocs, supplierPerf, priceHistory,
+  createSupplier, requestAdmit, approveAdmit, rejectAdmit, admitMissing, canAdmit, blacklistSupplier, unblockSupplier, openDocsOfSupplier, expiringCerts, certInfo, saveCert, removeCert, updateSupplier, removeSupplier, supplierDocs, supplierPerf, priceHistory,
   createCustomer, updateCustomer, removeCustomer, customerStock, MAT_GROUPS, matCat, nextMatCode, dupMaterial, createMaterial, addMaterialSkus, setMaterialStatus, skuStock, matStock, matUsedBy,
   specCode, skuCodeOf, skuUsedBy, removeMatSku, toggleMatSku, setSkuImages, removeMaterial, roleOf, scopeOf, nextCode,
   matLockReason, updateMaterial, catUsed, matCatUsed, liveCats, liveMatCats, addCategory, addMatCategory, renameCat, removeCat, toggleCat,
   addColor, editColor, sizeGroupUsed, appendSize, removeSize, renameSizeGroup, setBaseSize, removeSizeGroup, liveColors, colorUsed, addSizeGroup, whStock,
-  seasonUsed, liveSeasons, addSeason, saveWarehouse, toggleWarehouse, saveCompany, toggleCompany, addDictValue, removeDictValue,
+  seasonUsed, liveSeasons, addSeason, bigCatOf, bigCatUsed, liveBigCats, addBigCat, dnoLocked, setDesignerNo, saveWarehouse, toggleWarehouse, saveCompany, toggleCompany, addDictValue, removeDictValue,
   ROLES, AUDITS, auditRoles, cyclePerm, allLogs, factoryWh,
+  SUP_KEY, supGated, supChangeText, approveSupChange, rejectSupChange, withdrawSupChange, supToApprove,
+  RISK_LV, riskTone, lastRisk, riskToday, riskNewItems, cnDate, riskCheck, ackRisk, showVal,
 })
 
 /* ============================================================
@@ -434,30 +580,34 @@ expose({
  * ============================================================ */
 route('/suppliers', {
   setup() {
-    const s = reactive({ cat: '全部', st: '', q: '', cert: nav.query.f === '证照', add: false, imp: false })
+    // f：首页待办点进来的筛选——证照（30 天内到期）、待审批（准入审批中 + 有待批改动）、新增风险
+    const s = reactive({ cat: '全部', st: '', q: '', f: ['证照', '待审批', '新增风险'].includes(nav.query.f) ? nav.query.f : '', add: false, imp: false })
     const tabs = computed(() => [['全部', '全部', db.suppliers.length], ...db.dicts.供应商分类.map((c) => [c, c, db.suppliers.filter((x) => x.cats.includes(c)).length])])
     const soon = computed(() => new Set(expiringCerts().map((x) => x.s.code)))
-    const rows = computed(() => db.suppliers.filter((x) => (s.cat === '全部' || x.cats.includes(s.cat)) && (!s.st || x.status === s.st) && (!s.cert || soon.value.has(x.code))
-      && matchQ(s.q, x.code, x.short, x.name, x.contact, x.phone)))
-    return { s, tabs, rows }
+    const passF = (x) => !s.f || (s.f === '证照' ? soon.value.has(x.code) : s.f === '待审批' ? supToApprove().includes(x) : !!x.riskNew)
+    const fText = { 证照: '证照 30 天内到期', 待审批: '待审批：准入、关键信息改动', 新增风险: '企查查新增风险' }
+    const rows = computed(() => db.suppliers.filter((x) => (s.cat === '全部' || x.cats.includes(s.cat)) && (!s.st || x.status === s.st) && passF(x)
+      && matchQ(s.q, x.code, x.short, x.name, x.contact, x.phone, x.credit || '')))
+    return { s, tabs, rows, fText }
   },
   template: `<div>
     <Head t="供应商"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建供应商</button></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.cat" :items="tabs"/>
-      <button v-if="s.cert" class="chip on" @click="s.cert = false">证照 30 天内到期<Ico n="x" :s="12"/></button>
+      <button v-if="s.f" class="chip on" @click="s.f = ''">{{ fText[s.f] }}<Ico n="x" :s="12"/></button>
       <span class="sp"></span>
-      <select class="sel" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['合作中', '待准入', '停用', '黑名单']" :key="x">{{ x }}</option></select>
-      <Search v-model="s.q"/>
+      <select class="sel" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['合作中', '待准入', '准入审批中', '停用', '黑名单']" :key="x">{{ x }}</option></select>
+      <Search v-model="s.q" ph="编码、名称、联系人、信用代码"/>
     </div>
     <div data-c="供应商列表">
       <Tbl :rows="rows" link @row="x => go('/suppliers/' + x.code)" empty="没有符合条件的供应商" :cols="[
         { k: 'code', t: '编码', c: 'code' }, { k: 'short', t: '简称' }, { k: 'cats', t: '分类', f: x => x.cats.join('、') }, { k: 'level', t: '等级' },
         { k: 'status', t: '状态' }, { k: 'contact', t: '联系人' }, { k: 'settle', t: '结算', f: x => x.settle + (x.term ? ' ' + x.term + ' 天' : '') },
-        { k: 'buyer', t: '负责人', f: x => userName(x.buyer) }, { k: 'cert', t: '证照' }]">
+        { k: 'buyer', t: '负责人', f: x => userName(x.buyer) }, { k: 'cert', t: '证照' }, { k: 'risk', t: '风险' }]">
         <template #short="{ r }"><span>{{ r.short }}</span> <span class="dim">{{ r.name }}</span></template>
-        <template #status="{ r }"><St :s="r.status"/></template>
+        <template #status="{ r }"><span class="row g4"><St :s="r.status"/><span v-if="r.pending" class="pill amber" title="关键信息改动等审批">改动待批</span></span></template>
         <template #cert="{ r }"><span :class="certInfo(r).tone">{{ certInfo(r).t }}</span></template>
+        <template #risk="{ r }"><span class="row g4"><span v-if="lastRisk(r) && lastRisk(r).result !== '无风险'" class="flag" :class="riskTone(lastRisk(r))">{{ lastRisk(r).result }}</span><span v-if="r.riskNew" class="pill red">新增</span></span></template>
       </Tbl>
     </div>
     <SupplierForm v-if="s.add" @close="s.add = false"/>
@@ -465,15 +615,18 @@ route('/suppliers', {
   </div>`,
 }, { mod: 'suppliers', t: '供应商' })
 
-/* 新建、编辑供应商共用：传 s 就是编辑（编码、状态不在这里改；状态走准入、停用、拉黑） */
+/* 新建、编辑供应商共用：传 s 就是编辑（编码、状态不在这里改；状态走准入审批、停用、拉黑）
+ * 准入过的供应商，关键字段（标「需审批」）改了先挂起，另一个有审批权限的人批准才生效 */
 comp('SupplierForm', {
   props: { s: Object },
   emits: ['close'],
   setup(p, { emit }) {
     const keys = SUP_FIELDS.map(([k]) => k)
-    const f = reactive(p.s ? Object.fromEntries(keys.map((k) => [k, Array.isArray(p.s[k]) ? [...p.s[k]] : p.s[k] ?? ''])) : { name: '', short: '', cats: [], goodAt: [], level: 'B', contact: '', phone: '', wechat: '', addr: '', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', bank: '', account: '', buyer: 'u2', note: '' })
+    const f = reactive(p.s ? Object.fromEntries(keys.map((k) => [k, Array.isArray(p.s[k]) ? [...p.s[k]] : p.s[k] ?? ''])) : { name: '', credit: '', short: '', cats: [], goodAt: [], level: 'B', contact: '', phone: '', wechat: '', addr: '', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', bank: '', account: '', buyer: 'u2', note: '' })
     const toggle = (list, c) => { const i = list.indexOf(c); i >= 0 ? list.splice(i, 1) : list.push(c) }
     const cats = computed(() => db.categories.filter((c) => c.status !== '停用' || f.goodAt.includes(c.code)))
+    const gate = computed(() => !!p.s && supGated(p.s))
+    const credit = computed(() => creditProblem(normCredit(f.credit), p.s))
     function save() {
       if (p.s) { const r = run(() => updateSupplier(p.s, f)); if (r !== undefined) { emit('close'); toast(p.s.short + ' 已保存' + (r ? '；' + r : '')) } return }
       const s = run(() => createSupplier({ ...f, cats: [...f.cats], goodAt: [...f.goodAt] }))
@@ -481,33 +634,38 @@ comp('SupplierForm', {
       emit('close')
       go('/suppliers/' + s.code)
       const w = factoryWh(s.code)
-      toast(s.short + ' 已建，待准入' + (w ? '；自动建了工厂仓「' + w.name + '」' : ''))
+      toast(s.short + ' 已建，待准入；资料补齐后点「申请准入」' + (w ? '；自动建了工厂仓「' + w.name + '」' : ''))
     }
-    return { f, toggle, cats, save }
+    return { f, toggle, cats, save, gate, credit }
   },
   template: `<Modal :t="s ? '编辑供应商 ' + s.code : '新建供应商'" :w="680" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
-      <label class="f full">全称<input class="inp" v-model="f.name"></label>
+      <label class="f full"><span>全称<i v-if="gate" class="kmark">需审批</i></span><input class="inp" v-model="f.name"></label>
+      <label class="f" style="grid-column:span 2"><span>统一社会信用代码<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.credit" maxlength="20" placeholder="18 位，营业执照上有"><small v-if="f.credit && credit" class="red">{{ credit }}</small></label>
       <label class="f">简称<input class="inp" v-model="f.short"></label>
       <label class="f">编码<input class="inp code" :value="s ? s.code : nextCode('GYS', db.suppliers)" disabled :title="s ? '编码定了不改' : '自动编'"></label>
       <label class="f">等级<select class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></select></label>
+      <span></span>
       <div class="f full">分类<div class="chips"><button v-for="c in db.dicts.供应商分类" :key="c" class="chip" :class="{ on: f.cats.includes(c) }" @click="toggle(f.cats, c)">{{ c }}</button></div></div>
       <div class="f full" data-c="擅长品类">擅长品类<span class="dim" style="font-weight:400">（成衣厂、加工厂选；排单时参考）</span><div class="chips"><button v-for="c in cats" :key="c.code" class="chip" :class="{ on: f.goodAt.includes(c.code) }" @click="toggle(f.goodAt, c.code)">{{ c.name }}</button></div></div>
       <label class="f">联系人<input class="inp" v-model="f.contact"></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
       <label class="f">微信<input class="inp" v-model="f.wechat"></label>
       <label class="f full">地址<input class="inp" v-model="f.addr"></label>
-      <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
-      <label class="f">账期（天）<input class="inp num" type="number" v-model.number="f.term"></label>
+      <label class="f"><span>结算方式<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
+      <label class="f"><span>账期（天）<i v-if="gate" class="kmark">需审批</i></span><input class="inp num" type="number" v-model.number="f.term"></label>
       <label class="f">负责采购员<select class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></select></label>
-      <label class="f">发票类型<select class="sel" v-model="f.invoice"><option value="">—</option><option v-for="x in db.dicts.发票类型" :key="x">{{ x }}</option></select></label>
-      <label class="f">税率<select class="sel" v-model="f.tax"><option v-for="x in db.dicts.税率" :key="x">{{ x }}</option></select></label>
+      <label class="f"><span>发票类型<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.invoice"><option value="">—</option><option v-for="x in db.dicts.发票类型" :key="x">{{ x }}</option></select></label>
+      <label class="f"><span>税率<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.tax"><option v-for="x in db.dicts.税率" :key="x">{{ x }}</option></select></label>
       <span></span>
-      <label class="f">开户行<input class="inp" v-model="f.bank"></label>
-      <label class="f" style="grid-column:span 2">账号<input class="inp code" v-model="f.account"></label>
+      <label class="f"><span>开户行<i v-if="gate" class="kmark">需审批</i></span><input class="inp" v-model="f.bank"></label>
+      <label class="f" style="grid-column:span 2"><span>账号<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.account"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
-    <template #foot><span v-if="!s" class="dim" style="font-size:12px">建好是「待准入」，准入后才能下采购单、加工单</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ s ? '保存' : '建供应商' }}</button></template>
+    <template #foot>
+      <span v-if="!s" class="dim" style="font-size:12px">建好是「待准入」；补齐信用代码、营业执照、联系人、开户行、账号后申请准入，批了才能下采购单、加工单</span>
+      <span v-else-if="gate" class="dim" style="font-size:12px">带「需审批」的改了要另一个有审批权限的人批准才生效，其他的保存就生效</span>
+      <span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ s ? '保存' : '建供应商' }}</button></template>
   </Modal>`,
 })
 
@@ -515,16 +673,52 @@ route('/suppliers/:code', {
   props: ['code'],
   setup(p) {
     const s = computed(() => sup(p.code))
-    const tab = ref('certs')
+    const tab = ref(nav.query.tab || 'certs')
+    watch(() => nav.query.tab, (t) => { if (t && nav.path === '/suppliers/' + p.code) tab.value = t })
     const box = ref(null) // { mode: '拉黑' | '解除黑名单' }
     const certAdd = ref(false), certEdit = ref(null), editing = ref(false)
     const docs = computed(() => supplierDocs(p.code))
     const perf = computed(() => supplierPerf(p.code))
     const prices = computed(() => priceHistory(p.code))
-    function admit() {
-      const r = run(() => doAction('supplier', s.value, '准入'))
-      if (r) toast(typeof r === 'string' ? '已准入；' + r : '已准入，现在能选进采购单、加工单')
+    const contracts = computed(() => contractsOfSupplier(p.code))
+    const miss = computed(() => (s.value?.status === '待准入' ? admitMissing(s.value) : []))
+    const risk = computed(() => lastRisk(s.value))
+    const checks = computed(() => [...(s.value?.riskChecks || [])].reverse())
+    const newIds = computed(() => s.value?.riskNew?.ids || [])
+    const riskText = (r) => r.items.map((x) => `${x.type}（${x.date}）`).join('；')
+    function apply() {
+      const c = run(() => doAction('supplier', s.value, '申请准入'))
+      if (c) toast('已提交准入审批，等' + auditRoles('供应商').join('、') + '批；企查查：' + (c.failed ? '查询失败（不影响审批，晚点可以再查）' : c.result))
     }
+    async function approve() {
+      const r = lastRisk(s.value)
+      if (r && r.result !== '无风险') {
+        const why = await askText('企查查「' + r.result + '」，仍然通过？', `${fd(r.at)} 查到 ${r.items.length} 条：${riskText(r)}。通过要写明理由，会记进操作记录。`, '如：被执行案已结清，法院有结案文书', '仍然通过')
+        if (why && run(() => doAction('supplier', s.value, '通过', why))) toast(s.value.short + ' 准入通过，现在能选进采购单、加工单')
+        return
+      }
+      if (await ask('通过准入：' + s.value.short, (r ? `企查查 ${fd(r.at)} 查过，无风险。` : '企查查没查成功，不影响审批。') + '通过后能选进采购单、加工单。', '通过准入')
+        && run(() => doAction('supplier', s.value, '通过'))) toast(s.value.short + ' 准入通过，现在能选进采购单、加工单')
+    }
+    async function reject() {
+      const why = await askText('驳回准入申请：' + s.value.short, '驳回后回到「待准入」，申请人照着原因改好再申请。', '写清楚要补什么、改什么', '驳回')
+      if (why && run(() => doAction('supplier', s.value, '驳回', why))) toast('已驳回，回到待准入')
+    }
+    function approveChange() { if (run(() => approveSupChange(s.value))) toast('改动已批准，生效了') }
+    async function rejectChange() {
+      const why = await askText('驳回这批改动', '驳回后这批改动不生效，供应商资料保持原样。', '写清楚为什么不批', '驳回')
+      if (why && run(() => rejectSupChange(s.value, why))) toast('已驳回，资料保持原样')
+    }
+    async function withdrawChange() { if (await ask('撤回这批改动', '撤回后这批改动不生效，要改再重新提。', '撤回') && run(() => withdrawSupChange(s.value))) toast('已撤回') }
+    function checkNow() {
+      const c = run(() => riskCheck(s.value, '手动查'))
+      if (!c || c === true) return
+      tab.value = 'risk'
+      if (c.again) toast(`今天（${cnDate(c.at)}）已经查过，按次收费，不再查；那次的结果：${c.result}，${c.items.length} 条`)
+      else if (c.failed) toast('企查查没查成功：' + c.note + '；不影响准入和审批，晚点再查', null, true)
+      else toast(`查完了：${c.result}，${c.items.length} 条` + (c.added.length ? `，比上次新增 ${c.added.length} 条` : ''))
+    }
+    function ack() { if (run(() => ackRisk(s.value))) toast('已知悉，首页待办里消掉了') }
     async function disable() {
       if (await ask('停用 ' + s.value.short, '停用后不能再选进新的采购单、加工单；已有单据照常入库、回货。', '停用', true)) run(() => doAction('supplier', s.value, '停用'))
     }
@@ -537,30 +731,68 @@ route('/suppliers/:code', {
       can('supplier', s.value, '拉黑') && { t: '拉黑', danger: true, fn: () => { box.value = { mode: '拉黑' } } },
       { t: '删除', danger: true, fn: remove },
     ].filter(Boolean) : [])
-    return { s, tab, box, certAdd, certEdit, editing, docs, perf, prices, admit, more, delCert }
+    return { s, tab, box, certAdd, certEdit, editing, docs, perf, prices, contracts, miss, risk, checks, newIds, more, delCert,
+      apply, approve, reject, approveChange, rejectChange, withdrawChange, checkNow, ack }
   },
   template: `<div v-if="s">
     <Head :t="s.short" :back="['供应商', '/suppliers']">
-      <button v-if="can('supplier', s, '准入')" class="btn pri" @click="admit">准入</button>
+      <button v-if="can('supplier', s, '申请准入')" class="btn pri" @click="apply">申请准入</button>
+      <button v-if="can('supplier', s, '通过')" class="btn pri" @click="approve">通过准入</button>
+      <button v-if="can('supplier', s, '驳回')" class="btn" @click="reject">驳回</button>
       <button v-if="can('supplier', s, '启用')" class="btn pri" @click="run(() => doAction('supplier', s, '启用'))">恢复合作</button>
       <button v-if="can('supplier', s, '解除黑名单')" class="btn" @click="box = { mode: '解除黑名单' }">解除黑名单</button>
-      <button class="btn" @click="editing = true">编辑</button>
+      <button v-if="s.status !== '准入审批中'" class="btn" @click="editing = true">编辑</button>
       <More :items="more"/>
     </Head>
     <div class="detail">
       <div class="body">
-        <div class="title">{{ s.short }}<St :s="s.status"/></div>
-        <div class="sub"><span>{{ s.name }}</span><span>{{ s.cats.join('、') }}</span><span>{{ s.level }} 级</span></div>
+        <div class="title">{{ s.short }}<St :s="s.status"/><span v-if="risk && risk.result !== '无风险'" class="flag" :class="riskTone(risk)" style="margin-left:6px">企查查{{ risk.result }}</span></div>
+        <div class="sub"><span>{{ s.name }}</span><span class="code">{{ s.credit || '没填信用代码' }}</span><span>{{ s.cats.join('、') }}</span><span>{{ s.level }} 级</span></div>
+        <div v-if="s.riskNew" class="banner red" data-c="新增风险"><Ico n="alert"/><span>企查查 {{ fd(s.riskNew.at) }} 复查新增 {{ riskNewItems(s).length }} 条风险：{{ riskNewItems(s).map(x => x.type + '（' + x.date + '）').join('、') }}</span>
+          <span class="sp"></span><button class="btn sm" @click="tab = 'risk'">看风险</button><button class="btn sm pri" @click="ack">已知悉</button></div>
         <div v-if="s.status === '黑名单'" class="banner red" data-c="黑名单原因"><Ico n="alert"/>{{ s.blackReason }}<span v-if="s.blackAt" class="dim" style="margin-left:auto;font-size:12px">{{ userName(s.blackBy) }} · {{ fd(s.blackAt) }}</span></div>
-        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], ['docs', '往来单据', docs.length], ['perf', '绩效（待定）'], ['price', '询价记录（待定）', prices.length]]"/>
+        <div v-if="s.status === '准入审批中'" class="banner" data-c="准入审批中"><Ico n="bell"/>
+          <span>{{ userName(s.applyBy) }} {{ fd(s.applyAt) }} 申请准入，等{{ auditRoles('供应商').join('、') }}审批（不能自己批自己）；审批期间资料不能改。企查查：<b :class="riskTone(risk)">{{ risk ? risk.result : '没查成功' }}</b></span></div>
+        <div v-if="s.status === '待准入' && (miss.length || s.rejectNote)" class="banner" data-c="待准入"><Ico n="alert"/>
+          <span><template v-if="s.rejectNote">上次申请被驳回：{{ s.rejectNote }}。</template><template v-if="miss.length">申请准入前还要补：{{ miss.join('、') }}</template><template v-else>资料齐了，可以重新申请准入</template></span></div>
+        <div v-if="s.pending" class="banner pend" data-c="待批改动">
+          <div class="row g8" style="width:100%"><Ico n="bell"/><b>关键信息改动等审批</b><span class="dim">{{ userName(s.pending.by) }} · {{ fd(s.pending.at) }} 提的；批准前还按原来的用</span><span class="sp"></span>
+            <template v-if="s.pending.by === db.me"><button class="btn sm" @click="withdrawChange">撤回</button></template>
+            <template v-else><button class="btn sm" @click="rejectChange">驳回</button><button class="btn sm pri" @click="approveChange">批准改动</button></template></div>
+          <table class="ptbl"><tr v-for="i in s.pending.items" :key="i.k"><td>{{ i.t }}</td><td class="dim"><s>{{ showVal(i.from) }}</s></td><td>→ {{ showVal(i.to) }}</td></tr></table>
+        </div>
+        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], { v: 'risk', t: '风险', n: riskNewItems(s).length, ph: '待排期' }, ['docs', '往来单据', docs.length], ['prices', '价格记录', pricesOf({ sup: s.code }).filter(x => !x.void).length], { v: 'contracts', t: '合同', n: contracts.length, ph: '待排期' }, ['perf', '绩效（待定）'], ['price', '询价记录（待定）', prices.length]]"/><PriceHistory v-if="tab === 'prices'" :sup="s.code" data-c="价格记录"/>
 
         <section v-if="tab === 'certs'" data-c="资质">
-          <Tbl inset flat :rows="s.certs" empty="还没传证照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件' }, { k: 'note', t: '备注', f: c => c.note || '—' }, { k: 'act', t: '' }]">
+          <Tbl inset flat :rows="s.certs" empty="还没传证照；申请准入要有营业执照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件' }, { k: 'note', t: '备注', f: c => c.note || '—' }, { k: 'act', t: '' }]">
             <template #left="{ r }"><Days :d="r.until" :warn="30"/></template>
             <template #file="{ r }"><Pics v-if="r.file" :model-value="[r.file]" readonly :s="36"/><span v-else class="dim">没传</span></template>
             <template #act="{ r }"><span class="row g4"><button class="btn ghost sm" @click="certEdit = r">换</button><button class="btn ghost sm danger" @click="delCert(r)">删除</button></span></template>
           </Tbl>
           <button class="btn" style="margin-top:12px" @click="certAdd = true"><Ico n="plus" :s="14"/>加一份证照</button>
+        </section>
+
+        <section v-if="tab === 'risk'" data-c="企查查风险">
+          <div class="riskhead">
+            <div><span class="dim">最近结果</span><b :class="riskTone(risk)">{{ risk ? risk.result : '还没查过' }}</b><small v-if="risk" class="dim">{{ fd(risk.at) }} · {{ risk.why }} · {{ risk.items.length }} 条</small></div>
+            <span class="sp"></span>
+            <span class="dim" style="font-size:12px">申请准入时查一次；合作中的每周一自动复查，上次 {{ cnDate(db.riskRunAt) }}</span>
+            <button class="btn" @click="checkNow"><Ico n="search" :s="14"/>现在查一次</button>
+          </div>
+          <Tbl inset flat :rows="risk ? risk.items : []" :empty="risk ? '企查查没查到风险' : '还没查过；填好信用代码点「现在查一次」'" :cols="[
+            { k: 'level', t: '等级' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: x => x.date }, { k: 'text', t: '内容', f: x => x.text }]">
+            <template #level="{ r }"><span class="flag" :class="r.level === '高' ? 'red' : r.level === '中' ? 'amber' : 'dim'">{{ RISK_LV[r.level] }}</span></template>
+            <template #type="{ r }"><span class="row g4">{{ r.type }}<span v-if="newIds.includes(r.id)" class="pill red">新增</span></span></template>
+          </Tbl>
+          <h4 style="margin:18px 0 6px">查询记录</h4>
+          <Tbl inset flat :rows="checks" empty="还没查过" :cols="[
+            { k: 'at', t: '时间', f: c => fd(c.at) }, { k: 'src', t: '来源' }, { k: 'why', t: '原因' }, { k: 'by', t: '查的人', f: c => c.by ? userName(c.by) : '系统' },
+            { k: 'result', t: '结果' }, { k: 'n', t: '条数', c: 'num', f: c => c.failed ? '—' : c.items.length }, { k: 'added', t: '比上次新增' }]">
+            <template #result="{ r }"><span class="flag" :class="riskTone(r)" :title="r.note || ''">{{ r.result }}{{ r.failed ? '：' + r.note : '' }}</span></template>
+            <template #added="{ r }"><span v-if="r.added.length" class="red">{{ r.added.map(id => r.items.find(x => x.id === id)?.type).join('、') }}</span><span v-else class="dim">—</span></template>
+          </Tbl>
+          <p class="dim tip" style="margin-top:10px">风险等级按「基础 › 字典」里的企查查高风险、企查查关注两项分；一家一天只查一次（按次收费），查询失败不拦准入和审批。
+            原型里的结果是假的；真系统里由定时任务调企查查接口，或由 agent 通过 MCP 取数后写入；比对和提醒在系统里做。</p>
         </section>
 
         <section v-if="tab === 'docs'" data-c="往来单据">
@@ -569,6 +801,10 @@ route('/suppliers/:code', {
             { k: 'qty', t: '数量', c: 'num' }, { k: 'amt', t: '金额', c: 'num', f: d => d.amt == null ? '—' : fm(d.amt) }, { k: 'status', t: '状态' }]">
             <template #status="{ r }"><St v-if="r.status" :s="r.status"/><span v-else class="dim">—</span></template>
           </Tbl>
+        </section>
+
+        <section v-if="tab === 'contracts'" data-c="合同">
+          <ContractList :rows="contracts" empty="和这家还没有合同；在已审核的采购单、加工单上点「生成合同」"/>
         </section>
 
         <section v-if="tab === 'perf'" data-c="绩效">
@@ -593,6 +829,7 @@ route('/suppliers/:code', {
         <dl class="props">
           <dt>编码</dt><dd class="code">{{ s.code }}</dd>
           <dt>全称</dt><dd>{{ s.name }}</dd>
+          <dt>信用代码</dt><dd class="code">{{ s.credit || '—' }}</dd>
           <dt>擅长品类</dt><dd>{{ (s.goodAt || []).map(c => catOf(c).name).join('、') || '—' }}</dd>
           <dt>联系人</dt><dd>{{ s.contact || '—' }}</dd>
           <dt>电话</dt><dd>{{ s.phone || '—' }}</dd>
@@ -656,7 +893,7 @@ comp('CertForm', {
   </Modal>`,
 })
 
-/* ---------- 客户 ---------- */
+/* ---------- 客户：TRADE 关着时菜单、搜索里都没有，页面留着不删 ---------- */
 route('/customers', {
   setup() {
     const s = reactive({ q: '', st: '启用', add: false, imp: false })
@@ -896,7 +1133,9 @@ route('/materials/:code', {
   setup(p) {
     const m = computed(() => mat(p.code))
     const dlg = ref('')
+    const tab = ref(nav.query.tab || 'skus')
     const used = computed(() => matUsedBy(p.code))
+    const nPrice = computed(() => pricesOf({ mat: p.code }).filter((x) => !x.void).length)
     async function toggle() {
       if (m.value.status === '启用') { if (await ask('停用 ' + m.value.name, '停用后它的 SKU 不能再选进新的资料包、采购单；已有库存照常出库。', '停用', true)) setMaterialStatus(m.value, '停用') }
       else setMaterialStatus(m.value, '启用')
@@ -907,7 +1146,7 @@ route('/materials/:code', {
       toggleMatSku(m.value, k)
     }
     async function skuDel(k) { if (await ask('删除 ' + k.code, '没用过的 SKU 才能删；用过的只能停用。', '删除', true)) run(() => removeMatSku(m.value, k)) }
-    return { m, dlg, used, toggle, remove, skuToggle, skuDel }
+    return { m, dlg, tab, used, nPrice, toggle, remove, skuToggle, skuDel }
   },
   template: `<div v-if="m">
     <Head :t="m.code" :back="['物料', '/materials']">
@@ -919,7 +1158,9 @@ route('/materials/:code', {
       <div class="body">
         <div class="title">{{ m.name }}<St :s="m.status"/></div>
         <div class="sub"><span>{{ matCat(m.cat).parent }} / {{ matCat(m.cat).name }}</span><span>{{ m.type }}</span><span v-if="m.comp">{{ m.comp }}</span><span v-if="m.texture">{{ m.texture }}</span></div>
-        <section data-c="物料SKU">
+        <Tabs v-model="tab" :items="[['skus', 'SKU', m.skus.length], ['used', '用到它的款式', used.length], ['prices', '价格记录', nPrice]]"/>
+        <PriceHistory v-if="tab === 'prices'" :mat="m.code" data-c="价格记录"/>
+        <section v-if="tab === 'skus'" data-c="物料SKU">
           <Tbl inset flat :rows="m.skus" :cols="[
             { k: 'code', t: 'SKU', c: 'code', img: k => k.code }, { k: 'color', t: '颜色' }, { k: 'spec', t: '规格', f: k => k.spec || '—' }, { k: 'supColor', t: '供应商色号', f: k => k.supColor || '—' },
             { k: 'price', t: '单价', c: 'num', f: k => k.price != null ? fm(k.price) : '同参考价' }, { k: 'safety', t: '安全库存', c: 'num', f: k => k.safety ? fq(k.safety) : '—' },
@@ -931,8 +1172,7 @@ route('/materials/:code', {
             <template #act="{ r }"><span class="row g4"><button class="btn ghost sm" @click="skuToggle(r)">{{ r.status === '停用' ? '启用' : '停用' }}</button><button v-if="!skuUsedBy(r.code)" class="btn ghost sm danger" @click="skuDel(r)">删除</button></span></template>
           </Tbl>
         </section>
-        <div class="sec" data-c="用到它的款式">
-          <h3>用到它的款式</h3>
+        <div v-if="tab === 'used'" data-c="用到它的款式">
           <Tbl inset flat :rows="used" link @row="x => go('/styles/' + x.style)" empty="还没有生效的资料包用到它" :cols="[
             { k: 'style', t: '款号', c: 'code' }, { k: 'name', t: '名称', f: x => styleName(x.style) }, { k: 'ver', t: '资料包', f: x => 'V' + x.ver }, { k: 'part', t: '部位' }, { k: 'src', t: '来源' }]"/>
         </div>
@@ -951,6 +1191,7 @@ route('/materials/:code', {
           <dt>默认供应商</dt><dd><a v-if="m.supplier" :href="'#/suppliers/' + m.supplier">{{ supName(m.supplier) }}</a><span v-else>—</span></dd>
           <dt>供应商货号</dt><dd>{{ m.supNo || '—' }}</dd>
           <dt>参考单价</dt><dd>{{ fm(m.price) }} / {{ m.purUnit }}</dd>
+          <dt>档案现价</dt><dd><a v-if="m.supplier && curMatPrice(m.supplier, m.code) != null" :href="'#/materials/' + m.code + '?tab=prices'" @click="tab = 'prices'">{{ fm(curMatPrice(m.supplier, m.code)) }} · 默认供应商</a><span v-else class="dim">档案里没有，用参考单价</span></dd>
           <dt>起订量</dt><dd>{{ m.moq ? fq(m.moq) + ' ' + m.purUnit : '—' }}</dd>
           <dt>最小包装</dt><dd>{{ fq(m.pack) }} {{ m.purUnit }}</dd>
           <dt>采购周期</dt><dd>{{ m.lead }} 天</dd>
@@ -1008,6 +1249,8 @@ route('/basics', {
     async function delGroup(g) { if (await ask('删除尺码组「' + g.name + '」', '没有款式用它。删除后新建款式选不到它。', '删除', true)) run(() => removeSizeGroup(g)) }
     const ns = reactive({ code: '', name: '' })
     function saveSeason() { if (run(() => addSeason(ns))) { toast('加了季节 ' + ns.name); Object.assign(ns, { code: '', name: '' }) } }
+    const nb = reactive({ code: '', name: '' })
+    function saveBig() { if (run(() => addBigCat(nb))) { toast('加了大类 ' + nb.code + ' ' + nb.name); Object.assign(nb, { code: '', name: '' }) } }
     const newSize = reactive({})
     const ng = reactive({ name: '', sizes: '', base: '' })
     const whType = ref('全部')
@@ -1031,12 +1274,12 @@ route('/basics', {
     function addDict(k) { if (run(() => addDictValue(k, nd[k]))) nd[k] = '' }
     async function delDict(k, v) { if (await ask('删除「' + dictText(v) + '」', '以后新建的单据选不到它；已经用了它的单据不受影响。', '删除', true)) run(() => removeDictValue(k, v)) }
     const dictText = (v) => (Array.isArray(v) ? v[0] + ' ' + v[1] + ' 天' : v)
-    return { tab, nc, families, ce, openColor, doEditColor, sg, doRenameGroup, delGroup, ns, saveSeason, newSize, ng, whType, catGroups, matGroups, ncat, nmc, paths, ren, rename, doRename, del, saveColor, addSize, saveGroup, saveCat, saveMatCat, whs, edit, nd, addDict, delDict, dictText }
+    return { tab, nc, families, ce, openColor, doEditColor, sg, doRenameGroup, delGroup, ns, saveSeason, nb, saveBig, newSize, ng, whType, catGroups, matGroups, ncat, nmc, paths, ren, rename, doRename, del, saveColor, addSize, saveGroup, saveCat, saveMatCat, whs, edit, nd, addDict, delDict, dictText }
   },
   template: `<div>
     <Head t="基础"/>
     <div class="page">
-      <Tabs v-model="tab" :items="[['colors', '颜色', db.colors.length], ['sizes', '尺码组', db.sizeGroups.length], ['cats', '品类', db.categories.length], ['seasons', '季节', db.seasons.length], ['matcats', '物料分类', db.materialCategories.length], ['whs', '仓库', db.warehouses.length], ['companies', '主体公司', db.companies.length], ['dicts', '字典']]"/>
+      <Tabs v-model="tab" :items="[['colors', '颜色', db.colors.length], ['sizes', '尺码组', db.sizeGroups.length], ['bigs', '款号大类', db.bigCats.length], ['cats', '品类', db.categories.length], ['seasons', '季节', db.seasons.length], ['matcats', '物料分类', db.materialCategories.length], ['whs', '仓库', db.warehouses.length], ['companies', '主体公司', db.companies.length], ['dicts', '字典']]"/>
 
       <section v-if="tab === 'colors'" data-c="颜色">
         <p class="dim tip">颜色编码会进 SKU 码（27CF001-KQ-M 里的 KQ），定了不改；不用的颜色停用，新建款式、物料就选不到它。</p>
@@ -1087,8 +1330,21 @@ route('/basics', {
         </div>
       </section>
 
+      <section v-if="tab === 'bigs'" data-c="款号大类">
+        <p class="dim tip">款号 = 大类 2 位 + 建款日 yyMMdd + 设计师编号 2 位 + 流水 2 位，如 FS2611080701（服饰、11 月 8 日、设计师 07、当天第 1 个）。设计师编号在「设置 › 用户」里填。
+          大类编码定了不改；进过款号的不能删，只能停用，停用后新建款式选不到它。</p>
+        <div class="list"><div v-for="c in db.bigCats" :key="c.code" class="li" :class="{ off: c.status === '停用' }">
+          <span class="code dim" style="width:28px">{{ c.code }}</span>
+          <template v-if="ren.c === c"><input class="inp" style="height:26px;width:140px" v-model="ren.v" @keydown.enter="doRename(db.bigCats, () => 0, '')"><button class="btn sm" @click="doRename(db.bigCats, () => 0, '')">好</button></template>
+          <span v-else>{{ c.name }}</span><St v-if="c.status === '停用'" s="停用"/>
+          <span class="dim" style="font-size:12px">{{ bigCatUsed(c.code) ? bigCatUsed(c.code) + ' 个款' : '' }}</span>
+          <span class="row g4" style="margin-left:auto"><button class="btn ghost sm" @click="rename(c)">改名</button><button class="btn ghost sm" @click="toggleCat(c)">{{ c.status === '停用' ? '启用' : '停用' }}</button><button v-if="!bigCatUsed(c.code)" class="btn ghost sm danger" @click="del(db.bigCats, c, 0, '款')">删除</button></span>
+        </div></div>
+        <div class="row" style="margin-top:14px" data-c="加大类"><input class="inp code" style="width:64px" v-model="nb.code" maxlength="2" placeholder="编码"><input class="inp" style="width:120px" v-model="nb.name" placeholder="名称，如 包袋"><button class="btn" @click="saveBig"><Ico n="plus" :s="14"/>加大类</button></div>
+      </section>
+
       <section v-if="tab === 'cats'" data-c="品类">
-        <p class="dim tip">三级：大类 / 中类 / 品类。品类编码 1 位，会进款号（27CF001 里的 F）；已经有款用的品类不能删、编码不能改，只能停用（PRD §6.1.2）。</p>
+        <p class="dim tip">三级：大类 / 中类 / 品类。品类编码 1 位，定了不改；已经有款用的品类不能删、编码不能改，只能停用（PRD §6.1.2）。</p>
         <div v-for="g in catGroups" :key="g.p" style="margin-bottom:18px">
           <div class="dim" style="font-size:12px;margin-bottom:6px">{{ g.p }}</div>
           <div class="list"><div v-for="c in g.cats" :key="c.code" class="li" :class="{ off: c.status === '停用' }">
@@ -1104,7 +1360,7 @@ route('/basics', {
       </section>
 
       <section v-if="tab === 'seasons'" data-c="季节">
-        <p class="dim tip">季节编码 1 位，会进款号（27CF001 里的 C）；已经有款式、物料用的季节不能删、编码不能改，只能停用（PRD §6.1.2）。年份是 4 位数字，不用维护。</p>
+        <p class="dim tip">季节编码 1 位，定了不改；已经有款式、物料用的季节不能删、编码不能改，只能停用（PRD §6.1.2）。年份是 4 位数字，不用维护。</p>
         <div class="list"><div v-for="c in db.seasons" :key="c.code" class="li" :class="{ off: c.status === '停用' }">
           <span class="code dim" style="width:24px">{{ c.code }}</span>
           <template v-if="ren.c === c"><input class="inp" style="height:26px;width:140px" v-model="ren.v" @keydown.enter="doRename(db.seasons, () => 0, '')"><button class="btn sm" @click="doRename(db.seasons, () => 0, '')">好</button></template>
@@ -1227,8 +1483,11 @@ route('/settings', {
       <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
 
       <section v-if="tab === 'users'" data-c="用户">
-        <p class="dim tip">登录名、密码、启用停用在管理后台（已有）；这里是业务上要用的：部门、岗位、角色、默认主体（新单据的主体公司默认取它，PRD §5.7）。</p>
-        <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'company', t: '默认主体' }]">
+        <p class="dim tip">登录名、密码、启用停用在管理后台（已有）；这里是业务上要用的：部门、岗位、角色、默认主体（新单据的主体公司默认取它，PRD §5.7）、设计师编号。</p>
+        <p class="dim tip">设计师编号 2 位数字，进款号（FS2611080701 里的 07）；不能重号，进过款号就锁定：不能改，也不能给别人。没有编号的人建款不能自动编号，只能手填款号。</p>
+        <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
+          <template #dno="{ r }"><span v-if="dnoLocked(r)" class="row g4"><span class="code">{{ r.dno }}</span><span class="dim" style="font-size:12px" title="进过款号，不能改、不能给别人">已锁定</span></span>
+            <input v-else class="inp code" style="height:26px;width:56px" maxlength="2" :value="r.dno || ''" placeholder="—" @change="e => { if (!run(() => setDesignerNo(r, e.target.value))) e.target.value = r.dno || ''; else if (e.target.value) toast(r.name + ' 的设计师编号是 ' + r.dno) }"></template>
           <template #dept="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.dept"></template>
           <template #post="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.post"></template>
           <template #role="{ r }"><select class="sel" style="height:26px" v-model="r.role"><option v-for="x in ROLES" :key="x">{{ x }}</option></select></template>
@@ -1247,6 +1506,7 @@ route('/settings', {
       </section>
 
       <section v-if="tab === 'audit'" data-c="审批">
+        <p class="dim tip">谁能审 = 「角色权限」里这个模块是「审」的角色。供应商的准入申请和关键信息改动（全称、信用代码、结算方式、账期、税率、发票类型、开户行、账号）都要另一个有审批权限的人批，不能批自己提的（甲方 11-11）。</p>
         <Tbl inset flat :rows="AUDITS" :cols="[{ k: 't', t: '单据' }, { k: 'p', t: '权限点', c: 'code' }, { k: 'roles', t: '谁能审', f: a => auditRoles(a.m).join('、') || '—' }, { k: 'lv', t: '级数', f: () => '单级' }, { k: 'n', t: '待审', c: 'num', f: a => a.n() || '—' }]"/>
         <div class="sec" data-c="多级审批">
           <h3>多级审批<span class="pill blue">二期</span><span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
@@ -1350,14 +1610,15 @@ IMPORTS.customers = {
 }
 IMPORTS.suppliers = {
   title: '导入供应商', name: '供应商',
-  note: '一行一家供应商。成衣厂、加工厂导进来会自动建一个工厂仓。证照在供应商详情页一份份传。',
+  note: '一行一家供应商。成衣厂、加工厂导进来会自动建一个工厂仓。证照在供应商详情页一份份传。直接导成「合作中」只给上线搬历史数据用，导入的人要有供应商审批权限；平时新加的供应商走准入审批。',
   cols: [
     { k: 'code', t: '编码', tip: '选填；不填自动编（GYS + 4 位）', ex: 'GYS0101', text: true, w: 10 },
     { k: 'name', t: '全称', req: true, tip: '不能和已有供应商重名', ex: '绍兴某纺织有限公司', w: 24 },
+    { k: 'credit', t: '统一社会信用代码', tip: '18 位，营业执照上有；不能和已有的重复。导成「合作中」的必填', ex: '91330600MA0000199X', text: true, w: 22 },
     { k: 'short', t: '简称', req: true, ex: '某纺织' },
     { k: 'cats', t: '分类', req: true, tip: '可以填多个，用顿号或逗号隔开：' + '面料商、辅料商、成衣厂、加工厂、外协、包材商、其他', ex: '面料商', w: 16 },
     { k: 'level', t: '等级', opts: () => ['A', 'B', 'C', 'D'], tip: '不填 = B', ex: 'B', w: 6 },
-    { k: 'status', t: '状态', opts: () => ['合作中', '待准入', '停用'], tip: '不填 = 待准入；领猫里在合作的填「合作中」。黑名单导进来以后在详情页拉黑（要写原因）', ex: '合作中', w: 8 },
+    { k: 'status', t: '状态', opts: () => ['合作中', '待准入', '停用'], tip: '不填 = 待准入；领猫里在合作的填「合作中」（导入的人要有供应商审批权限）。黑名单导进来以后在详情页拉黑（要写原因）', ex: '合作中', w: 8 },
     { k: 'goodAt', t: '擅长品类', tip: '成衣厂、加工厂填；品类名称或编码，多个用顿号隔开', ex: '风衣、夹克', w: 14 },
     { k: 'contact', t: '联系人', ex: '吴总' },
     { k: 'phone', t: '电话', text: true, ex: '13500000000' },
@@ -1373,16 +1634,23 @@ IMPORTS.suppliers = {
     { k: 'note', t: '备注', w: 20 },
   ],
   example: () => [
-    { name: '绍兴某纺织有限公司', short: '某纺织', cats: '面料商', level: 'A', status: '合作中', contact: '吴总', phone: '13500000000', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', buyer: '林舟' },
-    { code: 'GYS0102', name: '湖州某制衣有限公司', short: '某制衣', cats: '成衣厂', level: 'B', status: '合作中', goodAt: '风衣、夹克', contact: '孙厂长', phone: '13800000000', settle: '月结', term: 45, tax: '6%', invoice: '增值税专用发票', buyer: '陈晓' },
+    { name: '绍兴某纺织有限公司', credit: '91330600MA0000199X', short: '某纺织', cats: '面料商', level: 'A', status: '合作中', contact: '吴总', phone: '13500000000', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', buyer: '林舟' },
+    { code: 'GYS0102', name: '湖州某制衣有限公司', credit: '91330500MA0000299X', short: '某制衣', cats: '成衣厂', level: 'B', status: '合作中', goodAt: '风衣、夹克', contact: '孙厂长', phone: '13800000000', settle: '月结', term: 45, tax: '6%', invoice: '增值税专用发票', buyer: '陈晓' },
   ],
   check(rows, bad) {
     checkCodes(rows, bad, sup)
-    const seen = new Map()
+    const seen = new Map(), seenCredit = new Map(), admit = canAdmit()
     for (const r of rows) {
       if (db.suppliers.some((x) => x.name === r.name)) bad(r, '全称', `已经有供应商叫「${r.name}」`)
       else if (seen.has(r.name)) bad(r, '全称', `和第 ${seen.get(r.name)} 行重复`)
       seen.set(r.name, r._r)
+      r.credit = normCredit(r.credit)
+      const cp = creditProblem(r.credit)
+      if (cp) bad(r, '统一社会信用代码', cp)
+      else if (r.credit && seenCredit.has(r.credit)) bad(r, '统一社会信用代码', `和第 ${seenCredit.get(r.credit)} 行重复`)
+      if (r.credit) seenCredit.set(r.credit, r._r)
+      if (r.status === '合作中' && !admit) bad(r, '状态', `直接导成「合作中」要有供应商审批权限（${auditRoles('供应商').join('、')}），${me().name} 没有；先导成「待准入」，再一家家申请准入`)
+      else if (r.status === '合作中' && !r.credit) bad(r, '统一社会信用代码', '导成「合作中」的要填信用代码')
       r.cats = splitList(r.cats)
       const badCat = r.cats.filter((c) => !db.dicts.供应商分类.includes(c))
       if (badCat.length) bad(r, '分类', `没有分类「${badCat.join('、')}」，可选：${db.dicts.供应商分类.join('、')}`)
@@ -1396,7 +1664,7 @@ IMPORTS.suppliers = {
     return rows
   },
   save(rows) {
-    const made = codeFirst(rows).map((r) => createSupplier({ imported: true, code: r.code, name: r.name, short: r.short, cats: r.cats, goodAt: r.goodAt, level: r.level || 'B', status: r.status || '待准入',
+    const made = codeFirst(rows).map((r) => createSupplier({ imported: true, code: r.code, name: r.name, credit: r.credit, short: r.short, cats: r.cats, goodAt: r.goodAt, level: r.level || 'B', status: r.status || '待准入',
       contact: r.contact, phone: r.phone, wechat: r.wechat, addr: r.addr, settle: r.settle || '月结', term: r.term ?? 30, tax: r.tax || '13%', invoice: r.invoice, bank: r.bank, account: r.account, buyer: r.buyer, note: r.note }))
     const whs = made.filter((s) => factoryWh(s.code)).length
     return { text: `导入了 ${made.length} 家供应商${whs ? '，自动建了 ' + whs + ' 个工厂仓' : ''}`, to: '/suppliers' }

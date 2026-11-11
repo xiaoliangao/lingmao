@@ -1,12 +1,14 @@
 /* ============================================================
  * 主数据 + 工具函数。全部虚构；今天固定 2026-11-08，方便演示逾期。
- * 单号：前缀 + yyyyMMdd + 4 位流水；款号：年份 2 位 + 季节码 + 品类码 + 3 位流水（27CF001）
+ * 单号：前缀 + yyyyMMdd + 4 位流水；款号：大类 + 建款日 yyMMdd + 设计师编号 + 2 位流水（FS2611080701，甲方 11-11 定）；27CF001 这种是导入的历史款号
  * SKU：款号-颜色码-尺码（27CF001-KQ-M）；物料 SKU：物料编码-颜色码[-规格]（ML0012-KQ）
  * 业务单据（订单、采购、库存……）不在这里写死，由 2-store.js 末尾用真实动作"演"出来，账才对得上。
  * ============================================================ */
 const { reactive, computed, ref, watch, nextTick, onMounted, onUnmounted } = Vue
 const TODAY = '2026-11-08'
 const clock = { today: TODAY } // 演历史数据时临时改，演完改回 TODAY
+const TRADE = false // 贸易代工：客户、客供料。甲方一期只做自营，以后接代工改成 true
+const DUE_T = TRADE ? '客户交期' : '要求交期' // 订单 due 的叫法
 
 /* ---------- 日期 ---------- */
 const toD = (s) => new Date(s + 'T00:00:00')
@@ -34,7 +36,7 @@ const db = reactive({
     { id: 'u1', name: '陈晓', role: '生产跟单', dept: '生产部', post: '跟单员', company: 'ZJ' },
     { id: 'u2', name: '林舟', role: '采购', dept: '采购部', post: '采购员', company: 'ZJ' },
     { id: 'u3', name: '周宁', role: '业务', dept: '业务部', post: '业务员', company: 'ZJ' },
-    { id: 'u4', name: '许然', role: '开发', dept: '开发部', post: '设计师', company: 'ZJ' },
+    { id: 'u4', name: '许然', role: '开发', dept: '开发部', post: '设计师', company: 'ZJ', dno: '07' }, // dno = 设计师编号，进款号
     { id: 'u5', name: '王敏', role: '仓管', dept: '仓储部', post: '仓管员', company: 'ZJ' },
     { id: 'u6', name: '赵启', role: '管理层', dept: '总经办', post: '总经理', company: 'ZJ' },
     { id: 'u7', name: '孙丽', role: '财务', dept: '财务部', post: '会计', company: 'ZJ' },
@@ -62,6 +64,8 @@ const db = reactive({
     { id: 'F', name: '均码', sizes: ['F'], base: 'F', status: '启用' },
   ],
   seasons: [{ code: 'C', name: '春' }, { code: 'X', name: '夏' }, { code: 'Q', name: '秋' }, { code: 'D', name: '冬' }],
+  bigCats: [{ code: 'FS', name: '服饰', status: '启用' }, { code: 'XZ', name: '鞋子', status: '启用' }], // 款号大类，2 位字母，进款号
+  dnoUsed: {}, // 进过款号的设计师编号 → 用户 id，锁定不能改、不能给别人
   categories: [
     { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'trench' },
     { code: 'J', name: '夹克', path: '女装 / 外套', shape: 'jacket' },
@@ -84,7 +88,7 @@ const db = reactive({
     结算方式: ['月结', '货到付款', '预付', '银行转账', '承兑'],
     税率: ['0%', '1%', '3%', '6%', '9%', '13%'],
     供应商分类: ['面料商', '辅料商', '成衣厂', '加工厂', '外协', '包材商', '其他'],
-    订单类型: ['客户订单', '自营备货', '补单', '翻单'],
+    订单类型: TRADE ? ['客户订单', '自营备货', '补单', '翻单'] : ['自营备货', '补单', '翻单'],
     加工方式: ['包工包料', '清加工', '半包'],
     生产节点: [['到料', 3], ['裁剪', 4], ['车缝', 10], ['后整', 3], ['包装', 2], ['入仓', 1]],
     异常类型: ['缺料', '面料质量', '做工质量', '延期', '工艺问题', '其他'],
@@ -94,32 +98,36 @@ const db = reactive({
     风格: ['通勤', '休闲', '运动'],
     系列: ['基础系列', '城市通勤', '假日'],
     性别: ['女', '男', '童', '中性'],
-    款式来源: ['自主开发', '客户来样', '选款', '改款'],
+    款式来源: TRADE ? ['自主开发', '客户来样', '选款', '改款'] : ['自主开发', '选款', '改款'],
     执行标准: ['GB/T 2664-2017 男西服、大衣', 'GB/T 2665-2017 女西服、大衣', 'FZ/T 81004-2022 连衣裙、裙套', 'FZ/T 73020-2019 针织休闲服装', 'GB/T 22849-2014 针织 T 恤衫'],
     安全类别: ['A 类', 'B 类', 'C 类'],
     色系: ['黑白灰', '棕', '蓝', '红', '黄', '绿', '紫'],
     物料类型: ['面料', '里料', '辅料', '标签吊牌', '包材'],
-    物料来源: ['我方采购', '客供', '工厂自备'],
+    物料来源: TRADE ? ['我方采购', '客供', '工厂自备'] : ['我方采购', '工厂自备'],
     币种: ['人民币', '美元', '港币', '欧元'],
     发票类型: ['增值税专用发票', '增值税普通发票', '不开票'],
     证照类型: ['营业执照', '验厂报告', '环保证明', '其他'],
     其他出入库原因: ['盘盈', '盘亏', '报废', '样品领用', '期初', '其他'],
+    // 企查查风险分级（甲方 11-11）：类型在哪个里就是哪级，都不在的算"提示"
+    企查查高风险: ['失信被执行', '被执行人', '股权冻结', '经营异常（严重违法）'],
+    企查查关注: ['经营异常', '行政处罚', '司法诉讼', '动产抵押'],
   },
+  // 客户：TRADE 关着时界面上不出现，订单、款式、库存上的客户 / 物权字段留着（可空）
   customers: [
     { code: 'KH0001', name: '华东某服饰有限公司', short: '华东某服饰', contact: '刘经理', phone: '138****2201', addr: '上海市某区某路 100 号', settle: '月结', term: 60, status: '启用', note: '', terms: { price: '按款报价，年度框架协议', deduct: '2%', rebate: '年度返点 1%' } },
     { code: 'KH0002', name: '南方某品牌管理有限公司', short: '南方某品牌', contact: '何小姐', phone: '139****8810', addr: '广州市某区某大道 66 号', settle: '预付', term: 0, status: '启用', note: '大货前要寄产前样确认', terms: { price: '30% 定金，出货前付清', deduct: '—', rebate: '—' } },
     { code: 'KH0003', name: '北方某电商有限公司', short: '北方某电商', contact: '马先生', phone: '136****5532', addr: '北京市某区某街 9 号', settle: '月结', term: 30, status: '启用', note: '', terms: { price: '平台结算价', deduct: '平台扣点 5%', rebate: '—' } },
   ],
   suppliers: [
-    { code: 'GYS0001', short: '恒丰面料', name: '绍兴恒丰纺织有限公司', cats: ['面料商'], level: 'A', status: '合作中', contact: '吴总', phone: '135****1020', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: 'hengfeng_wu', addr: '绍兴市某区某路 1 号', invoice: '增值税专用发票', bank: '某银行绍兴分行', account: '6222 **** **** 1001', note: '', certs: [{ type: '营业执照', until: '2030-12-31' }] },
-    { code: 'GYS0002', short: '鸿达辅料', name: '义乌鸿达服装辅料厂', cats: ['辅料商'], level: 'A', status: '合作中', contact: '陈姐', phone: '137****6612', settle: '月结', term: 30, tax: '3%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: '', addr: '义乌市某街道某路 22 号', invoice: '增值税普通发票', bank: '某银行义乌支行', account: '6222 **** **** 2002', note: '纽扣颜色以实物色卡为准', certs: [{ type: '营业执照', until: '2029-06-30' }] },
-    { code: 'GYS0003', short: '新雅包装', name: '杭州新雅包装材料有限公司', cats: ['包材商'], level: 'B', status: '合作中', contact: '李工', phone: '139****3345', settle: '货到付款', term: 0, tax: '13%', buyer: 'u2', admitted: '2026-04-11', goodAt: [], wechat: '', addr: '杭州市某区某路 9 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2028-01-31' }] },
-    { code: 'GYS0004', short: '锦程制衣', name: '湖州锦程制衣有限公司', cats: ['成衣厂'], level: 'A', status: '合作中', contact: '孙厂长', phone: '138****7781', settle: '月结', term: 45, tax: '6%', buyer: 'u1', admitted: '2026-02-20', goodAt: ['F', 'J', 'Y', 'C', 'W', 'S', 'T'], wechat: 'jincheng_sun', addr: '湖州市某区某工业园 6 号', invoice: '增值税专用发票', bank: '某银行湖州分行', account: '6222 **** **** 4004', note: '旺季（9-11 月）提前两周排产', certs: [{ type: '营业执照', until: '2031-05-31' }, { type: '验厂报告', until: '2027-02-28' }] },
-    { code: 'GYS0005', short: '华美服装厂', name: '嘉兴华美服装厂', cats: ['加工厂'], level: 'B', status: '合作中', contact: '钱老板', phone: '133****9902', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-05-08', goodAt: ['K', 'R', 'J'], wechat: '', addr: '嘉兴市某镇某路 18 号', invoice: '增值税普通发票', bank: '某银行嘉兴支行', account: '6222 **** **** 5005', note: '', certs: [{ type: '营业执照', until: '2029-09-30' }, { type: '验厂报告', until: '2026-11-30' }] },
-    { code: 'GYS0006', short: '永兴制衣', name: '桐乡永兴制衣有限公司', cats: ['成衣厂'], level: 'C', status: '待准入', contact: '周经理', phone: '131****2276', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: null, goodAt: ['L', 'C'], wechat: '', addr: '桐乡市某镇某路 3 号', invoice: '增值税普通发票', bank: '', account: '', note: '', certs: [] },
-    { code: 'GYS0007', short: '盛达印绣', name: '杭州盛达印绣有限公司', cats: ['外协'], level: 'B', status: '合作中', contact: '冯师傅', phone: '186****4410', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-06-01', goodAt: [], wechat: '', addr: '杭州市某区某路 31 号', invoice: '增值税普通发票', bank: '', account: '', note: '只做印花、绣花', certs: [{ type: '营业执照', until: '2028-08-31' }] },
-    { code: 'GYS0008', short: '利源纺织', name: '常熟利源纺织有限公司', cats: ['面料商'], level: 'D', status: '黑名单', contact: '郑总', phone: '150****8834', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-15', blackReason: '连续两批大货色差，拒不承担损失', goodAt: [], wechat: '', addr: '常熟市某镇某路 5 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2027-04-30' }] },
-    { code: 'GYS0009', short: '宏利针织', name: '海宁宏利针织有限公司', cats: ['面料商'], level: 'B', status: '合作中', contact: '褚总', phone: '159****6620', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-04-02', goodAt: [], wechat: '', addr: '海宁市某街道某路 12 号', invoice: '增值税专用发票', bank: '某银行海宁支行', account: '6222 **** **** 9009', note: '', certs: [{ type: '营业执照', until: '2030-03-31' }] },
+    { code: 'GYS0001', short: '恒丰面料', name: '绍兴恒丰纺织有限公司', credit: '91330600MA0000101X', cats: ['面料商'], level: 'A', status: '合作中', contact: '吴总', phone: '135****1020', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: 'hengfeng_wu', addr: '绍兴市某区某路 1 号', invoice: '增值税专用发票', bank: '某银行绍兴分行', account: '6222 **** **** 1001', note: '', certs: [{ type: '营业执照', until: '2030-12-31' }] },
+    { code: 'GYS0002', short: '鸿达辅料', name: '义乌鸿达服装辅料厂', credit: '91330782MA0000202X', cats: ['辅料商'], level: 'A', status: '合作中', contact: '陈姐', phone: '137****6612', settle: '月结', term: 30, tax: '3%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: '', addr: '义乌市某街道某路 22 号', invoice: '增值税普通发票', bank: '某银行义乌支行', account: '6222 **** **** 2002', note: '纽扣颜色以实物色卡为准', certs: [{ type: '营业执照', until: '2029-06-30' }] },
+    { code: 'GYS0003', short: '新雅包装', name: '杭州新雅包装材料有限公司', credit: '91330100MA0000303X', cats: ['包材商'], level: 'B', status: '合作中', contact: '李工', phone: '139****3345', settle: '货到付款', term: 0, tax: '13%', buyer: 'u2', admitted: '2026-04-11', goodAt: [], wechat: '', addr: '杭州市某区某路 9 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2028-01-31' }] },
+    { code: 'GYS0004', short: '锦程制衣', name: '湖州锦程制衣有限公司', credit: '91330500MA0000404X', cats: ['成衣厂'], level: 'A', status: '合作中', contact: '孙厂长', phone: '138****7781', settle: '月结', term: 45, tax: '6%', buyer: 'u1', admitted: '2026-02-20', goodAt: ['F', 'J', 'Y', 'C', 'W', 'S', 'T'], wechat: 'jincheng_sun', addr: '湖州市某区某工业园 6 号', invoice: '增值税专用发票', bank: '某银行湖州分行', account: '6222 **** **** 4004', note: '旺季（9-11 月）提前两周排产', certs: [{ type: '营业执照', until: '2031-05-31' }, { type: '验厂报告', until: '2027-02-28' }] },
+    { code: 'GYS0005', short: '华美服装厂', name: '嘉兴华美服装厂', credit: '91330400MA0000505X', cats: ['加工厂'], level: 'B', status: '合作中', contact: '钱老板', phone: '133****9902', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-05-08', goodAt: ['K', 'R', 'J'], wechat: '', addr: '嘉兴市某镇某路 18 号', invoice: '增值税普通发票', bank: '某银行嘉兴支行', account: '6222 **** **** 5005', note: '', certs: [{ type: '营业执照', until: '2029-09-30' }, { type: '验厂报告', until: '2026-11-30' }] },
+    { code: 'GYS0006', short: '永兴制衣', name: '桐乡永兴制衣有限公司', credit: '91330483MA0000606X', cats: ['成衣厂'], level: 'C', status: '待准入', contact: '周经理', phone: '131****2276', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: null, goodAt: ['L', 'C'], wechat: '', addr: '桐乡市某镇某路 3 号', invoice: '增值税普通发票', bank: '', account: '', note: '', certs: [] },
+    { code: 'GYS0007', short: '盛达印绣', name: '杭州盛达印绣有限公司', credit: '91330100MA0000707X', cats: ['外协'], level: 'B', status: '合作中', contact: '冯师傅', phone: '186****4410', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-06-01', goodAt: [], wechat: '', addr: '杭州市某区某路 31 号', invoice: '增值税普通发票', bank: '', account: '', note: '只做印花、绣花', certs: [{ type: '营业执照', until: '2028-08-31' }] },
+    { code: 'GYS0008', short: '利源纺织', name: '常熟利源纺织有限公司', credit: '91320581MA0000808X', cats: ['面料商'], level: 'D', status: '黑名单', contact: '郑总', phone: '150****8834', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-15', blackReason: '连续两批大货色差，拒不承担损失', goodAt: [], wechat: '', addr: '常熟市某镇某路 5 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2027-04-30' }] },
+    { code: 'GYS0009', short: '宏利针织', name: '海宁宏利针织有限公司', credit: '91330481MA0000909X', cats: ['面料商'], level: 'B', status: '合作中', contact: '褚总', phone: '159****6620', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-04-02', goodAt: [], wechat: '', addr: '海宁市某街道某路 12 号', invoice: '增值税专用发票', bank: '某银行海宁支行', account: '6222 **** **** 9009', note: '', certs: [{ type: '营业执照', until: '2030-03-31' }] },
   ],
   warehouses: [
     { code: 'WL01', name: '主料仓', type: '物料仓', keeper: 'u5', addr: '杭州市某区某路 88 号 1 楼', phone: '0571-8800****', status: '启用' },
@@ -131,11 +139,11 @@ const db = reactive({
   // 物料：price 按采购单位、含税；factor = 1 采购单位折多少库存单位
   materials: [
     { code: 'ML0012', name: '220g 斜纹棉', cat: 'ML', type: '面料', unit: '米', purUnit: '米', factor: 1, width: 148, weight: 220, comp: '100% 棉', supplier: 'GYS0001', supNo: 'HF-T220', price: 18.5, moq: 100, pack: 1, lead: 20, status: '启用',
-      skus: [{ code: 'ML0012-KQ', color: 'KQ', supColor: 'C-1032', safety: 200 }, { code: 'ML0012-ZQ', color: 'ZQ', supColor: 'C-2210' }, { code: 'ML0012-HE', color: 'HE', supColor: 'C-0001' }] },
+      skus: [{ code: 'ML0012-KQ', color: 'KQ', supColor: 'C-1032', safety: 300 }, { code: 'ML0012-ZQ', color: 'ZQ', supColor: 'C-2210' }, { code: 'ML0012-HE', color: 'HE', supColor: 'C-0001' }] },
     { code: 'ML0015', name: '170T 涤纶里布', cat: 'ML', type: '里料', unit: '米', purUnit: '米', factor: 1, width: 150, weight: 60, comp: '100% 聚酯纤维', supplier: 'GYS0001', supNo: 'HF-L170', price: 6.8, moq: 200, pack: 1, lead: 10, status: '启用',
       skus: [{ code: 'ML0015-HE', color: 'HE', supColor: 'L-01' }, { code: 'ML0015-MB', color: 'MB', supColor: 'L-12' }] },
     { code: 'ML0018', name: '280g 棉涤帆布', cat: 'ML', type: '面料', unit: '米', purUnit: '米', factor: 1, width: 145, weight: 280, comp: '65% 棉 35% 涤', supplier: 'GYS0001', supNo: 'HF-C280', price: 22, moq: 100, pack: 1, lead: 15, status: '启用',
-      skus: [{ code: 'ML0018-HE', color: 'HE', supColor: 'K-09' }, { code: 'ML0018-KQ', color: 'KQ', supColor: 'K-31' }] },
+      skus: [{ code: 'ML0018-HE', color: 'HE', supColor: 'K-09' }, { code: 'ML0018-KQ', color: 'KQ', supColor: 'K-31' }, { code: 'ML0018-YM', color: 'YM', supColor: 'K-12' }] },
     { code: 'MZ0003', name: '32 支精梳棉卫衣布', cat: 'MZ', type: '面料', unit: '米', purUnit: '公斤', factor: 3.2, width: 180, weight: 320, comp: '100% 棉', supplier: 'GYS0009', supNo: 'HL-32S', price: 46, moq: 50, pack: 25, lead: 12, status: '启用',
       skus: [{ code: 'MZ0003-HE', color: 'HE' }, { code: 'MZ0003-HH', color: 'HH' }, { code: 'MZ0003-WL', color: 'WL' }, { code: 'MZ0003-MB', color: 'MB' }] },
     { code: 'MZ0007', name: '1×1 罗纹', cat: 'MZ', type: '面料', unit: '米', purUnit: '米', factor: 1, width: 100, weight: 300, comp: '95% 棉 5% 氨纶', supplier: 'GYS0009', price: 15, moq: 50, pack: 1, lead: 10, status: '启用',
@@ -143,7 +151,7 @@ const db = reactive({
     { code: 'FL0031', name: '5# 金属拉链', cat: 'FL', type: '辅料', unit: '条', purUnit: '条', factor: 1, supplier: 'GYS0002', supNo: 'HD-Z5', price: 2.6, moq: 200, pack: 100, lead: 7, status: '启用',
       skus: [{ code: 'FL0031-HE-60', color: 'HE', spec: '60cm' }, { code: 'FL0031-HE-15', color: 'HE', spec: '15cm' }] },
     { code: 'FK0021', name: '18L 树脂纽扣', cat: 'FK', type: '辅料', unit: '个', purUnit: '个', factor: 1, supplier: 'GYS0002', supNo: 'HD-B18', price: 0.35, moq: 1000, pack: 500, lead: 5, status: '启用',
-      skus: [{ code: 'FK0021-HE', color: 'HE', spec: '18L' }, { code: 'FK0021-KQ', color: 'KQ', spec: '18L' }] },
+      skus: [{ code: 'FK0021-HE', color: 'HE', spec: '18L' }, { code: 'FK0021-KQ', color: 'KQ', spec: '18L', safety: 1500 }] },
     { code: 'FX0002', name: '402 缝纫线', cat: 'FX', type: '辅料', unit: '个', purUnit: '个', factor: 1, supplier: 'GYS0002', price: 4.5, moq: 50, pack: 10, lead: 3, status: '启用',
       skus: [{ code: 'FX0002' }] },
     { code: 'BX0001', name: '主唛（织标）', cat: 'BX', type: '标签吊牌', unit: '个', purUnit: '个', factor: 1, supplier: 'GYS0003', price: 0.18, moq: 2000, pack: 1000, lead: 7, status: '启用', skus: [{ code: 'BX0001' }] },
