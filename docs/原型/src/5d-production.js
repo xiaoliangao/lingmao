@@ -358,8 +358,8 @@ comp('ProdIssueMat', {
       <label class="f">从哪个物料仓发<select class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
       <div class="f">发到<span style="line-height:32px">{{ whName(factoryWh(p.factory)?.code) }}</span></div>
     </div>
-    <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th>物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
-      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
+    <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th v-if="db.trade">物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
+      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td v-if="db.trade" :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
         <td class="num">{{ fq(r.need) }}</td><td class="num">{{ fq(r.issued) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: have(r) < r.qty }">{{ fq(have(r)) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
         <tr v-if="!rows.length"><td colspan="7" class="empty">资料包里没有要发给工厂的料</td></tr></tbody></table>

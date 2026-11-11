@@ -33,7 +33,7 @@ const NAV = [
   ] },
   { g: '资料', items: [
     { k: 'suppliers', t: '供应商', i: 'store', to: '/suppliers', ph: '一期', ref: 'M12 · 12.01–12.06' },
-    { k: 'customers', t: '客户', i: 'user', to: '/customers', ph: '一期', ref: '6.1.8，12.03 商务条款' },
+    ...(TRADE ? [{ k: 'customers', t: '客户', i: 'user', to: '/customers', ph: '一期', ref: '6.1.8，12.03 商务条款' }] : []),
     { k: 'materials', t: '物料', i: 'box', to: '/materials', ph: '一期', ref: 'M01 · 01.03' },
     { k: 'basics', t: '基础', i: 'palette', to: '/basics', ph: '一期', ref: 'M01 · 01.01、01.04–01.07' },
   ] },

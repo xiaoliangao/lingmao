@@ -338,10 +338,10 @@ comp('PurchaseForm', {
       <label class="f">是否含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
       <label class="f" style="grid-column:span 4">备注<input class="inp" v-model="f.note" placeholder="比如：面料每卷标缸号，随货带色卡"></label>
     </div>
-    <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:88px">单价</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
+    <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th v-if="db.trade" style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:88px">单价</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
         <td><select class="sel" style="width:100%;height:28px" v-model="l.sku" @change="setSku(l)" :disabled="!!l.src"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select><small v-if="l.src" class="dim">来自算料单 {{ l.src.mrp }}</small></td>
-        <td><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
+        <td v-if="db.trade"><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? purUnit(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price"></td>
         <td class="num">{{ l.qty && l.price ? fm(l.qty * l.price) : '—' }}</td>
@@ -545,11 +545,11 @@ route('/stock-docs', {
     const parties = computed(() => [...new Set(db.stockDocs.map((d) => d.partner).filter(Boolean))].map((c) => [c, partnerName({ partner: c })]))
     const rows = computed(() => scoped.value.filter((d) => (s.tab === '全部' || DOC_GROUPS[s.tab].includes(d.type)) && (!s.st || d.status === s.st) && (!s.wh || d.from === s.wh || d.to === s.wh) && (!s.party || d.partner === s.party)
       && passFlt(s.flt, { date: d.date }) && matchQ(s.q, d.no, d.type, d.src, d.supNo || '', d.logistics || '', ...d.lines.flatMap((l) => [l.sku, skuName(l.sku), l.lot || '']))).slice().reverse())
-    const news = ['客供入库', '其他入库', '调拨', '退料', '其他出库'].map((t) => ({ t, fn: () => { s.add = t } }))
+    const news = (db.trade ? ['客供入库', '其他入库', '调拨', '退料', '其他出库'] : ['调拨', '退料', '其他出库']).map((t) => ({ t, fn: () => { s.add = t } }))
     return { s, tabs, parties, rows, news, partnerName }
   },
   template: `<div>
-    <Head t="出入库"><button class="btn pri" @click="s.add = '客供入库'"><Ico n="plus" :s="14"/>客供入库</button><More :items="news"/></Head>
+    <Head t="出入库"><button class="btn pri" @click="s.add = db.trade ? '客供入库' : '其他入库'"><Ico n="plus" :s="14"/>{{ db.trade ? '客供入库' : '其他入库' }}</button><More :items="news"/></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/>
       <select class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></select>
       <Filters v-model="s.flt"/>
@@ -620,17 +620,17 @@ comp('StockDocForm', {
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
     <p v-if="t === '退料'" class="dim" style="font-size:12px;margin-top:8px">退料：工厂剩料从工厂仓退回物料仓。挂上加工单，那张单的"已领"会扣掉这次退的。</p>
-    <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
+    <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="db.trade && t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
         <td><select class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select></td>
-        <td v-if="t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
+        <td v-if="db.trade && t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
         <td v-if="f.from" class="num dim">{{ have(l) == null ? '—' : fq(have(l)) }}</td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? unitOf(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price" title="元 / 库存单位"></td>
         <td class="num">{{ l.qty && l.price ? fm(l.qty * l.price) : '—' }}</td>
         <td><input class="inp cell" v-model="l.lot"></td><td><input class="inp cell num" type="number" v-model.number="l.rolls"></td><td><input class="inp cell" v-model="l.note"></td>
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
-      <tfoot><tr><td>合计</td><td v-if="t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
+      <tfoot><tr><td>合计</td><td v-if="db.trade && t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
     <button class="btn ghost" style="margin-top:8px" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, lot: '', rolls: null, note: '' })"><Ico n="plus" :s="14"/>加一行</button>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
@@ -696,7 +696,7 @@ IMPORTS.stock = {
   cols: [
     { k: 'sku', t: '物料SKU编码', req: true, text: true, tip: '要是物料里已有的 SKU 编码', ex: 'ML0012-KQ', w: 16 },
     { k: 'wh', t: '仓库编码', req: true, text: true, tip: '物料仓或工厂仓的编码', ex: 'WL01', opts: () => nonFgWhs().map((w) => w.code) },
-    { k: 'owner', t: '物权', text: true, tip: '不填 = 自有；客供料填客户编码', ex: '自有' },
+    ...(TRADE ? [{ k: 'owner', t: '物权', text: true, tip: '不填 = 自有；客供料填客户编码', ex: '自有' }] : []),
     { k: 'qty', t: '数量', req: true, num: true, tip: '库存单位（面料一般是米），最多 3 位小数', ex: 120 },
     { k: 'price', t: '单价', num: true, tip: '元 / 库存单位，以后算成本用；不填 = 物料 SKU 单价（没有就用参考单价）折成库存单位', ex: 18.5 },
     { k: 'lot', t: '缸号', text: true, tip: '选填', ex: 'G2610-07' },
@@ -761,11 +761,11 @@ route('/stock', {
     return { s, whs, rows, summary, owners, logs, safety, XC, xrows, STOCK_TYPES }
   },
   template: `<div>
-    <Head t="库存"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
+    <Head t="库存"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view].filter(c => db.trade || c.k !== 'owner')" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
       <select class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select>
-      <select class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
+      <select v-if="db.trade" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
       <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '日志']"/><Search v-model="s.q"/>
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>

@@ -111,7 +111,7 @@ route('/', {
       return g
     })
     const others = computed(() => TODOS.flatMap((f) => f()).filter((x) => x.n > 0))
-    // 本周交期：今天起 7 天内要交的订单（承诺交期，没有用客户交期）和加工单（预计交期），逾期还没交的排在前面
+    // 本周交期：今天起 7 天内要交的订单（承诺交期，没有用要求交期）和加工单（预计交期），逾期还没交的排在前面
     const week = computed(() => {
       const end = addDays(clock.today, 6)
       const os = db.orders.filter((o) => orderLive(o) && homeSees(o)).map((o) => ({ k: '订单', no: o.no, to: '/orders/' + o.no, img: orderStyles(o)[0], sub: `${custOrDash(o)} · ${orderStyles(o).map(styleName).join('、')}`, due: o.commit || o.due, a: orderRet(o), b: orderQty(o) }))
@@ -348,8 +348,8 @@ IMPORTS.styles = {
     { k: 'colors', t: '颜色', req: true, tip: '颜色名称或编码，多个用逗号隔开；要是启用的颜色', ex: '卡其,黑色', w: 18 },
     { k: 'sizeGroup', t: '尺码组', req: true, tip: '尺码组名称，要是启用的', opts: () => db.sizeGroups.filter((g) => g.status !== '停用').map((g) => g.name), ex: '女装字母码' },
     { k: 'source', t: '来源', opts: () => db.dicts.款式来源, tip: '不填 = 自主开发', ex: '自主开发' },
-    { k: 'customer', t: '客户', tip: '客户简称或编码；客户来样时填', ex: '华东某服饰' },
-    { k: 'custNo', t: '客户款号', text: true, ex: 'HD-F2701' },
+    ...(TRADE ? [{ k: 'customer', t: '客户', tip: '客户简称或编码；客户来样时填', ex: '华东某服饰' },
+      { k: 'custNo', t: '客户款号', text: true, ex: 'HD-F2701' }] : []),
     { k: 'wave', t: '波段', opts: () => db.dicts.波段, ex: '第 1 波' },
     { k: 'tag', t: '风格', opts: () => db.dicts.风格, ex: '通勤' },
     { k: 'series', t: '系列', opts: () => db.dicts.系列 },
@@ -369,7 +369,7 @@ IMPORTS.styles = {
   ],
   example: () => [
     { name: '双排扣短风衣', cat: '风衣', year: 2027, season: '春', brand: db.dicts.品牌[0], colors: '卡其,黑色', sizeGroup: '女装字母码', source: '自主开发', wave: '第 1 波', tag: '通勤', designer: '许然', patterner: '沈冬', tagPrice: 799, cost: 300, factory: '锦程制衣', mainMat: 'ML0012', product: '风衣', comp: '面料：100% 棉；里料：100% 聚酯纤维', safety: 'B 类', launch: '2027-03-01' },
-    { code: '27CK020', name: '高腰阔腿裤', cat: '裤装', year: 2027, season: '春', brand: db.dicts.品牌[0], colors: '黑色,藏青', sizeGroup: '女装字母码', source: '客户来样', customer: db.customers[0]?.short, custNo: 'HD-K2701', tagPrice: 399, factory: '华美服装厂' },
+    { code: '27CK020', name: '高腰阔腿裤', cat: '裤装', year: 2027, season: '春', brand: db.dicts.品牌[0], colors: '黑色,藏青', sizeGroup: '女装字母码', source: '自主开发', tagPrice: 399, factory: '华美服装厂' },
   ],
   check(rows, bad) {
     const plan = [], used = new Set(db.styles.map((x) => x.code)), inFile = new Map()
@@ -471,8 +471,8 @@ comp('StyleForm', {
       <label class="f">性别<select class="sel" v-model="f.gender"><option value="">—</option><option v-for="x in db.dicts.性别" :key="x">{{ x }}</option></select></label>
       <label class="f">设计师<select class="sel" v-model="f.designer"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">版师<select class="sel" v-model="f.patterner"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">客户<select class="sel" v-model="f.customer"><option value="">—</option><option v-for="c in custs" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
-      <label class="f">客户款号<input class="inp code" v-model="f.custNo" placeholder="客户来样时填"></label>
+      <label class="f" v-if="db.trade">客户<select class="sel" v-model="f.customer"><option value="">—</option><option v-for="c in custs" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f" v-if="db.trade">客户款号<input class="inp code" v-model="f.custNo" placeholder="客户来样时填"></label>
       <label class="f">主力面料<select class="sel" v-model="f.mainMat"><option value="">—</option><option v-for="m in fabrics" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></select></label>
       <h4 class="fh">尺码、价格、生产</h4>
       <label class="f">尺码组<select class="sel" v-model="f.sizeGroup" :disabled="!!sgLock"><option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }} {{ g.sizes.join(' ') }}</option></select>
@@ -540,10 +540,10 @@ route('/styles/:code', {
         <StyleSkus v-if="tab === 'sku'" :s="s"/>
         <section v-if="tab === 'orders'" data-c="款式的订单">
           <Tbl inset flat :rows="orders" link @row="o => go('/orders/' + o.no)" empty="这个款还没下过订单" :cols="[
-            { k: 'no', t: '订单号', c: 'code' }, { k: 'customer', t: '客户', f: o => o.customer ? custName(o.customer) : o.type },
+            { k: 'no', t: '订单号', c: 'code' }, { k: 'customer', t: db.trade ? '客户' : '类型', f: o => o.customer ? custName(o.customer) : o.type },
             { k: 'qty', t: '本款数量', c: 'num', f: o => sum(o.lines.filter(l => l.style === s.code), l => l.qty) },
             { k: 'ver', t: '资料包', f: o => { const v = o.lines.find(l => l.style === s.code)?.ver; return v ? 'V' + v : '—' } },
-            { k: 'due', t: '客户交期', f: o => fd(o.due) }, { k: 'status', t: '状态' }]">
+            { k: 'due', t: '要求交期', f: o => fd(o.due) }, { k: 'status', t: '状态' }]">
             <template #status="{ r }"><St :s="r.status"/></template>
           </Tbl>
         </section>
@@ -558,7 +558,7 @@ route('/styles/:code', {
           <dt>系列</dt><dd>{{ s.series || '—' }}</dd>
           <dt>性别</dt><dd>{{ s.gender || '—' }}</dd>
           <dt>来源</dt><dd>{{ s.source }}<template v-if="s.customer"> · {{ custName(s.customer) }}</template></dd>
-          <dt>客户款号</dt><dd class="code">{{ s.custNo || '—' }}</dd>
+          <dt v-if="db.trade">客户款号</dt><dd v-if="db.trade" class="code">{{ s.custNo || '—' }}</dd>
           <template v-if="s.sample"><dt>样衣</dt><dd><a class="code" :href="'#/samples/' + s.sample">{{ s.sample }}</a></dd></template>
           <dt>设计师</dt><dd>{{ userName(s.designer) }}</dd>
           <dt>版师</dt><dd>{{ userName(s.patterner) }}</dd>

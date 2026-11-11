@@ -708,7 +708,11 @@ const fpct = (a, b) => (b ? Math.min(100, Math.round((a / b) * 100)) : 0)
 const sum = (arr, f = (x) => x) => arr.reduce((s, x) => s + (+f(x) || 0), 0)
 
 /* ---------- 主数据 ---------- */
+// 代工业务（客户档案、客户订单、客供料、物权）：2026-11 甲方定一期先收起来。
+// 改成 true 整套界面回来；表结构里客户、物权字段一直留着（PRD §2.5）。
+const TRADE = false
 const db = reactive({
+  trade: TRADE,
   me: 'u6',
   companies: [
     { code: 'ZJ', name: '杭州织间服饰有限公司', short: '织间服饰', credit: '91330100MA0000001X', addr: '杭州市某区某路 88 号 3 楼', phone: '0571-8800****', status: '启用' },
@@ -768,7 +772,7 @@ const db = reactive({
     结算方式: ['月结', '货到付款', '预付', '银行转账', '承兑'],
     税率: ['0%', '1%', '3%', '6%', '9%', '13%'],
     供应商分类: ['面料商', '辅料商', '成衣厂', '加工厂', '外协', '包材商', '其他'],
-    订单类型: ['客户订单', '自营备货', '补单', '翻单'],
+    订单类型: [...(TRADE ? ['客户订单'] : []), '自营备货', '补单', '翻单'],
     加工方式: ['包工包料', '清加工', '半包'],
     生产节点: [['到料', 3], ['裁剪', 4], ['车缝', 10], ['后整', 3], ['包装', 2], ['入仓', 1]],
     异常类型: ['缺料', '面料质量', '做工质量', '延期', '工艺问题', '其他'],
@@ -778,12 +782,12 @@ const db = reactive({
     风格: ['通勤', '休闲', '运动'],
     系列: ['基础系列', '城市通勤', '假日'],
     性别: ['女', '男', '童', '中性'],
-    款式来源: ['自主开发', '客户来样', '选款', '改款'],
+    款式来源: ['自主开发', ...(TRADE ? ['客户来样'] : []), '选款', '改款'],
     执行标准: ['GB/T 2664-2017 男西服、大衣', 'GB/T 2665-2017 女西服、大衣', 'FZ/T 81004-2022 连衣裙、裙套', 'FZ/T 73020-2019 针织休闲服装', 'GB/T 22849-2014 针织 T 恤衫'],
     安全类别: ['A 类', 'B 类', 'C 类'],
     色系: ['黑白灰', '棕', '蓝', '红', '黄', '绿', '紫'],
     物料类型: ['面料', '里料', '辅料', '标签吊牌', '包材'],
-    物料来源: ['我方采购', '客供', '工厂自备'],
+    物料来源: ['我方采购', ...(TRADE ? ['客供'] : []), '工厂自备'],
     币种: ['人民币', '美元', '港币', '欧元'],
     发票类型: ['增值税专用发票', '增值税普通发票', '不开票'],
     证照类型: ['营业执照', '验厂报告', '环保证明', '其他'],
@@ -1171,8 +1175,8 @@ function createOrder(f) {
   const lines = (f.lines || []).filter((l) => l.qty > 0)
   if (!lines.length) fail('至少录一个数量')
   checkOrderLines(lines)
-  if (f.type !== '自营备货' && !f.customer) fail(`${f.type || '客户订单'}要选客户`)
-  if (!f.due) fail('客户交期要填')
+  if (db.trade && f.type !== '自营备货' && !f.customer) fail(`${f.type || '客户订单'}要选客户`)
+  if (!f.due) fail('要求交期要填')
   const o = add(db.orders, { no: nextNo('DD'), company: myCompany(), currency: '人民币', date: clock.today, commit: null, sales: roleUser('业务'), merch: roleUser('生产跟单'), ship: '', custNo: '', contract: '', brand: '', src: '手工', note: '', ...f, lines: lines.map((l) => ({ ver: null, price: null, ...l })), status: '草稿', log: [] })
   act(o, '新建')
   return o
@@ -1242,7 +1246,7 @@ function scheduleOrder(o, blocks) {
   return blocks.filter((b) => sum(Object.values(b.qty)) > 0).map((b) => createProduction(o, b))
 }
 
-/* 订单变更（PRD §6.5.6）：f = { items: [{ k: '27CF001|KQ|M', to: 100 }]（数量；原来没有的颜色 = 配色配码）, due: 新客户交期,
+/* 订单变更（PRD §6.5.6）：f = { items: [{ k: '27CF001|KQ|M', to: 100 }]（数量；原来没有的颜色 = 配色配码）, due: 新要求交期,
  *   prices: [{ style, to }] 单价, vers: [{ style, to }] 换资料包版本, cancel: true 取消订单 } */
 const orderDown = (o) => [...prodsOf(o).map((p) => p.no), ...mrpsOf(o).filter((m) => m.status !== '已关闭').map((m) => m.no)]
 function buildChange(o, f) {
@@ -1288,7 +1292,7 @@ function resubmitChange(c, f) {
 const describeChange = (c) => [
   c.cancel && '取消订单',
   ...c.items.map((i) => `${i.label}：${i.from} → ${i.to}${i.from ? '' : '（新增）'}`),
-  c.due && `客户交期：${fd(c.due.from)} → ${fd(c.due.to)}`,
+  c.due && `要求交期：${fd(c.due.from)} → ${fd(c.due.to)}`,
   ...(c.prices || []).map((x) => `${x.style} 单价：${fm(x.from)} → ${fm(x.to)}`),
   ...(c.vers || []).map((x) => `${x.style} 资料包：V${x.from} → V${x.to}`),
 ].filter(Boolean).join('；')
@@ -1717,10 +1721,10 @@ const label = (sku, extra) => ({ part: extra.part, mat: sku, mode: '固定', sku
 
 function seed() {
   as('u4', '2026-08-20', () => {
-    createStyle({ code: '26QJ012', name: '短款工装夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', source: '客户来样', customer: 'KH0002', custNo: 'NF-J2611', status: '启用',
+    createStyle({ code: '26QJ012', name: '短款工装夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', source: '选款', status: '启用',
       patterner: 'u8', mainMat: 'ML0018', product: '夹克', comp: '65% 棉 35% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2026-09-25' })
     createStyle({ code: '26QW008', name: '圆领针织衫', cat: 'W', year: 2026, season: 'Q', wave: '第 3 波', tag: '通勤', colors: ['MB', 'HH'], tagPrice: 399, cost: 150, factory: 'GYS0004', status: '启用' })
-    createStyle({ code: '26DS021', name: '连帽卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', source: '客户来样', customer: 'KH0003', status: '启用',
+    createStyle({ code: '26DS021', name: '连帽卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', source: '选款', status: '启用',
       gender: '中性', mainMat: 'MZ0003', product: '卫衣', comp: '100% 棉', standard: 'FZ/T 73020-2019 针织休闲服装', safety: 'B 类' })
     createStyle({ code: '27CF001', name: '女式风衣', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['KQ', 'ZQ', 'HE'], tagPrice: 899, cost: 330, factory: 'GYS0004', status: '启用',
       series: '城市通勤', patterner: 'u8', mainMat: 'ML0012', product: '风衣', comp: '面料：100% 棉；里料：100% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2027-02-20', note: '大身面料对格，样衣已过客户确认' })
@@ -1741,7 +1745,7 @@ function seed() {
   const thread = { part: '缝纫线', mat: 'FX0002', mode: '固定', sku: 'FX0002', um: '统一', use: 0.3, loss: 0, src: '工厂自备' }
   const cf001 = (m) => [
     { part: '大身', mat: 'ML0012', mode: '随款色', map: { KQ: 'ML0012-KQ', ZQ: 'ML0012-ZQ', HE: 'ML0012-HE' }, um: '分码', uses: SZ(2.25, m, 2.45, 2.55, 2.65), loss: 3, src: '我方采购', supplier: 'GYS0001', note: '注意对格' },
-    { part: '里布', mat: 'ML0015', mode: '随款色', map: { KQ: 'ML0015-MB', ZQ: 'ML0015-HE', HE: 'ML0015-HE' }, um: '统一', use: 1.6, loss: 2, src: '客供' },
+    { part: '里布', mat: 'ML0015', mode: '随款色', map: { KQ: 'ML0015-MB', ZQ: 'ML0015-HE', HE: 'ML0015-HE' }, um: '统一', use: 1.6, loss: 2 },
     { part: '纽扣', mat: 'FK0021', mode: '随款色', map: { KQ: 'FK0021-KQ', ZQ: 'FK0021-HE', HE: 'FK0021-HE' }, um: '统一', use: 8, loss: 2, src: '我方采购', supplier: 'GYS0002' },
     ...labels.map((x) => ({ ...x })), { ...thread },
   ]
@@ -1780,15 +1784,15 @@ function seed() {
     v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；衣长各码加长 2cm'
     publishTp(v2)
   })
-  // 期初库存、客供料
+  // 期初库存
   as('u5', '2026-10-01', () => postStockDoc(createStockDoc({ type: '其他入库', reason: '期初', to: 'WL01', lines: [
     ['ML0012-KQ', 120], ['ML0012-ZQ', 60], ['ML0012-HE', 300], ['ML0015-MB', 80], ['FK0021-HE', 3000], ['FK0021-KQ', 1000], ['FL0031-HE-15', 300],
     ['BX0001', 3000], ['BX0002', 3000], ['BP0001', 2500], ['BD0001', 2500], ['FX0002', 200],
   ].map(([sku, qty]) => ({ sku, qty, price: skuPrice(sku) / matOfSku(sku).factor })) })))
-  as('u5', '2026-10-28', () => postStockDoc(createStockDoc({ type: '客供入库', partner: 'KH0001', to: 'WL01', lines: [{ sku: 'ML0015-HE', qty: 200, lot: 'G2610-07' }] })))
+  as('u5', '2026-10-28', () => postStockDoc(createStockDoc({ type: '其他入库', reason: '盘盈', to: 'WL01', lines: [{ sku: 'ML0015-HE', qty: 200, lot: 'G2610-07', price: skuPrice('ML0015-HE') / matOfSku('ML0015-HE').factor }] })))
 
   // 订单 1：北方某电商 卫衣 900 件，已逾期、部分回货
-  const o4 = as('u3', '2026-09-28', () => createOrder({ type: '客户订单', customer: 'KH0003', custNo: 'BF-20260928', due: '2026-11-05', lines: mxLines('26DS021', { HE: SZ(60, 110, 120, 80, 30), HH: SZ(40, 80, 90, 60, 30), WL: SZ(30, 50, 60, 40, 20) }, 128) }))
+  const o4 = as('u3', '2026-09-28', () => createOrder({ type: '自营备货', due: '2026-11-05', lines: mxLines('26DS021', { HE: SZ(60, 110, 120, 80, 30), HH: SZ(40, 80, 90, 60, 30), WL: SZ(30, 50, 60, 40, 20) }, 128) }))
   as('u3', '2026-09-28', () => submitOrder(o4))
   as('u6', '2026-09-28', () => auditOrder(o4, '2026-11-05'))
   as('u2', '2026-09-29', () => {
@@ -1811,7 +1815,7 @@ function seed() {
   as('u1', '2026-11-06', () => registerReturn(p4, { lines: { 'HH|S': { qty: 40 }, 'HH|M': { qty: 80, def: 2 }, 'HH|L': { qty: 80, def: 1 } } }))
 
   // 订单 2：南方某品牌 夹克 500 件，拉链缺料、裁剪延期、客户改过交期
-  const o2 = as('u3', '2026-10-12', () => createOrder({ type: '客户订单', customer: 'KH0002', custNo: 'NF-PO-1012', due: '2026-11-25', lines: mxLines('26QJ012', { HE: SZ(60, 90, 90, 40, 20), KQ: SZ(40, 60, 60, 30, 10) }, 210) }))
+  const o2 = as('u3', '2026-10-12', () => createOrder({ type: '自营备货', due: '2026-11-25', lines: mxLines('26QJ012', { HE: SZ(60, 90, 90, 40, 20), KQ: SZ(40, 60, 60, 30, 10) }, 210) }))
   as('u3', '2026-10-12', () => submitOrder(o2))
   as('u6', '2026-10-13', () => auditOrder(o2, '2026-11-25'))
   const [po21, po22] = as('u2', '2026-10-14', () => {
@@ -1866,13 +1870,13 @@ function seed() {
   as('u2', '2026-11-06', () => move('purchase', createPurchase({ supplier: 'GYS0001', type: '备货采购', lines: [{ sku: 'ML0012-HE', qty: 500, price: 18.5 }] }), '提交'))
 
   // 订单 4：PRD 贯穿例子，已审核，等排单、算料
-  const o1 = as('u3', '2026-11-05', () => createOrder({ type: '客户订单', customer: 'KH0001', custNo: 'HD-2027SS-018', due: '2027-03-20', ship: '送客户杭州仓，按色按码装箱', lines: mxLines('27CF001', { KQ: SZ(80, 120, 120, 60, 20), ZQ: SZ(80, 120, 120, 60, 20), HE: SZ(80, 120, 120, 60, 20) }, 365) }))
+  const o1 = as('u3', '2026-11-05', () => createOrder({ type: '自营备货', due: '2027-03-20', ship: '送杭州仓，按色按码装箱', lines: mxLines('27CF001', { KQ: SZ(80, 120, 120, 60, 20), ZQ: SZ(80, 120, 120, 60, 20), HE: SZ(80, 120, 120, 60, 20) }, 365) }))
   as('u3', '2026-11-05', () => submitOrder(o1))
   as('u6', '2026-11-05', () => auditOrder(o1, '2027-03-20'))
   // 订单 5：待审核；订单 6：草稿
-  const o6 = as('u3', '2026-11-06', () => createOrder({ type: '客户订单', customer: 'KH0001', custNo: 'HD-2026W-033', due: '2026-12-20', lines: mxLines('26QW008', { MB: SZ(40, 70, 70, 40, 20), HH: SZ(40, 70, 70, 40, 20) }, 96) }))
+  const o6 = as('u3', '2026-11-06', () => createOrder({ type: '自营备货', due: '2026-12-20', lines: mxLines('26QW008', { MB: SZ(40, 70, 70, 40, 20), HH: SZ(40, 70, 70, 40, 20) }, 96) }))
   as('u3', '2026-11-06', () => submitOrder(o6))
-  as('u3', '2026-11-07', () => createOrder({ type: '翻单', customer: 'KH0002', due: '2026-12-25', lines: mxLines('26QJ012', { HE: SZ(40, 60, 60, 30, 10) }, 210) }))
+  as('u3', '2026-11-07', () => createOrder({ type: '翻单', due: '2026-12-25', lines: mxLines('26QJ012', { HE: SZ(40, 60, 60, 30, 10) }, 210) }))
   as('u5', '2026-11-07', () => createStockDoc({ type: '其他出库', reason: '报废', from: 'WL01', lines: [{ sku: 'FX0002', qty: 5 }] }))
 }
 seed()
@@ -1881,7 +1885,7 @@ seed()
 function selftest() {
   const out = [], ok = (name, cond, got) => out.push({ name, ok: !!cond, got })
   const err = (fn) => { try { fn(); return '' } catch (e) { return e.message + ' ' + e.list.join('；') } }
-  const o = db.orders.find((x) => x.custNo === 'HD-2027SS-018')
+  const o = db.orders.find((x) => x.due === '2027-03-20' && x.lines.some((l) => l.style === '27CF001'))
   const m = createMrp([o.no])
   const kq = m.rows.find((r) => r.sku === 'ML0012-KQ')
   ok('算料：卡其布毛需求 962', kq.gross === 962, kq.gross)
@@ -2082,18 +2086,20 @@ comp('Tbl', {
     const pages = computed(() => Math.max(1, Math.ceil(p.rows.length / size.value)))
     watch([() => p.rows.length, size], () => { if (cur.value > pages.value) cur.value = 1 })
     const shown = computed(() => (paged.value ? p.rows.slice((cur.value - 1) * size.value, cur.value * size.value) : p.rows))
-    return { size, cur, paged, pages, shown }
+    // 代工收起来时（db.trade = false）库存只有自有一种物权，「物权」列不显示
+    const vcols = computed(() => p.cols.filter((c) => db.trade || c.k !== 'owner'))
+    return { size, cur, paged, pages, shown, vcols }
   },
   template: `<table class="tbl" :class="{ inset, flat }">
     <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条<span v-if="paged" class="pager">
       <select class="sel" v-model.number="size"><option v-for="n in [20, 50, 100]" :key="n" :value="n">{{ n }} 条/页</option></select>
       <button class="btn sm" :disabled="cur <= 1" @click="cur--">上一页</button><span class="num">{{ cur }} / {{ pages }}</span><button class="btn sm" :disabled="cur >= pages" @click="cur++">下一页</button></span></caption>
-    <thead><tr><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
+    <thead><tr><th v-for="c in vcols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
     <tbody>
       <tr v-for="(r, i) in shown" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
-        <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
+        <td v-for="c in vcols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
       </tr>
-      <tr v-if="!rows.length"><td :colspan="cols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
+      <tr v-if="!rows.length"><td :colspan="vcols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
     </tbody>
     <tfoot v-if="$slots.foot"><slot name="foot"/></tfoot>
   </table>`,
@@ -3512,7 +3518,7 @@ route('/', {
       return g
     })
     const others = computed(() => TODOS.flatMap((f) => f()).filter((x) => x.n > 0))
-    // 本周交期：今天起 7 天内要交的订单（承诺交期，没有用客户交期）和加工单（预计交期），逾期还没交的排在前面
+    // 本周交期：今天起 7 天内要交的订单（承诺交期，没有用要求交期）和加工单（预计交期），逾期还没交的排在前面
     const week = computed(() => {
       const end = addDays(clock.today, 6)
       const os = db.orders.filter((o) => orderLive(o) && homeSees(o)).map((o) => ({ k: '订单', no: o.no, to: '/orders/' + o.no, img: orderStyles(o)[0], sub: `${custOrDash(o)} · ${orderStyles(o).map(styleName).join('、')}`, due: o.commit || o.due, a: orderRet(o), b: orderQty(o) }))
@@ -3749,8 +3755,8 @@ IMPORTS.styles = {
     { k: 'colors', t: '颜色', req: true, tip: '颜色名称或编码，多个用逗号隔开；要是启用的颜色', ex: '卡其,黑色', w: 18 },
     { k: 'sizeGroup', t: '尺码组', req: true, tip: '尺码组名称，要是启用的', opts: () => db.sizeGroups.filter((g) => g.status !== '停用').map((g) => g.name), ex: '女装字母码' },
     { k: 'source', t: '来源', opts: () => db.dicts.款式来源, tip: '不填 = 自主开发', ex: '自主开发' },
-    { k: 'customer', t: '客户', tip: '客户简称或编码；客户来样时填', ex: '华东某服饰' },
-    { k: 'custNo', t: '客户款号', text: true, ex: 'HD-F2701' },
+    ...(TRADE ? [{ k: 'customer', t: '客户', tip: '客户简称或编码；客户来样时填', ex: '华东某服饰' },
+      { k: 'custNo', t: '客户款号', text: true, ex: 'HD-F2701' }] : []),
     { k: 'wave', t: '波段', opts: () => db.dicts.波段, ex: '第 1 波' },
     { k: 'tag', t: '风格', opts: () => db.dicts.风格, ex: '通勤' },
     { k: 'series', t: '系列', opts: () => db.dicts.系列 },
@@ -3770,7 +3776,7 @@ IMPORTS.styles = {
   ],
   example: () => [
     { name: '双排扣短风衣', cat: '风衣', year: 2027, season: '春', brand: db.dicts.品牌[0], colors: '卡其,黑色', sizeGroup: '女装字母码', source: '自主开发', wave: '第 1 波', tag: '通勤', designer: '许然', patterner: '沈冬', tagPrice: 799, cost: 300, factory: '锦程制衣', mainMat: 'ML0012', product: '风衣', comp: '面料：100% 棉；里料：100% 聚酯纤维', safety: 'B 类', launch: '2027-03-01' },
-    { code: '27CK020', name: '高腰阔腿裤', cat: '裤装', year: 2027, season: '春', brand: db.dicts.品牌[0], colors: '黑色,藏青', sizeGroup: '女装字母码', source: '客户来样', customer: db.customers[0]?.short, custNo: 'HD-K2701', tagPrice: 399, factory: '华美服装厂' },
+    { code: '27CK020', name: '高腰阔腿裤', cat: '裤装', year: 2027, season: '春', brand: db.dicts.品牌[0], colors: '黑色,藏青', sizeGroup: '女装字母码', source: '自主开发', tagPrice: 399, factory: '华美服装厂' },
   ],
   check(rows, bad) {
     const plan = [], used = new Set(db.styles.map((x) => x.code)), inFile = new Map()
@@ -3872,8 +3878,8 @@ comp('StyleForm', {
       <label class="f">性别<select class="sel" v-model="f.gender"><option value="">—</option><option v-for="x in db.dicts.性别" :key="x">{{ x }}</option></select></label>
       <label class="f">设计师<select class="sel" v-model="f.designer"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">版师<select class="sel" v-model="f.patterner"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">客户<select class="sel" v-model="f.customer"><option value="">—</option><option v-for="c in custs" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
-      <label class="f">客户款号<input class="inp code" v-model="f.custNo" placeholder="客户来样时填"></label>
+      <label class="f" v-if="db.trade">客户<select class="sel" v-model="f.customer"><option value="">—</option><option v-for="c in custs" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f" v-if="db.trade">客户款号<input class="inp code" v-model="f.custNo" placeholder="客户来样时填"></label>
       <label class="f">主力面料<select class="sel" v-model="f.mainMat"><option value="">—</option><option v-for="m in fabrics" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></select></label>
       <h4 class="fh">尺码、价格、生产</h4>
       <label class="f">尺码组<select class="sel" v-model="f.sizeGroup" :disabled="!!sgLock"><option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }} {{ g.sizes.join(' ') }}</option></select>
@@ -3941,10 +3947,10 @@ route('/styles/:code', {
         <StyleSkus v-if="tab === 'sku'" :s="s"/>
         <section v-if="tab === 'orders'" data-c="款式的订单">
           <Tbl inset flat :rows="orders" link @row="o => go('/orders/' + o.no)" empty="这个款还没下过订单" :cols="[
-            { k: 'no', t: '订单号', c: 'code' }, { k: 'customer', t: '客户', f: o => o.customer ? custName(o.customer) : o.type },
+            { k: 'no', t: '订单号', c: 'code' }, { k: 'customer', t: db.trade ? '客户' : '类型', f: o => o.customer ? custName(o.customer) : o.type },
             { k: 'qty', t: '本款数量', c: 'num', f: o => sum(o.lines.filter(l => l.style === s.code), l => l.qty) },
             { k: 'ver', t: '资料包', f: o => { const v = o.lines.find(l => l.style === s.code)?.ver; return v ? 'V' + v : '—' } },
-            { k: 'due', t: '客户交期', f: o => fd(o.due) }, { k: 'status', t: '状态' }]">
+            { k: 'due', t: '要求交期', f: o => fd(o.due) }, { k: 'status', t: '状态' }]">
             <template #status="{ r }"><St :s="r.status"/></template>
           </Tbl>
         </section>
@@ -3959,7 +3965,7 @@ route('/styles/:code', {
           <dt>系列</dt><dd>{{ s.series || '—' }}</dd>
           <dt>性别</dt><dd>{{ s.gender || '—' }}</dd>
           <dt>来源</dt><dd>{{ s.source }}<template v-if="s.customer"> · {{ custName(s.customer) }}</template></dd>
-          <dt>客户款号</dt><dd class="code">{{ s.custNo || '—' }}</dd>
+          <dt v-if="db.trade">客户款号</dt><dd v-if="db.trade" class="code">{{ s.custNo || '—' }}</dd>
           <template v-if="s.sample"><dt>样衣</dt><dd><a class="code" :href="'#/samples/' + s.sample">{{ s.sample }}</a></dd></template>
           <dt>设计师</dt><dd>{{ userName(s.designer) }}</dd>
           <dt>版师</dt><dd>{{ userName(s.patterner) }}</dd>
@@ -4367,15 +4373,15 @@ const auditLog = (d) => [...(d.log || [])].reverse().find((x) => /^审核/.test(
 
 /* ---------- 改草稿（PRD §5.1）：已审核的订单要改，走变更单 ---------- */
 const ORDER_FIELDS = [['type', '类型'], ['customer', '客户', custName], ['custNo', '客户订单号'], ['contract', '合同号'], ['brand', '品牌'], ['company', '主体', companyName],
-  ['date', '下单日期'], ['due', '客户交期'], ['currency', '币种'], ['sales', '业务员', userName], ['merch', '跟单员', userName], ['ship', '送货要求'], ['note', '备注']]
+  ['date', '下单日期'], ['due', '要求交期'], ['currency', '币种'], ['sales', '业务员', userName], ['merch', '跟单员', userName], ['ship', '送货要求'], ['note', '备注']]
 const lineSig = (ls) => JSON.stringify(ls.map((l) => [l.style, l.color, l.size, l.qty, l.price ?? null, l.due || null, l.note || '']).sort())
 // quiet：没改动时不报错（"保存并提交"直接提交）
 function updateOrder(o, f, quiet) {
   if (o.status !== '草稿') fail(`${o.no} 是「${o.status}」，只有草稿能改；已审核的订单走变更单`)
   const lines = (f.lines || []).filter((l) => l.qty > 0)
   if (!lines.length) fail('至少录一个数量')
-  if (f.type !== '自营备货' && !f.customer) fail(`${f.type}要选客户`)
-  if (!f.due) fail('客户交期要填')
+  if (db.trade && f.type !== '自营备货' && !f.customer) fail(`${f.type}要选客户`)
+  if (!f.due) fail('要求交期要填')
   checkOrderLines(lines)
   const ch = applyFields(o, { ...f, customer: f.type === '自营备货' ? null : f.customer }, ORDER_FIELDS)
   if (lineSig(lines) !== lineSig(o.lines)) { ch.push(`明细 ${orderQty(o)} 件 → ${sum(lines, (l) => l.qty)} 件`); o.lines = lines.map((l) => ({ ver: null, price: null, due: null, note: '', ...l })) }
@@ -4395,25 +4401,25 @@ route('/orders', {
     // 导出的列比页面上多（PRD §5.4：页面最多 12 列，其余放详情和导出）
     const XCOLS = [{ k: 'no', t: '订单号', c: 'code' }, { k: 'date', t: '下单日期' }, { k: 'type', t: '类型' }, { k: 'cust', t: '客户', x: (o) => (o.customer ? custName(o.customer) : '') },
       { k: 'custNo', t: '客户订单号', c: 'code' }, { k: 'contract', t: '合同号', c: 'code' }, { k: 'brand', t: '品牌' }, { k: 'styles', t: '款号', x: (o) => orderStyles(o).join(' ') },
-      { k: 'qty', t: '数量', x: orderQty }, { k: 'amt', t: '金额', x: orderAmt }, { k: 'currency', t: '币种' }, { k: 'due', t: '客户交期' }, { k: 'commit', t: '承诺交期' },
+      { k: 'qty', t: '数量', x: orderQty }, { k: 'amt', t: '金额', x: orderAmt }, { k: 'currency', t: '币种' }, { k: 'due', t: '要求交期' }, { k: 'commit', t: '承诺交期' },
       { k: 'sched', t: '已排产', x: orderSched }, { k: 'ret', t: '已回货', x: orderRet }, { k: 'sales', t: '业务员', x: (o) => userName(o.sales) }, { k: 'merch', t: '跟单员', x: (o) => userName(o.merch) },
       { k: 'company', t: '主体', x: (o) => companyName(o.company) }, { k: 'src', t: '来源' }, { k: 'status', t: '状态' }]
     return { s, scoped, tabs, rows, custOrDash, XCOLS }
   },
   template: `<div>
     <Head t="订单"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="XCOLS" name="订单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建订单</button></Head>
-    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><button v-if="s.f" class="chip on" @click="s.f = ''">{{ s.f }}<Ico n="x" :s="12"/></button><span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="单号、客户单号、款号，多个用空格隔开"/></div>
-    <div class="bar" style="padding-top:0" data-c="更多筛选"><Filters v-model="s.flt" party="customer" merch label="下单日期"/>
+    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><button v-if="s.f" class="chip on" @click="s.f = ''">{{ s.f }}<Ico n="x" :s="12"/></button><span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="单号、合同号、款号，多个用空格隔开"/></div>
+    <div class="bar" style="padding-top:0" data-c="更多筛选"><Filters v-model="s.flt" :party="db.trade ? 'customer' : ''" merch label="下单日期"/>
       <select class="sel" v-model="s.type"><option value="">全部类型</option><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></select></div>
     <div data-c="订单列表">
       <Tbl :rows="rows" link @row="o => go('/orders/' + o.no)" :empty="scoped.length ? '没有符合条件的订单：换个状态页签，或者清空筛选' : ownOnly() ? '你的数据范围是「本人」：还没有你是制单人、业务员或跟单员的订单' : s.mine ? '还没有你是制单人、业务员或跟单员的订单，切到「全部」看所有人的' : '还没有订单'" :cols="[
-        { k: 'no', t: '订单号', c: 'code' }, { k: 'date', t: '下单', f: o => fd(o.date) }, { k: 'cust', t: '客户' }, { k: 'styles', t: '款式' },
+        { k: 'no', t: '订单号', c: 'code' }, { k: 'date', t: '下单', f: o => fd(o.date) }, { k: 'cust', t: db.trade ? '客户' : '类型' }, { k: 'styles', t: '款式' },
         { k: 'qty', t: '数量', c: 'num', f: o => orderQty(o).toLocaleString() }, { k: 'amt', t: '金额', c: 'num', f: o => orderMoney(o, orderAmt(o)) },
         { k: 'due', t: '交期' }, { k: 'sched', t: '排产' }, { k: 'ret', t: '回货' }, { k: 'kit', t: '齐料' },
         { k: 'merch', t: '跟单', f: o => userName(o.merch) }, { k: 'status', t: '状态' }]">
         <template #cust="{ r }">{{ custOrDash(r) }}<span v-if="r.customer && r.type !== '客户订单'" class="pill" style="margin-left:6px">{{ r.type }}</span></template>
         <template #styles="{ r }"><span class="row g4"><Thumb v-for="c in orderStyles(r)" :key="c" :code="c" :s="22"/><span class="code mut">{{ orderStyles(r).join(' ') }}</span></span></template>
-        <template #due="{ r }"><span :title="r.commit ? '承诺交期；客户交期 ' + fd(r.due) : '客户交期；审核时定承诺交期'">{{ fd(r.commit || r.due) }}<small class="dim"> {{ r.commit ? '承诺' : '客户' }}</small></span></template>
+        <template #due="{ r }"><span :title="r.commit ? '承诺交期；要求交期 ' + fd(r.due) : '要求交期；审核时定承诺交期'">{{ fd(r.commit || r.due) }}<small class="dim"> {{ r.commit ? '承诺' : '要求' }}</small></span></template>
         <template #sched="{ r }"><Prog v-if="r.status !== '草稿' && r.status !== '待审核'" :a="orderSched(r)" :b="orderQty(r)"/><span v-else class="dim">—</span></template>
         <template #ret="{ r }"><Prog v-if="orderSched(r)" :a="orderRet(r)" :b="orderQty(r)"/><span v-else class="dim">—</span></template>
         <template #kit="{ r }"><St v-if="orderLive(r) || r.status === '已完成'" :s="kitState(r).k === 'ok' ? '齐料' : kitState(r).k === 'part' ? '部分到货' : '未到料'" :t="kitState(r).t"/><span v-else class="dim">—</span></template>
@@ -4436,7 +4442,7 @@ comp('OrderForm', {
     const liveCust = computed(() => db.customers.filter((c) => c.status === '启用' || c.code === o?.customer))
     const f = reactive(o
       ? { type: o.type, customer: o.customer || '', custNo: o.custNo || '', contract: o.contract || '', brand: o.brand || '', company: o.company, date: o.date, due: o.due, currency: o.currency || '人民币', sales: o.sales, merch: o.merch, ship: o.ship || '', note: o.note || '' }
-      : { type: '客户订单', customer: p.customer || db.customers.find((c) => c.status === '启用')?.code || '', custNo: '', contract: '', brand: db.dicts.品牌[0], company: myCompany(), date: clock.today, due: addDays(clock.today, 60), currency: '人民币', sales: roleUser('业务'), merch: roleUser('生产跟单'), ship: '', note: '', files: [] })
+      : { type: db.dicts.订单类型[0], customer: db.trade ? p.customer || db.customers.find((c) => c.status === '启用')?.code || '' : '', custNo: '', contract: '', brand: db.dicts.品牌[0], company: myCompany(), date: clock.today, due: addDays(clock.today, 60), currency: '人民币', sales: roleUser('业务'), merch: roleUser('生产跟单'), ship: '', note: '', files: [] })
     // 一块 = 一个款：price 默认单价，byLine 时 sizePrice 里的码用自己的单价；due 行交期、note 行备注
     const mk = (code, ls = []) => {
       const prices = ls.map((l) => l.price).filter((x) => x != null), price = prices.length ? Math.min(...prices) : null, sizePrice = {}
@@ -4471,13 +4477,13 @@ comp('OrderForm', {
   template: `<Modal :t="o ? '改订单 ' + o.no : '新建订单'" :w="840" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr)" data-c="订单单头">
       <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></select></label>
-      <label class="f" v-if="f.type !== '自营备货'">客户<select class="sel" v-model="f.customer"><option v-for="c in liveCust" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
-      <label class="f" v-if="f.type !== '自营备货'">客户订单号<input class="inp" v-model="f.custNo"></label>
+      <label class="f" v-if="db.trade && f.type !== '自营备货'">客户<select class="sel" v-model="f.customer"><option v-for="c in liveCust" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f" v-if="db.trade && f.type !== '自营备货'">客户订单号<input class="inp" v-model="f.custNo"></label>
       <label class="f">合同号<input class="inp" v-model="f.contract"></label>
       <label class="f">品牌<select class="sel" v-model="f.brand"><option value="">—</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></select></label>
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
       <label class="f">下单日期<input class="inp" type="date" v-model="f.date"></label>
-      <label class="f">客户交期<input class="inp" type="date" v-model="f.due"></label>
+      <label class="f">要求交期<input class="inp" type="date" v-model="f.due"></label>
       <label class="f">币种<select class="sel" v-model="f.currency"><option v-for="x in db.dicts.币种" :key="x">{{ x }}</option></select></label>
       <label class="f">业务员<select class="sel" v-model="f.sales"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">跟单员<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
@@ -4492,7 +4498,7 @@ comp('OrderForm', {
       <div v-if="b.byLine" class="row g4" style="margin-bottom:8px;flex-wrap:wrap" data-c="尺码单价"><span class="dim" style="font-size:12px">各码单价（空着 = 用上面的单价）</span>
         <label v-for="z in sizesOf(style(b.style).sizeGroup)" :key="z" class="row g4" style="font-size:12px">{{ z }}<input class="inp num" style="width:72px;height:26px" type="number" v-model.number="b.sizePrice[z]" :placeholder="b.price ?? ''"></label></div>
       <Matrix :st="b.style" v-model="b.qty" :colors="colorsFor(b)"/>
-      <div class="row g4" style="margin-top:8px" data-c="行交期、行备注"><label class="row g4 mut" style="font-size:12px">行交期<input class="inp" type="date" style="height:26px" v-model="b.due"></label><span class="dim" style="font-size:12px">不填 = 客户交期</span>
+      <div class="row g4" style="margin-top:8px" data-c="行交期、行备注"><label class="row g4 mut" style="font-size:12px">行交期<input class="inp" type="date" style="height:26px" v-model="b.due"></label><span class="dim" style="font-size:12px">不填 = 要求交期</span>
         <input class="inp" style="height:26px;flex:1" v-model="b.note" placeholder="这个款的备注，如：黑色先做"></div>
     </div>
     <div class="row" style="margin-top:16px"><select class="sel" v-model="pick" @change="addBlock(pick)" style="width:260px"><option value="">加一个款……</option><option v-for="s in pickable" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}{{ activeTp(s.code) ? '' : '（资料包未生效）' }}</option></select>
@@ -4589,11 +4595,11 @@ route('/orders/:no', {
         <dl class="props">
           <dt>类型</dt><dd>{{ o.type }}</dd>
           <dt v-if="o.customer">客户</dt><dd v-if="o.customer"><a :href="'#/customers/' + o.customer">{{ custName(o.customer) }}</a></dd>
-          <dt>客户单号</dt><dd class="code">{{ o.custNo || '—' }}</dd>
+          <dt v-if="db.trade">客户单号</dt><dd v-if="db.trade" class="code">{{ o.custNo || '—' }}</dd>
           <dt>合同号</dt><dd class="code">{{ o.contract || '—' }}</dd>
           <dt>品牌</dt><dd>{{ o.brand || '—' }}</dd>
           <dt>下单日期</dt><dd>{{ fd(o.date) }}</dd>
-          <dt>客户交期</dt><dd>{{ fd(o.due) }}</dd>
+          <dt>要求交期</dt><dd>{{ fd(o.due) }}</dd>
           <dt>承诺交期</dt><dd>{{ fd(o.commit) }}</dd>
           <dt>币种</dt><dd>{{ o.currency || '人民币' }}</dd>
           <dt>业务员</dt><dd>{{ userName(o.sales) }}</dd>
@@ -4695,7 +4701,7 @@ comp('OrderChange', {
     const extra = reactive(Object.fromEntries(sts.map((st) => [st, []]))) // 这次新加的颜色
     const price = reactive(Object.fromEntries(sts.map((st) => [st, firstLine(st)?.price ?? ''])))
     const ver = reactive(Object.fromEntries(sts.map((st) => [st, firstLine(st)?.ver ?? ''])))
-    const f = reactive({ cancel: p.cancel, due: p.o.due, reason: '', party: '客户', fee: '', files: [] })
+    const f = reactive({ cancel: p.cancel, due: p.o.due, reason: '', party: db.trade ? '客户' : '我方', fee: '', files: [] })
     if (c0) { // 改了再提交：把上次的改动放回去
       Object.assign(f, { cancel: !!c0.cancel, due: c0.due?.to || p.o.due, reason: c0.reason, party: c0.party, fee: c0.fee, files: [...(c0.files || [])] })
       for (const i of c0.items) {
@@ -4731,10 +4737,10 @@ comp('OrderChange', {
           <label class="row g4 mut" style="font-size:12px">单价<input class="inp num" style="width:84px;height:26px" type="number" v-model.number="price[st]"></label>
           <label class="row g4 mut" style="font-size:12px">资料包<select class="sel" style="height:26px" v-model.number="ver[st]"><option v-for="t in vers(st)" :key="t.ver" :value="t.ver">V{{ t.ver }}{{ t.status === '已生效' ? '' : '（' + t.status + '）' }}</option></select></label></div>
         <Matrix :st="st" v-model="qty[st]" :colors="colorsOf(st)" :sub="sub(st)"/></div>
-      <div class="form"><label class="f">客户交期<input class="inp" type="date" v-model="f.due"></label></div>
+      <div class="form"><label class="f">要求交期<input class="inp" type="date" v-model="f.due"></label></div>
     </template>
     <div class="form" style="margin-top:12px">
-      <label class="f">责任方<select class="sel" v-model="f.party"><option>客户</option><option>我方</option><option>工厂</option><option>供应商</option></select></label>
+      <label class="f">责任方<select class="sel" v-model="f.party"><option v-if="db.trade">客户</option><option>我方</option><option>工厂</option><option>供应商</option></select></label>
       <label class="f full">原因<input class="inp" v-model="f.reason"></label>
       <label class="f full">费用说明<input class="inp" v-model="f.fee" placeholder="如：客户承担已裁片损失"></label>
       <div class="f full" data-c="变更附件">客户确认<Pics v-model="f.files" files :s="56" tip="客户的邮件、聊天截图；Ctrl+V 直接贴"/></div>
@@ -4755,7 +4761,7 @@ route('/changes', {
   template: `<div>
     <Head t="变更"/>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="变更单号、订单号，多个用空格隔开"/></div>
-    <div class="bar" style="padding-top:0"><Filters v-model="s.flt" party="customer" label="提交日期"/></div>
+    <div class="bar" style="padding-top:0"><Filters v-model="s.flt" :party="db.trade ? 'customer' : ''" label="提交日期"/></div>
     <div data-c="变更列表">
       <Tbl :rows="rows" link @row="c => go('/orders/' + c.order + '?tab=changes')" empty="没有符合条件的变更单。已审核的订单在详情页「提变更」" :cols="[
         { k: 'no', t: '变更单号', c: 'code' }, { k: 'order', t: '订单', c: 'code' }, { k: 'types', t: '类型', f: c => c.types.join('、') }, { k: 'text', t: '改了什么' }, { k: 'reason', t: '原因' },
@@ -4772,27 +4778,27 @@ expose({ createMrp, submitOrder, custOrDash, orderMoney, updateOrder })
 /* ---------- Excel 导入订单（PRD §6.5.2）：一行一个 SKU，同一个客户订单号的行进同一张订单 ---------- */
 IMPORTS.orders = {
   title: '导入订单', name: '订单',
-  note: '一行一个 SKU；同一个客户订单号的行进同一张订单。导进来是草稿，核对后再提交审核。',
+  note: '一行一个 SKU；单号相同的行进同一张订单。导进来是草稿，核对后再提交审核。',
   head: [
-    { k: 'type', t: '订单类型', opts: () => db.dicts.订单类型.map((x) => [x, x]), def: () => '客户订单' },
-    { k: 'customer', t: '客户', opts: () => [['', '—'], ...db.customers.filter((c) => c.status === '启用').map((c) => [c.code, c.short])], def: () => db.customers[0]?.code || '' },
-    { k: 'due', t: '客户交期', type: 'date', def: () => addDays(clock.today, 60) },
+    { k: 'type', t: '订单类型', opts: () => db.dicts.订单类型.map((x) => [x, x]), def: () => db.dicts.订单类型[0] },
+    ...(TRADE ? [{ k: 'customer', t: '客户', opts: () => [['', '—'], ...db.customers.filter((c) => c.status === '启用').map((c) => [c.code, c.short])], def: () => db.customers[0]?.code || '' }] : []),
+    { k: 'due', t: '要求交期', type: 'date', def: () => addDays(clock.today, 60) },
     { k: 'merch', t: '跟单员', opts: () => db.users.map((u) => [u.id, u.name]), def: () => 'u1' },
   ],
   cols: [
-    { k: 'custNo', t: '客户订单号', tip: '同一个单号的行进同一张订单；不填的行合成一张', ex: 'PO-2611-018', text: true, w: 16 },
+    { k: 'custNo', t: TRADE ? '客户订单号' : '分单号', tip: '同一个单号的行进同一张订单；不填的行合成一张', ex: 'PO-2611-018', text: true, w: 16 },
     { k: 'style', t: '款号', req: true, tip: '要是启用的款', ex: '27CF001', text: true },
     { k: 'color', t: '颜色', req: true, tip: '颜色名称或编码，要是这个款有的颜色', ex: '卡其' },
     { k: 'size', t: '尺码', req: true, tip: '要是这个款尺码组里的', ex: 'M', text: true, w: 8 },
     { k: 'qty', t: '数量', req: true, int: true, tip: '正整数，件', ex: 120, w: 8 },
     { k: 'price', t: '单价', num: true, tip: '选填，元', ex: 189, w: 8 },
-    { k: 'due', t: '行交期', date: true, tip: '选填；不填用对话框里选的客户交期。同一张单不同款交期不同时填', ex: '2027-01-20' },
+    { k: 'due', t: '行交期', date: true, tip: '选填；不填用对话框里选的要求交期。同一张单不同款交期不同时填', ex: '2027-01-20' },
   ],
   example: () => db.styles.filter((s) => s.status === '启用' && activeTp(s.code)).slice(0, 2).flatMap((s, i) =>
     s.colors.slice(0, 2).flatMap((c) => sizesOf(s.sizeGroup).slice(0, 3).map((z, j) => ({ custNo: 'PO-2611-0' + (18 + i), style: s.code, color: colorName(c), size: z, qty: 60 + j * 20, price: s.tagPrice ? rnd(s.tagPrice * 0.4, 0) : '' })))),
   check(rows, bad, head) {
-    if (head.type !== '自营备货' && !head.customer) bad('—', '客户', head.type + '要选客户')
-    if (!head.due) bad('—', '客户交期', '要选客户交期')
+    if (db.trade && head.type !== '自营备货' && !head.customer) bad('—', '客户', head.type + '要选客户')
+    if (!head.due) bad('—', '要求交期', '要选交期')
     const groups = new Map(), seen = new Map()
     rows.forEach((r) => {
       const s = style(r.style)
@@ -5161,10 +5167,10 @@ comp('PurchaseForm', {
       <label class="f">是否含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
       <label class="f" style="grid-column:span 4">备注<input class="inp" v-model="f.note" placeholder="比如：面料每卷标缸号，随货带色卡"></label>
     </div>
-    <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:88px">单价</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
+    <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th v-if="db.trade" style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:88px">单价</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
         <td><select class="sel" style="width:100%;height:28px" v-model="l.sku" @change="setSku(l)" :disabled="!!l.src"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select><small v-if="l.src" class="dim">来自算料单 {{ l.src.mrp }}</small></td>
-        <td><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
+        <td v-if="db.trade"><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? purUnit(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price"></td>
         <td class="num">{{ l.qty && l.price ? fm(l.qty * l.price) : '—' }}</td>
@@ -5368,11 +5374,11 @@ route('/stock-docs', {
     const parties = computed(() => [...new Set(db.stockDocs.map((d) => d.partner).filter(Boolean))].map((c) => [c, partnerName({ partner: c })]))
     const rows = computed(() => scoped.value.filter((d) => (s.tab === '全部' || DOC_GROUPS[s.tab].includes(d.type)) && (!s.st || d.status === s.st) && (!s.wh || d.from === s.wh || d.to === s.wh) && (!s.party || d.partner === s.party)
       && passFlt(s.flt, { date: d.date }) && matchQ(s.q, d.no, d.type, d.src, d.supNo || '', d.logistics || '', ...d.lines.flatMap((l) => [l.sku, skuName(l.sku), l.lot || '']))).slice().reverse())
-    const news = ['客供入库', '其他入库', '调拨', '退料', '其他出库'].map((t) => ({ t, fn: () => { s.add = t } }))
+    const news = (db.trade ? ['客供入库', '其他入库', '调拨', '退料', '其他出库'] : ['调拨', '退料', '其他出库']).map((t) => ({ t, fn: () => { s.add = t } }))
     return { s, tabs, parties, rows, news, partnerName }
   },
   template: `<div>
-    <Head t="出入库"><button class="btn pri" @click="s.add = '客供入库'"><Ico n="plus" :s="14"/>客供入库</button><More :items="news"/></Head>
+    <Head t="出入库"><button class="btn pri" @click="s.add = db.trade ? '客供入库' : '其他入库'"><Ico n="plus" :s="14"/>{{ db.trade ? '客供入库' : '其他入库' }}</button><More :items="news"/></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/>
       <select class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></select>
       <Filters v-model="s.flt"/>
@@ -5443,17 +5449,17 @@ comp('StockDocForm', {
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
     <p v-if="t === '退料'" class="dim" style="font-size:12px;margin-top:8px">退料：工厂剩料从工厂仓退回物料仓。挂上加工单，那张单的"已领"会扣掉这次退的。</p>
-    <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
+    <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="db.trade && t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
         <td><select class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select></td>
-        <td v-if="t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
+        <td v-if="db.trade && t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
         <td v-if="f.from" class="num dim">{{ have(l) == null ? '—' : fq(have(l)) }}</td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? unitOf(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price" title="元 / 库存单位"></td>
         <td class="num">{{ l.qty && l.price ? fm(l.qty * l.price) : '—' }}</td>
         <td><input class="inp cell" v-model="l.lot"></td><td><input class="inp cell num" type="number" v-model.number="l.rolls"></td><td><input class="inp cell" v-model="l.note"></td>
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
-      <tfoot><tr><td>合计</td><td v-if="t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
+      <tfoot><tr><td>合计</td><td v-if="db.trade && t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
     <button class="btn ghost" style="margin-top:8px" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, lot: '', rolls: null, note: '' })"><Ico n="plus" :s="14"/>加一行</button>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
@@ -5519,7 +5525,7 @@ IMPORTS.stock = {
   cols: [
     { k: 'sku', t: '物料SKU编码', req: true, text: true, tip: '要是物料里已有的 SKU 编码', ex: 'ML0012-KQ', w: 16 },
     { k: 'wh', t: '仓库编码', req: true, text: true, tip: '物料仓或工厂仓的编码', ex: 'WL01', opts: () => nonFgWhs().map((w) => w.code) },
-    { k: 'owner', t: '物权', text: true, tip: '不填 = 自有；客供料填客户编码', ex: '自有' },
+    ...(TRADE ? [{ k: 'owner', t: '物权', text: true, tip: '不填 = 自有；客供料填客户编码', ex: '自有' }] : []),
     { k: 'qty', t: '数量', req: true, num: true, tip: '库存单位（面料一般是米），最多 3 位小数', ex: 120 },
     { k: 'price', t: '单价', num: true, tip: '元 / 库存单位，以后算成本用；不填 = 物料 SKU 单价（没有就用参考单价）折成库存单位', ex: 18.5 },
     { k: 'lot', t: '缸号', text: true, tip: '选填', ex: 'G2610-07' },
@@ -5584,11 +5590,11 @@ route('/stock', {
     return { s, whs, rows, summary, owners, logs, safety, XC, xrows, STOCK_TYPES }
   },
   template: `<div>
-    <Head t="库存"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
+    <Head t="库存"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view].filter(c => db.trade || c.k !== 'owner')" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
       <select class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select>
-      <select class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
+      <select v-if="db.trade" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
       <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '日志']"/><Search v-model="s.q"/>
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>
@@ -5985,8 +5991,8 @@ comp('ProdIssueMat', {
       <label class="f">从哪个物料仓发<select class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
       <div class="f">发到<span style="line-height:32px">{{ whName(factoryWh(p.factory)?.code) }}</span></div>
     </div>
-    <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th>物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
-      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
+    <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th v-if="db.trade">物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
+      <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td v-if="db.trade" :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
         <td class="num">{{ fq(r.need) }}</td><td class="num">{{ fq(r.issued) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: have(r) < r.qty }">{{ fq(have(r)) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
         <tr v-if="!rows.length"><td colspan="7" class="empty">资料包里没有要发给工厂的料</td></tr></tbody></table>
@@ -6377,7 +6383,7 @@ db.samples = [
       { ver: 1, no: 'DY202610250001', type: '初样', way: '外部工厂', factory: 'GYS0005', qty: 2, need: '2026-11-08', reason: '', status: '打样中', nodes: smpSeedNodes('2026-11-08', [0, 0, 0, null, null]), review: null },
     ],
     log: [{ at: '2026-10-25', who: '许然', text: '新建' }] },
-  { no: 'YY26100002', name: '印花连衣裙', cat: 'L', year: 2027, season: 'X', wave: '第 2 波', tag: '休闲', colors: ['JH'], sizeGroup: 'W5', brand: '织间', source: '客户来样', customer: 'KH0001', custNo: 'HD-S27-D07', designer: 'u4', fabric: '印花雪纺，客户指定', tagPrice: 599, estCost: 290, status: '已淘汰', style: null,
+  { no: 'YY26100002', name: '印花连衣裙', cat: 'L', year: 2027, season: 'X', wave: '第 2 波', tag: '休闲', colors: ['JH'], sizeGroup: 'W5', brand: '织间', source: '选款', designer: 'u4', fabric: '印花雪纺，客户指定', tagPrice: 599, estCost: 290, status: '已淘汰', style: null,
     vers: [
       { ver: 1, no: 'DY202610100001', type: '初样', way: '内部版房', maker: 'u8', qty: 1, need: '2026-10-22', reason: '', status: '已淘汰', nodes: smpSeedNodes('2026-10-22', [0, 1, 0, 0, 0]), review: { at: '2026-10-23', by: ['u4', 'u6'], result: '淘汰', note: '面料成本超目标 30%，印花效果一般' } },
     ],
@@ -6428,8 +6434,8 @@ comp('SmpNew', {
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
       <label class="f">季节<span class="row g4"><select class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></select><select class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></span></label>
-      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option>客户来样</option><option>选款</option></select></label>
-      <label class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option v-if="db.trade">客户来样</option><option>选款</option></select></label>
+      <label class="f" v-if="db.trade">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors.filter(c => c.status !== '停用' || f.colors.includes(c.code))" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
@@ -6912,7 +6918,7 @@ const fgOrders = () => db.orders.filter((o) => ['已审核', '生产中', '已�
 // 种子：第一批回货入库，部分发给客户
 as('u5', '2026-11-02', () => { const r = db.returns[0]; if (r) fgPush(fgReceive(r)) })
 as('u5', '2026-11-03', () => {
-  const o = db.orders.find((x) => x.customer === 'KH0003')
+  const o = db.orders.find((x) => x.lines.some((l) => l.style === '26DS021'))
   if (o && fgQty('26DS021', 'HE', 'M')) fgShip(o, { logistics: 'SF1029385521', qty: { '26DS021|HE|S': 50, '26DS021|HE|M': 100, '26DS021|HE|L': 90, '26DS021|HE|XL': 40, '26DS021|HE|XXL': 20 } })
 })
 
@@ -7691,7 +7697,7 @@ function allLogs() {
     ['加工单', db.productions, (d) => d.no, (d) => '/production/' + d.no],
     ['回货', db.returns, (d) => d.no, (d) => '/production/' + d.prod],
     ['供应商', db.suppliers, (d) => d.code, (d) => '/suppliers/' + d.code],
-    ['客户', db.customers, (d) => d.code, (d) => '/customers/' + d.code],
+    ...(db.trade ? [['客户', db.customers, (d) => d.code, (d) => '/customers/' + d.code]] : []),
     ['物料', db.materials, (d) => d.code, (d) => '/materials/' + d.code],
     ['款式', db.styles, (d) => d.code, (d) => '/styles/' + d.code],
     ['资料包', db.techpacks, (d) => d.style + ' V' + d.ver, (d) => '/styles/' + d.style],
@@ -7703,7 +7709,7 @@ function allLogs() {
 
 SEARCH.push(() => [
   ...db.suppliers.map((s) => ({ t: s.code + ' ' + s.short, sub: '供应商 · ' + s.cats.join('、'), to: '/suppliers/' + s.code, i: 'store' })),
-  ...db.customers.map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
+  ...(db.trade ? db.customers : []).map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
   ...db.materials.map((m) => ({ t: m.code + ' ' + m.name, sub: '物料', to: '/materials/' + m.code, i: 'box' })),
 ])
 
@@ -8817,7 +8823,7 @@ const NAV = [
   ] },
   { g: '资料', items: [
     { k: 'suppliers', t: '供应商', i: 'store', to: '/suppliers', ph: '一期', ref: 'M12 · 12.01–12.06' },
-    { k: 'customers', t: '客户', i: 'user', to: '/customers', ph: '一期', ref: '6.1.8，12.03 商务条款' },
+    ...(TRADE ? [{ k: 'customers', t: '客户', i: 'user', to: '/customers', ph: '一期', ref: '6.1.8，12.03 商务条款' }] : []),
     { k: 'materials', t: '物料', i: 'box', to: '/materials', ph: '一期', ref: 'M01 · 01.03' },
     { k: 'basics', t: '基础', i: 'palette', to: '/basics', ph: '一期', ref: 'M01 · 01.01、01.04–01.07' },
   ] },

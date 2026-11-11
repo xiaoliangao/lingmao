@@ -218,7 +218,7 @@ db.samples = [
       { ver: 1, no: 'DY202610250001', type: '初样', way: '外部工厂', factory: 'GYS0005', qty: 2, need: '2026-11-08', reason: '', status: '打样中', nodes: smpSeedNodes('2026-11-08', [0, 0, 0, null, null]), review: null },
     ],
     log: [{ at: '2026-10-25', who: '许然', text: '新建' }] },
-  { no: 'YY26100002', name: '印花连衣裙', cat: 'L', year: 2027, season: 'X', wave: '第 2 波', tag: '休闲', colors: ['JH'], sizeGroup: 'W5', brand: '织间', source: '客户来样', customer: 'KH0001', custNo: 'HD-S27-D07', designer: 'u4', fabric: '印花雪纺，客户指定', tagPrice: 599, estCost: 290, status: '已淘汰', style: null,
+  { no: 'YY26100002', name: '印花连衣裙', cat: 'L', year: 2027, season: 'X', wave: '第 2 波', tag: '休闲', colors: ['JH'], sizeGroup: 'W5', brand: '织间', source: '选款', designer: 'u4', fabric: '印花雪纺，客户指定', tagPrice: 599, estCost: 290, status: '已淘汰', style: null,
     vers: [
       { ver: 1, no: 'DY202610100001', type: '初样', way: '内部版房', maker: 'u8', qty: 1, need: '2026-10-22', reason: '', status: '已淘汰', nodes: smpSeedNodes('2026-10-22', [0, 1, 0, 0, 0]), review: { at: '2026-10-23', by: ['u4', 'u6'], result: '淘汰', note: '面料成本超目标 30%，印花效果一般' } },
     ],
@@ -269,8 +269,8 @@ comp('SmpNew', {
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
       <label class="f">季节<span class="row g4"><select class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></select><select class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></span></label>
-      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option>客户来样</option><option>选款</option></select></label>
-      <label class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option v-if="db.trade">客户来样</option><option>选款</option></select></label>
+      <label class="f" v-if="db.trade">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors.filter(c => c.status !== '停用' || f.colors.includes(c.code))" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
@@ -753,7 +753,7 @@ const fgOrders = () => db.orders.filter((o) => ['已审核', '生产中', '已�
 // 种子：第一批回货入库，部分发给客户
 as('u5', '2026-11-02', () => { const r = db.returns[0]; if (r) fgPush(fgReceive(r)) })
 as('u5', '2026-11-03', () => {
-  const o = db.orders.find((x) => x.customer === 'KH0003')
+  const o = db.orders.find((x) => x.lines.some((l) => l.style === '26DS021'))
   if (o && fgQty('26DS021', 'HE', 'M')) fgShip(o, { logistics: 'SF1029385521', qty: { '26DS021|HE|S': 50, '26DS021|HE|M': 100, '26DS021|HE|L': 90, '26DS021|HE|XL': 40, '26DS021|HE|XXL': 20 } })
 })
 

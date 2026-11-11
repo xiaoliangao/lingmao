@@ -403,7 +403,7 @@ function allLogs() {
     ['加工单', db.productions, (d) => d.no, (d) => '/production/' + d.no],
     ['回货', db.returns, (d) => d.no, (d) => '/production/' + d.prod],
     ['供应商', db.suppliers, (d) => d.code, (d) => '/suppliers/' + d.code],
-    ['客户', db.customers, (d) => d.code, (d) => '/customers/' + d.code],
+    ...(db.trade ? [['客户', db.customers, (d) => d.code, (d) => '/customers/' + d.code]] : []),
     ['物料', db.materials, (d) => d.code, (d) => '/materials/' + d.code],
     ['款式', db.styles, (d) => d.code, (d) => '/styles/' + d.code],
     ['资料包', db.techpacks, (d) => d.style + ' V' + d.ver, (d) => '/styles/' + d.style],
@@ -415,7 +415,7 @@ function allLogs() {
 
 SEARCH.push(() => [
   ...db.suppliers.map((s) => ({ t: s.code + ' ' + s.short, sub: '供应商 · ' + s.cats.join('、'), to: '/suppliers/' + s.code, i: 'store' })),
-  ...db.customers.map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
+  ...(db.trade ? db.customers : []).map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
   ...db.materials.map((m) => ({ t: m.code + ' ' + m.name, sub: '物料', to: '/materials/' + m.code, i: 'box' })),
 ])
 

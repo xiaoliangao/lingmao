@@ -161,18 +161,20 @@ comp('Tbl', {
     const pages = computed(() => Math.max(1, Math.ceil(p.rows.length / size.value)))
     watch([() => p.rows.length, size], () => { if (cur.value > pages.value) cur.value = 1 })
     const shown = computed(() => (paged.value ? p.rows.slice((cur.value - 1) * size.value, cur.value * size.value) : p.rows))
-    return { size, cur, paged, pages, shown }
+    // 代工收起来时（db.trade = false）库存只有自有一种物权，「物权」列不显示
+    const vcols = computed(() => p.cols.filter((c) => db.trade || c.k !== 'owner'))
+    return { size, cur, paged, pages, shown, vcols }
   },
   template: `<table class="tbl" :class="{ inset, flat }">
     <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条<span v-if="paged" class="pager">
       <select class="sel" v-model.number="size"><option v-for="n in [20, 50, 100]" :key="n" :value="n">{{ n }} 条/页</option></select>
       <button class="btn sm" :disabled="cur <= 1" @click="cur--">上一页</button><span class="num">{{ cur }} / {{ pages }}</span><button class="btn sm" :disabled="cur >= pages" @click="cur++">下一页</button></span></caption>
-    <thead><tr><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
+    <thead><tr><th v-for="c in vcols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
     <tbody>
       <tr v-for="(r, i) in shown" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
-        <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
+        <td v-for="c in vcols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
       </tr>
-      <tr v-if="!rows.length"><td :colspan="cols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
+      <tr v-if="!rows.length"><td :colspan="vcols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
     </tbody>
     <tfoot v-if="$slots.foot"><slot name="foot"/></tfoot>
   </table>`,

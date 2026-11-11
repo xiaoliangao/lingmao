@@ -275,8 +275,8 @@ function createOrder(f) {
   const lines = (f.lines || []).filter((l) => l.qty > 0)
   if (!lines.length) fail('至少录一个数量')
   checkOrderLines(lines)
-  if (f.type !== '自营备货' && !f.customer) fail(`${f.type || '客户订单'}要选客户`)
-  if (!f.due) fail('客户交期要填')
+  if (db.trade && f.type !== '自营备货' && !f.customer) fail(`${f.type || '客户订单'}要选客户`)
+  if (!f.due) fail('要求交期要填')
   const o = add(db.orders, { no: nextNo('DD'), company: myCompany(), currency: '人民币', date: clock.today, commit: null, sales: roleUser('业务'), merch: roleUser('生产跟单'), ship: '', custNo: '', contract: '', brand: '', src: '手工', note: '', ...f, lines: lines.map((l) => ({ ver: null, price: null, ...l })), status: '草稿', log: [] })
   act(o, '新建')
   return o
@@ -346,7 +346,7 @@ function scheduleOrder(o, blocks) {
   return blocks.filter((b) => sum(Object.values(b.qty)) > 0).map((b) => createProduction(o, b))
 }
 
-/* 订单变更（PRD §6.5.6）：f = { items: [{ k: '27CF001|KQ|M', to: 100 }]（数量；原来没有的颜色 = 配色配码）, due: 新客户交期,
+/* 订单变更（PRD §6.5.6）：f = { items: [{ k: '27CF001|KQ|M', to: 100 }]（数量；原来没有的颜色 = 配色配码）, due: 新要求交期,
  *   prices: [{ style, to }] 单价, vers: [{ style, to }] 换资料包版本, cancel: true 取消订单 } */
 const orderDown = (o) => [...prodsOf(o).map((p) => p.no), ...mrpsOf(o).filter((m) => m.status !== '已关闭').map((m) => m.no)]
 function buildChange(o, f) {
@@ -392,7 +392,7 @@ function resubmitChange(c, f) {
 const describeChange = (c) => [
   c.cancel && '取消订单',
   ...c.items.map((i) => `${i.label}：${i.from} → ${i.to}${i.from ? '' : '（新增）'}`),
-  c.due && `客户交期：${fd(c.due.from)} → ${fd(c.due.to)}`,
+  c.due && `要求交期：${fd(c.due.from)} → ${fd(c.due.to)}`,
   ...(c.prices || []).map((x) => `${x.style} 单价：${fm(x.from)} → ${fm(x.to)}`),
   ...(c.vers || []).map((x) => `${x.style} 资料包：V${x.from} → V${x.to}`),
 ].filter(Boolean).join('；')
@@ -821,10 +821,10 @@ const label = (sku, extra) => ({ part: extra.part, mat: sku, mode: '固定', sku
 
 function seed() {
   as('u4', '2026-08-20', () => {
-    createStyle({ code: '26QJ012', name: '短款工装夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', source: '客户来样', customer: 'KH0002', custNo: 'NF-J2611', status: '启用',
+    createStyle({ code: '26QJ012', name: '短款工装夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', source: '选款', status: '启用',
       patterner: 'u8', mainMat: 'ML0018', product: '夹克', comp: '65% 棉 35% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2026-09-25' })
     createStyle({ code: '26QW008', name: '圆领针织衫', cat: 'W', year: 2026, season: 'Q', wave: '第 3 波', tag: '通勤', colors: ['MB', 'HH'], tagPrice: 399, cost: 150, factory: 'GYS0004', status: '启用' })
-    createStyle({ code: '26DS021', name: '连帽卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', source: '客户来样', customer: 'KH0003', status: '启用',
+    createStyle({ code: '26DS021', name: '连帽卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', source: '选款', status: '启用',
       gender: '中性', mainMat: 'MZ0003', product: '卫衣', comp: '100% 棉', standard: 'FZ/T 73020-2019 针织休闲服装', safety: 'B 类' })
     createStyle({ code: '27CF001', name: '女式风衣', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['KQ', 'ZQ', 'HE'], tagPrice: 899, cost: 330, factory: 'GYS0004', status: '启用',
       series: '城市通勤', patterner: 'u8', mainMat: 'ML0012', product: '风衣', comp: '面料：100% 棉；里料：100% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2027-02-20', note: '大身面料对格，样衣已过客户确认' })
@@ -845,7 +845,7 @@ function seed() {
   const thread = { part: '缝纫线', mat: 'FX0002', mode: '固定', sku: 'FX0002', um: '统一', use: 0.3, loss: 0, src: '工厂自备' }
   const cf001 = (m) => [
     { part: '大身', mat: 'ML0012', mode: '随款色', map: { KQ: 'ML0012-KQ', ZQ: 'ML0012-ZQ', HE: 'ML0012-HE' }, um: '分码', uses: SZ(2.25, m, 2.45, 2.55, 2.65), loss: 3, src: '我方采购', supplier: 'GYS0001', note: '注意对格' },
-    { part: '里布', mat: 'ML0015', mode: '随款色', map: { KQ: 'ML0015-MB', ZQ: 'ML0015-HE', HE: 'ML0015-HE' }, um: '统一', use: 1.6, loss: 2, src: '客供' },
+    { part: '里布', mat: 'ML0015', mode: '随款色', map: { KQ: 'ML0015-MB', ZQ: 'ML0015-HE', HE: 'ML0015-HE' }, um: '统一', use: 1.6, loss: 2 },
     { part: '纽扣', mat: 'FK0021', mode: '随款色', map: { KQ: 'FK0021-KQ', ZQ: 'FK0021-HE', HE: 'FK0021-HE' }, um: '统一', use: 8, loss: 2, src: '我方采购', supplier: 'GYS0002' },
     ...labels.map((x) => ({ ...x })), { ...thread },
   ]
@@ -884,15 +884,15 @@ function seed() {
     v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；衣长各码加长 2cm'
     publishTp(v2)
   })
-  // 期初库存、客供料
+  // 期初库存
   as('u5', '2026-10-01', () => postStockDoc(createStockDoc({ type: '其他入库', reason: '期初', to: 'WL01', lines: [
     ['ML0012-KQ', 120], ['ML0012-ZQ', 60], ['ML0012-HE', 300], ['ML0015-MB', 80], ['FK0021-HE', 3000], ['FK0021-KQ', 1000], ['FL0031-HE-15', 300],
     ['BX0001', 3000], ['BX0002', 3000], ['BP0001', 2500], ['BD0001', 2500], ['FX0002', 200],
   ].map(([sku, qty]) => ({ sku, qty, price: skuPrice(sku) / matOfSku(sku).factor })) })))
-  as('u5', '2026-10-28', () => postStockDoc(createStockDoc({ type: '客供入库', partner: 'KH0001', to: 'WL01', lines: [{ sku: 'ML0015-HE', qty: 200, lot: 'G2610-07' }] })))
+  as('u5', '2026-10-28', () => postStockDoc(createStockDoc({ type: '其他入库', reason: '盘盈', to: 'WL01', lines: [{ sku: 'ML0015-HE', qty: 200, lot: 'G2610-07', price: skuPrice('ML0015-HE') / matOfSku('ML0015-HE').factor }] })))
 
   // 订单 1：北方某电商 卫衣 900 件，已逾期、部分回货
-  const o4 = as('u3', '2026-09-28', () => createOrder({ type: '客户订单', customer: 'KH0003', custNo: 'BF-20260928', due: '2026-11-05', lines: mxLines('26DS021', { HE: SZ(60, 110, 120, 80, 30), HH: SZ(40, 80, 90, 60, 30), WL: SZ(30, 50, 60, 40, 20) }, 128) }))
+  const o4 = as('u3', '2026-09-28', () => createOrder({ type: '自营备货', due: '2026-11-05', lines: mxLines('26DS021', { HE: SZ(60, 110, 120, 80, 30), HH: SZ(40, 80, 90, 60, 30), WL: SZ(30, 50, 60, 40, 20) }, 128) }))
   as('u3', '2026-09-28', () => submitOrder(o4))
   as('u6', '2026-09-28', () => auditOrder(o4, '2026-11-05'))
   as('u2', '2026-09-29', () => {
@@ -915,7 +915,7 @@ function seed() {
   as('u1', '2026-11-06', () => registerReturn(p4, { lines: { 'HH|S': { qty: 40 }, 'HH|M': { qty: 80, def: 2 }, 'HH|L': { qty: 80, def: 1 } } }))
 
   // 订单 2：南方某品牌 夹克 500 件，拉链缺料、裁剪延期、客户改过交期
-  const o2 = as('u3', '2026-10-12', () => createOrder({ type: '客户订单', customer: 'KH0002', custNo: 'NF-PO-1012', due: '2026-11-25', lines: mxLines('26QJ012', { HE: SZ(60, 90, 90, 40, 20), KQ: SZ(40, 60, 60, 30, 10) }, 210) }))
+  const o2 = as('u3', '2026-10-12', () => createOrder({ type: '自营备货', due: '2026-11-25', lines: mxLines('26QJ012', { HE: SZ(60, 90, 90, 40, 20), KQ: SZ(40, 60, 60, 30, 10) }, 210) }))
   as('u3', '2026-10-12', () => submitOrder(o2))
   as('u6', '2026-10-13', () => auditOrder(o2, '2026-11-25'))
   const [po21, po22] = as('u2', '2026-10-14', () => {
@@ -970,13 +970,13 @@ function seed() {
   as('u2', '2026-11-06', () => move('purchase', createPurchase({ supplier: 'GYS0001', type: '备货采购', lines: [{ sku: 'ML0012-HE', qty: 500, price: 18.5 }] }), '提交'))
 
   // 订单 4：PRD 贯穿例子，已审核，等排单、算料
-  const o1 = as('u3', '2026-11-05', () => createOrder({ type: '客户订单', customer: 'KH0001', custNo: 'HD-2027SS-018', due: '2027-03-20', ship: '送客户杭州仓，按色按码装箱', lines: mxLines('27CF001', { KQ: SZ(80, 120, 120, 60, 20), ZQ: SZ(80, 120, 120, 60, 20), HE: SZ(80, 120, 120, 60, 20) }, 365) }))
+  const o1 = as('u3', '2026-11-05', () => createOrder({ type: '自营备货', due: '2027-03-20', ship: '送杭州仓，按色按码装箱', lines: mxLines('27CF001', { KQ: SZ(80, 120, 120, 60, 20), ZQ: SZ(80, 120, 120, 60, 20), HE: SZ(80, 120, 120, 60, 20) }, 365) }))
   as('u3', '2026-11-05', () => submitOrder(o1))
   as('u6', '2026-11-05', () => auditOrder(o1, '2027-03-20'))
   // 订单 5：待审核；订单 6：草稿
-  const o6 = as('u3', '2026-11-06', () => createOrder({ type: '客户订单', customer: 'KH0001', custNo: 'HD-2026W-033', due: '2026-12-20', lines: mxLines('26QW008', { MB: SZ(40, 70, 70, 40, 20), HH: SZ(40, 70, 70, 40, 20) }, 96) }))
+  const o6 = as('u3', '2026-11-06', () => createOrder({ type: '自营备货', due: '2026-12-20', lines: mxLines('26QW008', { MB: SZ(40, 70, 70, 40, 20), HH: SZ(40, 70, 70, 40, 20) }, 96) }))
   as('u3', '2026-11-06', () => submitOrder(o6))
-  as('u3', '2026-11-07', () => createOrder({ type: '翻单', customer: 'KH0002', due: '2026-12-25', lines: mxLines('26QJ012', { HE: SZ(40, 60, 60, 30, 10) }, 210) }))
+  as('u3', '2026-11-07', () => createOrder({ type: '翻单', due: '2026-12-25', lines: mxLines('26QJ012', { HE: SZ(40, 60, 60, 30, 10) }, 210) }))
   as('u5', '2026-11-07', () => createStockDoc({ type: '其他出库', reason: '报废', from: 'WL01', lines: [{ sku: 'FX0002', qty: 5 }] }))
 }
 seed()
@@ -985,7 +985,7 @@ seed()
 function selftest() {
   const out = [], ok = (name, cond, got) => out.push({ name, ok: !!cond, got })
   const err = (fn) => { try { fn(); return '' } catch (e) { return e.message + ' ' + e.list.join('；') } }
-  const o = db.orders.find((x) => x.custNo === 'HD-2027SS-018')
+  const o = db.orders.find((x) => x.due === '2027-03-20' && x.lines.some((l) => l.style === '27CF001'))
   const m = createMrp([o.no])
   const kq = m.rows.find((r) => r.sku === 'ML0012-KQ')
   ok('算料：卡其布毛需求 962', kq.gross === 962, kq.gross)

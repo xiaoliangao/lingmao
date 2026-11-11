@@ -76,7 +76,7 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认。确认以后
 
 ## Git
 
-- GitHub `xiaoliangao/lingmao`，直接提交 main，提交后推送（用户 11-05 定）；不 force push。
+- GitHub `xiaoliangao/lingmao`。改动开分支、提 PR，不直接提交 main（用户 11-11 定，替换 11-05 的"直接提交 main"）；一件事一个分支；不 force push。
 - 提交前缀：「功能:」「页面:」「修复:」「框架:」「部署:」「文档:」。
 - 提交前先看 `git status`：工作区里有用户的改动时，只 `git commit -- <自己的文件>`。
 - **仓库是公开的**。提交前 grep 一遍：服务器地址和端口、密钥、真实账号的密码哈希、甲方的企业名称和联系方式、真实价格和供应商。甲方给的原件和其他私有资料放 `docs/private/`（gitignore）。

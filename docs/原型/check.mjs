@@ -11,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null }
 const shots = opt('--shots'), only = opt('--only')?.split(',')
-const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const CHROME = process.env.CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const out = process.env.OUT || join(here, 'index.html')
@@ -60,5 +60,5 @@ try {
   console.log(bad ? `\n${bad} 项没过` : '\n全部通过')
   process.exitCode = bad ? 1 : 0
 } finally {
-  ws?.close(); chrome.kill(); await sleep(300); rmSync(profile, { recursive: true, force: true })
+  ws?.close(); chrome.kill(); await sleep(300); try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }) } catch { /* Windows 上 Chrome 退出慢，临时目录删不掉不算检查失败 */ }
 }
