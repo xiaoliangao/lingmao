@@ -407,7 +407,7 @@ route('/purchases/:no', {
   template: `<div v-if="po">
     <Head :t="po.no" :back="['采购', '/purchases']">
       <template v-if="po.status === '草稿'"><button class="btn" @click="dlg = 'edit'">编辑</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
-      <template v-if="can('purchase', po, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核</button></template>
+      <template v-if="mayAct('purchase', po, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核</button></template><ApproveWait v-else kind="purchase" :d="po"/>
       <button v-if="canGenContract('purchase', po)" class="btn" @click="dlg = 'contract'">生成合同</button>
       <button v-if="['已审核', '部分到货'].includes(po.status)" class="btn pri" @click="dlg = 'recv'">到货入库</button>
       <More :items="more"/>
@@ -450,6 +450,7 @@ route('/purchases/:no', {
           <dt>到货进度</dt><dd>{{ ['草稿', '待审核'].includes(po.status) ? '—' : progress }}</dd>
           <DocMeta :d="po"/>
         </dl>
+        <ApproveSteps kind="purchase" :d="po"/>
         <DocFiles :doc="po"/>
         <DocContracts kind="purchase" :d="po"/>
         <h4>操作记录</h4><Log :items="po.log"/>

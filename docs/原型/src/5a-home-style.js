@@ -7,12 +7,15 @@
  * ============================================================ */
 
 /* ---------- 首页按当前用户出（PRD §3.2、§6.9.2） ----------
- * 待办看权限和身份：待我审核 = 有这类单据审核权限的角色；跟单、采购只看自己负责的单；管理层看全部。
+ * 待办看权限和身份：待我审核 = 审批流走到的这一级是我（多级审批，2-store.js 的 APPROVE）；跟单、采购只看自己负责的单；管理层看全部。
  * 概况卡片看数据范围（isMine：制单人，或单据上的业务员 / 跟单员 / 采购员 / 设计师是自己） */
 const homeBoss = () => me()?.role === '管理层'
 const homeSees = (d) => !ownOnly() || isMine(d)
 const homeMineOr = (uid) => homeBoss() || uid === db.me
 const homeCanAudit = (m) => auditRoles(m).includes(me()?.role)
+// 轮到我审的单；多级的标出第几级
+const myAudits = (kind, list) => list.filter((d) => canApprove(kind, d))
+const lvSub = (kind, d) => (lvText(kind, d) ? ' · ' + lvText(kind, d) : '')
 // 供应商待审批（准入 + 关键信息改动）：自己提的自己不能批，不进自己的待办；新增风险给有审批权限的人和负责采购员
 const homeSupAudits = () => supToApprove().filter((s) => (s.status === '准入审批中' ? s.applyBy : s.pending?.by) !== db.me)
 const homeSupRisks = () => db.suppliers.filter((s) => s.riskNew && (homeCanAudit('供应商') || homeMineOr(s.buyer)))
@@ -25,10 +28,9 @@ TODOS.push(() => {
   const risk = db.productions.filter((p) => prodLive(p) && homeMineOr(p.merch)).map(prodRisk)
   const my = homeBoss() ? '' : '我跟单的'
   return [
-    a('订单') && { t: '待审核的订单', n: db.orders.filter((o) => o.status === '待审核').length, to: '/orders?s=待审核', i: 'file' },
-    a('订单') && { t: '待审核的变更', n: db.changes.filter((c) => c.status === '待审核').length, to: '/changes', i: 'diff' },
-    a('算料、采购单') && { t: '待审核的采购单', n: db.purchases.filter((p) => p.status === '待审核').length, to: '/purchases?s=待审核', i: 'cart' },
-    a('排单、加工单') && { t: '待审核的加工单', n: db.productions.filter((p) => p.status === '待审核').length, to: '/production?s=待审核', i: 'factory' },
+    ...[['order', db.orders, '订单', '待审核的订单', '/orders?s=待审核', 'file'], ['change', db.changes, '订单', '待审核的变更', '/changes', 'diff'],
+      ['purchase', db.purchases, '算料、采购单', '待审核的采购单', '/purchases?s=待审核', 'cart'], ['production', db.productions, '排单、加工单', '待审核的加工单', '/production?s=待审核', 'factory']]
+      .map(([k, list, m, t, to, i]) => { const n = myAudits(k, list).length; return (a(m) || n > 0) && { t, n, to, i } }),
     a('款式、资料包') && { t: '资料包草稿待生效', n: db.techpacks.filter((t) => t.status === '草稿').length, to: '/styles?tp=草稿', i: 'shirt' },
     a('出入库、库存') && { t: '出入库单待审核', n: db.stockDocs.filter((d) => d.status === '草稿').length, to: '/stock-docs', i: 'swap' },
     a('供应商') && { t: '供应商待审批', n: homeSupAudits().length, to: '/suppliers?f=待审批', i: 'store' },
@@ -90,10 +92,10 @@ route('/', {
     const todo = computed(() => {
       const g = [], a = homeCanAudit
       const audit = [
-        ...(a('订单') ? db.orders.filter((o) => o.status === '待审核').map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}`, to: '/orders/' + o.no, img: orderStyles(o)[0] })) : []),
-        ...(a('订单') ? db.changes.filter((c) => c.status === '待审核').map((c) => ({ t: '变更单 ' + c.no, sub: `订单 ${c.order} · ${describeChange(c)}`, to: '/orders/' + c.order + '?tab=changes', img: order(c.order) && orderStyles(order(c.order))[0] })) : []),
-        ...(a('算料、采购单') ? db.purchases.filter((p) => p.status === '待审核').map((p) => ({ t: '采购单 ' + p.no, sub: `${supName(p.supplier)} · ${fm(poAmt(p))}`, to: '/purchases/' + p.no, img: p.lines[0]?.sku })) : []),
-        ...(a('排单、加工单') ? db.productions.filter((p) => p.status === '待审核').map((p) => ({ t: '加工单 ' + p.no, sub: `${supName(p.factory)} · ${fq(prodQty(p))} 件`, to: '/production/' + p.no, img: p.style })) : []),
+        ...myAudits('order', db.orders).map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}${lvSub('order', o)}`, to: '/orders/' + o.no, img: orderStyles(o)[0] })),
+        ...myAudits('change', db.changes).map((c) => ({ t: '变更单 ' + c.no, sub: `订单 ${c.order} · ${describeChange(c)}`, to: '/orders/' + c.order + '?tab=changes', img: order(c.order) && orderStyles(order(c.order))[0] })),
+        ...myAudits('purchase', db.purchases).map((p) => ({ t: '采购单 ' + p.no, sub: `${supName(p.supplier)} · ${fm(poAmt(p))}${lvSub('purchase', p)}`, to: '/purchases/' + p.no, img: p.lines[0]?.sku })),
+        ...myAudits('production', db.productions).map((p) => ({ t: '加工单 ' + p.no, sub: `${supName(p.factory)} · ${fq(prodQty(p))} 件${lvSub('production', p)}`, to: '/production/' + p.no, img: p.style })),
         ...(a('款式、资料包') ? db.techpacks.filter((t) => t.status === '草稿').map((t) => ({ t: `资料包 ${t.style} V${t.ver}`, sub: `${styleName(t.style)} · 草稿待生效${t.note ? ' · ' + t.note : ''}`, to: '/styles/' + t.style, img: t.style })) : []),
         ...(a('出入库、库存') ? db.stockDocs.filter((x) => x.status === '草稿').map((x) => ({ t: `${x.type} ${x.no}`, sub: `${whName(x.from || x.to)} · ${x.lines.length} 行 · 待审核过账`, to: '/stock-docs/' + x.no, img: x.lines[0]?.sku })) : []),
         ...(a('供应商') ? homeSupAudits().map((s) => (s.status === '准入审批中'

@@ -102,12 +102,15 @@ function procToArchive(p) {
   act(p, `加工单价 ${fm(p.price)} 记进价格档案`)
 }
 RULES.purchase.审核 = auditPurchase
+const checkProdPrice = (p) => { const e = procPriceProblem({ ...p, why: p.priceWhy }, p.date); if (e) fail(e) }
 RULES.production.审核 = (p) => {
-  const e = procPriceProblem({ ...p, why: p.priceWhy }, p.date)
-  if (e) fail(e)
+  checkProdPrice(p)
   auditProduction(p)
   procToArchive(p)
 }
+// 多级审批每一级都先查改价原因（2-store.js 的 APPROVE）
+APPROVE.purchase.check = (p) => checkPoPrices(p.supplier, p.date, p.lines)
+APPROVE.production.check = checkProdPrice
 
 /* ---------- 研发 BOM → 生产 BOM ---------- */
 // 样衣转大货（PRD §6.3.3）：样衣的研发 BOM 挂到新款上（研发 V1，已生效），再复制成生产 BOM V1 草稿

@@ -41,6 +41,7 @@ const db = reactive({
     { id: 'u6', name: '赵启', role: '管理层', dept: '总经办', post: '总经理', company: 'ZJ' },
     { id: 'u7', name: '孙丽', role: '财务', dept: '财务部', post: '会计', company: 'ZJ' },
     { id: 'u8', name: '沈冬', role: '开发', dept: '开发部', post: '版师', company: 'ZJ' },
+    { id: 'u9', name: '何川', role: '管理层', dept: '运营部', post: '运营经理', company: 'ZJ' }, // 主管：日常的单他审第 1 级，金额大的再等总经理
   ],
   // 数据范围挂在角色上（PRD §3.2）：本人 = 只看自己是制单人 / 跟单员 / 采购员的单据
   roles: [

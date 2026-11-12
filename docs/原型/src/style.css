@@ -840,3 +840,14 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
   .mi { position: fixed; right: 0; top: 0; bottom: 0; z-index: 25; box-shadow: var(--shadow); max-width: 100%; }
 }
 @media print { .mi { display: none !important; } }
+/* 多级审批：详情右栏的审批进度、按钮那里的"等谁审" */
+.apv { list-style: none; margin: 0; padding: 0; }
+.apv li { position: relative; display: flex; gap: 10px; padding: 0 0 12px; font-size: 12.5px; }
+.apv li:not(:last-child)::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 0; border-left: 1.5px dashed var(--line-strong); }
+.apv li > i { flex: none; width: 12px; height: 12px; margin-top: 3px; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--bg); }
+.apv li.done > i { border-color: var(--green); background: var(--green); }
+.apv li.cur > i { border-color: var(--amber-line); box-shadow: 0 0 0 3px var(--amber-bg); }
+.apv li div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.apv li small { font-size: 12px; color: var(--fg-2); }
+.wait { display: inline-flex; align-items: center; height: 30px; padding: 0 10px; border: 1px dashed var(--amber-line); border-radius: var(--r); background: var(--amber-bg); color: var(--amber); font-size: 12.5px; white-space: nowrap; }
+.tbl .wait { height: 22px; padding: 0 6px; font-size: 12px; }

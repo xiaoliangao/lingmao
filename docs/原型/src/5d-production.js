@@ -153,7 +153,7 @@ route('/production/:no', {
   template: `<div v-if="x">
     <Head :t="x.no" :back="['加工单', '/production']">
       <template v-if="x.status === '草稿'"><button class="btn" @click="dlg = 'edit'">编辑</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
-      <template v-if="can('production', x, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核下单</button></template>
+      <template v-if="mayAct('production', x, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核下单</button></template><ApproveWait v-else kind="production" :d="x"/>
       <button v-if="canGenContract('production', x)" class="btn" @click="dlg = 'contract'">生成合同</button>
       <template v-if="prodLive(x)"><button class="btn" @click="dlg = 'issueMat'">领料</button><button class="btn" @click="dlg = 'return'">登记回货</button><button class="btn pri" @click="report(null)">报进度</button></template>
       <More :items="more"/>
@@ -223,6 +223,7 @@ route('/production/:no', {
           <dt>条款</dt><dd class="wrap">{{ x.terms || '—' }}</dd>
           <DocMeta :d="x"/>
         </dl>
+        <ApproveSteps kind="production" :d="x"/>
         <DocFiles :doc="x"/>
         <DocContracts kind="production" :d="x"/>
         <h4>操作记录</h4><Log :items="x.log"/>

@@ -67,7 +67,9 @@ async function docAct(kind, d, a, done) {
   if (a === '驳回') { arg = await askText('驳回 ' + (d.no || ''), '写清楚哪里要改，制单人会在操作记录里看到。', '驳回原因'); if (arg == null) return }
   else if (ACT_ASK[a] && !(await ask(a + ' ' + (d.no || ''), ACT_ASK[a][0], a, ACT_ASK[a][1]))) return
   const r = run(() => doAction(kind, d, a, arg))
-  if (r) toast(typeof done === 'function' ? done(r) : done || `${d.no || ''} ${a}了`)
+  // 多级审批没走完：这一级审过了，单据还是待审核
+  if (r && a === '审核' && d.status === '待审核') toast(`${d.no} 这一级审过了，等${lvName(curLevel(kind, d))}审`)
+  else if (r) toast(typeof done === 'function' ? done(r) : done || `${d.no || ''} ${a}了`)
   return r
 }
 const SEARCH = [] // () => [{ t, sub, to, i }]
@@ -344,6 +346,21 @@ comp('Log', {
   props: { items: Array },
   template: `<ul class="log"><li v-for="(x, i) in [...(items || [])].reverse()" :key="i"><span>{{ fd(x.at) }}</span><div>{{ x.who }} {{ x.text }}</div></li><li v-if="!items || !items.length"><div class="dim">还没有记录</div></li></ul>`,
 })
+/* 审批进度（多级审批，PRD §5.1）：待审核的都显示，好知道在等谁；审完了只有多级的留着看 */
+comp('ApproveSteps', {
+  props: { kind: String, d: Object },
+  setup: (p) => ({ flow: computed(() => (p.d.status === '待审核' || p.d.flow?.length > 1 ? flowOf(p.kind, p.d) : [])), cur: computed(() => (p.d.status === '待审核' ? (p.d.approved || []).length : -1)) }),
+  template: `<template v-if="flow.length"><h4>审批</h4>
+    <ol class="apv" data-c="审批进度"><li v-for="(lv, i) in flow" :key="i" :class="{ done: d.approved?.[i], cur: i === cur }"><i></i>
+      <div><b>第 {{ i + 1 }} 级 · {{ lvName(lv) }}</b><small v-if="lv.over" class="dim">金额超过 {{ fm(lv.over) }}</small>
+        <small v-if="d.approved?.[i]">{{ userName(d.approved[i].who) }} {{ fd(d.approved[i].at) }} 审过</small><small v-else-if="i === cur" class="amber">等审批</small></div></li></ol></template>`,
+})
+/* 待审核、但我不是这一级的审批人：按钮那里写在等谁 */
+comp('ApproveWait', {
+  props: { kind: String, d: Object },
+  template: `<span v-if="curLevel(kind, d)" class="wait" data-c="等审批">等{{ lvName(curLevel(kind, d)) }}审<template v-if="lvText(kind, d)">，{{ lvText(kind, d) }}</template></span>`,
+})
+expose({ APPROVE, mayAct, canApprove, curLevel, flowOf, lvName, lvText })
 /* 上游订单变更提示 */
 comp('Upstream', {
   props: { d: Object },

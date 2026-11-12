@@ -483,9 +483,10 @@ Object.assign(db, {
     { m: '进度、异常、回货', v: ['—', '看', '改', '看', '看', '—', '看'] },
     { m: '合同（待排期）', v: ['—', '—', '改', '改', '—', '看', '看'] }, // 跟单出加工合同、采购出采购合同；管理层管模板
   ],
+  // 多级审批（PRD §5.1）：金额超过 over 再加一级；审批人是一个角色（role）或指定的人（user）
   approvalRules: [
-    { doc: '采购单', over: 50000, role: '管理层' },
-    { doc: '加工单', over: 100000, role: '管理层' },
+    { doc: '采购单', over: 50000, user: 'u6' },
+    { doc: '加工单', over: 100000, user: 'u6' },
   ],
   notify: { 站内待办: true, 钉钉: false, 企业微信: false, 飞书: false, 邮件: false },
   notifyEvents: { 待我审核: true, 加工单逾期: true, 节点延期: true, 到料逾期: true, 上游订单变更: true, 证照到期: false },
@@ -504,6 +505,9 @@ const AUDITS = [
 const roleOf = (name) => db.roles.find((r) => r.name === name) || { name, scope: '全部' }
 const scopeOf = (uid) => roleOf(db.users.find((u) => u.id === uid)?.role).scope
 const auditRoles = (m) => { const row = db.perms.find((x) => x.m === m); return ROLES.filter((r, i) => row?.v[i] === '审') }
+// 设置 › 审批的「级数」：单级，或"1–2 级：超过 5 万加赵启"
+const fWan = (v) => (v >= 10000 && v % 1000 === 0 ? v / 10000 + ' 万' : fq(v) + ' 元')
+const levelsText = (t) => { const rs = db.approvalRules.filter((r) => r.doc === t).sort((a, b) => a.over - b.over); return rs.length ? `1–${rs.length + 1} 级：` + rs.map((r) => `超过 ${fWan(r.over)}加${r.user ? userName(r.user) : r.role}`).join('；') : '单级' }
 /* 设计师编号（甲方 11-11 反馈 3）：2 位数字，进款号（FS2611080701 里的 07）。不能重号；进过款号就锁定（db.dnoUsed），
  * 这个人的编号不能再改，这个号也不能给别人（老款号里的 07 永远指这个人）。没进过款号的可以改、可以清空 */
 const dnoLocked = (u) => !!u.dno && db.dnoUsed[u.dno] === u.id
@@ -553,6 +557,13 @@ as('u2', '2026-11-06', () => {
 })
 as('u2', '2026-11-07', () => { const s = sup('GYS0003'); updateSupplier(s, { name: s.name, short: s.short, cats: s.cats, bank: '某银行杭州分行', account: '6222 **** **** 3003' }) })
 
+/* ---------- 种子：多级审批（权限表、审批规则有了才排得出审批流） ---------- */
+// 前面种子里提交的单那时还排不出审批流，这里按提交时的规则补上
+;[['order', db.orders], ['purchase', db.purchases], ['production', db.productions], ['change', db.changes]].forEach(([k, list]) => list.filter((d) => d.status === '待审核').forEach((d) => pinFlow(k, d)))
+// 林舟 11-07 备一批黑色斜纹棉 3000 米（5.55 万，超过 5 万）；何川 11-08 审了第 1 级，等总经理赵启审第 2 级
+as('u2', '2026-11-07', () => { const p = createPurchase({ supplier: 'GYS0001', type: '备货采购', note: '冬季款提前备黑色斜纹棉', lines: [{ sku: 'ML0012-HE', qty: 3000 }] }); doAction('purchase', p, '提交') })
+as('u9', '2026-11-08', () => doAction('purchase', db.purchases[db.purchases.length - 1], '审核'))
+
 SEARCH.push(() => [
   ...db.suppliers.map((s) => ({ t: s.code + ' ' + s.short, sub: '供应商 · ' + s.cats.join('、'), to: '/suppliers/' + s.code, i: 'store' })),
   ...(TRADE ? db.customers : []).map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
@@ -566,7 +577,7 @@ expose({
   matLockReason, updateMaterial, catUsed, matCatUsed, liveCats, liveMatCats, addCategory, addMatCategory, renameCat, removeCat, toggleCat,
   addColor, editColor, sizeGroupUsed, appendSize, removeSize, renameSizeGroup, setBaseSize, removeSizeGroup, liveColors, colorUsed, addSizeGroup, whStock,
   seasonUsed, liveSeasons, addSeason, bigCatOf, bigCatUsed, liveBigCats, addBigCat, dnoLocked, setDesignerNo, saveWarehouse, toggleWarehouse, saveCompany, toggleCompany, addDictValue, removeDictValue,
-  ROLES, AUDITS, auditRoles, cyclePerm, allLogs, factoryWh,
+  ROLES, AUDITS, auditRoles, levelsText, cyclePerm, allLogs, factoryWh,
   SUP_KEY, supGated, supChangeText, approveSupChange, rejectSupChange, withdrawSupChange, supToApprove,
   RISK_LV, riskTone, lastRisk, riskToday, riskNewItems, cnDate, riskCheck, ackRisk, showVal,
 })
@@ -1461,10 +1472,15 @@ route('/settings', {
     const who = ref('')
     const logs = computed(() => allLogs().filter((x) => !who.value || x.who === who.value))
     const permTone = (v) => ({ 看: '', 改: 'blue', 审: 'green' }[v])
-    const addRule = () => db.approvalRules.push({ doc: '采购单', over: 0, role: '管理层' })
+    const addRule = () => db.approvalRules.push({ doc: '采购单', over: 10000, user: 'u6' })
+    // 多级审批：按金额加级的只有订单、采购单、加工单；审批人选人或角色
+    const amtDocs = Object.values(APPROVE).filter((x) => x.amt).map((x) => x.t)
+    const setWho = (r, v) => { if (v.startsWith('u:')) { r.user = v.slice(2); delete r.role } else { r.role = v.slice(2); delete r.user } }
+    // 第 1 级的人个个都能审这一级：他们审第 1 级时这一级一起过了，等于没加
+    const useless = (r) => { const l1 = db.users.filter((u) => auditRoles(APPROVE[approveKind(r.doc)].m).includes(u.role)); return l1.length > 0 && l1.every((u) => (r.user ? r.user === u.id : r.role === u.role)) }
     const JST = ['回货登记后推送聚水潭生成成品入库单，成品库存以聚水潭为准', '双向同步：入库推送聚水潭，出库和库存回写本系统', '暂不对接，两边各自录单']
     const FIN = ['金蝶', '用友', '系统内闭环，不对接']
-    return { tab, who, logs, permTone, addRule, JST, FIN }
+    return { tab, who, logs, permTone, addRule, amtDocs, setWho, useless, JST, FIN }
   },
   template: `<div>
     <Head t="设置"/>
@@ -1495,18 +1511,23 @@ route('/settings', {
       </section>
 
       <section v-if="tab === 'audit'" data-c="审批">
-        <p class="dim tip">谁能审 = 「角色权限」里这个模块是「审」的角色。供应商的准入申请和关键信息改动（全称、信用代码、结算方式、账期、税率、发票类型、开户行、账号）都要另一个有审批权限的人批，不能批自己提的（甲方 11-11）。</p>
-        <Tbl inset flat :rows="AUDITS" :cols="[{ k: 't', t: '单据' }, { k: 'p', t: '权限点', c: 'code' }, { k: 'roles', t: '谁能审', f: a => auditRoles(a.m).join('、') || '—' }, { k: 'lv', t: '级数', f: () => '单级' }, { k: 'n', t: '待审', c: 'num', f: a => a.n() || '—' }]"/>
+        <p class="dim tip">第 1 级谁能审 = 「角色权限」里这个模块是「审」的角色。供应商的准入申请和关键信息改动（全称、信用代码、结算方式、账期、税率、发票类型、开户行、账号）都要另一个有审批权限的人批，不能批自己提的（甲方 11-11）。</p>
+        <Tbl inset flat :rows="AUDITS" :cols="[{ k: 't', t: '单据' }, { k: 'p', t: '权限点', c: 'code' }, { k: 'roles', t: '谁能审', f: a => auditRoles(a.m).join('、') || '—' }, { k: 'lv', t: '级数', f: a => levelsText(a.t) }, { k: 'n', t: '待审', c: 'num', f: a => a.n() || '—' }]"/>
         <div class="sec" data-c="多级审批">
-          <h3>多级审批<span class="pill blue">二期</span><span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
+          <h3>多级审批<span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
+          <p class="dim tip">订单、采购单、加工单金额超过门槛，第 1 级审完还要再加一级；几条规则都超过就按门槛从低到高一级级审。没走完一直是「待审核」，详情右边能看到审到第几级、在等谁。<br>
+            审批流在提交时定下来，这里改了只影响以后提交的单。任何一级驳回都退回草稿，重新提交从第 1 级审起。同一个人连着几级都能审的，审一次都过（总经理自己审了第 1 级，就不用再审第 2 级）。</p>
           <table class="tbl inset flat"><tbody>
             <tr v-for="(r, i) in db.approvalRules" :key="i">
-              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.doc"><option v-for="a in AUDITS" :key="a.t">{{ a.t }}</option></select></td>
-              <td>金额超过 <input class="inp num" style="width:110px;height:26px" type="number" v-model.number="r.over"> 元，再加一级</td>
-              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.role"><option v-for="x in ROLES" :key="x">{{ x }}</option></select></td>
+              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.doc"><option v-for="t in amtDocs" :key="t">{{ t }}</option></select></td>
+              <td>金额超过 <input class="inp num" style="width:110px;height:26px" type="number" v-model.number="r.over"> 元，再加一级，由</td>
+              <td style="width:200px"><select class="sel" style="height:26px;width:100%" :value="r.user ? 'u:' + r.user : 'r:' + r.role" @change="setWho(r, $event.target.value)">
+                <optgroup label="指定的人"><option v-for="u in db.users" :key="u.id" :value="'u:' + u.id">{{ u.name }}（{{ u.post }}）</option></optgroup>
+                <optgroup label="角色：这个角色的人都能审"><option v-for="x in ROLES" :key="x" :value="'r:' + x">{{ x }}</option></optgroup></select></td>
+              <td><span v-if="useless(r)" class="flag amber" title="第 1 级能审的人这一级也都能审，他们审第 1 级时这一级就一起过了">不起作用：第 1 级的人审了就一起过</span><span v-else class="dim">审</span></td>
               <td class="num" style="width:40px"><button class="btn ghost icon sm" @click="db.approvalRules.splice(i, 1)"><Ico n="trash" :s="13"/></button></td>
             </tr>
-            <tr v-if="!db.approvalRules.length"><td colspan="4" class="empty">没有多级规则，所有单据都是单级审核</td></tr>
+            <tr v-if="!db.approvalRules.length"><td colspan="5" class="empty">没有多级规则，所有单据都是单级审核</td></tr>
           </tbody></table>
         </div>
       </section>

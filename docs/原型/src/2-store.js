@@ -64,8 +64,64 @@ const actionsOf = (kind, doc) => Object.keys(FLOWS[kind]).filter((a) => can(kind
 function move(kind, doc, a, note) {
   if (!can(kind, doc, a)) fail(`${doc.no || doc.code || ''} 现在是「${doc.status}」，不能${a}`)
   doc.status = FLOWS[kind][a][1]
+  if (APPROVE[kind]) syncApproval(kind, doc)
   act(doc, a + (note ? '：' + note : ''))
 }
+
+/* ---------- 多级审批（PRD §5.1）----------
+ * 第 1 级 = 「设置 › 角色权限」里这个模块是「审」的角色；金额超过「设置 › 审批」里的门槛，就往后加一级（门槛从低到高），
+ * 每级的审批人是一个角色或指定的一个人。没走完一直是「待审核」，d.approved 记每一级谁、哪天审的。
+ * - 提交时按当时的金额和规则定下要几级、每级谁审（d.flow），之后改规则不影响已经在审的单；第 1 级始终按当前的角色权限
+ * - 同一个人连着几级都能审的，审一次都过（总经理自己审了第 1 级，就不用再等他审第 2 级）
+ * - 任何一级驳回、撤回、反审核都回到草稿，重新提交从第 1 级走
+ * - 每一级都先跑一遍这种单据审核的检查（check），免得前面批了、最后一级才发现过不了 */
+const APPROVE = {
+  order: { t: '订单', m: '订单', amt: (d) => orderAmt(d) },
+  change: { t: '订单变更', m: '订单' },
+  purchase: { t: '采购单', m: '算料、采购单', amt: (d) => poAmt(d) },
+  production: { t: '加工单', m: '排单、加工单', amt: (d) => prodAmt(d) },
+}
+const approveKind = (t) => Object.keys(APPROVE).find((k) => APPROVE[k].t === t)
+// 按现在的规则排出审批流：[{ m }（第 1 级，权限表里有「审」的角色）, { roles | user, over }…]；种子在权限表（7-pages-master.js）之前跑，那时排不出来，第一次用到再排
+function approvalChain(kind, d) {
+  const x = APPROVE[kind]
+  if (!db.perms) return null
+  const amt = x.amt ? x.amt(d) : 0
+  const extra = x.amt ? db.approvalRules.filter((r) => r.doc === x.t && amt > r.over).sort((a, b) => a.over - b.over) : []
+  return [{ m: x.m }, ...extra.map((r) => (r.user ? { user: r.user, over: r.over } : { roles: [r.role], over: r.over }))]
+}
+function syncApproval(kind, d) {
+  if (d.status === '待审核') { d.flow = approvalChain(kind, d); d.approved = [] }
+  else if (['草稿', '已驳回'].includes(d.status)) { d.flow = null; d.approved = []; delete d.commitDraft }
+}
+// 页面上只读；动作里 pinFlow 把它定下来（种子里提交的单第一次审的时候定）
+const flowOf = (kind, d) => d.flow || approvalChain(kind, d) || []
+const pinFlow = (kind, d) => { if (!d.flow) d.flow = approvalChain(kind, d); d.approved ||= [] }
+const lvRoles = (lv) => (lv.m ? auditRoles(lv.m) : lv.roles)   // 第 1 级按当前的角色权限现查，规则加的级在提交时定下
+const lvOk = (lv, uid) => (lv.user ? lv.user === uid : lvRoles(lv).includes(db.users.find((u) => u.id === uid)?.role))
+const lvName = (lv) => (lv.user ? userName(lv.user) : lvRoles(lv).join('、') || '没人（角色权限里没有「审」）')
+const curLevel = (kind, d) => (d.status === '待审核' && APPROVE[kind] ? flowOf(kind, d)[(d.approved || []).length] : null)
+const canApprove = (kind, d, uid = db.me) => { const lv = curLevel(kind, d); return !!lv && lvOk(lv, uid) }
+// "第 2 级（共 2 级）"；单级的不写
+const lvText = (kind, d) => { const n = flowOf(kind, d).length; return n > 1 ? `第 ${(d.approved || []).length + 1} 级（共 ${n} 级）` : '' }
+function checkLevel(kind, d, a) {
+  pinFlow(kind, d)
+  const lv = curLevel(kind, d)
+  if (lv && !lvOk(lv, db.me)) fail(`${d.no} 现在${lvText(kind, d) ? '是' + lvText(kind, d) + '，' : ''}要${lvName(lv)}${a}，${me().name}（${me().role}）不能${a}`)
+}
+function approveStep(kind, d, final, args) {
+  const flow = flowOf(kind, d), from = d.approved.length
+  APPROVE[kind].check?.(d, ...args)
+  let to = from
+  while (to < flow.length && lvOk(flow[to], db.me)) to++
+  for (let i = from; i < to; i++) d.approved.push({ who: db.me, at: clock.today })
+  if (to >= flow.length) return final()
+  APPROVE[kind].hold?.(d, ...args)
+  act(d, `审核：第 ${from + 1}${to - from > 1 ? '–' + to : ''} 级通过（共 ${flow.length} 级），等${lvName(flow[to])}审`)
+  return d
+}
+// 页面上显示哪些按钮：审核、驳回还要是这一级的审批人
+const mayAct = (kind, d, a) => can(kind, d, a) && (!['审核', '驳回'].includes(a) || !curLevel(kind, d) || canApprove(kind, d))
 /* 单据公共动作（PRD §5.1）：驳回要写原因；撤回只有制单人；结案记下从哪个状态结的，取消结案回到那里 */
 const creatorOf = (d) => d.log?.[0]?.who
 const rejectDoc = (kind) => (d, reason) => { if (!reason?.trim()) fail('要写驳回原因，制单人照着改'); move(kind, d, '驳回', reason.trim()) }
@@ -79,7 +135,7 @@ const reopenDoc = (kind, back) => (d) => {
 const docRules = (kind, back) => ({ 驳回: rejectDoc(kind), 撤回: withdrawDoc(kind), 结案: closeDoc(kind), 取消结案: reopenDoc(kind, back) })
 /* 带额外规则的动作；没列在这里的直接 move */
 const RULES = {
-  order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 反审核: unauditOrder },
+  order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 审核: auditOrder, 反审核: unauditOrder },
   purchase: { ...docRules('purchase', (p) => { p.status = '已审核'; refreshPoStatus(p); return p.status }), 反审核: unauditPurchase },
   production: { ...docRules('production', (p) => (prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
   stock: { 审核: postStockDoc, 反审核: unpostStockDoc },
@@ -89,7 +145,10 @@ const RULES = {
 }
 function doAction(kind, doc, a, ...args) {
   const f = RULES[kind]?.[a]
-  return f ? f(doc, ...args) : move(kind, doc, a)
+  const exec = () => (f ? f(doc, ...args) : move(kind, doc, a))
+  if (!APPROVE[kind] || !['审核', '驳回'].includes(a) || doc.status !== '待审核') return exec()
+  checkLevel(kind, doc, a)
+  return a === '审核' ? approveStep(kind, doc, exec, args) : exec()
 }
 
 /* ---------- 供应商 ---------- */
@@ -367,11 +426,17 @@ function submitOrder(o) {
   checkOrderLines(o.lines)
   move('order', o, '提交')
 }
-function auditOrder(o, commit) {
+function checkOrderAudit(o, commit) {
   if (!commit) fail('要填承诺交期')
   const miss = orderStyles(o).filter((c) => !activeTp(c))
   if (miss.length) fail('没有生效的生产 BOM 的款不能审核', miss)
+}
+// 多级审批时前面几级填的承诺交期先记着，后面的人打开审核框就是它
+Object.assign(APPROVE.order, { check: checkOrderAudit, hold: (o, commit) => { o.commitDraft = commit } })
+function auditOrder(o, commit) {
+  checkOrderAudit(o, commit)
   move('order', o, '审核', '承诺交期 ' + commit)
+  delete o.commitDraft
   o.lines.forEach((l) => { l.ver = activeTp(l.style).ver })
   o.commit = commit
 }
@@ -454,6 +519,7 @@ function buildChange(o, f) {
 function createChange(o, f) {
   if (!orderLive(o)) fail('只有已审核的订单才走变更')
   const c = add(db.changes, { no: nextNo('BG'), order: o.no, ...buildChange(o, f), reason: f.reason.trim(), party: f.party || CHANGE_PARTIES[0], fee: f.fee || '', files: f.files || [], date: clock.today, by: db.me, status: '待审核', log: [] })
+  syncApproval('change', c)
   act(c, '提交')
   act(o, '提交变更单 ' + c.no)
   return c
@@ -1287,6 +1353,26 @@ function selftest() {
   ok('合同：作废后能重出，明细展开成表、金额大写', ((c) => c.html.includes('<table') && c.html.includes(rmbUpper(poAmt(po2))) && c.tpl.ver === tpl.ver)(createContract('purchase', po2, tpl.id)))
   ok('金额大写', rmbUpper(12345.6) === '壹万贰仟叁佰肆拾伍元陆角整' && rmbUpper(100010000) === '壹亿零壹万元整' && rmbUpper(1000.05) === '壹仟元零伍分', [rmbUpper(12345.6), rmbUpper(100010000), rmbUpper(1000.05)])
   ok('合同模板：有系统不认识的占位符不让保存，列出是哪几个', ((e) => e.includes('{{乙方传真}}') && e.includes('{{开票抬头}}'))(err(() => importTpl({ kind: '采购合同', name: '自检模板', file: '自检.docx', body: '{{甲方}} {{乙方传真}} {{开票抬头}}' }))))
+  // 多级审批（PRD §5.1）：采购单超过 5 万再加一级，指定总经理赵启（u6）；何川（u9）也是管理层，能审第 1 级
+  const big = db.purchases.find((p) => p.note === '冬季款提前备黑色斜纹棉')
+  ok('多级审批：何川审了第 1 级，5.55 万的采购单还是待审核，轮到赵启', big.status === '待审核' && big.approved.length === 1 && canApprove('purchase', big, 'u6') && !canApprove('purchase', big, 'u9'), [big.status, big.approved])
+  const e9 = as('u9', clock.today, () => err(() => doAction('purchase', big, '审核'))), e5 = as('u5', clock.today, () => err(() => doAction('purchase', big, '驳回', '数量不对')))
+  ok('多级审批：不是这一级的审批人不能审、不能驳回', e9.includes('要赵启审核') && e5.includes('不能驳回'), [e9, e5])
+  as('u6', clock.today, () => doAction('purchase', big, '审核'))
+  ok('多级审批：赵启审完第 2 级才算已审核，两级各记了谁审的', big.status === '已审核' && big.approved.map((x) => x.who).join() === 'u9,u6', big.approved)
+  const bigPo = () => { const p = createPurchase({ supplier: 'GYS0001', type: '备货采购', lines: [{ sku: 'ML0012-HE', qty: 3000 }] }); doAction('purchase', p, '提交'); return p }
+  const p3 = as('u6', clock.today, bigPo)
+  as('u6', clock.today, () => doAction('purchase', p3, '审核'))
+  ok('多级审批：同一个人连着两级都能审，审一次都过', p3.status === '已审核' && p3.approved.length === 2, p3.approved)
+  const p4 = as('u6', clock.today, bigPo)
+  as('u9', clock.today, () => doAction('purchase', p4, '审核'))
+  as('u6', clock.today, () => doAction('purchase', p4, '驳回', '数量再核一下'))
+  ok('多级审批：驳回退回草稿，审过的级清掉，重新提交从第 1 级审', p4.status === '草稿' && !p4.approved.length && as('u6', clock.today, () => { doAction('purchase', p4, '提交'); return p4.approved.length === 0 && p4.flow.length === 2 }))
+  const rule = db.approvalRules.find((r) => r.doc === '采购单'), over0 = rule.over
+  rule.over = 100000
+  ok('多级审批：提交时定下审批流，之后改门槛不影响已经在审的单', flowOf('purchase', p4).length === 2 && approvalChain('purchase', p4).length === 1)
+  rule.over = over0
+  as('u6', clock.today, () => { doAction('purchase', p3, '反审核'); removeDraft(db.purchases, p3); doAction('purchase', p4, '撤回'); removeDraft(db.purchases, p4) })
   return out
 }
 window.SCM = { db, FLOWS, doAction, selftest }

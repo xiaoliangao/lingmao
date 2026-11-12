@@ -196,7 +196,7 @@ route('/orders/:no', {
     <Head :t="o.no" :back="['订单', '/orders']">
       <button v-if="o.status === '草稿'" class="btn" @click="dlg = 'edit'">编辑</button>
       <button v-if="can('order', o, '提交')" class="btn pri" @click="a('提交')">提交审核</button>
-      <template v-if="can('order', o, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="dlg = 'audit'">审核</button></template>
+      <template v-if="mayAct('order', o, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="dlg = 'audit'">审核</button></template><ApproveWait v-else kind="order" :d="o"/>
       <template v-if="orderLive(o)"><button class="btn" @click="openChange()">提变更</button><button class="btn" @click="doMrp">算料</button><button v-if="o.lines.some(l => scheduledQty(o, l) < l.qty)" class="btn pri" @click="dlg = 'schedule'">排单</button></template>
       <More :items="more"/>
     </Head>
@@ -228,7 +228,7 @@ route('/orders/:no', {
             <template #reason="{ r }"><span class="wrap">{{ r.reason }}</span><Pics v-if="r.files && r.files.length" :model-value="r.files" readonly :s="32" :limit="3" style="margin-top:4px"/></template>
             <template #fee="{ r }"><span class="wrap">{{ r.fee || '—' }}</span></template>
             <template #status="{ r }"><span class="row" style="flex-wrap:wrap"><St :s="r.status"/>
-              <template v-if="r.status === '待审核'"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template>
+              <template v-if="mayAct('change', r, '审核')"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template><ApproveWait v-else kind="change" :d="r"/>
               <button v-if="r.status === '已驳回' && orderLive(o)" class="btn sm" @click="openChange(r)">改了再提交</button></span></template>
           </Tbl>
         </section>
@@ -255,6 +255,7 @@ route('/orders/:no', {
             <dt>回货</dt><dd>{{ orderRet(o) }} / {{ orderQty(o) }}</dd>
           </template>
         </dl>
+        <ApproveSteps kind="order" :d="o"/>
         <DocFiles :doc="o"/>
         <h4>操作记录</h4><Log :items="o.log"/>
       </aside>
@@ -272,8 +273,12 @@ comp('OrderAudit', {
   emits: ['close'],
   setup(p, { emit }) {
     const info = computed(() => reviewInfo(p.o))
-    const commit = ref(p.o.due)
-    function ok() { if (run(() => auditOrder(p.o, commit.value))) { emit('close'); toast(`${p.o.no} 已审核，资料包已锁定`) } }
+    const commit = ref(p.o.commitDraft || p.o.due)
+    function ok() {
+      if (!run(() => doAction('order', p.o, '审核', commit.value))) return
+      emit('close')
+      toast(p.o.status === '待审核' ? `${p.o.no} 这一级审过了，等${lvName(curLevel('order', p.o))}审` : `${p.o.no} 已审核，资料包已锁定`)
+    }
     return { info, commit, ok }
   },
   template: `<Modal :t="'审核 ' + o.no" :w="640" @close="$emit('close')">
@@ -416,7 +421,7 @@ route('/changes', {
         { k: 'no', t: '变更单号', c: 'code' }, { k: 'order', t: '订单', c: 'code' }, { k: 'types', t: '类型', f: c => c.types.join('、') }, { k: 'text', t: '改了什么' }, { k: 'reason', t: '原因' },
         { k: 'fee', t: '费用说明', f: c => c.fee || '—' }, { k: 'party', t: '责任方' }, { k: 'by', t: '提交', f: c => userName(c.by) + ' · ' + fd(c.date) }, { k: 'aud', t: '审核', f: c => auditLog(c) ? auditLog(c).who + ' · ' + fd(auditLog(c).at) : '—' }, { k: 'status', t: '状态' }]">
         <template #text="{ r }"><span class="wrap">{{ describeChange(r) }}</span></template>
-        <template #status="{ r }"><span class="row" @click.stop><St :s="r.status"/><template v-if="r.status === '待审核'"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template></span></template>
+        <template #status="{ r }"><span class="row" @click.stop><St :s="r.status"/><template v-if="mayAct('change', r, '审核')"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template><ApproveWait v-else kind="change" :d="r"/></span></template>
       </Tbl>
     </div>
   </div>`,

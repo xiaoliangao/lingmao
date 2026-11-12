@@ -847,6 +847,17 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
   .mi { position: fixed; right: 0; top: 0; bottom: 0; z-index: 25; box-shadow: var(--shadow); max-width: 100%; }
 }
 @media print { .mi { display: none !important; } }
+/* 多级审批：详情右栏的审批进度、按钮那里的"等谁审" */
+.apv { list-style: none; margin: 0; padding: 0; }
+.apv li { position: relative; display: flex; gap: 10px; padding: 0 0 12px; font-size: 12.5px; }
+.apv li:not(:last-child)::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 0; border-left: 1.5px dashed var(--line-strong); }
+.apv li > i { flex: none; width: 12px; height: 12px; margin-top: 3px; border-radius: 50%; border: 2px solid var(--line-strong); background: var(--bg); }
+.apv li.done > i { border-color: var(--green); background: var(--green); }
+.apv li.cur > i { border-color: var(--amber-line); box-shadow: 0 0 0 3px var(--amber-bg); }
+.apv li div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.apv li small { font-size: 12px; color: var(--fg-2); }
+.wait { display: inline-flex; align-items: center; height: 30px; padding: 0 10px; border: 1px dashed var(--amber-line); border-radius: var(--r); background: var(--amber-bg); color: var(--amber); font-size: 12.5px; white-space: nowrap; }
+.tbl .wait { height: 22px; padding: 0 6px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -907,6 +918,7 @@ const db = reactive({
     { id: 'u6', name: '赵启', role: '管理层', dept: '总经办', post: '总经理', company: 'ZJ' },
     { id: 'u7', name: '孙丽', role: '财务', dept: '财务部', post: '会计', company: 'ZJ' },
     { id: 'u8', name: '沈冬', role: '开发', dept: '开发部', post: '版师', company: 'ZJ' },
+    { id: 'u9', name: '何川', role: '管理层', dept: '运营部', post: '运营经理', company: 'ZJ' }, // 主管：日常的单他审第 1 级，金额大的再等总经理
   ],
   // 数据范围挂在角色上（PRD §3.2）：本人 = 只看自己是制单人 / 跟单员 / 采购员的单据
   roles: [
@@ -1150,8 +1162,64 @@ const actionsOf = (kind, doc) => Object.keys(FLOWS[kind]).filter((a) => can(kind
 function move(kind, doc, a, note) {
   if (!can(kind, doc, a)) fail(`${doc.no || doc.code || ''} 现在是「${doc.status}」，不能${a}`)
   doc.status = FLOWS[kind][a][1]
+  if (APPROVE[kind]) syncApproval(kind, doc)
   act(doc, a + (note ? '：' + note : ''))
 }
+
+/* ---------- 多级审批（PRD §5.1）----------
+ * 第 1 级 = 「设置 › 角色权限」里这个模块是「审」的角色；金额超过「设置 › 审批」里的门槛，就往后加一级（门槛从低到高），
+ * 每级的审批人是一个角色或指定的一个人。没走完一直是「待审核」，d.approved 记每一级谁、哪天审的。
+ * - 提交时按当时的金额和规则定下要几级、每级谁审（d.flow），之后改规则不影响已经在审的单；第 1 级始终按当前的角色权限
+ * - 同一个人连着几级都能审的，审一次都过（总经理自己审了第 1 级，就不用再等他审第 2 级）
+ * - 任何一级驳回、撤回、反审核都回到草稿，重新提交从第 1 级走
+ * - 每一级都先跑一遍这种单据审核的检查（check），免得前面批了、最后一级才发现过不了 */
+const APPROVE = {
+  order: { t: '订单', m: '订单', amt: (d) => orderAmt(d) },
+  change: { t: '订单变更', m: '订单' },
+  purchase: { t: '采购单', m: '算料、采购单', amt: (d) => poAmt(d) },
+  production: { t: '加工单', m: '排单、加工单', amt: (d) => prodAmt(d) },
+}
+const approveKind = (t) => Object.keys(APPROVE).find((k) => APPROVE[k].t === t)
+// 按现在的规则排出审批流：[{ m }（第 1 级，权限表里有「审」的角色）, { roles | user, over }…]；种子在权限表（7-pages-master.js）之前跑，那时排不出来，第一次用到再排
+function approvalChain(kind, d) {
+  const x = APPROVE[kind]
+  if (!db.perms) return null
+  const amt = x.amt ? x.amt(d) : 0
+  const extra = x.amt ? db.approvalRules.filter((r) => r.doc === x.t && amt > r.over).sort((a, b) => a.over - b.over) : []
+  return [{ m: x.m }, ...extra.map((r) => (r.user ? { user: r.user, over: r.over } : { roles: [r.role], over: r.over }))]
+}
+function syncApproval(kind, d) {
+  if (d.status === '待审核') { d.flow = approvalChain(kind, d); d.approved = [] }
+  else if (['草稿', '已驳回'].includes(d.status)) { d.flow = null; d.approved = []; delete d.commitDraft }
+}
+// 页面上只读；动作里 pinFlow 把它定下来（种子里提交的单第一次审的时候定）
+const flowOf = (kind, d) => d.flow || approvalChain(kind, d) || []
+const pinFlow = (kind, d) => { if (!d.flow) d.flow = approvalChain(kind, d); d.approved ||= [] }
+const lvRoles = (lv) => (lv.m ? auditRoles(lv.m) : lv.roles)   // 第 1 级按当前的角色权限现查，规则加的级在提交时定下
+const lvOk = (lv, uid) => (lv.user ? lv.user === uid : lvRoles(lv).includes(db.users.find((u) => u.id === uid)?.role))
+const lvName = (lv) => (lv.user ? userName(lv.user) : lvRoles(lv).join('、') || '没人（角色权限里没有「审」）')
+const curLevel = (kind, d) => (d.status === '待审核' && APPROVE[kind] ? flowOf(kind, d)[(d.approved || []).length] : null)
+const canApprove = (kind, d, uid = db.me) => { const lv = curLevel(kind, d); return !!lv && lvOk(lv, uid) }
+// "第 2 级（共 2 级）"；单级的不写
+const lvText = (kind, d) => { const n = flowOf(kind, d).length; return n > 1 ? `第 ${(d.approved || []).length + 1} 级（共 ${n} 级）` : '' }
+function checkLevel(kind, d, a) {
+  pinFlow(kind, d)
+  const lv = curLevel(kind, d)
+  if (lv && !lvOk(lv, db.me)) fail(`${d.no} 现在${lvText(kind, d) ? '是' + lvText(kind, d) + '，' : ''}要${lvName(lv)}${a}，${me().name}（${me().role}）不能${a}`)
+}
+function approveStep(kind, d, final, args) {
+  const flow = flowOf(kind, d), from = d.approved.length
+  APPROVE[kind].check?.(d, ...args)
+  let to = from
+  while (to < flow.length && lvOk(flow[to], db.me)) to++
+  for (let i = from; i < to; i++) d.approved.push({ who: db.me, at: clock.today })
+  if (to >= flow.length) return final()
+  APPROVE[kind].hold?.(d, ...args)
+  act(d, `审核：第 ${from + 1}${to - from > 1 ? '–' + to : ''} 级通过（共 ${flow.length} 级），等${lvName(flow[to])}审`)
+  return d
+}
+// 页面上显示哪些按钮：审核、驳回还要是这一级的审批人
+const mayAct = (kind, d, a) => can(kind, d, a) && (!['审核', '驳回'].includes(a) || !curLevel(kind, d) || canApprove(kind, d))
 /* 单据公共动作（PRD §5.1）：驳回要写原因；撤回只有制单人；结案记下从哪个状态结的，取消结案回到那里 */
 const creatorOf = (d) => d.log?.[0]?.who
 const rejectDoc = (kind) => (d, reason) => { if (!reason?.trim()) fail('要写驳回原因，制单人照着改'); move(kind, d, '驳回', reason.trim()) }
@@ -1165,7 +1233,7 @@ const reopenDoc = (kind, back) => (d) => {
 const docRules = (kind, back) => ({ 驳回: rejectDoc(kind), 撤回: withdrawDoc(kind), 结案: closeDoc(kind), 取消结案: reopenDoc(kind, back) })
 /* 带额外规则的动作；没列在这里的直接 move */
 const RULES = {
-  order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 反审核: unauditOrder },
+  order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 审核: auditOrder, 反审核: unauditOrder },
   purchase: { ...docRules('purchase', (p) => { p.status = '已审核'; refreshPoStatus(p); return p.status }), 反审核: unauditPurchase },
   production: { ...docRules('production', (p) => (prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
   stock: { 审核: postStockDoc, 反审核: unpostStockDoc },
@@ -1175,7 +1243,10 @@ const RULES = {
 }
 function doAction(kind, doc, a, ...args) {
   const f = RULES[kind]?.[a]
-  return f ? f(doc, ...args) : move(kind, doc, a)
+  const exec = () => (f ? f(doc, ...args) : move(kind, doc, a))
+  if (!APPROVE[kind] || !['审核', '驳回'].includes(a) || doc.status !== '待审核') return exec()
+  checkLevel(kind, doc, a)
+  return a === '审核' ? approveStep(kind, doc, exec, args) : exec()
 }
 
 /* ---------- 供应商 ---------- */
@@ -1453,11 +1524,17 @@ function submitOrder(o) {
   checkOrderLines(o.lines)
   move('order', o, '提交')
 }
-function auditOrder(o, commit) {
+function checkOrderAudit(o, commit) {
   if (!commit) fail('要填承诺交期')
   const miss = orderStyles(o).filter((c) => !activeTp(c))
   if (miss.length) fail('没有生效的生产 BOM 的款不能审核', miss)
+}
+// 多级审批时前面几级填的承诺交期先记着，后面的人打开审核框就是它
+Object.assign(APPROVE.order, { check: checkOrderAudit, hold: (o, commit) => { o.commitDraft = commit } })
+function auditOrder(o, commit) {
+  checkOrderAudit(o, commit)
   move('order', o, '审核', '承诺交期 ' + commit)
+  delete o.commitDraft
   o.lines.forEach((l) => { l.ver = activeTp(l.style).ver })
   o.commit = commit
 }
@@ -1540,6 +1617,7 @@ function buildChange(o, f) {
 function createChange(o, f) {
   if (!orderLive(o)) fail('只有已审核的订单才走变更')
   const c = add(db.changes, { no: nextNo('BG'), order: o.no, ...buildChange(o, f), reason: f.reason.trim(), party: f.party || CHANGE_PARTIES[0], fee: f.fee || '', files: f.files || [], date: clock.today, by: db.me, status: '待审核', log: [] })
+  syncApproval('change', c)
   act(c, '提交')
   act(o, '提交变更单 ' + c.no)
   return c
@@ -2373,6 +2451,26 @@ function selftest() {
   ok('合同：作废后能重出，明细展开成表、金额大写', ((c) => c.html.includes('<table') && c.html.includes(rmbUpper(poAmt(po2))) && c.tpl.ver === tpl.ver)(createContract('purchase', po2, tpl.id)))
   ok('金额大写', rmbUpper(12345.6) === '壹万贰仟叁佰肆拾伍元陆角整' && rmbUpper(100010000) === '壹亿零壹万元整' && rmbUpper(1000.05) === '壹仟元零伍分', [rmbUpper(12345.6), rmbUpper(100010000), rmbUpper(1000.05)])
   ok('合同模板：有系统不认识的占位符不让保存，列出是哪几个', ((e) => e.includes('{{乙方传真}}') && e.includes('{{开票抬头}}'))(err(() => importTpl({ kind: '采购合同', name: '自检模板', file: '自检.docx', body: '{{甲方}} {{乙方传真}} {{开票抬头}}' }))))
+  // 多级审批（PRD §5.1）：采购单超过 5 万再加一级，指定总经理赵启（u6）；何川（u9）也是管理层，能审第 1 级
+  const big = db.purchases.find((p) => p.note === '冬季款提前备黑色斜纹棉')
+  ok('多级审批：何川审了第 1 级，5.55 万的采购单还是待审核，轮到赵启', big.status === '待审核' && big.approved.length === 1 && canApprove('purchase', big, 'u6') && !canApprove('purchase', big, 'u9'), [big.status, big.approved])
+  const e9 = as('u9', clock.today, () => err(() => doAction('purchase', big, '审核'))), e5 = as('u5', clock.today, () => err(() => doAction('purchase', big, '驳回', '数量不对')))
+  ok('多级审批：不是这一级的审批人不能审、不能驳回', e9.includes('要赵启审核') && e5.includes('不能驳回'), [e9, e5])
+  as('u6', clock.today, () => doAction('purchase', big, '审核'))
+  ok('多级审批：赵启审完第 2 级才算已审核，两级各记了谁审的', big.status === '已审核' && big.approved.map((x) => x.who).join() === 'u9,u6', big.approved)
+  const bigPo = () => { const p = createPurchase({ supplier: 'GYS0001', type: '备货采购', lines: [{ sku: 'ML0012-HE', qty: 3000 }] }); doAction('purchase', p, '提交'); return p }
+  const p3 = as('u6', clock.today, bigPo)
+  as('u6', clock.today, () => doAction('purchase', p3, '审核'))
+  ok('多级审批：同一个人连着两级都能审，审一次都过', p3.status === '已审核' && p3.approved.length === 2, p3.approved)
+  const p4 = as('u6', clock.today, bigPo)
+  as('u9', clock.today, () => doAction('purchase', p4, '审核'))
+  as('u6', clock.today, () => doAction('purchase', p4, '驳回', '数量再核一下'))
+  ok('多级审批：驳回退回草稿，审过的级清掉，重新提交从第 1 级审', p4.status === '草稿' && !p4.approved.length && as('u6', clock.today, () => { doAction('purchase', p4, '提交'); return p4.approved.length === 0 && p4.flow.length === 2 }))
+  const rule = db.approvalRules.find((r) => r.doc === '采购单'), over0 = rule.over
+  rule.over = 100000
+  ok('多级审批：提交时定下审批流，之后改门槛不影响已经在审的单', flowOf('purchase', p4).length === 2 && approvalChain('purchase', p4).length === 1)
+  rule.over = over0
+  as('u6', clock.today, () => { doAction('purchase', p3, '反审核'); removeDraft(db.purchases, p3); doAction('purchase', p4, '撤回'); removeDraft(db.purchases, p4) })
   return out
 }
 window.SCM = { db, FLOWS, doAction, selftest }
@@ -2447,7 +2545,9 @@ async function docAct(kind, d, a, done) {
   if (a === '驳回') { arg = await askText('驳回 ' + (d.no || ''), '写清楚哪里要改，制单人会在操作记录里看到。', '驳回原因'); if (arg == null) return }
   else if (ACT_ASK[a] && !(await ask(a + ' ' + (d.no || ''), ACT_ASK[a][0], a, ACT_ASK[a][1]))) return
   const r = run(() => doAction(kind, d, a, arg))
-  if (r) toast(typeof done === 'function' ? done(r) : done || `${d.no || ''} ${a}了`)
+  // 多级审批没走完：这一级审过了，单据还是待审核
+  if (r && a === '审核' && d.status === '待审核') toast(`${d.no} 这一级审过了，等${lvName(curLevel(kind, d))}审`)
+  else if (r) toast(typeof done === 'function' ? done(r) : done || `${d.no || ''} ${a}了`)
   return r
 }
 const SEARCH = [] // () => [{ t, sub, to, i }]
@@ -2724,6 +2824,21 @@ comp('Log', {
   props: { items: Array },
   template: `<ul class="log"><li v-for="(x, i) in [...(items || [])].reverse()" :key="i"><span>{{ fd(x.at) }}</span><div>{{ x.who }} {{ x.text }}</div></li><li v-if="!items || !items.length"><div class="dim">还没有记录</div></li></ul>`,
 })
+/* 审批进度（多级审批，PRD §5.1）：待审核的都显示，好知道在等谁；审完了只有多级的留着看 */
+comp('ApproveSteps', {
+  props: { kind: String, d: Object },
+  setup: (p) => ({ flow: computed(() => (p.d.status === '待审核' || p.d.flow?.length > 1 ? flowOf(p.kind, p.d) : [])), cur: computed(() => (p.d.status === '待审核' ? (p.d.approved || []).length : -1)) }),
+  template: `<template v-if="flow.length"><h4>审批</h4>
+    <ol class="apv" data-c="审批进度"><li v-for="(lv, i) in flow" :key="i" :class="{ done: d.approved?.[i], cur: i === cur }"><i></i>
+      <div><b>第 {{ i + 1 }} 级 · {{ lvName(lv) }}</b><small v-if="lv.over" class="dim">金额超过 {{ fm(lv.over) }}</small>
+        <small v-if="d.approved?.[i]">{{ userName(d.approved[i].who) }} {{ fd(d.approved[i].at) }} 审过</small><small v-else-if="i === cur" class="amber">等审批</small></div></li></ol></template>`,
+})
+/* 待审核、但我不是这一级的审批人：按钮那里写在等谁 */
+comp('ApproveWait', {
+  props: { kind: String, d: Object },
+  template: `<span v-if="curLevel(kind, d)" class="wait" data-c="等审批">等{{ lvName(curLevel(kind, d)) }}审<template v-if="lvText(kind, d)">，{{ lvText(kind, d) }}</template></span>`,
+})
+expose({ APPROVE, mayAct, canApprove, curLevel, flowOf, lvName, lvText })
 /* 上游订单变更提示 */
 comp('Upstream', {
   props: { d: Object },
@@ -3871,12 +3986,15 @@ route('/feedback', {
  * ============================================================ */
 
 /* ---------- 首页按当前用户出（PRD §3.2、§6.9.2） ----------
- * 待办看权限和身份：待我审核 = 有这类单据审核权限的角色；跟单、采购只看自己负责的单；管理层看全部。
+ * 待办看权限和身份：待我审核 = 审批流走到的这一级是我（多级审批，2-store.js 的 APPROVE）；跟单、采购只看自己负责的单；管理层看全部。
  * 概况卡片看数据范围（isMine：制单人，或单据上的业务员 / 跟单员 / 采购员 / 设计师是自己） */
 const homeBoss = () => me()?.role === '管理层'
 const homeSees = (d) => !ownOnly() || isMine(d)
 const homeMineOr = (uid) => homeBoss() || uid === db.me
 const homeCanAudit = (m) => auditRoles(m).includes(me()?.role)
+// 轮到我审的单；多级的标出第几级
+const myAudits = (kind, list) => list.filter((d) => canApprove(kind, d))
+const lvSub = (kind, d) => (lvText(kind, d) ? ' · ' + lvText(kind, d) : '')
 // 供应商待审批（准入 + 关键信息改动）：自己提的自己不能批，不进自己的待办；新增风险给有审批权限的人和负责采购员
 const homeSupAudits = () => supToApprove().filter((s) => (s.status === '准入审批中' ? s.applyBy : s.pending?.by) !== db.me)
 const homeSupRisks = () => db.suppliers.filter((s) => s.riskNew && (homeCanAudit('供应商') || homeMineOr(s.buyer)))
@@ -3889,10 +4007,9 @@ TODOS.push(() => {
   const risk = db.productions.filter((p) => prodLive(p) && homeMineOr(p.merch)).map(prodRisk)
   const my = homeBoss() ? '' : '我跟单的'
   return [
-    a('订单') && { t: '待审核的订单', n: db.orders.filter((o) => o.status === '待审核').length, to: '/orders?s=待审核', i: 'file' },
-    a('订单') && { t: '待审核的变更', n: db.changes.filter((c) => c.status === '待审核').length, to: '/changes', i: 'diff' },
-    a('算料、采购单') && { t: '待审核的采购单', n: db.purchases.filter((p) => p.status === '待审核').length, to: '/purchases?s=待审核', i: 'cart' },
-    a('排单、加工单') && { t: '待审核的加工单', n: db.productions.filter((p) => p.status === '待审核').length, to: '/production?s=待审核', i: 'factory' },
+    ...[['order', db.orders, '订单', '待审核的订单', '/orders?s=待审核', 'file'], ['change', db.changes, '订单', '待审核的变更', '/changes', 'diff'],
+      ['purchase', db.purchases, '算料、采购单', '待审核的采购单', '/purchases?s=待审核', 'cart'], ['production', db.productions, '排单、加工单', '待审核的加工单', '/production?s=待审核', 'factory']]
+      .map(([k, list, m, t, to, i]) => { const n = myAudits(k, list).length; return (a(m) || n > 0) && { t, n, to, i } }),
     a('款式、资料包') && { t: '资料包草稿待生效', n: db.techpacks.filter((t) => t.status === '草稿').length, to: '/styles?tp=草稿', i: 'shirt' },
     a('出入库、库存') && { t: '出入库单待审核', n: db.stockDocs.filter((d) => d.status === '草稿').length, to: '/stock-docs', i: 'swap' },
     a('供应商') && { t: '供应商待审批', n: homeSupAudits().length, to: '/suppliers?f=待审批', i: 'store' },
@@ -3954,10 +4071,10 @@ route('/', {
     const todo = computed(() => {
       const g = [], a = homeCanAudit
       const audit = [
-        ...(a('订单') ? db.orders.filter((o) => o.status === '待审核').map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}`, to: '/orders/' + o.no, img: orderStyles(o)[0] })) : []),
-        ...(a('订单') ? db.changes.filter((c) => c.status === '待审核').map((c) => ({ t: '变更单 ' + c.no, sub: `订单 ${c.order} · ${describeChange(c)}`, to: '/orders/' + c.order + '?tab=changes', img: order(c.order) && orderStyles(order(c.order))[0] })) : []),
-        ...(a('算料、采购单') ? db.purchases.filter((p) => p.status === '待审核').map((p) => ({ t: '采购单 ' + p.no, sub: `${supName(p.supplier)} · ${fm(poAmt(p))}`, to: '/purchases/' + p.no, img: p.lines[0]?.sku })) : []),
-        ...(a('排单、加工单') ? db.productions.filter((p) => p.status === '待审核').map((p) => ({ t: '加工单 ' + p.no, sub: `${supName(p.factory)} · ${fq(prodQty(p))} 件`, to: '/production/' + p.no, img: p.style })) : []),
+        ...myAudits('order', db.orders).map((o) => ({ t: '订单 ' + o.no, sub: `${custOrDash(o)} · ${fq(orderQty(o))} 件 · 交期 ${o.due}${lvSub('order', o)}`, to: '/orders/' + o.no, img: orderStyles(o)[0] })),
+        ...myAudits('change', db.changes).map((c) => ({ t: '变更单 ' + c.no, sub: `订单 ${c.order} · ${describeChange(c)}`, to: '/orders/' + c.order + '?tab=changes', img: order(c.order) && orderStyles(order(c.order))[0] })),
+        ...myAudits('purchase', db.purchases).map((p) => ({ t: '采购单 ' + p.no, sub: `${supName(p.supplier)} · ${fm(poAmt(p))}${lvSub('purchase', p)}`, to: '/purchases/' + p.no, img: p.lines[0]?.sku })),
+        ...myAudits('production', db.productions).map((p) => ({ t: '加工单 ' + p.no, sub: `${supName(p.factory)} · ${fq(prodQty(p))} 件${lvSub('production', p)}`, to: '/production/' + p.no, img: p.style })),
         ...(a('款式、资料包') ? db.techpacks.filter((t) => t.status === '草稿').map((t) => ({ t: `资料包 ${t.style} V${t.ver}`, sub: `${styleName(t.style)} · 草稿待生效${t.note ? ' · ' + t.note : ''}`, to: '/styles/' + t.style, img: t.style })) : []),
         ...(a('出入库、库存') ? db.stockDocs.filter((x) => x.status === '草稿').map((x) => ({ t: `${x.type} ${x.no}`, sub: `${whName(x.from || x.to)} · ${x.lines.length} 行 · 待审核过账`, to: '/stock-docs/' + x.no, img: x.lines[0]?.sku })) : []),
         ...(a('供应商') ? homeSupAudits().map((s) => (s.status === '准入审批中'
@@ -5064,7 +5181,7 @@ route('/orders/:no', {
     <Head :t="o.no" :back="['订单', '/orders']">
       <button v-if="o.status === '草稿'" class="btn" @click="dlg = 'edit'">编辑</button>
       <button v-if="can('order', o, '提交')" class="btn pri" @click="a('提交')">提交审核</button>
-      <template v-if="can('order', o, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="dlg = 'audit'">审核</button></template>
+      <template v-if="mayAct('order', o, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="dlg = 'audit'">审核</button></template><ApproveWait v-else kind="order" :d="o"/>
       <template v-if="orderLive(o)"><button class="btn" @click="openChange()">提变更</button><button class="btn" @click="doMrp">算料</button><button v-if="o.lines.some(l => scheduledQty(o, l) < l.qty)" class="btn pri" @click="dlg = 'schedule'">排单</button></template>
       <More :items="more"/>
     </Head>
@@ -5096,7 +5213,7 @@ route('/orders/:no', {
             <template #reason="{ r }"><span class="wrap">{{ r.reason }}</span><Pics v-if="r.files && r.files.length" :model-value="r.files" readonly :s="32" :limit="3" style="margin-top:4px"/></template>
             <template #fee="{ r }"><span class="wrap">{{ r.fee || '—' }}</span></template>
             <template #status="{ r }"><span class="row" style="flex-wrap:wrap"><St :s="r.status"/>
-              <template v-if="r.status === '待审核'"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template>
+              <template v-if="mayAct('change', r, '审核')"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template><ApproveWait v-else kind="change" :d="r"/>
               <button v-if="r.status === '已驳回' && orderLive(o)" class="btn sm" @click="openChange(r)">改了再提交</button></span></template>
           </Tbl>
         </section>
@@ -5123,6 +5240,7 @@ route('/orders/:no', {
             <dt>回货</dt><dd>{{ orderRet(o) }} / {{ orderQty(o) }}</dd>
           </template>
         </dl>
+        <ApproveSteps kind="order" :d="o"/>
         <DocFiles :doc="o"/>
         <h4>操作记录</h4><Log :items="o.log"/>
       </aside>
@@ -5140,8 +5258,12 @@ comp('OrderAudit', {
   emits: ['close'],
   setup(p, { emit }) {
     const info = computed(() => reviewInfo(p.o))
-    const commit = ref(p.o.due)
-    function ok() { if (run(() => auditOrder(p.o, commit.value))) { emit('close'); toast(`${p.o.no} 已审核，资料包已锁定`) } }
+    const commit = ref(p.o.commitDraft || p.o.due)
+    function ok() {
+      if (!run(() => doAction('order', p.o, '审核', commit.value))) return
+      emit('close')
+      toast(p.o.status === '待审核' ? `${p.o.no} 这一级审过了，等${lvName(curLevel('order', p.o))}审` : `${p.o.no} 已审核，资料包已锁定`)
+    }
     return { info, commit, ok }
   },
   template: `<Modal :t="'审核 ' + o.no" :w="640" @close="$emit('close')">
@@ -5284,7 +5406,7 @@ route('/changes', {
         { k: 'no', t: '变更单号', c: 'code' }, { k: 'order', t: '订单', c: 'code' }, { k: 'types', t: '类型', f: c => c.types.join('、') }, { k: 'text', t: '改了什么' }, { k: 'reason', t: '原因' },
         { k: 'fee', t: '费用说明', f: c => c.fee || '—' }, { k: 'party', t: '责任方' }, { k: 'by', t: '提交', f: c => userName(c.by) + ' · ' + fd(c.date) }, { k: 'aud', t: '审核', f: c => auditLog(c) ? auditLog(c).who + ' · ' + fd(auditLog(c).at) : '—' }, { k: 'status', t: '状态' }]">
         <template #text="{ r }"><span class="wrap">{{ describeChange(r) }}</span></template>
-        <template #status="{ r }"><span class="row" @click.stop><St :s="r.status"/><template v-if="r.status === '待审核'"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template></span></template>
+        <template #status="{ r }"><span class="row" @click.stop><St :s="r.status"/><template v-if="mayAct('change', r, '审核')"><button class="btn sm" @click="docAct('change', r, '驳回')">驳回</button><button class="btn sm pri" @click="docAct('change', r, '审核', '变更已写回订单，下游单据已提示')">审核</button></template><ApproveWait v-else kind="change" :d="r"/></span></template>
       </Tbl>
     </div>
   </div>`,
@@ -5761,7 +5883,7 @@ route('/purchases/:no', {
   template: `<div v-if="po">
     <Head :t="po.no" :back="['采购', '/purchases']">
       <template v-if="po.status === '草稿'"><button class="btn" @click="dlg = 'edit'">编辑</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
-      <template v-if="can('purchase', po, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核</button></template>
+      <template v-if="mayAct('purchase', po, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核</button></template><ApproveWait v-else kind="purchase" :d="po"/>
       <button v-if="canGenContract('purchase', po)" class="btn" @click="dlg = 'contract'">生成合同</button>
       <button v-if="['已审核', '部分到货'].includes(po.status)" class="btn pri" @click="dlg = 'recv'">到货入库</button>
       <More :items="more"/>
@@ -5804,6 +5926,7 @@ route('/purchases/:no', {
           <dt>到货进度</dt><dd>{{ ['草稿', '待审核'].includes(po.status) ? '—' : progress }}</dd>
           <DocMeta :d="po"/>
         </dl>
+        <ApproveSteps kind="purchase" :d="po"/>
         <DocFiles :doc="po"/>
         <DocContracts kind="purchase" :d="po"/>
         <h4>操作记录</h4><Log :items="po.log"/>
@@ -6348,7 +6471,7 @@ route('/production/:no', {
   template: `<div v-if="x">
     <Head :t="x.no" :back="['加工单', '/production']">
       <template v-if="x.status === '草稿'"><button class="btn" @click="dlg = 'edit'">编辑</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
-      <template v-if="can('production', x, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核下单</button></template>
+      <template v-if="mayAct('production', x, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核下单</button></template><ApproveWait v-else kind="production" :d="x"/>
       <button v-if="canGenContract('production', x)" class="btn" @click="dlg = 'contract'">生成合同</button>
       <template v-if="prodLive(x)"><button class="btn" @click="dlg = 'issueMat'">领料</button><button class="btn" @click="dlg = 'return'">登记回货</button><button class="btn pri" @click="report(null)">报进度</button></template>
       <More :items="more"/>
@@ -6418,6 +6541,7 @@ route('/production/:no', {
           <dt>条款</dt><dd class="wrap">{{ x.terms || '—' }}</dd>
           <DocMeta :d="x"/>
         </dl>
+        <ApproveSteps kind="production" :d="x"/>
         <DocFiles :doc="x"/>
         <DocContracts kind="production" :d="x"/>
         <h4>操作记录</h4><Log :items="x.log"/>
@@ -6840,12 +6964,15 @@ function procToArchive(p) {
   act(p, `加工单价 ${fm(p.price)} 记进价格档案`)
 }
 RULES.purchase.审核 = auditPurchase
+const checkProdPrice = (p) => { const e = procPriceProblem({ ...p, why: p.priceWhy }, p.date); if (e) fail(e) }
 RULES.production.审核 = (p) => {
-  const e = procPriceProblem({ ...p, why: p.priceWhy }, p.date)
-  if (e) fail(e)
+  checkProdPrice(p)
   auditProduction(p)
   procToArchive(p)
 }
+// 多级审批每一级都先查改价原因（2-store.js 的 APPROVE）
+APPROVE.purchase.check = (p) => checkPoPrices(p.supplier, p.date, p.lines)
+APPROVE.production.check = checkProdPrice
 
 /* ---------- 研发 BOM → 生产 BOM ---------- */
 // 样衣转大货（PRD §6.3.3）：样衣的研发 BOM 挂到新款上（研发 V1，已生效），再复制成生产 BOM V1 草稿
@@ -8963,9 +9090,10 @@ Object.assign(db, {
     { m: '进度、异常、回货', v: ['—', '看', '改', '看', '看', '—', '看'] },
     { m: '合同（待排期）', v: ['—', '—', '改', '改', '—', '看', '看'] }, // 跟单出加工合同、采购出采购合同；管理层管模板
   ],
+  // 多级审批（PRD §5.1）：金额超过 over 再加一级；审批人是一个角色（role）或指定的人（user）
   approvalRules: [
-    { doc: '采购单', over: 50000, role: '管理层' },
-    { doc: '加工单', over: 100000, role: '管理层' },
+    { doc: '采购单', over: 50000, user: 'u6' },
+    { doc: '加工单', over: 100000, user: 'u6' },
   ],
   notify: { 站内待办: true, 钉钉: false, 企业微信: false, 飞书: false, 邮件: false },
   notifyEvents: { 待我审核: true, 加工单逾期: true, 节点延期: true, 到料逾期: true, 上游订单变更: true, 证照到期: false },
@@ -8984,6 +9112,9 @@ const AUDITS = [
 const roleOf = (name) => db.roles.find((r) => r.name === name) || { name, scope: '全部' }
 const scopeOf = (uid) => roleOf(db.users.find((u) => u.id === uid)?.role).scope
 const auditRoles = (m) => { const row = db.perms.find((x) => x.m === m); return ROLES.filter((r, i) => row?.v[i] === '审') }
+// 设置 › 审批的「级数」：单级，或"1–2 级：超过 5 万加赵启"
+const fWan = (v) => (v >= 10000 && v % 1000 === 0 ? v / 10000 + ' 万' : fq(v) + ' 元')
+const levelsText = (t) => { const rs = db.approvalRules.filter((r) => r.doc === t).sort((a, b) => a.over - b.over); return rs.length ? `1–${rs.length + 1} 级：` + rs.map((r) => `超过 ${fWan(r.over)}加${r.user ? userName(r.user) : r.role}`).join('；') : '单级' }
 /* 设计师编号（甲方 11-11 反馈 3）：2 位数字，进款号（FS2611080701 里的 07）。不能重号；进过款号就锁定（db.dnoUsed），
  * 这个人的编号不能再改，这个号也不能给别人（老款号里的 07 永远指这个人）。没进过款号的可以改、可以清空 */
 const dnoLocked = (u) => !!u.dno && db.dnoUsed[u.dno] === u.id
@@ -9033,6 +9164,13 @@ as('u2', '2026-11-06', () => {
 })
 as('u2', '2026-11-07', () => { const s = sup('GYS0003'); updateSupplier(s, { name: s.name, short: s.short, cats: s.cats, bank: '某银行杭州分行', account: '6222 **** **** 3003' }) })
 
+/* ---------- 种子：多级审批（权限表、审批规则有了才排得出审批流） ---------- */
+// 前面种子里提交的单那时还排不出审批流，这里按提交时的规则补上
+;[['order', db.orders], ['purchase', db.purchases], ['production', db.productions], ['change', db.changes]].forEach(([k, list]) => list.filter((d) => d.status === '待审核').forEach((d) => pinFlow(k, d)))
+// 林舟 11-07 备一批黑色斜纹棉 3000 米（5.55 万，超过 5 万）；何川 11-08 审了第 1 级，等总经理赵启审第 2 级
+as('u2', '2026-11-07', () => { const p = createPurchase({ supplier: 'GYS0001', type: '备货采购', note: '冬季款提前备黑色斜纹棉', lines: [{ sku: 'ML0012-HE', qty: 3000 }] }); doAction('purchase', p, '提交') })
+as('u9', '2026-11-08', () => doAction('purchase', db.purchases[db.purchases.length - 1], '审核'))
+
 SEARCH.push(() => [
   ...db.suppliers.map((s) => ({ t: s.code + ' ' + s.short, sub: '供应商 · ' + s.cats.join('、'), to: '/suppliers/' + s.code, i: 'store' })),
   ...(TRADE ? db.customers : []).map((c) => ({ t: c.code + ' ' + c.short, sub: '客户', to: '/customers/' + c.code, i: 'user' })),
@@ -9046,7 +9184,7 @@ expose({
   matLockReason, updateMaterial, catUsed, matCatUsed, liveCats, liveMatCats, addCategory, addMatCategory, renameCat, removeCat, toggleCat,
   addColor, editColor, sizeGroupUsed, appendSize, removeSize, renameSizeGroup, setBaseSize, removeSizeGroup, liveColors, colorUsed, addSizeGroup, whStock,
   seasonUsed, liveSeasons, addSeason, bigCatOf, bigCatUsed, liveBigCats, addBigCat, dnoLocked, setDesignerNo, saveWarehouse, toggleWarehouse, saveCompany, toggleCompany, addDictValue, removeDictValue,
-  ROLES, AUDITS, auditRoles, cyclePerm, allLogs, factoryWh,
+  ROLES, AUDITS, auditRoles, levelsText, cyclePerm, allLogs, factoryWh,
   SUP_KEY, supGated, supChangeText, approveSupChange, rejectSupChange, withdrawSupChange, supToApprove,
   RISK_LV, riskTone, lastRisk, riskToday, riskNewItems, cnDate, riskCheck, ackRisk, showVal,
 })
@@ -9941,10 +10079,15 @@ route('/settings', {
     const who = ref('')
     const logs = computed(() => allLogs().filter((x) => !who.value || x.who === who.value))
     const permTone = (v) => ({ 看: '', 改: 'blue', 审: 'green' }[v])
-    const addRule = () => db.approvalRules.push({ doc: '采购单', over: 0, role: '管理层' })
+    const addRule = () => db.approvalRules.push({ doc: '采购单', over: 10000, user: 'u6' })
+    // 多级审批：按金额加级的只有订单、采购单、加工单；审批人选人或角色
+    const amtDocs = Object.values(APPROVE).filter((x) => x.amt).map((x) => x.t)
+    const setWho = (r, v) => { if (v.startsWith('u:')) { r.user = v.slice(2); delete r.role } else { r.role = v.slice(2); delete r.user } }
+    // 第 1 级的人个个都能审这一级：他们审第 1 级时这一级一起过了，等于没加
+    const useless = (r) => { const l1 = db.users.filter((u) => auditRoles(APPROVE[approveKind(r.doc)].m).includes(u.role)); return l1.length > 0 && l1.every((u) => (r.user ? r.user === u.id : r.role === u.role)) }
     const JST = ['回货登记后推送聚水潭生成成品入库单，成品库存以聚水潭为准', '双向同步：入库推送聚水潭，出库和库存回写本系统', '暂不对接，两边各自录单']
     const FIN = ['金蝶', '用友', '系统内闭环，不对接']
-    return { tab, who, logs, permTone, addRule, JST, FIN }
+    return { tab, who, logs, permTone, addRule, amtDocs, setWho, useless, JST, FIN }
   },
   template: `<div>
     <Head t="设置"/>
@@ -9975,18 +10118,23 @@ route('/settings', {
       </section>
 
       <section v-if="tab === 'audit'" data-c="审批">
-        <p class="dim tip">谁能审 = 「角色权限」里这个模块是「审」的角色。供应商的准入申请和关键信息改动（全称、信用代码、结算方式、账期、税率、发票类型、开户行、账号）都要另一个有审批权限的人批，不能批自己提的（甲方 11-11）。</p>
-        <Tbl inset flat :rows="AUDITS" :cols="[{ k: 't', t: '单据' }, { k: 'p', t: '权限点', c: 'code' }, { k: 'roles', t: '谁能审', f: a => auditRoles(a.m).join('、') || '—' }, { k: 'lv', t: '级数', f: () => '单级' }, { k: 'n', t: '待审', c: 'num', f: a => a.n() || '—' }]"/>
+        <p class="dim tip">第 1 级谁能审 = 「角色权限」里这个模块是「审」的角色。供应商的准入申请和关键信息改动（全称、信用代码、结算方式、账期、税率、发票类型、开户行、账号）都要另一个有审批权限的人批，不能批自己提的（甲方 11-11）。</p>
+        <Tbl inset flat :rows="AUDITS" :cols="[{ k: 't', t: '单据' }, { k: 'p', t: '权限点', c: 'code' }, { k: 'roles', t: '谁能审', f: a => auditRoles(a.m).join('、') || '—' }, { k: 'lv', t: '级数', f: a => levelsText(a.t) }, { k: 'n', t: '待审', c: 'num', f: a => a.n() || '—' }]"/>
         <div class="sec" data-c="多级审批">
-          <h3>多级审批<span class="pill blue">二期</span><span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
+          <h3>多级审批<span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
+          <p class="dim tip">订单、采购单、加工单金额超过门槛，第 1 级审完还要再加一级；几条规则都超过就按门槛从低到高一级级审。没走完一直是「待审核」，详情右边能看到审到第几级、在等谁。<br>
+            审批流在提交时定下来，这里改了只影响以后提交的单。任何一级驳回都退回草稿，重新提交从第 1 级审起。同一个人连着几级都能审的，审一次都过（总经理自己审了第 1 级，就不用再审第 2 级）。</p>
           <table class="tbl inset flat"><tbody>
             <tr v-for="(r, i) in db.approvalRules" :key="i">
-              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.doc"><option v-for="a in AUDITS" :key="a.t">{{ a.t }}</option></select></td>
-              <td>金额超过 <input class="inp num" style="width:110px;height:26px" type="number" v-model.number="r.over"> 元，再加一级</td>
-              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.role"><option v-for="x in ROLES" :key="x">{{ x }}</option></select></td>
+              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.doc"><option v-for="t in amtDocs" :key="t">{{ t }}</option></select></td>
+              <td>金额超过 <input class="inp num" style="width:110px;height:26px" type="number" v-model.number="r.over"> 元，再加一级，由</td>
+              <td style="width:200px"><select class="sel" style="height:26px;width:100%" :value="r.user ? 'u:' + r.user : 'r:' + r.role" @change="setWho(r, $event.target.value)">
+                <optgroup label="指定的人"><option v-for="u in db.users" :key="u.id" :value="'u:' + u.id">{{ u.name }}（{{ u.post }}）</option></optgroup>
+                <optgroup label="角色：这个角色的人都能审"><option v-for="x in ROLES" :key="x" :value="'r:' + x">{{ x }}</option></optgroup></select></td>
+              <td><span v-if="useless(r)" class="flag amber" title="第 1 级能审的人这一级也都能审，他们审第 1 级时这一级就一起过了">不起作用：第 1 级的人审了就一起过</span><span v-else class="dim">审</span></td>
               <td class="num" style="width:40px"><button class="btn ghost icon sm" @click="db.approvalRules.splice(i, 1)"><Ico n="trash" :s="13"/></button></td>
             </tr>
-            <tr v-if="!db.approvalRules.length"><td colspan="4" class="empty">没有多级规则，所有单据都是单级审核</td></tr>
+            <tr v-if="!db.approvalRules.length"><td colspan="5" class="empty">没有多级规则，所有单据都是单级审核</td></tr>
           </tbody></table>
         </div>
       </section>
@@ -10801,7 +10949,7 @@ const FLOW_SECS = [
     steps: [
       '选订单算料：毛需求 = 订单件数 × 尺码用量，加损耗和备料比得出需求。只算我方采购的料；工厂自备的算在加工费里。',
       '需求先扣可用库存，再自动扣赶得上的在途：在途的预计到货不晚于要料日期（这批加工单"裁剪"的计划开始；还没排单的按承诺交期倒推）才算赶得上，已经被别的算料单占了的不再扣。赶不上的单独列出来，不扣。自动带出的数可以改。',
-      '确认后一键生成采购单，按供应商拆开；单价默认取价格档案里这家的现价，改了要写原因。金额超过 5 万要管理层审。审核时改过的单价自动记进价格档案（第 09 段）。',
+      '确认后一键生成采购单，按供应商拆开；单价默认取价格档案里这家的现价，改了要写原因。金额超过 5 万，管理层审完还要总经理再审一级（多级审批，见第 11 段）。审核时改过的单价自动记进价格档案（第 09 段）。',
       '"到料"页盯还没到的料：除了和采购交期比，还和加工单的开裁日期比，赶不上开裁的标出来，可以只看这些。到货点"到货入库"，审核后进库存；采购单变"部分到货"或"已到齐"。',
       '没有订单也能先备料：库存加在途低于安全库存，就进首页待办"物料低于安全库存"；在补货提醒页勾选，按默认供应商拆成备货采购单。备的料进公共库存，不预留给哪张订单，以后算料自动扣。',
     ] },
@@ -10813,7 +10961,7 @@ const FLOW_SECS = [
     branches: [{ lbl: '异常', flow: [flN('上报', '类型、描述、照片'), '', flN('处理中', '谁在处理'), '关闭', flN('已关闭', '记责任方：我方、工厂、供应商', { end: true })] }],
     steps: [
       '在已审核的订单上点"排单"：选加工厂、数量、加工方式、交期。加工单价默认取价格档案里这家工厂做这个款、这种加工方式的现价，改了要写原因。',
-      '加工单提交审核（金额超过 10 万要管理层审）。审核下单时，系统从交期往前倒排 6 个节点：到料、裁剪、车缝、后整、包装、入仓。',
+      '加工单提交审核（金额超过 10 万，管理层审完还要总经理再审一级）。审核下单时，系统从交期往前倒排 6 个节点：到料、裁剪、车缝、后整、包装、入仓。',
       '料齐了就领料：系统按 加工数 × 用量 ×（1 + 损耗）− 已领 给出建议，从物料仓发到这个加工厂的工厂仓。',
       '跟单员或工厂在手机上报进度：每个节点填实际开始、完成、数量，拍照。出了问题报异常（要拍照），处理完关闭，记上责任方。',
       '工厂交货时登记回货：回货数和次品数，最多比加工数多 3%。全部回齐，加工单"已完成"；订单的加工单都完成，订单"已完成"。',
@@ -10864,11 +11012,13 @@ const FLOW_SECS = [
 
   { no: '11', t: '每张单据都一样的规矩', menu: '首页、系统 → 设置',
     flow: [flN('草稿', '能改、能删'), '提交', flN('待审核', '制单人能撤回'), '审核', flN('已审核', '没有下游时能反审核'), '业务做完', flN('已结案', '能取消结案', { end: true })],
-    after: '驳回要写原因，退回草稿；草稿、待审核的能作废。',
+    branches: [{ lbl: '金额大', flow: [flN('待审核 · 第 1 级', '有「审」权限的人审，如何川'), '超过门槛', flN('待审核 · 第 2 级', '指定的人再审，如总经理赵启', { to: '/purchases?s=待审核' }), '审完', flN('已审核', '', { end: true })] }],
+    after: '驳回要写原因，退回草稿；草稿、待审核的能作废。多级审批任何一级驳回都退回草稿，重新提交从第 1 级审起。',
     cols: [
       ['谁能做', '角色 × 模块设"看、改、审"三档，在"设置 › 角色权限"里改；后台兜底，按钮也跟着藏。供应商准入、关键信息改动也要审，不能批自己提的。'],
+      ['多级审批', '订单、采购单、加工单金额超过门槛，再加一级，审批人可以是角色或指定的人，在"设置 › 审批"里配。提交时定下审批流；没审完一直是待审核，详情右边看得到审到第几级、在等谁。同一个人连着几级都能审的，审一次都过。'],
       ['看到哪些单', '业务、采购、生产跟单只看自己是制单人、业务员、跟单员、采购员的单；其他角色看全部，也能切到"我的"。'],
-      ['首页待办', '待我审核、逾期、节点延期、到料逾期、上游变更、供应商待审批、供应商新增风险、物料低于安全库存，点进去直接处理。'],
+      ['首页待办', '待我审核（轮到我这一级的）、逾期、节点延期、到料逾期、上游变更、供应商待审批、供应商新增风险、物料低于安全库存，点进去直接处理。'],
       ['留痕', '每张单据右边有操作记录：谁、什么时候、改了什么；设置里能汇总查。'],
     ] },
 ]
@@ -10950,7 +11100,7 @@ const MOD_INFO = {
       ['changes', '变更审核后受影响的单，进「上游变更待处理」'],
       ['suppliers', '供应商待审批、新增风险、证照 30 天内到期'],
     ],
-    tip: '待办按人出：有审核权限才有「待我审核」；跟单、采购只列自己负责的单，管理层看全部。',
+    tip: '待办按人出：多级审批的单轮到哪一级，才进那一级审批人的「待我审核」；跟单、采购只列自己负责的单，管理层看全部。',
     who: '所有人。待办、概况按各人的角色、审核权限和数据范围出。',
   },
   plans: {
@@ -11137,7 +11287,7 @@ const MOD_INFO = {
       ['suppliers', '审核时和现价不同的单价记进价格档案'],
       ['contracts', '待排期：审核后能生成采购合同，合同没作废不能反审核'],
     ],
-    tip: '单价默认带价格档案里这家的现价；改了要写改价原因，审核时自动记进价格档案。',
+    tip: '单价默认带价格档案里这家的现价；改了要写改价原因，审核时自动记进价格档案。金额超过 5 万，管理层审完还要总经理再审一级。',
   },
   arrivals: {
     perm: '算料、采购单',
@@ -11455,7 +11605,7 @@ const MOD_INFO = {
     has: [
       ['页签 · 用户', '姓名、部门、岗位、角色、数据范围、默认主体、设计师编号'],
       ['页签 · 角色权限', '角色 × 模块的看、改、审；每个角色的数据范围（全部、本人）'],
-      ['页签 · 审批', '每种单据的权限点、谁能审、待审数；多级审批（二期）'],
+      ['页签 · 审批', '每种单据谁能审、几级、待审数；多级审批：金额超过多少再加一级，由谁审'],
       ['页签 · 通知', '站内待办；钉钉、企业微信、飞书、邮件（二期）；推送哪些事'],
       ['页签 · 集成', '聚水潭（待 Q01）、财务软件（待 Q04）；电子签章、开放 API（三期）'],
       ['页签 · 操作日志', '各单据的操作记录汇总：日期、人、对象、单号、做了什么'],
@@ -11464,12 +11614,12 @@ const MOD_INFO = {
       ['basics', '默认主体从主体公司里选'],
     ],
     down: [
-      ['home', '首页待办按角色权限给人：有「审」权限的才看到待审核的单'],
+      ['home', '待我审核按审批流给人：轮到哪一级，就进那一级审批人的待办'],
       ['styles', '设计师编号进款号（FS2611080701 里的 07），进过款号就锁定'],
       ['suppliers', '准入和关键信息改动由「供应商」是「审」的角色批，不能批自己提的'],
       ['orders', '新单据的主体公司默认取制单人的默认主体'],
     ],
-    tip: '权限改了马上生效：没权限的按钮跟着藏起来，后台也会拦；数据范围是「本人」的角色只看自己经手的单',
+    tip: '多级审批的规则只管以后提交的单：审批流在提交时定下来，已经在审的单按提交时的走',
     who: '超级管理员（IT 或老板指定的人）：给人分角色、改权限、填设计师编号',
   },
 }
