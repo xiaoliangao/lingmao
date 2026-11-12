@@ -47,8 +47,9 @@ function voidReturn(r, reason) {
   if (!reason?.trim()) fail('要写作废原因')
   const p = production(r.prod)
   if (!['已下单', '生产中', '部分回货', '已完成'].includes(p.status)) fail(`加工单 ${p.no} 是「${p.status}」，回货不能作废`)
+  const st = stmtOf(r.no) // 对账单的规则和出入库单同一条（2-store.js checkNotBilled）
   const why = [db.qcs?.some((q) => q.src === r.no) && '已经验过货', db.fgIn?.some((x) => x.ret === r.no) && '已经入了成品仓',
-    db.statements?.some((s) => s.status !== '已作废' && s.items.some((i) => i.no === r.no)) && '已经进了对账单'].filter(Boolean)
+    st && `已经进了对账单 ${st.no}（${st.status}）${st.status === '草稿' ? '：先把这张草稿对账单作废' : '，对账单发出去了不能作废'}`].filter(Boolean)
   if (why.length) fail(`${r.no} 不能作废`, why)
   r.lines.forEach((x) => { const l = p.lines.find((y) => y.color === x.color && y.size === x.size); if (l) { l.ret -= x.qty; l.def -= x.def } })
   r.status = '已作废'
@@ -317,30 +318,37 @@ comp('ProdPlan', {
   </Modal>`,
 })
 
+/* 报进度：电脑（这个弹窗）和手机报工（/mobile）共用 reportInit 出初值、sendReport 提交，规则都在 2-store.js 的 reportNode。
+ * 两个按钮：「只报开始」节点进行中；「报完成」记实际完成，完成日期没选就按今天。实际完成不预填，不会一提交就把节点报完成 */
+const REPORT_TIP = '还在做点「只报开始」；做完了点「报完成」，完成日期不选就是今天'
+function sendReport(p, i, f, kind, tail = '') {
+  const w = run(() => reportNode(p, i, { ...f, kind }))
+  if (w) toast(`${p.nodes[i].name}已报${kind}${typeof w === 'string' ? '，' + w : ''}${tail}`)
+  return !!w
+}
 comp('ProdReport', {
   props: { p: Object, i: Number },
   emits: ['close'],
   setup(props, { emit }) {
     const cur = props.i ?? Math.max(0, props.p.nodes.findIndex((n) => !n.af))
-    const f = reactive({ i: cur, as: '', af: '', qty: null, note: '', photos: [] })
-    watch(() => f.i, (i) => { const n = props.p.nodes[i]; Object.assign(f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }, { immediate: true })
-    function ok() {
-      const w = run(() => reportNode(props.p, f.i, { ...f }))
-      if (w) { emit('close'); toast(typeof w === 'string' ? `已报，${w}` : `${props.p.nodes[f.i].name}已报`) }
-    }
-    return { f, ok }
+    const f = reactive({ i: cur, ...reportInit(props.p.nodes[cur]) })
+    watch(() => f.i, (i) => Object.assign(f, reportInit(props.p.nodes[i])))
+    function ok(kind) { if (sendReport(props.p, f.i, f, kind)) emit('close') }
+    return { f, ok, REPORT_TIP }
   },
   template: `<Modal :t="'报进度 ' + p.no" :w="520" @close="$emit('close')">
     <div class="chips" style="margin-bottom:14px" data-c="选节点"><button v-for="(n, k) in p.nodes" :key="n.name" class="chip" :class="{ on: f.i === k }" @click="f.i = k"><Ico v-if="n.af" n="check" :s="12" class="green"/>{{ n.name }}</button></div>
     <p class="dim" style="font-size:12px;margin:-6px 0 12px">计划 {{ fd(p.nodes[f.i].ps) }} – {{ fd(p.nodes[f.i].pf) }}<template v-if="p.nodes[f.i].at">；上次 {{ userName(p.nodes[f.i].by) }} {{ fd(p.nodes[f.i].at) }} 报的</template></p>
     <div class="form">
       <label class="f">实际开始<input class="inp" type="date" v-model="f.as"></label>
-      <label class="f">实际完成<input class="inp" type="date" v-model="f.af"></label>
+      <label class="f">实际完成<input class="inp" type="date" v-model="f.af"><small class="dim">{{ p.nodes[f.i].af ? '已经报过完成；报错了改日期再点「报完成」' : '没做完就空着' }}</small></label>
       <label class="f">数量（件）<input class="inp num" type="number" v-model.number="f.qty"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
       <div class="f full" data-c="报进度照片">照片<span v-if="p.nodes[f.i].photos && p.nodes[f.i].photos.length" class="dim" style="font-weight:400">（这个节点已经有 {{ p.nodes[f.i].photos.length }} 张，再传是追加）</span><Pics v-model="f.photos" :s="64" camera/></div>
     </div>
-    <template #foot><button class="btn ghost" @click="f.af = ''">只报开始</button><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">提交</button></template>
+    <p class="dim" style="font-size:12px;margin:10px 0 0">{{ REPORT_TIP }}</p>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button>
+      <button class="btn" :disabled="!!p.nodes[f.i].af" :title="p.nodes[f.i].af ? '这个节点已经报过完成' : null" @click="ok('开始')">只报开始</button><button class="btn pri" @click="ok('完成')">报完成</button></template>
   </Modal>`,
 })
 
@@ -487,13 +495,14 @@ route('/mobile', {
     const list = computed(() => db.productions.filter(prodLive).filter((p) => (s.who === '跟单员' ? p.merch === 'u1' : p.factory === s.factory)).slice().sort(byRisk))
     const p = computed(() => production(s.no))
     const openIs = computed(() => (p.value ? p.value.issues.filter((i) => i.status !== '已关闭') : []))
-    function pickNode(i) { const n = p.value.nodes[i]; s.node = i; Object.assign(s.f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }
-    function submit() { const w = run(() => reportNode(p.value, s.node, { ...s.f })); if (w) { toast(`${p.value.nodes[s.node].name}已报，电脑上马上能看到`); s.node = null } }
+    // 和电脑上的「报进度」同一套：reportInit 出初值（实际完成不预填），sendReport → reportNode
+    function pickNode(i) { s.node = i; Object.assign(s.f, reportInit(p.value.nodes[i])) }
+    function submit(kind) { if (sendReport(p.value, s.node, s.f, kind, '，电脑上马上能看到')) s.node = null }
     // 上报异常（PRD §6.7.3 第 3 条）：和电脑上同一套规则，照片必拍
     function openIssue() { Object.assign(s.e, { type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(p.value), 5), party: PARTY0, photos: [] }); s.issue = true }
     function submitIssue() { if (run(() => reportIssue(p.value, { ...s.e, newDate: s.e.impact ? s.e.newDate : null }))) { toast('异常已上报，电脑上马上能看到'); s.issue = false } }
     const back = () => { if (s.node != null) s.node = null; else if (s.issue) s.issue = false; else s.no = null }
-    return { s, list, p, openIs, pickNode, submit, openIssue, submitIssue, back, PARTIES }
+    return { s, list, p, openIs, pickNode, submit, openIssue, submitIssue, back, PARTIES, REPORT_TIP }
   },
   template: `<div>
     <Head t="手机报工"><Seg v-model="s.who" :items="['跟单员', '工厂']"/><select v-if="s.who === '工厂'" class="sel" style="height:28px" v-model="s.factory"><option v-for="f in db.suppliers.filter(f => isFactory(f) && f.status === '合作中')" :key="f.code" :value="f.code">{{ f.short }}</option></select></Head>
@@ -527,11 +536,12 @@ route('/mobile', {
           </template>
           <div v-else class="col m-form">
             <label class="f">实际开始<input class="inp" type="date" v-model="s.f.as"></label>
-            <label class="f">实际完成<input class="inp" type="date" v-model="s.f.af"></label>
+            <label class="f">实际完成<input class="inp" type="date" v-model="s.f.af"><small class="dim">{{ p.nodes[s.node].af ? '已经报过完成；报错了改日期再点「报完成」' : '没做完就空着' }}</small></label>
             <label class="f">数量（件）<input class="inp num" type="number" v-model.number="s.f.qty"></label>
             <div class="f">照片<Pics v-model="s.f.photos" :s="60" camera bare/></div>
             <label class="f">备注<textarea class="inp" v-model="s.f.note"></textarea></label>
-            <button class="btn pri" style="height:44px" @click="submit">提交</button>
+            <small class="dim">{{ REPORT_TIP }}</small>
+            <div class="row g8" data-c="手机报工按钮"><button class="btn" style="flex:1;height:44px" :disabled="!!p.nodes[s.node].af" @click="submit('开始')">只报开始</button><button class="btn pri" style="flex:1;height:44px" @click="submit('完成')">报完成</button></div>
           </div>
         </template>
       </div>

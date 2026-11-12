@@ -138,7 +138,7 @@ const RULES = {
   order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 审核: auditOrder, 反审核: unauditOrder },
   purchase: { ...docRules('purchase', (p) => { p.status = '已审核'; refreshPoStatus(p); return p.status }), 反审核: unauditPurchase },
   production: { ...docRules('production', (p) => (prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
-  stock: { 审核: postStockDoc, 反审核: unpostStockDoc },
+  stock: { 审核: postStockDoc, 反审核: unpostStockDoc, 作废: voidStockDoc },
   techpack: { 生效: publishTp },
   change: { 驳回: rejectDoc('change'), 审核: auditChange },
   supplier: { 申请准入: requestAdmit, 通过: approveAdmit, 驳回: rejectAdmit },
@@ -848,7 +848,23 @@ function postStockDoc(d) {
   move('stock', d, '审核')
   d.auditor = db.me
 }
+/* 进了对账单的单据不能反审核、作废（PRD §2.5 M11）：采购入库、采购退货、回货都查这一条。
+ * 对账单在 6-pages-later.js：草稿能作废（里面的单据回到待对账）；发出去以后只能往下走，不能作废，差错另开单冲回 */
+const stmtOf = (no) => db.statements?.find((s) => s.status !== '已作废' && s.items.some((i) => i.no === no))
+const STMT_GONE = { 已发送: '已经发给供应商了', 已确认: '供应商已经确认了', 已付款: '已经付了款' }
+function checkNotBilled(no, a) {
+  const s = stmtOf(no)
+  if (!s) return
+  fail(`${no} 已经进了对账单 ${s.no}（${s.status}），不能${a}`, s.status === '草稿'
+    ? [`先到 对账 › ${s.no} 把这张草稿对账单作废，里面的单据回到「待对账」，再来${a}`]
+    : [`对账单 ${s.no} ${STMT_GONE[s.status] || '已经往下走了'}，不能作废`, '这张单就不能再动了；数量、单价有差错，和供应商对清楚后另开单冲回（比如入多了开采购退货），冲回的单进下个月的对账单'])
+}
+function voidStockDoc(d) {
+  checkNotBilled(d.no, '作废')
+  move('stock', d, '作废')
+}
 function unpostStockDoc(d) {
+  checkNotBilled(d.no, '反审核')
   if (d.to) { const s = stockShortage(d.to, d.lines); if (s.length) fail('料已经被用掉或调走，改不回去', s) }
   d.lines.forEach((l) => { if (d.to) changeStock(d.to, l, -l.qty, d); if (d.from) changeStock(d.from, l, l.qty, d) })
   if (d.type === '采购入库' && d.src) {
@@ -912,17 +928,28 @@ function nodeState(n) {
   return n.as ? 'run' : 'todo'
 }
 const curNode = (p) => p.nodes.find((n) => !n.af)
+/* 报进度（PRD §6.7.3）：电脑上加工单的「报进度」和手机报工都调这一个，规则一样。
+ * f.kind = '开始'：只记实际开始，节点进行中；'完成'：记实际完成，没填日期按今天。要报完成得明确点「报完成」，不会不知不觉就完成了。
+ * 不传 kind 按有没有 af 判断（种子、自检这么调）。表单初值也共用 reportInit：实际开始默认今天，实际完成不预填 */
+const reportInit = (n) => ({ as: n.as || clock.today, af: n.af || '', qty: n.qty, note: n.note || '', photos: [] })
 function reportNode(p, i, f) {
   if (!prodLive(p)) fail('加工单审核后才能报进度')
   const n = p.nodes[i]
-  if (!f.as && !f.af) fail('开始、完成至少填一个')
-  if (f.af && f.as && f.af < f.as) fail('完成时间不能早于开始时间')
-  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, at: clock.today, photos: [...(n.photos || []), ...(f.photos || [])] })
+  const kind = f.kind || (f.af ? '完成' : '开始')
+  if (kind === '开始') {
+    if (f.af) fail('只报开始就不填实际完成；已经做完了点「报完成」')
+    if (n.af) fail(`${n.name}已经报过完成（${fd(n.af)}），不能改回进行中`, ['完成日期报错了：重新点「报完成」，填对的日期'])
+    if (!f.as) fail('实际开始要填')
+  }
+  const af = kind === '完成' ? f.af || clock.today : null
+  const as = f.as || n.as || af
+  if (af && af < as) fail('完成时间不能早于开始时间')
+  Object.assign(n, { as, af, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, at: clock.today, photos: [...(n.photos || []), ...(f.photos || [])] })
   // 每次汇报留一条（谁、哪天报的、报了什么），节点字段只留最新的（PRD §7.2 prd_node_report）
-  n.reports = [...(n.reports || []), { at: clock.today, by: db.me, as: f.as || null, af: f.af || null, qty: f.qty ?? null, note: f.note || '', photos: f.photos?.length || 0 }]
+  n.reports = [...(n.reports || []), { at: clock.today, by: db.me, as: f.as || null, af, qty: f.qty ?? null, note: f.note || '', photos: f.photos?.length || 0 }]
   if (p.status === '已下单') p.status = '生产中'
-  act(p, `报进度：${n.name}${f.af ? '完成' : '开始'}${f.qty ? ' ' + f.qty + ' 件' : ''}${f.photos?.length ? '，照片 ' + f.photos.length + ' 张' : ''}`)
-  return p.nodes.slice(0, i).some((x) => !x.af) ? '前面还有节点没报完成' : null
+  act(p, `报进度：${n.name}${kind}${f.qty ? ' ' + f.qty + ' 件' : ''}${f.photos?.length ? '，照片 ' + f.photos.length + ' 张' : ''}`)
+  return kind === '完成' && p.nodes.slice(0, i).some((x) => !x.af) ? '前面还有节点没报完成' : null
 }
 const expectDue = (p) => p.expect || p.due
 // 风险：late 已逾期 / near 临期（7 天内）/ node 节点延期 / issue 有未关闭异常
@@ -1373,6 +1400,51 @@ function selftest() {
   ok('多级审批：提交时定下审批流，之后改门槛不影响已经在审的单', flowOf('purchase', p4).length === 2 && approvalChain('purchase', p4).length === 1)
   rule.over = over0
   as('u6', clock.today, () => { doAction('purchase', p3, '反审核'); removeDraft(db.purchases, p3); doAction('purchase', p4, '撤回'); removeDraft(db.purchases, p4) })
+  // 占位符和 PRD §6.11.1 同一份：单号、金额、数量合计用 PRD 的名字；账期从结算方式里拆出来单独一个
+  const ctH = renderContract({ body: '标题\n{{单号}}|{{结算方式}}|{{账期}}' }, ctCtx('purchase', po2, 'x')).html
+  ok('合同占位符：{{单号}}{{金额}}{{数量合计}}{{账期}} 认得，旧名 {{单据编号}}{{总金额}}{{总数量}} 不认得；结算方式只放「月结」，账期单独填「30 天」',
+    tplUnknown('采购合同', '{{单号}}{{金额}}{{数量合计}}{{账期}}{{单据编号}}{{总金额}}{{总数量}}').join() === '{{单据编号}},{{总金额}},{{总数量}}'
+    && ctH.includes(`<span class="ct-v">${po2.no}</span>|<span class="ct-v">月结</span>|<span class="ct-v">30 天</span>`), ctH)
+
+  // 报进度（§6.7.3，页面在 5d-production.js）：电脑、手机都调 reportNode。实际完成不预填；只报开始不会把节点报完成；报完成不选日期按今天
+  const rpN = pb.nodes[1], rpF = reportInit(rpN)
+  reportNode(pb, 1, { ...rpF, kind: '开始' })
+  const rpE = err(() => reportNode(pb, 1, { ...reportInit(rpN), af: clock.today, kind: '开始' }))
+  const rpW = reportNode(pb, 1, { ...reportInit(rpN), kind: '完成' })
+  ok('报进度：表单不预填实际完成；只报开始节点还在进行，填了完成日期点只报开始被拦；报完成不选日期按今天，提示前面没报完',
+    rpF.af === '' && rpF.as === clock.today && rpE.includes('点「报完成」') && rpN.af === clock.today && rpN.reports.length === 2 && rpN.reports[0].af === null && rpW === '前面还有节点没报完成', [rpF, rpE, rpN.af, rpW])
+  ok('报进度：报过完成的节点不能再"只报开始"改回进行中', err(() => reportNode(pb, 1, { as: clock.today, kind: '开始' })).includes('不能改回进行中'))
+
+  // 质检返修（M09 待定，函数在 6-pages-later.js）：没验的回货不能入成品仓；不合格 → 返修 → 返修完成 → 回到待检再验，第 1 次的记录留着
+  const rr = db.returns.find((r) => r.prod === p.no)
+  ok('成品仓：没验货的回货不能入库，提示先验货', err(() => fgReceive(rr)).includes('先到 生产 › 质检 验货'))
+  as('u1', clock.today, () => qcInspect(qcPending().find((x) => x.src === rr.no), { sample: 50, bad: 5, result: '不合格', note: '自检：门襟不顺', photos: [{ id: 'x', name: '门襟.jpg' }] }))
+  const todoN = (uid, t) => as(uid, clock.today, () => TODOS.flatMap((f) => f()).find((x) => x.t === t)?.n || 0)
+  ok('质检：不合格不能入库；首页待办「回货不合格待返修」给跟单员和管理层，采购看不到', err(() => fgReceive(rr)).includes('点「返修」')
+    && todoN('u1', '回货不合格待返修') >= 1 && todoN('u6', '回货不合格待返修') === todoN('u1', '回货不合格待返修') && todoN('u2', '回货不合格待返修') === 0, [todoN('u1', '回货不合格待返修'), todoN('u2', '回货不合格待返修')])
+  ok('质检：仓管不能安排返修，不写返修说明也不行', as('u5', clock.today, () => err(() => qcRework(rr, '返工'))).includes('不能安排返修') && as('u1', clock.today, () => err(() => qcRework(rr, ' '))).includes('返修说明'))
+  as('u1', clock.today, () => qcRework(rr, '门襟拆了重做，工厂 11-12 送回'))
+  ok('质检：返修中的不在待检里，也不能入库', retQc(rr) === '返修中' && !qcPending().some((x) => x.src === rr.no) && err(() => fgReceive(rr)).includes('在返修'), retQc(rr))
+  as('u1', clock.today, () => qcReworkDone(rr))
+  const it2 = qcPending().find((x) => x.src === rr.no)
+  as('u1', clock.today, () => qcInspect(it2, { sample: 50, bad: 1, result: '合格' }))
+  const qs2 = qcsOf(rr.no)
+  ok('质检：返修完成回到待检，第 2 次合格后能入库；第 1 次不合格的记录和返修说明都留着', it2?.n === 2 && qs2.length === 2 && qs2[0].result === '不合格' && qs2[0].rework?.doneAt && qs2[1].n === 2 && !!fgReceive(rr)?.no, qs2.map((q) => [q.n, q.result]))
+
+  // 打样中（首页开发卡片、样衣页签同一个口径，smpCount 在 6-pages-later.js）：只数真在打样的，待派单、待评审不算
+  ok('打样中：首页和样衣页签同一个数 1（开发中的 3 个里只有 1 个在打样）', smpCount('打样中') === 1 && db.samples.filter((x) => x.status === '开发中').length === 3, smpCount('打样中'))
+  smpDispatch(db.samples.find((x) => smpState(x) === '待派单'), { way: '内部版房', maker: 'u8' })
+  ok('打样中：待派单的派出去，一起变 2', smpCount('打样中') === 2, smpCount('打样中'))
+
+  // 对账（PRD §2.5 M11，对账单在 6-pages-later.js）：进了没作废的对账单的采购入库、采购退货，反审核、作废都拦下，提示和对账单能做的一致
+  const rk9 = db.stockDocs.find((d) => d.type === '采购入库' && d.partner === 'GYS0009')
+  ok('对账：进了已确认对账单的采购入库不能反审核，说清楚对账单不能作废、差错另开单冲回', ((e) => e.includes(stmtOf(rk9.no)?.no) && e.includes('不能作废') && e.includes('另开单冲回'))(err(() => doAction('stock', rk9, '反审核'))))
+  const rk2 = receivePurchase(po2, { lines: [{ i: 0, qty: 1000 }] }), th2 = returnPurchase(po2, { lines: [{ i: 0, qty: 20 }], reason: '色差' })
+  const st2 = finCreate('GYS0002', clock.today.slice(0, 7))
+  ok('对账：进了草稿对账单的采购入库、采购退货都不能反审核，提示先作废这张草稿对账单', [rk2, th2].every((d) => ((e) => e.includes(st2.no) && e.includes('先到 对账'))(err(() => doAction('stock', d, '反审核')))))
+  finStmtAction(st2, '作废')
+  doAction('stock', th2, '反审核'); doAction('stock', th2, '作废')
+  ok('对账：草稿对账单作废后，退货单能反审核、作废', th2.status === '已作废' && po2.lines[0].returned === 0, [th2.status, po2.lines[0].returned])
   return out
 }
 window.SCM = { db, FLOWS, doAction, selftest }

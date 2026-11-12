@@ -136,6 +136,8 @@ function smpPlan(need) {
 }
 const smpCur = (s) => s.vers[s.vers.length - 1]
 const smpState = (s) => (s.status === '开发中' ? smpCur(s).status : s.status)
+// 按状态数样衣：样衣页的页签和首页开发卡片的「打样中」都用它，口径一样（待派单、待评审不算打样中）
+const smpCount = (k) => db.samples.filter((x) => smpState(x) === k).length
 const smpNode = (v) => v.nodes.find((n) => !n.done)
 const smpWho = (v) => (v.way === '外部工厂' ? supName(v.factory) : v.maker ? userName(v.maker) : '—')
 function smpNodeState(n) {
@@ -249,7 +251,7 @@ TODOS.push(() => [{ t: '样衣待评审', n: db.samples.filter((s) => smpState(s
 route('/samples', {
   setup() {
     const s = reactive({ tab: nav.query.s || '全部', q: '', add: false })
-    const tabs = computed(() => [['全部', '全部', db.samples.length], ...['待派单', '打样中', '待评审', '已通过', '已转大货', '已淘汰'].map((k) => [k, k, db.samples.filter((x) => smpState(x) === k).length]).filter((x) => x[2] || x[0] === s.tab)])
+    const tabs = computed(() => [['全部', '全部', db.samples.length], ...['待派单', '打样中', '待评审', '已通过', '已转大货', '已淘汰'].map((k) => [k, k, smpCount(k)]).filter((x) => x[2] || x[0] === s.tab)])
     const rows = computed(() => db.samples.filter((x) => (s.tab === '全部' || smpState(x) === s.tab) && (!s.q || (x.no + x.name).toLowerCase().includes(s.q.toLowerCase()))).slice().reverse())
     return { s, tabs, rows }
   },
@@ -627,11 +629,29 @@ comp('QuoteNew', {
 const QC_AQL = [[8, 2, 0], [15, 3, 0], [25, 5, 0], [50, 8, 0], [90, 13, 1], [150, 20, 1], [280, 32, 2], [500, 50, 3], [1200, 80, 5], [3200, 125, 7], [10000, 200, 10], [Infinity, 315, 14]]
 const qcAql = (lot) => { const [, n, ac] = QC_AQL.find(([max]) => lot <= max); return { n: Math.min(n, Math.max(1, Math.round(lot))), ac } }
 db.qcs = []
+/* 回货的验货（尾期验货）状态：待检 → 合格 / 让步接收 / 不合格；不合格 → 返修（写返修说明）→ 返修中 → 返修完成 → 回到待检，再验一次。
+ * 每验一次记一条验货记录（q.n = 第几次），前面的记录留着。合格、让步接收以后才能入成品仓（fgReceive）。
+ * 来料检验（采购入库）只验一次；不合格怎么处理（退货、扣款）等甲方定质检流程 */
+Object.assign(FLOWS, { retqc: { 合格: ['待检', '合格'], 让步接收: ['待检', '让步接收'], 不合格: ['待检', '不合格'], 返修: ['不合格', '返修中'], 返修完成: ['返修中', '待检'] } })
+const retQc = (r) => r.qc || '待检'
+function qcMove(r, a, note) {
+  if (!can('retqc', { status: retQc(r) }, a)) fail(`${r.no} 现在是「${retQc(r)}」，不能${a === '返修完成' ? '点返修完成' : a}`)
+  r.qc = FLOWS.retqc[a][1]
+  act(r, (['合格', '让步接收', '不合格'].includes(a) ? '验货：' : '') + a + (note ? '：' + note : ''))
+}
+const qcsOf = (src) => db.qcs.filter((q) => q.src === src)
+const qcOf = (src) => qcsOf(src).at(-1) // 最近一次
+// 返修谁能点：这张加工单的跟单员、管理层，或角色在「进度、异常、回货」上是改、审的人（设置 › 角色权限）
+const qcCanRework = (r) => production(r.prod)?.merch === db.me || me()?.role === '管理层'
+  || ['改', '审'].includes(db.perms.find((x) => x.m === '进度、异常、回货')?.v[ROLES.indexOf(me()?.role)])
+function qcCheckRework(r) {
+  if (!qcCanRework(r)) fail(`${me().name}（${me().role}）不能安排返修`, [`找这张加工单的跟单员 ${userName(production(r.prod)?.merch)} 或管理层；也可以在 设置 › 角色权限 给「进度、异常、回货」改的权限`])
+}
 function qcPending() {
   const done = new Set(db.qcs.map((q) => q.src))
   return [
-    ...liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: '/production/' + r.prod })),
-    ...db.stockDocs.filter((d) => d.type === '采购入库' && d.status === '已审核' && !done.has(d.no)).map((d) => ({ kind: '来料检验', src: d.no, date: d.date, party: d.partner, what: d.lines.map((l) => skuName(l.sku)).join('、'), lot: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), unit: matOfSku(d.lines[0].sku)?.purUnit || '', to: '/stock-docs/' + d.no })),
+    ...liveReturns().filter((r) => retQc(r) === '待检').map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: '/production/' + r.prod, n: qcsOf(r.no).length + 1 })),
+    ...db.stockDocs.filter((d) => d.type === '采购入库' && d.status === '已审核' && !done.has(d.no)).map((d) => ({ kind: '来料检验', src: d.no, date: d.date, party: d.partner, what: d.lines.map((l) => skuName(l.sku)).join('、'), lot: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), unit: matOfSku(d.lines[0].sku)?.purUnit || '', to: '/stock-docs/' + d.no, n: 1 })),
   ].sort((a, b) => b.date.localeCompare(a.date))
 }
 function qcInspect(item, f) {
@@ -640,9 +660,27 @@ function qcInspect(item, f) {
   if (!f.result) fail('选一个结论')
   if (f.result !== '合格' && !f.note) fail('不合格、让步接收要写问题')
   if (f.result !== '合格' && !f.photos?.length) fail('不合格、让步接收要拍问题照片')
-  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', photos: f.photos || [], by: db.me })
+  const r = item.kind === '尾期验货' ? db.returns.find((x) => x.no === item.src) : null
+  if (r) qcMove(r, f.result, f.note) // 回货：只有待检的能验（返修回来的也是待检）
+  else if (qcOf(item.src)) fail(item.src + ' 已经验过了')
+  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, n: qcsOf(item.src).length + 1, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', photos: f.photos || [], by: db.me, rework: null })
 }
-const qcOf = (src) => db.qcs.find((q) => q.src === src)
+// 返修：不合格的回货拉回工厂返修，写返修说明（返修什么、多少件、哪天送回），记在这次验货记录上
+function qcRework(r, note) {
+  qcCheckRework(r)
+  if (!note?.trim()) fail('要写返修说明：返修什么、多少件、工厂哪天送回')
+  qcMove(r, '返修', note.trim())
+  qcOf(r.no).rework = { note: note.trim(), at: clock.today, by: db.me }
+  act(production(r.prod), `回货 ${r.no} 验货不合格，拉回工厂返修：${note.trim()}`)
+}
+// 返修完成：工厂返修回来，回到待检，再验一次（记第 2 次、第 3 次……）
+function qcReworkDone(r) {
+  qcCheckRework(r)
+  qcMove(r, '返修完成')
+  Object.assign(qcOf(r.no).rework, { doneAt: clock.today, doneBy: db.me })
+  act(production(r.prod), `回货 ${r.no} 返修完成，等重新验货`)
+}
+const qcReworks = () => liveReturns().filter((r) => ['不合格', '返修中'].includes(retQc(r)))
 function qcSupplierStats() {
   const codes = [...new Set([...db.productions.map((p) => p.factory), ...db.qcs.map((q) => q.party)])]
   return codes.map((c) => {
@@ -651,22 +689,40 @@ function qcSupplierStats() {
     return { c, ret, def, rate: ret ? def / ret : null, n: qs.length, bad: qs.filter((q) => q.result === '不合格').length, soft: qs.filter((q) => q.result === '让步接收').length }
   }).filter((x) => x.ret || x.n)
 }
-// 种子：第一批回货验过（合格），两张面料入库验过（一张合格、一张让步接收）
-as('u1', '2026-11-02', () => { const r = db.returns[0]; if (r) qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 2, result: '合格' }) })
+// 种子：卫衣第一批回货（11-01）第 1 次验货不合格，拉回去返修，11-02 返修回来第 2 次合格、入库；第二批（11-06）11-07 验货不合格，等跟单安排返修
+//       两张面料入库验过（一张合格、一张让步接收）
+as('u1', '2026-11-01', () => {
+  const r = db.returns[0]
+  if (!r) return
+  qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 6, result: '不合格', note: '领口不平 4 件、线头没剪干净 2 件', photos: [demoPic('defect', colorOf('HE').hex, '领口', '领口不平.jpg')] })
+  qcRework(r, '领口不平的拆了重上，整批清线头，工厂 11-02 送回')
+  as('u1', '2026-11-02', () => { qcReworkDone(r); qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 2, result: '合格' }) })
+})
+as('u1', '2026-11-07', () => { const r = db.returns[1]; if (r) qcInspect(qcPending().find((x) => x.src === r.no), { sample: 32, bad: 4, result: '不合格', note: '后领贴条歪斜 3 件、袖口开线 1 件', photos: [demoPic('defect', colorOf('HH').hex, '袖口', '袖口开线.jpg')] }) })
 as('u5', '2026-10-08', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0009'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 20, bad: 0, result: '合格' }) })
 as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，' + ifTrade('客户同意接收', '开发确认能用'), photos: [demoPic('defect', colorOf('KQ').hex, '色差', '色差对比.jpg')] }) })
 
-TODOS.push(() => [{ t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' }])
+TODOS.push(() => [
+  { t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' },
+  // 给这张加工单的跟单员和管理层（homeMineOr 在 5a-home-style.js）
+  { t: '回货不合格待返修', n: liveReturns().filter((r) => retQc(r) === '不合格' && homeMineOr(production(r.prod)?.merch)).length, to: '/qc?tab=返修', i: 'shield', tone: 'red' },
+])
 
 route('/qc', {
   setup() {
-    const s = reactive({ tab: '待检', q: '', item: null })
+    const s = reactive({ tab: nav.query.tab || '待检', q: '', item: null })
     const pend = computed(qcPending)
     const done = computed(() => db.qcs.slice().reverse())
+    const fix = computed(() => qcReworks().map((r) => ({ r, q: qcOf(r.no), st: retQc(r) })))
     const stats = computed(qcSupplierStats)
-    const tabs = computed(() => [['待检', '待检', pend.value.length], ['已检', '已检', db.qcs.length], ['质量', '供应商质量']])
+    const tabs = computed(() => [['待检', '待检', pend.value.length], ['返修', '不合格、返修', fix.value.length || null], ['已检', '已检', db.qcs.length], ['质量', '供应商质量']])
     const filt = (rows, f) => rows.filter((x) => !s.q || f(x).toLowerCase().includes(s.q.toLowerCase()))
-    return { s, pend, done, stats, tabs, filt }
+    async function rework(r) {
+      const why = await askText('返修 ' + r.no, '回货拉回工厂返修，这批变「返修中」，不能入成品仓。工厂返修回来点「返修完成，重新验货」，回到待检再验一次；这次的验货记录留着。', '返修说明：返修什么、多少件、工厂哪天送回', '返修')
+      if (why != null && run(() => qcRework(r, why))) toast(`${r.no} 返修中，返修回来点「返修完成，重新验货」`)
+    }
+    function reworkDone(r) { if (run(() => qcReworkDone(r))) { toast(`${r.no} 回到待检，验第 ${qcsOf(r.no).length + 1} 次`); s.tab = '待检' } }
+    return { s, pend, done, fix, stats, tabs, filt, rework, reworkDone }
   },
   template: `<div>
     <Head t="质检"/>
@@ -676,18 +732,32 @@ route('/qc', {
         { k: 'kind', t: '类型' }, { k: 'src', t: '来源单' }, { k: 'party', t: '供应商', f: x => supName(x.party) }, { k: 'what', t: '货品' },
         { k: 'lot', t: '批量', c: 'num', f: x => fq(x.lot) + ' ' + x.unit }, { k: 'n', t: '抽检', c: 'num', f: x => qcAql(x.lot).n }, { k: 'date', t: '到货', f: x => fd(x.date) }, { k: 'act', t: '' }]">
         <template #src="{ r }"><a class="code" :href="'#' + r.to">{{ r.src }}</a></template>
-        <template #what="{ r }"><span class="ell" style="max-width:260px;display:inline-block;vertical-align:middle">{{ r.what }}</span></template>
+        <template #what="{ r }"><span class="ell" style="max-width:260px;display:inline-block;vertical-align:middle">{{ r.what }}</span><span v-if="r.n > 1" class="flag amber" style="margin-left:6px">返修后第 {{ r.n }} 次</span></template>
         <template #act="{ r }"><button class="btn sm" @click="s.item = r">验货</button></template>
+      </Tbl>
+    </div>
+    <div v-if="s.tab === '返修'" data-c="不合格、返修">
+      <p class="dim tip" style="margin:12px 20px">验货不合格的回货不能入成品仓：跟单员点「返修」写返修说明，拉回工厂返修；返修回来点「返修完成，重新验货」，回到「待检」再验一次。每次的验货记录都留在「已检」里。</p>
+      <Tbl :rows="filt(fix, x => x.r.no + x.r.prod + supName(x.r.factory) + x.r.style)" empty="没有不合格、在返修的回货：验货不合格的回货会列在这里，等跟单员安排返修" :cols="[
+        { k: 'no', t: '回货单', c: 'code', f: x => x.r.no }, { k: 'prod', t: '加工单 · 加工厂 · 跟单' }, { k: 'style', t: '款式 · 回货' },
+        { k: 'qc', t: '最近一次验货' }, { k: 'fix', t: '返修说明', w: '22%' }, { k: 'st', t: '状态' }, { k: 'act', t: '' }]">
+        <template #prod="{ r }"><a class="code" :href="'#/production/' + r.r.prod">{{ r.r.prod }}</a><div class="dim" style="font-size:12px">{{ supName(r.r.factory) }} · {{ userName(production(r.r.prod)?.merch) }}</div></template>
+        <template #style="{ r }"><span class="row"><Thumb :code="r.r.style" :s="24"/><span class="code">{{ r.r.style }}</span></span><div class="dim" style="font-size:12px">回货 {{ fq(sum(r.r.lines, l => l.qty)) }} 件</div></template>
+        <template #qc="{ r }"><div>第 {{ r.q.n || 1 }} 次 · {{ fd(r.q.date) }}</div><div class="mut" style="font-size:12px">抽 {{ r.q.sample }} 件，不合格 {{ r.q.bad }} 件</div><small class="dim ell" style="max-width:180px;display:inline-block">{{ r.q.note }}</small></template>
+        <template #fix="{ r }"><template v-if="r.q.rework"><span class="wrap">{{ r.q.rework.note }}</span><div class="dim" style="font-size:12px">{{ userName(r.q.rework.by) }} {{ fd(r.q.rework.at) }}</div></template><span v-else class="dim">还没安排</span></template>
+        <template #st="{ r }"><St :s="r.st"/></template>
+        <template #act="{ r }"><button v-if="r.st === '不合格'" class="btn sm" @click="rework(r.r)">返修</button><button v-else class="btn sm" @click="reworkDone(r.r)">返修完成，重新验货</button></template>
       </Tbl>
     </div>
     <div v-if="s.tab === '已检'" data-c="验货记录">
       <Tbl :rows="filt(done, x => x.no + x.src + supName(x.party) + x.what)" empty="还没有验货记录" :cols="[
-        { k: 'no', t: '单号', c: 'code' }, { k: 'kind', t: '类型' }, { k: 'src', t: '来源单' }, { k: 'party', t: '供应商', f: x => supName(x.party) },
+        { k: 'no', t: '单号', c: 'code' }, { k: 'kind', t: '类型' }, { k: 'src', t: '来源单' }, { k: 'n', t: '次', f: x => '第 ' + (x.n || 1) + ' 次' }, { k: 'party', t: '供应商', f: x => supName(x.party) },
         { k: 'lot', t: '批量', c: 'num', f: x => fq(x.lot) + ' ' + x.unit }, { k: 'bad', t: '抽检 / 不合格', c: 'num', f: x => x.sample + ' / ' + x.bad },
         { k: 'result', t: '结论' }, { k: 'note', t: '问题' }, { k: 'date', t: '日期', f: x => fd(x.date) }]">
         <template #src="{ r }"><a class="code" :href="'#' + r.to">{{ r.src }}</a></template>
         <template #result="{ r }"><St :s="r.result"/></template>
-        <template #note="{ r }"><span class="row"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="28" :limit="2"/><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span></span></template>
+        <template #note="{ r }"><span class="row"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="28" :limit="2"/><span class="col"><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span>
+          <small v-if="r.rework" class="dim">返修：{{ r.rework.note }}（{{ userName(r.rework.by) }} {{ fd(r.rework.at) }}{{ r.rework.doneAt ? '，' + fd(r.rework.doneAt) + ' 返修完成' : '，返修中' }}）</small></span></span></template>
       </Tbl>
     </div>
     <div v-if="s.tab === '质量'" data-c="供应商质量">
@@ -711,8 +781,9 @@ comp('QcInspect', {
     function save() { const q = run(() => qcInspect(p.item, { ...f })); if (q?.no) { emit('close'); toast(`${q.no} ${q.result}`) } }
     return { a, f, save }
   },
-  template: `<Modal :t="item.kind + ' · ' + item.src" :w="520" @close="$emit('close')">
-    <dl class="props" style="margin-bottom:16px"><dt>供应商</dt><dd>{{ supName(item.party) }}</dd><dt>货品</dt><dd>{{ item.what }}</dd><dt>批量</dt><dd>{{ fq(item.lot) }} {{ item.unit }} · AQL 2.5 抽 {{ a.n }}，允收 {{ a.ac }}</dd></dl>
+  template: `<Modal :t="item.kind + ' · ' + item.src + (item.n > 1 ? ' · 第 ' + item.n + ' 次' : '')" :w="520" @close="$emit('close')">
+    <dl class="props" style="margin-bottom:16px"><dt>供应商</dt><dd>{{ supName(item.party) }}</dd><dt>货品</dt><dd>{{ item.what }}</dd><dt>批量</dt><dd>{{ fq(item.lot) }} {{ item.unit }} · AQL 2.5 抽 {{ a.n }}，允收 {{ a.ac }}</dd>
+      <template v-for="q in qcsOf(item.src)" :key="q.no"><dt>第 {{ q.n || 1 }} 次</dt><dd>{{ fd(q.date) }} {{ q.result }}：{{ q.note || '—' }}<div v-if="q.rework" class="dim" style="font-size:12px">返修：{{ q.rework.note }}</div></dd></template></dl>
     <div class="form">
       <label class="f">抽检数<input class="inp num" type="number" v-model.number="f.sample"></label>
       <label class="f">不合格数<input class="inp num" type="number" v-model.number="f.bad"></label>
@@ -731,11 +802,18 @@ db.fgStock = {}
 db.shipments = []
 const fgKey = (st, c, z) => `${st}|${c}|${z}`
 const fgQty = (st, c, z) => db.fgStock[fgKey(st, c, z)] || 0
-const fgPending = () => { const done = new Set(db.fgIn.map((x) => x.ret)); return liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ r, qc: qcOf(r.no) })) }
+const fgPending = () => { const done = new Set(db.fgIn.map((x) => x.ret)); return liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ r, qc: qcOf(r.no), st: retQc(r) })) }
+// 合格、让步接收的回货才能入成品仓；没验、不合格、在返修的拦下，说清楚先做什么（页面上按钮灰着，旁边写 short，点了去 to）
+const FG_BLOCK = {
+  待检: { t: '还没验货，不能入成品仓', how: '先到 生产 › 质检 验货，合格或让步接收后再入库', short: '先验货', to: '/qc' },
+  不合格: { t: '验货不合格，不能入成品仓', how: '先到 质检 › 不合格、返修 点「返修」写返修说明；工厂返修回来重新验货，合格了再入库', short: '先返修', to: '/qc?tab=返修' },
+  返修中: { t: '工厂在返修，不能入成品仓', how: '返修回来到 质检 › 不合格、返修 点「返修完成，重新验货」，验过再入库', short: '返修中', to: '/qc?tab=返修' },
+}
+const fgBlock = (r) => FG_BLOCK[retQc(r)] || null
 function fgReceive(r) {
-  const qc = qcOf(r.no)
-  if (qc?.result === '不合格') fail('验货不合格，不能入成品仓', ['先返修，或者改成让步接收'])
   if (db.fgIn.some((x) => x.ret === r.no)) fail('这批回货已经入过库')
+  const b = fgBlock(r)
+  if (b) fail(`${r.no} ${b.t}`, [b.how])
   const lines = r.lines.map((l) => ({ color: l.color, size: l.size, qty: l.qty - l.def })).filter((l) => l.qty > 0)
   lines.forEach((l) => { const k = fgKey(r.style, l.color, l.size); db.fgStock[k] = (db.fgStock[k] || 0) + l.qty })
   const d = add(db.fgIn, { no: nextNo('CR'), ret: r.no, prod: r.prod, style: r.style, order: r.order, factory: r.factory, date: clock.today, wh: r.wh || 'CP01', lines, jst: '待推送', log: [] })
@@ -774,7 +852,7 @@ as('u5', '2026-11-03', () => {
 })
 
 SEARCH.push(() => db.shipments.map((s) => ({ t: s.no + ' ' + (TRADE ? custName(s.customer) : s.order), sub: '发货单', to: '/fg?tab=发货', i: 'warehouse' })))
-TODOS.push(() => [{ t: '回货待入成品仓', n: fgPending().filter((x) => x.qc?.result !== '不合格').length, to: '/fg', i: 'warehouse' }])
+TODOS.push(() => [{ t: '回货待入成品仓', n: fgPending().filter((x) => !fgBlock(x.r)).length, to: '/fg', i: 'warehouse' }])
 
 route('/fg', {
   setup() {
@@ -801,9 +879,11 @@ route('/fg', {
         { k: 'qty', t: '回货', c: 'num', f: x => sum(x.r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: x => sum(x.r.lines, l => l.def) },
         { k: 'good', t: '良品', c: 'num', f: x => sum(x.r.lines, l => l.qty - l.def) }, { k: 'qc', t: '验货' }, { k: 'date', t: '回货日期', f: x => fd(x.r.date) }, { k: 'act', t: '' }]">
         <template #style="{ r }"><span class="row"><Thumb :code="r.r.style" :s="24"/><span class="code">{{ r.r.style }}</span></span></template>
-        <template #qc="{ r }"><St v-if="r.qc" :s="r.qc.result"/><a v-else class="dim" href="#/qc">待检</a></template>
-        <template #act="{ r }"><button class="btn sm" :disabled="r.qc && r.qc.result === '不合格'" @click="receive(r.r)">入库</button></template>
+        <template #qc="{ r }"><span class="row g4"><St :s="r.st"/><small v-if="r.qc && (r.qc.n || 1) > 1" class="dim">第 {{ r.qc.n }} 次</small></span></template>
+        <template #act="{ r }"><span class="row g8" style="justify-content:flex-end"><a v-if="fgBlock(r.r)" class="dim" style="font-size:12px" :href="'#' + fgBlock(r.r).to" :title="fgBlock(r.r).how">{{ fgBlock(r.r).short }}</a>
+          <button class="btn sm" :disabled="!!fgBlock(r.r)" :title="fgBlock(r.r) ? fgBlock(r.r).t + '：' + fgBlock(r.r).how : null" @click="receive(r.r)">入库</button></span></template>
       </Tbl>
+      <p v-if="pend.some(x => fgBlock(x.r))" class="dim" style="font-size:12px;margin:10px 20px">回货验货合格（或让步接收）才能入库；没验的先去质检验货，不合格的先返修、返修回来再验。</p>
     </div>
     <div v-if="s.tab === '库存'" class="page" data-c="成品库存">
       <div v-for="st in stockStyles" :key="st" style="margin-bottom:28px">
@@ -1288,6 +1368,6 @@ route('/reports', {
 
 expose({
   seasonName, PLAN, planActual, smpCur, smpState, smpNode, smpWho, smpNodeState, costOf, costRate, rowMidUse, unitPrice,
-  qcAql, qcOf, fgQty, fgPush, finAmt, finDue, finVerify, OVER,
+  qcAql, qcOf, qcsOf, retQc, fgBlock, smpCount, fgQty, fgPush, finAmt, finDue, finVerify, OVER,
   OCR_CATS, OCR_NOTE, ocrOurs, ocrFake, ocrCompare, ocrCreate, ocrDemoFile, costTp,
 })

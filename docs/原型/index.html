@@ -805,7 +805,7 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
 .mi-rel a:hover { background: var(--bg-hover); }
 .mi-rel a > svg { margin-top: 2px; color: var(--fg-3); }
 .mi-rel a:hover b, .mi-rel a:hover > svg { color: var(--accent); }
-.mi-rel span { display: block; min-width: 0; }
+.mi-rel a > span { display: block; min-width: 0; }
 .mi-rel b { font-weight: 600; }
 .mi-rel small { display: block; font-size: 12px; line-height: 1.5; color: var(--fg-2); }
 .mi-strip { display: flex; gap: 3px; }
@@ -1236,7 +1236,7 @@ const RULES = {
   order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 审核: auditOrder, 反审核: unauditOrder },
   purchase: { ...docRules('purchase', (p) => { p.status = '已审核'; refreshPoStatus(p); return p.status }), 反审核: unauditPurchase },
   production: { ...docRules('production', (p) => (prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
-  stock: { 审核: postStockDoc, 反审核: unpostStockDoc },
+  stock: { 审核: postStockDoc, 反审核: unpostStockDoc, 作废: voidStockDoc },
   techpack: { 生效: publishTp },
   change: { 驳回: rejectDoc('change'), 审核: auditChange },
   supplier: { 申请准入: requestAdmit, 通过: approveAdmit, 驳回: rejectAdmit },
@@ -1946,7 +1946,23 @@ function postStockDoc(d) {
   move('stock', d, '审核')
   d.auditor = db.me
 }
+/* 进了对账单的单据不能反审核、作废（PRD §2.5 M11）：采购入库、采购退货、回货都查这一条。
+ * 对账单在 6-pages-later.js：草稿能作废（里面的单据回到待对账）；发出去以后只能往下走，不能作废，差错另开单冲回 */
+const stmtOf = (no) => db.statements?.find((s) => s.status !== '已作废' && s.items.some((i) => i.no === no))
+const STMT_GONE = { 已发送: '已经发给供应商了', 已确认: '供应商已经确认了', 已付款: '已经付了款' }
+function checkNotBilled(no, a) {
+  const s = stmtOf(no)
+  if (!s) return
+  fail(`${no} 已经进了对账单 ${s.no}（${s.status}），不能${a}`, s.status === '草稿'
+    ? [`先到 对账 › ${s.no} 把这张草稿对账单作废，里面的单据回到「待对账」，再来${a}`]
+    : [`对账单 ${s.no} ${STMT_GONE[s.status] || '已经往下走了'}，不能作废`, '这张单就不能再动了；数量、单价有差错，和供应商对清楚后另开单冲回（比如入多了开采购退货），冲回的单进下个月的对账单'])
+}
+function voidStockDoc(d) {
+  checkNotBilled(d.no, '作废')
+  move('stock', d, '作废')
+}
 function unpostStockDoc(d) {
+  checkNotBilled(d.no, '反审核')
   if (d.to) { const s = stockShortage(d.to, d.lines); if (s.length) fail('料已经被用掉或调走，改不回去', s) }
   d.lines.forEach((l) => { if (d.to) changeStock(d.to, l, -l.qty, d); if (d.from) changeStock(d.from, l, l.qty, d) })
   if (d.type === '采购入库' && d.src) {
@@ -2010,17 +2026,28 @@ function nodeState(n) {
   return n.as ? 'run' : 'todo'
 }
 const curNode = (p) => p.nodes.find((n) => !n.af)
+/* 报进度（PRD §6.7.3）：电脑上加工单的「报进度」和手机报工都调这一个，规则一样。
+ * f.kind = '开始'：只记实际开始，节点进行中；'完成'：记实际完成，没填日期按今天。要报完成得明确点「报完成」，不会不知不觉就完成了。
+ * 不传 kind 按有没有 af 判断（种子、自检这么调）。表单初值也共用 reportInit：实际开始默认今天，实际完成不预填 */
+const reportInit = (n) => ({ as: n.as || clock.today, af: n.af || '', qty: n.qty, note: n.note || '', photos: [] })
 function reportNode(p, i, f) {
   if (!prodLive(p)) fail('加工单审核后才能报进度')
   const n = p.nodes[i]
-  if (!f.as && !f.af) fail('开始、完成至少填一个')
-  if (f.af && f.as && f.af < f.as) fail('完成时间不能早于开始时间')
-  Object.assign(n, { as: f.as || n.as || f.af, af: f.af || null, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, at: clock.today, photos: [...(n.photos || []), ...(f.photos || [])] })
+  const kind = f.kind || (f.af ? '完成' : '开始')
+  if (kind === '开始') {
+    if (f.af) fail('只报开始就不填实际完成；已经做完了点「报完成」')
+    if (n.af) fail(`${n.name}已经报过完成（${fd(n.af)}），不能改回进行中`, ['完成日期报错了：重新点「报完成」，填对的日期'])
+    if (!f.as) fail('实际开始要填')
+  }
+  const af = kind === '完成' ? f.af || clock.today : null
+  const as = f.as || n.as || af
+  if (af && af < as) fail('完成时间不能早于开始时间')
+  Object.assign(n, { as, af, qty: f.qty ?? n.qty, note: f.note || n.note, by: db.me, at: clock.today, photos: [...(n.photos || []), ...(f.photos || [])] })
   // 每次汇报留一条（谁、哪天报的、报了什么），节点字段只留最新的（PRD §7.2 prd_node_report）
-  n.reports = [...(n.reports || []), { at: clock.today, by: db.me, as: f.as || null, af: f.af || null, qty: f.qty ?? null, note: f.note || '', photos: f.photos?.length || 0 }]
+  n.reports = [...(n.reports || []), { at: clock.today, by: db.me, as: f.as || null, af, qty: f.qty ?? null, note: f.note || '', photos: f.photos?.length || 0 }]
   if (p.status === '已下单') p.status = '生产中'
-  act(p, `报进度：${n.name}${f.af ? '完成' : '开始'}${f.qty ? ' ' + f.qty + ' 件' : ''}${f.photos?.length ? '，照片 ' + f.photos.length + ' 张' : ''}`)
-  return p.nodes.slice(0, i).some((x) => !x.af) ? '前面还有节点没报完成' : null
+  act(p, `报进度：${n.name}${kind}${f.qty ? ' ' + f.qty + ' 件' : ''}${f.photos?.length ? '，照片 ' + f.photos.length + ' 张' : ''}`)
+  return kind === '完成' && p.nodes.slice(0, i).some((x) => !x.af) ? '前面还有节点没报完成' : null
 }
 const expectDue = (p) => p.expect || p.due
 // 风险：late 已逾期 / near 临期（7 天内）/ node 节点延期 / issue 有未关闭异常
@@ -2471,6 +2498,51 @@ function selftest() {
   ok('多级审批：提交时定下审批流，之后改门槛不影响已经在审的单', flowOf('purchase', p4).length === 2 && approvalChain('purchase', p4).length === 1)
   rule.over = over0
   as('u6', clock.today, () => { doAction('purchase', p3, '反审核'); removeDraft(db.purchases, p3); doAction('purchase', p4, '撤回'); removeDraft(db.purchases, p4) })
+  // 占位符和 PRD §6.11.1 同一份：单号、金额、数量合计用 PRD 的名字；账期从结算方式里拆出来单独一个
+  const ctH = renderContract({ body: '标题\n{{单号}}|{{结算方式}}|{{账期}}' }, ctCtx('purchase', po2, 'x')).html
+  ok('合同占位符：{{单号}}{{金额}}{{数量合计}}{{账期}} 认得，旧名 {{单据编号}}{{总金额}}{{总数量}} 不认得；结算方式只放「月结」，账期单独填「30 天」',
+    tplUnknown('采购合同', '{{单号}}{{金额}}{{数量合计}}{{账期}}{{单据编号}}{{总金额}}{{总数量}}').join() === '{{单据编号}},{{总金额}},{{总数量}}'
+    && ctH.includes(`<span class="ct-v">${po2.no}</span>|<span class="ct-v">月结</span>|<span class="ct-v">30 天</span>`), ctH)
+
+  // 报进度（§6.7.3，页面在 5d-production.js）：电脑、手机都调 reportNode。实际完成不预填；只报开始不会把节点报完成；报完成不选日期按今天
+  const rpN = pb.nodes[1], rpF = reportInit(rpN)
+  reportNode(pb, 1, { ...rpF, kind: '开始' })
+  const rpE = err(() => reportNode(pb, 1, { ...reportInit(rpN), af: clock.today, kind: '开始' }))
+  const rpW = reportNode(pb, 1, { ...reportInit(rpN), kind: '完成' })
+  ok('报进度：表单不预填实际完成；只报开始节点还在进行，填了完成日期点只报开始被拦；报完成不选日期按今天，提示前面没报完',
+    rpF.af === '' && rpF.as === clock.today && rpE.includes('点「报完成」') && rpN.af === clock.today && rpN.reports.length === 2 && rpN.reports[0].af === null && rpW === '前面还有节点没报完成', [rpF, rpE, rpN.af, rpW])
+  ok('报进度：报过完成的节点不能再"只报开始"改回进行中', err(() => reportNode(pb, 1, { as: clock.today, kind: '开始' })).includes('不能改回进行中'))
+
+  // 质检返修（M09 待定，函数在 6-pages-later.js）：没验的回货不能入成品仓；不合格 → 返修 → 返修完成 → 回到待检再验，第 1 次的记录留着
+  const rr = db.returns.find((r) => r.prod === p.no)
+  ok('成品仓：没验货的回货不能入库，提示先验货', err(() => fgReceive(rr)).includes('先到 生产 › 质检 验货'))
+  as('u1', clock.today, () => qcInspect(qcPending().find((x) => x.src === rr.no), { sample: 50, bad: 5, result: '不合格', note: '自检：门襟不顺', photos: [{ id: 'x', name: '门襟.jpg' }] }))
+  const todoN = (uid, t) => as(uid, clock.today, () => TODOS.flatMap((f) => f()).find((x) => x.t === t)?.n || 0)
+  ok('质检：不合格不能入库；首页待办「回货不合格待返修」给跟单员和管理层，采购看不到', err(() => fgReceive(rr)).includes('点「返修」')
+    && todoN('u1', '回货不合格待返修') >= 1 && todoN('u6', '回货不合格待返修') === todoN('u1', '回货不合格待返修') && todoN('u2', '回货不合格待返修') === 0, [todoN('u1', '回货不合格待返修'), todoN('u2', '回货不合格待返修')])
+  ok('质检：仓管不能安排返修，不写返修说明也不行', as('u5', clock.today, () => err(() => qcRework(rr, '返工'))).includes('不能安排返修') && as('u1', clock.today, () => err(() => qcRework(rr, ' '))).includes('返修说明'))
+  as('u1', clock.today, () => qcRework(rr, '门襟拆了重做，工厂 11-12 送回'))
+  ok('质检：返修中的不在待检里，也不能入库', retQc(rr) === '返修中' && !qcPending().some((x) => x.src === rr.no) && err(() => fgReceive(rr)).includes('在返修'), retQc(rr))
+  as('u1', clock.today, () => qcReworkDone(rr))
+  const it2 = qcPending().find((x) => x.src === rr.no)
+  as('u1', clock.today, () => qcInspect(it2, { sample: 50, bad: 1, result: '合格' }))
+  const qs2 = qcsOf(rr.no)
+  ok('质检：返修完成回到待检，第 2 次合格后能入库；第 1 次不合格的记录和返修说明都留着', it2?.n === 2 && qs2.length === 2 && qs2[0].result === '不合格' && qs2[0].rework?.doneAt && qs2[1].n === 2 && !!fgReceive(rr)?.no, qs2.map((q) => [q.n, q.result]))
+
+  // 打样中（首页开发卡片、样衣页签同一个口径，smpCount 在 6-pages-later.js）：只数真在打样的，待派单、待评审不算
+  ok('打样中：首页和样衣页签同一个数 1（开发中的 3 个里只有 1 个在打样）', smpCount('打样中') === 1 && db.samples.filter((x) => x.status === '开发中').length === 3, smpCount('打样中'))
+  smpDispatch(db.samples.find((x) => smpState(x) === '待派单'), { way: '内部版房', maker: 'u8' })
+  ok('打样中：待派单的派出去，一起变 2', smpCount('打样中') === 2, smpCount('打样中'))
+
+  // 对账（PRD §2.5 M11，对账单在 6-pages-later.js）：进了没作废的对账单的采购入库、采购退货，反审核、作废都拦下，提示和对账单能做的一致
+  const rk9 = db.stockDocs.find((d) => d.type === '采购入库' && d.partner === 'GYS0009')
+  ok('对账：进了已确认对账单的采购入库不能反审核，说清楚对账单不能作废、差错另开单冲回', ((e) => e.includes(stmtOf(rk9.no)?.no) && e.includes('不能作废') && e.includes('另开单冲回'))(err(() => doAction('stock', rk9, '反审核'))))
+  const rk2 = receivePurchase(po2, { lines: [{ i: 0, qty: 1000 }] }), th2 = returnPurchase(po2, { lines: [{ i: 0, qty: 20 }], reason: '色差' })
+  const st2 = finCreate('GYS0002', clock.today.slice(0, 7))
+  ok('对账：进了草稿对账单的采购入库、采购退货都不能反审核，提示先作废这张草稿对账单', [rk2, th2].every((d) => ((e) => e.includes(st2.no) && e.includes('先到 对账'))(err(() => doAction('stock', d, '反审核')))))
+  finStmtAction(st2, '作废')
+  doAction('stock', th2, '反审核'); doAction('stock', th2, '作废')
+  ok('对账：草稿对账单作废后，退货单能反审核、作废', th2.status === '已作废' && po2.lines[0].returned === 0, [th2.status, po2.lines[0].returned])
   return out
 }
 window.SCM = { db, FLOWS, doAction, selftest }
@@ -2620,7 +2692,7 @@ const ST_KIND = {
   dashed: ['草稿', '待准入', '停用', '无', '未开始', '待开始', '待推送', '未领料', '未到料', '未算料', '待对账', '未开票'],
   pending: ['待审核', '待评审', '待处理', '待检', '待确认', '已驳回', '需改版', '待派单', '待收款', '待付款', '准入审批中', '待签回'],
   ring: ['已审核', '已下单', '合作中', '启用', '已生效', '已确认', '开发中', '已发送', '已开票'],
-  half: ['部分到货', '生产中', '部分回货', '打样中', '进行中', '处理中', '部分领料', '部分付款', '部分收款', '部分发货'],
+  half: ['部分到货', '生产中', '部分回货', '打样中', '进行中', '处理中', '部分领料', '部分付款', '部分收款', '部分发货', '返修中'],
   done: ['已完成', '已到齐', '已通过', '已转大货', '合格', '已付款', '已收款', '已推送', '已入库', '已发货', '已领齐', '齐料', '已对账', '已签回'],
   closed: ['已结案', '已关闭', '已作废版本'],
   x: ['已作废', '已取消', '黑名单', '已淘汰', '不合格', '让步接收'],
@@ -4051,7 +4123,7 @@ route('/', {
       const os = db.orders.filter(homeSees), lo = os.filter(orderLive), smp = db.samples || []
       const arr = arrivals().filter((a) => homeSees(a.p))
       return {
-        dev: { n: db.styles.filter((s) => s.status !== '停用').length, sub: [['打样中', smp.filter((x) => x.status === '开发中').length, '/samples'], ['资料包草稿', db.techpacks.filter((t) => t.status === '草稿').length, '/styles?tp=草稿'], ['样衣', smp.length, '/samples']] },
+        dev: { n: db.styles.filter((s) => s.status !== '停用').length, sub: [['打样中', smpCount('打样中'), '/samples?s=打样中'], ['资料包草稿', db.techpacks.filter((t) => t.status === '草稿').length, '/styles?tp=草稿'], ['样衣', smp.length, '/samples']] },
         ord: { n: sum(lo, orderQty), c: lo.length, sub: [['待审核', os.filter((o) => o.status === '待审核').length, '/orders?s=待审核'], ['待排单', lo.filter((o) => orderSched(o) === 0).length, '/orders?f=待排单'], ['变更待审', db.changes.filter((c) => c.status === '待审核' && os.some((o) => o.no === c.order)).length, '/changes']] },
         prd: { n: sum(live.value, prodQty), c: live.value.length, sub: [['已逾期', risk.value.filter((x) => x.r.late).length, '/production?f=late'], ['节点延期', risk.value.filter((x) => x.r.node).length, '/production?f=node'], ['未关异常', risk.value.filter((x) => x.r.issue).length, '/production?f=issue']] },
         mat: { n: arr.length, sub: [['到料逾期', arr.filter((a) => a.risk === 'late').length, '/arrivals?f=late'], ['采购待审', db.purchases.filter((p) => p.status === '待审核' && homeSees(p)).length, '/purchases?s=待审核'], ['算料待确认', db.mrps.filter((m) => m.status === '草稿' && homeSees(m)).length, '/mrp']] },
@@ -6365,8 +6437,9 @@ function voidReturn(r, reason) {
   if (!reason?.trim()) fail('要写作废原因')
   const p = production(r.prod)
   if (!['已下单', '生产中', '部分回货', '已完成'].includes(p.status)) fail(`加工单 ${p.no} 是「${p.status}」，回货不能作废`)
+  const st = stmtOf(r.no) // 对账单的规则和出入库单同一条（2-store.js checkNotBilled）
   const why = [db.qcs?.some((q) => q.src === r.no) && '已经验过货', db.fgIn?.some((x) => x.ret === r.no) && '已经入了成品仓',
-    db.statements?.some((s) => s.status !== '已作废' && s.items.some((i) => i.no === r.no)) && '已经进了对账单'].filter(Boolean)
+    st && `已经进了对账单 ${st.no}（${st.status}）${st.status === '草稿' ? '：先把这张草稿对账单作废' : '，对账单发出去了不能作废'}`].filter(Boolean)
   if (why.length) fail(`${r.no} 不能作废`, why)
   r.lines.forEach((x) => { const l = p.lines.find((y) => y.color === x.color && y.size === x.size); if (l) { l.ret -= x.qty; l.def -= x.def } })
   r.status = '已作废'
@@ -6635,30 +6708,37 @@ comp('ProdPlan', {
   </Modal>`,
 })
 
+/* 报进度：电脑（这个弹窗）和手机报工（/mobile）共用 reportInit 出初值、sendReport 提交，规则都在 2-store.js 的 reportNode。
+ * 两个按钮：「只报开始」节点进行中；「报完成」记实际完成，完成日期没选就按今天。实际完成不预填，不会一提交就把节点报完成 */
+const REPORT_TIP = '还在做点「只报开始」；做完了点「报完成」，完成日期不选就是今天'
+function sendReport(p, i, f, kind, tail = '') {
+  const w = run(() => reportNode(p, i, { ...f, kind }))
+  if (w) toast(`${p.nodes[i].name}已报${kind}${typeof w === 'string' ? '，' + w : ''}${tail}`)
+  return !!w
+}
 comp('ProdReport', {
   props: { p: Object, i: Number },
   emits: ['close'],
   setup(props, { emit }) {
     const cur = props.i ?? Math.max(0, props.p.nodes.findIndex((n) => !n.af))
-    const f = reactive({ i: cur, as: '', af: '', qty: null, note: '', photos: [] })
-    watch(() => f.i, (i) => { const n = props.p.nodes[i]; Object.assign(f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }, { immediate: true })
-    function ok() {
-      const w = run(() => reportNode(props.p, f.i, { ...f }))
-      if (w) { emit('close'); toast(typeof w === 'string' ? `已报，${w}` : `${props.p.nodes[f.i].name}已报`) }
-    }
-    return { f, ok }
+    const f = reactive({ i: cur, ...reportInit(props.p.nodes[cur]) })
+    watch(() => f.i, (i) => Object.assign(f, reportInit(props.p.nodes[i])))
+    function ok(kind) { if (sendReport(props.p, f.i, f, kind)) emit('close') }
+    return { f, ok, REPORT_TIP }
   },
   template: `<Modal :t="'报进度 ' + p.no" :w="520" @close="$emit('close')">
     <div class="chips" style="margin-bottom:14px" data-c="选节点"><button v-for="(n, k) in p.nodes" :key="n.name" class="chip" :class="{ on: f.i === k }" @click="f.i = k"><Ico v-if="n.af" n="check" :s="12" class="green"/>{{ n.name }}</button></div>
     <p class="dim" style="font-size:12px;margin:-6px 0 12px">计划 {{ fd(p.nodes[f.i].ps) }} – {{ fd(p.nodes[f.i].pf) }}<template v-if="p.nodes[f.i].at">；上次 {{ userName(p.nodes[f.i].by) }} {{ fd(p.nodes[f.i].at) }} 报的</template></p>
     <div class="form">
       <label class="f">实际开始<input class="inp" type="date" v-model="f.as"></label>
-      <label class="f">实际完成<input class="inp" type="date" v-model="f.af"></label>
+      <label class="f">实际完成<input class="inp" type="date" v-model="f.af"><small class="dim">{{ p.nodes[f.i].af ? '已经报过完成；报错了改日期再点「报完成」' : '没做完就空着' }}</small></label>
       <label class="f">数量（件）<input class="inp num" type="number" v-model.number="f.qty"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
       <div class="f full" data-c="报进度照片">照片<span v-if="p.nodes[f.i].photos && p.nodes[f.i].photos.length" class="dim" style="font-weight:400">（这个节点已经有 {{ p.nodes[f.i].photos.length }} 张，再传是追加）</span><Pics v-model="f.photos" :s="64" camera/></div>
     </div>
-    <template #foot><button class="btn ghost" @click="f.af = ''">只报开始</button><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">提交</button></template>
+    <p class="dim" style="font-size:12px;margin:10px 0 0">{{ REPORT_TIP }}</p>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button>
+      <button class="btn" :disabled="!!p.nodes[f.i].af" :title="p.nodes[f.i].af ? '这个节点已经报过完成' : null" @click="ok('开始')">只报开始</button><button class="btn pri" @click="ok('完成')">报完成</button></template>
   </Modal>`,
 })
 
@@ -6805,13 +6885,14 @@ route('/mobile', {
     const list = computed(() => db.productions.filter(prodLive).filter((p) => (s.who === '跟单员' ? p.merch === 'u1' : p.factory === s.factory)).slice().sort(byRisk))
     const p = computed(() => production(s.no))
     const openIs = computed(() => (p.value ? p.value.issues.filter((i) => i.status !== '已关闭') : []))
-    function pickNode(i) { const n = p.value.nodes[i]; s.node = i; Object.assign(s.f, { as: n.as || clock.today, af: n.af || clock.today, qty: n.qty, note: n.note, photos: [] }) }
-    function submit() { const w = run(() => reportNode(p.value, s.node, { ...s.f })); if (w) { toast(`${p.value.nodes[s.node].name}已报，电脑上马上能看到`); s.node = null } }
+    // 和电脑上的「报进度」同一套：reportInit 出初值（实际完成不预填），sendReport → reportNode
+    function pickNode(i) { s.node = i; Object.assign(s.f, reportInit(p.value.nodes[i])) }
+    function submit(kind) { if (sendReport(p.value, s.node, s.f, kind, '，电脑上马上能看到')) s.node = null }
     // 上报异常（PRD §6.7.3 第 3 条）：和电脑上同一套规则，照片必拍
     function openIssue() { Object.assign(s.e, { type: '缺料', desc: '', impact: false, newDate: addDays(expectDue(p.value), 5), party: PARTY0, photos: [] }); s.issue = true }
     function submitIssue() { if (run(() => reportIssue(p.value, { ...s.e, newDate: s.e.impact ? s.e.newDate : null }))) { toast('异常已上报，电脑上马上能看到'); s.issue = false } }
     const back = () => { if (s.node != null) s.node = null; else if (s.issue) s.issue = false; else s.no = null }
-    return { s, list, p, openIs, pickNode, submit, openIssue, submitIssue, back, PARTIES }
+    return { s, list, p, openIs, pickNode, submit, openIssue, submitIssue, back, PARTIES, REPORT_TIP }
   },
   template: `<div>
     <Head t="手机报工"><Seg v-model="s.who" :items="['跟单员', '工厂']"/><select v-if="s.who === '工厂'" class="sel" style="height:28px" v-model="s.factory"><option v-for="f in db.suppliers.filter(f => isFactory(f) && f.status === '合作中')" :key="f.code" :value="f.code">{{ f.short }}</option></select></Head>
@@ -6845,11 +6926,12 @@ route('/mobile', {
           </template>
           <div v-else class="col m-form">
             <label class="f">实际开始<input class="inp" type="date" v-model="s.f.as"></label>
-            <label class="f">实际完成<input class="inp" type="date" v-model="s.f.af"></label>
+            <label class="f">实际完成<input class="inp" type="date" v-model="s.f.af"><small class="dim">{{ p.nodes[s.node].af ? '已经报过完成；报错了改日期再点「报完成」' : '没做完就空着' }}</small></label>
             <label class="f">数量（件）<input class="inp num" type="number" v-model.number="s.f.qty"></label>
             <div class="f">照片<Pics v-model="s.f.photos" :s="60" camera bare/></div>
             <label class="f">备注<textarea class="inp" v-model="s.f.note"></textarea></label>
-            <button class="btn pri" style="height:44px" @click="submit">提交</button>
+            <small class="dim">{{ REPORT_TIP }}</small>
+            <div class="row g8" data-c="手机报工按钮"><button class="btn" style="flex:1;height:44px" :disabled="!!p.nodes[s.node].af" @click="submit('开始')">只报开始</button><button class="btn pri" style="flex:1;height:44px" @click="submit('完成')">报完成</button></div>
           </div>
         </template>
       </div>
@@ -7448,6 +7530,8 @@ function smpPlan(need) {
 }
 const smpCur = (s) => s.vers[s.vers.length - 1]
 const smpState = (s) => (s.status === '开发中' ? smpCur(s).status : s.status)
+// 按状态数样衣：样衣页的页签和首页开发卡片的「打样中」都用它，口径一样（待派单、待评审不算打样中）
+const smpCount = (k) => db.samples.filter((x) => smpState(x) === k).length
 const smpNode = (v) => v.nodes.find((n) => !n.done)
 const smpWho = (v) => (v.way === '外部工厂' ? supName(v.factory) : v.maker ? userName(v.maker) : '—')
 function smpNodeState(n) {
@@ -7561,7 +7645,7 @@ TODOS.push(() => [{ t: '样衣待评审', n: db.samples.filter((s) => smpState(s
 route('/samples', {
   setup() {
     const s = reactive({ tab: nav.query.s || '全部', q: '', add: false })
-    const tabs = computed(() => [['全部', '全部', db.samples.length], ...['待派单', '打样中', '待评审', '已通过', '已转大货', '已淘汰'].map((k) => [k, k, db.samples.filter((x) => smpState(x) === k).length]).filter((x) => x[2] || x[0] === s.tab)])
+    const tabs = computed(() => [['全部', '全部', db.samples.length], ...['待派单', '打样中', '待评审', '已通过', '已转大货', '已淘汰'].map((k) => [k, k, smpCount(k)]).filter((x) => x[2] || x[0] === s.tab)])
     const rows = computed(() => db.samples.filter((x) => (s.tab === '全部' || smpState(x) === s.tab) && (!s.q || (x.no + x.name).toLowerCase().includes(s.q.toLowerCase()))).slice().reverse())
     return { s, tabs, rows }
   },
@@ -7939,11 +8023,29 @@ comp('QuoteNew', {
 const QC_AQL = [[8, 2, 0], [15, 3, 0], [25, 5, 0], [50, 8, 0], [90, 13, 1], [150, 20, 1], [280, 32, 2], [500, 50, 3], [1200, 80, 5], [3200, 125, 7], [10000, 200, 10], [Infinity, 315, 14]]
 const qcAql = (lot) => { const [, n, ac] = QC_AQL.find(([max]) => lot <= max); return { n: Math.min(n, Math.max(1, Math.round(lot))), ac } }
 db.qcs = []
+/* 回货的验货（尾期验货）状态：待检 → 合格 / 让步接收 / 不合格；不合格 → 返修（写返修说明）→ 返修中 → 返修完成 → 回到待检，再验一次。
+ * 每验一次记一条验货记录（q.n = 第几次），前面的记录留着。合格、让步接收以后才能入成品仓（fgReceive）。
+ * 来料检验（采购入库）只验一次；不合格怎么处理（退货、扣款）等甲方定质检流程 */
+Object.assign(FLOWS, { retqc: { 合格: ['待检', '合格'], 让步接收: ['待检', '让步接收'], 不合格: ['待检', '不合格'], 返修: ['不合格', '返修中'], 返修完成: ['返修中', '待检'] } })
+const retQc = (r) => r.qc || '待检'
+function qcMove(r, a, note) {
+  if (!can('retqc', { status: retQc(r) }, a)) fail(`${r.no} 现在是「${retQc(r)}」，不能${a === '返修完成' ? '点返修完成' : a}`)
+  r.qc = FLOWS.retqc[a][1]
+  act(r, (['合格', '让步接收', '不合格'].includes(a) ? '验货：' : '') + a + (note ? '：' + note : ''))
+}
+const qcsOf = (src) => db.qcs.filter((q) => q.src === src)
+const qcOf = (src) => qcsOf(src).at(-1) // 最近一次
+// 返修谁能点：这张加工单的跟单员、管理层，或角色在「进度、异常、回货」上是改、审的人（设置 › 角色权限）
+const qcCanRework = (r) => production(r.prod)?.merch === db.me || me()?.role === '管理层'
+  || ['改', '审'].includes(db.perms.find((x) => x.m === '进度、异常、回货')?.v[ROLES.indexOf(me()?.role)])
+function qcCheckRework(r) {
+  if (!qcCanRework(r)) fail(`${me().name}（${me().role}）不能安排返修`, [`找这张加工单的跟单员 ${userName(production(r.prod)?.merch)} 或管理层；也可以在 设置 › 角色权限 给「进度、异常、回货」改的权限`])
+}
 function qcPending() {
   const done = new Set(db.qcs.map((q) => q.src))
   return [
-    ...liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: '/production/' + r.prod })),
-    ...db.stockDocs.filter((d) => d.type === '采购入库' && d.status === '已审核' && !done.has(d.no)).map((d) => ({ kind: '来料检验', src: d.no, date: d.date, party: d.partner, what: d.lines.map((l) => skuName(l.sku)).join('、'), lot: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), unit: matOfSku(d.lines[0].sku)?.purUnit || '', to: '/stock-docs/' + d.no })),
+    ...liveReturns().filter((r) => retQc(r) === '待检').map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: '/production/' + r.prod, n: qcsOf(r.no).length + 1 })),
+    ...db.stockDocs.filter((d) => d.type === '采购入库' && d.status === '已审核' && !done.has(d.no)).map((d) => ({ kind: '来料检验', src: d.no, date: d.date, party: d.partner, what: d.lines.map((l) => skuName(l.sku)).join('、'), lot: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), unit: matOfSku(d.lines[0].sku)?.purUnit || '', to: '/stock-docs/' + d.no, n: 1 })),
   ].sort((a, b) => b.date.localeCompare(a.date))
 }
 function qcInspect(item, f) {
@@ -7952,9 +8054,27 @@ function qcInspect(item, f) {
   if (!f.result) fail('选一个结论')
   if (f.result !== '合格' && !f.note) fail('不合格、让步接收要写问题')
   if (f.result !== '合格' && !f.photos?.length) fail('不合格、让步接收要拍问题照片')
-  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', photos: f.photos || [], by: db.me })
+  const r = item.kind === '尾期验货' ? db.returns.find((x) => x.no === item.src) : null
+  if (r) qcMove(r, f.result, f.note) // 回货：只有待检的能验（返修回来的也是待检）
+  else if (qcOf(item.src)) fail(item.src + ' 已经验过了')
+  return add(db.qcs, { no: nextNo('QC'), kind: item.kind, src: item.src, n: qcsOf(item.src).length + 1, party: item.party, what: item.what, lot: item.lot, unit: item.unit, to: item.to, date: clock.today, sample: f.sample, bad: f.bad || 0, ac: qcAql(item.lot).ac, result: f.result, note: f.note || '', photos: f.photos || [], by: db.me, rework: null })
 }
-const qcOf = (src) => db.qcs.find((q) => q.src === src)
+// 返修：不合格的回货拉回工厂返修，写返修说明（返修什么、多少件、哪天送回），记在这次验货记录上
+function qcRework(r, note) {
+  qcCheckRework(r)
+  if (!note?.trim()) fail('要写返修说明：返修什么、多少件、工厂哪天送回')
+  qcMove(r, '返修', note.trim())
+  qcOf(r.no).rework = { note: note.trim(), at: clock.today, by: db.me }
+  act(production(r.prod), `回货 ${r.no} 验货不合格，拉回工厂返修：${note.trim()}`)
+}
+// 返修完成：工厂返修回来，回到待检，再验一次（记第 2 次、第 3 次……）
+function qcReworkDone(r) {
+  qcCheckRework(r)
+  qcMove(r, '返修完成')
+  Object.assign(qcOf(r.no).rework, { doneAt: clock.today, doneBy: db.me })
+  act(production(r.prod), `回货 ${r.no} 返修完成，等重新验货`)
+}
+const qcReworks = () => liveReturns().filter((r) => ['不合格', '返修中'].includes(retQc(r)))
 function qcSupplierStats() {
   const codes = [...new Set([...db.productions.map((p) => p.factory), ...db.qcs.map((q) => q.party)])]
   return codes.map((c) => {
@@ -7963,22 +8083,40 @@ function qcSupplierStats() {
     return { c, ret, def, rate: ret ? def / ret : null, n: qs.length, bad: qs.filter((q) => q.result === '不合格').length, soft: qs.filter((q) => q.result === '让步接收').length }
   }).filter((x) => x.ret || x.n)
 }
-// 种子：第一批回货验过（合格），两张面料入库验过（一张合格、一张让步接收）
-as('u1', '2026-11-02', () => { const r = db.returns[0]; if (r) qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 2, result: '合格' }) })
+// 种子：卫衣第一批回货（11-01）第 1 次验货不合格，拉回去返修，11-02 返修回来第 2 次合格、入库；第二批（11-06）11-07 验货不合格，等跟单安排返修
+//       两张面料入库验过（一张合格、一张让步接收）
+as('u1', '2026-11-01', () => {
+  const r = db.returns[0]
+  if (!r) return
+  qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 6, result: '不合格', note: '领口不平 4 件、线头没剪干净 2 件', photos: [demoPic('defect', colorOf('HE').hex, '领口', '领口不平.jpg')] })
+  qcRework(r, '领口不平的拆了重上，整批清线头，工厂 11-02 送回')
+  as('u1', '2026-11-02', () => { qcReworkDone(r); qcInspect(qcPending().find((x) => x.src === r.no), { sample: 50, bad: 2, result: '合格' }) })
+})
+as('u1', '2026-11-07', () => { const r = db.returns[1]; if (r) qcInspect(qcPending().find((x) => x.src === r.no), { sample: 32, bad: 4, result: '不合格', note: '后领贴条歪斜 3 件、袖口开线 1 件', photos: [demoPic('defect', colorOf('HH').hex, '袖口', '袖口开线.jpg')] }) })
 as('u5', '2026-10-08', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0009'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 20, bad: 0, result: '合格' }) })
 as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '采购入库' && x.partner === 'GYS0001'); if (d) qcInspect(qcPending().find((x) => x.src === d.no), { sample: 80, bad: 6, result: '让步接收', note: '卡其色与确认样轻微色差，' + ifTrade('客户同意接收', '开发确认能用'), photos: [demoPic('defect', colorOf('KQ').hex, '色差', '色差对比.jpg')] }) })
 
-TODOS.push(() => [{ t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' }])
+TODOS.push(() => [
+  { t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' },
+  // 给这张加工单的跟单员和管理层（homeMineOr 在 5a-home-style.js）
+  { t: '回货不合格待返修', n: liveReturns().filter((r) => retQc(r) === '不合格' && homeMineOr(production(r.prod)?.merch)).length, to: '/qc?tab=返修', i: 'shield', tone: 'red' },
+])
 
 route('/qc', {
   setup() {
-    const s = reactive({ tab: '待检', q: '', item: null })
+    const s = reactive({ tab: nav.query.tab || '待检', q: '', item: null })
     const pend = computed(qcPending)
     const done = computed(() => db.qcs.slice().reverse())
+    const fix = computed(() => qcReworks().map((r) => ({ r, q: qcOf(r.no), st: retQc(r) })))
     const stats = computed(qcSupplierStats)
-    const tabs = computed(() => [['待检', '待检', pend.value.length], ['已检', '已检', db.qcs.length], ['质量', '供应商质量']])
+    const tabs = computed(() => [['待检', '待检', pend.value.length], ['返修', '不合格、返修', fix.value.length || null], ['已检', '已检', db.qcs.length], ['质量', '供应商质量']])
     const filt = (rows, f) => rows.filter((x) => !s.q || f(x).toLowerCase().includes(s.q.toLowerCase()))
-    return { s, pend, done, stats, tabs, filt }
+    async function rework(r) {
+      const why = await askText('返修 ' + r.no, '回货拉回工厂返修，这批变「返修中」，不能入成品仓。工厂返修回来点「返修完成，重新验货」，回到待检再验一次；这次的验货记录留着。', '返修说明：返修什么、多少件、工厂哪天送回', '返修')
+      if (why != null && run(() => qcRework(r, why))) toast(`${r.no} 返修中，返修回来点「返修完成，重新验货」`)
+    }
+    function reworkDone(r) { if (run(() => qcReworkDone(r))) { toast(`${r.no} 回到待检，验第 ${qcsOf(r.no).length + 1} 次`); s.tab = '待检' } }
+    return { s, pend, done, fix, stats, tabs, filt, rework, reworkDone }
   },
   template: `<div>
     <Head t="质检"/>
@@ -7988,18 +8126,32 @@ route('/qc', {
         { k: 'kind', t: '类型' }, { k: 'src', t: '来源单' }, { k: 'party', t: '供应商', f: x => supName(x.party) }, { k: 'what', t: '货品' },
         { k: 'lot', t: '批量', c: 'num', f: x => fq(x.lot) + ' ' + x.unit }, { k: 'n', t: '抽检', c: 'num', f: x => qcAql(x.lot).n }, { k: 'date', t: '到货', f: x => fd(x.date) }, { k: 'act', t: '' }]">
         <template #src="{ r }"><a class="code" :href="'#' + r.to">{{ r.src }}</a></template>
-        <template #what="{ r }"><span class="ell" style="max-width:260px;display:inline-block;vertical-align:middle">{{ r.what }}</span></template>
+        <template #what="{ r }"><span class="ell" style="max-width:260px;display:inline-block;vertical-align:middle">{{ r.what }}</span><span v-if="r.n > 1" class="flag amber" style="margin-left:6px">返修后第 {{ r.n }} 次</span></template>
         <template #act="{ r }"><button class="btn sm" @click="s.item = r">验货</button></template>
+      </Tbl>
+    </div>
+    <div v-if="s.tab === '返修'" data-c="不合格、返修">
+      <p class="dim tip" style="margin:12px 20px">验货不合格的回货不能入成品仓：跟单员点「返修」写返修说明，拉回工厂返修；返修回来点「返修完成，重新验货」，回到「待检」再验一次。每次的验货记录都留在「已检」里。</p>
+      <Tbl :rows="filt(fix, x => x.r.no + x.r.prod + supName(x.r.factory) + x.r.style)" empty="没有不合格、在返修的回货：验货不合格的回货会列在这里，等跟单员安排返修" :cols="[
+        { k: 'no', t: '回货单', c: 'code', f: x => x.r.no }, { k: 'prod', t: '加工单 · 加工厂 · 跟单' }, { k: 'style', t: '款式 · 回货' },
+        { k: 'qc', t: '最近一次验货' }, { k: 'fix', t: '返修说明', w: '22%' }, { k: 'st', t: '状态' }, { k: 'act', t: '' }]">
+        <template #prod="{ r }"><a class="code" :href="'#/production/' + r.r.prod">{{ r.r.prod }}</a><div class="dim" style="font-size:12px">{{ supName(r.r.factory) }} · {{ userName(production(r.r.prod)?.merch) }}</div></template>
+        <template #style="{ r }"><span class="row"><Thumb :code="r.r.style" :s="24"/><span class="code">{{ r.r.style }}</span></span><div class="dim" style="font-size:12px">回货 {{ fq(sum(r.r.lines, l => l.qty)) }} 件</div></template>
+        <template #qc="{ r }"><div>第 {{ r.q.n || 1 }} 次 · {{ fd(r.q.date) }}</div><div class="mut" style="font-size:12px">抽 {{ r.q.sample }} 件，不合格 {{ r.q.bad }} 件</div><small class="dim ell" style="max-width:180px;display:inline-block">{{ r.q.note }}</small></template>
+        <template #fix="{ r }"><template v-if="r.q.rework"><span class="wrap">{{ r.q.rework.note }}</span><div class="dim" style="font-size:12px">{{ userName(r.q.rework.by) }} {{ fd(r.q.rework.at) }}</div></template><span v-else class="dim">还没安排</span></template>
+        <template #st="{ r }"><St :s="r.st"/></template>
+        <template #act="{ r }"><button v-if="r.st === '不合格'" class="btn sm" @click="rework(r.r)">返修</button><button v-else class="btn sm" @click="reworkDone(r.r)">返修完成，重新验货</button></template>
       </Tbl>
     </div>
     <div v-if="s.tab === '已检'" data-c="验货记录">
       <Tbl :rows="filt(done, x => x.no + x.src + supName(x.party) + x.what)" empty="还没有验货记录" :cols="[
-        { k: 'no', t: '单号', c: 'code' }, { k: 'kind', t: '类型' }, { k: 'src', t: '来源单' }, { k: 'party', t: '供应商', f: x => supName(x.party) },
+        { k: 'no', t: '单号', c: 'code' }, { k: 'kind', t: '类型' }, { k: 'src', t: '来源单' }, { k: 'n', t: '次', f: x => '第 ' + (x.n || 1) + ' 次' }, { k: 'party', t: '供应商', f: x => supName(x.party) },
         { k: 'lot', t: '批量', c: 'num', f: x => fq(x.lot) + ' ' + x.unit }, { k: 'bad', t: '抽检 / 不合格', c: 'num', f: x => x.sample + ' / ' + x.bad },
         { k: 'result', t: '结论' }, { k: 'note', t: '问题' }, { k: 'date', t: '日期', f: x => fd(x.date) }]">
         <template #src="{ r }"><a class="code" :href="'#' + r.to">{{ r.src }}</a></template>
         <template #result="{ r }"><St :s="r.result"/></template>
-        <template #note="{ r }"><span class="row"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="28" :limit="2"/><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span></span></template>
+        <template #note="{ r }"><span class="row"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="28" :limit="2"/><span class="col"><span class="mut ell" style="max-width:240px;display:inline-block;vertical-align:middle">{{ r.note || '—' }}</span>
+          <small v-if="r.rework" class="dim">返修：{{ r.rework.note }}（{{ userName(r.rework.by) }} {{ fd(r.rework.at) }}{{ r.rework.doneAt ? '，' + fd(r.rework.doneAt) + ' 返修完成' : '，返修中' }}）</small></span></span></template>
       </Tbl>
     </div>
     <div v-if="s.tab === '质量'" data-c="供应商质量">
@@ -8023,8 +8175,9 @@ comp('QcInspect', {
     function save() { const q = run(() => qcInspect(p.item, { ...f })); if (q?.no) { emit('close'); toast(`${q.no} ${q.result}`) } }
     return { a, f, save }
   },
-  template: `<Modal :t="item.kind + ' · ' + item.src" :w="520" @close="$emit('close')">
-    <dl class="props" style="margin-bottom:16px"><dt>供应商</dt><dd>{{ supName(item.party) }}</dd><dt>货品</dt><dd>{{ item.what }}</dd><dt>批量</dt><dd>{{ fq(item.lot) }} {{ item.unit }} · AQL 2.5 抽 {{ a.n }}，允收 {{ a.ac }}</dd></dl>
+  template: `<Modal :t="item.kind + ' · ' + item.src + (item.n > 1 ? ' · 第 ' + item.n + ' 次' : '')" :w="520" @close="$emit('close')">
+    <dl class="props" style="margin-bottom:16px"><dt>供应商</dt><dd>{{ supName(item.party) }}</dd><dt>货品</dt><dd>{{ item.what }}</dd><dt>批量</dt><dd>{{ fq(item.lot) }} {{ item.unit }} · AQL 2.5 抽 {{ a.n }}，允收 {{ a.ac }}</dd>
+      <template v-for="q in qcsOf(item.src)" :key="q.no"><dt>第 {{ q.n || 1 }} 次</dt><dd>{{ fd(q.date) }} {{ q.result }}：{{ q.note || '—' }}<div v-if="q.rework" class="dim" style="font-size:12px">返修：{{ q.rework.note }}</div></dd></template></dl>
     <div class="form">
       <label class="f">抽检数<input class="inp num" type="number" v-model.number="f.sample"></label>
       <label class="f">不合格数<input class="inp num" type="number" v-model.number="f.bad"></label>
@@ -8043,11 +8196,18 @@ db.fgStock = {}
 db.shipments = []
 const fgKey = (st, c, z) => `${st}|${c}|${z}`
 const fgQty = (st, c, z) => db.fgStock[fgKey(st, c, z)] || 0
-const fgPending = () => { const done = new Set(db.fgIn.map((x) => x.ret)); return liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ r, qc: qcOf(r.no) })) }
+const fgPending = () => { const done = new Set(db.fgIn.map((x) => x.ret)); return liveReturns().filter((r) => !done.has(r.no)).map((r) => ({ r, qc: qcOf(r.no), st: retQc(r) })) }
+// 合格、让步接收的回货才能入成品仓；没验、不合格、在返修的拦下，说清楚先做什么（页面上按钮灰着，旁边写 short，点了去 to）
+const FG_BLOCK = {
+  待检: { t: '还没验货，不能入成品仓', how: '先到 生产 › 质检 验货，合格或让步接收后再入库', short: '先验货', to: '/qc' },
+  不合格: { t: '验货不合格，不能入成品仓', how: '先到 质检 › 不合格、返修 点「返修」写返修说明；工厂返修回来重新验货，合格了再入库', short: '先返修', to: '/qc?tab=返修' },
+  返修中: { t: '工厂在返修，不能入成品仓', how: '返修回来到 质检 › 不合格、返修 点「返修完成，重新验货」，验过再入库', short: '返修中', to: '/qc?tab=返修' },
+}
+const fgBlock = (r) => FG_BLOCK[retQc(r)] || null
 function fgReceive(r) {
-  const qc = qcOf(r.no)
-  if (qc?.result === '不合格') fail('验货不合格，不能入成品仓', ['先返修，或者改成让步接收'])
   if (db.fgIn.some((x) => x.ret === r.no)) fail('这批回货已经入过库')
+  const b = fgBlock(r)
+  if (b) fail(`${r.no} ${b.t}`, [b.how])
   const lines = r.lines.map((l) => ({ color: l.color, size: l.size, qty: l.qty - l.def })).filter((l) => l.qty > 0)
   lines.forEach((l) => { const k = fgKey(r.style, l.color, l.size); db.fgStock[k] = (db.fgStock[k] || 0) + l.qty })
   const d = add(db.fgIn, { no: nextNo('CR'), ret: r.no, prod: r.prod, style: r.style, order: r.order, factory: r.factory, date: clock.today, wh: r.wh || 'CP01', lines, jst: '待推送', log: [] })
@@ -8086,7 +8246,7 @@ as('u5', '2026-11-03', () => {
 })
 
 SEARCH.push(() => db.shipments.map((s) => ({ t: s.no + ' ' + (TRADE ? custName(s.customer) : s.order), sub: '发货单', to: '/fg?tab=发货', i: 'warehouse' })))
-TODOS.push(() => [{ t: '回货待入成品仓', n: fgPending().filter((x) => x.qc?.result !== '不合格').length, to: '/fg', i: 'warehouse' }])
+TODOS.push(() => [{ t: '回货待入成品仓', n: fgPending().filter((x) => !fgBlock(x.r)).length, to: '/fg', i: 'warehouse' }])
 
 route('/fg', {
   setup() {
@@ -8113,9 +8273,11 @@ route('/fg', {
         { k: 'qty', t: '回货', c: 'num', f: x => sum(x.r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: x => sum(x.r.lines, l => l.def) },
         { k: 'good', t: '良品', c: 'num', f: x => sum(x.r.lines, l => l.qty - l.def) }, { k: 'qc', t: '验货' }, { k: 'date', t: '回货日期', f: x => fd(x.r.date) }, { k: 'act', t: '' }]">
         <template #style="{ r }"><span class="row"><Thumb :code="r.r.style" :s="24"/><span class="code">{{ r.r.style }}</span></span></template>
-        <template #qc="{ r }"><St v-if="r.qc" :s="r.qc.result"/><a v-else class="dim" href="#/qc">待检</a></template>
-        <template #act="{ r }"><button class="btn sm" :disabled="r.qc && r.qc.result === '不合格'" @click="receive(r.r)">入库</button></template>
+        <template #qc="{ r }"><span class="row g4"><St :s="r.st"/><small v-if="r.qc && (r.qc.n || 1) > 1" class="dim">第 {{ r.qc.n }} 次</small></span></template>
+        <template #act="{ r }"><span class="row g8" style="justify-content:flex-end"><a v-if="fgBlock(r.r)" class="dim" style="font-size:12px" :href="'#' + fgBlock(r.r).to" :title="fgBlock(r.r).how">{{ fgBlock(r.r).short }}</a>
+          <button class="btn sm" :disabled="!!fgBlock(r.r)" :title="fgBlock(r.r) ? fgBlock(r.r).t + '：' + fgBlock(r.r).how : null" @click="receive(r.r)">入库</button></span></template>
       </Tbl>
+      <p v-if="pend.some(x => fgBlock(x.r))" class="dim" style="font-size:12px;margin:10px 20px">回货验货合格（或让步接收）才能入库；没验的先去质检验货，不合格的先返修、返修回来再验。</p>
     </div>
     <div v-if="s.tab === '库存'" class="page" data-c="成品库存">
       <div v-for="st in stockStyles" :key="st" style="margin-bottom:28px">
@@ -8600,7 +8762,7 @@ route('/reports', {
 
 expose({
   seasonName, PLAN, planActual, smpCur, smpState, smpNode, smpWho, smpNodeState, costOf, costRate, rowMidUse, unitPrice,
-  qcAql, qcOf, fgQty, fgPush, finAmt, finDue, finVerify, OVER,
+  qcAql, qcOf, qcsOf, retQc, fgBlock, smpCount, fgQty, fgPush, finAmt, finDue, finVerify, OVER,
   OCR_CATS, OCR_NOTE, ocrOurs, ocrFake, ocrCompare, ocrCreate, ocrDemoFile, costTp,
 })
 </script>
@@ -10424,6 +10586,7 @@ function rmbUpper(v) {
 }
 
 /* ---------- 占位符：模板里能用哪些，从单据和供应商上取什么 ----------
+ * 和 PRD §6.11.1 的表是同一份清单，改了两边一起改。
  * k = 写在模板里的名字；only = 只有这类合同能用；f(x)：x = { kind, d 单据, s 供应商, co 甲方主体, no 合同号 } */
 const CT_VARS = [
   { k: '合同编号', t: '生成时自动编，HT + 日期 + 4 位', f: (x) => x.no },
@@ -10440,16 +10603,13 @@ const CT_VARS = [
   { k: '乙方电话', f: (x) => x.s.phone },
   { k: '乙方开户行', f: (x) => x.s.bank },
   { k: '乙方账号', f: (x) => x.s.account },
-  { k: '单据编号', t: '采购单号 / 加工单号', f: (x) => x.d.no },
+  { k: '单号', t: '采购单号 / 加工单号', f: (x) => x.d.no },
   { k: '下单日期', f: (x) => x.d.date },
   { k: '交货日期', f: (x) => x.d.due },
-  { k: '结算方式', t: '单据上的结算方式 + 供应商账期', f: (x) => x.d.settle + (x.s.term ? `，账期 ${x.s.term} 天` : '') },
-  { k: '税率', f: (x) => (x.kind === 'purchase' ? x.d.tax : x.s.tax) },
+  { k: '结算方式', t: '单据上的结算方式：月结、现结、货到付款……', f: (x) => x.d.settle },
+  { k: '账期', t: '供应商账期，如 30 天', f: (x) => (x.s.term != null ? x.s.term + ' 天' : '') },
+  { k: '税率', t: '采购单取单据上的；加工单取供应商的', f: (x) => (x.kind === 'purchase' ? x.d.tax : x.s.tax) },
   { k: '发票类型', f: (x) => x.s.invoice },
-  { k: '总数量', t: '采购单按采购单位合计；加工单是件数', f: (x) => (x.kind === 'purchase' ? fq(poQty(x.d)) : prodQty(x.d) + ' 件') },
-  { k: '总金额', t: '数字，如 12,345.60', f: (x) => fmNum(x.kind === 'purchase' ? poAmt(x.d) : prodAmt(x.d)) },
-  { k: '金额大写', f: (x) => rmbUpper(x.kind === 'purchase' ? poAmt(x.d) : prodAmt(x.d)) },
-  { k: '明细', t: '展开成明细表：采购单是物料行，加工单是颜色 × 尺码', f: (x) => ctDetail(x) },
   { k: '备注', t: '单据备注', f: (x) => x.d.note },
   { k: '含税', only: 'purchase', t: '含税 / 不含税', f: (x) => (x.d.taxIncl === false ? '不含税' : '含税') },
   { k: '交货地点', only: 'purchase', t: '收货仓库和地址', f: (x) => [whName(x.d.wh), wh(x.d.wh)?.addr].filter(Boolean).join('，') },
@@ -10458,6 +10618,10 @@ const CT_VARS = [
   { k: '加工方式', only: 'production', t: '清加工 / 包工包料……', f: (x) => x.d.mode },
   { k: '加工单价', only: 'production', t: '元 / 件', f: (x) => fmNum(x.d.price) },
   { k: '条款', only: 'production', t: '加工单上写的条款', f: (x) => x.d.terms },
+  { k: '明细', t: '单独占一行，展开成明细表：采购单每行一个物料 SKU，加工单是颜色 × 尺码', f: (x) => ctDetail(x) },
+  { k: '数量合计', t: '采购单按采购单位合计；加工单是件数', f: (x) => (x.kind === 'purchase' ? fq(poQty(x.d)) : prodQty(x.d) + ' 件') },
+  { k: '金额', t: '数字，如 12,345.60', f: (x) => fmNum(x.kind === 'purchase' ? poAmt(x.d) : prodAmt(x.d)) },
+  { k: '金额大写', f: (x) => rmbUpper(x.kind === 'purchase' ? poAmt(x.d) : prodAmt(x.d)) },
 ]
 const fmNum = (v) => (+v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const ctKindKey = (name) => Object.keys(CT_KINDS).find((k) => CT_KINDS[k] === name)
@@ -10602,12 +10766,12 @@ const TPL_PO_V2 = `物料采购合同
 乙方（供应方）：{{乙方}}　统一社会信用代码：{{乙方信用代码}}
 地址：{{乙方地址}}　联系人：{{乙方联系人}}　电话：{{乙方电话}}
 甲乙双方经友好协商，就甲方向乙方采购下列物料一事订立本合同，共同遵守。
-第一条　采购明细（对应甲方采购单 {{单据编号}}）
+第一条　采购明细（对应甲方采购单 {{单号}}）
 {{明细}}
-合计金额：人民币{{金额大写}}（¥{{总金额}}），{{含税}}，税率 {{税率}}；乙方开具{{发票类型}}。
+合计金额：人民币{{金额大写}}（¥{{金额}}），{{含税}}，税率 {{税率}}；乙方开具{{发票类型}}。
 第二条　交货：乙方于 {{交货日期}} 前将货物送到 {{交货地点}}，运费由乙方承担。面料每卷标明缸号、米数，送货单写明采购单号。
 第三条　质量：按双方确认的样品、色卡和国家相关标准验收。有色差、疵点、短码的，甲方在收货后 7 日内书面提出，乙方负责退换或补足；因此影响甲方大货交期的，乙方承担相应损失。
-第四条　结算：{{结算方式}}。乙方收款账户：{{乙方开户行}}，账号 {{乙方账号}}。
+第四条　结算：{{结算方式}}，账期 {{账期}}。乙方收款账户：{{乙方开户行}}，账号 {{乙方账号}}。
 第五条　违约：乙方逾期交货的，每逾期一日按逾期部分货款的 0.5% 支付违约金；逾期超过 15 日的，甲方可以解除本合同。
 第六条　争议：协商不成的，向甲方所在地人民法院起诉。
 第七条　本合同一式两份，双方各执一份，签字盖章后生效。其他约定：{{备注}}
@@ -10620,13 +10784,13 @@ const TPL_PROD = `服装委托加工合同
 甲方（委托方）：{{甲方}}　统一社会信用代码：{{甲方信用代码}}
 乙方（加工方）：{{乙方}}　统一社会信用代码：{{乙方信用代码}}
 地址：{{乙方地址}}　联系人：{{乙方联系人}}　电话：{{乙方电话}}
-第一条　加工内容（对应甲方加工单 {{单据编号}}）：款号 {{款号}}（{{款式名称}}），加工方式 {{加工方式}}，加工单价 ¥{{加工单价}} / 件。
+第一条　加工内容（对应甲方加工单 {{单号}}）：款号 {{款号}}（{{款式名称}}），加工方式 {{加工方式}}，加工单价 ¥{{加工单价}} / 件。
 {{明细}}
-合计 {{总数量}}，加工费人民币{{金额大写}}（¥{{总金额}}）。
+合计 {{数量合计}}，加工费人民币{{金额大写}}（¥{{金额}}）。
 第二条　交期：{{交货日期}} 前全部交到甲方指定仓库；分批交货的，每批附装箱单。
 第三条　质量：按甲方资料包（工艺单、尺寸表）和确认的产前样生产。甲方按批抽检，次品率超过 3% 的整批返工，返工费用由乙方承担。
 第四条　物料：甲方提供的面辅料，乙方按资料包单耗领用，剩料在交货后 7 日内退回；超耗部分由乙方按甲方采购价赔偿。
-第五条　结算：{{结算方式}}，按实际合格回货数量结算。乙方收款账户：{{乙方开户行}}，账号 {{乙方账号}}。
+第五条　结算：{{结算方式}}，账期 {{账期}}，按实际合格回货数量结算。乙方收款账户：{{乙方开户行}}，账号 {{乙方账号}}。
 第六条　其他约定：{{条款}}
 第七条　未经甲方书面同意，乙方不得将本合同的加工任务转给第三方；甲方的款式、版型、工艺资料乙方负有保密义务。
 甲方（盖章）：{{甲方}}　　　　乙方（盖章）：{{乙方}}
@@ -10963,22 +11127,25 @@ const FLOW_SECS = [
       '在已审核的订单上点"排单"：选加工厂、数量、加工方式、交期。加工单价默认取价格档案里这家工厂做这个款、这种加工方式的现价，改了要写原因。',
       '加工单提交审核（金额超过 10 万，管理层审完还要总经理再审一级）。审核下单时，系统从交期往前倒排 6 个节点：到料、裁剪、车缝、后整、包装、入仓。',
       '料齐了就领料：系统按 加工数 × 用量 ×（1 + 损耗）− 已领 给出建议，从物料仓发到这个加工厂的工厂仓。',
-      '跟单员或工厂在手机上报进度：每个节点填实际开始、完成、数量，拍照。出了问题报异常（要拍照），处理完关闭，记上责任方。',
+      '跟单员或工厂在手机上报进度（电脑上加工单的「报进度」是同一套）：选节点，填数量、拍照；还在做点「只报开始」，做完了点「报完成」，完成日期不选就是今天。出了问题报异常（要拍照），处理完关闭，记上责任方。',
       '工厂交货时登记回货：回货数和次品数，最多比加工数多 3%。全部回齐，加工单"已完成"；订单的加工单都完成，订单"已完成"。',
       '"看板"把所有加工单的风险摆在一起：逾期、节点延期、缺料、有异常。',
     ] },
 
   { no: '08', t: '成品与结算', ph: '待定', menu: '生产 → 质检；成品与结算 → 成品仓、对账',
-    flow: [flN('回货', '第 07 段的结果'), '验货', flN('质检', '抽检：合格、不合格', { ph: '待定', to: '/qc' }), '良品', flN('成品入库', '推送聚水潭', { ph: '待定', to: '/fg' }), '按订单', flN('发货', '', { ph: '待定' }),
+    flow: [flN('回货', '第 07 段的结果'), '验货', flN('质检', '抽检：合格、让步接收、不合格', { ph: '待定', to: '/qc' }), '合格、让步接收的良品', flN('成品入库', '推送聚水潭；没验的不能入', { ph: '待定', to: '/fg' }), '按订单', flN('发货', '', { ph: '待定' }),
       ...(TRADE ? ['数量 × 单价', flN('客户应收', '按账期算到期日、登记收款', { ph: '待定' })] : [])],
     branches: [
+      { lbl: '不合格', flow: [flN('不合格', '不能入库；首页待办提醒跟单员', { ph: '待定', to: '/qc?tab=返修' }), '返修（写返修说明）', flN('返修中', '工厂拉回去返修', { ph: '待定' }), '返修完成',
+        flN('待检', '再验一次，记第 2 次；第 1 次的记录留着', { ph: '待定', to: '/qc' }), '合格', flN('成品入库', '', { end: true })] },
       { lbl: '对账', flow: [flN('采购入库、退货、回货', '一期已经记下的数'), '每月汇总', flN('供应商对账单', '发送 → 确认 → 付款', { ph: '待定', to: '/finance' }), '', flN('发票核销', '金额要对上', { ph: '待定' })] },
       { lbl: 'OCR', flow: [flN('上传工厂对账单', '照片、PDF', { ph: '待定', to: '/finance' }), '识别', flN('识别结果', '单号、日期、款号、数量、单价、金额', { ph: '待定' }), '按单号比',
         flN('四类', '一致；不一致；对方有我方没有；我方有对方没有', { ph: '待定' }), '差异写说明', flN('生成对账单', '原件、识别结果都挂上', { end: true })] },
     ],
     steps: [
-      '回货先验货，抽检定合格或不合格；不合格的先返修，不能入库。',
-      '合格的良品入成品仓，推送给聚水潭（成品库存以聚水潭为准）。',
+      '回货先验货：按 AQL 抽检，定合格、让步接收或不合格。没验的回货不能入成品仓。',
+      '不合格的先返修：跟单员点「返修」写返修说明（返修什么、多少件、哪天送回），这批回货变"返修中"；首页待办"回货不合格待返修"提醒这张加工单的跟单员和管理层。工厂返修回来点「返修完成，重新验货」，回到待检再验一次。每次验货都留记录（第 1 次、第 2 次），第一次的不合格记录不会被盖掉。',
+      '合格或让步接收的良品入成品仓，推送给聚水潭（成品库存以聚水潭为准）。',
       TRADE ? '按订单发货。发货数量 × 订单单价就是应收，按客户账期算到期日，收到钱登记收款。' : '按订单发货。',
       '每月按供应商汇总：采购入库减采购退货，加上回货的加工费减次品扣款，生成对账单；供应商确认后付款，收到的发票和对账单核销。',
       '工厂也会给一份对账单：在对账页上传照片或 PDF，识别成表格，按单号和系统里的入库、退货、回货逐行比，单号对不上再按日期和款号对。差异写清楚原因，再按比对结果生成对账单。',
@@ -11141,7 +11308,7 @@ const MOD_INFO = {
     down: [
       ['styles', '转大货生成款式，研发 BOM 复制成生产 BOM V1 草稿'],
       ['plans', '开发中、已通过的样衣算进企划表的「在开发」'],
-      ['home', '首页开发概况数样衣；待评审的进待办提醒'],
+      ['home', '首页开发卡片的「打样中」和这里的页签是同一个数，点进来就是那个页签；待评审的进待办提醒'],
     ],
     tip: '改版要写意见，系统自动开下一版打样单；只有评审通过的才能转大货，转出来的款不能删。',
     who: '开发部：设计师建样衣、派单、组织评审，版师接内部打样；评审人可以选几个人。',
@@ -11334,7 +11501,7 @@ const MOD_INFO = {
       ['qc', '待定：审核过的采购入库进来料检验'],
       ['finance', '待定：采购入库、退货汇总进供应商对账'],
     ],
-    tip: '出仓库存不够整张过不了账；采购入库、领料、采购退货从源单生成、当场过账，错了反审核、作废后回源单重做。',
+    tip: '出仓库存不够整张过不了账；采购入库、领料、采购退货从源单生成、当场过账，错了反审核、作废后回源单重做。进了对账单的采购入库、采购退货不能反审核、作废。',
   },
   stock: {
     perm: '出入库、库存',
@@ -11412,7 +11579,7 @@ const MOD_INFO = {
     has: [
       ['我的跟单', '自己跟的、在做的加工单，按风险排：款图、款号、工厂、件数、交期、当前节点'],
       ['单子里', '6 个节点：完成日期、进行中、计划日期，延期标红；还没关的异常'],
-      ['报进度', '实际开始、实际完成、数量、照片、备注'],
+      ['报进度', '实际开始、实际完成、数量、照片、备注；「只报开始」或「报完成」，和电脑上的报进度同一套'],
       ['上报异常', '类型、描述、照片（必须拍）、责任方，影响交期时填预计新交期'],
       ['工厂视角', '工厂自己报工要外部账号，等甲方定（Q02），原型里先放了样子'],
     ],
@@ -11423,14 +11590,15 @@ const MOD_INFO = {
       ['production', '进度写进节点时间线，第一次报进度加工单变生产中；异常进异常页签'],
       ['board', '节点延期、有异常的单，看板和首页待办跟着变'],
     ],
-    tip: '报异常必须拍照；影响交期的要填预计新交期，加工单和看板上马上标出来',
+    tip: '实际完成不预填：还在做点「只报开始」，做完了点「报完成」（完成日期不选就是今天）。报异常必须拍照；影响交期的要填预计新交期，加工单和看板上马上标出来',
   },
   qc: {
-    what: '回货和面料入库先抽检，按 AQL 2.5 算抽几件、允收几件，定合格、不合格或让步接收。模块待定，等甲方定质检流程，原型先给看样子。',
+    what: '回货和面料入库先抽检，按 AQL 2.5 算抽几件、允收几件，定合格、不合格或让步接收。不合格的回货拉回工厂返修，返修回来再验一次。模块待定，等甲方定质检流程，原型先给看样子。',
     has: [
-      ['待检', '尾期验货（回货）和来料检验（采购入库）：来源单、供应商、货品、批量、抽检数'],
-      ['验货', '抽检数、不合格数、结论；不合格和让步接收要写问题、拍照'],
-      ['已检', '单号、类型、来源单、抽检 / 不合格、结论、问题和照片、日期'],
+      ['待检', '尾期验货（回货）和来料检验（采购入库）：来源单、供应商、货品、批量、抽检数；返修回来的标「返修后第 2 次」'],
+      ['验货', '抽检数、不合格数、结论；不合格和让步接收要写问题、拍照；验过几次的列出前几次的结论'],
+      ['不合格、返修', '不合格、返修中的回货：最近一次验货、返修说明、跟单；「返修」「返修完成，重新验货」'],
+      ['已检', '单号、类型、来源单、第几次、抽检 / 不合格、结论、问题和照片、返修说明、日期'],
       ['供应商质量', '每家的回货件数、次品、次品率、验货批次、不合格、让步接收'],
     ],
     up: [
@@ -11438,30 +11606,31 @@ const MOD_INFO = {
       ['stockdocs', '审核过的采购入库单进待检（来料检验）'],
     ],
     down: [
-      ['fg', '验货不合格的回货不能入成品仓'],
-      ['production', '验过货的回货单不能再作废'],
+      ['fg', '合格、让步接收的回货才能入成品仓；没验、不合格、返修中的都不能入'],
+      ['home', '不合格还没安排返修的回货进首页待办，给这张加工单的跟单员和管理层'],
+      ['production', '验过货的回货单不能再作废；返修记进加工单的操作记录'],
     ],
-    tip: '结论按不合格数是否超过允收数自动带出；不合格、让步接收都要写问题、拍照',
-    who: '待定：演示数据里回货是跟单员验、面料入库是仓管验，谁来验等甲方定',
+    tip: '不合格的回货：跟单员点「返修」写返修说明 → 返修中 → 工厂返修回来点「返修完成，重新验货」→ 回到待检再验；每次验货都留记录（第 1 次、第 2 次）',
+    who: '待定：演示数据里回货是跟单员验、面料入库是仓管验，谁来验等甲方定。返修由这张加工单的跟单员、管理层，或「进度、异常、回货」有改权限的人安排',
   },
   fg: {
     what: '回货的良品入成品仓，按款 × 颜色 × 尺码记库存，再按订单发货；入库、发货都推送聚水潭。模块待定，等和聚水潭怎么对接定了（Q01）再做。',
     has: [
-      ['待入库', '回货单、款式、加工厂、回货、次品、良品、验货结论、回货日期'],
+      ['待入库', '回货单、款式、加工厂、回货、次品、良品、验货状态（待检、合格、不合格、返修中、让步接收）、回货日期；不能入的写着先做什么'],
       ['库存', '每个款一张颜色 × 尺码的库存表'],
       ['发货', '发货单、订单、件数、金额、物流单号、日期、聚水潭状态'],
       ['聚水潭', '成品入库单、发货单的推送状态；待推送的能一键推送'],
     ],
     up: [
       ['production', '加工单登记的回货进待入库，入库数 = 回货减次品'],
-      ['qc', '验货不合格的回货不能入库'],
+      ['qc', '验货合格或让步接收的才能入库；没验的先验货，不合格的先返修再验'],
       ['orders', '发货按订单的颜色尺码发，最多比订单多 3%'],
     ],
     down: [
       ['orders', '每次发货记进订单的操作记录'],
       ['production', '入了成品仓的回货单不能再作废'],
     ],
-    tip: '成品库存以聚水潭为准，这里的库存是入库减发货算出来的',
+    tip: '回货要验货合格（或让步接收）才能入库，入库按钮在那之前是灰的；成品库存以聚水潭为准，这里的库存是入库减发货算出来的',
     who: '仓管：回货良品入库、按订单发货、推送聚水潭（演示数据里是仓管做的）',
   },
   finance: {
@@ -11480,6 +11649,7 @@ const MOD_INFO = {
     ],
     down: [
       ['production', '进了对账单的回货单不能再作废'],
+      ['stockdocs', '进了对账单的采购入库、采购退货不能反审核、作废；草稿对账单作废后才行'],
     ],
     tip: '比对出来的差异每一处都要写说明，才能生成对账单；金额按我方单据算',
     who: '财务：每月对账、登记付款和收票（一期财务只看采购单、加工单的金额）',

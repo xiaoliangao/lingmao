@@ -72,7 +72,7 @@ route('/', {
       const os = db.orders.filter(homeSees), lo = os.filter(orderLive), smp = db.samples || []
       const arr = arrivals().filter((a) => homeSees(a.p))
       return {
-        dev: { n: db.styles.filter((s) => s.status !== '停用').length, sub: [['打样中', smp.filter((x) => x.status === '开发中').length, '/samples'], ['资料包草稿', db.techpacks.filter((t) => t.status === '草稿').length, '/styles?tp=草稿'], ['样衣', smp.length, '/samples']] },
+        dev: { n: db.styles.filter((s) => s.status !== '停用').length, sub: [['打样中', smpCount('打样中'), '/samples?s=打样中'], ['资料包草稿', db.techpacks.filter((t) => t.status === '草稿').length, '/styles?tp=草稿'], ['样衣', smp.length, '/samples']] },
         ord: { n: sum(lo, orderQty), c: lo.length, sub: [['待审核', os.filter((o) => o.status === '待审核').length, '/orders?s=待审核'], ['待排单', lo.filter((o) => orderSched(o) === 0).length, '/orders?f=待排单'], ['变更待审', db.changes.filter((c) => c.status === '待审核' && os.some((o) => o.no === c.order)).length, '/changes']] },
         prd: { n: sum(live.value, prodQty), c: live.value.length, sub: [['已逾期', risk.value.filter((x) => x.r.late).length, '/production?f=late'], ['节点延期', risk.value.filter((x) => x.r.node).length, '/production?f=node'], ['未关异常', risk.value.filter((x) => x.r.issue).length, '/production?f=issue']] },
         mat: { n: arr.length, sub: [['到料逾期', arr.filter((a) => a.risk === 'late').length, '/arrivals?f=late'], ['采购待审', db.purchases.filter((p) => p.status === '待审核' && homeSees(p)).length, '/purchases?s=待审核'], ['算料待确认', db.mrps.filter((m) => m.status === '草稿' && homeSees(m)).length, '/mrp']] },
