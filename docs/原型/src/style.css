@@ -761,3 +761,82 @@ td .pics .pgrid { flex-wrap: nowrap; gap: 4px; }
   .fl-stage + .fl-stage { margin-left: 0; }
   .fl-stage::after { display: none; }
 }
+/* ---------- 模块说明（8b-modinfo.js）：右侧一栏，和意见面板并排；屏幕不够宽时让给意见面板，详情页的属性栏挪到下面 ---------- */
+.tb-right .btn.ghost.on { color: var(--accent); background: var(--accent-bg); }
+.mi { width: 300px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); }
+.mi > header { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--line); flex: none; }
+.mi > header > svg { color: var(--accent); }
+.mi > header b { font-size: 14px; }
+.mi > header .dim { font-size: 12px; }
+.mi > header .phase { margin-left: 0; }
+.mi > header .btn { margin-left: auto; }
+.mi-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 28px; font-size: 12.5px; }
+.mi-body h4 { margin: 22px 0 8px; font-size: 12.5px; font-weight: 600; padding-left: 8px; border-left: 3px solid var(--accent); line-height: 1.1; }
+.mi-what { font-size: 13px; line-height: 1.7; }
+.mi-where { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; color: var(--accent); cursor: pointer; }
+.mi-where:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mi-body h4 { scroll-margin-top: 12px; }
+.mi-p { margin: 6px 0 0; line-height: 1.6; color: var(--fg-2); }
+.mi-p a, .mi-ref a { color: var(--accent); }
+.mi-has { display: grid; grid-template-columns: 76px 1fr; gap: 7px 10px; margin: 0; line-height: 1.55; }
+.mi-has dt { color: var(--fg-3); }
+.mi-has dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.mi-perm { border-collapse: collapse; }
+.mi-perm th { font-weight: 500; font-size: 12px; line-height: 1.35; color: var(--fg-3); text-align: left; vertical-align: bottom; padding: 0 8px 4px 0; min-width: 56px; }
+.mi-perm td { height: 26px; padding: 0 6px 0 0; border-bottom: 1px solid var(--line); }
+.mi-perm tr:last-child td { border-bottom: none; }
+.mi-perm td:first-child { padding-right: 14px; color: var(--fg-2); white-space: nowrap; }
+.mi-perm tr.mine td:first-child { color: var(--fg); font-weight: 600; }
+.mi-perm small { margin-left: 4px; padding: 0 4px; border-radius: 3px; font-size: 11px; font-weight: 600; color: var(--side-2); background: var(--stitch); }
+.mi-lv { display: inline-flex; align-items: center; height: 19px; white-space: nowrap; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 3px; font-size: 11.5px; color: var(--fg-2); background: var(--bg); cursor: default; }
+.mi-lv.lv-no { border-style: dashed; color: var(--fg-3); }
+.mi-lv.lv-edit { border-color: #c0cadc; color: var(--accent); background: var(--accent-bg); }
+.mi-lv.lv-audit { border-color: var(--accent); color: var(--accent-fg); background: var(--accent); }
+.mi-rel + .mi-rel { margin-top: 10px; }
+.mi-rel em { display: block; margin-bottom: 4px; font-style: normal; font-size: 12px; color: var(--fg-3); }
+.mi-rel a { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; margin: 0 -8px; border-radius: var(--r); }
+.mi-rel a:hover { background: var(--bg-hover); }
+.mi-rel a > svg { margin-top: 2px; color: var(--fg-3); }
+.mi-rel a:hover b, .mi-rel a:hover > svg { color: var(--accent); }
+.mi-rel span { display: block; min-width: 0; }
+.mi-rel b { font-weight: 600; }
+.mi-rel small { display: block; font-size: 12px; line-height: 1.5; color: var(--fg-2); }
+.mi-strip { display: flex; gap: 3px; }
+.mi-strip button { flex: 1; min-width: 0; height: 22px; padding: 0; border: 1px solid var(--line-strong); border-radius: 3px; background: var(--bg); color: var(--fg-3); font: 11px var(--mono); cursor: pointer; }
+.mi-strip button.p2 { border-style: dashed; border-color: var(--amber-line); }
+.mi-strip button.tbd { border-style: dashed; }
+.mi-strip button.hit { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.mi-strip button:hover { border-color: var(--accent); color: var(--accent); }
+.mi-strip button.on { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); }
+.mi-sec { display: flex; align-items: center; gap: 4px; margin: 10px 0 8px; font-weight: 600; color: var(--fg); }
+.mi-sec .phase { margin-left: 2px; }
+.mi-sec:hover { color: var(--accent); }
+.mi-flow { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; align-items: flex-start; }
+.mi-node { max-width: 100%; border: 1.5px solid var(--accent); border-radius: var(--r); background: var(--bg); }
+.mi-node > * { display: block; padding: 4px 9px; color: inherit; line-height: 1.45; }
+.mi-node > a b { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.mi-node > a:hover { background: var(--bg-hover); }
+.mi-node b { font-size: 12.5px; font-weight: 600; }
+.mi-node .phase { height: 16px; margin-left: 4px; font-size: 10.5px; }
+.mi-node small { display: block; font-size: 12px; color: var(--fg-2); }
+.mi-node.p2 { border-style: dashed; border-color: var(--amber-line); background: var(--amber-bg); }
+.mi-node.tbd { border-style: dashed; border-color: var(--fg-3); }
+.mi-node.end { border-color: var(--green); background: var(--green-bg); }
+.mi-node.end b { color: var(--green); }
+.mi-node.on { align-self: stretch; border-color: var(--stitch); background: var(--amber-bg); box-shadow: 0 0 0 2px var(--amber-bg), 0 0 0 3px var(--stitch); }
+.mi-node.on b { color: var(--fg); }
+.mi-arr { display: flex; align-items: center; gap: 6px; min-height: 22px; padding-left: 12px; font-size: 11.5px; color: var(--fg-3); }
+.mi-arr::before { content: "↓"; font-size: 14px; line-height: 1; color: var(--fg-3); }
+.mi-br { margin-top: 12px; padding-left: 10px; border-left: 2px solid var(--line); }
+.mi-br em { display: block; margin-bottom: 4px; font-style: normal; font-size: 12px; color: var(--fg-2); }
+.mi-tip { margin: 20px 0 0; padding: 8px 10px; border-left: 3px solid var(--amber-line); border-radius: 0 var(--r) var(--r) 0; background: var(--amber-bg); line-height: 1.6; }
+.mi-ref { margin: 14px 0 0; font-size: 12px; color: var(--fg-3); }
+@media (max-width: 1720px) {
+  .app:has(> .fb) > .mi { display: none; }
+  .app:has(> .mi) .detail { flex-direction: column; }
+  .app:has(> .mi) .detail > .aside { width: auto; border-left: none; border-top: 1px solid var(--line); }
+}
+@media (max-width: 1100px) {
+  .mi { position: fixed; right: 0; top: 0; bottom: 0; z-index: 25; box-shadow: var(--shadow); max-width: 100%; }
+}
+@media print { .mi { display: none !important; } }

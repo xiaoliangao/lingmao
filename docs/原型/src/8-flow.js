@@ -166,7 +166,9 @@ comp('FlowLine', {
 route('/flow', {
   setup() {
     const flTag = (ph) => (ph === '二期' ? 'p2' : ph === '待定' || ph === '待排期' ? 'tbd' : '')
-    const jump = (no) => document.getElementById('fl-' + no)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const jump = (no, behavior = 'smooth') => document.getElementById('fl-' + no)?.scrollIntoView({ behavior, block: 'start' })
+    // 从模块说明点"第 06 段"进来：#/flow?s=06，直接停在那一段
+    onMounted(() => { if (nav.query.s) jump(nav.query.s, 'auto') })
     return { FLOW_STRIP, FLOW_SECS, flTag, jump }
   },
   template: `<div>

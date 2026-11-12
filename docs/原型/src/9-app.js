@@ -104,6 +104,7 @@ const Shell = {
     function onKey(e) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); pal.open = !pal.open }
       else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c' && !escStack.length) fbUi.open = !fbUi.open
+      else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'i' && !escStack.length) miUi.open = !miUi.open
     }
     onMounted(() => window.addEventListener('keydown', onKey))
     // 页签：一个模块一个，记住这个模块最后停在哪一页
@@ -123,7 +124,8 @@ const Shell = {
     const fbCount = computed(() => fb.items.length || '')
     const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
     watch(() => db.me, () => toast(`现在是 ${me().name}（${me().role}，数据范围：${roleOf(me().role).scope}）`))
-    return { pal, main, mod, closed, toggle, fbCount, tabs, closeTab, tabTitle, todoCount }
+    const hasInfo = computed(() => !!MOD_INFO[mod.value])
+    return { pal, main, mod, closed, toggle, fbCount, tabs, closeTab, tabTitle, todoCount, miUi, hasInfo }
   },
   template: `<div class="app">
     <aside class="side" data-c="侧边栏">
@@ -142,6 +144,7 @@ const Shell = {
       <header class="topbar">
         <div class="ptabs"><a v-for="(t, i) in tabs" :key="t.k" class="ptab" :class="{ on: t.k === mod }" :href="'#' + t.to">{{ tabTitle(t.k) }}<span v-if="i" class="x" @click.prevent.stop="closeTab(i)"><Ico n="x" :s="12"/></span></a></div>
         <div class="tb-right">
+          <button v-if="hasInfo" class="btn ghost icon" :class="{ on: miUi.open }" :title="(miUi.open ? '收起' : '打开') + '模块说明（I）'" @click="miUi.open = !miUi.open"><Ico n="info"/></button>
           <button class="btn ghost icon" title="搜索 ⌘K" @click="pal.open = true"><Ico n="search"/></button>
           <a class="btn ghost icon" title="待办" href="#/"><Ico n="bell"/><span v-if="todoCount" class="dot">{{ todoCount > 99 ? '99+' : todoCount }}</span></a>
           <label class="me" data-c="切换身份" title="原型专用：换成别的人，看不同角色的待办、数据范围、撤回和审批"><i>{{ me().name[0] }}</i>
@@ -150,6 +153,7 @@ const Shell = {
       </header>
       <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet"/><NotFound v-else class="sheet"/></main>
     </div>
+    <ModInfo v-if="miUi.open && hasInfo" :k="mod"/>
     <FeedbackPanel v-if="fbUi.open"/>
     <Pins v-if="fbUi.open"/>
     <Picker v-if="fbUi.picking"/>
