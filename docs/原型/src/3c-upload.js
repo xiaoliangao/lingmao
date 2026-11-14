@@ -5,7 +5,7 @@
  * 第一张是主图；鼠标移到图上能「设为主图」「删除」；点图看大图（← → 翻页，Esc 关）。
  * 用法：
  *   <Pics v-model="f.images"/>                              多张图，默认最多 9 张
- *   <Pics v-model="f.images" :colors="f.colors"/>            每张图能标颜色（订单、加工单里按颜色出图）
+ *   <Pics v-model="f.images" :colors="f.colors"/>            每张图能标颜色（需求订单、生产单里按颜色出图）
  *   <Pics v-model="d.files" files/>                          附件：图片以外的文件也收，点了下载
  *   <Pics v-model="f.photos" camera/>                       报工、异常：按钮写「拍照」，手机上点了可以选拍照或相册
  *   <Pics :model-value="x.photos" readonly :s="28" :limit="3"/>   表格里只看
@@ -152,7 +152,7 @@ comp('PicsEdit', {
   </Modal>`,
 })
 
-/* 单据附件（订单、采购单、加工单、出入库单详情右侧） */
+/* 单据附件（需求订单、采购单、生产单、物料入库单、出库单、盘点单详情右侧） */
 comp('DocFiles', {
   props: { doc: Object },
   template: `<div class="docfiles" data-c="附件"><h4>附件<span v-if="doc.files && doc.files.length" class="dim" style="font-weight:400"> {{ doc.files.length }}</span></h4>
@@ -199,6 +199,18 @@ function fakePhoto(kind, a, b) {
   return svgUri(100, 75, cloth(100, 75))
 }
 const demoPic = (kind, a, b, name, extra) => ({ id: 'P' + ++picSeq, name, src: fakePhoto(kind, a, b), at: '2026-09-15', ...extra })
+// 演示用的工艺标准文件（设置 › 工艺标准）：一页 A4 的扫描件样子，标题 + 条文
+function stdDocPage(title, lines) {
+  const body = lines.map((t, i) => `<text x="10" y="${30 + i * 7.4}" font-size="3.6" fill="#3d3934">${t}</text>`).join('')
+  return svgUri(100, 141, `<rect width="100" height="141" fill="#fdfcf8"/><rect x="0.4" y="0.4" width="99.2" height="140.2" fill="none" stroke="#d9d4c8" stroke-width=".6"/>
+    <text x="50" y="16" text-anchor="middle" font-size="6" font-weight="700" fill="#22201d">${title}</text><path d="M10 21H90" stroke="#22201d" stroke-width=".5"/>${body}
+    <text x="90" y="134" text-anchor="end" font-size="3" fill="#8a8478">公司工艺标准 · 第 1 页</text>`)
+}
+const STD_DOCS = [
+  ['测量方法说明', ['衣服平铺在桌上，抚平不拉伸，用软尺量；单位 cm。', '后中长：后领中垂直量到下摆。', '胸围：袖窿底下 1cm 横量一周。', '腰围：腰节最细处横量一周。', '摆围：下摆边沿横量一周。', '肩宽：左肩点量到右肩点。', '袖长：肩点量到袖口边。', '袖肥：袖窿底向下 2.5cm 横量。', '裤长：腰头上口沿侧缝量到脚口。', '前浪 / 后浪：腰头上口量到裆底十字缝。', '量完对公差：超出公差的件要返修。']],
+  ['用针与针距要求', ['平车：明线 3cm 12–13 针，暗线 3cm 13–14 针。', '拷边：三线 / 五线 3cm 12 针，线迹平整不起皱。', '冚车：3cm 11–12 针，双针间距 0.6cm。', '针号：薄料 9–11 号，中厚料 11–14 号，厚料 14–16 号。', '用线：大身 40S/2 涤纶线，颜色配面料。', '锁眼：眼长 = 纽扣直径 + 0.2cm，不毛边。', '钉扣：十字钉法，绕脚高度 = 门襟厚度。', '回针：起止针回针 2–3 针，不能漏回针。']],
+  ['工艺操作基本流程与标准', ['1  验布：查色差、疵点，有问题先找跟单。', '2  预缩：按面料要求缩水、缩烫。', '3  排料：按利用率排版，对条对格的先对。', '4  裁剪：上下层误差不超过 0.2cm。', '5  编号分包：同一包不能混色号、缸号。', '6  粘衬：温度、压力、时间按衬布要求。', '7  车缝：照工艺指示，先封产前样。', '8  锁钉：位置照款式图，牢度要拉力测试。', '9  整烫：不起极光、不烫黄。', '10 检验：尺寸、外观、做工逐件查。', '11 包装：按包装方式，吊牌、洗唛齐全。']],
+]
 
 // 种子：几张示意照片，让列表、详情一打开就有图（款式主图按颜色、面料图、异常和报工照片、证照）
 ;(() => {
@@ -217,4 +229,5 @@ const demoPic = (kind, a, b, name, extra) => ({ id: 'P' + ++picSeq, name, src: f
   }
   const gs = sup('GYS0001')
   if (gs?.certs?.[0]) gs.certs[0].file = demoPic('license', null, gs.certs[0].type, gs.certs[0].type + '.jpg')
+  db.craftStd.files = STD_DOCS.map(([t, lines]) => ({ id: 'P' + ++picSeq, name: t + '.jpg', size: 0, src: stdDocPage(t, lines), at: '2026-09-15' }))
 })()

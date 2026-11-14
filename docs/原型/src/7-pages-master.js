@@ -159,9 +159,9 @@ function unblockSupplier(s, reason) {
 function supplierDocs(code) {
   return [
     ...db.purchases.filter((p) => p.supplier === code).map((p) => ({ no: p.no, k: '采购单', date: p.date, qty: fq(poQty(p)), amt: poAmt(p), status: p.status, to: '/purchases/' + p.no })),
-    ...db.productions.filter((p) => p.factory === code).map((p) => ({ no: p.no, k: '加工单', date: p.date, qty: prodQty(p) + ' 件', amt: prodAmt(p), status: p.status, to: '/production/' + p.no })),
-    ...db.stockDocs.filter((d) => d.partner === code).map((d) => ({ no: d.no, k: d.type, date: d.date, qty: d.lines.length + ' 行', amt: null, status: d.status, to: '/stock-docs/' + d.no })),
-    ...liveReturns().filter((r) => r.factory === code).map((r) => ({ no: r.no, k: '回货', date: r.date, qty: sum(r.lines, (x) => x.qty) + ' 件', amt: null, status: '', to: '/production/' + r.prod })),
+    ...db.productions.filter((p) => p.factory === code).map((p) => ({ no: p.no, k: prodKind(p), date: p.date, qty: prodQty(p) + ' 件', amt: prodAmt(p), status: p.status, to: prodLink(p) })),
+    ...db.stockDocs.filter((d) => d.partner === code).map((d) => ({ no: d.no, k: d.type, date: d.date, qty: d.lines.length + ' 行', amt: null, status: d.status, to: stockNoLink(d.no) })),
+    ...liveReturns().filter((r) => r.factory === code).map((r) => ({ no: r.no, k: '回货', date: r.date, qty: sum(r.lines, (x) => x.qty) + ' 件', amt: null, status: '', to: prodLink(production(r.prod)) })),
   ].sort((a, b) => b.date.localeCompare(a.date))
 }
 // 绩效（12.04 待定）：准时 = 入库 / 回货日期不晚于交期
@@ -202,7 +202,7 @@ function updateCustomer(c, f) {
   act(c, '改：' + ch.join('；'))
 }
 function removeCustomer(c) {
-  const refs = [...db.orders.filter((o) => o.customer === c.code).map((o) => '订单 ' + o.no), ...db.stockDocs.filter((d) => d.partner === c.code).map((d) => d.type + ' ' + d.no), ...customerStock(c.code).map((x) => whName(x.w) + ' 有它的客供料')]
+  const refs = [...db.orders.filter((o) => o.customer === c.code).map((o) => '需求订单 ' + o.no), ...db.stockDocs.filter((d) => d.partner === c.code).map((d) => d.type + ' ' + d.no), ...customerStock(c.code).map((x) => whName(x.w) + ' 有它的客供料')]
   if (refs.length) fail(`${c.short} 已经用过，不能删，只能停用`, refs.slice(0, 8))
   db.customers.splice(db.customers.indexOf(c), 1)
 }
@@ -277,7 +277,8 @@ function removeMaterial(m) {
 function matLockReason(m) {
   const skus = new Set(m.skus.map((k) => k.code))
   if (db.purchases.some((p) => p.lines.some((l) => skus.has(l.sku)))) return '已经有采购单用到它'
-  if (db.stockDocs.some((d) => d.lines.some((l) => skus.has(l.sku)))) return '已经有出入库单用到它'
+  if (db.stockDocs.some((d) => d.lines.some((l) => skus.has(l.sku)))) return '已经有物料入库单、出库单用到它'
+  if (db.stockTakes.some((d) => d.lines.some((l) => skus.has(l.sku)))) return '已经有盘点单用到它'
   if (db.techpacks.some((t) => t.bom.some((r) => r.mat === m.code))) return '已经有资料包用到它'
   return ''
 }
@@ -475,36 +476,39 @@ Object.assign(db, {
     { m: '物料档案', v: ['改', '看', '看', '改', '看', '看', '看'] }, // PRD §3.1：采购"改（物料）"
     { m: '供应商', v: ['看', '看', '看', '改', '看', '看', '审'] },
     { m: '款式、资料包', v: ['审', '看', '看', '看', '看', '看', '看'] },
+    { m: '成本（核价）', v: ['看', '—', '—', '看', '—', '看', '看'] }, // 资料包核价页签、侧边栏核价、导出工艺单「含价格」；默认给开发主管、采购、财务、管理层
     { m: '订单', v: ['看', '改', '看', '看', '—', '看', '审'] },
-    { m: '排单、加工单', v: ['看', '看', '改', '看', '看', '看', '审'] },
+    { m: '排单、生产单', v: ['看', '看', '改', '看', '看', '看', '审'] },
     { m: '算料、采购单', v: ['—', '看', '看', '改', '看', '看', '审'] },
     { m: '价格档案', v: ['看', '看', '改', '改', '—', '看', '改'] }, // price:edit：生产跟单改加工价、采购改物料价、管理层都能改（canEditPrice）
-    { m: '出入库、库存', v: ['—', '—', '看', '看', '审', '看', '看'] },
+    { m: '物料出入库、盘点、库存', v: ['—', '—', '看', '看', '审', '看', '看'] },
     { m: '进度、异常、回货', v: ['—', '看', '改', '看', '看', '—', '看'] },
     { m: '合同（待排期）', v: ['—', '—', '改', '改', '—', '看', '看'] }, // 跟单出加工合同、采购出采购合同；管理层管模板
   ],
   // 多级审批（PRD §5.1）：金额超过 over 再加一级；审批人是一个角色（role）或指定的人（user）
   approvalRules: [
     { doc: '采购单', over: 50000, user: 'u6' },
-    { doc: '加工单', over: 100000, user: 'u6' },
+    { doc: '生产单', over: 100000, user: 'u6' },
   ],
   notify: { 站内待办: true, 钉钉: false, 企业微信: false, 飞书: false, 邮件: false },
-  notifyEvents: { 待我审核: true, 加工单逾期: true, 节点延期: true, 到料逾期: true, 上游订单变更: true, 证照到期: false },
+  notifyEvents: { 待我审核: true, 生产单逾期: true, 节点延期: true, 到料逾期: true, 上游订单变更: true, 证照到期: false },
   integration: { jst: '', fin: '' },
 })
 const AUDITS = [
-  { t: '订单', p: 'order:audit', m: '订单', n: () => db.orders.filter((o) => o.status === '待审核').length },
+  { t: '需求订单', p: 'order:audit', m: '订单', n: () => db.orders.filter((o) => o.status === '待审核').length },
   { t: '订单变更', p: 'change:audit', m: '订单', n: () => db.changes.filter((c) => c.status === '待审核').length },
   { t: '资料包生效', p: 'techpack:publish', m: '款式、资料包', n: () => db.techpacks.filter((t) => t.status === '草稿').length },
   { t: '采购单', p: 'purchase:audit', m: '算料、采购单', n: () => db.purchases.filter((p) => p.status === '待审核').length },
-  { t: '加工单', p: 'production:audit', m: '排单、加工单', n: () => db.productions.filter((p) => p.status === '待审核').length },
-  { t: '出入库单', p: 'stock:audit', m: '出入库、库存', n: () => db.stockDocs.filter((d) => d.status === '草稿').length },
+  { t: '生产单', p: 'production:audit', m: '排单、生产单', n: () => db.productions.filter((p) => p.status === '待审核').length },
+  { t: '物料入库单、出库单', p: 'stock:audit', m: '物料出入库、盘点、库存', n: () => db.stockDocs.filter((d) => d.status === '草稿').length },
+  { t: '物料盘点单', p: 'stocktake:audit', m: '物料出入库、盘点、库存', n: () => db.stockTakes.filter((d) => d.status === '待审核').length },
   { t: '供应商准入、关键信息改动', p: 'supplier:admit', m: '供应商', n: () => supToApprove().length },
 ]
 // 数据范围（PRD §3.2）挂在角色上：本人 = 只看制单人、跟单员、采购员、业务员是自己的单据
 const roleOf = (name) => db.roles.find((r) => r.name === name) || { name, scope: '全部' }
 const scopeOf = (uid) => roleOf(db.users.find((u) => u.id === uid)?.role).scope
 const auditRoles = (m) => { const row = db.perms.find((x) => x.m === m); return ROLES.filter((r, i) => row?.v[i] === '审') }
+const canSeeCost = () => ['看', '改', '审'].includes(db.perms.find((x) => x.m === '成本（核价）')?.v[ROLES.indexOf(me()?.role)])
 // 设置 › 审批的「级数」：单级，或"1–2 级：超过 5 万加赵启"
 const fWan = (v) => (v >= 10000 && v % 1000 === 0 ? v / 10000 + ' 万' : fq(v) + ' 元')
 const levelsText = (t) => { const rs = db.approvalRules.filter((r) => r.doc === t).sort((a, b) => a.over - b.over); return rs.length ? `1–${rs.length + 1} 级：` + rs.map((r) => `超过 ${fWan(r.over)}加${r.user ? userName(r.user) : r.role}`).join('；') : '单级' }
@@ -525,13 +529,14 @@ function cyclePerm(row, i) { row.v[i] = PERM_CYCLE[(PERM_CYCLE.indexOf(row.v[i])
 // 操作日志：各单据的记录汇总，按时间倒序
 function allLogs() {
   const src = [
-    ['订单', db.orders, (d) => d.no, (d) => '/orders/' + d.no],
+    ['需求订单', db.orders, (d) => d.no, (d) => '/orders/' + d.no],
     ['变更', db.changes, (d) => d.no, (d) => '/orders/' + d.order],
     ['算料', db.mrps, (d) => d.no, (d) => '/mrp/' + d.no],
     ['采购', db.purchases, (d) => d.no, (d) => '/purchases/' + d.no],
-    ['出入库', db.stockDocs, (d) => d.no, (d) => '/stock-docs/' + d.no],
-    ['加工单', db.productions, (d) => d.no, (d) => '/production/' + d.no],
-    ['回货', db.returns, (d) => d.no, (d) => '/production/' + d.prod],
+    ['出入库', db.stockDocs, (d) => d.no, (d) => stockNoLink(d.no)],
+    ['盘点', db.stockTakes, (d) => d.no, (d) => stockNoLink(d.no)],
+    ['生产单', db.productions, (d) => d.no, (d) => prodLink(d)],
+    ['回货', db.returns, (d) => d.no, (d) => prodLink(production(d.prod))],
     ['供应商', db.suppliers, (d) => d.code, (d) => '/suppliers/' + d.code],
     ['合同', db.contracts || [], (d) => d.no, (d) => '/contracts/' + d.no],
     ...(TRADE ? [['客户', db.customers, (d) => d.code, (d) => '/customers/' + d.code]] : []),
@@ -577,7 +582,7 @@ expose({
   matLockReason, updateMaterial, catUsed, matCatUsed, liveCats, liveMatCats, addCategory, addMatCategory, renameCat, removeCat, toggleCat,
   addColor, editColor, sizeGroupUsed, appendSize, removeSize, renameSizeGroup, setBaseSize, removeSizeGroup, liveColors, colorUsed, addSizeGroup, whStock,
   seasonUsed, liveSeasons, addSeason, bigCatOf, bigCatUsed, liveBigCats, addBigCat, dnoLocked, setDesignerNo, saveWarehouse, toggleWarehouse, saveCompany, toggleCompany, addDictValue, removeDictValue,
-  ROLES, AUDITS, auditRoles, levelsText, cyclePerm, allLogs, factoryWh,
+  ROLES, AUDITS, auditRoles, canSeeCost, levelsText, cyclePerm, allLogs, factoryWh,
   SUP_KEY, supGated, supChangeText, approveSupChange, rejectSupChange, withdrawSupChange, supToApprove,
   RISK_LV, riskTone, lastRisk, riskToday, riskNewItems, cnDate, riskCheck, ackRisk, showVal,
 })
@@ -702,11 +707,11 @@ route('/suppliers/:code', {
       const r = lastRisk(s.value)
       if (r && r.result !== '无风险') {
         const why = await askText('企查查「' + r.result + '」，仍然通过？', `${fd(r.at)} 查到 ${r.items.length} 条：${riskText(r)}。通过要写明理由，会记进操作记录。`, '如：被执行案已结清，法院有结案文书', '仍然通过')
-        if (why && run(() => doAction('supplier', s.value, '通过', why))) toast(s.value.short + ' 准入通过，现在能选进采购单、加工单')
+        if (why && run(() => doAction('supplier', s.value, '通过', why))) toast(s.value.short + ' 准入通过，现在能选进采购单、生产单')
         return
       }
-      if (await ask('通过准入：' + s.value.short, (r ? `企查查 ${fd(r.at)} 查过，无风险。` : '企查查没查成功，不影响审批。') + '通过后能选进采购单、加工单。', '通过准入')
-        && run(() => doAction('supplier', s.value, '通过'))) toast(s.value.short + ' 准入通过，现在能选进采购单、加工单')
+      if (await ask('通过准入：' + s.value.short, (r ? `企查查 ${fd(r.at)} 查过，无风险。` : '企查查没查成功，不影响审批。') + '通过后能选进采购单、生产单。', '通过准入')
+        && run(() => doAction('supplier', s.value, '通过'))) toast(s.value.short + ' 准入通过，现在能选进采购单、生产单')
     }
     async function reject() {
       const why = await askText('驳回准入申请：' + s.value.short, '驳回后回到「待准入」，申请人照着原因改好再申请。', '写清楚要补什么、改什么', '驳回')
@@ -728,7 +733,7 @@ route('/suppliers/:code', {
     }
     function ack() { if (run(() => ackRisk(s.value))) toast('已知悉，首页待办里消掉了') }
     async function disable() {
-      if (await ask('停用 ' + s.value.short, '停用后不能再选进新的采购单、加工单；已有单据照常入库、回货。', '停用', true)) run(() => doAction('supplier', s.value, '停用'))
+      if (await ask('停用 ' + s.value.short, '停用后不能再选进新的采购单、生产单；已有单据照常入库、回货。', '停用', true)) run(() => doAction('supplier', s.value, '停用'))
     }
     async function remove() {
       if (await ask('删除 ' + s.value.short, '没有单据、物料、款式用过它才能删；删了找不回来。用过的只能停用。', '删除', true) && run(() => removeSupplier(s.value))) { go('/suppliers'); toast('删了') }
@@ -810,7 +815,7 @@ route('/suppliers/:code', {
         </section>
 
         <section v-if="tab === 'contracts'" data-c="合同">
-          <ContractList :rows="contracts" empty="和这家还没有合同；在已审核的采购单、加工单上点「生成合同」"/>
+          <ContractList :rows="contracts" empty="和这家还没有合同；在已审核的采购单、生产单上点「生成合同」"/>
         </section>
 
         <section v-if="tab === 'perf'" data-c="绩效">
@@ -861,7 +866,7 @@ comp('SupplierBlock', {
     const open = computed(() => (p.mode === '拉黑' ? openDocsOfSupplier(p.s.code) : []))
     function ok() {
       const r = run(() => (p.mode === '拉黑' ? blacklistSupplier(p.s, reason.value.trim()) : unblockSupplier(p.s, reason.value.trim())))
-      if (r) { emit('close'); toast(p.mode === '拉黑' ? p.s.short + ' 已拉黑，新的采购单、加工单选不到它' : p.s.short + ' 已解除黑名单，现在是停用') }
+      if (r) { emit('close'); toast(p.mode === '拉黑' ? p.s.short + ' 已拉黑，新的采购单、生产单选不到它' : p.s.short + ' 已解除黑名单，现在是停用') }
     }
     return { reason, open, ok }
   },
@@ -1140,7 +1145,7 @@ route('/materials/:code', {
       if (m.value.status === '启用') { if (await ask('停用 ' + m.value.name, '停用后它的 SKU 不能再选进新的资料包、采购单；已有库存照常出库。', '停用', true)) setMaterialStatus(m.value, '停用') }
       else setMaterialStatus(m.value, '启用')
     }
-    async function remove() { if (await ask('删除 ' + m.value.code, '没被采购单、出入库单、资料包用过，也没有库存的物料才能删；删了找不回来。', '删除', true) && run(() => removeMaterial(m.value))) { go('/materials'); toast('删了') } }
+    async function remove() { if (await ask('删除 ' + m.value.code, '没被采购单、出入库单、盘点单、资料包用过，也没有库存的物料才能删；删了找不回来。', '删除', true) && run(() => removeMaterial(m.value))) { go('/materials'); toast('删了') } }
     async function skuToggle(k) {
       if (k.status !== '停用' && !(await ask('停用 ' + k.code, '停用后这个 SKU 不能再选进新的资料包、采购单；已有库存照常出库。', '停用', true))) return
       toggleMatSku(m.value, k)
@@ -1449,7 +1454,7 @@ comp('CompanyEdit', {
       <label class="f">简称<input class="inp" v-model="f.short" placeholder="列表和单据上显示"></label>
       <label class="f full">名称<input class="inp" v-model="f.name" placeholder="公司全称"></label>
       <label class="f full">统一社会信用代码<input class="inp code" v-model="f.credit"></label>
-      <label class="f full">地址<input class="inp" v-model="f.addr" placeholder="打印采购单、加工单时用作抬头"></label>
+      <label class="f full">地址<input class="inp" v-model="f.addr" placeholder="打印采购单、生产单时用作抬头"></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
     </div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ c ? '保存' : '加上' }}</button></template>
@@ -1464,19 +1469,25 @@ route('/settings', {
     const logs = computed(() => allLogs().filter((x) => !who.value || x.who === who.value))
     const permTone = (v) => ({ 看: '', 改: 'blue', 审: 'green' }[v])
     const addRule = () => db.approvalRules.push({ doc: '采购单', over: 10000, user: 'u6' })
-    // 多级审批：按金额加级的只有订单、采购单、加工单；审批人选人或角色
+    // 多级审批：按金额加级的只有需求订单、采购单、生产单；审批人选人或角色
     const amtDocs = Object.values(APPROVE).filter((x) => x.amt).map((x) => x.t)
     const setWho = (r, v) => { if (v.startsWith('u:')) { r.user = v.slice(2); delete r.role } else { r.role = v.slice(2); delete r.user } }
     // 第 1 级的人个个都能审这一级：他们审第 1 级时这一级一起过了，等于没加
     const useless = (r) => { const l1 = db.users.filter((u) => auditRoles(APPROVE[approveKind(r.doc)].m).includes(u.role)); return l1.length > 0 && l1.every((u) => (r.user ? r.user === u.id : r.role === u.role)) }
     const JST = ['回货登记后推送聚水潭生成成品入库单，成品库存以聚水潭为准', '双向同步：入库推送聚水潭，出库和库存回写本系统', '暂不对接，两边各自录单']
     const FIN = ['金蝶', '用友', '系统内闭环，不对接']
-    return { tab, who, logs, permTone, addRule, amtDocs, setWho, useless, JST, FIN }
+    // 工艺标准：文件按顺序附在导出的工艺单后面；默认文字新建资料包时带进工艺指示；部位的默认测量方法在尺寸指示里选部位时带出
+    const stdFiles = computed(() => db.craftStd.files)
+    const addStd = (v) => { db.craftStd.files.push(...v); toast(`加了 ${v.length} 个文件，导出工艺单时附在最后`) }
+    async function dropStd(f) { if (await ask(`删除「${f.name}」`, '以后导出的工艺单不再附这个文件；已经发出去的不受影响。', '删除', true)) db.craftStd.files.splice(db.craftStd.files.indexOf(f), 1) }
+    const newPt = ref('')
+    function addPt() { const v = newPt.value.trim(); if (run(() => { if (!v) fail('先填部位名称'); addDictValue('尺寸部位', v) })) { db.craftStd.how[v] ||= ''; newPt.value = ''; toast(`加了部位「${v}」，字典里也有了`) } }
+    return { tab, who, logs, permTone, addRule, amtDocs, setWho, useless, JST, FIN, stdFiles, addStd, dropStd, newPt, addPt, CRAFT_SECS, PACK_WAYS }
   },
   template: `<div>
     <Head t="设置"/>
     <div class="page">
-      <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
+      <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['craft', '工艺标准'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
 
       <section v-if="tab === 'users'" data-c="用户">
         <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
@@ -1514,6 +1525,40 @@ route('/settings', {
             </tr>
             <tr v-if="!db.approvalRules.length"><td colspan="5" class="empty">没有多级规则，所有单据都是单级审核</td></tr>
           </tbody></table>
+        </div>
+      </section>
+
+      <section v-if="tab === 'craft'" data-c="工艺标准">
+        <div class="sec" style="margin-top:0;padding-top:0;border-top:none" data-c="工艺标准文件">
+          <h3>工艺标准文件<span class="dim" style="font-weight:400;font-size:12px">导出工艺单时按这个顺序附在最后</span></h3>
+          <table class="tbl inset flat std-files"><tbody>
+            <tr v-for="(f, i) in stdFiles" :key="f.id">
+              <td class="dim" style="width:28px">{{ i + 1 }}</td>
+              <td style="width:72px"><Pics :model-value="[f]" readonly :s="44"/></td>
+              <td><input class="inp" style="width:280px;height:28px" v-model="f.name"><div class="dim" style="font-size:12px;margin-top:2px">{{ fd(f.at) }}</div></td>
+              <td class="num"><span class="row" style="justify-content:flex-end;gap:0">
+                <button class="btn ghost icon sm" title="上移" :disabled="!i" @click="moveItem(stdFiles, i, i - 1)"><Ico n="up" :s="13"/></button>
+                <button class="btn ghost icon sm" title="下移" :disabled="i === stdFiles.length - 1" @click="moveItem(stdFiles, i, i + 1)"><Ico n="down" :s="13"/></button>
+                <button class="btn ghost icon sm" title="删除这个文件" @click="dropStd(f)"><Ico n="trash" :s="13"/></button></span></td>
+            </tr>
+            <tr v-if="!stdFiles.length"><td colspan="4" class="empty">还没传文件，导出工艺单时就不带附页</td></tr>
+          </tbody></table>
+          <div style="margin-top:10px"><Pics :model-value="[]" files :s="56" :max="20" @update:model-value="addStd"/></div>
+        </div>
+        <div class="sec" data-c="工艺指示默认文字">
+          <h3>工艺指示默认文字<span class="dim" style="font-weight:400;font-size:12px">新建资料包时带进工艺指示，每个款再改；改了不影响已经建的</span></h3>
+          <div v-for="g in CRAFT_SECS" :key="g.g" class="craft-grid" style="margin-bottom:12px">
+            <div v-for="it in g.items" :key="it[0]" class="craft-c" :class="{ wide: g.items.length === 1 }"><b>{{ g.items.length > 1 ? g.g + ' · ' : '' }}{{ it[1] }}</b>
+              <span v-if="it[0] === 'pack'" class="row" style="gap:14px"><span class="dim">默认包装方式</span><label v-for="w in PACK_WAYS" :key="w" class="chk"><input type="radio" name="std-pack" :value="w" v-model="db.craftStd.packWay">{{ w }}</label></span>
+              <textarea class="inp" rows="3" v-model="db.craftStd.texts[it[0]]" :aria-label="it[1] + '默认文字'" placeholder="不写就留空"></textarea></div>
+          </div>
+        </div>
+        <div class="sec" data-c="部位默认测量方法">
+          <h3>尺寸部位的默认测量方法<span class="dim" style="font-weight:400;font-size:12px">尺寸指示里选了部位就带出来，能改</span></h3>
+          <table class="tbl inset flat"><thead><tr><th style="width:140px">部位</th><th>默认测量方法</th></tr></thead><tbody>
+            <tr v-for="pt in db.dicts.尺寸部位" :key="pt"><td>{{ pt }}</td><td><input class="inp" style="width:100%;height:28px" v-model="db.craftStd.how[pt]" placeholder="没有默认写法"></td></tr>
+          </tbody></table>
+          <div class="row" style="margin-top:10px"><input class="inp" style="width:160px" v-model="newPt" placeholder="部位名称，如：门襟长" @keyup.enter="addPt"><button class="btn" @click="addPt"><Ico n="plus" :s="14"/>加部位</button></div>
         </div>
       </section>
 

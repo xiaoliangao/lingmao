@@ -53,6 +53,8 @@ const FLOWS = {
   mrp: { 确认: ['草稿', '已确认'], 关闭: [['草稿', '已确认'], '已关闭'] },
   purchase: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'], 结案: [['已审核', '部分到货', '已到齐'], '已结案'], 取消结案: ['已结案', '已审核'], 作废: [['草稿', '待审核'], '已作废'] },
   stock: { 审核: ['草稿', '已审核'], 反审核: ['已审核', '草稿'], 作废: ['草稿', '已作废'] },
+  // 物料盘点单（甲方 11-14）：提交后等审核，审核即过账；草稿能删，不作废
+  stocktake: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'] },
   production: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已下单'], 反审核: ['已下单', '草稿'], 结案: [['已下单', '生产中', '部分回货', '已完成'], '已结案'], 取消结案: ['已结案', '生产中'], 作废: [['草稿', '待审核'], '已作废'] },
   techpack: { 生效: ['草稿', '已生效'] },
   // 供应商准入要审批（甲方 11-11 反馈 1d）：申请 → 有准入权限的另一个人通过或驳回
@@ -76,10 +78,10 @@ function move(kind, doc, a, note) {
  * - 任何一级驳回、撤回、反审核都回到草稿，重新提交从第 1 级走
  * - 每一级都先跑一遍这种单据审核的检查（check），免得前面批了、最后一级才发现过不了 */
 const APPROVE = {
-  order: { t: '订单', m: '订单', amt: (d) => orderAmt(d) },
+  order: { t: '需求订单', m: '订单', amt: (d) => orderAmt(d) },
   change: { t: '订单变更', m: '订单' },
   purchase: { t: '采购单', m: '算料、采购单', amt: (d) => poAmt(d) },
-  production: { t: '加工单', m: '排单、加工单', amt: (d) => prodAmt(d) },
+  production: { t: '生产单', m: '排单、生产单', amt: (d) => prodAmt(d) }, // 外发加工单、成品采购单共用一套审批
 }
 const approveKind = (t) => Object.keys(APPROVE).find((k) => APPROVE[k].t === t)
 // 按现在的规则排出审批流：[{ m }（第 1 级，权限表里有「审」的角色）, { roles | user, over }…]；种子在权限表（7-pages-master.js）之前跑，那时排不出来，第一次用到再排
@@ -139,6 +141,7 @@ const RULES = {
   purchase: { ...docRules('purchase', (p) => { p.status = '已审核'; refreshPoStatus(p); return p.status }), 反审核: unauditPurchase },
   production: { ...docRules('production', (p) => (prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
   stock: { 审核: postStockDoc, 反审核: unpostStockDoc, 作废: voidStockDoc },
+  stocktake: { 提交: submitTake, 撤回: withdrawDoc('stocktake'), 驳回: rejectDoc('stocktake'), 审核: postTake, 反审核: unpostTake },
   techpack: { 生效: publishTp },
   change: { 驳回: rejectDoc('change'), 审核: auditChange },
   supplier: { 申请准入: requestAdmit, 通过: approveAdmit, 驳回: rejectAdmit },
@@ -275,7 +278,7 @@ function addStyleColor(s, c, silent) {
   sizesOf(s.sizeGroup).forEach((z) => s.skus.push({ code: `${s.code}-${c}-${z}`, color: c, size: z, status: '启用' }))
   if (!silent) act(s, '加颜色 ' + colorName(c) + '，新增 ' + sizesOf(s.sizeGroup).length + ' 个 SKU')
 }
-// 资料包分研发、生产两个阶段（PRD §6.4.1）：研发 BOM 只估价；订单、算料、加工单只认生产 BOM。没写 stage 的是生产
+// 资料包分研发、生产两个阶段（PRD §6.4.1）：研发 BOM 只估价；需求订单、算料、生产单只认生产 BOM。没写 stage 的是生产
 // 版本号按阶段各自从 V1 编；不传 stage 的查找都只看生产，stage = '全部' 两个阶段都要
 const tpStage = (t) => t.stage || '生产'
 const tpName = (t) => (tpStage(t) === '研发' ? '研发 ' : '') + 'V' + t.ver
@@ -307,37 +310,76 @@ const rowCost = (r, sizes, base, stage) => rnd(rowMidUse(r, sizes, base) * (1 + 
 // 只算我方采购的料：客供的料客户出，工厂自备的算在加工费里
 const tpMaterialCost = (tp) => { const g = style(tp.style).sizeGroup; return rnd(sum(tp.bom.filter((r) => r.src === '我方采购'), (r) => rowCost(r, sizesOf(g), baseSizeOf(g), tpStage(tp))), 2) }
 const tpLabor = (tp) => rnd(sum(tp.ops, (o) => o.price), 2)
+// 核价（资料包的「核价」页签、侧边栏「核价」列表、询价比价页都用它）：按基码用量算单件成本，分面料、辅料、加工费、其他费用四块。
+// 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有我方采购的计入，工厂自备的列出来标"含在加工价里"。加工费 = 工序工价合计（参考加工价）
+const FABRIC_TYPES = ['面料', '里料']
+function tpCost(tp) {
+  const g = style(tp.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g), st = tpStage(tp)
+  const rows = tp.bom.map((r, i) => ({ r, i, kind: FABRIC_TYPES.includes(mat(r.mat)?.type) ? '面料' : '辅料', use: rowMidUse(r, sizes, base), price: r.price ?? rowRefPrice(r, st),
+    counted: r.src === '我方采购', cost: r.src === '我方采购' ? rowCost(r, sizes, base, st) : 0 }))
+  const part = (k) => rnd(sum(rows.filter((x) => x.kind === k), (x) => x.cost), 2)
+  const fabric = part('面料'), trim = part('辅料'), labor = tpLabor(tp), other = rnd(sum(tp.costs || [], (c) => c.amt), 2)
+  return { rows, base, fabric, trim, mat: rnd(fabric + trim, 2), labor, other, total: rnd(fabric + trim + labor + other, 2) }
+}
 
-// 尺寸表：rows = [{ pt 部位, how 量法, tol 公差, step 档差, vals: { 尺码: cm } }]，从基码按档差往两边放
+/* ---------- 尺寸指示：rows = [{ pt 部位, how 测量方法, tol 公差 ±, step 档差, vals: { 尺码: cm }, note 备注 }]，单位 cm ----------
+ * 基码 = 尺码组的基码；「按档差生成」= 基码 ± 第几档 × 档差，算完每格还能改。不是生效的必填项 */
 function gradeRow(r, sizes, base, v) {
   const bi = sizes.indexOf(base)
-  sizes.forEach((z, i) => { r.vals[z] = rnd(v + (i - bi) * r.step, 1) })
+  sizes.forEach((z, i) => { r.vals[z] = rnd(v + (i - bi) * (+r.step || 0), 1) })
 }
-function specTemplate(styleCode) {
+const numSet = (v) => v != null && v !== '' && !Number.isNaN(+v)
+// 填了基码尺寸和档差的行，把其他码算出来；返回 [算了几行, 没填档差跳过几行]
+function gradeSpec(tp) {
+  const sizes = sizesOf(style(tp.style).sizeGroup), base = tp.spec.base
+  const ok = tp.spec.rows.filter((r) => numSet(r.vals[base]) && numSet(r.step))
+  if (!ok.length) fail(`先填基码（${base}）的尺寸和档差`)
+  ok.forEach((r) => gradeRow(r, sizes, base, +r.vals[base]))
+  return [ok.length, tp.spec.rows.filter((r) => numSet(r.vals[base]) && !numSet(r.step)).length]
+}
+// 新建资料包：按品类带常用部位、设置里的默认测量方法、公差、档差；vals = true 时按模板填上数（只给演示款用）
+function specTemplate(styleCode, vals) {
   const s = style(styleCode), sizes = sizesOf(s.sizeGroup), base = baseSizeOf(s.sizeGroup)
-  return { base, rows: (SPEC_POINTS[catOf(s.cat).shape] || SPEC_POINTS.tee).map(([pt, how, v, step, tol]) => {
-    const r = { pt, how, tol, step, vals: {} }
-    gradeRow(r, sizes, base, v)
+  return { base, unit: 'cm', rows: (SPEC_POINTS[catOf(s.cat).shape] || SPEC_POINTS.tee).map(([pt, v, step, tol]) => {
+    const r = { pt, how: db.craftStd.how[pt] || '', tol, step, vals: {}, note: '' }
+    if (vals) gradeRow(r, sizes, base, v)
     return r
   }) }
 }
+const specFilled = (tp) => tp.spec.rows.some((r) => Object.values(r.vals).some(numSet))
+
+/* ---------- 工艺指示：照甲方线下工艺单分段，每段文字 + 插图；包装要求多一个包装方式（单选） ----------
+ * craft = { 段: { text, pics } }，pack 段另有 way。新建资料包时每段带设置 › 工艺标准里的默认文字 */
+const CRAFT_SECS = [
+  { g: '车间缝制', items: [['cut', '裁剪要求'], ['sew', '缝制要求'], ['detail', '部位工艺细则'], ['quality', '做工品质']] },
+  { g: '后道', items: [['button', '锁钉要求'], ['iron', '整烫说明'], ['label', '洗唛 / 烫标'], ['pack', '包装要求']] },
+  { g: '注意事项', items: [['note', '注意事项']] },
+]
+const PACK_WAYS = ['平铺', '挂装', '折叠']
+const craftDefaults = () => Object.fromEntries(CRAFT_SECS.flatMap((g) => g.items).map(([k]) => [k, { text: db.craftStd.texts[k] || '', pics: [], ...(k === 'pack' ? { way: db.craftStd.packWay } : {}) }]))
+const craftHas = (tp) => Object.values(tp.craft || {}).some((x) => x.text || x.pics?.length)
+
 function createTechpack(styleCode, bom, ops, note, spec, stage = '生产') {
   const ver = (tpsOf(styleCode, stage)[0]?.ver || 0) + 1
-  // req = 工艺单的整体要求（文字 + 插图）；ops 每行 { cat, name, req 工艺要求, pics, sec, price, note }；source = 从哪个研发版转来的
-  const tp = add(db.techpacks, { id: styleCode + (stage === '研发' ? '-R' : '-V') + ver, style: styleCode, stage, ver, source: null, status: '草稿', note: note || '', util: null, req: { text: '', pics: [] }, bom, ops, spec: spec || specTemplate(styleCode), log: [] })
+  // spec = 尺寸指示；craft = 工艺指示的各段；ops = 工序工价（工艺指示页签最下面），每行 { cat, name, req 工艺要求, pics, sec, price, note }，合计 = 参考加工价；
+  // costs = 核价的其他费用 [{ name, amt 元/件, note }]；source = 从哪个研发版转来的
+  const tp = add(db.techpacks, { id: styleCode + (stage === '研发' ? '-R' : '-V') + ver, style: styleCode, stage, ver, source: null, status: '草稿', note: note || '', util: null,
+    bom, ops, spec: spec || specTemplate(styleCode), craft: craftDefaults(), costs: [], log: [] })
   act(tp, ver === 1 ? '新建' : '由 V' + (ver - 1) + ' 修订')
   return tp
 }
+// 修订、转生产 BOM 时整版复制：物料清单、工序、尺寸指示、工艺指示、其他费用
+const tpCopy = (tp) => JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec, craft: tp.craft || craftDefaults(), costs: tp.costs || [] }))
 // 转生产 BOM（PRD §6.4.1、架构 §4.7）：生效的研发版复制成生产版草稿（没有生产版就是 V1），记下来源；
 // 行上的手填估价不带过去，参考单价按价格档案重新取。之后两边各改各的
 function toProdTp(dev) {
   if (tpStage(dev) !== '研发' || dev.status !== '已生效') fail('研发 BOM 生效以后才能转生产 BOM')
   const draft = tpsOf(dev.style).find((t) => t.status === '草稿')
   if (draft) fail(`生产 BOM 已经有草稿 V${draft.ver}，先把它改完或删掉`)
-  const c = JSON.parse(JSON.stringify({ bom: dev.bom, ops: dev.ops, spec: dev.spec, req: dev.req || { text: '', pics: [] } }))
+  const c = tpCopy(dev)
   c.bom.forEach((r) => { r.price = null })
   const t = createTechpack(dev.style, c.bom, c.ops, '', c.spec, '生产')
-  Object.assign(t, { req: c.req, util: dev.util, source: { stage: '研发', ver: dev.ver } })
+  Object.assign(t, { craft: c.craft, costs: c.costs, util: dev.util, source: { stage: '研发', ver: dev.ver } })
   act(t, '由研发 V' + dev.ver + ' 转生产 BOM')
   return t
 }
@@ -354,7 +396,7 @@ function tpCheck(tp) {
     if (r.mode === '固定' && !r.sku) errs.push(`第 ${i + 1} 行（${r.part}）：没选物料 SKU`)
     if (!db.dicts.物料来源.includes(r.src)) errs.push(`第 ${i + 1} 行（${r.part}）：来源「${r.src}」现在不能用，改成 ${db.dicts.物料来源.join(' / ')}`) // TRADE 关着时没有客供
   })
-  // 尺寸表是二期（PRD 04.05），一期生效不查它
+  // 尺寸指示、工艺指示不是生效的必填项：没填的，导出工艺单时那一页不出
   return errs
 }
 function publishTp(tp) {
@@ -367,9 +409,9 @@ function publishTp(tp) {
 }
 function reviseTp(tp) {
   if (tpsOf(tp.style, tpStage(tp)).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
-  const copy = JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec, req: tp.req || { text: '', pics: [] } }))
-  const t = createTechpack(tp.style, copy.bom, copy.ops, '', copy.spec, tpStage(tp))
-  Object.assign(t, { req: copy.req, util: tp.util })
+  const c = tpCopy(tp)
+  const t = createTechpack(tp.style, c.bom, c.ops, '', c.spec, tpStage(tp))
+  Object.assign(t, { craft: c.craft, costs: c.costs, util: tp.util, source: tp.source })
   return t
 }
 // 删掉草稿版本（修订出来不想要了）；生效过、作废了的版本只能看
@@ -422,7 +464,7 @@ function submitOrder(o) {
     else if (!activeTp(c)) errs.push(`${c} 没有生效的生产 BOM` + (activeTp(c, '研发') ? '：研发 BOM 只用来估价，先在资料包里点「转生产 BOM」' : '')) // 研发 BOM 订单不能用（PRD §6.4.1）
     else unmatchedColors(s).forEach((col) => { if (o.lines.some((l) => l.style === c && l.color === col)) errs.push(`${c} 的 ${colorName(col)} 还没配料`) })
   })
-  if (errs.length) fail('订单还不能提交', errs)
+  if (errs.length) fail('需求订单还不能提交', errs)
   checkOrderLines(o.lines)
   move('order', o, '提交')
 }
@@ -461,17 +503,17 @@ function reviewInfo(o) {
 const unitPriceOfSku = (s) => skuPrice(s) / matOfSku(s).factor
 const factoryLoad = (f) => sum(db.productions.filter((p) => p.factory === f && ['已下单', '生产中', '部分回货'].includes(p.status)), (p) => prodQty(p) - prodRet(p))
 
-// 排单：blocks = [{ style, factory, mode, price, due, qty: { 'KQ|S': 80 } }]，一块生成一张加工单
+// 排单：blocks = [{ style, factory, mode, price, due, qty: { 'KQ|S': 80 } }]，一块生成一张生产单；加工方式定了是外发加工单还是成品采购单
 const OVER = 0.03 // 溢装 / 短装比例（PRD Q09 默认 3%）
 function scheduleOrder(o, blocks) {
-  if (!orderLive(o)) fail('订单审核后才能排单')
+  if (!orderLive(o)) fail('需求订单审核后才能排单')
   const errs = [], extra = {}
   blocks.forEach((b) => {
     const n = sum(Object.values(b.qty))
     if (!n) return
     if (!b.factory) errs.push(`${b.style}：要选加工厂`)
-    else if (!canUseSupplier(b.factory, '生产')) errs.push(`${supName(b.factory)} 现在是「${sup(b.factory).status}」，不能下加工单`)
-    if (!(b.price > 0)) errs.push(`${b.style}：加工单价要填`)
+    else if (!canUseSupplier(b.factory, '生产')) errs.push(`${supName(b.factory)} 现在是「${sup(b.factory).status}」，不能下${prodKind(b)}`)
+    if (!(b.price > 0)) errs.push(`${b.style}：${prodKindOf(b).price}要填`)
     else if (typeof procPriceProblem === 'function' && procPriceProblem(b)) errs.push(`${b.style}：${procPriceProblem(b)}`) // 和档案现价不一样要写改价原因（5e-price.js）
     Object.entries(b.qty).forEach(([k, q]) => { if (q > 0) extra[b.style + '|' + k] = (extra[b.style + '|' + k] || 0) + q })
   })
@@ -506,7 +548,7 @@ function buildChange(o, f) {
   items.forEach((i) => {
     const l = o.lines.find((x) => lineKey(x) === i.k)
     const done = l ? scheduledQty(o, l) : 0
-    if (i.to < done) errs.push(`${i.label}：已排产 ${done} 件，先调整加工单 ${prodsOf(o).filter((p) => p.style === l.style).map((p) => p.no).join('、')}`)
+    if (i.to < done) errs.push(`${i.label}：已排产 ${done} 件，先调整生产单 ${prodsOf(o).filter((p) => p.style === l.style).map((p) => p.no).join('、')}`)
     const [st, co] = i.k.split('|')
     const ver = vers.find((v) => v.style === st)?.to ?? firstLine(st)?.ver, tp = tpOf(st, ver)
     if (!l && tp?.bom.some((r) => r.mode === '随款色' && !r.map[co])) errs.push(`${st} 的${colorName(co)}在资料包 V${ver} 里没配料：先修订资料包并生效，这次变更把资料包一起换到新版本`)
@@ -517,7 +559,7 @@ function buildChange(o, f) {
   return { types, cancel: false, items, due, prices, vers }
 }
 function createChange(o, f) {
-  if (!orderLive(o)) fail('只有已审核的订单才走变更')
+  if (!orderLive(o)) fail('只有已审核的需求订单才走变更')
   const c = add(db.changes, { no: nextNo('BG'), order: o.no, ...buildChange(o, f), reason: f.reason.trim(), party: f.party || CHANGE_PARTIES[0], fee: f.fee || '', files: f.files || [], date: clock.today, by: db.me, status: '待审核', log: [] })
   syncApproval('change', c)
   act(c, '提交')
@@ -612,9 +654,9 @@ function availFor(sku, owner, exceptMrp) {
   const have = sum(materialWhs(), (w) => stockQty(w, sku, owner))
   return Math.max(0, rnd(have - heldStock(sku, owner, exceptMrp), 3))
 }
-const issuedFor = (orderNos, sku, owner) => sum(db.stockDocs.filter((d) => d.status === '已审核' && (d.type === '领料' || d.type === '退料') && orderNos.includes(production(d.src)?.order))
-  .flatMap((d) => d.lines.filter((l) => l.sku === sku && l.owner === owner).map((l) => (d.type === '退料' ? -l.qty : l.qty))))
-// 在途行：已审核、没入齐、送物料仓的采购行（直发工厂仓的是给那张加工单的，不进公共的数）
+const issuedFor = (orderNos, sku, owner) => sum(db.stockDocs.filter((d) => d.status === '已审核' && (d.type === '领料出库' || d.type === '退料入库') && orderNos.includes(production(d.src)?.order))
+  .flatMap((d) => d.lines.filter((l) => l.sku === sku && l.owner === owner).map((l) => (d.type === '退料入库' ? -l.qty : l.qty))))
+// 在途行：已审核、没入齐、送物料仓的采购行（直发工厂仓的是给那张生产单的，不进公共的数）
 //   left 没到的（库存单位）、held 别的算料单占着的、free 还能用的、date 预计到货（没填用交期）
 function transitRows(sku, owner, except) {
   const live = liveMrps(except)
@@ -629,7 +671,7 @@ function transitRows(sku, owner, except) {
 }
 const transitQty = (sku, owner) => rnd(sum(transitRows(sku, owner), (x) => x.left), 3)
 const heldTransit = (sku, owner) => rnd(sum(transitRows(sku, owner), (x) => x.held), 3)
-// 要料日期（PRD §6.6.1）：订单已排单的取加工单"裁剪"的计划开始；没排单的按承诺交期倒推（加工单交期 = 承诺交期 − 10 天，再按节点默认天数推到裁剪开始）
+// 要料日期（PRD §6.6.1）：订单已排单的取生产单"裁剪"的计划开始；没排单的按承诺交期倒推（生产单交期 = 承诺交期 − 10 天，再按节点默认天数推到裁剪开始）
 const PROD_LEAD = 10
 function cutStartFrom(due) {
   let end = due
@@ -803,16 +845,20 @@ function arrivals() {
 }
 
 /* ---------- 库存单据 ---------- */
-const STOCK_TYPES = { 采购入库: 'RK', ...(TRADE ? { 客供入库: 'RK' } : {}), 其他入库: 'RK', 领料: 'LL', 退料: 'LL', 调拨: 'DB', 采购退货: 'CK', 其他出库: 'CK' }
+// 两种单（甲方 11-14）：物料入库单 RK（采购入库、退料入库、其他入库），物料出库单 CK（领料出库、采购退货、调拨、其他出库）
+const STOCK_TYPES = { 采购入库: 'RK', ...(TRADE ? { 客供入库: 'RK' } : {}), 退料入库: 'RK', 其他入库: 'RK', 领料出库: 'CK', 采购退货: 'CK', 调拨: 'CK', 其他出库: 'CK' }
+const sdName = (d) => (STOCK_TYPES[d.type] === 'RK' ? '物料入库单' : '物料出库单')
+// 按单号跳到它的页面：库存流水、对账、供应商、首页都用
+const stockNoLink = (no) => (no.startsWith('PD') ? '/stock-takes/' : no.startsWith('RK') ? '/stock-in/' : '/stock-out/') + no
 // 新建、改草稿都过这一遍（PRD §6.6.5 类型表），返回有数量的行
 function checkStockDoc(f) {
   const lines = (f.lines || []).filter((l) => l.sku && l.qty > 0)
   if (!lines.length) fail('至少一行物料')
   if (f.type === '客供入库' && !f.partner) fail('客供入库要选客户')
-  if (['调拨', '领料', '退料'].includes(f.type) && (!f.from || !f.to)) fail('出仓、入仓都要选')
+  if (['调拨', '领料出库', '退料入库'].includes(f.type) && (!f.from || !f.to)) fail('出仓、入仓都要选')
   if (f.from && f.from === f.to) fail('出仓和入仓不能是同一个')
-  if (['其他入库', '其他出库'].includes(f.type) && !f.reason) fail(f.type + '要选原因（期初、盘盈、盘亏、报废……）')
-  if (f.type === '退料' && (wh(f.from)?.type !== '工厂仓' || wh(f.to)?.type !== '物料仓')) fail('退料是工厂剩料退回：出仓选工厂仓，入仓选物料仓')
+  if (['其他入库', '其他出库'].includes(f.type) && !f.reason) fail(f.type + '要选原因（' + db.dicts[f.type + '原因'].join('、') + '）；盘盈、盘亏开物料盘点单')
+  if (f.type === '退料入库' && (wh(f.from)?.type !== '工厂仓' || wh(f.to)?.type !== '物料仓')) fail('退料是工厂剩料退回：出仓选工厂仓，入仓选物料仓')
   if (f.date && f.date > clock.today) fail('单据日期不能晚于今天')
   return lines
 }
@@ -877,7 +923,91 @@ function unpostStockDoc(d) {
 }
 const stockDir = (d) => (d.from && d.to ? '移' : d.to ? '入' : '出')
 
-/* ---------- 加工单 ---------- */
+/* ---------- 物料盘点单（甲方 11-14） ----------
+ * 建单时把范围内每个 SKU 的账面数拍下来（book），盘点人填实盘（qty）；审核即过账：调整量 = 实盘 − 账面（建单时的），加到现在的库存上。
+ * 盘点期间照常收发，所以用"差额"补，不是把库存直接改成实盘数。哪一行补完变负数，整张不过，列出来。
+ * 用途「期初录入」：上线时录现有库存，空着的实盘当 0，流水类型记"期初"；日常盘点每行都要填，流水记"盘盈 / 盘亏"。
+ * 一个仓同时只能有一张没审核的盘点单，免得两张单对同一批货各补一次 */
+const TAKE_PURPOSES = ['日常盘点', '期初录入']
+const TAKE_SCOPES = ['全部', '按物料分类', '手选物料']
+const takeOpen = (code, except) => db.stockTakes.find((t) => t.wh === code && t.status !== '已审核' && t !== except)
+const takeDiff = (l) => (l.qty == null || l.qty === '' ? null : rnd(l.qty - l.book, 3))
+const takeQty = (t, l) => (l.qty == null || l.qty === '' ? (t.purpose === '期初录入' ? 0 : null) : l.qty)
+const takeLogType = (t, delta) => (t.purpose === '期初录入' ? '期初' : delta > 0 ? '盘盈' : '盘亏')
+// 范围里有哪些 SKU：日常盘点取账面上有数的；期初录入取物料库里全部启用的（还没有账）；手选的就是选的那些
+function takeSkus(code, purpose, scope) {
+  const inCat = (sku) => scope.kind !== '按物料分类' || scope.cats.includes(matOfSku(sku)?.cat)
+  if (scope.kind === '手选物料') return [...new Set(scope.skus)].map((sku) => ({ sku, owner: '自有' }))
+  if (purpose === '期初录入') return db.materials.filter((m) => m.status === '启用').flatMap((m) => m.skus.map((k) => k.code)).filter(inCat).map((sku) => ({ sku, owner: '自有' }))
+  return Object.entries(db.stock).filter(([k, q]) => k.startsWith(code + '|') && Math.abs(q) > 0.0005)
+    .map(([k]) => { const [, sku, owner] = k.split('|'); return { sku, owner } }).filter((x) => inCat(x.sku))
+}
+function createStockTake(f) {
+  if (!f.wh) fail('要选仓库')
+  if (wh(f.wh)?.type === '成品仓') fail('物料盘点单只盘物料仓、工厂仓；成品在成品库存里盘')
+  const o = takeOpen(f.wh)
+  if (o) fail(`${whName(f.wh)} 还有一张没审核的盘点单 ${o.no}（${o.status}），先把它审完或删掉`)
+  const scope = { kind: '全部', cats: [], skus: [], ...f.scope }
+  if (scope.kind === '按物料分类' && !scope.cats.length) fail('按物料分类盘点，要选至少一个分类')
+  if (scope.kind === '手选物料' && !scope.skus.length) fail('手选物料，要选至少一种物料')
+  if (f.date && f.date > clock.today) fail('盘点日期不能晚于今天')
+  const lines = takeSkus(f.wh, f.purpose || '日常盘点', scope).map((x) => ({ ...x, book: stockQty(f.wh, x.sku, x.owner), qty: null, note: '' }))
+  if (!lines.length) fail('范围里没有物料', [f.purpose === '期初录入' ? '物料库里这个分类下没有启用的物料' : `${whName(f.wh)} 在这个范围里没有账面库存；要盘没有账的料，范围选「手选物料」`])
+  const t = add(db.stockTakes, { no: nextNo('PD'), company: myCompany(), purpose: '日常盘点', date: clock.today, counter: db.me, note: '', files: [], ...f, scope, lines, status: '草稿', log: [] })
+  act(t, `新建：${t.purpose}，${t.lines.length} 种物料，账面数按 ${fd(clock.today)} 拍下`)
+  return t
+}
+// 草稿时手选加行：账面数按加的这天拍
+function addTakeLines(t, skus) {
+  if (t.status !== '草稿') fail('只有草稿能加物料')
+  const have = new Set(t.lines.map((l) => l.sku + '|' + l.owner))
+  const add_ = skus.filter((sku) => !have.has(sku + '|自有')).map((sku) => ({ sku, owner: '自有', book: stockQty(t.wh, sku, '自有'), qty: null, note: '', added: clock.today }))
+  t.lines.push(...add_)
+  if (add_.length) act(t, '加物料 ' + add_.map((l) => skuName(l.sku)).join('、'))
+  return add_.length
+}
+function submitTake(t) {
+  if (t.purpose !== '期初录入') {
+    const miss = t.lines.filter((l) => takeDiff(l) === null)
+    if (miss.length) fail(`还有 ${miss.length} 种物料没填实盘数`, miss.slice(0, 8).map((l) => skuName(l.sku)).concat(miss.length > 8 ? [`……共 ${miss.length} 种`] : []))
+  }
+  if (t.lines.some((l) => l.qty < 0)) fail('实盘数不能是负数')
+  move('stocktake', t, '提交')
+}
+// 审核即过账：调整量 = 实盘 − 建单时的账面，加到现在的库存上；有一行补完是负数整张不过
+function postTake(t) {
+  if (!can('stocktake', t, '审核')) fail(`${t.no} 现在是「${t.status}」，不能审核`)
+  const ls = t.lines.map((l) => ({ l, d: rnd((takeQty(t, l) ?? l.book) - l.book, 3) })).filter((x) => Math.abs(x.d) > 0.0005)
+  const neg = ls.filter((x) => stockQty(t.wh, x.l.sku, x.l.owner) + x.d < -0.0005)
+    .map((x) => `${skuName(x.l.sku)}：账面 ${fq(x.l.book)}、实盘 ${fq(takeQty(t, x.l))}，要扣 ${fq(-x.d)}，盘点后已经发出去，现在只剩 ${fq(stockQty(t.wh, x.l.sku, x.l.owner))}`)
+  if (neg.length) fail('有物料扣完会变负数，整张没过账；核对一下盘点后的出库，改实盘数或重新盘', neg)
+  t.lines.forEach((l) => { l.adj = 0 })
+  ls.forEach((x) => { changeStock(t.wh, x.l, x.d, { type: takeLogType(t, x.d), no: t.no }); x.l.adj = x.d })
+  move('stocktake', t, '审核', ls.length ? `过账 ${ls.length} 种物料：盘盈 ${ls.filter((x) => x.d > 0).length}、盘亏 ${ls.filter((x) => x.d < 0).length}` : '账实相符，没有调整')
+  t.auditor = db.me
+}
+// 反审核：把补的数退回去；退完变负数（盘盈的料已经发出去了）就不行；这个仓已经有别的没审的盘点单也不行
+function unpostTake(t) {
+  const o = takeOpen(t.wh, t)
+  if (o) fail(`${whName(t.wh)} 已经有一张没审核的盘点单 ${o.no}，一个仓同时只能有一张；先把它审完或删掉`)
+  const neg = t.lines.filter((l) => l.adj && stockQty(t.wh, l.sku, l.owner) - l.adj < -0.0005).map((l) => `${skuName(l.sku)}：盘盈的 ${fq(l.adj)} 已经发出去了，现在只剩 ${fq(stockQty(t.wh, l.sku, l.owner))}`)
+  if (neg.length) fail('料已经被用掉，改不回去', neg)
+  t.lines.forEach((l) => { if (l.adj) changeStock(t.wh, l, -l.adj, { type: takeLogType(t, l.adj), no: t.no }); delete l.adj })
+  move('stocktake', t, '反审核')
+  delete t.auditor
+}
+
+/* ---------- 生产单：外发加工单、成品采购单（甲方 11-14） ----------
+ * 数据还是一张表（db.productions），按加工方式分种类，不另存：清加工、半包 = 外发加工单（我方出料，单价是加工费）；
+ * 包工包料 = 成品采购单（工厂自己买料、做好成衣卖给我们，单价是成品单价，含料）。单号前缀按种类取 JG / CP。
+ * 两种单字段、状态、节点、报工、异常、回货都一样；同时指两种的地方（看板、首页、报表）叫"生产单" */
+const PROD_KINDS = {
+  外发加工单: { pre: 'JG', to: '/production', mod: 'production', price: '加工单价', modes: ['清加工', '半包'], short: '外发加工' },
+  成品采购单: { pre: 'CP', to: '/fp-purchases', mod: 'fpurchases', price: '成品单价（含料）', modes: ['包工包料'], short: '成品采购' },
+}
+const prodKind = (x) => ((typeof x === 'string' ? x : x?.mode) === '包工包料' ? '成品采购单' : '外发加工单') // x：生产单、排单块，或者加工方式
+const prodKindOf = (x) => PROD_KINDS[prodKind(x)]
+const prodLink = (p) => prodKindOf(p).to + '/' + p.no
 const prodQty = (p) => sum(p.lines, (l) => l.qty)
 const prodRet = (p) => sum(p.lines, (l) => l.ret)
 const prodDef = (p) => sum(p.lines, (l) => l.def)
@@ -887,10 +1017,10 @@ function createProduction(o, b) {
   const s = style(b.style)
   const lines = s.colors.flatMap((c) => sizesOf(s.sizeGroup).map((z) => ({ color: c, size: z, qty: b.qty[c + '|' + z] || 0, ret: 0, def: 0 }))).filter((l) => l.qty > 0)
   const p = add(db.productions, {
-    no: nextNo('JG'), company: o.company, order: o.no, style: b.style, ver: o.lines.find((l) => l.style === b.style)?.ver, factory: b.factory, mode: b.mode || '清加工',
+    no: nextNo(prodKindOf(b.mode || '清加工').pre), company: o.company, order: o.no, style: b.style, ver: o.lines.find((l) => l.style === b.style)?.ver, factory: b.factory, mode: b.mode || '清加工',
     price: +b.price, priceWhy: b.why || '', date: clock.today, due: b.due, expect: null, merch: b.merch || o.merch, settle: b.settle || sup(b.factory).settle, terms: b.terms || '', note: b.note || '', status: '草稿', lines, nodes: [], issues: [], upstream: null, log: [],
   })
-  act(p, '由订单 ' + o.no + ' 排单生成')
+  act(p, '由需求订单 ' + o.no + ' 排单生成')
   return p
 }
 // 审核：从交期往前倒排节点计划
@@ -903,9 +1033,9 @@ function auditProduction(p) {
     return { name, ps, pf, as: null, af: null, qty: null, note: '', by: null }
   }).reverse()
   const o = order(p.order)
-  if (o?.status === '已审核') { o.status = '生产中'; act(o, '加工单 ' + p.no + ' 已下单') }
+  if (o?.status === '已审核') { o.status = '生产中'; act(o, prodKind(p) + ' ' + p.no + ' 已下单') }
 }
-// 反审核：还没开工（没报进度、没领料、没回货、没异常）才行，节点计划清掉，订单没有别的在做的加工单就回到已审核
+// 反审核：还没开工（没报进度、没领料、没回货、没异常）才行，节点计划清掉，订单没有别的在做的生产单就回到已审核
 function unauditProduction(p) {
   const why = []
   if (p.nodes.some((n) => n.as || n.af)) why.push('已经报过进度')
@@ -913,12 +1043,12 @@ function unauditProduction(p) {
   if (issued.length) why.push('已经领过料：' + issued.join('、'))
   if (prodRet(p)) why.push('已经回过货 ' + prodRet(p) + ' 件')
   if (p.issues.length) why.push('已经上报过异常')
-  if (why.length) fail('加工单已经开工，不能反审核', why)
+  if (why.length) fail(prodKind(p) + '已经开工，不能反审核', why)
   if (liveContractOf(p.no)) fail(`先作废合同 ${liveContractOf(p.no).no}，再反审核`) // 合同在 7b-contracts.js
   move('production', p, '反审核')
   p.nodes = []
   const o = order(p.order)
-  if (o?.status === '生产中' && !prodsOf(o).some(prodLive)) { o.status = '已审核'; act(o, '加工单 ' + p.no + ' 反审核，订单回到已审核') }
+  if (o?.status === '生产中' && !prodsOf(o).some(prodLive)) { o.status = '已审核'; act(o, prodKind(p) + ' ' + p.no + ' 反审核，订单回到已审核') }
 }
 // 节点状态：done / late（延期）/ warn（临期）/ run / todo
 function nodeState(n) {
@@ -928,12 +1058,12 @@ function nodeState(n) {
   return n.as ? 'run' : 'todo'
 }
 const curNode = (p) => p.nodes.find((n) => !n.af)
-/* 报进度（PRD §6.7.3）：电脑上加工单的「报进度」和手机报工都调这一个，规则一样。
+/* 报进度（PRD §6.7.3）：电脑上生产单的「报进度」和手机报工都调这一个，规则一样。
  * f.kind = '开始'：只记实际开始，节点进行中；'完成'：记实际完成，没填日期按今天。要报完成得明确点「报完成」，不会不知不觉就完成了。
  * 不传 kind 按有没有 af 判断（种子、自检这么调）。表单初值也共用 reportInit：实际开始默认今天，实际完成不预填 */
 const reportInit = (n) => ({ as: n.as || clock.today, af: n.af || '', qty: n.qty, note: n.note || '', photos: [] })
 function reportNode(p, i, f) {
-  if (!prodLive(p)) fail('加工单审核后才能报进度')
+  if (!prodLive(p)) fail(prodKind(p) + '审核后才能报进度')
   const n = p.nodes[i]
   const kind = f.kind || (f.af ? '完成' : '开始')
   if (kind === '开始') {
@@ -980,13 +1110,13 @@ function closeIssue(p, i, measure, party) {
   Object.assign(i, { measure, status: '已关闭', closedAt: clock.today, closedBy: db.me })
   act(p, '关闭异常：' + i.type + (i.party ? '，责任方 ' + i.party : ''))
 }
-// 领料建议 = 加工数 × BOM 用量 ×（1 + 损耗）− 已领；只算我方采购和客供
+// 领料建议 = 加工数 × BOM 用量 ×（1 + 损耗）− 已领。外发加工单算我方采购和客供；成品采购单的料工厂自己买，只领我方采购的行（主唛、吊牌这类，常常没有）
 function issuePlan(p) {
   const tp = tpOf(p.style, p.ver)
   if (!tp) return []
-  const cust = order(p.order)?.customer, acc = {}
+  const cust = order(p.order)?.customer, acc = {}, cp = prodKind(p) === '成品采购单'
   p.lines.forEach((l) => tp.bom.forEach((r) => {
-    if (r.src === '工厂自备') return
+    if (r.src === '工厂自备' || (cp && r.src !== '我方采购')) return
     const sku = rowSku(r, l.color)
     if (!sku) return
     const owner = r.src === '客供' ? cust || '自有' : '自有'
@@ -995,7 +1125,7 @@ function issuePlan(p) {
   }))
   const docs = db.stockDocs.filter((d) => d.src === p.no && d.status === '已审核')
   return Object.values(acc).map((a) => {
-    const issued = rnd(sum(docs.flatMap((d) => d.lines.filter((l) => l.sku === a.sku && l.owner === a.owner).map((l) => (d.type === '退料' ? -l.qty : l.qty)))), 3)
+    const issued = rnd(sum(docs.flatMap((d) => d.lines.filter((l) => l.sku === a.sku && l.owner === a.owner).map((l) => (d.type === '退料入库' ? -l.qty : l.qty)))), 3)
     const need = rnd(a.need, 3)
     return { ...a, need, issued, suggest: Math.max(0, rnd(need - issued, 3)), avail: rnd(sum(materialWhs(), (w) => stockQty(w, a.sku, a.owner)), 3) }
   })
@@ -1008,7 +1138,7 @@ function issueState(p) {
 }
 // 领料：从选的物料仓（默认主料仓）发到加工厂的工厂仓
 function issueMaterials(p, lines, from = 'WL01') {
-  if (!prodLive(p)) fail('加工单审核后才能领料')
+  if (!prodLive(p)) fail(prodKind(p) + '审核后才能领料')
   const fw = factoryWh(p.factory)
   if (!fw) fail('这个加工厂还没有工厂仓')
   if (wh(from)?.type !== '物料仓') fail('领料要从物料仓发')
@@ -1016,18 +1146,18 @@ function issueMaterials(p, lines, from = 'WL01') {
   if (!ls.length) fail('至少领一行')
   const short = stockShortage(from, ls)
   if (short.length) fail('库存不够，没领成', short)
-  const d = createStockDoc({ type: '领料', src: p.no, from, to: fw.code, partner: p.factory, lines: ls })
+  const d = createStockDoc({ type: '领料出库', src: p.no, from, to: fw.code, partner: p.factory, lines: ls })
   postStockDoc(d)
-  act(p, '领料 ' + d.no)
-  // 订单的加工单都领齐了，算料单自动关闭，释放"本次使用库存"的占用
+  act(p, '领料出库 ' + d.no)
+  // 订单的生产单都领齐了，算料单自动关闭，释放"本次使用库存"的占用
   const o = order(p.order)
   if (o && o.lines.every((l) => scheduledQty(o, l) >= l.qty) && prodsOf(o).every((x) => issueState(x) === '已领齐'))
-    mrpsOf(o).filter((m) => m.status === '已确认').forEach((m) => { m.status = '已关闭'; act(m, '加工单都已领齐料，自动关闭') })
+    mrpsOf(o).filter((m) => m.status === '已确认').forEach((m) => { m.status = '已关闭'; act(m, '生产单都已领齐料，自动关闭') })
   return d
 }
 // 回货：lines = { 'KQ|S': { qty, def, note } }；wh 收货仓（成品仓，只记录）
 function registerReturn(p, f) {
-  if (!prodLive(p)) fail('加工单审核后才能登记回货')
+  if (!prodLive(p)) fail(prodKind(p) + '审核后才能登记回货')
   if (f.date && f.date > clock.today) fail('回货日期不能晚于今天')
   const errs = [], got = []
   p.lines.forEach((l) => {
@@ -1045,7 +1175,7 @@ function registerReturn(p, f) {
   const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d, note }) => ({ color: l.color, size: l.size, qty: q, def: d, note })), photos: f.photos || [], by: db.me, status: '已登记', log: [] })
   act(r, '登记')
   p.status = prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : '部分回货'
-  act(p, `回货 ${r.no}：${sum(r.lines, (x) => x.qty)} 件，次品 ${sum(r.lines, (x) => x.def)}${p.status === '已完成' ? '，加工单完成' : ''}`)
+  act(p, `回货 ${r.no}：${sum(r.lines, (x) => x.qty)} 件，次品 ${sum(r.lines, (x) => x.def)}${p.status === '已完成' ? '，' + prodKind(p) + '完成' : ''}`)
   checkOrderDone(order(p.order))
   return r
 }
@@ -1054,7 +1184,7 @@ function checkOrderDone(o) {
   const ps = prodsOf(o)
   if (ps.length && o.lines.every((l) => scheduledQty(o, l) >= l.qty) && ps.every((p) => ['已完成', '已结案'].includes(p.status))) {
     o.status = '已完成'
-    act(o, '全部加工单完成，订单完成')
+    act(o, '全部生产单完成，订单完成')
   }
 }
 
@@ -1073,14 +1203,14 @@ const label = (sku, extra) => ({ part: extra.part, mat: sku, mode: '固定', sku
 
 function seed() {
   as('u4', '2026-08-20', () => {
-    createStyle({ code: '26QJ012', name: '短款工装夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', ...ifTrade({ source: '客户来样', customer: 'KH0002', custNo: 'NF-J2611' }), status: '启用',
+    createStyle({ code: '26QJ012', name: '短款工装夹克', alias: '机车小夹克', cat: 'J', year: 2026, season: 'Q', wave: '第 2 波', tag: '休闲', colors: ['HE', 'KQ'], tagPrice: 699, cost: 260, factory: 'GYS0005', ...ifTrade({ source: '客户来样', customer: 'KH0002', custNo: 'NF-J2611' }), status: '启用',
       patterner: 'u8', mainMat: 'ML0018', product: '夹克', comp: '65% 棉 35% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2026-09-25' })
     createStyle({ code: '26QW008', name: '圆领针织衫', cat: 'W', year: 2026, season: 'Q', wave: '第 3 波', tag: '通勤', colors: ['MB', 'HH'], tagPrice: 399, cost: 150, factory: 'GYS0004', status: '启用' })
-    createStyle({ code: '26DS021', name: '连帽卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', ...ifTrade({ source: '客户来样', customer: 'KH0003' }), status: '启用',
+    createStyle({ code: '26DS021', name: '连帽卫衣', alias: '云朵卫衣', cat: 'S', year: 2026, season: 'D', wave: '第 1 波', tag: '运动', colors: ['HE', 'HH', 'WL'], tagPrice: 459, cost: 120, factory: 'GYS0004', ...ifTrade({ source: '客户来样', customer: 'KH0003' }), status: '启用',
       gender: '中性', mainMat: 'MZ0003', product: '卫衣', comp: '100% 棉', standard: 'FZ/T 73020-2019 针织休闲服装', safety: 'B 类' })
-    createStyle({ code: '27CF001', name: '女式风衣', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['KQ', 'ZQ', 'HE'], tagPrice: 899, cost: 330, factory: 'GYS0004', status: '启用',
+    createStyle({ code: '27CF001', name: '女式风衣', alias: '格纹双排扣', cat: 'F', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['KQ', 'ZQ', 'HE'], tagPrice: 899, cost: 330, factory: 'GYS0004', status: '启用',
       series: '城市通勤', patterner: 'u8', mainMat: 'ML0012', product: '风衣', comp: '面料：100% 棉；里料：100% 聚酯纤维', standard: 'GB/T 2665-2017 女西服、大衣', safety: 'B 类', launch: '2027-02-20', note: '大身面料对格，' + ifTrade('样衣已过客户确认', '样衣已确认') })
-    createStyle({ code: '27CK002', name: '直筒西裤', cat: 'K', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['HE', 'ZQ'], tagPrice: 459, cost: 160, factory: 'GYS0005', status: '启用' })
+    createStyle({ code: '27CK002', name: '直筒西裤', alias: '烟管裤', cat: 'K', year: 2027, season: 'C', wave: '第 1 波', tag: '通勤', colors: ['HE', 'ZQ'], tagPrice: 459, cost: 160, factory: 'GYS0005', status: '启用' })
     createStyle({ code: '27CT003', name: '基础圆领 T 恤', cat: 'T', year: 2027, season: 'C', wave: '第 2 波', tag: '休闲', colors: ['BB', 'HE'], tagPrice: 199, factory: 'GYS0004' })
   })
   // 只有款式档案、还没下过单的款，让款式库像个样子
@@ -1105,37 +1235,73 @@ function seed() {
   ]
   const cfOps = [['裁剪', '裁剪', 180, 2.5, '格子对齐后再开裁，左右前片对条对格'], ['车缝', '做领、上领', 420, 6, '领尖左右对称，止口 0.1cm 明线'], ['车缝', '做袖、上袖', 480, 6.5, '袖山吃势均匀，不起皱'], ['车缝', '前后片拼合、做门襟', 600, 9, '门襟顺直，不起涟'], ['车缝', '装里布', 420, 6, '里布下摆留 1cm 坐势'], ['整烫', '整烫', 240, 3, '面料不能烫出极光，垫布熨烫'], ['后道', '钉扣、剪线、查衫', 240, 3], ['包装', '挂吊牌、折叠入袋', 120, 2]]
   const ops = (a) => a.map(([cat, name, sec, price, req]) => ({ cat, name, req: req || '', sec, price, note: '' }))
+  // 演示款：尺寸指示按模板填上数；工艺指示在公司默认文字上补这个款的部位细则等；有的款加其他费用
+  const demoTp = (tp, o = {}) => {
+    tp.spec = specTemplate(tp.style, true)
+    Object.entries(o.craft || {}).forEach(([k, v]) => Object.assign(tp.craft[k], typeof v === 'string' ? { text: v } : v))
+    if (o.costs) tp.costs = o.costs
+    return tp
+  }
   as('u4', '2026-09-10', () => {
-    const cf = createTechpack('27CF001', cf001(2.3), ops(cfOps))
-    Object.assign(cf, { util: 84, req: { text: '缝份：大身 1cm，领、门襟 0.8cm\n针距：明线 3cm 12 针，暗线 3cm 13 针\n大身对条对格，左右前片、袖子格子对齐\n里布下摆比面布短 2cm，坐势 1cm', pics: [] } })
+    const cf = demoTp(createTechpack('27CF001', cf001(2.3), ops(cfOps)), {
+      craft: {
+        cut: '面料开裁前松布 24 小时。大身对条对格：左右前片、袖子、后背的格子对齐后再开裁；领面、袋盖横丝。裁片打号，分色分码捆扎。',
+        detail: '缝份：大身 1cm，领、门襟 0.8cm。\n领：领尖左右对称，止口压 0.1cm 明线。\n门襟：顺直不起涟，扣位按纸样点位。\n腰带：宽 4cm，两头尖角方正；腰带襻在侧缝上 2cm。\n里布：下摆比面布短 2cm，坐势 1cm。',
+        button: '双排扣 8 粒、袖襻 2 粒，备用扣 1 粒钉在洗唛上。扣眼锁凤眼，扣眼大小 = 纽扣直径 + 0.3cm。',
+        label: '主唛钉在后领中下 2cm 居中；洗唛缝在里布左侧摆缝，离下摆 15cm；尺码唛夹在主唛下方。',
+        pack: { way: '挂装', text: '挂装出货，一件一个防尘袋，腰带系好；按色按码挂箱，每箱 10 件。' },
+      },
+      costs: [{ name: '防尘袋', amt: 1.2, note: '挂装出货用' }, { name: '运费', amt: 2, note: '工厂来回，按件分摊' }],
+    })
+    cf.util = 84
     publishTp(cf)
-    publishTp(createTechpack('26QJ012', [
+    publishTp(demoTp(createTechpack('26QJ012', [
       { part: '大身', mat: 'ML0018', mode: '随款色', map: { HE: 'ML0018-HE', KQ: 'ML0018-KQ' }, um: '分码', uses: SZ(1.85, 1.95, 2.05, 2.15, 2.25), loss: 3, src: '我方采购', supplier: 'GYS0001' },
       { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-60', um: '统一', use: 1, loss: 1, src: '我方采购', supplier: 'GYS0002' },
       { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 4, loss: 2, src: '我方采购', supplier: 'GYS0002' },
       ...labels.map((x) => ({ ...x })), { ...thread },
-    ], ops([['裁剪', '裁剪', 160, 2.5], ['车缝', '前后片拼合', 540, 10], ['车缝', '上拉链', 360, 6], ['车缝', '做袖、上袖', 420, 7], ['车缝', '做领', 360, 6], ['整烫', '整烫', 200, 3], ['后道', '钉扣、查衫', 300, 4.5], ['包装', '包装', 150, 3]])))
-    publishTp(createTechpack('26QW008', [
+    ], ops([['裁剪', '裁剪', 160, 2.5], ['车缝', '前后片拼合', 540, 10], ['车缝', '上拉链', 360, 6], ['车缝', '做袖、上袖', 420, 7], ['车缝', '做领', 360, 6], ['整烫', '整烫', 200, 3], ['后道', '钉扣、查衫', 300, 4.5], ['包装', '包装', 150, 3]])), {
+      craft: {
+        detail: '明线：前后片拼缝压 0.6cm 双明线，线迹均匀。\n拉链：门襟拉链平服，上下止口对齐，不起拱。\n口袋：胸袋袋盖盖住袋口 0.2cm，左右袋位高低一致。\n袖口：袖襻宽 3cm，扣钉在袖襻正中。',
+      },
+      costs: [{ name: '洗水（酵素洗）', amt: 4.5, note: '外发洗水厂' }],
+    }))
+    publishTp(demoTp(createTechpack('26QW008', [
       { part: '大身', mat: 'MZ0003', mode: '随款色', map: { MB: 'MZ0003-MB', HH: 'MZ0003-HH' }, um: '统一', use: 1.4, loss: 5, src: '工厂自备' },
       ...labels.map((x) => ({ ...x })),
-    ], ops([['车缝', '套口', 300, 8], ['车缝', '缝合', 360, 10], ['后道', '后整', 200, 6], ['包装', '包装', 120, 3]])))
-    publishTp(createTechpack('26DS021', [
+    ], ops([['车缝', '套口', 300, 8], ['车缝', '缝合', 360, 10], ['后道', '后整', 200, 6], ['包装', '包装', 120, 3]])), {
+      craft: {
+        detail: '领口罗纹套口，接缝放在左肩；袖口、下摆罗纹平整，不起浪。\n肩缝加牵条，防止拉长变形。',
+        iron: '低温蒸汽定型，不能压烫；罗纹不要烫平。',
+      },
+    }))
+    publishTp(demoTp(createTechpack('26DS021', [
       { part: '大身', mat: 'MZ0003', mode: '随款色', map: { HE: 'MZ0003-HE', HH: 'MZ0003-HH', WL: 'MZ0003-WL' }, um: '分码', uses: SZ(1.5, 1.6, 1.7, 1.8, 1.9), loss: 4, src: '我方采购', supplier: 'GYS0009' },
       { part: '领', mat: 'MZ0007', mode: '随款色', map: { HE: 'MZ0007-HE', HH: 'MZ0007-HH', WL: 'MZ0007-WL' }, um: '统一', use: 0.25, loss: 3, src: '工厂自备' },
       ...labels.map((x) => ({ ...x })),
-    ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '拼缝、上帽', 600, 12], ['后道', '后整', 200, 5], ['包装', '包装', 120, 3]])))
-    createTechpack('27CK002', [
+    ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '拼缝、上帽', 600, 12], ['后道', '后整', 200, 5], ['包装', '包装', 120, 3]])), {
+      craft: {
+        detail: '帽子：帽中缝对齐后领中，帽绳两头长短一致，出绳孔打金属鸡眼。\n袖口、下摆罗纹：四线拷边，罗纹拉开不断线。\n袋：袋口压 0.6cm 双针，袋角打枣。',
+      },
+      costs: [{ name: '胸前印花（外加工）', amt: 6, note: '盛达印绣' }],
+    }))
+    demoTp(createTechpack('27CK002', [
       { part: '大身', mat: 'ML0012', mode: '随款色', map: { HE: 'ML0012-HE' }, um: '分码', uses: SZ(1.2, 1.25, 1.3, 1.35, 1.4), loss: 3, src: '我方采购', supplier: 'GYS0001' },
       { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-15', um: '统一', use: 1, loss: 1, src: '我方采购' },
       { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 1, loss: 2, src: '我方采购' },
       ...labels.map((x) => ({ ...x })),
-    ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '做腰、上腰', 420, 7], ['车缝', '上拉链、合裆', 480, 8], ['后道', '锁眼钉扣', 160, 2], ['包装', '包装', 100, 2]]))
+    ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '做腰、上腰', 420, 7], ['车缝', '上拉链、合裆', 480, 8], ['后道', '锁眼钉扣', 160, 2], ['包装', '包装', 100, 2]])), {
+      craft: {
+        detail: '前片烫迹线挺直，上下对齐；腰头内加衬，腰头宽 4cm。\n门襟拉链平服不起拱，裤钩钉牢。\n后袋双嵌线，嵌线宽 0.5cm，袋角方正、不毛露。',
+        pack: { way: '平铺' },
+      },
+    })
   })
   as('u4', '2026-10-20', () => {
     const v2 = reviseTp(activeTp('27CF001'))
     v2.bom[0].uses.M = 2.35
-    gradeRow(v2.spec.rows[0], sizesOf('W5'), 'M', 110)
-    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；衣长各码加长 2cm'
+    gradeRow(v2.spec.rows.find((r) => r.pt === '后中长'), sizesOf('W5'), 'M', 110)
+    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；后中长各码加长 2cm'
     publishTp(v2)
   })
   // 期初库存、客供料（TRADE 关着时没有客供，这批黑色里布算自有，并进期初）
@@ -1184,7 +1350,7 @@ function seed() {
   as('u6', '2026-10-16', () => auditProduction(p2))
   as('u3', '2026-10-20', () => createChange(o2, { due: '2026-11-30', ...ifTrade({ reason: '客户门店开业推迟，交期顺延 5 天', party: '客户' }, { reason: '门店开业推迟，交期顺延 5 天', party: '我方' }) }))
   as('u6', '2026-10-20', () => auditChange(db.changes[db.changes.length - 1]))
-  ;[...db.mrps, ...db.purchases].forEach((d) => { if (d.upstream) d.upstream.done = true }) // 采购那边当时已处理，只留加工单上的提示
+  ;[...db.mrps, ...db.purchases].forEach((d) => { if (d.upstream) d.upstream.done = true }) // 采购那边当时已处理，只留生产单上的提示
   as('u5', '2026-10-24', () => receivePurchase(po21, { lines: po21.lines.map((l, i) => ({ i, qty: l.qty, lot: 'K1024-' + (i + 1) })), supNo: 'HF-SH-8812' }))
   as('u5', '2026-10-25', () => issueMaterials(p2, issuePlan(p2).filter((r) => !r.sku.startsWith('FL')).map((r) => ({ sku: r.sku, owner: r.owner, qty: r.suggest }))))
   as('u1', '2026-10-28', () => reportNode(p2, 0, { as: '2026-10-26', af: '2026-10-28' }))
@@ -1232,6 +1398,18 @@ function seed() {
   as('u3', '2026-11-06', () => submitOrder(o6))
   as('u3', '2026-11-07', () => createOrder({ type: '翻单', ...ifTrade({ customer: 'KH0002' }, { brand: '织间' }), due: '2026-12-25', lines: mxLines('26QJ012', { HE: SZ(40, 60, 60, 30, 10) }, 210) }))
   as('u5', '2026-11-07', () => createStockDoc({ type: '其他出库', reason: '报废', from: 'WL01', lines: [{ sku: 'FX0002', qty: 5 }] }))
+  // 物料盘点单（甲方 11-14）：主料仓盘了纽扣、包装袋，黑色纽扣少 8 个、包装袋多 20 个，已审核过账；华美服装厂仓的单还在录实盘
+  as('u5', '2026-11-07', () => {
+    const t = createStockTake({ wh: 'WL01', purpose: '日常盘点', scope: { kind: '按物料分类', cats: ['FK', 'BD'] }, note: '月底前抽盘辅料、包材' })
+    t.lines.forEach((l) => { l.qty = rnd(l.book + ({ 'FK0021-HE': -8, BD0001: 20 }[l.sku] || 0), 3) })
+    t.lines.find((l) => l.sku === 'FK0021-HE').note = '散装袋里少了一小把'
+    submitTake(t)
+    postTake(t)
+  })
+  as('u1', '2026-11-08', () => {
+    const t = createStockTake({ wh: 'GC0005', purpose: '日常盘点', counter: 'u1', note: '华美服装厂剩料，跟单去厂里点' })
+    t.lines.slice(0, Math.ceil(t.lines.length / 2)).forEach((l) => { l.qty = l.book })
+  })
 }
 seed()
 
@@ -1266,7 +1444,7 @@ function selftest() {
   const [p] = scheduleOrder(o, [{ style: '27CF001', factory: 'GYS0004', mode: '清加工', price: 38, due: '2027-03-10', qty: { 'KQ|S': 80, 'KQ|M': 120, 'KQ|L': 120, 'KQ|XL': 60, 'KQ|XXL': 20 } }])
   ok('排单：再排 10 件被拒（最多 3 件）', err(() => scheduleOrder(o, [{ style: '27CF001', factory: 'GYS0004', price: 38, due: '2027-03-10', qty: { 'KQ|M': 10 } }])).includes('最多还能排 3 件'))
   doAction('production', p, '提交'); doAction('production', p, '审核')
-  ok('加工单：6 个节点，入仓 = 03-10', p.nodes.length === 6 && p.nodes[5].pf === '2027-03-10', p.nodes.map((n) => n.pf).join(' '))
+  ok('外发加工单：JG 开头，6 个节点，入仓 = 03-10', p.no.startsWith('JG') && p.nodes.length === 6 && p.nodes[5].pf === '2027-03-10', p.nodes.map((n) => n.pf).join(' '))
   ok('订单变"生产中"', o.status === '生产中', o.status)
   const fab = issuePlan(p).find((r) => r.sku === 'ML0012-KQ')
   ok('领料建议 990.86 米', fab.suggest === 990.86, fab.suggest)
@@ -1274,17 +1452,17 @@ function selftest() {
   ok('领料后物料仓剩 0.14、工厂仓 990.86', stockQty('WL01', 'ML0012-KQ') === 0.14 && stockQty('GC0004', 'ML0012-KQ') === 990.86, [stockQty('WL01', 'ML0012-KQ'), stockQty('GC0004', 'ML0012-KQ')])
   ok('再领 1 米被拒（差 0.86）', err(() => issueMaterials(p, [{ sku: 'ML0012-KQ', owner: '自有', qty: 1 }])).includes('差 0.86'))
   reportNode(p, 1, { af: clock.today, qty: 402 })
-  ok('报工后加工单"生产中"', p.status === '生产中', p.status)
-  ok('变更：改到小于已排产被拒', err(() => createChange(o, { items: [{ k: '27CF001|KQ|M', to: 100 }], reason: '减量' })).includes('先调整加工单'))
+  ok('报工后外发加工单"生产中"', p.status === '生产中', p.status)
+  ok('变更：改到小于已排产被拒', err(() => createChange(o, { items: [{ k: '27CF001|KQ|M', to: 100 }], reason: '减量' })).includes('先调整生产单'))
   registerReturn(p, { lines: Object.fromEntries(p.lines.map((l, i) => [l.color + '|' + l.size, { qty: l.qty, def: i === 0 ? 4 : 0 }])) })
-  ok('回货 400 件 → 加工单完成', p.status === '已完成', p.status)
+  ok('回货 400 件 → 外发加工单完成', p.status === '已完成', p.status)
   ok('回货超量被拒', err(() => registerReturn(p, { lines: { 'KQ|M': { qty: 10 } } })) !== '')
   ok('黑名单供应商不能下采购单', err(() => createPurchase({ supplier: 'GYS0008', lines: [{ sku: 'ML0012-HE', qty: 1, price: 1 }] })).includes('黑名单'))
   ok('资料包缺色不能生效', err(() => publishTp(tpsOf('27CK002')[0])).includes('藏青未配料'))
-  // 贸易代工开关：关着时补单、翻单都不选客户，出入库没有客供入库
+  // 贸易代工开关：关着时补单、翻单都不选客户，入库单没有客供入库
   const e = err(() => removeDraft(db.orders, createOrder({ type: '补单', due: '2026-12-31', lines: [{ style: '27CF001', color: 'KQ', size: 'M', qty: 10 }] })))
   ok(TRADE ? '补单要选客户' : '补单不选客户也能建', TRADE ? e.includes('要选客户') : e === '', e)
-  ok(TRADE ? '出入库有客供入库' : '出入库没有客供入库', ('客供入库' in STOCK_TYPES) === TRADE)
+  ok(TRADE ? '入库单有客供入库' : '入库单没有客供入库', ('客供入库' in STOCK_TYPES) === TRADE)
   // 研发 / 生产 BOM（§6.4.1）：订单只认生产 BOM；研发 BOM 转生产 BOM 记来源，单价按价格档案重新取
   const s9 = style('26DY009')
   const d9 = createTechpack(s9.code, [{ part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 5, loss: 2, src: '我方采购', supplier: 'GYS0002', price: 0.4 }], [{ cat: '车缝', name: '整件加工（估）', req: '', sec: 1000, price: 20, note: '' }], '自检估价', null, '研发')
@@ -1325,7 +1503,7 @@ function selftest() {
   ok('在途：预计到货晚于要料日期的不扣，列成"赶不上的在途"，照样要买', he3.availTransit === 0 && he3.lateTransit === rnd(500 - he.useTransit, 3) && he3.purQty > 0, [he3.availTransit, he3.lateTransit, he3.purQty])
   removeDraft(db.mrps, mb3)
   bp.lines[0].expect = null
-  // 赶不上开裁（§6.6.3）：排单后要料日期 = 加工单的裁剪计划开始；排单改了加工价要写原因
+  // 赶不上开裁（§6.6.3）：排单后要料日期 = 生产单的裁剪计划开始；排单改了加工价要写原因
   const blk = { style: '27CF001', factory: 'GYS0004', mode: '清加工', price: 40, due: '2027-03-10', qty: { 'HE|S': 20, 'HE|M': 30, 'HE|L': 30, 'HE|XL': 20, 'HE|XXL': 20 } }
   ok('加工价：排单改了单价不写原因被拦', err(() => scheduleOrder(ob, [blk])).includes('改价原因'))
   const [pb] = scheduleOrder(ob, [{ ...blk, price: 38 }])
@@ -1445,6 +1623,55 @@ function selftest() {
   finStmtAction(st2, '作废')
   doAction('stock', th2, '反审核'); doAction('stock', th2, '作废')
   ok('对账：草稿对账单作废后，退货单能反审核、作废', th2.status === '已作废' && po2.lines[0].returned === 0, [th2.status, po2.lines[0].returned])
+
+  // 资料包（甲方 11-14）：新建带设置里的默认文字和测量方法；按档差生成；修订整版复制；核价 = 面料 + 辅料 + 加工 + 其他，工厂自备不计
+  const note0 = db.craftStd.texts.note
+  db.craftStd.texts.note = '自检：注意事项默认文字'
+  const t3 = createTechpack('27CT003', [], [], '', null)
+  db.craftStd.texts.note = note0
+  ok('资料包：新建时工艺指示带设置里的默认文字，部位带默认测量方法，尺寸数值留空', t3.craft.note.text === '自检：注意事项默认文字' && t3.craft.pack.way === db.craftStd.packWay
+    && t3.spec.rows[0].how === db.craftStd.how[t3.spec.rows[0].pt] && !specFilled(t3), [t3.craft.note.text, t3.spec.rows[0]])
+  Object.assign(t3.spec.rows[0], { step: 1 }); t3.spec.rows[0].vals.M = 64
+  Object.assign(t3.spec.rows[1], { step: '' }); t3.spec.rows[1].vals.M = 44
+  const gr = gradeSpec(t3)
+  ok('尺寸指示：按档差生成 S 63、L 65、XXL 67，没填档差的行跳过', gr[0] === 1 && gr[1] === 1 && t3.spec.rows[0].vals.S === 63 && t3.spec.rows[0].vals.L === 65 && t3.spec.rows[0].vals.XXL === 67 && t3.spec.rows[1].vals.S == null, [gr, t3.spec.rows[0].vals])
+  removeTpDraft(t3)
+  const cfa = activeTp('27CF001'), k = tpCost(cfa)
+  ok('核价：单件成本 = 面料 + 辅料 + 加工 + 其他费用 3.2；缝纫线工厂自备不计', k.total === rnd(k.fabric + k.trim + k.labor + k.other, 2) && k.other === 3.2 && k.mat === tpMaterialCost(cfa)
+    && k.rows.find((x) => x.r.part === '缝纫线').cost === 0 && k.rows.find((x) => x.r.part === '里布').kind === '面料', [k.fabric, k.trim, k.labor, k.other, k.total])
+  const v3 = reviseTp(cfa)
+  ok('修订：新版本带着尺寸指示、工艺指示、其他费用（复制，不是同一份）', JSON.stringify([v3.spec, v3.craft, v3.costs]) === JSON.stringify([cfa.spec, cfa.craft, cfa.costs]) && v3.spec !== cfa.spec && v3.craft.detail !== cfa.craft.detail && v3.costs.length === 2)
+  removeTpDraft(v3)
+  // 外发加工单、成品采购单（甲方 11-14）：一张表按加工方式分种类；成品采购单只领我方采购的料
+  const cp = db.productions.find((x) => x.style === '26QW008' && x.mode === '包工包料'), jg = db.productions.find((x) => x.style === '26DS021')
+  ok('生产单：包工包料是成品采购单 CP 开头，半包是外发加工单 JG 开头，各自的单价名', cp?.no.startsWith('CP') && prodKind(cp) === '成品采购单' && jg?.no.startsWith('JG') && prodKind(jg) === '外发加工单' && prodKindOf(cp).price === '成品单价（含料）', [cp?.no, jg?.no])
+  ok('成品采购单：领料只算我方采购的行，面料工厂自备不领', issuePlan(cp).length > 0 && issuePlan(cp).every((r) => r.src === '我方采购'), issuePlan(cp).map((r) => r.sku + ' ' + r.src))
+  ok('排单：价格没填时按种类报单价名', err(() => scheduleOrder(order(cp.order), [{ style: '26QW008', factory: 'GYS0004', mode: '包工包料', due: '2026-12-01', qty: { 'MB|M': 1 } }])).includes('成品单价（含料）要填'))
+  // 物料盘点单（甲方 11-14）：调整量 = 实盘 − 建单时的账面，加到现在的库存上；盘点后照常收发不受影响
+  const pd = createStockTake({ wh: 'WL01', scope: { kind: '手选物料', skus: ['FX0002', 'BX0001'] } })
+  const bx = pd.lines.find((l) => l.sku === 'BX0001'), fx = pd.lines.find((l) => l.sku === 'FX0002'), bx0 = bx.book, fx0 = fx.book
+  ok('盘点单：同一个仓有没审核的盘点单，不能再开，提示是哪张', err(() => createStockTake({ wh: 'WL01' })).includes(pd.no) && err(() => createStockTake({ wh: 'GC0005' })).includes(db.stockTakes.find((t) => t.wh === 'GC0005' && t.status === '草稿').no))
+  postStockDoc(createStockDoc({ type: '其他出库', reason: '其他', from: 'WL01', lines: [{ sku: 'BX0001', qty: 10 }] })) // 盘点后又发出去 10 个
+  bx.qty = bx0 - 100; fx.qty = fx0 + 3
+  ok('盘点单：日常盘点没填完实盘不能提交', ((l) => { l.qty = null; const e = err(() => doAction('stocktake', pd, '提交')); l.qty = fx0 + 3; return e })(fx).includes('没填实盘数'))
+  doAction('stocktake', pd, '提交'); doAction('stocktake', pd, '审核')
+  const pdLogs = db.stockLogs.filter((x) => x.no === pd.no)
+  ok('盘点单：审核过账，主唛 = 账面 − 盘后发出 10 − 盘亏 100，缝纫线盘盈 3；流水记盘亏、盘盈', stockQty('WL01', 'BX0001') === rnd(bx0 - 110, 3) && stockQty('WL01', 'FX0002') === rnd(fx0 + 3, 3)
+    && pdLogs.find((x) => x.sku === 'BX0001')?.type === '盘亏' && pdLogs.find((x) => x.sku === 'FX0002')?.type === '盘盈', [stockQty('WL01', 'BX0001'), bx0, pdLogs.map((x) => x.type + x.delta)])
+  doAction('stocktake', pd, '反审核')
+  ok('盘点单：反审核把补的数退回去', stockQty('WL01', 'BX0001') === rnd(bx0 - 10, 3) && stockQty('WL01', 'FX0002') === fx0 && pd.status === '草稿', [stockQty('WL01', 'BX0001'), stockQty('WL01', 'FX0002')])
+  // 盘点后发出去的比盘出来的还多：实盘填 0，补完是负数，整张不过、列出是哪一行
+  postStockDoc(createStockDoc({ type: '其他出库', reason: '其他', from: 'WL01', lines: [{ sku: 'FX0002', qty: 1 }] }))
+  fx.qty = 0; bx.qty = bx0 - 10
+  doAction('stocktake', pd, '提交')
+  const eNeg = err(() => doAction('stocktake', pd, '审核'))
+  ok('盘点单：有一行补完变负数，整张不过账，列出这一行', eNeg.includes('整张没过账') && eNeg.includes(skuName('FX0002')) && !eNeg.includes(skuName('BX0001')) && pd.status === '待审核' && stockQty('WL01', 'FX0002') === rnd(fx0 - 1, 3), eNeg)
+  doAction('stocktake', pd, '撤回'); removeDraft(db.stockTakes, pd)
+  // 期初录入：空着的实盘当 0，流水记"期初"
+  const qc = createStockTake({ wh: 'GC0006', purpose: '期初录入', scope: { kind: '按物料分类', cats: ['BD'] } })
+  qc.lines[0].qty = 50
+  doAction('stocktake', qc, '提交'); doAction('stocktake', qc, '审核')
+  ok('盘点单：期初录入没填的当 0，流水类型记期初', stockQty('GC0006', qc.lines[0].sku) === 50 && db.stockLogs.filter((x) => x.no === qc.no).every((x) => x.type === '期初'), db.stockLogs.filter((x) => x.no === qc.no).map((x) => x.type))
   return out
 }
 window.SCM = { db, FLOWS, doAction, selftest }

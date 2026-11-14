@@ -8,27 +8,36 @@ const NAV = [
     { k: 'plans', t: '企划', i: 'layers', to: '/plans', ph: '待定', ref: 'M02 · 02.01–02.02' },
     { k: 'samples', t: '样衣', i: 'scissors', to: '/samples', ph: '二期', ref: 'M03 · 03.01–03.04' },
     { k: 'styles', t: '款式', i: 'shirt', to: '/styles', ph: '一期', ref: 'M02 · 02.03–02.06，M04 资料包' },
-    { k: 'costing', t: '核价', i: 'calc', to: '/costing', ph: '待定', ref: 'M05 · 05.01–05.06' },
+    { k: 'costing', t: '核价', i: 'calc', to: '/costing', ph: '一期', ref: 'M05 · 按款看成本（询价比价、订单毛利待定）' },
   ] },
   { g: '订单', items: [
-    { k: 'orders', t: '订单', i: 'file', to: '/orders', ph: '一期', ref: 'M06 · 06.01–06.04' },
+    { k: 'orders', t: '需求订单', i: 'file', to: '/orders', ph: '一期', ref: 'M06 · 06.01–06.04（甲方 11-14 改名需求订单）' },
     { k: 'changes', t: '变更', i: 'diff', to: '/changes', ph: '一期', ref: 'M06 · 06.06' },
   ] },
   { g: '物料', items: [
     { k: 'mrp', t: '算料', i: 'sigma', to: '/mrp', ph: '一期', ref: 'M07 · 07.01' },
     { k: 'purchases', t: '采购', i: 'cart', to: '/purchases', ph: '一期', ref: 'M07 · 07.02–07.03' },
-    { k: 'arrivals', t: '到料', i: 'truck', to: '/arrivals', ph: '一期', ref: 'M07 · 07.04' },
-    { k: 'stockdocs', t: '出入库', i: 'swap', to: '/stock-docs', ph: '一期', ref: 'M07 · 07.05、07.06、07.08' },
+    // 甲方 11-14：「到料」「出入库」拆成入库单（含待到料）、出库单，盘点单单独成单
+    { k: 'stockin', t: '物料入库单', i: 'inbox', to: '/stock-in', ph: '一期', ref: 'M07 · 07.04 到料、07.05–07.08 出入库（甲方 11-14 拆开）' },
+    { k: 'stockout', t: '物料出库单', i: 'swap', to: '/stock-out', ph: '一期', ref: 'M07 · 07.05–07.08 出入库（甲方 11-14 拆开）' },
+    { k: 'stocktake', t: '物料盘点单', i: 'clipboard', to: '/stock-takes', ph: '一期', ref: '甲方 11-14 新增' },
     { k: 'stock', t: '库存', i: 'package', to: '/stock', ph: '一期', ref: 'M07 · 07.07' },
   ] },
   { g: '生产', items: [
-    { k: 'production', t: '加工单', i: 'factory', to: '/production', ph: '一期', ref: 'M08 · 08.01–08.06' },
+    // 甲方 11-14：加工单按加工方式拆成外发加工单（清加工、半包）、成品采购单（包工包料），一张表
+    { k: 'production', t: '外发加工单', i: 'factory', to: '/production', ph: '一期', ref: 'M08 · 08.01–08.06' },
+    { k: 'fpurchases', t: '成品采购单', i: 'cart', to: '/fp-purchases', ph: '一期', ref: 'M08 · 08.01–08.06（甲方 11-14 拆出包工包料）' },
     { k: 'board', t: '看板', i: 'grid', to: '/board', ph: '一期', ref: 'M08 · 08.08' },
     { k: 'mobile', t: '手机报工', i: 'phone', to: '/mobile', ph: '一期', ref: 'M08 · 08.05，M13 · 13.02' },
     { k: 'qc', t: '质检', i: 'shield', to: '/qc', ph: '待定', ref: 'M09 · 09.01–09.06' },
   ] },
-  { g: '成品与结算', items: [
-    { k: 'fg', t: '成品仓', i: 'warehouse', to: '/fg', ph: '待定', ref: 'M10 · 10.01–10.07' },
+  // 甲方 11-14：成品仓拆成入库单、出库单、库存三个菜单，排二期；对账单独一组，还是待定
+  { g: '成品', items: [
+    { k: 'fgin', t: '成品入库单', i: 'warehouse', to: '/fg-in', ph: '二期', ref: 'M10 · 10.01–10.07' },
+    { k: 'fgout', t: '成品出库单', i: 'truck', to: '/fg-out', ph: '二期', ref: 'M10 · 10.01–10.07' },
+    { k: 'fgstock', t: '成品库存', i: 'package', to: '/fg-stock', ph: '二期', ref: 'M10 · 10.01–10.07' },
+  ] },
+  { g: '对账结算', items: [
     { k: 'finance', t: '对账', i: 'receipt', to: '/finance', ph: '待定', ref: 'M11 · 11.01–11.08' },
   ] },
   { g: '资料', items: [

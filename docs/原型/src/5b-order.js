@@ -1,7 +1,7 @@
 /* ============================================================
- * 订单（M06）：列表、颜色 × 尺码矩阵录单（新建、改草稿）、审核即评审、排单、订单变更
+ * 需求订单（M06，甲方 11-14 起叫需求订单，单号还是 DD）：列表、颜色 × 尺码矩阵录单（新建、改草稿）、审核即评审、排单、订单变更
  * ============================================================ */
-SEARCH.push(() => db.orders.map((o) => ({ t: o.no + ' ' + custOrDash(o), sub: '订单 ' + orderStyles(o).join(' ') + (TRADE && o.custNo ? ' ' + o.custNo : ''), to: '/orders/' + o.no, i: 'file' })))
+SEARCH.push(() => db.orders.map((o) => ({ t: o.no + ' ' + custOrDash(o), sub: '需求订单 ' + orderStyles(o).join(' ') + (TRADE && o.custNo ? ' ' + o.custNo : ''), to: '/orders/' + o.no, i: 'file' })))
 // 订单的对方：代工（TRADE）显示客户，没客户显示类型；只做自营时显示类型 · 品牌
 const custOrDash = (o) => (TRADE ? (o.customer ? custName(o.customer) : o.type) : o.type + (o.brand ? ' · ' + o.brand : ''))
 // 金额带币种：人民币用 ¥，外币写币种（一期不换算汇率，PRD §5.3）
@@ -54,7 +54,7 @@ route('/orders', {
     return { s, scoped, tabs, rows, custOrDash, XCOLS, picks, batch }
   },
   template: `<div>
-    <Head t="订单"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="XCOLS" name="订单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建订单</button></Head>
+    <Head t="需求订单"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="XCOLS" name="需求订单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建需求订单</button></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" :party="TRADE ? 'customer' : ''" merch label="下单">
         <label class="f">订单类型<Pick class="sel" v-model="s.type"><option value="">全部类型</option><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></Pick></label>
         <label v-if="!TRADE" class="f">品牌<Pick class="sel" v-model="s.brand"><option value="">全部品牌</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></Pick></label>
@@ -64,7 +64,7 @@ route('/orders', {
       <button v-if="s.f" type="button" class="chip on" @click="s.f = ''">{{ s.f }}<Ico n="x" :s="12"/></button>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" :ph="TRADE ? '单号 / 客户单号 / 款号' : '单号 / 合同号 / 款号'"/></div>
     <div data-c="订单列表">
-      <Tbl :rows="rows" link v-model:picked="s.picked" @row="o => go('/orders/' + o.no)" :empty="scoped.length ? '没有符合条件的订单：换个状态页签，或者清空筛选' : ownOnly() ? '你的数据范围是「本人」：还没有你是制单人、业务员或跟单员的订单' : s.mine ? '还没有你是制单人、业务员或跟单员的订单，切到「全部」看所有人的' : '还没有订单'" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="o => go('/orders/' + o.no)" :empty="scoped.length ? '没有符合条件的需求订单：换个状态页签，或者清空筛选' : ownOnly() ? '你的数据范围是「本人」：还没有你是制单人、业务员或跟单员的订单' : s.mine ? '还没有你是制单人、业务员或跟单员的订单，切到「全部」看所有人的' : '还没有需求订单'" :cols="[
         { k: 'no', t: '订单号', c: 'code' }, { k: 'date', t: '下单', f: o => fd(o.date) }, { k: 'cust', t: TRADE ? '客户' : '类型' }, { k: 'styles', t: '款式' },
         { k: 'qty', t: '数量', c: 'num', f: o => orderQty(o).toLocaleString() }, { k: 'amt', t: '金额', c: 'num', f: o => orderMoney(o, orderAmt(o)) },
         { k: 'due', t: '交期' }, { k: 'sched', t: '排产' }, { k: 'ret', t: '回货' }, { k: 'kit', t: '齐料' },
@@ -78,12 +78,12 @@ route('/orders', {
         <template #kit="{ r }"><St v-if="orderLive(r) || r.status === '已完成'" :s="kitState(r).k === 'ok' ? '齐料' : kitState(r).k === 'part' ? '部分到货' : '未到料'" :t="kitState(r).t"/><span v-else class="dim">—</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
-      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="订单" label="导出选中"/></BatchBar>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="需求订单" label="导出选中"/></BatchBar>
     </div>
     <OrderForm v-if="s.add" :st="typeof s.add === 'string' ? s.add : null" :customer="nav.query.customer" @close="s.add = null"/>
     <ImportBox v-if="s.imp" kind="orders" @close="s.imp = false"/>
   </div>`,
-}, { mod: 'orders', t: '订单' })
+}, { mod: 'orders', t: '需求订单' })
 
 /* ---------- 新建订单、改草稿：一个款一张颜色 × 尺码矩阵；单价默认一个款一个，大码加价时按尺码填（PRD §6.5.1） ---------- */
 // 能下单的颜色：这个颜色还有没停用的 SKU
@@ -128,7 +128,7 @@ comp('OrderForm', {
     }
     return { o, f, liveCust, blocks, pickable, picking, addBlock, total, amount, colorsFor, save }
   },
-  template: `<Modal :t="o ? '改订单 ' + o.no : '新建订单'" :w="840" @close="$emit('close')">
+  template: `<Modal :t="o ? '改需求订单 ' + o.no : '新建需求订单'" :w="840" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr)" data-c="订单单头">
       <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></Pick></label>
       <label class="f" v-if="TRADE && f.type !== '自营备货'">客户<Pick class="sel" v-model="f.customer"><option v-for="c in liveCust" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
@@ -181,17 +181,17 @@ route('/orders/:no', {
     const down = computed(() => {
       const ms = mrpsOf(o.value)
       return [
-        ...prodsOf(o.value).map((x) => ({ type: '加工单', no: x.no, to: '/production/' + x.no, who: supName(x.factory), qty: prodQty(x), status: x.status, p: x })),
+        ...prodsOf(o.value).map((x) => ({ type: prodKind(x), no: x.no, to: prodLink(x), who: supName(x.factory), qty: prodQty(x), status: x.status, p: x })),
         ...ms.map((x) => ({ type: '算料单', no: x.no, to: '/mrp/' + x.no, who: '', qty: null, status: x.status })),
         ...db.purchases.filter((x) => x.lines.some((l) => ms.some((m) => m.no === l.src?.mrp))).map((x) => ({ type: '采购单', no: x.no, to: '/purchases/' + x.no, who: supName(x.supplier), qty: null, status: x.status })),
-        ...liveReturns().filter((x) => x.order === o.value.no).map((x) => ({ type: '回货单', no: x.no, to: '/production/' + x.prod, who: supName(x.factory), qty: sum(x.lines, (l) => l.qty), status: '已完成' })),
+        ...liveReturns().filter((x) => x.order === o.value.no).map((x) => ({ type: '回货单', no: x.no, to: prodLink(production(x.prod)), who: supName(x.factory), qty: sum(x.lines, (l) => l.qty), status: '已完成' })),
       ]
     })
     const changes = computed(() => db.changes.filter((c) => c.order === p.no).slice().reverse())
     const pendingChange = computed(() => changes.value.find((c) => c.status === '待审核'))
     const a = (x) => docAct('order', o.value, x, x === '提交' ? `${o.value.no} 已提交，等审核` : null)
     function doMrp() { const m = run(() => createMrp([o.value.no])); if (m?.no) { go('/mrp/' + m.no); toast(`${m.no} 算好了，勾选要买的行生成采购单`) } }
-    async function remove() { if (await ask('删除订单 ' + o.value.no, '草稿删除后找不回来；想留个底就用「作废」。', '删除', true) && run(() => removeDraft(db.orders, o.value))) { go('/orders'); toast('删了') } }
+    async function remove() { if (await ask('删除需求订单 ' + o.value.no, '草稿删除后找不回来；想留个底就用「作废」。', '删除', true) && run(() => removeDraft(db.orders, o.value))) { go('/orders'); toast('删了') } }
     const openChange = (c, cancel) => { chg.value = c || null; dlg.value = cancel ? 'cancel' : 'change' }
     const more = computed(() => [
       can('order', o.value, '撤回') && { t: '撤回', fn: () => a('撤回') },
@@ -205,7 +205,7 @@ route('/orders/:no', {
     return { o, tab, dlg, chg, lineMap, cellSub, lockedVer, lineOf, down, changes, pendingChange, a, doMrp, more, openChange, stylePriceText, styleAmt, orderMoney, auditLog }
   },
   template: `<div v-if="o">
-    <Head :t="o.no" :back="['订单', '/orders']">
+    <Head :t="o.no" :back="['需求订单', '/orders']">
       <button v-if="o.status === '草稿'" class="btn" @click="dlg = 'edit'">编辑</button>
       <button v-if="can('order', o, '提交')" class="btn pri" @click="a('提交')">提交审核</button>
       <template v-if="mayAct('order', o, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="dlg = 'audit'">审核</button></template><ApproveWait v-else kind="order" :d="o"/>
@@ -277,7 +277,7 @@ route('/orders/:no', {
     <OrderSchedule v-if="dlg === 'schedule'" :o="o" @close="dlg = ''" @done="tab = 'down'"/>
     <OrderChange v-if="dlg === 'change' || dlg === 'cancel'" :o="o" :c="chg" :cancel="dlg === 'cancel'" @close="dlg = ''" @done="tab = 'changes'"/>
   </div><NotFound v-else/>`,
-}, { mod: 'orders', t: (p) => '订单 ' + p.no })
+}, { mod: 'orders', t: (p) => '需求订单 ' + p.no })
 
 /* ---------- 审核即评审：资料包、齐料参考、在手负荷，填承诺交期 ---------- */
 comp('OrderAudit', {
@@ -307,7 +307,8 @@ comp('OrderAudit', {
   </Modal>`,
 })
 
-/* ---------- 排单：每个款一块，可以拆给几个工厂；一块生成一张加工单（单头字段见 PRD §6.7.1） ---------- */
+/* ---------- 排单：每个款一块，可以拆给几个工厂；一块生成一张生产单（单头字段见 PRD §6.7.1）----------
+ * 每块先选生成哪种单（甲方 11-14）：外发加工单（清加工 / 半包，我方出料）或成品采购单（包工包料，工厂买料）；加工方式定了种类，单号前缀跟着变 */
 comp('OrderSchedule', {
   props: { o: Object },
   emits: ['close', 'done'],
@@ -316,33 +317,42 @@ comp('OrderSchedule', {
     const remain = (st) => Object.fromEntries(p.o.lines.filter((l) => l.style === st).map((l) => [l.color + '|' + l.size, Math.max(0, l.qty - scheduledQty(p.o, l))]))
     const due = addDays(p.o.commit || p.o.due, -10)
     // settle 空着 = 按加工厂档案上的结算方式
-    // 加工单价默认取价格档案里 工厂 × 款式 × 加工方式 的现价，没有就空着手填（PRD §6.10 规则 3）；和现价不一样要写改价原因（why）
+    // 单价默认取价格档案里 工厂 × 款式 × 加工方式 的现价，没有就空着手填（PRD §6.10 规则 3）；和现价不一样要写改价原因（why）
     const refOf = (b) => curProcPrice(b.factory, b.style, b.mode)
-    const mk = (st, qty) => { const b = { style: st, factory: style(st).factory, mode: '清加工', price: null, why: '', due, merch: p.o.merch, settle: '', terms: '', note: '', qty }; b.price = b.dft = refOf(b); return b }
+    // 默认加工方式：档案里这家工厂有现价的第一种（清加工、半包、包工包料），都没有按清加工
+    const firstMode = (b, modes) => modes.find((m) => curProcPrice(b.factory, b.style, m) != null) || modes[0]
+    const mk = (st, qty) => { const b = { style: st, factory: style(st).factory, mode: '清加工', price: null, why: '', due, merch: p.o.merch, settle: '', terms: '', note: '', qty }; b.mode = firstMode(b, ['清加工', '半包', '包工包料']); b.price = b.dft = refOf(b); return b }
     // 换了工厂、加工方式：单价没手改过（还是带出来的）就换成新的现价
     const reprice = (b) => { const d = refOf(b); if (b.price == null || b.price === '' || b.price === b.dft) b.price = d; b.dft = d }
+    const setKind = (b, k) => { if (prodKind(b) === k) return; b.mode = firstMode(b, PROD_KINDS[k].modes); reprice(b) }
+    const KIND_SEG = [['外发加工单', '外发加工（清加工 / 半包）'], ['成品采购单', '成品采购（包工包料）']]
     const priceOff = (b) => refOf(b) != null && b.price !== '' && b.price != null && b.price !== refOf(b)
     const blocks = reactive(orderStyles(p.o).filter((st) => sum(Object.values(remain(st)))).map((st) => mk(st, remain(st))))
     const more = (st) => blocks.splice(blocks.map((b) => b.style).lastIndexOf(st) + 1, 0, mk(st, {}))
     const colorsOf = (st) => [...new Set(p.o.lines.filter((l) => l.style === st).map((l) => l.color))]
     const sub = (st) => (c, z) => '余 ' + (remain(st)[c + '|' + z] ?? 0)
+    // 按钮、提示按这次生成的种类写："生成外发加工单"；两种都有就"生成 2 张生产单"
+    const kindsText = (list) => Object.entries(list.reduce((a, b) => { a[prodKind(b)] = (a[prodKind(b)] || 0) + 1; return a }, {})).map(([k, n]) => `${k} ${n} 张`).join('、')
+    const okText = computed(() => { const ks = [...new Set(blocks.map(prodKind))]; return ks.length === 1 ? '生成' + ks[0] : `生成 ${blocks.length} 张生产单` })
     function ok() {
       const ps = run(() => scheduleOrder(p.o, blocks))
       if (!ps?.length) return
       emit('close'); emit('done')
-      toast(`生成 ${ps.length} 张加工单草稿`, ['打开 ' + ps[0].no, '/production/' + ps[0].no])
+      toast(`生成了${kindsText(ps)}，都是草稿`, ['打开 ' + ps[0].no, prodLink(ps[0])])
     }
-    return { factories, blocks, more, colorsOf, sub, ok, refOf, reprice, priceOff }
+    return { factories, blocks, more, colorsOf, sub, ok, okText, refOf, reprice, priceOff, setKind, KIND_SEG }
   },
   template: `<Modal :t="'排单 ' + o.no" :w="840" @close="$emit('close')">
-    <div v-if="!blocks.length" class="empty">订单的数量都已经排完了</div>
+    <div v-if="!blocks.length" class="empty">需求订单的数量都已经排完了</div>
     <div v-for="(b, i) in blocks" :key="i" class="sec" :style="i ? '' : 'margin-top:0'" data-c="排单块">
       <h3><Thumb :code="b.style" :s="24"/><span class="code">{{ b.style }}</span>{{ styleName(b.style) }}<span class="acts"><button class="btn ghost sm" @click="more(b.style)"><Ico n="plus" :s="12"/>再加一个工厂</button><button v-if="blocks.filter(x => x.style === b.style).length > 1" class="btn ghost icon sm" @click="blocks.splice(i, 1)"><Ico n="x" :s="12"/></button></span></h3>
+      <div class="row" style="margin-bottom:10px" data-c="生成哪种单"><Seg :model-value="prodKind(b)" @update:model-value="k => setKind(b, k)" :items="KIND_SEG"/>
+        <small class="dim">{{ prodKind(b) === '成品采购单' ? '工厂自己买料，交成衣，单价含料；只发我方采购的料（如主唛、吊牌）' : '我方出料发给工厂，单价是加工费' }}</small></div>
       <div class="form" style="grid-template-columns:2fr 1fr 1fr 1.3fr;margin-bottom:10px">
         <label class="f">加工厂<Pick class="sel" v-model="b.factory" @change="reprice(b)"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
-        <label class="f">加工方式<Pick class="sel" v-model="b.mode" @change="reprice(b)"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></Pick></label>
-        <label class="f">单价（元/件）<input class="inp num" type="number" v-model.number="b.price" :placeholder="refOf(b) == null ? '档案里没有，手填' : ''">
-          <small class="dim" style="font-size:11.5px">{{ refOf(b) != null ? '档案现价 ' + fm(refOf(b)) : '档案里没有这家 × ' + b.mode + ' 的价' }}<template v-if="activeTp(b.style)"> · 工价合计 {{ fm(tpLabor(activeTp(b.style))) }}</template></small></label>
+        <label class="f">加工方式<Pick class="sel" v-model="b.mode" @change="reprice(b)" :disabled="prodKindOf(b).modes.length < 2"><option v-for="x in prodKindOf(b).modes" :key="x">{{ x }}</option></Pick></label>
+        <label class="f">{{ prodKindOf(b).price }}（元/件）<input class="inp num" type="number" v-model.number="b.price" :placeholder="refOf(b) == null ? '档案里没有，手填' : ''">
+          <small class="dim" style="font-size:11.5px">{{ refOf(b) != null ? '档案现价 ' + fm(refOf(b)) : '档案里没有这家 × ' + b.mode + ' 的价' }}<template v-if="activeTp(b.style) && prodKind(b) === '外发加工单'"> · 工价合计 {{ fm(tpLabor(activeTp(b.style))) }}</template></small></label>
         <label class="f">交期<DatePick v-model="b.due"/></label>
         <label class="f">生产跟单<Pick class="sel" v-model="b.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
         <label class="f">结算方式<Pick class="sel" v-model="b.settle"><option value="">按加工厂（{{ sup(b.factory) ? sup(b.factory).settle : '—' }}）</option><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></Pick></label>
@@ -352,7 +362,7 @@ comp('OrderSchedule', {
       </div>
       <Matrix :st="b.style" v-model="b.qty" :colors="colorsOf(b.style)" :sub="sub(b.style)"/>
     </div>
-    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!blocks.length" @click="ok">生成加工单</button></template>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!blocks.length" @click="ok">{{ okText }}</button></template>
   </Modal>`,
 })
 
@@ -444,7 +454,7 @@ expose({ createMrp, submitOrder, custOrDash, orderMoney, updateOrder, CHANGE_PAR
 // 分单的列：代工（TRADE）按客户订单号，只做自营按合同号
 const ORDER_GROUP = TRADE ? { k: 'custNo', t: '客户订单号', ex: 'PO-2611-018' } : { k: 'contract', t: '合同号', ex: 'HT-2611-018' }
 IMPORTS.orders = {
-  title: '导入订单', name: '订单',
+  title: '导入需求订单', name: '需求订单',
   // 按「分单号」分单（选填）：同一个分单号的行进同一张订单，都不填整个文件是一张订单；合同号（TRADE 开时客户订单号）只是记到订单上
   note: `一行一个 SKU；同一个分单号的行进同一张订单，分单号都不填就是一张订单。${ORDER_GROUP.t}记到订单上。导进来是草稿，核对后再提交审核。`,
   head: [
@@ -495,6 +505,6 @@ IMPORTS.orders = {
       act(o, `Excel 导入 ${lines.length} 行`)
       return o
     })
-    return { text: `建了 ${made.length} 张订单草稿：${made.map((o) => o.no).join('、')}。核对后提交审核`, to: made.length === 1 ? '/orders/' + made[0].no : '/orders' }
+    return { text: `建了 ${made.length} 张需求订单草稿：${made.map((o) => o.no).join('、')}。核对后提交审核`, to: made.length === 1 ? '/orders/' + made[0].no : '/orders' }
   },
 }

@@ -16,9 +16,21 @@ function route(pat, component, meta) {
   const re = new RegExp('^' + pat.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' }) + '$')
   ROUTES.push({ pat, re, keys, comp: component, ...meta })
 }
+// 旧地址跳到新页面（菜单改名、拆分、合并以后，首页、单据里、收藏的旧链接还能用）：fn(路径参数, query) 返回新地址，返回空就不跳
+const REDIRECTS = []
+function redirect(pat, fn) {
+  const keys = []
+  const re = new RegExp('^' + pat.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' }) + '$')
+  REDIRECTS.push({ re, keys, fn })
+}
 const nav = reactive({ path: '/', query: {}, r: null, params: {}, seq: 0 })
 function navigateTo(raw) {
   const [path, qs] = ((raw || '/').replace(/^#/, '') || '/').split('?')
+  for (const x of REDIRECTS) {
+    const m = decodeURIComponent(path).match(x.re)
+    const to = m && x.fn(Object.fromEntries(x.keys.map((k, i) => [k, m[i + 1]])), Object.fromEntries(new URLSearchParams(qs || '')))
+    if (to) { try { history.replaceState(null, '', '#' + to) } catch { /* sandboxed frame */ } return navigateTo(to) }
+  }
   nav.path = decodeURIComponent(path)
   nav.query = Object.fromEntries(new URLSearchParams(qs || ''))
   nav.r = null
@@ -129,6 +141,7 @@ const ICONS = {
   more: 'M5 12h.01 M12 12h.01 M19 12h.01',
   right: 'm9 18 6-6-6-6',
   down: 'm6 9 6 6 6-6',
+  up: 'm18 15-6-6-6 6',
   left: 'm15 18-6-6 6-6',
   x: 'M18 6 6 18 M6 6l12 12',
   check: 'M20 6 9 17l-5-5',
@@ -148,6 +161,8 @@ const ICONS = {
   panel: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M9 4v16',
   filter: 'M3 6h18 M7 12h10 M10 18h4',
   calendar: 'M8 2v3 M16 2v3 M3 9h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  clipboard: 'M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 14l2 2 4-4',
+  inbox: 'M22 12h-6l-2 3h-4l-2-3H2 M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z',
 }
 comp('Ico', {
   props: { n: String, s: { type: Number, default: 16 } },
@@ -439,7 +454,7 @@ expose({ APPROVE, mayAct, canApprove, curLevel, flowOf, lvName, lvText })
 /* 上游订单变更提示 */
 comp('Upstream', {
   props: { d: Object },
-  template: `<div v-if="d.upstream && !d.upstream.done" class="banner" data-c="上游变更提示"><Ico n="alert"/><span>上游订单 <a class="code" :href="'#/orders/' + d.upstream.order">{{ d.upstream.order }}</a> 于 {{ fd(d.upstream.at) }} 变更：{{ d.upstream.text }}</span><button class="btn sm" @click="d.upstream.done = true">已处理</button></div>`,
+  template: `<div v-if="d.upstream && !d.upstream.done" class="banner" data-c="上游变更提示"><Ico n="alert"/><span>上游需求订单 <a class="code" :href="'#/orders/' + d.upstream.order">{{ d.upstream.order }}</a> 于 {{ fd(d.upstream.at) }} 变更：{{ d.upstream.text }}</span><button class="btn sm" @click="d.upstream.done = true">已处理</button></div>`,
 })
 
 expose({
@@ -450,6 +465,7 @@ expose({
   orderQty, orderAmt, orderStyles, orderSched, orderRet, scheduledQty, returnedQty, kitState, prodsOf, mrpsOf, describeChange,
   poQty, poAmt, poRecv, prodQty, prodRet, prodDef, prodAmt, prodRisk, expectDue, curNode, nodeState, issueState, stockDir,
   run, toast, ask, doAction, addStyleColor, orderLive, prodLive, isFactory, canUseSupplier, arrivals, issuePlan, toD,
+  PROD_KINDS, prodKind, prodKindOf, prodLink, STOCK_TYPES, sdName, stockNoLink, stockTake, takeDiff, takeQty, TAKE_PURPOSES, TAKE_SCOPES,
 })
 
 /* ---------- 列表筛选（PRD §5.4）：关键字一次查多个（空格隔开，任一命中）、日期范围、往来方、跟单员 ----------
@@ -938,8 +954,9 @@ comp('Phase', {
   template: ``,
 })
 
-/* ---------- 打印预览（采购单 §6.6.2、加工单 §6.7.1、资料包 §6.4.4）：抬头用主体公司的名称、地址、电话；点"打印"只打这张纸
- *   <PrintSheet v-if="printing" t="采购单" :no="po.no" :company="po.company" @close="printing = false"> 单头 dl.sheet-meta、明细 table.sheet-tbl、签字 .sheet-sign </PrintSheet> */
+/* ---------- 打印预览（采购单 §6.6.2、外发加工单 / 成品采购单 §6.7.1、资料包 §6.4.4）：抬头用主体公司的名称、地址、电话；点"打印"只打这张纸
+ *   <PrintSheet v-if="printing" t="采购单" :no="po.no" :company="po.company" @close="printing = false"> 单头 dl.sheet-meta、明细 table.sheet-tbl、签字 .sheet-sign </PrintSheet>
+ *   #bar 插槽放打印选项（如生产单的「附工艺标准」），排在「关闭」前面 */
 comp('PrintSheet', {
   props: { t: String, no: String, company: String },
   emits: ['close'],
@@ -951,7 +968,7 @@ comp('PrintSheet', {
     return { co, print: () => window.print() }
   },
   template: `<Teleport to="body"><div class="print-root" :data-c="'打印预览：' + t">
-    <div class="print-bar"><b>打印预览</b><span class="dim">{{ t }} {{ no }}</span><span class="sp"></span><button class="btn" @click="$emit('close')">关闭</button><button class="btn pri" @click="print"><Ico n="printer" :s="14"/>打印</button></div>
+    <div class="print-bar"><b>打印预览</b><span class="dim">{{ t }} {{ no }}</span><span class="sp"></span><slot name="bar"/><button class="btn" @click="$emit('close')">关闭</button><button class="btn pri" @click="print"><Ico n="printer" :s="14"/>打印</button></div>
     <article class="psheet">
       <header class="sheet-head"><div><b>{{ co.name }}</b><small>{{ co.addr || '—' }}　电话 {{ co.phone || '—' }}</small></div><div class="sheet-t">{{ t }}<small class="code">{{ no }}</small></div></header>
       <slot/>

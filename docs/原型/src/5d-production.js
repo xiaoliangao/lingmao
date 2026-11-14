@@ -1,7 +1,11 @@
 /* ============================================================
- * 生产与外发（M08）：加工单（进度节点、领料、异常、回货）、生产看板、手机报工
+ * 生产与外发（M08）：生产单 = 外发加工单 + 成品采购单（甲方 11-14 拆成两个菜单，一张表，种类见 2-store.js PROD_KINDS）；
+ * 进度节点、领料、异常、回货两种单一样；生产看板、手机报工两种一起看
  * ============================================================ */
-SEARCH.push(() => db.productions.map((p) => ({ t: p.no + ' ' + p.style + ' ' + supName(p.factory), sub: '加工单', to: '/production/' + p.no, i: 'factory' })))
+SEARCH.push(() => db.productions.map((p) => ({ t: p.no + ' ' + p.style + ' ' + supName(p.factory), sub: prodKind(p), to: prodLink(p), i: 'factory' })))
+// 单号和菜单对不上（CP 开头的从 /production 打开）跳到它自己的页面
+redirect('/production/:no', ({ no }) => (production(no) && prodKind(production(no)) === '成品采购单' ? '/fp-purchases/' + no : ''))
+redirect('/fp-purchases/:no', ({ no }) => (production(no) && prodKind(production(no)) === '外发加工单' ? '/production/' + no : ''))
 const RISK_F = { late: '已逾期', node: '节点延期', near: '7 天内交货', issue: '有异常', upstream: '上游已变更' }
 const riskMatch = (p, f) => (f === 'upstream' ? p.upstream && !p.upstream.done : prodRisk(p)[f])
 const byRisk = (a, b) => prodRisk(b).score - prodRisk(a).score || expectDue(a).localeCompare(expectDue(b))
@@ -10,15 +14,17 @@ const KIT_CLS = { ok: 'green', part: 'amber', no: 'red', none: 'dim' }
 const PARTIES = CHANGE_PARTIES
 const PARTY0 = '我方'
 const brandOf = (p) => style(p.style)?.brand || order(p.order)?.brand || ''
-const TERMS_TPL = '次品率超过 3% 的部分按加工单价扣款；交期每延误一天扣加工费 0.5%；回货附送货单，写明加工单号、颜色、尺码、数量；剩料按领料单清点退回。'
+const TERMS_TPL = '次品率超过 3% 的部分按单价扣款；交期每延误一天扣货款 0.5%；回货附送货单，写明单号、颜色、尺码、数量；剩料按领料单清点退回。'
 
-/* ---------- 加工单：改草稿、改节点计划、异常开始处理、回货作废 ---------- */
+/* ---------- 生产单：改草稿、改节点计划、异常开始处理、回货作废 ---------- */
 const PROD_FIELDS = [['company', '主体', companyName], ['factory', '加工厂', supName], ['mode', '加工方式'], ['price', '单价', fm], ['due', '交期', fd],
   ['merch', '生产跟单', userName], ['settle', '结算方式'], ['terms', '条款'], ['priceWhy', '改价原因'], ['note', '备注']]
 function updateProduction(p, f) {
   if (p.status !== '草稿') fail('只有草稿能改；已提交的先撤回，或等审核人驳回')
-  if (!canUseSupplier(f.factory, '生产')) fail(`${supName(f.factory)} 现在是「${sup(f.factory)?.status || '未选'}」，不能下加工单`)
-  if (!(+f.price > 0)) fail('加工单价要填')
+  if (!canUseSupplier(f.factory, '生产')) fail(`${supName(f.factory)} 现在是「${sup(f.factory)?.status || '未选'}」，不能下${prodKind(p)}`)
+  // 种类跟着单号走（JG / CP），改加工方式只能在同一种里换；要换种类作废这张，回需求订单重新排单
+  if (f.mode && prodKind(f.mode) !== prodKind(p)) fail(`${prodKind(p)}的加工方式只能选 ${prodKindOf(p).modes.join('、')}`, ['要改成' + prodKind(f.mode) + '：作废这张，回需求订单重新排单'])
+  if (!(+f.price > 0)) fail(prodKindOf(p).price + '要填')
   if (!f.due) fail('交期要填')
   const e = procPriceProblem({ factory: f.factory, style: p.style, mode: f.mode, price: +f.price, why: f.priceWhy }, p.date) // 和价格档案现价不一样要写改价原因
   if (e) fail(e)
@@ -41,12 +47,12 @@ function startIssue(p, i) {
   Object.assign(i, { status: '处理中', handler: db.me, startAt: clock.today })
   act(p, '开始处理异常：' + i.type)
 }
-// 回货登记错了：作废这张，加工单的已回、次品减回去，状态重算；已经验货、入成品仓、对过账的不能作废
+// 回货登记错了：作废这张，生产单的已回、次品减回去，状态重算；已经验货、入成品仓、对过账的不能作废
 function voidReturn(r, reason) {
   if (r.status === '已作废') fail(r.no + ' 已经作废了')
   if (!reason?.trim()) fail('要写作废原因')
   const p = production(r.prod)
-  if (!['已下单', '生产中', '部分回货', '已完成'].includes(p.status)) fail(`加工单 ${p.no} 是「${p.status}」，回货不能作废`)
+  if (!['已下单', '生产中', '部分回货', '已完成'].includes(p.status)) fail(`${prodKind(p)} ${p.no} 是「${p.status}」，回货不能作废`)
   const st = stmtOf(r.no) // 对账单的规则和出入库单同一条（2-store.js checkNotBilled）
   const why = [db.qcs?.some((q) => q.src === r.no) && '已经验过货', db.fgIn?.some((x) => x.ret === r.no) && '已经入了成品仓',
     st && `已经进了对账单 ${st.no}（${st.status}）${st.status === '草稿' ? '：先把这张草稿对账单作废' : '，对账单发出去了不能作废'}`].filter(Boolean)
@@ -61,50 +67,57 @@ function voidReturn(r, reason) {
   if (o?.status === '已完成' && p.status !== '已完成') { o.status = '生产中'; act(o, `回货 ${r.no} 作废，订单回到生产中`) }
 }
 
-route('/production', {
-  setup() {
-    // cat：首页品类环形图点进来，只看这个品类的款
-    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', cat: nav.query.cat || '', q: '', flt: newFlt(), picked: [] })
-    const ST = ['全部', '草稿', '待审核', '已下单', '生产中', '部分回货', '已完成', '已结案', '已作废']
-    const scoped = computed(() => db.productions.filter((p) => inScope(s.mine, p)))
-    const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
-    const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f)) && (!s.cat || style(p.style)?.cat === s.cat)
-      && passFlt(s.flt, { date: expectDue(p), party: p.factory, merch: p.merch }) && matchQ(s.q, p.no, p.style, styleName(p.style), supName(p.factory), p.order)).slice().sort(byRisk))
-    const XCOLS = [{ k: 'no', t: '加工单号', c: 'code' }, { k: 'order', t: '订单号', c: 'code' }, { k: 'style', t: '款号', c: 'code' }, { k: 'name', t: '款名', x: (p) => styleName(p.style) },
-      { k: 'factory', t: '加工厂', x: (p) => supName(p.factory) }, { k: 'mode', t: '加工方式' }, { k: 'qty', t: '数量', x: prodQty }, { k: 'amt', t: '金额', x: prodAmt },
-      { k: 'due', t: '交期', x: expectDue }, { k: 'ret', t: '已回货', x: prodRet }, { k: 'merch', t: '跟单', x: (p) => userName(p.merch) }, { k: 'status', t: '状态' }]
-    const picks = computed(() => rows.value.filter((p) => s.picked.includes(p.no)))
-    const batch = async (a) => { const ok = await batchAct('production', picks.value, a); s.picked = s.picked.filter((k) => !ok.includes(k)) }
-    return { s, tabs, rows, RISK_F, XCOLS, picks, batch }
-  },
-  template: `<div>
-    <Head t="加工单"/>
-    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
-    <div class="bar" data-c="筛选：交期、加工厂、跟单"><Filters v-model="s.flt" party="factory" merch label="交期"/>
-      <Pick class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></Pick>
-      <span v-if="s.cat" class="fchip">{{ catOf(s.cat).name }}<button type="button" title="不按品类筛" @click="s.cat = ''"><Ico n="x" :s="11"/></button></span>
-      <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
-    <div data-c="加工单列表"><ProdTable :rows="rows" v-model:picked="s.picked"/>
-      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="加工单" label="导出选中"/></BatchBar></div>
-  </div>`,
-}, { mod: 'production', t: '加工单' })
+/* ---------- 外发加工单、成品采购单列表：页面一样，各看各的种类 ---------- */
+function prodListPage(kind) {
+  return {
+    setup() {
+      const K = PROD_KINDS[kind]
+      // cat：只看这个品类的款（旧链接带过来的）
+      const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', cat: nav.query.cat || '', q: '', flt: newFlt(), picked: [] })
+      const ST = ['全部', '草稿', '待审核', '已下单', '生产中', '部分回货', '已完成', '已结案', '已作废']
+      const scoped = computed(() => db.productions.filter((p) => prodKind(p) === kind && inScope(s.mine, p)))
+      const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
+      const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f)) && (!s.cat || style(p.style)?.cat === s.cat)
+        && passFlt(s.flt, { date: expectDue(p), party: p.factory, merch: p.merch }) && matchQ(s.q, p.no, p.style, styleName(p.style), supName(p.factory), p.order)).slice().sort(byRisk))
+      const XCOLS = [{ k: 'no', t: '单号', c: 'code' }, { k: 'order', t: '需求订单号', c: 'code' }, { k: 'style', t: '款号', c: 'code' }, { k: 'name', t: '款名', x: (p) => styleName(p.style) },
+        { k: 'factory', t: '加工厂', x: (p) => supName(p.factory) }, { k: 'mode', t: '加工方式' }, { k: 'qty', t: '数量', x: prodQty }, { k: 'price', t: K.price, x: (p) => p.price }, { k: 'amt', t: '金额', x: prodAmt },
+        { k: 'due', t: '交期', x: expectDue }, { k: 'ret', t: '已回货', x: prodRet }, { k: 'merch', t: '跟单', x: (p) => userName(p.merch) }, { k: 'status', t: '状态' }]
+      const picks = computed(() => rows.value.filter((p) => s.picked.includes(p.no)))
+      const batch = async (a) => { const ok = await batchAct('production', picks.value, a); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+      return { s, tabs, rows, RISK_F, XCOLS, picks, batch, kind }
+    },
+    template: `<div>
+      <Head :t="kind"/>
+      <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
+      <div class="bar" data-c="筛选：交期、加工厂、跟单"><Filters v-model="s.flt" party="factory" merch label="交期"/>
+        <Pick class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></Pick>
+        <span v-if="s.cat" class="fchip">{{ catOf(s.cat).name }}<button type="button" title="不按品类筛" @click="s.cat = ''"><Ico n="x" :s="11"/></button></span>
+        <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
+      <div :data-c="kind + '列表'"><ProdTable :rows="rows" :kind="kind" v-model:picked="s.picked"/>
+        <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" :name="kind" label="导出选中"/></BatchBar></div>
+    </div>`,
+  }
+}
+route('/production', prodListPage('外发加工单'), { mod: 'production', t: '外发加工单' })
+route('/fp-purchases', prodListPage('成品采购单'), { mod: 'fpurchases', t: '成品采购单' })
 
-// 列表和看板共用；board：去掉金额、领料，加一列异常（PRD §6.7.6）
+// 列表和看板共用；board：去掉金额、领料，加种类和异常两列（PRD §6.7.6）；kind：列表页是哪种单，空着的提示用
 comp('ProdTable', {
-  props: { rows: Array, board: Boolean, picked: { type: Array, default: null } },
+  props: { rows: Array, board: Boolean, kind: String, picked: { type: Array, default: null } },
   emits: ['update:picked'],
   setup(p) {
     const kit = (r) => (prodLive(r) || r.status === '已完成' ? kitState(order(r.order)) : null)
     const openIs = (r) => r.issues.filter((i) => i.status !== '已关闭')
     const cols = computed(() => [
-      { k: 'no', t: '加工单号', c: 'code' }, { k: 'style', t: '款式' }, { k: 'factory', t: '加工厂 · 方式' }, { k: 'qty', t: '数量', c: 'num', f: (r) => prodQty(r) },
+      { k: 'no', t: '单号', c: 'code' }, p.board && { k: 'kind', t: '种类', f: (r) => prodKindOf(r).short }, { k: 'style', t: '款式' }, { k: 'factory', t: '加工厂 · 方式' }, { k: 'qty', t: '数量', c: 'num', f: (r) => prodQty(r) },
       !p.board && { k: 'amt', t: '金额', c: 'num', f: (r) => fm(prodAmt(r)) }, { k: 'due', t: '交期' }, { k: 'nodes', t: '节点' }, { k: 'kit', t: '齐料' },
       !p.board && { k: 'issue', t: '领料', f: (r) => (prodLive(r) ? issueState(r) : '—') }, { k: 'ret', t: '回货' }, p.board && { k: 'exc', t: '异常' },
       { k: 'merch', t: '跟单', f: (r) => userName(r.merch) }, { k: 'status', t: '状态' },
     ].filter(Boolean))
-    return { cols, kit, openIs, KIT_CLS }
+    const empty = computed(() => `没有符合条件的${p.kind || '生产单'}。需求订单审核后在订单里「排单」生成${p.kind ? '，排单时选' + PROD_KINDS[p.kind].short : ''}；单号、款号、加工厂、订单号都能搜`)
+    return { cols, kit, openIs, KIT_CLS, empty }
   },
-  template: `<Tbl :rows="rows" link :picked="picked" @update:picked="$emit('update:picked', $event)" @row="p => go('/production/' + p.no)" empty="没有符合条件的加工单。订单审核后在订单里「排单」生成；单号、款号、加工厂、订单号都能搜" :cols="cols">
+  template: `<Tbl :rows="rows" link :picked="picked" @update:picked="$emit('update:picked', $event)" @row="p => go(prodLink(p))" :empty="empty" :cols="cols">
     <template #style="{ r }"><span class="row"><Thumb :code="r.style" :s="24"/><span class="code">{{ r.style }}</span></span></template>
     <template #factory="{ r }">{{ supName(r.factory) }}<span class="dim"> · {{ r.mode }}</span></template>
     <template #due="{ r }"><span class="row g4">{{ fd(expectDue(r)) }}<Days :d="expectDue(r)" :warn="7" :done="!prodLive(r)"/></span><span v-if="r.expect" class="dim" style="text-decoration:line-through;font-size:12px">{{ fd(r.due) }}</span></template>
@@ -116,12 +129,12 @@ comp('ProdTable', {
   </Tbl>`,
 })
 
-/* ---------- 加工单详情 ---------- */
-route('/production/:no', {
+/* ---------- 生产单详情：外发加工单、成品采购单共用，标题、单价名、打印跟着种类 ---------- */
+const PROD_DETAIL = {
   props: ['no'],
   setup(p) {
     const x = computed(() => production(p.no))
-    const tab = ref('nodes'), dlg = ref(''), node = ref(null), closing = ref(null), viewing = ref(null), printing = ref(false)
+    const tab = ref('nodes'), dlg = ref(''), node = ref(null), closing = ref(null), viewing = ref(null), printing = ref(false), printApx = ref(true)
     const docs = computed(() => db.stockDocs.filter((d) => d.src === p.no))
     const rets = computed(() => db.returns.filter((r) => r.prod === p.no))
     const openIssues = computed(() => x.value.issues.filter((i) => i.status !== '已关闭'))
@@ -135,17 +148,19 @@ route('/production/:no', {
     const repText = (r) => `${r.af ? '完成' : '开始'}${r.qty ? ' ' + r.qty + ' 件' : ''}${r.photos ? '，照片 ' + r.photos + ' 张' : ''}${r.note ? '，' + r.note : ''}`
     async function del() {
       if (!(await ask('删除 ' + x.value.no, '草稿删掉就找不回来了；订单上这些件数回到"待排单"，可以重新排。', '删除', true))) return
-      if (run(() => removeDraft(db.productions, x.value))) { go('/production'); toast('删掉了') }
+      if (run(() => removeDraft(db.productions, x.value))) { go(prodKindOf(x.value).to); toast('删掉了') }
     }
-    // 退料：工厂仓 → 物料仓，源单挂这张加工单，明细带出领过的料
+    // 退料入库：工厂仓 → 物料仓，源单挂这张生产单，明细带出领过的料
+    // 成品采购单只领我方采购的料（主唛、吊牌这类）；资料包里没有就不出「领料」按钮
+    const canIssue = computed(() => prodKind(x.value) === '外发加工单' || issuePlan(x.value).length > 0)
     const backInit = computed(() => ({ src: x.value.no, partner: x.value.factory, from: factoryWh(x.value.factory)?.code, to: db.warehouses.find((w) => w.type === '物料仓' && w.status !== '停用')?.code,
       lines: issuePlan(x.value).filter((r) => r.issued > 0).map((r) => ({ sku: r.sku, owner: r.owner, qty: null, price: null, lot: '', rolls: null, note: '' })) }))
     const more = computed(() => [
       prodLive(x.value) && { t: '上报异常', fn: () => { dlg.value = 'issue' } },
       prodLive(x.value) && x.value.nodes.length && { t: '改节点计划', fn: () => { dlg.value = 'plan' } },
-      after.value && docs.value.some((d) => d.type === '领料' && d.status === '已审核') && { t: '退料（剩料退回物料仓）', fn: () => { dlg.value = 'back' } },
+      after.value && docs.value.some((d) => d.type === '领料出库' && d.status === '已审核') && { t: '退料（剩料退回物料仓）', fn: () => { dlg.value = 'back' } },
       ...['撤回', '反审核', '结案', '取消结案'].filter((k) => can('production', x.value, k)).map((k) => ({ t: k, fn: () => a(k) })),
-      { t: '打印加工单（带资料包）', fn: () => { printing.value = true } },
+      { t: '打印（附工艺单）', fn: () => { printing.value = true } },
       x.value.status === '草稿' && { t: '删除', danger: true, fn: del },
       can('production', x.value, '作废') && { t: '作废', danger: true, fn: () => a('作废') },
     ].filter(Boolean))
@@ -153,19 +168,19 @@ route('/production/:no', {
     function doClose() { const c = closing.value; if (run(() => closeIssue(x.value, c.i, c.measure.trim(), c.party))) { closing.value = null; toast('异常已关闭') } }
     async function voidRet() {
       const r = viewing.value
-      const why = await askText('作废 ' + r.no, '加工单的已回、次品按这张单减回去，状态重新算。已经验货、入成品仓、对过账的不能作废。', '作废原因，比如：数量登记错了，重新登记', '作废')
+      const why = await askText('作废 ' + r.no, prodKind(x.value) + '的已回、次品按这张单减回去，状态重新算。已经验货、入成品仓、对过账的不能作废。', '作废原因，比如：数量登记错了，重新登记', '作废')
       if (why == null) return
-      if (run(() => voidReturn(r, why))) toast(`${r.no} 作废了，加工单现在是「${x.value.status}」`)
+      if (run(() => voidReturn(r, why))) toast(`${r.no} 作废了，${prodKind(x.value)}现在是「${x.value.status}」`)
     }
     const nodeCls = (n) => nodeState(n)
-    return { x, tab, dlg, node, closing, viewing, printing, docs, rets, openIssues, colors, sizes, qtyMap, after, sub, a, report, repText, backInit, more, start, doClose, voidRet, nodeCls, PARTIES }
+    return { x, tab, dlg, node, closing, viewing, printing, printApx, canIssue, docs, rets, openIssues, colors, sizes, qtyMap, after, sub, a, report, repText, backInit, more, start, doClose, voidRet, nodeCls, PARTIES }
   },
   template: `<div v-if="x">
-    <Head :t="x.no" :back="['加工单', '/production']">
+    <Head :t="x.no" :back="[prodKind(x), prodKindOf(x).to]">
       <template v-if="x.status === '草稿'"><button class="btn" @click="dlg = 'edit'">编辑</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
       <template v-if="mayAct('production', x, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核下单</button></template><ApproveWait v-else kind="production" :d="x"/>
       <button v-if="canGenContract('production', x)" class="btn" @click="dlg = 'contract'">生成合同</button>
-      <template v-if="prodLive(x)"><button class="btn" @click="dlg = 'issueMat'">领料</button><button class="btn" @click="dlg = 'return'">登记回货</button><button class="btn pri" @click="report(null)">报进度</button></template>
+      <template v-if="prodLive(x)"><button v-if="canIssue" class="btn" @click="dlg = 'issueMat'">领料</button><button class="btn" @click="dlg = 'return'">登记回货</button><button class="btn pri" @click="report(null)">报进度</button></template>
       <More :items="more"/>
     </Head>
     <div class="detail">
@@ -173,7 +188,7 @@ route('/production/:no', {
         <Upstream :d="x"/>
         <div v-for="i in openIssues" :key="i.id" class="banner red" data-c="异常提示"><Ico n="alert"/>{{ i.type }}：{{ i.desc }}<span v-if="i.newDate" class="mut">（预计交期 {{ fd(i.newDate) }}）</span><button class="btn sm" @click="tab = 'issues'">去处理</button></div>
         <div class="title">{{ supName(x.factory) }}<St :s="x.status"/></div>
-        <div class="sub"><a class="code" :href="'#/styles/' + x.style">{{ x.style }}</a><span>{{ styleName(x.style) }}</span><span>{{ x.mode }}</span><span>{{ prodQty(x) }} 件</span><span>交期 {{ fd(expectDue(x)) }}</span><Days v-if="prodLive(x)" :d="expectDue(x)" :warn="7"/></div>
+        <div class="sub"><a class="code" :href="'#/styles/' + x.style">{{ x.style }}</a><span>{{ styleName(x.style) }}</span><span>{{ prodKind(x) }} · {{ x.mode }}</span><span>{{ prodQty(x) }} 件</span><span>交期 {{ fd(expectDue(x)) }}</span><Days v-if="prodLive(x)" :d="expectDue(x)" :warn="7"/></div>
         <Tabs v-model="tab" :items="[['nodes', '进度'], ['lines', '明细'], ['mat', '领料', docs.length], ['issues', '异常', x.issues.length], ['rets', '回货', rets.length]]"/>
         <section v-if="tab === 'nodes'" data-c="进度节点">
           <div v-if="!x.nodes.length" class="empty">审核下单后按交期往前倒排节点</div>
@@ -190,10 +205,10 @@ route('/production/:no', {
         </section>
         <section v-if="tab === 'lines'" data-c="加工明细"><Matrix :st="x.style" :model-value="qtyMap" ro :colors="colors" :sub="sub"/></section>
         <section v-if="tab === 'mat'" data-c="领料">
-          <Tbl inset flat :rows="issuePlan(x)" empty="资料包里没有要发给工厂的料" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
+          <Tbl inset flat :rows="issuePlan(x)" :empty="prodKind(x) === '成品采购单' ? '成品采购单的料工厂自己买；资料包里没有标「我方采购」的料（如主唛、吊牌），不用领料' : '资料包里没有要发给工厂的料'" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
             { k: 'need', t: '应领', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'issued', t: '已领', c: 'num', f: r => fq(r.issued) }, { k: 'suggest', t: '还差', c: 'num' }, { k: 'avail', t: '物料仓库存', c: 'num', f: r => fq(r.avail) }]">
             <template #suggest="{ r }"><span :class="{ amber: r.suggest > 0 }">{{ r.suggest > 0 ? fq(r.suggest) : '领齐' }}</span></template></Tbl>
-          <div class="sec"><h3>领料、退料单</h3><Tbl inset flat :rows="docs" link @row="d => go('/stock-docs/' + d.no)" empty="还没领过料" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'flow', t: '出仓 → 入仓', f: d => whName(d.from) + ' → ' + whName(d.to) }, { k: 'n', t: '物料', f: d => d.lines.length + ' 种' }, { k: 'status', t: '状态' }]"><template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
+          <div class="sec"><h3>领料出库、退料入库单</h3><Tbl inset flat :rows="docs" link @row="d => go(stockNoLink(d.no))" empty="还没领过料" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'flow', t: '出仓 → 入仓', f: d => whName(d.from) + ' → ' + whName(d.to) }, { k: 'n', t: '物料', f: d => d.lines.length + ' 种' }, { k: 'status', t: '状态' }]"><template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
         </section>
         <section v-if="tab === 'issues'" data-c="异常">
           <Tbl inset flat :rows="x.issues" empty="没有异常" :cols="[{ k: 'type', t: '类型' }, { k: 'desc', t: '描述' }, { k: 'at', t: '上报', f: i => fd(i.at) + ' ' + userName(i.by) }, { k: 'newDate', t: '新交期', f: i => fd(i.newDate) }, { k: 'party', t: '责任方', f: i => i.party || '待定' }, { k: 'hd', t: '处理人' }, { k: 'measure', t: '处理措施', f: i => i.measure || '—' }, { k: 'status', t: '状态' }]">
@@ -210,14 +225,14 @@ route('/production/:no', {
             <template #status="{ r }"><St :s="r.status || '已登记'"/></template></Tbl>
         </section>
       </div>
-      <aside class="aside" data-c="加工单属性">
+      <aside class="aside" data-c="生产单属性">
         <Gallery :code="x.style" :colors="colors" :owner="style(x.style)"/>
         <dl class="props">
-          <dt>订单</dt><dd><a class="code" :href="'#/orders/' + x.order">{{ x.order }}</a></dd>
+          <dt>需求订单</dt><dd><a class="code" :href="'#/orders/' + x.order">{{ x.order }}</a></dd>
           <dt>资料包</dt><dd>V{{ x.ver }}</dd>
           <dt>加工厂</dt><dd><a :href="'#/suppliers/' + x.factory">{{ sup(x.factory).name }}</a></dd>
           <dt>加工方式</dt><dd>{{ x.mode }}</dd>
-          <dt>单价</dt><dd>{{ fm(x.price) }} / 件<div v-if="x.priceWhy" class="amber" style="font-size:12px" title="和价格档案现价不一样，改价原因">改价：{{ x.priceWhy }}</div></dd>
+          <dt>{{ prodKindOf(x).price }}</dt><dd>{{ fm(x.price) }} / 件<div v-if="x.priceWhy" class="amber" style="font-size:12px" title="和价格档案现价不一样，改价原因">改价：{{ x.priceWhy }}</div></dd>
           <dt>金额</dt><dd>{{ fm(prodAmt(x)) }}</dd>
           <dt>下单日期</dt><dd>{{ fd(x.date) }}</dd>
           <dt>交期</dt><dd>{{ fd(x.due) }}<span v-if="x.expect" class="amber"> → {{ fd(x.expect) }}</span></dd>
@@ -245,7 +260,7 @@ route('/production/:no', {
     <ProdEdit v-if="dlg === 'edit'" :p="x" @close="dlg = ''"/>
     <ProdPlan v-if="dlg === 'plan'" :p="x" @close="dlg = ''"/>
     <ContractGen v-if="dlg === 'contract'" kind="production" :d="x" @close="dlg = ''"/>
-    <StockDocForm v-if="dlg === 'back'" type="退料" :init="backInit" @close="dlg = ''"/>
+    <StockDocForm v-if="dlg === 'back'" type="退料入库" :init="backInit" @close="dlg = ''"/>
     <Modal v-if="closing" :t="'关闭异常：' + closing.i.type" :w="480" @close="closing = null">
       <div class="form">
         <label class="f full">处理措施<textarea class="inp" v-model="closing.measure" placeholder="比如：供应商补发 30 米，11-08 到；返工 20 件"></textarea></label>
@@ -261,22 +276,26 @@ route('/production/:no', {
       <div v-if="viewing.status === '已作废'" class="banner red" style="margin:10px 0 0"><Ico n="alert"/>{{ viewing.log[viewing.log.length - 1].who }} {{ viewing.log[viewing.log.length - 1].text }}</div>
       <template #foot><button v-if="viewing.status !== '已作废'" class="btn danger" @click="voidRet">作废这张回货单</button><span class="sp"></span><button class="btn" @click="viewing = null">关闭</button></template>
     </Modal>
-    <PrintSheet v-if="printing" t="加工单" :no="x.no" :company="x.company" @close="printing = false">
+    <PrintSheet v-if="printing" :t="prodKind(x)" :no="x.no" :company="x.company" @close="printing = false">
+      <template #bar><label class="chk" :title="db.craftStd.files.length ? '设置 › 工艺标准里的文件，接在工艺单后面' : '设置 › 工艺标准里还没传文件'"><input type="checkbox" v-model="printApx">附工艺标准</label></template>
       <dl class="sheet-meta">
         <div><dt>加工厂</dt><dd>{{ sup(x.factory).name }}</dd></div><div><dt>联系人</dt><dd>{{ sup(x.factory).contact || '—' }} {{ sup(x.factory).phone || '' }}</dd></div><div><dt>加工方式</dt><dd>{{ x.mode }}</dd></div>
-        <div><dt>款号</dt><dd>{{ x.style }} {{ styleName(x.style) }}</dd></div><div><dt>订单</dt><dd>{{ x.order }}</dd></div><div><dt>资料包</dt><dd>V{{ x.ver }}</dd></div>
+        <div><dt>款号</dt><dd>{{ x.style }} {{ styleName(x.style) }}</dd></div><div><dt>需求订单</dt><dd>{{ x.order }}</dd></div><div><dt>资料包</dt><dd>V{{ x.ver }}</dd></div>
         <div><dt>下单日期</dt><dd>{{ x.date }}</dd></div><div><dt>交期</dt><dd>{{ expectDue(x) }}</dd></div><div><dt>生产跟单</dt><dd>{{ userName(x.merch) }}</dd></div>
-        <div><dt>加工单价</dt><dd>{{ fm(x.price) }} / 件</dd></div><div><dt>数量</dt><dd>{{ prodQty(x) }} 件</dd></div><div><dt>金额</dt><dd>{{ fm(prodAmt(x)) }}（{{ x.settle }}）</dd></div>
+        <div><dt>{{ prodKindOf(x).price }}</dt><dd>{{ fm(x.price) }} / 件</dd></div><div><dt>数量</dt><dd>{{ prodQty(x) }} 件</dd></div><div><dt>金额</dt><dd>{{ fm(prodAmt(x)) }}（{{ x.settle }}）</dd></div>
       </dl>
       <table class="sheet-tbl"><thead><tr><th>颜色</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th class="num">合计</th></tr></thead>
         <tbody><tr v-for="c in colors" :key="c"><td>{{ colorName(c) }} {{ c }}</td><td v-for="z in sizes" :key="z" class="num">{{ qtyMap[c + '|' + z] || '' }}</td><td class="num">{{ sum(x.lines.filter(l => l.color === c), l => l.qty) }}</td></tr></tbody>
         <tfoot><tr><td>合计</td><td v-for="z in sizes" :key="z" class="num">{{ sum(x.lines.filter(l => l.size === z), l => l.qty) }}</td><td class="num">{{ prodQty(x) }}</td></tr></tfoot></table>
       <p class="sheet-note">条款：{{ x.terms || '—' }}<br>备注：{{ x.note || '—' }}</p>
       <div class="sheet-sign"><span>制单：{{ creatorOf(x) || '' }}</span><span>审核：</span><span>加工厂确认（签字盖章）：</span></div>
-      <TpPrintBody v-if="tpOf(x.style, x.ver)" :tp="tpOf(x.style, x.ver)" :colors="colors" bare/>
+      <!-- 工艺单：这张单锁定的资料包版本，不带价格（甲方 11-14） -->
+      <div v-if="tpOf(x.style, x.ver)" class="sheet-apx" data-c="打印：附工艺单"><TpPrintBody :tp="tpOf(x.style, x.ver)" :colors="colors" :appendix="printApx" bare/></div>
     </PrintSheet>
   </div><NotFound v-else/>`,
-}, { mod: 'production', t: (p) => '加工单 ' + p.no })
+}
+route('/production/:no', PROD_DETAIL, { mod: 'production', t: (p) => '外发加工单 ' + p.no })
+route('/fp-purchases/:no', PROD_DETAIL, { mod: 'fpurchases', t: (p) => '成品采购单 ' + p.no })
 
 comp('ProdEdit', {
   props: { p: Object },
@@ -292,12 +311,12 @@ comp('ProdEdit', {
     const off = computed(() => ref0.value != null && f.price !== '' && f.price != null && !samePrice(ref0.value, f.price))
     return { f, factories, setFactory, addTerms, ok, ref0, off }
   },
-  template: `<Modal :t="'改加工单 ' + p.no" :w="640" @close="$emit('close')">
-    <div class="form" data-c="加工单单头">
+  template: `<Modal :t="'改' + prodKind(p) + ' ' + p.no" :w="640" @close="$emit('close')">
+    <div class="form" data-c="生产单单头">
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
       <label class="f">加工厂<Pick class="sel" v-model="f.factory" @change="setFactory"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
-      <label class="f">加工方式<Pick class="sel" v-model="f.mode"><option v-for="v in db.dicts.加工方式" :key="v">{{ v }}</option></Pick></label>
-      <label class="f">加工单价（元 / 件）<input class="inp num" type="number" v-model.number="f.price"><small class="dim">{{ ref0 != null ? '档案现价 ' + fm(ref0) : '档案里没有这家 × ' + f.mode + ' 的价，审核时记进去' }}</small></label>
+      <label class="f">加工方式<Pick class="sel" v-model="f.mode" :disabled="prodKindOf(p).modes.length < 2" :title="'种类跟着单号走，' + prodKind(p) + '只能选 ' + prodKindOf(p).modes.join('、')"><option v-for="v in prodKindOf(p).modes" :key="v">{{ v }}</option></Pick></label>
+      <label class="f">{{ prodKindOf(p).price }}（元 / 件）<input class="inp num" type="number" v-model.number="f.price"><small class="dim">{{ ref0 != null ? '档案现价 ' + fm(ref0) : '档案里没有这家 × ' + f.mode + ' 的价，审核时记进去' }}</small></label>
       <label class="f">交期<DatePick v-model="f.due"/></label>
       <label v-if="off || f.priceWhy" class="f full">改价原因<input class="inp" v-model="f.priceWhy" placeholder="单价和档案现价不一样，写清楚为什么；审核时记进价格档案"></label>
       <label class="f">生产跟单<Pick class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
@@ -374,11 +393,11 @@ comp('ProdIssueMat', {
     function ok() {
       if (over.value && !f.reason.trim()) return toast('超领要写原因', null, true)
       const d = run(() => issueMaterials(props.p, rows.map((r) => ({ sku: r.sku, owner: r.owner, qty: +r.qty || 0, reason: isOver(r) ? f.reason.trim() : '' })), f.from))
-      if (d?.no) { emit('close'); emit('done'); toast(`${d.no} 已过账：${whName(d.from)} → ${whName(d.to)}`, ['打开', '/stock-docs/' + d.no]) }
+      if (d?.no) { emit('close'); emit('done'); toast(`${d.no} 已过账：${whName(d.from)} → ${whName(d.to)}`, ['打开', stockNoLink(d.no)]) }
     }
     return { whs, f, have, rows, over, ok }
   },
-  template: `<Modal :t="'领料 ' + p.no" :w="780" @close="$emit('close')">
+  template: `<Modal :t="'领料出库 ' + p.no" :w="780" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
       <label class="f">从哪个物料仓发<Pick class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <div class="f">发到<span style="line-height:32px">{{ whName(factoryWh(p.factory)?.code) }}</span></div>
@@ -387,7 +406,7 @@ comp('ProdIssueMat', {
       <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td v-if="TRADE" :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
         <td class="num">{{ fq(r.need) }}</td><td class="num">{{ fq(r.issued) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: have(r) < r.qty }">{{ fq(have(r)) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
-        <tr v-if="!rows.length"><td :colspan="TRADE ? 7 : 6" class="empty">资料包里没有要发给工厂的料</td></tr></tbody></table>
+        <tr v-if="!rows.length"><td :colspan="TRADE ? 7 : 6" class="empty">{{ prodKind(p) === '成品采购单' ? '资料包里没有标「我方采购」的料，成品采购单不用领料' : '资料包里没有要发给工厂的料' }}</td></tr></tbody></table>
     <label v-if="over" class="f" style="margin-top:12px">超领原因<input class="inp" v-model="f.reason" placeholder="比如：裁剪损耗大，补 5 米"></label>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">领料并过账</button></template>
   </Modal>`,
@@ -428,7 +447,7 @@ comp('ProdReturn', {
     function ok() {
       const lines = Object.fromEntries(Object.keys({ ...qty.value, ...def.value }).map((k) => [k, { qty: qty.value[k] || 0, def: def.value[k] || 0, note: (note[k] || '').trim() }]))
       const r = run(() => registerReturn(props.p, { ...f, lines }))
-      if (r?.no) { emit('close'); emit('done'); toast(`${r.no} 已登记：${sum(r.lines, (l) => l.qty)} 件${props.p.status === '已完成' ? '，加工单完成' : ''}`) }
+      if (r?.no) { emit('close'); emit('done'); toast(`${r.no} 已登记：${sum(r.lines, (l) => l.qty)} 件${props.p.status === '已完成' ? '，' + prodKind(props.p) + '完成' : ''}`) }
     }
     return { qty, def, note, fgs, f, colors, sub, got, ok }
   },
@@ -449,9 +468,10 @@ comp('ProdReturn', {
 /* ---------- 生产看板 ---------- */
 route('/board', {
   setup() {
-    const s = reactive({ card: '', view: '按单', brand: '', flt: newFlt() })
+    // 首页点数字、品类环形图进来：card = 哪张数字卡，cat = 哪个品类的款
+    const s = reactive({ card: nav.query.card || '', view: '按单', brand: '', cat: nav.query.cat || '', kind: '', flt: newFlt() })
     // 按工厂视图不按加工厂筛（点一行再筛进去）
-    const base = computed(() => db.productions.filter(prodLive).filter((p) => passFlt(s.flt, { date: expectDue(p), merch: p.merch }) && (!s.brand || brandOf(p) === s.brand)))
+    const base = computed(() => db.productions.filter(prodLive).filter((p) => passFlt(s.flt, { date: expectDue(p), merch: p.merch }) && (!s.brand || brandOf(p) === s.brand) && (!s.cat || style(p.style)?.cat === s.cat) && (!s.kind || prodKind(p) === s.kind)))
     const live = computed(() => base.value.filter((p) => !s.flt.party || p.factory === s.flt.party))
     const month = clock.today.slice(0, 7)
     const brands = computed(() => [...new Set([...(db.dicts.品牌 || []), ...db.productions.map(brandOf).filter(Boolean)])])
@@ -477,7 +497,9 @@ route('/board', {
   template: `<div>
     <Head t="看板"/>
     <div class="bar" data-c="筛选：交期、加工厂、跟单、品牌"><Filters v-model="s.flt" party="factory" merch label="交期"/>
-      <Pick class="sel" style="height:28px" v-model="s.brand"><option value="">全部品牌</option><option v-for="b in brands" :key="b" :value="b">{{ b }}</option></Pick></div>
+      <Pick class="sel" style="height:28px" v-model="s.brand"><option value="">全部品牌</option><option v-for="b in brands" :key="b" :value="b">{{ b }}</option></Pick>
+      <Pick class="sel" style="height:28px" v-model="s.kind" data-c="看板：按种类"><option value="">外发加工、成品采购</option><option v-for="(k, n) in PROD_KINDS" :key="n" :value="n">只看{{ n }}</option></Pick>
+      <span v-if="s.cat" class="fchip">{{ catOf(s.cat).name }}<button type="button" title="不按品类筛" @click="s.cat = ''"><Ico n="x" :s="11"/></button></span></div>
     <div class="stats" data-c="数字卡">
       <div v-for="c in cards" :key="c.k" class="stat" :class="{ on: s.card === c.k }" @click="c.f && (s.card = s.card === c.k ? '' : c.k)"><span>{{ c.t }}</span><b :class="{ red: (c.k === 'late' || c.k === 'issue') && c.n, amber: (c.k === 'near' || c.k === 'node') && c.n }">{{ c.n.toLocaleString() }}<small v-if="c.m">{{ c.m }}</small></b></div>
     </div>
@@ -537,7 +559,7 @@ route('/mobile', {
             <div style="padding:14px 16px" class="col"><span>{{ styleName(p.style) }} · {{ supName(p.factory) }}</span><span class="mut">{{ prodQty(p) }} 件 · 交期 {{ fd(expectDue(p)) }}</span></div>
             <div class="nodes-big"><button v-for="(n, i) in p.nodes" :key="n.name" :class="[nodeState(n) === 'late' ? 'late' : n.af ? 'done' : curNode(p) === n ? 'on' : '']" @click="pickNode(i)">{{ n.name }}<small>{{ n.af ? '完成 ' + fd(n.af) : n.as ? '进行中' : '计划 ' + fd(n.pf) }}</small></button></div>
             <div v-if="openIs.length" class="m-issues" data-c="未关闭异常"><div v-for="i in openIs" :key="i.id"><b class="red">{{ i.type }}</b> {{ i.desc }}<span class="dim">　{{ i.status }}</span></div></div>
-            <div class="col" style="padding:0 16px 16px;gap:8px"><button class="btn" style="width:100%;height:40px" @click="openIssue"><Ico n="alert" :s="14"/>上报异常</button><a class="btn" style="width:100%" :href="'#/production/' + p.no">在电脑上打开</a></div>
+            <div class="col" style="padding:0 16px 16px;gap:8px"><button class="btn" style="width:100%;height:40px" @click="openIssue"><Ico n="alert" :s="14"/>上报异常</button><a class="btn" style="width:100%" :href="'#' + prodLink(p)">在电脑上打开</a></div>
           </template>
           <div v-else class="col m-form">
             <label class="f">实际开始<DatePick v-model="s.f.as"/></label>

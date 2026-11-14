@@ -1,18 +1,21 @@
 /* ============================================================
- * 资料 › 合同（甲方 11-11 新增，排期待定）：合同模板 + 从已审核的采购单、加工单生成合同
+ * 资料 › 合同（甲方 11-11 新增，排期待定）：合同模板 + 从已审核的采购单、生产单生成合同
+ * - 生产单（甲方 11-14 拆成外发加工单、成品采购单）都出「加工合同」：同一套模板，{{单据名称}} 写的是哪种单；
+ *   成品采购要另一份合同文本的，导一个加工合同模板专门给它用
  * - 模板：导入 Word（原型只记 .docx 文件名，正文贴进来），占位符写成 {{甲方}}；系统不认识的占位符不让保存。
  *   更新 = 出一个新版本，旧版本自动停用但能看；停用的模板生成不了新合同。
  * - 合同：审核过的单据 + 合作中的供应商 + 填了信用代码才能生成；一张单据同时只有一份有效（没作废）合同。
  *   生成时把模板版本和填好的正文存成快照，以后改模板、改供应商资料都不影响已经出的合同。
  *   导出 Word → 线下签字盖章 → 传签回件变「已签回」；写错了写原因作废，再从单据上重出。
- * - 采购单、加工单详情只放按钮和合同列表（5c、5d），逻辑都在这里。
+ * - 采购单、生产单详情只放按钮和合同列表（5c、5d），逻辑都在这里。
  * ============================================================ */
 FLOWS.contract = { 签回: ['待签回', '已签回'], 作废: [['待签回', '已签回'], '已作废'] }
 const CT_KINDS = { purchase: '采购合同', production: '加工合同' }
-const CT_DOC = { purchase: '采购单', production: '加工单' }
+const CT_DOC = { purchase: '采购单', production: '生产单' }
+const ctDocName = (kind, d) => (kind === 'purchase' || !d ? CT_DOC[kind] : prodKind(d))
 const CT_OK = { purchase: ['已审核', '部分到货', '已到齐', '已结案'], production: ['已下单', '生产中', '部分回货', '已完成', '已结案'] }
 const ctDocOf = (kind, no) => (kind === 'purchase' ? purchase(no) : production(no))
-const ctDocTo = (c) => (c.kind === 'purchase' ? '/purchases/' : '/production/') + c.docNo
+const ctDocTo = (c) => (c.kind === 'purchase' ? '/purchases/' + c.docNo : production(c.docNo) ? prodLink(production(c.docNo)) : '/production/' + c.docNo)
 const ctSupOf = (kind, d) => sup(kind === 'purchase' ? d.supplier : d.factory)
 const liveContractOf = (no) => db.contracts.find((c) => c.docNo === no && c.status !== '已作废')
 const contractsOfDoc = (no) => db.contracts.filter((c) => c.docNo === no).slice().reverse()
@@ -52,7 +55,7 @@ const CT_VARS = [
   { k: '甲方信用代码', t: '主体公司的统一社会信用代码', f: (x) => x.co?.credit },
   { k: '甲方地址', f: (x) => x.co?.addr },
   { k: '甲方电话', f: (x) => x.co?.phone },
-  { k: '甲方经办人', t: '采购单的采购员 / 加工单的跟单员', f: (x) => userName(x.kind === 'purchase' ? x.d.buyer : x.d.merch) },
+  { k: '甲方经办人', t: '采购单的采购员 / 生产单的跟单员', f: (x) => userName(x.kind === 'purchase' ? x.d.buyer : x.d.merch) },
   { k: '乙方', t: '供应商全称', f: (x) => x.s.name },
   { k: '乙方信用代码', f: (x) => x.s.credit },
   { k: '乙方地址', f: (x) => x.s.addr },
@@ -60,23 +63,24 @@ const CT_VARS = [
   { k: '乙方电话', f: (x) => x.s.phone },
   { k: '乙方开户行', f: (x) => x.s.bank },
   { k: '乙方账号', f: (x) => x.s.account },
-  { k: '单号', t: '采购单号 / 加工单号', f: (x) => x.d.no },
+  { k: '单号', t: '采购单号 / 生产单号', f: (x) => x.d.no },
+  { k: '单据名称', t: '采购单 / 外发加工单 / 成品采购单', f: (x) => ctDocName(x.kind, x.d) },
   { k: '下单日期', f: (x) => x.d.date },
   { k: '交货日期', f: (x) => x.d.due },
   { k: '结算方式', t: '单据上的结算方式：月结、现结、货到付款……', f: (x) => x.d.settle },
   { k: '账期', t: '供应商账期，如 30 天', f: (x) => (x.s.term != null ? x.s.term + ' 天' : '') },
-  { k: '税率', t: '采购单取单据上的；加工单取供应商的', f: (x) => (x.kind === 'purchase' ? x.d.tax : x.s.tax) },
+  { k: '税率', t: '采购单取单据上的；生产单取供应商的', f: (x) => (x.kind === 'purchase' ? x.d.tax : x.s.tax) },
   { k: '发票类型', f: (x) => x.s.invoice },
   { k: '备注', t: '单据备注', f: (x) => x.d.note },
   { k: '含税', only: 'purchase', t: '含税 / 不含税', f: (x) => (x.d.taxIncl === false ? '不含税' : '含税') },
   { k: '交货地点', only: 'purchase', t: '收货仓库和地址', f: (x) => [whName(x.d.wh), wh(x.d.wh)?.addr].filter(Boolean).join('，') },
   { k: '款号', only: 'production', f: (x) => x.d.style },
   { k: '款式名称', only: 'production', f: (x) => styleName(x.d.style) },
-  { k: '加工方式', only: 'production', t: '清加工 / 包工包料……', f: (x) => x.d.mode },
-  { k: '加工单价', only: 'production', t: '元 / 件', f: (x) => fmNum(x.d.price) },
-  { k: '条款', only: 'production', t: '加工单上写的条款', f: (x) => x.d.terms },
-  { k: '明细', t: '单独占一行，展开成明细表：采购单每行一个物料 SKU，加工单是颜色 × 尺码', f: (x) => ctDetail(x) },
-  { k: '数量合计', t: '采购单按采购单位合计；加工单是件数', f: (x) => (x.kind === 'purchase' ? fq(poQty(x.d)) : prodQty(x.d) + ' 件') },
+  { k: '加工方式', only: 'production', t: '清加工、半包（外发加工单）/ 包工包料（成品采购单）', f: (x) => x.d.mode },
+  { k: '加工单价', only: 'production', t: '元 / 件；成品采购单是成品单价（含料）', f: (x) => fmNum(x.d.price) },
+  { k: '条款', only: 'production', t: '生产单上写的条款', f: (x) => x.d.terms },
+  { k: '明细', t: '单独占一行，展开成明细表：采购单每行一个物料 SKU，生产单是颜色 × 尺码', f: (x) => ctDetail(x) },
+  { k: '数量合计', t: '采购单按采购单位合计；生产单是件数', f: (x) => (x.kind === 'purchase' ? fq(poQty(x.d)) : prodQty(x.d) + ' 件') },
   { k: '金额', t: '数字，如 12,345.60', f: (x) => fmNum(x.kind === 'purchase' ? poAmt(x.d) : prodAmt(x.d)) },
   { k: '金额大写', f: (x) => rmbUpper(x.kind === 'purchase' ? poAmt(x.d) : prodAmt(x.d)) },
 ]
@@ -183,7 +187,7 @@ function createContract(kind, d, tplId) {
     no, kind, kindName: CT_KINDS[kind], docNo: d.no, supplier: x.s.code, company: x.co.code, amt: kind === 'purchase' ? poAmt(d) : prodAmt(d),
     tpl: { id: t.id, name: t.name, ver: t.ver, file: t.file }, html, miss, status: '待签回', at: clock.today, by: db.me, signed: [], log: [],
   })
-  act(c, `由${CT_DOC[kind]} ${d.no} 生成，模板「${t.name}」V${t.ver}${miss.length ? '；留空手填：' + miss.join('、') : ''}`)
+  act(c, `由${ctDocName(kind, d)} ${d.no} 生成，模板「${t.name}」V${t.ver}${miss.length ? '；留空手填：' + miss.join('、') : ''}`)
   act(d, '生成合同 ' + no)
   return c
 }
@@ -241,7 +245,7 @@ const TPL_PROD = `服装委托加工合同
 甲方（委托方）：{{甲方}}　统一社会信用代码：{{甲方信用代码}}
 乙方（加工方）：{{乙方}}　统一社会信用代码：{{乙方信用代码}}
 地址：{{乙方地址}}　联系人：{{乙方联系人}}　电话：{{乙方电话}}
-第一条　加工内容（对应甲方加工单 {{单号}}）：款号 {{款号}}（{{款式名称}}），加工方式 {{加工方式}}，加工单价 ¥{{加工单价}} / 件。
+第一条　加工内容（对应甲方{{单据名称}} {{单号}}）：款号 {{款号}}（{{款式名称}}），加工方式 {{加工方式}}，单价 ¥{{加工单价}} / 件。
 {{明细}}
 合计 {{数量合计}}，加工费人民币{{金额大写}}（¥{{金额}}）。
 第二条　交期：{{交货日期}} 前全部交到甲方指定仓库；分批交货的，每批附装箱单。
@@ -276,7 +280,7 @@ as('u6', '2026-09-01', () => {
 
 SEARCH.push(() => db.contracts.map((c) => ({ t: c.no + ' ' + c.kindName, sub: `合同 · ${supName(c.supplier)} · ${c.docNo} · ${c.status}`, to: '/contracts/' + c.no, i: 'pen' })))
 
-expose({ phText, CT_KINDS, CT_DOC, CT_VARS, varsOf, tplUnknown, liveContractOf, contractsOfDoc, contractsOfSupplier, canGenContract, tplVersions, tplUsed, rmbUpper, fmNum, ctDocTo })
+expose({ phText, CT_KINDS, CT_DOC, ctDocName, CT_VARS, varsOf, tplUnknown, liveContractOf, contractsOfDoc, contractsOfSupplier, canGenContract, tplVersions, tplUsed, rmbUpper, fmNum, ctDocTo })
 
 /* ============================================================
  * 页面
@@ -308,7 +312,7 @@ route('/contracts', {
           <Pick class="sel" v-model="s.sup"><option value="">全部供应商</option><option v-for="x in sups" :key="x" :value="x">{{ supName(x) }}</option></Pick>
           <Search v-model="s.q" ph="合同号、单据号、供应商"/>
         </div>
-        <ContractList :rows="rows" full :empty="db.contracts.length ? '没有符合条件的合同' : '还没有合同；在已审核的采购单、加工单上点「生成合同」'"/>
+        <ContractList :rows="rows" full :empty="db.contracts.length ? '没有符合条件的合同' : '还没有合同；在已审核的采购单、生产单上点「生成合同」'"/>
       </section>
       <section v-if="s.tab === 'tpls'" data-c="合同模板">
         <Tbl inset flat :rows="tpls" empty="还没有模板，点右上角「导入模板」" :cols="[
@@ -395,7 +399,7 @@ comp('TplView', {
   </Modal>`,
 })
 
-/* 从采购单 / 加工单生成合同：选模板 → 预览（明细展开、留空的列出来）→ 确认 */
+/* 从采购单 / 生产单生成合同：选模板 → 预览（明细展开、留空的列出来）→ 确认 */
 comp('ContractGen', {
   props: { kind: String, d: Object },
   emits: ['close'],
@@ -457,7 +461,7 @@ route('/contracts/:no', {
       <div class="body">
         <div v-if="c.status === '已作废'" class="banner red" data-c="作废原因"><Ico n="alert"/><span>{{ fd(c.voidAt) }} {{ userName(c.voidBy) }} 作废：{{ c.voidReason }}</span></div>
         <div class="title">{{ c.kindName }}<St :s="c.status"/></div>
-        <div class="sub"><span>{{ supName(c.supplier) }}</span><span>{{ CT_DOC[c.kind] }} <a class="code" :href="'#' + ctDocTo(c)">{{ c.docNo }}</a></span><span>{{ fm(c.amt) }}</span><span>模板「{{ c.tpl.name }}」V{{ c.tpl.ver }}</span></div>
+        <div class="sub"><span>{{ supName(c.supplier) }}</span><span>{{ ctDocName(c.kind, c.kind === 'purchase' ? purchase(c.docNo) : production(c.docNo)) }} <a class="code" :href="'#' + ctDocTo(c)">{{ c.docNo }}</a></span><span>{{ fm(c.amt) }}</span><span>模板「{{ c.tpl.name }}」V{{ c.tpl.ver }}</span></div>
         <p v-if="c.miss && c.miss.length" class="dim" style="font-size:12px;margin:0 0 12px">待手填项：{{ c.miss.join('、') }}</p>
         <article class="ct-paper" :class="{ void: c.status === '已作废' }" data-c="合同正文" v-html="c.html"></article>
       </div>

@@ -51,7 +51,7 @@ comp('DataPick', {
       ? db.materials.filter((m) => m.status === '启用').flatMap((m) => m.skus.filter((k) => k.status !== '停用').map((k) => ({ code: k.code, name: skuName(k.code), g: matCat(m.cat).parent || m.type, m })))
       : db.styles.filter((s) => s.status === '启用').map((s) => ({ code: s.code, name: s.name, g: catOf(s.cat).name, s }))
     ).map((r) => ({ ...r, had: p.have.includes(r.code) })))
-    const scoped = computed(() => rows.value.filter((r) => (!isSku || !mine.value || r.m.supplier === p.sup) && matchQ(q.value, r.code, r.name, r.g, isSku ? r.m.supNo || '' : r.s.brand || '')))
+    const scoped = computed(() => rows.value.filter((r) => (!isSku || !mine.value || r.m.supplier === p.sup) && matchQ(q.value, r.code, r.name, r.g, isSku ? r.m.supNo || '' : r.s.brand || '', isSku ? '' : r.s.alias || '')))
     const groups = computed(() => [{ v: '', t: '全部', n: scoped.value.length }, ...[...new Set(rows.value.map((r) => r.g))].map((g) => ({ v: g, t: g, n: scoped.value.filter((r) => r.g === g).length }))])
     const shown = computed(() => scoped.value.filter((r) => !grp.value || r.g === grp.value))
     const free = computed(() => shown.value.filter((r) => !r.had))
@@ -74,7 +74,7 @@ comp('DataPick', {
   },
   template: `<Modal :t="title" :w="880" @close="$emit('close')">
     <div class="dpk-top" data-c="选数据：搜索">
-      <Search v-model="q" :ph="isSku ? '物料名称、编码、颜色、供应商货号' : '款号、名称、品牌'"/>
+      <Search v-model="q" :ph="isSku ? '物料名称、编码、颜色、供应商货号' : '款号、名称、花名、品牌'"/>
       <label v-if="isSku && sup" class="chk"><input type="checkbox" v-model="mine">只看{{ supName(sup) }}的料</label>
     </div>
     <div class="dpk-chips" data-c="选数据：分类"><button v-for="g in groups" :key="g.v" type="button" :class="{ on: grp === g.v }" @click="grp = g.v">{{ g.t }}<i>{{ g.n }}</i></button></div>

@@ -1,10 +1,11 @@
 /* ============================================================
- * 物料（M07）：算料、采购单、到料跟踪、出入库单、库存与库存日志
+ * 物料（M07）：算料、采购单、物料入库单（含待到料）、物料出库单、物料盘点单、库存与库存日志
  * ============================================================ */
 SEARCH.push(() => [
   ...db.mrps.map((m) => ({ t: m.no, sub: '算料单 ' + m.orders.join(' '), to: '/mrp/' + m.no, i: 'sigma' })),
   ...db.purchases.map((p) => ({ t: p.no + ' ' + supName(p.supplier), sub: '采购单', to: '/purchases/' + p.no, i: 'cart' })),
-  ...db.stockDocs.map((d) => ({ t: d.no + ' ' + d.type, sub: '出入库单', to: '/stock-docs/' + d.no, i: 'swap' })),
+  ...db.stockDocs.map((d) => ({ t: d.no + ' ' + d.type, sub: sdName(d), to: stockNoLink(d.no), i: STOCK_TYPES[d.type] === 'RK' ? 'inbox' : 'swap' })),
+  ...db.stockTakes.map((d) => ({ t: d.no + ' ' + whName(d.wh), sub: '物料盘点单 ' + d.purpose, to: stockNoLink(d.no), i: 'clipboard' })),
 ])
 const purUnit = (sku) => matOfSku(sku)?.purUnit || ''
 const srcText = (l) => (l.src ? [...(l.src.orders || []), ...(l.src.styles || [])].join(' ') : '—')
@@ -157,7 +158,7 @@ route('/mrp/:no', {
         <dt>制单</dt><dd>{{ m.log[0] ? m.log[0].who + ' · ' + fd(m.log[0].at) : '—' }}</dd>
         <dt>确认</dt><dd>{{ confirmer ? confirmer.who + ' · ' + fd(confirmer.at) : '—' }}</dd>
         <dt>备料比</dt><dd>{{ Object.entries(db.reserve).filter(x => x[1] > 0).map(x => x[0] + ' ' + x[1] + '%').join('、') || '都是 0' }}</dd>
-        <dt>要料日期</dt><dd :title="'订单已排单取加工单裁剪的计划开始；没排单按承诺交期倒推。在途预计到货不晚于它才算赶得上'">{{ m.needDate ? fd(m.needDate) : '—' }}</dd>
+        <dt>要料日期</dt><dd :title="'订单已排单取生产单裁剪的计划开始；没排单按承诺交期倒推。在途预计到货不晚于它才算赶得上'">{{ m.needDate ? fd(m.needDate) : '—' }}</dd>
         <dt>备注</dt><dd style="grid-column:span 5"><NoteEdit :d="m"/></dd>
       </dl>
       <div v-if="m.prev" class="sec" data-c="和上一张对比"><h3>和上一张 <a class="code" :href="'#/mrp/' + m.prev.no">{{ m.prev.no }}</a> 比</h3>
@@ -442,7 +443,7 @@ route('/purchases/:no', {
           </Tbl>
         </section>
         <div class="sec" data-c="入库记录"><h3>入库 / 退货</h3>
-          <Tbl inset flat :rows="docs" link @row="d => go('/stock-docs/' + d.no)" empty="还没有入库" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'wh', t: '仓库', f: d => whName(d.to || d.from) }, { k: 'qty', t: '数量', c: 'num', f: d => d.lines.map(l => fq(l.purQty ?? l.qty)).join(' / ') }, { k: 'lot', t: '缸号', f: d => d.lines.map(l => l.lot).filter(Boolean).join(' ') || '—' }, { k: 'log', t: '物流单号', c: 'code', f: d => d.logistics || '—' }, { k: 'status', t: '状态' }]">
+          <Tbl inset flat :rows="docs" link @row="d => go(stockNoLink(d.no))" empty="还没有入库" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'wh', t: '仓库', f: d => whName(d.to || d.from) }, { k: 'qty', t: '数量', c: 'num', f: d => d.lines.map(l => fq(l.purQty ?? l.qty)).join(' / ') }, { k: 'lot', t: '缸号', f: d => d.lines.map(l => l.lot).filter(Boolean).join(' ') || '—' }, { k: 'log', t: '物流单号', c: 'code', f: d => d.logistics || '—' }, { k: 'status', t: '状态' }]">
             <template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
       </div>
       <aside class="aside" data-c="采购单属性">
@@ -484,12 +485,13 @@ route('/purchases/:no', {
   </div><NotFound v-else/>`,
 }, { mod: 'purchases', t: (p) => '采购单 ' + p.no })
 
+// only：物料入库单「待到料」里点某一行的「入库」，只带这一行的数（其他行 0，要一起收自己填）
 comp('PurchaseReceive', {
-  props: { po: Object, mode: String },
+  props: { po: Object, mode: String, only: { type: Number, default: null } },
   emits: ['close'],
   setup(p, { emit }) {
     const recv = p.mode === 'recv'
-    const lines = reactive(p.po.lines.map((l, i) => ({ i, qty: recv ? rnd(Math.max(0, l.qty - l.received), 3) : 0, lot: '', rolls: null, note: '' })))
+    const lines = reactive(p.po.lines.map((l, i) => ({ i, qty: recv && (p.only == null || p.only === i) ? rnd(Math.max(0, l.qty - l.received), 3) : 0, lot: '', rolls: null, note: '' })))
     const f = reactive({ wh: p.po.wh, from: p.po.wh, date: clock.today, supNo: '', logistics: '', note: '', reason: '', files: [] })
     const whs = computed(() => db.warehouses.filter((w) => w.type !== '成品仓'))
     // 退货从哪个仓出：这张单的料现在在哪些仓有库存（入库时可能改到了工厂仓）
@@ -498,7 +500,7 @@ comp('PurchaseReceive', {
     function ok() {
       const ls = lines.map((x) => ({ ...x }))
       const d = run(() => (recv ? receivePurchase(p.po, { lines: ls, wh: f.wh, date: f.date, supNo: f.supNo, logistics: f.logistics, note: f.note, files: f.files }) : returnPurchase(p.po, { lines: ls, from: f.from, date: f.date, logistics: f.logistics, reason: f.reason, files: f.files })))
-      if (d?.no) { emit('close'); toast(`${d.no} 已过账，库存已更新`, ['打开', '/stock-docs/' + d.no]) }
+      if (d?.no) { emit('close'); toast(`${d.no} 已过账，库存已更新`, ['打开', stockNoLink(d.no)]) }
     }
     return { recv, lines, f, whs, fromWhs, have, ok, purUnit }
   },
@@ -522,42 +524,21 @@ comp('PurchaseReceive', {
   </Modal>`,
 })
 
-/* ---------- 到料跟踪 ---------- */
-route('/arrivals', {
-  setup() {
-    const s = reactive({ tab: nav.query.f || 'all', q: '', buyer: '', flt: newFlt() })
-    const all = computed(() => arrivals().filter((x) => (!s.buyer || x.p.buyer === s.buyer) && passFlt(s.flt, { date: x.date, party: x.p.supplier })
-      && matchQ(s.q, x.p.no, x.l.sku, skuName(x.l.sku), supName(x.p.supplier), srcText(x.l), x.l.src?.mrp || '')).sort((a, b) => a.left - b.left))
-    // 赶不上开裁（PRD §6.6.3）：预计到货晚于要料日期（加工单裁剪的计划开始），采购交期没过也标出来
-    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length], ['cut', '赶不上开裁', all.value.filter((x) => x.cutLate > 0).length]])
-    const rows = computed(() => all.value.filter((x) => s.tab === 'all' || (s.tab === 'cut' ? x.cutLate > 0 : x.risk === s.tab)))
-    return { s, tabs, rows, srcText, purUnit }
-  },
-  template: `<div>
-    <Head t="到料"/>
-    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" party="supplier" label="交期"/>
-      <Pick class="sel" style="height:28px" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick>
-      <span class="sp"></span><Search v-model="s.q"/></div>
-    <div data-c="到料列表">
-      <Tbl :rows="rows" empty="没有该到没到的料。订单号、款号、采购单号、物料都能搜" :cols="[
-        { k: 'po', t: '采购单', c: 'code' }, { k: 'sup', t: '供应商', f: x => supName(x.p.supplier) }, { k: 'sku', t: '物料' },
-        { k: 'src', t: '订单 / 款', c: 'code', f: x => srcText(x.l) }, { k: 'qty', t: '采购', c: 'num', f: x => fq(x.l.qty) },
-        { k: 'recv', t: '已到', c: 'num', f: x => fq(x.l.received) }, { k: 'left', t: '未到', c: 'num', f: x => fq(rnd(x.l.qty - x.l.received, 3)) + ' ' + purUnit(x.l.sku) },
-        { k: 'due', t: '交期', f: x => fd(x.l.due || x.p.due) }, { k: 'exp', t: '预计到货' }, { k: 'days', t: '' }, { k: 'need', t: '要料日期' }, { k: 'note', t: '跟进', w: '220px' }]">
-        <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于加工单裁剪的计划开始">赶不上开裁，晚 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
-        <template #po="{ r }"><a :href="'#/purchases/' + r.p.no">{{ r.p.no }}</a><div class="dim" style="font-size:12px">{{ userName(r.p.buyer) }}</div></template>
-        <template #sku="{ r }"><span class="row"><Thumb :code="r.l.sku" :s="32"/><span class="col"><span>{{ skuName(r.l.sku) }}</span><small class="code dim">{{ r.l.sku }}</small></span></span></template>
-        <template #exp="{ r }"><DatePick cell ghost style="width:132px" v-model="r.l.expect" placeholder="设预计日"/></template>
-        <template #days="{ r }"><Days :d="r.date"/></template>
-        <template #note="{ r }"><input class="inp cell ghost" v-model="r.l.note"></template>
-      </Tbl>
-    </div>
-  </div>`,
-}, { mod: 'arrivals', t: '到料' })
-
-/* ---------- 出入库单 ---------- */
-const DOC_GROUPS = { 入库: ['采购入库', ...(TRADE ? ['客供入库'] : []), '其他入库'], 领料: ['领料', '退料'], 调拨: ['调拨'], 出库: ['采购退货', '其他出库'] }
-const srcLink = (d) => (!d.src ? '' : d.src.startsWith('CG') ? '/purchases/' + d.src : d.src.startsWith('JG') ? '/production/' + d.src : '')
+/* ---------- 物料入库单、物料出库单（甲方 11-14）----------
+ * 原来的「到料」「出入库」两个菜单拆成：物料入库单（RK：采购入库、退料入库、其他入库）、物料出库单（CK：领料出库、采购退货、调拨、其他出库）。
+ * 到料跟踪成了入库单的第一个页签「待到料」：每行点「入库」开采购入库单。旧地址（/arrivals、/stock-docs）跳到新页面 */
+redirect('/arrivals', (_, q) => '/stock-in' + (q.f ? '?f=' + q.f : ''))
+redirect('/stock-docs', () => '/stock-in?tab=docs')
+redirect('/stock-docs/:no', ({ no }) => stockNoLink(no))
+redirect('/stock-in/:no', ({ no }) => (stockDoc(no) && STOCK_TYPES[stockDoc(no).type] !== 'RK' ? stockNoLink(no) : ''))
+redirect('/stock-out/:no', ({ no }) => (stockDoc(no) && STOCK_TYPES[stockDoc(no).type] !== 'CK' ? stockNoLink(no) : ''))
+// side：RK 入库单、CK 出库单；news：页头能手工新建的类型，第一个放主按钮（采购入库从待到料、采购退货从采购单、领料出库从生产单来）
+const SD_SIDES = {
+  RK: { t: '物料入库单', to: '/stock-in?tab=docs', mod: 'stockin', news: [...(TRADE ? ['客供入库'] : []), '其他入库', '退料入库'] },
+  CK: { t: '物料出库单', to: '/stock-out', mod: 'stockout', news: ['其他出库', '调拨'] },
+}
+const sdTypes = (side) => Object.keys(STOCK_TYPES).filter((t) => STOCK_TYPES[t] === side)
+const srcLink = (d) => (!d.src ? '' : d.src.startsWith('CG') ? '/purchases/' + d.src : production(d.src) ? prodLink(production(d.src)) : '')
 const partnerName = (d) => (!d.partner ? '—' : d.partner.startsWith('KH') ? custName(d.partner) : supName(d.partner))
 const docQty = (d) => rnd(sum(d.lines, (l) => l.qty), 3)
 const docAmt = (d) => rnd(sum(d.lines, (l) => l.qty * (l.price || 0)), 2)
@@ -567,8 +548,8 @@ const lineAmt = (l) => (l.price == null ? null : l.purQty != null ? rnd(l.purQty
 const SD_FIELDS = [['company', '主体', companyName], ['date', '日期', fd], ['partner', '往来', (v) => partnerName({ partner: v })], ['from', '出仓', whName], ['to', '入仓', whName],
   ['src', '源单'], ['reason', '原因'], ['supNo', '送货单号'], ['logistics', '物流单号'], ['note', '备注']]
 const sdLineSig = (l) => [l.sku, l.owner || '自有', l.qty, l.price ?? '', l.lot || '', l.rolls ?? '', l.note || ''].join('|')
-// 手工建的单能改；采购入库、采购退货、领料是源单生成的（数量按采购行、加工单回写），改错了作废，回源单重做
-const SD_EDIT = ['客供入库', '其他入库', '调拨', '退料', '其他出库']
+// 手工建的单能改；采购入库、采购退货、领料出库是源单生成的（数量按采购行、生产单回写），改错了作废，回源单重做
+const SD_EDIT = ['客供入库', '其他入库', '调拨', '退料入库', '其他出库']
 function updateStockDoc(d, f) {
   if (d.status !== '草稿') fail('只有草稿能改；已审核的先反审核')
   if (!SD_EDIT.includes(d.type)) fail(`${d.type}是从 ${d.src || '源单'} 生成的，不能直接改：作废这张，回源单重新做`)
@@ -583,47 +564,116 @@ function updateStockDoc(d, f) {
   act(d, '改：' + ch.join('；'))
 }
 
-route('/stock-docs', {
-  setup() {
-    const s = reactive({ mine: false, tab: '全部', st: '', wh: '', party: '', q: '', add: '', flt: newFlt(), picked: [] })
-    const scoped = computed(() => db.stockDocs.filter((d) => inScope(s.mine, d)))
-    const tabs = computed(() => [['全部', '全部', scoped.value.length], ...Object.entries(DOC_GROUPS).map(([k, ts]) => [k, k, scoped.value.filter((d) => ts.includes(d.type)).length])])
-    const parties = computed(() => [...new Set(db.stockDocs.map((d) => d.partner).filter(Boolean))].map((c) => [c, partnerName({ partner: c })]))
-    const rows = computed(() => scoped.value.filter((d) => (s.tab === '全部' || DOC_GROUPS[s.tab].includes(d.type)) && (!s.st || d.status === s.st) && (!s.wh || d.from === s.wh || d.to === s.wh) && (!s.party || d.partner === s.party)
+// 入库单、出库单列表：同一个组件，side 分开；st 从地址带（首页「待审核」点进来 ?s=草稿）
+comp('StockDocList', {
+  props: { side: String },
+  setup(p) {
+    const types = sdTypes(p.side)
+    const s = reactive({ mine: false, tab: '全部', st: nav.query.s || '', wh: '', party: '', q: '', flt: newFlt(), picked: [] })
+    const scoped = computed(() => db.stockDocs.filter((d) => STOCK_TYPES[d.type] === p.side && inScope(s.mine, d)))
+    const tabs = computed(() => [['全部', '全部', scoped.value.length], ...types.map((t) => [t, t, scoped.value.filter((d) => d.type === t).length])])
+    const parties = computed(() => [...new Set(scoped.value.map((d) => d.partner).filter(Boolean))].map((c) => [c, partnerName({ partner: c })]))
+    const rows = computed(() => scoped.value.filter((d) => (s.tab === '全部' || d.type === s.tab) && (!s.st || d.status === s.st) && (!s.wh || d.from === s.wh || d.to === s.wh) && (!s.party || d.partner === s.party)
       && passFlt(s.flt, { date: d.date }) && matchQ(s.q, d.no, d.type, d.src, d.supNo || '', d.logistics || '', ...d.lines.flatMap((l) => [l.sku, skuName(l.sku), l.lot || '']))).slice().reverse())
-    // 手工新建的类型，第一个放在页头按钮上（TRADE 关着时没有客供入库）
-    const NEW_TYPES = [...(TRADE ? ['客供入库'] : []), '其他入库', '调拨', '退料', '其他出库']
-    const news = NEW_TYPES.map((t) => ({ t, fn: () => { s.add = t } }))
     const XCOLS = [{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'from', t: '出仓', x: (d) => (d.from ? whName(d.from) : '') }, { k: 'to', t: '入仓', x: (d) => (d.to ? whName(d.to) : '') },
       { k: 'partner', t: '往来', x: partnerName }, { k: 'src', t: '源单', c: 'code' }, { k: 'mat', t: '物料', x: (d) => d.lines.map((l) => l.sku).join(' ') }, { k: 'qty', t: '总数量', x: (d) => sum(d.lines, (l) => l.qty) },
       { k: 'date', t: '日期' }, { k: 'reason', t: '原因' }, { k: 'company', t: '主体', x: (d) => companyName(d.company) }, { k: 'status', t: '状态' }]
     const picks = computed(() => rows.value.filter((d) => s.picked.includes(d.no)))
     const batch = async (a) => { const ok = await batchAct('stock', picks.value, a, { note: a === '审核' ? '审核后马上改库存。' : '' }); s.picked = s.picked.filter((k) => !ok.includes(k)) }
-    return { s, tabs, parties, rows, news, NEW_TYPES, partnerName, XCOLS, picks, batch }
+    const empty = computed(() => (scoped.value.length ? '没有符合条件的单据。单号、源单、物料、缸号都能搜'
+      : p.side === 'RK' ? '还没有入库单：采购到货在「待到料」点「入库」，其他的点页头按钮新建' : '还没有出库单：领料在生产单上点「领料」，其他的点页头按钮新建'))
+    return { s, tabs, parties, rows, XCOLS, picks, batch, empty, name: SD_SIDES[p.side].t }
   },
   template: `<div>
-    <Head t="出入库"><button class="btn pri" @click="s.add = NEW_TYPES[0]"><Ico n="plus" :s="14"/>{{ NEW_TYPES[0] }}</button><More :items="news"/></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/>
       <Pick class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></Pick>
       <Filters v-model="s.flt"/>
       <Pick class="sel" style="height:28px;max-width:140px" v-model="s.wh"><option value="">全部仓库</option><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
       <Pick class="sel" style="height:28px;max-width:140px" v-model="s.party"><option value="">全部往来</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></Pick>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
-    <div data-c="出入库列表">
-      <Tbl :rows="rows" link v-model:picked="s.picked" @row="d => go('/stock-docs/' + d.no)" empty="没有符合条件的单据。单号、源单、物料、缸号都能搜" :cols="[
+    <div :data-c="name + '列表'">
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="d => go(stockNoLink(d.no))" :empty="empty" :cols="[
         { k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'flow', t: '出仓 → 入仓' }, { k: 'partner', t: '往来', f: partnerName },
         { k: 'src', t: '源单', c: 'code', f: d => d.src || '—' }, { k: 'mat', t: '物料', f: d => skuName(d.lines[0].sku) + (d.lines.length > 1 ? ' 等 ' + d.lines.length + ' 种' : ''), img: d => d.lines[0].sku },
         { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'status', t: '状态' }]">
         <template #flow="{ r }"><span class="mut">{{ r.from ? whName(r.from) : '' }}<template v-if="r.from && r.to"> → </template>{{ r.to ? whName(r.to) : '' }}</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
-      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="出入库单" label="导出选中"/></BatchBar>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" :name="name" label="导出选中"/></BatchBar>
     </div>
+  </div>`,
+})
+
+/* ---------- 物料入库单：待到料（原到料跟踪）+ 入库单列表 ---------- */
+route('/stock-in', {
+  setup() {
+    const s = reactive({ view: nav.query.tab === 'docs' ? 'docs' : 'wait', tab: nav.query.f || 'all', q: '', buyer: '', flt: newFlt(), add: '', recv: null })
+    const all = computed(() => arrivals().filter((x) => (!s.buyer || x.p.buyer === s.buyer) && passFlt(s.flt, { date: x.date, party: x.p.supplier })
+      && matchQ(s.q, x.p.no, x.l.sku, skuName(x.l.sku), supName(x.p.supplier), srcText(x.l), x.l.src?.mrp || '')).sort((a, b) => a.left - b.left))
+    // 赶不上开裁（PRD §6.6.3）：预计到货晚于要料日期（生产单裁剪的计划开始），采购交期没过也标出来
+    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length], ['cut', '赶不上开裁', all.value.filter((x) => x.cutLate > 0).length]])
+    const rows = computed(() => all.value.filter((x) => s.tab === 'all' || (s.tab === 'cut' ? x.cutLate > 0 : x.risk === s.tab)))
+    const views = computed(() => [['wait', '待到料', arrivals().length], ['docs', '入库单', db.stockDocs.filter((d) => STOCK_TYPES[d.type] === 'RK').length]])
+    const news = SD_SIDES.RK.news.map((t) => ({ t, fn: () => { s.add = t } }))
+    // 这一行能入库：采购单审核了、没结案（arrivals 里只有已审核、部分到货的）
+    return { s, tabs, rows, views, news, NEWS: SD_SIDES.RK.news, srcText, purUnit }
+  },
+  template: `<div>
+    <Head t="物料入库单"><button class="btn pri" @click="s.add = NEWS[0]"><Ico n="plus" :s="14"/>{{ NEWS[0] }}</button><More :items="news"/></Head>
+    <div class="bar" data-c="入库单页签"><Tabs v-model="s.view" :items="views"/></div>
+    <template v-if="s.view === 'wait'">
+      <div class="bar" data-c="待到料筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" party="supplier" label="交期"/>
+        <Pick class="sel" style="height:28px" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick>
+        <span class="sp"></span><Search v-model="s.q"/></div>
+      <div data-c="待到料列表">
+        <Tbl :rows="rows" empty="没有该到没到的料：采购单审核后，没入齐的行都在这里。需求订单号、款号、采购单号、物料都能搜" :cols="[
+          { k: 'po', t: '采购单', c: 'code' }, { k: 'sup', t: '供应商', f: x => supName(x.p.supplier) }, { k: 'sku', t: '物料' },
+          { k: 'src', t: '订单 / 款', c: 'code' }, { k: 'recv', t: '已到 / 采购', c: 'num', f: x => fq(x.l.received) + ' / ' + fq(x.l.qty) },
+          { k: 'left', t: '未到', c: 'num', f: x => fq(rnd(x.l.qty - x.l.received, 3)) + ' ' + purUnit(x.l.sku) },
+          { k: 'due', t: '交期' }, { k: 'exp', t: '预计到货' }, { k: 'need', t: '要料日期' }, { k: 'note', t: '跟进' }, { k: 'act', t: '' }]">
+          <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于生产单裁剪的计划开始">赶不上开裁，晚 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
+          <template #po="{ r }"><a :href="'#/purchases/' + r.p.no">{{ r.p.no }}</a><div class="dim" style="font-size:12px">{{ userName(r.p.buyer) }}</div></template>
+          <template #src="{ r }"><template v-if="r.l.src">{{ (r.l.src.orders || []).join(' ') || '—' }}<div class="dim" style="font-size:12px">{{ (r.l.src.styles || []).join(' ') }}</div></template><span v-else class="dim">—</span></template>
+          <template #sku="{ r }"><span class="row"><Thumb :code="r.l.sku" :s="32"/><span class="col"><span>{{ skuName(r.l.sku) }}</span><small class="code dim">{{ r.l.sku }}</small></span></span></template>
+          <template #exp="{ r }"><DatePick cell ghost style="width:112px" v-model="r.l.expect" placeholder="设预计日"/></template>
+          <template #due="{ r }">{{ fd(r.l.due || r.p.due) }}<div style="font-size:12px"><Days :d="r.date"/></div></template>
+          <template #note="{ r }"><input class="inp cell ghost" style="width:96px" v-model="r.l.note" placeholder="写跟进"></template>
+          <template #act="{ r }"><button class="btn sm" data-c="待到料：入库" title="按这一行开采购入库单，数量带未到的，可以改" @click="s.recv = r">入库</button></template>
+        </Tbl>
+      </div>
+    </template>
+    <StockDocList v-else side="RK"/>
+    <PurchaseReceive v-if="s.recv" :po="s.recv.p" mode="recv" :only="s.recv.i" @close="s.recv = null"/>
     <StockDocForm v-if="s.add" :type="s.add" @close="s.add = ''"/>
   </div>`,
-}, { mod: 'stockdocs', t: '出入库' })
+}, { mod: 'stockin', t: '物料入库单' })
 
-// 新建、改草稿共用：d 不给就是新建；init 预填（加工单详情点「退料」时带上源单、出仓）
+/* ---------- 物料出库单：领料出库从生产单来（这里也能挑一张生产单领），其他出库、调拨手工建 ---------- */
+route('/stock-out', {
+  setup() {
+    const s = reactive({ add: '', pick: false, prod: '', issue: '' })
+    // 能领料的生产单：审核下单了、没完成，资料包里有要发的料还没领齐
+    const prods = computed(() => db.productions.filter((x) => prodLive(x) && issuePlan(x).some((r) => r.suggest > 0)))
+    const news = [...SD_SIDES.CK.news.map((t) => ({ t, fn: () => { s.add = t } })), { t: '领料出库（选生产单）', fn: () => { s.prod = prods.value[0]?.no || ''; s.pick = true } }]
+    const next = () => { if (!s.prod) return toast('先选一张生产单', null, true); s.pick = false; s.issue = s.prod }
+    return { s, prods, news, next, NEWS: SD_SIDES.CK.news }
+  },
+  template: `<div>
+    <Head t="物料出库单"><button class="btn pri" @click="s.add = NEWS[0]"><Ico n="plus" :s="14"/>{{ NEWS[0] }}</button><More :items="news"/></Head>
+    <StockDocList side="CK"/>
+    <StockDocForm v-if="s.add" :type="s.add" @close="s.add = ''"/>
+    <Modal v-if="s.pick" t="领料出库：选生产单" :w="520" @close="s.pick = false">
+      <div class="form" data-c="领料出库：选生产单">
+        <label class="f full">生产单<Pick class="sel" v-model="s.prod"><option value="">选一张</option><option v-for="x in prods" :key="x.no" :value="x.no">{{ x.no }} · {{ prodKind(x) }} · {{ x.style }} {{ styleName(x.style) }} · {{ supName(x.factory) }}</option></Pick></label>
+      </div>
+      <p v-if="!prods.length" class="dim">没有要领料的生产单：审核下单后、资料包里有我方发的料还没领齐的才在这里</p>
+      <template #foot><span class="sp"></span><button class="btn" @click="s.pick = false">取消</button><button class="btn pri" :disabled="!prods.length" @click="next">下一步：填领料数</button></template>
+    </Modal>
+    <ProdIssueMat v-if="s.issue" :p="production(s.issue)" @close="s.issue = ''"/>
+  </div>`,
+}, { mod: 'stockout', t: '物料出库单' })
+
+// 新建、改草稿共用：d 不给就是新建；init 预填（生产单详情点「退料」时带上源单、出仓）
 comp('StockDocForm', {
   props: { type: String, d: Object, init: Object },
   emits: ['close'],
@@ -632,17 +682,17 @@ comp('StockDocForm', {
     const blank = () => ({ sku: '', owner: '自有', qty: null, price: null, lot: '', rolls: null, note: '' })
     const f = reactive(x
       ? { ...Object.fromEntries(SD_FIELDS.map(([k]) => [k, x[k] ?? ''])), from: x.from, to: x.to, lines: x.lines.map((l) => ({ ...blank(), ...l })) }
-      : { company: myCompany(), date: clock.today, partner: t === '客供入库' ? 'KH0001' : '', from: ['调拨', '其他出库'].includes(t) ? 'WL01' : t === '退料' ? 'GC0004' : null, to: ['客供入库', '其他入库', '退料'].includes(t) ? 'WL01' : t === '调拨' ? 'GC0005' : null,
+      : { company: myCompany(), date: clock.today, partner: t === '客供入库' ? 'KH0001' : '', from: ['调拨', '其他出库'].includes(t) ? 'WL01' : t === '退料入库' ? 'GC0004' : null, to: ['客供入库', '其他入库', '退料入库'].includes(t) ? 'WL01' : t === '调拨' ? 'GC0005' : null,
         src: '', reason: '', supNo: '', logistics: '', note: '', lines: [blank()], ...(p.init || {}) })
     if (!f.lines.length) f.lines.push(blank())
-    const whsFrom = computed(() => db.warehouses.filter((w) => (t === '退料' ? w.type === '工厂仓' : w.type !== '成品仓') && (w.status !== '停用' || w.code === f.from)))
-    const whsTo = computed(() => db.warehouses.filter((w) => (t === '退料' ? w.type === '物料仓' : w.type !== '成品仓') && (w.status !== '停用' || w.code === f.to)))
-    // 退料的源单：这个工厂仓所属加工厂的加工单（可选，选了才扣得掉加工单的"已领"）
-    const prods = computed(() => (t === '退料' ? db.productions.filter((pr) => factoryWh(pr.factory)?.code === f.from && !['草稿', '待审核', '已作废'].includes(pr.status)) : []))
+    const whsFrom = computed(() => db.warehouses.filter((w) => (t === '退料入库' ? w.type === '工厂仓' : w.type !== '成品仓') && (w.status !== '停用' || w.code === f.from)))
+    const whsTo = computed(() => db.warehouses.filter((w) => (t === '退料入库' ? w.type === '物料仓' : w.type !== '成品仓') && (w.status !== '停用' || w.code === f.to)))
+    // 退料的源单：这个工厂仓所属加工厂的生产单（可选，选了才扣得掉生产单的"已领"）
+    const prods = computed(() => (t === '退料入库' ? db.productions.filter((pr) => factoryWh(pr.factory)?.code === f.from && !['草稿', '待审核', '已作废'].includes(pr.status)) : []))
     const skus = computed(() => db.materials.flatMap((m) => m.skus.filter((k) => k.status !== '停用' || f.lines.some((l) => l.sku === k.code)).map((k) => ({ code: k.code, t: skuName(k.code) + ' · ' + k.code }))))
     const owners = computed(() => ['自有', ...db.customers.map((c) => c.code)])
     const have = (l) => (f.from && l.sku ? stockQty(f.from, l.sku, l.owner) : null)
-    // 选了加工单：往来记加工厂，明细带出这张单领过的料（数量自己填）
+    // 选了生产单：往来记加工厂，明细带出这张单领过的料（数量自己填）
     function pickProd() {
       const pr = production(f.src)
       if (!pr) return
@@ -660,7 +710,7 @@ comp('StockDocForm', {
       const g = { ...f, type: t, lines: f.lines.map((l) => ({ ...l })) }
       if (x) { if (run(() => updateStockDoc(x, g))) { emit('close'); toast('已保存') } return }
       const d = run(() => createStockDoc(g))
-      if (d?.no) { emit('close'); go('/stock-docs/' + d.no); toast(`${d.no} 存了草稿，审核后才改库存`) }
+      if (d?.no) { emit('close'); go(stockNoLink(d.no)); toast(`${d.no} 存了草稿，审核后才改库存`) }
     }
     return { x, t, f, whsFrom, whsTo, prods, skus, owners, have, pickProd, picking, addSkus, amt, ok, blank }
   },
@@ -671,9 +721,9 @@ comp('StockDocForm', {
       <label v-if="t === '客供入库'" class="f">客户<Pick class="sel" v-model="f.partner"><option v-for="c in db.customers" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
       <label v-if="f.from !== null" class="f">出仓<Pick class="sel" v-model="f.from"><option v-for="w in whsFrom" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <label v-if="f.to !== null" class="f">入仓<Pick class="sel" v-model="f.to"><option v-for="w in whsTo" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
-      <label v-if="t === '退料'" class="f">源单（加工单，选填）<Pick class="sel" v-model="f.src" @change="pickProd"><option value="">不挂加工单</option><option v-for="pr in prods" :key="pr.no" :value="pr.no">{{ pr.no }} {{ pr.style }}</option></Pick></label>
-      <label v-if="['其他入库', '其他出库'].includes(t)" class="f">原因<Pick class="sel" v-model="f.reason"><option value="">选原因（必填）</option><option v-for="v in db.dicts.其他出入库原因" :key="v">{{ v }}</option></Pick></label>
-      <label v-if="['调拨', '退料'].includes(t)" class="f">原因<input class="inp" v-model="f.reason" :placeholder="t === '退料' ? '比如：大货做完剩料' : ''"></label>
+      <label v-if="t === '退料入库'" class="f">源单（生产单，选填）<Pick class="sel" v-model="f.src" @change="pickProd"><option value="">不挂生产单</option><option v-for="pr in prods" :key="pr.no" :value="pr.no">{{ pr.no }} {{ pr.style }}</option></Pick></label>
+      <label v-if="['其他入库', '其他出库'].includes(t)" class="f" :title="'盘盈、盘亏开物料盘点单'">原因<Pick class="sel" v-model="f.reason"><option value="">选原因（必填）</option><option v-for="v in db.dicts[t + '原因']" :key="v">{{ v }}</option></Pick></label>
+      <label v-if="['调拨', '退料入库'].includes(t)" class="f">原因<input class="inp" v-model="f.reason" :placeholder="t === '退料入库' ? '比如：大货做完剩料' : ''"></label>
       <label v-if="t === '客供入库'" class="f">送货单号<input class="inp" v-model="f.supNo"></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
@@ -696,21 +746,23 @@ comp('StockDocForm', {
   </Modal>`,
 })
 
-route('/stock-docs/:no', {
+// 入库单、出库单详情：同一个页面，返回、标题按单据方向
+const SD_DETAIL = {
   props: ['no'],
   setup(p) {
     const d = computed(() => stockDoc(p.no))
     const dlg = ref('')
+    const side = computed(() => SD_SIDES[STOCK_TYPES[d.value.type]])
     const a = (x) => docAct('stock', d.value, x, x === '审核' ? `${d.value.no} 已过账，库存已更新` : '')
-    async function del() { if (await ask('删除 ' + d.value.no, '草稿删掉就找不回来了，库存不受影响（草稿还没过账）。', '删除', true)) { if (run(() => removeDraft(db.stockDocs, d.value))) { go('/stock-docs'); toast('删掉了') } } }
+    async function del() { if (await ask('删除 ' + d.value.no, '草稿删掉就找不回来了，库存不受影响（草稿还没过账）。', '删除', true)) { const to = side.value.to; if (run(() => removeDraft(db.stockDocs, d.value))) { go(to); toast('删掉了') } } }
     const more = computed(() => [can('stock', d.value, '反审核') && { t: '反审核（库存改回去）', fn: () => a('反审核') },
       d.value.status === '草稿' && { t: '删除', danger: true, fn: del }, can('stock', d.value, '作废') && { t: '作废', danger: true, fn: () => a('作废') }].filter(Boolean))
     // 采购入库、采购退货：数量按采购单位记的，金额按采购单价 × 采购数量
     const noteOf = (l) => [l.reason && '超领：' + l.reason, l.note].filter(Boolean).join('；') || '—'
-    return { d, dlg, a, more, srcLink, partnerName, docQty, docAmt, linePrice, lineAmt, noteOf, SD_EDIT }
+    return { d, dlg, side, a, more, srcLink, partnerName, docQty, docAmt, linePrice, lineAmt, noteOf, SD_EDIT }
   },
   template: `<div v-if="d">
-    <Head :t="d.no" :back="['出入库', '/stock-docs']"><button v-if="d.status === '草稿' && SD_EDIT.includes(d.type)" class="btn" @click="dlg = 'edit'">编辑</button><button v-if="can('stock', d, '审核')" class="btn pri" @click="a('审核')">审核过账</button><More :items="more"/></Head>
+    <Head :t="d.no" :back="[side.t, side.to]"><button v-if="d.status === '草稿' && SD_EDIT.includes(d.type)" class="btn" @click="dlg = 'edit'">编辑</button><button v-if="can('stock', d, '审核')" class="btn pri" @click="a('审核')">审核过账</button><More :items="more"/></Head>
     <div class="detail">
       <div class="body">
         <div class="title">{{ d.type }}<St :s="d.status"/></div>
@@ -727,6 +779,7 @@ route('/stock-docs/:no', {
       </div>
       <aside class="aside" data-c="单据属性">
         <dl class="props">
+          <dt>单据</dt><dd>{{ side.t }}</dd>
           <dt>类型</dt><dd>{{ d.type }}</dd>
           <dt>日期</dt><dd>{{ fd(d.date) }}</dd>
           <dt v-if="d.from">出仓</dt><dd v-if="d.from">{{ whName(d.from) }}</dd>
@@ -744,23 +797,193 @@ route('/stock-docs/:no', {
     </div>
     <StockDocForm v-if="dlg === 'edit'" :d="d" @close="dlg = ''"/>
   </div><NotFound v-else/>`,
-}, { mod: 'stockdocs', t: (p) => '出入库单 ' + p.no })
+}
+route('/stock-in/:no', SD_DETAIL, { mod: 'stockin', t: (p) => '物料入库单 ' + p.no })
+route('/stock-out/:no', SD_DETAIL, { mod: 'stockout', t: (p) => '物料出库单 ' + p.no })
+
+/* ---------- 物料盘点单（甲方 11-14；规则在 2-store.js：createStockTake、postTake）----------
+ * 建单拍下账面数 → 导出盘点表、去仓库点数 → 填实盘数（或 Excel 导回）→ 提交 → 审核过账（调整量 = 实盘 − 账面）。
+ * 用途选「期初录入」就是上线时录现有库存：空着的按 0，流水记"期初" */
+const takeScopeText = (t) => (t.scope.kind === '按物料分类' ? '分类：' + t.scope.cats.map((c) => db.materialCategories.find((x) => x.code === c)?.name || c).join('、') : t.scope.kind === '手选物料' ? `手选 ${t.scope.skus.length} 种` : '全部物料')
+const takeStat = (t) => { const ds = t.lines.map((l) => takeDiff(l)); return { n: t.lines.length, done: ds.filter((d) => d !== null).length, up: ds.filter((d) => d > 0.0005).length, down: ds.filter((d) => d < -0.0005).length } }
+const takeWhs = () => db.warehouses.filter((w) => ['物料仓', '工厂仓'].includes(w.type) && w.status !== '停用')
+// 盘点表：导出给仓库点数，填好「实盘数」再导回来；表头和导入对得上
+const TAKE_HEAD = ['物料SKU编码', '物料', '颜色', '规格', '单位', ...(TRADE ? ['物权'] : []), '账面数', '实盘数', '备注']
+function exportTake(t) {
+  const rows = [TAKE_HEAD, ...t.lines.map((l) => { const x = skuParts(l.sku); return [l.sku, x.name, x.color, x.spec, unitOf(l.sku), ...(TRADE ? [l.owner] : []), l.book, l.qty ?? '', l.note || ''] })]
+  saveBlob(xlsxWrite([{ name: '盘点表', rows, text: new Set([0]), widths: [18, 22, 10, 10, 8, ...(TRADE ? [12] : []), 12, 12, 24] }]), `盘点表-${whName(t.wh)}-${t.no}.xlsx`)
+  act(t, '导出盘点表')
+  toast(`导出了 ${t.lines.length} 种物料；填好「实盘数」再导回来`)
+}
+// Excel 导回实盘数：只认这张单上的 SKU；实盘数空着的行不动
+const takeImportDef = (t) => ({
+  title: '导回实盘数：' + t.no, name: '盘点表',
+  note: '用「导出盘点表」导出的文件，填好「实盘数」导回来；实盘数空着的行不改。单上没有的物料先在单上「从物料库加」。',
+  cols: [
+    { k: 'sku', t: '物料SKU编码', req: true, text: true, tip: '盘点表里带出来的，别改', ex: t.lines[0]?.sku || 'ML0012-KQ', w: 18 },
+    ...(TRADE ? [{ k: 'owner', t: '物权', text: true, tip: '不填 = 自有', ex: '自有' }] : []),
+    { k: 'qty', t: '实盘数', num: true, tip: '库存单位，最多 3 位小数；空着不改', ex: 118 },
+    { k: 'note', t: '备注', text: true, tip: '选填，比如差异原因', ex: '' },
+  ],
+  check(rows, bad) {
+    const seen = new Map(), plan = []
+    for (const r of rows) {
+      const owner = !r.owner || r.owner === '自有' ? '自有' : r.owner
+      const l = t.lines.find((x) => x.sku === r.sku && x.owner === owner)
+      if (!l) { bad(r, '物料SKU编码', `${r.sku} 不在这张盘点单上；要盘先在单上「从物料库加」`); continue }
+      if (seen.has(l)) { bad(r, '物料SKU编码', `和第 ${seen.get(l)} 行重复`); continue }
+      seen.set(l, r._r)
+      if (r.qty != null || r.note) plan.push({ l, qty: r.qty, note: r.note })
+    }
+    if (t.status !== '草稿') bad('—', '—', `${t.no} 是「${t.status}」，只有草稿能改实盘数`)
+    return plan
+  },
+  save(plan) {
+    plan.forEach((x) => { if (x.qty != null) x.l.qty = rnd(x.qty, 3); if (x.note) x.l.note = x.note })
+    act(t, `Excel 导回实盘数 ${plan.length} 行`)
+    return { text: `填了 ${plan.filter((x) => x.qty != null).length} 种物料的实盘数，核对后提交审核` }
+  },
+})
+
+route('/stock-takes', {
+  setup() {
+    const s = reactive({ tab: nav.query.s || '全部', wh: '', q: '', flt: newFlt(), add: nav.query.new ? (nav.query.new === '期初录入' ? '期初录入' : '日常盘点') : '' })
+    const ST = ['全部', '草稿', '待审核', '已审核']
+    const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? db.stockTakes.length : db.stockTakes.filter((t) => t.status === k).length]))
+    const rows = computed(() => db.stockTakes.filter((t) => (s.tab === '全部' || t.status === s.tab) && (!s.wh || t.wh === s.wh) && passFlt(s.flt, { date: t.date })
+      && matchQ(s.q, t.no, whName(t.wh), userName(t.counter), t.purpose, ...t.lines.map((l) => l.sku))).slice().reverse())
+    const XCOLS = [{ k: 'no', t: '单号', c: 'code' }, { k: 'wh', t: '仓库', x: (t) => whName(t.wh) }, { k: 'purpose', t: '用途' }, { k: 'scope', t: '范围', x: takeScopeText }, { k: 'date', t: '盘点日期' },
+      { k: 'counter', t: '盘点人', x: (t) => userName(t.counter) }, { k: 'n', t: '物料种数', x: (t) => t.lines.length }, { k: 'up', t: '盘盈种数', x: (t) => takeStat(t).up }, { k: 'down', t: '盘亏种数', x: (t) => takeStat(t).down }, { k: 'status', t: '状态' }]
+    return { s, tabs, rows, XCOLS, takeWhs, takeScopeText, takeStat }
+  },
+  template: `<div>
+    <Head t="物料盘点单"><ExportBtn :rows="rows" :cols="XCOLS" name="物料盘点单"/><button class="btn" @click="s.add = '期初录入'" title="上线时录各仓现有库存：建一张「期初录入」盘点单">录期初库存</button><button class="btn pri" @click="s.add = '日常盘点'"><Ico n="plus" :s="14"/>新建盘点单</button></Head>
+    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" label="盘点"/>
+      <Pick class="sel" style="height:28px;max-width:150px" v-model="s.wh"><option value="">全部仓库</option><option v-for="w in takeWhs()" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
+      <span class="sp"></span><Search v-model="s.q"/></div>
+    <div data-c="盘点单列表">
+      <Tbl :rows="rows" link @row="t => go('/stock-takes/' + t.no)" :empty="db.stockTakes.length ? '没有符合条件的盘点单。单号、仓库、盘点人、物料都能搜' : '还没有盘点单：点「新建盘点单」，选仓库和范围，系统把账面数拍下来'" :cols="[
+        { k: 'no', t: '单号', c: 'code' }, { k: 'wh', t: '仓库', f: t => whName(t.wh) }, { k: 'purpose', t: '用途' }, { k: 'scope', t: '范围', f: takeScopeText },
+        { k: 'date', t: '盘点日期', f: t => fd(t.date) }, { k: 'counter', t: '盘点人', f: t => userName(t.counter) }, { k: 'prog', t: '已填实盘', c: 'num' }, { k: 'diff', t: '差异' }, { k: 'status', t: '状态' }]">
+        <template #prog="{ r }">{{ takeStat(r).done }} / {{ takeStat(r).n }}</template>
+        <template #diff="{ r }"><span v-if="takeStat(r).up" class="green">盘盈 {{ takeStat(r).up }}</span><span v-if="takeStat(r).up && takeStat(r).down"> · </span><span v-if="takeStat(r).down" class="red">盘亏 {{ takeStat(r).down }}</span><span v-if="!takeStat(r).up && !takeStat(r).down" class="dim">—</span></template>
+        <template #status="{ r }"><St :s="r.status"/></template>
+      </Tbl>
+    </div>
+    <StockTakeNew v-if="s.add" :purpose="s.add" @close="s.add = ''"/>
+  </div>`,
+}, { mod: 'stocktake', t: '物料盘点单' })
+
+comp('StockTakeNew', {
+  props: { purpose: String },
+  emits: ['close'],
+  setup(p, { emit }) {
+    const whs = takeWhs()
+    const openOf = (code) => db.stockTakes.find((t) => t.wh === code && t.status !== '已审核')
+    const f = reactive({ wh: (whs.find((w) => !openOf(w.code)) || whs[0])?.code, purpose: p.purpose || '日常盘点', kind: '全部', cats: [], skus: [], date: clock.today, counter: roleUser('仓管'), note: '' })
+    const picking = ref(false)
+    const addSkus = (codes) => { f.skus.push(...codes.filter((c) => !f.skus.includes(c))) }
+    function ok() {
+      const t = run(() => createStockTake({ wh: f.wh, purpose: f.purpose, scope: { kind: f.kind, cats: [...f.cats], skus: [...f.skus] }, date: f.date, counter: f.counter, note: f.note }))
+      if (t?.no) { emit('close'); go('/stock-takes/' + t.no); toast(`${t.no} 建好了：${t.lines.length} 种物料，账面数已拍下`) }
+    }
+    return { whs, openOf, f, picking, addSkus, ok, TAKE_PURPOSES, TAKE_SCOPES }
+  },
+  template: `<Modal t="新建盘点单" :w="640" @close="$emit('close')">
+    <div class="form" data-c="盘点单单头">
+      <label class="f">仓库<Pick class="sel" v-model="f.wh"><option v-for="w in whs" :key="w.code" :value="w.code" :disabled="!!openOf(w.code)">{{ w.name }}{{ openOf(w.code) ? '（' + openOf(w.code).no + ' 还没审）' : '' }}</option></Pick></label>
+      <div class="f">用途<Seg v-model="f.purpose" :items="TAKE_PURPOSES"/></div>
+      <label class="f">盘点日期<DatePick v-model="f.date" :max="clock.today"/></label>
+      <label class="f">盘点人<Pick class="sel" v-model="f.counter"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
+      <div class="f full" data-c="盘点范围">范围<Seg v-model="f.kind" :items="TAKE_SCOPES"/>
+        <div v-if="f.kind === '按物料分类'" class="chips" style="margin-top:8px"><button v-for="c in db.materialCategories" :key="c.code" type="button" class="chip" :class="{ on: f.cats.includes(c.code) }" @click="f.cats.includes(c.code) ? f.cats.splice(f.cats.indexOf(c.code), 1) : f.cats.push(c.code)">{{ c.parent }} · {{ c.name }}</button></div>
+        <div v-if="f.kind === '手选物料'" class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px"><span v-for="(k, i) in f.skus" :key="k" class="fchip">{{ skuName(k) }}<button type="button" title="去掉" @click="f.skus.splice(i, 1)"><Ico n="x" :s="11"/></button></span><button type="button" class="btn ghost sm" @click="picking = true"><Ico n="search" :s="13"/>从物料库选</button></div>
+        <small class="dim">{{ f.purpose === '期初录入' ? '带出物料库里范围内全部启用的 SKU，账面数是现在的库存（一般是 0）' : '带出这个仓在范围里有账面库存的 SKU；没账的料选「手选物料」' }}</small></div>
+      <label class="f full">备注<input class="inp" v-model="f.note"></label>
+    </div>
+    <DataPick v-if="picking" kind="sku" :wh="f.wh" :have="f.skus" @pick="addSkus" @close="picking = false"/>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">建单，拍下账面数</button></template>
+  </Modal>`,
+})
+
+route('/stock-takes/:no', {
+  props: ['no'],
+  setup(p) {
+    const t = computed(() => stockTake(p.no))
+    const s = reactive({ view: '全部', imp: false, picking: false })
+    const edit = computed(() => t.value.status === '草稿')
+    const stat = computed(() => takeStat(t.value))
+    const rows = computed(() => t.value.lines.filter((l) => s.view === '全部' || (s.view === '没填' ? takeDiff(l) === null : Math.abs(takeDiff(l) || 0) > 0.0005)))
+    const views = computed(() => [['全部', '全部', stat.value.n], ['没填', '没填实盘', stat.value.n - stat.value.done], ['有差异', '有差异', stat.value.up + stat.value.down]])
+    const a = (x) => docAct('stocktake', t.value, x, x === '审核' ? () => `${t.value.no} 已过账：盘盈 ${stat.value.up} 种、盘亏 ${stat.value.down} 种` : x === '提交' ? `${t.value.no} 已提交，等审核过账` : '')
+    async function del() { if (await ask('删除 ' + t.value.no, '草稿删掉就找不回来了，库存不受影响（还没过账）；这个仓可以重新开盘点单。', '删除', true) && run(() => removeDraft(db.stockTakes, t.value))) { go('/stock-takes'); toast('删掉了') } }
+    function openImp() { IMPORTS.stocktake = takeImportDef(t.value); s.imp = true }
+    function addSkus(codes) { const n = run(() => addTakeLines(t.value, codes)); if (n != null) toast(n ? `加了 ${n} 种，账面数按今天拍` : '选的都已经在单上了') }
+    const fillBook = () => { t.value.lines.forEach((l) => { if (takeDiff(l) === null) l.qty = l.book }); act(t.value, '没填的实盘数按账面数填') }
+    const more = computed(() => [
+      edit.value && { t: '从物料库加物料', fn: () => { s.picking = true } },
+      edit.value && { t: '没填的按账面数填', fn: fillBook },
+      { t: '导出盘点表', fn: () => exportTake(t.value) },
+      ...['撤回', '反审核'].filter((k) => can('stocktake', t.value, k)).map((k) => ({ t: k === '反审核' ? '反审核（调整退回去）' : k, fn: () => a(k) })),
+      edit.value && { t: '删除', danger: true, fn: del },
+    ].filter(Boolean))
+    const setQty = (l, v) => { l.qty = v === '' ? null : rnd(+v, 3) }
+    return { t, s, edit, stat, rows, views, a, more, openImp, addSkus, setQty, takeScopeText, takeDiff, exportTake }
+  },
+  template: `<div v-if="t">
+    <Head :t="t.no" :back="['物料盘点单', '/stock-takes']">
+      <template v-if="edit"><button class="btn" @click="exportTake(t)"><Ico n="download" :s="14"/>导出盘点表</button><button class="btn" @click="openImp"><Ico n="upload" :s="14"/>导回实盘数</button><button class="btn pri" @click="a('提交')">提交审核</button></template>
+      <template v-if="can('stocktake', t, '审核')"><button class="btn" @click="a('驳回')">驳回</button><button class="btn pri" @click="a('审核')">审核过账</button></template>
+      <More :items="more"/>
+    </Head>
+    <div class="detail">
+      <div class="body">
+        <div class="title">{{ whName(t.wh) }} · {{ t.purpose }}<St :s="t.status"/></div>
+        <div class="sub"><span>{{ takeScopeText(t) }}</span><span>盘点 {{ fd(t.date) }} · {{ userName(t.counter) }}</span><span>{{ stat.n }} 种，已填 {{ stat.done }}</span><span v-if="stat.up" class="green">盘盈 {{ stat.up }} 种</span><span v-if="stat.down" class="red">盘亏 {{ stat.down }} 种</span></div>
+        <div class="bar" data-c="盘点明细筛选"><Seg v-model="s.view" :items="views"/></div>
+        <section data-c="盘点明细">
+          <Tbl inset flat :rows="rows" :empty="s.view === '全部' ? '单上没有物料：点「更多 › 从物料库加物料」' : s.view === '没填' ? '实盘数都填了' : '没有差异：实盘和账面一样'" :cols="[
+            { k: 'sku', t: '物料', f: l => skuName(l.sku), img: l => l.sku }, { k: 'code', t: 'SKU', c: 'code', f: l => l.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: l => ownerName(l.owner) }] : []),
+            { k: 'book', t: '账面数', c: 'num', f: l => fq(l.book) + ' ' + unitOf(l.sku) }, { k: 'qty', t: '实盘数', c: 'num' }, { k: 'diff', t: '差异', c: 'num' },
+            ...(t.status === '已审核' ? [{ k: 'adj', t: '已调整', c: 'num', f: l => (l.adj ? (l.adj > 0 ? '+' : '') + fq(l.adj) : '—') }] : []), { k: 'note', t: '备注' }]">
+            <template #qty="{ r }"><input v-if="edit" class="inp cell num" style="width:100px" type="number" min="0" :value="r.qty ?? ''" :placeholder="t.purpose === '期初录入' ? '空着按 0' : '没填'" @change="setQty(r, $event.target.value)"><template v-else>{{ r.qty == null ? (t.purpose === '期初录入' ? '0' : '—') : fq(r.qty) }}</template></template>
+            <template #diff="{ r }"><span v-if="takeDiff(r) === null" class="dim">—</span><span v-else :class="takeDiff(r) > 0 ? 'green' : takeDiff(r) < 0 ? 'red' : 'dim'">{{ takeDiff(r) > 0 ? '+' : '' }}{{ fq(takeDiff(r)) }}</span></template>
+            <template #note="{ r }"><input v-if="edit" class="inp cell" v-model="r.note" placeholder="差异原因"><template v-else>{{ r.note || '—' }}</template></template>
+          </Tbl>
+        </section>
+      </div>
+      <aside class="aside" data-c="盘点单属性">
+        <dl class="props">
+          <dt>仓库</dt><dd>{{ whName(t.wh) }}</dd>
+          <dt>用途</dt><dd>{{ t.purpose }}</dd>
+          <dt>范围</dt><dd>{{ takeScopeText(t) }}</dd>
+          <dt>盘点日期</dt><dd>{{ fd(t.date) }}</dd>
+          <dt>盘点人</dt><dd>{{ userName(t.counter) }}</dd>
+          <dt>账面数</dt><dd>建单时拍下的；审核时按实盘 − 账面补到现在的库存上</dd>
+          <DocMeta :d="t"/>
+        </dl>
+        <DocFiles :doc="t"/>
+        <h4>操作记录</h4><Log :items="t.log"/>
+      </aside>
+    </div>
+    <ImportBox v-if="s.imp" kind="stocktake" @close="s.imp = false"/>
+    <DataPick v-if="s.picking" kind="sku" :wh="t.wh" :have="t.lines.map(l => l.sku)" @pick="addSkus" @close="s.picking = false"/>
+  </div><NotFound v-else/>`,
+}, { mod: 'stocktake', t: (p) => '物料盘点单 ' + p.no })
 
 /* ---------- 库存与日志 ---------- */
-// 期初库存导入（PRD §10）：同一个仓库的行合成一张「其他入库（期初）」直接过账
+// 期初库存导入（PRD §10，甲方 11-14 改成走盘点单）：每个仓库建一张「期初录入」盘点单，导入的数当实盘数，提交审核；审核过账才进库存
 IMPORTS.stock = {
   title: '导入期初库存', name: '期初库存',
-  note: `上线时把各仓现有的料导进来。一行一个 SKU + 仓库${TRADE ? ' + 物权' : ''}；同一个仓库的行合成一张「其他入库（原因：期初）」并直接过账。`,
+  note: `上线时把各仓现有的料导进来。一行一个 SKU + 仓库${TRADE ? ' + 物权' : ''}；每个仓库建一张「期初录入」盘点单并提交审核，审核后进库存。`,
   head: [{ k: 'date', t: '期初日期', type: 'date', def: () => clock.today }],
   cols: [
     { k: 'sku', t: '物料SKU编码', req: true, text: true, tip: '要是物料里已有的 SKU 编码', ex: 'ML0012-KQ', w: 16 },
     { k: 'wh', t: '仓库编码', req: true, text: true, tip: '物料仓或工厂仓的编码', ex: 'WL01', opts: () => nonFgWhs().map((w) => w.code) },
     ...(TRADE ? [{ k: 'owner', t: '物权', text: true, tip: '不填 = 自有；客供料填客户编码', ex: '自有' }] : []), // TRADE 关着时全是自有
     { k: 'qty', t: '数量', req: true, num: true, tip: '库存单位（面料一般是米），最多 3 位小数', ex: 120 },
-    { k: 'price', t: '单价', num: true, tip: '元 / 库存单位，以后算成本用；不填 = 物料 SKU 单价（没有就用参考单价）折成库存单位', ex: 18.5 },
-    { k: 'lot', t: '缸号', text: true, tip: '选填', ex: 'G2610-07' },
   ],
-  example: () => [{ sku: 'ML0012-KQ', wh: 'WL01', owner: '自有', qty: 120, price: 18.5, lot: 'G2610-07' }, { sku: 'ML0015-HE', wh: 'WL01', owner: ifTrade('KH0001', '自有'), qty: 200, price: '', lot: '' }, { sku: 'FK0021-HE', wh: 'GC0004', owner: '自有', qty: 800, price: 0.35, lot: '' }],
+  example: () => [{ sku: 'ML0012-KQ', wh: 'WL01', owner: '自有', qty: 120 }, { sku: 'ML0015-HE', wh: 'WL01', owner: ifTrade('KH0001', '自有'), qty: 200 }, { sku: 'FK0021-HE', wh: 'GC0004', owner: '自有', qty: 800 }],
   check(rows, bad, head) {
     if (!head.date) bad('—', '期初日期', '要选期初日期')
     else if (head.date > clock.today) bad('—', '期初日期', '不能晚于今天')
@@ -770,23 +993,25 @@ IMPORTS.stock = {
       const owner = !r.owner || r.owner === '自有' ? '自有' : r.owner
       if (owner !== '自有' && !cust(owner)) { bad(r, '物权', `「${r.owner}」不是客户编码；自有的料不填或填「自有」`); continue }
       if (!(r.qty > 0)) { bad(r, '数量', '要大于 0'); continue }
-      const key = [r.sku, r.wh, owner, r.lot].join('|')
-      if (seen.has(key)) { bad(r, '物料SKU编码', `和第 ${seen.get(key)} 行重复（同一个仓库、${TRADE ? '物权、' : ''}缸号），合成一行再导`); continue }
+      const o = takeOpen(r.wh)
+      if (o) { bad(r, '仓库编码', `${whName(r.wh)} 还有一张没审核的盘点单 ${o.no}，先审完或删掉`); continue }
+      const key = [r.sku, r.wh, owner].join('|')
+      if (seen.has(key)) { bad(r, '物料SKU编码', `和第 ${seen.get(key)} 行重复（同一个仓库${TRADE ? '、物权' : ''}），合成一行再导`); continue }
       seen.set(key, r._r)
       if (!groups.has(r.wh)) groups.set(r.wh, [])
-      const ref = skuPrice(r.sku)
-      groups.get(r.wh).push({ sku: r.sku, owner, qty: r.qty, price: r.price ?? (ref == null ? null : rnd(ref / matOfSku(r.sku).factor, 4)), lot: r.lot })
+      groups.get(r.wh).push({ sku: r.sku, owner, qty: r.qty })
     }
     return [...groups]
   },
   save(groups, head) {
-    const docs = groups.map(([w, lines]) => {
-      const d = createStockDoc({ type: '其他入库', reason: '期初', to: w, date: head.date, note: 'Excel 导入期初库存', lines })
-      act(d, `Excel 导入 ${lines.length} 行`)
-      postStockDoc(d)
-      return d
+    const ts = groups.map(([w, rows]) => {
+      const t = createStockTake({ wh: w, purpose: '期初录入', date: head.date, note: 'Excel 导入期初库存', scope: { kind: '手选物料', skus: rows.map((x) => x.sku) } })
+      t.lines = rows.map((x) => ({ sku: x.sku, owner: x.owner, book: stockQty(w, x.sku, x.owner), qty: x.qty, note: '' }))
+      act(t, `Excel 导入 ${rows.length} 行`)
+      submitTake(t)
+      return t
     })
-    return { text: `建了 ${docs.length} 张期初入库单并过账：${docs.map((d) => d.no).join('、')}`, to: docs.length === 1 ? '/stock-docs/' + docs[0].no : '/stock-docs' }
+    return { text: `建了 ${ts.length} 张期初录入盘点单，已提交审核，审核后进库存：${ts.map((t) => t.no).join('、')}`, to: ts.length === 1 ? '/stock-takes/' + ts[0].no : '/stock-takes?s=待审核' }
   },
 }
 
@@ -817,10 +1042,12 @@ route('/stock', {
         ...(TRADE ? [{ k: 'owner', t: '物权', f: (x) => ownerName(x.owner) }] : []), { k: 'delta', t: '变动' }, { k: 'bal', t: '结存' }, { k: 'lot', t: '缸号' }, { k: 'who', t: '操作人', f: (x) => userName(x.who) }],
     }
     const xrows = computed(() => (s.view === '明细' ? rows.value : s.view === '按物料' ? summary.value : logs.value))
-    return { s, whs, rows, summary, owners, logs, safety, XC, xrows, STOCK_TYPES }
+    // 流水类型：入库单、出库单的类型，加上盘点单记的盘盈、盘亏、期初
+    const LOG_TYPES = [...Object.keys(STOCK_TYPES), '盘盈', '盘亏', '期初']
+    return { s, whs, rows, summary, owners, logs, safety, XC, xrows, LOG_TYPES }
   },
   template: `<div>
-    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于安全库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
+    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于安全库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><a class="btn" href="#/stock-takes" data-c="库存：去盘点">盘点</a><button class="btn" data-c="库存：导入期初" title="每个仓库建一张「期初录入」盘点单，审核后进库存" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
       <Pick class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
@@ -828,7 +1055,7 @@ route('/stock', {
       <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '日志']"/><Search v-model="s.q"/>
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>
-      <Pick class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="(v, t) in STOCK_TYPES" :key="t" :value="t">{{ t }}</option></Pick>
+      <Pick class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="t in LOG_TYPES" :key="t" :value="t">{{ t }}</option></Pick>
       </div>
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存。SKU、物料名、仓库都能搜，几个编码用空格隔开" :cols="[
@@ -852,8 +1079,8 @@ comp('StockLogTable', {
   props: { rows: Array, inset: Boolean },
   template: `<Tbl :inset="inset" :flat="inset" :rows="rows" :link="!inset" empty="没有变动" :cols="[{ k: 'at', t: '日期', f: x => fd(x.at) }, { k: 'type', t: '类型' }, { k: 'no', t: '单号', c: 'code' },
     { k: 'wh', t: '仓库', f: x => whName(x.wh) }, { k: 'sku', t: '物料', f: x => skuName(x.sku) }, ...(TRADE ? [{ k: 'owner', t: '物权', f: x => ownerName(x.owner) }] : []),
-    { k: 'delta', t: '变动', c: 'num' }, { k: 'bal', t: '结存', c: 'num', f: x => fq(x.bal) }, { k: 'lot', t: '缸号', f: x => x.lot || '—' }, { k: 'who', t: '操作人', f: x => userName(x.who) }]" @row="x => go('/stock-docs/' + x.no)">
-    <template #no="{ r }"><a :href="'#/stock-docs/' + r.no" @click.stop>{{ r.no }}</a></template>
+    { k: 'delta', t: '变动', c: 'num' }, { k: 'bal', t: '结存', c: 'num', f: x => fq(x.bal) }, { k: 'lot', t: '缸号', f: x => x.lot || '—' }, { k: 'who', t: '操作人', f: x => userName(x.who) }]" @row="x => go(stockNoLink(x.no))">
+    <template #no="{ r }"><a :href="'#' + stockNoLink(r.no)" @click.stop>{{ r.no }}</a></template>
     <template #delta="{ r }"><span :class="r.delta > 0 ? 'green' : 'red'">{{ r.delta > 0 ? '+' : '' }}{{ fq(r.delta) }}</span></template>
   </Tbl>`,
 })

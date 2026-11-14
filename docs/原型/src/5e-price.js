@@ -1,7 +1,7 @@
 /* ============================================================
  * 价格档案（PRD §6.10，05.06 甲方 11-11 提前到一期）、研发 / 生产 BOM 对比（§6.4.1）、补货提醒（§6.6.7）
  * 物料价：供应商 × 物料（SKU 选填：不填 = 所有颜色同价）；加工价：工厂 × 款式 × 加工方式
- * 只增不改：调价加一条，录错了作废。下单默认取现价；采购单、加工单审核时，和现价不一样的价自动记进来
+ * 只增不改：调价加一条，录错了作废。下单默认取现价；采购单、生产单审核时，和现价不一样的价自动记进来
  * ============================================================ */
 // 一条：{ id, seq, kind 物料价|加工价, sup, mat, sku, style, mode, price, tax, taxIncl, date 生效日期, why 调价原因, src 来源单号, by, at, void: { by, at, why } | null }
 db.prices = []
@@ -22,7 +22,7 @@ const samePrice = (a, b) => rnd(+a, 4) === rnd(+b, 4)
 const priceKey = (x) => [x.kind, x.sup, x.mat || x.style, x.sku || x.mode || ''].join('|')
 const priceWhat = (x) => (x.kind === '物料价' ? (x.sku ? skuName(x.sku) : mat(x.mat)?.name + ' · 所有颜色') : `${x.style} ${styleName(x.style)} · ${x.mode}`)
 const priceUnit = (x) => (x.kind === '物料价' ? mat(x.mat)?.purUnit : '件')
-const priceSrcLink = (no) => (no?.startsWith('CG') ? '#/purchases/' + no : no?.startsWith('JG') ? '#/production/' + no : null)
+const priceSrcLink = (no) => (no?.startsWith('CG') ? '#/purchases/' + no : production(no) ? '#' + prodLink(production(no)) : null)
 // price:edit（PRD §3.1）：采购录物料价，生产跟单录加工价，管理层两种都能录，其他人只看；不传 kind = 能录哪一种就算
 const PRICE_EDITOR = { 物料价: ['采购', '管理层'], 加工价: ['生产跟单', '管理层'] }
 const canEditPrice = (kind) => (kind ? PRICE_EDITOR[kind] || [] : Object.values(PRICE_EDITOR).flat()).includes(me()?.role)
@@ -54,7 +54,7 @@ function voidPrice(x, why) {
   if (!why?.trim()) fail('要写作废原因')
   x.void = { by: db.me, at: clock.today, why: why.trim() }
 }
-// 成交记录：审核过的采购单行、加工单，一单一行（原来供应商详情的"询价记录"并进来了）。档案只记和现价不一样的价，这里每一单都列
+// 成交记录：审核过的采购单行、生产单（外发加工单、成品采购单），一单一行（原来供应商详情的"询价记录"并进来了）。档案只记和现价不一样的价，这里每一单都列
 function dealsOf(q) {
   const done = (d) => !['草稿', '待审核', '已作废'].includes(d.status)
   const buys = db.purchases.filter((p) => done(p) && (!q.sup || p.supplier === q.sup)).flatMap((p) => p.lines.filter((l) => !q.mat || matOfSku(l.sku)?.code === q.mat)
@@ -90,16 +90,16 @@ function auditPurchase(p) {
   move('purchase', p, '审核')
   poToArchive(p)
 }
-// 加工单：排单、改单、审核都查；b = { factory, style, mode, price, why }
+// 生产单：排单、改单、审核都查；b = { factory, style, mode, price, why }；加工价按加工方式分开记，包工包料的就是成品采购价
 function procPriceProblem(b, date) {
   const cur = b.price == null || b.price === '' ? null : curProcPrice(b.factory, b.style, b.mode || '清加工', date)
-  return cur != null && !samePrice(cur, b.price) && !b.why?.trim() ? `加工单价 ${fm(b.price)} 和档案现价 ${fm(cur)} 不一样，要写改价原因` : ''
+  return cur != null && !samePrice(cur, b.price) && !b.why?.trim() ? `${prodKindOf(b.mode || '清加工').price} ${fm(b.price)} 和档案现价 ${fm(cur)} 不一样，要写改价原因` : ''
 }
 function procToArchive(p) {
   const cur = curProcRec(p.factory, p.style, p.mode, p.date)
   if (!(p.price > 0) || (cur && samePrice(cur.price, p.price))) return
   addPrice({ kind: '加工价', sup: p.factory, style: p.style, mode: p.mode, price: p.price, tax: sup(p.factory)?.tax, date: p.date, why: p.priceWhy || (cur ? '' : '第一次报价'), src: p.no })
-  act(p, `加工单价 ${fm(p.price)} 记进价格档案`)
+  act(p, `${prodKindOf(p).price} ${fm(p.price)} 记进价格档案`)
 }
 RULES.purchase.审核 = auditPurchase
 const checkProdPrice = (p) => { const e = procPriceProblem({ ...p, why: p.priceWhy }, p.date); if (e) fail(e) }
@@ -134,13 +134,13 @@ function tpCompare(dev, prod) {
   const a = t(dev), b = t(prod)
   return { rows, dev: a, prod: b, d: { mat: rnd(b.mat - a.mat, 2), labor: rnd(b.labor - a.labor, 2), all: rnd(b.all - a.all, 2) } }
 }
-// 实际花的：最近一张审核过的采购单的成交价；最近一张加工单的加工单价
+// 实际花的：最近一张审核过的采购单的成交价；最近一张外发加工单的加工单价
 function lastBuyOf(r) {
   const skus = r.mode === '固定' ? [r.sku] : Object.values(r.map || {}).filter(Boolean)
   return db.purchases.filter((p) => !['草稿', '待审核', '已作废'].includes(p.status)).flatMap((p) => p.lines.filter((l) => skus.includes(l.sku)).map((l) => ({ p, l })))
     .sort((a, b) => (a.p.date < b.p.date ? 1 : a.p.date > b.p.date ? -1 : 0))[0] || null
 }
-const lastProdOf = (code) => db.productions.filter((p) => p.style === code && !['草稿', '待审核', '已作废'].includes(p.status)).sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null
+const lastProdOf = (code) => db.productions.filter((p) => p.style === code && prodKind(p) === '外发加工单' && !['草稿', '待审核', '已作废'].includes(p.status)) // 成品采购单价含料，不和工价比.sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null
 
 /* ---------- 补货提醒（PRD §6.6.7） ---------- */
 // 设了安全库存的物料 SKU：物料仓库存 + 全部在途 − 已被占用 < 安全库存。这里在途不看赶不赶得上开裁：补货看的是会不会断
@@ -272,7 +272,7 @@ comp('PriceHistory', {
           <td><a v-if="priceSrcLink(c.x.src)" class="code" :href="priceSrcLink(c.x.src)">{{ c.x.src }}</a><span v-else class="mut">{{ c.x.src ? '报价 ' + c.x.src : '手工录' }}</span></td>
           <td class="num"><button v-if="canEditPrice(c.x.kind)" class="btn sm" @click="adjust(c.x)">调价</button></td>
         </tr>
-        <tr v-if="!cur.length"><td colspan="10" class="empty">还没有价格记录：采购单、加工单审核时会自动记进来，也可以点「录价格」直接录供应商的报价</td></tr>
+        <tr v-if="!cur.length"><td colspan="10" class="empty">还没有价格记录：采购单、生产单审核时会自动记进来，也可以点「录价格」直接录供应商的报价</td></tr>
       </tbody>
     </table></div>
     <div v-if="hist.length" class="sec" data-c="价格历史"><h3>调价历史</h3>
@@ -295,7 +295,7 @@ comp('PriceHistory', {
       <p v-if="hist.length > 12" style="margin-top:8px"><button class="btn ghost sm" @click="s.all = !s.all">{{ s.all ? '收起' : '看全部 ' + hist.length + ' 条' }}</button></p>
     </div>
     <div v-if="!style" class="sec" data-c="成交记录"><h3>成交记录</h3>
-      <Tbl inset flat :rows="deals" link @row="x => go(priceSrcLink(x.no).slice(1))" :empty="sup ? '还没有和这家审核过的采购单、加工单' : '还没有审核过的采购单买过它'" :cols="[
+      <Tbl inset flat :rows="deals" link @row="x => go(priceSrcLink(x.no).slice(1))" :empty="sup ? '还没有和这家审核过的采购单、生产单' : '还没有审核过的采购单买过它'" :cols="[
         { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'no', t: '单号', c: 'code' }, ...(sup ? [] : [{ k: 'sup', t: '供应商', f: x => supName(x.sup) }]),
         { k: 'what', t: '物料 / 款式' }, { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) + ' ' + (x.unit || '') }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }]"/>
     </div>
@@ -343,7 +343,7 @@ comp('PriceForm', {
   </Modal>`,
 })
 
-/* 研发 vs 生产对比：<TpCompare :dev="研发版" :prod="生产版" actual/>（actual：再加一列"实际花的"：最近成交价、最近加工单价） */
+/* 研发 vs 生产对比：<TpCompare :dev="研发版" :prod="生产版" actual/>（actual：再加一列"实际花的"：最近成交价、最近外发加工单的加工单价） */
 comp('TpCompare', {
   props: { dev: Object, prod: Object, actual: Boolean },
   setup(p) {
@@ -373,8 +373,8 @@ comp('TpCompare', {
           <td v-if="actual" class="num"><template v-if="acts[i]">{{ fm(acts[i].price) }} <a class="code dim" style="font-size:11px" :href="'#/purchases/' + acts[i].b.p.no">{{ acts[i].b.p.no }}</a></template><span v-else class="dim">{{ x.prod && x.prod.src === '我方采购' ? '还没买过' : '—' }}</span></td>
           <td v-if="actual" class="num">{{ acts[i] ? fm(acts[i].cost) : '—' }}</td>
         </tr>
-        <tr><td>加工</td><td class="mut">工艺单工价合计</td><td></td><td></td><td class="num">{{ fm(c.dev.labor) }} → {{ fm(c.prod.labor) }}</td><td class="num"><b v-if="c.d.labor" :class="dc(c.d.labor)" style="font-weight:500">{{ ds(c.d.labor, fm) }}</b><span v-else class="dim">—</span></td>
-          <td v-if="actual" class="num"><template v-if="lastProd">{{ fm(lastProd.price) }} <a class="code dim" style="font-size:11px" :href="'#/production/' + lastProd.no">{{ lastProd.no }}</a></template><span v-else class="dim">还没下过加工单</span></td><td v-if="actual" class="num">{{ fm(actAll.labor) }}</td></tr>
+        <tr><td>加工</td><td class="mut">工序工价合计</td><td></td><td></td><td class="num">{{ fm(c.dev.labor) }} → {{ fm(c.prod.labor) }}</td><td class="num"><b v-if="c.d.labor" :class="dc(c.d.labor)" style="font-weight:500">{{ ds(c.d.labor, fm) }}</b><span v-else class="dim">—</span></td>
+          <td v-if="actual" class="num"><template v-if="lastProd">{{ fm(lastProd.price) }} <a class="code dim" style="font-size:11px" :href="'#' + prodLink(lastProd)">{{ lastProd.no }}</a></template><span v-else class="dim">还没下过外发加工单</span></td><td v-if="actual" class="num">{{ fm(actAll.labor) }}</td></tr>
       </tbody>
       <tfoot><tr><td>单件合计</td><td class="mut">物料 {{ fm(c.dev.mat) }} → {{ fm(c.prod.mat) }}</td><td></td><td></td><td class="num"><b>{{ fm(c.dev.all) }} → {{ fm(c.prod.all) }}</b></td><td class="num"><b :class="dc(c.d.all)">{{ ds(c.d.all, fm) || '—' }}</b></td>
         <td v-if="actual"></td><td v-if="actual" class="num"><b>{{ fm(actAll.all) }}</b></td></tr></tfoot>

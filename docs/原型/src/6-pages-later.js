@@ -433,8 +433,10 @@ comp('SmpConvert', {
   </Modal>`,
 })
 
-/* ============================== 核价 ============================== */
-// 每款的费率和报价：包装运杂（元/件）、管理费率（% × 料工）、税率（报价含税）、对客报价
+/* ============================== 核价 ==============================
+ * 一期（甲方 11-14）：单件成本在资料包的「核价」页签算（tpCost：面料 + 辅料 + 加工费 + 其他费用），侧边栏「核价」是按款看成本的列表，点一行进那个款的核价页签
+ * 待定：询价比价、订单毛利（/costing/:code），甲方确认后再做 */
+// 每款的费率和报价（待定）：管理费率（% × 单件成本）、税率（报价含税）、对客报价
 db.costCfg = {}
 db.quotes = [
   { id: 'BJ01', mat: 'ML0012', sup: 'GYS0001', price: 18.5, lead: 20, moq: 100, at: '2026-08-12', chosen: true },
@@ -456,22 +458,25 @@ const costTp = (code) => activeTp(code) || tpsOf(code)[0] || activeTp(code, '研
 function costDefaults(code) {
   const s = style(code)
   const prices = db.orders.filter((o) => o.status !== '已取消').flatMap((o) => o.lines).filter((l) => l.style === code && l.price).map((l) => l.price)
-  return { pack: 3, mgmt: 8, tax: 13, quote: prices.length ? prices[prices.length - 1] : Math.round((s?.tagPrice || 0) * 0.45) }
+  return { mgmt: 8, tax: 13, quote: prices.length ? prices[prices.length - 1] : Math.round((s?.tagPrice || 0) * 0.45) }
 }
 const costCfgOf = (code) => db.costCfg[code] || costDefaults(code)
 function costEnsure(code) { if (!db.costCfg[code]) db.costCfg[code] = costDefaults(code); return db.costCfg[code] }
-// 总成本 = 物料 + 加工 + 包装运杂 + 管理费；毛利 = 不含税报价 − 总成本
+// 单件成本 = 资料包核价（tpCost）；总成本 = 单件成本 + 管理费；毛利 = 不含税报价 − 总成本
 function costOf(code) {
   const tp = costTp(code)
   if (!tp) return null
-  const c = costCfgOf(code)
-  const matC = tpMaterialCost(tp), labor = tpLabor(tp)
-  const mgmt = rnd((matC + labor) * (c.mgmt || 0) / 100, 2)
-  const total = rnd(matC + labor + (+c.pack || 0) + mgmt, 2)
+  const c = costCfgOf(code), k = tpCost(tp)
+  const mgmt = rnd(k.total * (c.mgmt || 0) / 100, 2)
+  const total = rnd(k.total + mgmt, 2)
   const net = rnd((+c.quote || 0) / (1 + (c.tax || 0) / 100), 2)
   const margin = rnd(net - total, 2)
-  return { tp, mat: matC, labor, pack: +c.pack || 0, mgmt, other: rnd((+c.pack || 0) + mgmt, 2), total, quote: +c.quote || 0, net, margin, rate: net ? margin / net : 0 }
+  return { tp, k, mat: k.mat, labor: k.labor, other: k.other, unit: k.total, mgmt, total, quote: +c.quote || 0, net, margin, rate: net ? margin / net : 0 }
 }
+// 倍率 = 吊牌价 ÷ 单件成本
+const costRatio = (s, total) => (s?.tagPrice && total ? rnd(s.tagPrice / total, 2) : null)
+// 进某个款资料包的核价页签（没有资料包就进资料包页签去建）
+const costLink = (code, tp) => '/styles/' + code + '?tab=tp' + (tp ? '&sub=cost&tpv=' + tp.id : '')
 const costRate = (x) => (x == null ? '—' : Math.round(x * 1000) / 10 + '%')
 function quoteChoose(q) {
   if (!canUseSupplier(q.sup, '采购')) fail(`${supName(q.sup)} 现在是「${sup(q.sup).status}」，不能选`)
@@ -490,26 +495,33 @@ function quoteAdd(f) {
   return add(db.quotes, { id: 'BJ' + String(db.quotes.length + 1).padStart(2, '0'), lead: null, moq: null, at: clock.today, chosen: false, ...f })
 }
 
+// 按款看成本：用生产 BOM（生效的，没有就最新草稿），还没有生产 BOM 的用研发 BOM 估
 route('/costing', {
   setup() {
     const s = reactive({ q: '' })
-    const rows = computed(() => db.styles.filter((x) => !s.q || (x.code + x.name).toLowerCase().includes(s.q.toLowerCase())).map((x) => ({ s: x, c: costOf(x.code) })))
-    return { s, rows }
+    const rows = computed(() => db.styles.filter((x) => matchQ(s.q, x.code, x.name, x.alias)).map((x) => { const tp = costTp(x.code); return { s: x, tp, k: tp && tpCost(tp) } }))
+    const tpText = (x) => (x.tp ? tpStage(x.tp) + ' ' + tpName(x.tp) + (x.tp.status === '已生效' ? '' : ' 草稿') : '')
+    const money = (x, key) => (x.k ? fm(x.k[key]) : '—')
+    return { s, rows, tpText, money, costRatio, costLink }
   },
   template: `<div>
     <Head t="核价"/>
-    <div class="bar" data-c="筛选"><span class="sp"></span><Search v-model="s.q"/></div>
-    <div data-c="核价列表">
-      <Tbl :rows="rows" link @row="x => go('/costing/' + x.s.code)" empty="没有符合条件的款式" :cols="[
-        { k: 'code', t: '款式' }, { k: 'tp', t: '资料包', f: x => x.c ? tpName(x.c.tp) + (x.c.tp.status === '已生效' ? '' : ' 草稿') : '—' },
-        { k: 'mat', t: '物料', c: 'num', f: x => x.c ? fm(x.c.mat) : '—' }, { k: 'labor', t: '加工', c: 'num', f: x => x.c ? fm(x.c.labor) : '—' },
-        { k: 'other', t: '其他', c: 'num', f: x => x.c ? fm(x.c.other) : '—' }, { k: 'total', t: '总成本', c: 'num' },
-        { k: 'quote', t: '报价', c: 'num', f: x => x.c ? fm(x.c.quote) : '—' }, { k: 'rate', t: '毛利率', c: 'num' }]">
-        <template #code="{ r }"><span class="row"><Thumb :code="r.s.code" :s="26"/><span class="code">{{ r.s.code }}</span><span class="mut">{{ r.s.name }}</span></span></template>
-        <template #total="{ r }"><b v-if="r.c" style="font-weight:500">{{ fm(r.c.total) }}</b><span v-else class="dim">没有资料包</span></template>
-        <template #rate="{ r }"><span v-if="r.c" :class="{ red: r.c.rate < 0.1 }">{{ costRate(r.c.rate) }}</span><span v-else class="dim">—</span></template>
-      </Tbl>
-    </div>
+    <div v-if="!canSeeCost()" class="empty" data-c="没有权限">看成本要有权限：找管理员在 设置 › 角色权限 里开「成本（核价）」</div>
+    <template v-else>
+      <div class="bar" data-c="筛选"><span class="dim">单件成本按基码用量算，点一行进那个款资料包的核价页签</span><span class="sp"></span><Search v-model="s.q" ph="款号、名称、花名"/></div>
+      <div data-c="核价列表">
+        <Tbl :rows="rows" link @row="x => go(costLink(x.s.code, x.tp))" empty="没有符合条件的款式" :cols="[
+          { k: 'code', t: '款' }, { k: 'tp', t: '资料包' },
+          { k: 'fabric', t: '面料', c: 'num', f: x => money(x, 'fabric') }, { k: 'trim', t: '辅料', c: 'num', f: x => money(x, 'trim') },
+          { k: 'labor', t: '加工', c: 'num', f: x => money(x, 'labor') }, { k: 'other', t: '其他', c: 'num', f: x => money(x, 'other') },
+          { k: 'total', t: '单件成本', c: 'num' }, { k: 'tag', t: '吊牌价', c: 'num', f: x => fm(x.s.tagPrice) },
+          { k: 'ratio', t: '倍率', c: 'num', f: x => (x.k && costRatio(x.s, x.k.total)) || '—' }]">
+          <template #code="{ r }"><span class="row"><Thumb :code="r.s.code" :s="26"/><span class="code">{{ r.s.code }}</span><span class="mut">{{ r.s.name }}{{ r.s.alias ? '（' + r.s.alias + '）' : '' }}</span></span></template>
+          <template #tp="{ r }"><span v-if="r.tp" class="row g4"><span class="pill" :class="tpStage(r.tp) === '研发' ? 'amber' : 'blue'">{{ tpStage(r.tp) }}</span>{{ tpName(r.tp) }}<span v-if="r.tp.status !== '已生效'" class="dim">草稿</span></span><span v-else class="dim">没有资料包</span></template>
+          <template #total="{ r }"><b v-if="r.k" style="font-weight:600">{{ fm(r.k.total) }}</b><span v-else class="dim">—</span></template>
+        </Tbl>
+      </div>
+    </template>
   </div>`,
 }, { mod: 'costing', t: '核价' })
 
@@ -518,7 +530,7 @@ route('/costing/:code', {
   setup(p) {
     const s = computed(() => style(p.code))
     const cfg = s.value ? costEnsure(p.code) : null
-    const tab = ref('cost'), adding = ref(false)
+    const tab = ref('quote'), adding = ref(false)
     const c = computed(() => costOf(p.code))
     const sizes = computed(() => sizesOf(s.value.sizeGroup))
     const mats = computed(() => (c.value ? [...new Set(c.value.tp.bom.filter((r) => r.src !== '工厂自备').map((r) => r.mat))] : []))
@@ -532,10 +544,10 @@ route('/costing/:code', {
       return { o, qty, price, net, cost, margin: rnd(net - cost, 2), rate: (net - cost) / net }
     }))
     function choose(q) { if (run(() => quoteChoose(q))) toast(`${mat(q.mat).name} 改用 ${supName(q.sup)}，参考价 ${fm(q.price)}`) }
-    return { s, cfg, tab, adding, c, sizes, mats, quotesOf, logOf, lines, choose }
+    return { s, cfg, tab, adding, c, sizes, mats, quotesOf, logOf, lines, choose, costLink }
   },
   template: `<div v-if="s">
-    <Head :t="s.code" :back="['核价', '/costing']">
+    <Head :t="s.code + ' 询价比价、订单毛利'" :back="['核价', '/costing']">
       <button v-if="tab === 'quote'" class="btn pri" @click="adding = true"><Ico n="plus" :s="14"/>加报价</button>
       <a class="btn" :href="'#/styles/' + s.code">款式</a>
     </Head>
@@ -543,20 +555,9 @@ route('/costing/:code', {
       <div class="body">
         <div class="title"><Thumb :code="s.code" :s="44"/>{{ s.name }}</div>
         <div class="sub"><span v-if="c">资料包 {{ tpName(c.tp) }}{{ c.tp.status === '已生效' ? '' : ' 草稿' }}<template v-if="tpStage(c.tp) === '研发'">（还没有生产 BOM，按研发估）</template></span><span>吊牌价 {{ fm(s.tagPrice) }}</span></div>
-        <Tabs v-model="tab" :items="[['cost', '成本'], ['quote', '询价比价'], ['margin', '订单毛利', lines.length]]"/>
+        <Tabs v-model="tab" :items="[['quote', '询价比价'], ['margin', '订单毛利', lines.length]]"/>
         <div v-if="!c" class="empty">这个款还没有资料包，算不了成本<p style="margin-top:14px"><a class="btn" :href="'#/styles/' + s.code">去建资料包</a></p></div>
         <template v-else>
-          <section v-if="tab === 'cost'" data-c="成本明细">
-            <table class="tbl inset flat">
-              <thead><tr><th>部位</th><th>物料</th><th class="num">用量（{{ baseSizeOf(s.sizeGroup) }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件</th></tr></thead>
-              <tbody>
-                <tr v-for="(r, i) in c.tp.bom.filter(r => r.src !== '工厂自备')" :key="i"><td>{{ r.part }}</td><td>{{ mat(r.mat).name }}<span v-if="r.src === '客供'" class="amber">　客供</span></td>
-                  <td class="num">{{ fq(rowMidUse(r, sizes, baseSizeOf(s.sizeGroup))) }} {{ mat(r.mat).unit }}</td><td class="num">{{ r.loss }}%</td><td class="num">{{ fm(unitPrice(r, tpStage(c.tp))) }}</td><td class="num">{{ r.src === '我方采购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup), tpStage(c.tp))) : '—' }}</td></tr>
-                <tr><td>加工</td><td>工艺单 {{ c.tp.ops.length }} 道工序</td><td></td><td></td><td></td><td class="num">{{ fm(c.labor) }}</td></tr>
-              </tbody>
-              <tfoot><tr><td>料工合计</td><td></td><td></td><td></td><td></td><td class="num">{{ fm(c.mat + c.labor) }}</td></tr></tfoot>
-            </table>
-          </section>
           <section v-if="tab === 'quote'" data-c="询价比价">
             <div v-for="m in mats" :key="m" class="sec" style="margin-top:0;margin-bottom:28px">
               <h3>{{ mat(m).name }}<span class="dim" style="font-weight:400">{{ mat(m).code }} · 按{{ mat(m).purUnit }}</span></h3>
@@ -583,9 +584,7 @@ route('/costing/:code', {
       </div>
       <aside v-if="c" class="aside" data-c="成本单">
         <dl class="props" style="align-items:center">
-          <dt>物料</dt><dd class="num">{{ fm(c.mat) }}</dd>
-          <dt>加工</dt><dd class="num">{{ fm(c.labor) }}</dd>
-          <dt>包装运杂</dt><dd><input class="inp cell num" type="number" v-model.number="cfg.pack"></dd>
+          <dt>单件成本</dt><dd class="num"><a :href="'#' + costLink(s.code, c.tp)" title="资料包核价页签：面料、辅料、加工费、其他费用">{{ fm(c.unit) }}</a></dd>
           <dt>管理费率 %</dt><dd><input class="inp cell num" type="number" v-model.number="cfg.mgmt"></dd>
           <dt><b style="color:var(--fg)">总成本</b></dt><dd class="num"><b>{{ fm(c.total) }}</b></dd>
           <dt>目标成本</dt><dd class="num">{{ fm(s.cost) }}<span v-if="s.cost" :class="c.total > s.cost ? 'red' : 'green'" style="margin-left:6px">{{ c.total > s.cost ? '超' : '省' }} {{ fm(Math.abs(c.total - s.cost)) }}</span></dd>
@@ -641,17 +640,17 @@ function qcMove(r, a, note) {
 }
 const qcsOf = (src) => db.qcs.filter((q) => q.src === src)
 const qcOf = (src) => qcsOf(src).at(-1) // 最近一次
-// 返修谁能点：这张加工单的跟单员、管理层，或角色在「进度、异常、回货」上是改、审的人（设置 › 角色权限）
+// 返修谁能点：这张生产单的跟单员、管理层，或角色在「进度、异常、回货」上是改、审的人（设置 › 角色权限）
 const qcCanRework = (r) => production(r.prod)?.merch === db.me || me()?.role === '管理层'
   || ['改', '审'].includes(db.perms.find((x) => x.m === '进度、异常、回货')?.v[ROLES.indexOf(me()?.role)])
 function qcCheckRework(r) {
-  if (!qcCanRework(r)) fail(`${me().name}（${me().role}）不能安排返修`, [`找这张加工单的跟单员 ${userName(production(r.prod)?.merch)} 或管理层；也可以在 设置 › 角色权限 给「进度、异常、回货」改的权限`])
+  if (!qcCanRework(r)) fail(`${me().name}（${me().role}）不能安排返修`, [`找这张生产单的跟单员 ${userName(production(r.prod)?.merch)} 或管理层；也可以在 设置 › 角色权限 给「进度、异常、回货」改的权限`])
 }
 function qcPending() {
   const done = new Set(db.qcs.map((q) => q.src))
   return [
-    ...liveReturns().filter((r) => retQc(r) === '待检').map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: '/production/' + r.prod, n: qcsOf(r.no).length + 1 })),
-    ...db.stockDocs.filter((d) => d.type === '采购入库' && d.status === '已审核' && !done.has(d.no)).map((d) => ({ kind: '来料检验', src: d.no, date: d.date, party: d.partner, what: d.lines.map((l) => skuName(l.sku)).join('、'), lot: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), unit: matOfSku(d.lines[0].sku)?.purUnit || '', to: '/stock-docs/' + d.no, n: 1 })),
+    ...liveReturns().filter((r) => retQc(r) === '待检').map((r) => ({ kind: '尾期验货', src: r.no, date: r.date, party: r.factory, what: `${r.style} ${styleName(r.style)}`, lot: sum(r.lines, (l) => l.qty), unit: '件', to: prodLink(production(r.prod)), n: qcsOf(r.no).length + 1 })),
+    ...db.stockDocs.filter((d) => d.type === '采购入库' && d.status === '已审核' && !done.has(d.no)).map((d) => ({ kind: '来料检验', src: d.no, date: d.date, party: d.partner, what: d.lines.map((l) => skuName(l.sku)).join('、'), lot: rnd(sum(d.lines, (l) => l.purQty ?? l.qty), 3), unit: matOfSku(d.lines[0].sku)?.purUnit || '', to: stockNoLink(d.no), n: 1 })),
   ].sort((a, b) => b.date.localeCompare(a.date))
 }
 function qcInspect(item, f) {
@@ -704,7 +703,7 @@ as('u5', '2026-10-24', () => { const d = db.stockDocs.find((x) => x.type === '�
 
 TODOS.push(() => [
   { t: '待检的回货和来料', n: qcPending().length, to: '/qc', i: 'shield' },
-  // 给这张加工单的跟单员和管理层（homeMineOr 在 5a-home-style.js）
+  // 给这张生产单的跟单员和管理层（homeMineOr 在 5a-home-style.js）
   { t: '回货不合格待返修', n: liveReturns().filter((r) => retQc(r) === '不合格' && homeMineOr(production(r.prod)?.merch)).length, to: '/qc?tab=返修', i: 'shield', tone: 'red' },
 ])
 
@@ -738,9 +737,9 @@ route('/qc', {
     </div>
     <div v-if="s.tab === '返修'" data-c="不合格、返修">
       <Tbl :rows="filt(fix, x => x.r.no + x.r.prod + supName(x.r.factory) + x.r.style)" empty="没有不合格、在返修的回货：验货不合格的回货会列在这里，等跟单员安排返修" :cols="[
-        { k: 'no', t: '回货单', c: 'code', f: x => x.r.no }, { k: 'prod', t: '加工单 · 加工厂 · 跟单' }, { k: 'style', t: '款式 · 回货' },
+        { k: 'no', t: '回货单', c: 'code', f: x => x.r.no }, { k: 'prod', t: '生产单 · 加工厂 · 跟单' }, { k: 'style', t: '款式 · 回货' },
         { k: 'qc', t: '最近一次验货' }, { k: 'fix', t: '返修说明', w: '22%' }, { k: 'st', t: '状态' }, { k: 'act', t: '' }]">
-        <template #prod="{ r }"><a class="code" :href="'#/production/' + r.r.prod">{{ r.r.prod }}</a><div class="dim" style="font-size:12px">{{ supName(r.r.factory) }} · {{ userName(production(r.r.prod)?.merch) }}</div></template>
+        <template #prod="{ r }"><a class="code" :href="'#' + prodLink(production(r.r.prod))">{{ r.r.prod }}</a><div class="dim" style="font-size:12px">{{ supName(r.r.factory) }} · {{ userName(production(r.r.prod)?.merch) }}</div></template>
         <template #style="{ r }"><span class="row"><Thumb :code="r.r.style" :s="24"/><span class="code">{{ r.r.style }}</span></span><div class="dim" style="font-size:12px">回货 {{ fq(sum(r.r.lines, l => l.qty)) }} 件</div></template>
         <template #qc="{ r }"><div>第 {{ r.q.n || 1 }} 次 · {{ fd(r.q.date) }}</div><div class="mut" style="font-size:12px">抽 {{ r.q.sample }} 件，不合格 {{ r.q.bad }} 件</div><small class="dim ell" style="max-width:180px;display:inline-block">{{ r.q.note }}</small></template>
         <template #fix="{ r }"><template v-if="r.q.rework"><span class="wrap">{{ r.q.rework.note }}</span><div class="dim" style="font-size:12px">{{ userName(r.q.rework.by) }} {{ fd(r.q.rework.at) }}</div></template><span v-else class="dim">还没安排</span></template>
@@ -794,9 +793,11 @@ comp('QcInspect', {
   </Modal>`,
 })
 
-/* ============================== 成品仓 ============================== */
+/* ============================== 成品（二期）============================== */
 // 回货 → 良品入成品仓（库存按款 × 色 × 码）→ 按订单发货；入库、发货都推聚水潭（这里只模拟状态）
+// 甲方 11-14：「成品仓」一个菜单拆成 成品入库单（待入库 + 入库单）、成品出库单（发货出库 + 其他出库）、成品库存（库存 + 聚水潭推送）
 db.fgIn = []
+db.fgOut = [] // 成品其他出库：样品、报废……
 db.fgStock = {}
 db.shipments = []
 const fgKey = (st, c, z) => `${st}|${c}|${z}`
@@ -842,6 +843,20 @@ function fgShip(o, f) {
   return s
 }
 function fgPush(d) { if (d.jst === '已推送') return; d.jst = '已推送'; d.pushedAt = clock.today; act(d, '推送聚水潭') }
+// 成品其他出库：f = { style, reason, qty: { 'KQ|M': 2 }, note }
+const FG_OUT_REASONS = ['样品', '报废', '其他']
+function fgOtherOut(f) {
+  if (!f.style) fail('要选款式')
+  if (!f.reason) fail('要选原因')
+  const lines = Object.entries(f.qty || {}).filter(([, n]) => n > 0).map(([k, n]) => { const [c, z] = k.split('|'); return { color: c, size: z, qty: n } })
+  if (!lines.length) fail('至少出一件')
+  const errs = lines.filter((l) => l.qty > fgQty(f.style, l.color, l.size)).map((l) => `${f.style}-${l.color}-${l.size}：成品库存 ${fgQty(f.style, l.color, l.size)}，不够 ${l.qty}`)
+  if (errs.length) fail('库存不够，没出库', errs)
+  lines.forEach((l) => { db.fgStock[fgKey(f.style, l.color, l.size)] -= l.qty })
+  const d = add(db.fgOut, { no: nextNo('CC'), style: f.style, reason: f.reason, note: f.note || '', date: clock.today, lines, log: [] })
+  act(d, `${f.reason}出库 ${sum(lines, (l) => l.qty)} 件`)
+  return d
+}
 const fgOrders = () => db.orders.filter((o) => ['已审核', '生产中', '已完成'].includes(o.status) && o.lines.some((l) => fgQty(l.style, l.color, l.size) > 0))
 // 种子：第一批回货入库，部分发货（卫衣那张订单）
 as('u5', '2026-11-02', () => { const r = db.returns[0]; if (r) fgPush(fgReceive(r)) })
@@ -850,66 +865,121 @@ as('u5', '2026-11-03', () => {
   if (o && fgQty('26DS021', 'HE', 'M')) fgShip(o, { logistics: 'SF1029385521', qty: { '26DS021|HE|S': 50, '26DS021|HE|M': 100, '26DS021|HE|L': 90, '26DS021|HE|XL': 40, '26DS021|HE|XXL': 20 } })
 })
 
-SEARCH.push(() => db.shipments.map((s) => ({ t: s.no + ' ' + (TRADE ? custName(s.customer) : s.order), sub: '发货单', to: '/fg?tab=发货', i: 'warehouse' })))
-TODOS.push(() => [{ t: '回货待入成品仓', n: fgPending().filter((x) => !fgBlock(x.r)).length, to: '/fg', i: 'warehouse' }])
+SEARCH.push(() => db.shipments.map((s) => ({ t: s.no + ' ' + (TRADE ? custName(s.customer) : s.order), sub: '成品出库单 · 发货出库', to: '/fg-out', i: 'warehouse' })))
+TODOS.push(() => [{ t: '回货待入成品仓', n: fgPending().filter((x) => !fgBlock(x.r)).length, to: '/fg-in', i: 'warehouse' }])
+// 旧地址 /fg?tab=… 跳到拆开以后的页面
+const FG_OLD_TAB = { 待入库: '/fg-in', 库存: '/fg-stock', 发货: '/fg-out', 聚水潭: '/fg-stock?tab=聚水潭' }
+redirect('/fg', (_, q) => FG_OLD_TAB[q.tab] || '/fg-in')
 
-route('/fg', {
-  setup() {
-    const s = reactive({ tab: nav.query.tab || '待入库', ship: false })
-    const pend = computed(fgPending)
-    const stockStyles = computed(() => [...new Set(Object.entries(db.fgStock).filter(([, q]) => q > 0).map(([k]) => k.split('|')[0]))])
-    const stockModel = (st) => Object.fromEntries(Object.entries(db.fgStock).filter(([k]) => k.startsWith(st + '|')).map(([k, q]) => [k.split('|').slice(1).join('|'), q]))
-    const stockColors = (st) => style(st).colors.filter((c) => sizesOf(style(st).sizeGroup).some((z) => fgQty(st, c, z) > 0))
-    const jst = computed(() => [...db.fgIn.map((d) => ({ d, kind: '成品入库', party: supName(d.factory), qty: sum(d.lines, (l) => l.qty) })), ...db.shipments.map((d) => ({ d, kind: '发货', party: TRADE ? custName(d.customer) : custOrDash(order(d.order)), qty: sum(d.lines, (l) => l.qty) }))].sort((a, b) => b.d.date.localeCompare(a.d.date)))
-    const tabs = computed(() => [['待入库', '待入库', pend.value.length], ['库存', '库存'], ['发货', '发货', db.shipments.length], ['聚水潭', '聚水潭', jst.value.filter((x) => x.d.jst === '待推送').length || null]])
-    function receive(r) { const d = run(() => fgReceive(r)); if (d?.no) toast(`${d.no} 入库 ${sum(d.lines, (l) => l.qty)} 件`) }
-    const pushAll = () => { jst.value.forEach((x) => fgPush(x.d)); toast('已全部推送') }
-    return { s, pend, stockStyles, stockModel, stockColors, jst, tabs, receive, pushAll }
-  },
-  template: `<div>
-    <Head t="成品仓">
-      <button v-if="s.tab === '聚水潭' && jst.some(x => x.d.jst === '待推送')" class="btn" @click="pushAll">全部推送</button>
-      <button class="btn pri" @click="s.ship = true"><Ico n="truck" :s="14"/>发货</button>
-    </Head>
-    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
-    <div v-if="s.tab === '待入库'" data-c="待入库">
-      <Tbl :rows="pend" empty="回货都入库了" :cols="[
-        { k: 'no', t: '回货单', c: 'code', f: x => x.r.no }, { k: 'style', t: '款式' }, { k: 'factory', t: '加工厂', f: x => supName(x.r.factory) },
-        { k: 'qty', t: '回货', c: 'num', f: x => sum(x.r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: x => sum(x.r.lines, l => l.def) },
-        { k: 'good', t: '良品', c: 'num', f: x => sum(x.r.lines, l => l.qty - l.def) }, { k: 'qc', t: '验货' }, { k: 'date', t: '回货日期', f: x => fd(x.r.date) }, { k: 'act', t: '' }]">
-        <template #style="{ r }"><span class="row"><Thumb :code="r.r.style" :s="24"/><span class="code">{{ r.r.style }}</span></span></template>
-        <template #qc="{ r }"><span class="row g4"><St :s="r.st"/><small v-if="r.qc && (r.qc.n || 1) > 1" class="dim">第 {{ r.qc.n }} 次</small></span></template>
-        <template #act="{ r }"><span class="row g8" style="justify-content:flex-end"><a v-if="fgBlock(r.r)" class="dim" style="font-size:12px" :href="'#' + fgBlock(r.r).to" :title="fgBlock(r.r).how">{{ fgBlock(r.r).short }}</a>
-          <button class="btn sm" :disabled="!!fgBlock(r.r)" :title="fgBlock(r.r) ? fgBlock(r.r).t + '：' + fgBlock(r.r).how : null" @click="receive(r.r)">入库</button></span></template>
-      </Tbl>
-    </div>
-    <div v-if="s.tab === '库存'" class="page" data-c="成品库存">
-      <div v-for="st in stockStyles" :key="st" style="margin-bottom:28px">
-        <div class="row" style="margin-bottom:8px"><Thumb :code="st" :s="28"/><a class="code" :href="'#/styles/' + st">{{ st }}</a><span>{{ styleName(st) }}</span></div>
-        <Matrix :st="st" :model-value="stockModel(st)" :colors="stockColors(st)" ro/>
+// 三个页面一个组件：view = in / out / stock，各管两个页签
+const FG_VIEWS = {
+  in: { t: '成品入库单', tabs: ['待入库', '入库单'] },
+  out: { t: '成品出库单', tabs: ['发货出库', '其他出库'] },
+  stock: { t: '成品库存', tabs: ['库存', '聚水潭推送'] },
+}
+function fgPage(view) {
+  const V = FG_VIEWS[view]
+  return {
+    setup() {
+      const s = reactive({ tab: V.tabs.includes(nav.query.tab) ? nav.query.tab : nav.query.tab === '聚水潭' ? '聚水潭推送' : V.tabs[0], ship: false, other: false })
+      const pend = computed(fgPending)
+      const stockStyles = computed(() => [...new Set(Object.entries(db.fgStock).filter(([, q]) => q > 0).map(([k]) => k.split('|')[0]))])
+      const stockModel = (st) => Object.fromEntries(Object.entries(db.fgStock).filter(([k]) => k.startsWith(st + '|')).map(([k, q]) => [k.split('|').slice(1).join('|'), q]))
+      const stockColors = (st) => style(st).colors.filter((c) => sizesOf(style(st).sizeGroup).some((z) => fgQty(st, c, z) > 0))
+      const jst = computed(() => [...db.fgIn.map((d) => ({ d, kind: '成品入库', party: supName(d.factory), qty: sum(d.lines, (l) => l.qty) })), ...db.shipments.map((d) => ({ d, kind: '发货出库', party: TRADE ? custName(d.customer) : custOrDash(order(d.order)), qty: sum(d.lines, (l) => l.qty) }))].sort((a, b) => b.d.date.localeCompare(a.d.date)))
+      const N = computed(() => ({ 待入库: pend.value.length, 入库单: db.fgIn.length, 发货出库: db.shipments.length, 其他出库: db.fgOut.length, 库存: null, 聚水潭推送: jst.value.filter((x) => x.d.jst === '待推送').length || null }))
+      const tabs = computed(() => V.tabs.map((t) => [t, t, N.value[t]]))
+      function receive(r) { const d = run(() => fgReceive(r)); if (d?.no) toast(`${d.no} 入库 ${sum(d.lines, (l) => l.qty)} 件`) }
+      const pushAll = () => { jst.value.forEach((x) => fgPush(x.d)); toast('已全部推送') }
+      return { s, V, pend, stockStyles, stockModel, stockColors, jst, tabs, receive, pushAll }
+    },
+    template: `<div>
+      <Head :t="V.t">
+        <button v-if="s.tab === '聚水潭推送' && jst.some(x => x.d.jst === '待推送')" class="btn" @click="pushAll">全部推送</button>
+        <template v-if="V.t === '成品出库单'"><button class="btn" @click="s.other = true">其他出库</button><button class="btn pri" @click="s.ship = true"><Ico n="truck" :s="14"/>发货出库</button></template>
+      </Head>
+      <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
+      <div v-if="s.tab === '待入库'" data-c="待入库">
+        <Tbl :rows="pend" empty="回货都入库了" :cols="[
+          { k: 'no', t: '回货单', c: 'code', f: x => x.r.no }, { k: 'style', t: '款式' }, { k: 'factory', t: '加工厂', f: x => supName(x.r.factory) },
+          { k: 'qty', t: '回货', c: 'num', f: x => sum(x.r.lines, l => l.qty) }, { k: 'def', t: '次品', c: 'num', f: x => sum(x.r.lines, l => l.def) },
+          { k: 'good', t: '良品', c: 'num', f: x => sum(x.r.lines, l => l.qty - l.def) }, { k: 'qc', t: '验货' }, { k: 'date', t: '回货日期', f: x => fd(x.r.date) }, { k: 'act', t: '' }]">
+          <template #style="{ r }"><span class="row"><Thumb :code="r.r.style" :s="24"/><span class="code">{{ r.r.style }}</span></span></template>
+          <template #qc="{ r }"><span class="row g4"><St :s="r.st"/><small v-if="r.qc && (r.qc.n || 1) > 1" class="dim">第 {{ r.qc.n }} 次</small></span></template>
+          <template #act="{ r }"><span class="row g8" style="justify-content:flex-end"><a v-if="fgBlock(r.r)" class="dim" style="font-size:12px" :href="'#' + fgBlock(r.r).to" :title="fgBlock(r.r).how">{{ fgBlock(r.r).short }}</a>
+            <button class="btn sm" :disabled="!!fgBlock(r.r)" :title="fgBlock(r.r) ? fgBlock(r.r).t + '：' + fgBlock(r.r).how : null" @click="receive(r.r)">入库</button></span></template>
+        </Tbl>
       </div>
-      <p v-if="!stockStyles.length" class="empty">成品仓是空的，回货入库后才有库存</p>
-    </div>
-    <div v-if="s.tab === '发货'" data-c="发货单">
-      <Tbl :rows="db.shipments.slice().reverse()" empty="还没有发过货" :cols="[
-        { k: 'no', t: '发货单', c: 'code' }, { k: 'order', t: '订单', c: 'code' }, ...(TRADE ? [{ k: 'customer', t: '客户', f: x => custName(x.customer) }] : []),
-        { k: 'qty', t: '件数', c: 'num', f: x => sum(x.lines, l => l.qty) }, { k: 'amt', t: '金额', c: 'num', f: x => fm(sum(x.lines, l => l.qty * (l.price || 0))) },
-        { k: 'logistics', t: '物流单号', c: 'code', f: x => x.logistics || '—' }, { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'jst', t: '聚水潭' }]">
-        <template #order="{ r }"><a class="code" :href="'#/orders/' + r.order">{{ r.order }}</a></template>
-        <template #jst="{ r }"><St :s="r.jst"/></template>
-      </Tbl>
-    </div>
-    <div v-if="s.tab === '聚水潭'" data-c="聚水潭推送">
-      <Tbl :rows="jst" empty="没有要推送的单据" :cols="[
-        { k: 'no', t: '单号', c: 'code', f: x => x.d.no }, { k: 'kind', t: '类型' }, { k: 'party', t: '往来' }, { k: 'qty', t: '件数', c: 'num' },
-        { k: 'date', t: '日期', f: x => fd(x.d.date) }, { k: 'jst', t: '状态' }, { k: 'act', t: '' }]">
-        <template #jst="{ r }"><St :s="r.d.jst"/></template>
-        <template #act="{ r }"><button v-if="r.d.jst === '待推送'" class="btn sm" @click="fgPush(r.d)">推送</button><span v-else class="dim">{{ fd(r.d.pushedAt) }}</span></template>
-      </Tbl>
-    </div>
-    <FgShip v-if="s.ship" @close="s.ship = false"/>
-  </div>`,
-}, { mod: 'fg', t: '成品仓' })
+      <div v-if="s.tab === '入库单'" data-c="成品入库单列表">
+        <Tbl :rows="db.fgIn.slice().reverse()" empty="还没有成品入库单：回货验过货，在「待入库」点「入库」" :cols="[
+          { k: 'no', t: '入库单', c: 'code' }, { k: 'ret', t: '回货单', c: 'code' }, { k: 'style', t: '款式', c: 'code' }, { k: 'factory', t: '加工厂', f: x => supName(x.factory) },
+          { k: 'qty', t: '良品入库', c: 'num', f: x => sum(x.lines, l => l.qty) }, { k: 'wh', t: '仓库', f: x => whName(x.wh) }, { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'jst', t: '聚水潭' }]">
+          <template #ret="{ r }"><a class="code" :href="'#' + prodLink(production(r.prod))">{{ r.ret }}</a></template>
+          <template #jst="{ r }"><St :s="r.jst"/></template>
+        </Tbl>
+      </div>
+      <div v-if="s.tab === '库存'" class="page" data-c="成品库存">
+        <div v-for="st in stockStyles" :key="st" style="margin-bottom:28px">
+          <div class="row" style="margin-bottom:8px"><Thumb :code="st" :s="28"/><a class="code" :href="'#/styles/' + st">{{ st }}</a><span>{{ styleName(st) }}</span></div>
+          <Matrix :st="st" :model-value="stockModel(st)" :colors="stockColors(st)" ro/>
+        </div>
+        <p v-if="!stockStyles.length" class="empty">成品仓是空的，回货入库后才有库存</p>
+      </div>
+      <div v-if="s.tab === '发货出库'" data-c="发货出库">
+        <Tbl :rows="db.shipments.slice().reverse()" empty="还没有发过货：成品仓有货以后点「发货出库」" :cols="[
+          { k: 'no', t: '发货单', c: 'code' }, { k: 'order', t: '需求订单', c: 'code' }, ...(TRADE ? [{ k: 'customer', t: '客户', f: x => custName(x.customer) }] : []),
+          { k: 'qty', t: '件数', c: 'num', f: x => sum(x.lines, l => l.qty) }, { k: 'amt', t: '金额', c: 'num', f: x => fm(sum(x.lines, l => l.qty * (l.price || 0))) },
+          { k: 'logistics', t: '物流单号', c: 'code', f: x => x.logistics || '—' }, { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'jst', t: '聚水潭' }]">
+          <template #order="{ r }"><a class="code" :href="'#/orders/' + r.order">{{ r.order }}</a></template>
+          <template #jst="{ r }"><St :s="r.jst"/></template>
+        </Tbl>
+      </div>
+      <div v-if="s.tab === '其他出库'" data-c="成品其他出库">
+        <Tbl :rows="db.fgOut.slice().reverse()" empty="还没有其他出库：拿样品、报废成品时点「其他出库」" :cols="[
+          { k: 'no', t: '单号', c: 'code' }, { k: 'reason', t: '原因' }, { k: 'style', t: '款式', c: 'code' }, { k: 'qty', t: '件数', c: 'num', f: x => sum(x.lines, l => l.qty) },
+          { k: 'note', t: '备注', f: x => x.note || '—' }, { k: 'date', t: '日期', f: x => fd(x.date) }]"/>
+      </div>
+      <div v-if="s.tab === '聚水潭推送'" data-c="聚水潭推送">
+        <Tbl :rows="jst" empty="没有要推送的单据" :cols="[
+          { k: 'no', t: '单号', c: 'code', f: x => x.d.no }, { k: 'kind', t: '类型' }, { k: 'party', t: '往来' }, { k: 'qty', t: '件数', c: 'num' },
+          { k: 'date', t: '日期', f: x => fd(x.d.date) }, { k: 'jst', t: '状态' }, { k: 'act', t: '' }]">
+          <template #jst="{ r }"><St :s="r.d.jst"/></template>
+          <template #act="{ r }"><button v-if="r.d.jst === '待推送'" class="btn sm" @click="fgPush(r.d)">推送</button><span v-else class="dim">{{ fd(r.d.pushedAt) }}</span></template>
+        </Tbl>
+      </div>
+      <FgShip v-if="s.ship" @close="s.ship = false; s.tab = '发货出库'"/>
+      <FgOtherOut v-if="s.other" @close="s.other = false; s.tab = '其他出库'"/>
+    </div>`,
+  }
+}
+route('/fg-in', fgPage('in'), { mod: 'fgin', t: '成品入库单' })
+route('/fg-out', fgPage('out'), { mod: 'fgout', t: '成品出库单' })
+route('/fg-stock', fgPage('stock'), { mod: 'fgstock', t: '成品库存' })
+
+comp('FgOtherOut', {
+  emits: ['close'],
+  setup(_, { emit }) {
+    const styles = computed(() => [...new Set(Object.entries(db.fgStock).filter(([, q]) => q > 0).map(([k]) => k.split('|')[0]))])
+    const f = reactive({ style: styles.value[0] || '', reason: FG_OUT_REASONS[0], note: '', qty: {} })
+    watch(() => f.style, () => { f.qty = {} })
+    const colors = computed(() => (f.style ? style(f.style).colors.filter((c) => sizesOf(style(f.style).sizeGroup).some((z) => fgQty(f.style, c, z) > 0)) : []))
+    const sub = (c, z) => '库存 ' + fgQty(f.style, c, z)
+    function save() { const d = run(() => fgOtherOut({ ...f })); if (d?.no) { emit('close'); toast(`${d.no} ${d.reason}出库 ${sum(d.lines, (l) => l.qty)} 件`) } }
+    return { styles, f, colors, sub, save, FG_OUT_REASONS }
+  },
+  template: `<Modal t="成品其他出库" :w="720" @close="$emit('close')">
+    <div v-if="!styles.length" class="empty">成品仓是空的，没有能出的货</div>
+    <template v-else>
+      <div class="form" style="margin-bottom:16px" data-c="成品其他出库单头">
+        <label class="f">款式<Pick class="sel" v-model="f.style"><option v-for="st in styles" :key="st" :value="st">{{ st }} {{ styleName(st) }}</option></Pick></label>
+        <div class="f">原因<Seg v-model="f.reason" :items="FG_OUT_REASONS"/></div>
+        <label class="f full">备注<input class="inp" v-model="f.note" placeholder="比如：给客户寄样 2 件"></label>
+      </div>
+      <Matrix v-if="f.style" :st="f.style" v-model="f.qty" :colors="colors" :sub="sub"/>
+    </template>
+    <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!styles.length" @click="save">出库</button></template>
+  </Modal>`,
+})
 
 comp('FgShip', {
   emits: ['close'],
@@ -930,11 +1000,11 @@ comp('FgShip', {
     }
     return { orders, f, o, styles, models, colorsOf, sub, save }
   },
-  template: `<Modal t="发货" :w="720" @close="$emit('close')">
+  template: `<Modal t="发货出库" :w="720" @close="$emit('close')">
     <div v-if="!orders.length" class="empty">成品仓里没有能发的货</div>
     <template v-else>
       <div class="form" style="margin-bottom:16px">
-        <label class="f">订单<Pick class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ custOrDash(x) }}</option></Pick></label>
+        <label class="f">需求订单<Pick class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ custOrDash(x) }}</option></Pick></label>
         <label class="f">物流单号<input class="inp code" v-model="f.logistics"></label>
       </div>
       <div v-for="st in styles" :key="st" style="margin-bottom:16px">
@@ -942,12 +1012,12 @@ comp('FgShip', {
         <Matrix :st="st" v-model="models[st]" :colors="colorsOf(st)" :sub="sub(st)"/>
       </div>
     </template>
-    <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!orders.length" @click="save">发货</button></template>
+    <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!orders.length" @click="save">发货出库</button></template>
   </Modal>`,
 })
 
 /* ============================== 对账 ============================== */
-// 供应商对账单：已审核的采购入库（采购单位数量 × 单价）+ 回货（件数 × 加工单价，次品按加工单价扣）
+// 供应商对账单：已审核的采购入库（采购单位数量 × 单价）+ 回货（件数 × 生产单单价，次品按单价扣；外发加工单是加工单价，成品采购单是成品单价）
 db.statements = []
 db.receipts = []
 db.invoices = []
@@ -1216,7 +1286,7 @@ route('/finance', {
       <Tbl :rows="db.invoices.slice().reverse()" empty="还没有登记发票" :cols="[
         { k: 'no', t: '发票号', c: 'code' }, { k: 'dir', t: '方向' }, { k: 'party', t: '往来', f: x => x.dir === '收票' ? supName(x.party) : custName(x.party) },
         { k: 'ref', t: '对应单据', c: 'code' }, { k: 'amt', t: '金额', c: 'num', f: x => fm(x.amt) }, { k: 'rate', t: '税率' }, { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'status', t: '核销' }, { k: 'act', t: '' }]">
-        <template #ref="{ r }"><a class="code" :href="r.dir === '收票' ? '#/finance/' + r.ref : '#/fg?tab=发货'">{{ r.ref }}</a></template>
+        <template #ref="{ r }"><a class="code" :href="r.dir === '收票' ? '#/finance/' + r.ref : '#/fg-out'">{{ r.ref }}</a></template>
         <template #status="{ r }"><St :s="r.status"/></template>
         <template #act="{ r }"><button v-if="r.status === '未核销'" class="btn sm" @click="run(() => finVerify(r))">核销</button></template>
       </Tbl>
@@ -1249,7 +1319,7 @@ route('/finance/:no', {
           <Tbl inset flat :rows="st.items" :cols="[
             { k: 'type', t: '类型' }, { k: 'no', t: '单号' }, { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'desc', t: '内容' },
             { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) }, { k: 'amt', t: '金额', c: 'num', f: x => fm(x.amt) }, { k: 'deduct', t: '次品扣款', c: 'num', f: x => x.deduct ? '−' + fm(x.deduct) : '—' }]">
-            <template #no="{ r }"><a class="code" :href="r.type === '回货' ? '#/production/' + r.prod : '#/stock-docs/' + r.no">{{ r.no }}</a></template>
+            <template #no="{ r }"><a class="code" :href="'#' + (r.type === '回货' ? prodLink(production(r.prod)) : stockNoLink(r.no))">{{ r.no }}</a></template>
             <template #desc="{ r }"><span class="ell mut" style="max-width:300px;display:inline-block;vertical-align:middle">{{ r.desc }}</span></template>
             <template #foot><tr><td>合计</td><td></td><td></td><td></td><td></td><td class="num">{{ fm(sum(st.items, i => i.amt)) }}</td><td class="num">{{ sum(st.items, i => i.deduct) ? '−' + fm(sum(st.items, i => i.deduct)) : '—' }}</td></tr></template>
           </Tbl>
@@ -1343,7 +1413,7 @@ route('/reports', {
       </div>
       <div class="h2">工厂在制</div>
       <div data-c="工厂在制">
-        <Tbl inset flat :rows="facs" empty="没有加工单" :cols="[{ k: 'c', t: '加工厂', f: x => supName(x.c) }, { k: 'n', t: '在制单', c: 'num' }, { k: 'wip', t: '在制件数' }, { k: 'late', t: '逾期单', c: 'num' }, { k: 'rate', t: '次品率', c: 'num' }]">
+        <Tbl inset flat :rows="facs" empty="没有在做的生产单" :cols="[{ k: 'c', t: '加工厂', f: x => supName(x.c) }, { k: 'n', t: '在制单', c: 'num' }, { k: 'wip', t: '在制件数' }, { k: 'late', t: '逾期单', c: 'num' }, { k: 'rate', t: '次品率', c: 'num' }]">
           <template #wip="{ r }"><span class="hbar" :title="r.wip + ' 件'"><b :style="{ width: r.wip / maxWip * W + 'px' }"></b>{{ r.wip }}</span></template>
           <template #late="{ r }"><span :class="{ red: r.late }">{{ r.late || '—' }}</span></template>
           <template #rate="{ r }">{{ r.rate == null ? '—' : costRate(r.rate) }}</template>
@@ -1362,7 +1432,7 @@ route('/reports', {
 }, { mod: 'reports', t: '报表' })
 
 expose({
-  seasonName, PLAN, planActual, smpCur, smpState, smpNode, smpWho, smpNodeState, costOf, costRate, rowMidUse, unitPrice,
+  seasonName, PLAN, planActual, smpCur, smpState, smpNode, smpWho, smpNodeState, costOf, costRate, costRatio, costLink, rowMidUse, unitPrice,
   qcAql, qcOf, qcsOf, retQc, fgBlock, smpCount, fgQty, fgPush, finAmt, finDue, finVerify, OVER,
   OCR_CATS, OCR_NOTE, ocrOurs, ocrFake, ocrCompare, ocrCreate, ocrDemoFile, costTp,
 })

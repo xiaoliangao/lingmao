@@ -304,7 +304,7 @@ comp('BomFigure', {
   </div>`,
 })
 
-/* ---------- 尺寸表的量法图：正面款式图上画尺寸线，字母对应尺寸表的行 ----------
+/* ---------- 尺寸指示的量法图：正面款式图上画尺寸线，字母对应尺寸指示的行 ----------
  * SPEC_LINES[形状][部位] = [x1, y1, x2, y2, 字母位置 x?, y?]；没画线的部位只在表里有字母 */
 const SPEC_LINES = {
   tee: { 衣长: [36, 14, 36, 92], 胸围: [24, 41, 76, 41], 肩宽: [29, 16.7, 71, 16.7], 袖长: [71, 16.7, 93, 39], 袖口: [94.1, 41.2, 82.1, 47.2], 下摆: [24, 95.5, 76, 95.5] },
@@ -318,6 +318,8 @@ const SPEC_LINES = {
   skirt: { 腰围: [32, 13, 68, 13], 臀围: [27.2, 32, 72.8, 32], 裙长: [72, 10, 89, 88], 下摆: [15, 95, 85, 95] },
   puffer: { 衣长: [37, 9, 37, 87], 胸围: [24.5, 41.5, 75.5, 41.5], 肩宽: [28.5, 15, 71.5, 15, 58, 15], 领高: [66, 3.5, 66, 10.5, 71, 7], 袖长: [71.5, 15, 92, 73], 袖口: [92.5, 75.5, 81.5, 78], 下摆: [24, 90.5, 76, 90.5] },
 }
+// 尺寸指示的部位叫法和图上的线对不上时，借同一条线（后中长画在衣长的位置、摆围画在下摆）
+const SPEC_ALIAS = { 后中长: '衣长', 摆围: '下摆' }
 const specLetter = (i) => String.fromCharCode(65 + i)
 // 一条尺寸线：两头画箭头
 function dimPath(x1, y1, x2, y2) {
@@ -332,7 +334,7 @@ comp('SpecFigure', {
     const dims = computed(() => {
       const lines = SPEC_LINES[catOf(style(p.code)?.cat).shape] || SPEC_LINES.tee
       return p.rows.map((r, i) => {
-        const d = lines[r.pt]
+        const d = lines[r.pt] || lines[SPEC_ALIAS[r.pt]]
         if (!d) return null
         const [x1, y1, x2, y2, lx, ly] = d
         return { i, ...dimPath(x1, y1, x2, y2), lx: lx ?? (x1 + x2) / 2, ly: ly ?? (y1 + y2) / 2 }
