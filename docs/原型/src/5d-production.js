@@ -199,7 +199,6 @@ route('/production/:no', {
             { k: 'wh', t: '收货仓', f: r => whName(r.wh) }, { k: 'by', t: '登记人', f: r => r.by ? userName(r.by) : '—' }, { k: 'logistics', t: '物流单号', c: 'code', f: r => r.logistics || '—' }, { k: 'photos', t: '照片' }, { k: 'status', t: '状态' }]">
             <template #photos="{ r }"><Pics v-if="r.photos && r.photos.length" :model-value="r.photos" readonly :s="32" :limit="3" @click.stop/><span v-else class="dim">—</span></template>
             <template #status="{ r }"><St :s="r.status || '已登记'"/></template></Tbl>
-          <p v-if="rets.length" class="dim" style="font-size:12px;margin-top:8px">点一行看每个颜色尺码回了多少；登记错了在里面作废。</p>
         </section>
       </div>
       <aside class="aside" data-c="加工单属性">
@@ -241,7 +240,7 @@ route('/production/:no', {
     <Modal v-if="closing" :t="'关闭异常：' + closing.i.type" :w="480" @close="closing = null">
       <div class="form">
         <label class="f full">处理措施<textarea class="inp" v-model="closing.measure" placeholder="比如：供应商补发 30 米，11-08 到；返工 20 件"></textarea></label>
-        <label class="f">责任方<select class="sel" v-model="closing.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></select><small class="dim">上报时没定的这时补上，质量和绩效统计要用</small></label>
+        <label class="f">责任方<select class="sel" v-model="closing.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></select></label>
       </div>
       <template #foot><button class="btn" @click="closing = null">取消</button><button class="btn pri" @click="doClose">关闭异常</button></template>
     </Modal>
@@ -290,14 +289,13 @@ comp('ProdEdit', {
       <label class="f">加工厂<select class="sel" v-model="f.factory" @change="setFactory"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select></label>
       <label class="f">加工方式<select class="sel" v-model="f.mode"><option v-for="v in db.dicts.加工方式" :key="v">{{ v }}</option></select></label>
       <label class="f">加工单价（元 / 件）<input class="inp num" type="number" v-model.number="f.price"><small class="dim">{{ ref0 != null ? '档案现价 ' + fm(ref0) : '档案里没有这家 × ' + f.mode + ' 的价，审核时记进去' }}</small></label>
-      <label class="f">交期<input class="inp" type="date" v-model="f.due"></label>
+      <label class="f">交期<DatePick v-model="f.due"/></label>
       <label v-if="off || f.priceWhy" class="f full">改价原因<input class="inp" v-model="f.priceWhy" placeholder="单价和档案现价不一样，写清楚为什么；审核时记进价格档案"></label>
-      <label class="f">生产跟单<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select><small class="dim">手机报工里他能看到这张单</small></label>
+      <label class="f">生产跟单<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
       <div class="f full">条款<textarea class="inp" v-model="f.terms" placeholder="次品扣款、延期扣款、送货要求"></textarea><a class="dim" style="font-size:12px;cursor:pointer;align-self:flex-start" @click="addTerms">填常用条款</a></div>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
-    <p class="dim" style="font-size:12px;margin-top:8px">这里只改单头。数量要改：删掉这张草稿，回订单重新排单。</p>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">保存</button></template>
   </Modal>`,
 })
@@ -311,9 +309,8 @@ comp('ProdPlan', {
     return { rows, ok }
   },
   template: `<Modal :t="'改节点计划 ' + p.no" :w="580" @close="$emit('close')">
-    <p class="mut" style="margin-bottom:10px">审核时按交期往前倒排的计划；工厂排期变了，跟单员在这里改。延期、临期按新计划算，改了记操作记录。</p>
     <table class="tbl inset flat" data-c="节点计划"><thead><tr><th>节点</th><th style="width:150px">计划开始</th><th style="width:150px">计划完成</th><th>实际完成</th></tr></thead>
-      <tbody><tr v-for="r in rows" :key="r.name"><td>{{ r.name }}</td><td><input class="inp cell" type="date" v-model="r.ps"></td><td><input class="inp cell" type="date" v-model="r.pf"></td><td class="dim">{{ r.af ? fd(r.af) : '—' }}</td></tr></tbody></table>
+      <tbody><tr v-for="r in rows" :key="r.name"><td>{{ r.name }}</td><td><DatePick cell v-model="r.ps"/></td><td><DatePick cell v-model="r.pf"/></td><td class="dim">{{ r.af ? fd(r.af) : '—' }}</td></tr></tbody></table>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">保存</button></template>
   </Modal>`,
 })
@@ -340,13 +337,12 @@ comp('ProdReport', {
     <div class="chips" style="margin-bottom:14px" data-c="选节点"><button v-for="(n, k) in p.nodes" :key="n.name" class="chip" :class="{ on: f.i === k }" @click="f.i = k"><Ico v-if="n.af" n="check" :s="12" class="green"/>{{ n.name }}</button></div>
     <p class="dim" style="font-size:12px;margin:-6px 0 12px">计划 {{ fd(p.nodes[f.i].ps) }} – {{ fd(p.nodes[f.i].pf) }}<template v-if="p.nodes[f.i].at">；上次 {{ userName(p.nodes[f.i].by) }} {{ fd(p.nodes[f.i].at) }} 报的</template></p>
     <div class="form">
-      <label class="f">实际开始<input class="inp" type="date" v-model="f.as"></label>
-      <label class="f">实际完成<input class="inp" type="date" v-model="f.af"><small class="dim">{{ p.nodes[f.i].af ? '已经报过完成；报错了改日期再点「报完成」' : '没做完就空着' }}</small></label>
+      <label class="f">实际开始<DatePick v-model="f.as"/></label>
+      <label class="f">实际完成<DatePick v-model="f.af"/></label>
       <label class="f">数量（件）<input class="inp num" type="number" v-model.number="f.qty"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
       <div class="f full" data-c="报进度照片">照片<span v-if="p.nodes[f.i].photos && p.nodes[f.i].photos.length" class="dim" style="font-weight:400">（这个节点已经有 {{ p.nodes[f.i].photos.length }} 张，再传是追加）</span><Pics v-model="f.photos" :s="64" camera/></div>
     </div>
-    <p class="dim" style="font-size:12px;margin:10px 0 0">{{ REPORT_TIP }}</p>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button>
       <button class="btn" :disabled="!!p.nodes[f.i].af" :title="p.nodes[f.i].af ? '这个节点已经报过完成' : null" @click="ok('开始')">只报开始</button><button class="btn pri" @click="ok('完成')">报完成</button></template>
   </Modal>`,
@@ -403,7 +399,7 @@ comp('ProdException', {
       <label class="f full">描述<textarea class="inp" v-model="f.desc" placeholder="什么问题、多少件、哪个颜色尺码"></textarea></label>
       <div class="f full" data-c="异常照片">照片<span class="red" style="font-weight:400">（必须传：问题部位、到货短缺或现场，对责任时要用）</span><Pics v-model="f.photos" :s="64" camera/></div>
       <label class="chk"><input type="checkbox" v-model="f.impact">影响交期</label>
-      <label v-if="f.impact" class="f">预计新交期<input class="inp" type="date" v-model="f.newDate"></label>
+      <label v-if="f.impact" class="f">预计新交期<DatePick v-model="f.newDate"/></label>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">上报</button></template>
   </Modal>`,
@@ -429,14 +425,14 @@ comp('ProdReturn', {
   },
   template: `<Modal :t="'登记回货 ' + p.no" :w="760" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
-      <label class="f">回货日期<input class="inp" type="date" v-model="f.date" :max="clock.today"></label>
+      <label class="f">回货日期<DatePick v-model="f.date" :max="clock.today"/></label>
       <label class="f">收货仓<select class="sel" v-model="f.wh"><option v-for="w in fgs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label></div>
     <div class="sec" style="margin-top:0" data-c="回货数"><h3>回货数（含次品）</h3><Matrix :st="p.style" v-model="qty" :colors="colors" :sub="sub"/></div>
     <div class="sec" data-c="次品数"><h3>其中次品</h3><Matrix :st="p.style" v-model="def" :colors="colors"/></div>
-    <details v-if="got.length" class="sec ret-notes" data-c="回货备注"><summary>按颜色尺码写备注<span class="dim">　选填，比如：少 2 件下周补、有 3 件色差</span></summary>
+    <details v-if="got.length" class="sec ret-notes" data-c="回货备注"><summary>分色分码备注</summary>
       <table class="tbl inset flat"><tbody><tr v-for="l in got" :key="l.color + l.size"><td style="width:150px">{{ colorName(l.color) }} · {{ l.size }}</td><td class="num" style="width:70px">{{ qty[l.color + '|' + l.size] }} 件</td><td><input class="inp cell" v-model="note[l.color + '|' + l.size]"></td></tr></tbody></table></details>
-    <div class="sec" data-c="回货照片"><h3>照片<span class="dim" style="font-weight:400;font-size:12px">　次品、外箱、送货单，选填</span></h3><Pics v-model="f.photos" :s="64"/></div>
+    <div class="sec" data-c="回货照片"><h3>照片</h3><Pics v-model="f.photos" :s="64"/></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">登记</button></template>
   </Modal>`,
 })
@@ -525,7 +521,7 @@ route('/mobile', {
             <div class="f">照片<span class="red" style="font-weight:400">（必须拍）</span><Pics v-model="s.e.photos" :s="60" camera bare/></div>
             <label class="f">责任方<select class="sel" v-model="s.e.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></select></label>
             <label class="chk"><input type="checkbox" v-model="s.e.impact">影响交期</label>
-            <label v-if="s.e.impact" class="f">预计新交期<input class="inp" type="date" v-model="s.e.newDate"></label>
+            <label v-if="s.e.impact" class="f">预计新交期<DatePick v-model="s.e.newDate"/></label>
             <button class="btn pri" style="height:44px" @click="submitIssue">上报</button>
           </div>
           <template v-else-if="s.node == null">
@@ -535,12 +531,11 @@ route('/mobile', {
             <div class="col" style="padding:0 16px 16px;gap:8px"><button class="btn" style="width:100%;height:40px" @click="openIssue"><Ico n="alert" :s="14"/>上报异常</button><a class="btn" style="width:100%" :href="'#/production/' + p.no">在电脑上打开</a></div>
           </template>
           <div v-else class="col m-form">
-            <label class="f">实际开始<input class="inp" type="date" v-model="s.f.as"></label>
-            <label class="f">实际完成<input class="inp" type="date" v-model="s.f.af"><small class="dim">{{ p.nodes[s.node].af ? '已经报过完成；报错了改日期再点「报完成」' : '没做完就空着' }}</small></label>
+            <label class="f">实际开始<DatePick v-model="s.f.as"/></label>
+            <label class="f">实际完成<DatePick v-model="s.f.af"/></label>
             <label class="f">数量（件）<input class="inp num" type="number" v-model.number="s.f.qty"></label>
             <div class="f">照片<Pics v-model="s.f.photos" :s="60" camera bare/></div>
             <label class="f">备注<textarea class="inp" v-model="s.f.note"></textarea></label>
-            <small class="dim">{{ REPORT_TIP }}</small>
             <div class="row g8" data-c="手机报工按钮"><button class="btn" style="flex:1;height:44px" :disabled="!!p.nodes[s.node].af" @click="submit('开始')">只报开始</button><button class="btn pri" style="flex:1;height:44px" @click="submit('完成')">报完成</button></div>
           </div>
         </template>

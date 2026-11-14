@@ -119,7 +119,7 @@ const GARMENTS_BACK = {
 }
 
 const PIC_DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-  <radialGradient id="pg-bg" cx=".5" cy=".38" r=".8"><stop offset="0" stop-color="#fbfbf8"/><stop offset="1" stop-color="#e7e9e2"/></radialGradient>
+  <radialGradient id="pg-bg" cx=".5" cy=".38" r=".8"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#f3f1ec"/></radialGradient>
   <linearGradient id="pg-shade" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
   <linearGradient id="pg-v" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".10"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
   <linearGradient id="pg-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".45" stop-color="#fff" stop-opacity=".38"/><stop offset=".55" stop-color="#fff" stop-opacity=".05"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>

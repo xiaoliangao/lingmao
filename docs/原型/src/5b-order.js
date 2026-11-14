@@ -48,10 +48,14 @@ route('/orders', {
   },
   template: `<div>
     <Head t="订单"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="XCOLS" name="订单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建订单</button></Head>
-    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><button v-if="s.f" class="chip on" @click="s.f = ''">{{ s.f }}<Ico n="x" :s="12"/></button><span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" :ph="TRADE ? '单号、客户单号、款号，多个用空格隔开' : '单号、合同号、款号，多个用空格隔开'"/></div>
-    <div class="bar" style="padding-top:0" data-c="更多筛选"><Filters v-model="s.flt" :party="TRADE ? 'customer' : ''" merch label="下单日期"/>
-      <select class="sel" v-model="s.type"><option value="">全部类型</option><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></select>
-      <select v-if="!TRADE" class="sel" v-model="s.brand"><option value="">全部品牌</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></select></div>
+    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" :party="TRADE ? 'customer' : ''" merch label="下单">
+        <label class="f">订单类型<select class="sel" v-model="s.type"><option value="">全部类型</option><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></select></label>
+        <label v-if="!TRADE" class="f">品牌<select class="sel" v-model="s.brand"><option value="">全部品牌</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></select></label>
+      </Filters>
+      <span v-if="s.type" class="fchip">{{ s.type }}<button type="button" @click="s.type = ''"><Ico n="x" :s="11"/></button></span>
+      <span v-if="s.brand" class="fchip">{{ s.brand }}<button type="button" @click="s.brand = ''"><Ico n="x" :s="11"/></button></span>
+      <button v-if="s.f" type="button" class="chip on" @click="s.f = ''">{{ s.f }}<Ico n="x" :s="12"/></button>
+      <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" :ph="TRADE ? '单号 / 客户单号 / 款号' : '单号 / 合同号 / 款号'"/></div>
     <div data-c="订单列表">
       <Tbl :rows="rows" link @row="o => go('/orders/' + o.no)" :empty="scoped.length ? '没有符合条件的订单：换个状态页签，或者清空筛选' : ownOnly() ? '你的数据范围是「本人」：还没有你是制单人、业务员或跟单员的订单' : s.mine ? '还没有你是制单人、业务员或跟单员的订单，切到「全部」看所有人的' : '还没有订单'" :cols="[
         { k: 'no', t: '订单号', c: 'code' }, { k: 'date', t: '下单', f: o => fd(o.date) }, { k: 'cust', t: TRADE ? '客户' : '类型' }, { k: 'styles', t: '款式' },
@@ -124,8 +128,8 @@ comp('OrderForm', {
       <label class="f">合同号<input class="inp" v-model="f.contract"></label>
       <label class="f">品牌<select class="sel" v-model="f.brand"><option value="">—</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></select></label>
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
-      <label class="f">下单日期<input class="inp" type="date" v-model="f.date"></label>
-      <label class="f">{{ DUE_T }}<input class="inp" type="date" v-model="f.due"></label>
+      <label class="f">下单日期<DatePick v-model="f.date"/></label>
+      <label class="f">{{ DUE_T }}<DatePick v-model="f.due"/></label>
       <label class="f">币种<select class="sel" v-model="f.currency"><option v-for="x in db.dicts.币种" :key="x">{{ x }}</option></select></label>
       <label class="f">业务员<select class="sel" v-model="f.sales"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
       <label class="f">跟单员<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
@@ -137,15 +141,15 @@ comp('OrderForm', {
         <span class="acts"><label class="row g4 mut">单价<input class="inp num" style="width:90px;height:26px" type="number" v-model.number="b.price"></label>
           <label class="row g4 mut" style="font-size:12px" title="大码加价时，各码单价不一样"><input type="checkbox" v-model="b.byLine">按尺码定价</label>
           <button class="btn ghost icon sm" @click="blocks.splice(i, 1)"><Ico n="x" :s="13"/></button></span></h3>
-      <div v-if="b.byLine" class="row g4" style="margin-bottom:8px;flex-wrap:wrap" data-c="尺码单价"><span class="dim" style="font-size:12px">各码单价（空着 = 用上面的单价）</span>
+      <div v-if="b.byLine" class="row g4" style="margin-bottom:8px;flex-wrap:wrap" data-c="尺码单价"><span class="dim" style="font-size:12px">分码单价</span>
         <label v-for="z in sizesOf(style(b.style).sizeGroup)" :key="z" class="row g4" style="font-size:12px">{{ z }}<input class="inp num" style="width:72px;height:26px" type="number" v-model.number="b.sizePrice[z]" :placeholder="b.price ?? ''"></label></div>
       <Matrix :st="b.style" v-model="b.qty" :colors="colorsFor(b)"/>
-      <div class="row g4" style="margin-top:8px" data-c="行交期、行备注"><label class="row g4 mut" style="font-size:12px">行交期<input class="inp" type="date" style="height:26px" v-model="b.due"></label><span class="dim" style="font-size:12px">不填 = {{ DUE_T }}</span>
+      <div class="row g4" style="margin-top:8px" data-c="行交期、行备注"><label class="row g4 mut" style="font-size:12px">行交期<DatePick sm v-model="b.due" placeholder="未设行交期"/></label>
         <input class="inp" style="height:26px;flex:1" v-model="b.note" placeholder="这个款的备注，如：黑色先做"></div>
     </div>
     <div class="row" style="margin-top:16px"><select class="sel" v-model="pick" @change="addBlock(pick)" style="width:260px"><option value="">加一个款……</option><option v-for="s in pickable" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}{{ activeTp(s.code) ? '' : '（资料包未生效）' }}</option></select>
-      <span class="dim" style="font-size:12px">只列启用的款；停用的颜色、尺码不能下单</span></div>
-    <div v-if="!o" class="sec" data-c="订单附件"><h3>附件<span class="dim" style="font-weight:400;font-size:12px">　{{ TRADE ? '客户的订单、PO 截图、合同' : '下单依据、合同' }}，选填</span></h3><Pics v-model="f.files" files :s="56" :max="20"/></div>
+      </div>
+    <div v-if="!o" class="sec" data-c="订单附件"><h3>附件</h3><Pics v-model="f.files" files :s="56" :max="20"/></div>
     <template #foot><span class="mut">{{ total }} 件<template v-if="amount"> · {{ orderMoney(f, amount) }}</template></span><span class="sp"></span>
       <button class="btn" @click="save(false)">{{ o ? '保存' : '存草稿' }}</button><button class="btn pri" @click="save(true)">{{ o ? '保存并提交' : '提交审核' }}</button></template>
   </Modal>`,
@@ -290,7 +294,7 @@ comp('OrderAudit', {
         <template #gap="{ r }"><span class="red">{{ fq(r.gap) }}</span></template></Tbl></div>
     <div class="sec" data-c="评审：工厂负荷"><h3>默认加工厂在手</h3>
       <div v-for="x in info.loads" :key="x.factory" class="row" style="height:28px"><span>{{ supName(x.factory) }}</span><span style="flex:1"></span><span class="mut">在制 {{ x.qty.toLocaleString() }} 件</span></div></div>
-    <div class="sec"><label class="f" style="width:200px">承诺交期<input class="inp" type="date" v-model="commit"></label></div>
+    <div class="sec"><label class="f" style="width:200px">承诺交期<DatePick v-model="commit"/></label></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">通过</button></template>
   </Modal>`,
 })
@@ -331,7 +335,7 @@ comp('OrderSchedule', {
         <label class="f">加工方式<select class="sel" v-model="b.mode" @change="reprice(b)"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></select></label>
         <label class="f">单价（元/件）<input class="inp num" type="number" v-model.number="b.price" :placeholder="refOf(b) == null ? '档案里没有，手填' : ''">
           <small class="dim" style="font-size:11.5px">{{ refOf(b) != null ? '档案现价 ' + fm(refOf(b)) : '档案里没有这家 × ' + b.mode + ' 的价' }}<template v-if="activeTp(b.style)"> · 工价合计 {{ fm(tpLabor(activeTp(b.style))) }}</template></small></label>
-        <label class="f">交期<input class="inp" type="date" v-model="b.due"></label>
+        <label class="f">交期<DatePick v-model="b.due"/></label>
         <label class="f">生产跟单<select class="sel" v-model="b.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
         <label class="f">结算方式<select class="sel" v-model="b.settle"><option value="">按加工厂（{{ sup(b.factory) ? sup(b.factory).settle : '—' }}）</option><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
         <label class="f" style="grid-column:span 2">条款<input class="inp" v-model="b.terms" placeholder="如：次品率超 3% 扣款；延期每天扣 0.5%"></label>
@@ -340,7 +344,7 @@ comp('OrderSchedule', {
       </div>
       <Matrix :st="b.style" v-model="b.qty" :colors="colorsOf(b.style)" :sub="sub(b.style)"/>
     </div>
-    <template #foot><span class="dim" style="font-size:12px">生产跟单在手机报工里能看到这张单</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!blocks.length" @click="ok">生成加工单</button></template>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!blocks.length" @click="ok">生成加工单</button></template>
   </Modal>`,
 })
 
@@ -382,7 +386,7 @@ comp('OrderChange', {
     return { c0, qty, extra, price, ver, f, colorsOf, addable, vers, sub, down, ok }
   },
   template: `<Modal :t="c0 ? '改变更单 ' + c0.no : f.cancel ? '取消订单 ' + o.no : '变更 ' + o.no" :w="840" @close="$emit('close')">
-    <label class="row g4" style="margin-bottom:14px" data-c="取消订单"><input type="checkbox" v-model="f.cancel">取消整张订单<span class="dim" style="font-size:12px">审核通过后订单变成「已取消」；已经有加工单、算料单的，要先把它们作废或结案</span></label>
+    <label class="row g4" style="margin-bottom:14px" data-c="取消订单"><input type="checkbox" v-model="f.cancel">取消整张订单</label>
     <div v-if="f.cancel && down.length" class="banner" data-c="要先处理的下游单据"><Ico n="alert"/><span>先处理这些下游单据：<template v-for="no in down" :key="no"><a class="code" :href="'#/' + (no.startsWith('JG') ? 'production' : 'mrp') + '/' + no">{{ no }}</a>　</template></span></div>
     <template v-if="!f.cancel">
       <div v-for="st in Object.keys(qty)" :key="st" style="margin-bottom:18px" data-c="变更矩阵">
@@ -391,7 +395,7 @@ comp('OrderChange', {
           <label class="row g4 mut" style="font-size:12px">单价<input class="inp num" style="width:84px;height:26px" type="number" v-model.number="price[st]"></label>
           <label class="row g4 mut" style="font-size:12px">资料包<select class="sel" style="height:26px" v-model.number="ver[st]"><option v-for="t in vers(st)" :key="t.ver" :value="t.ver">V{{ t.ver }}{{ t.status === '已生效' ? '' : '（' + t.status + '）' }}</option></select></label></div>
         <Matrix :st="st" v-model="qty[st]" :colors="colorsOf(st)" :sub="sub(st)"/></div>
-      <div class="form"><label class="f">{{ DUE_T }}<input class="inp" type="date" v-model="f.due"></label></div>
+      <div class="form"><label class="f">{{ DUE_T }}<DatePick v-model="f.due"/></label></div>
     </template>
     <div class="form" style="margin-top:12px">
       <label class="f">责任方<select class="sel" v-model="f.party"><option v-for="x in CHANGE_PARTIES" :key="x">{{ x }}</option></select></label>
@@ -399,7 +403,7 @@ comp('OrderChange', {
       <label class="f full">费用说明<input class="inp" v-model="f.fee" :placeholder="TRADE ? '如：客户承担已裁片损失' : '如：已裁片损失由我方承担'"></label>
       <div class="f full" data-c="变更附件">{{ TRADE ? '客户确认' : '变更依据' }}<Pics v-model="f.files" files :s="56" :tip="TRADE ? '客户的邮件、聊天截图；Ctrl+V 直接贴' : '审批截图、邮件、聊天记录；Ctrl+V 直接贴'"/></div>
     </div>
-    <template #foot><span class="dim" style="font-size:12px">单价按款改（各码一起）；换资料包版本只能换成已生效的</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ c0 ? '重新提交' : '提交变更' }}</button></template>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ c0 ? '重新提交' : '提交变更' }}</button></template>
   </Modal>`,
 })
 
@@ -414,8 +418,7 @@ route('/changes', {
   },
   template: `<div>
     <Head t="变更"/>
-    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="变更单号、订单号，多个用空格隔开"/></div>
-    <div class="bar" style="padding-top:0"><Filters v-model="s.flt" :party="TRADE ? 'customer' : ''" label="提交日期"/></div>
+    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" :party="TRADE ? 'customer' : ''" label="提交"/><span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="变更单号 / 订单号"/></div>
     <div data-c="变更列表">
       <Tbl :rows="rows" link @row="c => go('/orders/' + c.order + '?tab=changes')" empty="没有符合条件的变更单。已审核的订单在详情页「提变更」" :cols="[
         { k: 'no', t: '变更单号', c: 'code' }, { k: 'order', t: '订单', c: 'code' }, { k: 'types', t: '类型', f: c => c.types.join('、') }, { k: 'text', t: '改了什么' }, { k: 'reason', t: '原因' },

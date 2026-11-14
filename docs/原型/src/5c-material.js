@@ -84,7 +84,7 @@ comp('MrpReserve', {
     return { f, ok }
   },
   template: `<Modal t="备料比" :w="480" @close="$emit('close')">
-    <p class="mut" style="margin-bottom:14px">需求 = 毛需求 ×（1 + 损耗）×（1 + 备料比）。按物料类型设，比如面料多备 2% 留着补料、防色差；默认 0。改了只影响以后新算的算料单。</p>
+    <p class="dim" style="margin-bottom:12px;font-size:12px">需求 = 毛需求 × (1 + 损耗) × (1 + 备料比)</p>
     <div class="form"><label v-for="(v, t) in f" :key="t" class="f">{{ t }}（%）<input class="inp num" type="number" min="0" max="50" v-model.number="f[t]"></label></div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">保存</button></template>
   </Modal>`,
@@ -156,8 +156,8 @@ route('/mrp/:no', {
         <dt>主体公司</dt><dd>{{ companyName(m.company) }}</dd>
         <dt>制单</dt><dd>{{ m.log[0] ? m.log[0].who + ' · ' + fd(m.log[0].at) : '—' }}</dd>
         <dt>确认</dt><dd>{{ confirmer ? confirmer.who + ' · ' + fd(confirmer.at) : '—' }}</dd>
-        <dt>备料比</dt><dd>{{ Object.entries(db.reserve).filter(x => x[1] > 0).map(x => x[0] + ' ' + x[1] + '%').join('、') || '都是 0' }}<span class="dim">（新算时用）</span></dd>
-        <dt>要料日期</dt><dd :title="'订单已排单取加工单裁剪的计划开始；没排单按承诺交期倒推。在途预计到货不晚于它才算赶得上'">{{ m.needDate ? fd(m.needDate) : '—' }}<span class="dim">（算的时候）</span></dd>
+        <dt>备料比</dt><dd>{{ Object.entries(db.reserve).filter(x => x[1] > 0).map(x => x[0] + ' ' + x[1] + '%').join('、') || '都是 0' }}</dd>
+        <dt>要料日期</dt><dd :title="'订单已排单取加工单裁剪的计划开始；没排单按承诺交期倒推。在途预计到货不晚于它才算赶得上'">{{ m.needDate ? fd(m.needDate) : '—' }}</dd>
         <dt>备注</dt><dd style="grid-column:span 5"><NoteEdit :d="m"/></dd>
       </dl>
       <div v-if="m.prev" class="sec" data-c="和上一张对比"><h3>和上一张 <a class="code" :href="'#/mrp/' + m.prev.no">{{ m.prev.no }}</a> 比</h3>
@@ -198,7 +198,6 @@ route('/mrp/:no', {
             <tr v-if="!buy.length"><td :colspan="edit ? 17 : 16" class="empty">资料包里没有我方采购的料</td></tr>
           </tbody>
         </table></div>
-        <p class="dim" style="font-size:12px;margin-top:8px">毛需求 = 订单数 × 单件用量；需求 = 毛需求 ×（1 + 损耗）×（1 + 备料比）。可用 = 库存 + 交期赶得上要料日期的在途 − 别的算料单占着的：先下的备货采购还没到也自动扣，不会重复买；赶不上的在途单独列出来、不扣。本次用库存、本次用在途可以改小。已入库按这张单（和重新算料前的旧单）生成的采购单、本次用在途里到了货的算，加上本次用库存够了就是「齐」。</p>
       </div>
       <div class="sec" data-c="待客户提供" v-if="TRADE && rowsOf('客供').length"><h3>待客户提供</h3>
         <Tbl inset flat :rows="rowsOf('客供')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }, { k: 'del', t: '' }]">
@@ -291,10 +290,11 @@ route('/purchases', {
   },
   template: `<div>
     <Head t="采购"><ExportBtn :rows="rows" :cols="xcols" name="采购单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建采购单</button></Head>
-    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
-    <div class="bar" data-c="筛选：日期、供应商、采购员"><Filters v-model="s.flt" party="supplier" label="下单日期"/>
-      <select class="sel" style="height:28px" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select>
-      <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
+    <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" party="supplier" label="下单">
+        <label class="f">采购员<select class="sel" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      </Filters>
+      <span v-if="s.buyer" class="fchip">采购: {{ userName(s.buyer) }}<button type="button" @click="s.buyer = ''"><Ico n="x" :s="11"/></button></span>
+      <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="单号 / 物料 / 订单号 / 款号"/></div>
     <div data-c="采购单列表">
       <Tbl :rows="rows" link @row="p => go('/purchases/' + p.no)" empty="没有符合条件的采购单。单号、物料、订单号、款号都能搜，几个号用空格隔开" :cols="[
         { k: 'no', t: '采购单号', c: 'code' }, { k: 'sup', t: '供应商' }, { k: 'type', t: '类型' },
@@ -352,8 +352,8 @@ comp('PurchaseForm', {
       <label class="f">采购类型<select class="sel" v-model="f.type"><option>备货采购</option><option>订单采购</option><option>打样采购</option></select></label>
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
       <label class="f">采购员<select class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">下单日期<input class="inp" type="date" v-model="f.date"></label>
-      <label class="f">交货日期<input class="inp" type="date" v-model="f.due" :placeholder="dueAuto"><small v-if="!f.due" class="dim">不填 = {{ fd(dueAuto) }}（下单日 + 最长采购周期 {{ lead }} 天）</small></label>
+      <label class="f">下单日期<DatePick v-model="f.date"/></label>
+      <label class="f">交货日期<DatePick v-model="f.due" :placeholder="dueAuto ? '默认 ' + fd(dueAuto) : '选择日期'"/><small v-if="!f.due" class="dim">默认 {{ fd(dueAuto) }}</small></label>
       <label class="f">交货地点<select class="sel" v-model="f.wh"><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></select></label>
       <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
       <label class="f">税率<select class="sel" v-model="f.tax"><option v-for="v in db.dicts.税率" :key="v">{{ v }}</option></select></label>
@@ -361,7 +361,7 @@ comp('PurchaseForm', {
       <div v-if="f.type === '备货采购'" class="f" style="grid-column:span 4" data-c="计划用于款号">计划用于款号<span class="row g4" style="flex-wrap:wrap;min-height:30px">
         <span v-for="(c, i) in f.plan" :key="c" class="pill code">{{ c }} {{ styleName(c) }}<a style="margin-left:4px" title="去掉" @click="f.plan.splice(i, 1)">×</a></span>
         <select class="sel" style="height:28px;width:200px" @change="addPlan"><option value="">{{ f.plan.length ? '再加一个款' : '选填：备的料打算给哪个款' }}</option><option v-for="s in styles" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}</option></select>
-        <small class="dim">只是备注：不给这个款预留，到了进公共库存，谁先算料谁用</small></span></div>
+        </span></div>
       <label class="f" style="grid-column:span 4">备注<input class="inp" v-model="f.note" placeholder="比如：面料每卷标缸号，随货带色卡"></label>
     </div>
     <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th v-if="TRADE" style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:96px">单价</th><th style="width:150px">改价原因</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
@@ -372,13 +372,13 @@ comp('PurchaseForm', {
         <td><input class="inp cell num" type="number" v-model.number="l.price" :class="{ amber: off(l) }"><small v-if="curOf(l) != null" class="dim" style="display:block;text-align:right;font-size:11px">档案 {{ fm(curOf(l)) }}</small></td>
         <td><input v-if="off(l)" class="inp cell" style="width:100%" v-model="l.priceWhy" placeholder="改了单价要写原因"><span v-else class="dim">—</span></td>
         <td class="num">{{ l.qty && l.price ? fm(l.qty * l.price) : '—' }}</td>
-        <td><input class="inp cell" type="date" v-model="l.due" title="不填用单头交货日期"></td>
-        <td><input class="inp cell" type="date" v-model="l.expect"></td>
+        <td><DatePick cell v-model="l.due" placeholder="随单头" title="不填用单头交货日期"/></td>
+        <td><DatePick cell v-model="l.expect" placeholder="预计日"/></td>
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
       <tfoot><tr><td>合计 {{ f.lines.filter(l => l.sku).length }} 行</td><td v-if="TRADE"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td></td><td class="num">{{ fm(amt) }}</td><td colspan="3"></td></tr></tfoot></table>
     <div class="row" style="margin-top:8px"><button class="btn ghost" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' })"><Ico n="plus" :s="14"/>加一行</button>
-      <span class="dim" style="font-size:12px">单价默认取价格档案里这家的现价；改了价要写原因，审核时记进价格档案</span></div>
-    <div v-if="!x" class="sec" data-c="采购单附件"><h3>附件<span class="dim" style="font-weight:400;font-size:12px">　选填：报价单、合同、色卡照片</span></h3><Pics v-model="f.files" files :s="56"/></div>
+      </div>
+    <div v-if="!x" class="sec" data-c="采购单附件"><h3>附件</h3><Pics v-model="f.files" files :s="56"/></div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
 })
@@ -439,7 +439,7 @@ route('/purchases/:no', {
         <dl class="props">
           <dt>供应商</dt><dd><a :href="'#/suppliers/' + po.supplier">{{ sup(po.supplier).name }}</a></dd>
           <dt>采购类型</dt><dd>{{ po.type }}</dd>
-          <template v-if="po.plan?.length"><dt>计划用于</dt><dd><a v-for="c in po.plan" :key="c" class="code" :href="'#/styles/' + c" style="margin-right:6px">{{ c }}</a><div class="dim" style="font-size:12px">只是备注，不预留</div></dd></template>
+          <template v-if="po.plan?.length"><dt>计划用于</dt><dd><a v-for="c in po.plan" :key="c" class="code" :href="'#/styles/' + c" style="margin-right:6px">{{ c }}</a></dd></template>
           <dt>采购员</dt><dd>{{ userName(po.buyer) }}</dd>
           <dt>下单日期</dt><dd>{{ fd(po.date) }}</dd>
           <dt>交货日期</dt><dd>{{ fd(po.due) }}</dd>
@@ -496,7 +496,7 @@ comp('PurchaseReceive', {
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
       <label v-if="recv" class="f">入哪个仓<select class="sel" v-model="f.wh"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></select></label>
       <label v-else class="f">从哪个仓退<select class="sel" v-model="f.from"><option v-for="w in fromWhs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
-      <label class="f">{{ recv ? '到货日期' : '退货日期' }}<input class="inp" type="date" v-model="f.date" :max="clock.today"><small class="dim">第二天补录就填实际那天</small></label>
+      <label class="f">{{ recv ? '到货日期' : '退货日期' }}<DatePick v-model="f.date" :max="clock.today"/></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label>
       <label v-if="recv" class="f">供应商送货单号<input class="inp" v-model="f.supNo"></label>
       <label v-if="recv" class="f" style="grid-column:span 2">备注<input class="inp" v-model="f.note"></label>
@@ -507,7 +507,7 @@ comp('PurchaseReceive', {
         <td class="num">{{ fq(recv ? Math.max(0, po.lines[x.i].qty - po.lines[x.i].received) : po.lines[x.i].received - po.lines[x.i].returned) }} <span class="dim">{{ purUnit(po.lines[x.i].sku) }}</span></td>
         <td v-if="!recv" class="num dim">{{ fq(have(x)) }}</td>
         <td><input class="inp cell num" type="number" v-model.number="x.qty"></td><td v-if="recv"><input class="inp cell" v-model="x.lot"></td><td v-if="recv"><input class="inp cell num" type="number" v-model.number="x.rolls"></td><td><input class="inp cell" v-model="x.note"></td></tr></tbody></table>
-    <div class="sec" data-c="到货照片"><h3>{{ recv ? '送货单、到货照片' : '退货问题照片' }}<span class="dim" style="font-weight:400;font-size:12px">　选填，挂在{{ recv ? '入库单' : '退货单' }}的附件里</span></h3><Pics v-model="f.files" files :s="64" :tip="recv ? '拍送货单、外箱、布头标签；拖进来也行' : '拍问题部位、退货包装'"/></div>
+    <div class="sec" data-c="到货照片"><h3>{{ recv ? '到货附件' : '退货附件' }}</h3><Pics v-model="f.files" files :s="64" :tip="recv ? '拍送货单、外箱、布头标签；拖进来也行' : '拍问题部位、退货包装'"/></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ recv ? '入库并过账' : '退货并过账' }}</button></template>
   </Modal>`,
 })
@@ -537,7 +537,7 @@ route('/arrivals', {
         <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于加工单裁剪的计划开始">赶不上开裁，晚 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
         <template #po="{ r }"><a :href="'#/purchases/' + r.p.no">{{ r.p.no }}</a><div class="dim" style="font-size:12px">{{ userName(r.p.buyer) }}</div></template>
         <template #sku="{ r }"><span class="row"><Thumb :code="r.l.sku" :s="32"/><span class="col"><span>{{ skuName(r.l.sku) }}</span><small class="code dim">{{ r.l.sku }}</small></span></span></template>
-        <template #exp="{ r }"><input class="inp cell ghost" type="date" style="width:130px" v-model="r.l.expect"></template>
+        <template #exp="{ r }"><DatePick cell ghost style="width:132px" v-model="r.l.expect" placeholder="设预计日"/></template>
         <template #days="{ r }"><Days :d="r.date"/></template>
         <template #note="{ r }"><input class="inp cell ghost" v-model="r.l.note"></template>
       </Tbl>
@@ -646,7 +646,7 @@ comp('StockDocForm', {
   template: `<Modal :t="x ? '改' + t + ' ' + x.no : '新建' + t" :w="900" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(4,1fr)" data-c="出入库单单头">
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
-      <label class="f">日期<input class="inp" type="date" v-model="f.date" :max="clock.today"></label>
+      <label class="f">日期<DatePick v-model="f.date" :max="clock.today"/></label>
       <label v-if="t === '客供入库'" class="f">客户<select class="sel" v-model="f.partner"><option v-for="c in db.customers" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
       <label v-if="f.from !== null" class="f">出仓<select class="sel" v-model="f.from"><option v-for="w in whsFrom" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
       <label v-if="f.to !== null" class="f">入仓<select class="sel" v-model="f.to"><option v-for="w in whsTo" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
@@ -657,7 +657,6 @@ comp('StockDocForm', {
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
-    <p v-if="t === '退料'" class="dim" style="font-size:12px;margin-top:8px">退料：工厂剩料从工厂仓退回物料仓。挂上加工单，那张单的"已领"会扣掉这次退的。</p>
     <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="TRADE && t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
         <td><select class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select></td>
@@ -701,7 +700,6 @@ route('/stock-docs/:no', {
             { k: 'have', t: '出仓库存', c: 'num', f: l => d.from && d.status === '草稿' ? fq(stockQty(d.from, l.sku, l.owner)) : '' }]">
             <template #foot><tr><td>合计</td><td></td><td v-if="TRADE"></td><td class="num">{{ fq(docQty(d)) }}</td><td></td><td></td><td class="num">{{ fm(docAmt(d)) }}</td><td></td><td class="num">{{ sum(d.lines, l => l.rolls) || '—' }}</td><td></td><td></td></tr></template>
           </Tbl>
-          <p v-if="d.lines.some(l => l.purQty != null)" class="dim" style="font-size:12px;margin-top:8px">数量是库存单位；采购入库、退货的单价是采购单价折成库存单位，金额 = 采购数量 × 采购单价。</p>
         </section>
       </div>
       <aside class="aside" data-c="单据属性">
@@ -808,7 +806,7 @@ route('/stock', {
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>
       <select class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="(v, t) in STOCK_TYPES" :key="t" :value="t">{{ t }}</option></select>
-      <span class="dim" style="font-size:12px">关键字能搜单号、物料、缸号</span></div>
+      </div>
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存。SKU、物料名、仓库都能搜，几个编码用空格隔开" :cols="[
         { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku },

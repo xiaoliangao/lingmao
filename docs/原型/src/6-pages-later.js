@@ -100,7 +100,7 @@ route('/plans', {
       <div class="form">
         <div class="f full">状态<Seg v-model="s.task.status" :items="cols"/></div>
         <label class="f">负责人<select class="sel" v-model="s.task.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-        <label class="f">截止<input class="inp" type="date" v-model="s.task.due"></label>
+        <label class="f">截止<DatePick v-model="s.task.due"/></label>
       </div>
       <template #foot><a v-if="s.task.link" class="btn" :href="'#' + s.task.link" @click="s.task = null">打开{{ s.task.link.startsWith('/samples') ? '样衣' : '款式' }}</a><span class="sp"></span><button class="btn pri" @click="s.task = null">好</button></template>
     </Modal>
@@ -120,7 +120,7 @@ comp('PlanTaskNew', {
       <label class="f full">内容<input class="inp" v-model="f.title"></label>
       <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
       <label class="f">负责人<select class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">截止<input class="inp" type="date" v-model="f.due"></label>
+      <label class="f">截止<DatePick v-model="f.due"/></label>
       <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" :tip="(TRADE ? '灵感图、竞品图、客户发来的款都可以' : '灵感图、竞品图都可以') + '；Ctrl+V 能直接贴截图'"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建任务</button></template>
@@ -289,7 +289,7 @@ comp('SmpNew', {
       <label v-if="TRADE" class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors.filter(c => c.status !== '停用' || f.colors.includes(c.code))" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
-      <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
+      <label class="f">要样日期<DatePick v-model="f.need"/></label>
       <div class="f full" data-c="样衣图片">图片<Pics v-model="f.images" :colors="f.colors" :tip="(TRADE ? '设计稿、参考图、客户来样的照片' : '设计稿、参考图') + '；转大货时带到款式上'"/></div>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">建样衣</button></template>
@@ -372,7 +372,7 @@ comp('SmpDispatch', {
       <div class="f full">方式<Seg v-model="f.way" :items="['外部工厂', '内部版房']"/></div>
       <label v-if="f.way === '外部工厂'" class="f">打样工厂<select class="sel" v-model="f.factory"><option value="">选工厂</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}{{ x.status === '待准入' ? '（待准入）' : '' }}</option></select></label>
       <label v-else class="f">版师<select class="sel" v-model="f.maker"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">要样日期<input class="inp" type="date" v-model="f.need"></label>
+      <label class="f">要样日期<DatePick v-model="f.need"/></label>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">派单</button></template>
   </Modal>`,
@@ -388,7 +388,7 @@ comp('SmpNodeReport', {
   template: `<Modal t="报节点" :w="440" @close="$emit('close')">
     <div class="form">
       <div class="f full">节点<Seg v-model="f.i" :items="v.nodes.map((n, i) => [i, n.name + (n.done ? ' ✓' : '')])"/></div>
-      <label class="f">完成日期<input class="inp" type="date" v-model="f.date"></label>
+      <label class="f">完成日期<DatePick v-model="f.date"/></label>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">报完成</button></template>
   </Modal>`,
@@ -737,7 +737,6 @@ route('/qc', {
       </Tbl>
     </div>
     <div v-if="s.tab === '返修'" data-c="不合格、返修">
-      <p class="dim tip" style="margin:12px 20px">验货不合格的回货不能入成品仓：跟单员点「返修」写返修说明，拉回工厂返修；返修回来点「返修完成，重新验货」，回到「待检」再验一次。每次的验货记录都留在「已检」里。</p>
       <Tbl :rows="filt(fix, x => x.r.no + x.r.prod + supName(x.r.factory) + x.r.style)" empty="没有不合格、在返修的回货：验货不合格的回货会列在这里，等跟单员安排返修" :cols="[
         { k: 'no', t: '回货单', c: 'code', f: x => x.r.no }, { k: 'prod', t: '加工单 · 加工厂 · 跟单' }, { k: 'style', t: '款式 · 回货' },
         { k: 'qc', t: '最近一次验货' }, { k: 'fix', t: '返修说明', w: '22%' }, { k: 'st', t: '状态' }, { k: 'act', t: '' }]">
@@ -883,7 +882,6 @@ route('/fg', {
         <template #act="{ r }"><span class="row g8" style="justify-content:flex-end"><a v-if="fgBlock(r.r)" class="dim" style="font-size:12px" :href="'#' + fgBlock(r.r).to" :title="fgBlock(r.r).how">{{ fgBlock(r.r).short }}</a>
           <button class="btn sm" :disabled="!!fgBlock(r.r)" :title="fgBlock(r.r) ? fgBlock(r.r).t + '：' + fgBlock(r.r).how : null" @click="receive(r.r)">入库</button></span></template>
       </Tbl>
-      <p v-if="pend.some(x => fgBlock(x.r))" class="dim" style="font-size:12px;margin:10px 20px">回货验货合格（或让步接收）才能入库；没验的先去质检验货，不合格的先返修、返修回来再验。</p>
     </div>
     <div v-if="s.tab === '库存'" class="page" data-c="成品库存">
       <div v-for="st in stockStyles" :key="st" style="margin-bottom:28px">
@@ -1150,9 +1148,7 @@ comp('FinOcr', {
           <tr v-if="!shown.length"><td colspan="10" class="dim">{{ s.cmp.length ? '这一类没有' : '没识别出明细，换一张清楚的照片再试' }}</td></tr>
         </tbody>
       </table>
-      <p class="mut" style="margin:8px 0 0">对账单金额按我方单据算；有差异的每一行写清楚怎么处理（和工厂谈的结果），写完才能生成。原件和识别结果都挂在对账单上。</p>
     </template>
-    <p class="dim" style="font-size:12px;margin:10px 0 0" data-c="识别说明">{{ OCR_NOTE }}</p>
     <template #foot>
       <template v-if="s.step === 'done'"><button class="btn" @click="s.step = 'form'">重新上传</button><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">按比对结果生成对账单</button></template>
       <template v-else><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="s.step === 'busy'" @click="recognize">{{ s.step === 'busy' ? '识别中…' : '识别并比对' }}</button></template>
@@ -1270,7 +1266,6 @@ route('/finance/:no', {
           <details style="margin-top:8px"><summary class="mut" style="cursor:pointer">识别结果（{{ st.ocr.rows.length }} 行）</summary>
             <Tbl inset flat :rows="st.ocr.rows" :cols="[{ k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'no', t: '送货单号', c: 'code' }, { k: 'desc', t: '内容' }, { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }, { k: 'amt', t: '金额', c: 'num', f: x => fm(x.amt) }]"/>
           </details>
-          <p class="dim" style="font-size:12px;margin-top:6px">{{ OCR_NOTE }}</p>
         </section>
       </div>
       <aside class="aside" data-c="对账单属性">

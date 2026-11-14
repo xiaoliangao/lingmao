@@ -254,7 +254,7 @@ comp('PriceHistory', {
     return { s, cur, hist, mixed, shown, deals, newOne, adjust, drop, pct, canEditPrice }
   },
   template: `<section data-c="价格记录">
-    <div class="row" style="margin-bottom:10px"><span class="dim" style="font-size:12px">现价 = 生效日期不晚于今天的最新一条。下采购单、排单默认带现价；单据上改了价要写原因，审核时自动记进来</span><span class="sp" style="flex:1"></span>
+    <div class="row" style="margin-bottom:10px"><span class="sp" style="flex:1"></span>
       <button v-if="canEditPrice()" class="btn" @click="newOne"><Ico n="plus" :s="14"/>录价格</button></div>
     <div class="xscroll"><table class="tbl inset flat" data-c="现价">
       <thead><tr><th v-if="mixed">类型</th><th v-if="!sup">{{ style ? '工厂' : '供应商' }}</th><th v-if="sup || !mat">{{ style ? '款式 · 加工方式' : '物料 / 款式' }}</th><th v-if="mat && !sup">SKU</th><th class="num">现价</th><th class="num">上一次</th><th>生效</th><th>调价原因</th><th>来源</th><th></th></tr></thead>
@@ -275,7 +275,7 @@ comp('PriceHistory', {
         <tr v-if="!cur.length"><td colspan="10" class="empty">还没有价格记录：采购单、加工单审核时会自动记进来，也可以点「录价格」直接录供应商的报价</td></tr>
       </tbody>
     </table></div>
-    <div v-if="hist.length" class="sec" data-c="价格历史"><h3>历史<span class="dim" style="font-weight:400;font-size:12px">只增不改，录错的作废</span></h3>
+    <div v-if="hist.length" class="sec" data-c="价格历史"><h3>调价历史</h3>
       <div class="xscroll"><table class="tbl inset flat">
         <thead><tr><th>生效日期</th><th v-if="mixed">类型</th><th v-if="!sup">供应商 / 工厂</th><th>物料 / 款式</th><th class="num">单价</th><th>税率</th><th>调价原因</th><th>来源</th><th>记录</th><th></th></tr></thead>
         <tbody>
@@ -294,7 +294,7 @@ comp('PriceHistory', {
       </table></div>
       <p v-if="hist.length > 12" style="margin-top:8px"><button class="btn ghost sm" @click="s.all = !s.all">{{ s.all ? '收起' : '看全部 ' + hist.length + ' 条' }}</button></p>
     </div>
-    <div v-if="!style" class="sec" data-c="成交记录"><h3>成交记录<span class="dim" style="font-weight:400;font-size:12px">审核过的采购单{{ mat ? '' : '、加工单' }}，一单一行，点开看单据</span></h3>
+    <div v-if="!style" class="sec" data-c="成交记录"><h3>成交记录</h3>
       <Tbl inset flat :rows="deals" link @row="x => go(priceSrcLink(x.no).slice(1))" :empty="sup ? '还没有和这家审核过的采购单、加工单' : '还没有审核过的采购单买过它'" :cols="[
         { k: 'date', t: '日期', f: x => fd(x.date) }, { k: 'no', t: '单号', c: 'code' }, ...(sup ? [] : [{ k: 'sup', t: '供应商', f: x => supName(x.sup) }]),
         { k: 'what', t: '物料 / 款式' }, { k: 'qty', t: '数量', c: 'num', f: x => fq(x.qty) + ' ' + (x.unit || '') }, { k: 'price', t: '单价', c: 'num', f: x => fm(x.price) }]"/>
@@ -334,7 +334,7 @@ comp('PriceForm', {
       </template>
       <label class="f">单价（元/{{ f.kind === '物料价' ? (mat(f.mat)?.purUnit || '采购单位') : '件' }}）<input class="inp num" type="number" v-model.number="f.price"></label>
       <label class="f">税率<input class="inp" v-model="f.tax" placeholder="如 13%"></label>
-      <label class="f">生效日期<input class="inp" type="date" v-model="f.date"></label>
+      <label class="f">生效日期<DatePick v-model="f.date"/></label>
       <label class="f">含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
       <div v-if="cur" class="f full dim" style="font-size:12px">{{ fd(f.date) }} 的现价 {{ fm(cur.price) }}（{{ fd(cur.date) }} 起{{ cur.sku ? '，这个 SKU 单独定的' : '' }}）{{ needWhy ? '：调价要写原因' : '：给这个 SKU 单独定价，原因可以不写' }}</div>
       <label class="f full">调价原因<input class="inp" v-model="f.why" :placeholder="needWhy ? '必填，如：原料涨价' : '第一次报价可以不写'"></label>
@@ -379,7 +379,6 @@ comp('TpCompare', {
       <tfoot><tr><td>单件合计</td><td class="mut">物料 {{ fm(c.dev.mat) }} → {{ fm(c.prod.mat) }}</td><td></td><td></td><td class="num"><b>{{ fm(c.dev.all) }} → {{ fm(c.prod.all) }}</b></td><td class="num"><b :class="dc(c.d.all)">{{ ds(c.d.all, fm) || '—' }}</b></td>
         <td v-if="actual"></td><td v-if="actual" class="num"><b>{{ fm(actAll.all) }}</b></td></tr></tfoot>
     </table>
-    <p class="dim" style="font-size:12px;margin-top:8px">按部位 + 物料对行；用量按 {{ base }} 码，单件成本 = 用量 ×（1 + 损耗）× 单价，只算我方采购的料。研发单价是打样时手填的估价，生产单价默认取价格档案现价。<template v-if="actual">实际：没买过的料按生产 BOM 的单价算{{ actAll.miss ? '（有料还没买过）' : '' }}。完整的核价对比报表跟着 M05 核价（待定）。</template></p>
   </div>`,
 })
 
@@ -392,14 +391,14 @@ comp('StylePrice', {
     return { dev, prod }
   },
   template: `<div>
-    <section class="sec" style="margin-top:0" data-c="成本对比"><h3>研发估的 · 生产定的 · 实际花的
+    <section class="sec" style="margin-top:0" data-c="成本对比"><h3>成本对比
       <span class="dim" style="font-weight:400;font-size:12px" v-if="dev && prod">研发 V{{ dev.ver }}{{ dev.status === '已生效' ? '' : '（' + dev.status + '）' }} 对 生产 V{{ prod.ver }}{{ prod.status === '已生效' ? '' : '（' + prod.status + '）' }}</span></h3>
       <TpCompare v-if="dev && prod" :dev="dev" :prod="prod" actual/>
       <p v-else-if="prod" class="dim">这个款没有研发 BOM（导入的老款或直接下大货的款），只有生产 BOM：物料 {{ fm(tpMaterialCost(prod)) }}，加工 {{ fm(tpLabor(prod)) }}，单件 {{ fm(tpMaterialCost(prod) + tpLabor(prod)) }}。</p>
       <p v-else-if="dev" class="dim">只有研发 BOM，估价单件 {{ fm(tpMaterialCost(dev) + tpLabor(dev)) }}；转生产 BOM 以后能对比。</p>
       <p v-else class="dim">这个款还没有资料包，没有成本可比。</p>
     </section>
-    <section class="sec" data-c="加工价"><h3>加工价<span class="dim" style="font-weight:400;font-size:12px">各工厂、各加工方式的现价和历史</span></h3>
+    <section class="sec" data-c="加工价"><h3>加工价</h3>
       <PriceHistory :style="code"/></section>
   </div>`,
 })
@@ -422,7 +421,6 @@ route('/reorder', {
   template: `<div>
     <Head t="补货提醒" :back="['库存', '/stock']"><button class="btn pri" :disabled="!picked.length" @click="gen">生成备货采购单<span v-if="picked.length">（{{ picked.length }}）</span></button></Head>
     <div class="page">
-      <p class="dim tip">设了安全库存的物料 SKU，物料仓库存 + 全部在途 − 已被占用 低于安全库存就列在这里；在途不看赶不赶得上开裁，补货看的是会不会断。勾选后按供应商拆成备货采购单草稿：数量 = 差多少换成采购单位、按最小包装和起订量取整，单价按价格档案。补上以后自己消失。安全库存在物料详情的 SKU 上设。</p>
       <table class="tbl inset flat" data-c="补货清单">
         <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">库存</th><th class="num">在途</th><th class="num">已被占用</th><th class="num">安全库存</th><th class="num">差多少</th><th class="num">补货量</th><th class="num">单价</th><th>已开的备货单</th></tr></thead>
         <tbody>

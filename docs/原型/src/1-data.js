@@ -4,7 +4,7 @@
  * SKU：款号-颜色码-尺码（27CF001-KQ-M）；物料 SKU：物料编码-颜色码[-规格]（ML0012-KQ）
  * 业务单据（订单、采购、库存……）不在这里写死，由 2-store.js 末尾用真实动作"演"出来，账才对得上。
  * ============================================================ */
-const { reactive, computed, ref, watch, nextTick, onMounted, onUnmounted } = Vue
+const { reactive, computed, ref, watch, nextTick, onMounted, onUnmounted, Teleport } = Vue
 const TODAY = '2026-11-08'
 const clock = { today: TODAY } // 演历史数据时临时改，演完改回 TODAY
 const TRADE = false // 贸易代工：客户、客供料。甲方一期只做自营，以后接代工改成 true

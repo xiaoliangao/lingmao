@@ -179,14 +179,13 @@ route('/flow', {
   template: `<div>
     <Head t="业务流程"/>
     <div class="page fl" data-c="业务流程">
-      <p class="dim tip">按现在的原型画的：每一段一条流程线，下面配分步说明。带下划线的节点点开就是原型里对应的页面；数字、单号都是演示数据。右上角能切换身份，换成不同角色看看。</p>
       <div class="fl-legend"><span><i class="fl-k"></i>一期：12-01 上线</span><span><i class="fl-k p2"></i>二期：12 月每周发版</span><span><i class="fl-k tbd"></i>待定、待排期：甲方确认后再排</span><span><i class="fl-k end"></i>结果、回写</span></div>
       <section class="fl-sec" data-c="全景">
         <h2><span class="fl-no">00</span>全景</h2>
         <div v-for="(row, ri) in FLOW_STRIP" :key="ri" class="fl-strip" :style="{ '--n': row.length }">
           <button v-for="g in row" :key="g[0]" class="fl-stage" :class="flTag(g[3])" @click="jump(g[0])"><span class="fl-n">{{ g[0] }}<template v-if="g[3]"> · {{ g[3] }}</template></span><b>{{ g[1] }}</b><ul><li v-for="x in g[2]" :key="x">{{ x }}</li></ul></button>
         </div>
-        <p class="fl-spine"><b>一期的主线</b>：款式和生产 BOM 生效 → 订单审核 → 排单生成加工单，同时算料生成采购单（单价都从价格档案带）→ 到货入库 → 领料给加工厂 → 报进度 → 回货 → 订单完成、结案。没有订单时，按安全库存先备料。前面的企划、样衣和后面的质检、成品、对账是二期或待定，原型里先给甲方看样子。</p>
+        <p class="fl-spine"><b>一期的主线</b>：款式和生产 BOM 生效 → 订单审核 → 排单生成加工单，同时算料生成采购单（单价都从价格档案带）→ 到货入库 → 领料给加工厂 → 报进度 → 回货 → 订单完成、结案。没有订单时，按安全库存先备料。</p>
       </section>
       <section v-for="s in FLOW_SECS" :key="s.no" :id="'fl-' + s.no" class="fl-sec" :data-c="s.t">
         <h2><span class="fl-no">{{ s.no }}</span>{{ s.t }}<span class="fl-tag" :class="flTag(s.ph)">{{ s.ph || '一期' }}</span><span class="fl-menu">菜单：{{ s.menu }}</span></h2>
@@ -194,7 +193,7 @@ route('/flow', {
         <div v-for="b in s.branches || []" :key="b.lbl" class="fl-branch"><span class="fl-lbl">{{ b.lbl }}</span><FlowLine :items="b.flow"/></div>
         <p v-if="s.after" class="fl-note">{{ s.after }}</p>
         <p v-if="s.loop" class="fl-loop">{{ s.loop }}</p>
-        <template v-if="s.steps"><p class="fl-lead">流程是这样走的：</p><ol class="fl-steps"><li v-for="(x, i) in s.steps" :key="i">{{ x }}</li></ol></template>
+        <template v-if="s.steps"><ol class="fl-steps"><li v-for="(x, i) in s.steps" :key="i">{{ x }}</li></ol></template>
         <div v-if="s.cols" class="fl-cols"><div v-for="c in s.cols" :key="c[0]"><b>{{ c[0] }}</b>{{ c[1] }}</div></div>
         <p v-if="s.note" class="fl-note"><b>{{ s.note[0] }}：</b>{{ s.note[1] }}</p>
       </section>

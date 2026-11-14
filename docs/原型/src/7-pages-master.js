@@ -654,7 +654,7 @@ comp('SupplierForm', {
       <label class="f">等级<select class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></select></label>
       <span></span>
       <div class="f full">分类<div class="chips"><button v-for="c in db.dicts.供应商分类" :key="c" class="chip" :class="{ on: f.cats.includes(c) }" @click="toggle(f.cats, c)">{{ c }}</button></div></div>
-      <div class="f full" data-c="擅长品类">擅长品类<span class="dim" style="font-weight:400">（成衣厂、加工厂选；排单时参考）</span><div class="chips"><button v-for="c in cats" :key="c.code" class="chip" :class="{ on: f.goodAt.includes(c.code) }" @click="toggle(f.goodAt, c.code)">{{ c.name }}</button></div></div>
+      <div class="f full" data-c="擅长品类">擅长品类<div class="chips"><button v-for="c in cats" :key="c.code" class="chip" :class="{ on: f.goodAt.includes(c.code) }" @click="toggle(f.goodAt, c.code)">{{ c.name }}</button></div></div>
       <label class="f">联系人<input class="inp" v-model="f.contact"></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
       <label class="f">微信<input class="inp" v-model="f.wechat"></label>
@@ -670,8 +670,7 @@ comp('SupplierForm', {
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
     <template #foot>
-      <span v-if="!s" class="dim" style="font-size:12px">建好是「待准入」；补齐信用代码、营业执照、联系人、开户行、账号后申请准入，批了才能下采购单、加工单</span>
-      <span v-else-if="gate" class="dim" style="font-size:12px">带「需审批」的改了要另一个有审批权限的人批准才生效，其他的保存就生效</span>
+
       <span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ s ? '保存' : '建供应商' }}</button></template>
   </Modal>`,
 })
@@ -767,7 +766,7 @@ route('/suppliers/:code', {
             <template v-else><button class="btn sm" @click="rejectChange">驳回</button><button class="btn sm pri" @click="approveChange">批准改动</button></template></div>
           <table class="ptbl"><tr v-for="i in s.pending.items" :key="i.k"><td>{{ i.t }}</td><td class="dim"><s>{{ showVal(i.from) }}</s></td><td>→ {{ showVal(i.to) }}</td></tr></table>
         </div>
-        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], { v: 'risk', t: '风险', n: riskNewItems(s).length, ph: '待排期' }, ['docs', '往来单据', docs.length], ['prices', '价格记录', pricesOf({ sup: s.code }).filter(x => !x.void).length], { v: 'contracts', t: '合同', n: contracts.length, ph: '待排期' }, ['perf', '绩效（待定）']]"/><PriceHistory v-if="tab === 'prices'" :sup="s.code" data-c="价格记录"/>
+        <Tabs v-model="tab" :items="[['certs', '资质', s.certs.length], { v: 'risk', t: '风险', n: riskNewItems(s).length }, ['docs', '往来单据', docs.length], ['prices', '价格记录', pricesOf({ sup: s.code }).filter(x => !x.void).length], { v: 'contracts', t: '合同', n: contracts.length }, ['perf', '绩效']]"/><PriceHistory v-if="tab === 'prices'" :sup="s.code" data-c="价格记录"/>
 
         <section v-if="tab === 'certs'" data-c="资质">
           <Tbl inset flat :rows="s.certs" empty="还没传证照；申请准入要有营业执照" :cols="[{ k: 'type', t: '类型' }, { k: 'until', t: '有效期至', f: c => c.until }, { k: 'left', t: '' }, { k: 'file', t: '文件' }, { k: 'note', t: '备注', f: c => c.note || '—' }, { k: 'act', t: '' }]">
@@ -782,7 +781,7 @@ route('/suppliers/:code', {
           <div class="riskhead">
             <div><span class="dim">最近结果</span><b :class="riskTone(risk)">{{ risk ? risk.result : '还没查过' }}</b><small v-if="risk" class="dim">{{ fd(risk.at) }} · {{ risk.why }} · {{ risk.items.length }} 条</small></div>
             <span class="sp"></span>
-            <span class="dim" style="font-size:12px">申请准入时查一次；合作中的每周一自动复查，上次 {{ cnDate(db.riskRunAt) }}</span>
+            <span class="dim" style="font-size:12px">上次复查 {{ cnDate(db.riskRunAt) }}</span>
             <button class="btn" @click="checkNow"><Ico n="search" :s="14"/>现在查一次</button>
           </div>
           <Tbl inset flat :rows="risk ? risk.items : []" :empty="risk ? '企查查没查到风险' : '还没查过；填好信用代码点「现在查一次」'" :cols="[
@@ -797,8 +796,6 @@ route('/suppliers/:code', {
             <template #result="{ r }"><span class="flag" :class="riskTone(r)" :title="r.note || ''">{{ r.result }}{{ r.failed ? '：' + r.note : '' }}</span></template>
             <template #added="{ r }"><span v-if="r.added.length" class="red">{{ r.added.map(id => r.items.find(x => x.id === id)?.type).join('、') }}</span><span v-else class="dim">—</span></template>
           </Tbl>
-          <p class="dim tip" style="margin-top:10px">风险等级按「基础 › 字典」里的企查查高风险、企查查关注两项分；一家一天只查一次（按次收费），查询失败不拦准入和审批。
-            原型里的结果是假的；真系统里由定时任务调企查查接口，或由 agent 通过 MCP 取数后写入；比对和提醒在系统里做。</p>
         </section>
 
         <section v-if="tab === 'docs'" data-c="往来单据">
@@ -814,7 +811,6 @@ route('/suppliers/:code', {
         </section>
 
         <section v-if="tab === 'perf'" data-c="绩效">
-          <p class="dim tip"><Phase p="待定"/> 供应商绩效（12.04）是待定模块。这里先用一期记下的入库、回货日期和次品数算给甲方看，确认要做再细化指标。</p>
           <div class="stats" style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
             <div class="stat"><span>准时交货</span><b>{{ perf.onTime == null ? '—' : perf.onTime + '%' }}<small>{{ perf.n }} 次</small></b></div>
             <div class="stat"><span>逾期未交</span><b :class="{ red: perf.late }">{{ perf.late }}</b></div>
@@ -885,7 +881,7 @@ comp('CertForm', {
   template: `<Modal :t="c ? '换证照：' + c.type : '加一份证照'" :w="460" @close="$emit('close')">
     <div class="form">
       <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.证照类型" :key="x">{{ x }}</option></select></label>
-      <label class="f">有效期至<input class="inp" type="date" v-model="f.until"></label>
+      <label class="f">有效期至<DatePick v-model="f.until"/></label>
       <div class="f full">照片或扫描件<Pics v-model="f.files" files :max="1" :s="64" tip="拍照、扫描件、PDF 都行；拖进来也可以"/></div>
       <label class="f full">备注<input class="inp" v-model="f.note" placeholder="如：年检后换新"></label>
     </div>
@@ -972,7 +968,7 @@ route('/customers/:code', {
       <div class="body">
         <div class="title">{{ c.short }}<St :s="c.status"/></div>
         <div class="sub"><span>{{ c.name }}</span></div>
-        <Tabs v-model="tab" :items="[['orders', '订单', orders.length], ['stock', '客供料', stock.length], ['terms', '商务条款（待定）']]"/>
+        <Tabs v-model="tab" :items="[['orders', '订单', orders.length], ['stock', '客供料', stock.length], ['terms', '商务条款']]"/>
         <section v-if="tab === 'orders'" data-c="客户订单">
           <Tbl inset flat :rows="orders" link @row="o => go('/orders/' + o.no)" empty="这个客户还没下过订单" :cols="[
             { k: 'no', t: '订单号', c: 'code' }, { k: 'custNo', t: '客户单号', f: o => o.custNo || '—' }, { k: 'styles', t: '款式', f: o => orderStyles(o).join('、') },
@@ -981,7 +977,6 @@ route('/customers/:code', {
           </Tbl>
         </section>
         <section v-if="tab === 'terms'" data-c="商务条款">
-          <p class="dim tip"><Phase p="待定"/> 价格协议、扣点、返点（12.03）是待定模块（PRD §6.1.8），以后在客户档案上加。结算方式、账期在「编辑」里改。</p>
           <div class="form" style="max-width:560px">
             <label class="f full">价格协议<input class="inp" v-model="c.terms.price"></label>
             <label class="f">扣点<input class="inp" v-model="c.terms.deduct"></label>
@@ -1108,7 +1103,7 @@ comp('MaterialForm', {
       <label class="f">采购周期（天）<input class="inp num" type="number" v-model.number="f.lead"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
       <template v-if="!m">
-        <div class="f full">颜色<span class="dim" style="font-weight:400">（一个颜色一个 SKU；不选 = 1 个不带颜色的 SKU，如透明胶袋）</span><div class="chips"><button v-for="c in colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
+        <div class="f full">颜色<div class="chips"><button v-for="c in colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
         <div v-if="f.colors.length" class="f full" data-c="新建 SKU">
           <table class="tbl inset flat"><thead><tr><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（不填 = 参考单价）</th><th class="num">安全库存（{{ f.unit }}）</th></tr></thead>
             <tbody><tr v-for="c in f.colors" :key="c"><td><Sw :c="c"/></td><td><input class="inp" style="height:26px;width:90px" v-model="rows[c].spec" placeholder="如 15cm"></td>
@@ -1116,7 +1111,7 @@ comp('MaterialForm', {
               <td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="rows[c].safety"></td></tr></tbody></table></div>
         <div class="f full" data-c="物料图片">物料图片<Pics v-model="f.images" :colors="f.colors" tip="布样、色卡、辅料实物都可以拍；给图标上颜色，按颜色出图"/></div>
       </template>
-      <div v-else class="f full" data-c="编辑 SKU">SKU<span class="dim" style="font-weight:400">（加颜色、规格用详情页的「批量加 SKU」；用过的 SKU 不能删，只能停用）</span>
+      <div v-else class="f full" data-c="编辑 SKU">SKU
         <table class="tbl inset flat" style="margin-top:4px"><thead><tr><th>SKU</th><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（每{{ f.purUnit }}）</th><th class="num">安全库存（{{ f.unit }}）</th><th>状态</th></tr></thead>
           <tbody><tr v-for="k in f.skus" :key="k.code"><td class="code">{{ k.code }}</td><td><Sw v-if="k.color" :c="k.color"/><span v-else class="dim">—</span></td><td>{{ k.spec || '—' }}</td>
             <td><input class="inp" style="height:26px;width:100px" v-model="k.supColor"></td><td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.price" :placeholder="f.price ?? ''"></td>
@@ -1225,7 +1220,7 @@ comp('SkuAdd', {
   },
   template: `<Modal t="批量加 SKU" :w="560" @close="$emit('close')">
     <div class="form">
-      <div class="f full">颜色<span class="dim" style="font-weight:400">（可以不选：只有规格的，如不同长度的拉链）</span><div class="chips"><button v-for="c in liveColors()" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
+      <div class="f full">颜色<div class="chips"><button v-for="c in liveColors()" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f full">规格<input class="inp" v-model="f.specs" placeholder="可以填多个，空格隔开：15cm 18cm 60cm"></label>
     </div>
     <template #foot><span class="dim code" style="font-size:12px">{{ preview.length ? preview.length + ' 个：' + preview.join('、') : '选颜色或填规格' }}</span><span class="sp"></span>
@@ -1282,7 +1277,6 @@ route('/basics', {
       <Tabs v-model="tab" :items="[['colors', '颜色', db.colors.length], ['sizes', '尺码组', db.sizeGroups.length], ['bigs', '款号大类', db.bigCats.length], ['cats', '品类', db.categories.length], ['seasons', '季节', db.seasons.length], ['matcats', '物料分类', db.materialCategories.length], ['whs', '仓库', db.warehouses.length], ['companies', '主体公司', db.companies.length], ['dicts', '字典']]"/>
 
       <section v-if="tab === 'colors'" data-c="颜色">
-        <p class="dim tip">颜色编码会进 SKU 码（27CF001-KQ-M 里的 KQ），定了不改；不用的颜色停用，新建款式、物料就选不到它。</p>
         <Tbl inset flat :rows="db.colors" :cols="[{ k: 'sw', t: '' }, { k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称' }, { k: 'family', t: '色系' }, { k: 'used', t: '用在', c: 'num', f: c => colorUsed(c.code) ? colorUsed(c.code) + ' 个款 / 物料' : '—' }, { k: 'status', t: '状态' }, { k: 'act', t: '' }]">
           <template #sw="{ r }"><input v-if="ce.c === r" type="color" v-model="ce.hex" title="色块" style="width:26px;height:26px;padding:0;border:1px solid var(--line-strong);border-radius:6px;background:none"><Sw v-else :c="r.code" :n="false"/></template>
           <template #name="{ r }"><input v-if="ce.c === r" class="inp" style="height:26px;width:110px" v-model="ce.name" @keydown.enter="doEditColor"><span v-else>{{ r.name }}</span></template>
@@ -1303,7 +1297,6 @@ route('/basics', {
       </section>
 
       <section v-if="tab === 'sizes'" data-c="尺码组">
-        <p class="dim tip">已经有款式用的尺码组，只能在末尾追加尺码，不能删、不能改名、不能调顺序、不能换基码（PRD §6.1.3）；不用了就停用，新建款式选不到它。基码是核价取用量的那个码。</p>
         <div class="list">
           <div v-for="g in db.sizeGroups" :key="g.id" class="li" :class="{ off: g.status === '停用' }" style="height:auto;padding:12px 4px;gap:14px">
             <span v-if="sg.g === g" class="row g4" style="width:180px"><input class="inp" style="height:26px;width:130px" v-model="sg.v" @keydown.enter="doRenameGroup"><button class="btn sm" @click="doRenameGroup">好</button></span>
@@ -1331,8 +1324,6 @@ route('/basics', {
       </section>
 
       <section v-if="tab === 'bigs'" data-c="款号大类">
-        <p class="dim tip">款号 = 大类 2 位 + 建款日 yyMMdd + 设计师编号 2 位 + 流水 2 位，如 FS2611080701（服饰、11 月 8 日、设计师 07、当天第 1 个）。设计师编号在「设置 › 用户」里填。
-          大类编码定了不改；进过款号的不能删，只能停用，停用后新建款式选不到它。</p>
         <div class="list"><div v-for="c in db.bigCats" :key="c.code" class="li" :class="{ off: c.status === '停用' }">
           <span class="code dim" style="width:28px">{{ c.code }}</span>
           <template v-if="ren.c === c"><input class="inp" style="height:26px;width:140px" v-model="ren.v" @keydown.enter="doRename(db.bigCats, () => 0, '')"><button class="btn sm" @click="doRename(db.bigCats, () => 0, '')">好</button></template>
@@ -1344,7 +1335,6 @@ route('/basics', {
       </section>
 
       <section v-if="tab === 'cats'" data-c="品类">
-        <p class="dim tip">三级：大类 / 中类 / 品类。品类编码 1 位，定了不改；已经有款用的品类不能删、编码不能改，只能停用（PRD §6.1.2）。</p>
         <div v-for="g in catGroups" :key="g.p" style="margin-bottom:18px">
           <div class="dim" style="font-size:12px;margin-bottom:6px">{{ g.p }}</div>
           <div class="list"><div v-for="c in g.cats" :key="c.code" class="li" :class="{ off: c.status === '停用' }">
@@ -1360,7 +1350,6 @@ route('/basics', {
       </section>
 
       <section v-if="tab === 'seasons'" data-c="季节">
-        <p class="dim tip">季节编码 1 位，定了不改；已经有款式、物料用的季节不能删、编码不能改，只能停用（PRD §6.1.2）。年份是 4 位数字，不用维护。</p>
         <div class="list"><div v-for="c in db.seasons" :key="c.code" class="li" :class="{ off: c.status === '停用' }">
           <span class="code dim" style="width:24px">{{ c.code }}</span>
           <template v-if="ren.c === c"><input class="inp" style="height:26px;width:140px" v-model="ren.v" @keydown.enter="doRename(db.seasons, () => 0, '')"><button class="btn sm" @click="doRename(db.seasons, () => 0, '')">好</button></template>
@@ -1372,7 +1361,6 @@ route('/basics', {
       </section>
 
       <section v-if="tab === 'matcats'" data-c="物料分类">
-        <p class="dim tip">两级：面料 / 辅料 / 包材下面挂小类。小类编码 2 位字母，是物料编码的前缀（ML0012 里的 ML）；有物料的分类不能删、编码不能改，只能停用（PRD §6.1.4）。</p>
         <div v-for="g in matGroups" :key="g.g" style="margin-bottom:18px">
           <div class="dim" style="font-size:12px;margin-bottom:6px">{{ g.g }}</div>
           <div class="list"><div v-for="c in g.cats" :key="c.code" class="li" :class="{ off: c.status === '停用' }">
@@ -1395,11 +1383,10 @@ route('/basics', {
           <template #status="{ r }"><St :s="r.status"/></template>
           <template #act="{ r }"><span class="row g4"><button class="btn ghost sm" @click="edit.kind = 'wh'; edit.row = r">编辑</button><button class="btn ghost sm" @click="run(() => toggleWarehouse(r))">{{ r.status === '启用' ? '停用' : '启用' }}</button></span></template>
         </Tbl>
-        <p class="dim tip" style="margin-top:10px">新建「成衣厂」「加工厂」类的供应商时，自动建一个同名工厂仓。仓库里有库存不能停用。</p>
       </section>
 
       <section v-if="tab === 'companies'" data-c="主体公司">
-        <div class="row" style="margin-bottom:10px"><span class="dim tip" style="margin:0">每张单据记是哪个主体做的；打印采购单、加工单时用它的名称、地址、电话做抬头。至少要有一个启用的主体。</span><span class="sp"></span><button class="btn" @click="edit.kind = 'company'; edit.row = null"><Ico n="plus" :s="14"/>加主体</button></div>
+        <div class="row" style="margin-bottom:10px"><span class="sp"></span><button class="btn" @click="edit.kind = 'company'; edit.row = null"><Ico n="plus" :s="14"/>加主体</button></div>
         <Tbl inset flat :rows="db.companies" :cols="[{ k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称' }, { k: 'short', t: '简称' }, { k: 'credit', t: '统一社会信用代码', c: 'code', f: c => c.credit || '—' }, { k: 'addr', t: '地址', f: c => c.addr || '—' }, { k: 'phone', t: '电话', f: c => c.phone || '—' }, { k: 'status', t: '状态' }, { k: 'act', t: '' }]">
           <template #status="{ r }"><St :s="r.status"/></template>
           <template #act="{ r }"><span class="row g4"><button class="btn ghost sm" @click="edit.kind = 'company'; edit.row = r">编辑</button><button class="btn ghost sm" @click="run(() => toggleCompany(r))">{{ r.status === '启用' ? '停用' : '启用' }}</button></span></template>
@@ -1407,7 +1394,6 @@ route('/basics', {
       </section>
 
       <section v-if="tab === 'dicts'" data-c="字典">
-        <p class="dim tip">这些下拉框的选项甲方可以自己增删；删掉的值，以后新建的单据选不到，已经用了它的单据不受影响。</p>
         <div class="list">
           <div v-for="(vals, k) in db.dicts" :key="k" class="li" style="height:auto;padding:10px 4px;align-items:flex-start">
             <b style="width:96px;font-weight:500;flex:none">{{ k }}</b>
@@ -1488,8 +1474,6 @@ route('/settings', {
       <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
 
       <section v-if="tab === 'users'" data-c="用户">
-        <p class="dim tip">登录名、密码、启用停用在管理后台（已有）；这里是业务上要用的：部门、岗位、角色、默认主体（新单据的主体公司默认取它，PRD §5.7）、设计师编号。</p>
-        <p class="dim tip">设计师编号 2 位数字，进款号（FS2611080701 里的 07）；不能重号，进过款号就锁定：不能改，也不能给别人。没有编号的人建款不能自动编号，只能手填款号。</p>
         <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
           <template #dno="{ r }"><span v-if="dnoLocked(r)" class="row g4"><span class="code">{{ r.dno }}</span><span class="dim" style="font-size:12px" title="进过款号，不能改、不能给别人">已锁定</span></span>
             <input v-else class="inp code" style="height:26px;width:56px" maxlength="2" :value="r.dno || ''" placeholder="—" @change="e => { if (!run(() => setDesignerNo(r, e.target.value))) e.target.value = r.dno || ''; else if (e.target.value) toast(r.name + ' 的设计师编号是 ' + r.dno) }"></template>
@@ -1501,7 +1485,6 @@ route('/settings', {
       </section>
 
       <section v-if="tab === 'perms'" data-c="角色权限">
-        <p class="dim tip">点格子切换：— 看不到、看 = 能打开、改 = 新建编辑提交、审 = 审核反审核结案（PRD §3.1）。数据范围按角色设：「本人」只看制单人、跟单员、采购员、业务员是自己的单据；「全部」的人列表上有「我的 / 全部」切换（§3.2）。</p>
         <table class="tbl inset flat">
           <thead><tr><th>模块</th><th v-for="r in ROLES" :key="r" style="text-align:center">{{ r }}</th></tr></thead>
           <tbody><tr data-c="数据范围"><td>数据范围</td><td v-for="r in ROLES" :key="r" style="text-align:center"><button class="pill" :class="roleOf(r).scope === '全部' ? 'blue' : ''" style="border:none;cursor:pointer" @click="roleOf(r).scope = roleOf(r).scope === '全部' ? '本人' : '全部'">{{ roleOf(r).scope }}</button></td></tr>
@@ -1511,12 +1494,9 @@ route('/settings', {
       </section>
 
       <section v-if="tab === 'audit'" data-c="审批">
-        <p class="dim tip">第 1 级谁能审 = 「角色权限」里这个模块是「审」的角色。供应商的准入申请和关键信息改动（全称、信用代码、结算方式、账期、税率、发票类型、开户行、账号）都要另一个有审批权限的人批，不能批自己提的（甲方 11-11）。</p>
         <Tbl inset flat :rows="AUDITS" :cols="[{ k: 't', t: '单据' }, { k: 'p', t: '权限点', c: 'code' }, { k: 'roles', t: '谁能审', f: a => auditRoles(a.m).join('、') || '—' }, { k: 'lv', t: '级数', f: a => levelsText(a.t) }, { k: 'n', t: '待审', c: 'num', f: a => a.n() || '—' }]"/>
         <div class="sec" data-c="多级审批">
           <h3>多级审批<span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
-          <p class="dim tip">订单、采购单、加工单金额超过门槛，第 1 级审完还要再加一级；几条规则都超过就按门槛从低到高一级级审。没走完一直是「待审核」，详情右边能看到审到第几级、在等谁。<br>
-            审批流在提交时定下来，这里改了只影响以后提交的单。任何一级驳回都退回草稿，重新提交从第 1 级审起。同一个人连着几级都能审的，审一次都过（总经理自己审了第 1 级，就不用再审第 2 级）。</p>
           <table class="tbl inset flat"><tbody>
             <tr v-for="(r, i) in db.approvalRules" :key="i">
               <td style="width:140px"><select class="sel" style="height:26px" v-model="r.doc"><option v-for="t in amtDocs" :key="t">{{ t }}</option></select></td>
@@ -1534,7 +1514,7 @@ route('/settings', {
 
       <section v-if="tab === 'notify'" data-c="通知">
         <div class="list">
-          <label v-for="(on, k) in db.notify" :key="k" class="li chk"><input type="checkbox" v-model="db.notify[k]" :disabled="k === '站内待办'">{{ k }}<span v-if="k !== '站内待办'" class="pill blue" style="margin-left:auto">二期</span></label>
+          <label v-for="(on, k) in db.notify" :key="k" class="li chk"><input type="checkbox" v-model="db.notify[k]" :disabled="k === '站内待办'">{{ k }}</label>
         </div>
         <div class="h2">推送哪些事</div>
         <div class="list">

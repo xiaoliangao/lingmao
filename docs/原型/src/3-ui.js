@@ -17,8 +17,8 @@ function route(pat, component, meta) {
   ROUTES.push({ pat, re, keys, comp: component, ...meta })
 }
 const nav = reactive({ path: '/', query: {}, r: null, params: {}, seq: 0 })
-function parseHash() {
-  const [path, qs] = (location.hash.slice(1) || '/').split('?')
+function navigateTo(raw) {
+  const [path, qs] = ((raw || '/').replace(/^#/, '') || '/').split('?')
   nav.path = decodeURIComponent(path)
   nav.query = Object.fromEntries(new URLSearchParams(qs || ''))
   nav.r = null
@@ -29,8 +29,23 @@ function parseHash() {
   }
   nav.seq++
 }
+function parseHash() { navigateTo(location.hash.slice(1) || '/') }
 window.addEventListener('hashchange', parseHash)
-const go = (p) => { location.hash = '#' + p }
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="#/"]')
+  if (a && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.defaultPrevented) {
+    e.preventDefault()
+    go(a.getAttribute('href').slice(1))
+  }
+})
+const go = (p) => {
+  if (location.protocol !== 'about:' && location.origin !== 'null') {
+    location.hash = '#' + p
+    return
+  }
+  try { history.replaceState(null, '', '#' + p) } catch { /* sandboxed frame */ }
+  navigateTo(p)
+}
 const routeTitle = () => { const r = nav.r; if (!r) return '没有这个页面'; return typeof r.t === 'function' ? r.t(nav.params) : r.t }
 
 /* ---------- 提示、确认、出错 ---------- */
@@ -130,6 +145,9 @@ const ICONS = {
   link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
   pen: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
   info: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z M12 16v-4 M12 8h.01',
+  panel: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M9 4v16',
+  filter: 'M3 6h18 M7 12h10 M10 18h4',
+  calendar: 'M8 2v3 M16 2v3 M3 9h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
 }
 comp('Ico', {
   props: { n: String, s: { type: Number, default: 16 } },
@@ -152,7 +170,7 @@ const stKind = (s) => Object.keys(ST_KIND).find((k) => ST_KIND[k].includes(s)) |
 comp('St', {
   props: { s: String, t: String },
   setup: (p) => ({ k: computed(() => (['黑名单', '不合格'].includes(p.s) ? 'bad' : stKind(p.s))) }),
-  template: `<span class="st" :class="['k-' + k, { dot: t === '' }]" :title="t === '' ? s : null">{{ t === '' ? '' : t ?? s }}</span>`,
+  template: `<span class="st" :class="['k-' + k, { dot: t === '' }]" :data-status="s" :title="t === '' ? s : null">{{ t === '' ? '' : t ?? s }}</span>`,
 })
 
 /* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本, img: row => 款号/SKU（前面带小图） }]；单元格可用 #k 插槽改写
@@ -185,13 +203,20 @@ comp('Tbl', {
 
 // 二期、待定模块的页头标出分期（侧边栏 NAV 上的 ph），甲方一眼看出哪些这次不上
 const PHASE_TIP = { 二期: '12 月每周发版时再做（PRD §2.2）', 待定: '甲方表里没标黄，等主线跑起来、甲方确认要不要做再排（PRD §2.5）', 待排期: '甲方 11-11 新提的，排期还没定' }
+const shellUi = reactive({ side: true, pal: false })
 comp('Head', {
   props: { t: String, back: Array },
-  setup: () => ({ ph: computed(() => { const it = navOf(nav.r?.mod); return it?.ph && it.ph !== '一期' ? it : null }), PHASE_TIP }),
+  setup() {
+    const hasInfo = computed(() => typeof MOD_INFO !== 'undefined' && !!MOD_INFO[nav.r?.mod])
+    const infoOpen = computed(() => typeof miUi !== 'undefined' && miUi.open)
+    const toggleInfo = () => { if (typeof miUi !== 'undefined') miUi.open = !miUi.open }
+    return { shellUi, hasInfo, infoOpen, toggleInfo }
+  },
   template: `<header class="head" data-c="页头"><div class="crumb">
+      <button v-if="!shellUi.side" type="button" class="btn ghost icon sm" title="展开导航 ([)" @click="shellUi.side = true"><Ico n="panel" :s="15"/></button>
       <template v-if="back"><a :href="'#' + back[1]">{{ back[0] }}</a><Ico n="right" :s="14"/></template>
-      <b>{{ t }}</b><Phase v-if="ph" :p="ph.ph" :t="ph.ref + '：' + PHASE_TIP[ph.ph] + '。这里先给甲方看个样子'"/><slot name="title"/>
-    </div><div class="acts"><slot/></div></header>`,
+      <b>{{ t }}</b><slot name="title"/>
+    </div><div class="acts"><slot/><template v-if="hasInfo"><span class="head-sep"></span><button type="button" class="btn ghost icon sm" :class="{ on: infoOpen }" title="模块概览 (I)" @click="toggleInfo"><Ico n="info" :s="15"/></button></template></div></header>`,
 })
 
 const normItems = (items) => items.map((x) => (Array.isArray(x) ? { v: x[0], t: x[1] ?? x[0], n: x[2] } : typeof x === 'object' ? x : { v: x, t: x }))
@@ -199,14 +224,14 @@ comp('Seg', {
   props: { modelValue: null, items: Array },
   emits: ['update:modelValue'],
   setup: (p) => ({ list: computed(() => normItems(p.items)) }),
-  template: `<div class="seg"><button v-for="it in list" :key="it.v" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<i v-if="it.n != null">{{ it.n }}</i></button></div>`,
+  template: `<div class="seg" role="tablist"><button v-for="it in list" :key="it.v" type="button" role="tab" :aria-selected="it.v === modelValue" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<i v-if="it.n != null">{{ it.n }}</i></button></div>`,
 })
 // 页签项可以是对象 { v, t, n, ph }：ph 是分期（二期 / 待排期……），标题旁边出分期小标
 comp('Tabs', {
   props: { modelValue: null, items: Array },
   emits: ['update:modelValue'],
-  setup: (p) => ({ list: computed(() => normItems(p.items)), PHASE_TIP }),
-  template: `<div class="tabs"><button v-for="it in list" :key="it.v" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<Phase v-if="it.ph" :p="it.ph" :t="it.ph + '：' + (PHASE_TIP[it.ph] || '')"/><i v-if="it.n">{{ it.n }}</i></button></div>`,
+  setup: (p) => ({ list: computed(() => normItems(p.items)) }),
+  template: `<div class="tabs" role="tablist"><button v-for="it in list" :key="it.v" type="button" role="tab" :aria-selected="it.v === modelValue" :class="{ on: it.v === modelValue }" @click="$emit('update:modelValue', it.v)">{{ it.t }}<i v-if="it.n">{{ it.n }}</i></button></div>`,
 })
 comp('Search', {
   props: { modelValue: String, ph: { type: String, default: '搜索' } },
@@ -281,8 +306,8 @@ comp('AreaChart', {
     return { g, W, L, fmtK }
   },
   template: `<div class="chart"><svg :viewBox="'0 0 ' + W + ' ' + g.H" width="100%" :height="g.H" preserveAspectRatio="none">
-      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - 8" :y1="t.y" :y2="t.y" stroke="var(--line)" stroke-dasharray="3 3"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
-      <g v-for="s in g.lines" :key="s.t"><path :d="s.area" :fill="s.c" fill-opacity=".14"/><path :d="s.d" fill="none" :stroke="s.c" stroke-width="2"/></g>
+      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - 8" :y1="t.y" :y2="t.y" stroke="var(--line)"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
+      <g v-for="s in g.lines" :key="s.t"><path :d="s.area" :fill="s.c" fill-opacity=".12"/><path :d="s.d" fill="none" :stroke="s.c" stroke-width="2"/></g>
       <text v-for="x in g.xs.filter(z => z.show)" :key="x.t" :x="x.x" :y="g.H - 6" text-anchor="middle">{{ x.t }}</text>
     </svg><div class="legend"><span v-for="s in series" :key="s.t"><i :style="{ background: s.c }"></i>{{ s.t }}</span></div></div>`,
 })
@@ -396,19 +421,363 @@ comp('MineToggle', {
   template: `<span v-if="ownOnly()" class="pill" data-c="数据范围" title="你的角色数据范围是「本人」：只列出你是制单人、业务员、跟单员或采购员的单据（系统设置 → 角色权限里改）">只看我的</span>
     <Seg v-else data-c="数据范围" :modelValue="modelValue ? '我的' : '全部'" @update:modelValue="(v) => $emit('update:modelValue', v === '我的')" :items="['全部', '我的']"/>`,
 })
+/* ---------- 极简日历选择卡片：DatePick（单日） + DateRange（区间） ---------- */
+const WK_CN = ['一', '二', '三', '四', '五', '六', '日']
+function monthCells(y, m) {
+  const first = new Date(y, m - 1, 1)
+  const off = (first.getDay() + 6) % 7
+  const start = new Date(y, m - 1, 1 - off)
+  const out = []
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
+    const s = ymd(d)
+    out.push({ s, day: d.getDate(), cur: d.getMonth() + 1 === m, today: s === clock.today })
+  }
+  return out
+}
+function monthRangeOf(baseYmd, deltaM = 0) {
+  const b = toD(baseYmd)
+  const s = new Date(b.getFullYear(), b.getMonth() + deltaM, 1)
+  const e = new Date(b.getFullYear(), b.getMonth() + deltaM + 1, 0)
+  return [ymd(s), ymd(e)]
+}
+function rangePresets() {
+  const t = clock.today
+  const [m0, m1] = monthRangeOf(t, 0)
+  return [
+    { t: '今天', a: t, b: t },
+    { t: '近7天', a: addDays(t, -6), b: t },
+    { t: '近30天', a: addDays(t, -29), b: t },
+    { t: '本月', a: m0, b: m1 },
+    { t: '未来14天', a: t, b: addDays(t, 13) },
+  ]
+}
+function usePopAnchor(open, btnEl, popEl, defaultW = 280) {
+  const pos = reactive({ top: '0px', left: '0px', transformOrigin: 'top left' })
+  const place = () => {
+    if (!open.value || !btnEl.value) return
+    const r = btnEl.value.getBoundingClientRect()
+    const pw = popEl.value?.offsetWidth || defaultW
+    const ph = popEl.value?.offsetHeight || 336
+    let left = r.left
+    if (left + pw > window.innerWidth - 12) left = Math.max(12, window.innerWidth - 12 - pw)
+    let top = r.bottom + 6
+    let origin = 'top left'
+    if (top + ph > window.innerHeight - 12 && r.top > ph + 12) {
+      top = r.top - ph - 6
+      origin = 'bottom left'
+    }
+    pos.left = Math.round(left) + 'px'
+    pos.top = Math.round(Math.max(8, top)) + 'px'
+    pos.transformOrigin = origin
+  }
+  const closePop = () => { open.value = false }
+  const onOut = (e) => {
+    if (!open.value) return
+    const t = e.target
+    if (btnEl.value?.contains(t) || popEl.value?.contains(t)) return
+    const lbl = btnEl.value?.closest('label')
+    if (lbl && lbl.contains(t)) return
+    open.value = false
+  }
+  watch(open, (v) => {
+    if (v) {
+      escStack.push(closePop)
+      nextTick(() => { place(); requestAnimationFrame(place) })
+      window.addEventListener('scroll', place, true)
+      window.addEventListener('resize', place)
+    } else {
+      const i = escStack.indexOf(closePop)
+      if (i >= 0) escStack.splice(i, 1)
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  })
+  onMounted(() => document.addEventListener('pointerdown', onOut, true))
+  onUnmounted(() => {
+    document.removeEventListener('pointerdown', onOut, true)
+    const i = escStack.indexOf(closePop)
+    if (i >= 0) escStack.splice(i, 1)
+    window.removeEventListener('scroll', place, true)
+    window.removeEventListener('resize', place)
+  })
+  return { pos, place }
+}
+
+comp('DatePick', {
+  props: {
+    modelValue: String,
+    placeholder: { type: String, default: '选择日期' },
+    min: String,
+    max: String,
+    sm: Boolean,
+    cell: Boolean,
+    ghost: Boolean,
+    clearable: { type: Boolean, default: true },
+  },
+  emits: ['update:modelValue'],
+  setup(p, { emit }) {
+    const open = ref(false), mode = ref('day')
+    const btnEl = ref(null), popEl = ref(null)
+    const { pos, place } = usePopAnchor(open, btnEl, popEl, 280)
+    const vy = ref(2026), vm = ref(11)
+    const syncView = (s) => {
+      const d = toD(s || p.modelValue || clock.today)
+      if (!Number.isNaN(d.getTime())) { vy.value = d.getFullYear(); vm.value = d.getMonth() + 1 }
+    }
+    const toggle = () => {
+      if (!open.value) { mode.value = 'day'; syncView(p.modelValue || clock.today) }
+      open.value = !open.value
+    }
+    const stepM = (n) => {
+      const d = new Date(vy.value, vm.value - 1 + n, 1)
+      vy.value = d.getFullYear(); vm.value = d.getMonth() + 1
+    }
+    const jumpToday = () => { mode.value = 'day'; syncView(clock.today) }
+    const isDis = (s) => Boolean((p.min && s < p.min) || (p.max && s > p.max))
+    const pick = (s) => {
+      if (isDis(s)) return
+      emit('update:modelValue', s)
+      open.value = false
+    }
+    const clear = () => { emit('update:modelValue', ''); open.value = false }
+    const cells = computed(() => monthCells(vy.value, vm.value))
+    const quicks = computed(() => {
+      const t = clock.today
+      const raw = p.max && p.max <= t
+        ? [['今天', t], ['昨天', addDays(t, -1)], ['3天前', addDays(t, -3)]]
+        : [['今天', t], ['+7天', addDays(t, 7)], ['+15天', addDays(t, 15)], ['+30天', addDays(t, 30)]]
+      return raw.filter((x) => !isDis(x[1]))
+    })
+    const curM = computed(() => +clock.today.slice(5, 7))
+    const curY = computed(() => +clock.today.slice(0, 4))
+    const selY = computed(() => (p.modelValue ? +p.modelValue.slice(0, 4) : 0))
+    const selM = computed(() => (p.modelValue ? +p.modelValue.slice(5, 7) : 0))
+    const display = computed(() => {
+      if (!p.modelValue) return p.placeholder
+      return (p.cell || p.sm) ? fd(p.modelValue) : p.modelValue
+    })
+    watch(mode, () => nextTick(place))
+    return { WK_CN, open, mode, btnEl, popEl, pos, vy, vm, toggle, stepM, jumpToday, isDis, pick, clear, cells, quicks, curM, curY, selY, selM, display }
+  },
+  template: `<span class="dp-wrap" :class="{ auto: sm }">
+    <button ref="btnEl" type="button" class="dp-btn" :class="{ open, empty: !modelValue, sm, cell, ghost }" :data-date="modelValue || ''" @click="toggle">
+      <Ico v-if="!cell || !ghost || !modelValue" n="calendar" :s="sm || cell ? 13 : 14" class="dp-ico"/>
+      <span class="dp-txt">{{ display }}</span>
+      <span v-if="modelValue && clearable" class="dp-clr" role="button" tabindex="-1" aria-label="清除日期" @mousedown.stop.prevent @click.stop.prevent="$emit('update:modelValue', '')"><Ico n="x" :s="11"/></span>
+    </button>
+    <Teleport to="body">
+      <div v-if="open" ref="popEl" class="dp-card" :style="pos" @mousedown.stop @click.stop>
+        <div class="dp-nav">
+          <button type="button" class="dp-ym" :class="{ open: mode === 'month' }" @click="mode = mode === 'day' ? 'month' : 'day'">
+            <span>{{ mode === 'day' ? (vy + '年 ' + vm + '月') : (vy + '年') }}</span><Ico n="down" :s="13"/>
+          </button>
+          <div class="dp-arrows">
+            <button type="button" class="dp-arr" aria-label="上一段" @click="mode === 'day' ? stepM(-1) : (vy--)"><Ico n="left" :s="14"/></button>
+            <button type="button" class="dp-arr tod" @click="jumpToday">今</button>
+            <button type="button" class="dp-arr" aria-label="下一段" @click="mode === 'day' ? stepM(1) : (vy++)"><Ico n="right" :s="14"/></button>
+          </div>
+        </div>
+        <template v-if="mode === 'day'">
+          <div class="dp-wk"><span v-for="w in WK_CN" :key="w">{{ w }}</span></div>
+          <div class="dp-grid">
+            <button v-for="c in cells" :key="c.s" type="button" class="dp-day"
+              :class="{ 'is-out': !c.cur, 'is-today': c.today, 'is-sel': modelValue === c.s, 'is-dis': isDis(c.s) }"
+              @click="pick(c.s)"><span class="dp-num">{{ c.day }}</span></button>
+          </div>
+        </template>
+        <div v-else class="dp-months">
+          <button v-for="m in 12" :key="m" type="button" :class="{ cur: vy === curY && m === curM, on: vy === selY && m === selM }" @click="vm = m; mode = 'day'">{{ m }}月</button>
+        </div>
+        <div class="dp-foot">
+          <div class="dp-qks"><button v-for="q in quicks" :key="q[0]" type="button" :class="{ on: modelValue === q[1] }" @click="pick(q[1])">{{ q[0] }}</button></div>
+          <button v-if="modelValue && clearable" type="button" class="btn ghost sm" style="height:24px;padding:0 7px;font-size:11.5px" @click="clear">清除</button>
+        </div>
+      </div>
+    </Teleport>
+  </span>`,
+})
+
+comp('DateRange', {
+  props: {
+    from: String,
+    to: String,
+    prefix: String,
+    compact: Boolean,
+    placeholder: { type: String, default: '开始日期' },
+    endPlaceholder: { type: String, default: '结束日期' },
+  },
+  emits: ['update:from', 'update:to'],
+  setup(p, { emit }) {
+    const open = ref(false), mode = ref('day'), step = ref('from'), hoverD = ref('')
+    const btnEl = ref(null), popEl = ref(null)
+    const { pos, place } = usePopAnchor(open, btnEl, popEl, 304)
+    const vy = ref(2026), vm = ref(11)
+    const syncView = (s) => {
+      const d = toD(s || p.from || p.to || clock.today)
+      if (!Number.isNaN(d.getTime())) { vy.value = d.getFullYear(); vm.value = d.getMonth() + 1 }
+    }
+    const toggle = () => {
+      if (!open.value) {
+        mode.value = 'day'
+        step.value = p.from && !p.to ? 'to' : 'from'
+        hoverD.value = ''
+        syncView(p.from || p.to || clock.today)
+      }
+      open.value = !open.value
+    }
+    const stepM = (n) => {
+      const d = new Date(vy.value, vm.value - 1 + n, 1)
+      vy.value = d.getFullYear(); vm.value = d.getMonth() + 1
+    }
+    const jumpToday = () => { mode.value = 'day'; syncView(clock.today) }
+    const cells = computed(() => monthCells(vy.value, vm.value))
+    const presets = computed(rangePresets)
+    const applyPreset = (q) => {
+      emit('update:from', q.a)
+      emit('update:to', q.b)
+      step.value = 'from'
+      hoverD.value = ''
+      mode.value = 'day'
+      syncView(q.a)
+    }
+    const pickDay = (s) => {
+      if (step.value === 'from' || (p.from && p.to)) {
+        emit('update:from', s)
+        emit('update:to', '')
+        step.value = 'to'
+        hoverD.value = ''
+      } else {
+        if (!p.from) {
+          emit('update:from', s)
+          step.value = 'to'
+        } else if (s < p.from) {
+          emit('update:to', p.from)
+          emit('update:from', s)
+          step.value = 'from'
+          hoverD.value = ''
+        } else {
+          emit('update:to', s)
+          step.value = 'from'
+          hoverD.value = ''
+        }
+      }
+    }
+    const clear = () => { emit('update:from', ''); emit('update:to', ''); step.value = 'from'; hoverD.value = '' }
+    const eff = computed(() => {
+      if (step.value === 'to' && p.from && !p.to && hoverD.value) {
+        return hoverD.value < p.from ? { a: hoverD.value, b: p.from, preview: true } : { a: p.from, b: hoverD.value, preview: true }
+      }
+      return { a: p.from || '', b: p.to || '', preview: false }
+    })
+    const dayCls = (c) => {
+      const { a, b, preview } = eff.value
+      const rs = Boolean(a && c.s === a)
+      const re = Boolean(b && c.s === b)
+      const inR = Boolean(a && b && c.s > a && c.s < b)
+      return {
+        'is-out': !c.cur,
+        'is-today': c.today,
+        'range-start': rs,
+        'range-end': re,
+        'has-end': Boolean(rs && b && b !== a),
+        'has-start': Boolean(re && a && a !== b),
+        'in-range': inR,
+        'is-preview': preview && (inR || rs || re),
+      }
+    }
+    const curM = computed(() => +clock.today.slice(5, 7))
+    const curY = computed(() => +clock.today.slice(0, 4))
+    watch(mode, () => nextTick(place))
+    return { WK_CN, open, mode, step, hoverD, btnEl, popEl, pos, vy, vm, toggle, stepM, jumpToday, cells, presets, applyPreset, pickDay, clear, dayCls, curM, curY, fd }
+  },
+  template: `<span class="dp-wrap" :class="{ auto: compact }">
+    <button ref="btnEl" type="button" class="dr-btn" :class="{ open, compact }" @click="toggle">
+      <Ico n="calendar" :s="14" class="dp-ico"/>
+      <span v-if="prefix" class="dr-pre">{{ prefix }}</span>
+      <span :class="{ 'dr-ph': !from }">{{ from ? (compact ? fd(from) : from) : placeholder }}</span>
+      <span class="dr-sep">→</span>
+      <span :class="{ 'dr-ph': !to }">{{ to ? (compact ? fd(to) : to) : endPlaceholder }}</span>
+      <span v-if="from || to" class="dp-clr" role="button" tabindex="-1" aria-label="清除日期范围" @mousedown.stop.prevent @click.stop.prevent="clear"><Ico n="x" :s="11"/></span>
+    </button>
+    <Teleport to="body">
+      <div v-if="open" ref="popEl" class="dp-card is-range" :style="pos" @mousedown.stop @click.stop>
+        <div class="dr-head">
+          <button type="button" class="dr-slot" :class="{ active: step === 'from', filled: !!from }" @click="step = 'from'"><small>开始日期</small><b>{{ from || '点击选择' }}</b></button>
+          <span class="dr-sep">→</span>
+          <button type="button" class="dr-slot" :class="{ active: step === 'to', filled: !!to }" @click="step = 'to'"><small>结束日期</small><b>{{ to || '点击选择' }}</b></button>
+        </div>
+        <div class="dr-presets">
+          <button v-for="q in presets" :key="q.t" type="button" :class="{ on: from === q.a && to === q.b }" @click="applyPreset(q)">{{ q.t }}</button>
+        </div>
+        <div class="dp-nav">
+          <button type="button" class="dp-ym" :class="{ open: mode === 'month' }" @click="mode = mode === 'day' ? 'month' : 'day'">
+            <span>{{ mode === 'day' ? (vy + '年 ' + vm + '月') : (vy + '年') }}</span><Ico n="down" :s="13"/>
+          </button>
+          <div class="dp-arrows">
+            <button type="button" class="dp-arr" aria-label="上一段" @click="mode === 'day' ? stepM(-1) : (vy--)"><Ico n="left" :s="14"/></button>
+            <button type="button" class="dp-arr tod" @click="jumpToday">今</button>
+            <button type="button" class="dp-arr" aria-label="下一段" @click="mode === 'day' ? stepM(1) : (vy++)"><Ico n="right" :s="14"/></button>
+          </div>
+        </div>
+        <template v-if="mode === 'day'">
+          <div class="dp-wk"><span v-for="w in WK_CN" :key="w">{{ w }}</span></div>
+          <div class="dp-grid" @mouseleave="hoverD = ''">
+            <button v-for="c in cells" :key="c.s" type="button" class="dp-day" :class="dayCls(c)"
+              @mouseenter="hoverD = c.s" @click="pickDay(c.s)"><span class="dp-num">{{ c.day }}</span></button>
+          </div>
+        </template>
+        <div v-else class="dp-months">
+          <button v-for="m in 12" :key="m" type="button" :class="{ cur: vy === curY && m === curM }" @click="vm = m; mode = 'day'">{{ m }}月</button>
+        </div>
+        <div class="dp-foot">
+          <button type="button" class="btn ghost sm" style="height:25px;padding:0 8px;font-size:12px" :disabled="!from && !to" @click="clear">清空</button>
+          <button type="button" class="btn pri sm" style="height:26px;padding:0 12px;font-size:12px" @click="open = false">确定</button>
+        </div>
+      </div>
+    </Teleport>
+  </span>`,
+})
+
 comp('Filters', {
   props: { modelValue: Object, party: String, merch: Boolean, label: { type: String, default: '日期' } },
   setup(p) {
+    const open = ref(false)
+    const close = () => { open.value = false }
+    watch(open, (v) => {
+      if (v) escStack.push(close)
+      else { const i = escStack.indexOf(close); if (i >= 0) escStack.splice(i, 1) }
+    })
+    onMounted(() => document.addEventListener('click', close))
+    onUnmounted(() => {
+      document.removeEventListener('click', close)
+      const i = escStack.indexOf(close); if (i >= 0) escStack.splice(i, 1)
+    })
     const parties = computed(() => (p.party === 'customer' ? db.customers.map((c) => [c.code, c.short]) : db.suppliers.filter((s) => p.party !== 'factory' || isFactory(s)).map((s) => [s.code, s.short])))
-    const any = computed(() => Object.values(p.modelValue).some(Boolean))
+    const partyLabel = computed(() => (p.party === 'customer' ? '客户' : p.party === 'factory' ? '加工厂' : '供应商'))
+    const partyName = computed(() => parties.value.find((x) => x[0] === p.modelValue.party)?.[1] || p.modelValue.party)
+    const count = computed(() => ((p.modelValue.from || p.modelValue.to) ? 1 : 0) + (p.modelValue.party ? 1 : 0) + (p.modelValue.merch ? 1 : 0))
+    const any = computed(() => count.value > 0)
     const clear = () => Object.assign(p.modelValue, { from: '', to: '', party: '', merch: '' })
-    return { parties, any, clear }
+    const qks = computed(() => rangePresets().slice(1, 4))
+    return { open, parties, partyLabel, partyName, count, any, clear, qks }
   },
-  template: `<span class="flt" data-c="筛选：日期、往来方、跟单">
-    <span class="dim">{{ label }}</span><input class="inp" type="date" v-model="modelValue.from" :title="label + '从'"><span class="dim">–</span><input class="inp" type="date" v-model="modelValue.to" :title="label + '到'">
-    <select v-if="party" class="sel" v-model="modelValue.party"><option value="">{{ party === 'customer' ? '全部客户' : party === 'factory' ? '全部加工厂' : '全部供应商' }}</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></select>
-    <select v-if="merch" class="sel" v-model="modelValue.merch"><option value="">全部跟单员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select>
-    <button v-if="any" class="btn ghost sm" @click="clear">清空</button></span>`,
+  template: `<span class="flt-wrap" data-c="筛选：日期、往来方、跟单" @click.stop>
+    <button type="button" class="btn flt-btn" :class="{ on: open || any }" @click="open = !open"><Ico n="filter" :s="14"/><span>筛选</span><i v-if="count">{{ count }}</i></button>
+    <span v-if="modelValue.from || modelValue.to" class="fchip">{{ label }} {{ modelValue.from ? fd(modelValue.from) : '…' }}–{{ modelValue.to ? fd(modelValue.to) : '…' }}<button type="button" aria-label="清除日期" @click="modelValue.from = ''; modelValue.to = ''"><Ico n="x" :s="11"/></button></span>
+    <span v-if="modelValue.party" class="fchip">{{ partyLabel }}: {{ partyName }}<button type="button" aria-label="清除往来方" @click="modelValue.party = ''"><Ico n="x" :s="11"/></button></span>
+    <span v-if="modelValue.merch" class="fchip">跟单: {{ userName(modelValue.merch) }}<button type="button" aria-label="清除跟单" @click="modelValue.merch = ''"><Ico n="x" :s="11"/></button></span>
+    <div v-if="open" class="flt-pop">
+      <div class="f">
+        <div class="row" style="justify-content:space-between"><span>{{ label }}范围</span><span class="flt-qks"><button v-for="q in qks" :key="q.t" type="button" :class="{ on: modelValue.from === q.a && modelValue.to === q.b }" @click="modelValue.from = q.a; modelValue.to = q.b">{{ q.t }}</button></span></div>
+        <DateRange v-model:from="modelValue.from" v-model:to="modelValue.to"/>
+      </div>
+      <label v-if="party" class="f">{{ partyLabel }}<select class="sel" v-model="modelValue.party"><option value="">全部{{ partyLabel }}</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></select></label>
+      <label v-if="merch" class="f">跟单员<select class="sel" v-model="modelValue.merch"><option value="">全部跟单员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <slot/>
+      <footer><button type="button" class="btn ghost sm" :disabled="!any" @click="clear">重置</button><button type="button" class="btn pri sm" @click="open = false">完成</button></footer>
+    </div>
+  </span>`,
 })
 
 /* ---------- 单据单头的公共字段（PRD §5.1）：主体公司、制单、审核、备注；放在 <dl class="props"> 里 ---------- */
@@ -445,7 +814,7 @@ comp('CompanyPick', {
 // 分期小标：页面上放了二期 / 待定的内容时标出来，免得甲方以为一期都有（PRD §2.2、§2.5）
 comp('Phase', {
   props: { p: { type: String, default: '二期' }, t: String },
-  template: `<span class="phase" :title="t || (p + '再做，这里先给甲方看个样子')">{{ p }}</span>`,
+  template: ``,
 })
 
 /* ---------- 打印预览（采购单 §6.6.2、加工单 §6.7.1、资料包 §6.4.4）：抬头用主体公司的名称、地址、电话；点"打印"只打这张纸

@@ -134,7 +134,6 @@ comp('Pics', {
         <Ico :n="files ? 'upload' : 'camera'" :s="s < 56 ? 15 : 18"/><span v-if="s >= 56">{{ busy ? '处理中…' : files ? '加附件' : camera ? '拍照' : '加图片' }}</span></button>
     </div>
     <input ref="inp" type="file" :accept="files ? null : 'image/*'" multiple hidden @change="pick">
-    <p v-if="!readonly && !bare" class="ptip">{{ tipText }}</p>
   </div>`,
 })
 
@@ -149,7 +148,6 @@ comp('PicsEdit', {
   },
   template: `<Modal :t="t || '图片'" :w="660" @close="$emit('close')">
     <Pics v-model="list" :colors="colors" :s="96"/>
-    <p v-if="colors && colors.length > 1" class="mut" style="margin-top:6px">给图标上颜色，订单、加工单里会按颜色出图；没标颜色的图只当主图用。</p>
     <template #foot><span class="dim">{{ list.length }} 张</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">保存</button></template>
   </Modal>`,
 })

@@ -89,7 +89,7 @@ comp('FeedbackPanel', {
     return { fb, fbUi, VERDICTS, text, nameDraft, box, mod, meta, items, pinNo, mine, send, verdict, remove, open, verdictCount, fmtStamp }
   },
   template: `<aside class="fb">
-    <header><span>{{ meta.t }}</span><span v-if="meta.ph" class="pill" :class="{ amber: meta.ph === '待定', blue: meta.ph === '二期' }">{{ meta.ph }}</span>
+    <header><span>{{ meta.t }}</span>
       <button class="btn ghost icon" @click="fbUi.open = false"><Ico n="x"/></button></header>
     <div class="compose">
       <input v-if="!fb.name" class="inp" v-model="nameDraft" placeholder="你的名字">
@@ -191,8 +191,7 @@ route('/feedback', {
         <div class="list">
           <div v-for="it in g.items" :key="it.k" style="border-bottom:1px solid var(--line);padding:10px 4px">
             <div class="row"><Ico :n="it.i" :s="15"/><a :href="'#' + it.to" style="font-weight:500">{{ it.t }}</a>
-              <span v-if="it.ph" class="pill" :class="{ amber: it.ph === '待定', blue: it.ph === '二期' }">{{ it.ph }}</span>
-              <span class="dim" style="font-size:12px">{{ it.ref }}</span>
+
               <span style="flex:1"></span>
               <span v-for="[v, n] in it.vs.filter(x => x[1])" :key="v" class="pill" :class="{ green: v === '保留', red: v === '不需要', amber: v === '要改' }">{{ v }} {{ n }}</span>
               <span v-if="it.list.length" class="dim" style="font-size:12px">{{ it.list.length }} 条</span>
@@ -204,7 +203,7 @@ route('/feedback', {
           </div>
         </div>
       </template>
-      <p v-if="!total" class="empty">还没有意见。在任何页面点左下角「意见」写。</p>
+      <p v-if="!total" class="empty">暂无意见</p>
     </div>
   </div>`,
 }, { mod: 'feedback', t: '意见汇总' })

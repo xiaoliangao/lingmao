@@ -311,7 +311,6 @@ route('/contracts', {
         <ContractList :rows="rows" full :empty="db.contracts.length ? '没有符合条件的合同' : '还没有合同；在已审核的采购单、加工单上点「生成合同」'"/>
       </section>
       <section v-if="s.tab === 'tpls'" data-c="合同模板">
-        <p class="dim tip">在 Word 里写好合同，要系统填的地方写成占位符（如 <code v-pre>{{乙方}}</code>），导入时选 .docx 文件、把正文贴进来。更新 = 出一个新版本，旧版本自动停用但能看；已经出的合同存的是当时的版本，不跟着变。</p>
         <Tbl inset flat :rows="tpls" empty="还没有模板，点右上角「导入模板」" :cols="[
           { k: 'name', t: '名称' }, { k: 'kind', t: '类型' }, { k: 'ver', t: '版本', f: t => 'V' + t.ver }, { k: 'file', t: '文件' },
           { k: 'at', t: '导入', f: t => fd(t.at) + ' · ' + userName(t.by) }, { k: 'used', t: '出过', c: 'num', f: t => tplUsed(t) ? tplUsed(t) + ' 份' : '—' }, { k: 'status', t: '状态' }, { k: 'act', t: '' }]">
@@ -332,7 +331,6 @@ route('/contracts', {
 // 能用的占位符，分采购、加工两类列出来
 comp('CtVars', {
   template: `<div class="sec" data-c="占位符"><h3>模板里能用的占位符</h3>
-    <p class="dim tip">名字要一字不差；写了不认识的，保存时会列出来不让存。<code v-pre>{{明细}}</code> 单独占一行，生成时展开成明细表。</p>
     <div class="ct-vars">
       <div v-for="v in CT_VARS" :key="v.k" class="ct-var"><code>{{ phText(v.k) }}</code><span class="dim">{{ v.only ? '只有' + CT_KINDS[v.only] + '　' : '' }}{{ v.t || '' }}</span></div>
     </div></div>`,
@@ -368,14 +366,14 @@ comp('TplForm', {
       <label class="f">类型<select class="sel" v-model="f.kind" :disabled="!!t"><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></select></label>
       <label class="f">名称<input class="inp" v-model="f.name" :disabled="!!t" placeholder="如：物料采购合同"></label>
       <label class="f full">Word 文件（.docx）<span class="row g8"><input type="file" accept=".docx" @change="pick" data-c="模板文件"><span v-if="f.file" class="code">{{ f.file }}</span></span>
-        <small class="dim">原型只记文件名；真系统按这个 .docx 的版式填占位符</small></label>
+</label>
       <label class="f full">正文<textarea class="inp ct-src" v-model="f.body" rows="12" placeholder="在 Word 里全选、复制，粘贴到这里；要系统填的地方写成 {{乙方}} 这样的占位符"></textarea>
         <small v-if="bad.length" class="red" data-c="不认识的占位符">系统不认识：{{ bad.join('、') }}，不能保存</small>
         <small v-else-if="used.length" class="dim">用到 {{ used.length }} 个占位符：{{ used.join('、') }}</small></label>
       <label v-if="t" class="f full">这次改了什么<input class="inp" v-model="f.note" placeholder="如：违约金改成每日 0.5%"></label>
     </div>
     <details class="ct-help"><summary>能用的占位符</summary><div class="ct-vars"><div v-for="v in varsOf(f.kind)" :key="v.k" class="ct-var"><code>{{ phText(v.k) }}</code><span class="dim">{{ v.t || '' }}</span></div></div></details>
-    <template #foot><span class="dim" style="font-size:12px">{{ t ? '保存后出 V' + (t.ver + 1) + '，V' + t.ver + ' 自动停用；已出的合同不变' : '导入后是 V1，马上能用' }}</span><span class="sp"></span>
+    <template #foot><span class="sp"></span>
       <button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ t ? '保存新版本' : '导入' }}</button></template>
   </Modal>`,
 })
@@ -417,9 +415,9 @@ comp('ContractGen', {
     <div v-if="!tpls.length" class="banner"><Ico n="alert"/><span>还没有在用的{{ CT_KINDS[kind] }}模板，先到 <a href="#/contracts?tab=tpls">资料 › 合同 › 模板</a> 导入</span></div>
     <div v-else class="row g8" style="margin-bottom:10px;flex-wrap:wrap" data-c="选模板"><span class="dim">模板</span>
       <button v-for="t in tpls" :key="t.id" class="chip" :class="{ on: t.id === tid }" @click="tid = t.id">{{ t.name }} V{{ t.ver }}</button></div>
-    <p v-if="pre && pre.miss.length" class="dim tip amber" data-c="留空">这些没取到值，合同上留空，打印后手填：{{ pre.miss.join('、') }}</p>
+    <p v-if="pre && pre.miss.length" class="amber" style="font-size:12px;margin:0 0 10px" data-c="留空">待手填项：{{ pre.miss.join('、') }}</p>
     <div v-if="pre" class="ct-paper" data-c="合同预览" v-html="pre.html"></div>
-    <template #foot><span class="dim" style="font-size:12px">生成后存成快照：以后改模板、改供应商资料都不影响这份合同</span><span class="sp"></span>
+    <template #foot><span class="sp"></span>
       <button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!!block || !pre" @click="ok">确认生成合同</button></template>
   </Modal>`,
 })
@@ -427,7 +425,7 @@ comp('ContractGen', {
 // 单据详情右边：这张单出过的合同（作废的也列，划掉）
 comp('DocContracts', {
   props: { kind: String, d: Object },
-  template: `<div class="docfiles" data-c="合同"><h4>合同<Phase p="待排期" :t="'待排期：' + PHASE_TIP['待排期']"/></h4>
+  template: `<div class="docfiles" data-c="合同"><h4>合同</h4>
     <div v-for="c in contractsOfDoc(d.no)" :key="c.no" class="ct-mini" :class="{ off: c.status === '已作废' }"><a class="code" :href="'#/contracts/' + c.no">{{ c.no }}</a><St :s="c.status"/><span class="dim">V{{ c.tpl.ver }}</span></div>
     <p v-if="!contractsOfDoc(d.no).length" class="dim" style="font-size:12px;margin:0">{{ canGenContract(kind, d) ? '还没出合同，点上面「生成合同」' : '审核以后能生成合同' }}</p></div>`,
   setup: () => ({ PHASE_TIP }),
@@ -460,7 +458,7 @@ route('/contracts/:no', {
         <div v-if="c.status === '已作废'" class="banner red" data-c="作废原因"><Ico n="alert"/><span>{{ fd(c.voidAt) }} {{ userName(c.voidBy) }} 作废：{{ c.voidReason }}</span></div>
         <div class="title">{{ c.kindName }}<St :s="c.status"/></div>
         <div class="sub"><span>{{ supName(c.supplier) }}</span><span>{{ CT_DOC[c.kind] }} <a class="code" :href="'#' + ctDocTo(c)">{{ c.docNo }}</a></span><span>{{ fm(c.amt) }}</span><span>模板「{{ c.tpl.name }}」V{{ c.tpl.ver }}</span></div>
-        <p v-if="c.miss && c.miss.length" class="dim tip">生成时留空、要手填的：{{ c.miss.join('、') }}</p>
+        <p v-if="c.miss && c.miss.length" class="dim" style="font-size:12px;margin:0 0 12px">待手填项：{{ c.miss.join('、') }}</p>
         <article class="ct-paper" :class="{ void: c.status === '已作废' }" data-c="合同正文" v-html="c.html"></article>
       </div>
       <aside class="aside" data-c="合同属性">
@@ -481,7 +479,6 @@ route('/contracts/:no', {
       </aside>
     </div>
     <Modal v-if="signing" :t="'上传签回件：' + c.no" :w="480" @close="signing = false">
-      <p class="dim tip">双方签字盖章后拍照或扫描传上来，合同变「已签回」。可以传多份（每页一张也行）。</p>
       <Pics :model-value="c.signed" files :s="64" :max="10" @update:model-value="sign" tip="拖进来、粘贴、点选都行"/>
       <template #foot><span class="sp"></span><button class="btn" @click="signing = false">关闭</button></template>
     </Modal>

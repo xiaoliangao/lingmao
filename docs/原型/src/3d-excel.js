@@ -211,22 +211,22 @@ comp('ImportBox', {
     <template v-else>
       <div v-if="def.head" class="form" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px" data-c="导入：整批共用">
         <label v-for="h in def.head" :key="h.k" class="f">{{ h.t }}
-          <input v-if="h.type === 'date'" class="inp" type="date" v-model="head[h.k]">
+          <DatePick v-if="h.type === 'date'" v-model="head[h.k]"/>
           <select v-else class="sel" v-model="head[h.k]"><option v-for="o in h.opts()" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select></label>
       </div>
-      <ol class="isteps">
-        <li><b>下载模板，按模板填好</b><p class="mut">带 * 的列必填；表头别改名，列的顺序可以调。模板第二页「填写说明」里有每一列的格式和例子。{{ def.note }}</p>
-          <span class="row"><button class="btn" @click="importTemplate(def)"><Ico n="download" :s="14"/>下载模板</button><a v-if="def.example" class="dim" style="font-size:12px;cursor:pointer" @click="importTemplate(def, true)">没有现成的文件？下载一份填好的示例</a></span></li>
-        <li><b>选择填好的文件</b>
-          <div class="idrop" :class="{ over: s.over }" @click="input.click()" @dragover.prevent="s.over = true" @dragleave="s.over = false" @drop.prevent="s.over = false; pick($event.dataTransfer.files[0])" data-c="导入：选文件">
-            <Ico n="upload" :s="22"/>
-            <span v-if="s.file"><b>{{ s.file.name }}</b> <span class="dim num">{{ fsize(s.file.size) }}</span><br><span class="dim">点击或拖进来可以换一个</span></span>
-            <span v-else-if="s.errs.length">改好以后把文件重新拖进来，或<a>点击选择</a></span>
-            <span v-else>把 .xlsx 文件拖到这里，或<a>点击选择</a></span>
-            <input ref="input" type="file" accept=".xlsx" hidden @change="pick($event.target.files[0]); $event.target.value = ''">
-          </div>
-          <p class="dim" style="font-size:12px;margin-top:6px">只收 .xlsx，10MB、5000 行以内。有一行不对，整批都不导入。</p></li>
-      </ol>
+      <div class="isteps">
+        <div class="row" style="justify-content:space-between">
+          <span class="mut">Excel 模板</span>
+          <span class="row"><button v-if="def.example" type="button" class="btn ghost sm" @click="importTemplate(def, true)">下载示例</button><button type="button" class="btn sm" @click="importTemplate(def)"><Ico n="download" :s="13"/>下载模板</button></span>
+        </div>
+        <div class="idrop" :class="{ over: s.over }" @click="input.click()" @dragover.prevent="s.over = true" @dragleave="s.over = false" @drop.prevent="s.over = false; pick($event.dataTransfer.files[0])" data-c="导入：选文件">
+          <Ico n="upload" :s="20"/>
+          <span v-if="s.file"><b>{{ s.file.name }}</b> <span class="dim num">{{ fsize(s.file.size) }}</span></span>
+          <span v-else-if="s.errs.length">重新拖入修订后的 .xlsx，或<a>选择文件</a></span>
+          <span v-else>拖入 .xlsx 文件，或<a>选择文件</a></span>
+          <input ref="input" type="file" accept=".xlsx" hidden @change="pick($event.target.files[0]); $event.target.value = ''">
+        </div>
+      </div>
       <div v-if="s.msg" class="banner red" style="margin-top:12px"><Ico n="alert"/><span>{{ s.msg }}</span></div>
       <div v-if="s.errs.length" style="max-height:240px;overflow:auto;margin-top:8px" data-c="导入：错误清单">
         <Tbl inset flat :rows="s.errs" :cols="[{ k: 'r', t: '行', w: '60px' }, { k: 'c', t: '列', w: '110px' }, { k: 'm', t: '问题' }]"/>

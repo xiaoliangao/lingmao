@@ -64,10 +64,11 @@ comp('Palette', {
     }
     return { q, i, inp, items, pick, key }
   },
-  template: `<div class="mask" @mousedown.self="$emit('close')"><div class="pal">
-    <input ref="inp" v-model="q" @keydown="key" placeholder="跳到页面、单号、款号、供应商……">
+  template: `<div class="mask" @mousedown.self="$emit('close')"><div class="pal" role="dialog" aria-label="快捷跳转">
+    <div class="pal-top"><Ico n="search" :s="16"/><input ref="inp" v-model="q" @keydown="key" placeholder="搜索页面、单号、款号、供应商…"><kbd>ESC</kbd></div>
     <ul><li v-for="(x, n) in items" :key="x.to + n" :class="{ on: n === i }" @mouseenter="i = n" @click="pick(x)"><Ico :n="x.i || 'file'" :s="15"/>{{ x.t }}<span>{{ x.sub }}</span></li>
-      <li v-if="!items.length" class="dim">没有找到</li></ul>
+      <li v-if="!items.length" class="dim">无匹配结果</li></ul>
+    <div class="pal-foot"><span><kbd>↑↓</kbd> 选择</span><span><kbd>↵</kbd> 跳转</span><span><kbd>[</kbd> 收起侧栏</span><span><kbd>C</kbd> 批注</span></div>
   </div></div>`,
 })
 
@@ -88,76 +89,60 @@ comp('AskBox', {
     <template #foot><button class="btn" @click="done(false)">取消</button><button class="btn pri" :disabled="blocked" :style="ui.ask.danger ? 'background:var(--red);border-color:var(--red)' : ''" @click="done(true)">{{ ui.ask.ok }}</button></template></Modal>`,
 })
 comp('NotFound', {
-  template: `<div><Head t="没有这个页面"/><div class="empty">链接不对，或者这张单是刷新前新建的（原型刷新后数据回到初始）。<p style="margin-top:16px"><a class="btn" href="#/">回首页</a></p></div></div>`,
+  template: `<div><Head t="页面不存在"/><div class="empty">未找到对应页面或单据<p style="margin-top:16px"><a class="btn" href="#/">返回工作台</a></p></div></div>`,
 })
 
 const navOf = (k) => NAV.flatMap((g) => g.items).find((x) => x.k === k)
 
 const Shell = {
   setup() {
-    const pal = reactive({ open: false })
     const main = ref(null)
     const mod = computed(() => nav.r?.mod)
     const closed = reactive(JSON.parse((() => { try { return localStorage.getItem('scm-proto-nav') } catch { return null } })() || '{}'))
     const toggle = (g) => { closed[g] = !closed[g]; try { localStorage.setItem('scm-proto-nav', JSON.stringify(closed)) } catch { /* 无痕模式 */ } }
     const typing = (e) => /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable
     function onKey(e) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); pal.open = !pal.open }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); shellUi.pal = !shellUi.pal }
+      else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key === '[' && !escStack.length) shellUi.side = !shellUi.side
       else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c' && !escStack.length) fbUi.open = !fbUi.open
       else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'i' && !escStack.length) miUi.open = !miUi.open
     }
     onMounted(() => window.addEventListener('keydown', onKey))
-    // 页签：一个模块一个，记住这个模块最后停在哪一页
-    const tabs = reactive([{ k: 'home', to: '/' }])
     watch(() => nav.seq, () => {
       if (main.value) main.value.scrollTop = 0
       fbUi.focus = null
-      const k = mod.value
-      if (!k) return
-      const qs = new URLSearchParams(nav.query).toString(), to = nav.path + (qs ? '?' + qs : '')
-      const t = tabs.find((x) => x.k === k)
-      t ? (t.to = to) : tabs.push({ k, to })
-      if (tabs.length > 10) tabs.splice(tabs.findIndex((x, i) => i && x.k !== k), 1)
     }, { immediate: true })
-    function closeTab(i) { const [t] = tabs.splice(i, 1); if (t.k === mod.value) go(tabs[Math.max(0, i - 1)].to) }
-    const tabTitle = (k) => (k === 'feedback' ? '意见汇总' : navOf(k)?.t || k)
     const fbCount = computed(() => fb.items.length || '')
     const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
-    watch(() => db.me, () => toast(`现在是 ${me().name}（${me().role}，数据范围：${roleOf(me().role).scope}）`))
+    watch(() => db.me, () => toast(`已切换身份：${me().name}（${me().role} · ${roleOf(me().role).scope}）`))
     const hasInfo = computed(() => !!MOD_INFO[mod.value])
-    return { pal, main, mod, closed, toggle, fbCount, tabs, closeTab, tabTitle, todoCount, miUi, hasInfo }
+    return { shellUi, main, mod, closed, toggle, fbCount, todoCount, miUi, hasInfo }
   },
-  template: `<div class="app">
-    <aside class="side" data-c="侧边栏">
-      <div class="ws"><b>SCM</b><span>织间服饰</span></div>
-      <button class="find" @click="pal.open = true"><Ico n="search" :s="14"/><span>搜菜单、单号、款号</span><kbd>⌘K</kbd></button>
+  template: `<div class="app" :data-mod="mod" :data-route="nav.path">
+    <aside class="side" :class="{ shut: !shellUi.side }" data-c="侧边栏" aria-label="主导航">
+      <div class="ws"><b>织</b><span>织间服饰</span><button type="button" class="btn ghost icon sm ws-fold" title="收起导航 ([)" @click="shellUi.side = false"><Ico n="panel" :s="14"/></button></div>
+      <button type="button" class="find" aria-label="全局搜索" @click="shellUi.pal = true"><Ico n="search" :s="14"/><span>搜索或跳转…</span><kbd>⌘K</kbd></button>
       <nav><div v-for="g in NAV" :key="g.g || 'top'" class="grp">
-        <b v-if="g.g" :class="{ shut: closed[g.g] }" @click="toggle(g.g)">{{ g.g }}<Ico n="down" :s="13"/></b>
-        <template v-if="!closed[g.g]"><a v-for="it in g.items" :key="it.k" class="nav-i" :class="{ on: it.k === mod }" :href="'#' + it.to"><Ico :n="it.i"/><span>{{ it.t }}</span><span v-if="it.ph && it.ph !== '一期'" class="nav-ph" :title="it.ref">{{ it.ph }}</span></a></template>
+        <b v-if="g.g" :class="{ shut: closed[g.g] }" @click="toggle(g.g)">{{ g.g }}<Ico n="down" :s="12"/></b>
+        <template v-if="!closed[g.g]"><a v-for="it in g.items" :key="it.k" class="nav-i" :class="{ on: it.k === mod }" :aria-current="it.k === mod ? 'page' : null" :data-nav="it.k" :href="'#' + it.to"><Ico :n="it.i" :s="15"/><span>{{ it.t }}</span><span v-if="it.k === 'home' && todoCount" class="n">{{ todoCount > 99 ? '99+' : todoCount }}</span></a></template>
       </div></nav>
       <div class="side-foot">
-        <a class="nav-i" :class="{ on: fbUi.open }" @click="fbUi.open = !fbUi.open"><Ico n="msg"/><span>意见</span><span class="n">{{ fbCount }}</span></a>
-        <a class="nav-i" :class="{ on: mod === 'feedback' }" href="#/feedback"><Ico n="list"/><span>意见汇总</span></a>
+        <div class="side-util">
+          <a class="nav-i" :class="{ on: fbUi.open }" role="button" tabindex="0" @click="fbUi.open = !fbUi.open"><Ico n="msg" :s="14"/><span>批注</span><span class="n">{{ fbCount }}</span></a>
+          <a class="nav-i" :class="{ on: mod === 'feedback' }" href="#/feedback"><Ico n="list" :s="14"/><span>汇总</span></a>
+        </div>
+        <label class="me" data-c="切换身份"><i>{{ me().name[0] }}</i>
+          <select v-model="db.me" aria-label="当前身份"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></select></label>
       </div>
     </aside>
     <div class="work">
-      <header class="topbar">
-        <div class="ptabs"><a v-for="(t, i) in tabs" :key="t.k" class="ptab" :class="{ on: t.k === mod }" :href="'#' + t.to">{{ tabTitle(t.k) }}<span v-if="i" class="x" @click.prevent.stop="closeTab(i)"><Ico n="x" :s="12"/></span></a></div>
-        <div class="tb-right">
-          <button v-if="hasInfo" class="btn ghost icon" :class="{ on: miUi.open }" :title="(miUi.open ? '收起' : '打开') + '模块说明（I）'" @click="miUi.open = !miUi.open"><Ico n="info"/></button>
-          <button class="btn ghost icon" title="搜索 ⌘K" @click="pal.open = true"><Ico n="search"/></button>
-          <a class="btn ghost icon" title="待办" href="#/"><Ico n="bell"/><span v-if="todoCount" class="dot">{{ todoCount > 99 ? '99+' : todoCount }}</span></a>
-          <label class="me" data-c="切换身份" title="原型专用：换成别的人，看不同角色的待办、数据范围、撤回和审批"><i>{{ me().name[0] }}</i>
-            <select v-model="db.me"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></select></label>
-        </div>
-      </header>
-      <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet"/><NotFound v-else class="sheet"/></main>
+      <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet" :class="{ dash: mod === 'home' }"/><NotFound v-else class="sheet"/></main>
     </div>
     <ModInfo v-if="miUi.open && hasInfo" :k="mod"/>
     <FeedbackPanel v-if="fbUi.open"/>
     <Pins v-if="fbUi.open"/>
     <Picker v-if="fbUi.picking"/>
-    <Palette v-if="pal.open" @close="pal.open = false"/>
+    <Palette v-if="shellUi.pal" @close="shellUi.pal = false"/>
     <PicViewer v-if="viewer.list"/>
     <ErrBox/><AskBox/><Toasts/>
   </div>`,
@@ -166,6 +151,7 @@ const Shell = {
 const app = Vue.createApp(Shell)
 Object.entries(COMPONENTS).forEach(([n, c]) => app.component(n, c))
 Object.assign(app.config.globalProperties, G, { NAV, me, fb, fbUi })
+Object.assign(window.SCM, { nav, go, me, NAV })
 app.config.errorHandler = (e) => showErr(e)
 document.body.insertAdjacentHTML('afterbegin', PIC_DEFS)
 parseHash()

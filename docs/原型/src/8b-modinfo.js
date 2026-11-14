@@ -555,7 +555,7 @@ const MOD_INFO = {
   },
 }
 
-const miUi = reactive({ open: (() => { try { return localStorage.getItem('scm-proto-info') !== '0' } catch { return true } })() })
+const miUi = reactive({ open: (() => { try { return localStorage.getItem('scm-proto-info') === '1' } catch { return false } })() })
 watch(() => miUi.open, (v) => { try { localStorage.setItem('scm-proto-info', v ? '1' : '0') } catch { /* 无痕模式 */ } })
 
 // 流程节点链到哪个模块：按路由表认，/suppliers?f=待审批 → suppliers，/reorder → stock

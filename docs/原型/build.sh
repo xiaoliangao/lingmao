@@ -12,7 +12,7 @@ cat <<'HEAD'
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SCM 原型</title>
+<title>织间服饰 · 供应链</title>
 <style>
 HEAD
 cat "$SRC/style.css"
