@@ -64,7 +64,7 @@ public class MenuServiceImpl implements MenuService {
         boolean wasAdminOnly = Boolean.TRUE.equals(menu.getAdminOnly());
         boolean adminOnly = adminOnlyOf(parent, req);
         if (adminOnly != wasAdminOnly && hasChildren(id)) {
-            throw new BizException("下面还有菜单，不能在管理后台和工作台之间移动");
+            throw new BizException("下面还有菜单，不能在管理后台和业务菜单之间移动");
         }
         BeanUtils.copyProperties(req, menu);
         menu.setAdminOnly(adminOnly);
@@ -114,7 +114,7 @@ public class MenuServiceImpl implements MenuService {
         return parent;
     }
 
-    /** 属于管理后台还是工作台：顶层目录看请求里的 adminOnly，下级一律跟着上级 */
+    /** 属于管理后台还是业务菜单：顶层目录看请求里的 adminOnly，下级一律跟着上级 */
     private boolean adminOnlyOf(SysMenu parent, MenuSaveReq req) {
         return parent == null ? Boolean.TRUE.equals(req.getAdminOnly()) : Boolean.TRUE.equals(parent.getAdminOnly());
     }

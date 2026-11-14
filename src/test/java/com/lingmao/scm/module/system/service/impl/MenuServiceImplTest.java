@@ -92,7 +92,7 @@ class MenuServiceImplTest {
         assertThat(saved.getValue().getAdminOnly()).isTrue();
     }
 
-    /** 规则：下面还有菜单的目录，不能在管理后台和工作台之间移动（不然下级的标记就和它对不上了） */
+    /** 规则：下面还有菜单的目录，不能在管理后台和业务菜单之间移动（不然下级的标记就和它对不上了） */
     @Test
     void update_switchSideWithChildren_throwsAndNotUpdate() {
         SysMenu dir = menu(1L, 0L);
@@ -104,7 +104,7 @@ class MenuServiceImplTest {
 
         assertThatThrownBy(() -> menuService.update(1L, req))
                 .isInstanceOf(BizException.class)
-                .hasMessage("下面还有菜单，不能在管理后台和工作台之间移动");
+                .hasMessage("下面还有菜单，不能在管理后台和业务菜单之间移动");
         verify(sysMenuMapper, never()).updateById(any(SysMenu.class));
     }
 
