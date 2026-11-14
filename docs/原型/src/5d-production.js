@@ -63,11 +63,12 @@ function voidReturn(r, reason) {
 
 route('/production', {
   setup() {
-    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', q: '', flt: newFlt(), picked: [] })
+    // cat：首页品类环形图点进来，只看这个品类的款
+    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', cat: nav.query.cat || '', q: '', flt: newFlt(), picked: [] })
     const ST = ['全部', '草稿', '待审核', '已下单', '生产中', '部分回货', '已完成', '已结案', '已作废']
     const scoped = computed(() => db.productions.filter((p) => inScope(s.mine, p)))
     const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
-    const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f))
+    const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f)) && (!s.cat || style(p.style)?.cat === s.cat)
       && passFlt(s.flt, { date: expectDue(p), party: p.factory, merch: p.merch }) && matchQ(s.q, p.no, p.style, styleName(p.style), supName(p.factory), p.order)).slice().sort(byRisk))
     const XCOLS = [{ k: 'no', t: '加工单号', c: 'code' }, { k: 'order', t: '订单号', c: 'code' }, { k: 'style', t: '款号', c: 'code' }, { k: 'name', t: '款名', x: (p) => styleName(p.style) },
       { k: 'factory', t: '加工厂', x: (p) => supName(p.factory) }, { k: 'mode', t: '加工方式' }, { k: 'qty', t: '数量', x: prodQty }, { k: 'amt', t: '金额', x: prodAmt },
@@ -81,6 +82,7 @@ route('/production', {
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
     <div class="bar" data-c="筛选：交期、加工厂、跟单"><Filters v-model="s.flt" party="factory" merch label="交期"/>
       <Pick class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></Pick>
+      <span v-if="s.cat" class="fchip">{{ catOf(s.cat).name }}<button type="button" title="不按品类筛" @click="s.cat = ''"><Ico n="x" :s="11"/></button></span>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
     <div data-c="加工单列表"><ProdTable :rows="rows" v-model:picked="s.picked"/>
       <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="加工单" label="导出选中"/></BatchBar></div>

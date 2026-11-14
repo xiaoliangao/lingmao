@@ -1,5 +1,5 @@
 /* ============================================================
- * 意见：每个模块可以表态（保留 / 不需要 / 要改）、写意见、圈出页面上的位置。
+ * 意见：每个模块可以表态（保留 / 不需要 / 要改）、写意见、圈出页面上的位置；改好了点「解决」，首页右侧列着还没解决的。
  * 存在浏览器 localStorage（只在这台电脑这个浏览器里）；「意见汇总」页导出 Markdown / JSON 发回来，
  * JSON 可以再导入合并多个人的意见。页面上的区块用 data-c="名字" 标出来，圈位置时吸附到最近的区块。
  * ============================================================ */
@@ -27,6 +27,20 @@ function addComment(text) {
   fbUi.draft = null
   return true
 }
+// 解决 / 重新打开：记下谁、什么时候解决的，汇总和导出里都带着
+function fbResolve(x, on = !x.done) {
+  if (on) x.done = { by: fb.name, at: nowStamp() }
+  else delete x.done
+}
+// 去意见所在的页面，打开意见面板并高亮这条。换页时 9-app.js 会清掉高亮，所以等换完页再设
+function fbGoto(x) {
+  fbUi.open = true
+  if (x.path === nav.path) { fbUi.focus = x.id; return }
+  const seq = nav.seq, done = () => nextTick(() => { fbUi.focus = x.id })
+  go(x.path)
+  if (nav.seq !== seq) done()
+  else { const stop = watch(() => nav.seq, () => { stop(); done() }) }
+}
 function setVerdict(mod, v) {
   const m = (fb.verdicts[mod] ||= {})
   if (m[fb.name] === v) delete m[fb.name]
@@ -49,7 +63,7 @@ function fbMarkdown() {
     if (!items.length && !vs.length) return
     lines.push(`## ${g.g ? g.g + ' / ' : ''}${it.t}${it.ph ? '（' + it.ph + '）' : ''}`, ``)
     if (vs.length) lines.push(`结论：${vs.map(([v, n]) => `${v} ${n}`).join(' · ')}（${Object.entries(fb.verdicts[it.k] || {}).map(([a, v]) => `${a || '未署名'}：${v}`).join('，')}）`, ``)
-    items.forEach((x) => lines.push(`- 【${x.title}${x.anchor ? ' · ' + x.anchor : ''}】${x.text.replace(/\n/g, ' ')} —— ${x.author || '未署名'} ${fmtStamp(x.at)}（#${x.path}）`))
+    items.forEach((x) => lines.push(`- ${x.done ? '~~' : ''}【${x.title}${x.anchor ? ' · ' + x.anchor : ''}】${x.text.replace(/\n/g, ' ')} —— ${x.author || '未署名'} ${fmtStamp(x.at)}（#${x.path}）${x.done ? '~~ 已解决：' + (x.done.by || '未署名') + ' ' + fmtStamp(x.done.at) : ''}`))
     lines.push(``)
   }))
   return lines.join('\n')
@@ -58,8 +72,10 @@ const fbJson = () => JSON.stringify({ version: 1, exportedAt: nowStamp(), by: fb
 function fbImport(text) {
   const d = JSON.parse(text)
   if (!Array.isArray(d.items)) throw new Error('不是导出的意见文件')
-  const have = new Set(fb.items.map((x) => x.id))
+  const have = new Map(fb.items.map((x) => [x.id, x]))
   const added = d.items.filter((x) => !have.has(x.id))
+  // 已有的意见：别人那边解决了，这边也标上
+  d.items.forEach((x) => { const y = have.get(x.id); if (y && x.done && !y.done) y.done = x.done })
   fb.items.push(...added)
   Object.entries(d.verdicts || {}).forEach(([mod, m]) => Object.assign((fb.verdicts[mod] ||= {}), m))
   return added.length
@@ -72,10 +88,12 @@ comp('FeedbackPanel', {
     const text = ref(''), nameDraft = ref(fb.name), box = ref(null)
     const mod = computed(curMod)
     const meta = computed(() => navItem(mod.value) || { t: routeTitle(), ph: '' })
-    const items = computed(() => fb.items.filter((x) => x.mod === mod.value).slice().reverse())
+    // 没解决的在前，新的在前
+    const items = computed(() => fb.items.filter((x) => x.mod === mod.value).slice().reverse().sort((a, b) => !!a.done - !!b.done))
     const pinNo = (x) => pinsHere().indexOf(x) + 1
     const mine = computed(() => fb.verdicts[mod.value]?.[fb.name])
     watch(() => fbUi.draft, (d) => { if (d) nextTick(() => box.value?.focus()) })
+    watch(() => fbUi.focus, (id) => { if (id) nextTick(() => document.querySelector(`.fb [data-fb="${id}"]`)?.scrollIntoView({ block: 'nearest' })) }, { immediate: true })
     function ensureName() {
       if (fb.name) return true
       if (!nameDraft.value.trim()) { toast('先写上你的名字'); return false }
@@ -85,8 +103,7 @@ comp('FeedbackPanel', {
     function send() { if (ensureName() && addComment(text.value)) { text.value = ''; toast('意见已记下') } }
     function verdict(v) { if (ensureName()) setVerdict(mod.value, v) }
     function remove(x) { fb.items.splice(fb.items.indexOf(x), 1) }
-    function open(x) { if (x.path !== nav.path) go(x.path); fbUi.focus = x.id }
-    return { fb, fbUi, VERDICTS, text, nameDraft, box, mod, meta, items, pinNo, mine, send, verdict, remove, open, verdictCount, fmtStamp }
+    return { fb, fbUi, VERDICTS, text, nameDraft, box, mod, meta, items, pinNo, mine, send, verdict, remove, open: fbGoto, resolve: fbResolve, verdictCount, fmtStamp }
   },
   template: `<aside class="fb">
     <header><span>{{ meta.t }}</span>
@@ -103,10 +120,12 @@ comp('FeedbackPanel', {
       </div>
     </div>
     <div class="items">
-      <div v-for="x in items" :key="x.id" class="item" :class="{ hl: fbUi.focus === x.id }">
-        <div class="who"><i v-if="pinNo(x)" class="pin-no">{{ pinNo(x) }}</i><b>{{ x.author || '未署名' }}</b><span>{{ fmtStamp(x.at) }}</span>
-          <button v-if="x.author === fb.name" @click="remove(x)"><Ico n="trash" :s="13"/></button></div>
+      <div v-for="x in items" :key="x.id" class="item" :class="{ hl: fbUi.focus === x.id, done: x.done }" :data-fb="x.id">
+        <div class="who"><i v-if="pinNo(x)" class="pin-no" :class="{ done: x.done }">{{ pinNo(x) }}</i><b>{{ x.author || '未署名' }}</b><span>{{ fmtStamp(x.at) }}</span><span class="sp"></span>
+          <button class="fb-act" @click="resolve(x)">{{ x.done ? '重新打开' : '解决' }}</button>
+          <button v-if="x.author === fb.name" title="删除" @click="remove(x)"><Ico n="trash" :s="13"/></button></div>
         <p>{{ x.text }}</p>
+        <div v-if="x.done" class="done-by"><Ico n="check" :s="12"/>{{ x.done.by || '未署名' }} {{ fmtStamp(x.done.at) }} 解决</div>
         <a v-if="x.anchor || x.path !== nav.path" class="dim" style="font-size:12px;cursor:pointer" @click="open(x)">{{ x.title }}{{ x.anchor ? ' · ' + x.anchor : '' }}</a>
       </div>
       <div v-if="!items.length" class="empty" style="padding:40px 0">这个模块还没有意见</div>
@@ -125,7 +144,7 @@ comp('Pins', {
         if (!el) return null
         const r = el.getBoundingClientRect()
         if (!r.width) return null
-        return { id: x.id, n: i + 1, left: r.left + x.rx * r.width, top: r.top + x.ry * r.height }
+        return { id: x.id, n: i + 1, done: !!x.done, left: r.left + x.rx * r.width, top: r.top + x.ry * r.height }
       }).filter(Boolean)
     }
     let t
@@ -133,7 +152,7 @@ comp('Pins', {
     onUnmounted(() => clearInterval(t))
     return { pos, fbUi }
   },
-  template: `<div class="pins"><i v-for="p in pos" :key="p.id" class="pin-no" :style="{ left: p.left + 'px', top: p.top + 'px' }" @click="fbUi.focus = p.id">{{ p.n }}</i></div>`,
+  template: `<div class="pins"><i v-for="p in pos" :key="p.id" class="pin-no" :class="{ done: p.done }" :style="{ left: p.left + 'px', top: p.top + 'px' }" @click="fbUi.focus = p.id">{{ p.n }}</i></div>`,
 })
 
 /* 圈位置：鼠标移到哪个区块就高亮哪个，点一下记下来 */
@@ -175,7 +194,7 @@ route('/feedback', {
     async function clear() { if (await ask('清空意见', '这台电脑上记的意见会全部删掉，删了找不回来。先导出备份。', '清空', true)) { fb.items.splice(0); Object.keys(fb.verdicts).forEach((k) => delete fb.verdicts[k]) } }
     const exportMd = () => download('SCM原型意见.md', fbMarkdown(), 'text/markdown')
     const exportJson = () => download('SCM原型意见.json', fbJson(), 'application/json')
-    return { groups, total, file, imp, clear, exportMd, exportJson, fmtStamp, fb }
+    return { groups, total, file, imp, clear, exportMd, exportJson, fmtStamp, fb, fbGoto, fbResolve }
   },
   template: `<div>
     <Head t="意见汇总">
@@ -194,11 +213,16 @@ route('/feedback', {
 
               <span style="flex:1"></span>
               <span v-for="[v, n] in it.vs.filter(x => x[1])" :key="v" class="pill" :class="{ green: v === '保留', red: v === '不需要', amber: v === '要改' }">{{ v }} {{ n }}</span>
-              <span v-if="it.list.length" class="dim" style="font-size:12px">{{ it.list.length }} 条</span>
+              <span v-if="it.list.length" class="dim" style="font-size:12px">{{ it.list.length }} 条<template v-if="it.list.some(x => !x.done)">，{{ it.list.filter(x => !x.done).length }} 条没解决</template></span>
             </div>
-            <div v-for="x in it.list" :key="x.id" style="padding:8px 0 0 25px">
-              <div>{{ x.text }}</div>
-              <div class="dim" style="font-size:12px">{{ x.author || '未署名' }} · {{ fmtStamp(x.at) }} · <a :href="'#' + x.path">{{ x.title }}{{ x.anchor ? ' · ' + x.anchor : '' }}</a></div>
+            <div v-for="x in it.list" :key="x.id" class="row" style="padding:8px 0 0 25px;align-items:flex-start" :class="{ 'fb-done': x.done }">
+              <div style="flex:1;min-width:0">
+                <div class="fb-text">{{ x.text }}</div>
+                <div class="dim" style="font-size:12px">{{ x.author || '未署名' }} · {{ fmtStamp(x.at) }} · <a @click="fbGoto(x)">{{ x.title }}{{ x.anchor ? ' · ' + x.anchor : '' }}</a>
+                  <template v-if="x.done"> · {{ x.done.by || '未署名' }} {{ fmtStamp(x.done.at) }} 解决</template></div>
+              </div>
+              <span v-if="x.done" class="pill green">已解决</span>
+              <button class="btn sm" :class="{ ghost: x.done }" @click="fbResolve(x)">{{ x.done ? '重新打开' : '解决' }}</button>
             </div>
           </div>
         </div>

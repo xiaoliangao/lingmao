@@ -296,49 +296,85 @@ comp('Prog', {
   setup: (p) => ({ pct: computed(() => fpct(p.a, p.b)) }),
   template: `<span class="prog" :class="{ done: pct >= 100 }"><b><i :style="{ width: pct + '%' }"></i></b>{{ pct }}%</span>`,
 })
-/* ---------- 图表（首页、报表）：面积图 series = [{ t, c: 颜色, v: [数] }]，labels = x 轴；环形图 items = [{ t, v, c }] ---------- */
+/* ---------- 图表（首页、报表）：面积图 series = [{ t, c: 颜色, v: [数] }]，labels = x 轴，tips = 悬停时的标题（默认 labels）；环形图 items = [{ t, v, c }]
+ *   都能交互：悬停看数（面积图也能用左右键）；点图例隐藏 / 显示一条线；点一下发 pick（面积图给第几个点，环形图给那一项），页面拿去跳转，hint 写点了去哪 ---------- */
 const smooth = (pts) => pts.reduce((d, [x, y], i) => {
   if (!i) return `M${x},${y}`
   const [x0, y0] = pts[i - 1], cx = (x0 + x) / 2
   return d + `C${cx},${y0} ${cx},${y} ${x},${y}`
 }, '')
 comp('AreaChart', {
-  props: { series: Array, labels: Array, h: { type: Number, default: 200 } },
-  setup(p) {
-    const W = 600, L = 40, R = 8, T = 10, B = 22
+  props: { series: Array, labels: Array, tips: Array, h: { type: Number, default: 200 }, hint: String },
+  emits: ['pick'],
+  setup(p, { emit }) {
+    const L = 40, R = 16, T = 10, B = 22
+    // 宽度跟着容器走（不拉伸 SVG，圆点和字才不变形）
+    const box = ref(null), W = ref(600), at = ref(null), off = reactive(new Set())
+    let ro
+    onMounted(() => { ro = new ResizeObserver(([e]) => { W.value = Math.max(240, Math.round(e.contentRect.width)) }); ro.observe(box.value) })
+    onUnmounted(() => ro?.disconnect())
     const g = computed(() => {
-      const max = Math.max(1, ...p.series.flatMap((s) => s.v))
+      const shown = p.series.filter((s) => !off.has(s.t))
+      const max = Math.max(1, ...shown.flatMap((s) => s.v))
       const step = 10 ** Math.floor(Math.log10(max)), top = Math.ceil(max / step) * step
       const n = p.labels.length, H = p.h
-      const x = (i) => L + ((W - L - R) * i) / Math.max(1, n - 1), y = (v) => T + (H - T - B) * (1 - v / top)
+      const x = (i) => L + ((W.value - L - R) * i) / Math.max(1, n - 1), y = (v) => T + (H - T - B) * (1 - v / top)
       const ticks = [0, 1, 2, 3, 4].map((k) => ({ v: (top * k) / 4, y: y((top * k) / 4) }))
-      const lines = p.series.map((s) => { const pts = s.v.map((v, i) => [x(i), y(v)]); const d = smooth(pts); return { ...s, d, area: d + `L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z` } })
+      const lines = shown.map((s) => { const pts = s.v.map((v, i) => [x(i), y(v)]); const d = smooth(pts); return { ...s, pts, d, area: d + `L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z` } })
       const every = Math.ceil(n / 8)
-      return { H, ticks, lines, xs: p.labels.map((t, i) => ({ t, x: x(i), show: i % every === 0 || i === n - 1 })) }
+      return { H, n, ticks, lines, px: p.labels.map((_, i) => x(i)), xs: p.labels.map((t, i) => ({ t, x: x(i), show: i % every === 0 || i === n - 1 })) }
     })
+    function move(e) {
+      const sx = e.clientX - e.currentTarget.getBoundingClientRect().left, n = g.value.n
+      at.value = Math.min(n - 1, Math.max(0, Math.round(((sx - L) / (W.value - L - R)) * (n - 1))))
+    }
+    function key(e) {
+      const n = g.value.n
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); at.value = Math.min(n - 1, Math.max(0, (at.value ?? n) + (e.key === 'ArrowLeft' ? -1 : 1))) }
+      else if (e.key === 'Enter' && at.value != null) emit('pick', at.value)
+    }
+    // 至少留一条线
+    function toggle(s) { if (off.has(s.t)) off.delete(s.t); else if (off.size < p.series.length - 1) off.add(s.t) }
     const fmtK = (v) => (v >= 10000 ? rnd(v / 10000, 1) + '万' : fq(v))
-    return { g, W, L, fmtK }
+    return { box, W, L, R, at, off, g, move, key, toggle, fmtK }
   },
-  template: `<div class="chart"><svg :viewBox="'0 0 ' + W + ' ' + g.H" width="100%" :height="g.H" preserveAspectRatio="none">
-      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - 8" :y1="t.y" :y2="t.y" stroke="var(--line)"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
+  template: `<div class="chart" ref="box">
+    <svg :width="W" :height="g.H" :viewBox="'0 0 ' + W + ' ' + g.H" :class="{ pickable: hint }" tabindex="0" @mousemove="move" @mouseleave="at = null" @blur="at = null" @keydown="key" @click="at != null && $emit('pick', at)">
+      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - R" :y1="t.y" :y2="t.y" stroke="var(--line)"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
       <g v-for="s in g.lines" :key="s.t"><path :d="s.area" :fill="s.c" fill-opacity=".12"/><path :d="s.d" fill="none" :stroke="s.c" stroke-width="2"/></g>
+      <g v-if="at != null"><line class="chart-guide" :x1="g.px[at]" :x2="g.px[at]" :y1="10" :y2="g.H - 22"/>
+        <circle v-for="s in g.lines" :key="s.t" :cx="s.pts[at][0]" :cy="s.pts[at][1]" r="4" :fill="s.c" stroke="var(--bg)" stroke-width="2"/></g>
       <text v-for="x in g.xs.filter(z => z.show)" :key="x.t" :x="x.x" :y="g.H - 6" text-anchor="middle">{{ x.t }}</text>
-    </svg><div class="legend"><span v-for="s in series" :key="s.t"><i :style="{ background: s.c }"></i>{{ s.t }}</span></div></div>`,
+    </svg>
+    <div v-if="at != null" class="chart-tip" :class="{ flip: g.px[at] > W * 0.6 }" :style="{ left: g.px[at] + 'px' }">
+      <b>{{ (tips || labels)[at] }}</b>
+      <span v-for="s in g.lines" :key="s.t" class="row"><i :style="{ background: s.c }"></i>{{ s.t }}<b class="num">{{ fq(s.v[at]) }}</b></span>
+      <small v-if="hint">{{ hint }}</small>
+    </div>
+    <div class="legend"><button v-for="s in series" :key="s.t" type="button" :class="{ off: off.has(s.t) }" :aria-pressed="!off.has(s.t)" :title="off.has(s.t) ? '显示这条线' : '隐藏这条线'" @click="toggle(s)"><i :style="{ background: s.c }"></i>{{ s.t }}</button></div>
+  </div>`,
 })
 comp('Donut', {
-  props: { items: Array, s: { type: Number, default: 150 }, unit: { type: String, default: '' } },
+  props: { items: Array, s: { type: Number, default: 150 }, unit: { type: String, default: '' }, label: { type: String, default: '合计' }, hint: String },
+  emits: ['pick'],
   setup(p) {
+    const on = ref(null) // 悬停（或键盘停在）哪一项：其他的变淡，中间显示这一项
     const segs = computed(() => {
-      const tot = sum(p.items, (x) => x.v) || 1, C = 2 * Math.PI * 40
+      const tot = sum(p.items, (x) => x.v), C = 2 * Math.PI * 40
       let acc = 0
-      return { tot, list: p.items.map((x) => { const len = (x.v / tot) * C; const s = { ...x, dash: `${Math.max(0, len - 1.2)} ${C}`, off: -acc, pct: Math.round((x.v / tot) * 100) }; acc += len; return s }) }
+      return { tot, list: p.items.map((x) => { const len = (x.v / (tot || 1)) * C; const s = { ...x, dash: `${Math.max(0, len - 1.2)} ${C}`, off: -acc, pct: Math.round((x.v / (tot || 1)) * 100) }; acc += len; return s }) }
     })
-    return { segs }
+    const cur = computed(() => segs.value.list.find((x) => x.t === on.value))
+    return { segs, on, cur }
   },
-  template: `<div class="row" style="gap:20px;align-items:center"><svg :width="s" :height="s" viewBox="0 0 100 100" style="transform:rotate(-90deg)">
-      <circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-sunken)" stroke-width="14"/>
-      <circle v-for="x in segs.list" :key="x.t" cx="50" cy="50" r="40" fill="none" :stroke="x.c" stroke-width="14" :stroke-dasharray="x.dash" :stroke-dashoffset="x.off"/></svg>
-    <div class="col" style="gap:7px;flex:1;min-width:0;font-size:12.5px"><div v-for="x in segs.list" :key="x.t" class="row"><i :style="{ background: x.c, width: '10px', height: '10px', borderRadius: '2px', display: 'inline-block' }"></i><span class="ell" style="flex:1">{{ x.t }}</span><span class="num mut">{{ fq(x.v) }}{{ unit }}</span><span class="num dim" style="width:34px">{{ x.pct }}%</span></div></div></div>`,
+  template: `<div class="donut"><svg :width="s" :height="s" viewBox="0 0 100 100">
+      <g transform="rotate(-90 50 50)"><circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-sunken)" stroke-width="14"/>
+        <circle v-for="x in segs.list" :key="x.t" class="dn-seg" :class="{ dim: on && on !== x.t, pickable: hint }" cx="50" cy="50" r="40" fill="none" :stroke="x.c" :stroke-width="on === x.t ? 17 : 14" :stroke-dasharray="x.dash" :stroke-dashoffset="x.off"
+          @mouseenter="on = x.t" @mouseleave="on = null" @click="$emit('pick', x)"/></g>
+      <text x="50" y="49" text-anchor="middle" class="dn-v">{{ fq(cur ? cur.v : segs.tot) }}</text>
+      <text x="50" y="61" text-anchor="middle" class="dn-t">{{ cur ? cur.t + ' · ' + cur.pct + '%' : label }}</text></svg>
+    <div class="dn-legend"><button v-for="x in segs.list" :key="x.t" type="button" :class="{ dim: on && on !== x.t, on: on === x.t }" :title="hint" @mouseenter="on = x.t" @mouseleave="on = null" @focus="on = x.t" @blur="on = null" @click="$emit('pick', x)">
+      <i :style="{ background: x.c }"></i><span class="ell">{{ x.t }}</span><span class="num mut">{{ fq(x.v) }}{{ unit }}</span><span class="num dim">{{ x.pct }}%</span></button></div></div>`,
 })
 comp('Nodes', {
   props: { p: Object },

@@ -47,16 +47,17 @@ TODOS.push(() => {
 })
 
 // 首页：概况卡片点进去就是筛好的列表；趋势图、品类环形图是报表看板（13.06，二期），前几周是演示用的历史数
+// 排版：上面概况、快捷发起，下面两列一行一对（待办 | 待解决的意见、趋势 | 品类、交期 | 其他提醒），同一行一样高，长的在卡片里滚
 const HIST_ORDER = [1180, 860, 1420, 990, 1630, 1210, 1880, 1350, 1560, 2120, 1740]
 const HIST_RET = [640, 920, 780, 1150, 1020, 1310, 990, 1460, 1280, 1390, 1610]
 const CAT_COLORS = ['#9a6b3e', '#5c856b', '#cfa355', '#7e909a', '#c26b58', '#8d7b68', '#79998a', '#b88655', '#9c958b', '#a87568']
+// 按周汇总：最后一周到今天为止；rng 是每周的起止日期（点图跳列表用），lbl 是每周最后一天
+const shortMd = (s) => `${+s.slice(5, 7)}/${+s.slice(8, 10)}`
 function weekly(rows, dateOf, qtyOf, hist) {
-  const end = toD(clock.today), weeks = hist.length + 1
-  const out = hist.map((v) => v), lbl = []
-  for (let i = 0; i < weeks; i++) { const d = new Date(end); d.setDate(d.getDate() - (weeks - 1 - i) * 7); lbl.push(`${d.getMonth() + 1}/${d.getDate()}`) }
-  out.push(0)
+  const weeks = hist.length + 1, out = [...hist, 0]
+  const rng = Array.from({ length: weeks }, (_, i) => { const b = addDays(clock.today, -(weeks - 1 - i) * 7); return [addDays(b, -6), b] })
   rows.forEach((r) => { const k = weeks - 1 - Math.floor(diffDays(clock.today, dateOf(r)) / 7); if (k >= 0 && k < weeks) out[k] += qtyOf(r) })
-  return { lbl, out }
+  return { lbl: rng.map(([, b]) => shortMd(b)), rng, out }
 }
 route('/', {
   setup() {
@@ -81,12 +82,12 @@ route('/', {
     const trend = computed(() => {
       const a = weekly(db.orders.filter((o) => o.status !== '已取消'), (o) => o.date, orderQty, HIST_ORDER)
       const b = weekly(liveReturns(), (r) => r.date, (r) => sum(r.lines, (l) => l.qty), HIST_RET)
-      return { labels: a.lbl, series: [{ t: '下单件数', c: '#9a6b3e', v: a.out }, { t: '回货件数', c: '#5c856b', v: b.out }] }
+      return { labels: a.lbl, rng: a.rng, tips: a.rng.map(([x, y]) => `${shortMd(x)} – ${shortMd(y)}`), series: [{ t: '下单件数', c: '#9a6b3e', v: a.out }, { t: '回货件数', c: '#5c856b', v: b.out }] }
     })
     const cats = computed(() => {
       const acc = {}
-      live.value.forEach((p) => { const c = catOf(style(p.style)?.cat).name; acc[c] = (acc[c] || 0) + prodQty(p) - prodRet(p) })
-      return Object.entries(acc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([t, v], i) => ({ t, v, c: CAT_COLORS[i % CAT_COLORS.length] }))
+      live.value.forEach((p) => { const c = style(p.style)?.cat; acc[c] = (acc[c] || 0) + prodQty(p) - prodRet(p) })
+      return Object.entries(acc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([code, v], i) => ({ code, t: catOf(code).name, v, c: CAT_COLORS[i % CAT_COLORS.length] }))
     })
     // 待办：具体到单据，按 PRD §6.9.2 的"给谁"出
     const todo = computed(() => {
@@ -128,11 +129,20 @@ route('/', {
       const ps = live.value.map((p) => ({ k: '加工单', no: p.no, to: '/production/' + p.no, img: p.style, sub: `${styleName(p.style)} · ${supName(p.factory)}`, due: expectDue(p), a: prodRet(p), b: prodQty(p) }))
       return [...os, ...ps].filter((x) => x.due && x.due <= end).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 8)
     })
+    // 原型批注里还没解决的，按页面分组：最近有新意见的页排前面
+    const fbOpen = computed(() => {
+      const m = new Map()
+      fb.items.filter((x) => !x.done).forEach((x) => { if (!m.has(x.path)) m.set(x.path, { path: x.path, title: x.title, i: navItem(x.mod)?.i || 'file', items: [] }); m.get(x.path).items.push(x) })
+      return [...m.values()].map((g) => ({ ...g, items: g.items.slice().reverse() })).sort((a, b) => b.items[0].at.localeCompare(a.items[0].at))
+    })
+    const fbOpenN = computed(() => sum(fbOpen.value, (g) => g.items.length))
+    const fbDoneN = computed(() => fb.items.filter((x) => x.done).length)
+    const pickWeek = (i) => go(`/orders?from=${trend.value.rng[i][0]}&to=${trend.value.rng[i][1]}`)
     const quick = [['新建订单', 'file', '/orders?new=1'], ['新建款式', 'shirt', '/styles?new=1'], ['算料', 'sigma', '/mrp'], ['到料跟踪', 'truck', '/arrivals'], ['生产看板', 'grid', '/board'], ['库存', 'package', '/stock'], ['手机报工', 'phone', '/mobile'], ['批注汇总', 'list', '/feedback']]
     const inboxTab = ref('全部')
     const inboxTabs = computed(() => [['全部', '全部', todo.value.reduce((a, g) => a + g.items.length, 0)], ...todo.value.map((g) => [g.tag, g.tag, g.items.length])])
     const shownTodo = computed(() => (inboxTab.value === '全部' ? todo.value.flatMap((g) => g.items.slice(0, 4).map((x) => ({ ...x, tag: g.tag, tone: g.tone }))) : (todo.value.find((g) => g.tag === inboxTab.value)?.items || []).map((x) => ({ ...x, tag: inboxTab.value }))))
-    return { hi, today, co, who, kpi, trend, cats, todo, others, week, quick, inboxTab, inboxTabs, shownTodo }
+    return { hi, today, co, who, kpi, trend, cats, todo, others, week, quick, inboxTab, inboxTabs, shownTodo, fbOpen, fbOpenN, fbDoneN, pickWeek, fbGoto, fbResolve, fmtStamp }
   },
   template: `<div>
     <Head t="首页"><template #title><span class="head-sub">{{ today }}</span></template>
@@ -161,59 +171,72 @@ route('/', {
         </div>
       </section>
 
-      <div class="studio">
-        <div class="studio-col">
-          <section class="panel" data-c="待办">
-            <h3>待处理事项<span class="acts dim" style="font-size:12px">{{ shownTodo.length }} 项</span></h3>
-            <div v-if="todo.length > 1" class="inbox-bar"><Seg v-model="inboxTab" :items="inboxTabs"/></div>
-            <div class="pb">
-              <div v-if="shownTodo.length" class="inbox-list">
-                <a v-for="x in shownTodo" :key="x.to + x.t" class="todo-i" :href="'#' + x.to">
-                  <Thumb v-if="x.img" :code="x.img" :s="36"/>
-                  <div class="col"><span class="ell" style="font-weight:500">{{ x.t }}</span><small class="ell">{{ x.sub }}</small></div>
-                  <St v-if="inboxTab === '全部'" :s="x.tone === 'pending' ? '待处理' : x.tone === 'bad' ? '不合格' : '已审核'" :t="x.tag"/>
-                  <Ico n="right" :s="14" class="go-arr"/>
-                </a>
-              </div>
-              <div v-else class="empty">{{ me().name }}暂无待处理单据</div>
-              <div v-if="others.length" class="chips" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
-                <a v-for="x in others" :key="x.t" class="chip" :href="'#' + x.to">{{ x.t }}<b :class="x.tone">{{ x.n }}</b></a>
+      <nav class="quick dash-quick" data-c="快捷入口" aria-label="快捷发起"><a v-for="q in quick" :key="q[0]" :href="'#' + q[2]"><Ico :n="q[1]" :s="15"/><span class="ell">{{ q[0] }}</span></a></nav>
+
+      <div class="dash-grid">
+        <section class="panel cap" data-c="待办">
+          <h3>待处理事项<span class="acts dim" style="font-size:12px">{{ shownTodo.length }} 项</span></h3>
+          <div v-if="todo.length > 1" class="inbox-bar"><Seg v-model="inboxTab" :items="inboxTabs"/></div>
+          <div class="pb">
+            <div v-if="shownTodo.length" class="inbox-list">
+              <a v-for="x in shownTodo" :key="x.to + x.t" class="todo-i" :href="'#' + x.to">
+                <Thumb v-if="x.img" :code="x.img" :s="36"/>
+                <div class="col"><span class="ell" style="font-weight:500">{{ x.t }}</span><small class="ell">{{ x.sub }}</small></div>
+                <St v-if="inboxTab === '全部'" :s="x.tone === 'pending' ? '待处理' : x.tone === 'bad' ? '不合格' : '已审核'" :t="x.tag"/>
+                <Ico n="right" :s="14" class="go-arr"/>
+              </a>
+            </div>
+            <div v-else class="empty">{{ me().name }}暂无待处理单据</div>
+          </div>
+        </section>
+
+        <section class="panel cap" data-c="首页：待解决的意见">
+          <h3>待解决的意见<span class="acts dim" style="font-size:12px">{{ fbOpenN ? fbOpenN + ' 条 · ' + fbOpen.length + ' 个页面' : '' }}<a href="#/feedback">汇总</a></span></h3>
+          <div class="pb">
+            <div v-for="g in fbOpen" :key="g.path" class="fbq-g">
+              <button type="button" class="fbq-page" title="去这一页" @click="fbGoto(g.items[0])"><Ico :n="g.i" :s="14"/><span class="ell">{{ g.title }}</span><i>{{ g.items.length }}</i></button>
+              <div v-for="x in g.items" :key="x.id" class="fbq-i" role="button" tabindex="0" @click="fbGoto(x)" @keydown.enter="fbGoto(x)">
+                <p>{{ x.text }}</p>
+                <small><template v-if="x.anchor">{{ x.anchor }} · </template>{{ x.author || '未署名' }} {{ fmtStamp(x.at) }}</small>
+                <button type="button" class="btn sm" title="改好了，标成已解决" @click.stop="fbResolve(x)"><Ico n="check" :s="13"/>解决</button>
               </div>
             </div>
-          </section>
+            <div v-if="!fbOpenN" class="empty">{{ fbDoneN ? '意见都解决了（' + fbDoneN + ' 条）' : '还没有意见：在任意页面按 C，或点左下角「批注」' }}</div>
+          </div>
+        </section>
 
-          <section class="panel" data-c="本周交期">
-            <h3>近期交期<span class="acts dim" style="font-size:12px">7 天内及逾期</span></h3>
-            <div class="pb" style="padding-top:6px;padding-bottom:6px">
-              <div v-if="week.length" class="inbox-list">
-                <a v-for="x in week" :key="x.no" class="todo-i" :href="'#' + x.to">
-                  <Thumb :code="x.img" :s="36"/>
-                  <div class="col"><span class="ell"><span class="pill" style="margin-right:6px">{{ x.k }}</span><span class="code" style="font-weight:500">{{ x.no }}</span></span><small class="ell">{{ x.sub }}</small></div>
-                  <Prog :a="x.a" :b="x.b"/>
-                  <span style="min-width:68px;text-align:right"><Days :d="x.due" :warn="7"/></span>
-                </a>
-              </div>
-              <div v-else class="empty">近 7 天无待交付单据</div>
+        <section class="panel" data-c="首页：下单与回货趋势">
+          <h3>下单与回货<span class="acts dim" style="font-size:12px">近 12 周 · 件</span></h3>
+          <div class="pb"><AreaChart :series="trend.series" :labels="trend.labels" :tips="trend.tips" :h="210" hint="点一下看这周下的订单" @pick="pickWeek"/></div>
+        </section>
+
+        <section class="panel" data-c="首页：在制品类">
+          <h3>在制品类<span class="acts dim" style="font-size:12px">未回货件数</span></h3>
+          <div class="pb dash-center"><Donut v-if="cats.length" :items="cats" unit=" 件" label="件在制" :s="150" hint="点一下看这个品类的加工单" @pick="x => go('/production?cat=' + x.code)"/><div v-else class="empty">暂无在制加工单</div></div>
+        </section>
+
+        <section class="panel" data-c="本周交期">
+          <h3>近期交期<span class="acts dim" style="font-size:12px">7 天内及逾期</span></h3>
+          <div class="pb" style="padding-top:6px;padding-bottom:6px">
+            <div v-if="week.length" class="inbox-list">
+              <a v-for="x in week" :key="x.no" class="todo-i" :href="'#' + x.to">
+                <Thumb :code="x.img" :s="36"/>
+                <div class="col"><span class="ell"><span class="pill" style="margin-right:6px">{{ x.k }}</span><span class="code" style="font-weight:500">{{ x.no }}</span></span><small class="ell">{{ x.sub }}</small></div>
+                <Prog :a="x.a" :b="x.b"/>
+                <span style="min-width:68px;text-align:right"><Days :d="x.due" :warn="7"/></span>
+              </a>
             </div>
-          </section>
-        </div>
+            <div v-else class="empty">近 7 天无待交付单据</div>
+          </div>
+        </section>
 
-        <div class="studio-col">
-          <section class="panel" data-c="首页：下单与回货趋势">
-            <h3>下单与回货<span class="acts dim" style="font-size:12px">近 12 周 · 件</span></h3>
-            <div class="pb"><AreaChart :series="trend.series" :labels="trend.labels" :h="200"/></div>
-          </section>
-
-          <section class="panel" data-c="首页：在制品类">
-            <h3>在制品类<span class="acts dim" style="font-size:12px">未回货件数</span></h3>
-            <div class="pb"><Donut :items="cats" unit=" 件" :s="132"/><div v-if="!cats.length" class="empty">暂无在制加工单</div></div>
-          </section>
-
-          <section class="panel" data-c="快捷入口">
-            <h3>快捷发起</h3>
-            <div class="pb quick"><a v-for="q in quick" :key="q[0]" :href="'#' + q[2]"><Ico :n="q[1]" :s="15"/><span class="ell">{{ q[0] }}</span></a></div>
-          </section>
-        </div>
+        <section class="panel" data-c="首页：其他提醒">
+          <h3>其他提醒<span class="acts dim" style="font-size:12px">各模块要处理的数</span></h3>
+          <div class="pb">
+            <div v-if="others.length" class="chips"><a v-for="x in others" :key="x.t" class="chip" :href="'#' + x.to">{{ x.t }}<b :class="x.tone">{{ x.n }}</b></a></div>
+            <div v-else class="empty">没有别的要处理</div>
+          </div>
+        </section>
       </div>
     </div>
   </div>`,

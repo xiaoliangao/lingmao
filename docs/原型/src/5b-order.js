@@ -31,7 +31,8 @@ function updateOrder(o, f, quiet) {
 
 route('/orders', {
   setup() {
-    const s = reactive({ tab: nav.query.s || '全部', f: nav.query.f || '', q: '', type: '', brand: '', mine: false, flt: newFlt(), add: nav.query.new || null, imp: false, picked: [] })
+    // from / to：首页趋势图点某一周进来，按下单日期筛
+    const s = reactive({ tab: nav.query.s || '全部', f: nav.query.f || '', q: '', type: '', brand: '', mine: false, flt: Object.assign(newFlt(), { from: nav.query.from || '', to: nav.query.to || '' }), add: nav.query.new || null, imp: false, picked: [] })
     const TABS = ['全部', '草稿', '待审核', '已审核', '生产中', '已完成', '已结案', '已取消']
     const scoped = computed(() => db.orders.filter((o) => inScope(s.mine, o)))
     const tabs = computed(() => TABS.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((o) => o.status === k).length]))

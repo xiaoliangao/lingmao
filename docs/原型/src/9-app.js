@@ -122,7 +122,7 @@ const Shell = {
     }, { immediate: true })
     function closeTab(i) { const [t] = tabs.splice(i, 1); if (t.k === mod.value) go(tabs[Math.max(0, i - 1)].to) }
     const tabTitle = (k) => (k === 'feedback' ? '批注汇总' : navOf(k)?.t || k)
-    const fbCount = computed(() => fb.items.length || '')
+    const fbCount = computed(() => fb.items.filter((x) => !x.done).length || '') // 只数没解决的
     const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
     watch(() => db.me, () => toast(`已切换身份：${me().name}（${me().role} · ${roleOf(me().role).scope}）`))
     const hasInfo = computed(() => !!MOD_INFO[mod.value])

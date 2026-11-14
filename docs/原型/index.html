@@ -707,7 +707,7 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .h2 { font-size: 13.5px; font-weight: 600; margin: 24px 0 10px; display: flex; align-items: center; gap: 8px; }
 .h1 { font-size: 20px; font-weight: 600; margin: 4px 0; }
 
-/* ---------- Studio Home Workspace (Unified Pulse Ribbon + 2-Column Inbox/Rhythm) ---------- */
+/* ---------- 首页：概况条 + 快捷发起 + 两列（一行一对，同一行一样高，.cap 的卡片限高、里面滚） ---------- */
 .dash-wrap { max-width: 1320px; margin: 0 auto; padding: 22px 26px 42px; display: flex; flex-direction: column; gap: 18px; }
 .pulse {
   display: grid; grid-template-columns: repeat(4, 1fr);
@@ -728,8 +728,29 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .pulse-subs a b.amber { color: var(--amber); }
 .pulse-subs a b.red { color: var(--red); }
 
-.studio { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 18px; align-items: start; }
-.studio-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.dash-grid { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 5fr); gap: 18px; }
+.dash-grid > .panel.cap { max-height: 470px; }
+.dash-grid > .panel.cap > .pb { overflow-y: auto; }
+.dash-center { display: flex; align-items: center; }
+.dash-center > .empty { flex: 1; }
+.quick.dash-quick { grid-template-columns: repeat(8, 1fr); }
+/* 待解决的意见：按页面分组 */
+.fbq-g + .fbq-g { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.fbq-page {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 0; border: none; background: none; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--fg); text-align: left;
+}
+.fbq-page svg { color: var(--fg-3); flex: none; }
+.fbq-page:hover { color: var(--accent-2); }
+.fbq-page i { font-style: normal; font-weight: 500; font-size: 11.5px; color: var(--fg-3); margin-left: auto; }
+.fbq-i {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  margin: 2px -8px 0 13px; padding: 7px 8px 7px 12px; border-left: 2px solid var(--accent-line); border-radius: 0 var(--r) var(--r) 0; cursor: pointer;
+}
+.fbq-i:hover, .fbq-i:focus-visible { background: var(--bg-hover); }
+.fbq-i p { margin: 0; font-size: 13px; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fbq-i small { grid-column: 1; font-size: 12px; color: var(--fg-3); }
+.fbq-i .btn { grid-column: 2; grid-row: 1 / span 2; }
 .panel {
   background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg);
   min-width: 0; display: flex; flex-direction: column; overflow: hidden;
@@ -766,9 +787,45 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .quick a:hover { background: var(--bg); border-color: var(--line-strong); color: var(--fg); box-shadow: var(--shadow-sm); }
 .quick a svg { color: var(--fg-3); }
 .quick a:hover svg { color: var(--accent); }
+.chart { position: relative; }
+.chart svg { display: block; outline: none; }
+.chart svg.pickable { cursor: pointer; }
+.chart svg:focus-visible { box-shadow: 0 0 0 2px var(--accent-line); border-radius: var(--r); }
 .chart text { font-size: 10.5px; fill: var(--fg-3); font-family: inherit; }
-.legend { display: flex; gap: 16px; justify-content: center; font-size: 12px; color: var(--fg-2); margin-top: 6px; }
+.chart-guide { stroke: var(--line-strong); stroke-dasharray: 3 3; }
+.chart-tip {
+  position: absolute; top: 4px; z-index: 2; transform: translateX(12px); pointer-events: none;
+  display: flex; flex-direction: column; gap: 4px; min-width: 132px; padding: 8px 10px; white-space: nowrap;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-pop); font-size: 12px; color: var(--fg-2);
+}
+.chart-tip.flip { transform: translateX(calc(-100% - 12px)); }
+.chart-tip > b { color: var(--fg); font-weight: 600; }
+.chart-tip .row { gap: 6px; }
+.chart-tip .row i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.chart-tip .row b { margin-left: auto; padding-left: 12px; color: var(--fg); font-weight: 600; }
+.chart-tip small { color: var(--fg-3); font-size: 11.5px; padding-top: 4px; border-top: 1px solid var(--line-soft); }
+.legend { display: flex; gap: 6px; justify-content: center; font-size: 12px; color: var(--fg-2); margin-top: 6px; }
+.legend button { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border: none; border-radius: var(--r); background: none; font: inherit; color: inherit; cursor: pointer; }
+.legend button:hover { background: var(--bg-hover); color: var(--fg); }
+.legend button.off { color: var(--fg-3); text-decoration: line-through; }
+.legend button.off i { background: var(--line-strong) !important; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
+.donut { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 16px 22px; width: 100%; }
+.donut svg { flex: none; }
+.dn-seg { transition: opacity 0.14s, stroke-width 0.14s; }
+.dn-seg.pickable { cursor: pointer; }
+.dn-seg.dim, .dn-legend button.dim { opacity: 0.35; }
+.dn-v { font-size: 14px; font-weight: 600; fill: var(--fg); font-variant-numeric: tabular-nums; }
+.dn-t { font-size: 7px; fill: var(--fg-3); }
+.dn-legend { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 180px; font-size: 12.5px; }
+.dn-legend button {
+  display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; margin: 0 -8px; border: none; border-radius: var(--r);
+  background: none; font: inherit; color: var(--fg-2); cursor: pointer; text-align: left; transition: opacity 0.14s;
+}
+.dn-legend button:hover, .dn-legend button.on { background: var(--bg-hover); color: var(--fg); }
+.dn-legend button i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.dn-legend button .ell { flex: 1; }
+.dn-legend button .dim { width: 34px; text-align: right; }
 
 /* Color × Size Matrix */
 .mx { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--bg); }
@@ -857,7 +914,14 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .fb .item { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
 .fb .item .who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-3); margin-bottom: 4px; }
 .fb .item .who b { color: var(--fg); font-weight: 600; }
-.fb .item .who button { margin-left: auto; border: none; background: none; color: var(--fg-3); cursor: pointer; padding: 0; }
+.fb .item .who .sp { flex: 1; }
+.fb .item .who button { border: none; background: none; color: var(--fg-3); cursor: pointer; padding: 0; font: inherit; font-size: 12px; }
+.fb .item .who button:hover { color: var(--fg); }
+.fb .item .who .fb-act { color: var(--accent-2); }
+.fb .item.done p { color: var(--fg-3); }
+.fb .item .done-by { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: var(--green); }
+.pin-no.done { background: var(--fg-3); }
+.fb-done .fb-text { color: var(--fg-3); }
 .fb .item p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .fb .item.hl { background: var(--accent-bg); margin: 0 -16px; padding: 12px 16px; }
 .pin-no { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #ffffff; font-size: 11px; font-weight: 600; font-style: normal; }
@@ -908,7 +972,8 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
   .pulse { grid-template-columns: repeat(2, 1fr); }
   .pulse-cell:nth-child(2) { border-right: none; }
   .pulse-cell:nth-child(-n+2) { border-bottom: 1px solid var(--line-soft); }
-  .studio { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr; }
+  .quick.dash-quick { grid-template-columns: repeat(4, 1fr); }
 }
 @media (max-width: 900px) {
   .side { position: fixed; left: 0; top: 0; bottom: 0; z-index: 28; box-shadow: var(--shadow-pop); }
@@ -919,7 +984,7 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
   .pulse { grid-template-columns: 1fr; }
   .pulse-cell { border-right: none; border-bottom: 1px solid var(--line-soft); }
   .pulse-cell:last-child { border-bottom: none; }
-  .quick { grid-template-columns: repeat(2, 1fr); }
+  .quick, .quick.dash-quick { grid-template-columns: repeat(2, 1fr); }
   .head, .bar { padding-left: 16px; padding-right: 16px; }
   .tbl th:first-child, .tbl td:first-child { padding-left: 16px; }
   .tbl th:last-child, .tbl td:last-child { padding-right: 16px; }
@@ -3271,49 +3336,85 @@ comp('Prog', {
   setup: (p) => ({ pct: computed(() => fpct(p.a, p.b)) }),
   template: `<span class="prog" :class="{ done: pct >= 100 }"><b><i :style="{ width: pct + '%' }"></i></b>{{ pct }}%</span>`,
 })
-/* ---------- 图表（首页、报表）：面积图 series = [{ t, c: 颜色, v: [数] }]，labels = x 轴；环形图 items = [{ t, v, c }] ---------- */
+/* ---------- 图表（首页、报表）：面积图 series = [{ t, c: 颜色, v: [数] }]，labels = x 轴，tips = 悬停时的标题（默认 labels）；环形图 items = [{ t, v, c }]
+ *   都能交互：悬停看数（面积图也能用左右键）；点图例隐藏 / 显示一条线；点一下发 pick（面积图给第几个点，环形图给那一项），页面拿去跳转，hint 写点了去哪 ---------- */
 const smooth = (pts) => pts.reduce((d, [x, y], i) => {
   if (!i) return `M${x},${y}`
   const [x0, y0] = pts[i - 1], cx = (x0 + x) / 2
   return d + `C${cx},${y0} ${cx},${y} ${x},${y}`
 }, '')
 comp('AreaChart', {
-  props: { series: Array, labels: Array, h: { type: Number, default: 200 } },
-  setup(p) {
-    const W = 600, L = 40, R = 8, T = 10, B = 22
+  props: { series: Array, labels: Array, tips: Array, h: { type: Number, default: 200 }, hint: String },
+  emits: ['pick'],
+  setup(p, { emit }) {
+    const L = 40, R = 16, T = 10, B = 22
+    // 宽度跟着容器走（不拉伸 SVG，圆点和字才不变形）
+    const box = ref(null), W = ref(600), at = ref(null), off = reactive(new Set())
+    let ro
+    onMounted(() => { ro = new ResizeObserver(([e]) => { W.value = Math.max(240, Math.round(e.contentRect.width)) }); ro.observe(box.value) })
+    onUnmounted(() => ro?.disconnect())
     const g = computed(() => {
-      const max = Math.max(1, ...p.series.flatMap((s) => s.v))
+      const shown = p.series.filter((s) => !off.has(s.t))
+      const max = Math.max(1, ...shown.flatMap((s) => s.v))
       const step = 10 ** Math.floor(Math.log10(max)), top = Math.ceil(max / step) * step
       const n = p.labels.length, H = p.h
-      const x = (i) => L + ((W - L - R) * i) / Math.max(1, n - 1), y = (v) => T + (H - T - B) * (1 - v / top)
+      const x = (i) => L + ((W.value - L - R) * i) / Math.max(1, n - 1), y = (v) => T + (H - T - B) * (1 - v / top)
       const ticks = [0, 1, 2, 3, 4].map((k) => ({ v: (top * k) / 4, y: y((top * k) / 4) }))
-      const lines = p.series.map((s) => { const pts = s.v.map((v, i) => [x(i), y(v)]); const d = smooth(pts); return { ...s, d, area: d + `L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z` } })
+      const lines = shown.map((s) => { const pts = s.v.map((v, i) => [x(i), y(v)]); const d = smooth(pts); return { ...s, pts, d, area: d + `L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z` } })
       const every = Math.ceil(n / 8)
-      return { H, ticks, lines, xs: p.labels.map((t, i) => ({ t, x: x(i), show: i % every === 0 || i === n - 1 })) }
+      return { H, n, ticks, lines, px: p.labels.map((_, i) => x(i)), xs: p.labels.map((t, i) => ({ t, x: x(i), show: i % every === 0 || i === n - 1 })) }
     })
+    function move(e) {
+      const sx = e.clientX - e.currentTarget.getBoundingClientRect().left, n = g.value.n
+      at.value = Math.min(n - 1, Math.max(0, Math.round(((sx - L) / (W.value - L - R)) * (n - 1))))
+    }
+    function key(e) {
+      const n = g.value.n
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); at.value = Math.min(n - 1, Math.max(0, (at.value ?? n) + (e.key === 'ArrowLeft' ? -1 : 1))) }
+      else if (e.key === 'Enter' && at.value != null) emit('pick', at.value)
+    }
+    // 至少留一条线
+    function toggle(s) { if (off.has(s.t)) off.delete(s.t); else if (off.size < p.series.length - 1) off.add(s.t) }
     const fmtK = (v) => (v >= 10000 ? rnd(v / 10000, 1) + '万' : fq(v))
-    return { g, W, L, fmtK }
+    return { box, W, L, R, at, off, g, move, key, toggle, fmtK }
   },
-  template: `<div class="chart"><svg :viewBox="'0 0 ' + W + ' ' + g.H" width="100%" :height="g.H" preserveAspectRatio="none">
-      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - 8" :y1="t.y" :y2="t.y" stroke="var(--line)"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
+  template: `<div class="chart" ref="box">
+    <svg :width="W" :height="g.H" :viewBox="'0 0 ' + W + ' ' + g.H" :class="{ pickable: hint }" tabindex="0" @mousemove="move" @mouseleave="at = null" @blur="at = null" @keydown="key" @click="at != null && $emit('pick', at)">
+      <g v-for="t in g.ticks" :key="t.v"><line :x1="L" :x2="W - R" :y1="t.y" :y2="t.y" stroke="var(--line)"/><text :x="L - 6" :y="t.y + 3.5" text-anchor="end">{{ fmtK(t.v) }}</text></g>
       <g v-for="s in g.lines" :key="s.t"><path :d="s.area" :fill="s.c" fill-opacity=".12"/><path :d="s.d" fill="none" :stroke="s.c" stroke-width="2"/></g>
+      <g v-if="at != null"><line class="chart-guide" :x1="g.px[at]" :x2="g.px[at]" :y1="10" :y2="g.H - 22"/>
+        <circle v-for="s in g.lines" :key="s.t" :cx="s.pts[at][0]" :cy="s.pts[at][1]" r="4" :fill="s.c" stroke="var(--bg)" stroke-width="2"/></g>
       <text v-for="x in g.xs.filter(z => z.show)" :key="x.t" :x="x.x" :y="g.H - 6" text-anchor="middle">{{ x.t }}</text>
-    </svg><div class="legend"><span v-for="s in series" :key="s.t"><i :style="{ background: s.c }"></i>{{ s.t }}</span></div></div>`,
+    </svg>
+    <div v-if="at != null" class="chart-tip" :class="{ flip: g.px[at] > W * 0.6 }" :style="{ left: g.px[at] + 'px' }">
+      <b>{{ (tips || labels)[at] }}</b>
+      <span v-for="s in g.lines" :key="s.t" class="row"><i :style="{ background: s.c }"></i>{{ s.t }}<b class="num">{{ fq(s.v[at]) }}</b></span>
+      <small v-if="hint">{{ hint }}</small>
+    </div>
+    <div class="legend"><button v-for="s in series" :key="s.t" type="button" :class="{ off: off.has(s.t) }" :aria-pressed="!off.has(s.t)" :title="off.has(s.t) ? '显示这条线' : '隐藏这条线'" @click="toggle(s)"><i :style="{ background: s.c }"></i>{{ s.t }}</button></div>
+  </div>`,
 })
 comp('Donut', {
-  props: { items: Array, s: { type: Number, default: 150 }, unit: { type: String, default: '' } },
+  props: { items: Array, s: { type: Number, default: 150 }, unit: { type: String, default: '' }, label: { type: String, default: '合计' }, hint: String },
+  emits: ['pick'],
   setup(p) {
+    const on = ref(null) // 悬停（或键盘停在）哪一项：其他的变淡，中间显示这一项
     const segs = computed(() => {
-      const tot = sum(p.items, (x) => x.v) || 1, C = 2 * Math.PI * 40
+      const tot = sum(p.items, (x) => x.v), C = 2 * Math.PI * 40
       let acc = 0
-      return { tot, list: p.items.map((x) => { const len = (x.v / tot) * C; const s = { ...x, dash: `${Math.max(0, len - 1.2)} ${C}`, off: -acc, pct: Math.round((x.v / tot) * 100) }; acc += len; return s }) }
+      return { tot, list: p.items.map((x) => { const len = (x.v / (tot || 1)) * C; const s = { ...x, dash: `${Math.max(0, len - 1.2)} ${C}`, off: -acc, pct: Math.round((x.v / (tot || 1)) * 100) }; acc += len; return s }) }
     })
-    return { segs }
+    const cur = computed(() => segs.value.list.find((x) => x.t === on.value))
+    return { segs, on, cur }
   },
-  template: `<div class="row" style="gap:20px;align-items:center"><svg :width="s" :height="s" viewBox="0 0 100 100" style="transform:rotate(-90deg)">
-      <circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-sunken)" stroke-width="14"/>
-      <circle v-for="x in segs.list" :key="x.t" cx="50" cy="50" r="40" fill="none" :stroke="x.c" stroke-width="14" :stroke-dasharray="x.dash" :stroke-dashoffset="x.off"/></svg>
-    <div class="col" style="gap:7px;flex:1;min-width:0;font-size:12.5px"><div v-for="x in segs.list" :key="x.t" class="row"><i :style="{ background: x.c, width: '10px', height: '10px', borderRadius: '2px', display: 'inline-block' }"></i><span class="ell" style="flex:1">{{ x.t }}</span><span class="num mut">{{ fq(x.v) }}{{ unit }}</span><span class="num dim" style="width:34px">{{ x.pct }}%</span></div></div></div>`,
+  template: `<div class="donut"><svg :width="s" :height="s" viewBox="0 0 100 100">
+      <g transform="rotate(-90 50 50)"><circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-sunken)" stroke-width="14"/>
+        <circle v-for="x in segs.list" :key="x.t" class="dn-seg" :class="{ dim: on && on !== x.t, pickable: hint }" cx="50" cy="50" r="40" fill="none" :stroke="x.c" :stroke-width="on === x.t ? 17 : 14" :stroke-dasharray="x.dash" :stroke-dashoffset="x.off"
+          @mouseenter="on = x.t" @mouseleave="on = null" @click="$emit('pick', x)"/></g>
+      <text x="50" y="49" text-anchor="middle" class="dn-v">{{ fq(cur ? cur.v : segs.tot) }}</text>
+      <text x="50" y="61" text-anchor="middle" class="dn-t">{{ cur ? cur.t + ' · ' + cur.pct + '%' : label }}</text></svg>
+    <div class="dn-legend"><button v-for="x in segs.list" :key="x.t" type="button" :class="{ dim: on && on !== x.t, on: on === x.t }" :title="hint" @mouseenter="on = x.t" @mouseleave="on = null" @focus="on = x.t" @blur="on = null" @click="$emit('pick', x)">
+      <i :style="{ background: x.c }"></i><span class="ell">{{ x.t }}</span><span class="num mut">{{ fq(x.v) }}{{ unit }}</span><span class="num dim">{{ x.pct }}%</span></button></div></div>`,
 })
 comp('Nodes', {
   props: { p: Object },
@@ -4825,7 +4926,7 @@ comp('DataPick', {
 </script>
 <script>/* 4-feedback.js */
 /* ============================================================
- * 意见：每个模块可以表态（保留 / 不需要 / 要改）、写意见、圈出页面上的位置。
+ * 意见：每个模块可以表态（保留 / 不需要 / 要改）、写意见、圈出页面上的位置；改好了点「解决」，首页右侧列着还没解决的。
  * 存在浏览器 localStorage（只在这台电脑这个浏览器里）；「意见汇总」页导出 Markdown / JSON 发回来，
  * JSON 可以再导入合并多个人的意见。页面上的区块用 data-c="名字" 标出来，圈位置时吸附到最近的区块。
  * ============================================================ */
@@ -4853,6 +4954,20 @@ function addComment(text) {
   fbUi.draft = null
   return true
 }
+// 解决 / 重新打开：记下谁、什么时候解决的，汇总和导出里都带着
+function fbResolve(x, on = !x.done) {
+  if (on) x.done = { by: fb.name, at: nowStamp() }
+  else delete x.done
+}
+// 去意见所在的页面，打开意见面板并高亮这条。换页时 9-app.js 会清掉高亮，所以等换完页再设
+function fbGoto(x) {
+  fbUi.open = true
+  if (x.path === nav.path) { fbUi.focus = x.id; return }
+  const seq = nav.seq, done = () => nextTick(() => { fbUi.focus = x.id })
+  go(x.path)
+  if (nav.seq !== seq) done()
+  else { const stop = watch(() => nav.seq, () => { stop(); done() }) }
+}
 function setVerdict(mod, v) {
   const m = (fb.verdicts[mod] ||= {})
   if (m[fb.name] === v) delete m[fb.name]
@@ -4875,7 +4990,7 @@ function fbMarkdown() {
     if (!items.length && !vs.length) return
     lines.push(`## ${g.g ? g.g + ' / ' : ''}${it.t}${it.ph ? '（' + it.ph + '）' : ''}`, ``)
     if (vs.length) lines.push(`结论：${vs.map(([v, n]) => `${v} ${n}`).join(' · ')}（${Object.entries(fb.verdicts[it.k] || {}).map(([a, v]) => `${a || '未署名'}：${v}`).join('，')}）`, ``)
-    items.forEach((x) => lines.push(`- 【${x.title}${x.anchor ? ' · ' + x.anchor : ''}】${x.text.replace(/\n/g, ' ')} —— ${x.author || '未署名'} ${fmtStamp(x.at)}（#${x.path}）`))
+    items.forEach((x) => lines.push(`- ${x.done ? '~~' : ''}【${x.title}${x.anchor ? ' · ' + x.anchor : ''}】${x.text.replace(/\n/g, ' ')} —— ${x.author || '未署名'} ${fmtStamp(x.at)}（#${x.path}）${x.done ? '~~ 已解决：' + (x.done.by || '未署名') + ' ' + fmtStamp(x.done.at) : ''}`))
     lines.push(``)
   }))
   return lines.join('\n')
@@ -4884,8 +4999,10 @@ const fbJson = () => JSON.stringify({ version: 1, exportedAt: nowStamp(), by: fb
 function fbImport(text) {
   const d = JSON.parse(text)
   if (!Array.isArray(d.items)) throw new Error('不是导出的意见文件')
-  const have = new Set(fb.items.map((x) => x.id))
+  const have = new Map(fb.items.map((x) => [x.id, x]))
   const added = d.items.filter((x) => !have.has(x.id))
+  // 已有的意见：别人那边解决了，这边也标上
+  d.items.forEach((x) => { const y = have.get(x.id); if (y && x.done && !y.done) y.done = x.done })
   fb.items.push(...added)
   Object.entries(d.verdicts || {}).forEach(([mod, m]) => Object.assign((fb.verdicts[mod] ||= {}), m))
   return added.length
@@ -4898,10 +5015,12 @@ comp('FeedbackPanel', {
     const text = ref(''), nameDraft = ref(fb.name), box = ref(null)
     const mod = computed(curMod)
     const meta = computed(() => navItem(mod.value) || { t: routeTitle(), ph: '' })
-    const items = computed(() => fb.items.filter((x) => x.mod === mod.value).slice().reverse())
+    // 没解决的在前，新的在前
+    const items = computed(() => fb.items.filter((x) => x.mod === mod.value).slice().reverse().sort((a, b) => !!a.done - !!b.done))
     const pinNo = (x) => pinsHere().indexOf(x) + 1
     const mine = computed(() => fb.verdicts[mod.value]?.[fb.name])
     watch(() => fbUi.draft, (d) => { if (d) nextTick(() => box.value?.focus()) })
+    watch(() => fbUi.focus, (id) => { if (id) nextTick(() => document.querySelector(`.fb [data-fb="${id}"]`)?.scrollIntoView({ block: 'nearest' })) }, { immediate: true })
     function ensureName() {
       if (fb.name) return true
       if (!nameDraft.value.trim()) { toast('先写上你的名字'); return false }
@@ -4911,8 +5030,7 @@ comp('FeedbackPanel', {
     function send() { if (ensureName() && addComment(text.value)) { text.value = ''; toast('意见已记下') } }
     function verdict(v) { if (ensureName()) setVerdict(mod.value, v) }
     function remove(x) { fb.items.splice(fb.items.indexOf(x), 1) }
-    function open(x) { if (x.path !== nav.path) go(x.path); fbUi.focus = x.id }
-    return { fb, fbUi, VERDICTS, text, nameDraft, box, mod, meta, items, pinNo, mine, send, verdict, remove, open, verdictCount, fmtStamp }
+    return { fb, fbUi, VERDICTS, text, nameDraft, box, mod, meta, items, pinNo, mine, send, verdict, remove, open: fbGoto, resolve: fbResolve, verdictCount, fmtStamp }
   },
   template: `<aside class="fb">
     <header><span>{{ meta.t }}</span>
@@ -4929,10 +5047,12 @@ comp('FeedbackPanel', {
       </div>
     </div>
     <div class="items">
-      <div v-for="x in items" :key="x.id" class="item" :class="{ hl: fbUi.focus === x.id }">
-        <div class="who"><i v-if="pinNo(x)" class="pin-no">{{ pinNo(x) }}</i><b>{{ x.author || '未署名' }}</b><span>{{ fmtStamp(x.at) }}</span>
-          <button v-if="x.author === fb.name" @click="remove(x)"><Ico n="trash" :s="13"/></button></div>
+      <div v-for="x in items" :key="x.id" class="item" :class="{ hl: fbUi.focus === x.id, done: x.done }" :data-fb="x.id">
+        <div class="who"><i v-if="pinNo(x)" class="pin-no" :class="{ done: x.done }">{{ pinNo(x) }}</i><b>{{ x.author || '未署名' }}</b><span>{{ fmtStamp(x.at) }}</span><span class="sp"></span>
+          <button class="fb-act" @click="resolve(x)">{{ x.done ? '重新打开' : '解决' }}</button>
+          <button v-if="x.author === fb.name" title="删除" @click="remove(x)"><Ico n="trash" :s="13"/></button></div>
         <p>{{ x.text }}</p>
+        <div v-if="x.done" class="done-by"><Ico n="check" :s="12"/>{{ x.done.by || '未署名' }} {{ fmtStamp(x.done.at) }} 解决</div>
         <a v-if="x.anchor || x.path !== nav.path" class="dim" style="font-size:12px;cursor:pointer" @click="open(x)">{{ x.title }}{{ x.anchor ? ' · ' + x.anchor : '' }}</a>
       </div>
       <div v-if="!items.length" class="empty" style="padding:40px 0">这个模块还没有意见</div>
@@ -4951,7 +5071,7 @@ comp('Pins', {
         if (!el) return null
         const r = el.getBoundingClientRect()
         if (!r.width) return null
-        return { id: x.id, n: i + 1, left: r.left + x.rx * r.width, top: r.top + x.ry * r.height }
+        return { id: x.id, n: i + 1, done: !!x.done, left: r.left + x.rx * r.width, top: r.top + x.ry * r.height }
       }).filter(Boolean)
     }
     let t
@@ -4959,7 +5079,7 @@ comp('Pins', {
     onUnmounted(() => clearInterval(t))
     return { pos, fbUi }
   },
-  template: `<div class="pins"><i v-for="p in pos" :key="p.id" class="pin-no" :style="{ left: p.left + 'px', top: p.top + 'px' }" @click="fbUi.focus = p.id">{{ p.n }}</i></div>`,
+  template: `<div class="pins"><i v-for="p in pos" :key="p.id" class="pin-no" :class="{ done: p.done }" :style="{ left: p.left + 'px', top: p.top + 'px' }" @click="fbUi.focus = p.id">{{ p.n }}</i></div>`,
 })
 
 /* 圈位置：鼠标移到哪个区块就高亮哪个，点一下记下来 */
@@ -5001,7 +5121,7 @@ route('/feedback', {
     async function clear() { if (await ask('清空意见', '这台电脑上记的意见会全部删掉，删了找不回来。先导出备份。', '清空', true)) { fb.items.splice(0); Object.keys(fb.verdicts).forEach((k) => delete fb.verdicts[k]) } }
     const exportMd = () => download('SCM原型意见.md', fbMarkdown(), 'text/markdown')
     const exportJson = () => download('SCM原型意见.json', fbJson(), 'application/json')
-    return { groups, total, file, imp, clear, exportMd, exportJson, fmtStamp, fb }
+    return { groups, total, file, imp, clear, exportMd, exportJson, fmtStamp, fb, fbGoto, fbResolve }
   },
   template: `<div>
     <Head t="意见汇总">
@@ -5020,11 +5140,16 @@ route('/feedback', {
 
               <span style="flex:1"></span>
               <span v-for="[v, n] in it.vs.filter(x => x[1])" :key="v" class="pill" :class="{ green: v === '保留', red: v === '不需要', amber: v === '要改' }">{{ v }} {{ n }}</span>
-              <span v-if="it.list.length" class="dim" style="font-size:12px">{{ it.list.length }} 条</span>
+              <span v-if="it.list.length" class="dim" style="font-size:12px">{{ it.list.length }} 条<template v-if="it.list.some(x => !x.done)">，{{ it.list.filter(x => !x.done).length }} 条没解决</template></span>
             </div>
-            <div v-for="x in it.list" :key="x.id" style="padding:8px 0 0 25px">
-              <div>{{ x.text }}</div>
-              <div class="dim" style="font-size:12px">{{ x.author || '未署名' }} · {{ fmtStamp(x.at) }} · <a :href="'#' + x.path">{{ x.title }}{{ x.anchor ? ' · ' + x.anchor : '' }}</a></div>
+            <div v-for="x in it.list" :key="x.id" class="row" style="padding:8px 0 0 25px;align-items:flex-start" :class="{ 'fb-done': x.done }">
+              <div style="flex:1;min-width:0">
+                <div class="fb-text">{{ x.text }}</div>
+                <div class="dim" style="font-size:12px">{{ x.author || '未署名' }} · {{ fmtStamp(x.at) }} · <a @click="fbGoto(x)">{{ x.title }}{{ x.anchor ? ' · ' + x.anchor : '' }}</a>
+                  <template v-if="x.done"> · {{ x.done.by || '未署名' }} {{ fmtStamp(x.done.at) }} 解决</template></div>
+              </div>
+              <span v-if="x.done" class="pill green">已解决</span>
+              <button class="btn sm" :class="{ ghost: x.done }" @click="fbResolve(x)">{{ x.done ? '重新打开' : '解决' }}</button>
             </div>
           </div>
         </div>
@@ -5084,16 +5209,17 @@ TODOS.push(() => {
 })
 
 // 首页：概况卡片点进去就是筛好的列表；趋势图、品类环形图是报表看板（13.06，二期），前几周是演示用的历史数
+// 排版：上面概况、快捷发起，下面两列一行一对（待办 | 待解决的意见、趋势 | 品类、交期 | 其他提醒），同一行一样高，长的在卡片里滚
 const HIST_ORDER = [1180, 860, 1420, 990, 1630, 1210, 1880, 1350, 1560, 2120, 1740]
 const HIST_RET = [640, 920, 780, 1150, 1020, 1310, 990, 1460, 1280, 1390, 1610]
 const CAT_COLORS = ['#9a6b3e', '#5c856b', '#cfa355', '#7e909a', '#c26b58', '#8d7b68', '#79998a', '#b88655', '#9c958b', '#a87568']
+// 按周汇总：最后一周到今天为止；rng 是每周的起止日期（点图跳列表用），lbl 是每周最后一天
+const shortMd = (s) => `${+s.slice(5, 7)}/${+s.slice(8, 10)}`
 function weekly(rows, dateOf, qtyOf, hist) {
-  const end = toD(clock.today), weeks = hist.length + 1
-  const out = hist.map((v) => v), lbl = []
-  for (let i = 0; i < weeks; i++) { const d = new Date(end); d.setDate(d.getDate() - (weeks - 1 - i) * 7); lbl.push(`${d.getMonth() + 1}/${d.getDate()}`) }
-  out.push(0)
+  const weeks = hist.length + 1, out = [...hist, 0]
+  const rng = Array.from({ length: weeks }, (_, i) => { const b = addDays(clock.today, -(weeks - 1 - i) * 7); return [addDays(b, -6), b] })
   rows.forEach((r) => { const k = weeks - 1 - Math.floor(diffDays(clock.today, dateOf(r)) / 7); if (k >= 0 && k < weeks) out[k] += qtyOf(r) })
-  return { lbl, out }
+  return { lbl: rng.map(([, b]) => shortMd(b)), rng, out }
 }
 route('/', {
   setup() {
@@ -5118,12 +5244,12 @@ route('/', {
     const trend = computed(() => {
       const a = weekly(db.orders.filter((o) => o.status !== '已取消'), (o) => o.date, orderQty, HIST_ORDER)
       const b = weekly(liveReturns(), (r) => r.date, (r) => sum(r.lines, (l) => l.qty), HIST_RET)
-      return { labels: a.lbl, series: [{ t: '下单件数', c: '#9a6b3e', v: a.out }, { t: '回货件数', c: '#5c856b', v: b.out }] }
+      return { labels: a.lbl, rng: a.rng, tips: a.rng.map(([x, y]) => `${shortMd(x)} – ${shortMd(y)}`), series: [{ t: '下单件数', c: '#9a6b3e', v: a.out }, { t: '回货件数', c: '#5c856b', v: b.out }] }
     })
     const cats = computed(() => {
       const acc = {}
-      live.value.forEach((p) => { const c = catOf(style(p.style)?.cat).name; acc[c] = (acc[c] || 0) + prodQty(p) - prodRet(p) })
-      return Object.entries(acc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([t, v], i) => ({ t, v, c: CAT_COLORS[i % CAT_COLORS.length] }))
+      live.value.forEach((p) => { const c = style(p.style)?.cat; acc[c] = (acc[c] || 0) + prodQty(p) - prodRet(p) })
+      return Object.entries(acc).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([code, v], i) => ({ code, t: catOf(code).name, v, c: CAT_COLORS[i % CAT_COLORS.length] }))
     })
     // 待办：具体到单据，按 PRD §6.9.2 的"给谁"出
     const todo = computed(() => {
@@ -5165,11 +5291,20 @@ route('/', {
       const ps = live.value.map((p) => ({ k: '加工单', no: p.no, to: '/production/' + p.no, img: p.style, sub: `${styleName(p.style)} · ${supName(p.factory)}`, due: expectDue(p), a: prodRet(p), b: prodQty(p) }))
       return [...os, ...ps].filter((x) => x.due && x.due <= end).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 8)
     })
+    // 原型批注里还没解决的，按页面分组：最近有新意见的页排前面
+    const fbOpen = computed(() => {
+      const m = new Map()
+      fb.items.filter((x) => !x.done).forEach((x) => { if (!m.has(x.path)) m.set(x.path, { path: x.path, title: x.title, i: navItem(x.mod)?.i || 'file', items: [] }); m.get(x.path).items.push(x) })
+      return [...m.values()].map((g) => ({ ...g, items: g.items.slice().reverse() })).sort((a, b) => b.items[0].at.localeCompare(a.items[0].at))
+    })
+    const fbOpenN = computed(() => sum(fbOpen.value, (g) => g.items.length))
+    const fbDoneN = computed(() => fb.items.filter((x) => x.done).length)
+    const pickWeek = (i) => go(`/orders?from=${trend.value.rng[i][0]}&to=${trend.value.rng[i][1]}`)
     const quick = [['新建订单', 'file', '/orders?new=1'], ['新建款式', 'shirt', '/styles?new=1'], ['算料', 'sigma', '/mrp'], ['到料跟踪', 'truck', '/arrivals'], ['生产看板', 'grid', '/board'], ['库存', 'package', '/stock'], ['手机报工', 'phone', '/mobile'], ['批注汇总', 'list', '/feedback']]
     const inboxTab = ref('全部')
     const inboxTabs = computed(() => [['全部', '全部', todo.value.reduce((a, g) => a + g.items.length, 0)], ...todo.value.map((g) => [g.tag, g.tag, g.items.length])])
     const shownTodo = computed(() => (inboxTab.value === '全部' ? todo.value.flatMap((g) => g.items.slice(0, 4).map((x) => ({ ...x, tag: g.tag, tone: g.tone }))) : (todo.value.find((g) => g.tag === inboxTab.value)?.items || []).map((x) => ({ ...x, tag: inboxTab.value }))))
-    return { hi, today, co, who, kpi, trend, cats, todo, others, week, quick, inboxTab, inboxTabs, shownTodo }
+    return { hi, today, co, who, kpi, trend, cats, todo, others, week, quick, inboxTab, inboxTabs, shownTodo, fbOpen, fbOpenN, fbDoneN, pickWeek, fbGoto, fbResolve, fmtStamp }
   },
   template: `<div>
     <Head t="首页"><template #title><span class="head-sub">{{ today }}</span></template>
@@ -5198,59 +5333,72 @@ route('/', {
         </div>
       </section>
 
-      <div class="studio">
-        <div class="studio-col">
-          <section class="panel" data-c="待办">
-            <h3>待处理事项<span class="acts dim" style="font-size:12px">{{ shownTodo.length }} 项</span></h3>
-            <div v-if="todo.length > 1" class="inbox-bar"><Seg v-model="inboxTab" :items="inboxTabs"/></div>
-            <div class="pb">
-              <div v-if="shownTodo.length" class="inbox-list">
-                <a v-for="x in shownTodo" :key="x.to + x.t" class="todo-i" :href="'#' + x.to">
-                  <Thumb v-if="x.img" :code="x.img" :s="36"/>
-                  <div class="col"><span class="ell" style="font-weight:500">{{ x.t }}</span><small class="ell">{{ x.sub }}</small></div>
-                  <St v-if="inboxTab === '全部'" :s="x.tone === 'pending' ? '待处理' : x.tone === 'bad' ? '不合格' : '已审核'" :t="x.tag"/>
-                  <Ico n="right" :s="14" class="go-arr"/>
-                </a>
-              </div>
-              <div v-else class="empty">{{ me().name }}暂无待处理单据</div>
-              <div v-if="others.length" class="chips" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)">
-                <a v-for="x in others" :key="x.t" class="chip" :href="'#' + x.to">{{ x.t }}<b :class="x.tone">{{ x.n }}</b></a>
+      <nav class="quick dash-quick" data-c="快捷入口" aria-label="快捷发起"><a v-for="q in quick" :key="q[0]" :href="'#' + q[2]"><Ico :n="q[1]" :s="15"/><span class="ell">{{ q[0] }}</span></a></nav>
+
+      <div class="dash-grid">
+        <section class="panel cap" data-c="待办">
+          <h3>待处理事项<span class="acts dim" style="font-size:12px">{{ shownTodo.length }} 项</span></h3>
+          <div v-if="todo.length > 1" class="inbox-bar"><Seg v-model="inboxTab" :items="inboxTabs"/></div>
+          <div class="pb">
+            <div v-if="shownTodo.length" class="inbox-list">
+              <a v-for="x in shownTodo" :key="x.to + x.t" class="todo-i" :href="'#' + x.to">
+                <Thumb v-if="x.img" :code="x.img" :s="36"/>
+                <div class="col"><span class="ell" style="font-weight:500">{{ x.t }}</span><small class="ell">{{ x.sub }}</small></div>
+                <St v-if="inboxTab === '全部'" :s="x.tone === 'pending' ? '待处理' : x.tone === 'bad' ? '不合格' : '已审核'" :t="x.tag"/>
+                <Ico n="right" :s="14" class="go-arr"/>
+              </a>
+            </div>
+            <div v-else class="empty">{{ me().name }}暂无待处理单据</div>
+          </div>
+        </section>
+
+        <section class="panel cap" data-c="首页：待解决的意见">
+          <h3>待解决的意见<span class="acts dim" style="font-size:12px">{{ fbOpenN ? fbOpenN + ' 条 · ' + fbOpen.length + ' 个页面' : '' }}<a href="#/feedback">汇总</a></span></h3>
+          <div class="pb">
+            <div v-for="g in fbOpen" :key="g.path" class="fbq-g">
+              <button type="button" class="fbq-page" title="去这一页" @click="fbGoto(g.items[0])"><Ico :n="g.i" :s="14"/><span class="ell">{{ g.title }}</span><i>{{ g.items.length }}</i></button>
+              <div v-for="x in g.items" :key="x.id" class="fbq-i" role="button" tabindex="0" @click="fbGoto(x)" @keydown.enter="fbGoto(x)">
+                <p>{{ x.text }}</p>
+                <small><template v-if="x.anchor">{{ x.anchor }} · </template>{{ x.author || '未署名' }} {{ fmtStamp(x.at) }}</small>
+                <button type="button" class="btn sm" title="改好了，标成已解决" @click.stop="fbResolve(x)"><Ico n="check" :s="13"/>解决</button>
               </div>
             </div>
-          </section>
+            <div v-if="!fbOpenN" class="empty">{{ fbDoneN ? '意见都解决了（' + fbDoneN + ' 条）' : '还没有意见：在任意页面按 C，或点左下角「批注」' }}</div>
+          </div>
+        </section>
 
-          <section class="panel" data-c="本周交期">
-            <h3>近期交期<span class="acts dim" style="font-size:12px">7 天内及逾期</span></h3>
-            <div class="pb" style="padding-top:6px;padding-bottom:6px">
-              <div v-if="week.length" class="inbox-list">
-                <a v-for="x in week" :key="x.no" class="todo-i" :href="'#' + x.to">
-                  <Thumb :code="x.img" :s="36"/>
-                  <div class="col"><span class="ell"><span class="pill" style="margin-right:6px">{{ x.k }}</span><span class="code" style="font-weight:500">{{ x.no }}</span></span><small class="ell">{{ x.sub }}</small></div>
-                  <Prog :a="x.a" :b="x.b"/>
-                  <span style="min-width:68px;text-align:right"><Days :d="x.due" :warn="7"/></span>
-                </a>
-              </div>
-              <div v-else class="empty">近 7 天无待交付单据</div>
+        <section class="panel" data-c="首页：下单与回货趋势">
+          <h3>下单与回货<span class="acts dim" style="font-size:12px">近 12 周 · 件</span></h3>
+          <div class="pb"><AreaChart :series="trend.series" :labels="trend.labels" :tips="trend.tips" :h="210" hint="点一下看这周下的订单" @pick="pickWeek"/></div>
+        </section>
+
+        <section class="panel" data-c="首页：在制品类">
+          <h3>在制品类<span class="acts dim" style="font-size:12px">未回货件数</span></h3>
+          <div class="pb dash-center"><Donut v-if="cats.length" :items="cats" unit=" 件" label="件在制" :s="150" hint="点一下看这个品类的加工单" @pick="x => go('/production?cat=' + x.code)"/><div v-else class="empty">暂无在制加工单</div></div>
+        </section>
+
+        <section class="panel" data-c="本周交期">
+          <h3>近期交期<span class="acts dim" style="font-size:12px">7 天内及逾期</span></h3>
+          <div class="pb" style="padding-top:6px;padding-bottom:6px">
+            <div v-if="week.length" class="inbox-list">
+              <a v-for="x in week" :key="x.no" class="todo-i" :href="'#' + x.to">
+                <Thumb :code="x.img" :s="36"/>
+                <div class="col"><span class="ell"><span class="pill" style="margin-right:6px">{{ x.k }}</span><span class="code" style="font-weight:500">{{ x.no }}</span></span><small class="ell">{{ x.sub }}</small></div>
+                <Prog :a="x.a" :b="x.b"/>
+                <span style="min-width:68px;text-align:right"><Days :d="x.due" :warn="7"/></span>
+              </a>
             </div>
-          </section>
-        </div>
+            <div v-else class="empty">近 7 天无待交付单据</div>
+          </div>
+        </section>
 
-        <div class="studio-col">
-          <section class="panel" data-c="首页：下单与回货趋势">
-            <h3>下单与回货<span class="acts dim" style="font-size:12px">近 12 周 · 件</span></h3>
-            <div class="pb"><AreaChart :series="trend.series" :labels="trend.labels" :h="200"/></div>
-          </section>
-
-          <section class="panel" data-c="首页：在制品类">
-            <h3>在制品类<span class="acts dim" style="font-size:12px">未回货件数</span></h3>
-            <div class="pb"><Donut :items="cats" unit=" 件" :s="132"/><div v-if="!cats.length" class="empty">暂无在制加工单</div></div>
-          </section>
-
-          <section class="panel" data-c="快捷入口">
-            <h3>快捷发起</h3>
-            <div class="pb quick"><a v-for="q in quick" :key="q[0]" :href="'#' + q[2]"><Ico :n="q[1]" :s="15"/><span class="ell">{{ q[0] }}</span></a></div>
-          </section>
-        </div>
+        <section class="panel" data-c="首页：其他提醒">
+          <h3>其他提醒<span class="acts dim" style="font-size:12px">各模块要处理的数</span></h3>
+          <div class="pb">
+            <div v-if="others.length" class="chips"><a v-for="x in others" :key="x.t" class="chip" :href="'#' + x.to">{{ x.t }}<b :class="x.tone">{{ x.n }}</b></a></div>
+            <div v-else class="empty">没有别的要处理</div>
+          </div>
+        </section>
       </div>
     </div>
   </div>`,
@@ -6118,7 +6266,8 @@ function updateOrder(o, f, quiet) {
 
 route('/orders', {
   setup() {
-    const s = reactive({ tab: nav.query.s || '全部', f: nav.query.f || '', q: '', type: '', brand: '', mine: false, flt: newFlt(), add: nav.query.new || null, imp: false, picked: [] })
+    // from / to：首页趋势图点某一周进来，按下单日期筛
+    const s = reactive({ tab: nav.query.s || '全部', f: nav.query.f || '', q: '', type: '', brand: '', mine: false, flt: Object.assign(newFlt(), { from: nav.query.from || '', to: nav.query.to || '' }), add: nav.query.new || null, imp: false, picked: [] })
     const TABS = ['全部', '草稿', '待审核', '已审核', '生产中', '已完成', '已结案', '已取消']
     const scoped = computed(() => db.orders.filter((o) => inScope(s.mine, o)))
     const tabs = computed(() => TABS.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((o) => o.status === k).length]))
@@ -7514,11 +7663,12 @@ function voidReturn(r, reason) {
 
 route('/production', {
   setup() {
-    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', q: '', flt: newFlt(), picked: [] })
+    // cat：首页品类环形图点进来，只看这个品类的款
+    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', cat: nav.query.cat || '', q: '', flt: newFlt(), picked: [] })
     const ST = ['全部', '草稿', '待审核', '已下单', '生产中', '部分回货', '已完成', '已结案', '已作废']
     const scoped = computed(() => db.productions.filter((p) => inScope(s.mine, p)))
     const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
-    const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f))
+    const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f)) && (!s.cat || style(p.style)?.cat === s.cat)
       && passFlt(s.flt, { date: expectDue(p), party: p.factory, merch: p.merch }) && matchQ(s.q, p.no, p.style, styleName(p.style), supName(p.factory), p.order)).slice().sort(byRisk))
     const XCOLS = [{ k: 'no', t: '加工单号', c: 'code' }, { k: 'order', t: '订单号', c: 'code' }, { k: 'style', t: '款号', c: 'code' }, { k: 'name', t: '款名', x: (p) => styleName(p.style) },
       { k: 'factory', t: '加工厂', x: (p) => supName(p.factory) }, { k: 'mode', t: '加工方式' }, { k: 'qty', t: '数量', x: prodQty }, { k: 'amt', t: '金额', x: prodAmt },
@@ -7532,6 +7682,7 @@ route('/production', {
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
     <div class="bar" data-c="筛选：交期、加工厂、跟单"><Filters v-model="s.flt" party="factory" merch label="交期"/>
       <Pick class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></Pick>
+      <span v-if="s.cat" class="fchip">{{ catOf(s.cat).name }}<button type="button" title="不按品类筛" @click="s.cat = ''"><Ico n="x" :s="11"/></button></span>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
     <div data-c="加工单列表"><ProdTable :rows="rows" v-model:picked="s.picked"/>
       <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="加工单" label="导出选中"/></BatchBar></div>
@@ -12291,10 +12442,12 @@ const MOD_INFO = {
     what: '登录后的第一页：按你的角色和负责的单据，列出要处理的事、各块业务的概况和这一周要交的单。',
     has: [
       ['概况', '开发、订单、生产、物料四块的数，点数字进筛好的列表'],
+      ['快捷发起', '新建订单、新建款式、算料、到料跟踪等常用入口'],
       ['待办', '待我审核、生产延期、到料逾期、上游订单已变更、待排单、异常待处理、证照将到期'],
-      ['待办 · 下面一排', '其他提醒的个数，如加工单临期、物料低于安全库存、样衣待评审'],
-      ['本周交期', '7 天内要交的订单、加工单，逾期没交的排前面，带回货进度'],
-      ['下单与回货、在制品类', '近 12 周下单、回货趋势和在制品类占比（报表看板，二期）'],
+      ['待解决的意见', '原型上的批注还没解决的，按页面分组；点一条跳到那一页并高亮，改好了点「解决」（只在原型里有）'],
+      ['下单与回货、在制品类', '近 12 周下单、回货趋势和在制品类占比（报表看板，二期）。悬停看数，点图例隐藏一条线；点某一周看那周下的订单，点品类看它的加工单'],
+      ['近期交期', '7 天内要交的订单、加工单，逾期没交的排前面，带回货进度'],
+      ['其他提醒', '各模块要处理的个数，如加工单临期、物料低于安全库存、样衣待评审'],
       ['上游变更待处理', '订单变更后受影响的加工单、算料单、采购单，看完点「已处理」'],
     ],
     up: [
@@ -13047,7 +13200,7 @@ const Shell = {
     }, { immediate: true })
     function closeTab(i) { const [t] = tabs.splice(i, 1); if (t.k === mod.value) go(tabs[Math.max(0, i - 1)].to) }
     const tabTitle = (k) => (k === 'feedback' ? '批注汇总' : navOf(k)?.t || k)
-    const fbCount = computed(() => fb.items.length || '')
+    const fbCount = computed(() => fb.items.filter((x) => !x.done).length || '') // 只数没解决的
     const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
     watch(() => db.me, () => toast(`已切换身份：${me().name}（${me().role} · ${roleOf(me().role).scope}）`))
     const hasInfo = computed(() => !!MOD_INFO[mod.value])
