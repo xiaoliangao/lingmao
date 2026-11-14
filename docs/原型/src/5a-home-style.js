@@ -135,7 +135,7 @@ route('/', {
     return { hi, today, co, who, kpi, trend, cats, todo, others, week, quick, inboxTab, inboxTabs, shownTodo }
   },
   template: `<div>
-    <Head t="工作台"><template #title><span class="head-sub">{{ today }}</span></template>
+    <Head t="首页"><template #title><span class="head-sub">{{ today }}</span></template>
       <a class="btn" href="#/styles"><Ico n="shirt" :s="14"/>款式库</a><a class="btn pri" href="#/orders?new=1"><Ico n="plus" :s="14"/>新建订单</a></Head>
     <div class="dash-wrap">
       <section class="pulse" data-c="首页：核心指标">

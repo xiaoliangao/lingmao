@@ -89,7 +89,7 @@ comp('AskBox', {
     <template #foot><button class="btn" @click="done(false)">取消</button><button class="btn pri" :disabled="blocked" :style="ui.ask.danger ? 'background:var(--red);border-color:var(--red)' : ''" @click="done(true)">{{ ui.ask.ok }}</button></template></Modal>`,
 })
 comp('NotFound', {
-  template: `<div><Head t="页面不存在"/><div class="empty">未找到对应页面或单据<p style="margin-top:16px"><a class="btn" href="#/">返回工作台</a></p></div></div>`,
+  template: `<div><Head t="页面不存在"/><div class="empty">未找到对应页面或单据<p style="margin-top:16px"><a class="btn" href="#/">回首页</a></p></div></div>`,
 })
 
 const navOf = (k) => NAV.flatMap((g) => g.items).find((x) => x.k === k)
@@ -108,15 +108,25 @@ const Shell = {
       else if (!typing(e) && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'i' && !escStack.length) miUi.open = !miUi.open
     }
     onMounted(() => window.addEventListener('keydown', onKey))
+    // 页签：点过的模块排在顶上，一个模块一个，记住这个模块最后停在哪一页；首页关不掉，最多留 10 个
+    const tabs = reactive([{ k: 'home', to: '/' }])
     watch(() => nav.seq, () => {
       if (main.value) main.value.scrollTop = 0
       fbUi.focus = null
+      const k = mod.value
+      if (!k) return
+      const qs = new URLSearchParams(nav.query).toString(), to = nav.path + (qs ? '?' + qs : '')
+      const t = tabs.find((x) => x.k === k)
+      t ? (t.to = to) : tabs.push({ k, to })
+      if (tabs.length > 10) tabs.splice(tabs.findIndex((x, i) => i && x.k !== k), 1)
     }, { immediate: true })
+    function closeTab(i) { const [t] = tabs.splice(i, 1); if (t.k === mod.value) go(tabs[Math.max(0, i - 1)].to) }
+    const tabTitle = (k) => (k === 'feedback' ? '批注汇总' : navOf(k)?.t || k)
     const fbCount = computed(() => fb.items.length || '')
     const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
     watch(() => db.me, () => toast(`已切换身份：${me().name}（${me().role} · ${roleOf(me().role).scope}）`))
     const hasInfo = computed(() => !!MOD_INFO[mod.value])
-    return { shellUi, main, mod, closed, toggle, fbCount, todoCount, miUi, hasInfo }
+    return { shellUi, main, mod, closed, toggle, tabs, closeTab, tabTitle, fbCount, todoCount, miUi, hasInfo }
   },
   template: `<div class="app" :data-mod="mod" :data-route="nav.path">
     <aside class="side" :class="{ shut: !shellUi.side }" data-c="侧边栏" aria-label="主导航">
@@ -136,6 +146,7 @@ const Shell = {
       </div>
     </aside>
     <div class="work">
+      <nav class="ptabs" data-c="页签" aria-label="打开过的页面"><a v-for="(t, i) in tabs" :key="t.k" class="ptab" :class="{ on: t.k === mod }" :href="'#' + t.to" @auxclick.prevent="i && closeTab(i)">{{ tabTitle(t.k) }}<span v-if="i" class="x" title="关掉" @click.prevent.stop="closeTab(i)"><Ico n="x" :s="11"/></span></a></nav>
       <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet" :class="{ dash: mod === 'home' }"/><NotFound v-else class="sheet"/></main>
     </div>
     <ModInfo v-if="miUi.open && hasInfo" :k="mod"/>
