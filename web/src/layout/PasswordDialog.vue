@@ -2,6 +2,7 @@
 import { reactive, ref, useId, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { authApi } from '@/api/auth'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 
 // 自己改密码：旧密码对不对后端判断（错了弹"旧密码不对"，对话框不关，改了再提交）；新密码 8-32 位，和后端规则一样
 const visible = defineModel<boolean>({ required: true })
@@ -37,6 +38,8 @@ watch(
 )
 
 const saving = ref(false)
+// 填了一半按 Esc、点 ×：先问一声
+const guard = useUnsavedChanges(form, visible)
 
 async function submit() {
   await formRef.value?.validate()
@@ -62,8 +65,16 @@ function onOpen() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="修改密码" width="min(440px, 94vw)" :close-on-click-modal="false" @open="onOpen" @closed="clear">
-    <el-form :id="formId" ref="formRef" :model="form" :rules="rules" label-width="96px" @submit.prevent="submit">
+  <el-dialog
+    v-model="visible"
+    title="修改密码"
+    width="min(440px, 94vw)"
+    :close-on-click-modal="false"
+    :before-close="guard.beforeClose"
+    @open="onOpen"
+    @closed="clear"
+  >
+    <el-form :id="formId" ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
       <!-- autocomplete 告诉浏览器的密码管理器哪个是旧密码、哪个是新密码，它才不会把旧密码填进新密码栏 -->
       <el-form-item label="旧密码" prop="oldPassword">
         <el-input v-model="form.oldPassword" type="password" autocomplete="current-password" show-password />

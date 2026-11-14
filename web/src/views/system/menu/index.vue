@@ -5,6 +5,7 @@ import { menuApi, type MenuForm } from '@/api/system'
 import type { MenuNode } from '@/types/system'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 
 const TYPE_LABEL: Record<number, string> = { 1: '目录', 2: '页面', 3: '按钮' }
 
@@ -37,6 +38,7 @@ const emptyForm = (): MenuForm => ({
   adminOnly: false,
 })
 const form = reactive<MenuForm>(emptyForm())
+const guard = useUnsavedChanges(form, dialogVisible)
 
 function openCreate(parent?: MenuNode) {
   editingId.value = null
@@ -81,7 +83,11 @@ async function save() {
 }
 
 async function remove(row: MenuNode) {
-  await ElMessageBox.confirm(`删除"${row.name}"。下面还有菜单的删不掉，要先删下级。`, '删除菜单', { confirmButtonText: '删除', type: 'warning' })
+  await ElMessageBox.confirm(`删除以后侧边栏里就没有"${row.name}"了。下面还有菜单的删不掉，要先删下级。`, '删除菜单', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    confirmButtonClass: 'el-button--danger',
+  })
   await menuApi.remove(row.id)
   ElMessage.success('已删除')
   load()
@@ -89,55 +95,56 @@ async function remove(row: MenuNode) {
 </script>
 
 <template>
-  <div class="page">
-    <PageHeader description="侧边栏里的目录、页面，和页面上的按钮。管理后台的菜单只有超级管理员能用。">
+  <div>
+    <PageHeader>
       <template #actions>
         <el-button v-perm="'system:menu:add'" type="primary" icon="Plus" @click="openCreate()">新增目录</el-button>
       </template>
     </PageHeader>
 
-    <div class="panel">
-      <div class="panel-body">
-        <el-table v-loading="loading" :data="tree" row-key="id" default-expand-all>
-          <el-table-column label="名称" min-width="190">
-            <template #default="{ row }">
-              <span class="name">
-                <el-icon v-if="row.icon"><component :is="row.icon" /></el-icon>
-                {{ row.name }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="区域" width="96">
-            <template #default="{ row }">
-              <template v-if="row.parentId === 0">{{ row.adminOnly ? '管理后台' : '工作台' }}</template>
-            </template>
-          </el-table-column>
-          <el-table-column label="类型" width="64">
-            <template #default="{ row }">{{ TYPE_LABEL[row.type] }}</template>
-          </el-table-column>
-          <el-table-column prop="perms" label="权限标识" min-width="170" class-name="code" show-overflow-tooltip />
-          <el-table-column prop="path" label="路由" min-width="100" class-name="code" show-overflow-tooltip />
-          <el-table-column prop="component" label="组件" min-width="170" class-name="code" show-overflow-tooltip />
-          <el-table-column prop="sort" label="排序" width="64" align="right" class-name="num" />
-          <el-table-column label="状态" width="86">
-            <template #default="{ row }">
-              <StatusTag :tone="row.status === 1 ? 'done' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="190" fixed="right">
-            <template #default="{ row }">
-              <el-button v-if="row.type !== 3" v-perm="'system:menu:add'" link type="primary" @click="openCreate(row as MenuNode)">新增下级</el-button>
-              <el-button v-perm="'system:menu:edit'" link type="primary" @click="openEdit(row as MenuNode)">编辑</el-button>
-              <el-button v-perm="'system:menu:remove'" link type="danger" @click="remove(row as MenuNode)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </div>
+    <el-table v-loading="loading" :data="tree" row-key="id" default-expand-all empty-text="暂无菜单">
+      <el-table-column label="名称" min-width="190">
+        <template #default="{ row }">
+          <span class="name">
+            <el-icon v-if="row.icon"><component :is="row.icon" /></el-icon>
+            {{ row.name }}
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column label="区域" width="96">
+        <template #default="{ row }">
+          <template v-if="row.parentId === 0">{{ row.adminOnly ? '管理后台' : '业务菜单' }}</template>
+        </template>
+      </el-table-column>
+      <el-table-column label="类型" width="64">
+        <template #default="{ row }">{{ TYPE_LABEL[row.type] }}</template>
+      </el-table-column>
+      <el-table-column prop="perms" label="权限标识" min-width="170" class-name="code" show-overflow-tooltip />
+      <el-table-column prop="path" label="路由" min-width="100" class-name="code" show-overflow-tooltip />
+      <el-table-column prop="component" label="组件" min-width="170" class-name="code" show-overflow-tooltip />
+      <el-table-column prop="sort" label="排序" width="64" align="right" class-name="num" />
+      <el-table-column label="状态" width="86">
+        <template #default="{ row }">
+          <StatusTag :tone="row.status === 1 ? 'active' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="210" align="right" fixed="right">
+        <template #default="{ row }">
+          <el-button v-if="row.type !== 3" v-perm="'system:menu:add'" link @click="openCreate(row as MenuNode)">新增下级</el-button>
+          <el-button v-perm="'system:menu:edit'" link @click="openEdit(row as MenuNode)">编辑</el-button>
+          <el-button v-perm="'system:menu:remove'" link type="danger" @click="remove(row as MenuNode)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
 
-    <el-dialog v-model="dialogVisible" :title="editingId === null ? '新增菜单' : '编辑菜单'" width="540px">
-      <el-form :model="form" label-width="80px">
-        <el-form-item label="上级">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId === null ? '新增菜单' : '编辑菜单'"
+      width="min(560px, 94vw)"
+      :before-close="guard.beforeClose"
+    >
+      <el-form class="form-grid" :model="form" label-position="top">
+        <el-form-item label="上级" class="full">
           <el-tree-select
             v-model="form.parentId"
             :data="parentOptions"
@@ -148,9 +155,9 @@ async function remove(row: MenuNode) {
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item v-if="form.parentId === 0" label="区域">
+        <el-form-item v-if="form.parentId === 0" label="区域" class="full">
           <el-radio-group v-model="form.adminOnly">
-            <el-radio :value="false">工作台</el-radio>
+            <el-radio :value="false">业务菜单</el-radio>
             <el-radio :value="true">管理后台（只有超级管理员）</el-radio>
           </el-radio-group>
         </el-form-item>
@@ -168,7 +175,7 @@ async function remove(row: MenuNode) {
           <el-input v-model="form.path" :placeholder="form.type === 1 ? '如 /purchase' : '如 order'" />
         </el-form-item>
         <el-form-item v-if="form.type === 2" label="组件路径">
-          <el-input v-model="form.component" placeholder="如 purchase/order/index，对应 views 下的文件" />
+          <el-input v-model="form.component" placeholder="如 purchase/order/index" />
         </el-form-item>
         <el-form-item v-if="form.type !== 1" label="权限标识">
           <el-input v-model="form.perms" placeholder="如 purchase:order:add" />
@@ -195,7 +202,7 @@ async function remove(row: MenuNode) {
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button type="primary" @click="save">{{ editingId === null ? '新增菜单' : '保存' }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -206,5 +213,9 @@ async function remove(row: MenuNode) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.name .el-icon {
+  color: var(--lm-faint);
 }
 </style>

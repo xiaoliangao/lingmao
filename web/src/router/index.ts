@@ -1,14 +1,14 @@
 import { createRouter, createWebHistory, type RouteComponent, type RouteRecordRaw } from 'vue-router'
-import WorkbenchLayout from '@/layout/WorkbenchLayout.vue'
+import AppLayout from '@/layout/AppLayout.vue'
 import { APP_NAME } from '@/config'
 import { useUserStore } from '@/stores/user'
 import type { MenuNode } from '@/types/system'
 import { joinPath } from '@/utils/path'
 
 /**
- * 两块区域：
- * - 工作台（/）：所有人登录后都到这里，左边是业务菜单，顶上是页签
- * - 管理后台（/admin）：用户、角色、菜单、字典、日志，只有超级管理员有这块路由
+ * 两块区域，共用一个外框（layout/AppLayout.vue：左边侧边栏，右边页面）：
+ * - 首页这一侧（/）：所有人登录后都到这里，左边是业务菜单，顶上是页签（开过的页面用 keep-alive 留着）
+ * - 管理后台（/admin）：用户、角色、菜单、字典、日志，只有超级管理员有这块路由，没有页签
  * 两块的菜单都来自 /api/auth/me，按顶层目录的 adminOnly 分开
  */
 const routes: RouteRecordRaw[] = [
@@ -16,18 +16,16 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'workbench',
-    component: WorkbenchLayout,
+    component: AppLayout,
+    props: { area: 'workbench' },
     redirect: '/home',
     children: [
-      {
-        path: '/home',
-        component: () => import('@/views/home/index.vue'),
-        meta: { title: '首页', cacheName: 'WorkbenchHome' },
-      },
+      { path: '/home', component: () => import('@/views/home/index.vue'), meta: { title: '首页', cacheName: 'HomePage' } },
+      // 兜底：什么都匹配不上就是 404，放在首页这一侧的外框里，左边菜单照常能点（不开页签）。
+      // vue-router 按路径的具体程度排优先级，后加的菜单路由照样排在它前面
+      { path: '/:pathMatch(.*)*', component: () => import('@/views/error/404.vue'), meta: { title: '页面不存在' } },
     ],
   },
-  // 兜底：什么都匹配不上就是 404。vue-router 按路径的具体程度排优先级，后加的菜单路由照样排在它前面
-  { path: '/:pathMatch(.*)*', component: () => import('@/views/error/404.vue'), meta: { title: '页面不存在' } },
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })
@@ -37,7 +35,7 @@ const pages = import.meta.glob('../views/**/index.vue')
 /** 菜单配好了、页面还没做的，显示"还没上线" */
 const building = () => import('@/views/error/building.vue')
 
-/** 给页面组件起一个唯一的名字，keep-alive 按名字缓存、按名字清掉 */
+/** 给页面组件起一个唯一的名字（Menu<菜单 id>），keep-alive 按名字缓存、页签关了按名字清掉 */
 function named(loader: () => Promise<unknown>, name: string): () => Promise<RouteComponent> {
   return () => loader().then((mod) => ({ ...(mod as { default: RouteComponent }).default, name }))
 }
@@ -88,7 +86,8 @@ router.beforeEach(async (to) => {
       router.addRoute({
         path: '/admin',
         name: 'admin',
-        component: () => import('@/layout/AdminLayout.vue'),
+        component: AppLayout,
+        props: { area: 'admin' },
         redirect: () => adminHome,
         children: [],
       })

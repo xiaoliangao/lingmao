@@ -1,94 +1,121 @@
 /*
- * 设计令牌：颜色、字体、尺寸只在这里定义，页面里用变量，不写死。
+ * 设计令牌：颜色、字体、尺寸、阴影只在这里定义，页面里用变量，不写死。
  *
- * 配色取自植物染：靛蓝是主色，茜草红表示危险，栀子黄表示待处理（也是侧边栏的明线），苔绿表示完成；
- * 底色是坯布灰（没漂白的布的颜色）。侧边栏是靛蓝斜纹布，当前菜单用金黄明线缝出来。
+ * 风格照原型（docs/原型/src/style.css 开头的 :root）：大面积白纸，侧边栏和底用暖灰，
+ * 主色是铜褐，只用在主按钮、选中、链接这类要人注意的地方；红 = 危险，琥珀 = 待处理，绿 = 完成。
+ * 阴影、边线都很淡，靠留白和细线分区，不靠色块。
  */
 :root {
-  /* 靛蓝 */
-  --lm-indigo-950: #142038;
-  --lm-indigo-900: #1b2a4a; /* 侧边栏底色 */
-  --lm-indigo-600: #2d4e8c; /* 主色：主按钮、链接、选中 */
-  --lm-indigo-50: #f1f4f9; /* 表格行悬停 */
+  /* ---------- 纸和底 ---------- */
+  --lm-paper: #ffffff; /* 白纸：内容区、表格、弹窗、输入框、当前页签 */
+  --lm-greige: #f1efea; /* 暖灰：侧边栏、页签条 */
+  --lm-greige-2: #f7f6f2; /* 浅暖灰：首页底、弹窗底栏、筛选小标签 */
+  --lm-subtle: #f7f6f3; /* 更浅一档：表头、按钮悬停 */
+  --lm-hover: #f4f2ee; /* 悬停：表格行、下拉选项、页签 */
+  --lm-sunken: #ebe8e2; /* 凹下去的底：分段控件、键帽、幽灵按钮悬停。上面的字用 ink / ink-2，灰字不够清楚 */
 
-  /* 栀子黄：明线、待处理 */
-  --lm-stitch: #d9a23a; /* 只用在深色底上 */
-  --lm-pending-text: #8a5a00;
-  --lm-pending-bg: #fbf1da;
-  --lm-pending-line: #d9a23a;
+  /* ---------- 字和线 ----------
+   * 字色在白底和上面几种浅底上都不低于 4.5:1（WCAG AA）。括号里是在白底上的对比度 */
+  --lm-ink: #22201d; /* 正文、标题（16.3） */
+  --lm-ink-2: #4f4a43; /* 次一档：分段控件、键帽（8.8，凹底上 7.2） */
+  --lm-muted: #736d63; /* 说明、表头、占位符、图标（5.1）。侧边栏底上只有 4.46，侧边栏里换成 side-text-dim */
+  --lm-faint: var(--lm-muted); /* 原来更淡的一档对比度不够，现在和 muted 一样；名字留着，用到它的地方不用改 */
+  --lm-disabled: #a49d92; /* 只给禁用的字：WCAG 不要求禁用控件的对比度，故意淡，一眼看出点不了 */
+  --lm-line: #dcd7cd; /* 边框、分隔线 */
+  --lm-line-soft: #e8e4dc; /* 表格行线、区块里的细线 */
+  --lm-line-strong: #c2bbad; /* 悬停时加深的边框 */
 
-  /* 苔绿：完成、启用 */
-  --lm-done-text: #2e7350;
-  --lm-done-bg: #e6f1ea;
-  --lm-done-line: #b9d6c5;
+  /* ---------- 主色：铜褐 ---------- */
+  --lm-accent: #8a5c30; /* 主按钮、选中、链接、焦点（白底上 5.8；白字在它上面也是 5.8） */
+  --lm-accent-2: #704922; /* 主按钮悬停、浅底上的主色字（浅褐底上 7.0） */
+  --lm-accent-bg: #f8f0e6; /* 选中的浅底、焦点光圈 */
+  --lm-accent-line: #e6d3be; /* 选中的边框 */
+  --lm-on-accent: #ffffff; /* 主色、红色底上的字 */
 
-  /* 茜草红：危险、失败 */
-  --lm-danger-text: #b4392b;
-  --lm-danger-bg: #f8ebea;
-  --lm-danger-line: #e3b9b3;
+  /* ---------- 状态 ----------
+   * 字色在自己的浅底上：琥珀 5.2、绿 6.4、红 5.4 */
+  /* 琥珀：待处理、待审核 */
+  --lm-pending-text: #8f5d0c;
+  --lm-pending-bg: #fdf6e7;
+  --lm-pending-line: #f0dab0;
+  /* 绿：完成、启用 */
+  --lm-done-text: #2c6342;
+  --lm-done-bg: #eef6f1;
+  --lm-done-line: #c4dfd0;
+  /* 红：危险、失败、作废 */
+  --lm-danger-text: #b23a2e;
+  --lm-danger-bg: #fdf1f0;
+  --lm-danger-line: #f3cbc7;
 
-  /* 墨色文字与坯布底 */
-  --lm-ink: #1c2230;
-  --lm-ink-2: #3b4254;
-  --lm-muted: #5b6475;
-  --lm-faint: #8a909c; /* 只给占位符、禁用 */
-  --lm-line: #dcdfd7;
-  --lm-line-soft: #e8eae4;
-  --lm-paper: #ffffff;
-  --lm-greige: #eef0eb;
-  --lm-greige-2: #f6f7f3; /* 表头 */
+  /* ---------- 侧边栏 ---------- */
+  --lm-side-text: #3d3934; /* 菜单（侧边栏底上 10.0） */
+  --lm-side-text-dim: #6e685f; /* 分组名、键帽、版本号（侧边栏底上 4.8；原型的 #736d63 在这里只有 4.46） */
 
-  /* 侧边栏 */
-  --lm-side-text: #c3cde0;
-  --lm-side-text-dim: #8c9ab6;
-  /* 斜纹：135° 的细线，像牛仔布的斜纹组织 */
-  --lm-twill: repeating-linear-gradient(135deg, rgb(255 255 255 / 3.5%) 0 1px, transparent 1px 5px);
+  /* 消息提示：深色胶囊 */
+  --lm-toast-bg: #26231f;
+  /* 遮罩：弹窗后面那层 */
+  --lm-mask: rgb(28 24 18 / 24%);
 
-  /* 字体：中文用系统字体；数字、编码用 Barlow（只含拉丁字符，中文会自动落回系统字体） */
-  --lm-font: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', 'Source Han Sans SC', system-ui, sans-serif;
-  --lm-font-num: 'Barlow', var(--lm-font);
+  /* ---------- 字体 ---------- */
+  /* 有 Inter 就用（电脑上装了的话），没有落到系统字体；中文是苹方 / 微软雅黑 */
+  --lm-font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  /* 数量、金额、日期：和正文同一种字体，数位等宽（.num 里加 tabular-nums），上下行对得齐 */
+  --lm-font-num: var(--lm-font);
+  /* 编码：单号、用户名、权限标识这类给人念、给人抄的字符串，等宽字体，0 和 O 分得清 */
+  --lm-font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 
-  /* 尺寸 */
-  --lm-side-width: 216px;
-  --lm-side-width-collapsed: 64px;
-  --lm-header-height: 48px;
-  --lm-radius: 4px;
-  --lm-radius-panel: 6px;
+  /* ---------- 尺寸 ---------- */
+  --lm-side-width: 212px;
+  --lm-header-height: 52px; /* 页头（PageHeader）的高 */
+  --lm-radius: 8px; /* 按钮、输入框 */
+  --lm-radius-sm: 6px; /* 小按钮、表格里的输入框 */
+  --lm-radius-panel: 12px; /* 面板、卡片、下拉弹层 */
+  --lm-radius-dialog: 14px; /* 对话框、日期卡片 */
+
+  /* ---------- 阴影 ---------- */
+  --lm-shadow-sm: 0 1px 2px rgb(28 24 18 / 4%); /* 按钮、输入框 */
+  --lm-shadow-pop: 0 12px 32px rgb(28 24 18 / 12%), 0 2px 6px rgb(28 24 18 / 5%); /* 下拉、筛选弹层 */
+  --lm-shadow-card: 0 18px 42px -10px rgb(28 25 21 / 16%), 0 4px 14px -3px rgb(28 25 21 / 7%); /* 日期卡片 */
+  --lm-shadow: 0 20px 50px rgb(28 24 18 / 14%), 0 4px 12px rgb(28 24 18 / 6%), 0 0 0 1px rgb(28 24 18 / 6%); /* 对话框 */
+  --lm-focus-ring: 0 0 0 3px var(--lm-accent-bg); /* 焦点光圈 */
+
+  --lm-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ---------- Element Plus 主题：把它的变量换成上面的颜色 ---------- */
-  --el-color-primary: #2d4e8c;
-  --el-color-primary-light-3: #6c83ae;
-  --el-color-primary-light-5: #96a6c6;
-  --el-color-primary-light-7: #c0cadc;
-  --el-color-primary-light-8: #d5dce8;
-  --el-color-primary-light-9: #eaedf4;
-  --el-color-primary-dark-2: #243e70;
+  /* 每种颜色一组：light-N 是和白色按 N 成混出来的浅色（7、9 两档直接用上面的边框色和浅底），dark-2 是加深两成 */
+  --el-color-primary: #8a5c30;
+  --el-color-primary-light-3: #ad8d6e;
+  --el-color-primary-light-5: #c4ae98;
+  --el-color-primary-light-7: #e6d3be;
+  --el-color-primary-light-8: #eee3d6;
+  --el-color-primary-light-9: #f8f0e6;
+  --el-color-primary-dark-2: #704922;
 
-  --el-color-success: #2e7350;
-  --el-color-success-light-3: #6d9d84;
-  --el-color-success-light-5: #96b9a8;
-  --el-color-success-light-7: #c0d5ca;
-  --el-color-success-light-8: #d5e3dc;
-  --el-color-success-light-9: #eaf1ee;
-  --el-color-success-dark-2: #255c40;
+  --el-color-success: #2c6342;
+  --el-color-success-light-3: #6b927b;
+  --el-color-success-light-5: #96b1a0;
+  --el-color-success-light-7: #c4dfd0;
+  --el-color-success-light-8: #d5e0d9;
+  --el-color-success-light-9: #eef6f1;
+  --el-color-success-dark-2: #234f35;
 
-  --el-color-warning: #94660c;
-  --el-color-warning-light-3: #b49455;
-  --el-color-warning-light-5: #cab286;
-  --el-color-warning-light-7: #dfd1b6;
-  --el-color-warning-light-8: #eae0ce;
-  --el-color-warning-light-9: #f4f0e7;
-  --el-color-warning-dark-2: #76520a;
+  --el-color-warning: #8f5d0c;
+  --el-color-warning-light-3: #b18e55;
+  --el-color-warning-light-5: #c7ae86;
+  --el-color-warning-light-7: #f0dab0;
+  --el-color-warning-light-8: #e9dfce;
+  --el-color-warning-light-9: #fdf6e7;
+  --el-color-warning-dark-2: #724a0a;
 
-  --el-color-danger: #b4392b;
-  --el-color-danger-light-3: #ca746b;
-  --el-color-danger-light-5: #da9c95;
-  --el-color-danger-light-7: #e8c4bf;
-  --el-color-danger-light-8: #f0d7d5;
-  --el-color-danger-light-9: #f8ebea;
-  --el-color-danger-dark-2: #902e22;
+  --el-color-danger: #b23a2e;
+  --el-color-danger-light-3: #c9756d;
+  --el-color-danger-light-5: #d89c96;
+  --el-color-danger-light-7: #f3cbc7;
+  --el-color-danger-light-8: #f0d8d5;
+  --el-color-danger-light-9: #fdf1f0;
+  --el-color-danger-dark-2: #8e2e25;
 
-  /* 消息提示、提示框（ElMessage.error、el-alert type="error"）用的是 error 这一组，和 danger 一样是茜草红 */
+  /* 消息提示、提示框（ElMessage.error、el-alert type="error"）用的是 error 这一组，和 danger 一样是红 */
   --el-color-error: var(--el-color-danger);
   --el-color-error-light-3: var(--el-color-danger-light-3);
   --el-color-error-light-5: var(--el-color-danger-light-5);
@@ -97,26 +124,57 @@
   --el-color-error-light-9: var(--el-color-danger-light-9);
   --el-color-error-dark-2: var(--el-color-danger-dark-2);
 
-  --el-color-info: #677083;
-  --el-color-info-light-3: #959ba8;
-  --el-color-info-light-5: #b3b8c1;
-  --el-color-info-light-7: #d1d4da;
-  --el-color-info-light-8: #e1e2e6;
-  --el-color-info-light-9: #f0f1f3;
-  --el-color-info-dark-2: #525a69;
+  --el-color-info: #736d63;
+  --el-color-info-light-3: #9d9992;
+  --el-color-info-light-5: #b9b6b1;
+  --el-color-info-light-7: #d5d3d0;
+  --el-color-info-light-8: #e3e2e0;
+  --el-color-info-light-9: #f1efea;
+  --el-color-info-dark-2: #5c574f;
 
   --el-font-family: var(--lm-font);
+  --el-font-size-base: 13px;
+  --el-font-size-small: 12px;
+  --el-font-size-medium: 14px;
+  --el-font-size-large: 15px;
+
   --el-text-color-primary: var(--lm-ink);
-  --el-text-color-regular: var(--lm-ink-2);
+  --el-text-color-regular: var(--lm-ink);
   --el-text-color-secondary: var(--lm-muted);
-  --el-text-color-placeholder: var(--lm-faint);
+  --el-text-color-placeholder: var(--lm-muted);
+  --el-text-color-disabled: var(--lm-disabled);
+
   --el-border-color: var(--lm-line);
   --el-border-color-light: var(--lm-line-soft);
   --el-border-color-lighter: var(--lm-line-soft);
-  --el-border-color-extra-light: #f0f1ed;
-  --el-bg-color-page: var(--lm-greige);
-  --el-fill-color-light: var(--lm-greige-2);
-  --el-fill-color-lighter: #fafbf8;
+  --el-border-color-extra-light: var(--lm-line-soft);
+  --el-border-color-dark: var(--lm-line-strong);
+  --el-border-color-darker: var(--lm-line-strong);
+  --el-border-color-hover: var(--lm-line-strong);
+
+  --el-fill-color: var(--lm-sunken);
+  --el-fill-color-light: var(--lm-hover);
+  --el-fill-color-lighter: var(--lm-subtle);
+  --el-fill-color-extra-light: var(--lm-subtle);
+  --el-fill-color-dark: var(--lm-sunken);
+  --el-fill-color-darker: var(--lm-line);
+  --el-fill-color-blank: var(--lm-paper);
+
+  --el-bg-color: var(--lm-paper);
+  --el-bg-color-page: var(--lm-greige-2);
+  --el-bg-color-overlay: var(--lm-paper);
+  --el-overlay-color-lighter: var(--lm-mask);
+  --el-mask-color: rgb(255 255 255 / 72%);
+
   --el-border-radius-base: var(--lm-radius);
-  --el-border-radius-small: 3px;
+  --el-border-radius-small: var(--lm-radius-sm);
+  --el-border-radius-round: 99px;
+
+  --el-box-shadow: var(--lm-shadow);
+  --el-box-shadow-light: var(--lm-shadow-pop);
+  --el-box-shadow-lighter: var(--lm-shadow-sm);
+  --el-box-shadow-dark: var(--lm-shadow);
+
+  --el-component-size: 32px;
+  --el-component-size-small: 26px;
 }

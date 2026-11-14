@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onActivated, ref } from 'vue'
 import { backupApi } from '@/api/system'
+import BlankState from '@/components/BlankState.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { useUserStore } from '@/stores/user'
 import { formatDateTime, formatFileSize } from '@/utils/format'
 import { joinPath } from '@/utils/path'
 import type { BackupStatus, MenuNode } from '@/types/system'
 
-// 工作台首页：问候、待办、我能用的功能。名字给 keep-alive 用（见 stores/tabs.ts）
-defineOptions({ name: 'WorkbenchHome' })
+// 首页：待办、我能用的功能；超级管理员多一行数据库备份的情况。名字给 keep-alive 用（见 stores/tabs.ts）
+defineOptions({ name: 'HomePage' })
 
 const store = useUserStore()
 
@@ -19,7 +21,9 @@ const greeting = (() => {
   if (hour >= 13 && hour < 18) return '下午好'
   return '晚上好'
 })()
-const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(now)
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+const today = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 星期${WEEKDAYS[now.getDay()]}`
+const sub = computed(() => `${greeting}，${store.info?.nickname ?? ''} · ${today}`)
 
 interface PageLink {
   name: string
@@ -49,7 +53,7 @@ const groups = computed(() =>
 // ---------- 数据库备份：只有超级管理员看。停了要显眼，正常只留一行小字 ----------
 const backup = ref<BackupStatus | null>(null)
 
-// 首页一直开着（keep-alive），每次回到首页都重新取一次
+// 页签切回首页时也重新取一次（第一次打开也会触发）
 onActivated(async () => {
   if (!store.isAdmin) return
   try {
@@ -78,104 +82,62 @@ const backupLine = computed(() => {
 </script>
 
 <template>
-  <div class="page home">
-    <header class="hello">
-      <div>
-        <h1>{{ greeting }}，{{ store.info?.nickname }}</h1>
-        <p>{{ today }}</p>
+  <div class="home">
+    <PageHeader title="首页" :sub="sub" />
+
+    <div class="wrap">
+      <el-alert v-if="backupAlert" type="error" :title="backupAlert" :closable="false" show-icon />
+
+      <div class="columns">
+        <section class="panel">
+          <h2 class="panel-head">待办</h2>
+          <BlankState title="暂无待办" />
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-head">我的功能</h2>
+          <div v-if="groups.length" class="panel-body">
+            <div v-for="group in groups" :key="group.name" class="group">
+              <h3 v-if="group.name">{{ group.name }}</h3>
+              <div class="quick">
+                <router-link v-for="page in group.pages" :key="page.path" :to="page.path">
+                  <el-icon v-if="page.icon"><component :is="page.icon" /></el-icon>
+                  <span>{{ page.name }}</span>
+                </router-link>
+              </div>
+            </div>
+          </div>
+          <BlankState v-else title="还没有给你开通功能">
+            <el-button v-if="store.isAdmin" @click="$router.push('/admin')">去管理后台分配</el-button>
+          </BlankState>
+        </section>
       </div>
+
       <p v-if="backupLine" class="backup-line">{{ backupLine }}</p>
-    </header>
-
-    <el-alert v-if="backupAlert" class="backup-alert" type="error" :title="backupAlert" :closable="false" show-icon />
-
-    <div class="columns">
-      <section class="panel block">
-        <h2>待办</h2>
-        <p class="empty">
-          没有要你处理的单据。<br />
-          采购单、入库单上线以后，等你审核、等你入库的单据会列在这里。
-        </p>
-      </section>
-
-      <section class="panel block">
-        <h2>我的功能</h2>
-        <div v-for="group in groups" :key="group.name" class="group">
-          <h3 v-if="group.name">{{ group.name }}</h3>
-          <ul>
-            <li v-for="page in group.pages" :key="page.path">
-              <router-link :to="page.path">
-                <el-icon v-if="page.icon"><component :is="page.icon" /></el-icon>
-                {{ page.name }}
-              </router-link>
-            </li>
-          </ul>
-        </div>
-        <p v-if="groups.length === 0" class="empty">
-          还没有给你开通功能。
-          <template v-if="store.isAdmin">
-            在<router-link to="/admin">管理后台</router-link>的角色管理里给角色分配菜单，再把角色分给用户。
-          </template>
-          <template v-else>找管理员给你分配。</template>
-        </p>
-      </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.hello {
+.home {
+  min-height: 100%;
+  background: var(--lm-greige-2);
+}
+
+.wrap {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 24px;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.hello h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.hello p {
-  margin: 4px 0 0;
-  color: var(--lm-muted);
-}
-
-.hello .backup-line {
-  font-size: 12px;
-}
-
-.backup-alert {
-  margin-bottom: 16px;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 22px 26px 42px;
 }
 
 .columns {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 18px;
   align-items: start;
-}
-
-.block {
-  padding: 18px 20px 20px;
-}
-
-h2 {
-  margin: 0 0 12px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.empty {
-  margin: 0;
-  color: var(--lm-muted);
-}
-
-.empty a {
-  color: var(--el-color-primary);
 }
 
 .group + .group {
@@ -183,42 +145,70 @@ h2 {
 }
 
 h3 {
-  margin: 0 0 6px;
+  margin-bottom: 8px;
   font-size: 12px;
-  font-weight: 400;
-  color: var(--lm-muted);
+  font-weight: 500;
+  color: var(--lm-faint);
 }
 
-ul {
-  display: flex;
-  flex-wrap: wrap;
+.quick {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
   gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-li a {
-  display: inline-flex;
+.quick a {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  color: var(--lm-ink-2);
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  font-size: 12.5px;
+  color: var(--lm-muted);
   text-decoration: none;
-  background: var(--lm-greige-2);
+  background: var(--lm-subtle);
   border: 1px solid var(--lm-line-soft);
   border-radius: var(--lm-radius);
+  transition: all 0.14s var(--lm-ease);
 }
 
-li a:hover {
-  color: var(--lm-indigo-600);
-  border-color: var(--el-color-primary-light-7);
+.quick a span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (width < 900px) {
+.quick a .el-icon {
+  flex: none;
+  color: var(--lm-faint);
+}
+
+.quick a:hover {
+  color: var(--lm-ink);
+  background: var(--lm-paper);
+  border-color: var(--lm-line-strong);
+  box-shadow: var(--lm-shadow-sm);
+}
+
+.quick a:hover .el-icon {
+  color: var(--lm-accent);
+}
+
+.backup-line {
+  font-size: 12px;
+  color: var(--lm-faint);
+  text-align: right;
+}
+
+@media (max-width: 1200px) {
   .columns {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .wrap {
+    padding: 16px;
   }
 }
 </style>

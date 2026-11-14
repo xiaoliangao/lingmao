@@ -162,7 +162,7 @@ async function submit() {
   counter-reset: step;
 }
 
-/* 步骤编号：靛蓝小圆点里一个数字 */
+/* 步骤编号：浅铜褐小圆点里一个数字 */
 .steps li {
   position: relative;
   padding-left: 34px;
@@ -179,14 +179,15 @@ async function submit() {
   left: 0;
   width: 22px;
   height: 22px;
-  font-family: var(--lm-font-num);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 22px;
-  color: var(--lm-indigo-600);
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  color: var(--lm-accent-2);
   text-align: center;
   content: counter(step);
-  background: var(--el-color-primary-light-9);
+  background: var(--lm-accent-bg);
+  border: 1px solid var(--lm-accent-line);
   border-radius: 50%;
 }
 

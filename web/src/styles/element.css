@@ -1,0 +1,967 @@
+/*
+ * Element Plus 组件的外观，照原型（docs/原型/src/style.css）调：
+ * 按钮、输入框是白底细边 + 一点点阴影，焦点是铜褐边 + 浅光圈；表格没有竖线，表头小字浅灰；
+ * 弹层、对话框大圆角、淡阴影；日期面板做成原型 DatePick 那样的日历卡片。
+ * 只改样式，不改组件的用法。颜色、尺寸都取 tokens.css 的变量。
+ */
+
+:root {
+  --el-disabled-bg-color: var(--lm-greige-2);
+  --el-disabled-text-color: var(--lm-disabled);
+  --el-disabled-border-color: var(--lm-line-soft);
+}
+
+/* ---------- 按钮 ---------- */
+.el-button {
+  --el-button-font-weight: 500;
+  --el-button-hover-text-color: var(--lm-ink);
+  --el-button-hover-bg-color: var(--lm-subtle);
+  --el-button-hover-border-color: var(--lm-line-strong);
+  --el-button-active-text-color: var(--lm-ink);
+  --el-button-active-bg-color: var(--lm-hover);
+  --el-button-active-border-color: var(--lm-line-strong);
+  --el-button-outline-color: var(--lm-accent-bg);
+
+  padding: 8px 12px;
+  font-size: 12.5px;
+  box-shadow: var(--lm-shadow-sm);
+  transition:
+    background 0.14s var(--lm-ease),
+    border-color 0.14s var(--lm-ease),
+    box-shadow 0.14s var(--lm-ease),
+    transform 0.14s var(--lm-ease);
+}
+
+.el-button:not(.is-disabled, .is-link, .is-text):hover {
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--lm-ink) 6%, transparent);
+}
+
+.el-button:not(.is-disabled):active {
+  transform: scale(0.985);
+}
+
+.el-button:focus-visible {
+  outline: none;
+  border-color: var(--lm-accent);
+  box-shadow: var(--lm-focus-ring);
+}
+
+.el-button [class*='el-icon'] + span {
+  margin-left: 5px;
+}
+
+.el-button + .el-button {
+  margin-left: 8px;
+}
+
+.el-button--small {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  border-radius: var(--lm-radius-sm);
+}
+
+/* 主按钮：铜褐实底，悬停深一档 */
+.el-button--primary {
+  --el-button-hover-text-color: var(--lm-on-accent);
+  --el-button-hover-bg-color: var(--lm-accent-2);
+  --el-button-hover-border-color: var(--lm-accent-2);
+  --el-button-active-text-color: var(--lm-on-accent);
+  --el-button-active-bg-color: var(--lm-accent-2);
+  --el-button-active-border-color: var(--lm-accent-2);
+
+  box-shadow:
+    0 1px 3px color-mix(in srgb, var(--lm-accent) 25%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--lm-on-accent) 14%, transparent);
+}
+
+.el-button--primary:not(.is-disabled, .is-link, .is-text):hover {
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--lm-accent-2) 28%, transparent);
+}
+
+/* 危险按钮（确认框里的"删除"）：红色实底 */
+.el-button--danger {
+  --el-button-hover-text-color: var(--lm-on-accent);
+  --el-button-hover-bg-color: var(--el-color-danger-dark-2);
+  --el-button-hover-border-color: var(--el-color-danger-dark-2);
+  --el-button-active-text-color: var(--lm-on-accent);
+  --el-button-active-bg-color: var(--el-color-danger-dark-2);
+  --el-button-active-border-color: var(--el-color-danger-dark-2);
+}
+
+/* 文字按钮（link）：没有阴影、不缩放 */
+.el-button.is-link,
+.el-button.is-text {
+  box-shadow: none;
+}
+
+.el-button.is-link:not(.is-disabled):active {
+  transform: none;
+}
+
+/* 表格里每行的操作（编辑、删除……）：原型里的幽灵小按钮，平时灰字，悬停垫一块浅底；删除是红字 */
+.el-table .el-button.is-link {
+  height: 25px;
+  padding: 0 8px;
+  font-weight: 400;
+  color: var(--lm-muted);
+  border-radius: var(--lm-radius-sm);
+}
+
+.el-table .el-button.is-link:not(.is-disabled):hover,
+.el-table .el-button.is-link:not(.is-disabled):focus-visible {
+  color: var(--lm-ink);
+  background: var(--lm-sunken);
+}
+
+.el-table .el-button.is-link.el-button--danger {
+  color: var(--lm-danger-text);
+}
+
+.el-table .el-button.is-link.el-button--danger:not(.is-disabled):hover {
+  color: var(--lm-danger-text);
+  background: var(--lm-danger-bg);
+}
+
+.el-table .el-button + .el-button {
+  margin-left: 2px;
+}
+
+/* 靠右的操作列：最后一个按钮的字和表头"操作"右边对齐（按钮自带 8px 内边距） */
+.el-table .is-right .el-button.is-link:last-child {
+  margin-right: -8px;
+}
+
+/* ---------- 输入框、下拉框、多行文本、日期框 ---------- */
+.el-input {
+  --el-input-hover-border-color: var(--lm-line-strong);
+  --el-input-focus-border-color: var(--lm-accent);
+  --el-input-border-radius: var(--lm-radius);
+  --el-input-icon-color: var(--lm-faint);
+  --el-input-placeholder-color: var(--lm-faint);
+
+  font-size: 13px;
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  transition:
+    box-shadow 0.14s var(--lm-ease),
+    background 0.14s var(--lm-ease);
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-range-editor.is-active,
+.el-range-editor.is-active:hover {
+  box-shadow:
+    0 0 0 1px var(--lm-accent) inset,
+    var(--lm-focus-ring);
+}
+
+.el-textarea__inner {
+  padding: 7px 11px;
+  font-size: 13px;
+  line-height: 1.55;
+  border-radius: var(--lm-radius);
+}
+
+.el-textarea__inner:focus {
+  box-shadow:
+    0 0 0 1px var(--lm-accent) inset,
+    var(--lm-focus-ring);
+}
+
+.el-select__wrapper {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.el-select__wrapper:hover:not(.is-focused, .is-disabled) {
+  box-shadow: 0 0 0 1px var(--lm-line-strong) inset;
+}
+
+.el-input-group__append,
+.el-input-group__prepend {
+  color: var(--lm-muted);
+  background: var(--lm-greige-2);
+}
+
+/* ---------- 单选、多选、开关 ---------- */
+.el-checkbox,
+.el-radio {
+  --el-checkbox-font-size: 13px;
+  --el-radio-font-size: 13px;
+
+  font-weight: 400;
+}
+
+.el-checkbox__inner {
+  border-radius: 4px;
+}
+
+/* ---------- 表格：没有竖线，表头小字浅灰，行高 45 ---------- */
+.el-table {
+  --el-table-header-bg-color: var(--lm-subtle);
+  --el-table-header-text-color: var(--lm-faint);
+  --el-table-row-hover-bg-color: var(--lm-hover);
+  --el-table-border-color: var(--lm-line-soft);
+  --el-table-text-color: var(--lm-ink);
+  --el-table-current-row-bg-color: var(--lm-accent-bg);
+  --el-table-expanded-cell-bg-color: var(--lm-greige-2);
+
+  font-size: 13px;
+}
+
+.el-table th.el-table__cell {
+  padding: 7px 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.el-table th.el-table__cell.is-leaf {
+  border-bottom-color: var(--lm-line);
+}
+
+.el-table td.el-table__cell {
+  padding: 10px 0;
+}
+
+/* 第一列、最后一列和页头对齐：铺满页面的表格两头留 24px，面板里 16px（--lm-table-edge 在 base.css） */
+.el-table .el-table__cell:first-child .cell {
+  padding-left: var(--lm-table-edge, 12px);
+}
+
+.el-table .el-table__cell:last-child .cell {
+  padding-right: var(--lm-table-edge, 12px);
+}
+
+/* 鼠标移上去，第一格左边出一道主色竖线，看得出是哪一行 */
+.el-table__body tr.hover-row > td.el-table__cell:first-child,
+.el-table__body tr:hover > td.el-table__cell:first-child {
+  box-shadow: inset 2.5px 0 0 var(--lm-accent);
+}
+
+.el-table__empty-block {
+  min-height: 140px;
+}
+
+.el-table__empty-text {
+  font-size: 13px;
+  color: var(--lm-faint);
+}
+
+.el-table .cell.el-tooltip {
+  min-width: 0;
+}
+
+/* ---------- 分页 ---------- */
+.el-pagination {
+  --el-pagination-font-size: 12.5px;
+  --el-pagination-text-color: var(--lm-faint);
+  --el-pagination-button-color: var(--lm-muted);
+  --el-pagination-button-width: 28px;
+  --el-pagination-button-height: 28px;
+  --el-pagination-border-radius: var(--lm-radius-sm);
+  --el-pagination-hover-color: var(--lm-ink);
+  --el-pagination-item-gap: 12px;
+}
+
+.el-pagination__total {
+  color: var(--lm-faint);
+}
+
+.el-pager li {
+  margin: 0 1px;
+}
+
+.el-pager li:hover,
+.el-pagination .btn-prev:not(:disabled):hover,
+.el-pagination .btn-next:not(:disabled):hover {
+  background: var(--lm-hover);
+}
+
+.el-pager li.is-active {
+  font-weight: 600;
+  color: var(--lm-ink);
+  background: var(--lm-sunken);
+}
+
+.el-pagination .el-select {
+  width: 100px;
+}
+
+/* ---------- 弹层：下拉、菜单、气泡 ---------- */
+.el-popper.is-light {
+  border-color: var(--lm-line);
+  border-radius: 10px;
+  box-shadow: var(--lm-shadow-pop);
+}
+
+/* 原型的弹层没有小三角 */
+.el-popper.is-light > .el-popper__arrow {
+  display: none;
+}
+
+.el-popper.is-dark {
+  padding: 5px 9px;
+  font-size: 12px;
+  border-radius: var(--lm-radius-sm);
+}
+
+.el-select-dropdown__list {
+  padding: 5px;
+}
+
+.el-select-dropdown__item {
+  height: 31px;
+  padding: 0 28px 0 10px;
+  font-size: 12.5px;
+  line-height: 31px;
+  border-radius: var(--lm-radius-sm);
+}
+
+.el-select-dropdown__item.is-selected {
+  font-weight: 600;
+  color: var(--lm-accent-2);
+}
+
+.el-select-dropdown__empty {
+  font-size: 12.5px;
+  color: var(--lm-faint);
+}
+
+.el-dropdown-menu {
+  --el-dropdown-menuItem-hover-fill: var(--lm-hover);
+  --el-dropdown-menuItem-hover-color: var(--lm-ink);
+
+  padding: 5px;
+}
+
+.el-dropdown-menu__item {
+  gap: 8px;
+  height: 31px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  line-height: 31px;
+  border-radius: var(--lm-radius-sm);
+}
+
+.el-dropdown-menu__item--divided {
+  margin-top: 5px;
+}
+
+.el-dropdown-menu__item.is-danger,
+.el-dropdown-menu__item.is-danger:not(.is-disabled):hover {
+  color: var(--lm-danger-text);
+}
+
+.el-dropdown-menu__item.is-danger:not(.is-disabled):hover {
+  background: var(--lm-danger-bg);
+}
+
+/* ---------- 对话框：圆角 14、标题行和底栏各一条细线，底栏浅暖灰 ---------- */
+.el-overlay {
+  backdrop-filter: blur(5px);
+}
+
+.el-dialog {
+  --el-dialog-padding-primary: 0px;
+  --el-dialog-border-radius: var(--lm-radius-dialog);
+  --el-dialog-box-shadow: var(--lm-shadow);
+  --el-dialog-title-font-size: 15px;
+  --el-dialog-content-font-size: 13px;
+  --el-dialog-margin-top: 8vh;
+
+  padding: 0;
+  overflow: hidden;
+}
+
+.el-dialog__header,
+.el-dialog__header.show-close {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  padding: 0 50px 0 22px;
+  border-bottom: 1px solid var(--lm-line-soft);
+}
+
+.el-dialog__title {
+  font-weight: 600;
+}
+
+.el-dialog__headerbtn,
+.el-message-box__headerbtn {
+  top: 9px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--lm-radius);
+}
+
+.el-dialog__headerbtn:hover,
+.el-message-box__headerbtn:hover {
+  background: var(--lm-sunken);
+}
+
+.el-dialog__headerbtn .el-dialog__close,
+.el-message-box__headerbtn .el-message-box__close {
+  color: var(--lm-muted);
+}
+
+.el-dialog__headerbtn:hover .el-dialog__close,
+.el-message-box__headerbtn:hover .el-message-box__close {
+  color: var(--lm-ink);
+}
+
+.el-dialog__body {
+  padding: 18px 22px 16px;
+}
+
+.el-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 22px;
+  background: var(--lm-greige-2);
+  border-top: 1px solid var(--lm-line-soft);
+}
+
+.el-dialog__footer .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* 对话框里的表单：标签在上、控件在下时字小一点、灰一点（原型的 .f） */
+.el-form-item__label {
+  font-size: 12.5px;
+  color: var(--lm-muted);
+}
+
+.el-form--label-top .el-form-item__label {
+  margin-bottom: 4px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* ---------- 确认框（ElMessageBox）：和对话框一个样子 ---------- */
+.el-message-box {
+  --el-messagebox-padding-primary: 0px;
+  --el-messagebox-border-radius: var(--lm-radius-dialog);
+  --el-messagebox-box-shadow: var(--lm-shadow);
+  --el-messagebox-font-size: 15px;
+  --el-messagebox-content-font-size: 13px;
+  --el-messagebox-content-color: var(--lm-muted);
+
+  padding: 0;
+  overflow: hidden;
+}
+
+.el-message-box__header,
+.el-message-box__header.show-close {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  padding: 0 50px 0 22px;
+  border-bottom: 1px solid var(--lm-line-soft);
+}
+
+.el-message-box__title {
+  font-weight: 600;
+}
+
+.el-message-box__content {
+  padding: 18px 22px 20px;
+}
+
+.el-message-box__btns {
+  gap: 8px;
+  padding: 12px 22px;
+  background: var(--lm-greige-2);
+  border-top: 1px solid var(--lm-line-soft);
+}
+
+.el-message-box__btns .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* ---------- 消息提示：底下是深色胶囊（原型的 toast）；出错是红色 ---------- */
+.el-message {
+  --el-message-bg-color: var(--lm-toast-bg);
+  --el-message-border-color: transparent;
+  --el-message-text-color: var(--lm-on-accent);
+  --el-message-padding: 10px 18px;
+
+  gap: 10px;
+  font-size: 12.5px;
+  border-radius: 99px;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--lm-ink) 22%, transparent);
+}
+
+.el-message--error {
+  --el-message-bg-color: var(--lm-danger-text);
+}
+
+.el-message .el-message__content,
+.el-message .el-message__icon {
+  color: var(--lm-on-accent);
+}
+
+.el-message--success .el-message__icon {
+  color: var(--lm-done-line);
+}
+
+.el-message--warning .el-message__icon {
+  color: var(--lm-pending-line);
+}
+
+/* ---------- 提示条（el-alert）：原型的 .banner ---------- */
+.el-alert {
+  --el-alert-padding: 11px 15px;
+  --el-alert-border-radius-base: 10px;
+  --el-alert-title-font-size: 12.5px;
+
+  color: var(--lm-ink);
+  border: 1px solid transparent;
+}
+
+.el-alert--error.is-light {
+  color: var(--lm-ink);
+  background: var(--lm-danger-bg);
+  border-color: var(--lm-danger-line);
+}
+
+.el-alert--warning.is-light {
+  color: var(--lm-ink);
+  background: var(--lm-pending-bg);
+  border-color: var(--lm-pending-line);
+}
+
+.el-alert--success.is-light {
+  color: var(--lm-ink);
+  background: var(--lm-done-bg);
+  border-color: var(--lm-done-line);
+}
+
+.el-alert--error.is-light .el-alert__icon {
+  color: var(--lm-danger-text);
+}
+
+.el-alert--warning.is-light .el-alert__icon {
+  color: var(--lm-pending-text);
+}
+
+/* ---------- 分段控件（el-segmented）：原型的 Seg，凹槽里一块白 ---------- */
+.el-segmented {
+  --el-segmented-color: var(--lm-ink-2);
+  --el-segmented-bg-color: var(--lm-sunken);
+  --el-segmented-padding: 2.5px;
+  --el-segmented-item-selected-color: var(--lm-ink);
+  --el-segmented-item-selected-bg-color: var(--lm-paper);
+  --el-segmented-item-hover-color: var(--lm-ink);
+  --el-segmented-item-hover-bg-color: transparent;
+  --el-segmented-item-active-bg-color: transparent;
+
+  min-height: 29px;
+  font-size: 12.5px;
+  border-radius: 9px;
+}
+
+.el-segmented__item {
+  padding: 0 10px;
+  border-radius: 6.5px;
+}
+
+.el-segmented__item.is-selected {
+  font-weight: 600;
+}
+
+.el-segmented__item-selected {
+  border-radius: 6.5px;
+  box-shadow:
+    0 1px 3px color-mix(in srgb, var(--lm-ink) 8%, transparent),
+    0 0 0 0.5px color-mix(in srgb, var(--lm-ink) 5%, transparent);
+}
+
+/* ---------- 树、上传、加载 ---------- */
+.el-tree {
+  --el-tree-node-hover-bg-color: var(--lm-hover);
+
+  font-size: 13px;
+}
+
+.el-tree-node__content {
+  height: 30px;
+  border-radius: var(--lm-radius-sm);
+}
+
+.el-upload-dragger {
+  background: var(--lm-greige-2);
+  border-color: var(--lm-line-strong);
+  border-radius: var(--lm-radius-panel);
+}
+
+.el-upload-dragger:hover,
+.el-upload-dragger.is-dragover {
+  background: var(--lm-accent-bg);
+  border-color: var(--lm-accent);
+}
+
+.el-loading-spinner .path {
+  stroke: var(--lm-accent);
+}
+
+/* ---------- 日期：输入框像原型的 DateRange 按钮，面板像 DatePick 的日历卡片 ---------- */
+.el-date-editor .el-range-separator {
+  font-size: 12px;
+  color: var(--lm-faint);
+}
+
+.el-date-editor .el-range__icon,
+.el-date-editor .el-input__prefix {
+  color: var(--lm-faint);
+}
+
+.el-range-editor .el-range__icon {
+  margin-right: 6px;
+}
+
+.el-range-editor.is-active .el-range__icon {
+  color: var(--lm-accent);
+}
+
+.el-date-editor .el-range-input {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.el-picker__popper.el-popper {
+  border-color: var(--lm-line);
+  border-radius: var(--lm-radius-dialog);
+  box-shadow: var(--lm-shadow-card);
+}
+
+.el-picker-panel {
+  --el-datepicker-text-color: var(--lm-ink);
+  --el-datepicker-off-text-color: var(--lm-faint);
+  --el-datepicker-header-text-color: var(--lm-ink);
+  --el-datepicker-icon-color: var(--lm-muted);
+  --el-datepicker-inner-border-color: var(--lm-line-soft);
+  --el-datepicker-inrange-bg-color: var(--lm-accent-bg);
+  --el-datepicker-inrange-hover-bg-color: var(--lm-accent-bg);
+  --el-datepicker-active-color: var(--lm-accent);
+  --el-datepicker-hover-text-color: var(--lm-accent-2);
+
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--lm-radius-dialog);
+}
+
+.el-picker-panel__body-wrapper {
+  padding: 14px;
+}
+
+/* 快捷项（今天、近 7 天……）：从左边栏挪到日历上面，排成一行小胶囊 */
+.el-picker-panel .el-picker-panel__sidebar {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  width: auto;
+  margin-bottom: 10px;
+  padding: 0 0 10px;
+  overflow: visible;
+  background: none;
+  border-right: 0;
+  border-bottom: 1px solid var(--lm-line-soft);
+}
+
+.el-picker-panel .el-picker-panel__sidebar + .el-picker-panel__body {
+  margin-left: 0;
+}
+
+.el-picker-panel__shortcut {
+  width: auto;
+  height: 23px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  line-height: 21px;
+  color: var(--lm-muted);
+  white-space: nowrap;
+  background: var(--lm-subtle);
+  border: 1px solid var(--lm-line-soft);
+  border-radius: 99px;
+  transition: all 0.12s;
+}
+
+.el-picker-panel__shortcut:hover {
+  color: var(--lm-ink);
+  background: var(--lm-paper);
+  border-color: var(--lm-line-strong);
+}
+
+.el-picker-panel__shortcut.active {
+  font-weight: 500;
+  color: var(--lm-accent-2);
+  background: var(--lm-accent-bg);
+  border-color: var(--lm-accent-line);
+}
+
+/* 单月：卡片 280 宽；单月的日期范围（single-panel）312 宽；两个月的范围并排 */
+.el-date-picker,
+.el-date-picker.has-sidebar {
+  width: 280px;
+}
+
+.el-date-picker .el-picker-panel__content,
+.el-date-range-picker.single-panel .el-picker-panel__content {
+  width: auto;
+  margin: 0;
+}
+
+.el-date-range-picker.single-panel,
+.el-date-range-picker.single-panel.has-sidebar {
+  width: 312px;
+}
+
+.el-date-range-picker.single-panel .el-picker-panel__body {
+  min-width: 0;
+}
+
+.el-date-range-picker,
+.el-date-range-picker.has-sidebar {
+  width: 600px;
+}
+
+.el-date-range-picker .el-picker-panel__body {
+  min-width: 0;
+}
+
+.el-date-range-picker__content {
+  padding: 0 4px;
+}
+
+.el-date-range-picker__content.is-left {
+  padding-right: 12px;
+  border-right: 0;
+}
+
+.el-date-range-picker__content.is-right {
+  padding-left: 12px;
+  border-left: 1px solid var(--lm-line-soft);
+}
+
+/* 年月一行：年月靠左加粗，翻页的箭头挤在右边 */
+.el-date-picker__header,
+.el-date-range-picker__header {
+  display: flex;
+  align-items: center;
+  height: auto;
+  margin-bottom: 8px;
+  padding: 0;
+  text-align: left;
+}
+
+.el-date-picker__header--bordered {
+  padding-bottom: 10px;
+  border-bottom-color: var(--lm-line-soft);
+}
+
+.el-date-picker__header-label,
+.el-date-range-picker__header-label,
+.el-date-range-picker__header div {
+  padding: 0 2px;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 28px;
+  color: var(--lm-ink);
+}
+
+.el-date-range-picker__header div {
+  flex: 1;
+  order: 0;
+  text-align: left;
+}
+
+.el-date-range-picker__content .el-date-range-picker__header div {
+  margin: 0;
+}
+
+.el-date-picker__header-label:hover,
+.el-date-range-picker__header-label:hover {
+  color: var(--lm-accent-2);
+}
+
+.el-date-picker__header > span[role='button'],
+.el-date-picker__header > .el-date-picker__header-label {
+  order: 0;
+}
+
+
+.el-picker-panel__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  order: 1;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  color: var(--lm-muted);
+  float: none;
+  border-radius: 7px;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.el-picker-panel__icon-btn:hover {
+  color: var(--lm-ink);
+  background: var(--lm-hover);
+}
+
+.el-date-picker__prev-btn,
+.el-date-picker__next-btn {
+  display: inline-flex;
+  order: 1;
+  float: none;
+}
+
+/* 翻页箭头（上一年、上月 / 下月、下一年）整组推到右边 */
+.el-date-picker__prev-btn {
+  margin-left: auto;
+}
+
+/* 星期一行 */
+.el-date-table th {
+  padding: 0 0 4px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 24px;
+  color: var(--lm-faint);
+  border-bottom: 0;
+}
+
+/* 日子：32 见方的圆角方块；选中是主色实底，今天下面一个小点 */
+.el-date-table td {
+  width: auto;
+  height: 34px;
+  padding: 1px 0;
+}
+
+.el-date-table td .el-date-table-cell {
+  height: 32px;
+  padding: 0;
+}
+
+.el-date-table td .el-date-table-cell .el-date-table-cell__text {
+  top: 0;
+  width: 32px;
+  height: 32px;
+  font-size: 12.5px;
+  line-height: 32px;
+  border-radius: 8px;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.el-date-table td.available:hover .el-date-table-cell__text {
+  color: var(--lm-ink);
+  background: var(--lm-hover);
+}
+
+.el-date-table td.next-month .el-date-table-cell__text,
+.el-date-table td.prev-month .el-date-table-cell__text {
+  opacity: 0.5;
+}
+
+.el-date-table td.today .el-date-table-cell__text {
+  font-weight: 400;
+  color: var(--lm-ink);
+}
+
+.el-date-table td.today .el-date-table-cell__text::after {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  content: '';
+  background: var(--lm-accent);
+  border-radius: 99px;
+  transform: translateX(-50%);
+}
+
+.el-date-table td.current:not(.disabled) .el-date-table-cell__text,
+.el-date-table td.start-date .el-date-table-cell__text,
+.el-date-table td.end-date .el-date-table-cell__text {
+  font-weight: 600;
+  color: var(--lm-on-accent);
+  background: var(--lm-accent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--lm-accent) 26%, transparent);
+}
+
+.el-date-table td.today.current .el-date-table-cell__text::after,
+.el-date-table td.today.start-date .el-date-table-cell__text::after,
+.el-date-table td.today.end-date .el-date-table-cell__text::after {
+  background: color-mix(in srgb, var(--lm-on-accent) 88%, transparent);
+}
+
+.el-date-table td.in-range .el-date-table-cell {
+  background: var(--lm-accent-bg);
+}
+
+.el-date-table td.in-range .el-date-table-cell__text {
+  font-weight: 500;
+  color: var(--lm-accent-2);
+}
+
+.el-date-table td.start-date .el-date-table-cell {
+  margin-left: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.el-date-table td.end-date .el-date-table-cell {
+  margin-right: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.el-date-table td.start-date.end-date .el-date-table-cell {
+  border-radius: 8px;
+}
+
+.el-date-table td.disabled .el-date-table-cell {
+  background: none;
+  opacity: 0.3;
+}
+
+/* 选月份、年份：3 列方块 */
+.el-month-table td .el-date-table-cell__text,
+.el-year-table td .el-date-table-cell__text {
+  width: 72px;
+  font-size: 12.5px;
+  color: var(--lm-ink);
+  border-radius: 8px;
+}
+
+.el-month-table td .el-date-table-cell__text:hover,
+.el-year-table td .el-date-table-cell__text:hover {
+  color: var(--lm-ink);
+  background: var(--lm-hover);
+}
+
+.el-month-table td.today .el-date-table-cell__text,
+.el-year-table td.today .el-date-table-cell__text {
+  font-weight: 500;
+  color: var(--lm-accent-2);
+  box-shadow: inset 0 0 0 1px var(--lm-accent-line);
+}
+
+.el-picker-panel__footer {
+  padding: 10px 14px;
+  background: none;
+  border-top: 1px solid var(--lm-line-soft);
+}

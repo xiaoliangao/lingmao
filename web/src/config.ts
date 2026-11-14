@@ -4,6 +4,5 @@
  */
 export const APP_NAME = '服装 SCM'
 
-/** 登录页的织唛和侧边栏把名字按空格分两段排：前一段白色中文，后一段金黄色英文；没有空格就只有前一段 */
-const [cn, ...rest] = APP_NAME.split(' ')
-export const APP_BRAND = { cn, en: rest.join(' ') }
+/** 侧边栏左上角、登录页上那个小方块里的字：系统名的第一个字 */
+export const APP_MARK = APP_NAME.trim().charAt(0)

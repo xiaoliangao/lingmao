@@ -82,6 +82,23 @@ export function formatDateTime(value: DateInput): string {
   return parts.time ? `${parts.date} ${parts.time}` : parts.date
 }
 
+/**
+ * 日期范围，给筛选小标签用：11-01 – 11-14；不是今年的带上年份。没选（null、空数组）是空串。
+ * 只选了一头的显示成"11-01 起""11-14 止"
+ */
+export function formatDateRange(range: readonly (string | null | undefined)[] | null | undefined): string {
+  const [start, end] = range ?? []
+  const year = String(new Date().getFullYear())
+  const short = (value: string | null | undefined) => {
+    const date = formatDate(value)
+    return date.startsWith(`${year}-`) ? date.slice(5) : date
+  }
+  if (start && end) return start === end ? short(start) : `${short(start)} – ${short(end)}`
+  if (start) return `${short(start)} 起`
+  if (end) return `${short(end)} 止`
+  return ''
+}
+
 /** 文件大小：812 KB、3.4 MB */
 export function formatFileSize(bytes: number | null | undefined): string {
   if (bytes == null || !Number.isFinite(bytes)) return ''

@@ -117,7 +117,7 @@ function remove(index: number) {
         </button>
       </li>
     </ul>
-    <p v-if="disabled && model.length === 0" class="empty">没有上传图片</p>
+    <p v-if="disabled && model.length === 0" class="empty">暂无图片</p>
     <input ref="input" type="file" accept="image/*" multiple hidden @change="onPick" />
   </div>
 </template>
@@ -154,15 +154,15 @@ function remove(index: number) {
 
 .main-badge {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  padding: 0 6px;
-  font-size: 12px;
-  line-height: 20px;
+  top: 0;
+  left: 0;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--lm-paper);
   pointer-events: none;
-  background: var(--lm-indigo-600);
-  border-radius: 3px;
+  background: var(--lm-ink);
+  border-radius: 0 0 var(--lm-radius-sm) 0;
 }
 
 /* 操作条：鼠标移上去、键盘移到按钮上时出现；手机上没有悬停，一直显示 */
@@ -195,7 +195,7 @@ function remove(index: number) {
   padding: 4px 0;
   font: inherit;
   font-size: 12px;
-  color: var(--lm-indigo-600);
+  color: var(--lm-muted);
   cursor: pointer;
   background: none;
   border: 0;
@@ -206,7 +206,8 @@ function remove(index: number) {
 }
 
 .actions button:hover {
-  background: var(--lm-indigo-50);
+  color: var(--lm-ink);
+  background: var(--lm-hover);
 }
 
 .actions button.danger {
@@ -227,7 +228,7 @@ function remove(index: number) {
   font-size: 20px;
 }
 
-/* 添加：虚线框，像还没缝上的布片 */
+/* 添加：虚线框 */
 .add {
   gap: 2px;
   font: inherit;
@@ -247,8 +248,9 @@ function remove(index: number) {
 }
 
 .add:hover {
-  color: var(--lm-indigo-600);
-  border-color: var(--lm-indigo-600);
+  color: var(--lm-accent-2);
+  background: var(--lm-accent-bg);
+  border-color: var(--lm-accent);
 }
 
 .empty {

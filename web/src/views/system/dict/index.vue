@@ -4,7 +4,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { dictApi } from '@/api/system'
 import type { DictData, DictType } from '@/types/system'
 import PageHeader from '@/components/PageHeader.vue'
+import BlankState from '@/components/BlankState.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 
 // ---------- 左边：字典类型 ----------
 const typeQuery = reactive({ page: 1, size: 20, code: '', name: '' })
@@ -27,6 +29,7 @@ function selectType(row: DictType | null) {
 const typeDialog = ref(false)
 const typeEditingId = ref<number | null>(null)
 const typeForm = reactive({ code: '', name: '', remark: '', status: 1 })
+const typeGuard = useUnsavedChanges(typeForm, typeDialog)
 
 function openTypeForm(row?: DictType) {
   typeEditingId.value = row?.id ?? null
@@ -49,7 +52,11 @@ async function saveType() {
 }
 
 async function removeType(row: DictType) {
-  await ElMessageBox.confirm(`删除字典类型"${row.name}"。下面还有选项的删不掉，要先删选项。`, '删除字典类型', { confirmButtonText: '删除', type: 'warning' })
+  await ElMessageBox.confirm(`删除以后程序里按"${row.code}"就取不到选项了。下面还有选项的删不掉，要先删选项。`, '删除字典类型', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    confirmButtonClass: 'el-button--danger',
+  })
   await dictApi.removeType(row.id)
   ElMessage.success('已删除')
   if (currentType.value?.id === row.id) selectType(null)
@@ -75,6 +82,7 @@ async function loadData() {
 const dataDialog = ref(false)
 const dataEditingId = ref<number | null>(null)
 const dataForm = reactive({ label: '', value: '', sort: 0, status: 1, remark: '' })
+const dataGuard = useUnsavedChanges(dataForm, dataDialog)
 
 function openDataForm(row?: DictData) {
   dataEditingId.value = row?.id ?? null
@@ -97,7 +105,11 @@ async function saveData() {
 }
 
 async function removeData(row: DictData) {
-  await ElMessageBox.confirm(`删除选项"${row.label}"以后，下拉框里不再出现它。`, '删除选项', { confirmButtonText: '删除', type: 'warning' })
+  await ElMessageBox.confirm(`删除以后下拉框里不再出现"${row.label}"；已经选了它的单据不受影响。`, '删除选项', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    confirmButtonClass: 'el-button--danger',
+  })
   await dictApi.removeData(row.id)
   ElMessage.success('已删除')
   loadData()
@@ -107,92 +119,116 @@ onMounted(loadTypes)
 </script>
 
 <template>
-  <div class="page">
-    <PageHeader description="下拉框里的选项，比如季节、计量单位。左边选一个类型，右边改它的选项。" />
+  <div>
+    <PageHeader />
 
-    <div class="dict">
-      <section class="panel side">
-        <div class="side-head">
-          <el-input v-model="typeQuery.name" clearable placeholder="按名称找" prefix-icon="Search" @keyup.enter="loadTypes" @clear="loadTypes" />
-          <el-button v-perm="'system:dict:add'" icon="Plus" @click="openTypeForm()">新增类型</el-button>
+    <div class="page dict">
+      <section class="panel">
+        <div class="panel-head">
+          <el-input
+            v-model="typeQuery.name"
+            class="find"
+            clearable
+            placeholder="按名称找"
+            prefix-icon="Search"
+            aria-label="按名称找字典类型"
+            @keyup.enter="loadTypes"
+            @clear="loadTypes"
+          />
+          <span class="acts">
+            <el-button v-perm="'system:dict:add'" icon="Plus" @click="openTypeForm()">新增类型</el-button>
+          </span>
         </div>
-        <el-table :data="types" highlight-current-row empty-text="还没有字典类型" @current-change="selectType">
+        <el-table :data="types" highlight-current-row :empty-text="typeQuery.name ? '没有叫这个名字的类型' : '暂无字典类型'" @current-change="selectType">
           <el-table-column prop="name" label="名称" min-width="90" />
           <el-table-column prop="code" label="编码" min-width="100" class-name="code" />
           <el-table-column label="状态" width="84">
             <template #default="{ row }">
-              <StatusTag :tone="row.status === 1 ? 'done' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
+              <StatusTag :tone="row.status === 1 ? 'active' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="110">
+          <el-table-column label="操作" width="120" align="right">
             <template #default="{ row }">
-              <el-button v-perm="'system:dict:edit'" link type="primary" @click.stop="openTypeForm(row as DictType)">编辑</el-button>
+              <el-button v-perm="'system:dict:edit'" link @click.stop="openTypeForm(row as DictType)">编辑</el-button>
               <el-button v-perm="'system:dict:remove'" link type="danger" @click.stop="removeType(row as DictType)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination v-model:current-page="typeQuery.page" class="pagination side-pager" layout="total, prev, pager, next" :total="typeTotal" @change="loadTypes" />
+        <el-pagination v-model:current-page="typeQuery.page" class="pagination" layout="total, prev, pager, next" :total="typeTotal" @change="loadTypes" />
       </section>
 
-      <section class="panel main">
+      <section class="panel">
         <template v-if="currentType">
-          <div class="main-head">
-            <h2>{{ currentType.name }} <span class="code muted">{{ currentType.code }}</span></h2>
-            <el-button v-perm="'system:dict:add'" type="primary" icon="Plus" @click="openDataForm()">新增选项</el-button>
+          <div class="panel-head">
+            <span>{{ currentType.name }}</span>
+            <span class="code dim">{{ currentType.code }}</span>
+            <span class="acts">
+              <el-button v-perm="'system:dict:add'" type="primary" icon="Plus" @click="openDataForm()">新增选项</el-button>
+            </span>
           </div>
-          <el-table :data="dataList" empty-text="这个类型还没有选项">
+          <el-table :data="dataList" empty-text="暂无选项">
             <el-table-column prop="label" label="显示文字" min-width="120" />
             <el-table-column prop="value" label="存储值" min-width="100" class-name="code" />
             <el-table-column prop="sort" label="排序" width="70" align="right" class-name="num" />
             <el-table-column label="状态" width="84">
               <template #default="{ row }">
-                <StatusTag :tone="row.status === 1 ? 'done' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
+                <StatusTag :tone="row.status === 1 ? 'active' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="110">
+            <el-table-column label="操作" width="120" align="right">
               <template #default="{ row }">
-                <el-button v-perm="'system:dict:edit'" link type="primary" @click="openDataForm(row as DictData)">编辑</el-button>
+                <el-button v-perm="'system:dict:edit'" link @click="openDataForm(row as DictData)">编辑</el-button>
                 <el-button v-perm="'system:dict:remove'" link type="danger" @click="removeData(row as DictData)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="dataQuery.page" class="pagination main-pager" layout="total, prev, pager, next" :total="dataTotal" @change="loadData" />
+          <el-pagination v-model:current-page="dataQuery.page" class="pagination" layout="total, prev, pager, next" :total="dataTotal" @change="loadData" />
         </template>
-        <p v-else class="pick muted">{{ types.length ? '在左边点一个字典类型，这里显示它的选项。' : '先在左边新增一个字典类型。' }}</p>
+        <BlankState v-else :title="types.length ? '在左边点一个字典类型，这里列出它的选项' : '先在左边新增一个字典类型'" />
       </section>
     </div>
 
-    <el-dialog v-model="typeDialog" :title="typeEditingId === null ? '新增字典类型' : '编辑字典类型'" width="440px">
-      <el-form :model="typeForm" label-width="60px">
+    <el-dialog
+      v-model="typeDialog"
+      :title="typeEditingId === null ? '新增字典类型' : '编辑字典类型'"
+      width="min(480px, 94vw)"
+      :before-close="typeGuard.beforeClose"
+    >
+      <el-form class="form-grid" :model="typeForm" label-position="top">
         <el-form-item label="名称" required>
           <el-input v-model="typeForm.name" placeholder="如 季节" />
         </el-form-item>
         <el-form-item label="编码" required>
-          <el-input v-model="typeForm.code" placeholder="如 season，程序里按它取选项" />
+          <el-input v-model="typeForm.code" placeholder="如 season" />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item label="状态" class="full">
           <el-radio-group v-model="typeForm.status">
             <el-radio :value="1">启用</el-radio>
             <el-radio :value="0">停用</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item label="备注" class="full">
           <el-input v-model="typeForm.remark" type="textarea" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="typeDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveType">保存</el-button>
+        <el-button type="primary" @click="saveType">{{ typeEditingId === null ? '新增类型' : '保存' }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="dataDialog" :title="dataEditingId === null ? '新增选项' : '编辑选项'" width="440px">
-      <el-form :model="dataForm" label-width="80px">
+    <el-dialog
+      v-model="dataDialog"
+      :title="dataEditingId === null ? '新增选项' : '编辑选项'"
+      width="min(480px, 94vw)"
+      :before-close="dataGuard.beforeClose"
+    >
+      <el-form class="form-grid" :model="dataForm" label-position="top">
         <el-form-item label="显示文字" required>
           <el-input v-model="dataForm.label" placeholder="如 春季" />
         </el-form-item>
         <el-form-item label="存储值" required>
-          <el-input v-model="dataForm.value" placeholder="如 1，存进单据里的是它" />
+          <el-input v-model="dataForm.value" placeholder="如 1，单据里存的是它" />
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="dataForm.sort" :min="0" />
@@ -203,13 +239,13 @@ onMounted(loadTypes)
             <el-radio :value="0">停用</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item label="备注" class="full">
           <el-input v-model="dataForm.remark" type="textarea" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dataDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveData">保存</el-button>
+        <el-button type="primary" @click="saveData">{{ dataEditingId === null ? '新增选项' : '保存' }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -219,44 +255,12 @@ onMounted(loadTypes)
 .dict {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: 16px;
+  gap: 18px;
   align-items: start;
 }
 
-.side-head,
-.main-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--lm-line-soft);
-}
-
-.side-head .el-input {
-  max-width: 200px;
-}
-
-h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-h2 .code {
-  margin-left: 6px;
-  font-size: 13px;
-}
-
-.side-pager,
-.main-pager {
-  padding: 0 20px 16px;
-}
-
-.pick {
-  margin: 0;
-  padding: 48px 20px;
-  text-align: center;
+.find {
+  max-width: 220px;
 }
 
 @media (width < 1000px) {
