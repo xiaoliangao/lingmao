@@ -42,16 +42,19 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认。确认以后
 
 前端（`web/`，Vue 3 + TypeScript + Element Plus + Vite + pnpm）：
 
-- 两块区域：工作台 `/` 所有人，业务菜单 + 页签（keep-alive，页面组件按 `Menu<id>` 命名）；管理后台 `/admin` 只给超级管理员（后端 V7 `sys_menu.admin_only` 兜底）。业务菜单建在工作台的顶层目录下，页面文件还没做时自动显示"还没上线"。
-- 新页面套 `PageHeader` + `.panel` + `FilterBar` + `el-table`（不加 border）+ `StatusTag`（实线 = 定了，虚线 = 待处理或停用）。数字列 `class-name="num"`，编码列 `"code"`。
+- 两块区域，共用 `layout/AppLayout.vue`（左边侧边栏，没有顶栏）：`/` 所有人，首页 + 业务菜单 + 顶部页签（keep-alive，页面组件按 `Menu<id>` 命名，首页组件 `HomePage`）；管理后台 `/admin` 只给超级管理员、没有页签（后端 V7 `sys_menu.admin_only` 兜底）。`/` 这一页叫「首页」，不叫「工作台」；菜单管理里这块区域叫「业务菜单」。业务菜单建在它的顶层目录下，页面文件还没做时自动显示"还没上线"。
+- 页面结构照原型：每页顶上是 `PageHeader`（`title` / `sub` / `back`，插槽 `#title` / `#actions`）。列表页是 `PageHeader` → `FilterBar` → `el-table`（铺满，不套 `.panel`，不加 border）→ `el-pagination.pagination`；其他页的内容放 `<div class="page">`。状态用 `StatusTag`（`active | progress | pending | done | off | closed | void | danger`）。数字列 `class-name="num"`，编码列 `"code"`（等宽字体）。对话框表单标签放上面（`label-position="top"`），两列用 `.form-grid`。
+- 筛选：`FilterBar` 用 `v-model:keyword` + `@search`，分段控件放 `#left`，其他条件写成 `<FilterItem label :text @clear>` 收进"筛选"弹层，选了的显示成能去掉的小标签；日期用 `DateRange`，标签文字用 `formatDateRange`。
+- 选数据（用户 11-14 要的）：下拉一律能搜（`el-select filterable`）；要批量处理的列表加勾选列和底部批量条，只做现在能做的，没成功的逐条报原因、留着勾；新建单据加明细，从物料库 / 款式库的弹窗里挑（搜索 + 分类 + 一次勾多条，已在单上的灰掉）。样子照原型的 `Pick`、`BatchBar`、`DataPick`（`docs/原型/src/3-ui.js`、`3e-pick.js`）。
+- 没保存的修改：对话框表单写 `useUnsavedChanges(form, dialogVisible)`，对话框加 `:before-close="guard.beforeClose"`；整页表单写 `useUnsavedChanges(form)`，加载完、保存完调 `markSaved()`。切页签不问，关页签、去管理后台、退出、刷新时问。
 - 公共件，用法写在各文件开头的注释里：
   - 列表页用 `composables/useTable.ts`；导入用 `components/ImportDialog.vue`；多图用 `ImageUpload`。
   - 字典下拉用 `DictSelect`，表格里显示字典文字用 `useDict(type).labelOf`；选人用 `UserSelect`。
   - 数量、金额、单价、日期用 `utils/format.ts`；判断错误码用 `utils/errorCodes.ts` 里的名字，不写数字。
   - 下载、上传用 `utils/request.ts` 的 `download`、`upload`。
   - 系统名只在 `src/config.ts` 改。
-- 颜色只用 `web/src/styles/tokens.css` 的变量（植物染：靛蓝主色、茜红危险、栀黄待处理、苔绿完成、坯布灰底），不写死。
-- 文案：按钮写清楚做什么；删除确认要说后果，按钮就写"删除"；空表格要说明为什么空。
+- 颜色只用 `web/src/styles/tokens.css` 的变量（白底、暖灰底、铜褐主色；红 = 危险，琥珀 = 待处理，绿 = 完成），不写死；Element Plus 的样子统一在 `styles/element.css`。字色在白底和浅底上都不低于 4.5:1（用户 11-14 嫌看不清后加深的），新加颜色先算对比度。原型的颜色在 `docs/原型/src/style.css` 开头，两边一起改。
+- 文案：按钮写清楚做什么；删除确认要说后果，按钮就写"删除"；空表格用一句话说明为什么空。页面上不放大段说明文字。
 - 原型 `docs/原型/index.html` 是给甲方看的样子，做真页面时照它的结构，用真组件重写。原型本身要改：改 `docs/原型/src/`，再跑 `node docs/原型/check.mjs`（打包成 `index.html`，跑内置自测，逐页打开查报错；`--shots 目录` 截图）。业务规则在 `src/2-store.js`，页面按模块分文件；各文件共用一个全局作用域，顶层函数重名会悄悄互相覆盖，`check.mjs` 会查出来。侧边栏"业务流程"页（`src/8-flow.js`）是给甲方看的流程说明，原型的流程改了要跟着改。每个模块右侧的"模块说明"栏（`src/8b-modinfo.js`）写着这个模块有哪些信息、上下游是谁；页面加了页签、关联变了，跟着改（流程位置和谁能看是自动取的，不用改）。
 
 ## 运行与测试
