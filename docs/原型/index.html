@@ -236,6 +236,28 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
   background-image: linear-gradient(45deg, transparent 50%, var(--fg-3) 50%), linear-gradient(135deg, var(--fg-3) 50%, transparent 50%);
   background-position: calc(100% - 13px) 13px, calc(100% - 9px) 13px; background-size: 4px 4px; background-repeat: no-repeat;
 }
+/* 可搜索的下拉（Pick）：按钮和 .sel 一样，点开是能搜的卡片 */
+.pk-btn { display: inline-flex; align-items: center; max-width: 100%; text-align: left; color: var(--fg); font: inherit; font-size: 13px; }
+.pk-btn.open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.pk-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-btn.is-empty .pk-txt { color: var(--fg-3); }
+.pk-card {
+  position: fixed; z-index: 96; max-width: 440px; padding: 5px;
+  background: #ffffff; border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 18px 42px -10px rgba(28, 25, 21, 0.16), 0 4px 14px -3px rgba(28, 25, 21, 0.07);
+  animation: popIn 0.15s var(--ease);
+}
+.pk-q { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line-soft); color: var(--fg-3); }
+.pk-q input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 12.5px; color: var(--fg); }
+.pk-q small { font-size: 11px; font-variant-numeric: tabular-nums; }
+.pk-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.pk-g { padding: 8px 8px 3px; font-size: 11px; color: var(--fg-3); }
+.pk-opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 7px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.pk-opt.hi { background: var(--bg-hover); }
+.pk-opt.on { color: var(--accent-2); font-weight: 500; }
+.pk-opt.dis { color: var(--fg-3); opacity: 0.5; cursor: default; }
+.pk-opt svg { margin-left: auto; flex: none; color: var(--accent); }
+.pk-none { padding: 14px 8px; text-align: center; color: var(--fg-3); font-size: 12px; }
 .search { position: relative; display: flex; align-items: center; }
 .search svg { position: absolute; left: 9px; color: var(--fg-3); pointer-events: none; }
 .search .inp { padding-left: 29px; width: 210px; height: 29px; font-size: 12.5px; background: var(--bg-page); border-color: transparent; }
@@ -314,7 +336,7 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .dp-ico { color: var(--fg-3); flex: none; transition: color 0.14s; }
 .dp-btn.open .dp-ico, .dr-btn.open .dp-ico { color: var(--accent); }
 .dp-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.dp-btn.empty .dp-txt, .dr-ph { color: var(--fg-3); font-weight: 400; }
+.dp-btn.is-empty .dp-txt, .dr-ph { color: var(--fg-3); font-weight: 400; }
 .dp-clr {
   margin-left: auto; width: 16px; height: 16px; border-radius: 99px; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
@@ -483,6 +505,41 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .tbl tbody tr.link:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--accent); }
 .tbl tr.link td:first-child .code, .tbl tr.link td.code:first-child { color: var(--fg); font-weight: 500; }
 .tbl tr.sel td { background: var(--accent-bg); }
+.tbl th.ck, .tbl td.ck { width: 38px; padding-right: 0; cursor: pointer; }
+.tbl .ck input { accent-color: var(--accent); margin: 0; cursor: pointer; vertical-align: middle; }
+.tbl tbody tr.off td { opacity: 0.45; }
+
+/* 列表勾选后浮在底部的批量操作条 */
+.batch-bar {
+  position: sticky; bottom: 18px; z-index: 6; display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100% - 32px);
+  margin: 12px auto 0; padding: 6px 8px 6px 14px; background: var(--fg); color: #ffffff; border-radius: 12px;
+  box-shadow: 0 14px 34px -10px rgba(28, 25, 21, 0.35); animation: popIn 0.15s var(--ease); flex-wrap: wrap;
+}
+.batch-bar .bb-n { font-size: 12.5px; color: rgba(255, 255, 255, 0.72); }
+.batch-bar .bb-n b { color: #ffffff; font-variant-numeric: tabular-nums; margin: 0 2px; }
+.batch-bar .bb-sep { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.18); }
+.batch-bar .btn { background: transparent; border-color: rgba(255, 255, 255, 0.22); color: #ffffff; }
+.batch-bar .btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.4); color: #ffffff; }
+.batch-bar .btn.ghost { border-color: transparent; color: rgba(255, 255, 255, 0.7); }
+
+/* 从已有数据里挑（DataPick 弹窗） */
+.dpk-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.dpk-top .search { flex: 1; min-width: 200px; }
+.dpk-top .search .inp { width: 100%; }
+.dpk-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.dpk-chips button {
+  height: 26px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg);
+  font-size: 12px; color: var(--fg-2); cursor: pointer;
+}
+.dpk-chips button:hover { border-color: var(--line-strong); color: var(--fg); }
+.dpk-chips button.on { background: var(--accent-bg); border-color: rgba(154, 107, 62, 0.35); color: var(--accent-2); font-weight: 500; }
+.dpk-chips button i { font-style: normal; color: var(--fg-3); margin-left: 4px; font-size: 11px; }
+.dpk-list { max-height: 52vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.dpk-list .tbl th { top: 0; }
+.dpk-list .tbl th:first-child, .dpk-list .tbl td:first-child { padding-left: 12px; }
+.dpk-list .tbl th:last-child, .dpk-list .tbl td:last-child { padding-right: 14px; }
+.dpk-list .tbl tbody tr { cursor: pointer; }
+.dpk-list .tbl tbody tr:last-child td { border-bottom: none; }
 .tbl tfoot td { font-weight: 600; background: var(--bg-subtle); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .tbl caption { caption-side: bottom; text-align: right; padding: 12px 24px; color: var(--fg-3); font-size: 12px; }
 .tbl caption b { color: var(--fg-2); font-weight: 600; margin: 0 2px; }
@@ -494,6 +551,7 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .amber { color: var(--amber); }
 .green { color: var(--green); }
 .wrap { white-space: normal; }
+/* 空表格、空列表的提示。组件"没值"的状态类名用 is-empty，别用 empty（会套上这里的 52px 内边距，日期框被撑高过） */
 .empty { padding: 52px 24px; text-align: center; color: var(--fg-3); font-size: 13px; }
 .row { display: flex; align-items: center; gap: 8px; }
 .row.g4 { gap: 4px; }
@@ -3080,28 +3138,42 @@ comp('St', {
 })
 
 /* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本, img: row => 款号/SKU（前面带小图） }]；单元格可用 #k 插槽改写
- * 列表页（link、不是 inset）超过 20 条分页，每页 20 / 50 / 100（PRD §5.4） ---------- */
+ * 列表页（link、不是 inset）超过 20 条分页，每页 20 / 50 / 100（PRD §5.4）
+ * 勾选：v-model:picked="s.picked"（存行的键，默认 no / code / id，rowKey 可改）就多出勾选列；表头的框勾的是筛出来的全部行。
+ *   行不在 rows 里了（换了筛选）自动从 picked 去掉。配 <BatchBar> 做批量操作 ---------- */
+const rowKeyOf = (r) => r.no ?? r.code ?? r.id
 comp('Tbl', {
-  props: { rows: Array, cols: Array, link: Boolean, empty: String, inset: Boolean, flat: Boolean, sel: Function },
-  emits: ['row'],
-  setup(p) {
+  props: { rows: Array, cols: Array, link: Boolean, empty: String, inset: Boolean, flat: Boolean, sel: Function, picked: { type: Array, default: null }, rowKey: { type: Function, default: rowKeyOf } },
+  emits: ['row', 'update:picked'],
+  setup(p, { emit }) {
     const size = ref(20), cur = ref(1)
     const paged = computed(() => p.link && !p.inset && p.rows.length > 20)
     const pages = computed(() => Math.max(1, Math.ceil(p.rows.length / size.value)))
     watch([() => p.rows.length, size], () => { if (cur.value > pages.value) cur.value = 1 })
     const shown = computed(() => (paged.value ? p.rows.slice((cur.value - 1) * size.value, cur.value * size.value) : p.rows))
-    return { size, cur, paged, pages, shown }
+    const isPicked = (r) => !!p.picked && p.picked.includes(p.rowKey(r))
+    const nPicked = computed(() => (p.picked ? p.rows.filter(isPicked).length : 0))
+    const all = computed(() => p.rows.length > 0 && nPicked.value === p.rows.length)
+    const togglePick = (r) => { const k = p.rowKey(r); emit('update:picked', isPicked(r) ? p.picked.filter((x) => x !== k) : [...p.picked, k]) }
+    const toggleAll = () => emit('update:picked', all.value ? [] : p.rows.map(p.rowKey))
+    watch(() => p.rows, (rows) => {
+      if (!p.picked?.length) return
+      const keys = new Set(rows.map(p.rowKey)), keep = p.picked.filter((k) => keys.has(k))
+      if (keep.length !== p.picked.length) emit('update:picked', keep)
+    })
+    return { size, cur, paged, pages, shown, isPicked, nPicked, all, togglePick, toggleAll }
   },
   template: `<table class="tbl" :class="{ inset, flat }">
     <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条<span v-if="paged" class="pager">
-      <select class="sel" v-model.number="size"><option v-for="n in [20, 50, 100]" :key="n" :value="n">{{ n }} 条/页</option></select>
+      <Pick class="sel" v-model.number="size"><option v-for="n in [20, 50, 100]" :key="n" :value="n">{{ n }} 条/页</option></Pick>
       <button class="btn sm" :disabled="cur <= 1" @click="cur--">上一页</button><span class="num">{{ cur }} / {{ pages }}</span><button class="btn sm" :disabled="cur >= pages" @click="cur++">下一页</button></span></caption>
-    <thead><tr><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
+    <thead><tr><th v-if="picked" class="ck"><input type="checkbox" :checked="all" :indeterminate.prop="nPicked > 0 && !all" :title="all ? '全不选' : '全选筛出来的 ' + rows.length + ' 条'" @change="toggleAll"></th><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
     <tbody>
-      <tr v-for="(r, i) in shown" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
+      <tr v-for="(r, i) in shown" :key="i" :class="{ link, sel: (sel && sel(r)) || isPicked(r) }" @click="link && $emit('row', r)">
+        <td v-if="picked" class="ck" @click.stop="togglePick(r)"><input type="checkbox" :checked="isPicked(r)" @click.stop @change="togglePick(r)"></td>
         <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
       </tr>
-      <tr v-if="!rows.length"><td :colspan="cols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
+      <tr v-if="!rows.length"><td :colspan="cols.length + (picked ? 1 : 0)" class="empty">{{ empty || '没有记录' }}</td></tr>
     </tbody>
     <tfoot v-if="$slots.foot"><slot name="foot"/></tfoot>
   </table>`,
@@ -3467,7 +3539,7 @@ comp('DatePick', {
     return { WK_CN, open, mode, btnEl, popEl, pos, vy, vm, toggle, stepM, jumpToday, isDis, pick, clear, cells, quicks, curM, curY, selY, selM, display }
   },
   template: `<span class="dp-wrap" :class="{ auto: sm }">
-    <button ref="btnEl" type="button" class="dp-btn" :class="{ open, empty: !modelValue, sm, cell, ghost }" :data-date="modelValue || ''" @click="toggle">
+    <button ref="btnEl" type="button" class="dp-btn" :class="{ open, 'is-empty': !modelValue, sm, cell, ghost }" :data-date="modelValue || ''" @click="toggle">
       <Ico v-if="!cell || !ghost || !modelValue" n="calendar" :s="sm || cell ? 13 : 14" class="dp-ico"/>
       <span class="dp-txt">{{ display }}</span>
       <span v-if="modelValue && clearable" class="dp-clr" role="button" tabindex="-1" aria-label="清除日期" @mousedown.stop.prevent @click.stop.prevent="$emit('update:modelValue', '')"><Ico n="x" :s="11"/></span>
@@ -3645,6 +3717,77 @@ comp('DateRange', {
   </span>`,
 })
 
+/* ---------- 下拉选择：写法和原生 <select> 一样，里面照写 <option> / <optgroup>；点开是卡片，选项超过 7 个时能输入搜索
+ *   <Pick class="sel" v-model="f.supplier" @change="setSup"><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></Pick>
+ *   v-model.number、option 的 disabled 照常；class、style、title 落在按钮上 */
+function pickOpts(nodes, g = '', out = []) {
+  for (const n of nodes || []) {
+    if (!n || typeof n !== 'object') continue
+    if (n.type === 'option') {
+      const t = optText(n.children).trim()
+      out.push({ v: n.props && 'value' in n.props ? n.props.value : t, t, dis: n.props?.disabled === '' || !!n.props?.disabled, g })
+    } else if (n.type === 'optgroup') pickOpts(n.children, n.props?.label || '', out)
+    else if (n.type === Vue.Fragment) pickOpts(n.children, g, out)
+  }
+  return out
+}
+const optText = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (typeof x === 'string' ? x : optText(x?.children))).join('') : '')
+const sameV = (a, b) => a === b || (a != null && b != null && String(a) === String(b))
+comp('Pick', {
+  inheritAttrs: false,
+  props: { modelValue: null, disabled: Boolean, placeholder: { type: String, default: '请选择' } },
+  emits: ['update:modelValue', 'change'],
+  setup(p, { emit, slots }) {
+    const open = ref(false), q = ref(''), hi = ref(0), w = ref(0)
+    const btnEl = ref(null), popEl = ref(null), qEl = ref(null), listEl = ref(null)
+    const { pos } = usePopAnchor(open, btnEl, popEl, 220)
+    const opts = computed(() => pickOpts(slots.default?.() || []))
+    const cur = computed(() => opts.value.find((o) => sameV(o.v, p.modelValue)))
+    const shown = computed(() => { const k = q.value.trim().toLowerCase(); return k ? opts.value.filter((o) => (o.t + ' ' + o.v + ' ' + o.g).toLowerCase().includes(k)) : opts.value })
+    const scrollHi = () => nextTick(() => listEl.value?.querySelector('.hi')?.scrollIntoView({ block: 'nearest' }))
+    function toggle() {
+      if (p.disabled) return
+      if (!open.value) {
+        q.value = ''; w.value = btnEl.value?.offsetWidth || 0
+        hi.value = Math.max(0, opts.value.findIndex((o) => sameV(o.v, p.modelValue)))
+        nextTick(() => { qEl.value?.focus(); scrollHi() })
+      }
+      open.value = !open.value
+    }
+    function pick(o) {
+      if (!o || o.dis) return
+      open.value = false
+      btnEl.value?.focus()
+      if (sameV(o.v, p.modelValue)) return
+      emit('update:modelValue', o.v)
+      emit('change', o.v)
+    }
+    function key(e) {
+      if (!open.value) { if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); toggle() } return }
+      const n = shown.value.length
+      if (e.key === 'ArrowDown') { e.preventDefault(); hi.value = (hi.value + 1) % Math.max(1, n); scrollHi() }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); hi.value = (hi.value - 1 + n) % Math.max(1, n); scrollHi() }
+      else if (e.key === 'Enter') { e.preventDefault(); pick(shown.value[hi.value]) }
+      else if (e.key === 'Tab') open.value = false
+    }
+    watch(q, () => { hi.value = 0 })
+    return { open, q, hi, w, btnEl, popEl, qEl, listEl, pos, opts, cur, shown, toggle, pick, key, sameV }
+  },
+  template: `<button ref="btnEl" type="button" class="sel pk-btn" :class="{ open, 'is-empty': !cur || cur.v === '' }" v-bind="$attrs" :disabled="disabled" @click="toggle" @keydown="key"><span class="pk-txt">{{ cur ? cur.t : placeholder }}</span></button>
+    <Teleport to="body">
+      <div v-if="open" ref="popEl" class="pk-card" :style="{ ...pos, minWidth: Math.max(w, 180) + 'px' }" @mousedown.stop @click.stop>
+        <label v-if="opts.length > 7" class="pk-q"><Ico n="search" :s="13"/><input ref="qEl" v-model="q" placeholder="输入搜索" @keydown="key"><small class="dim">{{ shown.length }}/{{ opts.length }}</small></label>
+        <ul ref="listEl" class="pk-list" role="listbox">
+          <template v-for="(o, i) in shown" :key="i">
+            <li v-if="o.g && (i === 0 || shown[i - 1].g !== o.g)" class="pk-g">{{ o.g }}</li>
+            <li class="pk-opt" role="option" :aria-selected="sameV(o.v, modelValue)" :class="{ on: sameV(o.v, modelValue), hi: i === hi, dis: o.dis }" @mouseenter="hi = i" @click="pick(o)"><span class="ell">{{ o.t || '—' }}</span><Ico v-if="sameV(o.v, modelValue)" n="check" :s="13"/></li>
+          </template>
+          <li v-if="!shown.length" class="pk-none">没有匹配「{{ q }}」的选项</li>
+        </ul>
+      </div>
+    </Teleport>`,
+})
+
 comp('Filters', {
   props: { modelValue: Object, party: String, merch: Boolean, label: { type: String, default: '日期' } },
   setup(p) {
@@ -3678,8 +3821,8 @@ comp('Filters', {
         <div class="row" style="justify-content:space-between"><span>{{ label }}范围</span><span class="flt-qks"><button v-for="q in qks" :key="q.t" type="button" :class="{ on: modelValue.from === q.a && modelValue.to === q.b }" @click="modelValue.from = q.a; modelValue.to = q.b">{{ q.t }}</button></span></div>
         <DateRange v-model:from="modelValue.from" v-model:to="modelValue.to"/>
       </div>
-      <label v-if="party" class="f">{{ partyLabel }}<select class="sel" v-model="modelValue.party"><option value="">全部{{ partyLabel }}</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></select></label>
-      <label v-if="merch" class="f">跟单员<select class="sel" v-model="modelValue.merch"><option value="">全部跟单员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label v-if="party" class="f">{{ partyLabel }}<Pick class="sel" v-model="modelValue.party"><option value="">全部{{ partyLabel }}</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></Pick></label>
+      <label v-if="merch" class="f">跟单员<Pick class="sel" v-model="modelValue.merch"><option value="">全部跟单员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <slot/>
       <footer><button type="button" class="btn ghost sm" :disabled="!any" @click="clear">重置</button><button type="button" class="btn pri sm" @click="open = false">完成</button></footer>
     </div>
@@ -3715,7 +3858,7 @@ comp('DocMeta', {
 comp('CompanyPick', {
   props: { modelValue: String },
   emits: ['update:modelValue'],
-  template: `<select class="sel" :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><option v-for="c in db.companies.filter(x => x.status === '启用' || x.code === modelValue)" :key="c.code" :value="c.code">{{ c.short }}</option></select>`,
+  template: `<Pick class="sel" :modelValue="modelValue" @change="$emit('update:modelValue', $event)"><option v-for="c in db.companies.filter(x => x.status === '启用' || x.code === modelValue)" :key="c.code" :value="c.code">{{ c.short }}</option></Pick>`,
 })
 // 分期小标：页面上放了二期 / 待定的内容时标出来，免得甲方以为一期都有（PRD §2.2、§2.5）
 comp('Phase', {
@@ -4439,7 +4582,7 @@ function xlsxDate(v) {
 
 /* ---------- 导出：当前筛选结果 ---------- */
 comp('ExportBtn', {
-  props: { rows: Array, cols: Array, name: String },
+  props: { rows: Array, cols: Array, name: String, label: { type: String, default: '导出' } },
   setup(p) {
     function exp() {
       const cols = p.cols.filter((c) => c.t && c.x !== false)
@@ -4451,7 +4594,7 @@ comp('ExportBtn', {
     }
     return { exp }
   },
-  template: `<button class="btn" @click="exp" :disabled="!rows.length" title="导出当前筛选出来的行"><Ico n="download" :s="14"/>导出</button>`,
+  template: `<button class="btn" @click="exp" :disabled="!rows.length" :title="label === '导出' ? '导出当前筛选出来的行' : null"><Ico n="download" :s="14"/>{{ label }}</button>`,
 })
 
 /* ---------- 导入 ---------- */
@@ -4531,7 +4674,7 @@ comp('ImportBox', {
       <div v-if="def.head" class="form" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px" data-c="导入：整批共用">
         <label v-for="h in def.head" :key="h.k" class="f">{{ h.t }}
           <DatePick v-if="h.type === 'date'" v-model="head[h.k]"/>
-          <select v-else class="sel" v-model="head[h.k]"><option v-for="o in h.opts()" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select></label>
+          <Pick v-else class="sel" v-model="head[h.k]"><option v-for="o in h.opts()" :key="o[0]" :value="o[0]">{{ o[1] }}</option></Pick></label>
       </div>
       <div class="isteps">
         <div class="row" style="justify-content:space-between">
@@ -4558,6 +4701,116 @@ comp('ImportBox', {
 })
 
 expose({ IMPORTS, xlsxWrite, saveBlob })
+</script>
+<script>/* 3e-pick.js */
+/* ---------- 勾选后的批量操作、从已有数据里挑 ---------- */
+
+/* 列表勾了行，底部浮出这条：<BatchBar :n="s.picked.length" @clear="s.picked = []"> 放按钮 </BatchBar> */
+comp('BatchBar', {
+  props: { n: Number },
+  emits: ['clear'],
+  template: `<div v-if="n" class="batch-bar" role="toolbar" data-c="批量操作"><span class="bb-n">已选 <b>{{ n }}</b> 条</span><span class="bb-sep"></span><slot/><span class="bb-sep"></span><button type="button" class="btn ghost sm" @click="$emit('clear')">取消选择</button></div>`,
+})
+
+/* 批量提交 / 审核 / 停用……：只做现在能做的（和详情页按钮同一套判断），其余跳过；一张出错不影响别的，最后一起报
+ *   args(d) 给 doAction 的额外参数（订单审核要承诺交期）；返回做成了的单号（列表拿去取消勾选，没成的留着） */
+const BATCH_ASK = {
+  提交: '提交后等审核，提交了的不能再改，要改先撤回。',
+  审核: '每张单按自己的审批流走：轮到你这一级的才审得了；多级审批的单审完这一级还要等下一级。',
+  停用: '停用后新建单据里选不到，已有单据不受影响，随时可以恢复。',
+}
+const docId = (d) => d.no ?? d.code
+async function batchAct(kind, docs, a, { args = () => [], note = '' } = {}) {
+  const list = docs.filter((d) => mayAct(kind, d, a))
+  const u = kind === 'style' ? '条' : '张'
+  if (!list.length) { toast(`选中的现在都不能${a}`, null, true); return [] }
+  const skip = docs.length - list.length
+  const text = [BATCH_ASK[a] || ACT_ASK[a]?.[0] || '', note, skip ? `另外 ${skip} ${u}现在不能${a}，跳过。` : ''].filter(Boolean).join(' ')
+  if (!(await ask(`${a} ${list.length} ${u}`, text, a, !!ACT_ASK[a]?.[1]))) return []
+  const done = [], half = [], bad = []
+  for (const d of list) {
+    try {
+      const st = d.status
+      doAction(kind, d, a, ...args(d))
+      ;(a === '审核' && d.status === st ? half : done).push(docId(d))
+    } catch (e) { bad.push(`${docId(d)}：${e.message}${e.list?.length ? '（' + e.list.join('；') + '）' : ''}`) }
+  }
+  const msg = [done.length && `${a}了 ${done.length} ${u}`, half.length && `${half.length} 张这一级审过了，等下一级`].filter(Boolean).join('，')
+  if (bad.length) ui.err = { msg: `${msg ? msg + '；' : ''}${bad.length} ${u}没成功`, list: bad }
+  else toast(msg)
+  return [...done, ...half]
+}
+
+/* 新建单据加明细：从物料库 / 款式库里搜、按分类筛、一次勾多条
+ *   <DataPick v-if="picking" kind="sku" :sup="f.supplier" :date="f.date" :have="f.lines.map(l => l.sku)" @pick="addSkus" @close="picking = false"/>
+ *   kind：sku = 物料 SKU，style = 款式。have = 单上已经有的（灰掉不能再选）
+ *   sup 给了：默认只看这家的料，单价按这家的价格档案；wh 给了：库存列显示这个仓的，否则显示物料仓合计 */
+const whSkuQty = (w, s) => rnd(sum(Object.entries(db.stock).filter(([k]) => k.startsWith(w + '|' + s + '|')), ([, v]) => v), 3)
+comp('DataPick', {
+  props: { kind: { type: String, default: 'sku' }, sup: String, date: String, wh: String, have: { type: Array, default: () => [] } },
+  emits: ['pick', 'close'],
+  setup(p, { emit }) {
+    const q = ref(''), grp = ref(''), mine = ref(!!p.sup), chosen = ref([])
+    const isSku = p.kind !== 'style'
+    const rows = computed(() => (isSku
+      ? db.materials.filter((m) => m.status === '启用').flatMap((m) => m.skus.filter((k) => k.status !== '停用').map((k) => ({ code: k.code, name: skuName(k.code), g: matCat(m.cat).parent || m.type, m })))
+      : db.styles.filter((s) => s.status === '启用').map((s) => ({ code: s.code, name: s.name, g: catOf(s.cat).name, s }))
+    ).map((r) => ({ ...r, had: p.have.includes(r.code) })))
+    const scoped = computed(() => rows.value.filter((r) => (!isSku || !mine.value || r.m.supplier === p.sup) && matchQ(q.value, r.code, r.name, r.g, isSku ? r.m.supNo || '' : r.s.brand || '')))
+    const groups = computed(() => [{ v: '', t: '全部', n: scoped.value.length }, ...[...new Set(rows.value.map((r) => r.g))].map((g) => ({ v: g, t: g, n: scoped.value.filter((r) => r.g === g).length }))])
+    const shown = computed(() => scoped.value.filter((r) => !grp.value || r.g === grp.value))
+    const free = computed(() => shown.value.filter((r) => !r.had))
+    const allOn = computed(() => free.value.length > 0 && free.value.every((r) => chosen.value.includes(r.code)))
+    const someOn = computed(() => free.value.some((r) => chosen.value.includes(r.code)))
+    function toggle(r) {
+      if (r.had) return
+      const i = chosen.value.indexOf(r.code)
+      if (i >= 0) chosen.value.splice(i, 1); else chosen.value.push(r.code)
+    }
+    function toggleAll() {
+      const ks = free.value.map((r) => r.code)
+      chosen.value = allOn.value ? chosen.value.filter((k) => !ks.includes(k)) : [...new Set([...chosen.value, ...ks])]
+    }
+    const stockOf = (r) => (p.wh ? whSkuQty(p.wh, r.code) : skuStock(r.code, '物料仓'))
+    const priceOf = (r) => (p.sup ? poDefaultPrice(p.sup, r.code, p.date || clock.today) : skuPrice(r.code))
+    const ok = () => { emit('pick', [...chosen.value]); emit('close') }
+    const title = isSku ? '从物料库选' : '从款式库选'
+    return { isSku, q, grp, mine, chosen, groups, shown, allOn, someOn, toggle, toggleAll, stockOf, priceOf, ok, title }
+  },
+  template: `<Modal :t="title" :w="880" @close="$emit('close')">
+    <div class="dpk-top" data-c="选数据：搜索">
+      <Search v-model="q" :ph="isSku ? '物料名称、编码、颜色、供应商货号' : '款号、名称、品牌'"/>
+      <label v-if="isSku && sup" class="chk"><input type="checkbox" v-model="mine">只看{{ supName(sup) }}的料</label>
+    </div>
+    <div class="dpk-chips" data-c="选数据：分类"><button v-for="g in groups" :key="g.v" type="button" :class="{ on: grp === g.v }" @click="grp = g.v">{{ g.t }}<i>{{ g.n }}</i></button></div>
+    <div class="dpk-list" data-c="选数据：列表"><table class="tbl flat">
+      <thead><tr><th class="ck"><input type="checkbox" :checked="allOn" :indeterminate.prop="someOn && !allOn" :disabled="!shown.length" title="勾选 / 取消下面全部" @change="toggleAll"></th>
+        <template v-if="isSku"><th>物料</th><th>分类</th><th>供应商</th><th class="num">{{ wh ? '这个仓库存' : '物料仓库存' }}</th><th class="num">单价</th></template>
+        <template v-else><th>款式</th><th>品类</th><th>季节</th><th>颜色</th><th>生产资料包</th><th class="num">吊牌价</th></template></tr></thead>
+      <tbody>
+        <tr v-for="r in shown" :key="r.code" :class="{ sel: chosen.includes(r.code), off: r.had }" @click="toggle(r)">
+          <td class="ck"><input type="checkbox" :checked="r.had || chosen.includes(r.code)" :disabled="r.had" @click.stop @change="toggle(r)"></td>
+          <template v-if="isSku">
+            <td><span class="row"><Thumb :code="r.code" :s="30"/><span class="col"><span>{{ r.name }}</span><small class="code dim">{{ r.code }}<template v-if="r.had"> · 已在单上</template></small></span></span></td>
+            <td class="mut">{{ matCat(r.m.cat).name }}</td>
+            <td class="mut">{{ supName(r.m.supplier) }}</td>
+            <td class="num">{{ fq(stockOf(r)) }} <small class="dim">{{ r.m.unit }}</small></td>
+            <td class="num">{{ priceOf(r) == null ? '—' : fm(priceOf(r)) }}</td>
+          </template>
+          <template v-else>
+            <td><span class="row"><Thumb :code="r.code" :s="30"/><span class="col"><span>{{ r.name }}</span><small class="code dim">{{ r.code }}<template v-if="r.had"> · 已在单上</template></small></span></span></td>
+            <td class="mut">{{ r.g }}</td>
+            <td class="mut">{{ r.s.year }} {{ seasonName(r.s.season) }}</td>
+            <td><span class="row g4"><Sw v-for="c in r.s.colors" :key="c" :c="c" :n="false"/></span></td>
+            <td><span v-if="activeTp(r.code)" class="mut">已生效</span><span v-else class="amber">未生效</span></td>
+            <td class="num">{{ r.s.tagPrice == null ? '—' : fm(r.s.tagPrice) }}</td>
+          </template>
+        </tr>
+        <tr v-if="!shown.length"><td :colspan="isSku ? 6 : 7" class="empty">{{ q ? '没有匹配「' + q + '」的' + (isSku ? '物料' : '款式') : isSku && mine ? supName(sup) + '没有这类料，取消「只看」看全部' : '这一类还没有' + (isSku ? '启用的物料' : '启用的款式') }}</td></tr>
+      </tbody></table></div>
+    <template #foot><span class="dim">已选 <b style="color:var(--fg)">{{ chosen.length }}</b> 条</span><a v-if="chosen.length" style="font-size:12px" @click="chosen = []">清空</a><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" :disabled="!chosen.length" @click="ok">加入{{ chosen.length ? ' ' + chosen.length + ' 条' : '' }}</button></template>
+  </Modal>`,
+})
 </script>
 <script>/* 4-feedback.js */
 /* ============================================================
@@ -5101,7 +5354,7 @@ const STYLE_XCOLS = [
 
 route('/styles', {
   setup() {
-    const s = reactive({ tab: '全部', q: '', view: 'grid', tp: nav.query.tp || '', cat: '', ys: '', wave: '', designer: '', from: '', to: '', add: !!nav.query.new, imp: false })
+    const s = reactive({ tab: '全部', q: '', view: 'grid', tp: nav.query.tp || '', cat: '', ys: '', wave: '', designer: '', from: '', to: '', add: !!nav.query.new, imp: false, picked: [] })
     const counts = computed(() => Object.fromEntries(['草稿', '启用', '停用'].map((k) => [k, db.styles.filter((x) => x.status === k).length])))
     const tabs = computed(() => [['全部', '全部', db.styles.length], ...['启用', '草稿', '停用'].map((k) => [k, k, counts.value[k]])])
     const yss = computed(() => [...new Set(db.styles.map((x) => x.year + '|' + x.season))].sort((a, b) => b.localeCompare(a)))
@@ -5113,7 +5366,9 @@ route('/styles', {
       && matchQ(s.q, x.code, x.name, TRADE ? x.custNo || '' : '', x.product || '')).slice().reverse())
     const any = computed(() => s.tp || s.cat || s.ys || s.wave || s.designer || s.from || s.to)
     const clear = () => Object.assign(s, { tp: '', cat: '', ys: '', wave: '', designer: '', from: '', to: '' })
-    return { s, tabs, rows, yss, ysText, designers, any, clear, STYLE_XCOLS }
+    const picks = computed(() => rows.value.filter((x) => s.picked.includes(x.code)))
+    const batch = async (a) => { const ok = await batchAct('style', picks.value, a); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+    return { s, tabs, rows, yss, ysText, designers, any, clear, STYLE_XCOLS, picks, batch }
   },
   template: `<div>
     <Head t="款式">
@@ -5124,11 +5379,11 @@ route('/styles', {
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="tabs"/>
       <span class="flt" data-c="筛选：品类、季节、波段、设计师、资料包、更新日期">
-        <select class="sel" v-model="s.cat"><option value="">全部品类</option><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.name }}{{ c.status === '停用' ? '（停用）' : '' }}</option></select>
-        <select class="sel" v-model="s.ys"><option value="">全部季节</option><option v-for="k in yss" :key="k" :value="k">{{ ysText(k) }}</option></select>
-        <select class="sel" v-model="s.wave"><option value="">全部波段</option><option v-for="x in db.dicts.波段" :key="x">{{ x }}</option></select>
-        <select class="sel" v-model="s.designer"><option value="">全部设计师</option><option v-for="u in designers" :key="u" :value="u">{{ userName(u) }}</option></select>
-        <select class="sel" v-model="s.tp"><option value="">资料包：全部</option><option value="已生效">资料包已生效</option><option value="草稿">有草稿待生效</option><option value="无">还没有资料包</option></select>
+        <Pick class="sel" v-model="s.cat"><option value="">全部品类</option><option v-for="c in db.categories" :key="c.code" :value="c.code">{{ c.name }}{{ c.status === '停用' ? '（停用）' : '' }}</option></Pick>
+        <Pick class="sel" v-model="s.ys"><option value="">全部季节</option><option v-for="k in yss" :key="k" :value="k">{{ ysText(k) }}</option></Pick>
+        <Pick class="sel" v-model="s.wave"><option value="">全部波段</option><option v-for="x in db.dicts.波段" :key="x">{{ x }}</option></Pick>
+        <Pick class="sel" v-model="s.designer"><option value="">全部设计师</option><option v-for="u in designers" :key="u" :value="u">{{ userName(u) }}</option></Pick>
+        <Pick class="sel" v-model="s.tp"><option value="">资料包：全部</option><option value="已生效">资料包已生效</option><option value="草稿">有草稿待生效</option><option value="无">还没有资料包</option></Pick>
         <DateRange v-model:from="s.from" v-model:to="s.to" prefix="更新" compact/>
         <button v-if="any" class="btn ghost sm" @click="clear">清空</button>
       </span>
@@ -5148,7 +5403,7 @@ route('/styles', {
       <div v-if="!rows.length" class="empty" style="grid-column:1/-1">没有符合条件的款式，换个筛选条件试试</div>
     </div>
     <div v-else data-c="款式列表">
-      <Tbl :rows="rows" link @row="x => go('/styles/' + x.code)" empty="没有符合条件的款式，换个筛选条件试试" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="x => go('/styles/' + x.code)" empty="没有符合条件的款式，换个筛选条件试试" :cols="[
         { k: 'code', t: '款号' }, { k: 'name', t: '名称' }, { k: 'cat', t: '品类', f: x => catOf(x.cat).name },
         { k: 'season', t: '年份季节', f: x => seasonText(x) + ' · ' + (x.wave || '—') },
         { k: 'cs', t: '颜色 × 尺码' }, { k: 'tp', t: '资料包' }, { k: 'tagPrice', t: '吊牌价', c: 'num', f: x => fm(x.tagPrice) },
@@ -5158,6 +5413,7 @@ route('/styles', {
         <template #tp="{ r }"><span class="row g4"><St :s="tpState(r.code)" :t="activeTp(r.code) ? 'V' + activeTp(r.code).ver : tpState(r.code)"/><span v-if="activeTp(r.code) && tpHas(r.code, '草稿')" class="dim" style="font-size:12px">有修订草稿</span></span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('停用')">停用</button><button class="btn sm" @click="batch('恢复')">恢复</button><ExportBtn class="sm" :rows="picks" :cols="STYLE_XCOLS" name="款式" label="导出选中"/></BatchBar>
     </div>
     <StyleForm v-if="s.add" @close="s.add = false"/>
     <ImportBox v-if="s.imp" kind="styles" @close="s.imp = false"/>
@@ -5303,37 +5559,37 @@ comp('StyleForm', {
       <h4 class="fh">基本</h4>
       <label class="f">款号<input v-if="s" class="inp code" :value="s.code" disabled title="款号保存后不能改"><input v-else class="inp code" v-model="f.code" :placeholder="auto.code ? '不填自动编：' + auto.code : '编不出来，要手填'" title="可以手填，系统查重；保存后不能改"></label>
       <label class="f" style="grid-column:span 2">款式名称<input class="inp" v-model="f.name" placeholder="如：女式风衣"></label>
-      <label class="f">大类<select v-if="!s" class="sel" v-model="f.big"><option v-for="x in bigs" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></select>
+      <label class="f">大类<Pick v-if="!s" class="sel" v-model="f.big"><option v-for="x in bigs" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></Pick>
         <input v-else class="inp" :value="s.big ? s.big + ' ' + (bigCatOf(s.big)?.name || '') : '—'" disabled title="大类进了款号，保存后不改"></label>
-      <label class="f">设计师<select class="sel" v-model="f.designer"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}{{ u.dno ? ' · ' + u.dno : '' }}</option></select></label>
+      <label class="f">设计师<Pick class="sel" v-model="f.designer"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}{{ u.dno ? ' · ' + u.dno : '' }}</option></Pick></label>
       <p v-if="!s && !f.code.trim() && !auto.code" class="f dim" style="margin:0;font-size:12px;align-self:end" data-c="款号规则">
         <span class="amber">{{ auto.err }}<template v-if="auto.list[0]">：<a href="#/settings">{{ auto.list[0] }}</a></template></span></p>
       <span v-else></span>
-      <label class="f">品牌<select class="sel" v-model="f.brand"><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></select></label>
-      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}{{ c.status === '停用' ? '（停用）' : '' }}</option></select></label>
-      <label class="f">来源<select class="sel" v-model="f.source"><option v-for="x in db.dicts.款式来源" :key="x">{{ x }}</option></select></label>
-      <label class="f">年份<select class="sel" v-model.number="f.year"><option v-for="x in years" :key="x" :value="x">{{ x }}</option></select></label>
-      <label class="f">季节<select class="sel" v-model="f.season"><option v-for="x in db.seasons" :key="x.code" :value="x.code">{{ x.name }}</option></select></label>
-      <label class="f">波段<select class="sel" v-model="f.wave"><option value="">—</option><option v-for="x in db.dicts.波段" :key="x">{{ x }}</option></select></label>
-      <label class="f">风格<select class="sel" v-model="f.tag"><option value="">—</option><option v-for="x in db.dicts.风格" :key="x">{{ x }}</option></select></label>
-      <label class="f">系列<select class="sel" v-model="f.series"><option value="">—</option><option v-for="x in db.dicts.系列" :key="x">{{ x }}</option></select></label>
-      <label class="f">性别<select class="sel" v-model="f.gender"><option value="">—</option><option v-for="x in db.dicts.性别" :key="x">{{ x }}</option></select></label>
-      <label class="f">版师<select class="sel" v-model="f.patterner"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <template v-if="TRADE"><label class="f">客户<select class="sel" v-model="f.customer"><option value="">—</option><option v-for="c in custs" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f">品牌<Pick class="sel" v-model="f.brand"><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">品类<Pick class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}{{ c.status === '停用' ? '（停用）' : '' }}</option></Pick></label>
+      <label class="f">来源<Pick class="sel" v-model="f.source"><option v-for="x in db.dicts.款式来源" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">年份<Pick class="sel" v-model.number="f.year"><option v-for="x in years" :key="x" :value="x">{{ x }}</option></Pick></label>
+      <label class="f">季节<Pick class="sel" v-model="f.season"><option v-for="x in db.seasons" :key="x.code" :value="x.code">{{ x.name }}</option></Pick></label>
+      <label class="f">波段<Pick class="sel" v-model="f.wave"><option value="">—</option><option v-for="x in db.dicts.波段" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">风格<Pick class="sel" v-model="f.tag"><option value="">—</option><option v-for="x in db.dicts.风格" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">系列<Pick class="sel" v-model="f.series"><option value="">—</option><option v-for="x in db.dicts.系列" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">性别<Pick class="sel" v-model="f.gender"><option value="">—</option><option v-for="x in db.dicts.性别" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">版师<Pick class="sel" v-model="f.patterner"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
+      <template v-if="TRADE"><label class="f">客户<Pick class="sel" v-model="f.customer"><option value="">—</option><option v-for="c in custs" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
         <label class="f">客户款号<input class="inp code" v-model="f.custNo" placeholder="客户来样时填"></label></template>
-      <label class="f">主力面料<select class="sel" v-model="f.mainMat"><option value="">—</option><option v-for="m in fabrics" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></select></label>
+      <label class="f">主力面料<Pick class="sel" v-model="f.mainMat"><option value="">—</option><option v-for="m in fabrics" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></Pick></label>
       <h4 class="fh">尺码、价格、生产</h4>
-      <label class="f">尺码组<select class="sel" v-model="f.sizeGroup" :disabled="!!sgLock"><option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }} {{ g.sizes.join(' ') }}</option></select>
+      <label class="f">尺码组<Pick class="sel" v-model="f.sizeGroup" :disabled="!!sgLock"><option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }} {{ g.sizes.join(' ') }}</option></Pick>
         <small v-if="sgLock" class="dim">已关联 {{ sgLock }} 张订单，不可更换</small></label>
       <label class="f">吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">参考成本价<input class="inp num" type="number" v-model.number="f.cost" title="一期手填；资料包生效后另有测算价"></label>
-      <label class="f">默认加工厂<select class="sel" v-model="f.factory"><option value="">—</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></select></label>
+      <label class="f">默认加工厂<Pick class="sel" v-model="f.factory"><option value="">—</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
       <label class="f">上市日期<DatePick v-model="f.launch"/></label>
       <span></span>
       <h4 class="fh">吊牌</h4>
       <label class="f">品名<input class="inp" v-model="f.product" placeholder="吊牌上的品名，如 风衣"></label>
-      <label class="f">执行标准<select class="sel" v-model="f.standard"><option value="">—</option><option v-for="x in db.dicts.执行标准" :key="x">{{ x }}</option></select></label>
-      <label class="f">安全类别<select class="sel" v-model="f.safety"><option value="">—</option><option v-for="x in db.dicts.安全类别" :key="x">{{ x }}</option></select></label>
+      <label class="f">执行标准<Pick class="sel" v-model="f.standard"><option value="">—</option><option v-for="x in db.dicts.执行标准" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">安全类别<Pick class="sel" v-model="f.safety"><option value="">—</option><option v-for="x in db.dicts.安全类别" :key="x">{{ x }}</option></Pick></label>
       <label class="f full">成分<input class="inp" v-model="f.comp" placeholder="如 面料：100% 棉；里料：100% 聚酯纤维"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
       <template v-if="!s">
@@ -5605,15 +5861,15 @@ comp('TechPack', {
                 <div class="row" style="gap:28px;align-items:flex-start;flex-wrap:wrap">
                   <div v-if="r.mode === '随款色'"><div class="dim" style="font-size:12px;margin-bottom:6px">款色 → 物料颜色</div>
                     <div v-for="c in s.colors" :key="c" class="row" style="height:30px"><Sw :c="c" style="width:56px"/><Ico n="right" :s="12" class="dim"/>
-                      <select v-if="edit" class="sel" style="height:26px" v-model="r.map[c]"><option :value="undefined">未配</option><option v-for="k in matSkus(r)" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></select>
+                      <Pick v-if="edit" class="sel" style="height:26px" v-model="r.map[c]"><option :value="undefined">未配</option><option v-for="k in matSkus(r)" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></Pick>
                       <span v-else>{{ r.map[c] ? skuName(r.map[c]) : '未配' }}</span></div></div>
                   <div v-if="r.um === '分码'"><div class="dim" style="font-size:12px;margin-bottom:6px">分码用量（{{ mat(r.mat).unit }}/件）</div>
                     <table class="mx"><tr><th v-for="z in sizes" :key="z">{{ z }}</th></tr><tr><td v-for="z in sizes" :key="z"><input v-if="edit" class="inp cell num" style="width:56px" v-model.number="r.uses[z]"><template v-else>{{ fq(r.uses[z]) }}</template></td></tr></table></div>
                   <div v-if="edit" class="form" style="grid-template-columns:repeat(3,130px)">
                     <label v-if="r.um === '统一'" class="f">用量（{{ mat(r.mat).unit }}）<input class="inp num" v-model.number="r.use"></label>
                     <label class="f">损耗 %<input class="inp num" v-model.number="r.loss"></label>
-                    <label class="f">来源<select class="sel" v-model="r.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></select></label>
-                    <label class="f">供应商<select class="sel" v-model="r.supplier"><option value="">按物料默认</option><option v-for="x in supsFor(r)" :key="x.code" :value="x.code">{{ x.short }}</option></select></label>
+                    <label class="f">来源<Pick class="sel" v-model="r.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></Pick></label>
+                    <label class="f">供应商<Pick class="sel" v-model="r.supplier"><option value="">按物料默认</option><option v-for="x in supsFor(r)" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
                     <label class="f">{{ stage === '研发' ? '估价' : '参考单价' }}（元/{{ mat(r.mat).purUnit }}）<input class="inp num" type="number" :value="r.price ?? ''" :placeholder="rowRefPrice(r, stage)" @change="setPrice(r, $event.target.value)"></label>
                     <label class="f">备注<input class="inp" v-model="r.note"></label>
                   </div>
@@ -5653,7 +5909,7 @@ comp('TechPack', {
               <td v-if="edit" class="grip" title="按住拖动，调整顺序">⋮⋮</td>
               <td class="dim">{{ i + 1 }}</td>
               <template v-if="edit">
-                <td><select class="sel" style="height:26px" v-model="o.cat"><option v-for="x in OP_CATS" :key="x">{{ x }}</option></select></td>
+                <td><Pick class="sel" style="height:26px" v-model="o.cat"><option v-for="x in OP_CATS" :key="x">{{ x }}</option></Pick></td>
                 <td><input class="inp cell" style="min-width:120px" v-model="o.name" placeholder="工序名称"></td>
                 <td><input class="inp cell" style="min-width:180px" v-model="o.req" placeholder="怎么做、注意什么"></td>
                 <td><Pics v-model="o.pics" :s="36" :max="3" bare/></td>
@@ -5748,17 +6004,17 @@ comp('BomRowForm', {
   },
   template: `<Modal :t="row ? '改第 ' + (tp.bom.indexOf(row) + 1) + ' 行：' + row.part : '加一行物料'" :w="660" @close="$emit('close')">
     <div class="form">
-      <label class="f">部位<select class="sel" v-model="f.part"><option v-for="x in db.dicts.BOM部位" :key="x">{{ x }}</option></select></label>
-      <label class="f">物料<select class="sel" v-model="f.mat"><option v-for="x in mats" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}{{ x.status === '停用' ? '（停用）' : '' }}</option></select></label>
+      <label class="f">部位<Pick class="sel" v-model="f.part"><option v-for="x in db.dicts.BOM部位" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">物料<Pick class="sel" v-model="f.mat"><option v-for="x in mats" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}{{ x.status === '停用' ? '（停用）' : '' }}</option></Pick></label>
       <div class="f">颜色方式<Seg v-model="f.mode" :items="['固定', '随款色']"/></div>
-      <label v-if="f.mode === '固定'" class="f">物料 SKU<select class="sel" v-model="f.sku"><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></select></label>
-      <div v-else class="f full">款色 → 物料 SKU<div class="chips"><label v-for="c in s.colors" :key="c" class="row g4"><Sw :c="c"/><select class="sel" style="height:26px" v-model="f.map[c]"><option :value="undefined">未配</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></select></label></div></div>
+      <label v-if="f.mode === '固定'" class="f">物料 SKU<Pick class="sel" v-model="f.sku"><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></Pick></label>
+      <div v-else class="f full">款色 → 物料 SKU<div class="chips"><label v-for="c in s.colors" :key="c" class="row g4"><Sw :c="c"/><Pick class="sel" style="height:26px" v-model="f.map[c]"><option :value="undefined">未配</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></Pick></label></div></div>
       <div class="f">用量方式<Seg v-model="f.um" :items="['统一', '分码']"/></div>
       <label v-if="f.um === '统一'" class="f">单件用量（{{ m?.unit }}）<input class="inp num" v-model.number="f.use"></label>
       <div v-else class="f full">分码用量（{{ m?.unit }}/件）<div class="row"><label v-for="z in sizes" :key="z" class="f" style="width:72px">{{ z }}<input class="inp num" v-model.number="f.uses[z]"></label></div></div>
       <label class="f">损耗 %<input class="inp num" type="number" v-model.number="f.loss"></label>
-      <label class="f">物料来源<select class="sel" v-model="f.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></select></label>
-      <label class="f">供应商<select class="sel" v-model="f.supplier"><option value="">按物料默认</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></select></label>
+      <label class="f">物料来源<Pick class="sel" v-model="f.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">供应商<Pick class="sel" v-model="f.supplier"><option value="">按物料默认</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
       <label class="f">{{ tpStage(tp) === '研发' ? '估价' : '参考单价' }}（元/{{ m?.purUnit }}）<input class="inp num" type="number" v-model.number="f.price" :placeholder="m ? '带出 ' + rowRefPrice(f, tpStage(tp)) : ''"></label>
       <label class="f full">备注<input class="inp" v-model="f.note" placeholder="如：注意对格"></label>
     </div>
@@ -5780,7 +6036,7 @@ comp('TpPrintBody', {
     return { s, sizes, one, all, cs, skuAt }
   },
   template: `<div class="tpp" data-c="资料包打印内容">
-    <div v-if="!bare" class="sheet-ctl"><span>打印哪个颜色</span><select class="sel" style="height:26px" v-model="one"><option value="">全部颜色</option><option v-for="c in all" :key="c" :value="c">{{ colorName(c) }}</option></select><span class="dim">这一行打印时不出现</span></div>
+    <div v-if="!bare" class="sheet-ctl"><span>打印哪个颜色</span><Pick class="sel" style="height:26px" v-model="one"><option value="">全部颜色</option><option v-for="c in all" :key="c" :value="c">{{ colorName(c) }}</option></Pick><span class="dim">这一行打印时不出现</span></div>
     <h3>款式信息</h3>
     <div class="tpp-top">
       <div class="tpp-pics"><Thumb v-if="s.images && s.images.length" :code="s.code" :s="110"/><Thumb :code="s.code" :color="cs[0]" :s="110" flat/><Thumb :code="s.code" :color="cs[0]" :s="110" back/></div>
@@ -5851,7 +6107,7 @@ function updateOrder(o, f, quiet) {
 
 route('/orders', {
   setup() {
-    const s = reactive({ tab: nav.query.s || '全部', f: nav.query.f || '', q: '', type: '', brand: '', mine: false, flt: newFlt(), add: nav.query.new || null, imp: false })
+    const s = reactive({ tab: nav.query.s || '全部', f: nav.query.f || '', q: '', type: '', brand: '', mine: false, flt: newFlt(), add: nav.query.new || null, imp: false, picked: [] })
     const TABS = ['全部', '草稿', '待审核', '已审核', '生产中', '已完成', '已结案', '已取消']
     const scoped = computed(() => db.orders.filter((o) => inScope(s.mine, o)))
     const tabs = computed(() => TABS.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((o) => o.status === k).length]))
@@ -5864,20 +6120,26 @@ route('/orders', {
       { k: 'qty', t: '数量', x: orderQty }, { k: 'amt', t: '金额', x: orderAmt }, { k: 'currency', t: '币种' }, { k: 'due', t: DUE_T }, { k: 'commit', t: '承诺交期' },
       { k: 'sched', t: '已排产', x: orderSched }, { k: 'ret', t: '已回货', x: orderRet }, { k: 'sales', t: '业务员', x: (o) => userName(o.sales) }, { k: 'merch', t: '跟单员', x: (o) => userName(o.merch) },
       { k: 'company', t: '主体', x: (o) => companyName(o.company) }, { k: 'src', t: '来源' }, { k: 'status', t: '状态' }]
-    return { s, scoped, tabs, rows, custOrDash, XCOLS }
+    // 勾选的行批量提交、审核；批量审核的承诺交期先按要求交期定（审核弹窗里改的那个），要改的进详情一张张审
+    const picks = computed(() => rows.value.filter((o) => s.picked.includes(o.no)))
+    async function batch(a) {
+      const ok = await batchAct('order', picks.value, a, a === '审核' ? { args: (o) => [o.commitDraft || o.due], note: `承诺交期按${DUE_T}定，要另定的进详情审。` } : {})
+      s.picked = s.picked.filter((k) => !ok.includes(k))
+    }
+    return { s, scoped, tabs, rows, custOrDash, XCOLS, picks, batch }
   },
   template: `<div>
     <Head t="订单"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="XCOLS" name="订单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建订单</button></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" :party="TRADE ? 'customer' : ''" merch label="下单">
-        <label class="f">订单类型<select class="sel" v-model="s.type"><option value="">全部类型</option><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></select></label>
-        <label v-if="!TRADE" class="f">品牌<select class="sel" v-model="s.brand"><option value="">全部品牌</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></select></label>
+        <label class="f">订单类型<Pick class="sel" v-model="s.type"><option value="">全部类型</option><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></Pick></label>
+        <label v-if="!TRADE" class="f">品牌<Pick class="sel" v-model="s.brand"><option value="">全部品牌</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></Pick></label>
       </Filters>
       <span v-if="s.type" class="fchip">{{ s.type }}<button type="button" @click="s.type = ''"><Ico n="x" :s="11"/></button></span>
       <span v-if="s.brand" class="fchip">{{ s.brand }}<button type="button" @click="s.brand = ''"><Ico n="x" :s="11"/></button></span>
       <button v-if="s.f" type="button" class="chip on" @click="s.f = ''">{{ s.f }}<Ico n="x" :s="12"/></button>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" :ph="TRADE ? '单号 / 客户单号 / 款号' : '单号 / 合同号 / 款号'"/></div>
     <div data-c="订单列表">
-      <Tbl :rows="rows" link @row="o => go('/orders/' + o.no)" :empty="scoped.length ? '没有符合条件的订单：换个状态页签，或者清空筛选' : ownOnly() ? '你的数据范围是「本人」：还没有你是制单人、业务员或跟单员的订单' : s.mine ? '还没有你是制单人、业务员或跟单员的订单，切到「全部」看所有人的' : '还没有订单'" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="o => go('/orders/' + o.no)" :empty="scoped.length ? '没有符合条件的订单：换个状态页签，或者清空筛选' : ownOnly() ? '你的数据范围是「本人」：还没有你是制单人、业务员或跟单员的订单' : s.mine ? '还没有你是制单人、业务员或跟单员的订单，切到「全部」看所有人的' : '还没有订单'" :cols="[
         { k: 'no', t: '订单号', c: 'code' }, { k: 'date', t: '下单', f: o => fd(o.date) }, { k: 'cust', t: TRADE ? '客户' : '类型' }, { k: 'styles', t: '款式' },
         { k: 'qty', t: '数量', c: 'num', f: o => orderQty(o).toLocaleString() }, { k: 'amt', t: '金额', c: 'num', f: o => orderMoney(o, orderAmt(o)) },
         { k: 'due', t: '交期' }, { k: 'sched', t: '排产' }, { k: 'ret', t: '回货' }, { k: 'kit', t: '齐料' },
@@ -5891,6 +6153,7 @@ route('/orders', {
         <template #kit="{ r }"><St v-if="orderLive(r) || r.status === '已完成'" :s="kitState(r).k === 'ok' ? '齐料' : kitState(r).k === 'part' ? '部分到货' : '未到料'" :t="kitState(r).t"/><span v-else class="dim">—</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="订单" label="导出选中"/></BatchBar>
     </div>
     <OrderForm v-if="s.add" :st="typeof s.add === 'string' ? s.add : null" :customer="nav.query.customer" @close="s.add = null"/>
     <ImportBox v-if="s.imp" kind="orders" @close="s.imp = false"/>
@@ -5917,8 +6180,8 @@ comp('OrderForm', {
     }
     const blocks = reactive(o ? orderStyles(o).map((st) => mk(st, o.lines.filter((l) => l.style === st))) : [])
     const pickable = computed(() => db.styles.filter((s) => s.status === '启用' && !blocks.some((b) => b.style === s.code)))
-    const pick = ref('')
-    const addBlock = (code) => { if (code) blocks.push(mk(code)); pick.value = '' }
+    const picking = ref(false)
+    const addBlock = (code) => { if (code) blocks.push(mk(code)) }
     if (!o && style(p.st)) addBlock(p.st)
     const priceOf = (b, z) => (b.byLine && b.sizePrice[z] != null && b.sizePrice[z] !== '' ? +b.sizePrice[z] : b.price)
     const linesOf = () => blocks.flatMap((b) => Object.entries(b.qty).map(([k, n]) => { const [color, size] = k.split('|'); return { style: b.style, color, size, qty: n, price: priceOf(b, size), due: b.due || null, note: b.note || '' } }))
@@ -5938,21 +6201,21 @@ comp('OrderForm', {
       if (submit && !run(() => submitOrder(x))) { emit('close'); go('/orders/' + x.no); return }
       emit('close'); go('/orders/' + x.no); toast(submit ? `${x.no} 已提交，等审核` : `${x.no} 已存草稿`)
     }
-    return { o, f, liveCust, blocks, pickable, pick, addBlock, total, amount, colorsFor, save }
+    return { o, f, liveCust, blocks, pickable, picking, addBlock, total, amount, colorsFor, save }
   },
   template: `<Modal :t="o ? '改订单 ' + o.no : '新建订单'" :w="840" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr)" data-c="订单单头">
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></select></label>
-      <label class="f" v-if="TRADE && f.type !== '自营备货'">客户<select class="sel" v-model="f.customer"><option v-for="c in liveCust" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></Pick></label>
+      <label class="f" v-if="TRADE && f.type !== '自营备货'">客户<Pick class="sel" v-model="f.customer"><option v-for="c in liveCust" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
       <label class="f" v-if="TRADE && f.type !== '自营备货'">客户订单号<input class="inp" v-model="f.custNo"></label>
       <label class="f">合同号<input class="inp" v-model="f.contract"></label>
-      <label class="f">品牌<select class="sel" v-model="f.brand"><option value="">—</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></select></label>
+      <label class="f">品牌<Pick class="sel" v-model="f.brand"><option value="">—</option><option v-for="x in db.dicts.品牌" :key="x">{{ x }}</option></Pick></label>
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
       <label class="f">下单日期<DatePick v-model="f.date"/></label>
       <label class="f">{{ DUE_T }}<DatePick v-model="f.due"/></label>
-      <label class="f">币种<select class="sel" v-model="f.currency"><option v-for="x in db.dicts.币种" :key="x">{{ x }}</option></select></label>
-      <label class="f">业务员<select class="sel" v-model="f.sales"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">跟单员<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label class="f">币种<Pick class="sel" v-model="f.currency"><option v-for="x in db.dicts.币种" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">业务员<Pick class="sel" v-model="f.sales"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
+      <label class="f">跟单员<Pick class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f full">送货要求<input class="inp" v-model="f.ship" :placeholder="TRADE ? '如：分两批送，先送黑色；送到客户杭州仓' : '如：分两批送，先送黑色；送到成品仓'"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
@@ -5967,8 +6230,8 @@ comp('OrderForm', {
       <div class="row g4" style="margin-top:8px" data-c="行交期、行备注"><label class="row g4 mut" style="font-size:12px">行交期<DatePick sm v-model="b.due" placeholder="未设行交期"/></label>
         <input class="inp" style="height:26px;flex:1" v-model="b.note" placeholder="这个款的备注，如：黑色先做"></div>
     </div>
-    <div class="row" style="margin-top:16px"><select class="sel" v-model="pick" @change="addBlock(pick)" style="width:260px"><option value="">加一个款……</option><option v-for="s in pickable" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}{{ activeTp(s.code) ? '' : '（资料包未生效）' }}</option></select>
-      </div>
+    <div class="row" style="margin-top:16px"><button class="btn" :disabled="!pickable.length" data-c="选款式" @click="picking = true"><Ico n="shirt" :s="14"/>{{ blocks.length ? '再加款式' : '选款式' }}</button></div>
+    <DataPick v-if="picking" kind="style" :have="blocks.map(b => b.style)" @pick="cs => cs.forEach(addBlock)" @close="picking = false"/>
     <div v-if="!o" class="sec" data-c="订单附件"><h3>附件</h3><Pics v-model="f.files" files :s="56" :max="20"/></div>
     <template #foot><span class="mut">{{ total }} 件<template v-if="amount"> · {{ orderMoney(f, amount) }}</template></span><span class="sp"></span>
       <button class="btn" @click="save(false)">{{ o ? '保存' : '存草稿' }}</button><button class="btn pri" @click="save(true)">{{ o ? '保存并提交' : '提交审核' }}</button></template>
@@ -6151,13 +6414,13 @@ comp('OrderSchedule', {
     <div v-for="(b, i) in blocks" :key="i" class="sec" :style="i ? '' : 'margin-top:0'" data-c="排单块">
       <h3><Thumb :code="b.style" :s="24"/><span class="code">{{ b.style }}</span>{{ styleName(b.style) }}<span class="acts"><button class="btn ghost sm" @click="more(b.style)"><Ico n="plus" :s="12"/>再加一个工厂</button><button v-if="blocks.filter(x => x.style === b.style).length > 1" class="btn ghost icon sm" @click="blocks.splice(i, 1)"><Ico n="x" :s="12"/></button></span></h3>
       <div class="form" style="grid-template-columns:2fr 1fr 1fr 1.3fr;margin-bottom:10px">
-        <label class="f">加工厂<select class="sel" v-model="b.factory" @change="reprice(b)"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select></label>
-        <label class="f">加工方式<select class="sel" v-model="b.mode" @change="reprice(b)"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></select></label>
+        <label class="f">加工厂<Pick class="sel" v-model="b.factory" @change="reprice(b)"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
+        <label class="f">加工方式<Pick class="sel" v-model="b.mode" @change="reprice(b)"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></Pick></label>
         <label class="f">单价（元/件）<input class="inp num" type="number" v-model.number="b.price" :placeholder="refOf(b) == null ? '档案里没有，手填' : ''">
           <small class="dim" style="font-size:11.5px">{{ refOf(b) != null ? '档案现价 ' + fm(refOf(b)) : '档案里没有这家 × ' + b.mode + ' 的价' }}<template v-if="activeTp(b.style)"> · 工价合计 {{ fm(tpLabor(activeTp(b.style))) }}</template></small></label>
         <label class="f">交期<DatePick v-model="b.due"/></label>
-        <label class="f">生产跟单<select class="sel" v-model="b.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-        <label class="f">结算方式<select class="sel" v-model="b.settle"><option value="">按加工厂（{{ sup(b.factory) ? sup(b.factory).settle : '—' }}）</option><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
+        <label class="f">生产跟单<Pick class="sel" v-model="b.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
+        <label class="f">结算方式<Pick class="sel" v-model="b.settle"><option value="">按加工厂（{{ sup(b.factory) ? sup(b.factory).settle : '—' }}）</option><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></Pick></label>
         <label class="f" style="grid-column:span 2">条款<input class="inp" v-model="b.terms" placeholder="如：次品率超 3% 扣款；延期每天扣 0.5%"></label>
         <label v-if="priceOff(b)" class="f full" data-c="改价原因">改价原因<input class="inp" v-model="b.why" :placeholder="'单价和档案现价 ' + fm(refOf(b)) + ' 不一样，写清楚为什么；审核时记进价格档案'"></label>
         <label class="f full">备注<input class="inp" v-model="b.note"></label>
@@ -6211,14 +6474,14 @@ comp('OrderChange', {
     <template v-if="!f.cancel">
       <div v-for="st in Object.keys(qty)" :key="st" style="margin-bottom:18px" data-c="变更矩阵">
         <div class="row" style="margin-bottom:6px;flex-wrap:wrap"><Thumb :code="st" :s="22"/><span class="code">{{ st }}</span>{{ styleName(st) }}<span style="flex:1"></span>
-          <select v-if="addable(st).length" class="sel" style="height:26px" @change="extra[st].push($event.target.value); $event.target.value = ''" data-c="配色配码"><option value="">加颜色……</option><option v-for="c in addable(st)" :key="c" :value="c">{{ colorName(c) }}</option></select>
+          <Pick v-if="addable(st).length" class="sel" style="height:26px" @change="extra[st].push($event)" data-c="配色配码" modelValue=""><option value="">加颜色……</option><option v-for="c in addable(st)" :key="c" :value="c">{{ colorName(c) }}</option></Pick>
           <label class="row g4 mut" style="font-size:12px">单价<input class="inp num" style="width:84px;height:26px" type="number" v-model.number="price[st]"></label>
-          <label class="row g4 mut" style="font-size:12px">资料包<select class="sel" style="height:26px" v-model.number="ver[st]"><option v-for="t in vers(st)" :key="t.ver" :value="t.ver">V{{ t.ver }}{{ t.status === '已生效' ? '' : '（' + t.status + '）' }}</option></select></label></div>
+          <label class="row g4 mut" style="font-size:12px">资料包<Pick class="sel" style="height:26px" v-model.number="ver[st]"><option v-for="t in vers(st)" :key="t.ver" :value="t.ver">V{{ t.ver }}{{ t.status === '已生效' ? '' : '（' + t.status + '）' }}</option></Pick></label></div>
         <Matrix :st="st" v-model="qty[st]" :colors="colorsOf(st)" :sub="sub(st)"/></div>
       <div class="form"><label class="f">{{ DUE_T }}<DatePick v-model="f.due"/></label></div>
     </template>
     <div class="form" style="margin-top:12px">
-      <label class="f">责任方<select class="sel" v-model="f.party"><option v-for="x in CHANGE_PARTIES" :key="x">{{ x }}</option></select></label>
+      <label class="f">责任方<Pick class="sel" v-model="f.party"><option v-for="x in CHANGE_PARTIES" :key="x">{{ x }}</option></Pick></label>
       <label class="f full">原因<input class="inp" v-model="f.reason"></label>
       <label class="f full">费用说明<input class="inp" v-model="f.fee" :placeholder="TRADE ? '如：客户承担已裁片损失' : '如：已裁片损失由我方承担'"></label>
       <div class="f full" data-c="变更附件">{{ TRADE ? '客户确认' : '变更依据' }}<Pics v-model="f.files" files :s="56" :tip="TRADE ? '客户的邮件、聊天截图；Ctrl+V 直接贴' : '审批截图、邮件、聊天记录；Ctrl+V 直接贴'"/></div>
@@ -6367,7 +6630,7 @@ route('/mrp', {
   template: `<div>
     <Head t="算料"><button class="btn" @click="s.reserve = true" title="按物料类型多备一点料，默认 0">备料比<span class="dim" style="margin-left:4px">{{ reserveText || '都是 0' }}</span></button><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>选订单算料</button></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt"/>
-      <select class="sel" style="height:28px" v-model="s.by"><option value="">全部制单人</option><option v-for="u in makers" :key="u" :value="u">{{ u }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.by"><option value="">全部制单人</option><option v-for="u in makers" :key="u" :value="u">{{ u }}</option></Pick>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
     <div data-c="算料单列表">
       <Tbl :rows="rows" link @row="m => go('/mrp/' + m.no)" empty="没有符合条件的算料单。订单审核后点「选订单算料」" :cols="[
@@ -6487,7 +6750,7 @@ route('/mrp/:no', {
             <tr :class="{ sel: picked.includes(mrpKey(r)) }">
               <td><input type="checkbox" :checked="picked.includes(mrpKey(r))" :disabled="!open || r.purQty <= r.converted" @change="toggle(r)" style="accent-color:var(--accent)"></td>
               <td><span class="row"><Thumb :code="r.sku" :s="32"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td>
-              <td><select v-if="edit" class="sel" style="height:26px" v-model="r.supplier"><option v-for="s in suppliersFor()" :key="s.code" :value="s.code">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select><template v-else>{{ supName(r.supplier) }}</template></td>
+              <td><Pick v-if="edit" class="sel" style="height:26px" v-model="r.supplier"><option v-for="s in suppliersFor()" :key="s.code" :value="s.code">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick><template v-else>{{ supName(r.supplier) }}</template></td>
               <td class="num dim">{{ fq(r.gross) }}</td>
               <td class="num" :title="'损耗' + (r.reserve ? '、备料比 ' + r.reserve + '%' : '') + '以后'">{{ fq(r.need) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
               <td class="num">{{ fq(r.avail) }}</td>
@@ -6589,7 +6852,7 @@ function returnPurchase(p, f) {
 
 route('/purchases', {
   setup() {
-    const s = reactive({ mine: false, tab: nav.query.s || '全部', q: '', buyer: '', add: false, flt: newFlt() })
+    const s = reactive({ mine: false, tab: nav.query.s || '全部', q: '', buyer: '', add: false, flt: newFlt(), picked: [] })
     const ST = ['全部', '草稿', '待审核', '已审核', '部分到货', '已到齐', '已结案', '已作废']
     const scoped = computed(() => db.purchases.filter((p) => inScope(s.mine, p)))
     const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
@@ -6600,17 +6863,19 @@ route('/purchases', {
       { k: 'mat', t: '物料', f: (p) => p.lines.map((l) => l.sku).join(' ') }, { k: 'qty', t: '总数量', f: poQty }, { k: 'amt', t: '金额', f: poAmt },
       { k: 'date', t: '下单日期' }, { k: 'due', t: '交货日期' }, { k: 'wh', t: '交货地点', f: (p) => whName(p.wh) }, { k: 'recv', t: '已入库', f: poRecv },
       { k: 'buyer', t: '采购员', f: (p) => userName(p.buyer) }, { k: 'company', t: '主体', f: (p) => companyName(p.company) }, { k: 'status', t: '状态' }]
-    return { s, tabs, rows, xcols }
+    const picks = computed(() => rows.value.filter((p) => s.picked.includes(p.no)))
+    const batch = async (a) => { const ok = await batchAct('purchase', picks.value, a); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+    return { s, tabs, rows, xcols, picks, batch }
   },
   template: `<div>
     <Head t="采购"><ExportBtn :rows="rows" :cols="xcols" name="采购单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建采购单</button></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" party="supplier" label="下单">
-        <label class="f">采购员<select class="sel" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+        <label class="f">采购员<Pick class="sel" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       </Filters>
       <span v-if="s.buyer" class="fchip">采购: {{ userName(s.buyer) }}<button type="button" @click="s.buyer = ''"><Ico n="x" :s="11"/></button></span>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="单号 / 物料 / 订单号 / 款号"/></div>
     <div data-c="采购单列表">
-      <Tbl :rows="rows" link @row="p => go('/purchases/' + p.no)" empty="没有符合条件的采购单。单号、物料、订单号、款号都能搜，几个号用空格隔开" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="p => go('/purchases/' + p.no)" empty="没有符合条件的采购单。单号、物料、订单号、款号都能搜，几个号用空格隔开" :cols="[
         { k: 'no', t: '采购单号', c: 'code' }, { k: 'sup', t: '供应商' }, { k: 'type', t: '类型' },
         { k: 'mat', t: '物料', f: p => skuName(p.lines[0].sku) + (p.lines.length > 1 ? ' 等 ' + p.lines.length + ' 种' : ''), img: p => p.lines[0].sku },
         { k: 'amt', t: '金额', c: 'num', f: p => fm(poAmt(p)) }, { k: 'date', t: '下单日期', f: p => fd(p.date) }, { k: 'due', t: '交期', f: p => fd(p.due) }, { k: 'recv', t: '到货' },
@@ -6619,6 +6884,7 @@ route('/purchases', {
         <template #recv="{ r }"><Prog v-if="!['草稿', '待审核', '已作废'].includes(r.status)" :a="poRecv(r)" :b="poQty(r)"/><span v-else class="dim">—</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="xcols" name="采购单" label="导出选中"/></BatchBar>
     </div>
     <PurchaseForm v-if="s.add" @close="s.add = false"/>
   </div>`,
@@ -6650,7 +6916,13 @@ comp('PurchaseForm', {
       f.lines.forEach((l) => { if (l.sku && (l.price == null || l.price === '' || l.price === was.get(l))) { l.price = dft(l); was.set(l, l.price) } })
     }
     const styles = computed(() => db.styles.filter((s) => s.status === '启用' && !f.plan.includes(s.code)))
-    const addPlan = (e) => { if (e.target.value) f.plan.push(e.target.value); e.target.value = '' }
+    const addPlan = (v) => { if (v) f.plan.push(v) }
+    // 从物料库勾的：去掉还空着的行，每个 SKU 一行，单价照常带默认价
+    const picking = ref(false)
+    function addSkus(codes) {
+      for (let i = f.lines.length - 1; i >= 0; i--) if (!f.lines[i].sku && !f.lines[i].qty && !f.lines[i].src) f.lines.splice(i, 1)
+      for (const c of codes) { f.lines.push({ sku: c, owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' }); setSku(f.lines[f.lines.length - 1]) }
+    }
     const amt = computed(() => sum(f.lines, (l) => (+l.qty || 0) * (+l.price || 0)))
     function ok() {
       const g = { ...f, due: f.due || dueAuto.value, lines: f.lines.map((l) => ({ ...l, due: l.due || null, expect: l.expect || null })) }
@@ -6658,30 +6930,30 @@ comp('PurchaseForm', {
       const po = run(() => createPurchase(g))
       if (po?.no) { emit('close'); go('/purchases/' + po.no) }
     }
-    return { x, f, sups, skus, owners, lead, dueAuto, setSku, setSup, curOf, off, styles, addPlan, amt, ok, purUnit }
+    return { x, f, sups, skus, owners, lead, dueAuto, setSku, setSup, curOf, off, styles, addPlan, picking, addSkus, amt, ok, purUnit }
   },
   template: `<Modal :t="x ? '改采购单 ' + x.no : '新建采购单'" :w="900" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(4,1fr)" data-c="采购单单头">
-      <label class="f" style="grid-column:span 2">供应商<select class="sel" v-model="f.supplier" @change="setSup"><option v-for="s in sups" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select></label>
-      <label class="f">采购类型<select class="sel" v-model="f.type"><option>备货采购</option><option>订单采购</option><option>打样采购</option></select></label>
+      <label class="f" style="grid-column:span 2">供应商<Pick class="sel" v-model="f.supplier" @change="setSup"><option v-for="s in sups" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
+      <label class="f">采购类型<Pick class="sel" v-model="f.type"><option>备货采购</option><option>订单采购</option><option>打样采购</option></Pick></label>
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
-      <label class="f">采购员<select class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label class="f">采购员<Pick class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">下单日期<DatePick v-model="f.date"/></label>
-      <label class="f">交货日期<DatePick v-model="f.due" :placeholder="dueAuto ? '默认 ' + fd(dueAuto) : '选择日期'"/><small v-if="!f.due" class="dim">默认 {{ fd(dueAuto) }}</small></label>
-      <label class="f">交货地点<select class="sel" v-model="f.wh"><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></select></label>
-      <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
-      <label class="f">税率<select class="sel" v-model="f.tax"><option v-for="v in db.dicts.税率" :key="v">{{ v }}</option></select></label>
-      <label class="f">是否含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
+      <label class="f">交货日期<DatePick v-model="f.due" :placeholder="dueAuto ? '默认 ' + fd(dueAuto) : '选择日期'"/></label>
+      <label class="f">交货地点<Pick class="sel" v-model="f.wh"><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></Pick></label>
+      <label class="f">结算方式<Pick class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></Pick></label>
+      <label class="f">税率<Pick class="sel" v-model="f.tax"><option v-for="v in db.dicts.税率" :key="v">{{ v }}</option></Pick></label>
+      <label class="f">是否含税<Pick class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></Pick></label>
       <div v-if="f.type === '备货采购'" class="f" style="grid-column:span 4" data-c="计划用于款号">计划用于款号<span class="row g4" style="flex-wrap:wrap;min-height:30px">
         <span v-for="(c, i) in f.plan" :key="c" class="pill code">{{ c }} {{ styleName(c) }}<a style="margin-left:4px" title="去掉" @click="f.plan.splice(i, 1)">×</a></span>
-        <select class="sel" style="height:28px;width:200px" @change="addPlan"><option value="">{{ f.plan.length ? '再加一个款' : '选填：备的料打算给哪个款' }}</option><option v-for="s in styles" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}</option></select>
+        <Pick class="sel" style="height:28px;width:200px" @change="addPlan" modelValue=""><option value="">{{ f.plan.length ? '再加一个款' : '选填：备的料打算给哪个款' }}</option><option v-for="s in styles" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}</option></Pick>
         </span></div>
       <label class="f" style="grid-column:span 4">备注<input class="inp" v-model="f.note" placeholder="比如：面料每卷标缸号，随货带色卡"></label>
     </div>
     <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th v-if="TRADE" style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:96px">单价</th><th style="width:150px">改价原因</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
-        <td><select class="sel" style="width:100%;height:28px" v-model="l.sku" @change="setSku(l)" :disabled="!!l.src"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select><small v-if="l.src" class="dim">来自算料单 {{ l.src.mrp }}</small></td>
-        <td v-if="TRADE"><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
+        <td><Pick class="sel" style="width:100%;height:28px" v-model="l.sku" @change="setSku(l)" :disabled="!!l.src"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></Pick><small v-if="l.src" class="dim">来自算料单 {{ l.src.mrp }}</small></td>
+        <td v-if="TRADE"><Pick class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></Pick></td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? purUnit(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price" :class="{ amber: off(l) }"><small v-if="curOf(l) != null" class="dim" style="display:block;text-align:right;font-size:11px">档案 {{ fm(curOf(l)) }}</small></td>
         <td><input v-if="off(l)" class="inp cell" style="width:100%" v-model="l.priceWhy" placeholder="改了单价要写原因"><span v-else class="dim">—</span></td>
@@ -6691,7 +6963,8 @@ comp('PurchaseForm', {
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
       <tfoot><tr><td>合计 {{ f.lines.filter(l => l.sku).length }} 行</td><td v-if="TRADE"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td></td><td class="num">{{ fm(amt) }}</td><td colspan="3"></td></tr></tfoot></table>
     <div class="row" style="margin-top:8px"><button class="btn ghost" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' })"><Ico n="plus" :s="14"/>加一行</button>
-      </div>
+      <button class="btn ghost" data-c="从物料库选" @click="picking = true"><Ico n="search" :s="14"/>从物料库选</button></div>
+    <DataPick v-if="picking" kind="sku" :sup="f.supplier" :date="f.date" :have="f.lines.map(l => l.sku).filter(Boolean)" @pick="addSkus" @close="picking = false"/>
     <div v-if="!x" class="sec" data-c="采购单附件"><h3>附件</h3><Pics v-model="f.files" files :s="56"/></div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
@@ -6808,8 +7081,8 @@ comp('PurchaseReceive', {
   },
   template: `<Modal :t="(recv ? '到货入库 ' : '退货 ') + po.no" :w="820" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
-      <label v-if="recv" class="f">入哪个仓<select class="sel" v-model="f.wh"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></select></label>
-      <label v-else class="f">从哪个仓退<select class="sel" v-model="f.from"><option v-for="w in fromWhs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
+      <label v-if="recv" class="f">入哪个仓<Pick class="sel" v-model="f.wh"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></Pick></label>
+      <label v-else class="f">从哪个仓退<Pick class="sel" v-model="f.from"><option v-for="w in fromWhs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <label class="f">{{ recv ? '到货日期' : '退货日期' }}<DatePick v-model="f.date" :max="clock.today"/></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label>
       <label v-if="recv" class="f">供应商送货单号<input class="inp" v-model="f.supNo"></label>
@@ -6840,7 +7113,7 @@ route('/arrivals', {
   template: `<div>
     <Head t="到料"/>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" party="supplier" label="交期"/>
-      <select class="sel" style="height:28px" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick>
       <span class="sp"></span><Search v-model="s.q"/></div>
     <div data-c="到料列表">
       <Tbl :rows="rows" empty="没有该到没到的料。订单号、款号、采购单号、物料都能搜" :cols="[
@@ -6889,7 +7162,7 @@ function updateStockDoc(d, f) {
 
 route('/stock-docs', {
   setup() {
-    const s = reactive({ mine: false, tab: '全部', st: '', wh: '', party: '', q: '', add: '', flt: newFlt() })
+    const s = reactive({ mine: false, tab: '全部', st: '', wh: '', party: '', q: '', add: '', flt: newFlt(), picked: [] })
     const scoped = computed(() => db.stockDocs.filter((d) => inScope(s.mine, d)))
     const tabs = computed(() => [['全部', '全部', scoped.value.length], ...Object.entries(DOC_GROUPS).map(([k, ts]) => [k, k, scoped.value.filter((d) => ts.includes(d.type)).length])])
     const parties = computed(() => [...new Set(db.stockDocs.map((d) => d.partner).filter(Boolean))].map((c) => [c, partnerName({ partner: c })]))
@@ -6898,24 +7171,30 @@ route('/stock-docs', {
     // 手工新建的类型，第一个放在页头按钮上（TRADE 关着时没有客供入库）
     const NEW_TYPES = [...(TRADE ? ['客供入库'] : []), '其他入库', '调拨', '退料', '其他出库']
     const news = NEW_TYPES.map((t) => ({ t, fn: () => { s.add = t } }))
-    return { s, tabs, parties, rows, news, NEW_TYPES, partnerName }
+    const XCOLS = [{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'from', t: '出仓', x: (d) => (d.from ? whName(d.from) : '') }, { k: 'to', t: '入仓', x: (d) => (d.to ? whName(d.to) : '') },
+      { k: 'partner', t: '往来', x: partnerName }, { k: 'src', t: '源单', c: 'code' }, { k: 'mat', t: '物料', x: (d) => d.lines.map((l) => l.sku).join(' ') }, { k: 'qty', t: '总数量', x: (d) => sum(d.lines, (l) => l.qty) },
+      { k: 'date', t: '日期' }, { k: 'reason', t: '原因' }, { k: 'company', t: '主体', x: (d) => companyName(d.company) }, { k: 'status', t: '状态' }]
+    const picks = computed(() => rows.value.filter((d) => s.picked.includes(d.no)))
+    const batch = async (a) => { const ok = await batchAct('stock', picks.value, a, { note: a === '审核' ? '审核后马上改库存。' : '' }); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+    return { s, tabs, parties, rows, news, NEW_TYPES, partnerName, XCOLS, picks, batch }
   },
   template: `<div>
     <Head t="出入库"><button class="btn pri" @click="s.add = NEW_TYPES[0]"><Ico n="plus" :s="14"/>{{ NEW_TYPES[0] }}</button><More :items="news"/></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/>
-      <select class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></Pick>
       <Filters v-model="s.flt"/>
-      <select class="sel" style="height:28px;max-width:140px" v-model="s.wh"><option value="">全部仓库</option><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}</option></select>
-      <select class="sel" style="height:28px;max-width:140px" v-model="s.party"><option value="">全部往来</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></select>
+      <Pick class="sel" style="height:28px;max-width:140px" v-model="s.wh"><option value="">全部仓库</option><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
+      <Pick class="sel" style="height:28px;max-width:140px" v-model="s.party"><option value="">全部往来</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></Pick>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
     <div data-c="出入库列表">
-      <Tbl :rows="rows" link @row="d => go('/stock-docs/' + d.no)" empty="没有符合条件的单据。单号、源单、物料、缸号都能搜" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="d => go('/stock-docs/' + d.no)" empty="没有符合条件的单据。单号、源单、物料、缸号都能搜" :cols="[
         { k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'flow', t: '出仓 → 入仓' }, { k: 'partner', t: '往来', f: partnerName },
         { k: 'src', t: '源单', c: 'code', f: d => d.src || '—' }, { k: 'mat', t: '物料', f: d => skuName(d.lines[0].sku) + (d.lines.length > 1 ? ' 等 ' + d.lines.length + ' 种' : ''), img: d => d.lines[0].sku },
         { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'status', t: '状态' }]">
         <template #flow="{ r }"><span class="mut">{{ r.from ? whName(r.from) : '' }}<template v-if="r.from && r.to"> → </template>{{ r.to ? whName(r.to) : '' }}</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="出入库单" label="导出选中"/></BatchBar>
     </div>
     <StockDocForm v-if="s.add" :type="s.add" @close="s.add = ''"/>
   </div>`,
@@ -6948,6 +7227,11 @@ comp('StockDocForm', {
       const got = issuePlan(pr).filter((r) => r.issued > 0)
       if (got.length && !f.lines.some((l) => l.sku)) f.lines.splice(0, f.lines.length, ...got.map((r) => ({ ...blank(), sku: r.sku, owner: r.owner })))
     }
+    const picking = ref(false)
+    function addSkus(codes) {
+      for (let i = f.lines.length - 1; i >= 0; i--) if (!f.lines[i].sku && !f.lines[i].qty) f.lines.splice(i, 1)
+      f.lines.push(...codes.map((c) => ({ ...blank(), sku: c })))
+    }
     const amt = computed(() => sum(f.lines, (l) => (+l.qty || 0) * (+l.price || 0)))
     function ok() {
       const g = { ...f, type: t, lines: f.lines.map((l) => ({ ...l })) }
@@ -6955,17 +7239,17 @@ comp('StockDocForm', {
       const d = run(() => createStockDoc(g))
       if (d?.no) { emit('close'); go('/stock-docs/' + d.no); toast(`${d.no} 存了草稿，审核后才改库存`) }
     }
-    return { x, t, f, whsFrom, whsTo, prods, skus, owners, have, pickProd, amt, ok }
+    return { x, t, f, whsFrom, whsTo, prods, skus, owners, have, pickProd, picking, addSkus, amt, ok, blank }
   },
   template: `<Modal :t="x ? '改' + t + ' ' + x.no : '新建' + t" :w="900" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(4,1fr)" data-c="出入库单单头">
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
       <label class="f">日期<DatePick v-model="f.date" :max="clock.today"/></label>
-      <label v-if="t === '客供入库'" class="f">客户<select class="sel" v-model="f.partner"><option v-for="c in db.customers" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
-      <label v-if="f.from !== null" class="f">出仓<select class="sel" v-model="f.from"><option v-for="w in whsFrom" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
-      <label v-if="f.to !== null" class="f">入仓<select class="sel" v-model="f.to"><option v-for="w in whsTo" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
-      <label v-if="t === '退料'" class="f">源单（加工单，选填）<select class="sel" v-model="f.src" @change="pickProd"><option value="">不挂加工单</option><option v-for="pr in prods" :key="pr.no" :value="pr.no">{{ pr.no }} {{ pr.style }}</option></select></label>
-      <label v-if="['其他入库', '其他出库'].includes(t)" class="f">原因<select class="sel" v-model="f.reason"><option value="">选原因（必填）</option><option v-for="v in db.dicts.其他出入库原因" :key="v">{{ v }}</option></select></label>
+      <label v-if="t === '客供入库'" class="f">客户<Pick class="sel" v-model="f.partner"><option v-for="c in db.customers" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
+      <label v-if="f.from !== null" class="f">出仓<Pick class="sel" v-model="f.from"><option v-for="w in whsFrom" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
+      <label v-if="f.to !== null" class="f">入仓<Pick class="sel" v-model="f.to"><option v-for="w in whsTo" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
+      <label v-if="t === '退料'" class="f">源单（加工单，选填）<Pick class="sel" v-model="f.src" @change="pickProd"><option value="">不挂加工单</option><option v-for="pr in prods" :key="pr.no" :value="pr.no">{{ pr.no }} {{ pr.style }}</option></Pick></label>
+      <label v-if="['其他入库', '其他出库'].includes(t)" class="f">原因<Pick class="sel" v-model="f.reason"><option value="">选原因（必填）</option><option v-for="v in db.dicts.其他出入库原因" :key="v">{{ v }}</option></Pick></label>
       <label v-if="['调拨', '退料'].includes(t)" class="f">原因<input class="inp" v-model="f.reason" :placeholder="t === '退料' ? '比如：大货做完剩料' : ''"></label>
       <label v-if="t === '客供入库'" class="f">送货单号<input class="inp" v-model="f.supNo"></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label>
@@ -6973,8 +7257,8 @@ comp('StockDocForm', {
     </div>
     <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="TRADE && t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
-        <td><select class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select></td>
-        <td v-if="TRADE && t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
+        <td><Pick class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></Pick></td>
+        <td v-if="TRADE && t !== '客供入库'"><Pick class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></Pick></td>
         <td v-if="f.from" class="num dim">{{ have(l) == null ? '—' : fq(have(l)) }}</td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? unitOf(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price" title="元 / 库存单位"></td>
@@ -6982,7 +7266,9 @@ comp('StockDocForm', {
         <td><input class="inp cell" v-model="l.lot"></td><td><input class="inp cell num" type="number" v-model.number="l.rolls"></td><td><input class="inp cell" v-model="l.note"></td>
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
       <tfoot><tr><td>合计</td><td v-if="TRADE && t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
-    <button class="btn ghost" style="margin-top:8px" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, lot: '', rolls: null, note: '' })"><Ico n="plus" :s="14"/>加一行</button>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" @click="f.lines.push(blank())"><Ico n="plus" :s="14"/>加一行</button>
+      <button class="btn ghost" data-c="从物料库选" @click="picking = true"><Ico n="search" :s="14"/>从物料库选</button></div>
+    <DataPick v-if="picking" kind="sku" :wh="f.from || f.to || ''" :have="f.lines.map(l => l.sku).filter(Boolean)" @pick="addSkus" @close="picking = false"/>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
 })
@@ -7114,12 +7400,12 @@ route('/stock', {
     <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于安全库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
-      <select class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select>
-      <select v-if="TRADE" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
+      <Pick class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
+      <Pick v-if="TRADE" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></Pick>
       <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '日志']"/><Search v-model="s.q"/>
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>
-      <select class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="(v, t) in STOCK_TYPES" :key="t" :value="t">{{ t }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="(v, t) in STOCK_TYPES" :key="t" :value="t">{{ t }}</option></Pick>
       </div>
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存。SKU、物料名、仓库都能搜，几个编码用空格隔开" :cols="[
@@ -7217,27 +7503,34 @@ function voidReturn(r, reason) {
 
 route('/production', {
   setup() {
-    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', q: '', flt: newFlt() })
+    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', q: '', flt: newFlt(), picked: [] })
     const ST = ['全部', '草稿', '待审核', '已下单', '生产中', '部分回货', '已完成', '已结案', '已作废']
     const scoped = computed(() => db.productions.filter((p) => inScope(s.mine, p)))
     const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
     const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f))
       && passFlt(s.flt, { date: expectDue(p), party: p.factory, merch: p.merch }) && matchQ(s.q, p.no, p.style, styleName(p.style), supName(p.factory), p.order)).slice().sort(byRisk))
-    return { s, tabs, rows, RISK_F }
+    const XCOLS = [{ k: 'no', t: '加工单号', c: 'code' }, { k: 'order', t: '订单号', c: 'code' }, { k: 'style', t: '款号', c: 'code' }, { k: 'name', t: '款名', x: (p) => styleName(p.style) },
+      { k: 'factory', t: '加工厂', x: (p) => supName(p.factory) }, { k: 'mode', t: '加工方式' }, { k: 'qty', t: '数量', x: prodQty }, { k: 'amt', t: '金额', x: prodAmt },
+      { k: 'due', t: '交期', x: expectDue }, { k: 'ret', t: '已回货', x: prodRet }, { k: 'merch', t: '跟单', x: (p) => userName(p.merch) }, { k: 'status', t: '状态' }]
+    const picks = computed(() => rows.value.filter((p) => s.picked.includes(p.no)))
+    const batch = async (a) => { const ok = await batchAct('production', picks.value, a); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+    return { s, tabs, rows, RISK_F, XCOLS, picks, batch }
   },
   template: `<div>
     <Head t="加工单"/>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
     <div class="bar" data-c="筛选：交期、加工厂、跟单"><Filters v-model="s.flt" party="factory" merch label="交期"/>
-      <select class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></Pick>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
-    <div data-c="加工单列表"><ProdTable :rows="rows"/></div>
+    <div data-c="加工单列表"><ProdTable :rows="rows" v-model:picked="s.picked"/>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="加工单" label="导出选中"/></BatchBar></div>
   </div>`,
 }, { mod: 'production', t: '加工单' })
 
 // 列表和看板共用；board：去掉金额、领料，加一列异常（PRD §6.7.6）
 comp('ProdTable', {
-  props: { rows: Array, board: Boolean },
+  props: { rows: Array, board: Boolean, picked: { type: Array, default: null } },
+  emits: ['update:picked'],
   setup(p) {
     const kit = (r) => (prodLive(r) || r.status === '已完成' ? kitState(order(r.order)) : null)
     const openIs = (r) => r.issues.filter((i) => i.status !== '已关闭')
@@ -7249,7 +7542,7 @@ comp('ProdTable', {
     ].filter(Boolean))
     return { cols, kit, openIs, KIT_CLS }
   },
-  template: `<Tbl :rows="rows" link @row="p => go('/production/' + p.no)" empty="没有符合条件的加工单。订单审核后在订单里「排单」生成；单号、款号、加工厂、订单号都能搜" :cols="cols">
+  template: `<Tbl :rows="rows" link :picked="picked" @update:picked="$emit('update:picked', $event)" @row="p => go('/production/' + p.no)" empty="没有符合条件的加工单。订单审核后在订单里「排单」生成；单号、款号、加工厂、订单号都能搜" :cols="cols">
     <template #style="{ r }"><span class="row"><Thumb :code="r.style" :s="24"/><span class="code">{{ r.style }}</span></span></template>
     <template #factory="{ r }">{{ supName(r.factory) }}<span class="dim"> · {{ r.mode }}</span></template>
     <template #due="{ r }"><span class="row g4">{{ fd(expectDue(r)) }}<Days :d="expectDue(r)" :warn="7" :done="!prodLive(r)"/></span><span v-if="r.expect" class="dim" style="text-decoration:line-through;font-size:12px">{{ fd(r.due) }}</span></template>
@@ -7394,7 +7687,7 @@ route('/production/:no', {
     <Modal v-if="closing" :t="'关闭异常：' + closing.i.type" :w="480" @close="closing = null">
       <div class="form">
         <label class="f full">处理措施<textarea class="inp" v-model="closing.measure" placeholder="比如：供应商补发 30 米，11-08 到；返工 20 件"></textarea></label>
-        <label class="f">责任方<select class="sel" v-model="closing.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></select></label>
+        <label class="f">责任方<Pick class="sel" v-model="closing.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></Pick></label>
       </div>
       <template #foot><button class="btn" @click="closing = null">取消</button><button class="btn pri" @click="doClose">关闭异常</button></template>
     </Modal>
@@ -7440,13 +7733,13 @@ comp('ProdEdit', {
   template: `<Modal :t="'改加工单 ' + p.no" :w="640" @close="$emit('close')">
     <div class="form" data-c="加工单单头">
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
-      <label class="f">加工厂<select class="sel" v-model="f.factory" @change="setFactory"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select></label>
-      <label class="f">加工方式<select class="sel" v-model="f.mode"><option v-for="v in db.dicts.加工方式" :key="v">{{ v }}</option></select></label>
+      <label class="f">加工厂<Pick class="sel" v-model="f.factory" @change="setFactory"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
+      <label class="f">加工方式<Pick class="sel" v-model="f.mode"><option v-for="v in db.dicts.加工方式" :key="v">{{ v }}</option></Pick></label>
       <label class="f">加工单价（元 / 件）<input class="inp num" type="number" v-model.number="f.price"><small class="dim">{{ ref0 != null ? '档案现价 ' + fm(ref0) : '档案里没有这家 × ' + f.mode + ' 的价，审核时记进去' }}</small></label>
       <label class="f">交期<DatePick v-model="f.due"/></label>
       <label v-if="off || f.priceWhy" class="f full">改价原因<input class="inp" v-model="f.priceWhy" placeholder="单价和档案现价不一样，写清楚为什么；审核时记进价格档案"></label>
-      <label class="f">生产跟单<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
+      <label class="f">生产跟单<Pick class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
+      <label class="f">结算方式<Pick class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></Pick></label>
       <div class="f full">条款<textarea class="inp" v-model="f.terms" placeholder="次品扣款、延期扣款、送货要求"></textarea><a class="dim" style="font-size:12px;cursor:pointer;align-self:flex-start" @click="addTerms">填常用条款</a></div>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
@@ -7525,7 +7818,7 @@ comp('ProdIssueMat', {
   },
   template: `<Modal :t="'领料 ' + p.no" :w="780" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
-      <label class="f">从哪个物料仓发<select class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
+      <label class="f">从哪个物料仓发<Pick class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <div class="f">发到<span style="line-height:32px">{{ whName(factoryWh(p.factory)?.code) }}</span></div>
     </div>
     <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th v-if="TRADE">物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
@@ -7548,8 +7841,8 @@ comp('ProdException', {
   },
   template: `<Modal :t="'上报异常 ' + p.no" :w="520" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.异常类型" :key="x">{{ x }}</option></select></label>
-      <label class="f">责任方<select class="sel" v-model="f.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.异常类型" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">责任方<Pick class="sel" v-model="f.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></Pick></label>
       <label class="f full">描述<textarea class="inp" v-model="f.desc" placeholder="什么问题、多少件、哪个颜色尺码"></textarea></label>
       <div class="f full" data-c="异常照片">照片<span class="red" style="font-weight:400">（必须传：问题部位、到货短缺或现场，对责任时要用）</span><Pics v-model="f.photos" :s="64" camera/></div>
       <label class="chk"><input type="checkbox" v-model="f.impact">影响交期</label>
@@ -7580,7 +7873,7 @@ comp('ProdReturn', {
   template: `<Modal :t="'登记回货 ' + p.no" :w="760" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
       <label class="f">回货日期<DatePick v-model="f.date" :max="clock.today"/></label>
-      <label class="f">收货仓<select class="sel" v-model="f.wh"><option v-for="w in fgs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
+      <label class="f">收货仓<Pick class="sel" v-model="f.wh"><option v-for="w in fgs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label></div>
     <div class="sec" style="margin-top:0" data-c="回货数"><h3>回货数（含次品）</h3><Matrix :st="p.style" v-model="qty" :colors="colors" :sub="sub"/></div>
     <div class="sec" data-c="次品数"><h3>其中次品</h3><Matrix :st="p.style" v-model="def" :colors="colors"/></div>
@@ -7622,7 +7915,7 @@ route('/board', {
   template: `<div>
     <Head t="看板"/>
     <div class="bar" data-c="筛选：交期、加工厂、跟单、品牌"><Filters v-model="s.flt" party="factory" merch label="交期"/>
-      <select class="sel" style="height:28px" v-model="s.brand"><option value="">全部品牌</option><option v-for="b in brands" :key="b" :value="b">{{ b }}</option></select></div>
+      <Pick class="sel" style="height:28px" v-model="s.brand"><option value="">全部品牌</option><option v-for="b in brands" :key="b" :value="b">{{ b }}</option></Pick></div>
     <div class="stats" data-c="数字卡">
       <div v-for="c in cards" :key="c.k" class="stat" :class="{ on: s.card === c.k }" @click="c.f && (s.card = s.card === c.k ? '' : c.k)"><span>{{ c.t }}</span><b :class="{ red: (c.k === 'late' || c.k === 'issue') && c.n, amber: (c.k === 'near' || c.k === 'node') && c.n }">{{ c.n.toLocaleString() }}<small v-if="c.m">{{ c.m }}</small></b></div>
     </div>
@@ -8025,20 +8318,20 @@ comp('PriceForm', {
   },
   template: `<Modal :t="init.adjust ? '调价' : '录价格'" :w="560" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.kind" :disabled="init.adjust"><option v-for="k in ['物料价', '加工价']" :key="k" :disabled="!canEditPrice(k)">{{ k }}</option></select></label>
-      <label class="f">{{ f.kind === '加工价' ? '工厂' : '供应商' }}<select class="sel" v-model="f.sup" :disabled="init.adjust"><option value="">选一家</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.kind" :disabled="init.adjust"><option v-for="k in ['物料价', '加工价']" :key="k" :disabled="!canEditPrice(k)">{{ k }}</option></Pick></label>
+      <label class="f">{{ f.kind === '加工价' ? '工厂' : '供应商' }}<Pick class="sel" v-model="f.sup" :disabled="init.adjust"><option value="">选一家</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></Pick></label>
       <template v-if="f.kind === '物料价'">
-        <label class="f">物料<select class="sel" v-model="f.mat" :disabled="init.adjust" @change="f.sku = ''"><option value="">选物料</option><option v-for="m in db.materials" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></select></label>
-        <label class="f">SKU<select class="sel" v-model="f.sku" :disabled="init.adjust"><option value="">不选 = 所有颜色同价</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></select></label>
+        <label class="f">物料<Pick class="sel" v-model="f.mat" :disabled="init.adjust" @change="f.sku = ''"><option value="">选物料</option><option v-for="m in db.materials" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></Pick></label>
+        <label class="f">SKU<Pick class="sel" v-model="f.sku" :disabled="init.adjust"><option value="">不选 = 所有颜色同价</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></Pick></label>
       </template>
       <template v-else>
-        <label class="f">款式<select class="sel" v-model="f.style" :disabled="init.adjust"><option value="">选款式</option><option v-for="x in db.styles.filter(x => x.status !== '停用')" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></select></label>
-        <label class="f">加工方式<select class="sel" v-model="f.mode" :disabled="init.adjust"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></select></label>
+        <label class="f">款式<Pick class="sel" v-model="f.style" :disabled="init.adjust"><option value="">选款式</option><option v-for="x in db.styles.filter(x => x.status !== '停用')" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></Pick></label>
+        <label class="f">加工方式<Pick class="sel" v-model="f.mode" :disabled="init.adjust"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></Pick></label>
       </template>
       <label class="f">单价（元/{{ f.kind === '物料价' ? (mat(f.mat)?.purUnit || '采购单位') : '件' }}）<input class="inp num" type="number" v-model.number="f.price"></label>
       <label class="f">税率<input class="inp" v-model="f.tax" placeholder="如 13%"></label>
       <label class="f">生效日期<DatePick v-model="f.date"/></label>
-      <label class="f">含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
+      <label class="f">含税<Pick class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></Pick></label>
       <div v-if="cur" class="f full dim" style="font-size:12px">{{ fd(f.date) }} 的现价 {{ fm(cur.price) }}（{{ fd(cur.date) }} 起{{ cur.sku ? '，这个 SKU 单独定的' : '' }}）{{ needWhy ? '：调价要写原因' : '：给这个 SKU 单独定价，原因可以不写' }}</div>
       <label class="f full">调价原因<input class="inp" v-model="f.why" :placeholder="needWhy ? '必填，如：原料涨价' : '第一次报价可以不写'"></label>
     </div>
@@ -8130,7 +8423,7 @@ route('/reorder', {
           <tr v-for="r in rows" :key="r.sku" :class="{ sel: st(r).on }">
             <td><input type="checkbox" v-model="st(r).on" style="accent-color:var(--accent)"></td>
             <td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><a :href="'#/materials/' + r.mat">{{ skuName(r.sku) }}</a><small class="code dim">{{ r.sku }}</small></span></span></td>
-            <td><select class="sel" style="height:26px" v-model="st(r).sup"><option value="">先选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></select><div v-if="!r.sup" class="amber" style="font-size:12px">物料没设默认供应商</div></td>
+            <td><Pick class="sel" style="height:26px" v-model="st(r).sup"><option value="">先选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></Pick><div v-if="!r.sup" class="amber" style="font-size:12px">物料没设默认供应商</div></td>
             <td class="num">{{ fq(r.stock) }}</td><td class="num">{{ fq(r.transit) }}</td><td class="num">{{ fq(r.held) }}</td>
             <td class="num">{{ fq(r.safety) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
             <td class="num"><b class="amber">{{ fq(r.gap) }}</b></td>
@@ -8250,7 +8543,7 @@ route('/plans', {
     <Modal v-if="s.task" :t="s.task.title" :w="460" @close="s.task = null">
       <div class="form">
         <div class="f full">状态<Seg v-model="s.task.status" :items="cols"/></div>
-        <label class="f">负责人<select class="sel" v-model="s.task.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+        <label class="f">负责人<Pick class="sel" v-model="s.task.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
         <label class="f">截止<DatePick v-model="s.task.due"/></label>
       </div>
       <template #foot><a v-if="s.task.link" class="btn" :href="'#' + s.task.link" @click="s.task = null">打开{{ s.task.link.startsWith('/samples') ? '样衣' : '款式' }}</a><span class="sp"></span><button class="btn pri" @click="s.task = null">好</button></template>
@@ -8269,8 +8562,8 @@ comp('PlanTaskNew', {
   template: `<Modal t="新建开发任务" :w="460" @close="$emit('close')">
     <div class="form">
       <label class="f full">内容<input class="inp" v-model="f.title"></label>
-      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
-      <label class="f">负责人<select class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label class="f">品类<Pick class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.name }}</option></Pick></label>
+      <label class="f">负责人<Pick class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">截止<DatePick v-model="f.due"/></label>
       <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" :tip="(TRADE ? '灵感图、竞品图、客户发来的款都可以' : '灵感图、竞品图都可以') + '；Ctrl+V 能直接贴截图'"/></div>
     </div>
@@ -8434,10 +8727,10 @@ comp('SmpNew', {
   template: `<Modal t="新建样衣" :w="640" @close="$emit('close')">
     <div class="form">
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
-      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
-      <label class="f">季节<span class="row g4"><select class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></select><select class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></span></label>
-      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option v-if="TRADE">客户来样</option><option>选款</option></select></label>
-      <label v-if="TRADE" class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f">品类<Pick class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></Pick></label>
+      <label class="f">季节<span class="row g4"><Pick class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></Pick><Pick class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></Pick></span></label>
+      <label class="f">来源<Pick class="sel" v-model="f.source"><option>自主开发</option><option v-if="TRADE">客户来样</option><option>选款</option></Pick></label>
+      <label v-if="TRADE" class="f">客户<Pick class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors.filter(c => c.status !== '停用' || f.colors.includes(c.code))" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<DatePick v-model="f.need"/></label>
@@ -8521,8 +8814,8 @@ comp('SmpDispatch', {
   template: `<Modal t="派单" :w="460" @close="$emit('close')">
     <div class="form">
       <div class="f full">方式<Seg v-model="f.way" :items="['外部工厂', '内部版房']"/></div>
-      <label v-if="f.way === '外部工厂'" class="f">打样工厂<select class="sel" v-model="f.factory"><option value="">选工厂</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}{{ x.status === '待准入' ? '（待准入）' : '' }}</option></select></label>
-      <label v-else class="f">版师<select class="sel" v-model="f.maker"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label v-if="f.way === '外部工厂'" class="f">打样工厂<Pick class="sel" v-model="f.factory"><option value="">选工厂</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}{{ x.status === '待准入' ? '（待准入）' : '' }}</option></Pick></label>
+      <label v-else class="f">版师<Pick class="sel" v-model="f.maker"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">要样日期<DatePick v-model="f.need"/></label>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">派单</button></template>
@@ -8575,10 +8868,10 @@ comp('SmpConvert', {
   template: `<Modal t="转大货" :w="460" @close="$emit('close')">
     <div class="form">
       <label class="f">款号<input class="inp code" v-model="f.code" :placeholder="auto.code ? '不填自动编：' + auto.code : '编不出来，要手填'"></label>
-      <label class="f">大类<select class="sel" v-model="f.big"><option v-for="x in liveBigCats()" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></select></label>
+      <label class="f">大类<Pick class="sel" v-model="f.big"><option v-for="x in liveBigCats()" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></Pick></label>
       <p v-if="!f.code.trim() && auto.err" class="f full amber" style="margin:0;font-size:12px">{{ auto.err }}</p>
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
-      <label class="f full">默认加工厂<select class="sel" v-model="f.factory"><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></select></label>
+      <label class="f full">默认加工厂<Pick class="sel" v-model="f.factory"><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
     </div>
     <template #foot><span class="dim">{{ s.colors.length }} 色 × {{ sizesOf(s.sizeGroup).length }} 码</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">生成款式</button></template>
   </Modal>`,
@@ -8765,8 +9058,8 @@ comp('QuoteNew', {
   },
   template: `<Modal t="加报价" :w="480" @close="$emit('close')">
     <div class="form">
-      <label class="f full">物料<select class="sel" v-model="f.mat"><option v-for="m in mats" :key="m" :value="m">{{ m }} {{ mat(m).name }}</option></select></label>
-      <label class="f full">供应商<select class="sel" v-model="f.sup"><option value="">选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></select></label>
+      <label class="f full">物料<Pick class="sel" v-model="f.mat"><option v-for="m in mats" :key="m" :value="m">{{ m }} {{ mat(m).name }}</option></Pick></label>
+      <label class="f full">供应商<Pick class="sel" v-model="f.sup"><option value="">选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></Pick></label>
       <label class="f">报价（元/{{ mat(f.mat).purUnit }}）<input class="inp num" type="number" v-model.number="f.price"></label>
       <label class="f">交期（天）<input class="inp num" type="number" v-model.number="f.lead"></label>
       <label class="f">起订量<input class="inp num" type="number" v-model.number="f.moq"></label>
@@ -9085,7 +9378,7 @@ comp('FgShip', {
     <div v-if="!orders.length" class="empty">成品仓里没有能发的货</div>
     <template v-else>
       <div class="form" style="margin-bottom:16px">
-        <label class="f">订单<select class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ custOrDash(x) }}</option></select></label>
+        <label class="f">订单<Pick class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ custOrDash(x) }}</option></Pick></label>
         <label class="f">物流单号<input class="inp code" v-model="f.logistics"></label>
       </div>
       <div v-for="st in styles" :key="st" style="margin-bottom:16px">
@@ -9273,8 +9566,8 @@ comp('FinOcr', {
   template: `<Modal t="上传工厂对账单" :w="s.step === 'done' ? 1080 : 520" @close="$emit('close')">
     <template v-if="s.step !== 'done'">
       <div class="form">
-        <label class="f">供应商<select class="sel" v-model="f.sup" :disabled="s.step === 'busy'"><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short || x.name }}</option></select></label>
-        <label class="f">月份<select class="sel" v-model="f.month" :disabled="s.step === 'busy'"><option v-for="m in months" :key="m" :value="m">{{ m }}</option></select></label>
+        <label class="f">供应商<Pick class="sel" v-model="f.sup" :disabled="s.step === 'busy'"><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short || x.name }}</option></Pick></label>
+        <label class="f">月份<Pick class="sel" v-model="f.month" :disabled="s.step === 'busy'"><option v-for="m in months" :key="m" :value="m">{{ m }}</option></Pick></label>
         <div class="f full">对账单原件<Pics v-model="f.files" files :max="5" :s="64" tip="工厂发来的对账单：拍照、扫描件、PDF、Excel 都行"/>
           <a v-if="!f.files.length" href="javascript:;" style="font-size:12px" @click="demo">手边没有文件？用示例对账单</a></div>
       </div>
@@ -10109,26 +10402,28 @@ expose({
 route('/suppliers', {
   setup() {
     // f：首页待办点进来的筛选——证照（30 天内到期）、待审批（准入审批中 + 有待批改动）、新增风险
-    const s = reactive({ cat: '全部', st: '', q: '', f: ['证照', '待审批', '新增风险'].includes(nav.query.f) ? nav.query.f : '', add: false, imp: false })
+    const s = reactive({ cat: '全部', st: '', q: '', f: ['证照', '待审批', '新增风险'].includes(nav.query.f) ? nav.query.f : '', add: false, imp: false, picked: [] })
     const tabs = computed(() => [['全部', '全部', db.suppliers.length], ...db.dicts.供应商分类.map((c) => [c, c, db.suppliers.filter((x) => x.cats.includes(c)).length])])
     const soon = computed(() => new Set(expiringCerts().map((x) => x.s.code)))
     const passF = (x) => !s.f || (s.f === '证照' ? soon.value.has(x.code) : s.f === '待审批' ? supToApprove().includes(x) : !!x.riskNew)
     const fText = { 证照: '证照 30 天内到期', 待审批: '待审批：准入、关键信息改动', 新增风险: '企查查新增风险' }
     const rows = computed(() => db.suppliers.filter((x) => (s.cat === '全部' || x.cats.includes(s.cat)) && (!s.st || x.status === s.st) && passF(x)
       && matchQ(s.q, x.code, x.short, x.name, x.contact, x.phone, x.credit || '')))
-    return { s, tabs, rows, fText }
+    const XCOLS = [{ k: 'code', t: '编码', c: 'code' }, ...SUP_FIELDS.map(([k, t, f]) => ({ k, t, x: (r) => (f ? f(r[k] ?? []) : Array.isArray(r[k]) ? r[k].join('、') : r[k]) })), { k: 'status', t: '状态' }]
+    const picks = computed(() => rows.value.filter((x) => s.picked.includes(x.code)))
+    return { s, tabs, rows, fText, XCOLS, picks }
   },
   template: `<div>
-    <Head t="供应商"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建供应商</button></Head>
+    <Head t="供应商"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="XCOLS" name="供应商"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建供应商</button></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.cat" :items="tabs"/>
       <button v-if="s.f" class="chip on" @click="s.f = ''">{{ fText[s.f] }}<Ico n="x" :s="12"/></button>
       <span class="sp"></span>
-      <select class="sel" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['合作中', '待准入', '准入审批中', '停用', '黑名单']" :key="x">{{ x }}</option></select>
+      <Pick class="sel" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['合作中', '待准入', '准入审批中', '停用', '黑名单']" :key="x">{{ x }}</option></Pick>
       <Search v-model="s.q" ph="编码、名称、联系人、信用代码"/>
     </div>
     <div data-c="供应商列表">
-      <Tbl :rows="rows" link @row="x => go('/suppliers/' + x.code)" empty="没有符合条件的供应商" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="x => go('/suppliers/' + x.code)" empty="没有符合条件的供应商" :cols="[
         { k: 'code', t: '编码', c: 'code' }, { k: 'short', t: '简称' }, { k: 'cats', t: '分类', f: x => x.cats.join('、') }, { k: 'level', t: '等级' },
         { k: 'status', t: '状态' }, { k: 'contact', t: '联系人' }, { k: 'settle', t: '结算', f: x => x.settle + (x.term ? ' ' + x.term + ' 天' : '') },
         { k: 'buyer', t: '负责人', f: x => userName(x.buyer) }, { k: 'cert', t: '证照' }, { k: 'risk', t: '风险' }]">
@@ -10137,6 +10432,7 @@ route('/suppliers', {
         <template #cert="{ r }"><span :class="certInfo(r).tone">{{ certInfo(r).t }}</span></template>
         <template #risk="{ r }"><span class="row g4"><span v-if="lastRisk(r) && lastRisk(r).result !== '无风险'" class="flag" :class="riskTone(lastRisk(r))">{{ lastRisk(r).result }}</span><span v-if="r.riskNew" class="pill red">新增</span></span></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="供应商" label="导出选中"/></BatchBar>
     </div>
     <SupplierForm v-if="s.add" @close="s.add = false"/>
     <ImportBox v-if="s.imp" kind="suppliers" @close="s.imp = false"/>
@@ -10172,7 +10468,7 @@ comp('SupplierForm', {
       <label class="f" style="grid-column:span 2"><span>统一社会信用代码<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.credit" maxlength="20" placeholder="18 位，营业执照上有"><small v-if="f.credit && credit" class="red">{{ credit }}</small></label>
       <label class="f">简称<input class="inp" v-model="f.short"></label>
       <label class="f">编码<input class="inp code" :value="s ? s.code : nextCode('GYS', db.suppliers)" disabled :title="s ? '编码定了不改' : '自动编'"></label>
-      <label class="f">等级<select class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></select></label>
+      <label class="f">等级<Pick class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></Pick></label>
       <span></span>
       <div class="f full">分类<div class="chips"><button v-for="c in db.dicts.供应商分类" :key="c" class="chip" :class="{ on: f.cats.includes(c) }" @click="toggle(f.cats, c)">{{ c }}</button></div></div>
       <div class="f full" data-c="擅长品类">擅长品类<div class="chips"><button v-for="c in cats" :key="c.code" class="chip" :class="{ on: f.goodAt.includes(c.code) }" @click="toggle(f.goodAt, c.code)">{{ c.name }}</button></div></div>
@@ -10180,11 +10476,11 @@ comp('SupplierForm', {
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
       <label class="f">微信<input class="inp" v-model="f.wechat"></label>
       <label class="f full">地址<input class="inp" v-model="f.addr"></label>
-      <label class="f"><span>结算方式<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
+      <label class="f"><span>结算方式<i v-if="gate" class="kmark">需审批</i></span><Pick class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></Pick></label>
       <label class="f"><span>账期（天）<i v-if="gate" class="kmark">需审批</i></span><input class="inp num" type="number" v-model.number="f.term"></label>
-      <label class="f">负责采购员<select class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></select></label>
-      <label class="f"><span>发票类型<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.invoice"><option value="">—</option><option v-for="x in db.dicts.发票类型" :key="x">{{ x }}</option></select></label>
-      <label class="f"><span>税率<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.tax"><option v-for="x in db.dicts.税率" :key="x">{{ x }}</option></select></label>
+      <label class="f">负责采购员<Pick class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></Pick></label>
+      <label class="f"><span>发票类型<i v-if="gate" class="kmark">需审批</i></span><Pick class="sel" v-model="f.invoice"><option value="">—</option><option v-for="x in db.dicts.发票类型" :key="x">{{ x }}</option></Pick></label>
+      <label class="f"><span>税率<i v-if="gate" class="kmark">需审批</i></span><Pick class="sel" v-model="f.tax"><option v-for="x in db.dicts.税率" :key="x">{{ x }}</option></Pick></label>
       <span></span>
       <label class="f"><span>开户行<i v-if="gate" class="kmark">需审批</i></span><input class="inp" v-model="f.bank"></label>
       <label class="f" style="grid-column:span 2"><span>账号<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.account"></label>
@@ -10401,7 +10697,7 @@ comp('CertForm', {
   },
   template: `<Modal :t="c ? '换证照：' + c.type : '加一份证照'" :w="460" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.证照类型" :key="x">{{ x }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.证照类型" :key="x">{{ x }}</option></Pick></label>
       <label class="f">有效期至<DatePick v-model="f.until"/></label>
       <div class="f full">照片或扫描件<Pics v-model="f.files" files :max="1" :s="64" tip="拍照、扫描件、PDF 都行；拖进来也可以"/></div>
       <label class="f full">备注<input class="inp" v-model="f.note" placeholder="如：年检后换新"></label>
@@ -10456,7 +10752,7 @@ comp('CustomerForm', {
       <label class="f">联系人<input class="inp" v-model="f.contact"></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
       <label class="f full">地址<input class="inp" v-model="f.addr"></label>
-      <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
+      <label class="f">结算方式<Pick class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></Pick></label>
       <label class="f">账期（天）<input class="inp num" type="number" v-model.number="f.term"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
@@ -10532,7 +10828,7 @@ route('/customers/:code', {
 /* ---------- 物料 ---------- */
 route('/materials', {
   setup() {
-    const s = reactive({ cat: '', st: '启用', q: '', add: false, imp: false })
+    const s = reactive({ cat: '', st: '启用', q: '', add: false, imp: false, picked: [] })
     const groups = computed(() => MAT_GROUPS.map((g) => ({ g, cats: db.materialCategories.filter((c) => c.parent === g) })))
     const inCat = (m) => !s.cat || m.cat === s.cat || matCat(m.cat).parent === s.cat
     const rows = computed(() => db.materials.filter((m) => inCat(m) && (s.st === '全部' || m.status === s.st) && matchQ(s.q, m.code, m.name, m.supNo, m.comp, supName(m.supplier))))
@@ -10542,7 +10838,8 @@ route('/materials', {
       { k: 'spec', t: '门幅 · 克重', f: (m) => (m.width ? m.width + 'cm · ' + m.weight + 'g' : '—') }, { k: 'supplier', t: '默认供应商', f: (m) => supName(m.supplier) }, { k: 'supNo', t: '供应商货号', c: 'code', f: (m) => m.supNo || '—' },
       { k: 'price', t: '参考单价', c: 'num', f: (m) => fm(m.price) + '/' + m.purUnit }, { k: 'skus', t: 'SKU', c: 'num', f: (m) => m.skus.length },
       { k: 'stock', t: '库存', c: 'num', f: (m) => fq(matStock(m)) + ' ' + m.unit }, { k: 'status', t: '状态' }]
-    return { s, groups, rows, count, cols }
+    const picks = computed(() => rows.value.filter((m) => s.picked.includes(m.code)))
+    return { s, groups, rows, count, cols, picks }
   },
   template: `<div>
     <Head t="物料"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="cols" name="物料"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建物料</button></Head>
@@ -10558,10 +10855,11 @@ route('/materials', {
       <div style="flex:1;min-width:0">
         <div class="bar" data-c="筛选"><Seg v-model="s.st" :items="['启用', '停用', '全部']"/><span class="sp"></span><Search v-model="s.q"/></div>
         <div data-c="物料列表">
-          <Tbl :rows="rows" link @row="m => go('/materials/' + m.code)" empty="这个分类下没有物料" :cols="cols">
+          <Tbl :rows="rows" link v-model:picked="s.picked" @row="m => go('/materials/' + m.code)" empty="这个分类下没有物料" :cols="cols">
             <template #unit="{ r }"><span v-if="r.purUnit === r.unit">{{ r.unit }}</span><span v-else>{{ r.unit }} <span class="dim">1 {{ r.purUnit }} = {{ fq(r.factor) }} {{ r.unit }}</span></span></template>
             <template #status="{ r }"><St :s="r.status"/></template>
           </Tbl>
+          <BatchBar :n="picks.length" @clear="s.picked = []"><ExportBtn class="sm" :rows="picks" :cols="cols" name="物料" label="导出选中"/></BatchBar>
         </div>
       </div>
     </div>
@@ -10602,12 +10900,12 @@ comp('MaterialForm', {
   },
   template: `<Modal :t="m ? '编辑物料 ' + m.code : '新建物料'" :w="720" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
-      <label class="f">分类<select class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.parent }} / {{ c.name }}</option></select></label>
+      <label class="f">分类<Pick class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.parent }} / {{ c.name }}</option></Pick></label>
       <label class="f">编码<input class="inp code" :value="code" disabled :title="m ? '编码定了不改' : '按分类自动编'"></label>
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></Pick></label>
       <label class="f full">名称<input class="inp" v-model="f.name" placeholder="如：220g 斜纹棉"></label>
-      <label class="f">库存单位<select class="sel" v-model="f.unit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></select></label>
-      <label class="f">采购单位<select class="sel" v-model="f.purUnit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></select></label>
+      <label class="f">库存单位<Pick class="sel" v-model="f.unit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">采购单位<Pick class="sel" v-model="f.purUnit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
       <label class="f">1 {{ f.purUnit }} = ? {{ f.unit }}<input class="inp num" type="number" v-model.number="f.factor" :disabled="!!lock || f.purUnit === f.unit"></label>
       <p v-if="lock" class="full dim" style="margin:-4px 0 0;font-size:12px">{{ lock }}，单位和换算系数不能改了</p>
       <label class="f">门幅 cm<input class="inp num" type="number" v-model.number="f.width"></label>
@@ -10615,8 +10913,8 @@ comp('MaterialForm', {
       <label class="f">成分<input class="inp" v-model="f.comp" placeholder="如 100% 棉"></label>
       <label class="f">组织 / 纹理<input class="inp" v-model="f.texture" placeholder="如 斜纹、平纹"></label>
       <label class="f">年份<input class="inp num" type="number" v-model.number="f.year"></label>
-      <label class="f">季节<select class="sel" v-model="f.season"><option value="">—</option><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></label>
-      <label class="f">默认供应商<select class="sel" v-model="f.supplier"><option value="">不填</option><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></select></label>
+      <label class="f">季节<Pick class="sel" v-model="f.season"><option value="">—</option><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></Pick></label>
+      <label class="f">默认供应商<Pick class="sel" v-model="f.supplier"><option value="">不填</option><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></Pick></label>
       <label class="f">供应商货号<input class="inp" v-model="f.supNo"></label>
       <label class="f">参考单价（每{{ f.purUnit }}，含税）<input class="inp num" type="number" v-model.number="f.price"></label>
       <label class="f">起订量（{{ f.purUnit }}）<input class="inp num" type="number" v-model.number="f.moq"></label>
@@ -10637,7 +10935,7 @@ comp('MaterialForm', {
           <tbody><tr v-for="k in f.skus" :key="k.code"><td class="code">{{ k.code }}</td><td><Sw v-if="k.color" :c="k.color"/><span v-else class="dim">—</span></td><td>{{ k.spec || '—' }}</td>
             <td><input class="inp" style="height:26px;width:100px" v-model="k.supColor"></td><td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.price" :placeholder="f.price ?? ''"></td>
             <td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.safety"></td>
-            <td><select class="sel" style="height:26px" v-model="k.status"><option>启用</option><option>停用</option></select></td></tr></tbody></table></div>
+            <td><Pick class="sel" style="height:26px" v-model="k.status"><option>启用</option><option>停用</option></Pick></td></tr></tbody></table></div>
     </div>
     <template #foot><span v-if="!m" class="dim code">{{ preview.length }} 个 SKU：{{ preview.join('、') }}</span><span class="sp"></span>
       <button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ m ? '保存' : '建物料' }}</button></template>
@@ -10801,7 +11099,7 @@ route('/basics', {
         <Tbl inset flat :rows="db.colors" :cols="[{ k: 'sw', t: '' }, { k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称' }, { k: 'family', t: '色系' }, { k: 'used', t: '用在', c: 'num', f: c => colorUsed(c.code) ? colorUsed(c.code) + ' 个款 / 物料' : '—' }, { k: 'status', t: '状态' }, { k: 'act', t: '' }]">
           <template #sw="{ r }"><input v-if="ce.c === r" type="color" v-model="ce.hex" title="色块" style="width:26px;height:26px;padding:0;border:1px solid var(--line-strong);border-radius:6px;background:none"><Sw v-else :c="r.code" :n="false"/></template>
           <template #name="{ r }"><input v-if="ce.c === r" class="inp" style="height:26px;width:110px" v-model="ce.name" @keydown.enter="doEditColor"><span v-else>{{ r.name }}</span></template>
-          <template #family="{ r }"><select v-if="ce.c === r" class="sel" style="height:26px" v-model="ce.family"><option value="">—</option><option v-for="x in families" :key="x">{{ x }}</option></select><span v-else>{{ r.family || '—' }}</span></template>
+          <template #family="{ r }"><Pick v-if="ce.c === r" class="sel" style="height:26px" v-model="ce.family"><option value="">—</option><option v-for="x in families" :key="x">{{ x }}</option></Pick><span v-else>{{ r.family || '—' }}</span></template>
           <template #status="{ r }"><St :s="r.status || '启用'"/></template>
           <template #act="{ r }"><span class="row g4" style="justify-content:flex-end">
             <template v-if="ce.c === r"><button class="btn sm pri" @click="doEditColor">保存</button><button class="btn ghost sm" @click="ce.c = null">取消</button></template>
@@ -10812,7 +11110,7 @@ route('/basics', {
           <input type="color" v-model="nc.hex" style="width:30px;height:30px;padding:0;border:1px solid var(--line-strong);border-radius:6px;background:none">
           <input class="inp code" style="width:80px" v-model="nc.code" placeholder="编码">
           <input class="inp" style="width:120px" v-model="nc.name" placeholder="名称">
-          <select class="sel" v-model="nc.family"><option v-for="x in families" :key="x">{{ x }}</option></select>
+          <Pick class="sel" v-model="nc.family"><option v-for="x in families" :key="x">{{ x }}</option></Pick>
           <button class="btn" @click="saveColor"><Ico n="plus" :s="14"/>加颜色</button>
         </div>
       </section>
@@ -10825,7 +11123,7 @@ route('/basics', {
             <St v-if="g.status === '停用'" s="停用"/>
             <span class="chips"><span v-for="z in g.sizes" :key="z" class="chip" style="cursor:default">{{ z }}<Ico v-if="!sizeGroupUsed(g.id)" n="x" :s="11" style="cursor:pointer" @click="run(() => removeSize(g, z))"/></span></span>
             <span class="dim row g4" style="font-size:12px">基码
-              <select v-if="!sizeGroupUsed(g.id)" class="sel" style="height:24px" :value="baseSizeOf(g.id)" @change="run(() => setBaseSize(g, $event.target.value))"><option v-for="z in g.sizes" :key="z">{{ z }}</option></select>
+              <Pick v-if="!sizeGroupUsed(g.id)" class="sel" style="height:24px" :modelValue="baseSizeOf(g.id)" @change="run(() => setBaseSize(g, $event))"><option v-for="z in g.sizes" :key="z">{{ z }}</option></Pick>
               <template v-else>{{ baseSizeOf(g.id) }} · {{ sizeGroupUsed(g.id) }} 个款在用</template></span>
             <span style="flex:1"></span>
             <input class="inp" style="width:72px" v-model="newSize[g.id]" @keydown.enter="addSize(g)">
@@ -10892,7 +11190,7 @@ route('/basics', {
             <span class="row g4" style="margin-left:auto"><button class="btn ghost sm" @click="rename(c)">改名</button><button class="btn ghost sm" @click="toggleCat(c)">{{ c.status === '停用' ? '启用' : '停用' }}</button><button v-if="!matCatUsed(c.code)" class="btn ghost sm danger" @click="del(db.materialCategories, c, 0, '物料')">删除</button></span>
           </div></div>
         </div>
-        <div class="row" data-c="加物料分类"><select class="sel" v-model="nmc.parent"><option v-for="g in MAT_GROUPS" :key="g">{{ g }}</option></select>
+        <div class="row" data-c="加物料分类"><Pick class="sel" v-model="nmc.parent"><option v-for="g in MAT_GROUPS" :key="g">{{ g }}</option></Pick>
           <input class="inp code" style="width:64px" v-model="nmc.code" placeholder="编码"><input class="inp" style="width:120px" v-model="nmc.name" placeholder="名称，如 牛仔"><button class="btn" @click="saveMatCat"><Ico n="plus" :s="14"/>加分类</button></div>
       </section>
 
@@ -10942,10 +11240,10 @@ comp('WarehouseEdit', {
     <div class="form">
       <label class="f">编码<input class="inp code" v-model="f.code" placeholder="如 WL02"></label>
       <label class="f">名称<input class="inp" v-model="f.name"></label>
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in ['物料仓', '成品仓', '工厂仓']" :key="x">{{ x }}</option></select></label>
-      <label class="f" v-if="f.type === '工厂仓'">绑定加工厂<select class="sel" v-model="f.factory"><option value="">选一个</option><option v-for="s in factories" :key="s.code" :value="s.code">{{ s.short }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in ['物料仓', '成品仓', '工厂仓']" :key="x">{{ x }}</option></Pick></label>
+      <label class="f" v-if="f.type === '工厂仓'">绑定加工厂<Pick class="sel" v-model="f.factory"><option value="">选一个</option><option v-for="s in factories" :key="s.code" :value="s.code">{{ s.short }}</option></Pick></label>
       <label class="f full">地址<input class="inp" v-model="f.addr"></label>
-      <label class="f">负责人<select class="sel" v-model="f.keeper"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label class="f">负责人<Pick class="sel" v-model="f.keeper"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
     </div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ w ? '保存' : '加上' }}</button></template>
@@ -11000,7 +11298,7 @@ route('/settings', {
             <input v-else class="inp code" style="height:26px;width:56px" maxlength="2" :value="r.dno || ''" placeholder="—" @change="e => { if (!run(() => setDesignerNo(r, e.target.value))) e.target.value = r.dno || ''; else if (e.target.value) toast(r.name + ' 的设计师编号是 ' + r.dno) }"></template>
           <template #dept="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.dept"></template>
           <template #post="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.post"></template>
-          <template #role="{ r }"><select class="sel" style="height:26px" v-model="r.role"><option v-for="x in ROLES" :key="x">{{ x }}</option></select></template>
+          <template #role="{ r }"><Pick class="sel" style="height:26px" v-model="r.role"><option v-for="x in ROLES" :key="x">{{ x }}</option></Pick></template>
           <template #company="{ r }"><CompanyPick style="height:26px" :model-value="r.company" @update:model-value="v => r.company = v"/></template>
         </Tbl>
       </section>
@@ -11020,11 +11318,11 @@ route('/settings', {
           <h3>多级审批<span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
           <table class="tbl inset flat"><tbody>
             <tr v-for="(r, i) in db.approvalRules" :key="i">
-              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.doc"><option v-for="t in amtDocs" :key="t">{{ t }}</option></select></td>
+              <td style="width:140px"><Pick class="sel" style="height:26px" v-model="r.doc"><option v-for="t in amtDocs" :key="t">{{ t }}</option></Pick></td>
               <td>金额超过 <input class="inp num" style="width:110px;height:26px" type="number" v-model.number="r.over"> 元，再加一级，由</td>
-              <td style="width:200px"><select class="sel" style="height:26px;width:100%" :value="r.user ? 'u:' + r.user : 'r:' + r.role" @change="setWho(r, $event.target.value)">
+              <td style="width:200px"><Pick class="sel" style="height:26px;width:100%" :modelValue="r.user ? 'u:' + r.user : 'r:' + r.role" @change="setWho(r, $event)">
                 <optgroup label="指定的人"><option v-for="u in db.users" :key="u.id" :value="'u:' + u.id">{{ u.name }}（{{ u.post }}）</option></optgroup>
-                <optgroup label="角色：这个角色的人都能审"><option v-for="x in ROLES" :key="x" :value="'r:' + x">{{ x }}</option></optgroup></select></td>
+                <optgroup label="角色：这个角色的人都能审"><option v-for="x in ROLES" :key="x" :value="'r:' + x">{{ x }}</option></optgroup></Pick></td>
               <td><span v-if="useless(r)" class="flag amber" title="第 1 级能审的人这一级也都能审，他们审第 1 级时这一级就一起过了">不起作用：第 1 级的人审了就一起过</span><span v-else class="dim">审</span></td>
               <td class="num" style="width:40px"><button class="btn ghost icon sm" @click="db.approvalRules.splice(i, 1)"><Ico n="trash" :s="13"/></button></td>
             </tr>
@@ -11061,7 +11359,7 @@ route('/settings', {
       </section>
 
       <section v-if="tab === 'log'" data-c="操作日志">
-        <div class="row" style="margin-bottom:8px"><select class="sel" v-model="who"><option value="">所有人</option><option v-for="u in db.users" :key="u.id" :value="u.name">{{ u.name }}</option></select><span class="dim">{{ logs.length }} 条</span></div>
+        <div class="row" style="margin-bottom:8px"><Pick class="sel" v-model="who"><option value="">所有人</option><option v-for="u in db.users" :key="u.id" :value="u.name">{{ u.name }}</option></Pick><span class="dim">{{ logs.length }} 条</span></div>
         <Tbl inset flat :rows="logs" link @row="x => go(x.to)" empty="这个人还没有操作" :cols="[{ k: 'at', t: '日期', f: x => fd(x.at) }, { k: 'who', t: '人' }, { k: 'k', t: '对象' }, { k: 'id', t: '单号', c: 'code' }, { k: 'text', t: '做了什么' }]">
           <template #text="{ r }"><span class="wrap">{{ r.text }}</span></template>
         </Tbl>
@@ -11579,8 +11877,8 @@ route('/contracts', {
         <div class="bar" data-c="筛选">
           <Seg v-model="s.st" :items="sts"/>
           <span class="sp"></span>
-          <select class="sel" v-model="s.kind"><option value="">全部类型</option><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></select>
-          <select class="sel" v-model="s.sup"><option value="">全部供应商</option><option v-for="x in sups" :key="x" :value="x">{{ supName(x) }}</option></select>
+          <Pick class="sel" v-model="s.kind"><option value="">全部类型</option><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></Pick>
+          <Pick class="sel" v-model="s.sup"><option value="">全部供应商</option><option v-for="x in sups" :key="x" :value="x">{{ supName(x) }}</option></Pick>
           <Search v-model="s.q" ph="合同号、单据号、供应商"/>
         </div>
         <ContractList :rows="rows" full :empty="db.contracts.length ? '没有符合条件的合同' : '还没有合同；在已审核的采购单、加工单上点「生成合同」'"/>
@@ -11638,7 +11936,7 @@ comp('TplForm', {
   },
   template: `<Modal :t="t ? '更新模板：' + t.name + '（现在 V' + t.ver + '）' : '导入合同模板'" :w="720" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.kind" :disabled="!!t"><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.kind" :disabled="!!t"><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></Pick></label>
       <label class="f">名称<input class="inp" v-model="f.name" :disabled="!!t" placeholder="如：物料采购合同"></label>
       <label class="f full">Word 文件（.docx）<span class="row g8"><input type="file" accept=".docx" @change="pick" data-c="模板文件"><span v-if="f.file" class="code">{{ f.file }}</span></span>
 </label>

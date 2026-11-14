@@ -53,7 +53,7 @@ route('/mrp', {
   template: `<div>
     <Head t="算料"><button class="btn" @click="s.reserve = true" title="按物料类型多备一点料，默认 0">备料比<span class="dim" style="margin-left:4px">{{ reserveText || '都是 0' }}</span></button><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>选订单算料</button></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt"/>
-      <select class="sel" style="height:28px" v-model="s.by"><option value="">全部制单人</option><option v-for="u in makers" :key="u" :value="u">{{ u }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.by"><option value="">全部制单人</option><option v-for="u in makers" :key="u" :value="u">{{ u }}</option></Pick>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
     <div data-c="算料单列表">
       <Tbl :rows="rows" link @row="m => go('/mrp/' + m.no)" empty="没有符合条件的算料单。订单审核后点「选订单算料」" :cols="[
@@ -173,7 +173,7 @@ route('/mrp/:no', {
             <tr :class="{ sel: picked.includes(mrpKey(r)) }">
               <td><input type="checkbox" :checked="picked.includes(mrpKey(r))" :disabled="!open || r.purQty <= r.converted" @change="toggle(r)" style="accent-color:var(--accent)"></td>
               <td><span class="row"><Thumb :code="r.sku" :s="32"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td>
-              <td><select v-if="edit" class="sel" style="height:26px" v-model="r.supplier"><option v-for="s in suppliersFor()" :key="s.code" :value="s.code">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select><template v-else>{{ supName(r.supplier) }}</template></td>
+              <td><Pick v-if="edit" class="sel" style="height:26px" v-model="r.supplier"><option v-for="s in suppliersFor()" :key="s.code" :value="s.code">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick><template v-else>{{ supName(r.supplier) }}</template></td>
               <td class="num dim">{{ fq(r.gross) }}</td>
               <td class="num" :title="'损耗' + (r.reserve ? '、备料比 ' + r.reserve + '%' : '') + '以后'">{{ fq(r.need) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
               <td class="num">{{ fq(r.avail) }}</td>
@@ -275,7 +275,7 @@ function returnPurchase(p, f) {
 
 route('/purchases', {
   setup() {
-    const s = reactive({ mine: false, tab: nav.query.s || '全部', q: '', buyer: '', add: false, flt: newFlt() })
+    const s = reactive({ mine: false, tab: nav.query.s || '全部', q: '', buyer: '', add: false, flt: newFlt(), picked: [] })
     const ST = ['全部', '草稿', '待审核', '已审核', '部分到货', '已到齐', '已结案', '已作废']
     const scoped = computed(() => db.purchases.filter((p) => inScope(s.mine, p)))
     const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
@@ -286,17 +286,19 @@ route('/purchases', {
       { k: 'mat', t: '物料', f: (p) => p.lines.map((l) => l.sku).join(' ') }, { k: 'qty', t: '总数量', f: poQty }, { k: 'amt', t: '金额', f: poAmt },
       { k: 'date', t: '下单日期' }, { k: 'due', t: '交货日期' }, { k: 'wh', t: '交货地点', f: (p) => whName(p.wh) }, { k: 'recv', t: '已入库', f: poRecv },
       { k: 'buyer', t: '采购员', f: (p) => userName(p.buyer) }, { k: 'company', t: '主体', f: (p) => companyName(p.company) }, { k: 'status', t: '状态' }]
-    return { s, tabs, rows, xcols }
+    const picks = computed(() => rows.value.filter((p) => s.picked.includes(p.no)))
+    const batch = async (a) => { const ok = await batchAct('purchase', picks.value, a); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+    return { s, tabs, rows, xcols, picks, batch }
   },
   template: `<div>
     <Head t="采购"><ExportBtn :rows="rows" :cols="xcols" name="采购单"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建采购单</button></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" party="supplier" label="下单">
-        <label class="f">采购员<select class="sel" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+        <label class="f">采购员<Pick class="sel" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       </Filters>
       <span v-if="s.buyer" class="fchip">采购: {{ userName(s.buyer) }}<button type="button" @click="s.buyer = ''"><Ico n="x" :s="11"/></button></span>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="单号 / 物料 / 订单号 / 款号"/></div>
     <div data-c="采购单列表">
-      <Tbl :rows="rows" link @row="p => go('/purchases/' + p.no)" empty="没有符合条件的采购单。单号、物料、订单号、款号都能搜，几个号用空格隔开" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="p => go('/purchases/' + p.no)" empty="没有符合条件的采购单。单号、物料、订单号、款号都能搜，几个号用空格隔开" :cols="[
         { k: 'no', t: '采购单号', c: 'code' }, { k: 'sup', t: '供应商' }, { k: 'type', t: '类型' },
         { k: 'mat', t: '物料', f: p => skuName(p.lines[0].sku) + (p.lines.length > 1 ? ' 等 ' + p.lines.length + ' 种' : ''), img: p => p.lines[0].sku },
         { k: 'amt', t: '金额', c: 'num', f: p => fm(poAmt(p)) }, { k: 'date', t: '下单日期', f: p => fd(p.date) }, { k: 'due', t: '交期', f: p => fd(p.due) }, { k: 'recv', t: '到货' },
@@ -305,6 +307,7 @@ route('/purchases', {
         <template #recv="{ r }"><Prog v-if="!['草稿', '待审核', '已作废'].includes(r.status)" :a="poRecv(r)" :b="poQty(r)"/><span v-else class="dim">—</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="xcols" name="采购单" label="导出选中"/></BatchBar>
     </div>
     <PurchaseForm v-if="s.add" @close="s.add = false"/>
   </div>`,
@@ -336,7 +339,13 @@ comp('PurchaseForm', {
       f.lines.forEach((l) => { if (l.sku && (l.price == null || l.price === '' || l.price === was.get(l))) { l.price = dft(l); was.set(l, l.price) } })
     }
     const styles = computed(() => db.styles.filter((s) => s.status === '启用' && !f.plan.includes(s.code)))
-    const addPlan = (e) => { if (e.target.value) f.plan.push(e.target.value); e.target.value = '' }
+    const addPlan = (v) => { if (v) f.plan.push(v) }
+    // 从物料库勾的：去掉还空着的行，每个 SKU 一行，单价照常带默认价
+    const picking = ref(false)
+    function addSkus(codes) {
+      for (let i = f.lines.length - 1; i >= 0; i--) if (!f.lines[i].sku && !f.lines[i].qty && !f.lines[i].src) f.lines.splice(i, 1)
+      for (const c of codes) { f.lines.push({ sku: c, owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' }); setSku(f.lines[f.lines.length - 1]) }
+    }
     const amt = computed(() => sum(f.lines, (l) => (+l.qty || 0) * (+l.price || 0)))
     function ok() {
       const g = { ...f, due: f.due || dueAuto.value, lines: f.lines.map((l) => ({ ...l, due: l.due || null, expect: l.expect || null })) }
@@ -344,30 +353,30 @@ comp('PurchaseForm', {
       const po = run(() => createPurchase(g))
       if (po?.no) { emit('close'); go('/purchases/' + po.no) }
     }
-    return { x, f, sups, skus, owners, lead, dueAuto, setSku, setSup, curOf, off, styles, addPlan, amt, ok, purUnit }
+    return { x, f, sups, skus, owners, lead, dueAuto, setSku, setSup, curOf, off, styles, addPlan, picking, addSkus, amt, ok, purUnit }
   },
   template: `<Modal :t="x ? '改采购单 ' + x.no : '新建采购单'" :w="900" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(4,1fr)" data-c="采购单单头">
-      <label class="f" style="grid-column:span 2">供应商<select class="sel" v-model="f.supplier" @change="setSup"><option v-for="s in sups" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select></label>
-      <label class="f">采购类型<select class="sel" v-model="f.type"><option>备货采购</option><option>订单采购</option><option>打样采购</option></select></label>
+      <label class="f" style="grid-column:span 2">供应商<Pick class="sel" v-model="f.supplier" @change="setSup"><option v-for="s in sups" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
+      <label class="f">采购类型<Pick class="sel" v-model="f.type"><option>备货采购</option><option>订单采购</option><option>打样采购</option></Pick></label>
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
-      <label class="f">采购员<select class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label class="f">采购员<Pick class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">下单日期<DatePick v-model="f.date"/></label>
-      <label class="f">交货日期<DatePick v-model="f.due" :placeholder="dueAuto ? '默认 ' + fd(dueAuto) : '选择日期'"/><small v-if="!f.due" class="dim">默认 {{ fd(dueAuto) }}</small></label>
-      <label class="f">交货地点<select class="sel" v-model="f.wh"><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></select></label>
-      <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
-      <label class="f">税率<select class="sel" v-model="f.tax"><option v-for="v in db.dicts.税率" :key="v">{{ v }}</option></select></label>
-      <label class="f">是否含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
+      <label class="f">交货日期<DatePick v-model="f.due" :placeholder="dueAuto ? '默认 ' + fd(dueAuto) : '选择日期'"/></label>
+      <label class="f">交货地点<Pick class="sel" v-model="f.wh"><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></Pick></label>
+      <label class="f">结算方式<Pick class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></Pick></label>
+      <label class="f">税率<Pick class="sel" v-model="f.tax"><option v-for="v in db.dicts.税率" :key="v">{{ v }}</option></Pick></label>
+      <label class="f">是否含税<Pick class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></Pick></label>
       <div v-if="f.type === '备货采购'" class="f" style="grid-column:span 4" data-c="计划用于款号">计划用于款号<span class="row g4" style="flex-wrap:wrap;min-height:30px">
         <span v-for="(c, i) in f.plan" :key="c" class="pill code">{{ c }} {{ styleName(c) }}<a style="margin-left:4px" title="去掉" @click="f.plan.splice(i, 1)">×</a></span>
-        <select class="sel" style="height:28px;width:200px" @change="addPlan"><option value="">{{ f.plan.length ? '再加一个款' : '选填：备的料打算给哪个款' }}</option><option v-for="s in styles" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}</option></select>
+        <Pick class="sel" style="height:28px;width:200px" @change="addPlan" modelValue=""><option value="">{{ f.plan.length ? '再加一个款' : '选填：备的料打算给哪个款' }}</option><option v-for="s in styles" :key="s.code" :value="s.code">{{ s.code }} {{ s.name }}</option></Pick>
         </span></div>
       <label class="f" style="grid-column:span 4">备注<input class="inp" v-model="f.note" placeholder="比如：面料每卷标缸号，随货带色卡"></label>
     </div>
     <table class="tbl inset flat" style="margin-top:14px" data-c="采购明细"><thead><tr><th>物料</th><th v-if="TRADE" style="width:130px">物权</th><th class="num" style="width:96px">数量</th><th class="num" style="width:96px">单价</th><th style="width:150px">改价原因</th><th class="num" style="width:96px">金额</th><th style="width:136px">行交期</th><th style="width:136px">预计到货</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
-        <td><select class="sel" style="width:100%;height:28px" v-model="l.sku" @change="setSku(l)" :disabled="!!l.src"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select><small v-if="l.src" class="dim">来自算料单 {{ l.src.mrp }}</small></td>
-        <td v-if="TRADE"><select class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></select></td>
+        <td><Pick class="sel" style="width:100%;height:28px" v-model="l.sku" @change="setSku(l)" :disabled="!!l.src"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></Pick><small v-if="l.src" class="dim">来自算料单 {{ l.src.mrp }}</small></td>
+        <td v-if="TRADE"><Pick class="sel" style="width:100%;height:28px" v-model="l.owner" title="客户代采记客户" :disabled="!!l.src"><option v-for="o in owners" :key="o" :value="o">{{ o === '自有' ? '自有' : '代采 · ' + custName(o) }}</option></Pick></td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? purUnit(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price" :class="{ amber: off(l) }"><small v-if="curOf(l) != null" class="dim" style="display:block;text-align:right;font-size:11px">档案 {{ fm(curOf(l)) }}</small></td>
         <td><input v-if="off(l)" class="inp cell" style="width:100%" v-model="l.priceWhy" placeholder="改了单价要写原因"><span v-else class="dim">—</span></td>
@@ -377,7 +386,8 @@ comp('PurchaseForm', {
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
       <tfoot><tr><td>合计 {{ f.lines.filter(l => l.sku).length }} 行</td><td v-if="TRADE"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td></td><td class="num">{{ fm(amt) }}</td><td colspan="3"></td></tr></tfoot></table>
     <div class="row" style="margin-top:8px"><button class="btn ghost" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' })"><Ico n="plus" :s="14"/>加一行</button>
-      </div>
+      <button class="btn ghost" data-c="从物料库选" @click="picking = true"><Ico n="search" :s="14"/>从物料库选</button></div>
+    <DataPick v-if="picking" kind="sku" :sup="f.supplier" :date="f.date" :have="f.lines.map(l => l.sku).filter(Boolean)" @pick="addSkus" @close="picking = false"/>
     <div v-if="!x" class="sec" data-c="采购单附件"><h3>附件</h3><Pics v-model="f.files" files :s="56"/></div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
@@ -494,8 +504,8 @@ comp('PurchaseReceive', {
   },
   template: `<Modal :t="(recv ? '到货入库 ' : '退货 ') + po.no" :w="820" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
-      <label v-if="recv" class="f">入哪个仓<select class="sel" v-model="f.wh"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></select></label>
-      <label v-else class="f">从哪个仓退<select class="sel" v-model="f.from"><option v-for="w in fromWhs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
+      <label v-if="recv" class="f">入哪个仓<Pick class="sel" v-model="f.wh"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}{{ w.type === '工厂仓' ? '（面料直发工厂）' : '' }}</option></Pick></label>
+      <label v-else class="f">从哪个仓退<Pick class="sel" v-model="f.from"><option v-for="w in fromWhs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <label class="f">{{ recv ? '到货日期' : '退货日期' }}<DatePick v-model="f.date" :max="clock.today"/></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label>
       <label v-if="recv" class="f">供应商送货单号<input class="inp" v-model="f.supNo"></label>
@@ -526,7 +536,7 @@ route('/arrivals', {
   template: `<div>
     <Head t="到料"/>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/><Filters v-model="s.flt" party="supplier" label="交期"/>
-      <select class="sel" style="height:28px" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.buyer"><option value="">全部采购员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick>
       <span class="sp"></span><Search v-model="s.q"/></div>
     <div data-c="到料列表">
       <Tbl :rows="rows" empty="没有该到没到的料。订单号、款号、采购单号、物料都能搜" :cols="[
@@ -575,7 +585,7 @@ function updateStockDoc(d, f) {
 
 route('/stock-docs', {
   setup() {
-    const s = reactive({ mine: false, tab: '全部', st: '', wh: '', party: '', q: '', add: '', flt: newFlt() })
+    const s = reactive({ mine: false, tab: '全部', st: '', wh: '', party: '', q: '', add: '', flt: newFlt(), picked: [] })
     const scoped = computed(() => db.stockDocs.filter((d) => inScope(s.mine, d)))
     const tabs = computed(() => [['全部', '全部', scoped.value.length], ...Object.entries(DOC_GROUPS).map(([k, ts]) => [k, k, scoped.value.filter((d) => ts.includes(d.type)).length])])
     const parties = computed(() => [...new Set(db.stockDocs.map((d) => d.partner).filter(Boolean))].map((c) => [c, partnerName({ partner: c })]))
@@ -584,24 +594,30 @@ route('/stock-docs', {
     // 手工新建的类型，第一个放在页头按钮上（TRADE 关着时没有客供入库）
     const NEW_TYPES = [...(TRADE ? ['客供入库'] : []), '其他入库', '调拨', '退料', '其他出库']
     const news = NEW_TYPES.map((t) => ({ t, fn: () => { s.add = t } }))
-    return { s, tabs, parties, rows, news, NEW_TYPES, partnerName }
+    const XCOLS = [{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'from', t: '出仓', x: (d) => (d.from ? whName(d.from) : '') }, { k: 'to', t: '入仓', x: (d) => (d.to ? whName(d.to) : '') },
+      { k: 'partner', t: '往来', x: partnerName }, { k: 'src', t: '源单', c: 'code' }, { k: 'mat', t: '物料', x: (d) => d.lines.map((l) => l.sku).join(' ') }, { k: 'qty', t: '总数量', x: (d) => sum(d.lines, (l) => l.qty) },
+      { k: 'date', t: '日期' }, { k: 'reason', t: '原因' }, { k: 'company', t: '主体', x: (d) => companyName(d.company) }, { k: 'status', t: '状态' }]
+    const picks = computed(() => rows.value.filter((d) => s.picked.includes(d.no)))
+    const batch = async (a) => { const ok = await batchAct('stock', picks.value, a, { note: a === '审核' ? '审核后马上改库存。' : '' }); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+    return { s, tabs, parties, rows, news, NEW_TYPES, partnerName, XCOLS, picks, batch }
   },
   template: `<div>
     <Head t="出入库"><button class="btn pri" @click="s.add = NEW_TYPES[0]"><Ico n="plus" :s="14"/>{{ NEW_TYPES[0] }}</button><More :items="news"/></Head>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/>
-      <select class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['草稿', '已审核', '已作废']" :key="x">{{ x }}</option></Pick>
       <Filters v-model="s.flt"/>
-      <select class="sel" style="height:28px;max-width:140px" v-model="s.wh"><option value="">全部仓库</option><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}</option></select>
-      <select class="sel" style="height:28px;max-width:140px" v-model="s.party"><option value="">全部往来</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></select>
+      <Pick class="sel" style="height:28px;max-width:140px" v-model="s.wh"><option value="">全部仓库</option><option v-for="w in db.warehouses.filter(w => w.type !== '成品仓')" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
+      <Pick class="sel" style="height:28px;max-width:140px" v-model="s.party"><option value="">全部往来</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></Pick>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
     <div data-c="出入库列表">
-      <Tbl :rows="rows" link @row="d => go('/stock-docs/' + d.no)" empty="没有符合条件的单据。单号、源单、物料、缸号都能搜" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="d => go('/stock-docs/' + d.no)" empty="没有符合条件的单据。单号、源单、物料、缸号都能搜" :cols="[
         { k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'flow', t: '出仓 → 入仓' }, { k: 'partner', t: '往来', f: partnerName },
         { k: 'src', t: '源单', c: 'code', f: d => d.src || '—' }, { k: 'mat', t: '物料', f: d => skuName(d.lines[0].sku) + (d.lines.length > 1 ? ' 等 ' + d.lines.length + ' 种' : ''), img: d => d.lines[0].sku },
         { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'status', t: '状态' }]">
         <template #flow="{ r }"><span class="mut">{{ r.from ? whName(r.from) : '' }}<template v-if="r.from && r.to"> → </template>{{ r.to ? whName(r.to) : '' }}</span></template>
         <template #status="{ r }"><St :s="r.status"/></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="出入库单" label="导出选中"/></BatchBar>
     </div>
     <StockDocForm v-if="s.add" :type="s.add" @close="s.add = ''"/>
   </div>`,
@@ -634,6 +650,11 @@ comp('StockDocForm', {
       const got = issuePlan(pr).filter((r) => r.issued > 0)
       if (got.length && !f.lines.some((l) => l.sku)) f.lines.splice(0, f.lines.length, ...got.map((r) => ({ ...blank(), sku: r.sku, owner: r.owner })))
     }
+    const picking = ref(false)
+    function addSkus(codes) {
+      for (let i = f.lines.length - 1; i >= 0; i--) if (!f.lines[i].sku && !f.lines[i].qty) f.lines.splice(i, 1)
+      f.lines.push(...codes.map((c) => ({ ...blank(), sku: c })))
+    }
     const amt = computed(() => sum(f.lines, (l) => (+l.qty || 0) * (+l.price || 0)))
     function ok() {
       const g = { ...f, type: t, lines: f.lines.map((l) => ({ ...l })) }
@@ -641,17 +662,17 @@ comp('StockDocForm', {
       const d = run(() => createStockDoc(g))
       if (d?.no) { emit('close'); go('/stock-docs/' + d.no); toast(`${d.no} 存了草稿，审核后才改库存`) }
     }
-    return { x, t, f, whsFrom, whsTo, prods, skus, owners, have, pickProd, amt, ok }
+    return { x, t, f, whsFrom, whsTo, prods, skus, owners, have, pickProd, picking, addSkus, amt, ok, blank }
   },
   template: `<Modal :t="x ? '改' + t + ' ' + x.no : '新建' + t" :w="900" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(4,1fr)" data-c="出入库单单头">
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
       <label class="f">日期<DatePick v-model="f.date" :max="clock.today"/></label>
-      <label v-if="t === '客供入库'" class="f">客户<select class="sel" v-model="f.partner"><option v-for="c in db.customers" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
-      <label v-if="f.from !== null" class="f">出仓<select class="sel" v-model="f.from"><option v-for="w in whsFrom" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
-      <label v-if="f.to !== null" class="f">入仓<select class="sel" v-model="f.to"><option v-for="w in whsTo" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
-      <label v-if="t === '退料'" class="f">源单（加工单，选填）<select class="sel" v-model="f.src" @change="pickProd"><option value="">不挂加工单</option><option v-for="pr in prods" :key="pr.no" :value="pr.no">{{ pr.no }} {{ pr.style }}</option></select></label>
-      <label v-if="['其他入库', '其他出库'].includes(t)" class="f">原因<select class="sel" v-model="f.reason"><option value="">选原因（必填）</option><option v-for="v in db.dicts.其他出入库原因" :key="v">{{ v }}</option></select></label>
+      <label v-if="t === '客供入库'" class="f">客户<Pick class="sel" v-model="f.partner"><option v-for="c in db.customers" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
+      <label v-if="f.from !== null" class="f">出仓<Pick class="sel" v-model="f.from"><option v-for="w in whsFrom" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
+      <label v-if="f.to !== null" class="f">入仓<Pick class="sel" v-model="f.to"><option v-for="w in whsTo" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
+      <label v-if="t === '退料'" class="f">源单（加工单，选填）<Pick class="sel" v-model="f.src" @change="pickProd"><option value="">不挂加工单</option><option v-for="pr in prods" :key="pr.no" :value="pr.no">{{ pr.no }} {{ pr.style }}</option></Pick></label>
+      <label v-if="['其他入库', '其他出库'].includes(t)" class="f">原因<Pick class="sel" v-model="f.reason"><option value="">选原因（必填）</option><option v-for="v in db.dicts.其他出入库原因" :key="v">{{ v }}</option></Pick></label>
       <label v-if="['调拨', '退料'].includes(t)" class="f">原因<input class="inp" v-model="f.reason" :placeholder="t === '退料' ? '比如：大货做完剩料' : ''"></label>
       <label v-if="t === '客供入库'" class="f">送货单号<input class="inp" v-model="f.supNo"></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label>
@@ -659,8 +680,8 @@ comp('StockDocForm', {
     </div>
     <table class="tbl inset flat" style="margin-top:14px" data-c="出入库明细"><thead><tr><th>物料</th><th v-if="TRADE && t !== '客供入库'" style="width:120px">物权</th><th v-if="f.from" class="num">库存</th><th class="num" style="width:90px">数量</th><th class="num" style="width:80px">单价</th><th class="num" style="width:84px">金额</th><th style="width:96px">缸号</th><th class="num" style="width:64px">卷数</th><th style="width:120px">备注</th><th style="width:32px"></th></tr></thead>
       <tbody><tr v-for="(l, i) in f.lines" :key="i">
-        <td><select class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></select></td>
-        <td v-if="TRADE && t !== '客供入库'"><select class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select></td>
+        <td><Pick class="sel" style="width:100%;height:28px" v-model="l.sku"><option value="">选物料</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ k.t }}</option></Pick></td>
+        <td v-if="TRADE && t !== '客供入库'"><Pick class="sel" style="width:100%;height:28px" v-model="l.owner"><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></Pick></td>
         <td v-if="f.from" class="num dim">{{ have(l) == null ? '—' : fq(have(l)) }}</td>
         <td><input class="inp cell num" type="number" v-model.number="l.qty" :placeholder="l.sku ? unitOf(l.sku) : ''"></td>
         <td><input class="inp cell num" type="number" v-model.number="l.price" title="元 / 库存单位"></td>
@@ -668,7 +689,9 @@ comp('StockDocForm', {
         <td><input class="inp cell" v-model="l.lot"></td><td><input class="inp cell num" type="number" v-model.number="l.rolls"></td><td><input class="inp cell" v-model="l.note"></td>
         <td><button class="btn ghost icon sm" @click="f.lines.splice(i, 1)"><Ico n="x" :s="12"/></button></td></tr></tbody>
       <tfoot><tr><td>合计</td><td v-if="TRADE && t !== '客供入库'"></td><td v-if="f.from"></td><td class="num">{{ fq(sum(f.lines, l => l.qty)) }}</td><td></td><td class="num">{{ fm(amt) }}</td><td></td><td class="num">{{ fq(sum(f.lines, l => l.rolls)) }}</td><td colspan="2"></td></tr></tfoot></table>
-    <button class="btn ghost" style="margin-top:8px" @click="f.lines.push({ sku: '', owner: '自有', qty: null, price: null, lot: '', rolls: null, note: '' })"><Ico n="plus" :s="14"/>加一行</button>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" @click="f.lines.push(blank())"><Ico n="plus" :s="14"/>加一行</button>
+      <button class="btn ghost" data-c="从物料库选" @click="picking = true"><Ico n="search" :s="14"/>从物料库选</button></div>
+    <DataPick v-if="picking" kind="sku" :wh="f.from || f.to || ''" :have="f.lines.map(l => l.sku).filter(Boolean)" @pick="addSkus" @close="picking = false"/>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ x ? '保存' : '存草稿' }}</button></template>
   </Modal>`,
 })
@@ -800,12 +823,12 @@ route('/stock', {
     <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于安全库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
-      <select class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select>
-      <select v-if="TRADE" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></select>
+      <Pick class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
+      <Pick v-if="TRADE" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></Pick>
       <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '日志']"/><Search v-model="s.q"/>
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>
-      <select class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="(v, t) in STOCK_TYPES" :key="t" :value="t">{{ t }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="(v, t) in STOCK_TYPES" :key="t" :value="t">{{ t }}</option></Pick>
       </div>
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存。SKU、物料名、仓库都能搜，几个编码用空格隔开" :cols="[

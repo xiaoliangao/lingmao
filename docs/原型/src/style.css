@@ -229,6 +229,28 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
   background-image: linear-gradient(45deg, transparent 50%, var(--fg-3) 50%), linear-gradient(135deg, var(--fg-3) 50%, transparent 50%);
   background-position: calc(100% - 13px) 13px, calc(100% - 9px) 13px; background-size: 4px 4px; background-repeat: no-repeat;
 }
+/* 可搜索的下拉（Pick）：按钮和 .sel 一样，点开是能搜的卡片 */
+.pk-btn { display: inline-flex; align-items: center; max-width: 100%; text-align: left; color: var(--fg); font: inherit; font-size: 13px; }
+.pk-btn.open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.pk-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-btn.is-empty .pk-txt { color: var(--fg-3); }
+.pk-card {
+  position: fixed; z-index: 96; max-width: 440px; padding: 5px;
+  background: #ffffff; border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 18px 42px -10px rgba(28, 25, 21, 0.16), 0 4px 14px -3px rgba(28, 25, 21, 0.07);
+  animation: popIn 0.15s var(--ease);
+}
+.pk-q { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line-soft); color: var(--fg-3); }
+.pk-q input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 12.5px; color: var(--fg); }
+.pk-q small { font-size: 11px; font-variant-numeric: tabular-nums; }
+.pk-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.pk-g { padding: 8px 8px 3px; font-size: 11px; color: var(--fg-3); }
+.pk-opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 7px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+.pk-opt.hi { background: var(--bg-hover); }
+.pk-opt.on { color: var(--accent-2); font-weight: 500; }
+.pk-opt.dis { color: var(--fg-3); opacity: 0.5; cursor: default; }
+.pk-opt svg { margin-left: auto; flex: none; color: var(--accent); }
+.pk-none { padding: 14px 8px; text-align: center; color: var(--fg-3); font-size: 12px; }
 .search { position: relative; display: flex; align-items: center; }
 .search svg { position: absolute; left: 9px; color: var(--fg-3); pointer-events: none; }
 .search .inp { padding-left: 29px; width: 210px; height: 29px; font-size: 12.5px; background: var(--bg-page); border-color: transparent; }
@@ -307,7 +329,7 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .dp-ico { color: var(--fg-3); flex: none; transition: color 0.14s; }
 .dp-btn.open .dp-ico, .dr-btn.open .dp-ico { color: var(--accent); }
 .dp-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.dp-btn.empty .dp-txt, .dr-ph { color: var(--fg-3); font-weight: 400; }
+.dp-btn.is-empty .dp-txt, .dr-ph { color: var(--fg-3); font-weight: 400; }
 .dp-clr {
   margin-left: auto; width: 16px; height: 16px; border-radius: 99px; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
@@ -476,6 +498,41 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .tbl tbody tr.link:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--accent); }
 .tbl tr.link td:first-child .code, .tbl tr.link td.code:first-child { color: var(--fg); font-weight: 500; }
 .tbl tr.sel td { background: var(--accent-bg); }
+.tbl th.ck, .tbl td.ck { width: 38px; padding-right: 0; cursor: pointer; }
+.tbl .ck input { accent-color: var(--accent); margin: 0; cursor: pointer; vertical-align: middle; }
+.tbl tbody tr.off td { opacity: 0.45; }
+
+/* 列表勾选后浮在底部的批量操作条 */
+.batch-bar {
+  position: sticky; bottom: 18px; z-index: 6; display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100% - 32px);
+  margin: 12px auto 0; padding: 6px 8px 6px 14px; background: var(--fg); color: #ffffff; border-radius: 12px;
+  box-shadow: 0 14px 34px -10px rgba(28, 25, 21, 0.35); animation: popIn 0.15s var(--ease); flex-wrap: wrap;
+}
+.batch-bar .bb-n { font-size: 12.5px; color: rgba(255, 255, 255, 0.72); }
+.batch-bar .bb-n b { color: #ffffff; font-variant-numeric: tabular-nums; margin: 0 2px; }
+.batch-bar .bb-sep { width: 1px; height: 16px; background: rgba(255, 255, 255, 0.18); }
+.batch-bar .btn { background: transparent; border-color: rgba(255, 255, 255, 0.22); color: #ffffff; }
+.batch-bar .btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.4); color: #ffffff; }
+.batch-bar .btn.ghost { border-color: transparent; color: rgba(255, 255, 255, 0.7); }
+
+/* 从已有数据里挑（DataPick 弹窗） */
+.dpk-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.dpk-top .search { flex: 1; min-width: 200px; }
+.dpk-top .search .inp { width: 100%; }
+.dpk-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.dpk-chips button {
+  height: 26px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg);
+  font-size: 12px; color: var(--fg-2); cursor: pointer;
+}
+.dpk-chips button:hover { border-color: var(--line-strong); color: var(--fg); }
+.dpk-chips button.on { background: var(--accent-bg); border-color: rgba(154, 107, 62, 0.35); color: var(--accent-2); font-weight: 500; }
+.dpk-chips button i { font-style: normal; color: var(--fg-3); margin-left: 4px; font-size: 11px; }
+.dpk-list { max-height: 52vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.dpk-list .tbl th { top: 0; }
+.dpk-list .tbl th:first-child, .dpk-list .tbl td:first-child { padding-left: 12px; }
+.dpk-list .tbl th:last-child, .dpk-list .tbl td:last-child { padding-right: 14px; }
+.dpk-list .tbl tbody tr { cursor: pointer; }
+.dpk-list .tbl tbody tr:last-child td { border-bottom: none; }
 .tbl tfoot td { font-weight: 600; background: var(--bg-subtle); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .tbl caption { caption-side: bottom; text-align: right; padding: 12px 24px; color: var(--fg-3); font-size: 12px; }
 .tbl caption b { color: var(--fg-2); font-weight: 600; margin: 0 2px; }
@@ -487,6 +544,7 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .amber { color: var(--amber); }
 .green { color: var(--green); }
 .wrap { white-space: normal; }
+/* 空表格、空列表的提示。组件"没值"的状态类名用 is-empty，别用 empty（会套上这里的 52px 内边距，日期框被撑高过） */
 .empty { padding: 52px 24px; text-align: center; color: var(--fg-3); font-size: 13px; }
 .row { display: flex; align-items: center; gap: 8px; }
 .row.g4 { gap: 4px; }

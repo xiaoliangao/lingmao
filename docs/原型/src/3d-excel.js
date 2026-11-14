@@ -120,7 +120,7 @@ function xlsxDate(v) {
 
 /* ---------- 导出：当前筛选结果 ---------- */
 comp('ExportBtn', {
-  props: { rows: Array, cols: Array, name: String },
+  props: { rows: Array, cols: Array, name: String, label: { type: String, default: '导出' } },
   setup(p) {
     function exp() {
       const cols = p.cols.filter((c) => c.t && c.x !== false)
@@ -132,7 +132,7 @@ comp('ExportBtn', {
     }
     return { exp }
   },
-  template: `<button class="btn" @click="exp" :disabled="!rows.length" title="导出当前筛选出来的行"><Ico n="download" :s="14"/>导出</button>`,
+  template: `<button class="btn" @click="exp" :disabled="!rows.length" :title="label === '导出' ? '导出当前筛选出来的行' : null"><Ico n="download" :s="14"/>{{ label }}</button>`,
 })
 
 /* ---------- 导入 ---------- */
@@ -212,7 +212,7 @@ comp('ImportBox', {
       <div v-if="def.head" class="form" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px" data-c="导入：整批共用">
         <label v-for="h in def.head" :key="h.k" class="f">{{ h.t }}
           <DatePick v-if="h.type === 'date'" v-model="head[h.k]"/>
-          <select v-else class="sel" v-model="head[h.k]"><option v-for="o in h.opts()" :key="o[0]" :value="o[0]">{{ o[1] }}</option></select></label>
+          <Pick v-else class="sel" v-model="head[h.k]"><option v-for="o in h.opts()" :key="o[0]" :value="o[0]">{{ o[1] }}</option></Pick></label>
       </div>
       <div class="isteps">
         <div class="row" style="justify-content:space-between">

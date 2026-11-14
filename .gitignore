@@ -50,3 +50,7 @@ docs/private/
 
 ### macOS ###
 .DS_Store
+
+### 甲方给的表（真实数据，不进公开仓库；原件应放 docs/private/）
+docs/原型/*.xls
+docs/原型/*.xlsx

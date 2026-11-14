@@ -99,7 +99,7 @@ route('/plans', {
     <Modal v-if="s.task" :t="s.task.title" :w="460" @close="s.task = null">
       <div class="form">
         <div class="f full">状态<Seg v-model="s.task.status" :items="cols"/></div>
-        <label class="f">负责人<select class="sel" v-model="s.task.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+        <label class="f">负责人<Pick class="sel" v-model="s.task.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
         <label class="f">截止<DatePick v-model="s.task.due"/></label>
       </div>
       <template #foot><a v-if="s.task.link" class="btn" :href="'#' + s.task.link" @click="s.task = null">打开{{ s.task.link.startsWith('/samples') ? '样衣' : '款式' }}</a><span class="sp"></span><button class="btn pri" @click="s.task = null">好</button></template>
@@ -118,8 +118,8 @@ comp('PlanTaskNew', {
   template: `<Modal t="新建开发任务" :w="460" @close="$emit('close')">
     <div class="form">
       <label class="f full">内容<input class="inp" v-model="f.title"></label>
-      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.name }}</option></select></label>
-      <label class="f">负责人<select class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label class="f">品类<Pick class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.name }}</option></Pick></label>
+      <label class="f">负责人<Pick class="sel" v-model="f.who"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">截止<DatePick v-model="f.due"/></label>
       <div class="f full" data-c="参考图">参考图<Pics v-model="f.images" :s="64" :tip="(TRADE ? '灵感图、竞品图、客户发来的款都可以' : '灵感图、竞品图都可以') + '；Ctrl+V 能直接贴截图'"/></div>
     </div>
@@ -283,10 +283,10 @@ comp('SmpNew', {
   template: `<Modal t="新建样衣" :w="640" @close="$emit('close')">
     <div class="form">
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
-      <label class="f">品类<select class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></select></label>
-      <label class="f">季节<span class="row g4"><select class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></select><select class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></span></label>
-      <label class="f">来源<select class="sel" v-model="f.source"><option>自主开发</option><option v-if="TRADE">客户来样</option><option>选款</option></select></label>
-      <label v-if="TRADE" class="f">客户<select class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></select></label>
+      <label class="f">品类<Pick class="sel" v-model="f.cat"><option v-for="c in liveCats()" :key="c.code" :value="c.code">{{ c.path }} / {{ c.name }}</option></Pick></label>
+      <label class="f">季节<span class="row g4"><Pick class="sel" v-model.number="f.year"><option>2026</option><option>2027</option></Pick><Pick class="sel" v-model="f.season"><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></Pick></span></label>
+      <label class="f">来源<Pick class="sel" v-model="f.source"><option>自主开发</option><option v-if="TRADE">客户来样</option><option>选款</option></Pick></label>
+      <label v-if="TRADE" class="f">客户<Pick class="sel" v-model="f.customer" :disabled="f.source !== '客户来样'"><option value="">—</option><option v-for="c in db.customers.filter(c => c.status !== '停用' || c.code === f.customer)" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
       <div class="f full">颜色<div class="chips"><button v-for="c in db.colors.filter(c => c.status !== '停用' || f.colors.includes(c.code))" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
       <label class="f">预估吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">要样日期<DatePick v-model="f.need"/></label>
@@ -370,8 +370,8 @@ comp('SmpDispatch', {
   template: `<Modal t="派单" :w="460" @close="$emit('close')">
     <div class="form">
       <div class="f full">方式<Seg v-model="f.way" :items="['外部工厂', '内部版房']"/></div>
-      <label v-if="f.way === '外部工厂'" class="f">打样工厂<select class="sel" v-model="f.factory"><option value="">选工厂</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}{{ x.status === '待准入' ? '（待准入）' : '' }}</option></select></label>
-      <label v-else class="f">版师<select class="sel" v-model="f.maker"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label v-if="f.way === '外部工厂'" class="f">打样工厂<Pick class="sel" v-model="f.factory"><option value="">选工厂</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}{{ x.status === '待准入' ? '（待准入）' : '' }}</option></Pick></label>
+      <label v-else class="f">版师<Pick class="sel" v-model="f.maker"><option v-for="u in db.users.filter(u => ['开发', '版师'].includes(u.role))" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">要样日期<DatePick v-model="f.need"/></label>
     </div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">派单</button></template>
@@ -424,10 +424,10 @@ comp('SmpConvert', {
   template: `<Modal t="转大货" :w="460" @close="$emit('close')">
     <div class="form">
       <label class="f">款号<input class="inp code" v-model="f.code" :placeholder="auto.code ? '不填自动编：' + auto.code : '编不出来，要手填'"></label>
-      <label class="f">大类<select class="sel" v-model="f.big"><option v-for="x in liveBigCats()" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></select></label>
+      <label class="f">大类<Pick class="sel" v-model="f.big"><option v-for="x in liveBigCats()" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></Pick></label>
       <p v-if="!f.code.trim() && auto.err" class="f full amber" style="margin:0;font-size:12px">{{ auto.err }}</p>
       <label class="f full">名称<input class="inp" v-model="f.name"></label>
-      <label class="f full">默认加工厂<select class="sel" v-model="f.factory"><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></select></label>
+      <label class="f full">默认加工厂<Pick class="sel" v-model="f.factory"><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
     </div>
     <template #foot><span class="dim">{{ s.colors.length }} 色 × {{ sizesOf(s.sizeGroup).length }} 码</span><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">生成款式</button></template>
   </Modal>`,
@@ -614,8 +614,8 @@ comp('QuoteNew', {
   },
   template: `<Modal t="加报价" :w="480" @close="$emit('close')">
     <div class="form">
-      <label class="f full">物料<select class="sel" v-model="f.mat"><option v-for="m in mats" :key="m" :value="m">{{ m }} {{ mat(m).name }}</option></select></label>
-      <label class="f full">供应商<select class="sel" v-model="f.sup"><option value="">选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></select></label>
+      <label class="f full">物料<Pick class="sel" v-model="f.mat"><option v-for="m in mats" :key="m" :value="m">{{ m }} {{ mat(m).name }}</option></Pick></label>
+      <label class="f full">供应商<Pick class="sel" v-model="f.sup"><option value="">选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></Pick></label>
       <label class="f">报价（元/{{ mat(f.mat).purUnit }}）<input class="inp num" type="number" v-model.number="f.price"></label>
       <label class="f">交期（天）<input class="inp num" type="number" v-model.number="f.lead"></label>
       <label class="f">起订量<input class="inp num" type="number" v-model.number="f.moq"></label>
@@ -934,7 +934,7 @@ comp('FgShip', {
     <div v-if="!orders.length" class="empty">成品仓里没有能发的货</div>
     <template v-else>
       <div class="form" style="margin-bottom:16px">
-        <label class="f">订单<select class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ custOrDash(x) }}</option></select></label>
+        <label class="f">订单<Pick class="sel" v-model="f.order"><option v-for="x in orders" :key="x.no" :value="x.no">{{ x.no }} · {{ custOrDash(x) }}</option></Pick></label>
         <label class="f">物流单号<input class="inp code" v-model="f.logistics"></label>
       </div>
       <div v-for="st in styles" :key="st" style="margin-bottom:16px">
@@ -1122,8 +1122,8 @@ comp('FinOcr', {
   template: `<Modal t="上传工厂对账单" :w="s.step === 'done' ? 1080 : 520" @close="$emit('close')">
     <template v-if="s.step !== 'done'">
       <div class="form">
-        <label class="f">供应商<select class="sel" v-model="f.sup" :disabled="s.step === 'busy'"><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short || x.name }}</option></select></label>
-        <label class="f">月份<select class="sel" v-model="f.month" :disabled="s.step === 'busy'"><option v-for="m in months" :key="m" :value="m">{{ m }}</option></select></label>
+        <label class="f">供应商<Pick class="sel" v-model="f.sup" :disabled="s.step === 'busy'"><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short || x.name }}</option></Pick></label>
+        <label class="f">月份<Pick class="sel" v-model="f.month" :disabled="s.step === 'busy'"><option v-for="m in months" :key="m" :value="m">{{ m }}</option></Pick></label>
         <div class="f full">对账单原件<Pics v-model="f.files" files :max="5" :s="64" tip="工厂发来的对账单：拍照、扫描件、PDF、Excel 都行"/>
           <a v-if="!f.files.length" href="javascript:;" style="font-size:12px" @click="demo">手边没有文件？用示例对账单</a></div>
       </div>

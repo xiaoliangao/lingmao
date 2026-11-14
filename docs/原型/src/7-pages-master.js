@@ -588,26 +588,28 @@ expose({
 route('/suppliers', {
   setup() {
     // f：首页待办点进来的筛选——证照（30 天内到期）、待审批（准入审批中 + 有待批改动）、新增风险
-    const s = reactive({ cat: '全部', st: '', q: '', f: ['证照', '待审批', '新增风险'].includes(nav.query.f) ? nav.query.f : '', add: false, imp: false })
+    const s = reactive({ cat: '全部', st: '', q: '', f: ['证照', '待审批', '新增风险'].includes(nav.query.f) ? nav.query.f : '', add: false, imp: false, picked: [] })
     const tabs = computed(() => [['全部', '全部', db.suppliers.length], ...db.dicts.供应商分类.map((c) => [c, c, db.suppliers.filter((x) => x.cats.includes(c)).length])])
     const soon = computed(() => new Set(expiringCerts().map((x) => x.s.code)))
     const passF = (x) => !s.f || (s.f === '证照' ? soon.value.has(x.code) : s.f === '待审批' ? supToApprove().includes(x) : !!x.riskNew)
     const fText = { 证照: '证照 30 天内到期', 待审批: '待审批：准入、关键信息改动', 新增风险: '企查查新增风险' }
     const rows = computed(() => db.suppliers.filter((x) => (s.cat === '全部' || x.cats.includes(s.cat)) && (!s.st || x.status === s.st) && passF(x)
       && matchQ(s.q, x.code, x.short, x.name, x.contact, x.phone, x.credit || '')))
-    return { s, tabs, rows, fText }
+    const XCOLS = [{ k: 'code', t: '编码', c: 'code' }, ...SUP_FIELDS.map(([k, t, f]) => ({ k, t, x: (r) => (f ? f(r[k] ?? []) : Array.isArray(r[k]) ? r[k].join('、') : r[k]) })), { k: 'status', t: '状态' }]
+    const picks = computed(() => rows.value.filter((x) => s.picked.includes(x.code)))
+    return { s, tabs, rows, fText, XCOLS, picks }
   },
   template: `<div>
-    <Head t="供应商"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建供应商</button></Head>
+    <Head t="供应商"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="XCOLS" name="供应商"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建供应商</button></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.cat" :items="tabs"/>
       <button v-if="s.f" class="chip on" @click="s.f = ''">{{ fText[s.f] }}<Ico n="x" :s="12"/></button>
       <span class="sp"></span>
-      <select class="sel" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['合作中', '待准入', '准入审批中', '停用', '黑名单']" :key="x">{{ x }}</option></select>
+      <Pick class="sel" v-model="s.st"><option value="">全部状态</option><option v-for="x in ['合作中', '待准入', '准入审批中', '停用', '黑名单']" :key="x">{{ x }}</option></Pick>
       <Search v-model="s.q" ph="编码、名称、联系人、信用代码"/>
     </div>
     <div data-c="供应商列表">
-      <Tbl :rows="rows" link @row="x => go('/suppliers/' + x.code)" empty="没有符合条件的供应商" :cols="[
+      <Tbl :rows="rows" link v-model:picked="s.picked" @row="x => go('/suppliers/' + x.code)" empty="没有符合条件的供应商" :cols="[
         { k: 'code', t: '编码', c: 'code' }, { k: 'short', t: '简称' }, { k: 'cats', t: '分类', f: x => x.cats.join('、') }, { k: 'level', t: '等级' },
         { k: 'status', t: '状态' }, { k: 'contact', t: '联系人' }, { k: 'settle', t: '结算', f: x => x.settle + (x.term ? ' ' + x.term + ' 天' : '') },
         { k: 'buyer', t: '负责人', f: x => userName(x.buyer) }, { k: 'cert', t: '证照' }, { k: 'risk', t: '风险' }]">
@@ -616,6 +618,7 @@ route('/suppliers', {
         <template #cert="{ r }"><span :class="certInfo(r).tone">{{ certInfo(r).t }}</span></template>
         <template #risk="{ r }"><span class="row g4"><span v-if="lastRisk(r) && lastRisk(r).result !== '无风险'" class="flag" :class="riskTone(lastRisk(r))">{{ lastRisk(r).result }}</span><span v-if="r.riskNew" class="pill red">新增</span></span></template>
       </Tbl>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="供应商" label="导出选中"/></BatchBar>
     </div>
     <SupplierForm v-if="s.add" @close="s.add = false"/>
     <ImportBox v-if="s.imp" kind="suppliers" @close="s.imp = false"/>
@@ -651,7 +654,7 @@ comp('SupplierForm', {
       <label class="f" style="grid-column:span 2"><span>统一社会信用代码<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.credit" maxlength="20" placeholder="18 位，营业执照上有"><small v-if="f.credit && credit" class="red">{{ credit }}</small></label>
       <label class="f">简称<input class="inp" v-model="f.short"></label>
       <label class="f">编码<input class="inp code" :value="s ? s.code : nextCode('GYS', db.suppliers)" disabled :title="s ? '编码定了不改' : '自动编'"></label>
-      <label class="f">等级<select class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></select></label>
+      <label class="f">等级<Pick class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></Pick></label>
       <span></span>
       <div class="f full">分类<div class="chips"><button v-for="c in db.dicts.供应商分类" :key="c" class="chip" :class="{ on: f.cats.includes(c) }" @click="toggle(f.cats, c)">{{ c }}</button></div></div>
       <div class="f full" data-c="擅长品类">擅长品类<div class="chips"><button v-for="c in cats" :key="c.code" class="chip" :class="{ on: f.goodAt.includes(c.code) }" @click="toggle(f.goodAt, c.code)">{{ c.name }}</button></div></div>
@@ -659,11 +662,11 @@ comp('SupplierForm', {
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
       <label class="f">微信<input class="inp" v-model="f.wechat"></label>
       <label class="f full">地址<input class="inp" v-model="f.addr"></label>
-      <label class="f"><span>结算方式<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
+      <label class="f"><span>结算方式<i v-if="gate" class="kmark">需审批</i></span><Pick class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></Pick></label>
       <label class="f"><span>账期（天）<i v-if="gate" class="kmark">需审批</i></span><input class="inp num" type="number" v-model.number="f.term"></label>
-      <label class="f">负责采购员<select class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></select></label>
-      <label class="f"><span>发票类型<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.invoice"><option value="">—</option><option v-for="x in db.dicts.发票类型" :key="x">{{ x }}</option></select></label>
-      <label class="f"><span>税率<i v-if="gate" class="kmark">需审批</i></span><select class="sel" v-model="f.tax"><option v-for="x in db.dicts.税率" :key="x">{{ x }}</option></select></label>
+      <label class="f">负责采购员<Pick class="sel" v-model="f.buyer"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></Pick></label>
+      <label class="f"><span>发票类型<i v-if="gate" class="kmark">需审批</i></span><Pick class="sel" v-model="f.invoice"><option value="">—</option><option v-for="x in db.dicts.发票类型" :key="x">{{ x }}</option></Pick></label>
+      <label class="f"><span>税率<i v-if="gate" class="kmark">需审批</i></span><Pick class="sel" v-model="f.tax"><option v-for="x in db.dicts.税率" :key="x">{{ x }}</option></Pick></label>
       <span></span>
       <label class="f"><span>开户行<i v-if="gate" class="kmark">需审批</i></span><input class="inp" v-model="f.bank"></label>
       <label class="f" style="grid-column:span 2"><span>账号<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.account"></label>
@@ -880,7 +883,7 @@ comp('CertForm', {
   },
   template: `<Modal :t="c ? '换证照：' + c.type : '加一份证照'" :w="460" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.证照类型" :key="x">{{ x }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.证照类型" :key="x">{{ x }}</option></Pick></label>
       <label class="f">有效期至<DatePick v-model="f.until"/></label>
       <div class="f full">照片或扫描件<Pics v-model="f.files" files :max="1" :s="64" tip="拍照、扫描件、PDF 都行；拖进来也可以"/></div>
       <label class="f full">备注<input class="inp" v-model="f.note" placeholder="如：年检后换新"></label>
@@ -935,7 +938,7 @@ comp('CustomerForm', {
       <label class="f">联系人<input class="inp" v-model="f.contact"></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
       <label class="f full">地址<input class="inp" v-model="f.addr"></label>
-      <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></select></label>
+      <label class="f">结算方式<Pick class="sel" v-model="f.settle"><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></Pick></label>
       <label class="f">账期（天）<input class="inp num" type="number" v-model.number="f.term"></label>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
@@ -1011,7 +1014,7 @@ route('/customers/:code', {
 /* ---------- 物料 ---------- */
 route('/materials', {
   setup() {
-    const s = reactive({ cat: '', st: '启用', q: '', add: false, imp: false })
+    const s = reactive({ cat: '', st: '启用', q: '', add: false, imp: false, picked: [] })
     const groups = computed(() => MAT_GROUPS.map((g) => ({ g, cats: db.materialCategories.filter((c) => c.parent === g) })))
     const inCat = (m) => !s.cat || m.cat === s.cat || matCat(m.cat).parent === s.cat
     const rows = computed(() => db.materials.filter((m) => inCat(m) && (s.st === '全部' || m.status === s.st) && matchQ(s.q, m.code, m.name, m.supNo, m.comp, supName(m.supplier))))
@@ -1021,7 +1024,8 @@ route('/materials', {
       { k: 'spec', t: '门幅 · 克重', f: (m) => (m.width ? m.width + 'cm · ' + m.weight + 'g' : '—') }, { k: 'supplier', t: '默认供应商', f: (m) => supName(m.supplier) }, { k: 'supNo', t: '供应商货号', c: 'code', f: (m) => m.supNo || '—' },
       { k: 'price', t: '参考单价', c: 'num', f: (m) => fm(m.price) + '/' + m.purUnit }, { k: 'skus', t: 'SKU', c: 'num', f: (m) => m.skus.length },
       { k: 'stock', t: '库存', c: 'num', f: (m) => fq(matStock(m)) + ' ' + m.unit }, { k: 'status', t: '状态' }]
-    return { s, groups, rows, count, cols }
+    const picks = computed(() => rows.value.filter((m) => s.picked.includes(m.code)))
+    return { s, groups, rows, count, cols, picks }
   },
   template: `<div>
     <Head t="物料"><button class="btn" @click="s.imp = true"><Ico n="upload" :s="14"/>导入</button><ExportBtn :rows="rows" :cols="cols" name="物料"/><button class="btn pri" @click="s.add = true"><Ico n="plus" :s="14"/>新建物料</button></Head>
@@ -1037,10 +1041,11 @@ route('/materials', {
       <div style="flex:1;min-width:0">
         <div class="bar" data-c="筛选"><Seg v-model="s.st" :items="['启用', '停用', '全部']"/><span class="sp"></span><Search v-model="s.q"/></div>
         <div data-c="物料列表">
-          <Tbl :rows="rows" link @row="m => go('/materials/' + m.code)" empty="这个分类下没有物料" :cols="cols">
+          <Tbl :rows="rows" link v-model:picked="s.picked" @row="m => go('/materials/' + m.code)" empty="这个分类下没有物料" :cols="cols">
             <template #unit="{ r }"><span v-if="r.purUnit === r.unit">{{ r.unit }}</span><span v-else>{{ r.unit }} <span class="dim">1 {{ r.purUnit }} = {{ fq(r.factor) }} {{ r.unit }}</span></span></template>
             <template #status="{ r }"><St :s="r.status"/></template>
           </Tbl>
+          <BatchBar :n="picks.length" @clear="s.picked = []"><ExportBtn class="sm" :rows="picks" :cols="cols" name="物料" label="导出选中"/></BatchBar>
         </div>
       </div>
     </div>
@@ -1081,12 +1086,12 @@ comp('MaterialForm', {
   },
   template: `<Modal :t="m ? '编辑物料 ' + m.code : '新建物料'" :w="720" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
-      <label class="f">分类<select class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.parent }} / {{ c.name }}</option></select></label>
+      <label class="f">分类<Pick class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.parent }} / {{ c.name }}</option></Pick></label>
       <label class="f">编码<input class="inp code" :value="code" disabled :title="m ? '编码定了不改' : '按分类自动编'"></label>
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></Pick></label>
       <label class="f full">名称<input class="inp" v-model="f.name" placeholder="如：220g 斜纹棉"></label>
-      <label class="f">库存单位<select class="sel" v-model="f.unit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></select></label>
-      <label class="f">采购单位<select class="sel" v-model="f.purUnit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></select></label>
+      <label class="f">库存单位<Pick class="sel" v-model="f.unit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">采购单位<Pick class="sel" v-model="f.purUnit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
       <label class="f">1 {{ f.purUnit }} = ? {{ f.unit }}<input class="inp num" type="number" v-model.number="f.factor" :disabled="!!lock || f.purUnit === f.unit"></label>
       <p v-if="lock" class="full dim" style="margin:-4px 0 0;font-size:12px">{{ lock }}，单位和换算系数不能改了</p>
       <label class="f">门幅 cm<input class="inp num" type="number" v-model.number="f.width"></label>
@@ -1094,8 +1099,8 @@ comp('MaterialForm', {
       <label class="f">成分<input class="inp" v-model="f.comp" placeholder="如 100% 棉"></label>
       <label class="f">组织 / 纹理<input class="inp" v-model="f.texture" placeholder="如 斜纹、平纹"></label>
       <label class="f">年份<input class="inp num" type="number" v-model.number="f.year"></label>
-      <label class="f">季节<select class="sel" v-model="f.season"><option value="">—</option><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></select></label>
-      <label class="f">默认供应商<select class="sel" v-model="f.supplier"><option value="">不填</option><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></select></label>
+      <label class="f">季节<Pick class="sel" v-model="f.season"><option value="">—</option><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></Pick></label>
+      <label class="f">默认供应商<Pick class="sel" v-model="f.supplier"><option value="">不填</option><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></Pick></label>
       <label class="f">供应商货号<input class="inp" v-model="f.supNo"></label>
       <label class="f">参考单价（每{{ f.purUnit }}，含税）<input class="inp num" type="number" v-model.number="f.price"></label>
       <label class="f">起订量（{{ f.purUnit }}）<input class="inp num" type="number" v-model.number="f.moq"></label>
@@ -1116,7 +1121,7 @@ comp('MaterialForm', {
           <tbody><tr v-for="k in f.skus" :key="k.code"><td class="code">{{ k.code }}</td><td><Sw v-if="k.color" :c="k.color"/><span v-else class="dim">—</span></td><td>{{ k.spec || '—' }}</td>
             <td><input class="inp" style="height:26px;width:100px" v-model="k.supColor"></td><td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.price" :placeholder="f.price ?? ''"></td>
             <td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.safety"></td>
-            <td><select class="sel" style="height:26px" v-model="k.status"><option>启用</option><option>停用</option></select></td></tr></tbody></table></div>
+            <td><Pick class="sel" style="height:26px" v-model="k.status"><option>启用</option><option>停用</option></Pick></td></tr></tbody></table></div>
     </div>
     <template #foot><span v-if="!m" class="dim code">{{ preview.length }} 个 SKU：{{ preview.join('、') }}</span><span class="sp"></span>
       <button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ m ? '保存' : '建物料' }}</button></template>
@@ -1280,7 +1285,7 @@ route('/basics', {
         <Tbl inset flat :rows="db.colors" :cols="[{ k: 'sw', t: '' }, { k: 'code', t: '编码', c: 'code' }, { k: 'name', t: '名称' }, { k: 'family', t: '色系' }, { k: 'used', t: '用在', c: 'num', f: c => colorUsed(c.code) ? colorUsed(c.code) + ' 个款 / 物料' : '—' }, { k: 'status', t: '状态' }, { k: 'act', t: '' }]">
           <template #sw="{ r }"><input v-if="ce.c === r" type="color" v-model="ce.hex" title="色块" style="width:26px;height:26px;padding:0;border:1px solid var(--line-strong);border-radius:6px;background:none"><Sw v-else :c="r.code" :n="false"/></template>
           <template #name="{ r }"><input v-if="ce.c === r" class="inp" style="height:26px;width:110px" v-model="ce.name" @keydown.enter="doEditColor"><span v-else>{{ r.name }}</span></template>
-          <template #family="{ r }"><select v-if="ce.c === r" class="sel" style="height:26px" v-model="ce.family"><option value="">—</option><option v-for="x in families" :key="x">{{ x }}</option></select><span v-else>{{ r.family || '—' }}</span></template>
+          <template #family="{ r }"><Pick v-if="ce.c === r" class="sel" style="height:26px" v-model="ce.family"><option value="">—</option><option v-for="x in families" :key="x">{{ x }}</option></Pick><span v-else>{{ r.family || '—' }}</span></template>
           <template #status="{ r }"><St :s="r.status || '启用'"/></template>
           <template #act="{ r }"><span class="row g4" style="justify-content:flex-end">
             <template v-if="ce.c === r"><button class="btn sm pri" @click="doEditColor">保存</button><button class="btn ghost sm" @click="ce.c = null">取消</button></template>
@@ -1291,7 +1296,7 @@ route('/basics', {
           <input type="color" v-model="nc.hex" style="width:30px;height:30px;padding:0;border:1px solid var(--line-strong);border-radius:6px;background:none">
           <input class="inp code" style="width:80px" v-model="nc.code" placeholder="编码">
           <input class="inp" style="width:120px" v-model="nc.name" placeholder="名称">
-          <select class="sel" v-model="nc.family"><option v-for="x in families" :key="x">{{ x }}</option></select>
+          <Pick class="sel" v-model="nc.family"><option v-for="x in families" :key="x">{{ x }}</option></Pick>
           <button class="btn" @click="saveColor"><Ico n="plus" :s="14"/>加颜色</button>
         </div>
       </section>
@@ -1304,7 +1309,7 @@ route('/basics', {
             <St v-if="g.status === '停用'" s="停用"/>
             <span class="chips"><span v-for="z in g.sizes" :key="z" class="chip" style="cursor:default">{{ z }}<Ico v-if="!sizeGroupUsed(g.id)" n="x" :s="11" style="cursor:pointer" @click="run(() => removeSize(g, z))"/></span></span>
             <span class="dim row g4" style="font-size:12px">基码
-              <select v-if="!sizeGroupUsed(g.id)" class="sel" style="height:24px" :value="baseSizeOf(g.id)" @change="run(() => setBaseSize(g, $event.target.value))"><option v-for="z in g.sizes" :key="z">{{ z }}</option></select>
+              <Pick v-if="!sizeGroupUsed(g.id)" class="sel" style="height:24px" :modelValue="baseSizeOf(g.id)" @change="run(() => setBaseSize(g, $event))"><option v-for="z in g.sizes" :key="z">{{ z }}</option></Pick>
               <template v-else>{{ baseSizeOf(g.id) }} · {{ sizeGroupUsed(g.id) }} 个款在用</template></span>
             <span style="flex:1"></span>
             <input class="inp" style="width:72px" v-model="newSize[g.id]" @keydown.enter="addSize(g)">
@@ -1371,7 +1376,7 @@ route('/basics', {
             <span class="row g4" style="margin-left:auto"><button class="btn ghost sm" @click="rename(c)">改名</button><button class="btn ghost sm" @click="toggleCat(c)">{{ c.status === '停用' ? '启用' : '停用' }}</button><button v-if="!matCatUsed(c.code)" class="btn ghost sm danger" @click="del(db.materialCategories, c, 0, '物料')">删除</button></span>
           </div></div>
         </div>
-        <div class="row" data-c="加物料分类"><select class="sel" v-model="nmc.parent"><option v-for="g in MAT_GROUPS" :key="g">{{ g }}</option></select>
+        <div class="row" data-c="加物料分类"><Pick class="sel" v-model="nmc.parent"><option v-for="g in MAT_GROUPS" :key="g">{{ g }}</option></Pick>
           <input class="inp code" style="width:64px" v-model="nmc.code" placeholder="编码"><input class="inp" style="width:120px" v-model="nmc.name" placeholder="名称，如 牛仔"><button class="btn" @click="saveMatCat"><Ico n="plus" :s="14"/>加分类</button></div>
       </section>
 
@@ -1421,10 +1426,10 @@ comp('WarehouseEdit', {
     <div class="form">
       <label class="f">编码<input class="inp code" v-model="f.code" placeholder="如 WL02"></label>
       <label class="f">名称<input class="inp" v-model="f.name"></label>
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in ['物料仓', '成品仓', '工厂仓']" :key="x">{{ x }}</option></select></label>
-      <label class="f" v-if="f.type === '工厂仓'">绑定加工厂<select class="sel" v-model="f.factory"><option value="">选一个</option><option v-for="s in factories" :key="s.code" :value="s.code">{{ s.short }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in ['物料仓', '成品仓', '工厂仓']" :key="x">{{ x }}</option></Pick></label>
+      <label class="f" v-if="f.type === '工厂仓'">绑定加工厂<Pick class="sel" v-model="f.factory"><option value="">选一个</option><option v-for="s in factories" :key="s.code" :value="s.code">{{ s.short }}</option></Pick></label>
       <label class="f full">地址<input class="inp" v-model="f.addr"></label>
-      <label class="f">负责人<select class="sel" v-model="f.keeper"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label class="f">负责人<Pick class="sel" v-model="f.keeper"><option value="">—</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
     </div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">{{ w ? '保存' : '加上' }}</button></template>
@@ -1479,7 +1484,7 @@ route('/settings', {
             <input v-else class="inp code" style="height:26px;width:56px" maxlength="2" :value="r.dno || ''" placeholder="—" @change="e => { if (!run(() => setDesignerNo(r, e.target.value))) e.target.value = r.dno || ''; else if (e.target.value) toast(r.name + ' 的设计师编号是 ' + r.dno) }"></template>
           <template #dept="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.dept"></template>
           <template #post="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.post"></template>
-          <template #role="{ r }"><select class="sel" style="height:26px" v-model="r.role"><option v-for="x in ROLES" :key="x">{{ x }}</option></select></template>
+          <template #role="{ r }"><Pick class="sel" style="height:26px" v-model="r.role"><option v-for="x in ROLES" :key="x">{{ x }}</option></Pick></template>
           <template #company="{ r }"><CompanyPick style="height:26px" :model-value="r.company" @update:model-value="v => r.company = v"/></template>
         </Tbl>
       </section>
@@ -1499,11 +1504,11 @@ route('/settings', {
           <h3>多级审批<span class="acts"><button class="btn sm" @click="addRule"><Ico n="plus" :s="12"/>加一条</button></span></h3>
           <table class="tbl inset flat"><tbody>
             <tr v-for="(r, i) in db.approvalRules" :key="i">
-              <td style="width:140px"><select class="sel" style="height:26px" v-model="r.doc"><option v-for="t in amtDocs" :key="t">{{ t }}</option></select></td>
+              <td style="width:140px"><Pick class="sel" style="height:26px" v-model="r.doc"><option v-for="t in amtDocs" :key="t">{{ t }}</option></Pick></td>
               <td>金额超过 <input class="inp num" style="width:110px;height:26px" type="number" v-model.number="r.over"> 元，再加一级，由</td>
-              <td style="width:200px"><select class="sel" style="height:26px;width:100%" :value="r.user ? 'u:' + r.user : 'r:' + r.role" @change="setWho(r, $event.target.value)">
+              <td style="width:200px"><Pick class="sel" style="height:26px;width:100%" :modelValue="r.user ? 'u:' + r.user : 'r:' + r.role" @change="setWho(r, $event)">
                 <optgroup label="指定的人"><option v-for="u in db.users" :key="u.id" :value="'u:' + u.id">{{ u.name }}（{{ u.post }}）</option></optgroup>
-                <optgroup label="角色：这个角色的人都能审"><option v-for="x in ROLES" :key="x" :value="'r:' + x">{{ x }}</option></optgroup></select></td>
+                <optgroup label="角色：这个角色的人都能审"><option v-for="x in ROLES" :key="x" :value="'r:' + x">{{ x }}</option></optgroup></Pick></td>
               <td><span v-if="useless(r)" class="flag amber" title="第 1 级能审的人这一级也都能审，他们审第 1 级时这一级就一起过了">不起作用：第 1 级的人审了就一起过</span><span v-else class="dim">审</span></td>
               <td class="num" style="width:40px"><button class="btn ghost icon sm" @click="db.approvalRules.splice(i, 1)"><Ico n="trash" :s="13"/></button></td>
             </tr>
@@ -1540,7 +1545,7 @@ route('/settings', {
       </section>
 
       <section v-if="tab === 'log'" data-c="操作日志">
-        <div class="row" style="margin-bottom:8px"><select class="sel" v-model="who"><option value="">所有人</option><option v-for="u in db.users" :key="u.id" :value="u.name">{{ u.name }}</option></select><span class="dim">{{ logs.length }} 条</span></div>
+        <div class="row" style="margin-bottom:8px"><Pick class="sel" v-model="who"><option value="">所有人</option><option v-for="u in db.users" :key="u.id" :value="u.name">{{ u.name }}</option></Pick><span class="dim">{{ logs.length }} 条</span></div>
         <Tbl inset flat :rows="logs" link @row="x => go(x.to)" empty="这个人还没有操作" :cols="[{ k: 'at', t: '日期', f: x => fd(x.at) }, { k: 'who', t: '人' }, { k: 'k', t: '对象' }, { k: 'id', t: '单号', c: 'code' }, { k: 'text', t: '做了什么' }]">
           <template #text="{ r }"><span class="wrap">{{ r.text }}</span></template>
         </Tbl>

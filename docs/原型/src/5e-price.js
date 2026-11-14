@@ -322,20 +322,20 @@ comp('PriceForm', {
   },
   template: `<Modal :t="init.adjust ? '调价' : '录价格'" :w="560" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.kind" :disabled="init.adjust"><option v-for="k in ['物料价', '加工价']" :key="k" :disabled="!canEditPrice(k)">{{ k }}</option></select></label>
-      <label class="f">{{ f.kind === '加工价' ? '工厂' : '供应商' }}<select class="sel" v-model="f.sup" :disabled="init.adjust"><option value="">选一家</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.kind" :disabled="init.adjust"><option v-for="k in ['物料价', '加工价']" :key="k" :disabled="!canEditPrice(k)">{{ k }}</option></Pick></label>
+      <label class="f">{{ f.kind === '加工价' ? '工厂' : '供应商' }}<Pick class="sel" v-model="f.sup" :disabled="init.adjust"><option value="">选一家</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}{{ x.status !== '合作中' ? '（' + x.status + '）' : '' }}</option></Pick></label>
       <template v-if="f.kind === '物料价'">
-        <label class="f">物料<select class="sel" v-model="f.mat" :disabled="init.adjust" @change="f.sku = ''"><option value="">选物料</option><option v-for="m in db.materials" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></select></label>
-        <label class="f">SKU<select class="sel" v-model="f.sku" :disabled="init.adjust"><option value="">不选 = 所有颜色同价</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></select></label>
+        <label class="f">物料<Pick class="sel" v-model="f.mat" :disabled="init.adjust" @change="f.sku = ''"><option value="">选物料</option><option v-for="m in db.materials" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></Pick></label>
+        <label class="f">SKU<Pick class="sel" v-model="f.sku" :disabled="init.adjust"><option value="">不选 = 所有颜色同价</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></Pick></label>
       </template>
       <template v-else>
-        <label class="f">款式<select class="sel" v-model="f.style" :disabled="init.adjust"><option value="">选款式</option><option v-for="x in db.styles.filter(x => x.status !== '停用')" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></select></label>
-        <label class="f">加工方式<select class="sel" v-model="f.mode" :disabled="init.adjust"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></select></label>
+        <label class="f">款式<Pick class="sel" v-model="f.style" :disabled="init.adjust"><option value="">选款式</option><option v-for="x in db.styles.filter(x => x.status !== '停用')" :key="x.code" :value="x.code">{{ x.code }} {{ x.name }}</option></Pick></label>
+        <label class="f">加工方式<Pick class="sel" v-model="f.mode" :disabled="init.adjust"><option v-for="x in db.dicts.加工方式" :key="x">{{ x }}</option></Pick></label>
       </template>
       <label class="f">单价（元/{{ f.kind === '物料价' ? (mat(f.mat)?.purUnit || '采购单位') : '件' }}）<input class="inp num" type="number" v-model.number="f.price"></label>
       <label class="f">税率<input class="inp" v-model="f.tax" placeholder="如 13%"></label>
       <label class="f">生效日期<DatePick v-model="f.date"/></label>
-      <label class="f">含税<select class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></select></label>
+      <label class="f">含税<Pick class="sel" v-model="f.taxIncl"><option :value="true">含税</option><option :value="false">不含税</option></Pick></label>
       <div v-if="cur" class="f full dim" style="font-size:12px">{{ fd(f.date) }} 的现价 {{ fm(cur.price) }}（{{ fd(cur.date) }} 起{{ cur.sku ? '，这个 SKU 单独定的' : '' }}）{{ needWhy ? '：调价要写原因' : '：给这个 SKU 单独定价，原因可以不写' }}</div>
       <label class="f full">调价原因<input class="inp" v-model="f.why" :placeholder="needWhy ? '必填，如：原料涨价' : '第一次报价可以不写'"></label>
     </div>
@@ -427,7 +427,7 @@ route('/reorder', {
           <tr v-for="r in rows" :key="r.sku" :class="{ sel: st(r).on }">
             <td><input type="checkbox" v-model="st(r).on" style="accent-color:var(--accent)"></td>
             <td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><a :href="'#/materials/' + r.mat">{{ skuName(r.sku) }}</a><small class="code dim">{{ r.sku }}</small></span></span></td>
-            <td><select class="sel" style="height:26px" v-model="st(r).sup"><option value="">先选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></select><div v-if="!r.sup" class="amber" style="font-size:12px">物料没设默认供应商</div></td>
+            <td><Pick class="sel" style="height:26px" v-model="st(r).sup"><option value="">先选供应商</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></Pick><div v-if="!r.sup" class="amber" style="font-size:12px">物料没设默认供应商</div></td>
             <td class="num">{{ fq(r.stock) }}</td><td class="num">{{ fq(r.transit) }}</td><td class="num">{{ fq(r.held) }}</td>
             <td class="num">{{ fq(r.safety) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
             <td class="num"><b class="amber">{{ fq(r.gap) }}</b></td>

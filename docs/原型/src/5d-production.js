@@ -63,27 +63,34 @@ function voidReturn(r, reason) {
 
 route('/production', {
   setup() {
-    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', q: '', flt: newFlt() })
+    const s = reactive({ mine: false, tab: nav.query.s || '全部', f: nav.query.f || '', q: '', flt: newFlt(), picked: [] })
     const ST = ['全部', '草稿', '待审核', '已下单', '生产中', '部分回货', '已完成', '已结案', '已作废']
     const scoped = computed(() => db.productions.filter((p) => inScope(s.mine, p)))
     const tabs = computed(() => ST.map((k) => [k, k, k === '全部' ? scoped.value.length : scoped.value.filter((p) => p.status === k).length]))
     const rows = computed(() => scoped.value.filter((p) => (s.tab === '全部' || p.status === s.tab) && (!s.f || riskMatch(p, s.f))
       && passFlt(s.flt, { date: expectDue(p), party: p.factory, merch: p.merch }) && matchQ(s.q, p.no, p.style, styleName(p.style), supName(p.factory), p.order)).slice().sort(byRisk))
-    return { s, tabs, rows, RISK_F }
+    const XCOLS = [{ k: 'no', t: '加工单号', c: 'code' }, { k: 'order', t: '订单号', c: 'code' }, { k: 'style', t: '款号', c: 'code' }, { k: 'name', t: '款名', x: (p) => styleName(p.style) },
+      { k: 'factory', t: '加工厂', x: (p) => supName(p.factory) }, { k: 'mode', t: '加工方式' }, { k: 'qty', t: '数量', x: prodQty }, { k: 'amt', t: '金额', x: prodAmt },
+      { k: 'due', t: '交期', x: expectDue }, { k: 'ret', t: '已回货', x: prodRet }, { k: 'merch', t: '跟单', x: (p) => userName(p.merch) }, { k: 'status', t: '状态' }]
+    const picks = computed(() => rows.value.filter((p) => s.picked.includes(p.no)))
+    const batch = async (a) => { const ok = await batchAct('production', picks.value, a); s.picked = s.picked.filter((k) => !ok.includes(k)) }
+    return { s, tabs, rows, RISK_F, XCOLS, picks, batch }
   },
   template: `<div>
     <Head t="加工单"/>
     <div class="bar" data-c="筛选"><Seg v-model="s.tab" :items="tabs"/></div>
     <div class="bar" data-c="筛选：交期、加工厂、跟单"><Filters v-model="s.flt" party="factory" merch label="交期"/>
-      <select class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></select>
+      <Pick class="sel" style="height:28px" v-model="s.f"><option value="">全部风险</option><option v-for="(t, k) in RISK_F" :key="k" :value="k">{{ t }}</option></Pick>
       <span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q"/></div>
-    <div data-c="加工单列表"><ProdTable :rows="rows"/></div>
+    <div data-c="加工单列表"><ProdTable :rows="rows" v-model:picked="s.picked"/>
+      <BatchBar :n="picks.length" @clear="s.picked = []"><button class="btn sm" @click="batch('提交')">提交</button><button class="btn sm" @click="batch('审核')">审核</button><ExportBtn class="sm" :rows="picks" :cols="XCOLS" name="加工单" label="导出选中"/></BatchBar></div>
   </div>`,
 }, { mod: 'production', t: '加工单' })
 
 // 列表和看板共用；board：去掉金额、领料，加一列异常（PRD §6.7.6）
 comp('ProdTable', {
-  props: { rows: Array, board: Boolean },
+  props: { rows: Array, board: Boolean, picked: { type: Array, default: null } },
+  emits: ['update:picked'],
   setup(p) {
     const kit = (r) => (prodLive(r) || r.status === '已完成' ? kitState(order(r.order)) : null)
     const openIs = (r) => r.issues.filter((i) => i.status !== '已关闭')
@@ -95,7 +102,7 @@ comp('ProdTable', {
     ].filter(Boolean))
     return { cols, kit, openIs, KIT_CLS }
   },
-  template: `<Tbl :rows="rows" link @row="p => go('/production/' + p.no)" empty="没有符合条件的加工单。订单审核后在订单里「排单」生成；单号、款号、加工厂、订单号都能搜" :cols="cols">
+  template: `<Tbl :rows="rows" link :picked="picked" @update:picked="$emit('update:picked', $event)" @row="p => go('/production/' + p.no)" empty="没有符合条件的加工单。订单审核后在订单里「排单」生成；单号、款号、加工厂、订单号都能搜" :cols="cols">
     <template #style="{ r }"><span class="row"><Thumb :code="r.style" :s="24"/><span class="code">{{ r.style }}</span></span></template>
     <template #factory="{ r }">{{ supName(r.factory) }}<span class="dim"> · {{ r.mode }}</span></template>
     <template #due="{ r }"><span class="row g4">{{ fd(expectDue(r)) }}<Days :d="expectDue(r)" :warn="7" :done="!prodLive(r)"/></span><span v-if="r.expect" class="dim" style="text-decoration:line-through;font-size:12px">{{ fd(r.due) }}</span></template>
@@ -240,7 +247,7 @@ route('/production/:no', {
     <Modal v-if="closing" :t="'关闭异常：' + closing.i.type" :w="480" @close="closing = null">
       <div class="form">
         <label class="f full">处理措施<textarea class="inp" v-model="closing.measure" placeholder="比如：供应商补发 30 米，11-08 到；返工 20 件"></textarea></label>
-        <label class="f">责任方<select class="sel" v-model="closing.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></select></label>
+        <label class="f">责任方<Pick class="sel" v-model="closing.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></Pick></label>
       </div>
       <template #foot><button class="btn" @click="closing = null">取消</button><button class="btn pri" @click="doClose">关闭异常</button></template>
     </Modal>
@@ -286,13 +293,13 @@ comp('ProdEdit', {
   template: `<Modal :t="'改加工单 ' + p.no" :w="640" @close="$emit('close')">
     <div class="form" data-c="加工单单头">
       <label class="f">主体公司<CompanyPick v-model="f.company"/></label>
-      <label class="f">加工厂<select class="sel" v-model="f.factory" @change="setFactory"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></select></label>
-      <label class="f">加工方式<select class="sel" v-model="f.mode"><option v-for="v in db.dicts.加工方式" :key="v">{{ v }}</option></select></label>
+      <label class="f">加工厂<Pick class="sel" v-model="f.factory" @change="setFactory"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
+      <label class="f">加工方式<Pick class="sel" v-model="f.mode"><option v-for="v in db.dicts.加工方式" :key="v">{{ v }}</option></Pick></label>
       <label class="f">加工单价（元 / 件）<input class="inp num" type="number" v-model.number="f.price"><small class="dim">{{ ref0 != null ? '档案现价 ' + fm(ref0) : '档案里没有这家 × ' + f.mode + ' 的价，审核时记进去' }}</small></label>
       <label class="f">交期<DatePick v-model="f.due"/></label>
       <label v-if="off || f.priceWhy" class="f full">改价原因<input class="inp" v-model="f.priceWhy" placeholder="单价和档案现价不一样，写清楚为什么；审核时记进价格档案"></label>
-      <label class="f">生产跟单<select class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
-      <label class="f">结算方式<select class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></select></label>
+      <label class="f">生产跟单<Pick class="sel" v-model="f.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
+      <label class="f">结算方式<Pick class="sel" v-model="f.settle"><option v-for="v in db.dicts.结算方式" :key="v">{{ v }}</option></Pick></label>
       <div class="f full">条款<textarea class="inp" v-model="f.terms" placeholder="次品扣款、延期扣款、送货要求"></textarea><a class="dim" style="font-size:12px;cursor:pointer;align-self:flex-start" @click="addTerms">填常用条款</a></div>
       <label class="f full">备注<input class="inp" v-model="f.note"></label>
     </div>
@@ -371,7 +378,7 @@ comp('ProdIssueMat', {
   },
   template: `<Modal :t="'领料 ' + p.no" :w="780" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
-      <label class="f">从哪个物料仓发<select class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
+      <label class="f">从哪个物料仓发<Pick class="sel" v-model="f.from"><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <div class="f">发到<span style="line-height:32px">{{ whName(factoryWh(p.factory)?.code) }}</span></div>
     </div>
     <table class="tbl inset flat" data-c="领料明细"><thead><tr><th>物料</th><th v-if="TRADE">物权</th><th class="num">应领</th><th class="num">已领</th><th class="num">还差</th><th class="num">{{ whName(f.from) }}库存</th><th class="num" style="width:110px">本次领</th></tr></thead>
@@ -394,8 +401,8 @@ comp('ProdException', {
   },
   template: `<Modal :t="'上报异常 ' + p.no" :w="520" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.type"><option v-for="x in db.dicts.异常类型" :key="x">{{ x }}</option></select></label>
-      <label class="f">责任方<select class="sel" v-model="f.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.异常类型" :key="x">{{ x }}</option></Pick></label>
+      <label class="f">责任方<Pick class="sel" v-model="f.party"><option value="">待定</option><option v-for="v in PARTIES" :key="v">{{ v }}</option></Pick></label>
       <label class="f full">描述<textarea class="inp" v-model="f.desc" placeholder="什么问题、多少件、哪个颜色尺码"></textarea></label>
       <div class="f full" data-c="异常照片">照片<span class="red" style="font-weight:400">（必须传：问题部位、到货短缺或现场，对责任时要用）</span><Pics v-model="f.photos" :s="64" camera/></div>
       <label class="chk"><input type="checkbox" v-model="f.impact">影响交期</label>
@@ -426,7 +433,7 @@ comp('ProdReturn', {
   template: `<Modal :t="'登记回货 ' + p.no" :w="760" @close="$emit('close')">
     <div class="form" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
       <label class="f">回货日期<DatePick v-model="f.date" :max="clock.today"/></label>
-      <label class="f">收货仓<select class="sel" v-model="f.wh"><option v-for="w in fgs" :key="w.code" :value="w.code">{{ w.name }}</option></select></label>
+      <label class="f">收货仓<Pick class="sel" v-model="f.wh"><option v-for="w in fgs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick></label>
       <label class="f">物流单号<input class="inp" v-model="f.logistics"></label></div>
     <div class="sec" style="margin-top:0" data-c="回货数"><h3>回货数（含次品）</h3><Matrix :st="p.style" v-model="qty" :colors="colors" :sub="sub"/></div>
     <div class="sec" data-c="次品数"><h3>其中次品</h3><Matrix :st="p.style" v-model="def" :colors="colors"/></div>
@@ -468,7 +475,7 @@ route('/board', {
   template: `<div>
     <Head t="看板"/>
     <div class="bar" data-c="筛选：交期、加工厂、跟单、品牌"><Filters v-model="s.flt" party="factory" merch label="交期"/>
-      <select class="sel" style="height:28px" v-model="s.brand"><option value="">全部品牌</option><option v-for="b in brands" :key="b" :value="b">{{ b }}</option></select></div>
+      <Pick class="sel" style="height:28px" v-model="s.brand"><option value="">全部品牌</option><option v-for="b in brands" :key="b" :value="b">{{ b }}</option></Pick></div>
     <div class="stats" data-c="数字卡">
       <div v-for="c in cards" :key="c.k" class="stat" :class="{ on: s.card === c.k }" @click="c.f && (s.card = s.card === c.k ? '' : c.k)"><span>{{ c.t }}</span><b :class="{ red: (c.k === 'late' || c.k === 'issue') && c.n, amber: (c.k === 'near' || c.k === 'node') && c.n }">{{ c.n.toLocaleString() }}<small v-if="c.m">{{ c.m }}</small></b></div>
     </div>

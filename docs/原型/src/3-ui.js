@@ -174,28 +174,42 @@ comp('St', {
 })
 
 /* ---------- 表格：cols = [{ k, t, c: 'num'|'code', w, f: row => 文本, img: row => 款号/SKU（前面带小图） }]；单元格可用 #k 插槽改写
- * 列表页（link、不是 inset）超过 20 条分页，每页 20 / 50 / 100（PRD §5.4） ---------- */
+ * 列表页（link、不是 inset）超过 20 条分页，每页 20 / 50 / 100（PRD §5.4）
+ * 勾选：v-model:picked="s.picked"（存行的键，默认 no / code / id，rowKey 可改）就多出勾选列；表头的框勾的是筛出来的全部行。
+ *   行不在 rows 里了（换了筛选）自动从 picked 去掉。配 <BatchBar> 做批量操作 ---------- */
+const rowKeyOf = (r) => r.no ?? r.code ?? r.id
 comp('Tbl', {
-  props: { rows: Array, cols: Array, link: Boolean, empty: String, inset: Boolean, flat: Boolean, sel: Function },
-  emits: ['row'],
-  setup(p) {
+  props: { rows: Array, cols: Array, link: Boolean, empty: String, inset: Boolean, flat: Boolean, sel: Function, picked: { type: Array, default: null }, rowKey: { type: Function, default: rowKeyOf } },
+  emits: ['row', 'update:picked'],
+  setup(p, { emit }) {
     const size = ref(20), cur = ref(1)
     const paged = computed(() => p.link && !p.inset && p.rows.length > 20)
     const pages = computed(() => Math.max(1, Math.ceil(p.rows.length / size.value)))
     watch([() => p.rows.length, size], () => { if (cur.value > pages.value) cur.value = 1 })
     const shown = computed(() => (paged.value ? p.rows.slice((cur.value - 1) * size.value, cur.value * size.value) : p.rows))
-    return { size, cur, paged, pages, shown }
+    const isPicked = (r) => !!p.picked && p.picked.includes(p.rowKey(r))
+    const nPicked = computed(() => (p.picked ? p.rows.filter(isPicked).length : 0))
+    const all = computed(() => p.rows.length > 0 && nPicked.value === p.rows.length)
+    const togglePick = (r) => { const k = p.rowKey(r); emit('update:picked', isPicked(r) ? p.picked.filter((x) => x !== k) : [...p.picked, k]) }
+    const toggleAll = () => emit('update:picked', all.value ? [] : p.rows.map(p.rowKey))
+    watch(() => p.rows, (rows) => {
+      if (!p.picked?.length) return
+      const keys = new Set(rows.map(p.rowKey)), keep = p.picked.filter((k) => keys.has(k))
+      if (keep.length !== p.picked.length) emit('update:picked', keep)
+    })
+    return { size, cur, paged, pages, shown, isPicked, nPicked, all, togglePick, toggleAll }
   },
   template: `<table class="tbl" :class="{ inset, flat }">
     <caption v-if="link && !inset && rows.length">共 <b>{{ rows.length }}</b> 条<span v-if="paged" class="pager">
-      <select class="sel" v-model.number="size"><option v-for="n in [20, 50, 100]" :key="n" :value="n">{{ n }} 条/页</option></select>
+      <Pick class="sel" v-model.number="size"><option v-for="n in [20, 50, 100]" :key="n" :value="n">{{ n }} 条/页</option></Pick>
       <button class="btn sm" :disabled="cur <= 1" @click="cur--">上一页</button><span class="num">{{ cur }} / {{ pages }}</span><button class="btn sm" :disabled="cur >= pages" @click="cur++">下一页</button></span></caption>
-    <thead><tr><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
+    <thead><tr><th v-if="picked" class="ck"><input type="checkbox" :checked="all" :indeterminate.prop="nPicked > 0 && !all" :title="all ? '全不选' : '全选筛出来的 ' + rows.length + ' 条'" @change="toggleAll"></th><th v-for="c in cols" :key="c.k" :class="c.c" :style="c.w ? { width: c.w } : null">{{ c.t }}</th></tr></thead>
     <tbody>
-      <tr v-for="(r, i) in shown" :key="i" :class="{ link, sel: sel && sel(r) }" @click="link && $emit('row', r)">
+      <tr v-for="(r, i) in shown" :key="i" :class="{ link, sel: (sel && sel(r)) || isPicked(r) }" @click="link && $emit('row', r)">
+        <td v-if="picked" class="ck" @click.stop="togglePick(r)"><input type="checkbox" :checked="isPicked(r)" @click.stop @change="togglePick(r)"></td>
         <td v-for="c in cols" :key="c.k" :class="c.c"><slot :name="c.k" :r="r" :i="i"><span v-if="c.img" class="row"><Thumb :code="c.img(r)" :s="32"/>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</span><template v-else>{{ c.f ? c.f(r) : (r[c.k] ?? '—') }}</template></slot></td>
       </tr>
-      <tr v-if="!rows.length"><td :colspan="cols.length" class="empty">{{ empty || '没有记录' }}</td></tr>
+      <tr v-if="!rows.length"><td :colspan="cols.length + (picked ? 1 : 0)" class="empty">{{ empty || '没有记录' }}</td></tr>
     </tbody>
     <tfoot v-if="$slots.foot"><slot name="foot"/></tfoot>
   </table>`,
@@ -561,7 +575,7 @@ comp('DatePick', {
     return { WK_CN, open, mode, btnEl, popEl, pos, vy, vm, toggle, stepM, jumpToday, isDis, pick, clear, cells, quicks, curM, curY, selY, selM, display }
   },
   template: `<span class="dp-wrap" :class="{ auto: sm }">
-    <button ref="btnEl" type="button" class="dp-btn" :class="{ open, empty: !modelValue, sm, cell, ghost }" :data-date="modelValue || ''" @click="toggle">
+    <button ref="btnEl" type="button" class="dp-btn" :class="{ open, 'is-empty': !modelValue, sm, cell, ghost }" :data-date="modelValue || ''" @click="toggle">
       <Ico v-if="!cell || !ghost || !modelValue" n="calendar" :s="sm || cell ? 13 : 14" class="dp-ico"/>
       <span class="dp-txt">{{ display }}</span>
       <span v-if="modelValue && clearable" class="dp-clr" role="button" tabindex="-1" aria-label="清除日期" @mousedown.stop.prevent @click.stop.prevent="$emit('update:modelValue', '')"><Ico n="x" :s="11"/></span>
@@ -739,6 +753,77 @@ comp('DateRange', {
   </span>`,
 })
 
+/* ---------- 下拉选择：写法和原生 <select> 一样，里面照写 <option> / <optgroup>；点开是卡片，选项超过 7 个时能输入搜索
+ *   <Pick class="sel" v-model="f.supplier" @change="setSup"><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></Pick>
+ *   v-model.number、option 的 disabled 照常；class、style、title 落在按钮上 */
+function pickOpts(nodes, g = '', out = []) {
+  for (const n of nodes || []) {
+    if (!n || typeof n !== 'object') continue
+    if (n.type === 'option') {
+      const t = optText(n.children).trim()
+      out.push({ v: n.props && 'value' in n.props ? n.props.value : t, t, dis: n.props?.disabled === '' || !!n.props?.disabled, g })
+    } else if (n.type === 'optgroup') pickOpts(n.children, n.props?.label || '', out)
+    else if (n.type === Vue.Fragment) pickOpts(n.children, g, out)
+  }
+  return out
+}
+const optText = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => (typeof x === 'string' ? x : optText(x?.children))).join('') : '')
+const sameV = (a, b) => a === b || (a != null && b != null && String(a) === String(b))
+comp('Pick', {
+  inheritAttrs: false,
+  props: { modelValue: null, disabled: Boolean, placeholder: { type: String, default: '请选择' } },
+  emits: ['update:modelValue', 'change'],
+  setup(p, { emit, slots }) {
+    const open = ref(false), q = ref(''), hi = ref(0), w = ref(0)
+    const btnEl = ref(null), popEl = ref(null), qEl = ref(null), listEl = ref(null)
+    const { pos } = usePopAnchor(open, btnEl, popEl, 220)
+    const opts = computed(() => pickOpts(slots.default?.() || []))
+    const cur = computed(() => opts.value.find((o) => sameV(o.v, p.modelValue)))
+    const shown = computed(() => { const k = q.value.trim().toLowerCase(); return k ? opts.value.filter((o) => (o.t + ' ' + o.v + ' ' + o.g).toLowerCase().includes(k)) : opts.value })
+    const scrollHi = () => nextTick(() => listEl.value?.querySelector('.hi')?.scrollIntoView({ block: 'nearest' }))
+    function toggle() {
+      if (p.disabled) return
+      if (!open.value) {
+        q.value = ''; w.value = btnEl.value?.offsetWidth || 0
+        hi.value = Math.max(0, opts.value.findIndex((o) => sameV(o.v, p.modelValue)))
+        nextTick(() => { qEl.value?.focus(); scrollHi() })
+      }
+      open.value = !open.value
+    }
+    function pick(o) {
+      if (!o || o.dis) return
+      open.value = false
+      btnEl.value?.focus()
+      if (sameV(o.v, p.modelValue)) return
+      emit('update:modelValue', o.v)
+      emit('change', o.v)
+    }
+    function key(e) {
+      if (!open.value) { if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); toggle() } return }
+      const n = shown.value.length
+      if (e.key === 'ArrowDown') { e.preventDefault(); hi.value = (hi.value + 1) % Math.max(1, n); scrollHi() }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); hi.value = (hi.value - 1 + n) % Math.max(1, n); scrollHi() }
+      else if (e.key === 'Enter') { e.preventDefault(); pick(shown.value[hi.value]) }
+      else if (e.key === 'Tab') open.value = false
+    }
+    watch(q, () => { hi.value = 0 })
+    return { open, q, hi, w, btnEl, popEl, qEl, listEl, pos, opts, cur, shown, toggle, pick, key, sameV }
+  },
+  template: `<button ref="btnEl" type="button" class="sel pk-btn" :class="{ open, 'is-empty': !cur || cur.v === '' }" v-bind="$attrs" :disabled="disabled" @click="toggle" @keydown="key"><span class="pk-txt">{{ cur ? cur.t : placeholder }}</span></button>
+    <Teleport to="body">
+      <div v-if="open" ref="popEl" class="pk-card" :style="{ ...pos, minWidth: Math.max(w, 180) + 'px' }" @mousedown.stop @click.stop>
+        <label v-if="opts.length > 7" class="pk-q"><Ico n="search" :s="13"/><input ref="qEl" v-model="q" placeholder="输入搜索" @keydown="key"><small class="dim">{{ shown.length }}/{{ opts.length }}</small></label>
+        <ul ref="listEl" class="pk-list" role="listbox">
+          <template v-for="(o, i) in shown" :key="i">
+            <li v-if="o.g && (i === 0 || shown[i - 1].g !== o.g)" class="pk-g">{{ o.g }}</li>
+            <li class="pk-opt" role="option" :aria-selected="sameV(o.v, modelValue)" :class="{ on: sameV(o.v, modelValue), hi: i === hi, dis: o.dis }" @mouseenter="hi = i" @click="pick(o)"><span class="ell">{{ o.t || '—' }}</span><Ico v-if="sameV(o.v, modelValue)" n="check" :s="13"/></li>
+          </template>
+          <li v-if="!shown.length" class="pk-none">没有匹配「{{ q }}」的选项</li>
+        </ul>
+      </div>
+    </Teleport>`,
+})
+
 comp('Filters', {
   props: { modelValue: Object, party: String, merch: Boolean, label: { type: String, default: '日期' } },
   setup(p) {
@@ -772,8 +857,8 @@ comp('Filters', {
         <div class="row" style="justify-content:space-between"><span>{{ label }}范围</span><span class="flt-qks"><button v-for="q in qks" :key="q.t" type="button" :class="{ on: modelValue.from === q.a && modelValue.to === q.b }" @click="modelValue.from = q.a; modelValue.to = q.b">{{ q.t }}</button></span></div>
         <DateRange v-model:from="modelValue.from" v-model:to="modelValue.to"/>
       </div>
-      <label v-if="party" class="f">{{ partyLabel }}<select class="sel" v-model="modelValue.party"><option value="">全部{{ partyLabel }}</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></select></label>
-      <label v-if="merch" class="f">跟单员<select class="sel" v-model="modelValue.merch"><option value="">全部跟单员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></select></label>
+      <label v-if="party" class="f">{{ partyLabel }}<Pick class="sel" v-model="modelValue.party"><option value="">全部{{ partyLabel }}</option><option v-for="x in parties" :key="x[0]" :value="x[0]">{{ x[1] }}</option></Pick></label>
+      <label v-if="merch" class="f">跟单员<Pick class="sel" v-model="modelValue.merch"><option value="">全部跟单员</option><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
       <slot/>
       <footer><button type="button" class="btn ghost sm" :disabled="!any" @click="clear">重置</button><button type="button" class="btn pri sm" @click="open = false">完成</button></footer>
     </div>
@@ -809,7 +894,7 @@ comp('DocMeta', {
 comp('CompanyPick', {
   props: { modelValue: String },
   emits: ['update:modelValue'],
-  template: `<select class="sel" :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><option v-for="c in db.companies.filter(x => x.status === '启用' || x.code === modelValue)" :key="c.code" :value="c.code">{{ c.short }}</option></select>`,
+  template: `<Pick class="sel" :modelValue="modelValue" @change="$emit('update:modelValue', $event)"><option v-for="c in db.companies.filter(x => x.status === '启用' || x.code === modelValue)" :key="c.code" :value="c.code">{{ c.short }}</option></Pick>`,
 })
 // 分期小标：页面上放了二期 / 待定的内容时标出来，免得甲方以为一期都有（PRD §2.2、§2.5）
 comp('Phase', {

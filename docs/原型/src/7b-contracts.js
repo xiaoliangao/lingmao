@@ -304,8 +304,8 @@ route('/contracts', {
         <div class="bar" data-c="筛选">
           <Seg v-model="s.st" :items="sts"/>
           <span class="sp"></span>
-          <select class="sel" v-model="s.kind"><option value="">全部类型</option><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></select>
-          <select class="sel" v-model="s.sup"><option value="">全部供应商</option><option v-for="x in sups" :key="x" :value="x">{{ supName(x) }}</option></select>
+          <Pick class="sel" v-model="s.kind"><option value="">全部类型</option><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></Pick>
+          <Pick class="sel" v-model="s.sup"><option value="">全部供应商</option><option v-for="x in sups" :key="x" :value="x">{{ supName(x) }}</option></Pick>
           <Search v-model="s.q" ph="合同号、单据号、供应商"/>
         </div>
         <ContractList :rows="rows" full :empty="db.contracts.length ? '没有符合条件的合同' : '还没有合同；在已审核的采购单、加工单上点「生成合同」'"/>
@@ -363,7 +363,7 @@ comp('TplForm', {
   },
   template: `<Modal :t="t ? '更新模板：' + t.name + '（现在 V' + t.ver + '）' : '导入合同模板'" :w="720" @close="$emit('close')">
     <div class="form">
-      <label class="f">类型<select class="sel" v-model="f.kind" :disabled="!!t"><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></select></label>
+      <label class="f">类型<Pick class="sel" v-model="f.kind" :disabled="!!t"><option v-for="k in Object.values(CT_KINDS)" :key="k">{{ k }}</option></Pick></label>
       <label class="f">名称<input class="inp" v-model="f.name" :disabled="!!t" placeholder="如：物料采购合同"></label>
       <label class="f full">Word 文件（.docx）<span class="row g8"><input type="file" accept=".docx" @change="pick" data-c="模板文件"><span v-if="f.file" class="code">{{ f.file }}</span></span>
 </label>
