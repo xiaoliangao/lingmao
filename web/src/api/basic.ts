@@ -2,7 +2,7 @@ import { http, type RequestOptions } from '@/utils/request'
 import type { FileVO, PageResult } from '@/types/system'
 import type { Attachment, DocLog } from '@/types/biz'
 import type {
-  Color, ColorOption, Company, CompanyOption, MaterialDetail, MaterialDup, MaterialRow, MaterialSku, MaterialSource, SizeGroup,
+  Color, ColorOption, Company, CompanyOption, MaterialDetail, MaterialDup, MaterialPickRow, MaterialRow, MaterialSku, MaterialSource, SizeGroup,
   TreeNode, Warehouse, WarehouseOption, WarehouseType,
 } from '@/types/basic'
 import type { PageParams } from './system'
@@ -180,6 +180,9 @@ export const materialApi = {
   page: (params: PageParams & MaterialQuery) => http.get<PageResult<MaterialRow>>('/api/materials', params),
   get: (id: number) => http.get<MaterialDetail>(`/api/materials/${id}`),
   logs: (id: number) => http.get<DocLog[]>(`/api/materials/${id}/logs`),
+  /** 选 SKU 的弹窗：启用物料的启用 SKU。关键字查 SKU 码、物料编码、名称、货号、颜色名；分类含下级 */
+  pick: (params: PageParams & { keyword?: string; categoryId?: number }) =>
+    http.get<PageResult<MaterialPickRow>>('/api/materials/pick', params),
   /** 建档查重：同分类同名、同默认供应商同货号，只提示不拦 */
   dupCheck: (params: { categoryId?: number | null; name?: string; defaultSupplierId?: number | null; supplierItemNo?: string | null; excludeId?: number }) =>
     http.get<MaterialDup[]>('/api/materials/dup-check', params),

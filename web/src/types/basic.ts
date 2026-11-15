@@ -195,6 +195,28 @@ export interface MaterialDetail {
   images: Attachment[]
 }
 
+/** 选物料 SKU 弹窗（DataPick）的一行：启用物料的启用 SKU。price 是 SKU 单价，空的用物料参考单价；image 是 SKU 图，没有用物料主图 */
+export interface MaterialPickRow {
+  skuId: number
+  skuCode: string
+  materialId: number
+  materialCode: string
+  materialName: string
+  materialType: string
+  categoryId: number
+  categoryName: string
+  colorId: number | null
+  colorCode: string | null
+  colorName: string | null
+  colorHex: string | null
+  spec: string | null
+  stockUnit: string
+  purchaseUnit: string
+  conversionFactor: number
+  price: number | null
+  image: Attachment | null
+}
+
 /** 建档查重的一条（只提示不拦） */
 export interface MaterialDup {
   id: number
