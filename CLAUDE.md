@@ -32,7 +32,8 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认，但不等全
 - 分层：`com.lingmao.scm.module.<域>.{controller, service, service.impl, mapper, entity, dto}`，依赖方向不能反。同一个业务域里可以直接用兄弟表的 Mapper 做只读检查，跨域只调 Service。样板是 `module.system` 的字典类型。
 - 返回体 `R`，错误码 0 / 400 / 401 / 403 / 404 / 500 / 1xxx（业务错误，如库存不足）。分页 data 是 `{ list, total }`。
 - 时间列 `TIMESTAMPTZ` ↔ `OffsetDateTime`，JSON 东八区。数量、单价、金额用 `NUMERIC`（PRD §7.3），不用浮点。
-- 逻辑删除 `deleted`；唯一约束用部分索引 `WHERE deleted = false`。
+- 删除（架构 §6）：新业务表不用逻辑删除，没被引用的直接 `DELETE`，被引用的由外键拦住、报 1005"只能停用"，所以外键一个都不能省；提交后的单据只能作废。已有的 `sys_` 表沿用逻辑删除 `deleted` 和部分索引 `WHERE deleted = false`。
+- 上传文件的地址带签名（架构 §8）：接口返回文件地址一律走签名工具，不直接拼 `/files/...`。
 - Flyway：只加 `V<n>__*.sql`，已执行的一个字都不改。**哪个环境里有了甲方的真实数据，从那时起迁移只增不删、不改列类型**。
 - 路径用复数名词；动作用 `POST /api/xxx/{id}/audit` 这种。
 - 单号用 `common/seq/SerialNoGenerator`：前缀 + yyyyMMdd + 4 位流水。
