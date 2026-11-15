@@ -21,6 +21,12 @@ const routes: RouteRecordRaw[] = [
     redirect: '/home',
     children: [
       { path: '/home', component: () => import('@/views/home/index.vue'), meta: { title: '首页', cacheName: 'HomePage' } },
+      // 供应商详情（RFC 004 §12）：几家供应商的页签共用这一个页面实例，页面按地址里的 id 重新加载
+      {
+        path: '/suppliers/:id(\\d+)',
+        component: () => import('@/views/supplier/supplier/detail.vue'),
+        meta: { title: '供应商详情', cacheName: 'SupplierDetail' },
+      },
       // 兜底：什么都匹配不上就是 404，放在首页这一侧的外框里，左边菜单照常能点（不开页签）。
       // vue-router 按路径的具体程度排优先级，后加的菜单路由照样排在它前面
       { path: '/:pathMatch(.*)*', component: () => import('@/views/error/404.vue'), meta: { title: '页面不存在' } },

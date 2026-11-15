@@ -1,0 +1,98 @@
+<script setup lang="ts">
+import { reactive, ref, watch } from 'vue'
+import { supplierApi } from '@/api/supplier'
+import { SUPPLIER_STATUS, type SupplierOption, type SupplierUsage } from '@/types/supplier'
+
+/**
+ * 选供应商：输入编码或名称搜索，v-model 是供应商 id（RFC 004 §7）。一次最多列 50 家，再多就多打几个字。
+ * - category：只列分类里有它的（字典 supplier_category 的 value，如 FABRIC 面料商、GARMENT 成衣厂）
+ * - usage：SAMPLE（默认）打样、录价格用，待准入、审批中、合作中的都能选；BULK 大货单用，只有合作中的
+ * - 已经选中的那家（编辑旧记录）停用了、拉黑了也照样显示名字，后面标状态；想换就换，不换也能原样保存。
+ *   编辑旧记录时把名字传给 label：还没搜过，下拉框不知道这个 id 叫什么
+ * 能不能选最后由后端的 checkUsable 把关，这里只是不让人选到
+ *
+ *   <SupplierSelect v-model="form.defaultSupplierId" category="FABRIC" :label="form.defaultSupplierName" clearable />
+ */
+const props = withDefaults(defineProps<{ category?: string; usage?: SupplierUsage; label?: string | null }>(), {
+  category: undefined,
+  usage: 'SAMPLE',
+  label: null,
+})
+const model = defineModel<number | null>()
+
+const options = ref<SupplierOption[]>([])
+const loading = ref(false)
+/** 见过的供应商 id → 简称：换个词搜，上一批就不在列表里了，已经选中的还要能显示名字 */
+const names = reactive(new Map<number, string>())
+/** 搜索的序号：打字快的时候，先发的搜索后回来不能盖掉后发的 */
+let seq = 0
+
+async function search(keyword = '') {
+  const current = ++seq
+  loading.value = true
+  try {
+    const result = await supplierApi.options({
+      category: props.category,
+      usage: props.usage,
+      keyword: keyword.trim() || undefined,
+      includeId: model.value ?? undefined,
+    })
+    if (current !== seq) return
+    options.value = result
+    for (const option of result) names.set(option.id, option.shortName)
+  } catch {
+    // 消息拦截器已经弹过了
+    if (current === seq) options.value = []
+  } finally {
+    if (current === seq) loading.value = false
+  }
+}
+
+/** 分类、用途变了，已经列出来的不对了，下次展开重新取 */
+watch(() => [props.category, props.usage], () => {
+  options.value = []
+})
+
+/** 展开时还没搜过就先列一批，不用非得打字 */
+function onVisible(visible: boolean) {
+  if (visible && options.value.length === 0) void search()
+}
+
+function nameOf(id: number) {
+  return names.get(id) ?? (props.label || `供应商 ${id}`)
+}
+</script>
+
+<template>
+  <el-select
+    v-model="model"
+    filterable
+    remote
+    :remote-method="search"
+    :loading="loading"
+    placeholder="输入编码或名称搜索"
+    no-data-text="没有找到，换个词试试"
+    @visible-change="onVisible"
+  >
+    <template #label="{ value }">{{ nameOf(value) }}</template>
+    <el-option v-for="option in options" :key="option.id" :label="option.shortName" :value="option.id">
+      <span>{{ option.shortName }}</span>
+      <span v-if="option.status !== 'ACTIVE'" class="status">{{ SUPPLIER_STATUS[option.status].label }}</span>
+      <span class="code-tail code">{{ option.code }}</span>
+    </el-option>
+  </el-select>
+</template>
+
+<style scoped>
+.status {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--lm-pending-text);
+}
+
+.code-tail {
+  float: right;
+  margin-left: 16px;
+  color: var(--lm-muted);
+}
+</style>
