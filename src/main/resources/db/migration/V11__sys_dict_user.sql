@@ -218,7 +218,9 @@ WHERE deleted = false
                              ('prod_node',         'CUT'),              -- 裁剪：要料日期取它的计划开始
                              ('cert_type',         'LICENSE'),          -- 营业执照：申请准入时必须有
                              ('stock_in_reason',   'OPENING'),          -- 期初
-                             ('currency',          'CNY'));             -- 人民币
+                             ('currency',          'CNY'),              -- 人民币
+                             ('unit',              'PIECE'),            -- 件：加工价的单位固定是它（RFC 006 §3）
+                             ('style_source',      'OWN'));             -- 自主开发：导入款式时来源空就填它（RFC 005 §8）
 
 -- 5. 用户的五个新列（RFC 003 §3.2）。system 不能调 basic，默认主体存在由外键保证；停用的主体照样能留在用户上
 ALTER TABLE sys_user

@@ -189,7 +189,7 @@ class SchemaConventionsIT {
                 .containsExactlyInAnyOrder("style_source:CUSTOMER_SAMPLE", "material_type:FABRIC",
                         "material_type:LINING", "supplier_category:GARMENT", "supplier_category:PROCESSOR",
                         "order_type:CUSTOMER", "process_mode:FULL", "prod_node:CUT", "cert_type:LICENSE",
-                        "stock_in_reason:OPENING", "currency:CNY");
+                        "stock_in_reason:OPENING", "currency:CNY", "unit:PIECE", "style_source:OWN");
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_dict_data WHERE type_code = 'brand'", Integer.class))
                 .isZero();
