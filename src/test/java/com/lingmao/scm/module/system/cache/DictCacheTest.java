@@ -35,19 +35,20 @@ class DictCacheTest {
         dictCache = new DictCache(redis, JsonMapper.builder().build());
     }
 
-    /** 规则：存进去的 JSON 能原样读回来；key 是 dict:类型编码，24 小时过期 */
+    /** 规则：存进去的 JSON 能原样读回来（status 也在）；key 是 dict:v2:类型编码，24 小时过期 */
     @Test
     void putThenGet_roundTrip() {
         when(redis.opsForValue()).thenReturn(ops);
-        List<DictOption> options = List.of(new DictOption("春季", "1"), new DictOption("夏季", "2"));
+        List<DictOption> options = List.of(new DictOption("春季", "1", 1), new DictOption("夏季", "2", 0));
 
         dictCache.put("season", options);
 
         ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
-        verify(ops).set(eq("dict:season"), json.capture(), eq(Duration.ofHours(24)));
-        assertThat(json.getValue()).isEqualTo("[{\"label\":\"春季\",\"value\":\"1\"},{\"label\":\"夏季\",\"value\":\"2\"}]");
+        verify(ops).set(eq("dict:v2:season"), json.capture(), eq(Duration.ofHours(24)));
+        assertThat(json.getValue()).isEqualTo(
+                "[{\"label\":\"春季\",\"value\":\"1\",\"status\":1},{\"label\":\"夏季\",\"value\":\"2\",\"status\":0}]");
 
-        when(ops.get("dict:season")).thenReturn(json.getValue());
+        when(ops.get("dict:v2:season")).thenReturn(json.getValue());
         assertThat(dictCache.get("season")).isEqualTo(options);
     }
 
@@ -56,6 +57,6 @@ class DictCacheTest {
     void evictAfterCommit_noTransaction_deletesNow() {
         dictCache.evictAfterCommit("season", "season", null);
 
-        verify(redis).delete(List.of("dict:season"));
+        verify(redis).delete(List.of("dict:v2:season"));
     }
 }

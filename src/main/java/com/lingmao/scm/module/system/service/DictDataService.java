@@ -14,7 +14,10 @@ public interface DictDataService {
 
     DictData getById(Long id);
 
-    /** 某个类型下启用的选项，按 sort 排好，给下拉框用。走 Redis 缓存 */
+    /**
+     * 某个类型下的全部选项（停用的也在，带 status），按 sort 排好。走 Redis 缓存。
+     * 下拉框只列启用的，显示文字用全部；后端校验新数据的值时也只认启用的（DictOption.enabled）
+     */
     List<DictOption> listByType(String typeCode);
 
     Long create(DictDataSaveReq req);

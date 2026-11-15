@@ -1,4 +1,4 @@
-import { ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { dictApi } from '@/api/system'
 import type { DictOption } from '@/types/system'
 
@@ -21,7 +21,11 @@ export function loadDict(type: string): Promise<DictOption[]> {
   return options
 }
 
-/** 按字典类型编码取启用的选项。type 可以是 ref 或 getter，变了会重新取 */
+/**
+ * 按字典类型编码取选项。type 可以是 ref 或 getter，变了会重新取。
+ * options 是全部选项，停用的也在（status 0）：旧数据里存着停用的值，labelOf 要能翻成文字。
+ * 让人选的地方只列启用的：用 DictSelect，或者自己列的时候用 enabled
+ */
 export function useDict(type: MaybeRefOrGetter<string>) {
   const options = ref<DictOption[]>([])
   const loading = ref(false)
@@ -45,11 +49,14 @@ export function useDict(type: MaybeRefOrGetter<string>) {
     { immediate: true },
   )
 
-  /** 值 → 显示的文字，列表里显示字典项用。字典里没有的（比如已经停用的选项）显示值本身 */
+  /** 启用的选项：分段控件、筛选这些自己列选项的地方用 */
+  const enabled = computed(() => options.value.filter((option) => option.status === 1))
+
+  /** 值 → 显示的文字，列表里显示字典项用。停用的选项照样翻；字典里没有的（选项被删了）显示值本身 */
   function labelOf(value: string | null | undefined) {
     if (value == null || value === '') return ''
     return options.value.find((option) => option.value === value)?.label ?? value
   }
 
-  return { options, loading, labelOf }
+  return { options, enabled, loading, labelOf }
 }

@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.dto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -20,8 +21,11 @@ public class RoleSaveReq {
     @Size(max = 64, message = "名称最长 64")
     private String name;
 
+    /** 不传用默认值；保存是整体覆盖，显式传 null 等于清空，这一列不能空，所以拦住（下同） */
+    @NotNull(message = "排序不能为空")
     private Integer sort = 0;
 
+    @NotNull(message = "状态不能为空")
     @Min(value = 0, message = "状态只能是 0 或 1")
     @Max(value = 1, message = "状态只能是 0 或 1")
     private Integer status = 1;

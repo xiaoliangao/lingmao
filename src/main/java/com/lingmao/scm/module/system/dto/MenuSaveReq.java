@@ -37,10 +37,14 @@ public class MenuSaveReq {
     @Size(max = 64, message = "图标最长 64")
     private String icon;
 
+    /** 不传用默认值；保存是整体覆盖，显式传 null 等于清空，这几列不能空，所以拦住 */
+    @NotNull(message = "排序不能为空")
     private Integer sort = 0;
 
+    @NotNull(message = "是否显示不能为空")
     private Boolean visible = true;
 
+    @NotNull(message = "状态不能为空")
     private Integer status = 1;
 
     /** 只对顶层目录有效：true 表示这个目录属于管理后台。下级菜单一律跟着上级走，传了也不看 */

@@ -1,12 +1,18 @@
 package com.lingmao.scm.module.system.service.impl;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.DictTypeSaveReq;
 import com.lingmao.scm.module.system.entity.DictType;
 import com.lingmao.scm.module.system.mapper.DictDataMapper;
 import com.lingmao.scm.module.system.mapper.DictTypeMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -14,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,6 +43,12 @@ class DictTypeServiceImplTest {
 
     @InjectMocks
     private DictTypeServiceImpl dictTypeService;
+
+    /** 修改用 Updates.replaceById，它要从 MyBatis-Plus 的表信息里找列名；单元测试不起 Spring，手动建一份（见 RoleServiceImplTest） */
+    @BeforeAll
+    static void initTableInfo() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), DictType.class);
+    }
 
     /** 规则：编码已存在不能新增，而且不能走到 insert（先查重再写库）。 */
     @Test
@@ -97,7 +110,7 @@ class DictTypeServiceImplTest {
         assertThatThrownBy(() -> dictTypeService.update(1L, req("season2")))   // 想把 code 改成 season2
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("不能修改编码");
-        verify(dictTypeMapper, never()).updateById(any(DictType.class));
+        verify(dictTypeMapper, never()).update(any(DictType.class), any());
     }
 
     /** 规则：code 没变（只改名称），照常放行 */
@@ -111,7 +124,29 @@ class DictTypeServiceImplTest {
         dictTypeService.update(1L, req("season"));
 
         verify(dictDataMapper, never()).exists(any());            // ← 新加：code 没变，根本不该去查数据
-        verify(dictTypeMapper).updateById(any(DictType.class));
+        verify(dictTypeMapper).update(same(season), any());
+    }
+
+    /**
+     * 规则（bug 005）：保存是整体覆盖，备注传 null 就是清空。
+     * updateById 会跳过 null 字段，所以走 update(实体, Updates.replaceById(实体))：条件里多一句 SET remark = NULL，按 id 改
+     */
+    @Test
+    void update_remarkNull_setsRemarkNull() {
+        DictType season = new DictType();
+        season.setId(1L);
+        season.setCode("season");
+        season.setRemark("旧备注");
+        when(dictTypeMapper.selectById(1L)).thenReturn(season);
+        DictTypeSaveReq req = req("season");                 // remark 没传，是 null
+
+        dictTypeService.update(1L, req);
+
+        ArgumentCaptor<UpdateWrapper<DictType>> wrapper = ArgumentCaptor.captor();
+        verify(dictTypeMapper).update(same(season), wrapper.capture());
+        assertThat(season.getRemark()).isNull();
+        assertThat(wrapper.getValue().getSqlSet()).isEqualTo("remark = NULL");
+        assertThat(wrapper.getValue().getSqlSegment()).contains("id =");
     }
 
     /** 规则：查不到抛业务异常，code 是 404，前端据此提示"不存在"而不是"服务器错误"。 */

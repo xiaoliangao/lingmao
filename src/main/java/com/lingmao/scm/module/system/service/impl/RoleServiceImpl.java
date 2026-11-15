@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.system.dto.RoleQuery;
 import com.lingmao.scm.module.system.dto.RoleSaveReq;
@@ -75,7 +76,7 @@ public class RoleServiceImpl implements RoleService {
         ensureNotAdmin(role);
         ensureCodeUnique(req.getCode(), id);
         BeanUtils.copyProperties(req, role);
-        sysRoleMapper.updateById(role);
+        sysRoleMapper.update(role, Updates.replaceById(role));   // 整体覆盖，备注能清空（bug 005）
     }
 
     @Override

@@ -22,7 +22,10 @@ public final class ErrorCodes {
     /** 超出上限（超排、超收、超回货）。data：哪几行、上限多少 */
     public static final int OVER_LIMIT = 1004;
 
-    /** 有下游单据，不能反审核、取消或删除。data：下游单据列表 */
+    /**
+     * 被引用了，不能反审核、取消或删除。有下游单据时 data 是下游单据列表；
+     * 删除被数据库外键拦住时（GlobalExceptionHandler）没有 data，msg 是"已被采购单引用，不能删除，只能停用"
+     */
     public static final int HAS_DOWNSTREAM = 1005;
 
     private ErrorCodes() {

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { userApi } from '@/api/system'
+import type { UserOption } from '@/types/system'
 
 /**
- * 选人：输入用户名搜索，只列启用的账号，v-model 是用户 id。
+ * 选人：输入用户名或昵称搜索，只列启用的账号，v-model 是用户 id。
  * 编辑已有记录时把这个人的名字传给 label：还没搜过，下拉框不知道这个 id 叫什么，不传就只能显示"用户 12"
  *
  *   <UserSelect v-model="form.ownerId" :label="form.ownerName" clearable />
@@ -11,11 +12,6 @@ import { userApi } from '@/api/system'
 const props = defineProps<{ label?: string | null }>()
 const model = defineModel<number | null>()
 
-interface UserOption {
-  id: number
-  username: string
-  nickname: string
-}
 const options = ref<UserOption[]>([])
 const loading = ref(false)
 /** 搜到过的人 id → 名字：换个词搜，上一批就不在列表里了，已经选中的还要能显示名字 */
@@ -29,7 +25,7 @@ async function search(keyword: string) {
   try {
     const result = await userApi.search(keyword.trim())
     if (current !== seq) return
-    options.value = result.list.map(({ id, username, nickname }) => ({ id, username, nickname }))
+    options.value = result
     for (const user of options.value) names.set(user.id, user.nickname)
   } catch {
     // 消息拦截器已经弹过了
@@ -51,8 +47,8 @@ function nameOf(id: number) {
     remote
     :remote-method="search"
     :loading="loading"
-    placeholder="输入用户名搜索"
-    no-data-text="没有找到，换个用户名试试"
+    placeholder="输入用户名或昵称搜索"
+    no-data-text="没有找到，换个名字试试"
   >
     <template #label="{ value }">{{ nameOf(value) }}</template>
     <el-option v-for="user in options" :key="user.id" :label="user.nickname" :value="user.id">

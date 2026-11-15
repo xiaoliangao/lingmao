@@ -200,23 +200,22 @@ class AuthServiceImplTest {
                 .isInstanceOf(BizException.class)
                 .hasMessage("旧密码不对")
                 .extracting("code").isEqualTo(1000);
-        verify(sysUserMapper, never()).updateById(any(SysUser.class));
+        verify(sysUserMapper, never()).updatePassword(anyLong(), anyString());
     }
 
     /**
-     * 规则：旧密码对，存进库的是新密码加密后的值
+     * 规则：旧密码对，存进库的是新密码加密后的值。密码列标了 NEVER，走"改密码"这个动作（条件更新），不走 updateById
      */
     @Test
     void changePassword_ok_savesEncodedNewPassword() {
-        SysUser user = admin();
-        when(sysUserMapper.selectById(1L)).thenReturn(user);
+        when(sysUserMapper.selectById(1L)).thenReturn(admin());
         when(passwordEncoder.matches("right-old", "hashed")).thenReturn(true);
         when(passwordEncoder.encode("new-pass-123")).thenReturn("encoded-new");
 
         authService.changePassword(1L, "right-old", "new-pass-123");
 
-        assertThat(user.getPassword()).isEqualTo("encoded-new");
-        verify(sysUserMapper).updateById(user);
+        verify(sysUserMapper).updatePassword(1L, "encoded-new");
+        verify(sysUserMapper, never()).updateById(any(SysUser.class));
     }
 
     private SysUser admin() {

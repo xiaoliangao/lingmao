@@ -81,7 +81,6 @@ public class AuthServiceImpl implements AuthService {
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new BizException("旧密码不对");
         }
-        user.setPassword(passwordEncoder.encode(newPassword));
-        sysUserMapper.updateById(user);
+        sysUserMapper.updatePassword(userId, passwordEncoder.encode(newPassword));
     }
 }

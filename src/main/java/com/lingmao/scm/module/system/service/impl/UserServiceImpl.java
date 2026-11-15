@@ -1,9 +1,12 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
+import com.lingmao.scm.module.system.dto.UserOption;
 import com.lingmao.scm.module.system.dto.UserQuery;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.dto.UserVO;
@@ -28,6 +31,9 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    /** 选人下拉框一次最多给多少个：再多就该让他多打几个字了 */
+    static final int OPTIONS_LIMIT = 20;
+
     private final SysUserMapper sysUserMapper;
     private final PasswordEncoder passwordEncoder;
     private final SysUserRoleMapper sysUserRoleMapper;
@@ -46,6 +52,19 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserVO getById(Long id) {
         return UserVO.from(getEntity(id));
+    }
+
+    @Override
+    public List<UserOption> options(String keyword) {
+        String kw = StringUtils.hasText(keyword) ? keyword.trim() : null;
+        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getStatus, 1)
+                // 用户名或昵称包含关键字；括号要加：不加的话 status = 1 只管住了用户名那一半
+                .and(kw != null, w -> w.like(SysUser::getUsername, kw).or().like(SysUser::getNickname, kw))
+                .orderByAsc(SysUser::getUsername);
+        // 只取前 20 个，不查总数（第三个参数 false）
+        return sysUserMapper.selectPage(new Page<>(1, OPTIONS_LIMIT, false), wrapper)
+                .getRecords().stream().map(UserOption::from).toList();
     }
 
     @Override
@@ -76,7 +95,8 @@ public class UserServiceImpl implements UserService {
         user.setNickname(req.getNickname());
         user.setPhone(req.getPhone());
         user.setStatus(req.getStatus());
-        sysUserMapper.updateById(user);
+        // 整体覆盖：手机号传 null 就是清空（bug 005）。密码标了 NEVER，这里不会碰它
+        sysUserMapper.update(user, Updates.replaceById(user));
     }
 
     @Override
@@ -93,8 +113,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void resetPassword(Long id, String password) {
         SysUser user = getEntity(id);
-        user.setPassword(passwordEncoder.encode(password));
-        sysUserMapper.updateById(user);
+        sysUserMapper.updatePassword(id, passwordEncoder.encode(password));
         // 他可能就是输错被锁住了才来找管理员：重置以后马上能用新密码登录
         loginFailCounter.clear(user.getUsername());
     }

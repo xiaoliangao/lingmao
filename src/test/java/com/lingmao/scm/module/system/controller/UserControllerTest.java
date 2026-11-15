@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.module.system.dto.UserOption;
 import com.lingmao.scm.module.system.dto.UserVO;
 import com.lingmao.scm.module.system.service.UserService;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,37 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.msg").value("密码长度 8-32 位"));
 
         verify(userService, never()).create(any());
+    }
+
+    /**
+     * 规则（RFC 001 §18）：BCrypt 最多认 72 个字节。25 个汉字只有 25 个字符（@Size 放行），却有 75 个字节，
+     * 在入口返回 400，不能走到加密那一步变成 500
+     */
+    @Test
+    void create_passwordOver72Bytes_returns400() throws Exception {
+        String password = "密".repeat(25);
+        mockMvc.perform(post("/api/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username": "zhangsan", "password": "%s", "nickname": "张三"}
+                                """.formatted(password)))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("密码太长：最多 72 个字节，一个汉字算 3 个"));
+
+        verify(userService, never()).create(any());
+    }
+
+    /** 规则（RFC 001 §18 1d）：选人下拉的接口，关键字传给 Service，只返回 id、用户名、昵称；/options 不会被当成 /{id} */
+    @Test
+    void options_returnsIdUsernameNickname() throws Exception {
+        when(userService.options("zh")).thenReturn(List.of(new UserOption(2L, "zhangsan", "张三")));
+
+        mockMvc.perform(get("/api/users/options").param("keyword", "zh"))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[0].id").value(2))
+                .andExpect(jsonPath("$.data[0].username").value("zhangsan"))
+                .andExpect(jsonPath("$.data[0].nickname").value("张三"))
+                .andExpect(jsonPath("$.data[0].phone").doesNotExist());
     }
 
     /** 规则：列表返回的每个用户里都没有 password 字段 */

@@ -1,11 +1,15 @@
 package com.lingmao.scm.common.exception;
 
 import com.lingmao.scm.common.log.TraceIdFilter;
+import com.lingmao.scm.common.mybatis.TableComments;
 import com.lingmao.scm.common.result.R;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.MessageSourceResolvable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -19,10 +23,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tools.jackson.core.JacksonException;
 
+import java.sql.SQLException;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,10 +43,35 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
     /** PostgreSQL 唯一约束冲突的报错里，约束名在第一对双引号里：violates unique constraint "uk_xxx"（中文报错也一样） */
     private static final Pattern QUOTED = Pattern.compile("\"([^\"]+)\"");
+
+    /** PostgreSQL 的 SQLState：外键冲突 */
+    private static final String FOREIGN_KEY_VIOLATION = "23503";
+
+    /*
+     * 外键冲突的报错长这样（PgJDBC 把 detail 接在消息后面；PostgreSQL 的报错是英文的，部署包和本机开发库都没改 lc_messages）：
+     *   删除被拦住：ERROR: update or delete on table "sup_supplier" violates foreign key constraint "fk_x" on table "pur_order"
+     *                Detail: Key (id)=(1) is still referenced from table "pur_order".
+     *   引用的不存在：ERROR: insert or update on table "pur_order" violates foreign key constraint "fk_x"
+     *                Detail: Key (supplier_id)=(9) is not present in table "sup_supplier".
+     * 引用方的表名先从 detail 取，取不到（连接参数关了 detail）再从第一行取
+     */
+    private static final Pattern FK_STILL_REFERENCED = Pattern.compile("is still referenced from table \"([^\"]+)\"");
+    private static final Pattern FK_REFERENCED = Pattern.compile(
+            "update or delete on table \"[^\"]+\" violates foreign key constraint \"[^\"]+\" on table \"([^\"]+)\"");
+    private static final Pattern FK_NOT_PRESENT = Pattern.compile("is not present in table \"[^\"]+\"");
+    private static final Pattern FK_MISSING = Pattern.compile(
+            "insert or update on table \"[^\"]+\" violates foreign key constraint \"[^\"]+\"");
+
+    /**
+     * 查表的中文名（表注释）用。用 ObjectProvider 取：@WebMvcTest 这类只起 Web 层的测试里没有数据库，
+     * 取不到就用通用的说法，不至于让每个接口测试都去造一个假的
+     */
+    private final ObjectProvider<TableComments> tableComments;
 
     /** 业务异常：预期内的失败，记 warn，msg 直接给前端看；导入错误清单这类附加数据放在 data 里 */
     @ExceptionHandler(BizException.class)
@@ -99,6 +130,16 @@ public class GlobalExceptionHandler {
         return R.fail(400, "不支持的 Content-Type: " + e.getContentType());
     }
 
+    /**
+     * 上传请求本身坏了：传到一半断了、请求体不完整，或者根本不是 multipart。Tomcat 解析不了，Spring 包成这个（RFC 001 §18）。
+     * 文件太大（MaxUploadSizeExceededException）是它的子类，由下面那个更具体的方法接
+     */
+    @ExceptionHandler(MultipartException.class)
+    public R<Void> handleMultipart(MultipartException e) {
+        log.warn("上传请求解析失败: {}", e.getMessage());
+        return R.fail(400, "上传失败：请求不完整或格式不对，请重新上传");
+    }
+
     /** 上传的文件超过大小限制（application.yaml 里的 spring.servlet.multipart.max-file-size） */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public R<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
@@ -134,7 +175,36 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 兜底：程序错误（空指针、SQL 错误；外键冲突也算，说明少了一处检查）。完整堆栈打到日志，细节不给前端，
+     * 数据库约束拦住了（唯一冲突是它的子类，由上面的方法接）。只认外键冲突：
+     * - 删除被引用的数据：新业务表不用逻辑删除，没被引用的直接删，被引用的由外键（RESTRICT）拦住，
+     *   "用过的只能停用"靠数据库保证，不靠代码去查（用户 11-15 定）。返回 1005，说清是被什么引用了：
+     *   报错里有引用方的表名，用表注释翻成中文；没写注释就说"其他数据"。
+     * - 插入、修改时引用的数据不存在（页面开着的时候别人把它删了）：返回 1000 让用户刷新。
+     * 非空、检查约束这些说明少了一处校验，是程序错误，和兜底一样返回 500
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public R<Void> handleDataIntegrity(DataIntegrityViolationException e, HttpServletRequest request) {
+        SQLException sql = sqlExceptionOf(e);
+        if (sql == null || !FOREIGN_KEY_VIOLATION.equals(sql.getSQLState())) {
+            return handleOther(e, request);
+        }
+        String msg = Objects.requireNonNullElse(sql.getMessage(), "");
+        // 报错原文（SQL、表名、键值）只进日志，不给前端
+        if (FK_NOT_PRESENT.matcher(msg).find() || FK_MISSING.matcher(msg).find()) {
+            log.warn("外键冲突，引用的数据不存在: {}", msg);
+            return R.fail(ErrorCodes.BIZ_ERROR, "关联的数据不存在，可能刚被别人删除了，请刷新后再试");
+        }
+        // 认不出是哪种（比如数据库换成了中文报错），按删除处理：新表的外键冲突绝大多数是删除被拦住
+        String table = firstGroup(msg, FK_STILL_REFERENCED, FK_REFERENCED);
+        log.warn("删除被外键拦住，引用方 {}: {}", table, msg);
+        TableComments comments = table == null ? null : tableComments.getIfAvailable();
+        String name = comments == null ? null : comments.of(table);
+        return R.fail(ErrorCodes.HAS_DOWNSTREAM,
+                (name == null ? "已被其他数据引用" : "已被" + name + "引用") + "，不能删除，只能停用");
+    }
+
+    /**
+     * 兜底：程序错误（空指针、SQL 错误、非空约束……）。完整堆栈打到日志，细节不给前端，
      * 只给错误编号：用户把编号发过来，grep 一下就能找到这次请求的全部日志
      */
     @ExceptionHandler(Exception.class)
@@ -163,6 +233,27 @@ public class GlobalExceptionHandler {
             }
         }
         return path.toString();
+    }
+
+    /** 按顺序试几个正则，返回第一个匹配上的第 1 组；都没匹配上返回 null */
+    private static String firstGroup(String text, Pattern... patterns) {
+        for (Pattern pattern : patterns) {
+            Matcher matcher = pattern.matcher(text);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        return null;
+    }
+
+    /** 顺着 cause 往下找驱动抛的 SQLException：MyBatis、Spring 会包好几层 */
+    private static SQLException sqlExceptionOf(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SQLException sql) {
+                return sql;
+            }
+        }
+        return null;
     }
 
     /** 从数据库的报错里取约束名；取不到就把整条报错记下 */

@@ -15,14 +15,18 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 字典下拉选项的缓存：Redis 里 dict:{typeCode} → 选项列表的 JSON。
+ * 字典下拉选项的缓存：Redis 里 dict:v2:{typeCode} → 选项列表的 JSON。
  * 读：先查缓存，没有再查库并放进缓存（Cache-Aside）。写：改了字典数据，事务提交以后删掉缓存，下次读时重建
  */
 @Component
 @RequiredArgsConstructor
 public class DictCache {
 
-    private static final String KEY_PREFIX = "dict:";
+    /**
+     * v2：11-15 起选项带 status、停用的也缓存。换了前缀，升级前缓存的旧格式（没有 status、只有启用的）不会被读到，
+     * 最多 24 小时后自己过期；不换的话，旧缓存读出来 status 是 null，下拉框会一项都不列
+     */
+    private static final String KEY_PREFIX = "dict:v2:";
     /** 兜底的过期时间：万一哪里漏删了，最多一天后也会自己更新 */
     private static final Duration TTL = Duration.ofHours(24);
 

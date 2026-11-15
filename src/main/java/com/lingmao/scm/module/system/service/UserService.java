@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.service;
 
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
+import com.lingmao.scm.module.system.dto.UserOption;
 import com.lingmao.scm.module.system.dto.UserQuery;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.dto.UserVO;
@@ -14,6 +15,9 @@ public interface UserService {
     PageResult<UserVO> page(UserQuery query);
 
     UserVO getById(Long id);
+
+    /** 选人下拉框：启用的账号，用户名或昵称包含 keyword（空的话不筛），按用户名排，最多 20 个 */
+    List<UserOption> options(String keyword);
 
     /** 新增用户，返回新 id。用户名已存在抛 BizException */
     Long create(UserCreateReq req);

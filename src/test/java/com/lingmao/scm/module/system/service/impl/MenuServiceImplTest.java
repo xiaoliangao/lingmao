@@ -54,7 +54,7 @@ class MenuServiceImplTest {
         assertThatThrownBy(() -> menuService.update(1L, dirReq(3L)))
                 .isInstanceOf(BizException.class)
                 .hasMessage("上级菜单不能是自己或自己的下级");
-        verify(sysMenuMapper, never()).updateById(any(SysMenu.class));
+        verify(sysMenuMapper, never()).update(any(SysMenu.class), any());
     }
 
     /** 规则：按钮必须有权限标识，不然它什么也管不了 */
@@ -105,7 +105,7 @@ class MenuServiceImplTest {
         assertThatThrownBy(() -> menuService.update(1L, req))
                 .isInstanceOf(BizException.class)
                 .hasMessage("下面还有菜单，不能在管理后台和业务菜单之间移动");
-        verify(sysMenuMapper, never()).updateById(any(SysMenu.class));
+        verify(sysMenuMapper, never()).update(any(SysMenu.class), any());
     }
 
     private MenuSaveReq dirReq(Long parentId) {

@@ -43,14 +43,18 @@ class DictDataControllerTest {
         verify(dictDataService, never()).create(any());
     }
 
-    /** 规则：by-type 路径接对了，Service 返回的列表原样放进 R 的 data */
+    /** 规则：by-type 路径接对了，Service 返回的列表原样放进 R 的 data；停用的也在，带 status（前端下拉只列启用的） */
     @Test
     void listByType_returnsListInData() throws Exception {
-        when(dictDataService.listByType("season")).thenReturn(List.of(new DictOption("春季", "1")));
+        when(dictDataService.listByType("season"))
+                .thenReturn(List.of(new DictOption("春季", "1", 1), new DictOption("旧款季", "9", 0)));
 
         mockMvc.perform(get("/api/dict-data/by-type/season"))
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0].label").value("春季"))
-                .andExpect(jsonPath("$.data[0].value").value("1"));
+                .andExpect(jsonPath("$.data[0].value").value("1"))
+                .andExpect(jsonPath("$.data[0].status").value(1))
+                .andExpect(jsonPath("$.data[1].status").value(0))
+                .andExpect(jsonPath("$.data[1].enabled").doesNotExist());
     }
 }

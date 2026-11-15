@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -25,6 +26,7 @@ public class DictTypeSaveReq {
     @Size(max = 255, message = "备注最长 255")
     private String remark;
 
-    /** 1 启用 0 停用，默认启用 */
+    /** 1 启用 0 停用，默认启用。保存是整体覆盖，传 null 就是清空，这一列不能空，所以拦住 */
+    @NotNull(message = "状态不能为空")
     private Integer status = 1;
 }

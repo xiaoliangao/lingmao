@@ -1,9 +1,13 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
+import com.lingmao.scm.module.system.dto.UserOption;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.entity.SysRole;
 import com.lingmao.scm.module.system.entity.SysUser;
@@ -27,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,10 +57,14 @@ class UserServiceImplTest {
     @InjectMocks
     private UserServiceImpl userService;
 
-    /** assignRoles 查角色是否存在用了 Lambda 条件的 in，要先给 SysRole 建表信息（见 RoleServiceImplTest） */
+    /**
+     * assignRoles 查角色是否存在用了 Lambda 条件的 in，要先给 SysRole 建表信息（见 RoleServiceImplTest）；
+     * 修改用 Updates.replaceById、选人下拉的 Lambda 条件要拼成 SQL 来检查，SysUser 也建一份
+     */
     @BeforeAll
     static void initTableInfo() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SysRole.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SysUser.class);
     }
 
     /** 规则：用户名已存在，不能新增，也不能走到 insert */
@@ -98,7 +107,66 @@ class UserServiceImplTest {
         assertThatThrownBy(() -> userService.update(1L, updateReq(0), 1L))
                 .isInstanceOf(BizException.class)
                 .hasMessage("不能停用自己");
-        verify(sysUserMapper, never()).updateById(any(SysUser.class));
+        verify(sysUserMapper, never()).update(any(SysUser.class), any());
+    }
+
+    /**
+     * 规则（bug 005）：保存是整体覆盖，手机号传 null 就是清空，SET 里有 phone = NULL；
+     * 密码列标了 NEVER，修改资料不碰它（不然和同时进行的改密码互相覆盖）
+     */
+    @Test
+    void update_phoneNull_clearsPhoneAndNeverTouchesPassword() {
+        SysUser old = user(2L, "zhangsan");
+        old.setPassword("encoded-old");
+        old.setPhone("13800000000");
+        when(sysUserMapper.selectById(2L)).thenReturn(old);
+        UserUpdateReq req = updateReq(1);                       // phone 没传
+
+        userService.update(2L, req, 1L);
+
+        ArgumentCaptor<UpdateWrapper<SysUser>> wrapper = ArgumentCaptor.captor();
+        verify(sysUserMapper).update(same(old), wrapper.capture());
+        assertThat(old.getPhone()).isNull();
+        assertThat(wrapper.getValue().getSqlSet()).isEqualTo("phone = NULL").doesNotContain("password");
+    }
+
+    /**
+     * 规则（RFC 001 §18 1d）：选人下拉只列启用的人，用户名或昵称包含关键字，最多 20 个、不查总数。
+     * 关键字的 or 要包在括号里，不然 status = 1 只管住了用户名那一半
+     */
+    @Test
+    void options_enabledOnly_matchUsernameOrNickname_top20() {
+        SysUser zhang = user(2L, "zhangsan");
+        zhang.setNickname("张三");
+        when(sysUserMapper.selectPage(any(), any())).thenAnswer(inv -> {
+            Page<SysUser> page = inv.getArgument(0);
+            page.setRecords(List.of(zhang));
+            return page;
+        });
+
+        List<UserOption> options = userService.options(" 张 ");
+
+        ArgumentCaptor<Page<SysUser>> page = ArgumentCaptor.captor();
+        ArgumentCaptor<LambdaQueryWrapper<SysUser>> wrapper = ArgumentCaptor.captor();
+        verify(sysUserMapper).selectPage(page.capture(), wrapper.capture());
+        assertThat(page.getValue().getSize()).isEqualTo(20);
+        assertThat(page.getValue().searchCount()).isFalse();
+        assertThat(wrapper.getValue().getSqlSegment())
+                .containsPattern("status = #\\{.+\\} AND \\(username LIKE #\\{.+\\} OR nickname LIKE #\\{.+\\}\\)");
+        assertThat(wrapper.getValue().getParamNameValuePairs().values()).contains(1, "%张%");
+        assertThat(options).containsExactly(new UserOption(2L, "zhangsan", "张三"));
+    }
+
+    /** 规则：没有关键字时只按启用筛，不拼 LIKE */
+    @Test
+    void options_noKeyword_noLike() {
+        when(sysUserMapper.selectPage(any(), any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(userService.options("  ")).isEmpty();
+
+        ArgumentCaptor<LambdaQueryWrapper<SysUser>> wrapper = ArgumentCaptor.captor();
+        verify(sysUserMapper).selectPage(any(), wrapper.capture());
+        assertThat(wrapper.getValue().getSqlSegment()).contains("status =").doesNotContain("LIKE");
     }
 
     /** 规则（bug 008）：不能去掉自己的超级管理员角色，原来的角色关联一条都不动 */
@@ -127,19 +195,16 @@ class UserServiceImplTest {
         verify(sysUserRoleMapper).insert(anyList());
     }
 
-    /** 规则：重置密码，存进库的也是加密后的 */
+    /** 规则：重置密码，存进库的也是加密后的；走"改密码"这个动作，不走 updateById（密码列标了 NEVER） */
     @Test
     void resetPassword_savesEncodedPassword() {
-        SysUser user = new SysUser();
-        user.setId(2L);
-        user.setPassword("old-hash");
-        when(sysUserMapper.selectById(2L)).thenReturn(user);
+        when(sysUserMapper.selectById(2L)).thenReturn(user(2L, "zhangsan"));
         when(passwordEncoder.encode("654321")).thenReturn("encoded-654321");
 
         userService.resetPassword(2L, "654321");
 
-        assertThat(user.getPassword()).isEqualTo("encoded-654321");
-        verify(sysUserMapper).updateById(user);
+        verify(sysUserMapper).updatePassword(2L, "encoded-654321");
+        verify(sysUserMapper, never()).updateById(any(SysUser.class));
     }
 
     /** 规则：重置密码时清掉他的登录失败计数，被锁住的人马上能用新密码登录 */

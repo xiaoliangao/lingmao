@@ -6,10 +6,23 @@ import { ErrorCode } from '@/utils/errorCodes'
 import { formatFileSize } from '@/utils/format'
 import BizErrorTable from './BizErrorTable.vue'
 
+/** 一条提示，格式和 1003 的错误清单一样；sheet 只在一个文件几张表时有，row 是 0 说的是整张表 */
+interface ImportNote {
+  sheet?: string
+  row: number
+  column?: string
+  message: string
+}
+interface ImportResult {
+  total: number
+  notes: ImportNote[]
+}
+
 /**
  * Excel 导入：下载模板 → 选 .xlsx → 上传 → 成功显示导入了多少条，并发出 success（页面拿它刷新列表）。
  * 后端有一行不对就整批不导（RFC 001 §9.3），返回 1003 和全部错误。清单就显示在这个对话框里，
  * 不弹全局的错误清单：改好文件可以接着在这里重新选、重新导。
+ * 成功时后端返回 { total, notes }：notes 是不拦导入的提示（新建了哪些颜色……），不空就列在"导入完成"下面。
  *
  *   <ImportDialog v-model="importVisible" title="导入供应商" template-url="/api/suppliers/import-template"
  *                 import-url="/api/suppliers/import" @success="search" />
@@ -30,6 +43,8 @@ const errorMessage = ref('')
 const errors = ref<unknown[]>([])
 /** 导入了多少条；null 表示还没导成 */
 const imported = ref<number | null>(null)
+/** 导入成功时带回来的提示 */
+const notes = ref<ImportNote[]>([])
 
 /** 每次打开都从头来 */
 function reset() {
@@ -37,6 +52,7 @@ function reset() {
   errorMessage.value = ''
   errors.value = []
   imported.value = null
+  notes.value = []
 }
 
 async function downloadTemplate() {
@@ -74,7 +90,8 @@ async function submit() {
   errorMessage.value = ''
   errors.value = []
   try {
-    const result = await upload<{ total: number }>(props.importUrl, file.value, { silent: true })
+    const result = await upload<ImportResult>(props.importUrl, file.value, { silent: true })
+    notes.value = result.notes ?? []
     imported.value = result.total
     emit('success', result.total)
   } catch (error) {
@@ -101,16 +118,22 @@ async function submit() {
     :show-close="!importing"
     @open="reset"
   >
-    <div v-if="imported !== null" class="done">
-      <el-icon class="done-icon"><CircleCheckFilled /></el-icon>
-      <p>导入完成，共 <span class="num">{{ imported }}</span> 条。</p>
-    </div>
+    <template v-if="imported !== null">
+      <div class="done">
+        <el-icon class="done-icon"><CircleCheckFilled /></el-icon>
+        <p>导入完成，共 <span class="num">{{ imported }}</span> 条。</p>
+      </div>
+      <template v-if="notes.length">
+        <p class="notes-title">有 <span class="num">{{ notes.length }}</span> 条提示，不影响导入，请看一下：</p>
+        <BizErrorTable :items="notes" message-label="说明" />
+      </template>
+    </template>
 
     <template v-else>
       <ol class="steps">
         <li>
           <p class="step-title">下载模板，按模板填好</p>
-          <p class="step-hint">带 * 的列必填；表头别改名，列的顺序可以调。模板第二页"填写说明"里有每一列的格式和例子。</p>
+          <p class="step-hint">带 * 的列必填；表头别改名，列的顺序可以调。模板里"填写说明"那一页有每一列的格式和例子。</p>
           <el-button icon="Download" :loading="downloading" @click="downloadTemplate">下载模板</el-button>
         </li>
         <li>
@@ -246,5 +269,11 @@ async function submit() {
 .done p {
   margin: 12px 0 0;
   font-size: 15px;
+}
+
+.notes-title {
+  margin: 20px 0 8px;
+  font-size: 13px;
+  color: var(--lm-muted);
 }
 </style>

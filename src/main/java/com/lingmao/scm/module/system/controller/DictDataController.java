@@ -39,7 +39,7 @@ public class DictDataController {
         return R.ok(dictDataService.page(query));
     }
 
-    @Operation(summary = "按类型取启用的选项（下拉框用，不分页）")
+    @Operation(summary = "按类型取全部选项，停用的也在、带 status（下拉框只列启用的，显示文字用全部；不分页）")
     @GetMapping("/by-type/{typeCode}")
     public R<List<DictOption>> listByType(@PathVariable("typeCode") String typeCode) {
         return R.ok(dictDataService.listByType(typeCode));

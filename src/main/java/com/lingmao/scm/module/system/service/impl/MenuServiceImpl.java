@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.module.system.dto.MenuSaveReq;
 import com.lingmao.scm.module.system.dto.MenuVO;
 import com.lingmao.scm.module.system.entity.SysMenu;
@@ -68,7 +69,8 @@ public class MenuServiceImpl implements MenuService {
         }
         BeanUtils.copyProperties(req, menu);
         menu.setAdminOnly(adminOnly);
-        sysMenuMapper.updateById(menu);
+        // 整体覆盖：路由地址、组件、权限标识、图标清空了就是 NULL（bug 005）
+        sysMenuMapper.update(menu, Updates.replaceById(menu));
         if (adminOnly && !wasAdminOnly) {
             // 移进了管理后台：以前分给其他角色的关联收回
             sysRoleMenuMapper.delete(new LambdaQueryWrapper<SysRoleMenu>()

@@ -71,9 +71,19 @@ export interface DictData {
   createTime: string
 }
 
+/** 字典选项。停用的也在（旧数据里存着它的值，显示时要翻成文字）；下拉里只列启用的，见 DictSelect */
 export interface DictOption {
   label: string
   value: string
+  /** 1 启用 0 停用 */
+  status: number
+}
+
+/** 选人下拉的一项（GET /api/users/options） */
+export interface UserOption {
+  id: number
+  username: string
+  nickname: string
 }
 
 export interface OperLog {

@@ -2,14 +2,21 @@
 import { computed } from 'vue'
 
 /**
- * 错误清单表格。1003 的每一项是 {row, column, message}，显示成"行 / 列 / 问题"三列。
+ * 错误清单表格。1003 的每一项是 {sheet?, row, column, message}，显示成"工作表 / 行 / 列 / 问题"：
+ * sheet 只在一个文件几张表的导入里有，没有就不出这一列；row 是 0 说的是整张表、整个文件，显示"—"。
+ * 导入成功时的提示清单格式一样，传 message-label="说明"。
  * 1001、1004、1005 带什么还没定，先按"对象数组"通用地显示：每个字段一列，不认识的字段用字段名当表头，定了再往 LABELS 里加
  */
-const props = defineProps<{ items: unknown[] }>()
+const props = withDefaults(defineProps<{ items: unknown[]; messageLabel?: string }>(), { messageLabel: '问题' })
 
 type Item = Record<string, unknown>
 
-const LABELS: Record<string, string> = { row: '行', column: '列', message: '问题' }
+const LABELS = computed<Record<string, string>>(() => ({
+  sheet: '工作表',
+  row: '行',
+  column: '列',
+  message: props.messageLabel,
+}))
 
 /** 不是对象的（只有一句话）当成 message */
 const rows = computed<Item[]>(() =>
@@ -19,8 +26,9 @@ const rows = computed<Item[]>(() =>
 /** 所有行出现过的字段，按第一次出现的顺序 */
 const columns = computed(() => [...new Set(rows.value.flatMap((row) => Object.keys(row)))])
 
-function text(value: unknown) {
+function text(key: string, value: unknown) {
   if (value == null) return ''
+  if (key === 'row' && value === 0) return '—'
   return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 </script>
@@ -35,7 +43,7 @@ function text(value: unknown) {
       :min-width="key === 'message' ? 240 : 100"
       :class-name="key === 'row' ? 'num' : undefined"
     >
-      <template #default="{ row }">{{ text((row as Item)[key]) }}</template>
+      <template #default="{ row }">{{ text(key, (row as Item)[key]) }}</template>
     </el-table-column>
   </el-table>
 </template>

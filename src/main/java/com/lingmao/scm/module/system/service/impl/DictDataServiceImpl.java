@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.system.cache.DictCache;
 import com.lingmao.scm.module.system.dto.DictDataQuery;
@@ -62,12 +63,12 @@ public class DictDataServiceImpl implements DictDataService {
         if (cached != null) {
             return cached;
         }
+        // 停用的也要：旧数据里存着停用的值，显示时要能翻成文字。下拉框只列启用的，由前端按 status 过滤
         List<DictOption> options = dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
                         .eq(DictData::getTypeCode, typeCode)
-                        .eq(DictData::getStatus, 1)
                         .orderByAsc(DictData::getSort)
                         .orderByAsc(DictData::getId))
-                .stream().map(d -> new DictOption(d.getLabel(), d.getValue())).toList();
+                .stream().map(d -> new DictOption(d.getLabel(), d.getValue(), d.getStatus())).toList();
         dictCache.put(typeCode, options);
         return options;
     }
@@ -92,7 +93,7 @@ public class DictDataServiceImpl implements DictDataService {
         ensureValueUnique(req.getTypeCode(), req.getValue(), id);
         String oldTypeCode = entity.getTypeCode();
         BeanUtils.copyProperties(req, entity);
-        dictDataMapper.updateById(entity);
+        dictDataMapper.update(entity, Updates.replaceById(entity));   // 整体覆盖，备注能清空（bug 005）
         dictCache.evictAfterCommit(oldTypeCode, req.getTypeCode());
     }
 

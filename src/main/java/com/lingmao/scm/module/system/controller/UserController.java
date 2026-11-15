@@ -5,6 +5,7 @@ import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.IdsReq;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
+import com.lingmao.scm.module.system.dto.UserOption;
 import com.lingmao.scm.module.system.dto.UserPasswordReq;
 import com.lingmao.scm.module.system.dto.UserQuery;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -41,6 +43,16 @@ public class UserController {
     @PreAuthorize("hasAuthority('system:user:list')")
     public R<PageResult<UserVO>> page(@Valid UserQuery query) {
         return R.ok(userService.page(query));
+    }
+
+    /**
+     * 不加 @PreAuthorize：业务页面选负责人、跟单员时都要用，登录就能调。
+     * 所以只给 id、用户名、昵称，只给启用的，一次最多 20 个，用户管理的列表接口（要管理员权限）不对外放开
+     */
+    @Operation(summary = "选人下拉框：启用的账号，按用户名或昵称搜，最多 20 个（登录即可）")
+    @GetMapping("/options")
+    public R<List<UserOption>> options(@RequestParam(name = "keyword", required = false) String keyword) {
+        return R.ok(userService.options(keyword));
     }
 
     @Operation(summary = "详情")

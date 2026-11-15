@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.system.dto.DictTypeQuery;
 import com.lingmao.scm.module.system.dto.DictTypeSaveReq;
@@ -69,8 +70,9 @@ public class DictTypeServiceImpl implements DictTypeService {
             ensureNoData(entity.getCode(), "该类型下还有字典数据，不能修改编码");
         }
         ensureCodeUnique(req.getCode(), id);     // 排除自己再查重
-        BeanUtils.copyProperties(req, entity);
-        dictTypeMapper.updateById(entity);
+        BeanUtils.copyProperties(req, entity);   // 请求里的 null 也拷过去
+        // 保存是整体覆盖：备注传 null 就是清空。updateById 会跳过 null 字段，清不掉（bug 005）
+        dictTypeMapper.update(entity, Updates.replaceById(entity));
     }
 
     @Override

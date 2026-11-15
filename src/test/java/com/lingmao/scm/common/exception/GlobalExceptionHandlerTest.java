@@ -2,6 +2,7 @@ package com.lingmao.scm.common.exception;
 
 import com.jayway.jsonpath.JsonPath;
 import com.lingmao.scm.common.log.TraceIdFilter;
+import com.lingmao.scm.common.mybatis.TableComments;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.result.R;
 import jakarta.validation.Valid;
@@ -16,8 +17,10 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -40,6 +44,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -60,6 +68,10 @@ class GlobalExceptionHandlerTest {
     private WebApplicationContext context;
 
     private MockMvc mockMvc;
+
+    /** 外键冲突时查引用方的中文表名；这里不连数据库，用假的 */
+    @MockitoBean
+    private TableComments tableComments;
 
     @BeforeEach
     void setUp() {
@@ -161,6 +173,73 @@ class GlobalExceptionHandlerTest {
         assertThat(output.getOut()).contains("唯一约束冲突: uk_sys_dict_type_code");
     }
 
+    /** RFC 001 §18：上传请求本身坏了（这里是根本不是 multipart），返回 400，不是 500 */
+    @Test
+    void brokenMultipart_returns400() throws Exception {
+        mockMvc.perform(post("/demo/upload").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("上传失败：请求不完整或格式不对，请重新上传"));
+    }
+
+    /**
+     * 用户 11-15 定：删除被外键拦住，返回 1005，用引用方的表注释说清是被什么引用了。
+     * 引用方从 detail（is still referenced from table "pur_order"）里取；SQL 原文、英文表名不给前端
+     */
+    @Test
+    void foreignKeyOnDelete_returns1005WithTableComment() throws Exception {
+        when(tableComments.of("pur_order")).thenReturn("采购单");
+
+        mockMvc.perform(get("/demo/fk-delete"))
+                .andExpect(jsonPath("$.code").value(1005))
+                .andExpect(jsonPath("$.msg").value("已被采购单引用，不能删除，只能停用"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    /** 连接参数关了 detail 时，从第一行的 on table "pur_order" 取引用方 */
+    @Test
+    void foreignKeyOnDelete_withoutDetail_usesFirstLine() throws Exception {
+        when(tableComments.of("pur_order")).thenReturn("采购单");
+
+        mockMvc.perform(get("/demo/fk-delete-no-detail"))
+                .andExpect(jsonPath("$.msg").value("已被采购单引用，不能删除，只能停用"));
+    }
+
+    /** 引用方的表没写注释（或者查不到）：说"其他数据"，不露英文表名 */
+    @Test
+    void foreignKeyOnDelete_noComment_saysOtherData() throws Exception {
+        when(tableComments.of("pur_order")).thenReturn(null);
+
+        mockMvc.perform(get("/demo/fk-delete"))
+                .andExpect(jsonPath("$.code").value(1005))
+                .andExpect(jsonPath("$.msg").value("已被其他数据引用，不能删除，只能停用"));
+    }
+
+    /** 报错认不出（比如数据库换成了中文报错）：按删除处理，说"其他数据"，不去查表注释 */
+    @Test
+    void foreignKeyUnrecognized_saysOtherData() throws Exception {
+        mockMvc.perform(get("/demo/fk-unknown"))
+                .andExpect(jsonPath("$.code").value(1005))
+                .andExpect(jsonPath("$.msg").value("已被其他数据引用，不能删除，只能停用"));
+
+        verify(tableComments, never()).of(anyString());
+    }
+
+    /** 插入时引用的数据不存在（页面开着时别人把它删了）：不是"只能停用"，返回 1000 让用户刷新 */
+    @Test
+    void foreignKeyOnInsert_returns1000() throws Exception {
+        mockMvc.perform(get("/demo/fk-insert"))
+                .andExpect(jsonPath("$.code").value(1000))
+                .andExpect(jsonPath("$.msg").value("关联的数据不存在，可能刚被别人删除了，请刷新后再试"));
+    }
+
+    /** 别的约束（非空、检查约束）说明少了一处校验，是程序错误：500 */
+    @Test
+    void notNullViolation_returns500() throws Exception {
+        mockMvc.perform(get("/demo/not-null"))
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.msg").value(containsString("服务器出错了")));
+    }
+
     /** 业务异常带的数据原样放进 data：导入校验没通过时的错误清单 */
     @Test
     void bizExceptionWithData_returnsDataToFrontend() throws Exception {
@@ -228,6 +307,47 @@ class GlobalExceptionHandlerTest {
         public R<Void> duplicate() {
             throw new DuplicateKeyException("插入字典类型失败", new SQLException(
                     "ERROR: duplicate key value violates unique constraint \"uk_sys_dict_type_code\"", "23505"));
+        }
+
+        @PostMapping("/upload")
+        public R<Void> upload(@RequestParam("file") MultipartFile file) {
+            return R.ok();
+        }
+
+        /** PgJDBC 的消息：第一行是报错，下一行是 detail */
+        @GetMapping("/fk-delete")
+        public R<Void> fkDelete() {
+            throw new DataIntegrityViolationException("删除供应商失败", new SQLException(
+                    "ERROR: update or delete on table \"sup_supplier\" violates foreign key constraint "
+                            + "\"fk_pur_order_supplier\" on table \"pur_order\"\n"
+                            + "  Detail: Key (id)=(1) is still referenced from table \"pur_order\".", "23503"));
+        }
+
+        @GetMapping("/fk-delete-no-detail")
+        public R<Void> fkDeleteNoDetail() {
+            throw new DataIntegrityViolationException("删除供应商失败", new SQLException(
+                    "ERROR: update or delete on table \"sup_supplier\" violates foreign key constraint "
+                            + "\"fk_pur_order_supplier\" on table \"pur_order\"", "23503"));
+        }
+
+        @GetMapping("/fk-unknown")
+        public R<Void> fkUnknown() {
+            throw new DataIntegrityViolationException("删除供应商失败", new SQLException(
+                    "错误: 在 \"sup_supplier\" 上的更新或删除操作违反了在 \"pur_order\" 上的外键约束", "23503"));
+        }
+
+        @GetMapping("/fk-insert")
+        public R<Void> fkInsert() {
+            throw new DataIntegrityViolationException("新增采购单失败", new SQLException(
+                    "ERROR: insert or update on table \"pur_order\" violates foreign key constraint "
+                            + "\"fk_pur_order_supplier\"\n"
+                            + "  Detail: Key (supplier_id)=(9) is not present in table \"sup_supplier\".", "23503"));
+        }
+
+        @GetMapping("/not-null")
+        public R<Void> notNull() {
+            throw new DataIntegrityViolationException("新增失败", new SQLException(
+                    "ERROR: null value in column \"name\" of relation \"sup_supplier\" violates not-null constraint", "23502"));
         }
 
         @GetMapping("/import")

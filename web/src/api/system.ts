@@ -1,6 +1,6 @@
 import { http, request, upload } from '@/utils/request'
 import type {
-  BackupStatus, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, VersionInfo,
+  BackupStatus, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, UserOption, VersionInfo,
 } from '@/types/system'
 
 export interface PageParams {
@@ -16,12 +16,8 @@ export const userApi = {
   resetPassword: (id: number, password: string) => http.post<void>(`/api/users/${id}/reset-password`, { password }),
   roleIds: (id: number) => http.get<number[]>(`/api/users/${id}/roles`),
   assignRoles: (id: number, ids: number[]) => http.put<void>(`/api/users/${id}/roles`, { ids }),
-  /**
-   * 下拉框选人（UserSelect）：启用的账号，按用户名搜，最多 20 个。
-   * 暂时借用户管理的列表接口：只有管理员有它的权限，也不能按昵称搜。要换成一个登录就能用、能按昵称搜的接口
-   */
-  search: (keyword: string) =>
-    http.get<PageResult<User>>('/api/users', { username: keyword || undefined, status: 1, page: 1, size: 20 }),
+  /** 下拉框选人（UserSelect）：启用的账号，用户名或昵称包含关键字，最多 20 个。登录就能调，不要用户管理的权限 */
+  search: (keyword: string) => http.get<UserOption[]>('/api/users/options', { keyword: keyword || undefined }),
 }
 
 export interface RoleForm {
