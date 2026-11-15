@@ -2,6 +2,7 @@ package com.lingmao.scm.module.supplier.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
+import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.supplier.dto.SupplierSaveReq;
@@ -41,12 +42,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 供应商的保存、详情、能不能选（PRD §6.1.6、§6.8、Q30、RFC 004 §15）。
- * "分类加了加工厂时调 syncFactoryWarehouse"等工厂仓接上（第 3 步）再补，见 RFC 004 §17
+ * 供应商的保存、详情、能不能选、工厂仓（PRD §6.1.6、§6.8、Q30、RFC 004 §15）
  */
 @ExtendWith(MockitoExtension.class)
 class SupplierServiceImplTest {
 
+    @Mock
+    private GoodAtCategories goodAtCategories;
+    @Mock
+    private WarehouseService warehouseService;
     @Mock
     private SupplierMapper supplierMapper;
     @Mock
@@ -78,7 +82,8 @@ class SupplierServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new SupplierServiceImpl(supplierMapper, certMapper, changeMapper, changeService, serialNoGenerator,
-                docLogService, attachmentService, userService, dicts, new SupplierViews(dicts), lists, SupplierFixtures.CLOCK);
+                docLogService, attachmentService, userService, dicts, new SupplierViews(dicts), lists, goodAtCategories, warehouseService,
+                SupplierFixtures.CLOCK);
     }
 
     @AfterEach
@@ -177,6 +182,36 @@ class SupplierServiceImplTest {
                 .hasMessageContaining("黑名单里的不能删");
         verify(supplierMapper, never()).deleteById(anyLong());
         verify(supplierMapper, never()).deleteCategories(anyLong());
+    }
+
+    /** 规则：分类加了加工厂，在同一个事务里建工厂仓（RFC 004 §6） */
+    @Test
+    void update_addProcessor_createsFactoryWarehouse() {
+        SupplierFixtures.loginAs(7, "edit");
+        Supplier current = SupplierFixtures.supplier(1, ACTIVE);
+        stubLoaded(current);
+        when(supplierMapper.update(any(Supplier.class), any())).thenReturn(1);
+        SupplierSaveReq req = SupplierFixtures.reqOf(current);
+        req.setCategories(List.of("FABRIC", "PROCESSOR"));
+
+        service.update(1L, req);
+
+        verify(warehouseService).syncFactoryWarehouse(1L, "GYS0001", "测试面料1", true);
+    }
+
+    /** 规则：不是工厂的改了简称，也调一次但不建（以前是工厂、分类去掉了的，仓跟着改名） */
+    @Test
+    void update_notFactory_syncWithoutCreate() {
+        SupplierFixtures.loginAs(7, "edit");
+        Supplier current = SupplierFixtures.supplier(1, ACTIVE);
+        stubLoaded(current);
+        when(supplierMapper.update(any(Supplier.class), any())).thenReturn(1);
+        SupplierSaveReq req = SupplierFixtures.reqOf(current);
+        req.setShortName("新简称");
+
+        service.update(1L, req);
+
+        verify(warehouseService).syncFactoryWarehouse(1L, "GYS0001", "新简称", false);
     }
 
     private void stubLoaded(Supplier current) {

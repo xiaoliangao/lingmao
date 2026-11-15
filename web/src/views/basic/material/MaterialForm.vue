@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { materialApi, materialCategoryApi, type MaterialForm } from '@/api/basic'
 import { MATERIAL_SOURCE_LABEL, type MaterialDetail, type MaterialSource, type TreeNode } from '@/types/basic'
 import DictSelect from '@/components/DictSelect.vue'
+import SupplierSelect from '@/components/SupplierSelect.vue'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { orNull } from '../common'
 import SkuPicker from './SkuPicker.vue'
@@ -12,7 +13,7 @@ import { invalidSpecs, specsOf, type SpecCodeOverrides } from './sku'
 /**
  * 新建、修改物料的对话框（RFC 003 §7）。新建时顺带选颜色、填规格建第一批 SKU；修改时分类、库存单位灰掉（建好不改）。
  * 保存前查重（同分类同名、同供应商同货号），有就问一声，不拦。
- * 默认供应商这一步先不给选（第 3 步接供应商下拉），修改时原样带回去
+ * 默认供应商只列合作中的；原来选的那家后来停用了，照样显示、能原样保存（SupplierSelect）
  *
  *   <MaterialForm ref="formDialog" @saved="onSaved" />
  *   formDialog.value?.openCreate(categoryId)      formDialog.value?.openEdit(detail)
@@ -40,6 +41,7 @@ const EMPTY = {
   weightGsm: undefined as Num,
   composition: '',
   texture: '',
+  defaultSupplierId: null as number | null,
   supplierItemNo: '',
   refPrice: undefined as Num,
   moq: undefined as Num,
@@ -107,7 +109,7 @@ function openEdit(target: MaterialDetail) {
     categoryId: m.categoryId, materialType: m.materialType, name: m.name, stockUnit: m.stockUnit,
     purchaseUnit: m.purchaseUnit === m.stockUnit ? null : m.purchaseUnit, conversionFactor: m.conversionFactor,
     widthCm: m.widthCm ?? undefined, weightGsm: m.weightGsm ?? undefined, composition: m.composition ?? '', texture: m.texture ?? '',
-    supplierItemNo: m.supplierItemNo ?? '', refPrice: m.refPrice ?? undefined, moq: m.moq ?? undefined, minPackQty: m.minPackQty,
+    defaultSupplierId: m.defaultSupplierId, supplierItemNo: m.supplierItemNo ?? '', refPrice: m.refPrice ?? undefined, moq: m.moq ?? undefined, minPackQty: m.minPackQty,
     leadDays: m.leadDays ?? undefined, year: m.year ?? undefined, season: m.season, defaultSource: m.defaultSource,
     defaultLossPct: m.defaultLossPct ?? undefined, reservePct: m.reservePct ?? undefined, remark: m.remark ?? '',
   })
@@ -126,8 +128,7 @@ function body(): MaterialForm {
     weightGsm: form.weightGsm ?? null,
     composition: orNull(form.composition),
     texture: orNull(form.texture),
-    // 这一步页面上还不给选默认供应商：修改时原样带回去（PUT 是整体覆盖，不带就清空了）
-    defaultSupplierId: detail.value?.material.defaultSupplierId ?? null,
+    defaultSupplierId: form.defaultSupplierId,
     supplierItemNo: orNull(form.supplierItemNo),
     refPrice: form.refPrice ?? null,
     moq: form.moq ?? null,
@@ -293,7 +294,9 @@ defineExpose({ openCreate, openEdit })
       <el-form-item label="备料比（%）">
         <el-input-number v-model="form.reservePct" :min="0" :max="100" :controls="false" :value-on-clear="null" placeholder="不填按物料类型" />
       </el-form-item>
-      <el-form-item />
+      <el-form-item label="默认供应商">
+        <SupplierSelect v-model="form.defaultSupplierId" usage="BULK" :label="detail?.defaultSupplierName" clearable />
+      </el-form-item>
 
       <el-form-item label="备注" class="full">
         <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />

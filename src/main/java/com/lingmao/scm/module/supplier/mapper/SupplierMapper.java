@@ -1,7 +1,6 @@
 package com.lingmao.scm.module.supplier.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.lingmao.scm.module.supplier.entity.CategoryName;
 import com.lingmao.scm.module.supplier.entity.CertSummary;
 import com.lingmao.scm.module.supplier.entity.Supplier;
 import com.lingmao.scm.module.supplier.entity.SupplierCategoryRow;
@@ -86,19 +85,6 @@ public interface SupplierMapper extends BaseMapper<Supplier> {
 
     @Delete("DELETE FROM sup_supplier_good_at WHERE supplier_id = #{id}")
     int deleteGoodAt(@Param("id") long id);
-
-    /** 导入时按名称匹配擅长品类：启用的品类，只取 id、上级、名字、级（只读 bas_category，见 CategoryName） */
-    @Select("SELECT id, parent_id, name, level FROM bas_category WHERE status = 1")
-    List<CategoryName> selectEnabledCategories();
-
-    /** 保存时查新选的擅长品类是不是启用的：返回其中启用的 id（只读 bas_category 的状态，同上） */
-    @Select("""
-            <script>
-            SELECT id FROM bas_category WHERE status = 1 AND id IN
-            <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
-            </script>
-            """)
-    List<Long> selectEnabledCategoryIds(@Param("ids") Collection<Long> ids);
 
     // ---------- 列表用 ----------
 

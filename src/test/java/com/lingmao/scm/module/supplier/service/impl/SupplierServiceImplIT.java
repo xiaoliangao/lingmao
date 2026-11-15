@@ -96,12 +96,17 @@ class SupplierServiceImplIT {
     }
 
     /**
-     * 规则：被价格档案引用的供应商删不掉，外键拦住返回 1005"已被价格档案引用"；整个回滚，分类、资质、操作记录都还在。
-     * 价格删了以后能删，子表一起删干净
+     * 规则：加工厂新建时一起建工厂仓（GC + 编码里的数字）。被价格档案引用的删不掉，外键拦住返回 1005"已被价格档案引用"；
+     * 整个回滚，分类、资质、操作记录、工厂仓都还在。价格删了以后能删，子表和工厂仓一起删干净
      */
     @Test
     void delete_referencedByPrice_returns1005AndRollsBack() {
-        long id = create(newReq(true));
+        SupplierSaveReq req = newReq(true);
+        req.setCategories(List.of("FABRIC", "PROCESSOR"));
+        long id = create(req);
+        String code = jdbcTemplate.queryForObject("SELECT code FROM sup_supplier WHERE id = ?", String.class, id);
+        assertThat(jdbcTemplate.queryForObject("SELECT code || ' ' || name FROM bas_warehouse WHERE factory_id = ?", String.class, id))
+                .isEqualTo("GC" + code.replaceAll("\\D", "") + " " + req.getShortName() + "仓");
         long certId = addCert(id, "LICENSE", null);
         String suffix = suffix();
         Long categoryId = jdbcTemplate.queryForObject(
@@ -120,8 +125,9 @@ class SupplierServiceImplIT {
         assertThat(r.getCode()).isEqualTo(ErrorCodes.HAS_DOWNSTREAM);
         assertThat(r.getMsg()).isEqualTo("已被价格档案引用，不能删除，只能停用");
         assertThat(count("sup_supplier WHERE id = ?", id)).isEqualTo(1);
-        assertThat(count("sup_supplier_category WHERE supplier_id = ?", id)).isEqualTo(1);
+        assertThat(count("sup_supplier_category WHERE supplier_id = ?", id)).isEqualTo(2);
         assertThat(count("sup_supplier_cert WHERE id = ?", certId)).isEqualTo(1);
+        assertThat(count("bas_warehouse WHERE factory_id = ?", id)).isEqualTo(1);
         assertThat(count("biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ?", id)).isGreaterThan(0);
 
         jdbcTemplate.update("DELETE FROM prc_price WHERE supplier_id = ?", id);
@@ -131,6 +137,7 @@ class SupplierServiceImplIT {
         assertThat(count("sup_supplier WHERE id = ?", id)).isZero();
         assertThat(count("sup_supplier_cert WHERE supplier_id = ?", id)).isZero();
         assertThat(count("biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ?", id)).isZero();
+        assertThat(count("bas_warehouse WHERE factory_id = ?", id)).isZero();
     }
 
     /**

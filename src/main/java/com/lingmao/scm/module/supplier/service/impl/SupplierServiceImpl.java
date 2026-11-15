@@ -11,6 +11,7 @@ import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
+import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
@@ -49,7 +50,6 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
@@ -68,8 +68,7 @@ import static com.lingmao.scm.module.supplier.entity.SupplierStatus.PENDING_ADMI
 /**
  * 供应商（RFC 004）。状态规则只写在 FLOW 和 SupplierRules 里；改状态一律比较并交换，每个动作写一条操作记录。
  * <p>
- * 工厂仓（RFC 004 §6）这一步不接：basic 的 WarehouseService 和这一步并行在写。要接的地方标了"第 3 步：工厂仓"，
- * 清单在 RFC 004 §17 实现记录里
+ * 工厂仓（RFC 004 §6）：新建、保存、删除时在同一个事务里调 basic 的 WarehouseService
  */
 @Service
 @RequiredArgsConstructor
@@ -115,6 +114,8 @@ public class SupplierServiceImpl implements SupplierService {
     private final SupplierDicts dicts;
     private final SupplierViews views;
     private final SupplierLists lists;
+    private final GoodAtCategories goodAtCategories;
+    private final WarehouseService warehouseService;
     private final Clock clock;
 
     // ------------------------------------------------------------------ 查
@@ -201,7 +202,9 @@ public class SupplierServiceImpl implements SupplierService {
         insertCategories(id, categories);
         insertGoodAt(id, goodAt);
         docLogService.add(BizType.SUPPLIER, id, "create", null, PENDING_ADMIT, null);
-        // 第 3 步：工厂仓。分类含成衣厂、加工厂的，warehouseService.syncFactoryWarehouse(id, code, shortName, true)
+        if (SupplierDicts.hasFactory(categories)) {
+            warehouseService.syncFactoryWarehouse(id, s.getCode(), s.getShortName(), true);
+        }
         return new SupplierSaveResult(id, List.of(), List.of());
     }
 
@@ -270,8 +273,8 @@ public class SupplierServiceImpl implements SupplierService {
         if (!pending.isEmpty()) {
             docLogService.add(BizType.SUPPLIER, id, "change", views.describe(pending));
         }
-        // 第 3 步：工厂仓。分类含成衣厂、加工厂 → syncFactoryWarehouse(id, code, 新简称, true)；
-        // 不含但简称改了 → syncFactoryWarehouse(id, code, 新简称, false)
+        // 5. 工厂仓：含成衣厂、加工厂的没有就建；不含的不建，但有仓（以前是工厂、分类去掉了）照样跟着简称改名
+        warehouseService.syncFactoryWarehouse(id, current.getCode(), target.getShortName(), SupplierDicts.hasFactory(categories));
         boolean showAccount = SupplierPerms.has(SupplierPerms.BANK);
         return new SupplierSaveResult(id, views.display(applied, showAccount), views.display(pending, showAccount));
     }
@@ -355,9 +358,7 @@ public class SupplierServiceImpl implements SupplierService {
         dicts.checkAll(SupplierDicts.SUPPLIER_CATEGORY, categories, currentCategories, "分类");
         Set<Long> added = new LinkedHashSet<>(goodAt);
         currentGoodAt.forEach(added::remove);
-        if (!added.isEmpty() && new HashSet<>(supplierMapper.selectEnabledCategoryIds(added)).size() < added.size()) {
-            throw new BizException("擅长品类里有已经停用或者删掉的，请重新选");
-        }
+        goodAtCategories.checkEnabled(added);
     }
 
     private void insertCategories(long id, List<String> categories) {
@@ -386,7 +387,7 @@ public class SupplierServiceImpl implements SupplierService {
         supplierMapper.deleteGoodAt(id);
         certMapper.delete(new LambdaQueryWrapper<SupplierCert>().eq(SupplierCert::getSupplierId, id));
         changeMapper.delete(new LambdaQueryWrapper<SupplierChange>().eq(SupplierChange::getSupplierId, id));
-        // 第 3 步：工厂仓。warehouseService.deleteFactoryWarehouse(id)，被引用的外键拦住（1005）
+        warehouseService.deleteFactoryWarehouse(id);
         attachmentService.deleteByDoc(BizType.SUPPLIER, id);
         docLogService.deleteByDoc(BizType.SUPPLIER, id);
         supplierMapper.deleteById(id);

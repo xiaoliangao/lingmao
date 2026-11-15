@@ -5,6 +5,7 @@ import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
+import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.supplier.entity.Supplier;
 import com.lingmao.scm.module.supplier.entity.SupplierCategoryRow;
@@ -58,6 +59,10 @@ class SupplierImportTest {
     private static final String[] BANK_HEADERS = {"编码", "全称", "开户行", "账号", "名称", "状态", "默认排序", "备注"};
 
     @Mock
+    private GoodAtCategories goodAtCategories;
+    @Mock
+    private WarehouseService warehouseService;
+    @Mock
     private SupplierMapper supplierMapper;
     @Mock
     private SerialNoGenerator serialNoGenerator;
@@ -81,7 +86,7 @@ class SupplierImportTest {
     @BeforeEach
     void setUp() {
         service = new SupplierExcelServiceImpl(supplierMapper, serialNoGenerator, docLogService, userService, dicts, lists,
-                SupplierFixtures.CLOCK);
+                goodAtCategories, warehouseService, SupplierFixtures.CLOCK);
         lenient().when(dicts.options(SupplierDicts.SUPPLIER_CATEGORY)).thenReturn(List.of(
                 new DictOption("面料商", "FABRIC", 1), new DictOption("辅料商", "TRIM", 1),
                 new DictOption("成衣厂", "GARMENT", 1), new DictOption("加工厂", "PROCESSOR", 1),

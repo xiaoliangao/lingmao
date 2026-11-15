@@ -29,6 +29,10 @@ class SupplierDicts {
     static final String GARMENT = "GARMENT";
     static final String PROCESSOR = "PROCESSOR";
 
+    static boolean hasFactory(Collection<String> categories) {
+        return categories.contains(GARMENT) || categories.contains(PROCESSOR);
+    }
+
     /** 证照类型：营业执照，申请准入时必须有（字典内置项） */
     static final String LICENSE = "LICENSE";
 

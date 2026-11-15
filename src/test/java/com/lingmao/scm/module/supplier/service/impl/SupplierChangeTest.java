@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
+import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
@@ -46,6 +47,10 @@ import static org.mockito.Mockito.when;
 class SupplierChangeTest {
 
     @Mock
+    private GoodAtCategories goodAtCategories;
+    @Mock
+    private WarehouseService warehouseService;
+    @Mock
     private SupplierMapper supplierMapper;
     @Mock
     private SupplierCertMapper certMapper;
@@ -78,7 +83,8 @@ class SupplierChangeTest {
     void setUp() {
         SupplierViews views = new SupplierViews(dicts);
         supplierService = new SupplierServiceImpl(supplierMapper, certMapper, changeMapper, changeService, serialNoGenerator,
-                docLogService, attachmentService, userService, dicts, views, lists, SupplierFixtures.CLOCK);
+                docLogService, attachmentService, userService, dicts, views, lists, goodAtCategories, warehouseService,
+                SupplierFixtures.CLOCK);
         approvals = new SupplierChangeServiceImpl(changeMapper, supplierMapper, docLogService, userService, views,
                 SupplierFixtures.CLOCK);
         lenient().when(dicts.labelOf(anyString(), anyString())).thenAnswer(inv -> inv.getArgument(1));

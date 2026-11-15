@@ -21,12 +21,6 @@ const routes: RouteRecordRaw[] = [
     redirect: '/home',
     children: [
       { path: '/home', component: () => import('@/views/home/index.vue'), meta: { title: '首页', cacheName: 'HomePage' } },
-      // 供应商详情（RFC 004 §12）：几家供应商的页签共用这一个页面实例，页面按地址里的 id 重新加载
-      {
-        path: '/suppliers/:id(\\d+)',
-        component: () => import('@/views/supplier/supplier/detail.vue'),
-        meta: { title: '供应商详情', cacheName: 'SupplierDetail' },
-      },
       // 兜底：什么都匹配不上就是 404，放在首页这一侧的外框里，左边菜单照常能点（不开页签）。
       // vue-router 按路径的具体程度排优先级，后加的菜单路由照样排在它前面
       { path: '/:pathMatch(.*)*', component: () => import('@/views/error/404.vue'), meta: { title: '页面不存在' } },
@@ -43,8 +37,7 @@ const building = () => import('@/views/error/building.vue')
 
 /**
  * 详情页（RFC 003 §18）：一条记录一个页签，/materials/12 和 /materials/15 各开一个、各留各的状态。
- * 加一个详情页 = 下面加一行 + 写那个 detail.vue：
- *   { parent: '/suppliers', file: 'supplier/supplier/detail', title: '供应商' }
+ * 加一个详情页 = 下面加一行 + 写那个 detail.vue（RFC 003 §18"加一个详情页"）
  * - parent：列表页菜单的地址。用户有这个菜单才挂详情路由（没有就是 404）；侧边栏高亮、分组都跟着列表页
  * - title：页签先叫这个，页面加载完调 useTabsStore().rename(route.path, '物料 ML0001') 换成具体的
  * - 地址是 parent/:id，id 只认数字。页面在 setup 里取一次 id，不要 watch 路由：
@@ -52,6 +45,7 @@ const building = () => import('@/views/error/building.vue')
  */
 const DETAIL_ROUTES: { parent: string; file: string; title: string }[] = [
   { parent: '/materials', file: 'basic/material/detail', title: '物料' },
+  { parent: '/suppliers', file: 'supplier/supplier/detail', title: '供应商' },
 ]
 const detailPages = import.meta.glob('../views/**/detail.vue')
 /** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */

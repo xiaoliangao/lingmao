@@ -3,6 +3,7 @@ package com.lingmao.scm.module.supplier.service.impl;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
+import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
@@ -40,6 +41,10 @@ import static org.mockito.Mockito.when;
 class SupplierFlowTest {
 
     @Mock
+    private GoodAtCategories goodAtCategories;
+    @Mock
+    private WarehouseService warehouseService;
+    @Mock
     private SupplierMapper supplierMapper;
     @Mock
     private SupplierCertMapper certMapper;
@@ -70,7 +75,8 @@ class SupplierFlowTest {
     @BeforeEach
     void setUp() {
         service = new SupplierServiceImpl(supplierMapper, certMapper, changeMapper, changeService, serialNoGenerator,
-                docLogService, attachmentService, userService, dicts, new SupplierViews(dicts), lists, SupplierFixtures.CLOCK);
+                docLogService, attachmentService, userService, dicts, new SupplierViews(dicts), lists, goodAtCategories, warehouseService,
+                SupplierFixtures.CLOCK);
     }
 
     @AfterEach

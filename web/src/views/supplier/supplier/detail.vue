@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -26,10 +26,8 @@ import CertDialog from './CertDialog.vue'
  * 供应商详情（RFC 004 §12，原型 /suppliers/:code）。左边：状态横条、待批改动、资质 / 改动记录 / 操作记录三个页签；
  * 右边：资料。顶上的按钮按后端给的 actions 显示（状态 + 权限 + 不能自己批自己，后端算好的）。
  * 价格记录页签随价格档案（RFC 006）加。
- * 路由是 router/index.ts 里的一条静态路由 /suppliers/:id，几家供应商的页签共用这一个页面实例，按地址里的 id 重新加载
+ * 一家供应商一个页签（详情路由，见 router/index.ts）：id 在这里取一次，不跟着路由变
  */
-defineOptions({ name: 'SupplierDetail' })
-
 const route = useRoute()
 const router = useRouter()
 const store = useUserStore()
@@ -39,7 +37,8 @@ const settleDict = useDict('settle_method')
 const invoiceDict = useDict('invoice_type')
 const certDict = useDict('cert_type')
 
-const id = ref(0)
+const id = Number(route.params.id)
+const path = route.path
 const supplier = ref<SupplierDetail | null>(null)
 const loading = ref(false)
 const notFound = ref(false)
@@ -50,10 +49,11 @@ async function load() {
   const current = ++seq
   loading.value = true
   try {
-    const detail = await supplierApi.get(id.value, { silent: true })
+    const detail = await supplierApi.get(id, { silent: true })
     if (current !== seq) return
     supplier.value = detail
     notFound.value = false
+    tabs.rename(path, `供应商 ${detail.shortName}`)
   } catch (error) {
     if (current !== seq) return
     if (error instanceof ApiError && error.code === 404) {
@@ -97,9 +97,6 @@ const legacyAttrs = computed(() => Object.entries(supplier.value?.legacyAttrs ??
 // ---------- 账号：遮过的；有 bank 权限的点"显示"取全号（后端记一条日志） ----------
 const fullAccount = ref<string | null>(null)
 const revealing = ref(false)
-watch(id, () => {
-  fullAccount.value = null
-})
 
 async function toggleAccount() {
   if (fullAccount.value) {
@@ -108,7 +105,7 @@ async function toggleAccount() {
   }
   revealing.value = true
   try {
-    fullAccount.value = (await supplierApi.bank(id.value)).bankAccount
+    fullAccount.value = (await supplierApi.bank(id)).bankAccount
   } finally {
     revealing.value = false
   }
@@ -146,7 +143,7 @@ async function promptThen(message: string, title: string, button: string, placeh
 /** 申请准入：缺资料时后端一次列全（1000 + 缺项），弹清单 */
 async function submit() {
   try {
-    await supplierApi.submit(id.value, { silent: true })
+    await supplierApi.submit(id, { silent: true })
   } catch (error) {
     if (!(error instanceof ApiError)) throw error
     if (error.code === ErrorCode.BIZ && Array.isArray(error.data) && error.data.length > 0) {
@@ -162,33 +159,33 @@ async function submit() {
 
 const audit = () =>
   confirmThen('通过后能选进采购单、生产单。', `通过准入：${name.value}`, '通过准入',
-    () => supplierApi.audit(id.value), `${name.value} 准入通过，现在能选进采购单、生产单`)
+    () => supplierApi.audit(id), `${name.value} 准入通过，现在能选进采购单、生产单`)
 
 const reject = () =>
   promptThen('驳回后回到「待准入」，申请人照着原因改好再申请。', `驳回准入申请：${name.value}`, '驳回',
-    '写清楚要补什么、改什么', (reason) => supplierApi.reject(id.value, reason), '已驳回，回到待准入')
+    '写清楚要补什么、改什么', (reason) => supplierApi.reject(id, reason), '已驳回，回到待准入')
 
 const withdraw = () =>
   confirmThen('撤回后回到「待准入」，可以接着改资料、换证照，改好再申请。', '撤回准入申请', '撤回',
-    () => supplierApi.withdraw(id.value), '已撤回，回到待准入')
+    () => supplierApi.withdraw(id), '已撤回，回到待准入')
 
 const disable = () =>
   confirmThen('停用后新的采购单、生产单选不到它；已有单据照常入库、回货。随时可以恢复合作。', `停用 ${name.value}`, '停用',
-    () => supplierApi.disable(id.value), `${name.value} 已停用`, true)
+    () => supplierApi.disable(id), `${name.value} 已停用`, true)
 
 async function enable() {
-  await supplierApi.enable(id.value)
+  await supplierApi.enable(id)
   ElMessage.success(`${name.value} 恢复合作了`)
   reloadAll()
 }
 
 const blacklist = () =>
   promptThen('拉黑后新的单据、打样、录价格都选不到它；已有单据照常入库、回货。', `拉黑 ${name.value}`, '拉黑',
-    '写清楚为什么拉黑，以后解除时要看', (reason) => supplierApi.blacklist(id.value, reason), `${name.value} 已拉黑`, true)
+    '写清楚为什么拉黑，以后解除时要看', (reason) => supplierApi.blacklist(id, reason), `${name.value} 已拉黑`, true)
 
 const unblacklist = () =>
   promptThen('准入过的回到「停用」，要用再点恢复合作；从没准入过的回到「待准入」，要走准入审批。',
-    `解除黑名单：${name.value}`, '解除黑名单', '写清楚为什么解除', (reason) => supplierApi.unblacklist(id.value, reason),
+    `解除黑名单：${name.value}`, '解除黑名单', '写清楚为什么解除', (reason) => supplierApi.unblacklist(id, reason),
     `${name.value} 已解除黑名单`)
 
 async function remove() {
@@ -197,11 +194,11 @@ async function remove() {
     cancelButtonText: '取消',
     confirmButtonClass: 'el-button--danger',
   })
-  await supplierApi.remove(id.value)
+  await supplierApi.remove(id)
   ElMessage.success(`${name.value} 已删除`)
-  // 这一页没东西了：关掉它的页签，回列表
-  tabs.close(route.path, '/suppliers')
-  void router.push('/suppliers')
+  // 这一页没东西了：回列表，关掉它的页签
+  await router.push('/suppliers')
+  tabs.close(path, '/suppliers')
 }
 
 /** 右上角"更多"里的：停用、拉黑、删除这类不常点、点了影响大的 */
@@ -239,15 +236,15 @@ function changeText(change: SupplierChange) {
 
 const approveChange = (change: SupplierChange) =>
   confirmThen(`批准后马上生效：${changeText(change)}`, '批准改动', '批准改动',
-    () => supplierApi.approveChange(id.value, change.id), '改动已批准，生效了')
+    () => supplierApi.approveChange(id, change.id), '改动已批准，生效了')
 
 const rejectChange = (change: SupplierChange) =>
   promptThen('驳回后这批改动不生效，资料保持原样。', '驳回改动', '驳回', '写清楚为什么不批',
-    (reason) => supplierApi.rejectChange(id.value, change.id, reason), '已驳回，资料保持原样')
+    (reason) => supplierApi.rejectChange(id, change.id, reason), '已驳回，资料保持原样')
 
 const withdrawChange = (change: SupplierChange) =>
   confirmThen('撤回后这批改动不生效，要改再重新提。', '撤回改动', '撤回',
-    () => supplierApi.withdrawChange(id.value, change.id), '已撤回')
+    () => supplierApi.withdrawChange(id, change.id), '已撤回')
 
 // ---------- 资质 ----------
 const certs = ref<SupplierCert[]>([])
@@ -255,11 +252,11 @@ const certsLoading = ref(false)
 const certRef = ref<InstanceType<typeof CertDialog>>()
 
 async function loadCerts() {
-  const current = id.value
+  const current = id
   certsLoading.value = true
   try {
     const result = await supplierApi.certs(current)
-    if (current === id.value) certs.value = result
+    if (current === id) certs.value = result
   } catch {
     // 404 由详情那边显示；其他错误拦截器已经弹过了
   } finally {
@@ -282,7 +279,7 @@ async function removeCert(cert: SupplierCert) {
     cancelButtonText: '取消',
     confirmButtonClass: 'el-button--danger',
   })
-  await supplierApi.removeCert(id.value, cert.id)
+  await supplierApi.removeCert(id, cert.id)
   ElMessage.success('证照已删除')
   void loadCerts()
   logsRef.value?.reload()
@@ -298,11 +295,11 @@ const changes = ref<SupplierChange[]>([])
 const changesLoading = ref(false)
 
 async function loadChanges() {
-  const current = id.value
+  const current = id
   changesLoading.value = true
   try {
     const result = await supplierApi.changes(current)
-    if (current === id.value) changes.value = result
+    if (current === id) changes.value = result
   } catch {
     // 拦截器已经弹过了
   } finally {
@@ -313,7 +310,7 @@ async function loadChanges() {
 const logsRef = ref<InstanceType<typeof DocLogList>>()
 /** 换了一家供应商，DocLogList 看到 load 变了会重新加载 */
 const loadLogs = computed(() => {
-  const current = id.value
+  const current = id
   return () => supplierApi.logs(current)
 })
 
@@ -336,21 +333,8 @@ const LOG_ACTIONS: Record<string, string> = {
 }
 const LOG_STATUSES = Object.fromEntries(Object.entries(SUPPLIER_STATUS).map(([key, value]) => [key, value.label]))
 
-// 放在最后：立即执行一次，要用到上面的 certs、changes、logsRef
-// 地址里的 id 变了（同一个实例换了一家供应商）就重新加载；离开详情页（地址不是 /suppliers/数字）时不动
-watch(
-  () => route.path,
-  (path) => {
-    const match = /^\/suppliers\/(\d+)$/.exec(path)
-    if (!match || Number(match[1]) === id.value) return
-    id.value = Number(match[1])
-    supplier.value = null
-    certs.value = []
-    changes.value = []
-    reloadAll()
-  },
-  { immediate: true },
-)
+// 放在最后：要用到上面的 certs、changes、logsRef
+reloadAll()
 </script>
 
 <template>

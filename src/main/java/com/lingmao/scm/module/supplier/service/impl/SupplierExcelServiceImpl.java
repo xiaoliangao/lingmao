@@ -12,10 +12,11 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.basic.dto.TreeNode;
+import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.supplier.dto.SupplierBankExcelRow;
 import com.lingmao.scm.module.supplier.dto.SupplierExcelRow;
 import com.lingmao.scm.module.supplier.dto.SupplierQuery;
-import com.lingmao.scm.module.supplier.entity.CategoryName;
 import com.lingmao.scm.module.supplier.entity.Supplier;
 import com.lingmao.scm.module.supplier.entity.SupplierCategoryRow;
 import com.lingmao.scm.module.supplier.entity.SupplierGoodAtRow;
@@ -104,6 +105,8 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
     private final UserService userService;
     private final SupplierDicts dicts;
     private final SupplierLists lists;
+    private final GoodAtCategories goodAtCategories;
+    private final WarehouseService warehouseService;
     private final Clock clock;
 
     // ------------------------------------------------------------------ 列定义
@@ -261,7 +264,7 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
         Set<String> existing = codes.isEmpty() ? Set.of() : Set.copyOf(supplierMapper.selectExistingCodes(codes));
         Map<String, String> categoryMap = categoryMap();
         Map<String, String> invoiceMap = dictMap(SupplierDicts.INVOICE_TYPE);
-        CategoryMatcher goodAt = new CategoryMatcher(supplierMapper.selectEnabledCategories());
+        CategoryMatcher goodAt = new CategoryMatcher(goodAtCategories.enabled());
         Map<String, Long> buyers = userService.idsByNickname(lines.stream().map(l -> l.data().getBuyer())
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         Map<String, SupplierBankExcelRow> pickedBanks = pickBanks(main, banks);
@@ -495,7 +498,9 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
                 supplierMapper.insertGoodAt(p.goodAt().stream().map(c -> new SupplierGoodAtRow(id, c)).toList());
             }
             docLogService.add(BizType.SUPPLIER, id, "import", null, s.getStatus(), null);
-            // 第 3 步：工厂仓。分类含成衣厂、加工厂的，warehouseService.syncFactoryWarehouse(id, code, shortName, true)
+            if (SupplierDicts.hasFactory(p.categories())) {
+                warehouseService.syncFactoryWarehouse(id, s.getCode(), s.getShortName(), true);
+            }
             Matcher serial = SERIAL_CODE.matcher(s.getCode());
             if (serial.matches()) {
                 maxSerial = Math.max(maxSerial, Integer.parseInt(serial.group(1)));
@@ -567,17 +572,17 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
 
     /** 擅长类目按名称对品类：同名的不止一个（不同上级下）不知道是哪个，算对不上 */
     static final class CategoryMatcher {
-        private final Map<String, List<CategoryName>> byName;
+        private final Map<String, List<TreeNode>> byName;
 
-        CategoryMatcher(List<CategoryName> categories) {
-            this.byName = categories.stream().collect(Collectors.groupingBy(CategoryName::getName));
+        CategoryMatcher(List<TreeNode> categories) {
+            this.byName = categories.stream().collect(Collectors.groupingBy(TreeNode::getName));
         }
 
         /** 对上的 id 加进 ids；对不上的拼起来放进 legacy[key] */
         void match(List<String> names, boolean topOnly, List<Long> ids, Map<String, String> legacy, String key) {
             List<String> unmatched = new ArrayList<>();
             for (String name : names) {
-                List<CategoryName> found = byName.getOrDefault(name, List.of()).stream()
+                List<TreeNode> found = byName.getOrDefault(name, List.of()).stream()
                         .filter(c -> !topOnly || Integer.valueOf(1).equals(c.getLevel())).toList();
                 if (found.size() == 1) {
                     if (!ids.contains(found.getFirst().getId())) {
