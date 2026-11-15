@@ -50,7 +50,7 @@ import java.util.stream.Stream;
  * 价格档案（RFC 006）。规则照 PRD §6.10 规则 1、2、5 和原型 5e-price.js 的 recordPrice、voidPrice。
  * <p>
  * 跨域只调 Service：供应商能不能用、名称（SupplierService），物料和 SKU 的状态、采购单位、名称（MaterialService）。
- * 款式的两处还没接，标了"第 4c 步：款式"：录加工价时查款式存在且启用、列表里填款号和名称（RFC 006 §13 实现记录）；
+ * 款式的两处还没接，标了"第 4c 步：款式"：录加工价时查款式存在且启用、列表里填款号和名称（RFC 006 §14 实现记录）；
  * 在那之前款式由外键兜底（不存在的款式插不进去，1000"关联的数据不存在"）
  */
 @Service
