@@ -11,7 +11,9 @@ import com.lingmao.scm.module.supplier.dto.SupplierSaveReq;
 import com.lingmao.scm.module.supplier.dto.SupplierSaveResult;
 import com.lingmao.scm.module.supplier.dto.SupplierVO;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 供应商档案和状态动作（RFC 004）。关键字段改动的审批在 SupplierChangeService，资质在 SupplierCertService，
@@ -78,6 +80,9 @@ public interface SupplierService {
 
     /** 单据、价格档案显示和带默认值用：编码、全称、简称、状态、税率、结算方式、账期、发票类型。不存在抛 404 */
     SupplierRef getRef(long id);
+
+    /** 批量版：价格档案、单据的列表一次取一页的供应商名称。不存在的 id 不在返回里（列表只是显示，不报错） */
+    Map<Long, SupplierRef> refs(Collection<Long> ids);
 
     /**
      * 能不能选进单据（PRD §6.8.2 的表）。SAMPLE：打样、录价格；BULK：采购单、生产单。

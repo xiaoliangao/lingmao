@@ -50,6 +50,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
@@ -561,7 +562,19 @@ public class SupplierServiceImpl implements SupplierService {
 
     @Override
     public SupplierRef getRef(long id) {
-        Supplier s = getEntity(id);
+        return toRef(getEntity(id));
+    }
+
+    @Override
+    public Map<Long, SupplierRef> refs(Collection<Long> ids) {
+        List<Long> wanted = ids.stream().filter(Objects::nonNull).distinct().toList();
+        if (wanted.isEmpty()) {
+            return new HashMap<>();                 // 调用方可能拿 null 的 id 来 get，不给 Map.of()
+        }
+        return supplierMapper.selectByIds(wanted).stream().collect(Collectors.toMap(Supplier::getId, SupplierServiceImpl::toRef));
+    }
+
+    private static SupplierRef toRef(Supplier s) {
         return new SupplierRef(s.getId(), s.getCode(), s.getName(), s.getShortName(), s.getStatus(),
                 s.getTaxPct(), s.getSettleMethod(), s.getCreditDays(), s.getInvoiceType());
     }

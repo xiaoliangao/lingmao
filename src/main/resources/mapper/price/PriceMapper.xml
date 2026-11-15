@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  价格档案：取现价、列表（RFC 006 §4、§7，架构 §5.5）。
+  不 JOIN 别的域的表：名称由各域的 Service 批量取；物料现在的采购单位由 basic 给，当参数传进来（keys、units 里的 unit）。
+  现价的口径，这几条语句都一样：没作废、生效日期不晚于那一天，按生效日期、id 取最新的（同一天取后录的）；
+  物料价只认物料现在的采购单位，先找 SKU 的、没有再找物料层的（material_sku_id IS NULL）。
+  索引：idx_prc_price_mat (type, supplier_id, material_id, effective_date)、idx_prc_price_proc (type, supplier_id, style_id, process_mode, effective_date)
+-->
+<mapper namespace="com.lingmao.scm.module.price.mapper.PriceMapper">
+
+    <!-- SKU 的排在物料层的前面：这个 SKU 单独定过价，就一直用它的（原型 curMatRec），物料层后来调价不影响它 -->
+    <select id="selectCurrentMaterial" resultType="com.lingmao.scm.module.price.entity.Price">
+        SELECT p.*
+        FROM prc_price p
+        WHERE p.type = 'MATERIAL' AND p.supplier_id = #{supplierId} AND p.material_id = #{materialId}
+          AND p.unit = #{unit} AND NOT p.voided AND p.effective_date &lt;= #{date}
+          AND (p.material_sku_id = #{skuId,jdbcType=BIGINT} OR p.material_sku_id IS NULL)
+        ORDER BY p.material_sku_id IS NULL, p.effective_date DESC, p.id DESC
+        LIMIT 1
+    </select>
+
+    <!-- 批量版：key 写成 VALUES，每个 key 用 DISTINCT ON 取排在最前的一条，排序和上面一样。一条 SQL 带出几十行 -->
+    <select id="selectCurrentMaterials" resultType="com.lingmao.scm.module.price.mapper.CurrentMaterialHit">
+        WITH k (supplier_id, material_id, sku_id, unit) AS (
+            VALUES
+            <foreach collection="keys" item="x" separator=",">
+                (#{x.supplierId}::bigint, #{x.materialId}::bigint, #{x.materialSkuId,jdbcType=BIGINT}::bigint, #{x.unit}::varchar)
+            </foreach>
+        )
+        SELECT DISTINCT ON (k.supplier_id, k.material_id, k.sku_id) k.sku_id AS key_sku_id, p.*
+        FROM k
+        JOIN prc_price p ON p.type = 'MATERIAL' AND p.supplier_id = k.supplier_id AND p.material_id = k.material_id
+         AND p.unit = k.unit AND NOT p.voided AND p.effective_date &lt;= #{date}
+         AND (p.material_sku_id = k.sku_id OR p.material_sku_id IS NULL)
+        ORDER BY k.supplier_id, k.material_id, k.sku_id, p.material_sku_id IS NULL, p.effective_date DESC, p.id DESC
+    </select>
+
+    <select id="selectCurrentProcess" resultType="com.lingmao.scm.module.price.entity.Price">
+        SELECT p.*
+        FROM prc_price p
+        WHERE p.type = 'PROCESS' AND p.supplier_id = #{supplierId} AND p.style_id = #{styleId}
+          AND p.process_mode = #{processMode} AND NOT p.voided AND p.effective_date &lt;= #{date}
+        ORDER BY p.effective_date DESC, p.id DESC
+        LIMIT 1
+    </select>
+
+    <!-- 列表的条件：三个详情页各传自己的 id；页签里再按类型、SKU、加工方式筛 -->
+    <sql id="filters">
+        <if test="q.type != null">AND p.type = #{q.type}</if>
+        <if test="q.supplierId != null">AND p.supplier_id = #{q.supplierId}</if>
+        <if test="q.materialId != null">AND p.material_id = #{q.materialId}</if>
+        <if test="q.materialSkuId != null">AND p.material_sku_id = #{q.materialSkuId}</if>
+        <if test="q.styleId != null">AND p.style_id = #{q.styleId}</if>
+        <if test="q.processMode != null and q.processMode != ''">AND p.process_mode = #{q.processMode}</if>
+    </sql>
+
+    <select id="selectHistoryPage" resultType="com.lingmao.scm.module.price.dto.PriceRowVO">
+        SELECT p.*
+        FROM prc_price p
+        WHERE true
+        <include refid="filters"/>
+        <if test="q.includeVoided != true">AND NOT p.voided</if>
+        ORDER BY p.effective_date DESC, p.id DESC
+    </select>
+
+    <select id="selectMaterialIds" resultType="java.lang.Long">
+        SELECT DISTINCT p.material_id
+        FROM prc_price p
+        WHERE p.type = 'MATERIAL'
+        <include refid="filters"/>
+    </select>
+
+    <!-- 同一组：类型、供应商、物料、SKU、款式、加工方式都一样，单位也一样（换了采购单位的旧价不拿来比），没作废 -->
+    <sql id="sameGroup">
+        q.type = cur.type AND q.supplier_id = cur.supplier_id
+        AND q.material_id IS NOT DISTINCT FROM cur.material_id
+        AND q.material_sku_id IS NOT DISTINCT FROM cur.material_sku_id
+        AND q.style_id IS NOT DISTINCT FROM cur.style_id
+        AND q.process_mode IS NOT DISTINCT FROM cur.process_mode
+        AND q.unit = cur.unit AND NOT q.voided
+    </sql>
+
+    <!--
+      只看现价，每组一行：
+      - cur：DISTINCT ON 每组排第一的。今天已经生效的排前面，其中生效日期最新的、同一天后录的；一条都没生效的，取最早生效的那条
+      - prev：这一行已经生效时，同组它前面的一条（上一次的价）
+      - nxt：这一行已经生效时，同组以后才生效的最早一条（"12-01 起 19.00"）
+      物料价只认 units 里物料现在的采购单位；units 是空的（只有加工价）时 u 是空表
+    -->
+    <select id="selectCurrentPage" resultType="com.lingmao.scm.module.price.dto.PriceRowVO">
+        WITH u (material_id, unit) AS (
+            <choose>
+                <when test="units == null or units.isEmpty()">SELECT NULL::bigint, NULL::varchar WHERE false</when>
+                <otherwise>
+                    VALUES
+                    <foreach collection="units" item="x" separator=",">(#{x.materialId}::bigint, #{x.unit}::varchar)</foreach>
+                </otherwise>
+            </choose>
+        ),
+        cur AS (
+            SELECT DISTINCT ON (p.type, p.supplier_id, p.material_id, p.material_sku_id, p.style_id, p.process_mode) p.*
+            FROM prc_price p
+            LEFT JOIN u ON u.material_id = p.material_id
+            WHERE NOT p.voided AND (p.type = 'PROCESS' OR p.unit = u.unit)
+            <include refid="filters"/>
+            ORDER BY p.type, p.supplier_id, p.material_id, p.material_sku_id, p.style_id, p.process_mode,
+                     p.effective_date &gt; #{today},
+                     CASE WHEN p.effective_date &lt;= #{today} THEN p.effective_date END DESC,
+                     p.effective_date, p.id DESC
+        )
+        SELECT cur.*, prev.price AS prev_price, nxt.price AS next_price, nxt.effective_date AS next_date
+        FROM cur
+        LEFT JOIN LATERAL (
+            SELECT q.price
+            FROM prc_price q
+            WHERE <include refid="sameGroup"/>
+              AND cur.effective_date &lt;= #{today}
+              AND (q.effective_date, q.id) &lt; (cur.effective_date, cur.id)
+            ORDER BY q.effective_date DESC, q.id DESC
+            LIMIT 1
+        ) prev ON true
+        LEFT JOIN LATERAL (
+            SELECT q.price, q.effective_date
+            FROM prc_price q
+            WHERE <include refid="sameGroup"/>
+              AND cur.effective_date &lt;= #{today} AND q.effective_date &gt; #{today}
+            ORDER BY q.effective_date, q.id DESC
+            LIMIT 1
+        ) nxt ON true
+        ORDER BY cur.type, cur.supplier_id, cur.material_id, cur.material_sku_id NULLS FIRST, cur.style_id, cur.process_mode, cur.id
+    </select>
+</mapper>
