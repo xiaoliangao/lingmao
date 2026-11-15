@@ -19,13 +19,14 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
+import PriceHistory from '@/components/price/PriceHistory.vue'
 import SupplierFormDialog from './SupplierFormDialog.vue'
 import CertDialog from './CertDialog.vue'
 
 /**
- * 供应商详情（RFC 004 §12，原型 /suppliers/:code）。左边：状态横条、待批改动、资质 / 改动记录 / 操作记录三个页签；
+ * 供应商详情（RFC 004 §12，原型 /suppliers/:code）。左边：状态横条、待批改动、资质 / 改动记录 / 价格记录 / 操作记录四个页签；
  * 右边：资料。顶上的按钮按后端给的 actions 显示（状态 + 权限 + 不能自己批自己，后端算好的）。
- * 价格记录页签随价格档案（RFC 006）加。
+ * 价格记录页签（RFC 006 §9）要 price:price:list，没有就不显示。
  * 一家供应商一个页签（详情路由，见 router/index.ts）：id 在这里取一次，不跟着路由变
  */
 const route = useRoute()
@@ -475,6 +476,10 @@ reloadAll()
                 </template>
               </el-table-column>
             </el-table>
+          </el-tab-pane>
+
+          <el-tab-pane v-if="store.hasPerm('price:price:list')" label="价格记录" name="prices" lazy>
+            <PriceHistory :subject="{ kind: 'supplier', id, code: supplier.code, name: supplier.shortName }" />
           </el-tab-pane>
 
           <el-tab-pane label="操作记录" name="logs" lazy>

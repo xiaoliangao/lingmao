@@ -10,6 +10,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
+import PriceHistory from '@/components/price/PriceHistory.vue'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useTabsStore } from '@/stores/tabs'
@@ -22,8 +23,8 @@ import SkuPicker from './SkuPicker.vue'
 import { invalidSpecs, specsOf, type SpecCodeOverrides } from './sku'
 
 /**
- * 物料详情（/materials/:id，RFC 003 §7、§12）：左边 SKU、操作记录两个页签，右边图片和资料。
- * 价格记录页签等价格档案（RFC 006）做的时候加。
+ * 物料详情（/materials/:id，RFC 003 §7、§12）：左边 SKU、价格记录、操作记录三个页签，右边图片和资料。
+ * 价格记录（RFC 006 §9）要 price:price:list，没有就不显示这个页签。
  * 一条物料一个页签（详情路由，见 router/index.ts）：id 在这里取一次，不跟着路由变
  */
 const route = useRoute()
@@ -39,7 +40,7 @@ const seasons = useDict('season')
 
 const detail = ref<MaterialDetail | null>(null)
 const notFound = ref(false)
-const tab = ref<'skus' | 'logs'>('skus')
+const tab = ref<'skus' | 'prices' | 'logs'>('skus')
 const logList = ref<InstanceType<typeof DocLogList>>()
 const loadLogs = () => materialApi.logs(id)
 const canEdit = computed(() => user.hasPerm('basic:material:edit'))
@@ -277,6 +278,9 @@ const LOG_ACTIONS = {
                 </template>
               </el-table-column>
             </el-table>
+          </el-tab-pane>
+          <el-tab-pane v-if="user.hasPerm('price:price:list')" label="价格记录" name="prices" lazy>
+            <PriceHistory :subject="{ kind: 'material', id, code: m.code, name: m.name }" />
           </el-tab-pane>
           <el-tab-pane label="操作记录" name="logs" lazy>
             <DocLogList ref="logList" :load="loadLogs" :actions="LOG_ACTIONS" />
