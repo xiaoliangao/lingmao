@@ -115,6 +115,6 @@ public interface StyleService {
      */
     void checkUsable(long id);
 
-    /** 一批款式的 id、款号、名称，给列表显示用。id → StyleRef；查不到的（被删了）不在 map 里 */
+    /** 一批款式的 id、款号、名称，给列表显示用。id → StyleRef；查不到的（被删了）不在 map 里；get(null) 返回 null，不抛 */
     Map<Long, StyleRef> refs(Collection<Long> ids);
 }

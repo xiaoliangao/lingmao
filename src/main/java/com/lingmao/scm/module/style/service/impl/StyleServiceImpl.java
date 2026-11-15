@@ -507,13 +507,16 @@ public class StyleServiceImpl implements StyleService {
     @Override
     public Map<Long, StyleRef> refs(Collection<Long> ids) {
         List<Long> distinct = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        // 一律给 HashMap：调用方拿行上可能为空的 styleId（物料价）直接 get，Map.of() 的 get(null) 会抛空指针
+        Map<Long, StyleRef> refs = new HashMap<>();
         if (distinct.isEmpty()) {
-            return Map.of();
+            return refs;
         }
-        return styleMapper.selectList(new LambdaQueryWrapper<Style>()
+        styleMapper.selectList(new LambdaQueryWrapper<Style>()
                         .select(Style::getId, Style::getCode, Style::getName)
                         .in(Style::getId, distinct))
-                .stream().collect(Collectors.toMap(Style::getId, s -> new StyleRef(s.getId(), s.getCode(), s.getName())));
+                .forEach(s -> refs.put(s.getId(), new StyleRef(s.getId(), s.getCode(), s.getName())));
+        return refs;
     }
 
     // ------------------------------------------------------------------ 内部

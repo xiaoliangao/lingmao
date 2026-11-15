@@ -173,6 +173,8 @@ class StyleServiceImplTest extends StyleTestBase {
         assertThat(refs).containsEntry(5L, new StyleRef(5L, "FS2611080701", "测试风衣"))
                 .containsEntry(6L, new StyleRef(6L, "27CF001", "测试风衣"));
         assertThat(service.refs(List.of())).isEmpty();
+        // 物料价那几行 styleId 为空，调用方直接 get(null)：不能抛
+        assertThat(service.refs(List.of()).get(null)).isNull();
         verify(styleMapper).selectList(any());
     }
 
