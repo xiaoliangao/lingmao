@@ -132,11 +132,18 @@ export function request<T>(config: AxiosRequestConfig): Promise<T> {
   return instance.request<R<T>>(config).then((response) => response.data.data)
 }
 
+/**
+ * 单个请求的选项。silent：出错不弹提示，由调用方自己汇总（批量操作条 BatchBar 逐条调接口时就这样）。
+ * 接口函数想让调用方能静默，就多收一个 options 原样传下来：
+ *   disable: (id: number, options?: RequestOptions) => http.post<void>(`/api/materials/${id}/disable`, undefined, options)
+ */
+export type RequestOptions = Pick<AxiosRequestConfig, 'silent'>
+
 export const http = {
-  get: <T>(url: string, params?: object) => request<T>({ url, method: 'get', params }),
-  post: <T>(url: string, data?: object) => request<T>({ url, method: 'post', data }),
-  put: <T>(url: string, data?: object) => request<T>({ url, method: 'put', data }),
-  delete: <T>(url: string) => request<T>({ url, method: 'delete' }),
+  get: <T>(url: string, params?: object, options?: RequestOptions) => request<T>({ url, method: 'get', params, ...options }),
+  post: <T>(url: string, data?: object, options?: RequestOptions) => request<T>({ url, method: 'post', data, ...options }),
+  put: <T>(url: string, data?: object, options?: RequestOptions) => request<T>({ url, method: 'put', data, ...options }),
+  delete: <T>(url: string, options?: RequestOptions) => request<T>({ url, method: 'delete', ...options }),
 }
 
 /** 上传一个文件：multipart，字段名 file（后端约定）。filename 不传就用文件自己的名字 */
