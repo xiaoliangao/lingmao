@@ -1,0 +1,120 @@
+package com.lingmao.scm.module.style.service;
+
+import com.lingmao.scm.common.excel.ImportResult;
+import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.module.biz.dto.AttachmentReq;
+import com.lingmao.scm.module.biz.dto.AttachmentVO;
+import com.lingmao.scm.module.biz.dto.DocLogVO;
+import com.lingmao.scm.module.style.dto.StyleCreateReq;
+import com.lingmao.scm.module.style.dto.StyleCreateResult;
+import com.lingmao.scm.module.style.dto.StyleDetailVO;
+import com.lingmao.scm.module.style.dto.StyleListVO;
+import com.lingmao.scm.module.style.dto.StylePickQuery;
+import com.lingmao.scm.module.style.dto.StylePickVO;
+import com.lingmao.scm.module.style.dto.StyleQuery;
+import com.lingmao.scm.module.style.dto.StyleRef;
+import com.lingmao.scm.module.style.dto.StyleSaveReq;
+import com.lingmao.scm.module.style.dto.StyleSkuSaveReq;
+import com.lingmao.scm.module.style.dto.StyleSkuVO;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 款式、颜色、SKU（RFC 005）。款号建好不改；状态照转换表（StyleServiceImpl.FLOW）比较并交换，每个动作写一条操作记录；
+ * 颜色只追加；SKU = 启用的颜色 × 尺码组的尺码，一键生成只补缺。
+ * <p>
+ * 给别的域用的是最后两个方法：checkUsable、refs（价格档案用）。第 3 批需求订单、资料包开工时再加 checkOrderable、updateTechPackStatus
+ * （RFC 005 §4）。
+ */
+public interface StyleService {
+
+    PageResult<StyleListVO> page(StyleQuery query);
+
+    /** 款式 + 颜色 + 尺码组 + 图片 + 设计附件 + 领猫附加属性 + 能做的动作。不存在 404 */
+    StyleDetailVO detail(long id);
+
+    /**
+     * 自动编号的预览（RFC 005 §3.1）：只看不取，跳过已经被手填占了的号。
+     * 设计师没选、没有设计师编号、今天的流水用完了 → 1000，提示可以手填
+     */
+    String codePreview(String styleClass, Long designerId);
+
+    /** 新建，状态是草稿。带了颜色的同时生成 SKU。返回实际的款号 */
+    StyleCreateResult create(StyleCreateReq req);
+
+    /** 只改款式自己的列，不收款号、状态。已经有 SKU 的换尺码组 → 1000 */
+    void update(long id, StyleSaveReq req);
+
+    /** 连同 SKU、颜色、附件、操作记录一起删；被需求订单、资料包、价格档案引用了外键拦住 → 1005，整个回滚 */
+    void delete(long id);
+
+    /** 草稿、停用 → 启用：至少有一个启用的 SKU（1000） */
+    void enable(long id);
+
+    /** 启用 → 停用 */
+    void disable(long id);
+
+    /** 加颜色：追加在后面，要存在、启用；已经有的 → 1000 */
+    void addColors(long id, List<Long> colorIds);
+
+    /** 颜色的新顺序：要正好是款式上的全部颜色 */
+    void reorderColors(long id, List<Long> colorIds);
+
+    void enableColor(long id, long colorId);
+
+    /** 停用颜色不连带停用它的 SKU（RFC 005 §5） */
+    void disableColor(long id, long colorId);
+
+    /** 去掉颜色：生成过 SKU 的只能停用（1000） */
+    void removeColor(long id, long colorId);
+
+    /** SKU，按颜色顺序、尺码顺序 */
+    List<StyleSkuVO> skus(long id);
+
+    /** 一键生成：启用的颜色 × 尺码组的全部尺码，已有的跳过。返回新建了几个；调几次结果都一样 */
+    int generateSkus(long id);
+
+    /** 改条码、吊牌价。条码重复 → 1000 */
+    void updateSku(long id, long skuId, StyleSkuSaveReq req);
+
+    /** 被需求订单引用了外键拦住 → 1005 */
+    void deleteSku(long id, long skuId);
+
+    void enableSku(long id, long skuId);
+
+    void disableSku(long id, long skuId);
+
+    /** 款式图整组替换，第一张是主图（RFC 003 §2） */
+    List<AttachmentVO> replaceImages(long id, List<AttachmentReq> files);
+
+    /** 设计附件整组替换 */
+    List<AttachmentVO> replaceFiles(long id, List<AttachmentReq> files);
+
+    /** 操作记录，新的在前 */
+    List<DocLogVO> logs(long id);
+
+    /** 选款式（DataPick）：启用的款式 */
+    PageResult<StylePickVO> pick(StylePickQuery query);
+
+    byte[] importTemplate();
+
+    /** 导入（RFC 005 §8）：只新增；有一处不对整批不导（1003） */
+    ImportResult importExcel(MultipartFile file);
+
+    /** 导出：款式一张表 + SKU 一张表，条件同列表 */
+    byte[] export(StyleQuery query);
+
+    // ---------- 给别的域 ----------
+
+    /**
+     * 能不能选进价格档案（录加工价）、以后的单据：款式要启用。
+     * 不存在抛 404；草稿、停用抛 1000"款式 X 现在是「停用」，不能……"
+     */
+    void checkUsable(long id);
+
+    /** 一批款式的 id、款号、名称，给列表显示用。id → StyleRef；查不到的（被删了）不在 map 里 */
+    Map<Long, StyleRef> refs(Collection<Long> ids);
+}
