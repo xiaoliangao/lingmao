@@ -57,7 +57,7 @@ const FLOWS = {
   stocktake: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'] },
   production: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已下单'], 反审核: ['已下单', '草稿'], 结案: [['已下单', '生产中', '部分回货', '已完成'], '已结案'], 取消结案: ['已结案', '生产中'], 作废: [['草稿', '待审核'], '已作废'] },
   techpack: { 生效: ['草稿', '已生效'] },
-  // 供应商准入要审批（甲方 11-11 反馈 1d）：申请 → 有准入权限的另一个人通过或驳回
+  // 供应商准入要审批（甲方 11-11 反馈 1d）：申请 → 有准入权限的另一个人通过或驳回。解除黑名单：从没准入过的回待准入（unblockSupplier）
   supplier: { 申请准入: ['待准入', '准入审批中'], 通过: ['准入审批中', '合作中'], 驳回: ['准入审批中', '待准入'], 停用: ['合作中', '停用'], 启用: ['停用', '合作中'], 拉黑: [['待准入', '准入审批中', '合作中', '停用'], '黑名单'], 解除黑名单: ['黑名单', '停用'] },
   style: { 启用: ['草稿', '启用'], 停用: ['启用', '停用'], 恢复: ['停用', '启用'] },
 }
@@ -1540,6 +1540,15 @@ function selftest() {
   ok('关键信息改动：自己提的不能自己批', as('u2', clock.today, () => err(() => approveSupChange(g1))).includes('自己'))
   as('u6', clock.today, () => approveSupChange(g1))
   ok('关键信息改动：另一个人批准后才生效', g1.bank === '某银行杭州分行' && !g1.pending, g1.bank)
+  // 用户 11-15 定（RFC 004 §16）：信用代码从空补上直接生效、改已有的才审批；解除黑名单时从没准入过的回待准入
+  const imp = as('u6', clock.today, () => createSupplier({ imported: true, status: '合作中', name: '自检导入有限公司', short: '自检导入', cats: ['其他'] }))
+  as('u2', clock.today, () => updateSupplier(imp, { name: imp.name, short: imp.short, cats: imp.cats, credit: '91330100MA0000777Y' }))
+  ok('信用代码：导入时没填的，补上直接生效，不用审批', imp.credit === '91330100MA0000777Y' && !imp.pending, [imp.credit, imp.pending])
+  as('u2', clock.today, () => updateSupplier(imp, { name: imp.name, short: imp.short, cats: imp.cats, credit: '91330100MA0000778Y' }))
+  ok('信用代码：改已有的要审批', imp.credit === '91330100MA0000777Y' && imp.pending?.items[0]?.k === 'credit', [imp.credit, imp.pending])
+  const nb = as('u2', clock.today, () => createSupplier({ name: '自检未准入有限公司', short: '自检未准入', cats: ['其他'] }))
+  as('u6', clock.today, () => { blacklistSupplier(nb, '自检'); unblockSupplier(nb, '自检'); blacklistSupplier(imp, '自检'); unblockSupplier(imp, '自检') })
+  ok('解除黑名单：从没准入过的回待准入，准入过的回停用', nb.status === '待准入' && imp.status === '停用', [nb.status, imp.status])
   ok('企查查：每周复查比上次多出一条，记成新增风险', sup('GYS0005').riskNew?.ids.length === 1 && sup('GYS0005').riskChecks.at(-1).result === '高风险', sup('GYS0005').riskNew)
   const g2 = sup('GYS0002'), r1 = riskCheck(g2, '手动'), n1 = g2.riskChecks.length, r2 = riskCheck(g2, '手动')
   ok('企查查：同一家一天只查一次，再查给当天那次的结果', r2.again && r2.at === r1.at && g2.riskChecks.length === n1, [r2.again, n1, g2.riskChecks.length])

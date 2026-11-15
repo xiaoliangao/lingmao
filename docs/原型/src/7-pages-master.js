@@ -34,7 +34,8 @@ function updateSupplier(s, f) {
   if (!f.short?.trim() || !f.name?.trim()) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
   if ('credit' in f) { f.credit = normCredit(f.credit); checkCredit(f.credit, s) }
-  const gated = supGated(s) ? SUP_FIELDS.filter(([k]) => SUP_KEY.includes(k) && k in f && !sameVal(f[k], s[k])) : []
+  // 信用代码从空补上的直接生效，改已有的才审批：导入的多数没填，上线后逐家补、逐家批太麻烦（用户 11-15 定）
+  const gated = supGated(s) ? SUP_FIELDS.filter(([k]) => SUP_KEY.includes(k) && k in f && !sameVal(f[k], s[k]) && !(k === 'credit' && !s.credit)) : []
   if (gated.length && s.pending) fail(`已经有一份待批改动（${userName(s.pending.by)} ${fd(s.pending.at)} 提的），先处理那份：批准、驳回或撤回以后再改`, s.pending.items.map(supChangeText))
   const direct = { ...f }
   gated.forEach(([k]) => delete direct[k])
@@ -154,6 +155,8 @@ function removeSupplier(s) {
 function unblockSupplier(s, reason) {
   if (!reason) fail('要写解除原因')
   move('supplier', s, '解除黑名单', reason)
+  // 从没准入过的回待准入：回停用的话再点启用就成了合作中，绕过了准入（用户 11-15 定，RFC 004 §2）
+  if (!s.admitted) s.status = '待准入'
   s.blackReason = ''
 }
 function supplierDocs(code) {
@@ -656,7 +659,7 @@ comp('SupplierForm', {
   template: `<Modal :t="s ? '编辑供应商 ' + s.code : '新建供应商'" :w="680" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
       <label class="f full"><span>全称<i v-if="gate" class="kmark">需审批</i></span><input class="inp" v-model="f.name"></label>
-      <label class="f" style="grid-column:span 2"><span>统一社会信用代码<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.credit" maxlength="20" placeholder="18 位，营业执照上有"><small v-if="f.credit && credit" class="red">{{ credit }}</small></label>
+      <label class="f" style="grid-column:span 2"><span>统一社会信用代码<i v-if="gate && s.credit" class="kmark">需审批</i></span><input class="inp code" v-model="f.credit" maxlength="20" placeholder="18 位，营业执照上有"><small v-if="f.credit && credit" class="red">{{ credit }}</small></label>
       <label class="f">简称<input class="inp" v-model="f.short"></label>
       <label class="f">编码<input class="inp code" :value="s ? s.code : nextCode('GYS', db.suppliers)" disabled :title="s ? '编码定了不改' : '自动编'"></label>
       <label class="f">等级<Pick class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></Pick></label>
@@ -866,7 +869,7 @@ comp('SupplierBlock', {
     const open = computed(() => (p.mode === '拉黑' ? openDocsOfSupplier(p.s.code) : []))
     function ok() {
       const r = run(() => (p.mode === '拉黑' ? blacklistSupplier(p.s, reason.value.trim()) : unblockSupplier(p.s, reason.value.trim())))
-      if (r) { emit('close'); toast(p.mode === '拉黑' ? p.s.short + ' 已拉黑，新的采购单、生产单选不到它' : p.s.short + ' 已解除黑名单，现在是停用') }
+      if (r) { emit('close'); toast(p.mode === '拉黑' ? p.s.short + ' 已拉黑，新的采购单、生产单选不到它' : p.s.short + ' 已解除黑名单，现在是「' + p.s.status + '」') }
     }
     return { reason, open, ok }
   },

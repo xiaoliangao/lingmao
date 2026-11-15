@@ -1732,7 +1732,7 @@ const FLOWS = {
   stocktake: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已审核'], 反审核: ['已审核', '草稿'] },
   production: { 提交: ['草稿', '待审核'], 撤回: ['待审核', '草稿'], 驳回: ['待审核', '草稿'], 审核: ['待审核', '已下单'], 反审核: ['已下单', '草稿'], 结案: [['已下单', '生产中', '部分回货', '已完成'], '已结案'], 取消结案: ['已结案', '生产中'], 作废: [['草稿', '待审核'], '已作废'] },
   techpack: { 生效: ['草稿', '已生效'] },
-  // 供应商准入要审批（甲方 11-11 反馈 1d）：申请 → 有准入权限的另一个人通过或驳回
+  // 供应商准入要审批（甲方 11-11 反馈 1d）：申请 → 有准入权限的另一个人通过或驳回。解除黑名单：从没准入过的回待准入（unblockSupplier）
   supplier: { 申请准入: ['待准入', '准入审批中'], 通过: ['准入审批中', '合作中'], 驳回: ['准入审批中', '待准入'], 停用: ['合作中', '停用'], 启用: ['停用', '合作中'], 拉黑: [['待准入', '准入审批中', '合作中', '停用'], '黑名单'], 解除黑名单: ['黑名单', '停用'] },
   style: { 启用: ['草稿', '启用'], 停用: ['启用', '停用'], 恢复: ['停用', '启用'] },
 }
@@ -3215,6 +3215,15 @@ function selftest() {
   ok('关键信息改动：自己提的不能自己批', as('u2', clock.today, () => err(() => approveSupChange(g1))).includes('自己'))
   as('u6', clock.today, () => approveSupChange(g1))
   ok('关键信息改动：另一个人批准后才生效', g1.bank === '某银行杭州分行' && !g1.pending, g1.bank)
+  // 用户 11-15 定（RFC 004 §16）：信用代码从空补上直接生效、改已有的才审批；解除黑名单时从没准入过的回待准入
+  const imp = as('u6', clock.today, () => createSupplier({ imported: true, status: '合作中', name: '自检导入有限公司', short: '自检导入', cats: ['其他'] }))
+  as('u2', clock.today, () => updateSupplier(imp, { name: imp.name, short: imp.short, cats: imp.cats, credit: '91330100MA0000777Y' }))
+  ok('信用代码：导入时没填的，补上直接生效，不用审批', imp.credit === '91330100MA0000777Y' && !imp.pending, [imp.credit, imp.pending])
+  as('u2', clock.today, () => updateSupplier(imp, { name: imp.name, short: imp.short, cats: imp.cats, credit: '91330100MA0000778Y' }))
+  ok('信用代码：改已有的要审批', imp.credit === '91330100MA0000777Y' && imp.pending?.items[0]?.k === 'credit', [imp.credit, imp.pending])
+  const nb = as('u2', clock.today, () => createSupplier({ name: '自检未准入有限公司', short: '自检未准入', cats: ['其他'] }))
+  as('u6', clock.today, () => { blacklistSupplier(nb, '自检'); unblockSupplier(nb, '自检'); blacklistSupplier(imp, '自检'); unblockSupplier(imp, '自检') })
+  ok('解除黑名单：从没准入过的回待准入，准入过的回停用', nb.status === '待准入' && imp.status === '停用', [nb.status, imp.status])
   ok('企查查：每周复查比上次多出一条，记成新增风险', sup('GYS0005').riskNew?.ids.length === 1 && sup('GYS0005').riskChecks.at(-1).result === '高风险', sup('GYS0005').riskNew)
   const g2 = sup('GYS0002'), r1 = riskCheck(g2, '手动'), n1 = g2.riskChecks.length, r2 = riskCheck(g2, '手动')
   ok('企查查：同一家一天只查一次，再查给当天那次的结果', r2.again && r2.at === r1.at && g2.riskChecks.length === n1, [r2.again, n1, g2.riskChecks.length])
@@ -10877,7 +10886,8 @@ function updateSupplier(s, f) {
   if (!f.short?.trim() || !f.name?.trim()) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
   if ('credit' in f) { f.credit = normCredit(f.credit); checkCredit(f.credit, s) }
-  const gated = supGated(s) ? SUP_FIELDS.filter(([k]) => SUP_KEY.includes(k) && k in f && !sameVal(f[k], s[k])) : []
+  // 信用代码从空补上的直接生效，改已有的才审批：导入的多数没填，上线后逐家补、逐家批太麻烦（用户 11-15 定）
+  const gated = supGated(s) ? SUP_FIELDS.filter(([k]) => SUP_KEY.includes(k) && k in f && !sameVal(f[k], s[k]) && !(k === 'credit' && !s.credit)) : []
   if (gated.length && s.pending) fail(`已经有一份待批改动（${userName(s.pending.by)} ${fd(s.pending.at)} 提的），先处理那份：批准、驳回或撤回以后再改`, s.pending.items.map(supChangeText))
   const direct = { ...f }
   gated.forEach(([k]) => delete direct[k])
@@ -10997,6 +11007,8 @@ function removeSupplier(s) {
 function unblockSupplier(s, reason) {
   if (!reason) fail('要写解除原因')
   move('supplier', s, '解除黑名单', reason)
+  // 从没准入过的回待准入：回停用的话再点启用就成了合作中，绕过了准入（用户 11-15 定，RFC 004 §2）
+  if (!s.admitted) s.status = '待准入'
   s.blackReason = ''
 }
 function supplierDocs(code) {
@@ -11499,7 +11511,7 @@ comp('SupplierForm', {
   template: `<Modal :t="s ? '编辑供应商 ' + s.code : '新建供应商'" :w="680" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
       <label class="f full"><span>全称<i v-if="gate" class="kmark">需审批</i></span><input class="inp" v-model="f.name"></label>
-      <label class="f" style="grid-column:span 2"><span>统一社会信用代码<i v-if="gate" class="kmark">需审批</i></span><input class="inp code" v-model="f.credit" maxlength="20" placeholder="18 位，营业执照上有"><small v-if="f.credit && credit" class="red">{{ credit }}</small></label>
+      <label class="f" style="grid-column:span 2"><span>统一社会信用代码<i v-if="gate && s.credit" class="kmark">需审批</i></span><input class="inp code" v-model="f.credit" maxlength="20" placeholder="18 位，营业执照上有"><small v-if="f.credit && credit" class="red">{{ credit }}</small></label>
       <label class="f">简称<input class="inp" v-model="f.short"></label>
       <label class="f">编码<input class="inp code" :value="s ? s.code : nextCode('GYS', db.suppliers)" disabled :title="s ? '编码定了不改' : '自动编'"></label>
       <label class="f">等级<Pick class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></Pick></label>
@@ -11709,7 +11721,7 @@ comp('SupplierBlock', {
     const open = computed(() => (p.mode === '拉黑' ? openDocsOfSupplier(p.s.code) : []))
     function ok() {
       const r = run(() => (p.mode === '拉黑' ? blacklistSupplier(p.s, reason.value.trim()) : unblockSupplier(p.s, reason.value.trim())))
-      if (r) { emit('close'); toast(p.mode === '拉黑' ? p.s.short + ' 已拉黑，新的采购单、生产单选不到它' : p.s.short + ' 已解除黑名单，现在是停用') }
+      if (r) { emit('close'); toast(p.mode === '拉黑' ? p.s.short + ' 已拉黑，新的采购单、生产单选不到它' : p.s.short + ' 已解除黑名单，现在是「' + p.s.status + '」') }
     }
     return { reason, open, ok }
   },
