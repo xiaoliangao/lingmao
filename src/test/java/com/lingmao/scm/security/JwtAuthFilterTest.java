@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -19,6 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -69,6 +71,24 @@ class JwtAuthFilterTest {
         filter.doFilter(requestWithToken("good-token"), new MockHttpServletResponse(), new MockFilterChain());
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    /**
+     * 规则：查权限时数据库出错 → 异常抛出去，不当成"没登录"（那样前端会以为登录过期、把人踢回登录页）。
+     * 抛出去以后由 TraceIdFilter 回 500 和错误编号
+     */
+    @Test
+    void permissionLookupFails_exceptionPropagates() {
+        when(jwtUtil.parse("good-token")).thenReturn(Jwts.claims().id("jti-1").subject("1").build());
+        when(loginSessionStore.getUserId("jti-1")).thenReturn(1L);
+        when(permissionService.loadPermissions(1L)).thenThrow(new CannotGetJdbcConnectionException("数据库连不上"));
+        MockFilterChain chain = new MockFilterChain();
+
+        assertThatThrownBy(() -> filter.doFilter(requestWithToken("good-token"), new MockHttpServletResponse(), chain))
+                .isInstanceOf(CannotGetJdbcConnectionException.class);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(chain.getRequest()).isNull();
     }
 
     /** 规则：token 本身没问题，但 Redis 里那一笔已经删了（退出过）→ 认不出 */

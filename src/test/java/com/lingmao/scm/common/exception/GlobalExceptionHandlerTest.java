@@ -5,6 +5,7 @@ import com.lingmao.scm.common.log.TraceIdFilter;
 import com.lingmao.scm.common.mybatis.TableComments;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.result.R;
+import jakarta.servlet.Filter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -20,6 +21,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -33,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -73,9 +76,12 @@ class GlobalExceptionHandlerTest {
     @MockitoBean
     private TableComments tableComments;
 
+    @Autowired
+    private JsonMapper jsonMapper;
+
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(context).addFilters(new TraceIdFilter()).build();
+        mockMvc = MockMvcBuilders.webAppContextSetup(context).addFilters(new TraceIdFilter(jsonMapper)).build();
     }
 
     /** bug 003：请求体根本不是 JSON，返回 400，不是 500 */
@@ -271,6 +277,28 @@ class GlobalExceptionHandlerTest {
         String msg = JsonPath.read(result.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.msg");
         assertThat(msg).isEqualTo("服务器出错了，错误编号 " + traceId);
         assertThat(output.getOut()).containsPattern("\\[" + traceId + "\\] .*未处理异常: GET /demo/boom");
+    }
+
+    /**
+     * 过滤器里出错（到不了这里的 handler，比如查权限时数据库断了）：同样是 500 + 错误编号，
+     * 日志那一行也带编号（以前掉到 Tomcat 的 /error，前端收到 401，日志里没编号）
+     */
+    @Test
+    void errorInFilter_returns500WithTraceId(CapturedOutput output) throws Exception {
+        Filter failing = (req, res, chain) -> {
+            throw new CannotGetJdbcConnectionException("数据库连不上");
+        };
+        MockMvc withFailingFilter = MockMvcBuilders.webAppContextSetup(context)
+                .addFilters(new TraceIdFilter(jsonMapper), failing).build();
+
+        MvcResult result = withFailingFilter.perform(get("/demo/items/1"))
+                .andExpect(jsonPath("$.code").value(500))
+                .andReturn();
+
+        String traceId = result.getResponse().getHeader(TraceIdFilter.HEADER);
+        String msg = JsonPath.read(result.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.msg");
+        assertThat(msg).isEqualTo("服务器出错了，错误编号 " + traceId);
+        assertThat(output.getOut()).containsPattern("\\[" + traceId + "\\] .*未处理异常（过滤器）: GET /demo/items/1");
     }
 
     /** 测试专用：每个接口造一种出错的情况 */

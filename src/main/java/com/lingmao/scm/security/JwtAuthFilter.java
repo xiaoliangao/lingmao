@@ -52,7 +52,9 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
         if (userId == null) {
             return;
         }
-        // 每个请求都从库里查一次：账号停用、删除，或者权限改了，下一个请求立即生效
+        // 每个请求都从库里查一次：账号停用、删除，或者权限改了，下一个请求立即生效。
+        // 查的时候数据库、Redis 出错不在这里接：接住当成"没登录"的话，前端以为登录过期、把人踢回登录页。
+        // 让它抛出去，由 TraceIdFilter 记日志、回 500 和错误编号
         Set<String> perms = permissionService.loadPermissions(userId);
         if (perms == null) {
             return;

@@ -6,7 +6,6 @@ import com.lingmao.scm.common.result.R;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -210,8 +209,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public R<Void> handleOther(Exception e, HttpServletRequest request) {
         log.error("未处理异常: {} {}", request.getMethod(), request.getRequestURI(), e);
-        String traceId = MDC.get(TraceIdFilter.MDC_KEY);
-        return R.fail(500, traceId == null ? "服务器出错了" : "服务器出错了，错误编号 " + traceId);
+        return R.fail(500, TraceIdFilter.serverErrorMsg());
     }
 
     /** 多条消息用"；"连起来，一模一样的只留一条 */
