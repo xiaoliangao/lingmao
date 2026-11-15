@@ -1,0 +1,33 @@
+# 数据库集成测试（*IT，mvn verify 时由 failsafe 跑，RFC 001 §11.2）的配置，@IntegrationTest 激活 it 这个 profile。
+# 连本机 Docker 里的 scm_test（dev/compose.yml）。本机库只绑 127.0.0.1、没有密码，所以这个文件能进仓库；
+# 要用的密钥每次启动随机生成，测完就扔，和任何真实环境都没关系。
+# 启动时先查库名必须以 _test 结尾，再清空、重新执行全部迁移（IntegrationTestConfig），开发库 scm 一点不碰。
+
+spring:
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5433/scm_test
+    username: scm
+    password: ""
+  flyway:
+    # 测试开始前要 clean 整个库。Flyway 默认禁止 clean，只在这里打开；这个文件在 src/test 下，不会打进部署的 jar
+    clean-disabled: false
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6380
+      password: ""
+      database: 14                 # 开发用 0，打包时导出接口文档用 15，测试用 14，互不干扰
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl   # 并发取号的测试一次几十条 SQL，打出来只是刷屏
+
+lingmao:
+  jwt:
+    # 每次随机。random.value 是 32 位十六进制，两段拼成 64 位：十六进制字符也是合法的 Base64，解出来 48 字节，够 HS256 要的 32 字节
+    secret: ${random.value}${random.value}
+  # 库是清空重建的，没有 admin：用随机密码建一个，AdminInitializer 那条路也一起跑到。密码没人知道，也用不着
+  init-admin-password: ${random.uuid}
+  upload:
+    dir: target/it-uploads
+    sign-key: ${random.value}      # 32 位十六进制，符合 FileUrlSigner 的要求

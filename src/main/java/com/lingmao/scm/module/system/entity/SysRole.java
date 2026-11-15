@@ -18,4 +18,6 @@ public class SysRole extends BaseEntity {
     private Integer sort;
     private Integer status;
     private String remark;
+    /** 数据范围：全部 / 本人（V8）。超级管理员是全部 */
+    private RoleDataScope dataScope;
 }

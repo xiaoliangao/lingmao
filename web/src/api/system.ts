@@ -1,6 +1,7 @@
 import { http, request, upload } from '@/utils/request'
 import type {
-  BackupStatus, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, UserOption, VersionInfo,
+  BackupStatus, DataScope, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, UserOption,
+  VersionInfo,
 } from '@/types/system'
 
 export interface PageParams {
@@ -26,6 +27,7 @@ export interface RoleForm {
   sort: number
   status: number
   remark?: string | null
+  dataScope: DataScope
 }
 
 export const roleApi = {

@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.aspect;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
+import com.lingmao.scm.common.log.TraceIdFilter;
 import com.lingmao.scm.module.system.entity.SysOperLog;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysOperLogMapper;
@@ -16,6 +17,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.slf4j.MDC;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -75,6 +77,7 @@ public class OperLogAspect {
             record.setSuccess(error == null);
             record.setErrorMsg(error == null ? null : errorMessage(error));
             record.setCostMs((int) costMs);
+            record.setTraceId(MDC.get(TraceIdFilter.MDC_KEY));
             fillUser(record);
             fillRequest(record);
             sysOperLogMapper.insert(record);

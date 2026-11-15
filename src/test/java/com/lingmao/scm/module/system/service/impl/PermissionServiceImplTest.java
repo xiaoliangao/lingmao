@@ -56,4 +56,17 @@ class PermissionServiceImplTest {
 
         assertThat(permissionService.loadPermissions(2L)).containsExactly("system:user:list", "system:user:add");
     }
+
+    /** 规则：数据范围是"全部"的多一个 data:all（哪些角色算"全部"由 SQL 判断，在 PermissionIT 里测） */
+    @Test
+    void loadPermissions_allDataScope_addsDataAll() {
+        SysUser user = new SysUser();
+        user.setId(2L);
+        user.setStatus(1);
+        when(sysUserMapper.selectById(2L)).thenReturn(user);
+        when(sysMenuMapper.selectPermsByUserId(2L)).thenReturn(List.of("system:user:list"));
+        when(sysRoleMapper.hasAllDataScope(2L)).thenReturn(true);
+
+        assertThat(permissionService.loadPermissions(2L)).containsExactly("system:user:list", "data:all");
+    }
 }

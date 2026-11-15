@@ -71,6 +71,10 @@ onMounted(load)
               <dt>失败原因</dt>
               <dd>{{ row.errorMsg }}</dd>
             </template>
+            <template v-if="row.traceId">
+              <dt>错误编号</dt>
+              <dd class="code">{{ row.traceId }}</dd>
+            </template>
           </dl>
         </template>
       </el-table-column>

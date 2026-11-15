@@ -39,7 +39,7 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认，但不等全
 - 单号用 `common/seq/SerialNoGenerator`：前缀 + yyyyMMdd + 4 位流水。
 - 单据：状态转换集中校验（允许的转换表），不写散落的 if；审核过账在一个事务里（改状态、改库存、写日志、回写源单）；库存用条件更新防并发（PRD §7.3）。
 - 权限：菜单和按钮权限都在 `sys_menu`，后端 `@PreAuthorize` 兜底；数据范围按 PRD §3.2。
-- 测试：每个模块 Service 单测覆盖主要规则 2-4 个（JUnit 5 + Mockito）+ 接口测试 1 个（`@WebMvcTest` + `@MockitoBean`）。样板：`DictTypeServiceImplTest`、`DictTypeControllerTest`。纯 Mockito 测试里用到 Lambda 条件的 `in` 时，要先 `TableInfoHelper.initTableInfo(...)`（见 `RoleServiceImplTest`）。
+- 测试：每个模块 Service 单测覆盖主要规则 2-4 个（JUnit 5 + Mockito）+ 接口测试 1 个（`@WebMvcTest` + `@MockitoBean`）。样板：`DictTypeServiceImplTest`、`DictTypeControllerTest`。纯 Mockito 测试里用到 Lambda 条件的 `in` 时，要先 `TableInfoHelper.initTableInfo(...)`（见 `RoleServiceImplTest`）。 条件更新、并发、外键、迁移这些 Mockito 测不出的，写集成测试 `*IT`（基座 `IntegrationTest`，样板 `DictTypeServiceImplIT`、`SerialNoGeneratorIT`）。
 
 前端（`web/`，Vue 3 + TypeScript + Element Plus + Vite + pnpm）：
 
@@ -62,8 +62,8 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认，但不等全
 
 - **本机开发环境**（11-05 起，不再连服务器）：`docker compose -f dev/compose.yml up -d` 起 PostgreSQL 16（`127.0.0.1:5433`，开发库 `scm`、集成测试库 `scm_test`）和 Redis 7（`127.0.0.1:6380`），都没有密码、只绑本机。数据在 `dev/data/`（gitignore）。开发完清理：`docker compose -f dev/compose.yml down --rmi all && rm -rf dev/data`。连接配置在 `application-local.yaml`，模板是 `.example`。
 - 用户在 IDEA 里跑应用，占 8080 端口。**绝不杀 8080**。Claude 自己起服务用 `mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=18080`，只杀 18080。Swagger 在 `/swagger-ui.html`。
-- 跑测试：`mvn -q test -Dtest='!ScmApplicationTests' -Dsurefire.failIfNoSpecifiedTests=false`。不排除 `ScmApplicationTests` 的话，它会连开发库 `scm`，把还没提交的新迁移执行掉；之后迁移文件一改，校验和对不上，应用就起不来。
-- 新迁移先在 `scm_test` 里跑通（`DB_URL` 换成 `.../scm_test`），跑完重建它：`docker exec scm-dev-postgres psql -U scm -d scm -c 'DROP DATABASE scm_test' -c 'CREATE DATABASE scm_test'`。开发库 `scm` 里有用户自己的数据，不在上面试。
+- 跑测试：平时 `mvn -q test`，只跑单元测试，不碰数据库。`mvn -q verify` 再跑集成测试（`*IT`，要先起 dev compose）：连 `scm_test`（库名不以 `_test` 结尾就拒绝跑），每次先清空、从 V1 执行全部迁移，所以新迁移跑一遍 verify 就验证了。单跑一个：`mvn verify -Dtest=NONE -Dsurefire.failIfNoSpecifiedTests=false -Dit.test=XxxIT`。不要用 `-Dtest='!…'` 这种只写排除的写法：surefire 会把 `*IT` 也当单元测试跑一遍。
+- 开发库 `scm` 只执行提交过的迁移（用户在 IDEA 里、或 Claude 在 18080 起应用时自动执行）：没提交的迁移在开发库上跑过，之后一改，校验和就对不上，应用起不来。`scm_test` 要空库时：`docker exec scm-dev-postgres psql -U scm -d scm -c 'DROP DATABASE scm_test' -c 'CREATE DATABASE scm_test'`。
 - 测写操作（POST/PUT/DELETE）只用临时数据，测完物理删除；用户的数据只发 GET。
 - 前端：`cd web && pnpm install && pnpm dev`。
 

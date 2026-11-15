@@ -110,10 +110,8 @@ mkdir "$BUILD/src"
 git archive HEAD | tar -x -C "$BUILD/src"
 
 step "后端：mvn verify"
-# ScmApplicationTests 要连开发库 scm（配置在 application-local.yaml，不进 git，导出的代码里没有），先排除。
-# RFC 001 把它改成连 scm_test 的集成测试以后，去掉这个排除
-(cd "$BUILD/src" && mvn -B -q verify -Drelease.version="$VERSION" \
-  -Dtest='!ScmApplicationTests' -Dsurefire.failIfNoSpecifiedTests=false)
+# 单元测试加集成测试（*IT，连本机开发库容器里的 scm_test，每次先清空再从 V1 迁移，RFC 001 §11.2）
+(cd "$BUILD/src" && mvn -B -q verify -Drelease.version="$VERSION")
 set -- "$BUILD"/src/target/scm-*.jar
 JAR=$1
 if [ ! -f "$JAR" ]; then die "没找到打出来的 jar"; fi

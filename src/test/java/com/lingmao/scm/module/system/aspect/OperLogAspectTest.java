@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.aspect;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
+import com.lingmao.scm.common.log.TraceIdFilter;
 import com.lingmao.scm.module.system.dto.PasswordChangeReq;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
 import com.lingmao.scm.module.system.entity.SysOperLog;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -43,10 +45,16 @@ class OperLogAspectTest {
         proxy = factory.getProxy();
     }
 
-    /** 规则：成功的操作记一条 success=true 的日志，入参里的密码打码 */
+    /** 规则：成功的操作记一条 success=true 的日志，入参里的密码打码，带上这次请求的错误编号 */
     @Test
     void success_savesLogWithMaskedPassword() {
-        Long id = proxy.create(req("zhangsan", "123456"));
+        MDC.put(TraceIdFilter.MDC_KEY, "3f9a1c2e");   // 请求里由 TraceIdFilter 放进去
+        Long id;
+        try {
+            id = proxy.create(req("zhangsan", "123456"));
+        } finally {
+            MDC.remove(TraceIdFilter.MDC_KEY);
+        }
 
         assertThat(id).isEqualTo(2L);
         ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
@@ -58,6 +66,7 @@ class OperLogAspectTest {
         assertThat(log.getSuccess()).isTrue();
         assertThat(log.getParams()).contains("\"username\":\"zhangsan\"").contains("\"password\":\"******\"")
                 .doesNotContain("123456");
+        assertThat(log.getTraceId()).isEqualTo("3f9a1c2e");
     }
 
     /** 规则：名字里含 password 的字段都打码，不分大小写：改密码的 oldPassword、newPassword 也不能明文进日志 */

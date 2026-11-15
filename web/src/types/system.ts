@@ -41,6 +41,9 @@ export interface User {
   createTime: string
 }
 
+/** 角色的数据范围：ALL 全部 / SELF 本人（PRD §3.2）。有"全部"角色的人，权限里多一个 data:all */
+export type DataScope = 'ALL' | 'SELF'
+
 export interface Role {
   id: number
   code: string
@@ -48,6 +51,7 @@ export interface Role {
   sort: number
   status: number
   remark: string | null
+  dataScope: DataScope
   createTime: string
 }
 
@@ -100,6 +104,8 @@ export interface OperLog {
   errorMsg: string | null
   costMs: number
   ip: string | null
+  /** 这次请求的错误编号，拿它在服务器上 grep 应用日志 */
+  traceId: string | null
   createTime: string
 }
 

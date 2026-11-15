@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.dto;
 
+import com.lingmao.scm.module.system.entity.RoleDataScope;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -32,4 +33,8 @@ public class RoleSaveReq {
 
     @Size(max = 255, message = "备注最长 255")
     private String remark;
+
+    /** ALL 全部 / SELF 本人；不传是本人：忘了设最多是看不到别人的单，不会看到不该看的（RFC 001 §8）。别的值在读请求体时就是 400 */
+    @NotNull(message = "数据范围不能为空")
+    private RoleDataScope dataScope = RoleDataScope.SELF;
 }

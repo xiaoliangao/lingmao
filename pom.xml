@@ -207,6 +207,15 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+              数据库集成测试（RFC 001 §11.2）：类名以 IT 结尾的测试由 failsafe 在 mvn verify 时跑，连本机 Docker 里的 scm_test
+              （配置在 src/test/resources/application-it.yaml）。mvn test 只跑 surefire 的单元测试，不碰数据库。
+              执行时机、classesDirectory 由 spring-boot-starter-parent 配好了，这里只要启用
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
         </plugins>
     </build>
 

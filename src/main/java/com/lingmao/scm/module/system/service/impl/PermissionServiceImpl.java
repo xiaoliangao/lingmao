@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.lingmao.scm.module.system.dto.MenuVO;
+import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysMenuMapper;
 import com.lingmao.scm.module.system.mapper.SysRoleMapper;
@@ -27,7 +28,12 @@ public class PermissionServiceImpl implements PermissionService {
         if (user == null || user.getStatus() != 1) {
             return null;
         }
-        return new LinkedHashSet<>(sysMenuMapper.selectPermsByUserId(userId));
+        Set<String> perms = new LinkedHashSet<>(sysMenuMapper.selectPermsByUserId(userId));
+        // 数据范围是"全部"的多给一个 data:all（RFC 001 §8）：过滤器每个请求都调这里，以后查单据时看权限就知道，不用另外查库
+        if (sysRoleMapper.hasAllDataScope(userId)) {
+            perms.add(RoleDataScope.ALL_AUTHORITY);
+        }
+        return perms;
     }
 
     @Override

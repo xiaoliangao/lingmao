@@ -41,6 +41,20 @@ class RoleControllerTest {
         verify(roleService, never()).create(any());
     }
 
+    /** 规则：数据范围只有 ALL、SELF 两种，别的值读请求体时就拦住，返回 400 并指出字段 */
+    @Test
+    void create_unknownDataScope_returns400() throws Exception {
+        mockMvc.perform(post("/api/roles")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "keeper", "name": "仓管", "dataScope": "DEPT"}
+                                """))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.msg").value("请求体格式不对：字段 dataScope"));
+
+        verify(roleService, never()).create(any());
+    }
+
     /** 规则：分配菜单时 ids 不能不传（全部取消要明确传 []） */
     @Test
     void assignMenus_missingIds_returns400() throws Exception {

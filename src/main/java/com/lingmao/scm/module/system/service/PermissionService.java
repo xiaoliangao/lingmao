@@ -8,7 +8,10 @@ import java.util.Set;
 /** 某个用户"能做什么"：权限标识、角色、侧边栏菜单。过滤器每个请求都会调 loadPermissions */
 public interface PermissionService {
 
-    /** 用户的全部权限标识。用户不存在、被删除或被停用时返回 null，表示"不认这个人了" */
+    /**
+     * 用户的全部权限标识：菜单和按钮的（只算自己和上级都启用的），数据范围是"全部"的再加一个 data:all。
+     * 用户不存在、被删除或被停用时返回 null，表示"不认这个人了"
+     */
     Set<String> loadPermissions(Long userId);
 
     List<String> loadRoleCodes(Long userId);

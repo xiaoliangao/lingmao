@@ -2,7 +2,7 @@
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type ElTree, type FormInstance, type FormRules } from 'element-plus'
 import { menuApi, roleApi } from '@/api/system'
-import type { MenuNode, Role } from '@/types/system'
+import type { DataScope, MenuNode, Role } from '@/types/system'
 import PageHeader from '@/components/PageHeader.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
@@ -10,6 +10,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 
 const ADMIN_CODE = 'admin'
+const DATA_SCOPE_LABEL: Record<DataScope, string> = { ALL: '全部', SELF: '本人' }
 
 // ---------- 列表 ----------
 const query = reactive({ page: 1, size: 20, code: '', name: '' })
@@ -39,7 +40,7 @@ onMounted(load)
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
-const form = reactive({ code: '', name: '', sort: 0, status: 1, remark: '' })
+const form = reactive({ code: '', name: '', sort: 0, status: 1, dataScope: 'SELF' as DataScope, remark: '' })
 const guard = useUnsavedChanges(form, dialogVisible)
 const rules: FormRules = {
   code: [
@@ -51,13 +52,16 @@ const rules: FormRules = {
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { code: '', name: '', sort: 0, status: 1, remark: '' })
+  // 默认"本人"：忘了改最多是看不到别人的单，不会看到不该看的（RFC 001 §8）
+  Object.assign(form, { code: '', name: '', sort: 0, status: 1, dataScope: 'SELF', remark: '' })
   dialogVisible.value = true
 }
 
 function openEdit(row: Role) {
   editingId.value = row.id
-  Object.assign(form, { code: row.code, name: row.name, sort: row.sort, status: row.status, remark: row.remark ?? '' })
+  Object.assign(form, {
+    code: row.code, name: row.name, sort: row.sort, status: row.status, dataScope: row.dataScope, remark: row.remark ?? '',
+  })
   dialogVisible.value = true
 }
 
@@ -136,6 +140,9 @@ async function saveMenus() {
       <el-table-column prop="name" label="名称" min-width="120" />
       <el-table-column prop="code" label="编码" min-width="140" class-name="code" />
       <el-table-column prop="sort" label="排序" width="80" align="right" class-name="num" />
+      <el-table-column label="数据范围" width="100">
+        <template #default="{ row }">{{ DATA_SCOPE_LABEL[(row as Role).dataScope] }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <StatusTag :tone="row.status === 1 ? 'active' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
@@ -186,6 +193,13 @@ async function saveMenus() {
             <el-radio :value="0">停用</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="数据范围" class="full">
+          <el-radio-group v-model="form.dataScope">
+            <el-radio value="ALL">全部</el-radio>
+            <el-radio value="SELF">本人</el-radio>
+          </el-radio-group>
+          <p class="dim field-tip">本人：只看自己是制单人，或者业务员、跟单员、采购员是自己的单据</p>
+        </el-form-item>
         <el-form-item label="备注" class="full">
           <el-input v-model="form.remark" type="textarea" />
         </el-form-item>
@@ -220,5 +234,12 @@ async function saveMenus() {
 .dialog-tip {
   margin-bottom: 12px;
   font-size: 12.5px;
+}
+
+.field-tip {
+  width: 100%;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 </style>

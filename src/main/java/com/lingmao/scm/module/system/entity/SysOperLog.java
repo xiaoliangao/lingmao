@@ -27,6 +27,8 @@ public class SysOperLog {
     private String errorMsg;
     private Integer costMs;
     private String ip;
+    /** 这次请求的错误编号（TraceIdFilter，V8）：拿它 grep 应用日志，能找到这次请求的每一行 */
+    private String traceId;
 
     /** 不赋值，插入时用表的默认值 now() */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
