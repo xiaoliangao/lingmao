@@ -42,12 +42,16 @@ const building = () => import('@/views/error/building.vue')
  * - title：页签先叫这个，页面加载完调 useTabsStore().rename(route.path, '物料 ML0001') 换成具体的
  * - 地址是 parent/:id，id 只认数字。页面在 setup 里取一次 id，不要 watch 路由：
  *   keep-alive 留着的别的详情页也看得到路由变化（AppLayout 给每个详情页签套一层按地址起名的壳）
+ * - path：地址不是 parent/:id 的（整页的新建、编辑表单 form.vue，RFC 005 §9）写在这里，同样一个地址一个页签
  */
-const DETAIL_ROUTES: { parent: string; file: string; title: string }[] = [
+const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: string }[] = [
   { parent: '/materials', file: 'basic/material/detail', title: '物料' },
   { parent: '/suppliers', file: 'supplier/supplier/detail', title: '供应商' },
+  { parent: '/styles', file: 'style/style/detail', title: '款式' },
+  { parent: '/styles', path: '/styles/new', file: 'style/style/form', title: '新建款式' },
+  { parent: '/styles', path: '/styles/:id(\\d+)/edit', file: 'style/style/form', title: '编辑款式' },
 ]
-const detailPages = import.meta.glob('../views/**/detail.vue')
+const detailPages = import.meta.glob('../views/**/{detail,form}.vue')
 /** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */
 const menuGroups = new Map<string, string>()
 
@@ -56,7 +60,7 @@ function addDetailRoutes(parentName: string) {
     const group = menuGroups.get(detail.parent)
     if (group === undefined) continue
     router.addRoute(parentName, {
-      path: `${detail.parent}/:id(\\d+)`,
+      path: detail.path ?? `${detail.parent}/:id(\\d+)`,
       component: detailPages[`../views/${detail.file}.vue`] ?? building,
       meta: { title: detail.title, group, detail: true },
     })
