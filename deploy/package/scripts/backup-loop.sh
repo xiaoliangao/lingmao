@@ -4,7 +4,7 @@
 #
 # 用循环不用 cron：容器里不用另装 cron，输出直接进 docker compose logs backup。
 # 按"今天做没做"判断，而不是"是不是正好这一分钟"：BACKUP_TIME 那一刻服务器关着机、容器在重启也不要紧，起来以后马上补一次。
-# 刚装好时如果已经过了 BACKUP_TIME，也会马上备份一次，装完就能看到备份是好的。失败了一小时后再试。
+# 刚装好时如果已经过了 BACKUP_TIME，等应用建好表就备份一次（一两分钟），装完就能看到备份是好的。失败了一小时后再试。
 set -euo pipefail
 
 # 备份时间、文件名都按北京时间。镜像里没有时区数据时 TZ=Asia/Shanghai 不起作用（会按 UTC 算，02:30 变成北京时间 10:30），
@@ -23,6 +23,29 @@ esac
 
 state=/backups/.daily-done      # 最近一次定时备份成功的日期。手动备份不算，不会让当天的定时备份跳过
 retry_at=0
+tables_since=0                  # 第一次看到库里有表的时间（db_ready）
+waiting_said=''
+
+# db_ready <现在>：库里有没有应用的表。刚装好时 backup 容器和应用一起启动，应用要过一会儿才建好表，
+# 这时备份出来的是个空库：没用，还让人以为装完就有了一份好备份（11-14 装试用环境时就是这样）。所以等表建好再备份。
+# 看到表以后再等一分钟：应用第一次启动时在一张张建表，碰巧那一刻备份的话只有一半的表。
+# 查不了（数据库没起来）时照常去备份：让 backup.sh 报错、记进 backup.log，有人看得到
+db_ready() {
+  local r
+  r=$(psql -XAtq -c "SELECT to_regclass('public.flyway_schema_history') IS NOT NULL" 2>/dev/null < /dev/null) || return 0
+  if [ "$r" != t ]; then
+    tables_since=0
+    if [ -z "$waiting_said" ]; then
+      echo "库里还没有表（应用第一次启动，还在建表），建好以后再备份"
+      waiting_said=1
+    fi
+    return 1
+  fi
+  if [ "$tables_since" = 0 ]; then
+    tables_since=$1
+  fi
+  [ $(($1 - tables_since)) -ge 60 ]
+}
 
 trap 'exit 0' TERM INT          # docker compose stop 时马上退出，不用等 10 秒被强制杀掉
 echo "每天 $backup_time 备份一次，保留 ${BACKUP_KEEP_DAYS:-7} 天"
@@ -31,7 +54,7 @@ while true; do
   now=$(date +%s)
   today=$(date +%Y%m%d)
   if [ "$now" -ge "$(date -d "today $backup_time" +%s)" ] && [ "$now" -ge "$retry_at" ] \
-    && [ "$(cat "$state" 2>/dev/null || true)" != "$today" ]; then
+    && [ "$(cat "$state" 2>/dev/null || true)" != "$today" ] && db_ready "$now"; then
     if bash /scripts/backup.sh daily; then
       echo "$today" > "$state"
       retry_at=0

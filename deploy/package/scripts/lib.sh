@@ -231,6 +231,21 @@ check_env() {
   esac
 }
 
+# 这台机器上已经有一套装在别的目录、compose 项目名一样（默认都是 scm）时停下来：接着 up 的话，
+# 那一套的容器会被换成这个目录的，库也换成这里的空库，看起来像数据没了（那边的文件其实都还在）。
+# 真要在一台机器上装两套（比如演练换服务器），新目录的 .env 里先写一行 COMPOSE_PROJECT_NAME=<别的名字>，端口也换一个
+check_other_install() {
+  local name dir
+  name=$(env_get "$TARGET"/.env COMPOSE_PROJECT_NAME)
+  name=${name:-scm}
+  dir=$(docker ps -a --filter "label=com.docker.compose.project=$name" \
+    --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u | sed -n 1p || true)
+  if [ -n "$dir" ] && ! [ "$dir" -ef "$TARGET" ]; then
+    die "这台机器上已经在 $dir 装了一套（compose 项目名 ${name}）。
+升级那一套用 upgrade.sh ${dir}，见部署手册第 6 节。确实要再装一套的话，先在 $TARGET/.env 里加一行 COMPOSE_PROJECT_NAME=<别的名字>，端口也换一个"
+  fi
+}
+
 # 端口被别的程序占了就停下来。自己的 web 已经在跑（重复执行）时不查：占着端口的就是它
 check_ports() {
   local spec port ports busy

@@ -48,6 +48,7 @@ else
   info "  生成了 .env，数据库、Redis 的密码和登录密钥都是随机生成的"
 fi
 chmod 600 .env
+check_other_install
 ensure_dirs
 check_env
 check_ports
@@ -69,6 +70,7 @@ check_through_nginx "$PKG_VERSION"
 if [ "$(env_get .env SCM_WEB_MODE)" = https ]; then
   url="https://<域名>/"
   port=$(env_get .env SCM_HTTPS_PORT)
+  port=${port##*:}
   if [ -n "$port" ] && [ "$port" != 443 ]; then
     url="https://<域名>:$port/"
   fi
