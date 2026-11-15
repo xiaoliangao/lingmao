@@ -128,7 +128,8 @@ class UserServiceImplTest {
         ArgumentCaptor<UpdateWrapper<SysUser>> wrapper = ArgumentCaptor.captor();
         verify(sysUserMapper).update(same(old), wrapper.capture());
         assertThat(old.getPhone()).isNull();
-        assertThat(wrapper.getValue().getSqlSet()).isEqualTo("phone = NULL").doesNotContain("password");
+        // 别的空列（默认主体、部门、岗位）也一起置空；设计师编号走自己的条件更新，不在这里
+        assertThat(wrapper.getValue().getSqlSet()).contains("phone = NULL").doesNotContain("password").doesNotContain("designer_no");
     }
 
     /**
@@ -228,6 +229,53 @@ class UserServiceImplTest {
         assertThat(userService.nicknames(List.of(5L))).containsExactly(Map.entry(5L, "张三"));
         assertThat(userService.nicknames(List.of())).isEmpty();
         verify(sysUserMapper).selectNamesByIds(any());
+    }
+
+    /** 规则（RFC 005 §3.3）：设计师编号查重连已删除的账号一起查，编号不回收 */
+    @Test
+    void create_designerNoOfDeletedUser_rejected() {
+        SysUser gone = user(9L, "lisi");
+        gone.setNickname("李四");
+        gone.setDeleted(true);
+        when(sysUserMapper.selectByDesignerNo("07")).thenReturn(gone);
+        UserCreateReq req = createReq("wangwu", "Abc12345");
+        req.setDesignerNo(" 07 ");
+
+        assertThatThrownBy(() -> userService.create(req))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("已经给了李四（已删除的账号");
+        verify(sysUserMapper, never()).insert(any(SysUser.class));
+    }
+
+    /** 规则：编过款号的编号（designer_no_locked）不能改：条件更新 0 行就报错，整个修改回滚 */
+    @Test
+    void update_lockedDesignerNoChanged_rejected() {
+        SysUser old = user(2L, "zhangsan");
+        old.setDesignerNo("07");
+        when(sysUserMapper.selectById(2L)).thenReturn(old);
+        when(sysUserMapper.updateDesignerNo(2L, null)).thenReturn(0);
+        UserUpdateReq req = updateReq(1);                       // 编号没传 = 清空
+
+        assertThatThrownBy(() -> userService.update(2L, req, 1L))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("设计师编号 07 已经用来编过款号，不能清空");
+    }
+
+    /** 规则：编号没变就不碰它（不查重、不发条件更新），锁了的人照样能改别的资料 */
+    @Test
+    void update_designerNoUnchanged_notTouched() {
+        SysUser old = user(2L, "zhangsan");
+        old.setDesignerNo("07");
+        when(sysUserMapper.selectById(2L)).thenReturn(old);
+        UserUpdateReq req = updateReq(1);
+        req.setDesignerNo("07");
+        req.setDept("设计部");
+
+        userService.update(2L, req, 1L);
+
+        verify(sysUserMapper, never()).selectByDesignerNo(any());
+        verify(sysUserMapper, never()).updateDesignerNo(any(), any());
+        assertThat(old.getDept()).isEqualTo("设计部");
     }
 
     private UserCreateReq createReq(String username, String password) {

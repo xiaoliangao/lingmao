@@ -29,4 +29,8 @@ public class DictTypeSaveReq {
     /** 1 启用 0 停用，默认启用。保存是整体覆盖，传 null 就是清空，这一列不能空，所以拦住 */
     @NotNull(message = "状态不能为空")
     private Integer status = 1;
+
+    /** 数值列的名字，如"默认天数"；不填 = 这个字典不用数值 */
+    @Size(max = 32, message = "数值名称最长 32")
+    private String numLabel;
 }

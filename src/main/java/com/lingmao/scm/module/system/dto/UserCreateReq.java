@@ -25,4 +25,17 @@ public class UserCreateReq {
 
     @Size(max = 20, message = "手机号最长 20")
     private String phone;
+
+    /** 默认主体（bas_company.id），下拉调 /api/companies/options；空 = 单据上取唯一启用的主体 */
+    private Long defaultCompanyId;
+
+    @Size(max = 64, message = "部门最长 64")
+    private String dept;
+
+    @Size(max = 64, message = "岗位最长 64")
+    private String post;
+
+    /** 设计师编号：两位数字 01-99，进款号；不是设计师的不填 */
+    @Pattern(regexp = "^$|^(0[1-9]|[1-9][0-9])$", message = "设计师编号是 01-99 的两位数字")
+    private String designerNo;
 }

@@ -92,7 +92,13 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(req.getPassword()));
         user.setNickname(req.getNickname());
         user.setPhone(req.getPhone());
-        sysUserMapper.insert(user);
+        user.setDefaultCompanyId(req.getDefaultCompanyId());
+        user.setDept(trimToNull(req.getDept()));
+        user.setPost(trimToNull(req.getPost()));
+        String designerNo = trimToNull(req.getDesignerNo());
+        ensureDesignerNoFree(designerNo, null);
+        user.setDesignerNo(designerNo);
+        sysUserMapper.insert(user);   // 同时给两个人同一个编号：uk_sys_user_designer_no 拦住后一个（1000）
         return user.getId();
     }
 
@@ -107,8 +113,12 @@ public class UserServiceImpl implements UserService {
         user.setNickname(req.getNickname());
         user.setPhone(req.getPhone());
         user.setStatus(req.getStatus());
-        // 整体覆盖：手机号传 null 就是清空（bug 005）。密码标了 NEVER，这里不会碰它
+        user.setDefaultCompanyId(req.getDefaultCompanyId());
+        user.setDept(trimToNull(req.getDept()));
+        user.setPost(trimToNull(req.getPost()));
+        // 整体覆盖：手机号传 null 就是清空（bug 005）。密码、设计师编号标了 NEVER，这里不会碰它们
         sysUserMapper.update(user, Updates.replaceById(user));
+        changeDesignerNo(user, trimToNull(req.getDesignerNo()));
     }
 
     @Override
@@ -176,6 +186,37 @@ public class UserServiceImpl implements UserService {
         if (isAdmin) {
             throw new BizException("不能去掉自己的超级管理员角色");
         }
+    }
+
+    /**
+     * 改、清空设计师编号（RFC 003 §3.2、RFC 005 §3.3）：没变不动；变了先查有没有别人用着（删了的人也算），
+     * 再按 designer_no_locked = false 条件更新，0 行说明编号已经用来编过款号了
+     */
+    private void changeDesignerNo(SysUser user, String designerNo) {
+        if (Objects.equals(designerNo, user.getDesignerNo())) {
+            return;
+        }
+        ensureDesignerNoFree(designerNo, user.getId());
+        if (sysUserMapper.updateDesignerNo(user.getId(), designerNo) == 0) {
+            throw new BizException("设计师编号 " + user.getDesignerNo() + " 已经用来编过款号，不能"
+                    + (designerNo == null ? "清空" : "改") + "：老款号里的编号要一直对应这个人");
+        }
+    }
+
+    /** 设计师编号全表唯一，离职（删除）的人的编号也不回收。excludeId 是自己 */
+    private void ensureDesignerNoFree(String designerNo, Long excludeId) {
+        if (designerNo == null) {
+            return;
+        }
+        SysUser owner = sysUserMapper.selectByDesignerNo(designerNo);
+        if (owner != null && !owner.getId().equals(excludeId)) {
+            throw new BizException("设计师编号 " + designerNo + " 已经给了" + owner.getNickname()
+                    + (Boolean.TRUE.equals(owner.getDeleted()) ? "（已删除的账号，编号不回收）" : ""));
+        }
+    }
+
+    private static String trimToNull(String text) {
+        return StringUtils.hasText(text) ? text.strip() : null;
     }
 
     /** 查实体，不存在抛 404。只在本类里用，所以是 private，返回实体不返回 VO */

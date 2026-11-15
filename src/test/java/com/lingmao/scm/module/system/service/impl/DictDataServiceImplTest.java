@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.config.TradeFeature;
 import com.lingmao.scm.module.system.cache.DictCache;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
 import com.lingmao.scm.module.system.dto.DictOption;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -38,6 +40,10 @@ class DictDataServiceImplTest {
 
     @Mock
     private DictCache dictCache;
+
+    /** 代工开关用真的，按默认关着（RFC 003 §3.3） */
+    @Spy
+    private TradeFeature tradeFeature = new TradeFeature(false);
 
     @InjectMocks
     private DictDataServiceImpl dictDataService;
@@ -140,22 +146,83 @@ class DictDataServiceImplTest {
         verify(dictCache).put("season", options);
     }
 
-    /** 规则：把一条数据从 season 挪到 color，两个类型的缓存都要删 */
+    /** 规则：字典项不能挪到别的类型（挪了等于改了它的身份，和改 value 一样，RFC 003 §4.2） */
     @Test
-    void update_typeChanged_evictsOldAndNewType() {
-        DictData old = new DictData();
-        old.setId(5L);
-        old.setTypeCode("season");
-        when(dictDataMapper.selectById(5L)).thenReturn(old);
-        when(dictTypeMapper.exists(any())).thenReturn(true);
-        when(dictDataMapper.exists(any())).thenReturn(false);
-        DictDataSaveReq req = new DictDataSaveReq();
-        req.setTypeCode("color");
-        req.setLabel("红色");
-        req.setValue("red");
+    void update_typeChanged_rejected() {
+        when(dictDataMapper.selectById(5L)).thenReturn(item(5L, "season", "SPRING", false));
+        DictDataSaveReq req = req("color_family", "SPRING");
+
+        assertThatThrownBy(() -> dictDataService.update(5L, req))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("不能挪到别的类型");
+        verify(dictDataMapper, never()).update(any(DictData.class), any());
+    }
+
+    /** 规则：value 建好以后不能改，所有项都是，不只内置项（RFC 003 §4.2） */
+    @Test
+    void update_valueChanged_rejected() {
+        when(dictDataMapper.selectById(5L)).thenReturn(item(5L, "season", "SPRING", false));
+
+        assertThatThrownBy(() -> dictDataService.update(5L, req("season", "SPRING2")))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("存储值建好就不能改");
+        verify(dictDataMapper, never()).update(any(DictData.class), any());
+    }
+
+    /** 规则：内置项的名称、排序、数值能改，改完删这个类型的缓存 */
+    @Test
+    void update_builtinLabel_savedAndEvicts() {
+        when(dictDataMapper.selectById(5L)).thenReturn(item(5L, "unit", "PIECE", true));
+        DictDataSaveReq req = req("unit", "PIECE");
+        req.setLabel("件（成衣）");
 
         dictDataService.update(5L, req);
 
-        verify(dictCache).evictAfterCommit("season", "color");
+        verify(dictDataMapper).update(any(DictData.class), any());
+        verify(dictCache).evictAfterCommit("unit");
+    }
+
+    /** 规则：内置项不能停用 */
+    @Test
+    void update_builtinDisabled_rejected() {
+        when(dictDataMapper.selectById(5L)).thenReturn(item(5L, "unit", "PIECE", true));
+        DictDataSaveReq req = req("unit", "PIECE");
+        req.setStatus(0);
+
+        assertThatThrownBy(() -> dictDataService.update(5L, req))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("内置项，不能停用");
+        verify(dictDataMapper, never()).update(any(DictData.class), any());
+    }
+
+    /** 规则：内置项不能删；普通项照旧逻辑删除 */
+    @Test
+    void delete_builtin_rejected() {
+        when(dictDataMapper.selectById(5L)).thenReturn(item(5L, "style_source", "OWN", true));
+
+        assertThatThrownBy(() -> dictDataService.delete(5L))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("内置项，不能删除");
+        verify(dictDataMapper, never()).deleteById(any(Long.class));
+    }
+
+    /** 规则：TRADE 关时，下拉选项里没有"客户来样"（缓存里是全的，取出来再滤） */
+    @Test
+    void listByType_tradeOff_hidesCustomerSample() {
+        when(dictCache.get("style_source")).thenReturn(List.of(
+                new DictOption("自主开发", "OWN", 1), new DictOption("客户来样", "CUSTOMER_SAMPLE", 1)));
+
+        assertThat(dictDataService.listByType("style_source")).extracting(DictOption::value).containsExactly("OWN");
+    }
+
+    private static DictData item(Long id, String typeCode, String value, boolean builtin) {
+        DictData d = new DictData();
+        d.setId(id);
+        d.setTypeCode(typeCode);
+        d.setLabel("名称");
+        d.setValue(value);
+        d.setStatus(1);
+        d.setBuiltin(builtin);
+        return d;
     }
 }

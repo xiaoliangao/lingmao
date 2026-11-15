@@ -5,6 +5,7 @@ import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.DictDataQuery;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
+import com.lingmao.scm.module.system.dto.DictDataVO;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.service.DictDataService;
@@ -35,7 +36,7 @@ public class DictDataController {
     @Operation(summary = "分页查询")
     @GetMapping
     @PreAuthorize("hasAuthority('system:dict:list')")
-    public R<PageResult<DictData>> page(@Valid DictDataQuery query) {
+    public R<PageResult<DictDataVO>> page(@Valid DictDataQuery query) {
         return R.ok(dictDataService.page(query));
     }
 

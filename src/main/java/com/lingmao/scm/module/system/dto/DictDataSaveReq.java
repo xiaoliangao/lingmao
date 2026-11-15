@@ -1,9 +1,12 @@
 package com.lingmao.scm.module.system.dto;
 
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+
+import java.math.BigDecimal;
 
 @Data
 public class DictDataSaveReq {
@@ -30,4 +33,8 @@ public class DictDataSaveReq {
 
     @Size(max = 255, message = "备注最长 255")
     private String remark;
+
+    /** 数值，类型有 num_label 时才用（备料比 %、默认天数） */
+    @Digits(integer = 10, fraction = 4, message = "数值最多 10 位整数、4 位小数")
+    private BigDecimal numValue;
 }

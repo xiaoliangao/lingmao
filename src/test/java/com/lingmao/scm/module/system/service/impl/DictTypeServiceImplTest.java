@@ -145,7 +145,7 @@ class DictTypeServiceImplTest {
         ArgumentCaptor<UpdateWrapper<DictType>> wrapper = ArgumentCaptor.captor();
         verify(dictTypeMapper).update(same(season), wrapper.capture());
         assertThat(season.getRemark()).isNull();
-        assertThat(wrapper.getValue().getSqlSet()).isEqualTo("remark = NULL");
+        assertThat(wrapper.getValue().getSqlSet()).contains("remark = NULL");
         assertThat(wrapper.getValue().getSqlSegment()).contains("id =");
     }
 

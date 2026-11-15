@@ -34,4 +34,22 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             </script>
             """)
     List<SysUser> selectNamesByIds(@Param("ids") Collection<Long> ids);
+
+    /**
+     * 谁用着这个设计师编号，删了的人也查（RFC 003 §3.2）：编号全表唯一、离职不回收，老款号上的编号永远只对应一个人。
+     * 手写 SQL 绕开逻辑删除，同 selectNamesByIds
+     */
+    @Select("SELECT id, nickname, deleted FROM sys_user WHERE designer_no = #{designerNo}")
+    SysUser selectByDesignerNo(@Param("designerNo") String designerNo);
+
+    /**
+     * 用户页改、清空设计师编号（RFC 005 §3.3）：条件带 designer_no_locked = false，锁了的（编过款号的）改不动，返回 0 行。
+     * 和 style 第一次用编号时的锁（比较编号本身）两边谁后到谁失败
+     */
+    default int updateDesignerNo(Long userId, String designerNo) {
+        return update(new SysUser(), new LambdaUpdateWrapper<SysUser>()
+                .set(SysUser::getDesignerNo, designerNo)
+                .eq(SysUser::getId, userId)
+                .eq(SysUser::getDesignerNoLocked, false));
+    }
 }

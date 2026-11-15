@@ -17,4 +17,7 @@ public class DictType extends BaseEntity {
     private String name;
     private String remark;
     private Integer status;
+
+    /** 这个字典的数值叫什么（"备料比 %""默认天数"）；空 = 这个字典不用数值，字典页不显示数值列 */
+    private String numLabel;
 }

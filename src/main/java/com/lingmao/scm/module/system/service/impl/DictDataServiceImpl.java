@@ -4,10 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.config.TradeFeature;
 import com.lingmao.scm.module.system.cache.DictCache;
 import com.lingmao.scm.module.system.dto.DictDataQuery;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
+import com.lingmao.scm.module.system.dto.DictDataVO;
 import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.entity.DictType;
 import com.lingmao.scm.module.system.mapper.DictDataMapper;
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service //告诉 Spring "这是一个要交给你管理的对象"。启动时 Spring 会创建它的唯一一个实例，谁需要 DictDataService，就把这个实例给谁。
 @RequiredArgsConstructor
@@ -30,9 +33,10 @@ public class DictDataServiceImpl implements DictDataService {
     private final DictDataMapper dictDataMapper;
     private final DictTypeMapper dictTypeMapper;
     private final DictCache dictCache;
+    private final TradeFeature tradeFeature;
 
     @Override
-    public PageResult<DictData> page(DictDataQuery query) {
+    public PageResult<DictDataVO> page(DictDataQuery query) {
         /**
          * LambdaQueryWrapper 是用 Java 代码拼 WHERE 条件的工具。
          * DictData::getTypeCode 代替字符串 "type_code" 写列名：列名拼错的话，编译时就能发现。
@@ -45,7 +49,8 @@ public class DictDataServiceImpl implements DictDataService {
                 .like(StringUtils.hasText(query.getLabel()), DictData::getLabel, query.getLabel())
                 .orderByAsc(DictData::getSort)
                 .orderByAsc(DictData::getId);
-        return PageResult.of(dictDataMapper.selectPage(query.toPage(), wrapper));
+        return PageResult.of(dictDataMapper.selectPage(query.toPage(), wrapper)
+                .convert(d -> DictDataVO.of(d, tradeFeature.isReservedDict(d.getTypeCode(), d.getValue()))));
     }
 
     @Override
@@ -61,7 +66,7 @@ public class DictDataServiceImpl implements DictDataService {
     public List<DictOption> listByType(String typeCode) {
         List<DictOption> cached = dictCache.get(typeCode);
         if (cached != null) {
-            return cached;
+            return tradeFeature.filterDict(typeCode, cached, DictOption::value);
         }
         // 停用的也要：旧数据里存着停用的值，显示时要能翻成文字。下拉框只列启用的，由前端按 status 过滤
         List<DictOption> options = dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
@@ -70,7 +75,7 @@ public class DictDataServiceImpl implements DictDataService {
                         .orderByAsc(DictData::getId))
                 .stream().map(d -> new DictOption(d.getLabel(), d.getValue(), d.getStatus())).toList();
         dictCache.put(typeCode, options);
-        return options;
+        return tradeFeature.filterDict(typeCode, options, DictOption::value);
     }
 
     @Override
@@ -89,18 +94,29 @@ public class DictDataServiceImpl implements DictDataService {
     @Transactional
     public void update(Long id, DictDataSaveReq req) {
         DictData entity = getById(id);
-        ensureTypeExists(req.getTypeCode());
-        ensureValueUnique(req.getTypeCode(), req.getValue(), id);
-        String oldTypeCode = entity.getTypeCode();
+        // value 建好不改（RFC 003 §4.2）：业务表存的是 value，改了旧数据就对不上；system 在最底下，查不了哪些表用过它。
+        // 挪到别的类型同理。要换就新建一项、停用旧的
+        if (!Objects.equals(entity.getTypeCode(), req.getTypeCode())) {
+            throw new BizException("字典项不能挪到别的类型：新建一项，再停用这一项");
+        }
+        if (!Objects.equals(entity.getValue(), req.getValue())) {
+            throw new BizException("存储值建好就不能改：业务数据里存的是它，改了旧数据就对不上。要换就新建一项，再停用这一项");
+        }
+        if (Boolean.TRUE.equals(entity.getBuiltin()) && Objects.equals(req.getStatus(), 0)) {
+            throw new BizException("「" + entity.getLabel() + "」是内置项，不能停用：系统按它的值认它。名称、排序、数值能改");
+        }
         BeanUtils.copyProperties(req, entity);
         dictDataMapper.update(entity, Updates.replaceById(entity));   // 整体覆盖，备注能清空（bug 005）
-        dictCache.evictAfterCommit(oldTypeCode, req.getTypeCode());
+        dictCache.evictAfterCommit(entity.getTypeCode());
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
         DictData entity = getById(id);
+        if (Boolean.TRUE.equals(entity.getBuiltin())) {
+            throw new BizException("「" + entity.getLabel() + "」是内置项，不能删除：系统按它的值认它");
+        }
         dictDataMapper.deleteById(id);
         dictCache.evictAfterCommit(entity.getTypeCode());
     }
