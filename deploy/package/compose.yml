@@ -18,7 +18,7 @@ x-logging: &logging
     max-file: "3"
 
 services:
-  # Nginx + 前端页面，唯一对外开端口的服务。/api 转给 app，/files 直接发上传目录里的文件
+  # Nginx + 前端页面，唯一对外开端口的服务。/api 转给 app，/files 校验签名后直接发上传目录里的文件
   web:
     # 按 SCM_WEB_MODE 叠加 web-http.yml 或 web-https.yml：两种模式开的端口、用的配置文件不一样
     extends:
@@ -29,6 +29,8 @@ services:
     environment:
       TZ: Asia/Shanghai
       SCM_HTTPS_PORT: ${SCM_HTTPS_PORT:-443}
+      # 文件地址的签名密钥，和 app 用同一个（架构 §8）；改名成 SCM_ 开头，配置模板才会替换它
+      SCM_FILE_SIGN_KEY: ${FILE_SIGN_KEY:?.env 里没有 FILE_SIGN_KEY}
       NGINX_ENVSUBST_FILTER: ^SCM_    # 配置模板里只替换 SCM_ 开头的变量，$host 这些 Nginx 自己的变量不动
     volumes:
       - ./nginx:/etc/nginx/scm:ro
@@ -55,6 +57,7 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:?.env 里没有 REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?.env 里没有 JWT_SECRET}
+      FILE_SIGN_KEY: ${FILE_SIGN_KEY:?.env 里没有 FILE_SIGN_KEY}
       INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD:-}
       UPLOAD_DIR: /data/uploads
       BACKUP_DIR: /backups

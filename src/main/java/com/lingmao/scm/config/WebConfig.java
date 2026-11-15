@@ -11,7 +11,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.nio.file.Paths;
 
-/** Web 层配置：/files/** 映射到上传目录（上传的图片、附件用这个地址访问）；错误编号过滤器 */
+/** Web 层配置：/files/** 映射到上传目录（上传的图片、附件用这个地址访问，要带签名，校验在 FileAccessConfig）；错误编号过滤器 */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 

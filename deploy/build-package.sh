@@ -130,6 +130,7 @@ mkdir "$BUILD/uploads"
   DB_URL="jdbc:postgresql://127.0.0.1:5433/$OPENAPI_DB" DB_USER=scm DB_PASSWORD= \
   REDIS_HOST=127.0.0.1 REDIS_PORT=6380 REDIS_PASSWORD= REDIS_DB=15 \
   JWT_SECRET="$(head -c 48 /dev/urandom | base64)" INIT_ADMIN_PASSWORD="$(head -c 12 /dev/urandom | base64)" \
+  FILE_SIGN_KEY="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" \
   UPLOAD_DIR="$BUILD/uploads" BACKUP_DIR= \
   java -jar "$JAR" --server.port=$OPENAPI_PORT) > "$BUILD/openapi-app.log" 2>&1 &
 APP_PID=$!

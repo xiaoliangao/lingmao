@@ -6,6 +6,8 @@ DB_PASSWORD: ""
 REDIS_HOST: 127.0.0.1
 REDIS_PORT: 6380
 REDIS_PASSWORD: ""
+# 上传文件地址的签名密钥（架构 §8）：至少 32 位，只能用字母、数字、- 和 _。开发用下面这个就行；部署包安装时另外随机生成
+FILE_SIGN_KEY: dev-only-file-sign-key-not-for-production
 # JWT 签名密钥：Base64，解码后至少 32 字节。生成：openssl rand -base64 48
 JWT_SECRET: <生成的随机串>
 # 库里还没有 admin 时，用它建 admin 的初始密码

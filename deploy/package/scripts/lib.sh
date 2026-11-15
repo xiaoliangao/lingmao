@@ -9,7 +9,7 @@
 
 # .env 是这些配置的唯一来源。docker compose 会优先用 shell 里的同名环境变量，先清掉，免得被 root 的环境悄悄覆盖
 unset SCM_VERSION SCM_HTTP_PORT SCM_HTTPS_PORT SCM_WEB_MODE POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET \
-      INIT_ADMIN_PASSWORD BACKUP_TIME BACKUP_KEEP_DAYS COMPOSE_FILE COMPOSE_PROJECT_NAME
+      FILE_SIGN_KEY INIT_ADMIN_PASSWORD BACKUP_TIME BACKUP_KEEP_DAYS COMPOSE_FILE COMPOSE_PROJECT_NAME
 
 APP_UID=10001        # app 镜像里跑应用的用户（deploy/app.Dockerfile），上传和日志目录要交给它
 MIN_DOCKER=24.0
@@ -127,6 +127,7 @@ initial_value() {
     SCM_VERSION) printf '%s' "$PKG_VERSION" ;;
     POSTGRES_PASSWORD | REDIS_PASSWORD) random_hex 16 ;;
     JWT_SECRET) random_base64 48 ;;                  # 应用要求 Base64、解码后至少 32 字节
+    FILE_SIGN_KEY) random_hex 32 ;;                  # 只有字母和数字：原样写进 Nginx 配置，不用转义
     INIT_ADMIN_PASSWORD) random_password 16 ;;
     *) printf '%s' "$2" ;;
   esac

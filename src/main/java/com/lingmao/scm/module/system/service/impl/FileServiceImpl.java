@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.common.image.Thumbnails;
 import com.lingmao.scm.module.system.dto.FileVO;
 import com.lingmao.scm.module.system.service.FileService;
@@ -31,10 +32,12 @@ public class FileServiceImpl implements FileService {
 
     private final Path root;
     private final Clock clock;
+    private final FileUrlSigner signer;
 
-    public FileServiceImpl(@Value("${lingmao.upload.dir}") String uploadDir, Clock clock) {
+    public FileServiceImpl(@Value("${lingmao.upload.dir}") String uploadDir, Clock clock, FileUrlSigner signer) {
         this.root = Paths.get(uploadDir).toAbsolutePath().normalize();
         this.clock = clock;
+        this.signer = signer;
     }
 
     @Override
@@ -61,8 +64,9 @@ public class FileServiceImpl implements FileService {
             throw new UncheckedIOException("保存上传文件失败: " + target, e);
         }
         String thumbName = Thumbnails.supports(ext) ? thumbnail(target, dir.resolve(baseName + "_s." + ext), ext) : null;
-        return new FileVO(urlOf(datePath, target.getFileName().toString()),
-                thumbName == null ? null : urlOf(datePath, thumbName), original, file.getSize());
+        // 返回的地址带签名（架构 §8）；缩略图是另一个地址，单独签
+        return new FileVO(signer.sign(urlOf(datePath, target.getFileName().toString())),
+                thumbName == null ? null : signer.sign(urlOf(datePath, thumbName)), original, file.getSize());
     }
 
     /**
@@ -86,6 +90,6 @@ public class FileServiceImpl implements FileService {
     }
 
     private static String urlOf(String datePath, String fileName) {
-        return "/files/" + datePath + "/" + fileName;
+        return FileUrlSigner.PREFIX + datePath + "/" + fileName;
     }
 }

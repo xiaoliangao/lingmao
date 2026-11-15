@@ -103,7 +103,10 @@ export interface OperLog {
   createTime: string
 }
 
-/** 上传成功返回的文件 */
+/**
+ * 上传成功返回的文件。url、thumbUrl 带签名（?e=…&s=…，一周左右过期）：原样拿去显示、原样传回后端保存，
+ * 不要自己拼 /files/… 地址，也不要去掉参数
+ */
 export interface FileVO {
   url: string
   /** 长边 320px 的缩略图，只有 jpg、png 有，其他为 null。显示列表时用它，没有就用 url */
