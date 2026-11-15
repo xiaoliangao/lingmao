@@ -3,6 +3,7 @@ package com.lingmao.scm.common.excel;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.xssf.usermodel.XSSFCell;
 
 import java.math.BigDecimal;
 import java.time.DateTimeException;
@@ -42,6 +43,8 @@ public final class ExcelColumn<R, V> {
     private static final Pattern DATE_TEXT = Pattern.compile("(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})");
     /** "常规"格式显示成科学计数法的数字：1.23457E+12 */
     private static final Pattern SCIENTIFIC = Pattern.compile("-?\\d+(\\.\\d+)?E[-+]\\d+");
+    /** xlsx 里数字单元格存的原文：6228480402564890018、1.3800138E10 */
+    private static final Pattern STORED_NUMBER = Pattern.compile("-?\\d+(\\.\\d+)?(E[-+]?\\d+)?", Pattern.CASE_INSENSITIVE);
 
     /** 报"不在选项里"、写填写说明时最多列出几个选项，再多就说"等 N 项" */
     private static final int LISTED_OPTIONS = 20;
@@ -60,6 +63,7 @@ public final class ExcelColumn<R, V> {
     private boolean required;
     private boolean code;
     private boolean percent;
+    private boolean raw;
     private int maxLength;
     private String example;
     private String note;
@@ -117,6 +121,17 @@ public final class ExcelColumn<R, V> {
     public ExcelColumn<R, V> code() {
         requireKind("code()", Kind.TEXT);
         this.code = true;
+        return this;
+    }
+
+    /**
+     * 账号、电话这类文字列：数字单元格按 xlsx 里存的原文读，不经过 Excel 的数字格式（数据库设计附录 A 的通用规则、Q35）。
+     * 领猫导出的银行账号是数字单元格，19 位的显示成 6.22848E+18，按显示的文字读后几位就丢了；
+     * 文件里存的原文还是全的（只要导出后没在 Excel 里另存）
+     */
+    public ExcelColumn<R, V> raw() {
+        requireKind("raw()", Kind.TEXT);
+        this.raw = true;
         return this;
     }
 
@@ -250,7 +265,7 @@ public final class ExcelColumn<R, V> {
             throw new InvalidCell("单元格里是公式算出来的错误值 " + text + "，请改成具体的值");
         }
         Object value = switch (kind) {
-            case TEXT -> parseText(unscientific(cell, text));
+            case TEXT -> parseText(raw ? stored(cell, text) : unscientific(cell, text));
             case INTEGER -> parseInteger(unscientific(cell, text));
             case DECIMAL -> parseDecimal(unscientific(cell, text));
             case DATE -> parseDate(cell, text);
@@ -266,6 +281,20 @@ public final class ExcelColumn<R, V> {
     private static String unscientific(Cell cell, String text) {
         if (cell != null && effectiveType(cell) == CellType.NUMERIC && SCIENTIFIC.matcher(text).matches()) {
             return BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
+        }
+        return text;
+    }
+
+    /**
+     * 数字单元格在 xlsx 里存的原文（raw() 的列用）：存的是 6228480402564890018 就原样给，是 1.3800138E10 就写成 13800138000。
+     * 不是数字单元格（文本、公式出错……）、不是 xlsx 的，还是按显示的文字
+     */
+    private static String stored(Cell cell, String text) {
+        if (cell instanceof XSSFCell xssf && effectiveType(cell) == CellType.NUMERIC && !DateUtil.isCellDateFormatted(cell)) {
+            String value = xssf.getRawValue();
+            if (value != null && STORED_NUMBER.matcher(value).matches()) {
+                return new BigDecimal(value).stripTrailingZeros().toPlainString();
+            }
         }
         return text;
     }

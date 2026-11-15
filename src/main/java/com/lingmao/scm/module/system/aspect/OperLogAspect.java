@@ -126,14 +126,16 @@ public class OperLogAspect {
 
     /**
      * 递归找名字里含 password 的字段（不分大小写），值换成 ******。
-     * 不只看名字等于 password 的：改密码的 oldPassword、newPassword 也是密码，只认 password 的话它们会明文进日志
+     * 不只看名字等于 password 的：改密码的 oldPassword、newPassword 也是密码，只认 password 的话它们会明文进日志。
+     * 名字里含 bankaccount 的（供应商的银行账号 bankAccount）一样遮：保存请求里的全号不进日志（RFC 004 §5）
      */
     private void maskPasswords(JsonNode node) {
         if (node instanceof ObjectNode object) {
             List<String> names = new ArrayList<>();
             object.properties().forEach(entry -> names.add(entry.getKey()));
             for (String name : names) {
-                if (name.toLowerCase(Locale.ROOT).contains("password")) {
+                String lower = name.toLowerCase(Locale.ROOT);
+                if (lower.contains("password") || lower.contains("bankaccount")) {
                     object.put(name, "******");
                 } else {
                     maskPasswords(object.get(name));

@@ -85,6 +85,18 @@ class OperLogAspectTest {
                 .doesNotContain("old-pass-111").doesNotContain("new-pass-222");
     }
 
+    /** 规则：名字里含 bankaccount 的（供应商的 bankAccount）也打码，不分大小写：保存请求里的银行账号全号不进日志（RFC 004 §5） */
+    @Test
+    void bankAccountFields_masked() {
+        proxy.saveSupplier(java.util.Map.of("bankAccount", "6222000011112222333", "bankName", "测试银行"));
+
+        ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
+        verify(sysOperLogMapper).insert(saved.capture());
+        assertThat(saved.getValue().getParams())
+                .contains("\"bankAccount\":\"******\"").contains("\"bankName\":\"测试银行\"")
+                .doesNotContain("6222000011112222333");
+    }
+
     /** 规则：业务失败也记，success=false，带上原因；异常照样抛给调用方 */
     @Test
     void failure_savesLogAndRethrows() {
@@ -129,6 +141,10 @@ class OperLogAspectTest {
 
         @OperLog(module = "认证", action = "改密码")
         public void changePassword(PasswordChangeReq req) {
+        }
+
+        @OperLog(module = "供应商", action = "修改")
+        public void saveSupplier(java.util.Map<String, Object> req) {
         }
     }
 }

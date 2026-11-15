@@ -44,4 +44,10 @@ public interface UserService {
 
     /** 重新分配角色：先清空，再按 roleIds 写入。currentUserId 是当前登录的人：不能去掉自己的超级管理员角色 */
     void assignRoles(Long id, List<Long> roleIds, Long currentUserId);
+
+    /**
+     * 按昵称找人（导入时把"采购员"这类显示名对到用户，RFC 004 §9）：只找启用的；同名的不止一个算对不上。
+     * 返回 昵称 → id，对不上的不在 map 里
+     */
+    Map<String, Long> idsByNickname(Collection<String> nicknames);
 }

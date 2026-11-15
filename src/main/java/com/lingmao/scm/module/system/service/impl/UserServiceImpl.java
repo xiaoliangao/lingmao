@@ -186,4 +186,20 @@ public class UserServiceImpl implements UserService {
         }
         return user;
     }
+
+    @Override
+    public Map<String, Long> idsByNickname(Collection<String> nicknames) {
+        if (nicknames == null || nicknames.isEmpty()) {
+            return Map.of();
+        }
+        List<SysUser> users = sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                .select(SysUser::getId, SysUser::getNickname)
+                .eq(SysUser::getStatus, 1)
+                .in(SysUser::getNickname, nicknames));
+        // 同名的不止一个：不知道是哪个，算对不上
+        Map<String, List<Long>> byName = users.stream().collect(Collectors.groupingBy(SysUser::getNickname,
+                Collectors.mapping(SysUser::getId, Collectors.toList())));
+        return byName.entrySet().stream().filter(e -> e.getValue().size() == 1)
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getFirst()));
+    }
 }
