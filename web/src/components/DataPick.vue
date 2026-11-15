@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
-import { materialApi, materialCategoryApi } from '@/api/basic'
+import { categoryApi, materialApi, materialCategoryApi } from '@/api/basic'
+import { styleApi } from '@/api/style'
 import type { MaterialPickRow, TreeNode } from '@/types/basic'
+import type { PageResult } from '@/types/system'
+import { TECH_PACK_STATUS, type StylePickRow } from '@/types/style'
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
 import { formatPrice } from '@/utils/format'
@@ -13,15 +16,22 @@ import { formatPrice } from '@/utils/format'
  *
  *   <DataPick v-model="picking" kind="sku" :have="lines.map((l) => l.skuId)" @pick="addLines" />
  *
- * kind：sku = 物料 SKU（GET /api/materials/pick，启用物料的启用 SKU），have 是 SKU id。
- * 加一种（比如款式）：SOURCES 加一项，模板里按 kind 加它的列，pick 的类型改成联合
+ * kind：sku = 物料 SKU（GET /api/materials/pick，启用物料的启用 SKU），have 是 SKU id；
+ *       style = 款式（GET /api/styles/pick，启用的款式，按一级品类分组），have 是款式 id。
+ * pick 发出的行按 kind 是 MaterialPickRow[] 或 StylePickRow[]，接的地方按自己的 kind 断言。
+ * 加一种：SOURCES 加一项，模板里按 kind 加它的列，PickRow 加上它的行类型
  *
  * single：只挑一条（录价格选物料用）。点一行就换成这一行，表头没有"全选"，按钮叫"选定"，pick 发出的数组只有一条
  *
  *   <DataPick v-model="picking" kind="sku" single @pick="(rows) => choose(rows[0])" />
  */
-const props = withDefaults(defineProps<{ kind?: 'sku'; have?: number[]; single?: boolean }>(), { kind: 'sku', have: () => [], single: false })
-const emit = defineEmits<{ pick: [rows: MaterialPickRow[]] }>()
+type PickRow = MaterialPickRow | StylePickRow
+const props = withDefaults(defineProps<{ kind?: 'sku' | 'style'; have?: number[]; single?: boolean }>(), {
+  kind: 'sku',
+  have: () => [],
+  single: false,
+})
+const emit = defineEmits<{ pick: [rows: MaterialPickRow[] | StylePickRow[]] }>()
 const visible = defineModel<boolean>({ required: true })
 
 const SOURCES = {
@@ -31,20 +41,29 @@ const SOURCES = {
     placeholder: '物料名称、编码、SKU 码、颜色、供应商货号',
     groups: materialCategoryApi.enabledTree,
     fetch: materialApi.pick,
-    key: (row: MaterialPickRow) => row.skuId,
+    key: (row: PickRow) => (row as MaterialPickRow).skuId,
+  },
+  style: {
+    title: '从款式库选',
+    noun: '款式',
+    placeholder: '款号、名称、花名、品牌',
+    groups: categoryApi.enabledTree,
+    fetch: styleApi.pick,
+    key: (row: PickRow) => (row as StylePickRow).id,
   },
 }
 const source = computed(() => SOURCES[props.kind])
 
 const units = useDict('unit')
+const seasons = useDict('season')
 const groups = shallowRef<TreeNode[]>([])
 const { query, page, size, list, total, loading, search } = useTable({
-  fetch: (params) => source.value.fetch(params),
+  fetch: (params): Promise<PageResult<PickRow>> => source.value.fetch(params),
   query: { keyword: '', categoryId: undefined as number | undefined },
   immediate: false,
 })
 /** 勾了的：id → 行，Map 按勾的先后排 */
-const chosen = ref(new Map<number, MaterialPickRow>())
+const chosen = ref(new Map<number, PickRow>())
 const had = computed(() => new Set(props.have))
 
 async function onOpen() {
@@ -60,15 +79,15 @@ function pickGroup(id: number | undefined) {
   search()
 }
 
-const keyOf = (row: MaterialPickRow) => source.value.key(row)
-const rowKey = (row: MaterialPickRow) => String(keyOf(row))
-const isHad = (row: MaterialPickRow) => had.value.has(keyOf(row))
+const keyOf = (row: PickRow) => source.value.key(row)
+const rowKey = (row: PickRow) => String(keyOf(row))
+const isHad = (row: PickRow) => had.value.has(keyOf(row))
 /** 这一页能勾的 */
 const free = computed(() => list.value.filter((row) => !isHad(row)))
 const allOn = computed(() => free.value.length > 0 && free.value.every((row) => chosen.value.has(keyOf(row))))
 const someOn = computed(() => free.value.some((row) => chosen.value.has(keyOf(row))))
 
-function toggle(row: MaterialPickRow) {
+function toggle(row: PickRow) {
   if (isHad(row)) return
   const key = keyOf(row)
   if (props.single && !chosen.value.has(key)) chosen.value.clear()
@@ -84,14 +103,14 @@ function toggleAll() {
 }
 
 function confirm() {
-  emit('pick', [...chosen.value.values()])
+  emit('pick', [...chosen.value.values()] as MaterialPickRow[] | StylePickRow[])
   visible.value = false
 }
 
 const emptyText = computed(() =>
   query.keyword.trim() ? `没有匹配「${query.keyword.trim()}」的${source.value.noun}` : `这一类还没有启用的${source.value.noun}`,
 )
-const rowClass = ({ row }: { row: MaterialPickRow }) => (isHad(row) ? 'is-had' : chosen.value.has(keyOf(row)) ? 'is-chosen' : '')
+const rowClass = ({ row }: { row: PickRow }) => (isHad(row) ? 'is-had' : chosen.value.has(keyOf(row)) ? 'is-chosen' : '')
 </script>
 
 <template>
@@ -144,6 +163,42 @@ const rowClass = ({ row }: { row: MaterialPickRow }) => (isHad(row) ? 'is-had' :
         </el-table-column>
         <el-table-column label="单价" class-name="num" width="100">
           <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
+        </el-table-column>
+      </template>
+      <template v-else-if="kind === 'style'">
+        <el-table-column label="款式" min-width="230">
+          <template #default="{ row }">
+            <span class="dpk-item">
+              <img v-if="row.image" class="dpk-thumb" :src="row.image.thumbUrl || row.image.url" alt="" />
+              <span v-else class="dpk-thumb" />
+              <span class="dpk-text">
+                <span>{{ row.name }}<template v-if="row.aliasName"> · {{ row.aliasName }}</template></span>
+                <small class="code">{{ row.code }}<template v-if="isHad(row as StylePickRow)"> · 已在单上</template></small>
+              </span>
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="品类" prop="categoryName" min-width="90" />
+        <el-table-column label="季节" min-width="90">
+          <template #default="{ row }">{{ row.year }} {{ seasons.labelOf(row.season) }}</template>
+        </el-table-column>
+        <el-table-column label="颜色" min-width="110">
+          <template #default="{ row }">
+            <span class="dpk-color">
+              <span v-for="c in row.colors" :key="c.id" class="swatch" :title="`${c.code} ${c.name}`" :style="{ background: c.hex ?? undefined }" />
+              <span v-if="!row.colors.length" class="dpk-muted">—</span>
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="生产资料包" width="96">
+          <template #default="{ row }">
+            <span :class="row.techPackStatus === 'PROD' ? 'dpk-muted' : 'dpk-amber'">
+              {{ row.techPackStatus === 'PROD' ? TECH_PACK_STATUS.PROD.label : '未生效' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="吊牌价" class-name="num" width="90">
+          <template #default="{ row }">{{ row.tagPrice == null ? '—' : formatPrice(row.tagPrice) }}</template>
         </el-table-column>
       </template>
     </el-table>
@@ -247,6 +302,14 @@ const rowClass = ({ row }: { row: MaterialPickRow }) => (isHad(row) ? 'is-had' :
   height: 14px;
   border: 1px solid var(--lm-line);
   border-radius: 3px;
+}
+
+.dpk-muted {
+  color: var(--lm-muted);
+}
+
+.dpk-amber {
+  color: var(--lm-pending-text);
 }
 
 .dpk-foot {
