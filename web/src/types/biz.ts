@@ -16,3 +16,15 @@ export interface DocLog {
   /** 2026-11-15 10:30:00，东八区 */
   createTime: string
 }
+
+/**
+ * 挂在单据、主数据上的一个附件（AttachmentVO）：地址都带签名。和上传接口返回的 FileVO 一个样子，多一个 id；
+ * 整组替换时把 url、thumbUrl、name、size 原样传回去（PUT …/images）
+ */
+export interface Attachment {
+  id: number
+  url: string
+  thumbUrl: string | null
+  name: string
+  size: number
+}

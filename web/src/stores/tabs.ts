@@ -12,6 +12,15 @@ export interface Tab {
 
 export const HOME_TAB: Tab = { path: '/home', title: '首页', cacheName: 'HomePage' }
 
+/**
+ * 页签的缓存名。菜单页面是路由上的 Menu<菜单 id>；详情页（路由 meta.detail，见 router/index.ts 的 DETAIL_ROUTES）
+ * 一条记录一个页签，同一个组件开好几份，按地址起名，AppLayout 给它套一层同名的壳让 keep-alive 分开留
+ */
+export function cacheNameOf(route: Pick<RouteLocationNormalizedLoaded, 'path' | 'meta'>): string | undefined {
+  if (route.meta.detail) return `Detail:${route.path}`
+  return route.meta.cacheName as string | undefined
+}
+
 /** 最多开这么多个页签，再多就关掉最早打开的那个（有没保存修改的不关） */
 const MAX_TABS = 10
 
@@ -50,7 +59,7 @@ export const useTabsStore = defineStore('tabs', () => {
 
   /** 打开一个页面：已经开着就不重复加 */
   function open(route: RouteLocationNormalizedLoaded) {
-    const cacheName = route.meta.cacheName as string | undefined
+    const cacheName = cacheNameOf(route)
     if (!cacheName || has(route.path)) return
     tabs.value.push({ path: route.path, title: (route.meta.title as string | undefined) ?? '', cacheName })
     if (tabs.value.length > MAX_TABS) {
@@ -74,5 +83,11 @@ export const useTabsStore = defineStore('tabs', () => {
     tabs.value = [HOME_TAB]
   }
 
-  return { tabs, cacheNames, has, open, close, reset, trackDirty, isDirty, dirtyTitles }
+  /** 改页签上的字：详情页加载完换成"物料 ML0001"这种（打开时只知道是"物料"） */
+  function rename(path: string, title: string) {
+    const tab = tabs.value.find((t) => t.path === path)
+    if (tab) tab.title = title
+  }
+
+  return { tabs, cacheNames, has, open, close, reset, rename, trackDirty, isDirty, dirtyTitles }
 })

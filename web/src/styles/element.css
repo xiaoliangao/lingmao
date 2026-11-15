@@ -965,3 +965,10 @@
   background: none;
   border-top: 1px solid var(--lm-line-soft);
 }
+
+/* 表格里点不了的操作（内置字典项、工厂仓的"删除"）：上面给行内按钮定了字色，盖住了 Element 的禁用色，这里改回淡字 */
+.el-table .el-button.is-link.is-disabled,
+.el-table .el-button.is-link.is-disabled:hover {
+  color: var(--lm-disabled);
+  background: none;
+}

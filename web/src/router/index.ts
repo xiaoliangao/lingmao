@@ -41,6 +41,34 @@ const pages = import.meta.glob('../views/**/index.vue')
 /** 菜单配好了、页面还没做的，显示"还没上线" */
 const building = () => import('@/views/error/building.vue')
 
+/**
+ * 详情页（RFC 003 §18）：一条记录一个页签，/materials/12 和 /materials/15 各开一个、各留各的状态。
+ * 加一个详情页 = 下面加一行 + 写那个 detail.vue：
+ *   { parent: '/suppliers', file: 'supplier/supplier/detail', title: '供应商' }
+ * - parent：列表页菜单的地址。用户有这个菜单才挂详情路由（没有就是 404）；侧边栏高亮、分组都跟着列表页
+ * - title：页签先叫这个，页面加载完调 useTabsStore().rename(route.path, '物料 ML0001') 换成具体的
+ * - 地址是 parent/:id，id 只认数字。页面在 setup 里取一次 id，不要 watch 路由：
+ *   keep-alive 留着的别的详情页也看得到路由变化（AppLayout 给每个详情页签套一层按地址起名的壳）
+ */
+const DETAIL_ROUTES: { parent: string; file: string; title: string }[] = [
+  { parent: '/materials', file: 'basic/material/detail', title: '物料' },
+]
+const detailPages = import.meta.glob('../views/**/detail.vue')
+/** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */
+const menuGroups = new Map<string, string>()
+
+function addDetailRoutes(parentName: string) {
+  for (const detail of DETAIL_ROUTES) {
+    const group = menuGroups.get(detail.parent)
+    if (group === undefined) continue
+    router.addRoute(parentName, {
+      path: `${detail.parent}/:id(\\d+)`,
+      component: detailPages[`../views/${detail.file}.vue`] ?? building,
+      meta: { title: detail.title, group, detail: true },
+    })
+  }
+}
+
 /** 给页面组件起一个唯一的名字（Menu<菜单 id>），keep-alive 按名字缓存、页签关了按名字清掉 */
 function named(loader: () => Promise<unknown>, name: string): () => Promise<RouteComponent> {
   return () => loader().then((mod) => ({ ...(mod as { default: RouteComponent }).default, name }))
@@ -60,6 +88,7 @@ function addMenuRoutes(parentName: string, menus: MenuNode[], parentPath = '', g
         component: named(page, cacheName),
         meta: { title: menu.name, group, cacheName },
       })
+      menuGroups.set(fullPath, group)
       first ??= fullPath
     }
     const child = addMenuRoutes(parentName, menu.children, fullPath, menu.type === 1 ? menu.name : group)
@@ -86,6 +115,7 @@ router.beforeEach(async (to) => {
       return false
     }
     addMenuRoutes('workbench', store.workbenchMenus)
+    addDetailRoutes('workbench')
     if (store.isAdmin) {
       // 打开 /admin 时跳到管理后台的第一个页面。redirect 写成函数，等下面加完菜单路由再取值
       let adminHome = '/home'

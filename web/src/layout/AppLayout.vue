@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { onBeforeRouteLeave, useRoute } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useSidebar } from '@/composables/useSidebar'
-import { useTabsStore } from '@/stores/tabs'
+import { cacheNameOf, useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import AppSidebar from './AppSidebar.vue'
 import TabsBar from './TabsBar.vue'
@@ -29,6 +29,28 @@ const sidebar = ref<InstanceType<typeof AppSidebar>>()
 
 // 每个页签记住滚到哪了：切回来接着看；新打开的页面从顶上开始
 const scrollTops = new Map<string, number>()
+
+// 详情页（/materials/12）一条记录一个页签，用的是同一个组件。keep-alive 按 key 留页面、按组件名清（include），
+// 同名的分不开，所以给每个详情页签套一层按地址起名的壳（名字 = tabs.cacheNameOf，"Detail:/materials/12"，key 是地址），
+// 关了页签按名字清掉
+const shells = new Map<string, Component>()
+
+function shellOf(target: RouteLocationNormalizedLoaded): Component {
+  const name = cacheNameOf(target)!
+  let shell = shells.get(name)
+  if (!shell) {
+    shell = defineComponent({ name, setup: (_, { slots }) => () => slots.default?.() })
+    shells.set(name, shell)
+  }
+  return shell
+}
+
+watch(
+  () => tabs.cacheNames,
+  (names) => {
+    for (const name of shells.keys()) if (!names.includes(name)) shells.delete(name)
+  },
+)
 
 watch(
   () => route.path,
@@ -96,9 +118,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <div class="shell-work">
       <TabsBar v-if="withTabs" />
       <main ref="main" class="shell-main">
-        <router-view v-slot="{ Component }">
+        <router-view v-slot="{ Component, route: current }">
           <keep-alive v-if="withTabs" :include="tabs.cacheNames">
-            <component :is="Component" />
+            <component :is="shellOf(current)" v-if="current.meta.detail" :key="current.path">
+              <component :is="Component" />
+            </component>
+            <!-- key 不能省：v-if / v-else 会给两支各配一个固定的 key，keep-alive 按 key 缓存，所有菜单页就挤在同一格里了 -->
+            <component :is="Component" v-else :key="cacheNameOf(current) ?? current.path" />
           </keep-alive>
           <component :is="Component" v-else />
         </router-view>
