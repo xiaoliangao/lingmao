@@ -7,7 +7,9 @@ import com.lingmao.scm.module.system.dto.UserQuery;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.dto.UserVO;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /** 用户管理：给管理员用的增删改查。和 AuthService（登录、当前用户）分开 */
 public interface UserService {
@@ -18,6 +20,12 @@ public interface UserService {
 
     /** 选人下拉框：启用的账号，用户名或昵称包含 keyword（空的话不筛），按用户名排，最多 20 个 */
     List<UserOption> options(String keyword);
+
+    /**
+     * 一批用户的昵称，id → 昵称：操作记录、单据上的"谁做的"显示名字用。停用的、删除的也给：人走了，记录上照样要看得出是谁。
+     * 查不到的 id 不在 map 里。别的域显示人名调这个，不 JOIN sys_user（架构 §3.2）
+     */
+    Map<Long, String> nicknames(Collection<Long> ids);
 
     /** 新增用户，返回新 id。用户名已存在抛 BizException */
     Long create(UserCreateReq req);

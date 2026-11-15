@@ -24,8 +24,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -65,6 +68,15 @@ public class UserServiceImpl implements UserService {
         // 只取前 20 个，不查总数（第三个参数 false）
         return sysUserMapper.selectPage(new Page<>(1, OPTIONS_LIMIT, false), wrapper)
                 .getRecords().stream().map(UserOption::from).toList();
+    }
+
+    @Override
+    public Map<Long, String> nicknames(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        return sysUserMapper.selectNamesByIds(ids).stream()
+                .collect(Collectors.toMap(SysUser::getId, SysUser::getNickname));
     }
 
     @Override

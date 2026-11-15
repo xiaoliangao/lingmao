@@ -26,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -215,6 +216,18 @@ class UserServiceImplTest {
         userService.resetPassword(2L, "new-pass-123");
 
         verify(loginFailCounter).clear("zhangsan");
+    }
+
+    /** 规则：取昵称按 id 对上；一个 id 都没有时不查库（IN () 是错的 SQL）。删了的人也取得到，在 DocLogServiceImplIT 用真库测 */
+    @Test
+    void nicknames_mapsIdToNickname_emptyIdsNoQuery() {
+        SysUser zhang = user(5L, "zhangsan");
+        zhang.setNickname("张三");
+        when(sysUserMapper.selectNamesByIds(List.of(5L))).thenReturn(List.of(zhang));
+
+        assertThat(userService.nicknames(List.of(5L))).containsExactly(Map.entry(5L, "张三"));
+        assertThat(userService.nicknames(List.of())).isEmpty();
+        verify(sysUserMapper).selectNamesByIds(any());
     }
 
     private UserCreateReq createReq(String username, String password) {
