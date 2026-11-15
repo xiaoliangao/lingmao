@@ -43,11 +43,14 @@ class ArchitectureTest {
      */
     private static final Map<String, Set<String>> DIRECT = Map.ofEntries(
             entry("board", Set.of("production", "purchase")),
-            entry("production", Set.of("mrp", "order", "inventory")),
-            entry("purchase", Set.of("mrp", "inventory", "supplier")),
+            entry("contract", Set.of("production", "purchase")),
+            entry("fg", Set.of("production")),
+            entry("production", Set.of("mrp", "order", "inventory", "price")),
+            entry("purchase", Set.of("mrp", "inventory", "supplier", "price")),
             entry("mrp", Set.of("order", "inventory")),
             entry("order", Set.of("techpack")),
-            entry("techpack", Set.of("style")),
+            entry("techpack", Set.of("style", "price")),
+            entry("price", Set.of("supplier", "basic")),
             entry("style", Set.of("supplier", "basic")),
             entry("supplier", Set.of("basic")),
             entry("inventory", Set.of("basic")),
