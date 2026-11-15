@@ -20,7 +20,14 @@ step() { printf '\n== %s\n' "$*"; }
 warn() { printf '注意：%s\n' "$*" >&2; }
 die()  { printf '\n出错了：%s\n' "$*" >&2; exit 1; }
 
+# 我们自己的 Mac 上也能装（Docker Desktop），当上线前的试用环境：
+# Docker Desktop 按当前用户跑，sudo 了反而连不上；挂进容器的目录不管属主是谁容器都能写；Mac 上没有 flock、ss
+is_mac() { [ "$(uname -s)" = Darwin ]; }
+
 require_root() {
+  if is_mac; then
+    return 0
+  fi
   if [ "$(id -u)" -ne 0 ]; then
     die "要用 root 执行：在命令前面加 sudo"
   fi
@@ -199,7 +206,9 @@ ensure_dirs() {
     "$TARGET"/backups "$TARGET"/backups/daily "$TARGET"/backups/pre-upgrade "$TARGET"/backups/pre-restore
   make_dir 700 "$TARGET"/certs
   # 应用不用 root 跑，上传和日志目录要交给它才写得进去
-  chown "$APP_UID:$APP_UID" "$TARGET"/data/uploads "$TARGET"/logs
+  if ! is_mac; then
+    chown "$APP_UID:$APP_UID" "$TARGET"/data/uploads "$TARGET"/logs
+  fi
 }
 
 # 启动之前检查 .env 里容易写错的几项：写错了容器会起不来或者反复重启，不如现在就说清楚
@@ -223,11 +232,11 @@ check_env() {
 
 # 端口被别的程序占了就停下来。自己的 web 已经在跑（重复执行）时不查：占着端口的就是它
 check_ports() {
-  local spec port ports
+  local spec port ports busy
   if [ -n "$(docker compose ps -q --status running web 2>/dev/null || true)" ]; then
     return 0
   fi
-  if ! command -v ss >/dev/null 2>&1; then
+  if ! command -v ss >/dev/null 2>&1 && ! command -v lsof >/dev/null 2>&1; then
     warn "没有 ss 命令，跳过端口检查"
     return 0
   fi
@@ -239,7 +248,12 @@ check_ports() {
   fi
   for spec in $ports; do
     port=${spec##*:}       # 也可能写成 127.0.0.1:8080
-    if ss -ltn "sport = :$port" | grep LISTEN > /dev/null; then
+    if command -v ss >/dev/null 2>&1; then
+      busy=$(ss -ltn "sport = :$port" | grep LISTEN || true)
+    else
+      busy=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+    fi
+    if [ -n "$busy" ]; then
       die "端口 $port 已经被别的程序占了（ss -ltnp 'sport = :$port' 能看到是谁）。换一个：改 $TARGET/.env 里的端口，再执行一次"
     fi
   done
@@ -316,6 +330,9 @@ prune_old_images() {
 
 # 同一时间只让一个安装、升级、恢复脚本跑：两个一起动数据库，结果说不清
 take_lock() {
+  if is_mac; then
+    return 0     # 只有我们自己在用，不防
+  fi
   exec 9> "$TARGET"/.scm.lock
   if ! flock -n 9; then
     die "另一个安装、升级或恢复脚本正在执行，等它结束再来"
