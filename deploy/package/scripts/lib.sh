@@ -11,6 +11,14 @@
 unset SCM_VERSION SCM_HTTP_PORT SCM_HTTPS_PORT SCM_WEB_MODE POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET \
       FILE_SIGN_KEY INIT_ADMIN_PASSWORD BACKUP_TIME BACKUP_KEEP_DAYS COMPOSE_FILE COMPOSE_PROJECT_NAME
 
+# 脚本在服务器上写的时间（backup.log、屏幕上显示的备份文件时间）按北京时间，和 backup 容器里写的一致。
+# 不设的话按服务器的时区：云服务器常常是 UTC，backup.log 里两种时间混在一起（2c 在 Mac 上测出来的）
+if [ -e /usr/share/zoneinfo/Asia/Shanghai ]; then
+  export TZ=Asia/Shanghai
+else
+  export TZ=CST-8
+fi
+
 APP_UID=10001        # app 镜像里跑应用的用户（deploy/app.Dockerfile），上传和日志目录要交给它
 MIN_DOCKER=24.0
 MIN_COMPOSE=2.20

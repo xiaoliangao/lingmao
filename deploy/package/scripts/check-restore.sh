@@ -34,8 +34,9 @@ fi
 
 db=scm_restore_check
 work=$(mktemp -d)
+# 不显示"database ... does not exist, skipping"这类 NOTICE：部署人员看到会以为出错了
 admin_sql() {
-  docker compose exec -T postgres psql -U scm -d postgres -v ON_ERROR_STOP=1 -q "$@" < /dev/null
+  docker compose exec -T postgres psql -U scm -d postgres -v ON_ERROR_STOP=1 -q -c 'SET client_min_messages = warning' "$@" < /dev/null
 }
 cleanup() {
   admin_sql -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" > /dev/null 2>&1 || true

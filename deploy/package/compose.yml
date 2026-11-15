@@ -36,6 +36,10 @@ services:
       - ./nginx:/etc/nginx/scm:ro
       - ./data/uploads:/data/uploads:ro
     # 不依赖 app：应用重启、升级时 Nginx 照常在，/api 回"系统正在升级"，而不是连不上
+    # Nginx 只解析 app 这一个名字，由 Docker 自带的 DNS 回答，用不到外面的 DNS。不写这一行的话，app 停着的时候
+    # Docker 会把"app"转给服务器的 DNS 去查：有的 DNS（代理软件、把查不到的域名劫持到广告页的运营商 DNS）会回一个假地址，
+    # Nginx 连着假地址一直等，页面收不到上面那句提示。写成 127.0.0.1，查不到的名字马上失败，Nginx 马上回提示
+    dns: 127.0.0.1
     mem_limit: 64m
     logging: *logging
     healthcheck:
