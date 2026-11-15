@@ -95,10 +95,25 @@ const menuRole = ref<Role | null>(null)
 const menuTree = ref<MenuNode[]>([])
 const treeRef = ref<InstanceType<typeof ElTree>>()
 
+/**
+ * 页面自己带"看"的权限码（basic:basics:list），按钮带其余的（V4、V16）。树里勾一个有下级的节点等于勾它全部下级，
+ * 所以"只能看、不能改"勾不出来：只授了页面、没授按钮的角色（如 V16 的业务看"基础"），打开时页面显示成没勾，
+ * 一保存就把它丢了。给这种页面在按钮前面加一个"查看"叶子代表页面自己，id 用页面 id 的相反数：
+ * 打开时页面授了就勾它，保存时换回页面的 id。勾了别的按钮，页面是半选，照样存进去，所以能改的一定能看
+ */
+function withViewLeaf(nodes: MenuNode[]): MenuNode[] {
+  return nodes.map((node) => {
+    const children = withViewLeaf(node.children)
+    if (node.type !== 2 || !node.perms || children.length === 0) return { ...node, children }
+    const view: MenuNode = { ...node, id: -node.id, parentId: node.id, name: '查看', type: 3, sort: -1, children: [] }
+    return { ...node, children: [view, ...children] }
+  })
+}
+
 /** 只把"叶子"（没有下级的节点）设为勾选，上级的勾选状态由树自己算；直接勾上级会把它所有下级都勾上 */
 function leafIds(nodes: MenuNode[], wanted: Set<number>): number[] {
   return nodes.flatMap((node) =>
-    node.children.length > 0 ? leafIds(node.children, wanted) : wanted.has(node.id) ? [node.id] : [],
+    node.children.length > 0 ? leafIds(node.children, wanted) : wanted.has(Math.abs(node.id)) ? [node.id] : [],
   )
 }
 
@@ -106,7 +121,7 @@ async function openMenus(row: Role) {
   menuRole.value = row
   const [tree, ids] = await Promise.all([menuApi.tree(), roleApi.menuIds(row.id)])
   // 管理后台的菜单只给超级管理员，不能分给角色，这里不列出来
-  menuTree.value = tree.filter((menu) => !menu.adminOnly)
+  menuTree.value = withViewLeaf(tree.filter((menu) => !menu.adminOnly))
   menuDialogVisible.value = true
   await nextTick()
   treeRef.value?.setCheckedKeys(leafIds(menuTree.value, new Set(ids)))
@@ -114,8 +129,9 @@ async function openMenus(row: Role) {
 
 async function saveMenus() {
   const tree = treeRef.value!
-  // 全选的 + 半选的（部分下级被勾了的上级），上级也要存，侧边栏才显示得出目录
-  const ids = [...tree.getCheckedKeys(), ...tree.getHalfCheckedKeys()] as number[]
+  // 全选的 + 半选的（部分下级被勾了的上级），上级也要存，侧边栏才显示得出目录。"查看"叶子换回页面自己的 id
+  const keys = [...tree.getCheckedKeys(), ...tree.getHalfCheckedKeys()] as number[]
+  const ids = [...new Set(keys.map((id) => Math.abs(id)))]
   await roleApi.assignMenus(menuRole.value!.id, ids)
   ElMessage.success('权限已保存，用户刷新页面后生效')
   menuDialogVisible.value = false
