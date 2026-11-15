@@ -15,8 +15,12 @@ import { formatPrice } from '@/utils/format'
  *
  * kind：sku = 物料 SKU（GET /api/materials/pick，启用物料的启用 SKU），have 是 SKU id。
  * 加一种（比如款式）：SOURCES 加一项，模板里按 kind 加它的列，pick 的类型改成联合
+ *
+ * single：只挑一条（录价格选物料用）。点一行就换成这一行，表头没有"全选"，按钮叫"选定"，pick 发出的数组只有一条
+ *
+ *   <DataPick v-model="picking" kind="sku" single @pick="(rows) => choose(rows[0])" />
  */
-const props = withDefaults(defineProps<{ kind?: 'sku'; have?: number[] }>(), { kind: 'sku', have: () => [] })
+const props = withDefaults(defineProps<{ kind?: 'sku'; have?: number[]; single?: boolean }>(), { kind: 'sku', have: () => [], single: false })
 const emit = defineEmits<{ pick: [rows: MaterialPickRow[]] }>()
 const visible = defineModel<boolean>({ required: true })
 
@@ -67,6 +71,7 @@ const someOn = computed(() => free.value.some((row) => chosen.value.has(keyOf(ro
 function toggle(row: MaterialPickRow) {
   if (isHad(row)) return
   const key = keyOf(row)
+  if (props.single && !chosen.value.has(key)) chosen.value.clear()
   if (!chosen.value.delete(key)) chosen.value.set(key, row)
 }
 
@@ -103,7 +108,7 @@ const rowClass = ({ row }: { row: MaterialPickRow }) => (isHad(row) ? 'is-had' :
 
     <el-table v-loading="loading" :data="list" :row-key="rowKey" max-height="480" class="dpk-table" :row-class-name="rowClass" :empty-text="emptyText" @row-click="toggle">
       <el-table-column width="44">
-        <template #header>
+        <template v-if="!single" #header>
           <el-checkbox :model-value="allOn" :indeterminate="someOn && !allOn" :disabled="!free.length" aria-label="勾选这一页全部" @change="toggleAll" />
         </template>
         <template #default="{ row }">
@@ -150,7 +155,7 @@ const rowClass = ({ row }: { row: MaterialPickRow }) => (isHad(row) ? 'is-had' :
         <el-button v-if="chosen.size" link type="primary" @click="chosen = new Map()">清空</el-button>
         <span class="dpk-gap" />
         <el-button @click="visible = false">取消</el-button>
-        <el-button type="primary" :disabled="!chosen.size" @click="confirm">加入{{ chosen.size ? ` ${chosen.size} 条` : '' }}</el-button>
+        <el-button type="primary" :disabled="!chosen.size" @click="confirm">{{ single ? '选定' : `加入${chosen.size ? ` ${chosen.size} 条` : ''}` }}</el-button>
       </div>
     </template>
   </el-dialog>
