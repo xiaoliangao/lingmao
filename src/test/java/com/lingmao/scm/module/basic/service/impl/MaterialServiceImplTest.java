@@ -174,6 +174,29 @@ class MaterialServiceImplTest {
         verify(materialSkuMapper, never()).deleteById(any(Long.class));
     }
 
+    /**
+     * 规则：SKU 全都不带颜色（导入时没有 SKU 表、只建了一个光 SKU 的物料）也能取 SKU 给下游。
+     * 原来颜色表是空的时候给的是 Map.of()，拿 null 的颜色 id 去 get 会空指针（第 4b 步价格档案测出来的，详情页同一处）
+     */
+    @Test
+    void skuRefs_skusWithoutColor_ok() {
+        MaterialSku sku = new MaterialSku();
+        sku.setId(7L);
+        sku.setMaterialId(100L);
+        sku.setCode("ML0001");
+        sku.setStatus(1);
+        Material material = new Material();
+        material.setId(100L);
+        material.setCode("ML0001");
+        material.setStatus(1);
+        when(materialSkuMapper.selectByIds(List.of(7L))).thenReturn(List.of(sku));
+        when(materialMapper.selectByIds(List.of(100L))).thenReturn(List.of(material));
+
+        assertThat(materialService.skuRefs(List.of(7L))).singleElement()
+                .satisfies(ref -> assertThat(ref.colorName()).isNull())
+                .satisfies(ref -> assertThat(ref.material().code()).isEqualTo("ML0001"));
+    }
+
     /** 关键字里有空格就按几个编码查（大写、去重），没有空格按包含查 */
     @Test
     void codesIn_splitsOnWhitespace() {

@@ -49,6 +49,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -547,10 +548,11 @@ public class MaterialServiceImpl implements MaterialService {
         return sku;
     }
 
+    /** 调用方拿不带颜色的 SKU 的 colorId（null）来 get：返回的 Map 要能 get(null)，所以空的也给 HashMap，不给 Map.of() */
     private Map<Long, Color> colorsOf(Collection<MaterialSku> skus) {
         List<Long> ids = skus.stream().map(MaterialSku::getColorId).filter(Objects::nonNull).distinct().toList();
         if (ids.isEmpty()) {
-            return Map.of();
+            return new HashMap<>();
         }
         return colorMapper.selectByIds(ids).stream().collect(Collectors.toMap(Color::getId, Function.identity()));
     }
