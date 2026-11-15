@@ -116,11 +116,52 @@ class SerialNoGeneratorIT {
         assertThat(inTx(() -> day1.daily(prefix))).isEqualTo(prefix + "202611050003");
     }
 
-    /** 规则：不在事务里取号直接报错：号一取就提交了，后面建单失败就白白跳过一个号 */
+    /** 规则：不在事务里取号、推流水直接报错：号一取就提交了，后面建单失败就白白跳过一个号 */
     @Test
     void outsideTransaction_throws() {
         assertThatThrownBy(() -> generator.daily(randomPrefix()))
                 .isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> generator.raiseTo(randomPrefix(), 5))
+                .isInstanceOf(IllegalTransactionStateException.class);
+    }
+
+    /** 规则：peek 只看不取（款号预览，RFC 005 §3.1）：没取过是 1；看几次都一样；接着 next 取到的就是看到的那个。不用在事务里 */
+    @Test
+    void peek_doesNotTake() {
+        String key = randomPrefix();
+
+        assertThat(generator.peek(key)).isEqualTo(1);
+        assertThat(inTx(() -> generator.next(key, 2))).isEqualTo(key + "01");
+        assertThat(generator.peek(key)).isEqualTo(2);
+        int seen = generator.peek(key);
+        assertThat(seen).isEqualTo(2);
+        assertThat(inTx(() -> generator.next(key, 2))).isEqualTo(SerialNoGenerator.format(key, seen, 2));
+        assertThat(generator.peek(key)).isEqualTo(3);
+    }
+
+    /**
+     * 规则：导入老编码后 raiseTo 把流水推上去，新建的从下一个开始、不撞导入的（RFC 003 §7.1）；
+     * 只往上推不往下拉；没取过的 key 也能推；导入回滚，推上去的一起撤销
+     */
+    @Test
+    void raiseTo_onlyRaises() {
+        String key = randomPrefix();
+        String fresh = randomPrefix();
+
+        assertThat(inTx(() -> generator.next(key, 4))).isEqualTo(key + "0001");
+        tx.executeWithoutResult(s -> generator.raiseTo(key, 37));
+        assertThat(inTx(() -> generator.next(key, 4))).isEqualTo(key + "0038");
+        tx.executeWithoutResult(s -> generator.raiseTo(key, 5));
+        assertThat(inTx(() -> generator.next(key, 4))).isEqualTo(key + "0039");
+
+        tx.executeWithoutResult(s -> generator.raiseTo(fresh, 12));
+        assertThat(generator.peek(fresh)).isEqualTo(13);
+
+        tx.executeWithoutResult(s -> {
+            generator.raiseTo(key, 500);
+            s.setRollbackOnly();   // 相当于导入时后面出错了
+        });
+        assertThat(inTx(() -> generator.next(key, 4))).isEqualTo(key + "0040");
     }
 
     /** 在一个新事务里取号，返回后事务已经提交：和建单方法上的 @Transactional 一样 */
