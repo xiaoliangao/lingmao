@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * 列表和导出共用的：查询条件怎么拼、一页的行怎么补齐分类、待批改动、证照、采购员名字（RFC 004 §8）
@@ -57,7 +58,7 @@ class SupplierLists {
                     .or().apply("short_name ILIKE {0}", like).or().apply("contact ILIKE {0}", like));
         }
         if (StringUtils.hasText(query.getCategory())) {
-            inCategory(wrapper, query.getCategory());
+            inCategory(wrapper, List.of(query.getCategory()));
         }
         if (query.getStatus() != null && !query.getStatus().isEmpty()) {
             wrapper.in("status", query.getStatus().stream().map(Enum::name).toList());
@@ -84,10 +85,11 @@ class SupplierLists {
         return wrapper.orderByAsc("code");
     }
 
-    /** 分类里有 category 的 */
-    static void inCategory(QueryWrapper<Supplier> wrapper, String category) {
-        wrapper.apply("EXISTS (SELECT 1 FROM sup_supplier_category c WHERE c.supplier_id = sup_supplier.id AND c.category = {0})",
-                category);
+    /** 分类里有 categories 其中任一个的（不能是空的） */
+    static void inCategory(QueryWrapper<Supplier> wrapper, List<String> categories) {
+        String marks = IntStream.range(0, categories.size()).mapToObj(i -> "{" + i + "}").collect(Collectors.joining(", "));
+        wrapper.apply("EXISTS (SELECT 1 FROM sup_supplier_category c WHERE c.supplier_id = sup_supplier.id AND c.category IN ("
+                + marks + "))", categories.toArray());
     }
 
     /** 关键字 → ILIKE 的样子：两头加 %，关键字里的 % _ \ 当普通字符（搜"100%"不会匹配所有 100 开头的） */

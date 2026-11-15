@@ -22,7 +22,7 @@ import { EDIT_PERM, changePct, recordableTypes, shortDay, skuLabel, styleLabel, 
  *     <PriceHistory :subject="{ kind: 'material', id, code: m.code, name: m.name }" />
  *   </el-tab-pane>
  *
- * 款式详情（第 4c 步）：:subject="{ kind: 'style', id, code: 款号, name: 款名 }"，只有加工价
+ * 款式详情：:subject="{ kind: 'style', id, code: 款号, name: 款名 }"，只有加工价
  */
 const props = defineProps<{ subject: PriceSubject }>()
 

@@ -73,10 +73,10 @@
 
     <select id="selectPickPage" resultType="com.lingmao.scm.module.style.dto.StylePickVO">
         SELECT s.id, s.code, s.name, s.alias_name, s.brand, s.category_id, c.name AS category_name, s.year, s.season,
-               s.tag_price, s.tech_pack_status
+               s.tag_price, s.tech_pack_status, s.status
         FROM sty_style s
         JOIN bas_category c ON c.id = s.category_id
-        WHERE s.status = 'ENABLED'
+        WHERE s.status IN ('ENABLED'<if test="q.includeDraft != null and q.includeDraft">, 'DRAFT'</if>)
         <if test="q.keyword != null and q.keyword.trim() != ''">
             AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
             OR s.alias_name ILIKE '%' || #{q.keyword} || '%' OR s.brand ILIKE '%' || #{q.keyword} || '%')

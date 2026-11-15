@@ -21,7 +21,7 @@ export interface PriceRow {
   skuColorName: string | null
   skuSpec: string | null
   styleId: number | null
-  /** 第 4c 步接上款式以前是 null */
+  /** 物料价是 null */
   styleCode: string | null
   styleName: string | null
   /** 字典 process_mode 的值 */

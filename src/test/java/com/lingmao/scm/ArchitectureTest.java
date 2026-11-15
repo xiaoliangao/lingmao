@@ -49,7 +49,7 @@ class ArchitectureTest {
             entry("purchase", Set.of("order", "inventory", "supplier", "price")),
             entry("order", Set.of("techpack")),
             entry("techpack", Set.of("style", "price")),
-            entry("price", Set.of("supplier", "basic")),
+            entry("price", Set.of("style", "supplier", "basic")),
             entry("style", Set.of("supplier", "basic")),
             entry("supplier", Set.of("basic")),
             entry("inventory", Set.of("basic")),

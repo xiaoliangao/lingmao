@@ -28,8 +28,7 @@ import { recordableTypes, shortDay, skuLabel, styleLabel, today, type PriceSubje
  *   form.value?.open({ kind: 'material', id, code, name })          录价格
  *   form.value?.open(subject, row)                                    调价（row 是现价那一行）
  *
- * 第 4c 步：款式 —— 款式那一格现在只有"定住"的样子（款式页打开、调价）；CAN_PICK_STYLE 改成 true 时，
- * 在下面 v-else 那里接 <DataPick kind="style" single>，选中后填 form.styleId 和 names.style
+ * 选款式时草稿也列出来（打样阶段工厂就报价，RFC 006 §3）；停用的不列，后端也拦
  */
 const emit = defineEmits<{ saved: [] }>()
 const user = useUserStore()
@@ -126,7 +125,7 @@ async function loadSkus() {
   if (mine === skuSeq) skus.value = result.list.filter((row) => row.materialId === id)
 }
 
-function onPick(rows: MaterialPickRow[] | StylePickRow[]) {
+function onPickMaterial(rows: MaterialPickRow[] | StylePickRow[]) {
   const row = (rows as MaterialPickRow[])[0]
   if (!row || row.materialId === form.materialId) return
   form.materialId = row.materialId
@@ -134,6 +133,16 @@ function onPick(rows: MaterialPickRow[] | StylePickRow[]) {
   names.material = `${row.materialCode} ${row.materialName}`
   names.materialCode = row.materialCode
   void loadSkus()
+}
+
+// ---------- 款式 ----------
+const pickingStyle = ref(false)
+
+function onPickStyle(rows: MaterialPickRow[] | StylePickRow[]) {
+  const row = (rows as StylePickRow[])[0]
+  if (!row) return
+  form.styleId = row.id
+  names.style = `${row.code} ${row.name}`
 }
 
 const skuOptions = computed(() =>
@@ -303,7 +312,10 @@ watch(() => form.type, () => formRef.value?.clearValidate())
       <template v-else>
         <el-form-item label="款式" prop="styleId">
           <div v-if="styleFixed" class="fixed">{{ names.style }}</div>
-          <!-- 第 4c 步：款式 —— 这里接 <DataPick kind="style" single>（CAN_PICK_STYLE 为 false 时走不到这里） -->
+          <el-button v-else class="pick" @click="pickingStyle = true">
+            <span v-if="names.style">{{ names.style }}</span>
+            <span v-else class="dim">从款式库选</span>
+          </el-button>
         </el-form-item>
         <el-form-item label="加工方式" prop="processMode">
           <DictSelect v-model="form.processMode" type="process_mode" :disabled="!!adjusting" />
@@ -340,7 +352,8 @@ watch(() => form.type, () => formRef.value?.clearValidate())
     </template>
   </el-dialog>
 
-  <DataPick v-model="picking" kind="sku" single @pick="onPick" />
+  <DataPick v-model="picking" kind="sku" single @pick="onPickMaterial" />
+  <DataPick v-model="pickingStyle" kind="style" single :params="{ includeDraft: true }" @pick="onPickStyle" />
 </template>
 
 <style scoped>

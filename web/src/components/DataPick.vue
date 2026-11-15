@@ -4,7 +4,7 @@ import { categoryApi, materialApi, materialCategoryApi } from '@/api/basic'
 import { styleApi } from '@/api/style'
 import type { MaterialPickRow, TreeNode } from '@/types/basic'
 import type { PageResult } from '@/types/system'
-import { TECH_PACK_STATUS, type StylePickRow } from '@/types/style'
+import { STYLE_STATUS, TECH_PACK_STATUS, type StylePickRow } from '@/types/style'
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
 import { formatPrice } from '@/utils/format'
@@ -18,6 +18,7 @@ import { formatPrice } from '@/utils/format'
  *
  * kind：sku = 物料 SKU（GET /api/materials/pick，启用物料的启用 SKU），have 是 SKU id；
  *       style = 款式（GET /api/styles/pick，启用的款式，按一级品类分组），have 是款式 id。
+ * params：每次查询都带上的条件，如录加工价时 :params="{ includeDraft: true }"（草稿款式也列出来，名字后面标"草稿"）。
  * pick 发出的行按 kind 是 MaterialPickRow[] 或 StylePickRow[]，接的地方按自己的 kind 断言。
  * 加一种：SOURCES 加一项，模板里按 kind 加它的列，PickRow 加上它的行类型
  *
@@ -26,11 +27,10 @@ import { formatPrice } from '@/utils/format'
  *   <DataPick v-model="picking" kind="sku" single @pick="(rows) => choose(rows[0])" />
  */
 type PickRow = MaterialPickRow | StylePickRow
-const props = withDefaults(defineProps<{ kind?: 'sku' | 'style'; have?: number[]; single?: boolean }>(), {
-  kind: 'sku',
-  have: () => [],
-  single: false,
-})
+const props = withDefaults(
+  defineProps<{ kind?: 'sku' | 'style'; have?: number[]; single?: boolean; params?: Record<string, string | number | boolean> }>(),
+  { kind: 'sku', have: () => [], single: false, params: () => ({}) },
+)
 const emit = defineEmits<{ pick: [rows: MaterialPickRow[] | StylePickRow[]] }>()
 const visible = defineModel<boolean>({ required: true })
 
@@ -58,7 +58,7 @@ const units = useDict('unit')
 const seasons = useDict('season')
 const groups = shallowRef<TreeNode[]>([])
 const { query, page, size, list, total, loading, search } = useTable({
-  fetch: (params): Promise<PageResult<PickRow>> => source.value.fetch(params),
+  fetch: (params): Promise<PageResult<PickRow>> => source.value.fetch({ ...props.params, ...params }),
   query: { keyword: '', categoryId: undefined as number | undefined },
   immediate: false,
 })
@@ -173,7 +173,7 @@ const rowClass = ({ row }: { row: PickRow }) => (isHad(row) ? 'is-had' : chosen.
               <span v-else class="dpk-thumb" />
               <span class="dpk-text">
                 <span>{{ row.name }}<template v-if="row.aliasName"> · {{ row.aliasName }}</template></span>
-                <small class="code">{{ row.code }}<template v-if="isHad(row as StylePickRow)"> · 已在单上</template></small>
+                <small class="code">{{ row.code }}<template v-if="isHad(row as StylePickRow)"> · 已在单上</template><span v-if="row.status === 'DRAFT'" class="dpk-amber"> · {{ STYLE_STATUS.DRAFT.label }}</span></small>
               </span>
             </span>
           </template>

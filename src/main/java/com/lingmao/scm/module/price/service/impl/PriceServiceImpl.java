@@ -21,6 +21,8 @@ import com.lingmao.scm.module.price.mapper.MaterialUnit;
 import com.lingmao.scm.module.price.mapper.MaterialUnitKey;
 import com.lingmao.scm.module.price.mapper.PriceMapper;
 import com.lingmao.scm.module.price.service.PriceService;
+import com.lingmao.scm.module.style.dto.StyleRef;
+import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.DictDataService;
@@ -49,9 +51,8 @@ import java.util.stream.Stream;
 /**
  * 价格档案（RFC 006）。规则照 PRD §6.10 规则 1、2、5 和原型 5e-price.js 的 recordPrice、voidPrice。
  * <p>
- * 跨域只调 Service：供应商能不能用、名称（SupplierService），物料和 SKU 的状态、采购单位、名称（MaterialService）。
- * 款式的两处还没接，标了"第 4c 步：款式"：录加工价时查款式存在且启用、列表里填款号和名称（RFC 006 §14 实现记录）；
- * 在那之前款式由外键兜底（不存在的款式插不进去，1000"关联的数据不存在"）
+ * 跨域只调 Service：供应商能不能用、名称（SupplierService），物料和 SKU 的状态、采购单位、名称（MaterialService），
+ * 款式能不能录、款号和名称（StyleService）
  */
 @Service
 @RequiredArgsConstructor
@@ -71,6 +72,7 @@ public class PriceServiceImpl implements PriceService {
     private final PriceMapper priceMapper;
     private final SupplierService supplierService;
     private final MaterialService materialService;
+    private final StyleService styleService;
     private final DictDataService dictDataService;
     private final UserService userService;
     private final Clock clock;
@@ -104,7 +106,7 @@ public class PriceServiceImpl implements PriceService {
                 .collect(Collectors.toMap(MaterialRef::id, Function.identity()));
         Map<Long, MaterialSkuRef> skus = materialService.skuRefs(ids(rows, PriceRowVO::getMaterialSkuId)).stream()
                 .collect(Collectors.toMap(MaterialSkuRef::id, Function.identity()));
-        // 第 4c 步：款式 —— styleService.refs(ids(rows, PriceRowVO::getStyleId)) 取款号、名称，下面循环里填 styleCode、styleName
+        Map<Long, StyleRef> styles = styleService.refs(ids(rows, PriceRowVO::getStyleId));
         Map<Long, String> users = userService.nicknames(Stream.concat(rows.stream().map(PriceRowVO::getCreateBy),
                 rows.stream().map(PriceRowVO::getVoidBy)).filter(Objects::nonNull).collect(Collectors.toSet()));
         for (PriceRowVO row : rows) {
@@ -124,6 +126,11 @@ public class PriceServiceImpl implements PriceService {
                 row.setSkuCode(sku.code());
                 row.setSkuColorName(sku.colorName());
                 row.setSkuSpec(sku.spec());
+            }
+            StyleRef style = styles.get(row.getStyleId());
+            if (style != null) {
+                row.setStyleCode(style.code());
+                row.setStyleName(style.name());
             }
             row.setCreateByName(users.get(row.getCreateBy()));
             row.setVoidByName(users.get(row.getVoidBy()));
@@ -177,8 +184,7 @@ public class PriceServiceImpl implements PriceService {
             if (req.getStyleId() == null || !StringUtils.hasText(req.getProcessMode())) {
                 throw new BizException(400, "加工价要选款式和加工方式");
             }
-            // 第 4c 步：款式 —— styleService.checkUsable(req.getStyleId())：款式不存在、停用的不能录（1000）。
-            // 现在由外键兜底：不存在的款式插不进去（1000"关联的数据不存在"），停用的还拦不住
+            styleService.checkUsable(req.getStyleId());   // 不存在 404，停用 1000；草稿能录
             checkProcessMode(req.getProcessMode());
             p.setStyleId(req.getStyleId());
             p.setProcessMode(req.getProcessMode());

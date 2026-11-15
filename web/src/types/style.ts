@@ -147,6 +147,8 @@ export interface StylePickRow {
   id: number
   code: string
   name: string
+  /** 只列启用的；带 includeDraft 时也有草稿 */
+  status: StyleStatus
   aliasName: string | null
   brand: string
   categoryId: number

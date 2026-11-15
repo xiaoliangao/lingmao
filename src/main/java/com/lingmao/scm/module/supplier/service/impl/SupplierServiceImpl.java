@@ -536,13 +536,14 @@ public class SupplierServiceImpl implements SupplierService {
     // ------------------------------------------------------------------ 给别的页面、别的域
 
     @Override
-    public List<SupplierOption> options(String category, Usage usage, String keyword, Long includeId) {
+    public List<SupplierOption> options(List<String> categories, Usage usage, String keyword, Long includeId) {
         Set<SupplierStatus> statuses = SupplierRules.USABLE.get(usage == null ? Usage.SAMPLE : usage);
         QueryWrapper<Supplier> wrapper = new QueryWrapper<Supplier>()
                 .select("id", "code", "short_name", "status")
                 .in("status", statuses.stream().map(Enum::name).toList());
-        if (StringUtils.hasText(category)) {
-            SupplierLists.inCategory(wrapper, category);
+        List<String> wanted = categories == null ? List.of() : categories.stream().filter(StringUtils::hasText).toList();
+        if (!wanted.isEmpty()) {
+            SupplierLists.inCategory(wrapper, wanted);
         }
         if (StringUtils.hasText(keyword)) {
             String like = SupplierLists.likePattern(keyword);

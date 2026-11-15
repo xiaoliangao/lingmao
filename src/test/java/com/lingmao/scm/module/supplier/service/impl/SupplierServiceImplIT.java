@@ -321,8 +321,11 @@ class SupplierServiceImplIT {
         query.setToApprove(true);
         assertThat(supplierService.page(query).getList()).isEmpty();
 
-        assertThat(supplierService.options("GARMENT", Usage.SAMPLE, req.getShortName(), null))
+        assertThat(supplierService.options(List.of("GARMENT"), Usage.SAMPLE, req.getShortName(), null))
                 .extracting(SupplierOption::id).containsExactly(id);
+        assertThat(supplierService.options(List.of("PROCESSOR", "GARMENT"), Usage.SAMPLE, req.getShortName(), null))
+                .extracting(SupplierOption::id).containsExactly(id);   // 几个分类任一个就算
+        assertThat(supplierService.options(List.of("PROCESSOR"), Usage.SAMPLE, req.getShortName(), null)).isEmpty();
         assertThat(supplierService.options(null, Usage.BULK, req.getShortName(), null)).isEmpty();
         assertThat(supplierService.options(null, Usage.BULK, req.getShortName(), id))
                 .extracting(SupplierOption::id).containsExactly(id);

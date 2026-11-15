@@ -10,4 +10,6 @@ import lombok.EqualsAndHashCode;
 public class StylePickQuery extends PageQuery {
     private String keyword;
     private Long categoryId;
+    /** 录加工价时带上：草稿也列出来（打样阶段就报价）。不带只列启用的（以后选进单据） */
+    private Boolean includeDraft;
 }

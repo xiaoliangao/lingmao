@@ -498,9 +498,8 @@ public class StyleServiceImpl implements StyleService {
     @Override
     public void checkUsable(long id) {
         Style s = getEntity(id);
-        if (s.getStatus() != ENABLED) {
-            String why = s.getStatus() == DRAFT ? "启用以后才能用" : "不能再用";
-            throw new BizException("款式 " + s.getCode() + " 现在是「" + s.getStatus().getLabel() + "」，" + why);
+        if (s.getStatus() == DISABLED) {
+            throw new BizException("款式 " + s.getCode() + " 现在是「" + s.getStatus().getLabel() + "」，不能再用");
         }
     }
 

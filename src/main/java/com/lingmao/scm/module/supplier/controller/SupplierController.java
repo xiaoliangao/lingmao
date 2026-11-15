@@ -262,9 +262,9 @@ public class SupplierController {
 
     // ------------------------------------------------------------------ 下拉、导入导出
 
-    @Operation(summary = "下拉：按分类、按能不能用筛（usage 不传 = SAMPLE）")
+    @Operation(summary = "下拉：按分类（逗号隔开多个，任一个就算）、按能不能用筛（usage 不传 = SAMPLE）")
     @GetMapping("/options")
-    public R<List<SupplierOption>> options(@RequestParam(value = "category", required = false) String category,
+    public R<List<SupplierOption>> options(@RequestParam(value = "category", required = false) List<String> category,
                                            @RequestParam(value = "usage", required = false) SupplierService.Usage usage,
                                            @RequestParam(value = "keyword", required = false) String keyword,
                                            @RequestParam(value = "includeId", required = false) Long includeId) {

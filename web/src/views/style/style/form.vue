@@ -74,6 +74,8 @@ const form = reactive<StyleCreateForm>({
   files: [],
 })
 const guard = useUnsavedChanges(form)
+/** 默认加工厂只列成衣厂、加工厂（RFC 005 §9）；只是默认值，存的时候不查（架构 A23） */
+const FACTORY_CATEGORIES = ['GARMENT', 'PROCESSOR']
 
 /** 编辑时给下拉框显示名字用（它们还没搜过，不知道 id 叫什么），以及只读的几项 */
 const names = reactive({
@@ -402,7 +404,7 @@ const title = computed(() => (editing ? `编辑款式 ${names.code}` : '新建�
             </div>
           </el-form-item>
           <el-form-item label="默认加工厂">
-            <SupplierSelect v-model="form.defaultFactoryId" :label="names.factory" clearable />
+            <SupplierSelect v-model="form.defaultFactoryId" :category="FACTORY_CATEGORIES" :label="names.factory" clearable />
           </el-form-item>
           <el-form-item label="上市日期">
             <el-date-picker v-model="form.launchDate" type="date" value-format="YYYY-MM-DD" placeholder="选填" class="date" />

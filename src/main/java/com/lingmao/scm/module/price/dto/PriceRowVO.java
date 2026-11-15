@@ -34,7 +34,7 @@ public class PriceRowVO {
     private String skuSpec;
 
     private Long styleId;
-    /** 款号、款式名称：第 4c 步接上款式以后才有 */
+    /** 款号、款式名称（StyleService.refs） */
     private String styleCode;
     private String styleName;
 

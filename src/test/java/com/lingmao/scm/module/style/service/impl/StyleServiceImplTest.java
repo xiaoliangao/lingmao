@@ -145,16 +145,15 @@ class StyleServiceImplTest extends StyleTestBase {
         verify(styleMapper).update(any(Style.class), any());
     }
 
-    /** 给价格档案：启用的能用；草稿、停用 1000 说清是什么状态；不存在 404 */
+    /** 给价格档案：启用、草稿的能录（打样阶段就报价）；停用 1000 说清是什么状态；不存在 404 */
     @Test
-    void checkUsable_onlyEnabled() {
+    void checkUsable_disabledRejected() {
         when(styleMapper.selectById(5L)).thenReturn(style(5L, "FS2611080701", StyleStatus.ENABLED));
         when(styleMapper.selectById(6L)).thenReturn(style(6L, "FS2611080702", StyleStatus.DRAFT));
         when(styleMapper.selectById(7L)).thenReturn(style(7L, "FS2611080703", StyleStatus.DISABLED));
 
         service.checkUsable(5L);
-        assertThat(catchThrowableOfType(BizException.class, () -> service.checkUsable(6L)))
-                .hasMessage("款式 FS2611080702 现在是「草稿」，启用以后才能用");
+        service.checkUsable(6L);
         assertThat(catchThrowableOfType(BizException.class, () -> service.checkUsable(7L)))
                 .hasMessage("款式 FS2611080703 现在是「停用」，不能再用")
                 .extracting(BizException::getCode).isEqualTo(ErrorCodes.BIZ_ERROR);

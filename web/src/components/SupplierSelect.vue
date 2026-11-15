@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { supplierApi } from '@/api/supplier'
 import { SUPPLIER_STATUS, type SupplierOption, type SupplierUsage } from '@/types/supplier'
 
 /**
  * 选供应商：输入编码或名称搜索，v-model 是供应商 id（RFC 004 §7）。一次最多列 50 家，再多就多打几个字。
- * - category：只列分类里有它的（字典 supplier_category 的 value，如 FABRIC 面料商、GARMENT 成衣厂）
+ * - category：只列分类里有它的（字典 supplier_category 的 value，如 FABRIC 面料商、GARMENT 成衣厂）；
+ *   给数组就列有其中任一个的，如默认加工厂 :category="['GARMENT', 'PROCESSOR']"
  * - usage：SAMPLE（默认）打样、录价格用，待准入、审批中、合作中的都能选；BULK 大货单用，只有合作中的
  * - 已经选中的那家（编辑旧记录）停用了、拉黑了也照样显示名字，后面标状态；想换就换，不换也能原样保存。
  *   编辑旧记录时把名字传给 label：还没搜过，下拉框不知道这个 id 叫什么
@@ -13,12 +14,14 @@ import { SUPPLIER_STATUS, type SupplierOption, type SupplierUsage } from '@/type
  *
  *   <SupplierSelect v-model="form.defaultSupplierId" category="FABRIC" :label="form.defaultSupplierName" clearable />
  */
-const props = withDefaults(defineProps<{ category?: string; usage?: SupplierUsage; label?: string | null }>(), {
+const props = withDefaults(defineProps<{ category?: string | string[]; usage?: SupplierUsage; label?: string | null }>(), {
   category: undefined,
   usage: 'SAMPLE',
   label: null,
 })
 const model = defineModel<number | null>()
+/** 接口收逗号隔开的；也拿来判断分类变没变（模板里写的数组每次渲染都是新的） */
+const categoryParam = computed(() => [props.category ?? []].flat().join(',') || undefined)
 
 const options = ref<SupplierOption[]>([])
 const loading = ref(false)
@@ -32,7 +35,7 @@ async function search(keyword = '') {
   loading.value = true
   try {
     const result = await supplierApi.options({
-      category: props.category,
+      category: categoryParam.value,
       usage: props.usage,
       keyword: keyword.trim() || undefined,
       includeId: model.value ?? undefined,
@@ -49,7 +52,7 @@ async function search(keyword = '') {
 }
 
 /** 分类、用途变了，已经列出来的不对了，下次展开重新取 */
-watch(() => [props.category, props.usage], () => {
+watch(() => `${categoryParam.value}|${props.usage}`, () => {
   options.value = []
 })
 

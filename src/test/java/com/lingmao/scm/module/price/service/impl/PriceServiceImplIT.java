@@ -204,7 +204,10 @@ class PriceServiceImplIT {
         assertThat(now.unit()).isEqualTo("KG");
     }
 
-    /** 规则：加工价按加工方式分开：清加工 38 不会被当成包工包料的价（PRD §6.10 验收 4） */
+    /**
+     * 规则：加工价按加工方式分开：清加工 38 不会被当成包工包料的价（PRD §6.10 验收 4）。
+     * 草稿款式能录（打样就报价），列表里款号、名称由 StyleService 填；款式停用后再录 1000（RFC 006 §3）
+     */
     @Test
     void currentProcess_modeSeparated() {
         long factory = supplier();
@@ -222,6 +225,18 @@ class PriceServiceImplIT {
         PriceRef ref = priceService.currentProcess(factory, style, "CMT", today).orElseThrow();
         assertThat(ref.price()).isEqualByComparingTo("38");
         assertThat(ref.unit()).isEqualTo("PIECE");
+
+        PriceQuery byStyle = new PriceQuery();
+        byStyle.setStyleId(style);
+        byStyle.setCurrent(true);
+        PriceRowVO row = priceService.page(byStyle).getList().getFirst();
+        assertThat(row.getStyleCode()).startsWith("ITP");
+        assertThat(row.getStyleName()).isEqualTo("IT 价格款");
+
+        jdbcTemplate.update("UPDATE sty_style SET status = 'DISABLED' WHERE id = ?", style);
+        cmt.setPrice(new BigDecimal("40"));
+        assertThat(catchThrowableOfType(BizException.class, () -> record(cmt)))
+                .extracting(BizException::getCode).isEqualTo(ErrorCodes.BIZ_ERROR);
     }
 
     /**
@@ -400,7 +415,7 @@ class PriceServiceImplIT {
                 Long.class, material, code + "-" + specCode, specCode, specCode);
     }
 
-    /** 一个款式（只为了加工价有外键可指），品类、尺码组随手建 */
+    /** 一个草稿款式（只为了加工价有外键可指），品类、尺码组随手建 */
     private long style() {
         String suffix = suffix();
         Long category = jdbcTemplate.queryForObject(

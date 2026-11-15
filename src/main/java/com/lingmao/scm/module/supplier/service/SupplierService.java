@@ -73,10 +73,11 @@ public interface SupplierService {
 
     /**
      * 下拉（SupplierSelect）：按分类、按能不能用筛，关键字查编码、全称、简称，按编码排，最多 50 条。
+     * categories 空 = 不按分类筛；给几个就列分类里有其中任一个的（款式的默认加工厂：成衣厂或加工厂）。
      * usage 不传按 SAMPLE（待准入、审批中、合作中都能选）；BULK 只要合作中。
      * includeId：表单里已经选着的那一家，不满足条件也带上（停用了照样显示它的名字）
      */
-    List<SupplierOption> options(String category, Usage usage, String keyword, Long includeId);
+    List<SupplierOption> options(List<String> categories, Usage usage, String keyword, Long includeId);
 
     /** 单据、价格档案显示和带默认值用：编码、全称、简称、状态、税率、结算方式、账期、发票类型。不存在抛 404 */
     SupplierRef getRef(long id);

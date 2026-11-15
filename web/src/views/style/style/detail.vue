@@ -11,6 +11,7 @@ import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import ColorSelect from '@/components/ColorSelect.vue'
+import PriceHistory from '@/components/price/PriceHistory.vue'
 import { useDict } from '@/composables/useDict'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
@@ -20,9 +21,9 @@ import { confirmRemove } from '@/views/basic/common'
 import DesignFiles from './DesignFiles.vue'
 
 /**
- * 款式详情（/styles/:id，RFC 005 §9，原型 /styles/:code）。左边页签：基本信息、颜色尺码、操作记录；右边图片、设计附件。
+ * 款式详情（/styles/:id，RFC 005 §9，原型 /styles/:code）。左边页签：基本信息、颜色尺码、价格、操作记录；右边图片、设计附件。
  * 顶上的按钮按后端给的 actions 显示（状态 + 权限，后端算好的）。
- * 价格页签（加工价，RFC 006）第 4c 步加，位置在模板里"颜色尺码"和"操作记录"之间；资料包、订单页签第 3 批加。
+ * 价格页签只有这款的加工价（RFC 006 §9），要 price:price:list，没有就不显示；资料包、订单页签第 3 批加。
  * 一款一个页签（详情路由，见 router/index.ts）：id 在这里取一次，不跟着路由变
  */
 const route = useRoute()
@@ -49,7 +50,7 @@ type SkuRow = StyleSku & { draftBarcode: string; draftPrice: number | null }
 const detail = ref<StyleDetail | null>(null)
 const skus = ref<SkuRow[]>([])
 const notFound = ref(false)
-const tab = ref<'info' | 'skus' | 'logs'>('info')
+const tab = ref<'info' | 'skus' | 'prices' | 'logs'>('info')
 const logList = ref<InstanceType<typeof DocLogList>>()
 const loadLogs = () => styleApi.logs(id)
 const canEdit = computed(() => user.hasPerm('style:style:edit'))
@@ -448,7 +449,9 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
             </el-table>
           </el-tab-pane>
 
-          <!-- 第 4c 步：价格页签（这款的加工价，RFC 006）加在这里，name="prices"，tab 的类型跟着加 -->
+          <el-tab-pane v-if="user.hasPerm('price:price:list')" label="价格" name="prices" lazy>
+            <PriceHistory :subject="{ kind: 'style', id, code: s.code, name: s.name }" />
+          </el-tab-pane>
 
           <el-tab-pane label="操作记录" name="logs" lazy>
             <DocLogList ref="logList" :load="loadLogs" :actions="LOG_ACTIONS" :statuses="LOG_STATUSES" />

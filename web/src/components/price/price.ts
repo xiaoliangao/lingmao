@@ -1,12 +1,6 @@
 import type { PriceRow, PriceType } from '@/types/price'
 
-/**
- * 价格记录页签（PriceHistory）和录价对话框（PriceForm）共用的小件。
- *
- * 第 4c 步：款式 —— DataPick 能选款式（kind="style"）以后改成 true：供应商页签上就能录加工价（PriceForm 里款式那一格接 DataPick）。
- * 在那之前，加工价只能从款式详情的"价格"页签录（款式是定的），或者在现价那一行点"调价"
- */
-export const CAN_PICK_STYLE = false
+/** 价格记录页签（PriceHistory）和录价对话框（PriceForm）共用的小件 */
 
 /** 从哪一页打开的：物料、供应商、款式详情。code、name 是给对话框显示、查 SKU 用的 */
 export interface PriceSubject {
@@ -20,8 +14,7 @@ export const EDIT_PERM: Record<PriceType, string> = { MATERIAL: 'price:material:
 
 /** 从这一页能录哪几种：有权限，而且对话框里选得到要录的东西（物料页只有物料价，款式页只有加工价） */
 export function recordableTypes(kind: PriceSubject['kind'], hasPerm: (perm: string) => boolean): PriceType[] {
-  const reachable: PriceType[] =
-    kind === 'material' ? ['MATERIAL'] : kind === 'style' ? ['PROCESS'] : CAN_PICK_STYLE ? ['MATERIAL', 'PROCESS'] : ['MATERIAL']
+  const reachable: PriceType[] = kind === 'material' ? ['MATERIAL'] : kind === 'style' ? ['PROCESS'] : ['MATERIAL', 'PROCESS']
   return reachable.filter((type) => hasPerm(EDIT_PERM[type]))
 }
 
@@ -44,7 +37,7 @@ export function skuLabel(row: Pick<PriceRow, 'skuCode' | 'skuColorName' | 'skuSp
   return [row.skuColorName, row.skuSpec].filter(Boolean).join(' · ') || row.skuCode || ''
 }
 
-/** 款式的叫法。第 4c 步：款式 —— 后端填上 styleCode、styleName 以后就不会走到"款式 #id" */
+/** 款式的叫法；款式被删掉的不会有（有价格的款式删不掉），"款式 #id" 只是兜底 */
 export function styleLabel(row: Pick<PriceRow, 'styleId' | 'styleCode' | 'styleName'>): string {
   return row.styleCode ? `${row.styleCode} ${row.styleName ?? ''}`.trim() : `款式 #${row.styleId}`
 }

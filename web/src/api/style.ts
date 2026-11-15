@@ -71,8 +71,9 @@ export const styleApi = {
   /** 自动款号预览：不占号，保存时才取。设计师没编号、今天流水满了回 1000，消息说清楚怎么办 */
   codePreview: (styleClass: string, designerId: number | null) =>
     http.get<string>(`${base}/code-preview`, { styleClass, designerId: designerId ?? undefined }, { silent: true }),
-  /** 选款式的弹窗：启用的款式，关键字查款号、名称、花名、品牌；品类含下级（登录即可） */
-  pick: (params: PageParams & { keyword?: string; categoryId?: number }) => http.get<PageResult<StylePickRow>>(`${base}/pick`, params),
+  /** 选款式的弹窗：启用的款式（includeDraft 时草稿也列，录加工价用），关键字查款号、名称、花名、品牌；品类含下级（登录即可） */
+  pick: (params: PageParams & { keyword?: string; categoryId?: number; includeDraft?: boolean }) =>
+    http.get<PageResult<StylePickRow>>(`${base}/pick`, params),
   create: ({ images, files, ...data }: StyleCreateForm) =>
     http.post<StyleCreateResult>(base, { ...data, images: attachmentBody(images), files: attachmentBody(files) }),
   update: (id: number, data: StyleForm) => http.put<void>(`${base}/${id}`, data),

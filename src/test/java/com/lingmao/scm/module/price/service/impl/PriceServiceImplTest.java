@@ -9,6 +9,7 @@ import com.lingmao.scm.module.price.dto.PriceSaveReq;
 import com.lingmao.scm.module.price.entity.Price;
 import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.mapper.PriceMapper;
+import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.entity.SupplierStatus;
 import com.lingmao.scm.module.supplier.service.SupplierService;
@@ -68,6 +69,8 @@ class PriceServiceImplTest {
     @Mock
     private MaterialService materialService;
     @Mock
+    private StyleService styleService;
+    @Mock
     private DictDataService dictDataService;
     @Mock
     private UserService userService;
@@ -76,7 +79,7 @@ class PriceServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PriceServiceImpl(priceMapper, supplierService, materialService, dictDataService, userService, CLOCK);
+        service = new PriceServiceImpl(priceMapper, supplierService, materialService, styleService, dictDataService, userService, CLOCK);
     }
 
     @AfterEach
@@ -220,6 +223,21 @@ class PriceServiceImplTest {
                     assertThat(e.getCode()).isEqualTo(ErrorCodes.STATE_CHANGED);
                     assertThat(e.getMessage()).isEqualTo("这条已经作废了");
                 });
+    }
+
+    /** 规则：停用的款式不能录加工价（RFC 006 §3），StyleService 说为什么，不插 */
+    @Test
+    void record_processForDisabledStyle_rejected() {
+        loginAs("price:process:edit");
+        stubSupplier();
+        doThrow(new BizException("款式 FS2611080701 现在是「停用」，不能再用")).when(styleService).checkUsable(500L);
+
+        assertThatThrownBy(() -> service.record(processReq("CMT")))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
+                    assertThat(e.getMessage()).contains("停用");
+                });
+        verify(priceMapper, never()).insert(any(Price.class));
     }
 
     /** 规则：作废按那条的类型查权限：只有物料价权限的人作废加工价 → 403，不改库 */

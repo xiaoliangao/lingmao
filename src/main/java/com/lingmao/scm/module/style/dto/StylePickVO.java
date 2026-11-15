@@ -2,6 +2,7 @@ package com.lingmao.scm.module.style.dto;
 
 import com.lingmao.scm.module.basic.dto.ColorOption;
 import com.lingmao.scm.module.biz.dto.AttachmentVO;
+import com.lingmao.scm.module.style.entity.StyleStatus;
 import com.lingmao.scm.module.style.entity.TechPackStatus;
 import lombok.Data;
 
@@ -25,6 +26,8 @@ public class StylePickVO {
     private String season;
     private BigDecimal tagPrice;
     private TechPackStatus techPackStatus;
+    /** 只有带 includeDraft 时才会有草稿 */
+    private StyleStatus status;
     private AttachmentVO image;
     /** 款式上启用的颜色，按顺序 */
     private List<ColorOption> colors = List.of();
