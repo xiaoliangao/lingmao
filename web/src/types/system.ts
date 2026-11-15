@@ -39,6 +39,14 @@ export interface User {
   phone: string | null
   status: number
   createTime: string
+  /** 默认主体公司：新建单据时带出来 */
+  defaultCompanyId: number | null
+  dept: string | null
+  post: string | null
+  /** 设计师编号，两位数字 01-99，进款号；不是设计师的为空 */
+  designerNo: string | null
+  /** 编号已经用来编过款号，不能再改、清空 */
+  designerNoLocked: boolean
 }
 
 /** 角色的数据范围：ALL 全部 / SELF 本人（PRD §3.2）。有"全部"角色的人，权限里多一个 data:all */
@@ -62,6 +70,8 @@ export interface DictType {
   remark: string | null
   status: number
   createTime: string
+  /** 数值列叫什么（"备料比 %""默认天数"）；空 = 这个字典不用数值 */
+  numLabel: string | null
 }
 
 export interface DictData {
@@ -73,6 +83,11 @@ export interface DictData {
   status: number
   remark: string | null
   createTime: string
+  numValue: number | null
+  /** 内置项：程序按 value 认它，不能删、不能停用 */
+  builtin: boolean
+  /** 贸易代工用的值：代工没打开时下拉里没有它 */
+  trade: boolean
 }
 
 /** 字典选项。停用的也在（旧数据里存着它的值，显示时要翻成文字）；下拉里只列启用的，见 DictSelect */

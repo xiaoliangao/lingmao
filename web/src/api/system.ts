@@ -9,10 +9,21 @@ export interface PageParams {
   size: number
 }
 
+/** 用户的工作资料（RFC 003 §4.3） */
+export interface UserProfileForm {
+  defaultCompanyId?: number | null
+  dept?: string | null
+  post?: string | null
+  /** 两位数字 01-99；编过款号以后不能改、清空 */
+  designerNo?: string | null
+}
+
 export const userApi = {
   page: (params: PageParams & { username?: string; status?: number }) => http.get<PageResult<User>>('/api/users', params),
-  create: (data: { username: string; password: string; nickname: string; phone?: string }) => http.post<number>('/api/users', data),
-  update: (id: number, data: { nickname: string; phone?: string | null; status: number }) => http.put<void>(`/api/users/${id}`, data),
+  create: (data: { username: string; password: string; nickname: string; phone?: string } & UserProfileForm) => http.post<number>('/api/users', data),
+  /** 整体覆盖：没传的资料（部门、设计师编号……）会被清空，表单要把原来的值带上 */
+  update: (id: number, data: { nickname: string; phone?: string | null; status: number } & UserProfileForm) =>
+    http.put<void>(`/api/users/${id}`, data),
   remove: (id: number) => http.delete<void>(`/api/users/${id}`),
   resetPassword: (id: number, password: string) => http.post<void>(`/api/users/${id}/reset-password`, { password }),
   roleIds: (id: number) => http.get<number[]>(`/api/users/${id}/roles`),
@@ -67,6 +78,7 @@ export interface DictTypeForm {
   name: string
   remark?: string | null
   status: number
+  numLabel?: string | null
 }
 
 export interface DictDataForm {
@@ -76,6 +88,7 @@ export interface DictDataForm {
   sort: number
   status: number
   remark?: string | null
+  numValue?: number | null
 }
 
 export const dictApi = {

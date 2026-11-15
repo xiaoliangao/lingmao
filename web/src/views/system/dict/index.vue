@@ -28,19 +28,19 @@ function selectType(row: DictType | null) {
 
 const typeDialog = ref(false)
 const typeEditingId = ref<number | null>(null)
-const typeForm = reactive({ code: '', name: '', remark: '', status: 1 })
+const typeForm = reactive({ code: '', name: '', remark: '', status: 1, numLabel: '' })
 const typeGuard = useUnsavedChanges(typeForm, typeDialog)
 
 function openTypeForm(row?: DictType) {
   typeEditingId.value = row?.id ?? null
   Object.assign(typeForm, row
-    ? { code: row.code, name: row.name, remark: row.remark ?? '', status: row.status }
-    : { code: '', name: '', remark: '', status: 1 })
+    ? { code: row.code, name: row.name, remark: row.remark ?? '', status: row.status, numLabel: row.numLabel ?? '' }
+    : { code: '', name: '', remark: '', status: 1, numLabel: '' })
   typeDialog.value = true
 }
 
 async function saveType() {
-  const data = { ...typeForm, remark: typeForm.remark || null }
+  const data = { ...typeForm, remark: typeForm.remark || null, numLabel: typeForm.numLabel.trim() || null }
   if (typeEditingId.value === null) {
     await dictApi.createType(data)
   } else {
@@ -48,7 +48,10 @@ async function saveType() {
   }
   ElMessage.success('已保存')
   typeDialog.value = false
-  loadTypes()
+  await loadTypes()
+  // 右边列着的就是这个类型：数值列的名字可能改了，换成新的
+  const fresh = types.value.find((t) => t.id === currentType.value?.id)
+  if (fresh) currentType.value = fresh
 }
 
 async function removeType(row: DictType) {
@@ -81,19 +84,22 @@ async function loadData() {
 
 const dataDialog = ref(false)
 const dataEditingId = ref<number | null>(null)
-const dataForm = reactive({ label: '', value: '', sort: 0, status: 1, remark: '' })
+const dataForm = reactive({ label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined as number | undefined })
+/** 正在编辑的是内置项：不能停用 */
+const dataBuiltin = ref(false)
 const dataGuard = useUnsavedChanges(dataForm, dataDialog)
 
 function openDataForm(row?: DictData) {
   dataEditingId.value = row?.id ?? null
+  dataBuiltin.value = row?.builtin ?? false
   Object.assign(dataForm, row
-    ? { label: row.label, value: row.value, sort: row.sort, status: row.status, remark: row.remark ?? '' }
-    : { label: '', value: '', sort: 0, status: 1, remark: '' })
+    ? { label: row.label, value: row.value, sort: row.sort, status: row.status, remark: row.remark ?? '', numValue: row.numValue ?? undefined }
+    : { label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined })
   dataDialog.value = true
 }
 
 async function saveData() {
-  const data = { ...dataForm, typeCode: currentType.value!.code, remark: dataForm.remark || null }
+  const data = { ...dataForm, typeCode: currentType.value!.code, remark: dataForm.remark || null, numValue: dataForm.numValue ?? null }
   if (dataEditingId.value === null) {
     await dictApi.createData(data)
   } else {
@@ -167,8 +173,17 @@ onMounted(loadTypes)
             </span>
           </div>
           <el-table :data="dataList" empty-text="暂无选项">
-            <el-table-column prop="label" label="显示文字" min-width="120" />
+            <el-table-column label="显示文字" min-width="140">
+              <template #default="{ row }">
+                {{ row.label }}
+                <el-tag v-if="row.builtin" size="small" type="info" disable-transitions title="程序按存储值认它：不能删、不能停用">内置</el-tag>
+                <el-tag v-if="row.trade" size="small" type="warning" disable-transitions title="贸易代工用的：代工没打开时下拉里没有它">代工</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="value" label="存储值" min-width="100" class-name="code" />
+            <el-table-column v-if="currentType.numLabel" :label="currentType.numLabel" width="110" align="right" class-name="num">
+              <template #default="{ row }">{{ row.numValue ?? '—' }}</template>
+            </el-table-column>
             <el-table-column prop="sort" label="排序" width="70" align="right" class-name="num" />
             <el-table-column label="状态" width="84">
               <template #default="{ row }">
@@ -178,7 +193,16 @@ onMounted(loadTypes)
             <el-table-column label="操作" width="120" align="right">
               <template #default="{ row }">
                 <el-button v-perm="'system:dict:edit'" link @click="openDataForm(row as DictData)">编辑</el-button>
-                <el-button v-perm="'system:dict:remove'" link type="danger" @click="removeData(row as DictData)">删除</el-button>
+                <el-button
+                  v-perm="'system:dict:remove'"
+                  link
+                  type="danger"
+                  :disabled="row.builtin"
+                  :title="row.builtin ? '内置项不能删：程序按它的存储值认它' : undefined"
+                  @click="removeData(row as DictData)"
+                >
+                  删除
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -201,7 +225,10 @@ onMounted(loadTypes)
         <el-form-item label="编码" required>
           <el-input v-model="typeForm.code" placeholder="如 season" />
         </el-form-item>
-        <el-form-item label="状态" class="full">
+        <el-form-item label="数值名称">
+          <el-input v-model="typeForm.numLabel" maxlength="32" placeholder="如 默认天数；不用数值不填" />
+        </el-form-item>
+        <el-form-item label="状态">
           <el-radio-group v-model="typeForm.status">
             <el-radio :value="1">启用</el-radio>
             <el-radio :value="0">停用</el-radio>
@@ -228,16 +255,19 @@ onMounted(loadTypes)
           <el-input v-model="dataForm.label" placeholder="如 春季" />
         </el-form-item>
         <el-form-item label="存储值" required>
-          <el-input v-model="dataForm.value" placeholder="如 1，单据里存的是它" />
+          <el-input v-model="dataForm.value" :disabled="dataEditingId !== null" placeholder="如 SPRING，单据里存的是它，建好不能改" />
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="dataForm.sort" :min="0" />
         </el-form-item>
         <el-form-item label="状态">
-          <el-radio-group v-model="dataForm.status">
+          <el-radio-group v-model="dataForm.status" :disabled="dataBuiltin">
             <el-radio :value="1">启用</el-radio>
             <el-radio :value="0">停用</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="currentType?.numLabel" :label="currentType.numLabel">
+          <el-input-number v-model="dataForm.numValue" :controls="false" placeholder="不填" />
         </el-form-item>
         <el-form-item label="备注" class="full">
           <el-input v-model="dataForm.remark" type="textarea" />
