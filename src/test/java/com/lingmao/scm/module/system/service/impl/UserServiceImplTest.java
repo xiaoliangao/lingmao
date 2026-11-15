@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
 import com.lingmao.scm.module.system.dto.UserOption;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
@@ -276,6 +277,30 @@ class UserServiceImplTest {
         verify(sysUserMapper, never()).selectByDesignerNo(any());
         verify(sysUserMapper, never()).updateDesignerNo(any(), any());
         assertThat(old.getDept()).isEqualTo("设计部");
+    }
+
+    /**
+     * 规则（RFC 005 §3.3）：款式第一次用编号自动编号时锁住它，条件比较编号本身。
+     * 管理员刚把 07 改成 08，款号用的还是 07：0 行 → 1002，建款整个回滚
+     */
+    @Test
+    void lockDesignerNo_numberChangedMeanwhile_stateChanged() {
+        when(sysUserMapper.lockDesignerNo(2L, "07")).thenReturn(0);
+
+        assertThatThrownBy(() -> userService.lockDesignerNo(2L, "07"))
+                .isInstanceOf(BizException.class)
+                .hasMessage("设计师编号刚被改过，请重新编号")
+                .extracting(e -> ((BizException) e).getCode()).isEqualTo(ErrorCodes.STATE_CHANGED);
+    }
+
+    /** 编号对得上：锁上，不报错 */
+    @Test
+    void lockDesignerNo_sameNumber_locked() {
+        when(sysUserMapper.lockDesignerNo(2L, "07")).thenReturn(1);
+
+        userService.lockDesignerNo(2L, "07");
+
+        verify(sysUserMapper).lockDesignerNo(2L, "07");
     }
 
     private UserCreateReq createReq(String username, String password) {

@@ -50,4 +50,11 @@ public interface UserService {
      * 返回 昵称 → id，对不上的不在 map 里
      */
     Map<String, Long> idsByNickname(Collection<String> nicknames);
+
+    /**
+     * 第一次用设计师编号自动编款号时锁住它（RFC 005 §3.3），之后不能改、不能清空。由 style 在建款的同一个事务里调。
+     * 条件比较编号本身：编号刚被管理员改了（款号用的是旧号）→ 1002"设计师编号刚被改过，请重新编号"，整个建款回滚。
+     * 已经锁过的再锁一次没关系
+     */
+    void lockDesignerNo(long userId, String designerNo);
 }

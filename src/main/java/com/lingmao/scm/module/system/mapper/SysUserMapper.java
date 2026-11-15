@@ -52,4 +52,15 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
                 .eq(SysUser::getId, userId)
                 .eq(SysUser::getDesignerNoLocked, false));
     }
+
+    /**
+     * 锁住设计师编号（RFC 005 §3.3）：SET designer_no_locked = true WHERE id = ? AND designer_no = ?。
+     * 比较编号本身，0 行说明编号刚被改了（或者人被删了）。和 updateDesignerNo 两边谁后到谁失败
+     */
+    default int lockDesignerNo(Long userId, String designerNo) {
+        return update(new SysUser(), new LambdaUpdateWrapper<SysUser>()
+                .set(SysUser::getDesignerNoLocked, true)
+                .eq(SysUser::getId, userId)
+                .eq(SysUser::getDesignerNo, designerNo));
+    }
 }

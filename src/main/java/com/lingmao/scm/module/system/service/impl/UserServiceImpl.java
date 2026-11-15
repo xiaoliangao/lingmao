@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.system.dto.UserCreateReq;
@@ -242,5 +243,13 @@ public class UserServiceImpl implements UserService {
                 Collectors.mapping(SysUser::getId, Collectors.toList())));
         return byName.entrySet().stream().filter(e -> e.getValue().size() == 1)
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getFirst()));
+    }
+
+    @Override
+    @Transactional
+    public void lockDesignerNo(long userId, String designerNo) {
+        if (designerNo == null || sysUserMapper.lockDesignerNo(userId, designerNo) == 0) {
+            throw new BizException(ErrorCodes.STATE_CHANGED, "设计师编号刚被改过，请重新编号");
+        }
     }
 }
