@@ -48,7 +48,10 @@ esac
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 NAME=scm-$VERSION
-if [ "$FULL" = 1 ]; then FILE=$NAME-full.tar.gz; else FILE=$NAME.tar.gz; fi
+if [ "$FULL" = 1 ]; then FILE=$NAME-full; else FILE=$NAME; fi
+# ARM 的包只装我们 Mac 上的试用环境，文件名带上架构：迁移时同一个版本两种都要打，不能互相顶掉
+if [ "$ARCH" = arm64 ]; then FILE=$FILE-arm64; fi
+FILE=$FILE.tar.gz
 OPENAPI_DB=scm_package_openapi     # 导出接口文档时应用连的临时库，在本机开发库的 PostgreSQL 里，用完删掉
 OPENAPI_PORT=18099
 dev_compose() { docker compose -f "$ROOT/dev/compose.yml" "$@"; }
