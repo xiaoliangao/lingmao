@@ -4,6 +4,7 @@ import { ElMessage, type FormInstance, type FormItemRule } from 'element-plus'
 import { priceApi } from '@/api/price'
 import { materialApi } from '@/api/basic'
 import type { MaterialPickRow } from '@/types/basic'
+import type { StylePickRow } from '@/types/style'
 import { PRICE_TYPE_LABEL, type CurrentPrice, type PriceRow, type PriceType } from '@/types/price'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -125,8 +126,8 @@ async function loadSkus() {
   if (mine === skuSeq) skus.value = result.list.filter((row) => row.materialId === id)
 }
 
-function onPick(rows: MaterialPickRow[]) {
-  const row = rows[0]
+function onPick(rows: MaterialPickRow[] | StylePickRow[]) {
+  const row = (rows as MaterialPickRow[])[0]
   if (!row || row.materialId === form.materialId) return
   form.materialId = row.materialId
   form.materialSkuId = null
