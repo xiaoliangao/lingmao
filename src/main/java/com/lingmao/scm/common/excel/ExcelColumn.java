@@ -43,7 +43,7 @@ public final class ExcelColumn<R, V> {
     private static final Pattern DATE_TEXT = Pattern.compile("(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})");
     /** "常规"格式显示成科学计数法的数字：1.23457E+12 */
     private static final Pattern SCIENTIFIC = Pattern.compile("-?\\d+(\\.\\d+)?E[-+]\\d+");
-    /** xlsx 里数字单元格存的原文：6228480402564890018、1.3800138E10 */
+    /** xlsx 里数字单元格存的原文：6228480000000000018、1.3800138E10 */
     private static final Pattern STORED_NUMBER = Pattern.compile("-?\\d+(\\.\\d+)?(E[-+]?\\d+)?", Pattern.CASE_INSENSITIVE);
 
     /** 报"不在选项里"、写填写说明时最多列出几个选项，再多就说"等 N 项" */
@@ -286,7 +286,7 @@ public final class ExcelColumn<R, V> {
     }
 
     /**
-     * 数字单元格在 xlsx 里存的原文（raw() 的列用）：存的是 6228480402564890018 就原样给，是 1.3800138E10 就写成 13800138000。
+     * 数字单元格在 xlsx 里存的原文（raw() 的列用）：存的是 6228480000000000018 就原样给，是 1.3800138E10 就写成 13800138000。
      * 不是数字单元格（文本、公式出错……）、不是 xlsx 的，还是按显示的文字
      */
     private static String stored(Cell cell, String text) {
