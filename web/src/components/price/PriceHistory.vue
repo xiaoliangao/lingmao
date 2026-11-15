@@ -167,7 +167,7 @@ async function voidRow(row: PriceRow) {
           <span v-else class="dim">手工录</span>
         </template>
       </el-table-column>
-      <el-table-column label="" width="76" align="right">
+      <el-table-column label="" width="76" align="right" fixed="right">
         <template #default="{ row }">
           <el-button v-if="canEdit(row as PriceRow)" link @click="formDialog?.open(subject, row as PriceRow)">调价</el-button>
         </template>
@@ -211,7 +211,7 @@ async function voidRow(row: PriceRow) {
             <div class="note dim">{{ row.createByName }} · {{ shortDay(formatDate(row.createTime)) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="" width="76" align="right">
+        <el-table-column label="" width="76" align="right" fixed="right">
           <template #default="{ row }">
             <el-button v-if="!row.voided && canEdit(row as PriceRow)" link type="danger" @click="voidRow(row as PriceRow)">作废</el-button>
           </template>
