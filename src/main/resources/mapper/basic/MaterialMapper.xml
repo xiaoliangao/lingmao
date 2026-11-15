@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  物料列表、导出、查重、选 SKU（RFC 003 §7、§8）。
+  默认供应商只读 JOIN sup_supplier 取简称、按编码找 id（架构 §3.2 规则 4）：basic 的 Java 代码不调 supplier。
+-->
+<mapper namespace="com.lingmao.scm.module.basic.mapper.MaterialMapper">
+
+    <sql id="listColumns">
+        m.id, m.code, m.name, m.category_id, c.code AS category_code, c.name AS category_name, p.name AS parent_category_name,
+        m.material_type, m.stock_unit, m.purchase_unit, m.conversion_factor, m.width_cm, m.weight_gsm, m.composition,
+        m.default_supplier_id, s.short_name AS default_supplier_name, m.supplier_item_no, m.ref_price, m.status,
+        (SELECT count(*) FROM bas_material_sku k WHERE k.material_id = m.id) AS sku_count,
+        m.update_time
+    </sql>
+
+    <sql id="listFrom">
+        FROM bas_material m
+        JOIN bas_material_category c ON c.id = m.category_id
+        LEFT JOIN bas_material_category p ON p.id = c.parent_id
+        LEFT JOIN sup_supplier s ON s.id = m.default_supplier_id
+    </sql>
+
+    <!-- 关键字：有空格时按几个编码查，名称包含整个关键字的也算；没空格查编码、名称、货号、成分。分类含下级 -->
+    <sql id="listWhere">
+        <where>
+            <if test="q.keyword != null and q.keyword.trim() != ''">
+                <choose>
+                    <when test="codes != null and codes.size() > 0">
+                        AND (upper(m.code) IN
+                        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                        OR m.name ILIKE '%' || #{q.keyword} || '%')
+                    </when>
+                    <otherwise>
+                        AND (m.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%'
+                        OR m.supplier_item_no ILIKE '%' || #{q.keyword} || '%' OR m.composition ILIKE '%' || #{q.keyword} || '%')
+                    </otherwise>
+                </choose>
+            </if>
+            <if test="q.categoryId != null">AND (m.category_id = #{q.categoryId} OR c.parent_id = #{q.categoryId})</if>
+            <if test="q.materialType != null and q.materialType != ''">AND m.material_type = #{q.materialType}</if>
+            <if test="q.status != null">AND m.status = #{q.status}</if>
+            <if test="q.ids != null and q.ids.size() > 0">
+                AND m.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectListPage" resultType="com.lingmao.scm.module.basic.dto.MaterialListVO">
+        SELECT <include refid="listColumns"/>
+        <include refid="listFrom"/>
+        <include refid="listWhere"/>
+        ORDER BY m.code
+    </select>
+
+    <select id="selectIds" resultType="java.lang.Long">
+        SELECT m.id
+        <include refid="listFrom"/>
+        <include refid="listWhere"/>
+        ORDER BY m.code
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectListByIds" resultType="com.lingmao.scm.module.basic.dto.MaterialListVO">
+        SELECT <include refid="listColumns"/>
+        <include refid="listFrom"/>
+        WHERE m.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY m.code
+    </select>
+
+    <!-- 查重只提示不拦：两个条件哪个有值查哪个；用 idx_bas_material_category、idx_bas_material_supplier -->
+    <select id="selectDuplicates" resultType="com.lingmao.scm.module.basic.dto.MaterialDupVO">
+        SELECT m.id, m.code, m.name, m.supplier_item_no, s.short_name AS default_supplier_name,
+               CASE WHEN <choose>
+                   <when test="categoryId != null and name != null">m.category_id = #{categoryId} AND lower(m.name) = lower(#{name})</when>
+                   <otherwise>false</otherwise>
+               </choose> THEN '同分类同名' ELSE '同供应商同货号' END AS reason
+        FROM bas_material m
+        LEFT JOIN sup_supplier s ON s.id = m.default_supplier_id
+        WHERE (false
+            <if test="categoryId != null and name != null">
+                OR (m.category_id = #{categoryId} AND lower(m.name) = lower(#{name}))
+            </if>
+            <if test="supplierId != null and itemNo != null">
+                OR (m.default_supplier_id = #{supplierId} AND upper(m.supplier_item_no) = upper(#{itemNo}))
+            </if>
+        )
+        <if test="excludeId != null">AND m.id &lt;&gt; #{excludeId}</if>
+        ORDER BY m.code
+        LIMIT 10
+    </select>
+
+    <select id="selectPickPage" resultType="com.lingmao.scm.module.basic.dto.MaterialPickVO">
+        SELECT k.id AS sku_id, k.code AS sku_code, m.id AS material_id, m.code AS material_code, m.name AS material_name,
+               m.material_type, m.category_id, c.name AS category_name,
+               k.color_id, cl.code AS color_code, cl.name AS color_name, cl.hex AS color_hex, k.spec,
+               m.stock_unit, m.purchase_unit, m.conversion_factor, COALESCE(k.price, m.ref_price) AS price
+        FROM bas_material_sku k
+        JOIN bas_material m ON m.id = k.material_id
+        JOIN bas_material_category c ON c.id = m.category_id
+        LEFT JOIN bas_color cl ON cl.id = k.color_id
+        WHERE k.status = 1 AND m.status = 1
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%'
+            OR m.supplier_item_no ILIKE '%' || #{q.keyword} || '%' OR cl.name ILIKE '%' || #{q.keyword} || '%')
+        </if>
+        <if test="q.categoryId != null">AND (m.category_id = #{q.categoryId} OR c.parent_id = #{q.categoryId})</if>
+        ORDER BY m.code, k.code
+    </select>
+
+    <select id="selectSuppliersByCodes" resultType="com.lingmao.scm.module.basic.dto.SupplierBrief">
+        SELECT id, code, name, short_name FROM sup_supplier
+        WHERE code IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+    </select>
+
+    <select id="selectSuppliersByIds" resultType="com.lingmao.scm.module.basic.dto.SupplierBrief">
+        SELECT id, code, name, short_name FROM sup_supplier
+        WHERE id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+</mapper>

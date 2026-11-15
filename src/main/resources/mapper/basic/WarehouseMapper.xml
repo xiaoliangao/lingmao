@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 仓库列表、详情：工厂仓绑定的工厂只读 JOIN sup_supplier 取简称（架构 §3.2 规则 4），basic 的 Java 代码不调 supplier -->
+<mapper namespace="com.lingmao.scm.module.basic.mapper.WarehouseMapper">
+
+    <sql id="columns">
+        w.id, w.code, w.name, w.type, w.factory_id, s.short_name AS factory_name, w.address, w.keeper_id,
+        w.phone, w.status, w.remark, w.update_time
+    </sql>
+
+    <select id="selectVOPage" resultType="com.lingmao.scm.module.basic.dto.WarehouseVO">
+        SELECT <include refid="columns"/>
+        FROM bas_warehouse w
+        LEFT JOIN sup_supplier s ON s.id = w.factory_id
+        <where>
+            <if test="q.keyword != null and q.keyword.trim() != ''">
+                AND (w.code ILIKE '%' || #{q.keyword} || '%' OR w.name ILIKE '%' || #{q.keyword} || '%')
+            </if>
+            <if test="q.type != null and q.type != ''">AND w.type = #{q.type}</if>
+            <if test="q.status != null">AND w.status = #{q.status}</if>
+        </where>
+        ORDER BY w.type, w.code
+    </select>
+
+    <select id="selectVOById" resultType="com.lingmao.scm.module.basic.dto.WarehouseVO">
+        SELECT <include refid="columns"/>
+        FROM bas_warehouse w
+        LEFT JOIN sup_supplier s ON s.id = w.factory_id
+        WHERE w.id = #{id}
+    </select>
+</mapper>

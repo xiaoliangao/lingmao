@@ -64,6 +64,20 @@ class UserControllerTest {
         verify(userService, never()).create(any());
     }
 
+    /** 规则（RFC 005 §3.3）：设计师编号是两位数字 01-99，填 7、00、A1 都返回 400；不填可以 */
+    @Test
+    void create_designerNoNotTwoDigits_returns400() throws Exception {
+        for (String no : new String[]{"7", "00", "A1"}) {
+            mockMvc.perform(post("/api/users")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"username": "zhangsan", "password": "Abc12345", "nickname": "张三", "designerNo": "%s"}
+                                    """.formatted(no)))
+                    .andExpect(jsonPath("$.code").value(400));
+        }
+        verify(userService, never()).create(any());
+    }
+
     /** 规则（RFC 001 §18 1d）：选人下拉的接口，关键字传给 Service，只返回 id、用户名、昵称；/options 不会被当成 /{id} */
     @Test
     void options_returnsIdUsernameNickname() throws Exception {
