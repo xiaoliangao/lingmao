@@ -144,7 +144,7 @@ export interface SpecPoint {
   seq: number
   /** 部位：从字典 size_point 选或手填，存的是文字不是字典 value */
   point: string
-  /** 测量方法：选部位时默认带设置 › 工艺标准里这个部位的测量方法，可改 */
+  /** 测量方法：选部位时默认带工艺标准里这个部位的测量方法，可改 */
   method: string | null
   /** 公差 ±cm */
   toleranceCm: number | null
@@ -359,7 +359,7 @@ export interface TechPackDetail {
   baseSize: string
   /** 款式现在启用的颜色，按顺序；随款色配料按它出行，"按颜色"视图、导出 PDF 按它选 */
   colors: ColorOption[]
-  /** 尺寸指示选部位的下拉：字典 size_point 启用的项和它的默认测量方法（设置 › 工艺标准里填的）。只读的版本也给，数量不多 */
+  /** 尺寸指示选部位的下拉：字典 size_point 启用的项和它的默认测量方法（工艺标准里填的）。只读的版本也给，数量不多 */
   pointOptions: { label: string; method: string | null }[]
   specPoints: SpecPoint[]
   bomItems: BomItem[]
@@ -540,7 +540,7 @@ export interface StyleCostQuery {
   stage?: PackStage
 }
 
-// ---------------------------------------------------------------- 工艺标准（/craft-standard）
+// ---------------------------------------------------------------- 工艺标准（/api/craft-standards，资料包页签上的抽屉 CraftStandardDrawer）
 
 /** 字典 size_point 的一项和它的默认测量方法（sys_dict_data.text_value） */
 export interface SizePointStd {
@@ -552,7 +552,7 @@ export interface SizePointStd {
   status: EnableStatus
 }
 
-/** GET /api/craft-standards：设置 › 工艺标准的全部内容 */
+/** GET /api/craft-standards：工艺标准的全部内容 */
 export interface CraftStandard {
   /** 工艺标准文件（PDF 或图片），按顺序；导出 PDF 勾"附工艺标准"时按这个顺序接在最后，name 就是附页的标题 */
   files: Attachment[]

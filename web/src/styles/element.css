@@ -1,7 +1,7 @@
 /*
  * Element Plus 组件的外观，照原型（docs/原型/src/style.css）调：
  * 按钮、输入框是白底细边 + 一点点阴影，焦点是铜褐边 + 浅光圈；表格没有竖线，表头小字浅灰；
- * 弹层、对话框大圆角、淡阴影；日期面板做成原型 DatePick 那样的日历卡片。
+ * 弹层、对话框大圆角、淡阴影，抽屉的标题行和底栏照对话框；日期面板做成原型 DatePick 那样的日历卡片。
  * 只改样式，不改组件的用法。颜色、尺寸都取 tokens.css 的变量。
  */
 
@@ -437,6 +437,66 @@
 }
 
 .el-dialog__footer .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* ---------- 抽屉（el-drawer）：标题行、底栏和对话框一个样子；窄屏不超过屏幕宽，占满 ---------- */
+.el-drawer {
+  --el-drawer-padding-primary: 0px;
+
+  max-width: 100%;
+  box-shadow: var(--lm-shadow);
+}
+
+.el-drawer__header {
+  min-height: 50px;
+  padding: 0 10px 0 22px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--lm-line-soft);
+}
+
+.el-drawer__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lm-ink);
+}
+
+.el-drawer__close-btn {
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  color: var(--lm-muted);
+  border-radius: var(--lm-radius);
+}
+
+.el-drawer__close-btn:hover {
+  color: var(--lm-ink);
+  background: var(--lm-sunken);
+}
+
+.el-drawer__close-btn:hover i,
+.el-drawer__close-btn:focus i {
+  color: inherit;
+}
+
+.el-drawer__body {
+  padding: 18px 22px;
+}
+
+.el-drawer__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 22px;
+  background: var(--lm-greige-2);
+  border-top: 1px solid var(--lm-line-soft);
+}
+
+.el-drawer__footer .el-button + .el-button {
   margin-left: 0;
 }
 

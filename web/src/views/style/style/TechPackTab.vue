@@ -44,6 +44,7 @@ import {
 import { formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
+import CraftStandardDrawer from '@/views/techpack/standard/CraftStandardDrawer.vue'
 import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
 
 /**
@@ -57,6 +58,8 @@ import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
  * - 四个子页签共用一份表单、一个"保存"；只有 actions 里有 edit 的草稿能改。没保存的修改：换版本先问，离开由 useUnsavedChanges 管
  * - 参考单价、单件成本、工价没有看成本权限也显示（01 §4.4、§4.5：BOM 的单价不受看成本权限管）；核价子页签、PDF 含价格才要 techpack:cost:query
  * - 核价按上次保存的算（01 §6），改了没保存时提示一句
+ * - 工艺标准（公司通用的默认文字、测量方法、附页文件）不单开一页，从这里拉出抽屉 CraftStandardDrawer：版本条上的"工艺标准"、
+ *   还没有资料包时的空状态、导出 PDF 对话框"附工艺标准"旁边的"看附页文件"。要 techpack:standard:list
  */
 const props = defineProps<{
   styleId: number
@@ -80,6 +83,8 @@ type SubTab = 'spec' | 'bom' | 'craft' | 'cost' | 'logs'
 const SUB_TABS: readonly SubTab[] = ['spec', 'bom', 'craft', 'cost', 'logs']
 
 const canSeeCost = computed(() => user.hasPerm('techpack:cost:query'))
+const canSeeStd = computed(() => user.hasPerm('techpack:standard:list'))
+const craftStd = ref<InstanceType<typeof CraftStandardDrawer>>()
 const activePackId = ref<number | null>(null)
 const subTab = ref<SubTab>('bom')
 const bomView = ref<'bom' | 'color'>('bom')
@@ -748,6 +753,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
       <el-button v-for="st in newStageButtons" :key="st" :type="st === 'PROD' ? 'primary' : 'default'" @click="createStage(st)">
         建{{ PACK_STAGE[st].label }}
       </el-button>
+      <el-button v-if="canSeeStd" icon="Notebook" @click="craftStd?.open()">工艺标准</el-button>
     </BlankState>
 
     <template v-else-if="overview">
@@ -772,6 +778,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           <template v-if="detail">
             <el-button v-if="can('remove')" size="small" @click="removeDraft">删除草稿</el-button>
             <el-button size="small" icon="Printer" @click="openPdf">导出 PDF</el-button>
+            <el-button v-if="canSeeStd" size="small" icon="Notebook" @click="craftStd?.open()">工艺标准</el-button>
             <el-button v-if="can('revise')" size="small" @click="revisePack">修订</el-button>
             <el-button v-if="can('toProd')" size="small" @click="convertToProd">转生产 BOM</el-button>
             <el-button v-if="editable" size="small" :loading="saving" :disabled="!guard.dirty.value" @click="saveDraft()">保存</el-button>
@@ -1254,7 +1261,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
         <el-form-item>
           <div class="pdf-checks">
             <el-checkbox v-if="canSeeCost" v-model="pdfForm.price">含价格（单价、成本、工价）</el-checkbox>
-            <el-checkbox v-model="pdfForm.appendix">附工艺标准</el-checkbox>
+            <div class="appendix-row">
+              <el-checkbox v-model="pdfForm.appendix">附工艺标准</el-checkbox>
+              <button v-if="canSeeStd" type="button" class="link-btn" @click="craftStd?.open('files')">看附页文件</button>
+            </div>
           </div>
         </el-form-item>
       </el-form>
@@ -1263,6 +1273,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
         <el-button type="primary" :loading="exportingPdf" @click="doExportPdf">导出</el-button>
       </template>
     </el-dialog>
+
+    <CraftStandardDrawer v-if="canSeeStd" ref="craftStd" />
   </div>
 </template>
 
@@ -1539,6 +1551,16 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.appendix-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.appendix-row .link-btn {
+  font-size: 12.5px;
 }
 
 @media (max-width: 900px) {

@@ -55,7 +55,7 @@ export const styleCostApi = {
   page: (params: PageParams & StyleCostQuery) => http.get<PageResult<StyleCostRow>>('/api/style-costs', params),
 }
 
-/** 设置 › 工艺标准（/craft-standard）。看要 techpack:standard:list，改要 techpack:standard:edit */
+/** 工艺标准（资料包页签上拉出的抽屉 CraftStandardDrawer，不单开一页）。看要 techpack:standard:list，改要 techpack:standard:edit */
 export const craftStandardApi = {
   get: () => http.get<CraftStandard>('/api/craft-standards'),
   /** 工艺标准文件整组替换：数组顺序就是附页顺序，改 name 就是改附页标题 */
