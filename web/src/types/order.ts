@@ -93,10 +93,10 @@ export interface OrderQuery {
   orderType?: string
   /** 字典 brand */
   brand?: string
-  salesId?: number
-  merchId?: number
+  salesId?: number | null
+  merchId?: number | null
   /** 含这个款的订单 */
-  styleId?: number
+  styleId?: number | null
   /** 下单日期，yyyy-MM-dd，两头都含 */
   orderDateFrom?: string
   orderDateTo?: string
@@ -566,7 +566,7 @@ export interface OrderChangeQuery {
   status?: ChangeStatus[]
   /** 和 status=DRAFT 一起用：true 只要被驳回的（页面的"已驳回"），false 只要没被驳回的（页面的"草稿"）；不给 = 都要 */
   rejected?: boolean
-  orderId?: number
+  orderId?: number | null
   changeType?: ChangeType
   /** 提交（制单）日期，yyyy-MM-dd，两头都含 */
   createDateFrom?: string

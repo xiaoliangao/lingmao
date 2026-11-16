@@ -530,10 +530,10 @@ export interface StyleCostQuery {
   /** 款号、名称、花名；有空格 = 按几个款号查 */
   keyword?: string
   /** 品类，含下级 */
-  categoryId?: number
+  categoryId?: number | null
   /** 字典 brand */
   brand?: string
-  year?: number
+  year?: number | null
   /** 字典 season */
   season?: string
   /** 只看取到的是研发版还是生产版的 */

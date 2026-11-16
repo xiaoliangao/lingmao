@@ -10,12 +10,16 @@ import { formatDateTime } from '@/utils/format'
  * 动作、状态存的是英文名，同一个名字在不同单据上叫法不一样（采购单的 RUNNING 叫"部分到货"），所以中文由调用方给，
  * 盖在下面的通用叫法上；两边都没有的原样显示英文名，一眼看得出漏了哪个。操作人为空是系统做的，显示"系统"。
  *
+ *   const loadLogs = () => supplierApi.logs(id)
+ *
  *   <el-tab-pane label="操作记录" name="logs" lazy>
- *     <DocLogList ref="logs" :load="() => supplierApi.logs(id)"
+ *     <DocLogList ref="logs" :load="loadLogs"
  *                 :actions="{ submit: '申请准入', audit: '准入通过', blacklist: '拉黑' }"
  *                 :statuses="SUPPLIER_STATUS_LABEL" />
  *   </el-tab-pane>
  *
+ * load 在 script 里定义好再传。模板里写 `:load="() => supplierApi.logs(id)"`，箭头函数里用了 import 进来的东西，
+ * vue-tsc 会报 "Property 'value' does not exist"（DocRefs、附件这类传函数的组件同理）。
  * 一进来就加载（页签加 lazy，切过来才加载）；换了 load（详情页换了 id）重新加载。
  * 详情页做完一个动作要刷新记录：logs.value?.reload()
  */

@@ -240,8 +240,8 @@ export interface ProductionQuery {
   /** 和 status=RUNNING 一起用：true 部分回货、false 生产中（没回过货）；不传都要 */
   returned?: boolean
   risk?: ProductionRiskKey
-  factoryId?: number
-  merchId?: number
+  factoryId?: number | null
+  merchId?: number | null
   /** 字典 brand（款式的品牌） */
   brand?: string
   /** 按"预计交期 ?? 交期"，两头都含 */
@@ -435,7 +435,7 @@ export interface IssueOption {
 export interface IssueOptionQuery {
   /** 单号、款号、加工厂 */
   keyword?: string
-  factoryId?: number
+  factoryId?: number | null
   /** true：退料用，列已领 > 0 的；不传或 false：领料用，列还有没领齐的 */
   returnable?: boolean
 }
@@ -603,8 +603,8 @@ export type BoardCardKey = 'RUNNING' | 'WAITING' | 'NEAR' | 'LATE' | 'NODE_LATE'
 
 export interface BoardQuery {
   kind?: ProductionKind
-  factoryId?: number
-  merchId?: number
+  factoryId?: number | null
+  merchId?: number | null
   /** 字典 brand */
   brand?: string
   /** 按"预计交期 ?? 交期" */

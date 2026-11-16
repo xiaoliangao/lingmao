@@ -68,6 +68,7 @@
 - **关键字**：`keyword`。单据列表里关键字有空格，就按几个单号精确查（PRD §5.4）。
 - **多选条件**：数组参数发成 `status=A&status=B`，`request.ts` 已经这样配了。
 - **日期范围**：`xxxFrom`、`xxxTo`，`yyyy-MM-dd`，两头都含。组件用 `DateRange`。
+- **选出来的 id**：查询类型里写成 `number | null`（`UserSelect`、`SupplierSelect` 清空后是 `null`）。值是 `null` 的参数 axios 不发，等于没筛。
 - **我的 / 全部**：单据列表有 `mine=true`，只看自己负责的。数据范围是"本人"的角色本来就只看得到自己的（PRD §3.2）。
 - **导出**：`GET /api/<资源>/export`，筛选参数和列表一样，再加 `ids` 只导勾选的。用 `download()`。
 

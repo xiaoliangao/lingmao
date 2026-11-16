@@ -130,8 +130,8 @@ export interface InvDocQuery {
   docType?: InvDocType
   status?: InvDocStatus[]
   /** 出仓或入仓是它 */
-  warehouseId?: number
-  partnerId?: number
+  warehouseId?: number | null
+  partnerId?: number | null
   docDateFrom?: string
   docDateTo?: string
   /** 单号、源单号、送货单号、物流单号、物料编码 / 名称 / SKU 码、缸号；有空格 = 按几个单号精确查 */
@@ -420,7 +420,7 @@ export interface CountQuery {
   /** 单号、仓库、盘点人、物料编码 / 名称 / SKU 码 */
   keyword?: string
   status?: CountStatus[]
-  warehouseId?: number
+  warehouseId?: number | null
   purpose?: CountPurpose
   countDateFrom?: string
   countDateTo?: string
@@ -537,7 +537,7 @@ export interface StockRow extends MaterialSkuBrief {
 export interface StockQuery {
   /** 页签：MATERIAL 物料仓 / FACTORY 工厂仓 / 不传 = 全部（成品仓不在这里） */
   warehouseType?: Extract<WarehouseType, 'MATERIAL' | 'FACTORY'>
-  warehouseId?: number
+  warehouseId?: number | null
   /** SKU 码、物料编码、名称、仓库名；有空格 = 按几个编码查 */
   keyword?: string
   /** 默认不列数量是 0 的行；true 也列 */
@@ -602,9 +602,9 @@ export interface StockLogRow extends MaterialSkuBrief {
 }
 
 export interface StockLogQuery {
-  warehouseId?: number
+  warehouseId?: number | null
   /** 点库存一行看它的流水：带上仓库 + SKU */
-  materialSkuId?: number
+  materialSkuId?: number | null
   changeType?: StockChangeType[]
   bizDateFrom?: string
   bizDateTo?: string

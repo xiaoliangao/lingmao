@@ -71,7 +71,7 @@ export interface MrpCalcQuery {
   /** 算料单号、订单号、款号；有空格 = 按几个单号精确查 */
   keyword?: string
   status?: MrpStatus[]
-  createBy?: number
+  createBy?: number | null
   createDateFrom?: string
   createDateTo?: string
   mine?: boolean
@@ -310,8 +310,8 @@ export interface PurchaseQuery {
   keyword?: string
   status?: PurchaseStatus[]
   purchaseType?: PurchaseType
-  supplierId?: number
-  buyerId?: number
+  supplierId?: number | null
+  buyerId?: number | null
   orderDateFrom?: string
   orderDateTo?: string
   mine?: boolean
@@ -558,8 +558,8 @@ export interface PendingArrivalQuery {
   tab?: 'LATE' | 'NEAR' | 'CUT'
   /** 采购单号、物料编码 / 名称 / SKU 码、供应商、订单号、款号、算料单号；有空格 = 按几个单号查 */
   keyword?: string
-  supplierId?: number
-  buyerId?: number
+  supplierId?: number | null
+  buyerId?: number | null
   /** 按交期（行交期 ?? 单头交货日期）筛 */
   dueDateFrom?: string
   dueDateTo?: string
