@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, watch } from 'vue'
+import type { ColumnsState } from '@/composables/useColumns'
 import { FILTER_BAR, type FilterEntry } from './filterBar'
 
 /**
@@ -8,6 +9,8 @@ import { FILTER_BAR, type FilterEntry } from './filterBar'
  * - 其他条件收进"筛选"弹层，每个条件是一个 FilterItem；选了的条件在按钮旁边显示成小标签，点 × 去掉
  * - 弹层里改了条件，停 0.4 秒就查（打字时不会一个字查一次），关弹层时还没查的马上查
  * - left 插槽放在最左边，一般放状态分段（el-segmented），它变了页面自己 search；right 插槽在搜索框左边
+ * - 传了 columns（useColumns 的返回值）最右边多一个"显示列"，各人自己挑显示哪些列
+ * - 搜索框按提示文字的长短放宽（210 ~ 360px），提示文字写全也看得见
  *
  *   const { query, search, ... } = useTable({ fetch: userApi.page, query: { username: '', status: undefined as number | undefined, createDate: null } })
  *
@@ -21,8 +24,14 @@ import { FILTER_BAR, type FilterEntry } from './filterBar'
  * 不传 v-model:keyword 就没有搜索框；没有 FilterItem 就没有"筛选"按钮
  */
 const keyword = defineModel<string>('keyword')
-withDefaults(defineProps<{ placeholder?: string }>(), { placeholder: '搜索' })
+const props = withDefaults(defineProps<{ placeholder?: string; columns?: ColumnsState }>(), { placeholder: '搜索' })
 const emit = defineEmits<{ search: [] }>()
+
+/** 搜索框宽度：汉字按一个字宽、字母数字按半个算（12.5px 的字），加上放大镜和左右留白 66px */
+const searchWidth = computed(() => {
+  const chars = [...props.placeholder].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 0xff ? 1 : 0.55), 0)
+  return `${Math.min(360, Math.max(210, Math.ceil(chars * 12.5 + 66)))}px`
+})
 
 // ---------- FilterItem 登记进来 ----------
 const entries = shallowReactive<FilterEntry[]>([])
@@ -137,6 +146,7 @@ onBeforeUnmount(() => {
       v-if="keyword !== undefined"
       v-model="keyword"
       class="search"
+      :style="{ '--search-width': searchWidth }"
       :placeholder="placeholder"
       :aria-label="placeholder"
       prefix-icon="Search"
@@ -144,6 +154,21 @@ onBeforeUnmount(() => {
       @keyup.enter="emit('search')"
       @clear="emit('search')"
     />
+
+    <el-popover v-if="columns" trigger="click" placement="bottom-end" :width="200">
+      <template #reference>
+        <button type="button" class="flt-btn" :class="{ on: columns.changed }">
+          <el-icon><Grid /></el-icon>
+          <span>显示列</span>
+        </button>
+      </template>
+      <div class="cols" role="group" aria-label="显示哪些列">
+        <el-checkbox v-for="def in columns.defs" :key="def.key" v-model="columns.show[def.key]">{{ def.label }}</el-checkbox>
+      </div>
+      <footer class="cols-foot">
+        <el-button size="small" text :disabled="!columns.changed" @click="columns.reset()">恢复默认</el-button>
+      </footer>
+    </el-popover>
   </div>
 </template>
 
@@ -280,9 +305,28 @@ onBeforeUnmount(() => {
   background: var(--lm-sunken);
 }
 
+/* ---------- 显示列 ---------- */
+.cols {
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.cols .el-checkbox {
+  height: 28px;
+  margin-right: 0;
+}
+
+.cols-foot {
+  padding-top: 6px;
+  margin-top: 6px;
+  border-top: 1px solid var(--lm-line-soft);
+}
+
 /* ---------- 关键字搜索 ---------- */
 .search {
-  width: 210px;
+  width: var(--search-width, 210px);
 }
 
 .search :deep(.el-input__wrapper) {

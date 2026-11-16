@@ -40,7 +40,8 @@ window.addEventListener('vite:preloadError', (event) => {
 const app = createApp(App)
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
+// 所有表格：格子里放不下的字不换行，末尾显示省略号，鼠标移上去看全文。要换行的列自己写 :show-overflow-tooltip="false"
+app.use(ElementPlus, { locale: zhCn, table: { showOverflowTooltip: true, tooltipOptions: { popperClass: 'table-tip' } } })
 // 图标全部注册成全局组件：菜单表的 icon 字段存的就是图标名，如 Setting、User
 for (const [name, component] of Object.entries(ElementPlusIcons)) {
   app.component(name, component)

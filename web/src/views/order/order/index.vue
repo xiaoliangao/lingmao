@@ -17,12 +17,13 @@ import UserSelect from '@/components/UserSelect.vue'
 import CompanySelect from '@/components/doc/CompanySelect.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
 import { addDaysStr, todayStr } from '@/components/doc/docUtils'
+import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import { useUserStore } from '@/stores/user'
-import { ORDER_STATUS, type OrderImportHead, type OrderQuery, type OrderRow, type OrderStatus } from '@/types/order'
+import { ORDER_SOURCE, ORDER_STATUS, type OrderImportHead, type OrderQuery, type OrderRow, type OrderStatus } from '@/types/order'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
-import { formatDate, formatDateRange, formatMoney, formatQty } from '@/utils/format'
+import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
 import { download } from '@/utils/request'
 
 /**
@@ -37,6 +38,25 @@ const router = useRouter()
 const user = useUserStore()
 const orderTypes = useDict('order_type')
 const brands = useDict('brand')
+
+// 订单号、状态总在；后面几列默认不显示，在"显示列"里勾
+const cols = useColumns('orders', [
+  { key: 'orderDate', label: '下单日期' },
+  { key: 'type', label: '类型' },
+  { key: 'styles', label: '款式' },
+  { key: 'qty', label: '数量' },
+  { key: 'amount', label: '金额' },
+  { key: 'dueDate', label: '交期' },
+  { key: 'scheduled', label: '排产' },
+  { key: 'returned', label: '回货' },
+  { key: 'kitting', label: '齐料' },
+  { key: 'merch', label: '跟单' },
+  { key: 'contractNo', label: '合同号', hidden: true },
+  { key: 'sales', label: '业务员', hidden: true },
+  { key: 'company', label: '主体', hidden: true },
+  { key: 'source', label: '来源', hidden: true },
+  { key: 'created', label: '制单', hidden: true },
+])
 
 const ALL_STATUSES: OrderStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'RUNNING', 'DONE', 'CLOSED', 'VOIDED']
 const counts = ref<Partial<Record<OrderStatus, number>>>({})
@@ -231,7 +251,7 @@ function onImported(count: number) {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="单号、合同号、款号；空格隔开查几张单" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="单号、合同号、款号；空格隔开查几张单" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.statusTab" :options="statusOptions" @change="search" />
       </template>
@@ -266,22 +286,23 @@ function onImported(count: number) {
       :data="list"
       row-key="id"
       row-class-name="clickable"
+      scrollbar-always-on
       :empty-text="emptyText"
       @selection-change="selected = $event"
       @row-click="onRowClick"
     >
-      <el-table-column type="selection" width="40" reserve-selection />
-      <el-table-column label="订单号" prop="no" min-width="150" class-name="code" />
-      <el-table-column label="下单日期" width="104" class-name="num">
+      <el-table-column type="selection" width="40" fixed="left" reserve-selection />
+      <el-table-column label="订单号" prop="no" width="140" fixed="left" class-name="code" />
+      <el-table-column v-if="cols.show.orderDate" label="下单日期" width="104" class-name="num">
         <template #default="{ row }">{{ formatDate(row.orderDate) }}</template>
       </el-table-column>
-      <el-table-column label="类型" min-width="120">
+      <el-table-column v-if="cols.show.type" label="类型" min-width="140">
         <template #default="{ row }">
           {{ orderTypes.labelOf(row.orderType) }}
           <span v-if="row.brand" class="dim small"> {{ brands.labelOf(row.brand) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="款式" min-width="175">
+      <el-table-column v-if="cols.show.styles" label="款式" min-width="180">
         <template #default="{ row }">
           <span class="styles-cell">
             <template v-for="st in (row as OrderRow).styles.slice(0, 2)" :key="st.styleId">
@@ -292,33 +313,33 @@ function onImported(count: number) {
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="数量" width="86" class-name="num" align="right">
+      <el-table-column v-if="cols.show.qty" label="数量" width="90" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
       </el-table-column>
-      <el-table-column label="金额" width="116" class-name="num" align="right">
+      <el-table-column v-if="cols.show.amount" label="金额" width="130" class-name="num" align="right">
         <template #default="{ row }">
           <span v-if="row.currency !== 'CNY'" class="dim">{{ row.currency }} </span>{{ formatMoney(row.totalAmount) }}
         </template>
       </el-table-column>
-      <el-table-column label="交期" width="120" class-name="num">
+      <el-table-column v-if="cols.show.dueDate" label="交期" width="136" class-name="num">
         <template #default="{ row }">
           {{ formatDate(row.commitDate && row.status !== 'DRAFT' && row.status !== 'PENDING' ? row.commitDate : row.requiredDate) }}
           <span class="dim small">{{ row.commitDate && row.status !== 'DRAFT' && row.status !== 'PENDING' ? '承诺' : '要求' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="排产" width="112">
+      <el-table-column v-if="cols.show.scheduled" label="排产" width="112">
         <template #default="{ row }">
           <QtyProgress v-if="canSchedule(row as OrderRow)" :done="row.scheduledQty" :total="row.totalQty" />
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="回货" width="112">
+      <el-table-column v-if="cols.show.returned" label="回货" width="112">
         <template #default="{ row }">
           <QtyProgress v-if="row.scheduledQty > 0" :done="row.returnedQty" :total="row.totalQty" tone="done" />
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="齐料" width="112">
+      <el-table-column v-if="cols.show.kitting" label="齐料" width="136">
         <template #default="{ row }">
           <button v-if="kittingMap[row.id]" type="button" class="tag-btn" :disabled="!kittingMap[row.id]!.calcIds.length" @click.stop="openKitting(kittingMap[row.id]!)">
             <StatusTag :tone="KITTING_STATUS[kittingMap[row.id]!.status].tone">{{ kittingMap[row.id]!.label }}</StatusTag>
@@ -326,10 +347,27 @@ function onImported(count: number) {
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="跟单" width="80">
+      <el-table-column v-if="cols.show.merch" label="跟单" width="96">
         <template #default="{ row }">{{ row.merchName ?? '—' }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="88">
+      <el-table-column v-if="cols.show.contractNo" label="合同号" min-width="130" class-name="code">
+        <template #default="{ row }">{{ row.contractNo ?? '—' }}</template>
+      </el-table-column>
+      <el-table-column v-if="cols.show.sales" label="业务员" width="96">
+        <template #default="{ row }">{{ row.salesName ?? '—' }}</template>
+      </el-table-column>
+      <el-table-column v-if="cols.show.company" label="主体" min-width="160">
+        <template #default="{ row }">{{ row.companyName }}</template>
+      </el-table-column>
+      <el-table-column v-if="cols.show.source" label="来源" width="104">
+        <template #default="{ row }">{{ ORDER_SOURCE[(row as OrderRow).source] }}</template>
+      </el-table-column>
+      <el-table-column v-if="cols.show.created" label="制单" width="190">
+        <template #default="{ row }">
+          {{ row.createByName ?? '—' }} <span class="dim small">{{ formatDateTime(row.createTime) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="112" fixed="right">
         <template #default="{ row }">
           <StatusTag :tone="ORDER_STATUS[(row as OrderRow).status].tone">{{ ORDER_STATUS[(row as OrderRow).status].label }}</StatusTag>
         </template>

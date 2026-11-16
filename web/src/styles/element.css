@@ -256,6 +256,13 @@
   min-width: 0;
 }
 
+/* 格子放不下时鼠标移上去的全文（main.ts 给所有表格开的）：太长的折行，原文里的换行照样分行 */
+.table-tip {
+  max-width: 420px;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
 /* ---------- 分页 ---------- */
 .el-pagination {
   --el-pagination-font-size: 12.5px;
