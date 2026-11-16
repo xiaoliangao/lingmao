@@ -573,13 +573,13 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         </el-tabs>
       </div>
 
-      <aside class="aside">
+      <aside class="doc-aside">
         <img v-if="detail.image" :src="detail.image.url" alt="" class="style-img" />
 
         <section class="panel">
           <div class="panel-head">单据信息</div>
           <div class="panel-body">
-            <dl class="props">
+            <dl class="doc-props">
               <dt>需求订单</dt>
               <dd><router-link :to="`/orders/${detail.orderId}`" class="code link">{{ detail.orderNo }}</router-link></dd>
               <dt>资料包</dt>

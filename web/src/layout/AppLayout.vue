@@ -119,11 +119,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <TabsBar v-if="withTabs" />
       <main ref="main" class="shell-main">
         <router-view v-slot="{ Component, route: current }">
+          <!--
+            菜单页那支的 key 不能省：v-if / v-else 会给两支各配一个固定的 key，keep-alive 按 key 缓存，所有菜单页就挤在同一格里了。
+            这条注释不能挪进 keep-alive 里：开发模式下 Vue 会把两支之间的注释并进 v-else 那支，那支就成了"注释 + 组件"两个节点，
+            keep-alive 认不出组件、一个都不缓存（也不报警告），切页签时菜单页每次重建；打包后注释被去掉，所以只有 pnpm dev 时出问题
+          -->
           <keep-alive v-if="withTabs" :include="tabs.cacheNames">
             <component :is="shellOf(current)" v-if="current.meta.detail" :key="current.path">
               <component :is="Component" />
             </component>
-            <!-- key 不能省：v-if / v-else 会给两支各配一个固定的 key，keep-alive 按 key 缓存，所有菜单页就挤在同一格里了 -->
             <component :is="Component" v-else :key="cacheNameOf(current) ?? current.path" />
           </keep-alive>
           <component :is="Component" v-else />

@@ -341,11 +341,11 @@ function openKitting() {
         </el-tabs>
       </div>
 
-      <aside class="aside">
+      <aside class="doc-aside">
         <section class="panel">
           <div class="panel-head">订单信息</div>
           <div class="panel-body">
-            <dl class="props">
+            <dl class="doc-props">
               <dt>主体</dt>
               <dd>{{ detail.companyName }}</dd>
               <dt>类型</dt>

@@ -182,11 +182,11 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(CHANGE_STATUS).map(([k, v
         </section>
       </div>
 
-      <aside class="aside">
+      <aside class="doc-aside">
         <section class="panel">
           <div class="panel-head">变更信息</div>
           <div class="panel-body">
-            <dl class="props">
+            <dl class="doc-props">
               <dt>订单</dt>
               <dd>
                 <router-link :to="`/orders/${detail.orderId}`" class="code">{{ detail.orderNo }}</router-link>

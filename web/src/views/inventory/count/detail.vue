@@ -369,11 +369,11 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
         </el-table>
       </div>
 
-      <aside class="aside">
+      <aside class="doc-aside">
         <section class="panel">
           <div class="panel-head">盘点单信息</div>
           <div class="panel-body">
-            <dl class="props">
+            <dl class="doc-props">
               <dt>仓库</dt>
               <dd>{{ detail.warehouseName }}</dd>
               <dt>用途</dt>
@@ -452,7 +452,6 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
   margin-bottom: 12px;
 }
 
-
 .small {
   font-size: 11.5px;
 }
@@ -465,29 +464,6 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
 .loss {
   font-weight: 600;
   color: var(--lm-danger-text);
-}
-
-.aside {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.props {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 8px 10px;
-  margin: 0;
-  font-size: 12.5px;
-  align-items: center;
-}
-
-.props dt {
-  color: var(--lm-muted);
-}
-
-.props dd {
-  margin: 0;
 }
 
 :deep(.el-input-number--small) {

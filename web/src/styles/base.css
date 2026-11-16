@@ -31,6 +31,16 @@ p {
   margin: 0;
 }
 
+/* 正文里的链接（单号、款号、"去物料"）：主色、不带下划线，悬停才有；侧边栏、页签这些自己定了颜色的不受影响 */
+a {
+  color: var(--lm-accent-2);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
 ::selection {
   color: var(--lm-ink);
   background: var(--lm-accent-bg);
@@ -145,16 +155,17 @@ kbd {
   padding: 14px 16px 16px;
 }
 
-/* 单据详情的右侧栏（.aside）：一列面板；侧栏里的属性表（dl.props）：左边浅色字段名、右边值。
- * 订单、变更、算料、采购、出入库、生产单详情都用，所以放这里，不在每页各写一份 */
-.aside {
+/* 单据详情的右侧栏（.doc-aside）：一列面板；侧栏里的属性表（dl.doc-props）：左边浅色字段名、右边值。
+ * 订单、变更、算料、采购、出入库、盘点、生产单详情都用，所以放这里，不在每页各写一份。
+ * 不叫 .aside / .props：物料、款式、供应商详情早就有同名的 scoped 样式，全局的会叠上去改了它们的样子 */
+.doc-aside {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
 }
 
-.props {
+.doc-props {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
   gap: 8px 10px;
@@ -162,11 +173,11 @@ kbd {
   font-size: 12.5px;
 }
 
-.props dt {
+.doc-props dt {
   color: var(--lm-muted);
 }
 
-.props dd {
+.doc-props dd {
   margin: 0;
   overflow-wrap: anywhere;
 }

@@ -546,11 +546,11 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
         </el-tabs>
       </div>
 
-      <aside class="aside">
+      <aside class="doc-aside">
         <section class="panel">
           <div class="panel-head">算料单信息</div>
           <div class="panel-body">
-            <dl class="props">
+            <dl class="doc-props">
               <dt>制单</dt>
               <dd>{{ detail.createByName ?? '—' }} · {{ formatDate(detail.createTime) }}</dd>
               <dt>确认</dt>

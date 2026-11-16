@@ -197,11 +197,11 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
         </el-table>
       </div>
 
-      <aside class="aside">
+      <aside class="doc-aside">
         <section class="panel">
           <div class="panel-head">单据信息</div>
           <div class="panel-body">
-            <dl class="props">
+            <dl class="doc-props">
               <dt>主体</dt>
               <dd>{{ detail.companyName }}</dd>
               <dt>类型</dt>
