@@ -28,7 +28,7 @@
 | 外发加工单 | `/production`、`/production/:id` | `5d-production.js` | [05-生产](05-生产.md) |
 | 成品采购单 | `/fp-purchases`、`/fp-purchases/:id` | `5d-production.js` | 05 |
 | 生产看板 | `/board` | `5d-production.js` | 05 |
-| 手机报工 | `/mobile` | `5d-production.js` | 05 |
+| 手机报工 | `/mobile`、`/mobile/:id` | `5d-production.js` | 05 |
 | 首页的概况、待办 | `/home` | `5a-home-style.js` 的 `/` | [06-首页](06-首页.md) |
 | 上游已变更、待处理 | `/upstream` | `5a-home-style.js` | 06 |
 | 设置 › 审批（管理后台） | `/system/approval-rule` | `7-pages-master.js` 的 `/settings` | 本文 §4.6 |
