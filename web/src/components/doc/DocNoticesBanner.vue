@@ -15,7 +15,8 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
  *   const handleNotice = (noticeId: number, remark: string | null) => purchaseApi.handleNotice(id, noticeId, remark)
  *   <DocNoticesBanner :pending-count="detail.pendingNotices" :load="loadNotices" :handle="handleNotice" @handled="refresh" />
  *
- * load、handle 在 script 里定义好再传（见 DocLogList）。处理完一条发 handled，详情页重新取（条数跟着变）
+ * load、handle 在 script 里定义好再传（见 DocLogList）。处理完一条发 handled，详情页重新取（条数跟着变）。
+ * 插槽 #actions：黄条右边多放的按钮，如算料单的"重新算料"（03 §4）
  */
 const props = defineProps<{
   pendingCount: number
@@ -98,6 +99,7 @@ async function markHandled(notice: DocNotice) {
       </span>
     </div>
     <div class="acts">
+      <slot name="actions" />
       <el-button size="small" @click="openDialog">查看并处理</el-button>
     </div>
   </div>
@@ -125,6 +127,11 @@ async function markHandled(notice: DocNotice) {
 </template>
 
 <style scoped>
+.acts {
+  display: flex;
+  gap: 8px;
+}
+
 .notice-banner {
   display: flex;
   flex-wrap: wrap;
