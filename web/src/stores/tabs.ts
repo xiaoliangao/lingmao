@@ -78,6 +78,14 @@ export const useTabsStore = defineStore('tabs', () => {
     return path === currentPath ? tabs.value[index - 1]!.path : currentPath
   }
 
+  /** 一次关掉好几个页签（页签右键菜单的关闭其他、左侧、右侧、所有），首页不关。关完显示哪一页由 TabsBar 定 */
+  function closeMany(paths: string[]) {
+    const closing = new Set(paths.filter((path) => path !== HOME_TAB.path))
+    tabs.value = tabs.value.filter((tab) => !closing.has(tab.path))
+    // 同 close：关之前问过了
+    closing.forEach((path) => dirtyChecks.delete(path))
+  }
+
   /** 退出登录：页签清空，下一个人登录进来只有首页 */
   function reset() {
     tabs.value = [HOME_TAB]
@@ -89,5 +97,5 @@ export const useTabsStore = defineStore('tabs', () => {
     if (tab) tab.title = title
   }
 
-  return { tabs, cacheNames, has, open, close, reset, rename, trackDirty, isDirty, dirtyTitles }
+  return { tabs, cacheNames, has, open, close, closeMany, reset, rename, trackDirty, isDirty, dirtyTitles }
 })
