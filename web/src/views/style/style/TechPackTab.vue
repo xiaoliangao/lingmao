@@ -1263,7 +1263,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
             <el-checkbox v-if="canSeeCost" v-model="pdfForm.price">含价格（单价、成本、工价）</el-checkbox>
             <div class="appendix-row">
               <el-checkbox v-model="pdfForm.appendix">附工艺标准</el-checkbox>
-              <button v-if="canSeeStd" type="button" class="link-btn" @click="craftStd?.open('files')">看附页文件</button>
+              <el-button v-if="canSeeStd" link type="primary" size="small" @click="craftStd?.open('files')">看附页文件</el-button>
             </div>
           </div>
         </el-form-item>
@@ -1557,10 +1557,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.appendix-row .link-btn {
-  font-size: 12.5px;
 }
 
 @media (max-width: 900px) {

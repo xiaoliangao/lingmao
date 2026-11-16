@@ -283,22 +283,22 @@ class SchemaConventionsIT {
                 Set.of("production:order:audit", "production:order:close")));
     }
 
-    /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现 */
+    /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包""工艺标准"（V18 起是资料包里的抽屉）是 visible = false 的，不出现 */
     private static final List<String> MASTER = List.of("供应商", "物料", "基础");
     private static final List<String> ORDERS = List.of("需求订单", "变更");
     private static final List<String> SUPPLY_ALL = List.of("算料", "采购", "物料入库单", "物料出库单", "物料盘点单", "库存");
     private static final List<String> MAKE = List.of("外发加工单", "成品采购单", "看板");
     private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.of(
-            "dev", Map.of("开发", List.of("款式", "工艺标准"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
-            "dev_lead", Map.of("开发", List.of("款式", "核价", "工艺标准"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
+            "dev", Map.of("开发", List.of("款式"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
+            "dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
             "sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER),
-            "merchandiser", Map.of("开发", List.of("款式", "工艺标准"), "订单", ORDERS,
+            "merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
                     "物料", List.of("算料", "采购", "物料入库单", "物料出库单", "库存"),
                     "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER),
             "buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
             "warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
             "finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
-            "manager", Map.of("开发", List.of("款式", "核价", "工艺标准"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE,
+            "manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE,
                     "资料", MASTER));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */
@@ -310,7 +310,7 @@ class SchemaConventionsIT {
     /**
      * 规则：八个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
      * （第 2 批 RFC 003 §13.2，第 3、4 批 V17），data:all 跟着数据范围走；侧边栏正好是 ROLE_SIDEBARS 那样（目录也授了才挂得上），
-     * 没有"价格档案""资料包"（visible = false，只为在角色页里勾），也没有管理后台的"审批规则"。走的是登录时真正用的 PermissionService
+     * 没有"价格档案""资料包""工艺标准"（visible = false，只为在角色页里勾），也没有管理后台的"审批规则"。走的是登录时真正用的 PermissionService
      */
     @Test
     void roleTemplates() {
