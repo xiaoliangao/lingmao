@@ -1,4 +1,6 @@
 import type { DocNotice } from '@/types/biz'
+import type { UpstreamRow } from '@/types/home'
+import { MRP_STATUS, PURCHASE_STATUS } from '@/types/purchase'
 import type {
   FollowForm,
   MrpCalcDetail,
@@ -897,3 +899,27 @@ mock('get', '/api/material-supply', () => {
   ]
   return list
 })
+
+/** 首页"上游已变更"（mock/home.ts）汇总用：算料单、采购单里还没处理的提醒，一张单一行；处理掉以后这里跟着少 */
+export function purchaseUpstreamRows(): UpstreamRow[] {
+  const rows: UpstreamRow[] = []
+  for (const m of mrps) {
+    const notices = mrpNotices.list(m.id).filter((n) => !n.handledTime)
+    if (!notices.length) continue
+    const st = MRP_STATUS[m.status]
+    rows.push({
+      doc: { type: 'MRP_CALC', kind: null, parentId: null, typeLabel: '算料单', id: m.id, no: m.no, status: m.status, statusLabel: st.label, statusTone: st.tone, ownerId: m.createBy, ownerName: m.createByName },
+      notices,
+    })
+  }
+  for (const p of pos) {
+    const notices = poNotices.list(p.id).filter((n) => !n.handledTime)
+    if (!notices.length) continue
+    const st = PURCHASE_STATUS[p.status]
+    rows.push({
+      doc: { type: 'PURCHASE_ORDER', kind: null, parentId: null, typeLabel: '采购单', id: p.id, no: p.no, status: p.status, statusLabel: st.label, statusTone: st.tone, ownerId: p.buyerId, ownerName: p.buyerName },
+      notices,
+    })
+  }
+  return rows
+}

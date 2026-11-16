@@ -15,6 +15,8 @@ import type {
 } from '@/types/production'
 import type { DocNotice } from '@/types/biz'
 import type { ProductionAction, ProductionStatus } from '@/types/production'
+import { PRODUCTION_KIND, PRODUCTION_STATUS } from '@/types/production'
+import type { UpstreamRow } from '@/types/home'
 import { fail, mock, page } from './index'
 
 /**
@@ -770,3 +772,18 @@ mock('get', '/api/production-board/factories', () => {
   ]
   return list
 })
+
+/** 首页"上游已变更"（mock/home.ts）汇总用：生产单里还没处理的提醒，一张单一行；处理掉以后这里跟着少 */
+export function productionUpstreamRows(): UpstreamRow[] {
+  const rows: UpstreamRow[] = []
+  for (const d of prdOrders) {
+    const notices = (prdNotices.get(d.id) ?? []).filter((n) => !n.handledTime)
+    if (!notices.length) continue
+    const st = PRODUCTION_STATUS[d.status]
+    rows.push({
+      doc: { type: 'PRODUCTION_ORDER', kind: d.kind, parentId: null, typeLabel: PRODUCTION_KIND[d.kind].label, id: d.id, no: d.no, status: d.status, statusLabel: st.label, statusTone: st.tone, ownerId: d.merchId, ownerName: d.merchName },
+      notices,
+    })
+  }
+  return rows
+}
