@@ -1,0 +1,527 @@
+<script setup lang="ts">
+import { computed, h, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { warehouseApi } from '@/api/basic'
+import { invDocApi, stockApi } from '@/api/inventory'
+import type { WarehouseOption } from '@/types/basic'
+import {
+  INV_DOC_TYPE,
+  type InvDocDraft,
+  type InvDocDraftItem,
+  type InvDocFromSourceItem,
+  type InvDocFromSourceReq,
+  type InvDocType,
+} from '@/types/inventory'
+import { useDict } from '@/composables/useDict'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useUserStore } from '@/stores/user'
+import { formatPrice, formatQty } from '@/utils/format'
+import { ApiError } from '@/utils/request'
+import { orNull } from '@/views/basic/common'
+import { showSilentError, todayStr } from './docUtils'
+
+/**
+ * 由源单生成物料入库单、出库单的对话框（docs/api/04 §1、§3.3、§4，原型 PurchaseReceive、ProdIssueMat）。
+ * 采购单详情、待到料（采购入库、采购退货）、生产单详情、出库单页（领料出库、退料入库）共用：
+ *
+ *   <SourceInvDocDialog v-model="receiving" source-kind="PURCHASE" :source-id="id" doc-type="PURCHASE_IN" :item-ids="pickedIds" @created="refresh" />
+ *   <SourceInvDocDialog v-model="issuing" source-kind="PRODUCTION" :source-id="id" doc-type="ISSUE_OUT" @created="refresh" />
+ *
+ * - 打开时调 prefill 带出单头默认值和明细，"本次"默认 suggestQty，旁边一列是可入 / 可退 / 还差
+ * - 采购入库超过未入库、没超上限：琥珀色"超收 n"；超过 maxQty 标红、按钮灰掉（后端也会回 1004）
+ * - 领料超过还差：琥珀色，超领原因必填。领料换了出仓重新带出（还差、出仓库存跟着出仓变）
+ * - 有出仓的显示出仓库存（库存单位）。采购退货的"本次"是采购单位，乘换算系数再和库存比；不够标红但不拦（审核时会失败）
+ * - 本次是 0 的行不建，全是 0 时按钮灰掉；没有 inventory:doc:audit 的只有"存草稿"
+ * - 建好发 created（{ id, no, posted }），页面刷新自己
+ */
+const visible = defineModel<boolean>({ required: true })
+
+const props = defineProps<{
+  sourceKind: 'PURCHASE' | 'PRODUCTION'
+  sourceId: number | null
+  docType: Extract<InvDocType, 'PURCHASE_IN' | 'PURCHASE_RETURN' | 'ISSUE_OUT' | 'RETURN_IN'>
+  /** 采购单上只处理这几行（待到料、采购单详情勾的）；不传 = 能处理的全部行 */
+  itemIds?: number[]
+}>()
+
+const emit = defineEmits<{
+  created: [payload: { id: number; no: string; posted: boolean }]
+}>()
+
+const router = useRouter()
+const user = useUserStore()
+const units = useDict('unit')
+
+interface DraftRow extends InvDocDraftItem {
+  thisQty: number
+  dyeLotInput: string
+  rollsInput: number | null
+  overReasonInput: string
+  remarkInput: string
+  /** 出仓现库存（库存单位）；还没取到、取不到是 null */
+  stockQty: number | null
+}
+
+const loading = ref(false)
+const submitting = ref(false)
+const draft = ref<InvDocDraft | null>(null)
+const warehouses = ref<WarehouseOption[]>([])
+const rows = ref<DraftRow[]>([])
+
+const head = reactive({
+  docDate: todayStr(),
+  fromWarehouseId: null as number | null,
+  toWarehouseId: null as number | null,
+  supplierDeliveryNo: '',
+  logisticsNo: '',
+  reason: '',
+  remark: '',
+})
+
+const guard = useUnsavedChanges(
+  () => ({ head, rows: rows.value.map((r) => [r.thisQty, r.dyeLotInput, r.rollsInput, r.overReasonInput, r.remarkInput]) }),
+  visible,
+)
+
+const meta = computed(() => INV_DOC_TYPE[props.docType])
+const isPurchase = computed(() => props.sourceKind === 'PURCHASE')
+const canAudit = computed(() => user.hasPerm('inventory:doc:audit'))
+
+const fromOptions = computed(() => {
+  const allowed = meta.value.from
+  return allowed ? warehouses.value.filter((w) => allowed.includes(w.type)) : []
+})
+
+const toOptions = computed(() => {
+  const allowed = meta.value.to
+  return allowed ? warehouses.value.filter((w) => allowed.includes(w.type)) : []
+})
+
+const dialogTitle = computed(() => {
+  const no = draft.value?.source.no ?? ''
+  return no ? `${meta.value.label} · ${no}` : meta.value.label
+})
+
+/** 入库、退货、领料、退料：按钮、提示里的动词 */
+const verb = computed(() => meta.value.label.slice(-2))
+
+/** 可入 / 可退 / 还差这一列 */
+const LIMIT_LABEL: Record<typeof props.docType, string> = { PURCHASE_IN: '可入', PURCHASE_RETURN: '可退', ISSUE_OUT: '还差', RETURN_IN: '可退' }
+function limitOf(row: DraftRow): number | null {
+  // 采购入库的"可入"是未入库、领料的"还差"是还没领的（都是默认的本次）；退货、退料是上限
+  return props.docType === 'PURCHASE_IN' || props.docType === 'ISSUE_OUT' ? row.suggestQty : row.maxQty
+}
+
+/** 出仓库存：选了出仓、换了仓都重新取；取不到显示"—"，不影响建单 */
+async function refreshFromStock() {
+  const whId = head.fromWarehouseId
+  if (!whId || !rows.value.length) return
+  try {
+    const skuIds = [...new Set(rows.value.map((r) => r.materialSkuId))]
+    const list = await stockApi.qty(whId, skuIds, { silent: true })
+    if (whId !== head.fromWarehouseId) return
+    const map = new Map(list.map((x) => [x.materialSkuId, x.qty]))
+    rows.value.forEach((r) => (r.stockQty = map.get(r.materialSkuId) ?? 0))
+  } catch {
+    rows.value.forEach((r) => (r.stockQty = null))
+  }
+}
+
+function prefill(sourceId: number, fromWarehouseId?: number): Promise<InvDocDraft> {
+  if (props.sourceKind === 'PURCHASE') {
+    return invDocApi.prefillFromPurchase(sourceId, { docType: props.docType as 'PURCHASE_IN' | 'PURCHASE_RETURN', itemIds: props.itemIds })
+  }
+  return invDocApi.prefillFromProduction(sourceId, { docType: props.docType as 'ISSUE_OUT' | 'RETURN_IN', fromWarehouseId })
+}
+
+function toRows(d: InvDocDraft): DraftRow[] {
+  return d.items.map((item) => ({
+    ...item,
+    thisQty: item.suggestQty,
+    dyeLotInput: item.dyeLot ?? '',
+    rollsInput: null,
+    overReasonInput: '',
+    remarkInput: '',
+    stockQty: null,
+  }))
+}
+
+async function init() {
+  if (!visible.value || !props.sourceId) return
+  loading.value = true
+  try {
+    const [whs, d] = await Promise.all([warehouseApi.options(), prefill(props.sourceId)])
+    warehouses.value = whs
+    draft.value = d
+    Object.assign(head, {
+      docDate: todayStr(),
+      fromWarehouseId: d.fromWarehouseId,
+      toWarehouseId: d.toWarehouseId,
+      supplierDeliveryNo: '',
+      logisticsNo: '',
+      reason: '',
+      remark: '',
+    })
+    rows.value = toRows(d)
+    await refreshFromStock()
+    guard.markSaved()
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(visible, (on) => {
+  if (on) void init()
+})
+
+/** 换了出仓。领料的还差跟着出仓变（04 §3.3.2），重新带出，已填的本次、原因按 SKU 留着；别的只重取出仓库存 */
+async function onFromWarehouseChange(whId: number | null) {
+  if (!visible.value || !whId || !props.sourceId) return
+  if (props.docType !== 'ISSUE_OUT') {
+    await refreshFromStock()
+    return
+  }
+  const kept = new Map(rows.value.map((r) => [r.materialSkuId, r]))
+  loading.value = true
+  try {
+    const d = await prefill(props.sourceId, whId)
+    draft.value = d
+    rows.value = toRows(d).map((r) => {
+      const old = kept.get(r.materialSkuId)
+      return old ? { ...r, thisQty: old.thisQty, overReasonInput: old.overReasonInput, remarkInput: old.remarkInput } : r
+    })
+    await refreshFromStock()
+  } finally {
+    loading.value = false
+  }
+}
+
+function unitText(row: DraftRow): string {
+  return units.labelOf(isPurchase.value ? (row.purchaseUnit ?? row.stockUnit) : row.stockUnit)
+}
+
+/** 本次换成库存单位：采购的两种按采购单位填，乘换算系数（04 §3.3）；领料、退料本来就是库存单位 */
+function stockQtyOf(row: DraftRow): number {
+  return isPurchase.value && row.conversionFactor ? row.thisQty * row.conversionFactor : row.thisQty
+}
+
+const EPS = 1e-6
+
+function isOverMax(row: DraftRow): boolean {
+  return row.maxQty != null && row.thisQty > row.maxQty + EPS
+}
+
+function isNeedOverReason(row: DraftRow): boolean {
+  return props.docType === 'ISSUE_OUT' && row.thisQty > row.suggestQty + EPS
+}
+
+/** 采购入库超过未入库、没超上限的部分（溢收） */
+function overReceive(row: DraftRow): number {
+  return props.docType === 'PURCHASE_IN' && !isOverMax(row) ? Math.max(0, row.thisQty - row.suggestQty) : 0
+}
+
+/** 出仓库存不够：标红，不拦（库存可能审核前就到了） */
+function isShort(row: DraftRow): boolean {
+  return row.stockQty != null && stockQtyOf(row) > row.stockQty + EPS
+}
+
+function disableFutureDate(d: Date) {
+  return d.getTime() > Date.now()
+}
+
+const activeRows = computed(() => rows.value.filter((r) => r.thisQty > 0))
+/** 全是 0、有超上限的：按钮灰掉，悬停说为什么 */
+const blockedTip = computed(() => {
+  if (!activeRows.value.length) return '本次都是 0，没有要建的行'
+  const over = rows.value.find(isOverMax)
+  return over ? `${over.skuCode} 超过上限 ${formatQty(over.maxQty)}` : ''
+})
+
+/** 草稿建好的提示带个链接，点了去单据详情 */
+function notifyDraft(id: number, no: string) {
+  const kindLabel = meta.value.kind === 'IN' ? '入库单' : '出库单'
+  const base = meta.value.kind === 'IN' ? '/stock-in' : '/stock-out'
+  const message = ElMessage.success({
+    duration: 5000,
+    message: h('span', [
+      `建了${kindLabel}草稿 `,
+      h(
+        'a',
+        {
+          class: 'code',
+          style: 'color: var(--lm-accent); cursor: pointer',
+          onClick: () => {
+            message.close()
+            void router.push(`${base}/${id}`)
+          },
+        },
+        no,
+      ),
+    ]),
+  })
+}
+
+async function submit(post: boolean) {
+  if (!props.sourceId || !draft.value || blockedTip.value) return
+  if (meta.value.from && !head.fromWarehouseId) {
+    ElMessage.warning('选一个出库仓库')
+    return
+  }
+  if (meta.value.to && !head.toWarehouseId) {
+    ElMessage.warning('选一个入库仓库')
+    return
+  }
+  const missingOver = activeRows.value.find((r) => isNeedOverReason(r) && !r.overReasonInput.trim())
+  if (missingOver) {
+    ElMessage.warning(`${missingOver.skuCode} 领多了，要写超领原因`)
+    return
+  }
+
+  const items: InvDocFromSourceItem[] = activeRows.value.map((r) => ({
+    sourceItemId: r.sourceItemId,
+    materialSkuId: r.materialSkuId,
+    qty: r.thisQty,
+    dyeLot: orNull(r.dyeLotInput),
+    rolls: r.rollsInput ?? null,
+    overReason: isNeedOverReason(r) ? orNull(r.overReasonInput) : null,
+    remark: orNull(r.remarkInput),
+  }))
+
+  const req: InvDocFromSourceReq = {
+    docType: props.docType,
+    docDate: head.docDate,
+    fromWarehouseId: head.fromWarehouseId,
+    toWarehouseId: head.toWarehouseId,
+    supplierDeliveryNo: orNull(head.supplierDeliveryNo),
+    logisticsNo: orNull(head.logisticsNo),
+    reason: orNull(head.reason),
+    remark: orNull(head.remark),
+    items,
+    itemIds: null,
+    post,
+  }
+
+  submitting.value = true
+  try {
+    const res =
+      props.sourceKind === 'PURCHASE'
+        ? await invDocApi.fromPurchase(props.sourceId, req, { silent: true })
+        : await invDocApi.fromProduction(props.sourceId, req, { silent: true })
+    guard.markSaved()
+    visible.value = false
+    const posted = res.status === 'APPROVED'
+    if (posted) ElMessage.success(`${verb.value}了，库存已更新（${res.no}）`)
+    else notifyDraft(res.id, res.no)
+    emit('created', { id: res.id, no: res.no, posted })
+  } catch (e) {
+    // 1001 库存不够、1004 超上限弹清单表格，别的一行消息；对话框留着改
+    if (e instanceof ApiError) showSilentError(e)
+    else throw e
+  } finally {
+    submitting.value = false
+  }
+}
+</script>
+
+<template>
+  <el-dialog v-model="visible" :title="dialogTitle" width="920px" :close-on-click-modal="false" :before-close="guard.beforeClose">
+    <div v-loading="loading">
+      <el-form label-position="top" class="head-grid">
+        <el-form-item label="日期">
+          <el-date-picker v-model="head.docDate" type="date" value-format="YYYY-MM-DD" :disabled-date="disableFutureDate" :clearable="false" />
+        </el-form-item>
+        <el-form-item v-if="meta.from" label="从哪个仓出">
+          <el-select v-model="head.fromWarehouseId" filterable placeholder="选出库仓库" @change="onFromWarehouseChange">
+            <el-option v-for="w in fromOptions" :key="w.id" :label="w.name" :value="w.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="meta.to" label="入哪个仓">
+          <el-select v-model="head.toWarehouseId" filterable placeholder="选入库仓库">
+            <el-option v-for="w in toOptions" :key="w.id" :label="w.name" :value="w.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="draft?.partnerName" label="往来单位">
+          <el-input :model-value="draft.partnerName" disabled />
+        </el-form-item>
+        <el-form-item v-if="docType === 'PURCHASE_IN'" label="供应商送货单号">
+          <el-input v-model="head.supplierDeliveryNo" maxlength="60" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="物流单号">
+          <el-input v-model="head.logisticsNo" maxlength="60" placeholder="选填" />
+        </el-form-item>
+        <el-form-item v-if="docType === 'PURCHASE_RETURN' || docType === 'RETURN_IN'" label="原因">
+          <el-input v-model="head.reason" maxlength="120" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="备注" class="span-2">
+          <el-input v-model="head.remark" maxlength="200" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+
+      <el-table :data="rows" row-key="materialSkuId" :empty-text="`这张单上没有要${verb}的物料`">
+        <el-table-column label="物料" min-width="190">
+          <template #default="{ row }">
+            <div class="sku-cell">
+              <span class="code">{{ row.skuCode }}</span>
+              <span class="sub">{{ row.materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template><template v-if="row.spec"> {{ row.spec }}</template></span>
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column v-if="isPurchase" label="采购 / 已入 / 已退" width="150" class-name="num" align="right">
+          <template #default="{ row }">{{ formatQty(row.orderedQty) }} / {{ formatQty(row.receivedQty) }} / {{ formatQty(row.returnedQty) }}</template>
+        </el-table-column>
+        <el-table-column v-else label="应领 / 已领" width="120" class-name="num" align="right">
+          <template #default="{ row }">{{ formatQty(row.needQty) }} / {{ formatQty(row.issuedQty) }}</template>
+        </el-table-column>
+
+        <el-table-column :label="LIMIT_LABEL[docType]" width="90" class-name="num" align="right">
+          <template #default="{ row }">{{ limitOf(row as DraftRow) == null ? '不限' : formatQty(limitOf(row as DraftRow)) }}</template>
+        </el-table-column>
+
+        <el-table-column v-if="meta.from" label="出仓库存" width="110" class-name="num" align="right">
+          <template #default="{ row }">
+            <span :class="{ danger: isShort(row as DraftRow) }" :title="isShort(row as DraftRow) ? '库存不够，审核会失败' : undefined">
+              {{ row.stockQty == null ? '—' : formatQty(row.stockQty) }}
+            </span>
+            <span v-if="row.stockQty != null" class="unit dim">{{ units.labelOf(row.stockUnit) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column v-if="isPurchase" label="单价" width="80" class-name="num" align="right">
+          <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
+        </el-table-column>
+
+        <el-table-column label="本次" width="160" align="right">
+          <template #default="{ row }">
+            <div class="qty-box" :class="{ over: isOverMax(row as DraftRow), warn: overReceive(row as DraftRow) > 0 || isNeedOverReason(row as DraftRow) }">
+              <el-input-number v-model="row.thisQty" size="small" :min="0" :precision="3" :controls="false" />
+              <span class="unit dim">{{ unitText(row as DraftRow) }}</span>
+            </div>
+            <div v-if="isOverMax(row as DraftRow)" class="cell-tip danger">最多 {{ formatQty(row.maxQty) }}</div>
+            <div v-else-if="overReceive(row as DraftRow) > 0" class="cell-tip warn-txt">超收 {{ formatQty(overReceive(row as DraftRow)) }}</div>
+          </template>
+        </el-table-column>
+
+        <el-table-column v-if="docType === 'PURCHASE_IN'" label="缸号 / 卷数" width="165">
+          <template #default="{ row }">
+            <div class="lot-row">
+              <el-input v-model="row.dyeLotInput" size="small" maxlength="40" placeholder="缸号" />
+              <el-input-number v-model="row.rollsInput" size="small" :min="0" :precision="0" :controls="false" placeholder="卷" class="rolls" />
+            </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column :label="docType === 'ISSUE_OUT' ? '超领原因 / 备注' : '备注'" min-width="150">
+          <template #default="{ row }">
+            <el-input v-if="isNeedOverReason(row as DraftRow)" v-model="row.overReasonInput" size="small" maxlength="100" placeholder="超领原因（必填）" class="over-input" />
+            <el-input v-else v-model="row.remarkInput" size="small" maxlength="100" placeholder="选填" />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <template #footer>
+      <span v-if="blockedTip && rows.length" class="foot-tip">{{ blockedTip }}</span>
+      <el-button @click="visible = false">取消</el-button>
+      <el-button :loading="submitting" :disabled="!!blockedTip" @click="submit(false)">存草稿</el-button>
+      <el-button v-if="canAudit" type="primary" :loading="submitting" :disabled="!!blockedTip" @click="submit(true)">{{ verb }}并过账</el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<style scoped>
+.head-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 16px;
+  margin-bottom: 8px;
+}
+
+.head-grid .span-2 {
+  grid-column: span 2;
+}
+
+.head-grid :deep(.el-select),
+.head-grid :deep(.el-date-editor) {
+  width: 100%;
+}
+
+.sku-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sku-cell .sub {
+  font-size: 12px;
+  color: var(--lm-muted);
+}
+
+.qty-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.qty-box :deep(.el-input-number) {
+  width: 96px;
+}
+
+.qty-box.warn :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px var(--lm-pending-text) inset;
+}
+
+.qty-box.over :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px var(--lm-danger-text) inset;
+}
+
+.unit {
+  margin-left: 2px;
+  font-size: 12px;
+}
+
+.cell-tip {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.danger {
+  color: var(--lm-danger-text);
+}
+
+.warn-txt {
+  color: var(--lm-pending-text);
+}
+
+.lot-row {
+  display: flex;
+  gap: 6px;
+}
+
+.lot-row .rolls {
+  flex: none;
+  width: 58px;
+}
+
+.over-input :deep(.el-input__wrapper) {
+  background: var(--lm-pending-bg);
+  box-shadow: 0 0 0 1px var(--lm-pending-text) inset;
+}
+
+.foot-tip {
+  margin-right: 12px;
+  font-size: 12px;
+  color: var(--lm-danger-text);
+}
+
+@media (max-width: 768px) {
+  .head-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .head-grid .span-2 {
+    grid-column: auto;
+  }
+}
+</style>
