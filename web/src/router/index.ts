@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory, type RouteComponent, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteComponent, type RouteLocationNormalized, type RouteRecordRaw } from 'vue-router'
 import AppLayout from '@/layout/AppLayout.vue'
 import { APP_NAME } from '@/config'
 import { useUserStore } from '@/stores/user'
@@ -21,6 +21,13 @@ const routes: RouteRecordRaw[] = [
     redirect: '/home',
     children: [
       { path: '/home', component: () => import('@/views/home/index.vue'), meta: { title: '首页', cacheName: 'HomePage' } },
+      // 上游已变更（docs/api/06 §1.2）：和首页一样所有人都有、不是菜单，内容由后端按负责人筛。
+      // 用 glob 取：页面文件还没做时显示"还没上线"，不让打包报错。页面里写 defineOptions({ name: 'UpstreamPage' })
+      {
+        path: '/upstream',
+        component: import.meta.glob('../views/home/upstream.vue')['../views/home/upstream.vue'] ?? (() => import('@/views/error/building.vue')),
+        meta: { title: '上游已变更', cacheName: 'UpstreamPage' },
+      },
       // 兜底：什么都匹配不上就是 404，放在首页这一侧的外框里，左边菜单照常能点（不开页签）。
       // vue-router 按路径的具体程度排优先级，后加的菜单路由照样排在它前面
       { path: '/:pathMatch(.*)*', component: () => import('@/views/error/404.vue'), meta: { title: '页面不存在' } },
@@ -63,6 +70,9 @@ const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: strin
   { parent: '/stock-in', file: 'inventory/doc/detail', title: '物料入库单' },
   { parent: '/stock-out', file: 'inventory/doc/detail', title: '物料出库单' },
   { parent: '/stock-takes', file: 'inventory/count/detail', title: '物料盘点单' },
+  { parent: '/production', file: 'production/order/detail', title: '外发加工单' },
+  { parent: '/fp-purchases', file: 'production/order/detail', title: '成品采购单' },
+  { parent: '/mobile', file: 'production/mobile/detail', title: '手机报工' },
 ]
 const detailPages = import.meta.glob('../views/**/{detail,form}.vue')
 /** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */
@@ -110,6 +120,12 @@ function addMenuRoutes(parentName: string, menus: MenuNode[], parentPath = '', g
 
 let menuRoutesAdded = false
 
+/** 手机上（屏宽 < 600px）打开 / 时（登录后就是），有手机报工菜单的直接进手机报工（docs/api/05 §1.2），别的照常去首页 */
+function phoneHome(to: RouteLocationNormalized): string | undefined {
+  if (to.redirectedFrom?.path !== '/' || !window.matchMedia('(max-width: 599px)').matches) return undefined
+  return menuGroups.has('/mobile') ? '/mobile' : undefined
+}
+
 router.beforeEach(async (to) => {
   const title = to.meta.title as string | undefined
   document.title = title ? `${title} - ${APP_NAME}` : APP_NAME
@@ -142,9 +158,9 @@ router.beforeEach(async (to) => {
     }
     menuRoutesAdded = true
     // 这一次跳转是按加路由之前的表匹配的（菜单页会落到 404），按新表重新跳一次
-    return to.fullPath
+    return phoneHome(to) ?? to.fullPath
   }
-  return true
+  return phoneHome(to) ?? true
 })
 
 export default router
