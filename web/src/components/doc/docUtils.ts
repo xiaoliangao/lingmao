@@ -37,6 +37,11 @@ function dateStr(date: Date): string {
   return `${date.getFullYear()}-${m}-${d}`
 }
 
+/** 按条件拼按钮清单：[can('void') && { … }, …].filter(isItem)，把 false 去掉、类型收窄 */
+export function isItem<T>(item: T | false | null | undefined): item is T {
+  return !!item
+}
+
 /** 弹框写原因（驳回、作废回货单这种必填的）。取消了返回 null */
 export async function promptReason(title: string, placeholder = '写一句原因', confirmText = '确定', danger = true): Promise<string | null> {
   try {

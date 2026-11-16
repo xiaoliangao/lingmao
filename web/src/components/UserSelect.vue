@@ -8,9 +8,18 @@ import type { UserOption } from '@/types/system'
  * 编辑已有记录时把这个人的名字传给 label：还没搜过，下拉框不知道这个 id 叫什么，不传就只能显示"用户 12"
  *
  *   <UserSelect v-model="form.ownerId" :label="form.ownerName" clearable />
+ *
+ * 筛选弹层的小标签要写选了谁：用 v-model:label，选了以后把名字写回来（清空写回 null）
+ *
+ *   <UserSelect v-model="query.merchId" v-model:label="merchName" clearable />
  */
 const props = defineProps<{ label?: string | null }>()
+const emit = defineEmits<{ 'update:label': [name: string | null] }>()
 const model = defineModel<number | null>()
+
+function onChange(id: number | null | undefined) {
+  emit('update:label', id == null ? null : (names.get(id) ?? null))
+}
 
 const options = ref<UserOption[]>([])
 const loading = ref(false)
@@ -49,6 +58,7 @@ function nameOf(id: number) {
     :loading="loading"
     placeholder="输入用户名或昵称搜索"
     no-data-text="没有找到，换个名字试试"
+    @change="onChange"
   >
     <template #label="{ value }">{{ nameOf(value) }}</template>
     <el-option v-for="user in options" :key="user.id" :label="user.nickname" :value="user.id">

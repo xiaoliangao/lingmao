@@ -13,12 +13,15 @@ import { SUPPLIER_STATUS, type SupplierOption, type SupplierUsage } from '@/type
  * 能不能选最后由后端的 checkUsable 把关，这里只是不让人选到
  *
  *   <SupplierSelect v-model="form.defaultSupplierId" category="FABRIC" :label="form.defaultSupplierName" clearable />
+ *
+ * 要拿选中那家的简称（筛选小标签、单据上跟着换供应商名）：用 v-model:label，选了以后写回简称（清空写回 null）
  */
 const props = withDefaults(defineProps<{ category?: string | string[]; usage?: SupplierUsage; label?: string | null }>(), {
   category: undefined,
   usage: 'SAMPLE',
   label: null,
 })
+const emit = defineEmits<{ 'update:label': [name: string | null] }>()
 const model = defineModel<number | null>()
 /** 接口收逗号隔开的；也拿来判断分类变没变（模板里写的数组每次渲染都是新的） */
 const categoryParam = computed(() => [props.category ?? []].flat().join(',') || undefined)
@@ -64,6 +67,10 @@ function onVisible(visible: boolean) {
 function nameOf(id: number) {
   return names.get(id) ?? (props.label || `供应商 ${id}`)
 }
+
+function onChange(id: number | null | undefined) {
+  emit('update:label', id == null ? null : (names.get(id) ?? null))
+}
 </script>
 
 <template>
@@ -76,6 +83,7 @@ function nameOf(id: number) {
     placeholder="输入编码或名称搜索"
     no-data-text="没有找到，换个词试试"
     @visible-change="onVisible"
+    @change="onChange"
   >
     <template #label="{ value }">{{ nameOf(value) }}</template>
     <el-option v-for="option in options" :key="option.id" :label="option.shortName" :value="option.id">
