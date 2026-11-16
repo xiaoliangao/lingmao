@@ -405,7 +405,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="物料" min-width="190" fixed="left">
+            <el-table-column label="物料" min-width="210" fixed="left">
               <template #default="{ row }">
                 <span class="code">{{ row.skuCode }}</span>
                 <div class="dim small">{{ row.materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template></div>
@@ -433,7 +433,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
             <el-table-column label="备料比" width="70" class-name="num" align="right">
               <template #default="{ row }">{{ formatQty(row.reservePct) }}%</template>
             </el-table-column>
-            <el-table-column label="需求" width="96" class-name="num" align="right">
+            <el-table-column label="需求" width="110" class-name="num" align="right">
               <template #default="{ row }">{{ formatQty(row.needQty) }} <span class="dim">{{ units.labelOf(row.stockUnit) }}</span></template>
             </el-table-column>
             <el-table-column label="可用库存" width="84" class-name="num" align="right">
@@ -507,13 +507,13 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
             <el-table-column label="已转采购" width="84" class-name="num" align="right">
               <template #default="{ row }">{{ formatQty(row.convertedQty) }}</template>
             </el-table-column>
-            <el-table-column label="齐料" width="80" align="right">
+            <el-table-column label="齐料" width="104" align="right">
               <template #default="{ row }">
                 <StatusTag v-if="row.shortQty <= 0" tone="done">齐</StatusTag>
                 <span v-else class="warn num">差 {{ formatQty(row.shortQty) }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="isDraft" label="" width="52" align="right">
+            <el-table-column v-if="isDraft" label="" width="60" align="right" :show-overflow-tooltip="false">
               <template #default="{ row }">
                 <el-button v-if="row.convertedQty === 0" link type="danger" size="small" @click="removeLine(row as MrpItem)">删</el-button>
               </template>

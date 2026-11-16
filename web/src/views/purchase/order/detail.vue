@@ -190,7 +190,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
         <el-tabs v-model="tab">
           <el-tab-pane :label="`明细 ${detail.items.length}`" name="items">
             <el-table :data="detail.items" row-key="id" :row-class-name="lineClass">
-              <el-table-column label="#" prop="seq" width="44" class-name="num" />
+              <el-table-column label="#" prop="seq" width="56" class-name="num" />
               <el-table-column label="物料" min-width="200">
                 <template #default="{ row }">
                   <span class="code">{{ row.skuCode }}</span>
@@ -200,7 +200,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="来源" min-width="150">
+              <el-table-column label="来源" min-width="210">
                 <template #default="{ row }">
                   <router-link v-if="row.calcId" :to="`/mrp/${row.calcId}`" class="code">{{ row.calcNo }}</router-link>
                   <div v-if="sourceText(row as PurchaseItem)" class="dim small code">{{ sourceText(row as PurchaseItem) }}</div>
@@ -229,12 +229,12 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
               <el-table-column label="未入库" width="84" class-name="num" align="right">
                 <template #default="{ row }"><strong>{{ formatQty(row.pendingQty) }}</strong></template>
               </el-table-column>
-              <el-table-column label="行交期" width="96" class-name="num">
+              <el-table-column label="行交期" width="104" class-name="num">
                 <template #default="{ row }">
                   {{ formatDate(row.dueDate) }}
                 </template>
               </el-table-column>
-              <el-table-column label="预计到货" width="120" class-name="num">
+              <el-table-column label="预计到货" min-width="140" class-name="num">
                 <template #default="{ row }">
                   {{ row.expectDate ? formatDate(row.expectDate) : '—' }}
                   <div v-if="row.followNote" class="dim small">{{ row.followNote }}</div>

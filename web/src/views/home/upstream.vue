@@ -8,7 +8,9 @@ import type { BatchAction } from '@/components/batchBar'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import UserSelect from '@/components/UserSelect.vue'
+import { useColumns } from '@/composables/useColumns'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import type { DocRef } from '@/types/biz'
 import type { UpstreamDocType, UpstreamRow } from '@/types/home'
@@ -25,8 +27,18 @@ defineOptions({ name: 'UpstreamPage' })
  * - "已处理"：弹小框写处理说明（选填），把这一行的提醒逐条处理掉，成功了这一行从表里拿掉
  * - 批量"标成已处理"：逐条、不弹错，没成功的留着勾、列出原因（BatchBar）
  * - 处理走各单据自己的 notices 接口（upstreamApi.handle 按 doc.type 找路径），board 只读
+ * - 变更内容一条提醒一行，放不下就折行（不省略）
  */
 const router = useRouter()
+
+// 单号、"已处理"总在；单据的状态默认不显示，在"显示列"里勾
+const cols = useColumns('upstream', [
+  { key: 'type', label: '单据' },
+  { key: 'owner', label: '负责人' },
+  { key: 'time', label: '变更时间' },
+  { key: 'content', label: '变更内容' },
+  { key: 'status', label: '状态', hidden: true },
+])
 
 const TYPE_OPTIONS: { label: string; value: '' | UpstreamDocType }[] = [
   { label: '全部', value: '' },
@@ -178,7 +190,7 @@ const emptyText = computed(() =>
   <div>
     <PageHeader title="上游已变更" :back="{ label: '首页', to: '/home' }" />
 
-    <FilterBar @search="load">
+    <FilterBar :columns="cols" @search="load">
       <template #left>
         <el-segmented v-model="query.type" :options="TYPE_OPTIONS" @change="load" />
         <el-segmented v-if="canSeeAll" v-model="query.mine" :options="SCOPE_OPTIONS" @change="onScopeChange" />
@@ -193,25 +205,31 @@ const emptyText = computed(() =>
       v-loading="loading"
       :data="rows"
       :row-key="rowKey"
+      scrollbar-always-on
       :empty-text="emptyText"
       @selection-change="selected = $event"
     >
-      <el-table-column type="selection" width="40" reserve-selection />
-      <el-table-column label="单据" width="110">
-        <template #default="{ row }">{{ row.doc.typeLabel }}</template>
-      </el-table-column>
-      <el-table-column label="单号" width="170" class-name="code">
+      <el-table-column type="selection" width="40" fixed="left" reserve-selection />
+      <el-table-column label="单号" width="150" fixed="left" class-name="code">
         <template #default="{ row }">
           <el-button link type="primary" @click="open(row.doc)">{{ row.doc.no }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column label="负责人" width="100">
+      <el-table-column v-if="cols.show.type" label="单据" width="110">
+        <template #default="{ row }">{{ row.doc.typeLabel }}</template>
+      </el-table-column>
+      <el-table-column v-if="cols.show.status" label="状态" width="112">
+        <template #default="{ row }">
+          <StatusTag :tone="(row as UpstreamRow).doc.statusTone">{{ row.doc.statusLabel }}</StatusTag>
+        </template>
+      </el-table-column>
+      <el-table-column v-if="cols.show.owner" label="负责人" width="100">
         <template #default="{ row }">{{ row.doc.ownerName ?? '—' }}</template>
       </el-table-column>
-      <el-table-column label="变更时间" width="150" class-name="num">
+      <el-table-column v-if="cols.show.time" label="变更时间" width="150" class-name="num">
         <template #default="{ row }">{{ formatDateTime(row.notices[0]?.createTime) }}</template>
       </el-table-column>
-      <el-table-column label="变更内容" min-width="360">
+      <el-table-column v-if="cols.show.content" label="变更内容" min-width="360" :show-overflow-tooltip="false">
         <template #default="{ row }">
           <div v-for="n in row.notices" :key="n.id" class="notice-line">
             <span class="num dim">{{ shortDay(n.createTime) }}</span>
@@ -220,7 +238,7 @@ const emptyText = computed(() =>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="" width="90" fixed="right">
+      <el-table-column label="" width="104" fixed="right" align="right" :show-overflow-tooltip="false">
         <template #default="{ row }">
           <el-button link type="primary" @click="startHandle(row as UpstreamRow)">已处理</el-button>
         </template>

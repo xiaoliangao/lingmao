@@ -8,6 +8,7 @@ import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
 import type { WarehouseOption } from '@/types/basic'
 import {
@@ -17,7 +18,7 @@ import {
   type CountRow,
   type CountStatus,
 } from '@/types/inventory'
-import { formatDate, formatDateRange } from '@/utils/format'
+import { formatDate, formatDateRange, formatDateTime } from '@/utils/format'
 import CountCreateDialog from './CountCreateDialog.vue'
 
 /**
@@ -26,6 +27,18 @@ import CountCreateDialog from './CountCreateDialog.vue'
  */
 const route = useRoute()
 const router = useRouter()
+
+// 单号、状态总在；建单时间默认不显示，在"显示列"里勾
+const cols = useColumns('stock-takes', [
+  { key: 'warehouse', label: '仓库' },
+  { key: 'purpose', label: '用途' },
+  { key: 'scope', label: '范围' },
+  { key: 'countDate', label: '盘点日期' },
+  { key: 'counter', label: '盘点人' },
+  { key: 'filled', label: '已填实盘' },
+  { key: 'diff', label: '差异' },
+  { key: 'createTime', label: '建单时间', hidden: true },
+])
 
 const STATUSES: CountStatus[] = ['DRAFT', 'PENDING', 'APPROVED']
 const STATUS_OPTIONS = [{ label: '全部', value: '' }, ...STATUSES.map((st) => ({ label: COUNT_STATUS[st].label, value: st }))]
@@ -132,7 +145,7 @@ function openCreate(purpose: CountPurpose) {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="盘点单号、仓库、盘点人、物料编码/名称" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="盘点单号、仓库、盘点人、物料编码/名称" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>
@@ -156,23 +169,24 @@ function openCreate(purpose: CountPurpose) {
       :data="list"
       row-key="id"
       row-class-name="clickable"
+      scrollbar-always-on
       :empty-text="emptyText"
       @row-click="openRow"
     >
-      <el-table-column label="单号" prop="no" width="155" class-name="code" />
-      <el-table-column label="仓库" prop="warehouseName" min-width="130" />
-      <el-table-column label="用途" width="100">
+      <el-table-column label="单号" prop="no" width="140" fixed="left" class-name="code" />
+      <el-table-column v-if="cols.show.warehouse" label="仓库" prop="warehouseName" min-width="130" />
+      <el-table-column v-if="cols.show.purpose" label="用途" width="96">
         <template #default="{ row }">{{ COUNT_PURPOSE_LABEL[(row as CountRow).purpose] }}</template>
       </el-table-column>
-      <el-table-column label="范围" prop="scopeText" min-width="180" show-overflow-tooltip />
-      <el-table-column label="盘点日期" width="112" class-name="num">
+      <el-table-column v-if="cols.show.scope" label="范围" prop="scopeText" min-width="180" />
+      <el-table-column v-if="cols.show.countDate" label="盘点日期" width="104" class-name="num">
         <template #default="{ row }">{{ formatDate(row.countDate) }}</template>
       </el-table-column>
-      <el-table-column label="盘点人" prop="counterName" width="96" />
-      <el-table-column label="已填实盘" width="96" class-name="num" align="right">
+      <el-table-column v-if="cols.show.counter" label="盘点人" prop="counterName" width="96" />
+      <el-table-column v-if="cols.show.filled" label="已填实盘" width="100" class-name="num" align="right">
         <template #default="{ row }">{{ row.filledCount }} / {{ row.itemCount }}</template>
       </el-table-column>
-      <el-table-column label="差异" width="140">
+      <el-table-column v-if="cols.show.diff" label="差异" width="140">
         <template #default="{ row }">
           <template v-if="row.gainCount || row.lossCount">
             <span class="gain">盘盈 {{ row.gainCount }}</span> · <span class="loss">盘亏 {{ row.lossCount }}</span>
@@ -180,7 +194,10 @@ function openCreate(purpose: CountPurpose) {
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="94">
+      <el-table-column v-if="cols.show.createTime" label="建单时间" width="150" class-name="num">
+        <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="112" fixed="right">
         <template #default="{ row }">
           <StatusTag :tone="COUNT_STATUS[(row as CountRow).status].tone">{{ COUNT_STATUS[(row as CountRow).status].label }}</StatusTag>
         </template>

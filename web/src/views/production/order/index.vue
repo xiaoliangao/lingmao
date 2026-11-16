@@ -11,6 +11,7 @@ import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
+import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import {
@@ -25,7 +26,7 @@ import {
   type ProductionStatus,
 } from '@/types/production'
 import { formatDateRange } from '@/utils/format'
-import ProductionTable from './ProductionTable.vue'
+import ProductionTable, { productionColumns } from './ProductionTable.vue'
 
 /**
  * 外发加工单 / 成品采购单列表（/production、/fp-purchases，docs/api/05 §1.4）。两个菜单共用这个文件、各有一个缓存实例，
@@ -47,6 +48,8 @@ const brands = useDict('brand')
 
 const kind: ProductionKind = route.path.startsWith(PRODUCTION_KIND.BUY.path) ? 'BUY' : 'OUTSOURCE'
 const kindMeta = PRODUCTION_KIND[kind]
+// 两个菜单各记各的列（订单号、单价、次品默认不显示）
+const cols = useColumns(kind === 'BUY' ? 'fp-purchases' : 'production', productionColumns('list'))
 
 const pickTab = (v: unknown): TabKey => (TAB_KEYS.includes(v as Exclude<TabKey, ''>) ? (v as TabKey) : '')
 const pickRisk = (v: unknown): ProductionRiskKey | undefined =>
@@ -203,7 +206,7 @@ const exportPicked = () => exportFile(selected.value.map((r) => r.id))
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="单号、订单号、款号、加工厂" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="单号、订单号、款号、加工厂" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.tabKey" :options="tabOptions" @change="search" />
       </template>
@@ -234,6 +237,7 @@ const exportPicked = () => exportFile(selected.value.map((r) => r.id))
       mode="list"
       :rows="list"
       :loading="loading"
+      :columns="cols"
       :empty-text="emptyText"
       @selection-change="selected = $event"
     />

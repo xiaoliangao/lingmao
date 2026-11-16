@@ -314,7 +314,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
         </div>
 
         <el-table :data="filteredItems" row-key="materialSkuId" :empty-text="emptyText">
-            <el-table-column label="#" prop="seq" width="46" class-name="num" />
+            <el-table-column label="#" prop="seq" width="56" class-name="num" />
             <el-table-column label="物料" min-width="200">
               <template #default="{ row }">
                 <span class="code">{{ row.skuCode }}</span>
@@ -361,7 +361,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
                 <span v-else class="dim">{{ row.remark || '—' }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="editable" label="" width="52" align="right">
+            <el-table-column v-if="editable" label="" width="68" align="right" :show-overflow-tooltip="false">
               <template #default="{ row }">
                 <el-button link type="danger" size="small" @click="removeLine(row as CountItem)">删</el-button>
               </template>

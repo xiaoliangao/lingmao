@@ -10,6 +10,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import UserSelect from '@/components/UserSelect.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
+import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { MRP_STATUS, type MrpCalcRow, type MrpOrderOption, type MrpStatus, type ReservePct } from '@/types/purchase'
@@ -25,6 +26,17 @@ const router = useRouter()
 const STATUSES: MrpStatus[] = ['DRAFT', 'CONFIRMED', 'CLOSED']
 const STATUS_OPTIONS = [{ label: '全部', value: '' }, ...STATUSES.map((st) => ({ label: MRP_STATUS[st].label, value: st }))]
 const pickStatus = (value: unknown): MrpStatus | '' => (STATUSES.includes(value as MrpStatus) ? (value as MrpStatus) : '')
+
+// 单号、状态总在（状态固定在右边，重新算料成的新单小字放在状态下面）
+const cols = useColumns('mrp', [
+  { key: 'orders', label: '订单' },
+  { key: 'styles', label: '款式' },
+  { key: 'buy', label: '要买' },
+  { key: 'converted', label: '转采购' },
+  { key: 'needDate', label: '要料日期' },
+  { key: 'creator', label: '制单人' },
+  { key: 'createDate', label: '日期' },
+])
 
 const dateRange = ref<[string, string] | null>(null)
 const creatorName = ref<string | null>(null)
@@ -163,7 +175,7 @@ async function createCalc() {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="算料单号、订单号、款号" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="算料单号、订单号、款号" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>
@@ -178,36 +190,36 @@ async function createCalc() {
       </template>
     </FilterBar>
 
-    <el-table v-loading="loading" :data="list" row-key="id" row-class-name="clickable" :empty-text="emptyText" @row-click="openRow">
-      <el-table-column label="单号" prop="no" min-width="150" class-name="code" />
-      <el-table-column label="订单" min-width="160">
+    <el-table v-loading="loading" :data="list" row-key="id" row-class-name="clickable" scrollbar-always-on :empty-text="emptyText" @row-click="openRow">
+      <el-table-column label="单号" prop="no" width="140" fixed="left" class-name="code" />
+      <el-table-column v-if="cols.show.orders" label="订单" min-width="160">
         <template #default="{ row }"><span class="code">{{ (row as MrpCalcRow).orderNos.join('、') }}</span></template>
       </el-table-column>
-      <el-table-column label="款式" min-width="150">
+      <el-table-column v-if="cols.show.styles" label="款式" min-width="150">
         <template #default="{ row }"><span class="code">{{ (row as MrpCalcRow).styleCodes.join('、') }}</span></template>
       </el-table-column>
-      <el-table-column label="要买" width="76" class-name="num" align="right">
+      <el-table-column v-if="cols.show.buy" label="要买" width="80" class-name="num" align="right">
         <template #default="{ row }">{{ row.buyCount }} 种</template>
       </el-table-column>
-      <el-table-column label="转采购" width="110">
+      <el-table-column v-if="cols.show.converted" label="转采购" width="112">
         <template #default="{ row }">
           <QtyProgress v-if="row.buyCount > 0" :done="row.convertedCount" :total="row.buyCount" />
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="要料日期" width="104" class-name="num">
+      <el-table-column v-if="cols.show.needDate" label="要料日期" width="104" class-name="num">
         <template #default="{ row }">{{ row.needDate ? formatDate(row.needDate) : '—' }}</template>
       </el-table-column>
-      <el-table-column label="制单人" width="84">
+      <el-table-column v-if="cols.show.creator" label="制单人" width="96">
         <template #default="{ row }">{{ row.createByName ?? '—' }}</template>
       </el-table-column>
-      <el-table-column label="日期" width="100" class-name="num">
+      <el-table-column v-if="cols.show.createDate" label="日期" width="104" class-name="num">
         <template #default="{ row }">{{ formatDate(row.createTime) }}</template>
       </el-table-column>
-      <el-table-column label="状态" min-width="150">
+      <el-table-column label="状态" width="136" fixed="right">
         <template #default="{ row }">
           <StatusTag :tone="MRP_STATUS[(row as MrpCalcRow).status].tone">{{ MRP_STATUS[(row as MrpCalcRow).status].label }}</StatusTag>
-          <router-link v-if="row.nextCalcId" :to="`/mrp/${row.nextCalcId}`" class="next code" @click.stop>→ {{ row.nextCalcNo }}</router-link>
+          <div v-if="row.nextCalcId"><router-link :to="`/mrp/${row.nextCalcId}`" class="next code" @click.stop>→ {{ row.nextCalcNo }}</router-link></div>
         </template>
       </el-table-column>
     </el-table>
@@ -269,8 +281,7 @@ async function createCalc() {
 
 <style scoped>
 .next {
-  margin-left: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .small {

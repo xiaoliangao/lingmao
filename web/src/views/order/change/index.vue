@@ -7,10 +7,11 @@ import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { runDocAction } from '@/components/doc/docUtils'
+import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
 import { CHANGE_TYPE, type ChangeStatus, type ChangeType, type OrderChangeQuery, type OrderChangeRow } from '@/types/order'
 import { formatDateRange } from '@/utils/format'
-import ChangeTable from './ChangeTable.vue'
+import ChangeTable, { CHANGE_COLUMNS } from './ChangeTable.vue'
 
 /**
  * 订单变更单列表（/order-changes，docs/api/02 §1.4、§3.14）。没有"新建"：变更从订单详情的"提变更"进来。
@@ -21,6 +22,8 @@ type TabKey = '' | 'PENDING' | 'REJECTED' | 'DRAFT' | 'APPROVED' | 'VOIDED'
 const TAB_KEYS: TabKey[] = ['', 'PENDING', 'REJECTED', 'DRAFT', 'APPROVED', 'VOIDED']
 
 const route = useRoute()
+// 变更单号、行尾的审核按钮总在；审核人、费用说明、驳回原因默认不显示，在"显示列"里勾
+const cols = useColumns('order-changes', CHANGE_COLUMNS)
 const counts = ref<Partial<Record<ChangeStatus | 'REJECTED', number>>>({})
 const dateRange = ref<[string, string] | null>(null)
 
@@ -120,7 +123,7 @@ async function quickAct(row: OrderChangeRow, action: 'audit' | 'reject') {
   <div>
     <PageHeader />
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="变更单号、订单号、SKU 码" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="变更单号、订单号、SKU 码" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.tabKey" :options="tabOptions" @change="search" />
       </template>
@@ -137,7 +140,7 @@ async function quickAct(row: OrderChangeRow, action: 'audit' | 'reject') {
       </template>
     </FilterBar>
 
-    <ChangeTable :rows="list" :loading="loading" :empty-text="emptyText" @act="quickAct" />
+    <ChangeTable :rows="list" :loading="loading" :columns="cols" :empty-text="emptyText" @act="quickAct" />
 
     <el-pagination
       v-model:current-page="page"

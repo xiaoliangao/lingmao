@@ -8,6 +8,7 @@ import DateRange from '@/components/DateRange.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import { useUserStore } from '@/stores/user'
@@ -46,6 +47,34 @@ const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
 const units = useDict('unit')
+const materialTypes = useDict('material_type')
+
+// 三个视图各挑各的列。仓库、物料（日志是日期、单号）固定在左边、总在；带 hidden 的默认不显示，在"显示列"里勾
+const detailCols = useColumns('stock', [
+  { key: 'qty', label: '数量' },
+  { key: 'transit', label: '在途' },
+  { key: 'safety', label: '安全库存' },
+  { key: 'updated', label: '最近变动' },
+  { key: 'warehouseCode', label: '仓库编码', hidden: true },
+  { key: 'materialType', label: '物料类型', hidden: true },
+])
+const summaryCols = useColumns('stock-summary', [
+  { key: 'material', label: '物料仓合计' },
+  { key: 'factory', label: '工厂仓合计' },
+  { key: 'total', label: '合计' },
+  { key: 'safety', label: '安全库存' },
+  { key: 'materialType', label: '物料类型', hidden: true },
+])
+const logCols = useColumns('stock-log', [
+  { key: 'type', label: '类型' },
+  { key: 'warehouse', label: '仓库' },
+  { key: 'material', label: '物料' },
+  { key: 'changeQty', label: '变动数量' },
+  { key: 'balance', label: '结存' },
+  { key: 'dyeLot', label: '缸号' },
+  { key: 'operator', label: '操作人' },
+  { key: 'createTime', label: '记账时间', hidden: true },
+])
 
 const viewFromQuery = (): View => (route.query.view === 'log' ? 'logs' : 'detail')
 const viewMode = ref<View>(viewFromQuery())
@@ -248,7 +277,7 @@ function doExport() {
 
     <!-- 1. 明细视图 -->
     <template v-if="viewMode === 'detail'">
-      <FilterBar v-model:keyword="detailTable.query.keyword" placeholder="SKU 码、物料编码、名称、仓库" @search="detailTable.search">
+      <FilterBar v-model:keyword="detailTable.query.keyword" placeholder="SKU 码、物料编码、名称、仓库" :columns="detailCols" @search="detailTable.search">
         <template #left>
           <el-segmented v-model="detailTable.query.whType" :options="WH_TYPE_OPTIONS" @change="detailTable.search" />
         </template>
@@ -267,35 +296,40 @@ function doExport() {
         :data="detailTable.list.value"
         row-key="id"
         :row-class-name="detailRowClass"
+        scrollbar-always-on
         :empty-text="detailTable.query.keyword || detailTable.query.warehouseId ? '没有符合条件的库存：换个仓库，或者清空筛选' : '这类仓库里还没有库存：采购入库、录期初库存后就有了'"
         @row-click="openCellLogs"
       >
-        <el-table-column label="仓库" width="150">
+        <el-table-column label="仓库" width="190" fixed="left">
           <template #default="{ row }">
             {{ row.warehouseName }}
             <span class="dim small">({{ WAREHOUSE_TYPE_LABEL[(row as StockRow).warehouseType] }})</span>
           </template>
         </el-table-column>
-        <el-table-column label="物料" min-width="240">
+        <el-table-column label="物料" min-width="240" fixed="left">
           <template #default="{ row }">
             <span class="code">{{ row.skuCode }}</span>
             <div class="dim small">{{ row.materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template><template v-if="row.spec"> · {{ row.spec }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column label="数量" width="125" class-name="num" align="right">
+        <el-table-column v-if="detailCols.show.warehouseCode" label="仓库编码" width="110" class-name="code" prop="warehouseCode" />
+        <el-table-column v-if="detailCols.show.materialType" label="物料类型" width="96">
+          <template #default="{ row }">{{ materialTypes.labelOf(row.materialType) }}</template>
+        </el-table-column>
+        <el-table-column v-if="detailCols.show.qty" label="数量" width="130" class-name="num" align="right">
           <template #default="{ row }">
             <strong :class="{ warn: isBelowSafety(row as StockRow) }">
               {{ formatQty(row.qty) }} {{ units.labelOf(row.stockUnit) }}
             </strong>
           </template>
         </el-table-column>
-        <el-table-column label="在途" width="100" class-name="num" align="right">
+        <el-table-column v-if="detailCols.show.transit" label="在途" width="100" class-name="num" align="right">
           <template #default="{ row }">{{ transitText(row as StockRow) }}</template>
         </el-table-column>
-        <el-table-column label="安全库存" width="110" class-name="num" align="right">
+        <el-table-column v-if="detailCols.show.safety" label="安全库存" width="110" class-name="num" align="right">
           <template #default="{ row }">{{ row.safetyStock == null ? '—' : formatQty(row.safetyStock) }}</template>
         </el-table-column>
-        <el-table-column label="最近变动" width="155" class-name="num">
+        <el-table-column v-if="detailCols.show.updated" label="最近变动" width="160" class-name="num">
           <template #default="{ row }">{{ formatDateTime(row.updateTime) }}</template>
         </el-table-column>
       </el-table>
@@ -312,7 +346,7 @@ function doExport() {
 
     <!-- 2. 按物料汇总视图 -->
     <template v-else-if="viewMode === 'summary'">
-      <FilterBar v-model:keyword="summaryTable.query.keyword" placeholder="SKU 码、物料编码、名称" @search="summaryTable.search">
+      <FilterBar v-model:keyword="summaryTable.query.keyword" placeholder="SKU 码、物料编码、名称" :columns="summaryCols" @search="summaryTable.search">
         <template #right>
           <el-checkbox v-model="summaryTable.query.includeZero" @change="summaryTable.search">含 0 库存</el-checkbox>
         </template>
@@ -322,24 +356,28 @@ function doExport() {
         v-loading="summaryTable.loading.value"
         :data="summaryTable.list.value"
         row-key="materialSkuId"
+        scrollbar-always-on
         :empty-text="summaryTable.query.keyword ? '没有符合条件的物料' : '还没有库存'"
       >
-        <el-table-column label="物料" min-width="240">
+        <el-table-column label="物料" min-width="240" fixed="left">
           <template #default="{ row }">
             <span class="code">{{ row.skuCode }}</span>
             <div class="dim small">{{ (row as StockSummaryRow).materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template></div>
           </template>
         </el-table-column>
-        <el-table-column label="物料仓合计" width="130" class-name="num" align="right">
+        <el-table-column v-if="summaryCols.show.materialType" label="物料类型" width="96">
+          <template #default="{ row }">{{ materialTypes.labelOf(row.materialType) }}</template>
+        </el-table-column>
+        <el-table-column v-if="summaryCols.show.material" label="物料仓合计" width="130" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.materialQty) }} {{ units.labelOf(row.stockUnit) }}</template>
         </el-table-column>
-        <el-table-column label="工厂仓合计" width="130" class-name="num" align="right">
+        <el-table-column v-if="summaryCols.show.factory" label="工厂仓合计" width="130" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.factoryQty) }}</template>
         </el-table-column>
-        <el-table-column label="合计" width="120" class-name="num" align="right">
+        <el-table-column v-if="summaryCols.show.total" label="合计" width="120" class-name="num" align="right">
           <template #default="{ row }"><strong>{{ formatQty(row.totalQty) }}</strong></template>
         </el-table-column>
-        <el-table-column label="安全库存" width="110" class-name="num" align="right">
+        <el-table-column v-if="summaryCols.show.safety" label="安全库存" width="120" class-name="num" align="right">
           <template #default="{ row }">{{ row.safetyStock == null ? '—' : formatQty(row.safetyStock) }}</template>
         </el-table-column>
       </el-table>
@@ -356,7 +394,7 @@ function doExport() {
 
     <!-- 3. 库存日志视图 -->
     <template v-else>
-      <FilterBar v-model:keyword="logTable.query.keyword" placeholder="单号、SKU 码、物料名称、缸号" @search="logTable.search">
+      <FilterBar v-model:keyword="logTable.query.keyword" placeholder="单号、SKU 码、物料名称、缸号" :columns="logCols" @search="logTable.search">
         <FilterItem label="仓库" :text="warehouseName(logTable.query.warehouseId)" @clear="logTable.query.warehouseId = undefined">
           <el-select v-model="logTable.query.warehouseId" filterable clearable placeholder="全部仓库" :value-on-clear="undefined">
             <el-option v-for="w in filteredWhOptions" :key="w.id" :label="w.name" :value="w.id" />
@@ -372,39 +410,42 @@ function doExport() {
         </FilterItem>
       </FilterBar>
 
-      <el-table v-loading="logTable.loading.value" :data="logTable.list.value" row-key="id" empty-text="没有符合条件的库存变动">
-        <el-table-column label="日期" width="100" class-name="num">
+      <el-table v-loading="logTable.loading.value" :data="logTable.list.value" row-key="id" scrollbar-always-on empty-text="没有符合条件的库存变动">
+        <el-table-column label="日期" width="116" fixed="left" class-name="num">
           <template #default="{ row }">{{ formatDate(row.bizDate) }}</template>
         </el-table-column>
-        <el-table-column label="类型" width="100">
-          <template #default="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[(row as StockLogRow).changeType] }}</template>
-        </el-table-column>
-        <el-table-column label="单号" width="155">
+        <el-table-column label="单号" width="150" fixed="left">
           <template #default="{ row }">
             <button type="button" class="link-btn code" @click="goLogDoc(row as StockLogRow)">{{ row.docNo }}</button>
           </template>
         </el-table-column>
-        <el-table-column label="仓库" prop="warehouseName" width="130" />
-        <el-table-column label="物料" min-width="200">
+        <el-table-column v-if="logCols.show.type" label="类型" width="100">
+          <template #default="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[(row as StockLogRow).changeType] }}</template>
+        </el-table-column>
+        <el-table-column v-if="logCols.show.warehouse" label="仓库" prop="warehouseName" width="130" />
+        <el-table-column v-if="logCols.show.material" label="物料" min-width="220">
           <template #default="{ row }">
             <span class="code">{{ row.skuCode }}</span> {{ row.materialName }}
           </template>
         </el-table-column>
-        <el-table-column label="变动数量" width="120" class-name="num" align="right">
+        <el-table-column v-if="logCols.show.changeQty" label="变动数量" width="120" class-name="num" align="right">
           <template #default="{ row }">
             <span :class="row.changeQty >= 0 ? 'gain' : 'loss'">
               {{ row.changeQty >= 0 ? '+' : '' }}{{ formatQty(row.changeQty) }} {{ units.labelOf(row.stockUnit) }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="结存" width="100" class-name="num" align="right">
+        <el-table-column v-if="logCols.show.balance" label="结存" width="100" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.balanceQty) }}</template>
         </el-table-column>
-        <el-table-column label="缸号" width="110">
+        <el-table-column v-if="logCols.show.dyeLot" label="缸号" width="110">
           <template #default="{ row }">{{ row.dyeLot || '—' }}</template>
         </el-table-column>
-        <el-table-column label="操作人" width="90">
+        <el-table-column v-if="logCols.show.operator" label="操作人" width="100">
           <template #default="{ row }">{{ row.operatorName ?? '—' }}</template>
+        </el-table-column>
+        <el-table-column v-if="logCols.show.createTime" label="记账时间" width="160" class-name="num">
+          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
         </el-table-column>
       </el-table>
 

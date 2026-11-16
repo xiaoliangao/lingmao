@@ -9,18 +9,19 @@ import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
+import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import type { BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, ProductionKind } from '@/types/production'
 import { formatDateRange, formatQty } from '@/utils/format'
-import ProductionTable from '../order/ProductionTable.vue'
+import ProductionTable, { productionColumns } from '../order/ProductionTable.vue'
 
 /**
  * 生产看板（/board，docs/api/05 §1.4、§3.7）。
  * - 数字卡、按单列表、按工厂三份数分开取：卡片取不到就不显示卡片，列表照常
  * - 点卡片筛下面的列表，再点一次取消；卡片的数不受选中的卡片影响
  * - 认 ?card=（首页点进来）：只认 /board 自己的地址。离开看板时地址变了不能把选中的卡片清掉
- * - 按单的表格和外发加工单列表共用 ProductionTable（mode="board"）
+ * - 按单的表格和外发加工单列表共用 ProductionTable（mode="board"），"显示列"只管按单的表格
  * - 按工厂：点一行把这家筛进去、切回按单
  */
 const CARD_KEYS: BoardCardKey[] = ['RUNNING', 'WAITING', 'NEAR', 'LATE', 'NODE_LATE', 'ISSUE']
@@ -41,6 +42,7 @@ type View = 'orders' | 'factories'
 
 const route = useRoute()
 const brands = useDict('brand')
+const cols = useColumns('board', productionColumns('board'))
 
 const pickCard = (v: unknown): BoardCardKey | undefined => (CARD_KEYS.includes(v as BoardCardKey) ? (v as BoardCardKey) : undefined)
 
@@ -165,7 +167,7 @@ const emptyText = computed(() => {
   <div>
     <PageHeader title="看板" />
 
-    <FilterBar @search="search">
+    <FilterBar :columns="viewMode === 'orders' ? cols : undefined" @search="search">
       <template #left>
         <el-segmented v-model="query.kindTab" :options="KIND_OPTIONS" @change="search" />
       </template>
@@ -224,7 +226,7 @@ const emptyText = computed(() => {
     </div>
 
     <template v-if="viewMode === 'orders'">
-      <ProductionTable mode="board" :rows="list" :loading="loading" :empty-text="emptyText" />
+      <ProductionTable mode="board" :rows="list" :loading="loading" :columns="cols" :empty-text="emptyText" />
       <el-pagination
         v-model:current-page="page"
         v-model:page-size="size"

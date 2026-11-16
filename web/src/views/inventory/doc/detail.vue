@@ -154,7 +154,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
         </p>
 
         <el-table :data="detail.items" row-key="id">
-          <el-table-column label="#" prop="seq" width="44" class-name="num" />
+          <el-table-column label="#" prop="seq" width="56" class-name="num" />
           <el-table-column label="物料" min-width="200">
             <template #default="{ row }">
               <span class="code">{{ row.skuCode }}</span>

@@ -13,6 +13,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
+import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
 import {
   PURCHASE_STATUS,
@@ -21,7 +22,7 @@ import {
   type PurchaseStatus,
   type PurchaseType,
 } from '@/types/purchase'
-import { formatDate, formatDateRange, formatMoney } from '@/utils/format'
+import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
 
 /**
  * 采购单列表（/purchases，docs/api/03 §1.4）。认 ?status=（首页"采购单待审核"点进来），只认 /purchases 自己的地址。
@@ -29,6 +30,22 @@ import { formatDate, formatDateRange, formatMoney } from '@/utils/format'
  */
 const route = useRoute()
 const router = useRouter()
+
+// 采购单号、状态总在；后面几列默认不显示，在"显示列"里勾
+const cols = useColumns('purchases', [
+  { key: 'supplier', label: '供应商' },
+  { key: 'type', label: '类型' },
+  { key: 'material', label: '物料摘要' },
+  { key: 'amount', label: '总金额' },
+  { key: 'orderDate', label: '下单日' },
+  { key: 'deliveryDate', label: '交货日' },
+  { key: 'received', label: '到货进度' },
+  { key: 'buyer', label: '采购员' },
+  { key: 'qty', label: '数量', hidden: true },
+  { key: 'warehouse', label: '交货地点', hidden: true },
+  { key: 'company', label: '主体', hidden: true },
+  { key: 'createTime', label: '制单时间', hidden: true },
+])
 
 const STATUSES: PurchaseStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'RUNNING', 'DONE', 'CLOSED', 'VOIDED']
 const STATUS_OPTIONS = [{ label: '全部', value: '' }, ...STATUSES.map((st) => ({ label: PURCHASE_STATUS[st].label, value: st }))]
@@ -138,7 +155,7 @@ async function exportPicked() {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="采购单号、供应商、物料编码/名称、订单号、款号" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="采购单号、供应商、物料编码/名称、订单号、款号" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>
@@ -167,22 +184,23 @@ async function exportPicked() {
       :data="list"
       row-key="id"
       row-class-name="clickable"
+      scrollbar-always-on
       :empty-text="emptyText"
       @selection-change="selected = $event"
       @row-click="onRowClick"
     >
-      <el-table-column type="selection" width="40" reserve-selection />
-      <el-table-column label="采购单号" prop="no" width="150" class-name="code" />
-      <el-table-column label="供应商" min-width="140">
+      <el-table-column type="selection" width="40" fixed="left" reserve-selection />
+      <el-table-column label="采购单号" prop="no" width="140" fixed="left" class-name="code" />
+      <el-table-column v-if="cols.show.supplier" label="供应商" min-width="130">
         <template #default="{ row }">
           <span>{{ row.supplierName }}</span>
           <span v-if="row.supplierStatus !== 'ACTIVE'" class="sup-warn">供应商已停用</span>
         </template>
       </el-table-column>
-      <el-table-column label="类型" width="92">
+      <el-table-column v-if="cols.show.type" label="类型" width="88">
         <template #default="{ row }">{{ PURCHASE_TYPE_LABEL[(row as PurchaseRow).purchaseType] }}</template>
       </el-table-column>
-      <el-table-column label="物料摘要" min-width="190" show-overflow-tooltip>
+      <el-table-column v-if="cols.show.material" label="物料摘要" min-width="160">
         <template #default="{ row }">
           <template v-if="row.firstItem">
             {{ row.firstItem.materialName }}
@@ -191,27 +209,33 @@ async function exportPicked() {
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="总金额" width="115" class-name="num" align="right">
+      <el-table-column v-if="cols.show.qty" label="数量" width="100" class-name="num" align="right">
+        <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
+      </el-table-column>
+      <el-table-column v-if="cols.show.amount" label="总金额" width="120" class-name="num" align="right">
         <template #default="{ row }">{{ formatMoney(row.totalAmount) }}</template>
       </el-table-column>
-      <el-table-column label="下单日" width="106" class-name="num">
+      <el-table-column v-if="cols.show.orderDate" label="下单日" width="104" class-name="num">
         <template #default="{ row }">{{ formatDate(row.orderDate) }}</template>
       </el-table-column>
-      <el-table-column label="交货日" width="106" class-name="num">
+      <el-table-column v-if="cols.show.deliveryDate" label="交货日" width="104" class-name="num">
         <template #default="{ row }">{{ formatDate(row.deliveryDate) }}</template>
       </el-table-column>
-      <el-table-column label="到货进度" width="132">
+      <el-table-column v-if="cols.show.received" label="到货进度" width="112">
         <template #default="{ row }">
           <QtyProgress v-if="showProgress(row as PurchaseRow)" :done="row.receivedQty" :total="row.totalQty" tone="done" />
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="采购员" width="86" prop="buyerName" />
-      <el-table-column label="状态" width="94">
+      <el-table-column v-if="cols.show.buyer" label="采购员" width="88" prop="buyerName" />
+      <el-table-column v-if="cols.show.warehouse" label="交货地点" min-width="130" prop="warehouseName" />
+      <el-table-column v-if="cols.show.company" label="主体" min-width="160" prop="companyName" />
+      <el-table-column v-if="cols.show.createTime" label="制单时间" width="150" class-name="num">
+        <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="124" fixed="right">
         <template #default="{ row }">
-          <StatusTag :tone="PURCHASE_STATUS[(row as PurchaseRow).status].tone">
-            {{ PURCHASE_STATUS[(row as PurchaseRow).status].label }}
-          </StatusTag>
+          <StatusTag :tone="PURCHASE_STATUS[(row as PurchaseRow).status].tone">{{ PURCHASE_STATUS[(row as PurchaseRow).status].label }}</StatusTag>
         </template>
       </el-table-column>
     </el-table>

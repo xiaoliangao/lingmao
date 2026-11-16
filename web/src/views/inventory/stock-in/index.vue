@@ -89,7 +89,15 @@ function openReturn(productionOrderId: number) {
 </template>
 
 <style scoped>
-.tabs :deep(.el-tabs__header) {
-  margin-bottom: 4px;
+/* 页签条接在页头下面，左边和页头标题对齐（同基础资料页）；下面每个页签是"筛选一行 + 表格" */
+.tabs > :deep(.el-tabs__header) {
+  margin: 0;
+  padding: 0 var(--lm-table-edge, 24px);
+  background: var(--lm-paper);
+}
+
+.tabs > :deep(.el-tabs__header .el-tabs__nav-wrap::after) {
+  height: 1px;
+  background: var(--lm-line-soft);
 }
 </style>
