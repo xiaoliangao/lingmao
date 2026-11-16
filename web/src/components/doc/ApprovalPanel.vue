@@ -10,7 +10,8 @@ import { formatDateTime, formatMoney } from '@/utils/format'
  *
  *   <ApprovalPanel :approval="detail.approval" :status="detail.status" />
  *
- * 待审核时一直显示；审完了只有多于一级的留着。能不能审看详情的 actions，这里只显示
+ * 待审核时一直显示；审完了只有多于一级的留着。能不能审看详情的 actions，这里只显示：
+ * 轮到我审时等待条下面多一行字，指到页头的"审核""驳回"（不做成按钮或实心标签，免得看着像能点）
  */
 const props = defineProps<{
   approval: ApprovalView | null
@@ -48,7 +49,7 @@ function levelLabel(st: string) {
     <div class="panel-body">
       <div v-if="approval.waitingFor" class="wait-banner" :class="{ mine: approval.canPass }">
         <span>当前等待：<strong>{{ approval.waitingFor }}</strong></span>
-        <span v-if="approval.canPass" class="mine-tag">可由我审</span>
+        <span v-if="approval.canPass" class="mine-line">轮到你审：在右上角审核或驳回</span>
       </div>
       <ol class="levels">
         <li v-for="lv in approval.levels" :key="lv.levelNo" :class="lv.status.toLowerCase()">
@@ -71,9 +72,8 @@ function levelLabel(st: string) {
 <style scoped>
 .wait-banner {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 10px;
   margin-bottom: 10px;
   font-size: 12px;
@@ -89,13 +89,8 @@ function levelLabel(st: string) {
   border-color: var(--lm-accent-line);
 }
 
-.mine-tag {
-  padding: 1px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--lm-on-accent);
-  background: var(--lm-accent);
-  border-radius: 99px;
+.mine-line {
+  font-weight: 500;
 }
 
 .levels {
