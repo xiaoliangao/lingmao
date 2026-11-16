@@ -5,7 +5,8 @@ import { computed } from 'vue'
  * 错误清单表格。1003 的每一项是 {sheet?, row, column, message}，显示成"工作表 / 行 / 列 / 问题"：
  * sheet 只在一个文件几张表的导入里有，没有就不出这一列；row 是 0 说的是整张表、整个文件，显示"—"。
  * 导入成功时的提示清单格式一样，传 message-label="说明"。
- * 1001、1004、1005 带什么还没定，先按"对象数组"通用地显示：每个字段一列，不认识的字段用字段名当表头，定了再往 LABELS 里加
+ * 1001、1004、1005 是"对象数组"：每个字段一列，表头查 LABELS，不认识的字段用字段名当表头（一眼看得出漏了哪个）。
+ * 各种清单有哪些字段见 docs/api：库存不足、超收超退 04 §3.4，超排 02 §3.12，1005 是 DocRef（README §4.5）
  */
 const props = withDefaults(defineProps<{ items: unknown[]; messageLabel?: string }>(), { messageLabel: '问题' })
 
@@ -16,6 +17,24 @@ const LABELS = computed<Record<string, string>>(() => ({
   row: '行',
   column: '列',
   message: props.messageLabel,
+  // 1001 库存不足、1004 超收超退（04 §3.4）
+  seqs: '行',
+  seq: '行',
+  warehouseName: '仓库',
+  skuCode: 'SKU',
+  materialName: '物料',
+  stockQty: '库存',
+  needQty: '要扣',
+  shortQty: '差',
+  unit: '单位',
+  sourceNo: '源单',
+  thisQty: '本次',
+  maxQty: '最多',
+  reason: '说明',
+  // 1004 超排（02 §3.12）
+  sku: 'SKU',
+  orderQty: '订单数',
+  scheduledQty: '已排产',
 }))
 
 /** 不是对象的（只有一句话）当成 message */

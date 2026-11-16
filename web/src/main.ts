@@ -60,4 +60,9 @@ window.addEventListener('unhandledrejection', (event) => {
   if (isExpected(event.reason)) event.preventDefault()
 })
 
-app.mount('#app')
+// pnpm dev:mock：后端还没写的接口先用前端的假数据（web/src/mock，docs/api/README.md §6）。import.meta.env.DEV 在正式打包时是 false，这段连同 mock 都不进包
+async function start() {
+  if (import.meta.env.DEV && import.meta.env.VITE_MOCK === 'true') await (await import('./mock')).loadMocks()
+  app.mount('#app')
+}
+void start()

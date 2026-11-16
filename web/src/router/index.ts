@@ -50,6 +50,19 @@ const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: strin
   { parent: '/styles', file: 'style/style/detail', title: '款式' },
   { parent: '/styles', path: '/styles/new', file: 'style/style/form', title: '新建款式' },
   { parent: '/styles', path: '/styles/:id(\\d+)/edit', file: 'style/style/form', title: '编辑款式' },
+  // 第 3、4 批（docs/api 各模块文档的"页面"一节）
+  { parent: '/orders', file: 'order/order/detail', title: '需求订单' },
+  { parent: '/orders', path: '/orders/new', file: 'order/order/form', title: '新建需求订单' },
+  { parent: '/orders', path: '/orders/:id(\\d+)/edit', file: 'order/order/form', title: '编辑需求订单' },
+  { parent: '/order-changes', file: 'order/change/detail', title: '订单变更' },
+  { parent: '/mrp', file: 'purchase/mrp/detail', title: '算料单' },
+  { parent: '/purchases', file: 'purchase/order/detail', title: '采购单' },
+  { parent: '/purchases', path: '/purchases/new', file: 'purchase/order/form', title: '新建采购单' },
+  { parent: '/purchases', path: '/purchases/:id(\\d+)/edit', file: 'purchase/order/form', title: '编辑采购单' },
+  { parent: '/stock', path: '/reorder', file: 'purchase/reorder/detail', title: '补货提醒' },
+  { parent: '/stock-in', file: 'inventory/doc/detail', title: '物料入库单' },
+  { parent: '/stock-out', file: 'inventory/doc/detail', title: '物料出库单' },
+  { parent: '/stock-takes', file: 'inventory/count/detail', title: '物料盘点单' },
 ]
 const detailPages = import.meta.glob('../views/**/{detail,form}.vue')
 /** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */

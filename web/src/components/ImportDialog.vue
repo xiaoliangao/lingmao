@@ -26,8 +26,15 @@ interface ImportResult {
  *
  *   <ImportDialog v-model="importVisible" title="导入供应商" template-url="/api/suppliers/import-template"
  *                 import-url="/api/suppliers/import" @success="search" />
+ *
+ * 一批共用的信息（需求订单导入的主体、订单类型、业务员……）放 #head 插槽，显示成第一步；import-url 由页面按填的值拼好，
+ * 没填好时 :ready="false"，"开始导入"灰掉：
+ *
+ *   <ImportDialog … :import-url="orderApi.importUrl(head)" :ready="headReady">
+ *     <template #head><div class="form-grid">…</div></template>
+ *   </ImportDialog>
  */
-const props = defineProps<{ title: string; templateUrl: string; importUrl: string }>()
+const props = withDefaults(defineProps<{ title: string; templateUrl: string; importUrl: string; ready?: boolean }>(), { ready: true })
 const emit = defineEmits<{ success: [total: number] }>()
 const visible = defineModel<boolean>({ required: true })
 
@@ -131,6 +138,10 @@ async function submit() {
 
     <template v-else>
       <ol class="steps">
+        <li v-if="$slots.head">
+          <p class="step-title">先填这一批共用的信息</p>
+          <slot name="head" />
+        </li>
         <li>
           <p class="step-title">下载模板，按模板填好</p>
           <p class="step-hint">带 * 的列必填；表头别改名，列的顺序可以调。模板里"填写说明"那一页有每一列的格式和例子。</p>
@@ -171,7 +182,7 @@ async function submit() {
       <el-button v-if="imported !== null" type="primary" @click="visible = false">完成</el-button>
       <template v-else>
         <el-button :disabled="importing" @click="visible = false">取消</el-button>
-        <el-button type="primary" :disabled="!file" :loading="importing" @click="submit">开始导入</el-button>
+        <el-button type="primary" :disabled="!file || !ready" :loading="importing" @click="submit">开始导入</el-button>
       </template>
     </template>
   </el-dialog>

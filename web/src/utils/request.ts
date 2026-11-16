@@ -1,4 +1,4 @@
-import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios'
+import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import { showBizError } from '@/composables/useBizError'
 import { LIST_ERROR_CODES } from './errorCodes'
@@ -94,6 +94,21 @@ instance.interceptors.response.use(
   },
 )
 
+/**
+ * 只给 web/src/mock 用（pnpm dev:mock）：后端还没写的接口先由假数据回答。answer 返回 undefined = 不归 mock 管，照常发给后端；
+ * 返回 R 就当后端回了这个（code 不是 0 照样走下面的出错处理），返回 Blob 就当下载到的文件。正式打包不会调它
+ */
+export function installMock(answer: (config: InternalAxiosRequestConfig) => Promise<R<unknown> | Blob> | undefined) {
+  const real = axios.getAdapter(instance.defaults.adapter)
+  instance.defaults.adapter = async (config) => {
+    const answered = answer(config)
+    if (!answered) return real(config)
+    const data = await answered
+    const contentType = data instanceof Blob ? data.type || 'application/octet-stream' : 'application/json'
+    return { data, status: 200, statusText: 'OK', headers: { 'content-type': contentType }, config, request: null }
+  }
+}
+
 /** 后端说出错了：401 回登录页，带清单的弹表格，其他弹一行消息。返回给调用方的 ApiError */
 function fail(body: R<unknown>, response: AxiosResponse): ApiError {
   if (body.code === 401) {
@@ -162,13 +177,30 @@ export function upload<T>(url: string, file: Blob, options: { filename?: string;
  * 不能用 <a href> 直接打开，那样带不上 token。文件名取响应头 Content-Disposition，取不到用 fallbackName
  */
 export async function download(url: string, params?: object, fallbackName = '下载的文件'): Promise<void> {
+  const file = await fetchFile(url, params, fallbackName)
+  saveBlob(file, file.name)
+}
+
+/**
+ * 只取回文件、不保存：手机上拿去调系统分享（资料包 PDF 发微信，架构 §11.1），分享不了再 saveFile 存下来。
+ *   const file = await fetchFile(`/api/tech-packs/${id}/pdf`, params, '工艺单.pdf')
+ *   if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] })
+ *   else saveFile(file)
+ */
+export async function fetchFile(url: string, params?: object, fallbackName = '下载的文件'): Promise<File> {
   const response = await instance.request<Blob>({ url, method: 'get', params, responseType: 'blob', timeout: TRANSFER_TIMEOUT })
   if (!(response.data instanceof Blob)) {
     const message = '服务器没有返回文件，请稍后再试'
     ElMessage.error(message)
     throw new ApiError(-1, message)
   }
-  saveBlob(response.data, filenameOf(response.headers['content-disposition']) ?? fallbackName)
+  const name = filenameOf(response.headers['content-disposition']) ?? fallbackName
+  return new File([response.data], name, { type: response.data.type })
+}
+
+/** 把 fetchFile 取回的文件交给浏览器保存 */
+export function saveFile(file: File) {
+  saveBlob(file, file.name)
 }
 
 /**
