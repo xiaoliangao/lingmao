@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { styleApi } from '@/api/style'
+import { techPackApi } from '@/api/techpack'
 import { STYLE_STATUS, TECH_PACK_STATUS, type StyleAction, type StyleColor, type StyleDetail, type StyleSku } from '@/types/style'
 import type { FileVO } from '@/types/system'
+import type { TechPackOverview } from '@/types/techpack'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import BlankState from '@/components/BlankState.vue'
@@ -19,12 +21,16 @@ import { ApiError } from '@/utils/request'
 import { formatDate, formatDateTime, formatPrice } from '@/utils/format'
 import { confirmRemove } from '@/views/basic/common'
 import DesignFiles from './DesignFiles.vue'
+import StyleOrdersTab from './StyleOrdersTab.vue'
+import TechPackTab from './TechPackTab.vue'
 
 /**
- * 款式详情（/styles/:id，RFC 005 §9，原型 /styles/:code）。左边页签：基本信息、颜色尺码、价格、操作记录；右边图片、设计附件。
+ * 款式详情（/styles/:id，RFC 005 §9，原型 /styles/:code）。左边页签：基本信息、资料包、颜色尺码、需求订单、价格、操作记录；右边图片、设计附件。
  * 顶上的按钮按后端给的 actions 显示（状态 + 权限，后端算好的）。
- * 价格页签只有这款的加工价（RFC 006 §9），要 price:price:list，没有就不显示；资料包、订单页签第 3 批加。
- * 一款一个页签（详情路由，见 router/index.ts）：id 在这里取一次，不跟着路由变
+ * 价格页签只有这款的加工价（RFC 006 §9），要 price:price:list，没有就不显示。
+ * 资料包页签要 techpack:pack:list，需求订单页签要 order:order:list（docs/api/01 §1.1）。
+ * 一款一个页签（详情路由，见 router/index.ts）：id 在这里取一次，不跟着路由变；
+ * 但地址上的 ?tab=（还有资料包的 techPackId、sub）要 watch：页签留着时，别处带着参数再点进来不会重新挂载
  */
 const route = useRoute()
 const router = useRouter()
@@ -50,16 +56,62 @@ type SkuRow = StyleSku & { draftBarcode: string; draftPrice: number | null }
 const detail = ref<StyleDetail | null>(null)
 const skus = ref<SkuRow[]>([])
 const notFound = ref(false)
-const tab = ref<'info' | 'skus' | 'prices' | 'logs'>('info')
 const logList = ref<InstanceType<typeof DocLogList>>()
 const loadLogs = () => styleApi.logs(id)
 const canEdit = computed(() => user.hasPerm('style:style:edit'))
 const canRemove = computed(() => user.hasPerm('style:style:remove'))
+const canSeePack = computed(() => user.hasPerm('techpack:pack:list'))
+const canSeeCost = computed(() => user.hasPerm('techpack:cost:query'))
 const can = (action: StyleAction) => detail.value?.actions.includes(action) ?? false
+
+// ---------- 页签：没带 ?tab= 是基本信息（01 §1.1） ----------
+const TABS = ['info', 'techpack', 'skus', 'orders', 'prices', 'logs'] as const
+type TabName = (typeof TABS)[number]
+const pickTab = (value: unknown): TabName | undefined => ((TABS as readonly unknown[]).includes(value) ? (value as TabName) : undefined)
+const tab = ref<TabName>(pickTab(route.query.tab) ?? 'info')
+watch(
+  () => route.query.tab,
+  (value) => {
+    const name = pickTab(value)
+    if (name && route.path === path) tab.value = name
+  },
+)
+
+// ---------- 资料包概况：顶上的"新颜色没配料"、基本信息的"资料包核价"、"下订单"按钮都用它 ----------
+const tpOverview = ref<TechPackOverview | null>(null)
+const techPack = ref<InstanceType<typeof TechPackTab>>()
+
+async function loadOverview() {
+  if (!canSeePack.value) return
+  try {
+    tpOverview.value = await techPackApi.overview(id)
+  } catch {
+    tpOverview.value = null
+  }
+}
+
+const unmatchedNames = computed(() => (tpOverview.value?.unmatchedColors ?? []).map((c) => c.name).join('、'))
+
+/** 下订单：款式启用、有已生效的生产 BOM、有 order:order:add（看不到资料包的按款式上的资料包状态判断） */
+const canOrder = computed(() => {
+  const d = detail.value
+  if (!d || d.status !== 'ENABLED' || !user.hasPerm('order:order:add')) return false
+  const packs = tpOverview.value?.packs
+  return packs ? packs.some((p) => p.stage === 'PROD' && p.status === 'EFFECTIVE') : d.techPackStatus === 'PROD'
+})
+
+/** 基本信息里的"资料包核价"：点了去那一版的核价子页签 */
+async function openCost() {
+  const packId = tpOverview.value?.unitCostPackId
+  if (!packId) return
+  tab.value = 'techpack'
+  await nextTick()
+  await techPack.value?.open(packId, 'cost')
+}
 
 async function load() {
   try {
-    const [d, list] = await Promise.all([styleApi.get(id), styleApi.skus(id)])
+    const [d, list] = await Promise.all([styleApi.get(id), styleApi.skus(id), loadOverview()])
     detail.value = d
     skus.value = list.map((k) => ({ ...k, draftBarcode: k.barcode ?? '', draftPrice: k.tagPrice }))
     tabs.rename(path, `款式 ${d.code}`)
@@ -311,6 +363,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
         <el-button v-if="can('disable')" @click="disable">停用</el-button>
         <el-button v-if="can('edit')" @click="router.push(`/styles/${id}/edit`)">编辑</el-button>
         <el-button v-if="can('enable')" type="primary" @click="enable">启用</el-button>
+        <el-button v-if="canOrder" type="primary" @click="router.push(`/orders/new?styleId=${id}`)">下订单</el-button>
       </template>
     </PageHeader>
 
@@ -320,6 +373,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
 
     <div v-else-if="s" class="page detail">
       <div class="body">
+        <div v-if="unmatchedNames" class="unmatched">
+          <span>新颜色 {{ unmatchedNames }} 还没配料，订单不能下这个颜色</span>
+          <el-button size="small" @click="tab = 'techpack'">去资料包</el-button>
+        </div>
         <p class="sub dim">
           {{ subLine }}
           <span v-for="c in s.colors.filter((x) => x.status === 1)" :key="c.colorId" class="swatch" :title="`${c.code} ${c.name}`" :style="{ background: c.hex ?? undefined }" />
@@ -330,6 +387,15 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
               <template v-for="p in infoRows" :key="p.label">
                 <dt>{{ p.label }}</dt>
                 <dd>{{ p.value }}</dd>
+              </template>
+              <template v-if="canSeePack && canSeeCost">
+                <dt>资料包核价</dt>
+                <dd>
+                  <button v-if="tpOverview?.unitCost != null" type="button" class="link-btn num" @click="openCost">
+                    {{ tpOverview.unitCostStage === 'DEV' ? '研发估 ' : '' }}{{ formatPrice(tpOverview.unitCost) }} 元
+                  </button>
+                  <template v-else>资料包还没生效</template>
+                </dd>
               </template>
               <dt>主力面料</dt>
               <dd>
@@ -353,6 +419,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
                 </template>
               </dl>
             </template>
+          </el-tab-pane>
+
+          <el-tab-pane v-if="canSeePack" label="资料包" name="techpack" lazy>
+            <TechPackTab ref="techPack" :style-id="id" :style-code="s.code" :style-name="s.name" :overview="tpOverview" @changed="loadOverview" />
           </el-tab-pane>
 
           <el-tab-pane :label="`颜色尺码（${skus.length}）`" name="skus">
@@ -449,6 +519,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
             </el-table>
           </el-tab-pane>
 
+          <el-tab-pane v-if="user.hasPerm('order:order:list')" label="需求订单" name="orders" lazy>
+            <StyleOrdersTab :style-id="id" />
+          </el-tab-pane>
+
           <el-tab-pane v-if="user.hasPerm('price:price:list')" label="价格" name="prices" lazy>
             <PriceHistory :subject="{ kind: 'style', id, code: s.code, name: s.name }" />
           </el-tab-pane>
@@ -478,6 +552,35 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
 </template>
 
 <style scoped>
+/* 已生效的生产 BOM 里有颜色没配料（款式后来加的颜色）：顶上黄条 */
+.unmatched {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--lm-pending-text);
+  background: var(--lm-pending-bg);
+  border: 1px solid var(--lm-pending-line);
+  border-radius: var(--lm-radius);
+}
+
+.link-btn {
+  padding: 0;
+  font: inherit;
+  color: var(--lm-accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
 /* 详情页：左边主体（页签），右边一栏图片、附件。窄屏上下排（和物料详情一样） */
 .detail {
   display: grid;
