@@ -98,7 +98,7 @@ export const REASON_REQUIRED: readonly DocAction[] = ['reject']
 /** 点了先确认的动作：确认框里说的后果；danger 的确认按钮是红的 */
 export const DOC_ACTION_CONFIRM: Partial<Record<DocAction, { text: string; danger: boolean }>> = {
   void: { text: '作废后这张单只读，单号不再使用。', danger: true },
-  close: { text: '结案后不能再入库、回货、生成下游单据，只能看。有审核权限的人可以取消结案。', danger: false },
+  close: { text: '结案后不能再入库、回货、生成下游单据，只能看。要继续可以取消结案。', danger: false },
   unaudit: { text: '回到草稿，改完要重新提交审核。', danger: false },
   reopen: { text: '回到结案前的状态，可以继续执行。', danger: false },
 }
