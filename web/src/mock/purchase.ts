@@ -506,7 +506,7 @@ const pos: PurchaseDetail[] = [
     supplierShortName: '示例面料厂',
     supplierStatus: 'ACTIVE',
     supplierContact: '陈经理',
-    supplierPhone: '13000000001',
+    supplierPhone: '000-0000-0001',
     purchaseType: 'ORDER',
     calcId: 301,
     calcNo: 'SL202611130001',

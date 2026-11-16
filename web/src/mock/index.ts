@@ -83,7 +83,10 @@ function parseQuery(config: InternalAxiosRequestConfig, url: URL): Record<string
 installMock((config) => {
   const url = new URL(config.url ?? '', location.origin)
   const method = (config.method ?? 'get').toLowerCase()
-  for (const route of routes) {
+  // 参数少的先比：/api/production-orders/schedule-quote（order.ts）要排在 /api/production-orders/:id（production.ts）前面，
+  // 各模块文件是并行加载的，登记顺序靠不住。段数不同的路径本来就不会互相匹配，所以只按参数个数排就够了（sort 是稳定的）
+  const ordered = [...routes].sort((a, b) => a.keys.length - b.keys.length)
+  for (const route of ordered) {
     const matched = route.method === method && route.pattern.exec(url.pathname)
     if (!matched) continue
     const params = Object.fromEntries(route.keys.map((key, i) => [key, decodeURIComponent(matched[i + 1]!)]))

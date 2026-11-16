@@ -145,6 +145,32 @@ kbd {
   padding: 14px 16px 16px;
 }
 
+/* 单据详情的右侧栏（.aside）：一列面板；侧栏里的属性表（dl.props）：左边浅色字段名、右边值。
+ * 订单、变更、算料、采购、出入库、生产单详情都用，所以放这里，不在每页各写一份 */
+.aside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.props {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px 10px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.props dt {
+  color: var(--lm-muted);
+}
+
+.props dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* 对话框里的表单：标签在上（label-position="top"），两列排；占满一行的 el-form-item 加 class="full" */
 .form-grid {
   display: grid;
