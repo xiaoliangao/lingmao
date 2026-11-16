@@ -7,7 +7,8 @@
 #   deploy/build-package.sh --arch arm64           给 ARM 服务器打（默认 amd64，也就是 x86_64 服务器）
 #
 # 开始前：Docker Desktop 在跑；本机开发库起着（docker compose -f dev/compose.yml up -d，导出接口文档要起一次应用）；
-# 工作区是干净的（打的是 HEAD，没提交的改动不会进包，干净才不会搞混）。
+# 工作区除了 docs/ 是干净的（打的是 HEAD，没提交的改动不会进包，干净才不会搞混）。docs/ 不进包——包里的部署手册在
+# deploy/package/——所以那里没提交的文档不挡打包。
 #
 # 步骤：导出 HEAD → mvn verify（跑测试）→ pnpm build → 起一次应用导出 openapi.json → 按服务器的 CPU 架构打镜像 →
 # docker save → 连同 deploy/package/ 打成 dist/scm-<版本>[-full].tar.gz，附 sha256 校验值。
@@ -28,7 +29,7 @@ while [ $# -gt 0 ]; do
       ARCH=$2
       shift ;;
     --arch=*) ARCH=${1#--arch=} ;;
-    -h | --help) sed -n '2,14p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,15p' "$0"; exit 0 ;;
     -*) die "不认识的参数：$1（deploy/build-package.sh --help 看用法）" ;;
     *)
       if [ -n "$VERSION" ]; then die "版本号只能写一个"; fi
@@ -72,8 +73,8 @@ if ! command -v pnpm > /dev/null 2>&1; then
   done
   if ! command -v pnpm > /dev/null 2>&1; then die "没有 pnpm"; fi
 fi
-if [ -n "$(git status --porcelain)" ]; then
-  die "工作区有没提交的改动。包是从 HEAD 打的，先提交或者 git stash"
+if [ -n "$(git status --porcelain -- . ':(exclude)docs')" ]; then
+  die "工作区有没提交的改动（docs/ 以外）。包是从 HEAD 打的，先提交或者 git stash"
 fi
 running=$(dev_compose ps --status running --services 2> /dev/null || true)
 case $running in

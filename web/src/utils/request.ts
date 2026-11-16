@@ -34,11 +34,14 @@ export class ApiError extends Error {
   }
 }
 
-/** 上传文件的大小上限，和后端 spring.servlet.multipart.max-file-size 一致 */
+/** 上传文件的大小上限，和后端 FileServiceImpl 一致：一般 10MB；设计源文件 AI、PSD 100MB（只有款式的设计附件收） */
 export const MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+export const MAX_DESIGN_SOURCE_SIZE = 100 * 1024 * 1024
 
 /** 上传、下载用的超时：10MB 的文件在慢网上要传几十秒，默认的 15 秒不够 */
 const TRANSFER_TIMEOUT = 120_000
+/** 大文件按每秒 100KB 的慢网算超时：100MB 的 PSD 给 17 分钟 */
+const SLOW_BYTES_PER_SECOND = 100_000
 
 const instance = axios.create({
   timeout: 15000,
@@ -80,7 +83,7 @@ instance.interceptors.response.use(
       message = '服务器太久没有回应，请稍后再试'
     } else if (error.response?.status === 413) {
       // 超过 Nginx 的上传上限，请求没到后端
-      message = `文件太大，最大 ${MAX_UPLOAD_SIZE / 1024 / 1024}MB`
+      message = '文件太大：AI、PSD 最大 100MB，其他文件最大 10MB'
     } else if (error.response) {
       message = `服务器出错了（HTTP ${error.response.status}），请稍后再试`
     }
@@ -150,7 +153,8 @@ export const http = {
 export function upload<T>(url: string, file: Blob, options: { filename?: string; silent?: boolean } = {}): Promise<T> {
   const form = new FormData()
   form.append('file', file, options.filename ?? (file instanceof File ? file.name : 'file'))
-  return request<T>({ url, method: 'post', data: form, timeout: TRANSFER_TIMEOUT, silent: options.silent })
+  const timeout = Math.max(TRANSFER_TIMEOUT, (file.size / SLOW_BYTES_PER_SECOND) * 1000)
+  return request<T>({ url, method: 'post', data: form, timeout, silent: options.silent })
 }
 
 /**

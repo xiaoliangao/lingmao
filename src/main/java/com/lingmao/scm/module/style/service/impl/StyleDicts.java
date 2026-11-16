@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -54,6 +55,12 @@ class StyleDicts {
         if (!ok) {
             throw new BizException(400, what + "「" + value + "」不在字典里，或者已经停用了");
         }
+    }
+
+    /** 名称里含 keyword 的选项的 value，不分大小写，停用的也算：选款式时按品牌名称搜 */
+    List<String> valuesLabelled(String typeCode, String keyword) {
+        String k = keyword.toLowerCase(Locale.ROOT);
+        return options(typeCode).stream().filter(o -> o.label().toLowerCase(Locale.ROOT).contains(k)).map(DictOption::value).toList();
     }
 
     /** value → label，停用的也翻；字典里没有的（被删了）原样 */

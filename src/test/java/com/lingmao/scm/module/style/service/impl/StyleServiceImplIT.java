@@ -136,7 +136,7 @@ class StyleServiceImplIT {
 
     /**
      * 规则（RFC 005 §5）：建款带一色生成 5 个；再点生成 0 个（ON CONFLICT 只补缺）；加第二色再生成补 5 个；
-     * 同一个颜色再加一次 → 1000；生成过 SKU 的颜色不能去掉。启用后选款式能选到它，草稿时选不到
+     * 同一个颜色再加一次 → 1000；生成过 SKU 的颜色不能去掉。启用后选款式能选到它，草稿时选不到；选款式按品牌名称能搜到
      */
     @Test
     void colorsAndGenerate_idempotent() {
@@ -169,6 +169,12 @@ class StyleServiceImplIT {
             assertThat(p.getId()).isEqualTo(r.id());
             assertThat(p.getColors()).hasSize(2);
         });
+        // 品牌按名称搜（不分大小写），字典的 value 不算
+        StylePickQuery byBrand = new StylePickQuery();
+        byBrand.setKeyword(f.brandLabel().toUpperCase());
+        assertThat(styleService.pick(byBrand).getList()).extracting(StylePickVO::getId).containsExactly(r.id());
+        byBrand.setKeyword(f.brand());
+        assertThat(styleService.pick(byBrand).getList()).isEmpty();
     }
 
     /** 规则：条码有值时全表唯一（部分唯一索引），Service 先查给出是哪个 SKU；空的不算重复 */
@@ -267,7 +273,7 @@ class StyleServiceImplIT {
 
     private record Fixture(long parentCategoryId, long leafId, String leafName, String leafPath, long sizeGroupId,
                            String sizeGroupName, long designerId, String designerName, String designerNo, String brand,
-                           long colorId, String colorCode) {
+                           String brandLabel, long colorId, String colorCode) {
     }
 
     /** 一个新的两级品类、一个 S–XXL 的尺码组、一个颜色、一个有编号的设计师、一个品牌 */
@@ -299,7 +305,7 @@ class StyleServiceImplIT {
         brand.setValue("ITB" + suffix.toUpperCase());
         dictDataService.create(brand);
         return new Fixture(parentId, leafId, leafName, parentName + "/" + leafName, groupId, groupName, designerId, designerName,
-                designerNo, brand.getValue(), colorId, colorCode);
+                designerNo, brand.getValue(), brand.getLabel(), colorId, colorCode);
     }
 
     private StyleCreateReq req(Fixture f, String name) {

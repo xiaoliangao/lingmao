@@ -460,7 +460,9 @@ public class StyleServiceImpl implements StyleService {
     @Override
     public PageResult<StylePickVO> pick(StylePickQuery query) {
         query.setKeyword(trim(query.getKeyword()));
-        IPage<StylePickVO> page = styleMapper.selectPickPage(query.toPage(), query, categories.withDescendants(query.getCategoryId()));
+        // 品牌按名称搜：字典里名称对得上的品牌 value 交给 SQL（款式上存的是 value）
+        List<String> brands = query.getKeyword() == null ? List.of() : dicts.valuesLabelled(StyleDicts.BRAND, query.getKeyword());
+        IPage<StylePickVO> page = styleMapper.selectPickPage(query.toPage(), query, categories.withDescendants(query.getCategoryId()), brands);
         List<StylePickVO> rows = page.getRecords();
         List<Long> ids = rows.stream().map(StylePickVO::getId).toList();
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, ids, Attachment.IMAGE);

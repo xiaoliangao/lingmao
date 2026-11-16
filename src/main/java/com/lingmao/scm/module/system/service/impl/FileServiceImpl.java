@@ -27,7 +27,11 @@ import java.util.UUID;
 public class FileServiceImpl implements FileService {
 
     /** 只收这些扩展名。不收 html、js、exe 这类能在浏览器里执行或被下载运行的文件 */
-    private static final Set<String> ALLOWED = Set.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "xls", "xlsx", "doc", "docx");
+    private static final Set<String> ALLOWED = Set.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "xls", "xlsx", "doc", "docx", "ai", "psd");
+    /** 设计源文件（款式的设计附件）动辄几十 MB，放宽到 100MB；别的还是 10MB。multipart 的总上限是 100MB（application.yaml） */
+    private static final Set<String> DESIGN_SOURCE = Set.of("ai", "psd");
+    static final long MAX_BYTES = 10L * 1024 * 1024;
+    static final long MAX_DESIGN_SOURCE_BYTES = 100L * 1024 * 1024;
     private static final DateTimeFormatter DATE_PATH = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
     private final Path root;
@@ -51,6 +55,10 @@ public class FileServiceImpl implements FileService {
             throw new BizException("不支持的文件类型: " + original);
         }
         ext = ext.toLowerCase();
+        boolean source = DESIGN_SOURCE.contains(ext);
+        if (file.getSize() > (source ? MAX_DESIGN_SOURCE_BYTES : MAX_BYTES)) {
+            throw new BizException(400, original + " 太大：" + (source ? "AI、PSD 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
+        }
         // 存储用的文件名自己生成（UUID），不用用户给的名字：防重名，也防 ../ 这类路径穿越
         // 目录按上传那天分，"今天"从注入的 Clock 取（RFC 001 §6.2）
         String datePath = LocalDate.now(clock).format(DATE_PATH);

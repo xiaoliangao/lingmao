@@ -29,9 +29,9 @@ public interface StyleMapper extends BaseMapper<Style> {
     List<Long> selectIds(@Param("q") StyleQuery query, @Param("codes") List<String> codes,
                          @Param("categoryIds") Collection<Long> categoryIds, @Param("limit") int limit);
 
-    /** 选款式：启用的款式 */
+    /** 选款式：启用的款式（includeDraft 时加草稿）。brands：名称对得上关键字的品牌 value，关键字也算命中它们 */
     IPage<StylePickVO> selectPickPage(IPage<StylePickVO> page, @Param("q") StylePickQuery query,
-                                      @Param("categoryIds") Collection<Long> categoryIds);
+                                      @Param("categoryIds") Collection<Long> categoryIds, @Param("brands") Collection<String> brands);
 
     /** 导入：按编码找物料（主力面料），不看状态；状态由 MaterialService 判断 */
     List<LookupRow> selectMaterialsByCodes(@Param("codes") Collection<String> codes);

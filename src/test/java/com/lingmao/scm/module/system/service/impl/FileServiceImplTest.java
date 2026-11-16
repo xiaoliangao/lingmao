@@ -116,6 +116,24 @@ class FileServiceImplTest {
         }
     }
 
+    /** 规则：设计源文件 AI、PSD 收，不做缩略图，最大 100MB；别的类型还是 10MB，超了 400 说清楚 */
+    @Test
+    void upload_designSource_largerLimit() {
+        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+        long eleven = 11L * 1024 * 1024;
+
+        FileVO psd = service.upload(sized("款式图稿.PSD", eleven));
+        assertThat(psd.url()).contains(".psd?");
+        assertThat(psd.thumbUrl()).isNull();
+        assertThat(service.upload(sized("印花.ai", eleven)).url()).contains(".ai?");
+
+        assertThatThrownBy(() -> service.upload(sized("大图.jpg", eleven)))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400))
+                .hasMessage("大图.jpg 太大：图片、PDF、Word、Excel 最大 10MB");
+        assertThatThrownBy(() -> service.upload(sized("超大.psd", FileServiceImpl.MAX_DESIGN_SOURCE_BYTES + 1)))
+                .hasMessage("超大.psd 太大：AI、PSD 最大 100MB");
+    }
+
     /** 规则：不在白名单里的扩展名（比如 html）不收 */
     @Test
     void upload_htmlFile_rejected() {
@@ -143,5 +161,15 @@ class FileServiceImplTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ImageIO.write(img, format, out);
         return out.toByteArray();
+    }
+
+    /** 报的大小是 size，内容只有 3 个字节：测大小规则不用真的分配几十 MB */
+    private static MockMultipartFile sized(String name, long size) {
+        return new MockMultipartFile("file", name, "application/octet-stream", new byte[]{1, 2, 3}) {
+            @Override
+            public long getSize() {
+                return size;
+            }
+        };
     }
 }

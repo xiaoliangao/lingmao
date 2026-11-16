@@ -139,10 +139,10 @@ public class GlobalExceptionHandler {
         return R.fail(400, "上传失败：请求不完整或格式不对，请重新上传");
     }
 
-    /** 上传的文件超过大小限制（application.yaml 里的 spring.servlet.multipart.max-file-size） */
+    /** 上传的文件超过大小限制（application.yaml 里的 spring.servlet.multipart，100MB；按类型的 10MB 在 FileServiceImpl） */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public R<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
-        return R.fail(400, "文件太大，最大 10MB");
+        return R.fail(400, "文件太大：AI、PSD 最大 100MB，其他文件最大 10MB");
     }
 
     /** 已登录，但没有这个接口的权限（@PreAuthorize 没通过） */

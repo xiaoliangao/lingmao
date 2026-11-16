@@ -21,8 +21,8 @@ spring:
     baseline-on-migrate: false
   servlet:
     multipart:
-      max-file-size: 10MB          # 单个上传文件最大 10MB，超过返回 400
-      max-request-size: 10MB
+      max-file-size: 100MB         # 单个上传文件最大 100MB（AI、PSD 设计源文件），超过返回 400；别的类型 FileServiceImpl 再卡 10MB
+      max-request-size: 101MB      # 比文件大一点：multipart 的分隔行、表单头也算在请求里
   data:
     redis:
       host: ${REDIS_HOST}

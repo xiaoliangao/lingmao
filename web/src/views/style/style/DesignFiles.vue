@@ -4,11 +4,12 @@ import { ElMessage, type UploadRequestOptions } from 'element-plus'
 import { fileApi } from '@/api/system'
 import type { FileVO } from '@/types/system'
 import { formatFileSize } from '@/utils/format'
-import { MAX_UPLOAD_SIZE } from '@/utils/request'
+import { MAX_DESIGN_SOURCE_SIZE, MAX_UPLOAD_SIZE } from '@/utils/request'
 
 /**
  * 款式的设计附件（图稿、设计说明）：一行一个文件，点名字打开。v-model 是 FileVO 数组，整组替换（RFC 005 §7）。
- * 能传的类型照后端 FileServiceImpl：图片、PDF、Word、Excel；AI、PSD 传不了，先导出成 PDF
+ * 能传的类型照后端 FileServiceImpl：图片、PDF、Word、Excel 最大 10MB，设计源文件 AI、PSD 最大 100MB。
+ * 浏览器打不开的（AI、PSD、Office）点了直接下载，存下来还是原来的文件名
  *
  *   <DesignFiles v-model="form.files" />
  *   <DesignFiles :model-value="detail.files" :disabled="!canEdit" @update:model-value="saveFiles" />
@@ -16,14 +17,17 @@ import { MAX_UPLOAD_SIZE } from '@/utils/request'
 const props = withDefaults(defineProps<{ max?: number; disabled?: boolean }>(), { max: 20, disabled: false })
 const model = defineModel<FileVO[]>({ default: () => [] })
 
-const MAX_MB = MAX_UPLOAD_SIZE / 1024 / 1024
-const ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx'
+const ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ai,.psd'
+const isSource = (name: string) => /\.(ai|psd)$/i.test(name)
+/** 图片、PDF 在新页签里看；别的下载 */
+const viewable = (name: string) => /\.(jpe?g|png|gif|webp|pdf)$/i.test(name)
 const uploading = ref(0)
 const full = computed(() => model.value.length + uploading.value >= props.max)
 
 function beforeUpload(file: File) {
-  if (file.size > MAX_UPLOAD_SIZE) {
-    ElMessage.error(`${file.name} 太大，最大 ${MAX_MB}MB`)
+  const limit = isSource(file.name) ? MAX_DESIGN_SOURCE_SIZE : MAX_UPLOAD_SIZE
+  if (file.size > limit) {
+    ElMessage.error(`${file.name} 太大，${isSource(file.name) ? 'AI、PSD' : '图片、PDF、Word、Excel'} 最大 ${limit / 1024 / 1024}MB`)
     return false
   }
   if (full.value) {
@@ -53,7 +57,7 @@ function remove(index: number) {
     <ul v-if="model.length" class="list">
       <li v-for="(f, i) in model" :key="f.url">
         <el-icon class="icon"><Document /></el-icon>
-        <a :href="f.url" target="_blank" rel="noopener" class="name">{{ f.name }}</a>
+        <a :href="f.url" target="_blank" rel="noopener" :download="viewable(f.name) ? undefined : f.name" class="name">{{ f.name }}</a>
         <span class="dim size">{{ formatFileSize(f.size) }}</span>
         <el-button v-if="!disabled" link type="danger" size="small" :aria-label="`去掉 ${f.name}`" @click="remove(i)">去掉</el-button>
       </li>
@@ -70,7 +74,7 @@ function remove(index: number) {
     >
       <el-button size="small" icon="Upload" :loading="uploading > 0" :disabled="full">传附件</el-button>
       <template #tip>
-        <span class="dim tip">图片、PDF、Word、Excel，每个最大 {{ MAX_MB }}MB，最多 {{ max }} 个</span>
+        <span class="dim tip">图片、PDF、Word、Excel 最大 10MB，AI、PSD 最大 100MB，最多 {{ max }} 个</span>
       </template>
     </el-upload>
   </div>

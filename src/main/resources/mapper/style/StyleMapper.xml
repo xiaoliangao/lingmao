@@ -79,7 +79,8 @@
         WHERE s.status IN ('ENABLED'<if test="q.includeDraft != null and q.includeDraft">, 'DRAFT'</if>)
         <if test="q.keyword != null and q.keyword.trim() != ''">
             AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
-            OR s.alias_name ILIKE '%' || #{q.keyword} || '%' OR s.brand ILIKE '%' || #{q.keyword} || '%')
+            OR s.alias_name ILIKE '%' || #{q.keyword} || '%'
+            <if test="!brands.isEmpty()">OR s.brand IN <foreach collection="brands" item="b" open="(" separator="," close=")">#{b}</foreach></if>)
         </if>
         <if test="categoryIds != null">
             AND s.category_id IN <foreach collection="categoryIds" item="id" open="(" separator="," close=")">#{id}</foreach>
