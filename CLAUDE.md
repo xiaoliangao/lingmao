@@ -45,7 +45,7 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认，但不等全
 
 前端（`web/`，Vue 3 + TypeScript + Element Plus + Vite + pnpm）：
 
-- 两块区域，共用 `layout/AppLayout.vue`（左边侧边栏，没有顶栏）：`/` 所有人，首页 + 业务菜单 + 顶部页签（keep-alive，页面组件按 `Menu<id>` 命名，首页组件 `HomePage`）；管理后台 `/admin` 只给超级管理员、没有页签（后端 V7 `sys_menu.admin_only` 兜底）。`/` 这一页叫「首页」，不叫「工作台」；菜单管理里这块区域叫「业务菜单」。业务菜单建在它的顶层目录下，页面文件还没做时自动显示"还没上线"。
+- 两块区域，共用 `layout/AppLayout.vue`（左边侧边栏，没有顶栏）：`/` 所有人，首页 + 业务菜单 + 顶部页签（keep-alive，页面组件按 `Menu<id>` 命名，首页组件 `HomePage`）；管理后台 `/admin` 只给超级管理员、没有页签（后端 V7 `sys_menu.admin_only` 兜底）。`/` 这一页叫「首页」，不叫「工作台」；菜单管理里这块区域叫「业务菜单」。业务菜单建在它的顶层目录下，页面文件还没做时自动显示"还没上线"。手机报工单独成页（`router/standalone.ts`、`layout/MobileLayout.vue`，没有侧边栏和页签），电脑上点它在新标签里打开。侧边栏的"搜索功能"和 ⌘K 是快捷跳转弹窗（`layout/CommandPalette.vue`），能按名字找页面、按单号款号找单据和资料。
 - 页面结构照原型：每页顶上是 `PageHeader`（`title` / `sub` / `back`，插槽 `#title` / `#actions`）。列表页是 `PageHeader` → `FilterBar` → `el-table`（铺满，不套 `.panel`，不加 border）→ `el-pagination.pagination`；其他页的内容放 `<div class="page">`。状态用 `StatusTag`（`active | progress | pending | done | off | closed | void | danger`）。数字列 `class-name="num"`，编码列 `"code"`（等宽字体）。对话框表单标签放上面（`label-position="top"`），两列用 `.form-grid`。
 - 表格（用户 11-16 要的）：格子里放不下的字不换行，末尾省略号，鼠标移上去看全文（`main.ts` 给所有表格开了 `showOverflowTooltip`，要换行的列写 `:show-overflow-tooltip="false"`）。列宽要让日期、单号、状态标签、金额一行放下（最后一列多算 24px 页边），只有原因、备注这种长文字靠省略号。列多了表格横着滚：勾选列、单号列 `fixed="left"`，操作列（没有就状态列）`fixed="right"`，表格加 `scrollbar-always-on`。列表页的列用 `composables/useColumns.ts`，各人在 `FilterBar :columns` 的"显示列"里挑；行里有、默认不显示的字段也列进去（`hidden: true`），单号、勾选、操作列不进。样板是需求订单列表。
 - 筛选：`FilterBar` 用 `v-model:keyword` + `@search`，分段控件放 `#left`，其他条件写成 `<FilterItem label :text @clear>` 收进"筛选"弹层，选了的显示成能去掉的小标签；日期用 `DateRange`，标签文字用 `formatDateRange`。

@@ -9,6 +9,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import UserSelect from '@/components/UserSelect.vue'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
+import { isStandalone } from '@/router/standalone'
 import { useUserStore } from '@/stores/user'
 import {
   TODO_COUNT,
@@ -61,6 +62,12 @@ const QUICK = [
   { label: '手机报工', to: '/mobile', perm: 'production:mobile:list', icon: 'Iphone' },
 ]
 const quickActions = computed(() => QUICK.filter((a) => store.hasPerm(a.perm)))
+
+/** 快捷入口：单独成页的（手机报工）和侧边栏一样在新标签里打开 */
+function openQuick(to: string) {
+  if (isStandalone(to)) window.open(to, '_blank')
+  else router.push(to)
+}
 
 // ---------- 三块分开取 ----------
 const kpi = ref<HomeKpi | null>(null)
@@ -313,7 +320,7 @@ const backupLine = computed(() => {
       </section>
 
       <section v-if="quickActions.length" class="quick-bar">
-        <button v-for="a in quickActions" :key="a.to" type="button" class="quick-btn" @click="router.push(a.to)">
+        <button v-for="a in quickActions" :key="a.to" type="button" class="quick-btn" @click="openQuick(a.to)">
           <el-icon><component :is="a.icon" /></el-icon>
           <span>{{ a.label }}</span>
         </button>

@@ -11,7 +11,7 @@ const base = '/api/suppliers'
 
 /** 供应商（RFC 004 §8）。会被批量条逐条调的动作多收一个 options，批量时传 { silent: true } */
 export const supplierApi = {
-  page: (params: SupplierQuery & PageParams) => http.get<PageResult<SupplierRow>>(base, params),
+  page: (params: SupplierQuery & PageParams, options?: RequestOptions) => http.get<PageResult<SupplierRow>>(base, params, options),
   get: (id: number, options?: RequestOptions) => http.get<SupplierDetail>(`${base}/${id}`, undefined, options),
   /** 银行信息全号：要 bank 权限，每调一次记一条操作日志 */
   bank: (id: number) => http.get<SupplierBank>(`${base}/${id}/bank`),

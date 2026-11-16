@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { productionApi } from '@/api/production'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
@@ -27,15 +27,8 @@ async function load() {
   }
 }
 
+// 单独的外框里没有 keep-alive：从详情页回来是重新打开这一页，onMounted 会再取一次
 onMounted(load)
-let activated = false
-onActivated(() => {
-  if (!activated) {
-    activated = true
-    return
-  }
-  void load()
-})
 </script>
 
 <template>

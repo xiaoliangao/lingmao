@@ -177,7 +177,7 @@ export interface SkuForm {
 }
 
 export const materialApi = {
-  page: (params: PageParams & MaterialQuery) => http.get<PageResult<MaterialRow>>('/api/materials', params),
+  page: (params: PageParams & MaterialQuery, options?: RequestOptions) => http.get<PageResult<MaterialRow>>('/api/materials', params, options),
   get: (id: number) => http.get<MaterialDetail>(`/api/materials/${id}`),
   logs: (id: number) => http.get<DocLog[]>(`/api/materials/${id}/logs`),
   /** 选 SKU 的弹窗：启用物料的启用 SKU。关键字查 SKU 码、物料编码、名称、货号、颜色名；分类含下级 */

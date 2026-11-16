@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { APP_MARK, APP_NAME } from '@/config'
 import { useSidebar } from '@/composables/useSidebar'
 import { useVersion } from '@/composables/useVersion'
+import { isStandalone } from '@/router/standalone'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import type { MenuNode } from '@/types/system'
 import { joinPath } from '@/utils/path'
+import CommandPalette, { type PaletteItem } from './CommandPalette.vue'
 import PasswordDialog from './PasswordDialog.vue'
 
 /**
- * 侧边栏（照原型的外框）：浅暖灰底，顶上系统名和收起按钮，下面"搜索功能"，再下面按目录分组的菜单；
+ * 侧边栏（照原型的外框）：浅暖灰底，顶上系统名和收起按钮，下面"搜索功能"（点开是快捷跳转 CommandPalette），再下面按目录分组的菜单；
  * 最底下是切换区域（管理后台 / 回首页）和当前用户（点开改密码、退出登录）。
  * 菜单只有两层：顶层目录是一组（组名可以点着收起来），目录下面的页面一个一个列出来；更深的目录摊平
  */
@@ -96,42 +98,19 @@ function toggleGroup(key: string) {
   }
 }
 
-// ---------- 搜索功能：按名字找页面，不用一组组展开 ----------
-const keyword = ref('')
-const searchInput = ref<HTMLInputElement>()
+// ---------- 搜索功能：点开快捷跳转，按名字找页面、按单号款号找单据和资料 ----------
+const paletteOpen = ref(false)
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
 const SHORTCUT = IS_MAC ? '⌘K' : 'Ctrl K'
 
-const results = computed(() => {
-  const word = keyword.value.trim()
-  if (!word) return []
-  return allItems.value.filter((item) => item.name.includes(word) || item.group.includes(word))
-})
+const palettePages = computed<PaletteItem[]>(() => allItems.value.map((item) => ({ name: item.name, path: item.path, icon: item.icon, sub: item.group })))
 
-function go(path: string) {
-  keyword.value = ''
-  router.push(path)
+/** ⌘K / Ctrl+K：开着就关，关着就开（侧边栏收着也能开） */
+function toggleSearch() {
+  paletteOpen.value = !paletteOpen.value
 }
 
-function goFirst() {
-  const first = results.value[0]
-  if (first) go(first.path)
-}
-
-function clearSearch() {
-  keyword.value = ''
-  searchInput.value?.blur()
-}
-
-/** ⌘K / Ctrl+K：侧边栏收着就先拉出来，再把光标放进搜索框 */
-async function focusSearch() {
-  if (!open.value) toggle()
-  await nextTick()
-  searchInput.value?.focus()
-  searchInput.value?.select()
-}
-
-defineExpose({ focusSearch })
+defineExpose({ toggleSearch })
 
 // ---------- 当前用户 ----------
 const passwordVisible = ref(false)
@@ -170,45 +149,35 @@ async function onCommand(command: string) {
         </button>
       </div>
 
-      <label class="find">
+      <button type="button" class="find" aria-haspopup="dialog" @click="paletteOpen = true">
         <el-icon><Search /></el-icon>
-        <input
-          ref="searchInput"
-          v-model="keyword"
-          placeholder="搜索功能…"
-          aria-label="搜索功能"
-          @keydown.enter="goFirst"
-          @keydown.esc="clearSearch"
-        />
-        <kbd v-if="!keyword">{{ SHORTCUT }}</kbd>
-      </label>
+        <span class="find-text">搜索功能…</span>
+        <kbd>{{ SHORTCUT }}</kbd>
+      </button>
 
       <nav class="nav">
-        <template v-if="keyword.trim()">
-          <button v-for="item in results" :key="item.path" type="button" class="nav-i" @click="go(item.path)">
-            <el-icon v-if="item.icon"><component :is="item.icon" /></el-icon>
-            <span v-else class="no-icon" />
-            <span class="label">{{ item.name }}</span>
-            <small v-if="item.group">{{ item.group }}</small>
+        <div v-for="group in groups" :key="group.key" class="grp">
+          <button
+            v-if="group.name"
+            type="button"
+            class="grp-head"
+            :class="{ shut: closed[group.key] }"
+            :aria-expanded="!closed[group.key]"
+            @click="toggleGroup(group.key)"
+          >
+            {{ group.name }}<el-icon><ArrowDown /></el-icon>
           </button>
-          <p v-if="!results.length" class="none">没有叫"{{ keyword.trim() }}"的功能</p>
-        </template>
-        <template v-else>
-          <div v-for="group in groups" :key="group.key" class="grp">
-            <button
-              v-if="group.name"
-              type="button"
-              class="grp-head"
-              :class="{ shut: closed[group.key] }"
-              :aria-expanded="!closed[group.key]"
-              @click="toggleGroup(group.key)"
-            >
-              {{ group.name }}<el-icon><ArrowDown /></el-icon>
-            </button>
-            <template v-if="!group.name || !closed[group.key]">
+          <template v-if="!group.name || !closed[group.key]">
+            <template v-for="item in group.items" :key="item.path">
+              <!-- 单独成页的（手机报工）在浏览器新标签里打开，工作台这一页留着 -->
+              <a v-if="isStandalone(item.path)" :href="item.path" target="_blank" class="nav-i" :title="`${item.name}（在新标签里打开）`">
+                <el-icon v-if="item.icon"><component :is="item.icon" /></el-icon>
+                <span v-else class="no-icon" />
+                <span class="label">{{ item.name }}</span>
+                <el-icon class="out"><TopRight /></el-icon>
+              </a>
               <router-link
-                v-for="item in group.items"
-                :key="item.path"
+                v-else
                 :to="item.path"
                 class="nav-i"
                 :class="{ on: item.path === activePath }"
@@ -219,9 +188,9 @@ async function onCommand(command: string) {
                 <span class="label">{{ item.name }}</span>
               </router-link>
             </template>
-          </div>
-          <p v-if="!groups.length" class="none">暂无可用的功能</p>
-        </template>
+          </template>
+        </div>
+        <p v-if="!groups.length" class="none">暂无可用的功能</p>
       </nav>
 
       <div class="side-foot">
@@ -250,6 +219,7 @@ async function onCommand(command: string) {
     </div>
     <PasswordDialog v-model="passwordVisible" />
   </aside>
+  <CommandPalette v-model="paletteOpen" :pages="palettePages" />
 </template>
 
 <style scoped>
@@ -376,12 +346,15 @@ async function onCommand(command: string) {
   flex: none;
   align-items: center;
   gap: 8px;
+  width: calc(100% - 20px);
   height: 32px;
   margin: 0 10px 10px;
   padding: 0 8px 0 10px;
+  font: inherit;
   font-size: 12.5px;
   color: var(--lm-faint);
-  cursor: text;
+  text-align: left;
+  cursor: pointer;
   background: var(--lm-paper);
   border: 1px solid var(--lm-line);
   border-radius: var(--lm-radius);
@@ -395,24 +368,14 @@ async function onCommand(command: string) {
   border-color: var(--lm-line-strong);
 }
 
-.find:focus-within {
+.find:focus-visible {
   border-color: var(--lm-accent);
+  outline: none;
   box-shadow: var(--lm-focus-ring);
 }
 
-.find input {
+.find-text {
   flex: 1;
-  min-width: 0;
-  padding: 0;
-  font: inherit;
-  color: var(--lm-ink);
-  background: none;
-  border: 0;
-  outline: none;
-}
-
-.find input::placeholder {
-  color: var(--lm-faint);
 }
 
 /* ---------- 菜单 ---------- */
@@ -503,8 +466,10 @@ async function onCommand(command: string) {
   text-overflow: ellipsis;
 }
 
-.nav-i small {
-  font-size: 11.5px;
+/* 在新标签里打开的：右边一个小箭头 */
+.nav-i .out {
+  margin-left: auto;
+  font-size: 12px;
   color: var(--lm-faint);
 }
 

@@ -19,7 +19,7 @@ const base = '/api/orders'
 
 export const orderApi = {
   ...docApi(base),
-  page: (params: PageParams & OrderQuery) => http.get<PageResult<OrderRow>>(base, params),
+  page: (params: PageParams & OrderQuery, options?: RequestOptions) => http.get<PageResult<OrderRow>>(base, params, options),
   /** 状态页签上的条数：筛选条件和列表一样（status 不看），返回每个状态几张，没有的状态不在里面 */
   counts: (params: Omit<OrderQuery, 'status' | 'ids'>) => http.get<Partial<Record<OrderStatus, number>>>(`${base}/counts`, params),
   get: (id: number) => http.get<OrderDetail>(`${base}/${id}`),

@@ -55,7 +55,7 @@ export const purchaseApi = {
   /** act(id, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit' | 'close' | 'reopen' | 'void', body, options)、remove、logs…… */
   ...docApi(poBase),
   /** 要 purchase:order:list */
-  page: (params: PageParams & PurchaseQuery) => http.get<PageResult<PurchaseRow>>(poBase, params),
+  page: (params: PageParams & PurchaseQuery, options?: RequestOptions) => http.get<PageResult<PurchaseRow>>(poBase, params, options),
   get: (id: number) => http.get<PurchaseDetail>(`${poBase}/${id}`),
   create: (data: PurchaseForm) => http.post<PurchaseCreated>(poBase, data),
   /** 返回新的 version */

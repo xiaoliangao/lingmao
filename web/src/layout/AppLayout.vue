@@ -13,7 +13,7 @@ import TabsBar from './TabsBar.vue'
  * - 首页这一侧（/，所有人）：右边顶上多一条页签，开过的菜单页面用 keep-alive 留着，切回来还是原来的样子
  * - 管理后台（/admin，只有超级管理员）：没有页签，点哪页显示哪页
  *
- * 快捷键：[ 收起 / 展开侧边栏；⌘K（Windows 上 Ctrl+K）跳到"搜索功能"
+ * 快捷键：[ 收起 / 展开侧边栏；⌘K（Windows 上 Ctrl+K）打开 / 关掉快捷跳转（侧边栏的"搜索功能"）
  */
 const props = defineProps<{ area: 'workbench' | 'admin' }>()
 
@@ -98,7 +98,7 @@ function onKey(event: KeyboardEvent) {
   if (event.isComposing) return
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
-    void sidebar.value?.focusSearch()
+    sidebar.value?.toggleSearch()
     return
   }
   const bracket = event.key === '[' || event.key === '【' || (event.code === 'BracketLeft' && !event.shiftKey)

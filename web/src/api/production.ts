@@ -1,4 +1,4 @@
-import { download, http } from '@/utils/request'
+import { download, http, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
   BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
@@ -22,7 +22,7 @@ const base = '/api/production-orders'
 export const productionApi = {
   /** act(id, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit' | 'close' | 'reopen' | 'void', body, options)、remove、logs…… */
   ...docApi(base),
-  page: (params: PageParams & ProductionQuery) => http.get<PageResult<ProductionRow>>(base, params),
+  page: (params: PageParams & ProductionQuery, options?: RequestOptions) => http.get<PageResult<ProductionRow>>(base, params, options),
   /** 状态页签上的数：筛选条件和列表一样（status、returned 不看） */
   counts: (params: Omit<ProductionQuery, 'status' | 'returned' | 'ids'>) => http.get<ProductionCounts>(`${base}/counts`, params),
   /** 不在数据范围里 404。地址的种类和单子对不上（/production/ 打开了 CP 单）时页面按 kind 换地址 */

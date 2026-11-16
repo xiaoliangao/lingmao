@@ -65,7 +65,7 @@ export interface StyleCreateForm extends StyleForm {
 }
 
 export const styleApi = {
-  page: (params: PageParams & StyleQuery) => http.get<PageResult<StyleRow>>(base, params),
+  page: (params: PageParams & StyleQuery, options?: RequestOptions) => http.get<PageResult<StyleRow>>(base, params, options),
   get: (id: number) => http.get<StyleDetail>(`${base}/${id}`),
   logs: (id: number) => http.get<DocLog[]>(`${base}/${id}/logs`),
   /** 自动款号预览：不占号，保存时才取。设计师没编号、今天流水满了回 1000，消息说清楚怎么办 */

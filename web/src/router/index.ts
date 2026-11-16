@@ -4,6 +4,7 @@ import { APP_NAME } from '@/config'
 import { useUserStore } from '@/stores/user'
 import type { MenuNode } from '@/types/system'
 import { joinPath } from '@/utils/path'
+import { STANDALONE_PAGES, isStandalone } from './standalone'
 
 /**
  * 两块区域，共用一个外框（layout/AppLayout.vue：左边侧边栏，右边页面）：
@@ -72,7 +73,6 @@ const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: strin
   { parent: '/stock-takes', file: 'inventory/count/detail', title: '物料盘点单' },
   { parent: '/production', file: 'production/order/detail', title: '外发加工单' },
   { parent: '/fp-purchases', file: 'production/order/detail', title: '成品采购单' },
-  { parent: '/mobile', file: 'production/mobile/detail', title: '手机报工' },
 ]
 const detailPages = import.meta.glob('../views/**/{detail,form}.vue')
 /** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */
@@ -95,12 +95,28 @@ function named(loader: () => Promise<unknown>, name: string): () => Promise<Rout
   return () => loader().then((mod) => ({ ...(mod as { default: RouteComponent }).default, name }))
 }
 
+/** 单独成页的菜单（router/standalone.ts）：自己的外框，列表页和详情页 /:id 挂在它下面 */
+function addStandaloneRoute(path: string, title: string, page: () => Promise<unknown>) {
+  const detail = detailPages[`../views/${STANDALONE_PAGES[path]!.detail}.vue`] ?? building
+  router.addRoute({
+    path,
+    component: () => import('@/layout/MobileLayout.vue'),
+    children: [
+      { path: '', component: page, meta: { title } },
+      { path: ':id(\\d+)', component: detail, meta: { title } },
+    ],
+  })
+}
+
 /** 把菜单（目录、菜单）变成路由，挂在 parentName 那块区域下面。返回第一个页面的地址 */
 function addMenuRoutes(parentName: string, menus: MenuNode[], parentPath = '', group = ''): string | undefined {
   let first: string | undefined
   for (const menu of menus) {
     const fullPath = joinPath(parentPath, menu.path ?? '')
-    if (menu.type === 2 && menu.component) {
+    if (menu.type === 2 && menu.component && isStandalone(fullPath)) {
+      addStandaloneRoute(fullPath, menu.name, pages[`../views/${menu.component}.vue`] ?? building)
+      menuGroups.set(fullPath, group)
+    } else if (menu.type === 2 && menu.component) {
       const cacheName = `Menu${menu.id}`
       const page = pages[`../views/${menu.component}.vue`] ?? building
       router.addRoute(parentName, {
@@ -120,9 +136,12 @@ function addMenuRoutes(parentName: string, menus: MenuNode[], parentPath = '', g
 
 let menuRoutesAdded = false
 
-/** 手机上（屏宽 < 600px）打开 / 时（登录后就是），有手机报工菜单的直接进手机报工（docs/api/05 §1.2），别的照常去首页 */
+/**
+ * 手机上（屏宽 < 600px）打开 / 时（登录后就是），有手机报工菜单的直接进手机报工（docs/api/05 §1.2），别的照常去首页。
+ * 守卫里改道以后，下一次跳转的 redirectedFrom 还是 /，已经在 /mobile 了就不再改，不然一直改道（vue-router 报 Infinite redirect）
+ */
 function phoneHome(to: RouteLocationNormalized): string | undefined {
-  if (to.redirectedFrom?.path !== '/' || !window.matchMedia('(max-width: 599px)').matches) return undefined
+  if (to.redirectedFrom?.path !== '/' || to.path === '/mobile' || !window.matchMedia('(max-width: 599px)').matches) return undefined
   return menuGroups.has('/mobile') ? '/mobile' : undefined
 }
 
