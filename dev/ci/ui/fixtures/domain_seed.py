@@ -72,14 +72,15 @@ class DomainFixture:
             self.api.request("POST", f"/api/tech-packs/{identity}/publish", {"versionLock": current["versionLock"]})
         return identity
 
-    def new_production(self) -> dict:
+    def new_production(self, *, merch_id: int | None = None) -> dict:
         """A tiny draft from the dedicated approved matrix order; no direct SQL."""
         order = self.api.request("GET", f"/api/orders/{self.f['matrixOrderId']}")
         result = self.api.request("POST", "/api/production-orders/schedule", {
             "orderId": order["id"], "blocks": [{
                 "styleId": self.f["styleId"], "factoryId": self.f.get("factoryId", 3), "processMode": "CMT",
                 "unitPrice": 12.3456, "priceSourceId": None, "priceChangeReason": "匿名权限回归",
-                "dueDate": (self.today + timedelta(days=30)).isoformat(), "merchId": self.f["userId"],
+                "dueDate": (self.today + timedelta(days=30)).isoformat(),
+                "merchId": self.f["userId"] if merch_id is None else merch_id,
                 "settleMethod": "MONTHLY", "terms": None, "remark": "匿名权限单据",
                 "items": [{"orderItemId": row["id"], "qty": 2} for row in order["items"]],
             }]})

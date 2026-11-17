@@ -25,6 +25,8 @@ def create_identities(admin: ApiClient, company_id: int) -> dict:
         "all_reader": ("ALL", lists),
         "no_list": ("SELF", set()),
         "pack_editor": ("SELF", {"style:style:list", "techpack:pack:list", "techpack:pack:edit"}),
+        "mobile_only": ("SELF", {"production:mobile:list"}),
+        "warehouse_only": ("SELF", {"inventory:doc:list", "inventory:doc:add"}),
     }
     password = os.environ.get("SCM_UI_PASSWORD")
     if not password:
@@ -59,6 +61,18 @@ def create_identities(admin: ApiClient, company_id: int) -> dict:
             raise AssertionError("The no-cost editor must not have cost authority")
         if key in {"designated", "all_reader", "outsider", "no_list"} and any(p.endswith(":audit") for p in me["perms"]):
             raise AssertionError("Read-only identity accidentally received an audit permission")
+        if key == "mobile_only" and set(me["perms"]) != permissions:
+            raise AssertionError("The mobile-only identity must not inherit desktop or ALL authority")
+        if key == "warehouse_only" and set(me["perms"]) != permissions:
+            raise AssertionError("The independent warehouse identity must not inherit purchase, audit or ALL authority")
         result[key] = {"userId": user_id, "roleId": role_id, "username": username,
                        "dataScope": scope, "permissions": sorted(permissions), "menuIds": sorted(matches)}
+        if key == "mobile_only":
+            # Shared report buttons live under the desktop menu. C19 grants only
+            # these button IDs later, never their production:order:list parent.
+            report_permissions = {"production:node:edit", "production:issue:edit"}
+            report_ids = {row["id"] for row in nodes.values() if row.get("perms") in report_permissions}
+            if {nodes[identity]["perms"] for identity in report_ids} != report_permissions:
+                raise AssertionError("Mobile report permissions must use the existing shared button definitions")
+            result[key]["reportMenuIds"] = sorted(report_ids)
     return result

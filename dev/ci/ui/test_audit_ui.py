@@ -1119,6 +1119,21 @@ class AuditUi(unittest.TestCase):
         if any(row["valuationStatus"] == "UNKNOWN" for row in stock_logs["/api/stock-logs"]["list"]):
             expect(page.get_by_text("估值未知", exact=True).first).to_be_visible()
         self.shot("stock-ledger-valued-or-unknown")
+        with page.expect_download() as ledger_download, page.expect_response(
+                lambda response: self.response_for(response, "GET", "/api/stock-logs/export")) as ledger_export:
+            page.locator(".page-header").get_by_role("button", name="导出", exact=True).click()
+        self.assertEqual(ledger_export.value.status, 200)
+        ledger_file = self.case_dir / "stock-ledger-values.xlsx"
+        ledger_download.value.save_as(str(ledger_file))
+        ledger_bytes = ledger_file.read_bytes()
+        ledger_rows = spreadsheet_rows(ledger_bytes)
+        self.assertGreater(len(ledger_rows), 1)
+        value_headers = ["单价", "金额", "币种", "估值状态", "冲销原流水 ID"]
+        self.assertTrue(set(value_headers).issubset(ledger_rows[0]))
+        self.assertTrue(any("RECORDED" in row for row in ledger_rows[1:]))
+        self.assertTrue(any("UNKNOWN" in row for row in ledger_rows[1:]))
+        self.note("real browser stock ledger export contains valuation facts", headers=value_headers,
+                  recordedPresent=True, unknownPresent=True, sha256=hashlib.sha256(ledger_bytes).hexdigest())
 
         go("/stock-in?tab=pending", "/api/purchase-orders/pending-items", "pending-arrivals", "采购单")
         # Both panels mount under stock-in; full navigation gives each shown panel a
@@ -1239,6 +1254,341 @@ class AuditUi(unittest.TestCase):
         self.assertEqual(mutations, [], "Open/cancel smoke unexpectedly sent a business mutation")
         self.note("all added forms cancelled without mutation", mutationCount=0)
         # Parent tearDown still asserts zero console errors, zero page errors and local-only requests.
+
+    def test_18_home_unavailable_is_not_a_successful_empty_state(self):
+        page = self.page
+        panels = (
+            ("/api/board/home/kpi", "home-kpi-error", "重试概况", "概况暂不可用"),
+            ("/api/board/home/todos", "home-todos-error", "重试待办", "待处理事项暂不可用"),
+            ("/api/board/home/deliveries", "home-deliveries-error", "重试交期", "近期交期暂不可用"),
+        )
+        # The current contract explicitly defers these aggregates. Observe their
+        # actual responses instead of replacing them with an empty fixture.
+        with ExitStack() as stack:
+            waits = [(path, stack.enter_context(page.expect_response(
+                lambda response, target=path: self.response_for(response, "GET", target))))
+                     for path, _, _, _ in panels]
+            page.goto(self.ui_base + "/home")
+        for path, wait in waits:
+            self.assertEqual(wait.value.json()["code"], 404)
+            self.note("real home aggregate unavailable", path=path, code=404)
+        expect(page.locator(".page-header h1")).to_have_text("首页")
+        for _, test_id, retry, message in panels:
+            alert = page.get_by_test_id(test_id)
+            expect(alert).to_contain_text(message)
+            expect(alert.get_by_role("button", name=retry, exact=True)).to_be_visible()
+        expect(page.get_by_text("其他提醒暂不可用，未取得提醒数据", exact=True)).to_be_visible()
+        for fabricated_empty in ("暂无待处理的事", "近 7 天没有要交的单", "没有别的要处理"):
+            expect(page.get_by_text(fabricated_empty, exact=True)).not_to_be_visible()
+        expect(page.locator(".kpi-grid")).not_to_be_visible()
+        self.shot("home-real-unavailable-without-fabricated-zeros")
+        for path, test_id, retry, message in panels:
+            with self.subTest(panel=test_id):
+                with page.expect_response(lambda response, target=path: self.response_for(response, "GET", target)) as retried:
+                    page.get_by_test_id(test_id).get_by_role("button", name=retry, exact=True).click()
+                self.assertEqual(retried.value.json()["code"], 404)
+                expect(page.get_by_test_id(test_id)).to_contain_text(message)
+                self.note("home retry preserves failure state", path=path, code=404, fabricatedEmpty=False)
+        self.shot("home-independent-retries-remain-explicit")
+
+    def test_19_mobile_only_self_scope_and_real_report_issue(self):
+        identity = self.fixture["identities"]["mobile_only"]
+        actor = self.actor("mobile_only")
+        base = "/api/production-orders"
+        read_permissions = {"production:mobile:list"}
+        report_permissions = read_permissions | {"production:node:edit", "production:issue:edit"}
+
+        def assert_permissions(expected):
+            me = actor.request("GET", "/api/auth/me")
+            self.assertEqual(set(me["perms"]), expected)
+            self.assertNotIn("admin", me["roles"])
+            def paths(menus):
+                return {menu.get("path") for menu in menus} | {
+                    path for menu in menus for path in paths(menu.get("children") or [])}
+            menu_paths = paths(me["menus"])
+            self.assertIn("/mobile", menu_paths)
+            self.assertTrue({"/production", "/fp-purchases", "/board"}.isdisjoint(menu_paths))
+
+        assert_permissions(read_permissions)
+        owned = self.domain.approve(base, self.domain.new_production(merch_id=identity["userId"])["id"])
+        foreign = self.domain.approve(base, self.domain.new_production()["id"])
+        pending = self.domain.submit(base, self.domain.new_production(merch_id=identity["userId"])["id"])
+        self.assertEqual(owned["merchId"], identity["userId"])
+        self.assertNotEqual(foreign["merchId"], identity["userId"])
+        self.assertGreater(len(owned["nodes"]), 0)
+        own_path = f"{base}/{owned['id']}"
+        pending_path = f"{base}/{pending['id']}"
+        node = owned["nodes"][0]
+        start_body = {"action": "START", "actualStart": business_day().isoformat(), "actualFinish": None,
+                      "doneQty": owned["totalQty"], "remark": "合成手机开始", "photos": []}
+        receipt_body = {"clientActionId": str(uuid4()), "receiptDate": business_day().isoformat(),
+                        "warehouseId": self.fixture["productWarehouseId"], "logisticsNo": None,
+                        "remark": "合成权限拒绝检查", "photos": [],
+                        "items": [{"prdOrderItemId": owned["items"][0]["id"], "qty": 1, "defectQty": 0, "remark": None}]}
+
+        def assert_forbidden(phase):
+            for path in (query_path(base, {"kind": "OUTSOURCE"}),
+                         query_path(base + "/counts", {"kind": "OUTSOURCE"})):
+                self.assertEqual(actor.envelope("GET", path)["code"], 403)
+            self.assertEqual(actor.envelope("GET", f"{base}/{foreign['id']}")["code"], 404)
+            self.assertEqual(actor.envelope("POST", own_path + "/receipts", receipt_body)["code"], 403)
+            # A visible PENDING document reaches the real current-level check;
+            # an APPROVED document would only prove a state-transition rejection.
+            self.assertEqual(actor.envelope("POST", pending_path + "/audit", {"version": pending["version"]})["code"], 403)
+            unchanged = self.api.request("GET", pending_path)
+            self.assertEqual((unchanged["status"], unchanged["version"]), ("PENDING", pending["version"]))
+            self.assertEqual(self.api.request("GET", own_path)["returnedQty"], 0)
+            self.assertEqual(self.api.request("GET", own_path + "/receipts"), [])
+            self.note("mobile-only denied desktop, foreign object, receipt and approval", phase=phase,
+                      desktopListCode=403, desktopCountsCode=403, foreignDetailCode=404,
+                      receiptCode=403, pendingAuditCode=403, unchangedPendingVersion=pending["version"])
+
+        assert_forbidden("read-only")
+        self.assertEqual(actor.envelope("POST", f"{own_path}/nodes/{node['id']}/reports", start_body)["code"], 403)
+
+        def fit_phone(page):
+            self.assertEqual(page.viewport_size, {"width": 390, "height": 844})
+            self.assertTrue(page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"))
+
+        # The existing desktop-authorized path remains available at the same width.
+        desktop = self.new_context(mobile=True).new_page()
+        with desktop.expect_response(lambda r: self.response_for(r, "GET", own_path)) as desktop_read:
+            desktop.goto(f"{self.ui_base}/mobile/{owned['id']}")
+        self.assertEqual(desktop_read.value.json()["code"], 0)
+        expect(desktop.get_by_role("button", name="在电脑上打开", exact=True)).to_be_visible()
+        fit_phone(desktop)
+        self.shot("mobile-desktop-authority-keeps-entry", desktop)
+        with desktop.expect_response(lambda r: self.response_for(r, "GET", own_path)) as desktop_opened:
+            desktop.get_by_role("button", name="在电脑上打开", exact=True).click()
+        self.assertEqual(desktop_opened.value.json()["code"], 0)
+        desktop.wait_for_url(f"{self.ui_base}/production/{owned['id']}")
+        expect(desktop.locator(".page-header")).to_contain_text(owned["no"])
+
+        page = self.new_context(mobile=True, actor=actor).new_page()
+        self.page = page  # A failure image must capture the actual mobile state.
+        with page.expect_response(lambda r: self.response_for(r, "GET", base + "/my-follow")) as listed:
+            page.goto(self.ui_base + "/")
+        self.assertEqual(listed.value.json()["code"], 0)
+        self.assertEqual({row["id"] for row in listed.value.json()["data"]}, {owned["id"]})
+        page.wait_for_url(self.ui_base + "/mobile")
+        expect(page.get_by_role("heading", name="我的跟单", exact=True)).to_be_visible()
+        expect(page.locator(".m-card")).to_have_count(1)
+        expect(page.locator(".m-card")).to_contain_text(owned["no"])
+        fit_phone(page)
+        self.shot("mobile-only-owned-active-list", page)
+        with page.expect_response(lambda r: self.response_for(r, "GET", own_path)) as opened:
+            page.locator(".m-card").click()
+        own_read = opened.value.json()
+        self.assertEqual(own_read["code"], 0)
+        self.assertTrue({"report", "reportIssue", "receive", "audit"}.isdisjoint(own_read["data"]["actions"]))
+        expect(page.locator(".big-node")).to_have_count(len(owned["nodes"]))
+        for button in page.locator(".big-node").all():
+            expect(button).to_be_disabled()
+        expect(page.get_by_role("button", name="上报异常", exact=True)).not_to_be_visible()
+        expect(page.get_by_role("button", name="在电脑上打开", exact=True)).not_to_be_visible()
+        fit_phone(page)
+        self.shot("mobile-only-read-only-detail", page)
+
+        with page.expect_response(lambda r: self.response_for(r, "GET", f"{base}/{foreign['id']}")) as inaccessible:
+            page.goto(f"{self.ui_base}/mobile/{foreign['id']}")
+        self.assertEqual(inaccessible.value.json()["code"], 404)
+        expect(page.get_by_text("这张单不存在，或者不归你看", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="回我的跟单", exact=True)).to_be_visible()
+        expect(page.locator(".summary-card")).not_to_be_visible()
+        fit_phone(page)
+        self.shot("mobile-only-foreign-detail-denied", page)
+
+        # Grant shared action IDs directly. Including their desktop menu ancestor
+        # would silently turn this into a desktop-user test and defeat T09.
+        report_menu_ids = sorted(set(identity["menuIds"]) | set(identity["reportMenuIds"]))
+        self.api.request("PUT", f"/api/roles/{identity['roleId']}/menus", {"ids": report_menu_ids})
+        try:
+            assert_permissions(report_permissions)
+            assert_forbidden("report-enabled")
+            foreign_node = foreign["nodes"][0]
+            self.assertEqual(actor.envelope("POST", f"{base}/{foreign['id']}/nodes/{foreign_node['id']}/reports", start_body)["code"], 404)
+            foreign_after = self.api.request("GET", f"{base}/{foreign['id']}")
+            self.assertEqual(foreign_after["nodes"], foreign["nodes"])
+            with page.expect_response(lambda r: self.response_for(r, "GET", own_path)) as reloaded:
+                page.goto(f"{self.ui_base}/mobile/{owned['id']}")
+            allowed = reloaded.value.json()
+            self.assertEqual(allowed["code"], 0)
+            self.assertTrue({"report", "reportIssue"}.issubset(allowed["data"]["actions"]))
+            self.assertTrue({"receive", "audit"}.isdisjoint(allowed["data"]["actions"]))
+            expect(page.get_by_role("button", name="在电脑上打开", exact=True)).not_to_be_visible()
+            node_button = page.locator(".big-node").filter(has=page.get_by_text(node["nodeName"], exact=True))
+            expect(node_button).to_be_enabled()
+            node_button.click()
+            page.get_by_label("实际开始", exact=True).fill(start_body["actualStart"])
+            page.get_by_label("备注", exact=True).fill(start_body["remark"])
+            start = page.get_by_role("button", name="只报开始", exact=True)
+            start.scroll_into_view_if_needed()
+            expect(start).to_be_in_viewport(ratio=1)
+            fit_phone(page)
+            self.shot("mobile-only-real-start-form", page)
+            report_path = f"{own_path}/nodes/{node['id']}/reports"
+            with page.expect_response(lambda r: self.response_for(r, "POST", report_path)) as reported, \
+                    page.expect_response(lambda r: self.response_for(r, "GET", own_path)) as report_read:
+                start.click()
+            self.assertEqual(reported.value.json()["code"], 0)
+            self.assertEqual(report_read.value.json()["code"], 0)
+            after_start = actor.request("GET", own_path)
+            saved_node = next(item for item in after_start["nodes"] if item["id"] == node["id"])
+            self.assertEqual((saved_node["actualStart"], saved_node["actualFinish"]), (start_body["actualStart"], None))
+            self.assertEqual(saved_node["reportCount"], node["reportCount"] + 1)
+            self.assertEqual(after_start["status"], "RUNNING")
+            self.assertEqual(after_start["planRevision"], owned["planRevision"])
+            reports = actor.request("GET", report_path)
+            self.assertEqual(len(reports), node["reportCount"] + 1)
+            self.assertEqual((reports[0]["action"], reports[0]["remark"]), ("START", start_body["remark"]))
+            expect(page.locator(".big-node").filter(has=page.get_by_text(node["nodeName"], exact=True))).to_contain_text("进行中")
+            self.shot("mobile-only-start-persisted", page)
+
+            issue_types = actor.request("GET", "/api/dict-data/by-type/issue_type")
+            issue_type = next(item for item in issue_types if item["value"] == "OTHER" and item["status"] == 1)
+            page.get_by_role("button", name="上报异常", exact=True).click()
+            page.locator(".m-body .el-select").get_by_role("combobox").click()
+            page.get_by_role("option", name=issue_type["label"], exact=True).click()
+            description = "合成手机异常：仅作权限与图片回归"
+            page.get_by_label("描述", exact=True).fill(description)
+            with page.expect_response(lambda r: self.response_for(r, "POST", "/api/files")) as uploaded:
+                page.locator('.image-upload input[type="file"]').set_input_files(
+                    {"name": "audit-mobile-anonymous.png", "mimeType": "image/png", "buffer": anonymous_png()})
+            uploaded_result = uploaded.value.json()
+            self.assertEqual(uploaded_result["code"], 0)
+            expect(page.locator(".image-upload .pending")).to_have_count(0)
+            expect(page.locator(".image-upload li.tile")).to_have_count(1)
+            expect(page.locator(".image-upload .el-image__inner")).to_be_visible()
+            issue_submit = page.get_by_role("button", name="上报", exact=True)
+            issue_submit.scroll_into_view_if_needed()
+            expect(issue_submit).to_be_in_viewport(ratio=1)
+            fit_phone(page)
+            self.shot("mobile-only-anonymous-image-issue-form", page)
+            with page.expect_response(lambda r: self.response_for(r, "POST", own_path + "/issues")) as issue_saved, \
+                    page.expect_response(lambda r: self.response_for(r, "GET", own_path)) as issue_read:
+                issue_submit.click()
+            issue_result = issue_saved.value.json()
+            self.assertEqual(issue_result["code"], 0)
+            self.assertEqual(issue_read.value.json()["code"], 0)
+            issue_id = issue_result["data"]["id"]
+            issues = actor.request("GET", own_path + "/issues")
+            created_issue = next(item for item in issues if item["id"] == issue_id)
+            self.assertEqual((created_issue["issueType"], created_issue["description"]), ("OTHER", description))
+            self.assertEqual((created_issue["responsibleParty"], created_issue["impactDelivery"]), ("SELF", False))
+            self.assertEqual([photo["url"] for photo in created_issue["photos"]], [uploaded_result["data"]["url"]])
+            persisted = actor.request("GET", own_path)
+            self.assertIn(issue_id, {item["id"] for item in persisted["openIssues"]})
+            self.assertEqual(persisted["planRevision"], owned["planRevision"])
+            expect(page.locator(".open-issues")).to_contain_text(description)
+            expect(page.get_by_role("button", name="在电脑上打开", exact=True)).not_to_be_visible()
+            fit_phone(page)
+            self.shot("mobile-only-issue-persisted", page)
+            assert_forbidden("after-real-actions")
+            self.note("mobile-only real report and image issue stay within SELF", ownedId=owned["id"],
+                      foreignId=foreign["id"], pendingId=pending["id"], nodeId=node["id"], issueId=issue_id,
+                      initialPermissions=sorted(read_permissions), reportPermissions=sorted(report_permissions),
+                      reportCount=saved_node["reportCount"], savedPhotoCount=len(created_issue["photos"]),
+                      planRevisionBefore=owned["planRevision"], planRevisionAfter=persisted["planRevision"],
+                      desktopEntryHidden=True, viewportWidth=390, responseMocks=False)
+        finally:
+            self.api.request("PUT", f"/api/roles/{identity['roleId']}/menus", {"ids": identity["menuIds"]})
+
+    def test_20_independent_warehouse_source_state_and_post_authority(self):
+        # API-only intersection of inventory authority and purchase source state.
+        # No response replacement, UI assertion or complete status enumeration.
+        self.facts["verification"] = "real API permission/source-state matrix; no UI assertions"
+        identity = self.fixture["identities"]["warehouse_only"]
+        warehouse = self.actor("warehouse_only")
+        no_add = self.actor("no_list")
+        expected_permissions = {"inventory:doc:list", "inventory:doc:add"}
+        self.assertEqual(set(warehouse.request("GET", "/api/auth/me")["perms"]), expected_permissions)
+        self.assertNotIn("inventory:doc:add", no_add.request("GET", "/api/auth/me")["perms"])
+        purchase_base = "/api/purchase-orders"
+        inventory_base = "/api/inventory-docs"
+        draft = self.domain.new_purchase(qty=10)
+        pending = self.domain.submit(purchase_base, self.domain.new_purchase(qty=10)["id"])
+        approved = self.domain.approve(purchase_base, self.domain.new_purchase(qty=10)["id"])
+
+        def source_path(source):
+            return f"{inventory_base}/from-purchase/{source['id']}"
+
+        def doc_ids(source):
+            rows = self.api.rows(inventory_base, {"kind": "IN", "keyword": source["no"]})
+            self.assertTrue(all(row["sourceNo"] == source["no"] for row in rows))
+            return {row["id"] for row in rows}
+
+        def payload(source, *, post=False, quantity=2):
+            return {"clientActionId": str(uuid4()), "docType": "PURCHASE_IN",
+                    "docDate": business_day().isoformat(), "fromWarehouseId": None,
+                    "toWarehouseId": self.fixture["warehouseId"], "supplierDeliveryNo": None,
+                    "logisticsNo": None, "reason": None, "remark": "合成独立仓管来源验收",
+                    "items": [{"sourceItemId": source["items"][0]["id"],
+                               "materialSkuId": self.fixture["materialSkuId"], "qty": quantity,
+                               "dyeLot": None, "rolls": None, "overReason": None, "remark": None}],
+                    "itemIds": None, "post": post}
+
+        self.assertEqual(warehouse.envelope("GET", purchase_base)["code"], 403)
+        for source in (draft, pending, approved):
+            self.assertNotEqual(source["buyerId"], identity["userId"])
+            self.assertEqual(warehouse.envelope("GET", f"{purchase_base}/{source['id']}")["code"], 403)
+            self.assertEqual(doc_ids(source), set())
+        for source, status in ((draft, "DRAFT"), (pending, "PENDING")):
+            self.assertEqual(source["status"], status)
+            before_qty = self.domain.stock_qty()
+            self.assertEqual(warehouse.envelope("GET", query_path(source_path(source), {"docType": "PURCHASE_IN"}))["code"], 1000)
+            self.assertEqual(warehouse.envelope("POST", source_path(source), payload(source))["code"], 1000)
+            self.assertEqual(doc_ids(source), set())
+            after = self.api.request("GET", f"{purchase_base}/{source['id']}")
+            self.assertEqual((after["status"], after["version"]), (status, source["version"]))
+            self.assertEqual(self.domain.stock_qty(), before_qty)
+            self.note("warehouse authority cannot bypass purchase source state", sourceId=source["id"],
+                      state=status, prefillCode=1000, createCode=1000, generatedDocumentCount=0)
+
+        prefill_url = query_path(source_path(approved), {"docType": "PURCHASE_IN"})
+        prefill = warehouse.request("GET", prefill_url)
+        self.assertEqual(prefill["source"]["id"], approved["id"])
+        self.assertEqual(prefill["source"]["status"], "APPROVED")
+        self.assertEqual([item["sourceItemId"] for item in prefill["items"]], [approved["items"][0]["id"]])
+        assert_decimal_equal(prefill["items"][0]["suggestQty"], 10)
+        before_qty = self.domain.stock_qty()
+        self.assertEqual(no_add.envelope("GET", prefill_url)["code"], 403)
+        self.assertEqual(no_add.envelope("POST", source_path(approved), payload(approved))["code"], 403)
+        self.assertEqual(warehouse.envelope("POST", source_path(approved), payload(approved, post=True))["code"], 403)
+        self.assertEqual(doc_ids(approved), set())
+        self.assertEqual(self.domain.stock_qty(), before_qty)
+        self.assertEqual(self.api.request("GET", f"{purchase_base}/{approved['id']}")["version"], approved["version"])
+        self.note("source access does not imply stock posting authority", sourceId=approved["id"],
+                  warehousePermissions=sorted(expected_permissions), purchaseDetailCode=403,
+                  approvedPrefillCode=0, noAddPrefillCode=403, noAddCreateCode=403,
+                  noAuditAutoPostCode=403, generatedDocumentCountAfterDenials=0)
+
+        # A separate legitimate draft proves this is not an all-denied fixture.
+        made = warehouse.request("POST", source_path(approved), payload(approved))
+        self.assertEqual(made["status"], "DRAFT")
+        saved = warehouse.request("GET", f"{inventory_base}/{made['id']}")
+        self.assertEqual((saved["status"], saved["source"]["id"]), ("DRAFT", approved["id"]))
+        self.assertEqual(doc_ids(approved), {made["id"]})
+        self.assertEqual(self.domain.stock_qty(), before_qty)
+        self.assertEqual(self.api.request("GET", f"{purchase_base}/{approved['id']}")["status"], "APPROVED")
+
+        # Admin posts an actual partial receipt; the warehouse role still cannot
+        # open the purchase, but can prefill its remaining permitted source lines.
+        posted = self.api.request("POST", source_path(approved), payload(approved, post=True))
+        self.assertEqual(posted["status"], "APPROVED")
+        partial = self.api.request("GET", f"{purchase_base}/{approved['id']}")
+        self.assertEqual(partial["status"], "RUNNING")  # UI calls this 部分到货 / PARTIAL.
+        assert_decimal_equal(partial["items"][0]["receivedQty"], 2)
+        partial_prefill = warehouse.request("GET", prefill_url)
+        self.assertEqual(partial_prefill["source"]["status"], "RUNNING")
+        assert_decimal_equal(partial_prefill["items"][0]["suggestQty"], 8)
+        self.assertEqual(warehouse.envelope("GET", f"{purchase_base}/{approved['id']}")["code"], 403)
+        self.assertEqual(doc_ids(approved), {made["id"], posted["id"]})
+        self.note("independent SELF warehouse source flow", approvedSourceId=approved["id"],
+                  buyerId=approved["buyerId"], warehouseUserId=identity["userId"],
+                  draftInventoryId=made["id"], postedInventoryId=posted["id"],
+                  actualPartialStatus="RUNNING", partialPrefillCode=0, remainingPurchaseQty=8,
+                  coveredSourceStates=["DRAFT", "PENDING", "APPROVED", "RUNNING"],
+                  notEnumeratedSourceStates=["DONE", "CLOSED", "VOIDED"], responseMocks=False)
 
 
 if __name__ == "__main__":
