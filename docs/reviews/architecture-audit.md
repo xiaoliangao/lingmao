@@ -403,3 +403,35 @@ OrderItem row = ci.getStyleSkuId() == null
 - 构建记录来自本次环境；`docs/进度.md` 中历史测试通过次数属于历史记录，没有当作本次验证结果。完整 JDK/数据库/浏览器可用后，按第 4 节和各任务补齐验证。
 - 架构分析覆盖当前跟踪源码及文档，未扫描 Git 全历史、私有配置、线上数据库、第三方完整源码或外部仓库设置；也未宣称达到 PRD 中的性能指标。相关需求位置为 [docs/PRD.md:2074–2082](https://github.com/xiaoliangao/lingmao/blob/34e692b3144d562d885da12270a59b1ec148bcd5/docs/PRD.md#L2074-L2082)。
 - 仅从指定审查分支提交 PR 到核实后的默认分支 `main`；不直接推送主分支，不替业务确认尚未明确的规则。
+
+## 11. PR #4 整改状态回写
+
+原审查基线、发现、证据与历史执行结果保留。以下是后续修复分支`fix/audit-remediation`的验收范围；不把历史审查改写为当时已修复。完整契约、测试方法和运行边界见[audit-remediation.md](audit-remediation.md) §2–6。
+
+已验证代码为`61ea1c542ba8448cecefc8684f2031530d3df49d`，[云端运行](https://github.com/xiaoliangao/lingmao/actions/runs/44148637997)通过：464单测、121 IT、19前端测试、20 API/浏览器用例及类型/Lint/build/恢复；125张原始PNG已逐张打开。[CI产物](https://github.com/xiaoliangao/lingmao/actions/runs/44148637997/artifacts/14356814763)只含隔离合成数据。全部P0/P1的真实启用门禁尚未满足，PR保持Draft。
+
+| 原问题编号 | 修复内容 / 定位 | 状态与范围 | 修复 Commit SHA |
+|---|---|---|---|
+| P1-01 | 正反过账 / MRP 锁序；`src/main/java/com/lingmao/scm/module/inventory/service/impl/InvDocServiceImpl.java:565–598` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / 1d33085 |
+| P1-02 | 退货反审净收上限；`src/main/java/com/lingmao/scm/module/purchase/service/impl/PurchaseStockHandler.java:176–208` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 |
+| P1-03 | 逐 SKU 无损往返；`web/src/utils/orderSku.ts:12–26` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / da06a92 / c134b44 / 793e5ed |
+| P1-04 | 成本失败不覆盖；`web/src/views/style/style/TechPackTab.vue:154–202,338–369` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 / c134b44 / 793e5ed |
+| P1-05 | 盘点 KeepAlive 草稿；`web/src/views/inventory/count/detail.vue:73–105` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 / c134b44 / 793e5ed / 61ea1c5 |
+| P1-06 | 列表与导出同条件；`web/src/composables/useTable.ts:53–74,96–117` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / da06a92 / c134b44 |
+| P1-07 | 非 SKU 终态变更可读；`src/main/java/com/lingmao/scm/module/order/service/impl/OrderChangeServiceImpl.java:215–228` | 通过（限定本行验收范围）；代码 / 运行 | 3939674 / 1d33085 |
+| P1-08 | 实际色码与 BOM 准入；`src/main/java/com/lingmao/scm/module/techpack/service/impl/RequirementChecks.java:23–68` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 |
+| P1-09 | 限定跨域读投影；`src/main/java/com/lingmao/scm/module/order/service/impl/OrderServiceImpl.java:797–804` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 |
+| P1-10 | 登录回跳校验；`web/src/utils/redirect.ts:1–16` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 / c134b44 |
+| P1-11 | 备份账号只读隔离；`deploy/package/部署手册.md` | 通过（限定本行验收范围）；文档 / 合成环境运行 | a3c7196 / da06a92 |
+| P2-01 | 导入空单位行列错误；`src/main/java/com/lingmao/scm/module/basic/service/impl/MaterialImport.java:378–384` | 通过（限定本行验收范围）；代码 / 运行 | 3939674 |
+| P2-02 | MOQ 与整包量同时满足；`src/main/java/com/lingmao/scm/common/num/Num.java:82–93` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 |
+| P2-03 | 1002 冲突可恢复；`web/src/components/doc/docUtils.ts:61–69` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 / c134b44 / 793e5ed |
+| P2-04 | 东八区纯日期；`web/src/utils/businessDate.ts:4–40` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 |
+| P2-05 | BOM 款图 / 行料卡；`web/src/views/style/style/TechPackTab.vue:953–969,1019,1070` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 |
+| P2-06 | 删除、恢复与进度旧口径；`docs/架构设计.md` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / da06a92 |
+| P2-07 | 工具锁定与完整门禁；`.github/workflows/ci.yml` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 / bac099d / 13fa7a5 / c134b44 / 2ff9117 / 8b7846c / 327b734 / 793e5ed / 61ea1c5 |
+| Q1 | 仓管来源独立作业视图；`src/main/java/com/lingmao/scm/module/inventory/controller/InvDocController.java:127–167` | 通过（限定本行验收范围）；契约已定 / 验证边界 | a3c7196 / 3939674 / 327b734 |
+| Q2 | 保留合法逐 SKU 差异；`web/src/utils/orderSku.ts:12–26` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / da06a92 / 793e5ed |
+| Q3 | 上传等待与迟到隔离；`web/src/utils/pendingTasks.ts:2–30` | 通过（限定本行验收范围）；代码 / 运行 | da06a92 / c134b44 |
+
+原报告材料缺口和后续分期继续有效；正式截止/期初、实际角色规则、目标部署机及业务人员验收均不由合成CI替代。完整首页聚合未实现，不能把S/P1-08当前入口通过扩大为首页功能全部通过。

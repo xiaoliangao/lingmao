@@ -661,3 +661,37 @@ S0–S5 是建议任务阶段，不是新日期承诺。业务审批只影响相
 - **敏感材料：** 报告只保留附件功能/单元格定位、路由/字段/状态名称和匿名反例；不包含登录身份、认证信息、真实联系人、合同价款、业务记录或线上截图。原工作簿及临时检查材料不随PR提交。
 
 本报告与已有架构审查互补：后者的历史基线和发现保留在 [docs/reviews/architecture-audit.md](https://github.com/xiaoliangao/lingmao/blob/061559663a2f76c911b7ea276f35265c7caa95a6/docs/reviews/architecture-audit.md)。本轮只更新“生产已实现、首页下一步”的阶段事实（[docs/进度.md:65–66](https://github.com/xiaoliangao/lingmao/blob/48a9fcae9a9ed57f97aa1e2bd5a14dba0208fdb5/docs/%E8%BF%9B%E5%BA%A6.md#L65-L66)）；其余历史问题未经逐项回归不自动关闭。
+
+## 13. PR #4 整改状态回写
+
+原审查基线、发现、证据与历史执行结果保留。以下是后续修复分支`fix/audit-remediation`的验收范围；不把历史审查改写为当时已修复。完整契约、测试方法和运行边界见[audit-remediation.md](audit-remediation.md) §2–6。
+
+已验证代码为`61ea1c542ba8448cecefc8684f2031530d3df49d`，[云端运行](https://github.com/xiaoliangao/lingmao/actions/runs/44148637997)通过：464单测、121 IT、19前端测试、20 API/浏览器用例及类型/Lint/build/恢复；125张原始PNG已逐张打开。[CI产物](https://github.com/xiaoliangao/lingmao/actions/runs/44148637997/artifacts/14356814763)只含隔离合成数据。全部P0/P1的真实启用门禁尚未满足，PR保持Draft。
+
+| 原问题编号 | 修复内容 / 定位 | 状态与范围 | 修复 Commit SHA |
+|---|---|---|---|
+| P0-01 | 旧单分流与期初交割；`docs/PRD.md:2163` | 云端无法验证（真实启用门禁）；设计已定 / 真实启用门禁 | a3c7196 / 2b45916 |
+| P1-01 | 成本加载 / 字段权限；`src/main/java/com/lingmao/scm/module/techpack/service/impl/TechPackServiceImpl.java:259–290` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 / c134b44 / 793e5ed |
+| P1-02 | 订单矩阵字段无损；`web/src/utils/orderSku.ts:12–26` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / da06a92 / c134b44 / 793e5ed |
+| P1-03 | 盘点测量截止 / ABA；`src/main/resources/db/migration/V26__audit_remediation.sql:7–16` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 |
+| P1-04 | 已执行后的减量处置；`src/main/java/com/lingmao/scm/module/order/service/impl/OrderServiceImpl.java:927–940,999–1006` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 |
+| P1-05 | 新动作 / 第二批幂等；`src/main/resources/db/migration/V26__audit_remediation.sql:27–43` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 / c134b44 / 8b7846c / 793e5ed |
+| P1-06 | 不可变流水价值 / 未知成本；`src/main/resources/db/migration/V26__audit_remediation.sql:48–70` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 / 2ff9117 / 327b734 |
+| P1-07 | 工厂净托管口径；`src/main/resources/mapper/purchase/SupplyMapper.xml:7–16` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / 1d33085 / da06a92 |
+| P1-08 | SELF 与当前审批入口；`src/main/java/com/lingmao/scm/module/biz/service/impl/ApprovalAccess.java:12–27` | 通过（当前审批/SELF与首页失败态；完整聚合未实现）；API06契约 / 已实现审批入口；完整首页聚合仍原分期 | a3c7196 / 3939674 / da06a92 / 13fa7a5 / c134b44 / 2b45916 / 327b734 / 793e5ed |
+| P1-09 | 实现 / 验证 / 发布退出门槛；`.github/workflows/ci.yml` | 云端无法验证（真实启用门禁）；工程门禁 / 真实启用门禁 | a3c7196 / 1d33085 / da06a92 / bac099d / 13fa7a5 / c134b44 / 2ff9117 / 327b734 / 793e5ed / 61ea1c5 |
+| P2-01 | 历史包色码 / PDF；`src/main/java/com/lingmao/scm/module/techpack/service/impl/PackOwners.java:86–120` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 / c134b44 |
+| P2-02 | 导出与角标条件；`web/src/composables/useTable.ts:53–74,96–117` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / da06a92 / c134b44 |
+| P2-03 | MRP 解释边界 / 共享在途；`src/main/java/com/lingmao/scm/module/purchase/service/impl/SupplyBook.java:88–107,164–174` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / d32bd15 |
+| P2-04 | 二期主体物权；`docs/rfc/008-成品.md` | 通过（文档契约；实现按原分期）；文档契约 / 后续分期 | a3c7196 |
+| P2-05 | 节点计划独立版本；`src/main/resources/db/migration/V26__audit_remediation.sql:19–23` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 / c134b44 / 793e5ed |
+| P2-06 | 二期成品尾数；`docs/rfc/008-成品.md` | 通过（文档契约；实现按原分期）；文档契约 / 后续分期 | a3c7196 |
+| P2-07 | 助手草稿不产生业务效果；`docs/rfc/009-智能助手.md` | 通过（文档契约；实现按原分期）；文档契约 / 后续分期 | a3c7196 |
+| P2-08 | 外部事件独立身份；`docs/架构设计.md` | 通过（文档契约；实现按原分期）；文档契约 / 后续分期 | a3c7196 |
+| P2-09 | 正文 / 原型旧口径；`docs/PRD.md` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / da06a92 / 13fa7a5 / 2b45916 |
+| P2-10 | 四位单价输入；`web/src/utils/orderSku.ts:29–49` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 / c134b44 / 793e5ed |
+| P2-11 | 派生金额 / 累计件数容量；`src/main/java/com/lingmao/scm/common/num/NumericLimits.java:9–39` | 通过（限定本行验收范围）；代码 / 运行 | a3c7196 / 3939674 / da06a92 |
+| P2-12 | 恢复证据同快照；`deploy/package/scripts/check-restore.sh:69–94` | 通过（限定本行验收范围）；文档 / 合成环境运行 | a3c7196 / da06a92 |
+| P2-13 | 实际查询计划 / 批量边界；`src/test/java/com/lingmao/scm/module/order/service/impl/OrderIT.java：listCapacityExplainRecordsRealSql` | 通过（限定本行验收范围）；代码 / 运行 | 3939674 / da06a92 / c134b44 |
+
+原报告材料缺口和后续分期继续有效；正式截止/期初、实际角色规则、目标部署机及业务人员验收均不由合成CI替代。完整首页聚合未实现，不能把S/P1-08当前入口通过扩大为首页功能全部通过。
