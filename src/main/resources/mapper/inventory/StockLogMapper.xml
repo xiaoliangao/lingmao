@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  库存日志（docs/api/04 §3.6.4），新的在前。仓库名、关键字里的物料只读 JOIN（架构 §3.2 规则 4）；
+  物料的名称颜色图、操作人的名字由 Service 补
+-->
+<mapper namespace="com.lingmao.scm.module.inventory.mapper.StockLogMapper">
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.StockLogRowVO">
+        SELECT l.id, l.biz_date, l.create_time, l.change_type,
+               CASE WHEN l.inv_doc_id IS NOT NULL THEN 'INV_DOC' ELSE 'INV_COUNT' END AS doc_type,
+               d.kind AS doc_kind, COALESCE(l.inv_doc_id, l.count_id) AS doc_id, l.doc_no,
+               l.warehouse_id, w.name AS warehouse_name, l.material_sku_id, l.change_qty, l.balance_qty, l.dye_lot, l.create_by
+        FROM inv_stock_log l
+        JOIN bas_warehouse w ON w.id = l.warehouse_id
+        LEFT JOIN inv_doc d ON d.id = l.inv_doc_id
+        WHERE true
+        <if test="q.warehouseId != null">AND l.warehouse_id = #{q.warehouseId}</if>
+        <if test="q.materialSkuId != null">AND l.material_sku_id = #{q.materialSkuId}</if>
+        <if test="q.changeType != null and q.changeType.size() > 0">
+            AND l.change_type IN <foreach collection="q.changeType" item="t" open="(" separator="," close=")">#{t}</foreach>
+        </if>
+        <if test="q.bizDateFrom != null">AND l.biz_date &gt;= #{q.bizDateFrom}</if>
+        <if test="q.bizDateTo != null">AND l.biz_date &lt;= #{q.bizDateTo}</if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND l.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (l.doc_no ILIKE '%' || #{q.keyword} || '%' OR l.dye_lot ILIKE '%' || #{q.keyword} || '%'
+                 OR EXISTS (SELECT 1 FROM bas_material_sku k JOIN bas_material m ON m.id = k.material_id
+                            WHERE k.id = l.material_sku_id
+                              AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%')))
+        </if>
+        ORDER BY l.id DESC
+    </select>
+</mapper>

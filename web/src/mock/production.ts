@@ -17,6 +17,7 @@ import type { DocNotice } from '@/types/biz'
 import type { ProductionAction, ProductionStatus } from '@/types/production'
 import { PRODUCTION_KIND, PRODUCTION_STATUS } from '@/types/production'
 import type { UpstreamRow } from '@/types/home'
+import type { InvDocDraft } from '@/types/inventory'
 import { fail, mock, page } from './index'
 
 /**
@@ -787,3 +788,61 @@ export function productionUpstreamRows(): UpstreamRow[] {
   }
   return rows
 }
+
+// ---------- 由生产单生成入库单、出库单：带出明细（docs/api/04 §3.3） ----------
+// 库存后端写好了，但生产单的后端还没写：这里先假带出，好看对话框；点"生成"走真后端，回 1000"生产单还没上线"。生产单后端写好一起删
+
+mock('get', '/api/inventory-docs/from-production/:id', ({ params, query }) => {
+  const prodId = Number(params.id)
+  const docType = (query.docType as 'ISSUE_OUT' | 'RETURN_IN') ?? 'ISSUE_OUT'
+  const draft: InvDocDraft = {
+    docType,
+    source: {
+      type: 'PRODUCTION_ORDER',
+      kind: 'OUTSOURCE',
+      parentId: null,
+      typeLabel: '外发加工单',
+      id: prodId,
+      no: 'JG202611130001',
+      status: 'RUNNING',
+      statusLabel: '部分回货',
+      statusTone: 'progress',
+      ownerId: 1,
+      ownerName: '管理员',
+    },
+    partnerId: 3,
+    partnerName: '示例制衣一厂',
+    fromWarehouseId: docType === 'ISSUE_OUT' ? 1 : 3,
+    fromWarehouseName: docType === 'ISSUE_OUT' ? '总公司面辅料一仓' : '示例制衣一厂工厂仓',
+    toWarehouseId: docType === 'ISSUE_OUT' ? 3 : 1,
+    toWarehouseName: docType === 'ISSUE_OUT' ? '示例制衣一厂工厂仓' : '总公司面辅料一仓',
+    items: [
+      {
+        sourceItemId: null,
+        materialSkuId: 101,
+        skuCode: 'ML0001-KQ',
+        materialId: 1,
+        materialCode: 'ML0001',
+        materialName: '220g 精梳斜纹棉布',
+        materialType: 'FABRIC',
+        colorName: '卡其',
+        colorHex: '#c3b091',
+        spec: '150cm',
+        stockUnit: 'METER',
+        image: null,
+        purchaseUnit: null,
+        conversionFactor: null,
+        price: null,
+        suggestQty: docType === 'ISSUE_OUT' ? 207.2 : 0,
+        maxQty: docType === 'RETURN_IN' ? 260 : null,
+        orderedQty: null,
+        receivedQty: null,
+        returnedQty: null,
+        needQty: 467.2,
+        issuedQty: 260,
+        dyeLot: null,
+      },
+    ],
+  }
+  return draft
+})

@@ -23,7 +23,7 @@ import InvDocFormDialog from './InvDocFormDialog.vue'
 /**
  * 物料入库单、出库单详情（/stock-in/:id、/stock-out/:id 共用，docs/api/04 §1.3、§1.5）。
  * - 地址和单据的 kind 对不上（手敲了 /stock-in/ 去看出库单）：换到对的地址
- * - 页头按 actions：编辑、审核过账、反审核、删除。审核没过（1001 库存不足、1004 超上限）弹清单；1002 重新取
+ * - 页头按 actions：编辑、审核过账、反审核、删除（没过过账的草稿）或作废（过过账的）。审核没过（1001 库存不足、1004 超上限）弹清单；1002 重新取
  * - 草稿且有出仓：多一列"出仓库存"，不够的标红
  */
 const route = useRoute()
@@ -93,9 +93,10 @@ onActivated(() => {
 const NOTES: Partial<Record<DocAction, string>> = {
   audit: '审核后马上改库存。',
   unaudit: '这张单改的库存改回去，回到草稿。',
+  void: '库存不受影响（反审核时已经改回去了），库存日志里的进出都留着。',
 }
 
-async function act(action: Extract<DocAction, 'audit' | 'unaudit'>) {
+async function act(action: Extract<DocAction, 'audit' | 'unaudit' | 'void'>) {
   const d = detail.value
   if (!d) return
   const ok = await runDocAction(action, d.no, d.version, (a, body, o) => invDocApi.act(id, a, body, o), { note: NOTES[action], reload: refresh })
@@ -134,6 +135,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
       </template>
       <template v-if="detail" #actions>
         <el-button v-if="can('remove')" @click="remove">删除</el-button>
+        <el-button v-if="can('void')" @click="act('void')">作废</el-button>
         <el-button v-if="can('unaudit')" @click="act('unaudit')">反审核</el-button>
         <el-button v-if="can('edit')" @click="editVisible = true">编辑</el-button>
         <el-button v-if="can('audit')" type="primary" @click="act('audit')">审核过账</el-button>

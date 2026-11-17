@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  入库单、出库单列表（docs/api/04 §3.2.1）：仓库名、往来名、关键字里的物料只读 JOIN bas_warehouse、sup_supplier、bas_material(_sku)（架构 §3.2 规则 4）。
+  第一行物料、条数、合计用 LATERAL 现算；第一行物料的名称颜色图由 Service 调 MaterialService.skuBriefs 补
+-->
+<mapper namespace="com.lingmao.scm.module.inventory.mapper.InvDocMapper">
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.InvDocRowVO">
+        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.version,
+               d.from_warehouse_id, fw.name AS from_warehouse_name, d.to_warehouse_id, tw.name AS to_warehouse_name,
+               d.partner_id, p.short_name AS partner_name, d.source_no, d.doc_date, d.reason, d.create_by, d.create_time,
+               agg.first_sku_id, agg.item_count, agg.total_qty, agg.total_amount
+        FROM inv_doc d
+        LEFT JOIN bas_warehouse fw ON fw.id = d.from_warehouse_id
+        LEFT JOIN bas_warehouse tw ON tw.id = d.to_warehouse_id
+        LEFT JOIN sup_supplier p ON p.id = d.partner_id
+        LEFT JOIN LATERAL (SELECT (array_agg(i.material_sku_id ORDER BY i.seq, i.id))[1] AS first_sku_id,
+                                  COUNT(*) AS item_count, SUM(i.qty) AS total_qty, SUM(i.amount) AS total_amount
+                           FROM inv_doc_item i WHERE i.doc_id = d.id) agg ON true
+        WHERE d.kind = #{q.kind}
+        <if test="scope.self">AND d.create_by = #{scope.userId}</if>
+        <if test="q.docType != null">AND d.doc_type = #{q.docType}</if>
+        <if test="q.status != null and q.status.size() > 0">
+            AND d.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
+        </if>
+        <if test="q.warehouseId != null">AND (d.from_warehouse_id = #{q.warehouseId} OR d.to_warehouse_id = #{q.warehouseId})</if>
+        <if test="q.partnerId != null">AND d.partner_id = #{q.partnerId}</if>
+        <if test="q.docDateFrom != null">AND d.doc_date &gt;= #{q.docDateFrom}</if>
+        <if test="q.docDateTo != null">AND d.doc_date &lt;= #{q.docDateTo}</if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND d.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (d.no ILIKE '%' || #{q.keyword} || '%' OR d.source_no ILIKE '%' || #{q.keyword} || '%'
+                 OR d.supplier_delivery_no ILIKE '%' || #{q.keyword} || '%' OR d.logistics_no ILIKE '%' || #{q.keyword} || '%'
+                 OR EXISTS (SELECT 1 FROM inv_doc_item i
+                            JOIN bas_material_sku k ON k.id = i.material_sku_id
+                            JOIN bas_material m ON m.id = k.material_id
+                            WHERE i.doc_id = d.id
+                              AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
+                                   OR m.name ILIKE '%' || #{q.keyword} || '%' OR i.dye_lot ILIKE '%' || #{q.keyword} || '%'))
+                 <if test="codes != null and codes.size() > 0">
+                     OR upper(d.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                 </if>)
+        </if>
+        ORDER BY d.id DESC
+    </select>
+</mapper>

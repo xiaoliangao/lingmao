@@ -18,6 +18,7 @@ import com.lingmao.scm.module.basic.dto.MaterialPickVO;
 import com.lingmao.scm.module.basic.dto.MaterialQuery;
 import com.lingmao.scm.module.basic.dto.MaterialRef;
 import com.lingmao.scm.module.basic.dto.MaterialSaveReq;
+import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuSaveReq;
 import com.lingmao.scm.module.basic.dto.MaterialSkuVO;
@@ -60,6 +61,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -319,6 +321,53 @@ public class MaterialServiceImpl implements MaterialService {
         Map<Long, Color> colors = colorsOf(skus.values());
         return ids.stream().map(skus::get)
                 .map(k -> MaterialSkuRef.of(k, materials.get(k.getMaterialId()), colors.get(k.getColorId()))).toList();
+    }
+
+    @Override
+    public Map<Long, MaterialSkuBrief> skuBriefs(Collection<Long> skuIds) {
+        List<Long> ids = skuIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<MaterialSku> skus = materialSkuMapper.selectByIds(ids);
+        Map<Long, Material> materials = materialMapper.selectByIds(skus.stream().map(MaterialSku::getMaterialId).distinct().toList())
+                .stream().collect(Collectors.toMap(Material::getId, Function.identity()));
+        Map<Long, Color> colors = colorsOf(skus);
+        Map<Long, AttachmentVO> skuImages = attachmentService.firsts(BizType.MATERIAL_SKU, ids, Attachment.IMAGE);
+        Map<Long, AttachmentVO> materialImages = attachmentService.firsts(BizType.MATERIAL,
+                List.copyOf(materials.keySet()), Attachment.IMAGE);
+        Map<Long, MaterialSkuBrief> briefs = new HashMap<>();
+        for (MaterialSku k : skus) {
+            Material m = materials.get(k.getMaterialId());
+            Color c = colors.get(k.getColorId());
+            MaterialSkuBrief b = new MaterialSkuBrief();
+            b.setMaterialSkuId(k.getId());
+            b.setSkuCode(k.getCode());
+            b.setMaterialId(m.getId());
+            b.setMaterialCode(m.getCode());
+            b.setMaterialName(m.getName());
+            b.setMaterialType(m.getMaterialType());
+            b.setColorName(c == null ? null : c.getName());
+            b.setColorHex(c == null ? null : c.getHex());
+            b.setSpec(k.getSpec());
+            b.setStockUnit(m.getStockUnit());
+            b.setImage(skuImages.getOrDefault(k.getId(), materialImages.get(m.getId())));
+            briefs.put(k.getId(), b);
+        }
+        return briefs;
+    }
+
+    @Override
+    public Map<String, Long> skuIdsByCodes(Collection<String> codes) {
+        List<String> upper = codes.stream().filter(Objects::nonNull).map(c -> c.strip().toUpperCase(Locale.ROOT)).distinct().toList();
+        if (upper.isEmpty()) {
+            return Map.of();
+        }
+        return materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>()
+                        .select(MaterialSku::getId, MaterialSku::getCode)
+                        .apply("upper(code) IN (" + IntStream.range(0, upper.size()).mapToObj(i -> "{" + i + "}")
+                                .collect(Collectors.joining(",")) + ")", upper.toArray()))
+                .stream().collect(Collectors.toMap(k -> k.getCode().toUpperCase(Locale.ROOT), MaterialSku::getId, (a, b) -> a));
     }
 
     // ---------- 导入导出 ----------

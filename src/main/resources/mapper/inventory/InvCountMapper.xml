@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  盘点单列表（docs/api/04 §3.5.1）：仓库名、分类名、关键字里的物料和盘点人只读 JOIN（架构 §3.2 规则 4）。
+  条数、已填、盘盈、盘亏用 LATERAL 现算；盘点人的名字由 Service 调 UserService.nicknames
+-->
+<mapper namespace="com.lingmao.scm.module.inventory.mapper.InvCountMapper">
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.CountRowVO">
+        SELECT c.id, c.no, c.warehouse_id, w.name AS warehouse_name, c.purpose, c.scope, c.count_date, c.counter_id,
+               c.status, c.version, c.create_by, c.create_time,
+               agg.item_count, agg.filled_count, agg.gain_count, agg.loss_count, cat.category_names
+        FROM inv_count c
+        JOIN bas_warehouse w ON w.id = c.warehouse_id
+        LEFT JOIN LATERAL (SELECT COUNT(*) AS item_count, COUNT(i.counted_qty) AS filled_count,
+                                  COUNT(*) FILTER (WHERE i.counted_qty &gt; i.book_qty) AS gain_count,
+                                  COUNT(*) FILTER (WHERE i.counted_qty &lt; i.book_qty) AS loss_count
+                           FROM inv_count_item i WHERE i.count_id = c.id) agg ON true
+        LEFT JOIN LATERAL (SELECT string_agg(COALESCE(pc.name || '-', '') || mc.name, '、' ORDER BY mc.code) AS category_names
+                           FROM inv_count_category cc
+                           JOIN bas_material_category mc ON mc.id = cc.category_id
+                           LEFT JOIN bas_material_category pc ON pc.id = mc.parent_id
+                           WHERE cc.count_id = c.id) cat ON true
+        WHERE true
+        <if test="scope.self">AND (c.create_by = #{scope.userId} OR c.counter_id = #{scope.userId})</if>
+        <if test="q.status != null and q.status.size() > 0">
+            AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
+        </if>
+        <if test="q.warehouseId != null">AND c.warehouse_id = #{q.warehouseId}</if>
+        <if test="q.purpose != null">AND c.purpose = #{q.purpose}</if>
+        <if test="q.countDateFrom != null">AND c.count_date &gt;= #{q.countDateFrom}</if>
+        <if test="q.countDateTo != null">AND c.count_date &lt;= #{q.countDateTo}</if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND c.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (c.no ILIKE '%' || #{q.keyword} || '%' OR w.name ILIKE '%' || #{q.keyword} || '%'
+                 OR c.counter_id IN (SELECT u.id FROM sys_user u WHERE u.nickname ILIKE '%' || #{q.keyword} || '%')
+                 OR EXISTS (SELECT 1 FROM inv_count_item i
+                            JOIN bas_material_sku k ON k.id = i.material_sku_id
+                            JOIN bas_material m ON m.id = k.material_id
+                            WHERE i.count_id = c.id
+                              AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
+                                   OR m.name ILIKE '%' || #{q.keyword} || '%')))
+        </if>
+        ORDER BY c.id DESC
+    </select>
+</mapper>

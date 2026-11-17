@@ -11,6 +11,7 @@ import com.lingmao.scm.module.basic.dto.MaterialPickVO;
 import com.lingmao.scm.module.basic.dto.MaterialQuery;
 import com.lingmao.scm.module.basic.dto.MaterialRef;
 import com.lingmao.scm.module.basic.dto.MaterialSaveReq;
+import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuSaveReq;
 import com.lingmao.scm.module.basic.dto.MaterialSkuVO;
@@ -22,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 物料和物料 SKU（RFC 003 §7）。编码 = 分类码 + 4 位（取到的号被导入的老编码占了就再取）；分类、库存单位建好不改；
@@ -78,6 +80,15 @@ public interface MaterialService {
 
     /** 物料 SKU：给下游用。有不存在的 id 抛 404 */
     List<MaterialSkuRef> skuRefs(Collection<Long> skuIds);
+
+    /**
+     * 一批 SKU 的显示字段（编码、名称、颜色、规格、库存单位、图），skuId → brief。单据明细、库存列表显示用；
+     * 不存在的 id 不在 map 里（被单据引用的 SKU 有外键，删不掉）
+     */
+    Map<Long, MaterialSkuBrief> skuBriefs(Collection<Long> skuIds);
+
+    /** 按 SKU 码找 id（导入盘点表用），不分大小写；key 是大写的码，找不到的不在 map 里 */
+    Map<String, Long> skuIdsByCodes(Collection<String> codes);
 
     byte[] importTemplate();
 

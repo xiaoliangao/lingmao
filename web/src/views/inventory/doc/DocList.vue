@@ -54,7 +54,7 @@ const docName = computed(() => (props.kind === 'IN' ? '入库单' : '出库单')
 
 const TYPES = (Object.keys(INV_DOC_TYPE) as InvDocType[]).filter((t) => INV_DOC_TYPE[t].kind === props.kind)
 const TYPE_OPTIONS = [{ label: '全部', value: '' }, ...TYPES.map((t) => ({ label: INV_DOC_TYPE[t].label, value: t }))]
-const STATUSES: InvDocStatus[] = ['DRAFT', 'APPROVED']
+const STATUSES: InvDocStatus[] = ['DRAFT', 'APPROVED', 'VOIDED']
 const pickStatus = (value: unknown): InvDocStatus | '' => (STATUSES.includes(value as InvDocStatus) ? (value as InvDocStatus) : '')
 
 const warehouses = ref<WarehouseOption[]>([])

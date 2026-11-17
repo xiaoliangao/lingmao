@@ -40,7 +40,7 @@ const cols = useColumns('stock-takes', [
   { key: 'createTime', label: '建单时间', hidden: true },
 ])
 
-const STATUSES: CountStatus[] = ['DRAFT', 'PENDING', 'APPROVED']
+const STATUSES: CountStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'VOIDED']
 const STATUS_OPTIONS = [{ label: '全部', value: '' }, ...STATUSES.map((st) => ({ label: COUNT_STATUS[st].label, value: st }))]
 const PURPOSES: CountPurpose[] = ['DAILY', 'OPENING']
 const pickStatus = (value: unknown): CountStatus | '' => (STATUSES.includes(value as CountStatus) ? (value as CountStatus) : '')

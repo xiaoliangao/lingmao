@@ -71,18 +71,22 @@ export const INV_DOC_TYPE: Record<InvDocType, InvDocTypeMeta> = {
 }
 
 /**
- * 入库单、出库单只有两个状态：没有待审核，审核即过账（PRD §6.6.5，数据库设计 §13.1）。
- * 也没有作废：草稿直接删，审核过的先反审核回草稿再删
+ * 没有待审核，审核即过账（PRD §6.6.5，数据库设计 §13.1）。没过过账的草稿直接删；
+ * 过过账又反审核回草稿的不能删、只能作废（用户 11-17 定，库存日志指着它）
  */
-export type InvDocStatus = 'DRAFT' | 'APPROVED'
+export type InvDocStatus = 'DRAFT' | 'APPROVED' | 'VOIDED'
 
 export const INV_DOC_STATUS: Record<InvDocStatus, { label: string; tone: StatusTone }> = {
   DRAFT: { label: '草稿', tone: 'off' },
   APPROVED: { label: '已审核', tone: 'active' },
+  VOIDED: { label: '已作废', tone: 'void' },
 }
 
-/** 详情、列表行上能点的：audit 审核过账、unaudit 反审核（库存改回去），edit 改草稿、remove 删草稿 */
-export type InvDocAction = Extract<DocAction, 'audit' | 'unaudit'> | 'edit' | 'remove'
+/**
+ * 详情、列表行上能点的：audit 审核过账、unaudit 反审核（库存改回去），edit 改草稿；
+ * remove 删没过过账的草稿、void 作废过过账的草稿，两个只会有一个
+ */
+export type InvDocAction = Extract<DocAction, 'audit' | 'unaudit' | 'void'> | 'edit' | 'remove'
 
 /** 操作记录里的动作叫法（DocLogList 的 actions），通用的（提交、审核……）不用列 */
 export const INV_DOC_LOG_ACTION: Record<string, string> = {
@@ -143,8 +147,11 @@ export interface InvDocQuery {
 
 /** 明细的一行 */
 export interface InvDocItem extends MaterialSkuBrief {
+  /** 改草稿时原样带回（InvDocItemForm.id） */
   id: number
   seq: number
+  /** 这一行过过账（有库存日志）：改草稿时不能删、不能换物料 */
+  posted: boolean
   /** 库存单位，> 0；方向由单据类型定 */
   qty: number
   /** 采购入库、采购退货才有：采购单位、采购单位数量、换算系数（qty = purchaseQty × conversionFactor），别的是 null */
@@ -185,11 +192,15 @@ export interface InvDocDetail extends DocHeader<InvDocStatus, InvDocAction> {
   logisticsNo: string | null
   totalQty: number
   totalAmount: number
+  /** 过过账（有库存日志）：草稿时 actions 给 void 不给 remove */
+  posted: boolean
   items: InvDocItem[]
 }
 
 /** 手建的单（退料入库不挂源单、其他入库、调拨、其他出库）新建、改草稿共用的明细。保存是整体覆盖：没填的发 null */
 export interface InvDocItemForm {
+  /** 改草稿时，原来的行带回 InvDocItem.id，新加的行是 null；请求里没有的行删掉（过过账的行删不了，1000）。新建都是 null */
+  id: number | null
   /** 源单生成的草稿：原样带回（采购明细 id），后端按它重新取单价、换算系数；手建的是 null */
   sourceItemId: number | null
   materialSkuId: number
@@ -370,18 +381,26 @@ export const COUNT_SCOPE_LABEL: Record<CountScope, string> = { ALL: '全部', CA
 
 /**
  * 草稿 → 待审核 → 已审核（审核即过账），反审核回草稿。单级审核，不走多级审批。
- * 没有作废：草稿没被任何东西引用，直接删（和原型一样）；审核过的先反审核再删
+ * 删除、作废同入库单：没过过账的草稿直接删，过过账又反审核回来的只能作废（用户 11-17 定）。作废的不算"没审核的"
  */
-export type CountStatus = 'DRAFT' | 'PENDING' | 'APPROVED'
+export type CountStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'VOIDED'
 
 export const COUNT_STATUS: Record<CountStatus, { label: string; tone: StatusTone }> = {
   DRAFT: { label: '草稿', tone: 'off' },
   PENDING: { label: '待审核', tone: 'pending' },
   APPROVED: { label: '已审核', tone: 'active' },
+  VOIDED: { label: '已作废', tone: 'void' },
 }
 
-/** submit、withdraw、reject、audit、unaudit，加上 edit 改实盘数、加删行、导回实盘数，remove 删草稿，refreshBook 重新取账面数（都是草稿） */
-export type CountAction = Extract<DocAction, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit'> | 'edit' | 'remove' | 'refreshBook'
+/**
+ * submit、withdraw、reject、audit、unaudit、void（作废过过账的草稿），加上 edit 改实盘数、加删行、导回实盘数，
+ * remove 删没过过账的草稿，refreshBook 重新取账面数（都是草稿）
+ */
+export type CountAction =
+  | Extract<DocAction, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit' | 'void'>
+  | 'edit'
+  | 'remove'
+  | 'refreshBook'
 
 export const COUNT_LOG_ACTION: Record<string, string> = {
   audit: '审核过账',
@@ -439,6 +458,8 @@ export interface CountItem extends MaterialSkuBrief {
   /** 已审核才有：过账时实际调了多少（= diffQty，为 0 的行是 0）；没审核是 null */
   adjustedQty: number | null
   remark: string | null
+  /** 这一行过过账（反审核回来的草稿）：不能删 */
+  posted: boolean
 }
 
 export interface CountCategory {
@@ -471,6 +492,8 @@ export interface CountDetail extends DocHeader<CountStatus, CountAction> {
    * "建单以后有 n 笔进出，盘点只调差异，不影响这些进出"，只提示不拦（PRD §6.6.8 规则 2）；别的状态是 0
    */
   movesSinceBook: number
+  /** 过过账（有库存日志）：草稿时 actions 给 void 不给 remove */
+  posted: boolean
   items: CountItem[]
 }
 

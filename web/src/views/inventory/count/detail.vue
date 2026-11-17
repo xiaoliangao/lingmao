@@ -231,11 +231,16 @@ async function doSubmit() {
   await doAct('submit')
 }
 
-async function doAct(act: Extract<DocAction, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit'>) {
+async function doAct(act: Extract<DocAction, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit' | 'void'>) {
   const d = detail.value
   if (!d) return
   // 拍了账面数以后仓里又有进出：审核只按差异调，不冲销这段时间的进出（04 §3.5.8）
-  const note = act === 'audit' && d.movesSinceBook > 0 ? `取账面数以后这个仓又有 ${d.movesSinceBook} 笔进出，审核只按差异调。` : undefined
+  const note =
+    act === 'audit' && d.movesSinceBook > 0
+      ? `取账面数以后这个仓又有 ${d.movesSinceBook} 笔进出，审核只按差异调。`
+      : act === 'void'
+        ? '库存不受影响（反审核时已经退回去了）；作废后这个仓能再开盘点单。'
+        : undefined
   const ok = await runDocAction(act, d.no, d.version, (a, body, o) => countApi.act(id, a, body, o), { note, reload: refresh })
   if (ok) await refresh()
 }
@@ -250,7 +255,7 @@ async function doRemove() {
   tabs.close(path, '/stock-takes')
 }
 
-type MoreCommand = 'add' | 'fill' | 'refreshBook' | 'withdraw' | 'unaudit' | 'remove'
+type MoreCommand = 'add' | 'fill' | 'refreshBook' | 'withdraw' | 'unaudit' | 'remove' | 'void'
 const moreItems = computed(() => {
   const items: (MoreItem<MoreCommand> | false)[] = [
     editable.value && { command: 'add', label: '从物料库加物料' },
@@ -259,6 +264,7 @@ const moreItems = computed(() => {
     can('withdraw') && { command: 'withdraw', label: '撤回' },
     can('unaudit') && { command: 'unaudit', label: '反审核' },
     can('remove') && { command: 'remove', label: '删除', danger: true },
+    can('void') && { command: 'void', label: '作废', danger: true },
   ]
   return items.filter(isItem)
 })
@@ -363,7 +369,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
             </el-table-column>
             <el-table-column v-if="editable" label="" width="68" align="right" :show-overflow-tooltip="false">
               <template #default="{ row }">
-                <el-button link type="danger" size="small" @click="removeLine(row as CountItem)">删</el-button>
+                <el-tooltip v-if="(row as CountItem).posted" content="这一行过过账，不能删" placement="top">
+                  <span class="dim small">不能删</span>
+                </el-tooltip>
+                <el-button v-else link type="danger" size="small" @click="removeLine(row as CountItem)">删</el-button>
               </template>
             </el-table-column>
         </el-table>

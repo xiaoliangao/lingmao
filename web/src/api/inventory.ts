@@ -11,7 +11,8 @@ import type { PageParams } from './system'
 
 /**
  * 库存（docs/api/04-库存.md）：物料入库单、出库单（一组接口按 kind 分）、物料盘点单、库存、库存日志。
- * 审核、反审核、删除、操作记录、附件、下游单据这些单据公共的接口在 docApi 里（README §4）；入库单、出库单、盘点单都没有作废。
+ * 审核、反审核、作废、删除、操作记录、附件、下游单据这些单据公共的接口在 docApi 里（README §4）。
+ * 没过过账的草稿删（remove），过过账又反审核回来的作废（act(id, 'void')），看详情的 actions 给哪个。
  * 会被批量条逐条调的多收一个 options，批量时传 { silent: true }
  */
 
@@ -20,14 +21,14 @@ import type { PageParams } from './system'
 const docBase = '/api/inventory-docs'
 
 export const invDocApi = {
-  /** act(id, 'audit' | 'unaudit', { version })、remove（删草稿）、logs、attachments、references、notices */
+  /** act(id, 'audit' | 'unaudit' | 'void', { version })、remove（删没过过账的草稿）、logs、attachments、references、notices */
   ...docApi(docBase),
   /** 要 inventory:doc:list；kind 必填 */
   page: (params: PageParams & InvDocQuery) => http.get<PageResult<InvDocRow>>(docBase, params),
   get: (id: number) => http.get<InvDocDetail>(`${docBase}/${id}`),
   /** 手工新建（退料入库不挂源单、其他入库、调拨、其他出库），存草稿 */
   create: (data: InvDocCreateForm) => http.post<InvDocCreated>(docBase, data),
-  /** 改草稿，整体覆盖。源单生成的草稿只能删行、改数量缸号卷数备注，不能加源单以外的行 */
+  /** 改草稿，整体覆盖，原来的行带 id。源单生成的草稿只能删行、改数量缸号卷数备注，不能加源单以外的行；过过账的行不能删、不能换物料 */
   update: (id: number, data: InvDocForm) => http.put<number>(`${docBase}/${id}`, data),
   export: (params: InvDocQuery) =>
     download(`${docBase}/export`, params, params.kind === 'IN' ? '物料入库单.xlsx' : '物料出库单.xlsx'),
@@ -52,17 +53,17 @@ export const invDocApi = {
 const countBase = '/api/inventory-counts'
 
 export const countApi = {
-  /** act(id, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit', body)、remove（删草稿）、logs、attachments */
+  /** act(id, 'submit' | 'withdraw' | 'reject' | 'audit' | 'unaudit' | 'void', body)、remove（删没过过账的草稿）、logs、attachments */
   ...docApi(countBase),
   page: (params: PageParams & CountQuery) => http.get<PageResult<CountRow>>(countBase, params),
   get: (id: number) => http.get<CountDetail>(`${countBase}/${id}`),
   /** 新建：按范围带出明细、拍下账面数。这个仓库已经有没审核的盘点单回 1000，消息里有那张的单号 */
   create: (data: CountCreateForm) => http.post<CountCreated>(countBase, data),
-  /** 存草稿（实盘数、备注、删行），整体覆盖 */
+  /** 存草稿（实盘数、备注、删行），整体覆盖；过过账的行不能删 */
   update: (id: number, data: CountForm) => http.put<number>(`${countBase}/${id}`, data),
   /** 从物料库加物料：账面数按现在的库存拍（期初录入是 0）；已经在单上的跳过。返回加完的详情 */
   addItems: (id: number, data: { version: number; skuIds: number[] }) => http.post<CountDetail>(`${countBase}/${id}/items`, data),
-  /** 重新取账面数（草稿）：按范围重新带出明细、重拍账面数，已填的实盘数按 SKU 留着。返回新的详情 */
+  /** 重新取账面数（草稿）：所有行重拍账面数，已填的实盘数留着，范围里新出现的 SKU 补进来，一行不删。返回新的详情 */
   refreshBook: (id: number, body: DocActionReq) => http.post<CountDetail>(`${countBase}/${id}/refresh-book`, body),
   /** 有没审核的盘点单的仓库，新建对话框里灰掉 */
   openWarehouses: () => http.get<CountOpenWarehouse[]>(`${countBase}/open-warehouses`),

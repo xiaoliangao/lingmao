@@ -46,6 +46,10 @@ const emit = defineEmits<{
 const units = useDict('unit')
 
 interface LineRow {
+  /** 改草稿时原来的行：保存时带回，后端按它认行 */
+  id: number | null
+  /** 过过账的行（反审核回来的草稿）不能删 */
+  posted: boolean
   sourceItemId: number | null
   materialSkuId: number
   skuCode: string
@@ -159,6 +163,8 @@ async function init() {
       remark: d.remark ?? '',
     })
     lines.value = d.items.map((it) => ({
+      id: it.id,
+      posted: it.posted,
       sourceItemId: it.sourceItemId,
       materialSkuId: it.materialSkuId,
       skuCode: it.skuCode,
@@ -217,6 +223,8 @@ watch(
 async function onPickedSkus(rows: MaterialPickRow[] | StylePickRow[]) {
   for (const r of rows as MaterialPickRow[]) {
     lines.value.push({
+      id: null,
+      posted: false,
       sourceItemId: null,
       materialSkuId: r.skuId,
       skuCode: r.skuCode,
@@ -251,6 +259,7 @@ async function save() {
   if (noQty >= 0) return void ElMessage.warning(`第 ${noQty + 1} 行没填数量`)
 
   const items: InvDocItemForm[] = lines.value.map((l) => ({
+    id: l.id,
     sourceItemId: l.sourceItemId,
     materialSkuId: l.materialSkuId,
     qty: isPurchaseDoc.value ? null : l.qty,
@@ -416,8 +425,11 @@ async function save() {
       </el-table-column>
 
       <el-table-column label="操作" width="60" align="right">
-        <template #default="{ $index }">
-          <el-button link type="danger" size="small" @click="lines.splice($index, 1)">删</el-button>
+        <template #default="{ row, $index }">
+          <el-tooltip v-if="(row as LineRow).posted" content="这一行过过账，不能删，数量能改" placement="top">
+            <span class="dim small">不能删</span>
+          </el-tooltip>
+          <el-button v-else link type="danger" size="small" @click="lines.splice($index, 1)">删</el-button>
         </template>
       </el-table-column>
     </el-table>

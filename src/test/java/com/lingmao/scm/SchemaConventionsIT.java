@@ -62,7 +62,15 @@ class SchemaConventionsIT {
             Map.entry("biz_doc_notice.owner_id", "插入时抄下游单据的负责人，同审计人不加外键"),
             Map.entry("biz_approval_step.doc_id", "类型 + id：三种单据"),
             Map.entry("biz_approval_step.role_id", "提交时从规则抄的快照：角色删了，审过的记录照样留着"),
-            Map.entry("biz_approval_step.user_id", "同上"));
+            Map.entry("biz_approval_step.user_id", "同上"),
+            Map.entry("inv_doc.source_id", "类型 + id：采购单、生产单"),
+            Map.entry("inv_doc_item.source_item_id", "源单明细，源单类型不固定"),
+            Map.entry("inv_doc_item.owner_id", "物权方：自有存 0，0 加不了外键（数据库设计 §1.5）"),
+            Map.entry("inv_stock.owner_id", "同上"),
+            Map.entry("inv_stock.location_id", "货位：0 = 不分货位，二期才有货位表（数据库设计 §13.3）"),
+            Map.entry("inv_stock_log.owner_id", "物权方，同 inv_stock"),
+            Map.entry("inv_stock_log.location_id", "货位，同 inv_stock"),
+            Map.entry("inv_count_item.owner_id", "物权方，同 inv_stock"));
 
     @Autowired
     private JdbcTemplate jdbc;

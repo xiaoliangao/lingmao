@@ -16,6 +16,7 @@ import type {
   ReservePct,
   SkuSupply,
 } from '@/types/purchase'
+import type { InvDocDraft } from '@/types/inventory'
 import { fail, mock, page } from './index'
 
 /**
@@ -923,3 +924,61 @@ export function purchaseUpstreamRows(): UpstreamRow[] {
   }
   return rows
 }
+
+// ---------- 由采购单生成入库单、出库单：带出明细（docs/api/04 §3.3） ----------
+// 库存后端写好了，但采购单的后端还没写：这里先假带出，好看对话框；点"生成"走真后端，回 1000"采购单还没上线"。采购单后端写好一起删
+
+mock('get', '/api/inventory-docs/from-purchase/:id', ({ params, query }) => {
+  const poId = Number(params.id)
+  const docType = (query.docType as 'PURCHASE_IN' | 'PURCHASE_RETURN') ?? 'PURCHASE_IN'
+  const draft: InvDocDraft = {
+    docType,
+    source: {
+      type: 'PURCHASE_ORDER',
+      kind: null,
+      parentId: null,
+      typeLabel: '采购单',
+      id: poId,
+      no: 'CG202611130001',
+      status: 'RUNNING',
+      statusLabel: '部分到货',
+      statusTone: 'progress',
+      ownerId: 1,
+      ownerName: '管理员',
+    },
+    partnerId: 1,
+    partnerName: '示例面料厂',
+    fromWarehouseId: docType === 'PURCHASE_RETURN' ? 1 : null,
+    fromWarehouseName: docType === 'PURCHASE_RETURN' ? '总公司面辅料一仓' : null,
+    toWarehouseId: docType === 'PURCHASE_IN' ? 1 : null,
+    toWarehouseName: docType === 'PURCHASE_IN' ? '总公司面辅料一仓' : null,
+    items: [
+      {
+        sourceItemId: 4001,
+        materialSkuId: 101,
+        skuCode: 'ML0001-KQ',
+        materialId: 1,
+        materialCode: 'ML0001',
+        materialName: '220g 精梳斜纹棉布',
+        materialType: 'FABRIC',
+        colorName: '卡其',
+        colorHex: '#c3b091',
+        spec: '150cm',
+        stockUnit: 'METER',
+        image: null,
+        purchaseUnit: 'METER',
+        conversionFactor: 1,
+        price: 27.8,
+        suggestQty: docType === 'PURCHASE_IN' ? 200 : 0,
+        maxQty: docType === 'PURCHASE_IN' ? 225 : 300,
+        orderedQty: 500,
+        receivedQty: 300,
+        returnedQty: 0,
+        needQty: null,
+        issuedQty: null,
+        dyeLot: null,
+      },
+    ],
+  }
+  return draft
+})
