@@ -20,6 +20,7 @@ import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.style.entity.TechPackStatus;
+import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
@@ -32,6 +33,7 @@ import com.lingmao.scm.module.techpack.dto.BomSkuVO;
 import com.lingmao.scm.module.techpack.dto.CraftSectionForm;
 import com.lingmao.scm.module.techpack.dto.CraftSectionVO;
 import com.lingmao.scm.module.techpack.dto.PackOwner;
+import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.dto.ProcessVO;
 import com.lingmao.scm.module.techpack.dto.PublishProblem;
 import com.lingmao.scm.module.techpack.dto.SpecPointVO;
@@ -162,7 +164,7 @@ public class TechPackServiceImpl implements TechPackService {
         vo.setUnmatchedColors(prod == null ? List.of() : unmatchedColors(packContent.loadBom(prod.getId()), ctx.colors()));
         TechPack costed = prod != null ? prod : find(packs, PackStage.DEV, EFFECTIVE);
         if (costed != null && LoginUser.hasAuthority(COST_PERM)) {
-            vo.setUnitCost(costCalculator.unitCost(costed, ctx));
+            vo.setUnitCost(costCalculator.unitCost(costed, packOwners.context(costed)));
             vo.setUnitCostPackId(costed.getId());
             vo.setUnitCostStage(costed.getStage());
         }
@@ -172,7 +174,7 @@ public class TechPackServiceImpl implements TechPackService {
     @Override
     public TechPackDetailVO detail(long id) {
         TechPack pack = getEntity(id);
-        Ctx ctx = packOwners.context(packOwners.of(pack));
+        Ctx ctx = packOwners.context(pack);
         Content content = packContent.load(id);
 
         TechPackDetailVO vo = new TechPackDetailVO();
@@ -198,6 +200,8 @@ public class TechPackServiceImpl implements TechPackService {
         vo.setCreateTime(pack.getCreateTime());
         vo.setUpdateTime(pack.getUpdateTime());
         vo.setVersionLock(pack.getVersionLock());
+        vo.setContextSource(PackOwners.contextSource(pack));
+        vo.setContextNotice(PackOwners.contextNotice(pack));
         vo.setSizes(ctx.sizes());
         vo.setBaseSize(ctx.baseSize());
         vo.setColors(ctx.colors());
@@ -213,7 +217,7 @@ public class TechPackServiceImpl implements TechPackService {
         if (LoginUser.hasAuthority(COST_PERM)) {
             vo.setUnitCost(costCalculator.unitCost(pack, ctx));
         }
-        vo.setActions(actions(pack, ctx.owner()));
+        vo.setActions(actions(pack, packOwners.of(pack)));
         return vo;
     }
 
@@ -258,6 +262,10 @@ public class TechPackServiceImpl implements TechPackService {
         FLOW.next("edit", pack.getStatus());
         Ctx ctx = packOwners.context(packOwners.of(pack));
         rejectLocked(ctx.owner());
+        // 字段授权在内容转换之前裁定，头与费用子表必须使用同一结果（RFC010 §4.1）。
+        if (!LoginUser.hasAuthority(COST_PERM)) {
+            req.setCost(null);
+        }
         Content content = packForms.toContent(req, ctx.sizes());
         boolean withCost = req.getCost() != null;
 
@@ -331,6 +339,8 @@ public class TechPackServiceImpl implements TechPackService {
                     pack.getStage().versionName(pack.getVersion()) + " 生效，这一版作废");
         }
         StatusCas.update(techPackMapper, new TechPack(), StatusCas.of(TechPack::getId, id, TechPack::getStatus, DRAFT, to)
+                .set(TechPack::getOwnerSnapshot, PackOwners.snapshot(ctx),
+                        "typeHandler=com.lingmao.scm.common.mybatis.JsonbTypeHandler")
                 .set(TechPack::getPublishBy, LoginUser.currentUserId())
                 .set(TechPack::getPublishTime, OffsetDateTime.now(clock))
                 .setSql("version_lock = version_lock + 1")
@@ -387,6 +397,34 @@ public class TechPackServiceImpl implements TechPackService {
     public Map<Long, PackBrief> briefs(Collection<Long> packIds) {
         List<Long> ids = packIds.stream().filter(Objects::nonNull).distinct().toList();
         return ids.isEmpty() ? new HashMap<>() : briefsOf(techPackMapper.selectByIds(ids));
+    }
+
+    @Override
+    public void checkRequirements(Collection<PackRequirement> requirements) {
+        if (requirements.isEmpty()) return;
+        List<PackRequirement> requested = requirements.stream().distinct().toList();
+        List<Long> packIds = requested.stream().map(PackRequirement::packId).filter(Objects::nonNull).distinct().toList();
+        Map<Long, TechPack> packs = packIds.isEmpty() ? Map.of() : techPackMapper.selectByIds(packIds).stream()
+                .collect(Collectors.toMap(TechPack::getId, p -> p));
+        Map<Long, StyleOrderInfo> styles = styleService.orderInfos(packs.values().stream().map(TechPack::getStyleId).distinct().toList());
+        Map<Long, List<BomRow>> bom = packContent.loadBoms(packs.keySet());
+        List<BomRow> allRows = bom.values().stream().flatMap(List::stream).toList();
+        Map<Long, MaterialRef> materials = materials(allRows);
+        Map<Long, MaterialSkuRef> skus = skus(allRows);
+        List<String> problems = new ArrayList<>();
+        for (PackRequirement requirement : requested) {
+            TechPack pack = requirement.packId() == null ? null : packs.get(requirement.packId());
+            StyleOrderInfo style = pack == null ? null : styles.get(pack.getStyleId());
+            StyleOrderInfo.Sku sku = style == null ? null : style.skus().stream()
+                    .filter(s -> Objects.equals(s.id(), requirement.styleSkuId())).findFirst().orElse(null);
+            if (pack == null || style == null || sku == null) {
+                problems.add("款式 SKU " + requirement.styleSkuId() + "：生产 BOM 或本款 SKU 不存在");
+                continue;
+            }
+            problems.addAll(RequirementChecks.check(pack, style, sku, bom.getOrDefault(pack.getId(), List.of()), materials, skus));
+        }
+        if (!problems.isEmpty()) throw new BizException(ErrorCodes.BIZ_ERROR,
+                "生产 BOM 有 " + problems.size() + " 处需要处理", problems);
     }
 
     @Override

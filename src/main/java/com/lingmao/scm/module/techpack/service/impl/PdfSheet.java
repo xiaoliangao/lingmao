@@ -18,6 +18,7 @@ class PdfSheet {
     String title;
     /** 不是已生效的版本，表头印的状态（"草稿""已作废"）；已生效是 null */
     String statusMark;
+    String contextNotice;
     Meta meta;
     /** 款式主图，data: 地址；没有是 null */
     String image;

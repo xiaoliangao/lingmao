@@ -18,6 +18,7 @@ import com.lingmao.scm.module.inventory.entity.CountScope;
 import com.lingmao.scm.module.inventory.entity.InvCount;
 import com.lingmao.scm.module.inventory.entity.InvCountItem;
 import com.lingmao.scm.module.inventory.entity.StockChangeType;
+import com.lingmao.scm.module.inventory.entity.Stock;
 import com.lingmao.scm.module.inventory.mapper.InvCountCategoryMapper;
 import com.lingmao.scm.module.inventory.mapper.InvCountItemMapper;
 import com.lingmao.scm.module.inventory.mapper.InvCountMapper;
@@ -38,6 +39,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -119,10 +121,26 @@ class CountServiceImplTest {
     void submit_needsEveryRowCounted() {
         InvCount count = count(DocStatus.DRAFT, CountPurpose.DAILY);
         when(countMapper.selectById(7L)).thenReturn(count);
+        when(countMapper.lockById(7L)).thenReturn(count);
         when(itemMapper.selectByCount(7L)).thenReturn(List.of(item(1, "5", "5"), item(2, "3", null), item(3, "0", null)));
 
         assertThatThrownBy(() -> service.act(7L, "submit", new DocActionReq(0, null)))
                 .isInstanceOf(BizException.class).hasMessage("还有 2 行没填实盘数");
+        verify(countMapper, never()).update(any(), any());
+    }
+
+    /** 数量恢复原值仍然发生过收发，必须重取并重数，不能只比较余额。 */
+    @Test
+    void submit_rejectsMovementRevisionEvenWhenQtySame() {
+        InvCount c = count(DocStatus.DRAFT, CountPurpose.DAILY);
+        InvCountItem i = item(1, "5", "5"); i.setBookRevision(10L);
+        Stock now = new Stock(); now.setQty(new BigDecimal("5")); now.setMovementRevision(12L);
+        when(countMapper.selectById(7L)).thenReturn(c);
+        when(countMapper.lockById(7L)).thenReturn(c);
+        when(itemMapper.selectByCount(7L)).thenReturn(List.of(i));
+        when(ledger.lockBalances(3L, List.of(11L))).thenReturn(Map.of(11L, now));
+        assertThatThrownBy(() -> service.act(7L, "submit", new DocActionReq(0, null)))
+                .isInstanceOf(BizException.class).hasMessageContaining("重数").extracting("code").isEqualTo(1002);
         verify(countMapper, never()).update(any(), any());
     }
 

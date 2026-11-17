@@ -29,5 +29,9 @@ public class OrderQuery extends PageQuery {
     /** 待排单：已审核、一件都还没排的 */
     private boolean unscheduled;
     private boolean mine;
+    private boolean auditForMe;
+    /** 仅由 Service 覆写的当前级审批集合，不采信客户端输入。 */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private List<Long> approvalIds = List.of();
     private List<Long> ids;
 }

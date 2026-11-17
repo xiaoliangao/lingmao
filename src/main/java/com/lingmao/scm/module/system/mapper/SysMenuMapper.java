@@ -45,6 +45,18 @@ public interface SysMenuMapper extends BaseMapper<SysMenu> {
             """)
     List<String> selectPermsByUserId(@Param("userId") Long userId);
 
+    @Select(ENABLED_MENUS + """
+            SELECT EXISTS (
+              SELECT 1 FROM sys_role r JOIN enabled_menu m ON m.perms = #{permission}
+              WHERE r.id = #{roleId} AND r.status=1 AND r.deleted=false
+                AND (r.code='admin' OR (m.admin_only=false AND EXISTS
+                  (SELECT 1 FROM sys_role_menu rm WHERE rm.role_id=r.id AND rm.menu_id=m.id)))
+                AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_user u ON u.id=ur.user_id
+                            WHERE ur.role_id=r.id AND u.status=1 AND u.deleted=false)
+            )
+            """)
+    boolean roleCanApprove(@Param("roleId") Long roleId, @Param("permission") String permission);
+
     /** 用户能在侧边栏看到的目录和菜单（不含按钮），规则同上 */
     @Select(ENABLED_MENUS + """
             SELECT m.* FROM enabled_menu m

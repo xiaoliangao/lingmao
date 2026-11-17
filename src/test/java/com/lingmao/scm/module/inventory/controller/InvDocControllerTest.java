@@ -68,7 +68,7 @@ class InvDocControllerTest {
     @Test
     void postAndVoid_checkPermissions() throws Exception {
         mockMvc.perform(post("/api/inventory-docs/from-purchase/88").with(loginAs("inventory:doc:add"))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"docType\": \"PURCHASE_IN\", \"post\": true}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"clientActionId\": \"7a12b243-6a31-4eea-b5bb-af9ba9e4f771\", \"docType\": \"PURCHASE_IN\", \"post\": true}"))
                 .andExpect(jsonPath("$.code").value(403));
         verify(invDocService, never()).fromSource(any(), anyLong(), any());
 

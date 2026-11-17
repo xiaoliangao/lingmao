@@ -47,6 +47,11 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
+    public boolean roleCanApprove(Long roleId, String permission) {
+        return sysMenuMapper.roleCanApprove(roleId, permission);
+    }
+
+    @Override
     public List<MenuVO> loadMenuTree(Long userId) {
         return MenuVO.tree(sysMenuMapper.selectMenusByUserId(userId));
     }

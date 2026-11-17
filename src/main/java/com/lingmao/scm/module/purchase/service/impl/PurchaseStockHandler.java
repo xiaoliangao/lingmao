@@ -190,6 +190,13 @@ class PurchaseStockHandler implements StockSourceHandler {
             if (received.subtract(returned).signum() < 0) {
                 throw new BizException("采购单 " + po.getNo() + " 第 " + i.getSeq() + " 行入的料已经退了一部分：先反审核退货单，再反审核这张入库单");
             }
+            BigDecimal maxReceived = Num.maxQty(i.getQty(), OVER_PCT);
+            if (received.signum() < 0 || returned.signum() < 0 || received.subtract(returned).compareTo(maxReceived) > 0) {
+                throw new BizException(ErrorCodes.OVER_LIMIT,
+                        "采购单 " + po.getNo() + " 第 " + i.getSeq() + " 行操作后净入库将超过上限：先撤销补收入库，再反审核退货单",
+                        List.of(new InvOverRow(seqOf(posting, i.getId()), null, null, po.getNo(),
+                                received.subtract(returned), maxReceived, i.getPurchaseUnit(), "采购量 × (1 + 溢收比例)")));
+            }
             itemMapper.addPosted(i.getId(), in ? delta : BigDecimal.ZERO, in ? BigDecimal.ZERO : delta);
             i.setReceivedQty(received);
             i.setReturnedQty(returned);

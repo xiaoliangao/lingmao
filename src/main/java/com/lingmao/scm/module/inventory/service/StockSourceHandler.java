@@ -11,7 +11,8 @@ import java.util.List;
  * 入库单、出库单的源单那一边（架构 §5.2 "带出、回写源单都用接口反转依赖"）：inventory 不认识采购单、生产单，
  * 由 purchase（采购入库、采购退货）、production（领料出库、退料入库）实现，注册成 Bean。一种源单一个实现。
  * <p>
- * 都在 inventory 的事务里调：建草稿、改草稿时调 {@link #check}，审核时 check → 过账 → {@link #onPosted}，反审核时过账 → {@link #onUnposted}。
+ * 都在 inventory 的事务里调：建草稿、改草稿时调 {@link #check}；正反过账先 {@link #preparePosting} 再改库存。
+ * 来源回写可能锁采购/MRP，不能在库存锁后获取它们；后续库存失败使来源回写一起回滚（RFC010 §2.1）。
  * 抛出的 BizException（1000 源单状态不对、1004 超上限）原样回给前端，整个事务回滚
  */
 public interface StockSourceHandler {
@@ -30,9 +31,19 @@ public interface StockSourceHandler {
     /** 按源单最新的数查上限：超了抛 1004（data 是 InvOverRow[]），源单状态不让入、不让领抛 1000 */
     void check(SourcePosting posting);
 
-    /** 审核过账以后回写源单（已入库、已退货、已领），重算源单状态 */
+    /** 在库存余额锁之前完成来源校验与回写；reverse=true 为反审核。调用方必须持有库存单头锁。 */
+    default void preparePosting(SourcePosting posting, boolean reverse) {
+        if (reverse) {
+            onUnposted(posting);
+        } else {
+            check(posting);
+            onPosted(posting);
+        }
+    }
+
+    /** 正向回写源单（已入库、已退货、已领），在余额更新前重算源单状态 */
     void onPosted(SourcePosting posting);
 
-    /** 反审核以后退回去；源单那边不让退的抛 1000 */
+    /** 反向回写，在余额更新前校验；源单那边不让退的抛业务错误 */
     void onUnposted(SourcePosting posting);
 }

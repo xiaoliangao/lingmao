@@ -36,6 +36,11 @@ public interface PurchaseOrderMapper extends BaseMapper<PurchaseOrder> {
             + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY id FOR SHARE</script>")
     List<Long> lockShared(@Param("ids") Collection<Long> ids);
 
+    /** MRP确认含采购行改挂：预先按头ID取排他锁，避免先锁明细或共享锁升级形成环。 */
+    @Select("<script>SELECT id FROM pur_order WHERE id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY id FOR UPDATE</script>")
+    List<Long> lockForUpdate(@Param("ids") Collection<Long> ids);
+
     IPage<PurchaseRowVO> selectRowPage(IPage<PurchaseRowVO> page, @Param("q") PurchaseQuery query, @Param("codes") List<String> codes,
                                        @Param("scope") DataScope scope);
 

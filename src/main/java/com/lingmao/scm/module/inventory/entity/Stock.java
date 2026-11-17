@@ -31,5 +31,8 @@ public class Stock {
 
     private BigDecimal qty;
 
+    /** 每次产生流水的同键过账递增，盘点用它检测包括净量不变的收发。 */
+    private Long movementRevision;
+
     private OffsetDateTime updateTime;
 }

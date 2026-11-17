@@ -132,6 +132,18 @@ class StockLedgerTest {
     void post_reversedAddsBack() {
         when(stockMapper.add(1L, 10L, Stock.OWN, 0L, 0L, new BigDecimal("2"))).thenReturn(new BigDecimal("9"));
         StockLedger.Posting posting = new StockLedger.Posting(5L, null, "CK1", DAY, List.of(out(1, 10, "2", 1, null)));
+        StockLog original = new StockLog();
+        original.setId(900L);
+        original.setWarehouseId(1L);
+        original.setMaterialSkuId(10L);
+        original.setInvDocItemId(101L);
+        original.setChangeQty(new BigDecimal("-2"));
+        original.setValuationStatus("RECORDED");
+        original.setStockUnit("METER");
+        original.setCurrency("CNY");
+        original.setUnitPrice(new BigDecimal("2.0000"));
+        original.setAmount(new BigDecimal("-4.00"));
+        when(stockLogMapper.reversibleOf(5L, null)).thenReturn(List.of(original));
 
         ledger.post(posting.reversed());
 
@@ -140,6 +152,9 @@ class StockLedgerTest {
         assertThat(log.getValue().getChangeType()).isEqualTo(StockChangeType.OTHER_OUT);
         assertThat(log.getValue().getChangeQty()).isEqualByComparingTo("2");
         assertThat(log.getValue().getBalanceQty()).isEqualByComparingTo("9");
+        assertThat(log.getValue().getReversalOfLogId()).isEqualTo(900L);
+        assertThat(log.getValue().getUnitPrice()).isEqualByComparingTo("2");
+        assertThat(log.getValue().getAmount()).isEqualByComparingTo("4");
     }
 
     private static MaterialSkuBrief brief(long id, String code, String name, String color) {

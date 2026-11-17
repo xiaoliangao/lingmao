@@ -9,14 +9,27 @@
     <!-- 列表和条数共用的条件；条数不看状态（withStatus = false） -->
     <sql id="where">
         WHERE true
-        <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
+        <choose>
+            <when test="q.auditForMe">
+                AND o.status = 'PENDING'
+                <choose>
+                    <when test="q.approvalIds != null and q.approvalIds.size() > 0">
+                        AND o.id IN <foreach collection="q.approvalIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+                    </when>
+                    <otherwise>AND false</otherwise>
+                </choose>
+            </when>
+            <otherwise>
+                <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
+            </otherwise>
+        </choose>
         <if test="withStatus and q.status != null and q.status.size() > 0">
             AND o.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
         </if>
         <if test="q.orderType != null and q.orderType != ''">AND o.order_type = #{q.orderType}</if>
         <if test="q.brand != null and q.brand != ''">AND o.brand = #{q.brand}</if>
-        <if test="q.salesId != null">AND o.sales_id = #{q.salesId}</if>
-        <if test="q.merchId != null">AND o.merch_id = #{q.merchId}</if>
+        <if test="!q.auditForMe and q.salesId != null">AND o.sales_id = #{q.salesId}</if>
+        <if test="!q.auditForMe and q.merchId != null">AND o.merch_id = #{q.merchId}</if>
         <if test="q.styleId != null">
             AND EXISTS (SELECT 1 FROM ord_order_item i WHERE i.order_id = o.id AND i.style_id = #{q.styleId} AND i.qty &gt; 0)
         </if>

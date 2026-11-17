@@ -32,6 +32,9 @@ public class ProductionQuery extends PageQuery {
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate dueDateTo;
     private boolean mine;
+    private boolean auditForMe;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private List<Long> approvalIds = List.of();
     private List<Long> ids;
     /** 看板的数字卡：RUNNING / WAITING / NEAR / LATE / NODE_LATE / ISSUE（看板列表才有） */
     private String card;

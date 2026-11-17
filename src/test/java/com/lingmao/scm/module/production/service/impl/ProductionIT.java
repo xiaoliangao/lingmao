@@ -36,6 +36,7 @@ import com.lingmao.scm.module.production.service.ProductionNodeService;
 import com.lingmao.scm.module.production.service.ProductionOrderService;
 import com.lingmao.scm.module.production.service.ProductionReceiptService;
 import com.lingmao.scm.module.production.service.ScheduleService;
+import com.lingmao.scm.module.production.dto.NodePlanReq;
 import com.lingmao.scm.module.purchase.service.NeedDateSource;
 import com.lingmao.scm.security.LoginUser;
 import org.junit.jupiter.api.AfterEach;
@@ -250,6 +251,52 @@ class ProductionIT {
                 Integer.class, orderId)).isEqualTo(4);
     }
 
+    @Test
+    void nodePlanRevisionBlocksSecondDevice_butReportsDoNotChangePlanRevision() {
+        Fixture f = fixture();
+        long id = approvedProduction(f);
+        ProductionDetailVO d = productionOrderService.detail(id);
+        NodePlanReq req = new NodePlanReq(); req.setPlanRevision(d.getPlanRevision());
+        req.setNodes(d.getNodes().stream().map(n -> {
+            NodePlanReq.Item i = new NodePlanReq.Item(); i.setNodeId(n.getId());
+            i.setPlanStart(n.getPlanStart().plusDays(1)); i.setPlanFinish(n.getPlanFinish().plusDays(1)); return i;
+        }).toList());
+        assertThat(nodeService.updatePlan(id, req)).isEqualTo(1);
+        assertThatThrownBy(() -> nodeService.updatePlan(id, req)).isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+        assertThat(productionOrderService.detail(id).getNodes().getFirst().getPlanStart()).isEqualTo(req.getNodes().getFirst().getPlanStart());
+        nodeService.report(id, d.getNodes().getFirst().getId(), nodeReport(NodeReportAction.START, LocalDate.now(), null));
+        assertThat(productionOrderService.detail(id).getPlanRevision()).isEqualTo(1);
+        req.setPlanRevision(1);
+        assertThat(nodeService.updatePlan(id, req)).isEqualTo(1);
+    }
+
+    @Test
+    void receiptRetryPreservesOriginalResult_andRealSecondBatchRequiresNewId() {
+        Fixture f = fixture();
+        long id = approvedProduction(f);
+        long item = productionOrderService.detail(id).getItems().getFirst().getId();
+        ReceiptReq req = receiptReq(Map.of(item, 10), item, 0);
+        var first = receiptService.receive(id, req);
+        assertThat(receiptService.receive(id, req)).isEqualTo(first);
+        assertThat(receiptService.list(id)).hasSize(1);
+        assertThat(productionOrderService.detail(id).getReturnedQty()).isEqualTo(10);
+        req.getItems().getFirst().setQty(11);
+        assertThatThrownBy(() -> receiptService.receive(id, req)).isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+        req.getItems().getFirst().setQty(10); req.setClientActionId(java.util.UUID.randomUUID());
+        assertThat(receiptService.receive(id, req).id()).isNotEqualTo(first.id());
+        assertThat(productionOrderService.detail(id).getReturnedQty()).isEqualTo(20);
+    }
+
+    private long approvedProduction(Fixture f) {
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long order = approvedOrder(f, commit);
+        long id = scheduleService.schedule(scheduleReq(f, order, commit.minusDays(10),
+                Map.of(orderLine(order, f.skuM), 60, orderLine(order, f.skuL), 40))).getFirst().id();
+        productionOrderService.act(id, "submit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        return id;
+    }
+
     // ---------------------------------------------------------------- 数据
 
     record Fixture(long company, long user, long warehouse, long factory, long style, long skuM, long skuL, long sku) {
@@ -381,6 +428,7 @@ class ProductionIT {
 
     private ReceiptReq receiptReq(Map<Long, Integer> qty, long defectItem, int defect) {
         ReceiptReq r = new ReceiptReq();
+        r.setClientActionId(java.util.UUID.randomUUID());
         r.setReceiptDate(LocalDate.now());
         r.setPhotos(List.of(photo("receipt")));
         r.setItems(qty.entrySet().stream().map(e -> {
@@ -407,6 +455,7 @@ class ProductionIT {
         i.setMaterialSkuId(f.sku);
         i.setQty(new BigDecimal(qty));
         InvDocFromSourceReq req = new InvDocFromSourceReq();
+        req.setClientActionId(java.util.UUID.randomUUID());
         req.setDocType(type);
         if (type == InvDocType.ISSUE_OUT) {
             req.setFromWarehouseId(f.warehouse);

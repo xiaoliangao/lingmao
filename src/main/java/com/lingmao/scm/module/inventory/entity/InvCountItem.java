@@ -28,6 +28,9 @@ public class InvCountItem {
     /** 账面数：建单（或重新取账面数）时的库存快照 */
     private BigDecimal bookQty;
 
+    /** 与账面数在同一库存键锁内取得；历史NULL必须重取账面重数。 */
+    private Long bookRevision;
+
     /** 实盘数，还没盘是 null */
     private BigDecimal countedQty;
 

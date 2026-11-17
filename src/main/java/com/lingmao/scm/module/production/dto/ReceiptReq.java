@@ -9,10 +9,13 @@ import lombok.Data;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 /** 登记回货（POST /api/production-orders/{id}/receipts，前端 ReceiptForm）：qty 是 0 的行不发 */
 @Data
 public class ReceiptReq {
+    @NotNull(message = "缺少 clientActionId，请刷新后重新操作")
+    private UUID clientActionId;
     @NotNull(message = "请填回货日期")
     private LocalDate receiptDate;
     private Long warehouseId;

@@ -69,6 +69,10 @@ public class ProductionOrder extends DocEntity {
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private MaterialIssueStatus issueStatus;
 
+    /** 节点整计划版本；报工和普通单据动作不修改。 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer planRevision = 0;
+
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private DocStatus status;
 }

@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -65,10 +66,16 @@ class PackContent {
     }
 
     List<BomRow> loadBom(long packId) {
+        return loadBoms(List.of(packId)).getOrDefault(packId, List.of());
+    }
+
+    /** 跨单据批量检查时一次取完，查询数不随 SKU/版次数增加。 */
+    Map<Long, List<BomRow>> loadBoms(Collection<Long> packIds) {
+        if (packIds.isEmpty()) return Map.of();
         List<BomItem> items = bomItemMapper.selectList(new LambdaQueryWrapper<BomItem>()
-                .eq(BomItem::getTechPackId, packId).orderByAsc(BomItem::getSeq, BomItem::getId));
+                .in(BomItem::getTechPackId, packIds).orderByAsc(BomItem::getTechPackId, BomItem::getSeq, BomItem::getId));
         if (items.isEmpty()) {
-            return List.of();
+            return Map.of();
         }
         List<Long> ids = items.stream().map(BomItem::getId).toList();
         Map<Long, List<BomItemSku>> skus = group(bomItemSkuMapper.selectList(new LambdaQueryWrapper<BomItemSku>()
@@ -76,7 +83,7 @@ class PackContent {
         Map<Long, List<BomItemSize>> sizes = group(bomItemSizeMapper.selectList(new LambdaQueryWrapper<BomItemSize>()
                 .in(BomItemSize::getBomItemId, ids).orderByAsc(BomItemSize::getId)), BomItemSize::getBomItemId);
         return items.stream().map(i -> new BomRow(i, skus.getOrDefault(i.getId(), List.of()),
-                sizes.getOrDefault(i.getId(), List.of()))).toList();
+                sizes.getOrDefault(i.getId(), List.of()))).collect(Collectors.groupingBy(r -> r.item().getTechPackId()));
     }
 
     List<ProcessRow> loadProcesses(long packId) {

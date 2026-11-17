@@ -14,6 +14,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.page.PageResult;
@@ -71,6 +72,7 @@ import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.module.techpack.dto.PackBrief;
+import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LoginUser;
@@ -175,6 +177,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public PageResult<OrderRowVO> page(OrderQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
         IPage<OrderRowVO> page = orderMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()));
         fillRows(page.getRecords());
@@ -183,6 +186,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public Map<String, Long> counts(OrderQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
         return StatusCount.toMap(orderMapper.selectCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())));
     }
 
@@ -686,7 +690,7 @@ public class OrderServiceImpl implements OrderService {
             item.setStyleId(styleId);
             item.setStyleSkuId(r.getStyleSkuId());
             item.setQty(r.getQty());
-            item.setPrice(Num.price(r.getPrice()));
+            item.setPrice(NumericLimits.price(r.getPrice(), "第 " + item.getSeq() + " 行："));
             item.setAmount(Num.amount(r.getQty(), item.getPrice()));
             item.setLineDueDate(r.getLineDueDate());
             item.setRemark(OrderTexts.blankToNull(r.getRemark()));
@@ -697,8 +701,14 @@ public class OrderServiceImpl implements OrderService {
 
     /** 合计件数、金额（没单价的行不算金额） */
     static void totals(Order o, List<OrderItem> items) {
-        o.setTotalQty(items.stream().mapToInt(OrderItem::getQty).sum());
-        o.setTotalAmount(sumAmount(items));
+        for (int n = 0; n < items.size(); n++) {
+            OrderItem item = items.get(n);
+            String label = "第 " + (n + 1) + " 行：";
+            NumericLimits.price(item.getPrice(), label);
+            NumericLimits.amount(item.getAmount(), label);
+        }
+        o.setTotalQty(NumericLimits.pieces(items.stream().mapToLong(OrderItem::getQty).sum(), "订单"));
+        o.setTotalAmount(NumericLimits.amount(sumAmount(items), "订单合计"));
     }
 
     // ---------- 状态动作 ----------
@@ -778,7 +788,20 @@ public class OrderServiceImpl implements OrderService {
         if (!problems.isEmpty()) {
             throw new BizException(ErrorCodes.BIZ_ERROR, action + "不了：有 " + problems.size() + " 处要先处理", problems);
         }
+        techPackService.checkRequirements(items.stream()
+                .map(i -> new PackRequirement(packs.get(i.getStyleId()).id(), i.getStyleSkuId())).toList());
         return packs;
+    }
+
+    @Override
+    public void checkForMrp(Collection<Long> orderIds) {
+        Set<Long> ids = new HashSet<>(orderIds);
+        if (ids.isEmpty()) return;
+        List<Order> orders = orderMapper.selectByIds(ids);
+        if (orders.size() != ids.size()) throw new BizException(404, "有需求订单不存在，请重新选择");
+        List<String> problems = orders.stream().filter(o -> o.getStatus() != APPROVED && o.getStatus() != RUNNING)
+                .map(o -> "订单 " + o.getNo() + " 只能在已审核或生产中状态算料").toList();
+        if (!problems.isEmpty()) throw new BizException(ErrorCodes.BIZ_ERROR, problems.getFirst(), problems);
     }
 
     @Override
@@ -912,8 +935,8 @@ public class OrderServiceImpl implements OrderService {
                 throw stale();
             }
             if (row != null && ci.getToQty() < row.getScheduledQty()) {
-                throw new BizException("已经排了 " + row.getScheduledQty() + " 件，不能改成 " + ci.getToQty()
-                        + "：先调整生产单，再作废这张变更单重新提");
+                throw new BizException(reductionMessage(row, ci.getToQty(),
+                        referenceService.referrers(BizType.ORDER, o.getId())));
             }
             if (row == null) {
                 OrderItem sample = rowsOf(rows, ci.getStyleId()).stream().findFirst().orElseThrow(OrderServiceImpl::stale);
@@ -934,6 +957,18 @@ public class OrderServiceImpl implements OrderService {
             row.setAmount(Num.amount(row.getQty(), row.getPrice()));
             touched.add(row);
         }
+        totals(o, rows); // 整单容量先验证，之后才写任一行
+        Set<Long> changedStyles = items.stream().filter(i -> i.getChangeType() == ChangeType.TECH_PACK)
+                .map(OrderChangeItem::getStyleId).collect(Collectors.toSet());
+        Map<Long, PackBrief> latest = changedStyles.isEmpty() ? Map.of() : techPackService.effectiveProd(changedStyles);
+        for (OrderItem row : active(rows)) {
+            if (changedStyles.contains(row.getStyleId()) && (latest.get(row.getStyleId()) == null
+                    || !Objects.equals(latest.get(row.getStyleId()).id(), row.getTechPackId()))) {
+                throw new BizException(ErrorCodes.STATE_CHANGED, "目标生产 BOM 已更新，请重新确认变更版本");
+            }
+        }
+        techPackService.checkRequirements(active(rows).stream()
+                .map(row -> new PackRequirement(row.getTechPackId(), row.getStyleSkuId())).toList());
         int seq = rows.stream().filter(r -> r.getSeq() != null).mapToInt(OrderItem::getSeq).max().orElse(0);
         for (OrderItem r : added) {
             r.setSeq(++seq);
@@ -950,7 +985,6 @@ public class OrderServiceImpl implements OrderService {
                     .set(OrderItem::getTechPackId, r.getTechPackId())
                     .eq(OrderItem::getId, r.getId()));
         }
-        totals(o, rows);
         orderMapper.update(null, new LambdaUpdateWrapper<Order>()
                 .set(Order::getRequiredDate, o.getRequiredDate())
                 .set(Order::getTotalQty, o.getTotalQty())
@@ -960,6 +994,16 @@ public class OrderServiceImpl implements OrderService {
         ChangeTexts.Names n = changeTexts.names(items);
         List<String> texts = items.stream().map(ci -> ChangeTexts.text(ci, n, null)).toList();
         docLogService.add(BizType.ORDER, o.getId(), "change", source + "：" + ChangeTexts.summary(false, texts));
+    }
+
+    static String reductionMessage(OrderItem row, int target, List<com.lingmao.scm.module.biz.dto.DocRef> refs) {
+        String production = refs.stream().filter(r -> r.type() == BizType.PRODUCTION_ORDER)
+                .map(r -> r.no() + "（" + r.statusLabel() + "）").collect(Collectors.joining("、"));
+        return "SKU " + row.getStyleSkuId() + " 已排 " + row.getScheduledQty() + " 件、已回 "
+                + Objects.requireNonNullElse(row.getReturnedQty(), 0) + " 件，不能改为 " + target + " 件。"
+                + (production.isBlank() ? "" : "关联生产单：" + production + "。")
+                + "未执行的生产单按现有条件撤回/反审核、作废后重排；已有领退、报工或回货的单保留实绩和锁定版本，"
+                + "可结案并记录原因，后续需求另开新单。结案不退已排量；不要改写已执行数量或直接换旧生产单BOM";
     }
 
     private static List<OrderItem> rowsOf(Collection<OrderItem> rows, Long styleId) {
@@ -1026,6 +1070,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public byte[] export(OrderQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
         Page<OrderRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<OrderRowVO> rows = orderMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();

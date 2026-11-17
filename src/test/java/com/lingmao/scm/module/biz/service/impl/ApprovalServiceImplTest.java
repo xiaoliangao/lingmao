@@ -35,6 +35,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -90,6 +91,7 @@ class ApprovalServiceImplTest {
         when(ruleMapper.selectList(any())).thenReturn(List.of(
                 rule(1L, "50000", 5L, null), rule(2L, "100000", null, 9L)));
         when(roleService.isEnabled(5L)).thenReturn(true);
+        when(permissionService.roleCanApprove(5L, "purchase:order:list")).thenReturn(true);
 
         service.start(BizType.PURCHASE_ORDER, 30L, new BigDecimal("100000.00"));
 
@@ -109,6 +111,9 @@ class ApprovalServiceImplTest {
                 rule(3L, "100000", 6L, null), rule(1L, "20000", null, 9L), rule(2L, "100000", 5L, null)));
         when(roleService.isEnabled(any(Long.class))).thenReturn(true);
         when(userService.isEnabled(9L)).thenReturn(true);
+        when(permissionService.roleCanApprove(5L, "purchase:order:list")).thenReturn(true);
+        when(permissionService.roleCanApprove(6L, "purchase:order:list")).thenReturn(true);
+        when(permissionService.loadPermissions(9L)).thenReturn(Set.of("purchase:order:list"));
 
         service.start(BizType.PURCHASE_ORDER, 30L, new BigDecimal("150000"));
 

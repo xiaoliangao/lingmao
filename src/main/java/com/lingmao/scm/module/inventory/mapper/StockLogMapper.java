@@ -17,6 +17,14 @@ import java.util.Set;
 @Mapper
 public interface StockLogMapper extends BaseMapper<StockLog> {
 
+    /** 每个明细/仓库键最近尚未冲销的事件；库存单头CAS锁保证同单不会并发反审。 */
+    @Select("<script>SELECT DISTINCT ON (l.warehouse_id, l.material_sku_id, l.inv_doc_item_id, l.count_item_id) l.* "
+            + "FROM inv_stock_log l WHERE "
+            + "<choose><when test='docId != null'>l.inv_doc_id = #{docId}</when><otherwise>l.count_id = #{countId}</otherwise></choose> "
+            + "AND l.reversal_of_log_id IS NULL AND NOT EXISTS (SELECT 1 FROM inv_stock_log r WHERE r.reversal_of_log_id = l.id) "
+            + "ORDER BY l.warehouse_id, l.material_sku_id, l.inv_doc_item_id, l.count_item_id, l.id DESC</script>")
+    List<StockLog> reversibleOf(@Param("docId") Long docId, @Param("countId") Long countId);
+
     /** 这张入库单 / 出库单过过账没有（审核过一次就有日志，反审核也不删） */
     @Select("SELECT EXISTS (SELECT 1 FROM inv_stock_log WHERE inv_doc_id = #{docId})")
     boolean docPosted(@Param("docId") long docId);

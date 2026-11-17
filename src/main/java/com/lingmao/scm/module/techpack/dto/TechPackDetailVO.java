@@ -37,10 +37,13 @@ public class TechPackDetailVO {
     private OffsetDateTime updateTime;
     /** 乐观锁：保存、生效都带回来 */
     private Integer versionLock;
+    /** LIVE 草稿，SNAPSHOT 新生效版，LEGACY 无历史上下文快照的旧版。 */
+    private String contextSource;
+    private String contextNotice;
     /** 款式尺码组的尺码，按顺序 */
     private List<String> sizes;
     private String baseSize;
-    /** 款式现在启用的颜色，按顺序（跟着款式走，不跟着版本走） */
+    /** 展示上下文的有序颜色；生效后有快照的版本不跟随当前主数据。 */
     private List<ColorOption> colors;
     private List<PointOption> pointOptions;
     private List<SpecPointVO> specPoints;

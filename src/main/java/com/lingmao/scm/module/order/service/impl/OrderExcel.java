@@ -1,6 +1,9 @@
 package com.lingmao.scm.module.order.service.impl;
 
 import com.lingmao.scm.common.doc.DocStatus;
+import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ExcelColumn;
 import com.lingmao.scm.common.excel.ExcelImport;
@@ -98,6 +101,12 @@ class OrderExcel {
         Map<String, Integer> firstRowOfSku = new HashMap<>();
         for (ExcelImport.Line<ImportRow> l : rows) {
             ImportRow r = l.data();
+            try {
+                NumericLimits.price(r.getPrice(), "");
+                if (r.getQty() != null) NumericLimits.amount(Num.amount(r.getQty(), r.getPrice()), "行");
+            } catch (BizException e) {
+                sheet.error(l.row(), "单价/金额", e.getMessage());
+            }
             String group = Objects.requireNonNullElse(r.getGroup(), "");
             if (r.getContractNo() != null) {
                 String first = contracts.putIfAbsent(group, r.getContractNo());
@@ -153,6 +162,22 @@ class OrderExcel {
             groups.computeIfAbsent(group, g -> new ArrayList<>())
                     .add(new Line(l.row(), info.id(), info.code(), sku.id(), r.getQty(), r.getPrice(), r.getLineDueDate()));
         }
+        groups.forEach((group, lines) -> {
+            long qty = 0;
+            BigDecimal amount = BigDecimal.ZERO;
+            for (Line line : lines) {
+                qty += line.qty();
+                BigDecimal value = Num.amount(line.qty(), line.price());
+                if (value != null) amount = amount.add(value);
+                try {
+                    NumericLimits.pieces(qty, "分单" + group + "：");
+                    NumericLimits.amount(amount, "分单" + group + "合计：");
+                } catch (BizException e) {
+                    sheet.error(line.row(), "分单合计", e.getMessage());
+                    break;
+                }
+            }
+        });
         sheet.dataOrThrow();
         return groups.entrySet().stream().map(e -> new Parsed(contracts.get(e.getKey()), e.getValue())).toList();
     }

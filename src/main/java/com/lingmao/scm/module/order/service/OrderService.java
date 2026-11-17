@@ -21,6 +21,7 @@ import com.lingmao.scm.module.order.entity.OrderChangeItem;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Map;
 
 /** 需求订单（docs/api/02 §3.2–§3.11）。数据范围"本人"看制单人、业务员、跟单员是自己的 */
@@ -82,6 +83,9 @@ public interface OrderService {
 
     /** 同上，不加锁：排单对话框带出、取价这种只读的 */
     OrderForProduction getForProduction(long orderId);
+
+    /** 算料的授权作业视图：批量校验来源业务可用性，不把订单普通列表权限授给算料用户。 */
+    void checkForMrp(Collection<Long> orderIds);
 
     /** 已排产加减：正数占上（排单），负数退回（删、作废生产单草稿）。调之前已经 lockForProduction */
     void addScheduled(Map<Long, Integer> deltaByItem);

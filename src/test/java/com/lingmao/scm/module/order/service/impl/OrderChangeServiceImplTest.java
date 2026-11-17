@@ -172,8 +172,12 @@ class OrderChangeServiceImplTest {
         assertThatThrownBy(() -> service.check(o, null, false, ResponsibleParty.SELF, items))
                 .isInstanceOfSatisfying(BizException.class, e -> {
                     assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
-                    assertThat(e.getData()).isEqualTo(List.of("27CF001-KQ-M 已排 80 件，不能改成 60：先调整生产单 JG202611180001",
-                            "27CF001 酒红：资料包 V2 里没给这个颜色配料，先换资料包版本"));
+                    assertThat(e.getData()).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(String.class))
+                            .hasSize(2).satisfies(problems -> {
+                        assertThat(problems.getFirst()).contains("27CF001-KQ-M", "已排 80 件", "不能改为 60 件",
+                                "JG202611180001（草稿）", "保留实绩和锁定版本", "结案不退已排量");
+                        assertThat(problems.get(1)).isEqualTo("27CF001 酒红：资料包 V2 里没给这个颜色配料，先换资料包版本");
+                    });
                 });
     }
 

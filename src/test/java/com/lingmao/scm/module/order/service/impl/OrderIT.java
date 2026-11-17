@@ -6,6 +6,7 @@ import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.dto.DocSaved;
 import com.lingmao.scm.module.order.dto.OrderAuditReq;
@@ -23,6 +24,9 @@ import com.lingmao.scm.module.order.entity.ResponsibleParty;
 import com.lingmao.scm.module.order.service.OrderChangeService;
 import com.lingmao.scm.module.order.service.OrderService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.DataScope;
+import org.apache.ibatis.scripting.defaults.DefaultParameterHandler;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -35,17 +39,22 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.json.JsonMapper;
 
+import javax.sql.DataSource;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -69,6 +78,10 @@ class OrderIT {
     private OrderChangeService changeService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private SqlSessionFactory sqlSessionFactory;
+    @Autowired
+    private DataSource dataSource;
 
     @AfterEach
     void logout() {
@@ -123,7 +136,15 @@ class OrderIT {
             assertThat(d.getCommitDate()).isEqualTo(LocalDate.now().plusDays(40));
             assertThat(lockedPacks(id)).containsOnlyNulls();
 
-            loginAs(f.approver, List.of());
+            loginAs(f.approver, List.of("order:order:list"));
+            OrderQuery approvalQuery = new OrderQuery(); approvalQuery.setKeyword(saved.no());
+            assertThat(orderService.page(approvalQuery).getList()).isEmpty();
+            approvalQuery.setAuditForMe(true); approvalQuery.setMine(true);
+            approvalQuery.setSalesId(Long.MAX_VALUE); approvalQuery.setMerchId(Long.MAX_VALUE);
+            assertThat(orderService.page(approvalQuery).getList()).extracting(r -> r.getId()).containsExactly(id);
+            assertThat(orderService.counts(approvalQuery)).containsExactly(Map.entry("PENDING", 1L));
+            approvalQuery.setBrand("NO-SUCH-BRAND");
+            assertThat(orderService.page(approvalQuery).getList()).isEmpty();
             assertThat(orderService.detail(id).getActions()).contains("audit", "reject");
             orderService.audit(id, new OrderAuditReq(2, LocalDate.now().plusDays(45)));
         } finally {
@@ -250,6 +271,91 @@ class OrderIT {
         }
     }
 
+    @Test
+    void orderCapacityRejectsJsonAndWholeExcelBatchBeforeWrites() throws IOException {
+        Fixture f = fixture();
+        assertThatThrownBy(() -> createOrder(f, Map.of(f.sku("A", "M"), Integer.MAX_VALUE, f.sku("B", "L"), 1)))
+                .isInstanceOf(BizException.class).hasMessageContaining("总件数超出上限").extracting("code").isEqualTo(400);
+        OrderImportHead head = new OrderImportHead(); head.setCompanyId(f.company); head.setOrderType("STOCK");
+        head.setRequiredDate(LocalDate.now().plusDays(30));
+        byte[] over = workbook(new String[][]{
+                {"分单号", "合同号", "款号", "颜色", "尺码", "数量", "单价"},
+                {"VALID", null, f.styleCode, f.colorNames.get("A"), "M", "1", "89"},
+                {"OVER", null, f.styleCode, f.colorNames.get("A"), "M", "2147483647", "1"},
+                {"OVER", null, f.styleCode, f.colorNames.get("B"), "L", "1", "1"}});
+        assertThatThrownBy(() -> orderService.importExcel(head, new MockMultipartFile("file", "订单.xlsx", Excel.CONTENT_TYPE, over)))
+                .isInstanceOf(BizException.class).extracting("code").isEqualTo(1003);
+        assertThat(count("SELECT COUNT(*) FROM ord_order WHERE company_id=?", f.company)).isZero();
+    }
+
+    /** RFC010：万行列表容量门禁保留真实 Mapper 的执行计划；时延仅记录，不把测试机耗时伪装成生产 SLA。 */
+    @Test
+    void listCapacityExplainRecordsRealSql() throws Exception {
+        Fixture f = fixture();
+        String prefix = "ITCAP-" + f.company + "-";
+        jdbcTemplate.update("""
+                INSERT INTO ord_order (no, company_id, order_type, brand, order_date, required_date,
+                                       sales_id, merch_id, total_qty, total_amount, create_by)
+                SELECT ? || lpad(n::text, 6, '0'), ?, 'STOCK',
+                       CASE WHEN n % 10 = 0 THEN 'ITCAP-B' ELSE 'ITCAP-A' END,
+                       CURRENT_DATE - (n % 30), CURRENT_DATE + 30, ?, ?, 1, 1, ?
+                FROM generate_series(1, 10000) n""", prefix, f.company, f.user, f.user, f.user);
+        jdbcTemplate.update("""
+                INSERT INTO ord_order_item (order_id, seq, style_id, style_sku_id, qty, price, amount)
+                SELECT id, 1, ?, ?, 1, 1, 1 FROM ord_order WHERE company_id=?""", f.style, f.sku("A", "M"), f.company);
+        jdbcTemplate.execute("ANALYZE ord_order");
+        jdbcTemplate.execute("ANALYZE ord_order_item");
+
+        Map<String, OrderQuery> scenarios = new LinkedHashMap<>();
+        scenarios.put("unfiltered-self", new OrderQuery());
+        OrderQuery single = new OrderQuery(); single.setKeyword(prefix + "000123");
+        scenarios.put("single-code", single);
+        OrderQuery batch = new OrderQuery();
+        batch.setKeyword(IntStream.rangeClosed(1, 200).mapToObj(n -> prefix + String.format("%06d", n))
+                .collect(java.util.stream.Collectors.joining(" ")));
+        scenarios.put("two-hundred-codes", batch);
+        OrderQuery combined = new OrderQuery(); combined.setKeyword(f.styleCode);
+        combined.setBrand("ITCAP-B"); combined.setMerchId(f.user); combined.setStyleId(f.style);
+        combined.setStatus(List.of(com.lingmao.scm.common.doc.DocStatus.DRAFT));
+        combined.setOrderDateFrom(LocalDate.now().minusDays(7)); combined.setOrderDateTo(LocalDate.now());
+        scenarios.put("combined-filters", combined);
+
+        JsonMapper json = JsonMapper.builder().build();
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("dataset", Map.of("orderHeads", 10000, "orderItems", 10000, "data", "synthetic ITCAP only"));
+        evidence.put("database", jdbcTemplate.queryForObject("SHOW server_version", String.class));
+        evidence.put("scope", "SELF; real OrderMapper SQL; page 1 LIMIT 20; status counts use identical filters");
+        List<Object> plans = new ArrayList<>();
+        for (var scenario : scenarios.entrySet()) {
+            OrderQuery query = scenario.getValue();
+            var actual = orderService.page(query);
+            assertThat(actual.getList()).hasSizeLessThanOrEqualTo(20);
+            if (scenario.getKey().equals("unfiltered-self")) assertThat(actual.getTotal()).isEqualTo(10000);
+            if (scenario.getKey().equals("single-code")) assertThat(actual.getTotal()).isEqualTo(1);
+            if (scenario.getKey().equals("two-hundred-codes")) assertThat(actual.getTotal()).isEqualTo(200);
+            for (String method : List.of("selectRowPage", "selectCounts")) {
+                var statement = sqlSessionFactory.getConfiguration().getMappedStatement(
+                        "com.lingmao.scm.module.order.mapper.OrderMapper." + method);
+                Map<String, Object> parameters = new LinkedHashMap<>();
+                parameters.put("q", query); parameters.put("codes", Keywords.codes(query.getKeyword()));
+                parameters.put("scope", DataScope.current(false)); parameters.put("page", query.toPage());
+                var bound = statement.getBoundSql(parameters);
+                String sql = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + bound.getSql()
+                        + (method.equals("selectRowPage") ? " LIMIT 20" : "");
+                try (var connection = dataSource.getConnection(); var prepared = connection.prepareStatement(sql)) {
+                    new DefaultParameterHandler(statement, parameters, bound).setParameters(prepared);
+                    try (var rows = prepared.executeQuery()) {
+                        assertThat(rows.next()).isTrue();
+                        plans.add(Map.of("scenario", scenario.getKey(), "mapper", method, "plan", json.readTree(rows.getString(1))));
+                    }
+                }
+            }
+        }
+        evidence.put("plans", plans);
+        Files.createDirectories(Path.of("target"));
+        Files.writeString(Path.of("target/audit-query-capacity.json"), json.writerWithDefaultPrettyPrinter().writeValueAsString(evidence));
+    }
+
     // ---------- 造数据 ----------
 
     /** 款有甲（A）、乙（B）、丙（C）三个颜色、M/L 两个尺码、6 个 SKU；生效的生产 BOM V1 只给甲、乙配了料 */
@@ -271,6 +377,10 @@ class OrderIT {
                 Long.class, "it-order-" + s, userName);
         long approver = jdbcTemplate.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES (?, 'x', ?) RETURNING id",
                 Long.class, "it-approver-" + s, "IT 总经理" + s);
+        long approverRole = jdbcTemplate.queryForObject("INSERT INTO sys_role (code, name, data_scope) VALUES (?, ?, 'SELF') RETURNING id",
+                Long.class, "it-ap-" + s, "IT 审批入口" + s);
+        jdbcTemplate.update("INSERT INTO sys_user_role (user_id, role_id) VALUES (?, ?)", approver, approverRole);
+        jdbcTemplate.update("INSERT INTO sys_role_menu (role_id, menu_id) SELECT ?, id FROM sys_menu WHERE perms='order:order:list'", approverRole);
         long sizeGroup = jdbcTemplate.queryForObject("INSERT INTO bas_size_group (name, base_size) VALUES (?, 'M') RETURNING id",
                 Long.class, "IT 订单尺码" + s);
         jdbcTemplate.update("INSERT INTO bas_size_group_item (size_group_id, seq, size_code) VALUES (?, 1, 'M'), (?, 2, 'L')",

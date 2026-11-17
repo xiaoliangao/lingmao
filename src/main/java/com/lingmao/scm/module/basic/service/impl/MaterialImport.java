@@ -375,7 +375,7 @@ public class MaterialImport {
                     }
                 }
             }
-            String purchaseUnit = Objects.requireNonNullElse(r.getPurchaseUnit(), r.getStockUnit());
+            String purchaseUnit = r.getPurchaseUnit() == null ? r.getStockUnit() : r.getPurchaseUnit();
             BigDecimal factor = Objects.requireNonNullElse(r.getConversionFactor(), BigDecimal.ONE);
             if (purchaseUnit != null && purchaseUnit.equals(r.getStockUnit()) && factor.compareTo(BigDecimal.ONE) != 0) {
                 sheet.error(row, "换算系数", "采购单位和单位一样时，换算系数只能是 1");

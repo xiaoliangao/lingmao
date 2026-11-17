@@ -172,6 +172,62 @@ class TechPackServiceImplIT {
         assertThat(status(v2)).isEqualTo("EFFECTIVE");
     }
 
+    @Test
+    void publishedContextFreezesColorsSizesAndOwner_legacyIsExplicit() throws Exception {
+        Fixture f = fixture();
+        long id = techPackService.create(f.style, PackStage.PROD);
+        int lock = techPackService.save(id, saveReq(0, f, null));
+        techPackService.publish(id, lock);
+        TechPackDetailVO original = techPackService.detail(id);
+        assertThat(original.getContextSource()).isEqualTo("SNAPSHOT");
+        assertThat(jdbcTemplate.queryForObject("SELECT owner_snapshot->>'schemaVersion' FROM tp_tech_pack WHERE id=?", String.class, id))
+                .isEqualTo("1");
+        jdbcTemplate.update("UPDATE sty_style_color SET status=0 WHERE style_id=? AND color_id=?", f.style, f.colorB);
+        jdbcTemplate.update("UPDATE bas_color SET name='改名后的颜色' WHERE id=?", f.colorA);
+        jdbcTemplate.update("UPDATE sty_style SET name='改名后的款式' WHERE id=?", f.style);
+        jdbcTemplate.update("INSERT INTO bas_size_group_item (size_group_id, seq, size_code) SELECT size_group_id, 4, 'XL' FROM sty_style WHERE id=?", f.style);
+        TechPackDetailVO frozen = techPackService.detail(id);
+        assertThat(frozen.getColors()).isEqualTo(original.getColors());
+        assertThat(frozen.getSizes()).containsExactly("S", "M", "L");
+        assertThat(frozen.getStyleName()).isEqualTo(original.getStyleName());
+        String pdf = flat(pdfService.export(id, f.colorB, false, false).content());
+        assertThat(pdf).contains("IT资料包款", "IT乙色").doesNotContain("改名后的款式", "改名后的颜色");
+        // 模拟 V25 旧版本：不能伪装成冻结快照，停用颜色仍可打印。
+        jdbcTemplate.update("UPDATE tp_tech_pack SET owner_snapshot=NULL WHERE id=?", id);
+        TechPackDetailVO legacy = techPackService.detail(id);
+        assertThat(legacy.getContextSource()).isEqualTo("LEGACY");
+        assertThat(legacy.getContextNotice()).contains("不能证明原始全集");
+        assertThat(legacy.getColors()).extracting(c -> c.id()).contains(f.colorB);
+        assertThat(flat(pdfService.export(id, f.colorB, false, false).content())).contains("旧版本没有生效时的色码快照");
+    }
+
+    @Test
+    void costAuthorizationPreservesHeadAndChildren() {
+        Fixture f = fixture();
+        long id = techPackService.create(f.style, PackStage.PROD);
+        TechPackSaveReq initial = saveReq(0, f, null);
+        var cost = new com.lingmao.scm.module.techpack.dto.TechPackCostForm();
+        cost.setCostMode(com.lingmao.scm.module.techpack.entity.CostMode.BUY); cost.setBuyPrice(new BigDecimal("30"));
+        var fee = new com.lingmao.scm.module.techpack.dto.CostItemForm(); fee.setName("包装"); fee.setAmount(new BigDecimal("2"));
+        cost.setItems(List.of(fee)); initial.setCost(cost);
+        int version = techPackService.save(id, initial);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(USER, "test"), null,
+                List.of(new SimpleGrantedAuthority("techpack:pack:edit"))));
+        TechPackSaveReq denied = saveReq(version, f, "仅改说明");
+        var empty = new com.lingmao.scm.module.techpack.dto.TechPackCostForm();
+        empty.setCostMode(com.lingmao.scm.module.techpack.entity.CostMode.OUTSOURCE); empty.setItems(List.of()); denied.setCost(empty);
+        int afterDenied = techPackService.save(id, denied);
+        assertThat(jdbcTemplate.queryForObject("SELECT buy_price FROM tp_tech_pack WHERE id=?", BigDecimal.class, id)).isEqualByComparingTo("30");
+        assertThat(count("SELECT COUNT(*) FROM tp_cost_item WHERE tech_pack_id=?", id)).isEqualTo(1);
+        setUp();
+        int afterNull = techPackService.save(id, saveReq(afterDenied, f, "成本未加载"));
+        assertThat(count("SELECT COUNT(*) FROM tp_cost_item WHERE tech_pack_id=?", id)).isEqualTo(1);
+        TechPackSaveReq clear = saveReq(afterNull, f, "明确清空成本"); clear.setCost(empty);
+        techPackService.save(id, clear);
+        assertThat(jdbcTemplate.queryForObject("SELECT buy_price FROM tp_tech_pack WHERE id=?", BigDecimal.class, id)).isNull();
+        assertThat(count("SELECT COUNT(*) FROM tp_cost_item WHERE tech_pack_id=?", id)).isZero();
+    }
+
     /** 规则：同款同阶段已经有草稿再建 → 1000；绕过检查直接插第二个草稿，部分唯一索引 uk_tp_pack_draft 拦住 */
     @Test
     void oneDraftPerStage() {
