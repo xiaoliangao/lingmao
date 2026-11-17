@@ -245,7 +245,7 @@ function onImported(count: number) {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="单号、合同号、款号" batch="单号、款号" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="单号、合同号、款号" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.statusTab" :options="statusOptions" @change="search" />
       </template>

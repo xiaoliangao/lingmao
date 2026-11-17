@@ -145,7 +145,7 @@ function openCreate(purpose: CountPurpose) {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="盘点单号、仓库、盘点人、物料编码/名称" batch="单号" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="盘点单号、仓库、盘点人、物料编码/名称" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>

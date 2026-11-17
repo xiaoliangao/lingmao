@@ -206,7 +206,7 @@ const exportPicked = () => exportFile(selected.value.map((r) => r.id))
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="单号、订单号、款号、加工厂" batch="单号、款号" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="单号、订单号、款号、加工厂" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.tabKey" :options="tabOptions" @change="search" />
       </template>

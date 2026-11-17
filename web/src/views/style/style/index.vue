@@ -179,7 +179,7 @@ const importVisible = ref(false)
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="款号、名称、花名、品名" batch="款号" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="款号、名称、花名、品名" @search="search">
       <template #left>
         <el-segmented v-model="query.status" :options="STATUS_OPTIONS" @change="search" />
       </template>

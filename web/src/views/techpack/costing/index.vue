@@ -97,7 +97,7 @@ function openCostTab(row: StyleCostRow) {
   <div>
     <PageHeader />
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="款号、名称、花名" batch="款号" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="款号、名称、花名" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.stage" :options="STAGE_OPTIONS" @change="search" />
       </template>
