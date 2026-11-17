@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.production.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.file.FileUrlSigner;
@@ -404,8 +405,7 @@ class ProductionIT {
                                        default_factory_id)
                 VALUES (?, 'IT 生产款', 'FS', 'IT', ?, 2026, 'AUTUMN', 'OWN', ?, 299, 'ENABLED', ?) RETURNING id""",
                 Long.class, styleCode, category, sizeGroup, factory);
-        long color = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 生产色" + s);
+        long color = TestColors.insert(jdbcTemplate, "IT 生产色" + s);
         jdbcTemplate.update("INSERT INTO sty_style_color (style_id, color_id, seq) VALUES (?, ?, 1)", style, color);
         long skuM = jdbcTemplate.queryForObject("INSERT INTO sty_style_sku (style_id, code, color_id, size_code) VALUES (?, ?, ?, 'M') RETURNING id",
                 Long.class, style, styleCode + "-A-M", color);
@@ -556,9 +556,4 @@ class ProductionIT {
         return jdbcTemplate.queryForObject("SELECT sum(scheduled_qty) FROM ord_order_item WHERE order_id = ?", Integer.class, orderId);
     }
 
-    /** bas_color 的编码是 3 位、全局唯一 */
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
-    }
 }

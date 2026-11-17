@@ -410,10 +410,9 @@ class SchemaConventionsIT {
                 """, supplierId, materialId, skuId);
         cleanUps.push("DELETE FROM prc_price WHERE id = " + priceId);
 
-        String designerNo = String.valueOf(ThreadLocalRandom.current().nextInt(10, 100));
-        long left = insertId("INSERT INTO sys_user (username, password, nickname, designer_no, deleted) VALUES (?, 'x', '离职的', ?, true)",
-                "it_" + random(8), designerNo);
-        cleanUps.push("DELETE FROM sys_user WHERE id = " + left);
+        DesignerFixture left = deletedDesigner();
+        String designerNo = left.number();
+        cleanUps.push("DELETE FROM sys_user WHERE id = " + left.id());
         assertThat(sqlState(catchThrowableOfType(DataIntegrityViolationException.class, () -> jdbc.update(
                 "INSERT INTO sys_user (username, password, nickname, designer_no) VALUES (?, 'x', '新来的', ?)",
                 "it_" + random(8), designerNo))))
@@ -422,8 +421,25 @@ class SchemaConventionsIT {
 
     // ---------------- 造数据 ----------------
 
+    private record DesignerFixture(long id, String number) {
+    }
+
+    /** 先用真实唯一索引认领未被任何用户（含已删除用户）占用的编号，再测删除后仍不可重用。 */
+    private DesignerFixture deletedDesigner() {
+        String username = "it_" + UUID.randomUUID();
+        for (int value = 1; value <= 99; value++) {
+            String number = value < 10 ? "0" + value : Integer.toString(value);
+            List<Long> ids = jdbc.queryForList("""
+                    INSERT INTO sys_user (username, password, nickname, designer_no, deleted)
+                    VALUES (?, 'x', '离职的', ?, true)
+                    ON CONFLICT (designer_no) DO NOTHING RETURNING id""", Long.class, username, number);
+            if (!ids.isEmpty()) return new DesignerFixture(ids.getFirst(), number);
+        }
+        throw new IllegalStateException("No unused designer number for test fixture");
+    }
+
     private long color() {
-        long id = insertId("INSERT INTO bas_color (code, name) VALUES (?, ?)", random(3), "测试色" + random(8));
+        long id = TestColors.insert(jdbc, "测试色" + random(8));
         cleanUps.push("DELETE FROM bas_color WHERE id = " + id);
         return id;
     }

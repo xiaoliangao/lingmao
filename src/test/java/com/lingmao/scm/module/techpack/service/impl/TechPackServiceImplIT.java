@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.techpack.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.basic.entity.MaterialSource;
@@ -378,10 +379,8 @@ class TechPackServiceImplIT {
 
     private Fixture fixture() {
         String s = suffix();
-        long colorA = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 甲色" + s);
-        long colorB = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 乙色" + s);
+        long colorA = TestColors.insert(jdbcTemplate, "IT 甲色" + s);
+        long colorB = TestColors.insert(jdbcTemplate, "IT 乙色" + s);
         long sizeGroup = jdbcTemplate.queryForObject("INSERT INTO bas_size_group (name, base_size) VALUES (?, 'M') RETURNING id",
                 Long.class, "IT 资料包尺码" + s);
         List<String> sizes = List.of("S", "M", "L");
@@ -477,9 +476,4 @@ class TechPackServiceImplIT {
         return String.valueOf(ThreadLocalRandom.current().nextInt(1_000_000, 10_000_000));
     }
 
-    /** 颜色编码 3 位字母，同一次跑撞上的概率可以不管 */
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
-    }
 }

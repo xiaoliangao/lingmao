@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.inventory.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportError;
@@ -409,8 +410,7 @@ class InventoryIT {
         long material = jdbcTemplate.queryForObject("""
                 INSERT INTO bas_material (code, name, category_id, material_type, stock_unit, purchase_unit)
                 VALUES (?, 'IT 库存面料', ?, 'FABRIC', 'METER', 'METER') RETURNING id""", Long.class, "ITM" + s, category);
-        long color = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 色" + s);
+        long color = TestColors.insert(jdbcTemplate, "IT 色" + s);
         long skuA = jdbcTemplate.queryForObject("INSERT INTO bas_material_sku (material_id, code, color_id) VALUES (?, ?, ?) RETURNING id",
                 Long.class, material, "ITM" + s + "-A", color);
         long skuB = jdbcTemplate.queryForObject("INSERT INTO bas_material_sku (material_id, code, spec) VALUES (?, ?, '150cm') RETURNING id",
@@ -420,11 +420,6 @@ class InventoryIT {
         return new Fixture(company, warehouseA, warehouseB, skuA, skuB, counter);
     }
 
-
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
-    }
 
     private static InvDocCreateReq createReq(Fixture f, InvDocType type, Long from, Long to, List<InvDocItemReq> items) {
         InvDocCreateReq req = new InvDocCreateReq();

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.purchase.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
@@ -596,8 +597,7 @@ class PurchaseIT {
                 INSERT INTO sty_style (code, name, style_class, brand, category_id, year, season, source, size_group_id, tag_price, status)
                 VALUES (?, 'IT 采购款', 'FS', 'IT', ?, 2026, 'AUTUMN', 'OWN', ?, 299, 'ENABLED') RETURNING id""",
                 Long.class, styleCode, category, sizeGroup);
-        long color = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 采购色" + s);
+        long color = TestColors.insert(jdbcTemplate, "IT 采购色" + s);
         jdbcTemplate.update("INSERT INTO sty_style_color (style_id, color_id, seq) VALUES (?, ?, 1)", style, color);
         long skuM = jdbcTemplate.queryForObject("INSERT INTO sty_style_sku (style_id, code, color_id, size_code) VALUES (?, ?, ?, 'M') RETURNING id",
                 Long.class, style, styleCode + "-A-M", color);
@@ -717,12 +717,6 @@ class PurchaseIT {
         req.setItems(List.of(i));
         req.setPost(true);
         return req;
-    }
-
-    /** bas_color 的编码是 3 位、全局唯一 */
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
     }
 
     private ReorderRowVO reorderRow(Fixture f) {
