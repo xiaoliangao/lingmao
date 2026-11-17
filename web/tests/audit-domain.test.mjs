@@ -109,6 +109,51 @@ test('a client action preserves the payload snapshot and distinct genuine action
   const next = newClientAction(input, '00000000-0000-4000-8000-000000000002')
   assert.notEqual(next.clientActionId, first.clientActionId)
 })
+function withCrypto(source, check) {
+  const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+  assert.ok(originalCrypto)
+  try {
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: source })
+    check()
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', originalCrypto)
+  }
+}
+test('client actions prefer the native randomUUID when it is available', () => {
+  const nativeId = '12345678-1234-4234-8234-123456789abc'
+  let calls = 0
+  withCrypto({
+    randomUUID() { calls++; return nativeId },
+    getRandomValues() { assert.fail('Native UUID support must not use the fallback') },
+  }, () => {
+    assert.equal(newClientAction({ qty: 2 }).clientActionId, nativeId)
+    assert.equal(calls, 1)
+  })
+})
+test('HTTP contexts without randomUUID generate distinct v4 actions using getRandomValues', () => {
+  const browserCrypto = globalThis.crypto
+  let calls = 0
+  withCrypto({
+    getRandomValues(bytes) {
+      assert.ok(bytes instanceof Uint8Array)
+      assert.equal(bytes.length, 16)
+      calls++
+      return browserCrypto.getRandomValues(bytes)
+    },
+  }, () => {
+    const payload = { items: [{ qty: 2 }] }
+    const first = newClientAction(payload)
+    const second = newClientAction(payload)
+    const v4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    assert.match(first.clientActionId, v4)
+    assert.match(second.clientActionId, v4)
+    assert.notEqual(first.clientActionId, second.clientActionId)
+    assert.equal(calls, 2)
+    payload.items[0].qty = 9
+    assert.equal(first.items[0].qty, 2)
+    assert.equal(globalThis.structuredClone(first).clientActionId, first.clientActionId)
+  })
+})
 test('network/5xx failures retain unknown action identity; business validation failures do not', () => {
   for (const code of [undefined, -1, 500, 502, 503]) assert.equal(unknownActionResult(code), true)
   for (const code of [400, 403, 1000, 1002, 1004]) assert.equal(unknownActionResult(code), false)
