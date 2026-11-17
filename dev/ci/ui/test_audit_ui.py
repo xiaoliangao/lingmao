@@ -320,6 +320,15 @@ class AuditUi(unittest.TestCase):
         expect(quantity).to_have_value("17.125")
         self.page.locator(".ptab").filter(has=self.page.locator(f'a[href="/stock-takes/{count_id}"]')).get_by_role("button").click()
         expect(self.page.get_by_text("有没保存的修改", exact=False)).to_be_visible()
+        warning = self.page.locator(".el-message-box:visible")
+        expect(warning).to_have_count(1)
+        self.page.wait_for_function("""element => {
+            for (let node = element; node; node = node.parentElement) {
+                const style = getComputedStyle(node);
+                if (Number(style.opacity) < 1 || style.visibility !== 'visible' || style.display === 'none') return false;
+            }
+            return element.getAnimations({subtree: true}).every(animation => animation.playState === 'finished');
+        }""", arg=warning.element_handle())
         self.shot("count-close-unsaved-warning")
         self.page.get_by_role("button", name="继续编辑", exact=True).click()
         expect(self.page.locator(".el-message-box:visible")).to_have_count(0)
@@ -1168,7 +1177,30 @@ class AuditUi(unittest.TestCase):
         self.shot("supplier-new-lower-fields-and-footer")
         cancel(dialog)
 
-        go("/costing", "/api/style-costs", "costing-list", "核算版本")
+        costing = go("/costing", "/api/style-costs", column="核算版本")
+        expected_codes = [row["styleCode"] for row in costing["list"]]
+        self.assertTrue(any(len(code) >= 15 for code in expected_codes), "The real fixture must exercise a long style code")
+        codes = page.locator(".el-table__body-wrapper .name-cell .code")
+        expect(codes).to_have_text(expected_codes)
+        code_bounds = codes.evaluate_all("""elements => elements.map(element => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const text = range.getBoundingClientRect(), cell = element.closest('td');
+            if (!cell || text.width <= 0 || text.height <= 0) return false;
+            const bounds = cell.getBoundingClientRect();
+            if (text.left < Math.max(0, bounds.left) - 1 || text.right > Math.min(innerWidth, bounds.right) + 1) return false;
+            for (let node = element.parentElement; node; node = node.parentElement) {
+                const style = getComputedStyle(node);
+                if (!['hidden', 'auto', 'scroll', 'clip'].includes(style.overflowX)) continue;
+                const box = node.getBoundingClientRect(), left = box.left + node.clientLeft;
+                if (text.left < left - 1 || text.right > left + node.clientWidth + 1) return false;
+            }
+            const line = parseFloat(getComputedStyle(element).lineHeight);
+            return Number.isFinite(line) && text.height <= line + 1;
+        })""")
+        self.assertTrue(all(code_bounds), "Costing style codes must be fully visible beside their thumbnails")
+        self.note("costing complete style codes fit beside thumbnails", count=len(code_bounds), longestCodeLength=max(map(len, expected_codes)), tolerancePx=1)
+        self.shot("costing-list")
         go("/mrp", "/api/mrp-calcs", "mrp-list", "单号")
         reads_during(["/api/mrp-calcs/reserve-pcts"], lambda: page.get_by_role("button", name="备料比", exact=True).click())
         dialog = page.get_by_role("dialog", name="备料比", exact=True)

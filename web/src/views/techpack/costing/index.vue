@@ -136,7 +136,7 @@ function openCostTab(row: StyleCostRow) {
       :empty-text="query.keyword || query.categoryId || query.brand || query.year || query.season || query.stage ? '没有符合条件的款式：换个条件，或者清空筛选' : '还没有生效的资料包：资料包生效后，这里按款列出单件成本'"
       @row-click="openCostTab"
     >
-      <el-table-column label="款号" width="170" fixed="left">
+      <el-table-column label="款号" width="220" fixed="left">
         <template #default="{ row }">
           <span class="name-cell">
             <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
@@ -195,6 +195,7 @@ function openCostTab(row: StyleCostRow) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .thumb {
