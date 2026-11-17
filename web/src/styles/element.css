@@ -426,6 +426,13 @@
   padding: 18px 22px 16px;
 }
 
+/* 回货色码矩阵、附件和重试提示较长；照原型 modal > section 在正文内滚动，
+   保留标题与登记/取消按钮。只约束该长表单，不改变其他对话框尺寸。 */
+.receipt-entry-dialog .el-dialog__body {
+  max-height: 68vh;
+  overflow-y: auto;
+}
+
 .el-dialog__footer {
   display: flex;
   align-items: center;

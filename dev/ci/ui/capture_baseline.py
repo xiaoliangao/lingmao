@@ -10,7 +10,10 @@ evidence={'synthetic':True,'phase':'before','orderBefore':line_values(api.reques
 with sync_playwright() as pw:
  browser=pw.chromium.launch(executable_path=os.environ.get('SCM_UI_CHROMIUM'),headless=True)
  context=browser.new_context(viewport={'width':1440,'height':900},timezone_id='Asia/Shanghai')
- context.add_init_script("localStorage.setItem('lingmao-token', "+json.dumps(api.token)+")")
+ # Init scripts also run on opaque about:blank documents before navigation.
+ # Write the real local login only on the exact test UI origin; retain errors
+ # from that application document instead of swallowing storage exceptions.
+ context.add_init_script("if (location.origin === "+json.dumps(base)+") { localStorage.setItem('lingmao-token', "+json.dumps(api.token)+"); }")
  context.route(re.compile(r'^https?://'),lambda route:route.continue_() if urlsplit(route.request.url).hostname in {'127.0.0.1','localhost'} else route.abort())
  page=context.new_page();page.on('pageerror',lambda e:evidence['consoleErrors'].append(str(e)))
  for name,path in [('orders','/orders'),('order-matrix',f'/orders/{order_id}/edit'),('techpack-bom',f"/styles/{f['styleId']}?tab=techpack&techPackId={f['packId']}&sub=bom"),('techpack-cost',f"/styles/{f['styleId']}?tab=techpack&techPackId={f['packId']}&sub=cost"),('count-detail',f"/stock-takes/{f['countId']}"),('purchases-empty','/purchases'),('stock-takes','/stock-takes')]:

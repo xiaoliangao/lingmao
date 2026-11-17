@@ -207,6 +207,7 @@ async function voidCurrentReceipt() {
 <template>
   <el-dialog
     v-model="createVisible"
+    class="receipt-entry-dialog"
     :title="`登记回货 · ${doc.no}`"
     width="820px"
     :close-on-click-modal="false"

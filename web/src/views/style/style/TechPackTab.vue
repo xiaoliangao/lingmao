@@ -1263,7 +1263,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <span class="gap" />
                   <el-button v-if="editable" size="small" icon="Plus" @click="addOtherCost">加一项</el-button>
                 </div>
-                <el-table :data="draft.costItems" empty-text="没有其他费用">
+                <el-table :data="draft.costItems" empty-text="没有其他费用" class="other-cost-table">
                   <el-table-column label="名称" min-width="160">
                     <template #default="{ row }">
                       <el-input v-if="editable" v-model="row.name" size="small" placeholder="如：前胸刺绣" />
@@ -1593,6 +1593,11 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 
 .cost-block {
   margin-bottom: 16px;
+}
+
+.other-cost-table :deep(.el-input-number) {
+  width: 100%;
+  min-width: 0;
 }
 
 .blk-head {

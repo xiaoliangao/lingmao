@@ -240,7 +240,7 @@ async function savePlan() {
     :close-on-click-modal="false"
     :before-close="planGuard.beforeClose"
   >
-    <el-table :data="planRows" row-key="nodeId" size="small">
+    <el-table :data="planRows" row-key="nodeId" size="small" class="node-plan-table">
       <el-table-column label="节点" prop="nodeName" width="100" />
       <el-table-column label="计划开始">
         <template #default="{ row }">
@@ -306,6 +306,11 @@ async function savePlan() {
 .form-grid :deep(.el-input-number),
 .form-grid :deep(.el-date-editor) {
   width: 100%;
+}
+
+.node-plan-table :deep(.el-date-editor) {
+  width: 100%;
+  min-width: 0;
 }
 
 .span-all {
