@@ -39,6 +39,7 @@ import com.lingmao.scm.module.biz.service.ReferenceService;
 import com.lingmao.scm.module.order.dto.OrderAuditReq;
 import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderDetailVO;
+import com.lingmao.scm.module.order.dto.OrderForProduction;
 import com.lingmao.scm.module.order.dto.OrderForm;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
@@ -50,6 +51,7 @@ import com.lingmao.scm.module.order.dto.OrderStyleOptionVO;
 import com.lingmao.scm.module.order.dto.OrderStyleRef;
 import com.lingmao.scm.module.order.dto.OrderStyleVO;
 import com.lingmao.scm.module.order.dto.PendingChange;
+import com.lingmao.scm.module.order.dto.ProductionProgress;
 import com.lingmao.scm.module.order.dto.StyleOrderRowVO;
 import com.lingmao.scm.module.order.entity.ChangeType;
 import com.lingmao.scm.module.order.entity.Order;
@@ -99,6 +101,7 @@ import java.util.stream.Collectors;
 
 import static com.lingmao.scm.common.doc.DocStatus.APPROVED;
 import static com.lingmao.scm.common.doc.DocStatus.CLOSED;
+import static com.lingmao.scm.common.doc.DocStatus.DONE;
 import static com.lingmao.scm.common.doc.DocStatus.DRAFT;
 import static com.lingmao.scm.common.doc.DocStatus.PENDING;
 import static com.lingmao.scm.common.doc.DocStatus.RUNNING;
@@ -141,6 +144,9 @@ public class OrderServiceImpl implements OrderService {
     static final StatusLabels<DocStatus> ORDER_STATUS = StatusLabels.DOC.rename(RUNNING, "生产中").rename(VOIDED, "已取消");
 
     static final String NO_PROD_PACK = "没有生效的生产 BOM：研发 BOM 只用来估价，订单不能用";
+
+    /** 生产进度能改的订单状态：结案、取消的不动（取消结案时按结案前的状态回去） */
+    private static final Set<DocStatus> PRODUCTION_DRIVEN = Set.of(APPROVED, RUNNING, DONE);
 
     private static final String NOT_FOUND = "订单不存在";
     private static final String STALE = "这张订单已经被别人改过，请刷新后再改";
@@ -1025,5 +1031,72 @@ public class OrderServiceImpl implements OrderService {
                 DataScope.current(query.isMine())).getRecords();
         fillRows(rows);
         return excel.export(rows);
+    }
+
+    // ---------- 给生产 ----------
+
+    @Override
+    public OrderForProduction lockForProduction(long orderId) {
+        return forProduction(orderMapper.lockById(orderId));
+    }
+
+    @Override
+    public OrderForProduction getForProduction(long orderId) {
+        return forProduction(orderMapper.selectById(orderId));
+    }
+
+    private OrderForProduction forProduction(Order o) {
+        if (o == null) {
+            throw new BizException(404, NOT_FOUND);
+        }
+        long orderId = o.getId();
+        List<OrderForProduction.Line> lines = itemMapper.selectByOrder(orderId).stream()
+                .map(i -> new OrderForProduction.Line(i.getId(), i.getStyleId(), i.getStyleSkuId(), i.getQty(), i.getScheduledQty(),
+                        i.getReturnedQty(), i.getTechPackId()))
+                .toList();
+        return new OrderForProduction(o.getId(), o.getNo(), o.getStatus(), o.getCompanyId(), o.getCommitDate(), o.getRequiredDate(),
+                o.getMerchId(), lines);
+    }
+
+    @Override
+    public void addScheduled(Map<Long, Integer> deltaByItem) {
+        deltaByItem.forEach((id, delta) -> {
+            if (delta != 0) {
+                itemMapper.addScheduled(id, delta);
+            }
+        });
+    }
+
+    @Override
+    public void addReturned(Map<Long, Integer> deltaByItem) {
+        deltaByItem.forEach((id, delta) -> {
+            if (delta != 0) {
+                itemMapper.addReturned(id, delta);
+            }
+        });
+    }
+
+    @Override
+    public void syncProduction(long orderId, ProductionProgress progress, String cause) {
+        Order o = orderMapper.selectById(orderId);
+        if (o == null || !PRODUCTION_DRIVEN.contains(o.getStatus())) {
+            return;
+        }
+        DocStatus to = byProduction(itemMapper.selectByOrder(orderId), progress);
+        if (to == o.getStatus()) {
+            return;
+        }
+        StatusCas.update(orderMapper, new Order(), StatusCas.of(Order::getId, orderId, Order::getStatus, o.getStatus(), to)
+                .setSql("version = version + 1"));
+        docLogService.add(BizType.ORDER, orderId, "production", o.getStatus(), to, cause);
+    }
+
+    /** 按生产进度算的状态（PRD §6.7.5 规则 3）：每个 SKU 都排满、生产单都完成或结案 → 已完成；有审核过的生产单 → 生产中；否则已审核 */
+    static DocStatus byProduction(List<OrderItem> items, ProductionProgress progress) {
+        boolean scheduled = items.stream().allMatch(i -> i.getScheduledQty() >= i.getQty());
+        if (scheduled && progress.allFinished()) {
+            return DONE;
+        }
+        return progress.audited() ? RUNNING : APPROVED;
     }
 }

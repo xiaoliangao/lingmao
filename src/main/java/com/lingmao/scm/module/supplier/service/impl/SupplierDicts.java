@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
 import lombok.RequiredArgsConstructor;
@@ -25,12 +26,12 @@ class SupplierDicts {
     static final String INVOICE_TYPE = "invoice_type";
     static final String CERT_TYPE = "cert_type";
 
-    /** 供应商分类里会建工厂仓的两类（PRD §6.1.6），字典内置项，按 value 认 */
+    /** 供应商分类里会建工厂仓的两类（PRD §6.1.6），字典内置项，按 value 认（SupplierService.FACTORY_CATEGORIES） */
     static final String GARMENT = "GARMENT";
     static final String PROCESSOR = "PROCESSOR";
 
     static boolean hasFactory(Collection<String> categories) {
-        return categories.contains(GARMENT) || categories.contains(PROCESSOR);
+        return SupplierService.isFactory(categories);
     }
 
     /** 证照类型：营业执照，申请准入时必须有（字典内置项） */

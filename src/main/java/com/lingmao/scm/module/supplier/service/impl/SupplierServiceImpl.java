@@ -589,6 +589,18 @@ public class SupplierServiceImpl implements SupplierService {
         }
     }
 
+    @Override
+    public Map<Long, List<String>> categories(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<String>> out = new HashMap<>();
+        supplierMapper.selectByIds(ids).forEach(s -> out.put(s.getId(), new ArrayList<>()));
+        supplierMapper.selectCategoriesOf(ids).forEach(r -> out.computeIfAbsent(r.getSupplierId(), k -> new ArrayList<>())
+                .add(r.getCategory()));
+        return out;
+    }
+
     // ------------------------------------------------------------------ 小工具
 
     Supplier getEntity(long id) {

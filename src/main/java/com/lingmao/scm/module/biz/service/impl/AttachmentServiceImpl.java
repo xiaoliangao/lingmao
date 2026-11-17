@@ -42,6 +42,19 @@ public class AttachmentServiceImpl implements AttachmentService {
     }
 
     @Override
+    public Map<Long, List<AttachmentVO>> lists(BizType type, Collection<Long> docIds, String category) {
+        if (docIds == null || docIds.isEmpty()) {
+            return Map.of();
+        }
+        return attachmentMapper.selectList(new LambdaQueryWrapper<Attachment>()
+                        .eq(Attachment::getDocType, type)
+                        .in(Attachment::getDocId, docIds)
+                        .eq(Attachment::getCategory, category)
+                        .orderByAsc(Attachment::getDocId, Attachment::getSort, Attachment::getId))
+                .stream().collect(Collectors.groupingBy(Attachment::getDocId, Collectors.mapping(this::toVO, Collectors.toList())));
+    }
+
+    @Override
     public Map<Long, AttachmentVO> firsts(BizType type, Collection<Long> docIds, String category) {
         if (docIds == null || docIds.isEmpty()) {
             return Map.of();

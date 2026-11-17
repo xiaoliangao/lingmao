@@ -1,15 +1,29 @@
 import type { DocRef } from '@/types/biz'
 import type { DeliveryRow, HomeKpi, HomeTodos, TodoGroup, UpstreamList, UpstreamRow } from '@/types/home'
 import { mock } from './index'
-import { productionUpstreamRows } from './production'
 
 /**
  * 首页、上游已变更的假接口（docs/api/06）。
- * - "上游已变更"不另存一份：从生产 mock 的提醒里现取（算料单、采购单的已经是真后端，不在这里），在 /upstream 或单据详情里处理掉，这里跟着少
+ * - "上游已变更"：生产单、算料单、采购单都是真后端了，这里写死一行生产单的提醒好看样子；在单据详情里处理掉，这里不跟着少
  * - 待办、上游已变更：canSeeAll = true（看得到"全部 / 我的"和负责人筛选）；选"我的"或别的负责人时只剩"待我审核"一组，看得出筛了
  * 名称都是编的
  */
-const upstreamRows = (): UpstreamRow[] => productionUpstreamRows()
+const upstreamRows = (): UpstreamRow[] => [
+  {
+    doc: { type: 'PRODUCTION_ORDER', kind: 'OUTSOURCE', parentId: null, typeLabel: '外发加工单', id: 501, no: 'JG202611130001', status: 'RUNNING', statusLabel: '生产中', statusTone: 'progress', ownerId: 1, ownerName: '管理员' },
+    notices: [
+      {
+        id: 1,
+        source: { type: 'ORDER_CHANGE', kind: null, parentId: null, typeLabel: '订单变更单', id: 201, no: 'BG202611150001', status: 'APPROVED', statusLabel: '已审核', statusTone: 'active', ownerId: 1, ownerName: '管理员' },
+        content: '订单 DD202611150001 的 FS2611150101 卡其 M 码从 100 改成 120',
+        createTime: '2026-11-15 20:00:00',
+        handledByName: null,
+        handledTime: null,
+        handleRemark: null,
+      },
+    ],
+  },
+]
 
 const ref = (r: Omit<DocRef, 'kind' | 'parentId' | 'ownerId' | 'ownerName'> & Partial<DocRef>): DocRef => ({
   kind: null,

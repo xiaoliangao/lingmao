@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  生产单列表、条数、看板、选生产单、领料（docs/api/05 §3.2、§3.4、§3.7）。加工厂、订单、款式、BOM、物料出入库单、库存、变更提醒只读 JOIN
+  （架构 §3.2 规则 4）；节点进度条、款式主图、人名、按钮由 Service 填。
+  货期预警（§2.3）在 riskJoin 里现算，只看已下单、生产中：列表、条数、详情、看板、手机报工都用这一段
+-->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.production.mapper.ProductionOrderMapper">
+
+    <!-- 别名 p 的生产单：r 是货期预警，rq 是已回货、次品合计 -->
+    <sql id="riskJoin">
+        LEFT JOIN LATERAL (
+            SELECT p.status IN ('APPROVED', 'RUNNING') AND COALESCE(p.expect_date, p.due_date) &lt; #{today} AS late,
+                   p.status IN ('APPROVED', 'RUNNING') AND COALESCE(p.expect_date, p.due_date) BETWEEN #{today} AND #{nearUntil} AS near,
+                   p.status IN ('APPROVED', 'RUNNING')
+                       AND EXISTS (SELECT 1 FROM prd_node n
+                                   WHERE n.prd_order_id = p.id AND n.actual_finish IS NULL AND n.plan_finish &lt; #{today}) AS node_late,
+                   p.status IN ('APPROVED', 'RUNNING')
+                       AND EXISTS (SELECT 1 FROM prd_issue x WHERE x.prd_order_id = p.id AND x.status &lt;&gt; 'CLOSED') AS issue,
+                   p.status IN ('APPROVED', 'RUNNING')
+                       AND EXISTS (SELECT 1 FROM biz_doc_notice dn
+                                   WHERE dn.doc_type = 'PRODUCTION_ORDER' AND dn.doc_id = p.id AND dn.handled_time IS NULL) AS upstream
+        ) r ON true
+    </sql>
+
+    <sql id="returnedJoin">
+        LEFT JOIN LATERAL (SELECT COALESCE(SUM(i.returned_qty), 0) AS returned_qty, COALESCE(SUM(i.defect_qty), 0) AS defect_qty
+                           FROM prd_order_item i WHERE i.prd_order_id = p.id) rq ON true
+    </sql>
+
+    <sql id="from">
+        FROM prd_order p
+        JOIN sup_supplier f ON f.id = p.factory_id
+        JOIN ord_order o ON o.id = p.order_id
+        JOIN sty_style s ON s.id = p.style_id
+        <include refid="riskJoin"/>
+        <include refid="returnedJoin"/>
+    </sql>
+
+    <!-- 排序分数：逾期 8、节点延期 4、有异常 2、临期 1，同分按交期从早到晚 -->
+    <sql id="riskOrder">
+        ORDER BY (CASE WHEN r.late THEN 8 ELSE 0 END) + (CASE WHEN r.node_late THEN 4 ELSE 0 END)
+                 + (CASE WHEN r.issue THEN 2 ELSE 0 END) + (CASE WHEN r.near THEN 1 ELSE 0 END) DESC,
+                 COALESCE(p.expect_date, p.due_date), p.id DESC
+    </sql>
+
+    <!-- 种类、加工厂、跟单、品牌、数据范围：看板的本月回货也用 -->
+    <sql id="baseWhere">
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="q.kind != null and q.kind != ''">AND p.kind = #{q.kind}</if>
+        <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
+        <if test="q.merchId != null">AND p.merch_id = #{q.merchId}</if>
+        <if test="q.brand != null and q.brand != ''">AND s.brand = #{q.brand}</if>
+    </sql>
+
+    <!-- 列表、条数、看板共用；条数不看状态和回没回过货（withStatus = false），看板的卡片数不看 card（withCard = false） -->
+    <sql id="where">
+        WHERE true
+        <include refid="baseWhere"/>
+        <if test="withStatus and q.status != null and q.status.size() > 0">
+            AND p.status IN <foreach collection="q.status" item="st" open="(" separator="," close=")">#{st}</foreach>
+        </if>
+        <if test="withStatus and q.returned != null">AND (rq.returned_qty &gt; 0) = #{q.returned}</if>
+        <if test="q.risk != null and q.risk != ''">
+            <choose>
+                <when test="q.risk == 'LATE'">AND r.late</when>
+                <when test="q.risk == 'NEAR'">AND r.near</when>
+                <when test="q.risk == 'NODE_LATE'">AND r.node_late</when>
+                <when test="q.risk == 'ISSUE'">AND r.issue</when>
+                <when test="q.risk == 'UPSTREAM'">AND r.upstream</when>
+                <otherwise>AND false</otherwise>
+            </choose>
+        </if>
+        <if test="withCard and q.card != null and q.card != ''">
+            <choose>
+                <when test="q.card == 'RUNNING'">AND p.status = 'RUNNING'</when>
+                <when test="q.card == 'WAITING'">AND p.status = 'APPROVED'</when>
+                <when test="q.card == 'NEAR'">AND r.near</when>
+                <when test="q.card == 'LATE'">AND r.late</when>
+                <when test="q.card == 'NODE_LATE'">AND r.node_late</when>
+                <when test="q.card == 'ISSUE'">AND r.issue</when>
+                <otherwise>AND false</otherwise>
+            </choose>
+        </if>
+        <if test="q.dueDateFrom != null">AND COALESCE(p.expect_date, p.due_date) &gt;= #{q.dueDateFrom}</if>
+        <if test="q.dueDateTo != null">AND COALESCE(p.expect_date, p.due_date) &lt;= #{q.dueDateTo}</if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND p.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (p.no ILIKE '%' || #{q.keyword} || '%' OR o.no ILIKE '%' || #{q.keyword} || '%'
+                 OR s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
+                 OR f.name ILIKE '%' || #{q.keyword} || '%' OR f.short_name ILIKE '%' || #{q.keyword} || '%'
+                 <if test="codes != null">
+                     OR upper(p.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                     OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                 </if>)
+        </if>
+    </sql>
+
+    <sql id="rowColumns">
+        SELECT p.id, p.no, p.kind, p.status, p.version, p.company_id, p.factory_id, f.short_name AS factory_short_name, p.process_mode,
+               p.order_id, o.no AS order_no, p.style_id, s.code AS style_code, s.name AS style_name, p.total_qty, p.unit_price,
+               p.total_amount, p.due_date, p.expect_date, p.issue_status, rq.returned_qty, rq.defect_qty,
+               iss.open_count AS open_issue_count, iss.first_type AS first_open_issue_type, p.merch_id, p.create_by,
+               r.late AS risk_late, r.near AS risk_near, r.node_late AS risk_node_late, r.issue AS risk_issue,
+               r.upstream AS risk_upstream
+        <include refid="from"/>
+        LEFT JOIN LATERAL (SELECT COUNT(*) AS open_count, (array_agg(x.issue_type ORDER BY x.id))[1] AS first_type
+                           FROM prd_issue x WHERE x.prd_order_id = p.id AND x.status &lt;&gt; 'CLOSED') iss ON true
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.production.dto.ProductionRowVO">
+        <bind name="withStatus" value="true"/>
+        <bind name="withCard" value="true"/>
+        <include refid="rowColumns"/>
+        <include refid="where"/>
+        <include refid="riskOrder"/>
+    </select>
+
+    <select id="selectRows" resultType="com.lingmao.scm.module.production.dto.ProductionRowVO">
+        <bind name="withStatus" value="true"/>
+        <bind name="withCard" value="true"/>
+        <include refid="rowColumns"/>
+        <include refid="where"/>
+        <include refid="riskOrder"/>
+    </select>
+
+    <select id="selectCounts" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$CountRow">
+        <bind name="withStatus" value="false"/>
+        <bind name="withCard" value="false"/>
+        SELECT p.status, COUNT(*) AS count, COUNT(*) FILTER (WHERE rq.returned_qty &gt; 0) AS partial
+        <include refid="from"/>
+        <include refid="where"/>
+        GROUP BY p.status
+    </select>
+
+    <select id="selectRisk" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$RiskRow">
+        SELECT r.late, r.near, r.node_late, r.issue, r.upstream
+        FROM prd_order p
+        <include refid="riskJoin"/>
+        WHERE p.id = #{id}
+    </select>
+
+    <select id="selectCards" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$CardRow">
+        <bind name="withStatus" value="false"/>
+        <bind name="withCard" value="false"/>
+        SELECT COUNT(*) FILTER (WHERE p.status = 'RUNNING') AS running_count,
+               COALESCE(SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) FILTER (WHERE p.status = 'RUNNING'), 0) AS running_qty,
+               COUNT(*) FILTER (WHERE p.status = 'APPROVED') AS waiting_count,
+               COUNT(*) FILTER (WHERE r.near) AS near_count,
+               COUNT(*) FILTER (WHERE r.late) AS late_count,
+               COUNT(*) FILTER (WHERE r.node_late) AS node_late_count,
+               COUNT(*) FILTER (WHERE r.issue) AS issue_count
+        <include refid="from"/>
+        <include refid="where"/>
+        AND p.status IN ('APPROVED', 'RUNNING')
+    </select>
+
+    <select id="selectReturnedQty" resultType="long">
+        SELECT COALESCE(SUM(ri.qty), 0)
+        FROM prd_receipt rc
+        JOIN prd_receipt_item ri ON ri.receipt_id = rc.id
+        JOIN prd_order p ON p.id = rc.prd_order_id
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE rc.status = 'APPROVED' AND rc.receipt_date BETWEEN #{from} AND #{to}
+        <include refid="baseWhere"/>
+    </select>
+
+    <!-- 在制 = 已下单、生产中；02 审核对话框的在手负荷（OrderReviewLoad）以后也按这个口径 -->
+    <select id="selectFactoryLoads" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$FactoryLoadRow">
+        <bind name="withStatus" value="false"/>
+        <bind name="withCard" value="false"/>
+        SELECT sf.id AS factory_id, sf.short_name AS factory_short_name, COALESCE(w.wip_count, 0) AS wip_count,
+               COALESCE(w.wip_qty, 0) AS wip_qty, COALESCE(w.late_count, 0) AS late_count
+        FROM sup_supplier sf
+        LEFT JOIN (SELECT p.factory_id, COUNT(*) AS wip_count, SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) AS wip_qty,
+                          COUNT(*) FILTER (WHERE r.late) AS late_count
+                   <include refid="from"/>
+                   <include refid="where"/>
+                   AND p.status IN ('APPROVED', 'RUNNING')
+                   GROUP BY p.factory_id) w ON w.factory_id = sf.id
+        WHERE w.factory_id IS NOT NULL
+           OR (sf.status = 'ACTIVE'
+               AND EXISTS (SELECT 1 FROM sup_supplier_category c WHERE c.supplier_id = sf.id
+                           AND c.category IN <foreach collection="categories" item="c" open="(" separator="," close=")">#{c}</foreach>))
+        ORDER BY wip_qty DESC, sf.short_name, sf.id
+    </select>
+
+    <select id="selectIssueOptions" resultType="com.lingmao.scm.module.production.dto.IssueOptionVO">
+        SELECT p.id, p.no, p.kind, p.status, p.factory_id, f.short_name AS factory_short_name, s.code AS style_code,
+               s.name AS style_name, p.total_qty, p.issue_status
+        FROM prd_order p
+        JOIN sup_supplier f ON f.id = p.factory_id
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE p.issue_status IS NOT NULL
+        <choose>
+            <when test="q.returnable">AND p.status IN ('APPROVED', 'RUNNING', 'DONE') AND p.issue_status IN ('PARTIAL', 'DONE')</when>
+            <otherwise>AND p.status IN ('APPROVED', 'RUNNING') AND p.issue_status IN ('NONE', 'PARTIAL')</otherwise>
+        </choose>
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (p.no ILIKE '%' || #{q.keyword} || '%' OR s.code ILIKE '%' || #{q.keyword} || '%'
+                 OR f.name ILIKE '%' || #{q.keyword} || '%' OR f.short_name ILIKE '%' || #{q.keyword} || '%'
+                 <if test="codes != null">
+                     OR upper(p.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                     OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                 </if>)
+        </if>
+        ORDER BY p.id DESC
+    </select>
+
+    <!-- 和算料 MrpCalcMapper.selectDemand 同一种对法：按款色 / 按尺码 / 按款色尺码配的物料 SKU -->
+    <select id="selectNeeds" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$NeedRow">
+        SELECT p.id AS prd_order_id, bs.material_sku_id AS sku_id, pi.qty,
+               CASE WHEN b.usage_mode = 'BY_SIZE' THEN bz.usage_qty ELSE b.usage_qty END AS usage, b.loss_pct
+        FROM prd_order p
+        JOIN prd_order_item pi ON pi.prd_order_id = p.id
+        JOIN sty_style_sku k ON k.id = pi.style_sku_id
+        JOIN tp_bom_item b ON b.tech_pack_id = p.tech_pack_id AND b.source = 'PURCHASE'
+        JOIN tp_bom_item_sku bs ON bs.bom_item_id = b.id
+             AND bs.color_id IS NOT DISTINCT FROM (CASE WHEN b.sku_mode IN ('BY_COLOR', 'BY_COLOR_SIZE') THEN k.color_id END)
+             AND bs.size_code IS NOT DISTINCT FROM (CASE WHEN b.sku_mode IN ('BY_SIZE', 'BY_COLOR_SIZE') THEN k.size_code END)
+        LEFT JOIN tp_bom_item_size bz ON bz.bom_item_id = b.id AND bz.size_code = k.size_code
+        WHERE p.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY p.id, pi.seq, b.seq
+    </select>
+
+    <select id="selectIssued" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$SkuQtyRow">
+        SELECT d.source_id AS prd_order_id, i.material_sku_id AS sku_id,
+               SUM(CASE WHEN d.doc_type = 'ISSUE_OUT' THEN i.qty ELSE -i.qty END) AS qty
+        FROM inv_doc d
+        JOIN inv_doc_item i ON i.doc_id = d.id
+        WHERE d.source_type = 'PRODUCTION_ORDER' AND d.status = 'APPROVED' AND d.doc_type IN ('ISSUE_OUT', 'RETURN_IN')
+          AND d.source_id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+          <if test="excludeDocId != null">AND d.id &lt;&gt; #{excludeDocId}</if>
+        GROUP BY d.source_id, i.material_sku_id
+    </select>
+
+    <select id="selectStockDocs" resultType="com.lingmao.scm.module.production.dto.ProductionStockDocVO">
+        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.doc_date, fw.name AS from_warehouse_name, tw.name AS to_warehouse_name,
+               (SELECT COUNT(DISTINCT i.material_sku_id) FROM inv_doc_item i WHERE i.doc_id = d.id) AS item_count
+        FROM inv_doc d
+        LEFT JOIN bas_warehouse fw ON fw.id = d.from_warehouse_id
+        LEFT JOIN bas_warehouse tw ON tw.id = d.to_warehouse_id
+        WHERE d.source_type = 'PRODUCTION_ORDER' AND d.source_id = #{id} AND d.status &lt;&gt; 'VOIDED'
+        ORDER BY d.id DESC
+    </select>
+</mapper>

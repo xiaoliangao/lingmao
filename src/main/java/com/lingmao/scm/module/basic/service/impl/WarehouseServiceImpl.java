@@ -156,6 +156,12 @@ public class WarehouseServiceImpl implements WarehouseService {
         warehouseMapper.delete(new LambdaQueryWrapper<Warehouse>().eq(Warehouse::getFactoryId, supplierId));
     }
 
+    @Override
+    public WarehouseVO factoryWarehouse(long factoryId) {
+        Warehouse w = warehouseMapper.selectOne(new LambdaQueryWrapper<Warehouse>().eq(Warehouse::getFactoryId, factoryId));
+        return w == null ? null : getById(w.getId());
+    }
+
     /** GC + 供应商编码里的数字；没有数字、或者被占了（手建的仓用了这个编码），按流水一直取到没被占的 */
     private String factoryCode(String supplierCode) {
         String digits = supplierCode == null ? "" : supplierCode.replaceAll("\\D", "");

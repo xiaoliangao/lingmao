@@ -983,6 +983,59 @@ public class MrpServiceImpl implements MrpService {
     // ---------- 齐料 ----------
 
     @Override
+    public Set<Long> calcPeers(Collection<Long> orderIds) {
+        Set<Long> out = new HashSet<>(orderIds);
+        if (orderIds.isEmpty()) {
+            return out;
+        }
+        Set<Long> calcIds = calcMapper.selectOrderCalcs(orderIds).stream()
+                .filter(c -> CONFIRMED.name().equals(c.status())).map(MrpCalcMapper.OrderCalc::calcId).collect(Collectors.toSet());
+        if (!calcIds.isEmpty()) {
+            calcMapper.selectCalcOrders(calcIds).forEach(o -> out.add(o.orderId()));
+        }
+        return out;
+    }
+
+    @Override
+    @Transactional
+    public void syncIssued(Map<Long, Map<Long, BigDecimal>> issuedByOrder, Set<Long> doneOrders) {
+        Set<Long> calcIds = issuedByOrder.isEmpty() ? Set.of() : calcMapper.selectOrderCalcs(issuedByOrder.keySet()).stream()
+                .filter(c -> CONFIRMED.name().equals(c.status())).map(MrpCalcMapper.OrderCalc::calcId).collect(Collectors.toSet());
+        if (calcIds.isEmpty()) {
+            return;
+        }
+        calcMapper.lockByIds(calcIds);
+        Map<Long, List<Long>> ordersOf = new HashMap<>();
+        calcMapper.selectCalcOrders(calcIds).forEach(o -> ordersOf.computeIfAbsent(o.calcId(), k -> new ArrayList<>()).add(o.orderId()));
+        List<MrpCalc> calcs = calcMapper.selectByIds(calcIds).stream().filter(c -> c.getStatus() == CONFIRMED).toList();
+        Set<Long> live = calcs.stream().map(MrpCalc::getId).collect(Collectors.toSet());
+        for (MrpCalcItem i : itemMapper.selectByCalcs(live)) {
+            if (i.getBlock() != MrpBlock.PURCHASE) {
+                continue;
+            }
+            BigDecimal issued = BigDecimal.ZERO;
+            for (Long orderId : ordersOf.getOrDefault(i.getCalcId(), List.of())) {
+                issued = issued.add(issuedByOrder.getOrDefault(orderId, Map.of()).getOrDefault(i.getMaterialSkuId(), BigDecimal.ZERO));
+            }
+            issued = Num.qty(issued.max(BigDecimal.ZERO));
+            if (issued.compareTo(i.getIssuedQty()) != 0) {
+                itemMapper.updateIssued(i.getId(), issued);
+            }
+        }
+        for (MrpCalc c : calcs) {
+            List<Long> orders = ordersOf.getOrDefault(c.getId(), List.of());
+            if (orders.isEmpty() || !doneOrders.containsAll(orders) || nextDraft(c) != null) {
+                continue;
+            }
+            StatusCas.update(calcMapper, new MrpCalc(), StatusCas.of(MrpCalc::getId, c.getId(), MrpCalc::getStatus, CONFIRMED, CLOSED)
+                    .set(MrpCalc::getCloseReason, MrpCloseReason.ISSUED)
+                    .set(MrpCalc::getCloseTime, OffsetDateTime.now(clock))
+                    .setSql("version = version + 1"));
+            docLogService.add(BizType.MRP_CALC, c.getId(), "close", CONFIRMED, CLOSED, "订单的生产单都领齐了料，自动关闭");
+        }
+    }
+
+    @Override
     public List<OrderKittingVO> kitting(List<Long> orderIds) {
         List<Long> ids = orderIds.stream().filter(Objects::nonNull).distinct().toList();
         if (ids.size() > 500) {

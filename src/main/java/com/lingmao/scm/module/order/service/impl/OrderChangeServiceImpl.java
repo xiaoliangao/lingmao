@@ -499,6 +499,13 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         return rows.stream().collect(Collectors.toMap(OrderItem::getStyleSkuId, Function.identity()));
     }
 
+    /** "先调整生产单"后面带上这张订单没作废的生产单号（生产那边按 ReferrerProvider 给），一张都没有是空串 */
+    private String productionNos(long orderId) {
+        List<String> nos = referenceService.referrers(BizType.ORDER, orderId).stream()
+                .filter(r -> r.type() == BizType.PRODUCTION_ORDER).map(DocRef::no).toList();
+        return nos.isEmpty() ? "" : " " + String.join("、", nos);
+    }
+
     /**
      * 新建、改草稿、提交都跑（docs/api/02 §3.14 的表）。订单状态、另一张没审完的、"没有改动"直接 1000；
      * 件数小于已排产、新加的颜色不能下、资料包不是现在生效的版本，一次列全：1000，消息用"；"连起来，data 是清单。
@@ -559,7 +566,8 @@ public class OrderChangeServiceImpl implements OrderChangeService {
                         throw stale();
                     }
                     if (row != null && ci.getToQty() < row.getScheduledQty()) {
-                        problems.add(skuCode(infos, ci) + " 已排 " + row.getScheduledQty() + " 件，不能改成 " + ci.getToQty() + "：先调整生产单");
+                        problems.add(skuCode(infos, ci) + " 已排 " + row.getScheduledQty() + " 件，不能改成 " + ci.getToQty() + "：先调整生产单"
+                                + productionNos(o.getId()));
                     }
                     finalQty.put(ci.getStyleSkuId(), ci.getToQty());
                     if (ci.getFromQty() == 0) {

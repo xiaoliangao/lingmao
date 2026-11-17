@@ -17,6 +17,7 @@ import com.lingmao.scm.module.price.dto.PriceRef;
 import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
 import com.lingmao.scm.module.price.dto.PriceSource;
+import com.lingmao.scm.module.price.dto.ProcessPriceLine;
 import com.lingmao.scm.module.price.entity.Price;
 import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.mapper.CurrentMaterialHit;
@@ -378,6 +379,38 @@ public class PriceServiceImpl implements PriceService {
         p.setSourceNo(source.no());
         priceMapper.insert(p);
         recorded.put(key, PriceRef.of(p));
+    }
+
+    @Override
+    @Transactional
+    public Optional<PriceRef> recordProcessFromDoc(PriceSource source, LocalDate effectiveDate, ProcessPriceLine line) {
+        PriceRef current = currentProcess(line.supplierId(), line.styleId(), line.processMode(), effectiveDate).orElse(null);
+        if (current != null && current.price().compareTo(line.price()) == 0) {
+            return Optional.empty();
+        }
+        String reason = trim(line.reason());
+        if (current == null) {
+            reason = reason == null ? "第一次报价" : reason;
+        } else if (reason == null) {
+            throw new IllegalStateException(source.no() + " 的单价和现价不一样却没写改价原因：保存时漏了检查");
+        }
+        Price p = new Price();
+        p.setType(PriceType.PROCESS);
+        p.setSupplierId(line.supplierId());
+        p.setStyleId(line.styleId());
+        p.setProcessMode(line.processMode());
+        p.setUnit(PIECE);
+        p.setPrice(line.price());
+        p.setTaxPct(line.taxPct());
+        p.setTaxIncluded(line.taxIncluded());
+        p.setFreightIncluded(true);
+        p.setEffectiveDate(effectiveDate);
+        p.setReason(reason);
+        p.setSourceType(source.type().name());
+        p.setSourceId(source.id());
+        p.setSourceNo(source.no());
+        priceMapper.insert(p);
+        return Optional.of(PriceRef.of(p));
     }
 
     @Override

@@ -44,10 +44,12 @@ import com.lingmao.scm.module.techpack.entity.BomItemSku;
 import com.lingmao.scm.module.techpack.entity.CostMode;
 import com.lingmao.scm.module.techpack.entity.CraftSection;
 import com.lingmao.scm.module.techpack.entity.CraftText;
+import com.lingmao.scm.module.techpack.entity.PackProcess;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.mapper.BomItemSkuMapper;
+import com.lingmao.scm.module.techpack.mapper.PackProcessMapper;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import com.lingmao.scm.module.techpack.service.CraftStandardService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
@@ -120,6 +122,7 @@ public class TechPackServiceImpl implements TechPackService {
 
     private final TechPackMapper techPackMapper;
     private final BomItemSkuMapper bomItemSkuMapper;
+    private final PackProcessMapper packProcessMapper;
     private final PackContent packContent;
     private final PackOwners packOwners;
     private final PackForms packForms;
@@ -384,6 +387,21 @@ public class TechPackServiceImpl implements TechPackService {
     public Map<Long, PackBrief> briefs(Collection<Long> packIds) {
         List<Long> ids = packIds.stream().filter(Objects::nonNull).distinct().toList();
         return ids.isEmpty() ? new HashMap<>() : briefsOf(techPackMapper.selectByIds(ids));
+    }
+
+    @Override
+    public Map<Long, BigDecimal> laborTotals(Collection<Long> packIds) {
+        List<Long> ids = packIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<PackProcess>> byPack = packProcessMapper.selectList(new LambdaQueryWrapper<PackProcess>()
+                        .in(PackProcess::getTechPackId, ids))
+                .stream().collect(Collectors.groupingBy(PackProcess::getTechPackId));
+        Map<Long, BigDecimal> out = new HashMap<>();
+        techPackMapper.selectByIds(ids).forEach(p -> out.put(p.getId(),
+                CostCalculator.laborTotal(byPack.getOrDefault(p.getId(), List.of()))));
+        return out;
     }
 
     /** 每一版按款色配料的行都配了的款色 = 各行配了的款色取交集；没有这种行是 null（哪个颜色都行） */

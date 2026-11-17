@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.Collection;
 import java.util.List;
@@ -38,4 +39,12 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
     @Select("<script>SELECT DISTINCT order_id FROM ord_order_item WHERE scheduled_qty &lt; qty AND order_id IN "
             + "<foreach collection='orderIds' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
     Set<Long> selectUnscheduledOrders(@Param("orderIds") Collection<Long> orderIds);
+
+    /** 已排产加减（生产排单、删、作废草稿）；减成负数被表上的 CHECK 拦住 */
+    @Update("UPDATE ord_order_item SET scheduled_qty = scheduled_qty + #{delta} WHERE id = #{id}")
+    int addScheduled(@Param("id") long id, @Param("delta") int delta);
+
+    /** 已回货加减（登记回货、作废回货单） */
+    @Update("UPDATE ord_order_item SET returned_qty = returned_qty + #{delta} WHERE id = #{id}")
+    int addReturned(@Param("id") long id, @Param("delta") int delta);
 }

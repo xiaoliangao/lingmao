@@ -1,0 +1,25 @@
+package com.lingmao.scm.module.production.dto;
+
+import com.lingmao.scm.common.page.PageQuery;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDate;
+
+/** 生产看板的筛选（docs/api/05 §3.7）：三个接口一样；card 只有列表看 */
+@Data
+@EqualsAndHashCode(callSuper = true)
+public class BoardQuery extends PageQuery {
+    private String kind;
+    private Long factoryId;
+    private Long merchId;
+    private String brand;
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+    private LocalDate dueDateFrom;
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+    private LocalDate dueDateTo;
+    private boolean mine;
+    /** RUNNING / WAITING / NEAR / LATE / NODE_LATE / ISSUE */
+    private String card;
+}

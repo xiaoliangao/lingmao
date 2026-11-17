@@ -153,7 +153,7 @@ class OrderChangeServiceImplTest {
     }
 
     /**
-     * 规则（docs/api/02 §3.14 的表、PRD §6.5.6 规则 2）：件数不能小于已排产；新加的颜色要在锁定的资料包里配了料。
+     * 规则（docs/api/02 §3.14 的表、PRD §6.5.6 规则 2）：件数不能小于已排产（带上要调的生产单号）；新加的颜色要在锁定的资料包里配了料。
      * 一次列全，消息用"；"连起来，data 是清单
      */
     @Test
@@ -165,12 +165,14 @@ class OrderChangeServiceImplTest {
         when(styleService.orderInfos(any())).thenReturn(Map.of(1L, style()));
         when(techPackService.briefs(Set.of(501L)))
                 .thenReturn(Map.of(501L, new PackBrief(501, 1, PackStage.PROD, 2, PackStatus.EFFECTIVE, Set.of(10L))));
+        when(referenceService.referrers(BizType.ORDER, 7L)).thenReturn(List.of(
+                new DocRef(BizType.PRODUCTION_ORDER, "OUTSOURCE", null, "外发加工单", 30, "JG202611180001", "DRAFT", "草稿", null, 4L, null)));
         List<OrderChangeItem> items = List.of(qty(ChangeType.QTY, 11, 100, 60), qty(ChangeType.COLOR_SIZE, 21, 0, 20));
 
         assertThatThrownBy(() -> service.check(o, null, false, ResponsibleParty.SELF, items))
                 .isInstanceOfSatisfying(BizException.class, e -> {
                     assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
-                    assertThat(e.getData()).isEqualTo(List.of("27CF001-KQ-M 已排 80 件，不能改成 60：先调整生产单",
+                    assertThat(e.getData()).isEqualTo(List.of("27CF001-KQ-M 已排 80 件，不能改成 60：先调整生产单 JG202611180001",
                             "27CF001 酒红：资料包 V2 里没给这个颜色配料，先换资料包版本"));
                 });
     }

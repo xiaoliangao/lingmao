@@ -14,6 +14,7 @@ import com.lingmao.scm.module.supplier.dto.SupplierVO;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 供应商档案和状态动作（RFC 004）。关键字段改动的审批在 SupplierChangeService，资质在 SupplierCertService，
@@ -90,6 +91,17 @@ public interface SupplierService {
      * 不能用抛 1000"××现在是「停用」，不能……"。不存在抛 404
      */
     void checkUsable(long id, Usage usage);
+
+    /** 几家供应商的分类（字典 supplier_category 的 value）：id → 分类；没有分类的是空列表，查不到的不在 map 里 */
+    Map<Long, List<String>> categories(Collection<Long> ids);
+
+    /** 会建工厂仓、能接外发加工单和成品采购单的两类（PRD §6.1.6）：成衣厂、加工厂，字典内置项 */
+    Set<String> FACTORY_CATEGORIES = Set.of("GARMENT", "PROCESSOR");
+
+    /** 分类里有成衣厂或加工厂 */
+    static boolean isFactory(Collection<String> categories) {
+        return categories.stream().anyMatch(FACTORY_CATEGORIES::contains);
+    }
 
     /** 选供应商是干什么用（PRD §6.8.2）：打样、录价格要求松一点，大货单据只要合作中的 */
     enum Usage {

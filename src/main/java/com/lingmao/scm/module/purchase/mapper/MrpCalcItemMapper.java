@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 
@@ -29,6 +30,10 @@ public interface MrpCalcItemMapper extends BaseMapper<MrpCalcItem> {
             + "JOIN pur_order o ON o.id = i.purchase_order_id WHERE i.calc_item_id = ci.id AND o.status &lt;&gt; 'VOIDED'), 0) "
             + "WHERE ci.id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
     void syncConverted(@Param("ids") Collection<Long> ids);
+
+    /** 已领（生产领料回写），调之前先锁住算料单 */
+    @Update("UPDATE mrp_calc_item SET issued_qty = #{qty} WHERE id = #{id}")
+    void updateIssued(@Param("id") long id, @Param("qty") BigDecimal qty);
 
     @Delete("DELETE FROM mrp_calc_item WHERE calc_id = #{calcId}")
     void deleteByCalc(@Param("calcId") long calcId);

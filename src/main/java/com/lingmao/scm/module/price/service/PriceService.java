@@ -10,6 +10,7 @@ import com.lingmao.scm.module.price.dto.PriceRef;
 import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
 import com.lingmao.scm.module.price.dto.PriceSource;
+import com.lingmao.scm.module.price.dto.ProcessPriceLine;
 import com.lingmao.scm.module.price.entity.PriceType;
 
 import java.time.LocalDate;
@@ -74,6 +75,12 @@ public interface PriceService {
      * 不查录价权限：是单据审核带出来的
      */
     DocPrices recordFromDoc(PriceSource source, LocalDate effectiveDate, List<PriceLine> lines);
+
+    /**
+     * 生产单最后一级审核时记加工价（在审核的事务里调）：和单据日期的现价一样不记，返回 empty；不一样记一条（含税运口径按单据的），
+     * 没有现价的原因写"第一次报价"，有现价又没写原因是程序的错（保存时漏了检查）。不查录价权限
+     */
+    Optional<PriceRef> recordProcessFromDoc(PriceSource source, LocalDate effectiveDate, ProcessPriceLine line);
 
     /** 单据反审核时作废它审核时记的价（docs/api/03 §3.3.6）：来源是这张单、没作废的都作废。不查录价权限。返回作废了几条 */
     int voidFromDoc(PriceSource source, String reason);

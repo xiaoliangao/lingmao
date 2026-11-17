@@ -17,8 +17,11 @@ import com.lingmao.scm.module.purchase.dto.ReservePctVO;
 import com.lingmao.scm.module.purchase.entity.MrpCalc;
 import com.lingmao.scm.module.purchase.entity.MrpCalcItem;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /** 算料单（docs/api/03 §3.2）、齐料状态（§3.5） */
 public interface MrpService {
@@ -73,4 +76,16 @@ public interface MrpService {
     void syncConverted(Collection<Long> calcItemIds);
 
     MrpCalc getById(long id);
+
+    // ---------- 给生产（docs/api/05 §3.4.3，架构 §5.4） ----------
+
+    /** 和这几张订单一起算料的订单：它们所在的已确认算料单里的全部订单（含它们自己）。回写已领前用它拿全要算的订单 */
+    Set<Long> calcPeers(Collection<Long> orderIds);
+
+    /**
+     * 生产领料、退料过账以后回写：issuedByOrder 是订单 → 物料 SKU → 从物料仓已领（领料出库 − 退料入库，库存单位），要传齐 calcPeers 给的订单。
+     * 已确认的算料单每一行的已领 = 它的订单加起来；doneOrders 是排满了、生产单都领齐了的订单，一张算料单的订单都在里面就自动关闭（ISSUED）。
+     * 有重新算料的草稿的不自动关（不然确认草稿时关不了上一张）
+     */
+    void syncIssued(Map<Long, Map<Long, BigDecimal>> issuedByOrder, Set<Long> doneOrders);
 }

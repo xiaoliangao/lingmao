@@ -20,6 +20,9 @@ public interface AttachmentService {
     /** 一条记录某个分类下的全部，按顺序 */
     List<AttachmentVO> list(BizType type, long docId, String category);
 
+    /** 几条记录某个分类下的全部，docId → 按顺序的一组；没有的不在 map 里（报工照片、回货照片一次取） */
+    Map<Long, List<AttachmentVO>> lists(BizType type, Collection<Long> docIds, String category);
+
     /**
      * 列表页的主图：每条记录在这个分类下排第一的那个，docId → 附件；没有图的不在 map 里。
      * 一页列表只查一次，不用每行查一遍

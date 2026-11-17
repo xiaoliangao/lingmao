@@ -8,11 +8,13 @@ import com.lingmao.scm.module.biz.dto.DocSaved;
 import com.lingmao.scm.module.order.dto.OrderAuditReq;
 import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderDetailVO;
+import com.lingmao.scm.module.order.dto.OrderForProduction;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderQuery;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
 import com.lingmao.scm.module.order.dto.OrderSaveReq;
 import com.lingmao.scm.module.order.dto.OrderStyleOptionVO;
+import com.lingmao.scm.module.order.dto.ProductionProgress;
 import com.lingmao.scm.module.order.dto.StyleOrderRowVO;
 import com.lingmao.scm.module.order.entity.OrderChange;
 import com.lingmao.scm.module.order.entity.OrderChangeItem;
@@ -69,4 +71,27 @@ public interface OrderService {
      * 改件数、加 SKU、单价、资料包版本、要求交期，重算合计，版本号 +1；取消订单的有下游单据 1005，没有就变成已取消
      */
     void applyChange(OrderChange change, List<OrderChangeItem> items);
+
+    // ---------- 给生产（docs/api/05 §3.9） ----------
+
+    /**
+     * 锁住订单（FOR UPDATE）再取：排单、生产单的动作要回写订单的，都先调它。锁的顺序是订单 → 生产单，
+     * 和变更单写回、取消订单排队。不查数据范围（生产跟单不一定看得到订单）。不存在 404
+     */
+    OrderForProduction lockForProduction(long orderId);
+
+    /** 同上，不加锁：排单对话框带出、取价这种只读的 */
+    OrderForProduction getForProduction(long orderId);
+
+    /** 已排产加减：正数占上（排单），负数退回（删、作废生产单草稿）。调之前已经 lockForProduction */
+    void addScheduled(Map<Long, Integer> deltaByItem);
+
+    /** 已回货加减：登记回货、作废回货单。调之前已经 lockForProduction */
+    void addReturned(Map<Long, Integer> deltaByItem);
+
+    /**
+     * 按生产进度重算订单状态（已审核、生产中、已完成之间换），别的状态不动；变了写一条操作记录，cause 是哪张生产单干了什么。
+     * 每个 SKU 都排满了、没作废的生产单都完成或结案了是已完成，有审核过的生产单是生产中，不然是已审核。调之前已经 lockForProduction
+     */
+    void syncProduction(long orderId, ProductionProgress progress, String cause);
 }

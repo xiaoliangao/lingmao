@@ -54,8 +54,8 @@ export const PRODUCTION_LOG_ACTION: Record<string, string> = {
   'close-issue': '关闭异常',
   receive: '登记回货',
   'void-receipt': '回货作废',
-  'material-issued': '领料',
-  'material-returned': '退料',
+  'issue-material': '领料',
+  'return-material': '退料',
   'export-pdf': '导出工艺单',
 }
 

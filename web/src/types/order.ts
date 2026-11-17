@@ -37,6 +37,7 @@ export const ORDER_SOURCE: Record<OrderSource, string> = {
 export const ORDER_LOG_ACTIONS: Record<string, string> = {
   import: 'Excel 导入',
   schedule: '排单',
+  production: '生产进度',
   change: '变更',
   cancel: '经变更单取消',
 }

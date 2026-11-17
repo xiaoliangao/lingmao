@@ -9,6 +9,7 @@ import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -68,4 +69,7 @@ public interface TechPackService {
 
     /** 几个版本：id → PackBrief（订单锁定的、变更单换的）；查不到的不在 map 里 */
     Map<Long, PackBrief> briefs(Collection<Long> packIds);
+
+    /** 几个版本的工序工价合计（元 / 件，核价的"加工费"口径）：排单时外发加工的单价旁边提示用。查不到的不在 map 里 */
+    Map<Long, BigDecimal> laborTotals(Collection<Long> packIds);
 }

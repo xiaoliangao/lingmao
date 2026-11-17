@@ -43,4 +43,7 @@ public interface WarehouseService {
 
     /** 删供应商之前调：工厂仓没被引用就删；被引用了外键拦住，整个删除回滚，报 1005。这家没有工厂仓什么也不做 */
     void deleteFactoryWarehouse(long supplierId);
+
+    /** 这家加工厂的工厂仓（一家一个，停用的也返回）；没有是 null：领料的入仓、退料的出仓用 */
+    WarehouseVO factoryWarehouse(long factoryId);
 }
