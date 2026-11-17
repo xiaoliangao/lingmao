@@ -53,7 +53,6 @@ docker exec "$SCM_CI_POSTGRES_CONTAINER" psql -U scm -d "$database" -v ON_ERROR_
 export SCM_UI_API_BASE=http://127.0.0.1:18080 SCM_UI_BASE_URL=http://127.0.0.1:18081
 export SCM_UI_USERNAME=admin SCM_UI_PASSWORD="$INIT_ADMIN_PASSWORD"
 export SCM_UI_FIXTURE_INPUT="$work/input.json" SCM_UI_FIXTURE="$work/fixture.json" SCM_UI_SCREENSHOTS="$artifacts"
-export SCM_UI_CHROMIUM="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
 python - "$repo/dev/ci/ui/fixture-input.json" "$SCM_UI_FIXTURE_INPUT" "$database" <<'PY'
 import json,sys
 value=json.load(open(sys.argv[1])); value['database']=sys.argv[3]

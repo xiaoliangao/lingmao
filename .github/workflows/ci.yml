@@ -53,6 +53,7 @@ jobs:
           cache: pip
           cache-dependency-path: dev/ci/requirements.txt
       - name: Install pinned tools and browser
+        id: tools
         run: |
           npm install --global pnpm@11.25.0
           pnpm --dir web install --frozen-lockfile
@@ -62,8 +63,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends openssh-server poppler-utils
           bash dev/fetch-font.sh
       - name: Schema, migration, unit and integration tests; production JAR
+        id: backend
         run: ./mvnw -B -ntp verify
       - name: Strict TypeScript, lint, regression tests and production web build
+        id: web
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
         working-directory: web
         run: |
           pnpm typecheck
@@ -71,22 +75,30 @@ jobs:
           pnpm test
           pnpm build
       - name: Prototype build and existing browser self-check
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
         run: |
-          export CHROME="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
-          node docs/原型/check.mjs --shots test-artifacts/prototype --only '/basics?tab=sizes'
+          python dev/ci/check-prototype.py
           git diff --exit-code -- docs/原型/index.html
-      - name: Backup account read-only isolation and restore drill
+      - name: Backup account read-only isolation
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
         run: |
+          set -euo pipefail
           mkdir -p test-artifacts/operations
           sudo --preserve-env=GITHUB_ACTIONS bash dev/ci/check-backup-readonly.sh | tee test-artifacts/operations/backup-readonly.log
+      - name: Real PostgreSQL restore drill
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          mkdir -p test-artifacts/operations
           sudo --preserve-env=GITHUB_ACTIONS bash dev/ci/check-restore.sh | tee test-artifacts/operations/restore.log
       - name: Capture the original PR base in the same browser
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.backend.outcome == 'success' && steps.web.outcome == 'success' }}
         env:
           SCM_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: bash dev/ci/capture-before.sh "$SCM_PR_BASE_SHA"
       - name: Start services, health/API smoke and real Playwright regressions
+        if: ${{ !cancelled() && steps.backend.outcome == 'success' && steps.web.outcome == 'success' }}
         env:
           SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: bash dev/ci/run-smoke.sh after

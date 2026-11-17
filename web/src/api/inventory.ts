@@ -63,7 +63,7 @@ export const countApi = {
   update: (id: number, data: CountForm) => http.put<number>(`${countBase}/${id}`, data),
   /** 从物料库加物料：账面数按现在的库存拍（期初录入是 0）；已经在单上的跳过。返回加完的详情 */
   addItems: (id: number, data: { version: number; skuIds: number[] }) => http.post<CountDetail>(`${countBase}/${id}/items`, data),
-  /** 重新取账面数（草稿）：所有行重拍账面数，已填的实盘数留着，范围里新出现的 SKU 补进来，一行不删。返回新的详情 */
+  /** 重新取账面数（草稿）：重拍数量与流水水位并清空实盘，须重新计数；范围里新出现的 SKU 补进来，一行不删。返回新的详情 */
   refreshBook: (id: number, body: DocActionReq) => http.post<CountDetail>(`${countBase}/${id}/refresh-book`, body),
   /** 有没审核的盘点单的仓库，新建对话框里灰掉 */
   openWarehouses: () => http.get<CountOpenWarehouse[]>(`${countBase}/open-warehouses`),

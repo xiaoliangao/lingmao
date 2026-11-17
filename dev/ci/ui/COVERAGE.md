@@ -6,10 +6,10 @@
 
 - `harness.py`：仅接受 loopback HTTP；API 固定隔离端口 `18080`。凭据只读进程环境，API 跟踪仅保留方法、路径、HTTP 状态与业务码。
 - `prepare_fixtures.py`、`fixtures/domain_seed.py`：以 `dev/seed-demo.sql` 匿名主数据为基础，经真实接口建立业务单据；不控制服务，不直接改业务表，不清理已过账单据。每次完整运行需要全新 `*_test` 数据库。
-- `test_audit_ui.py`：Python Playwright + unittest 的 16 个核心用例。统一桌面 `1440×900`、手机 `390×844`；真实 Vue、真实 API，仅下表明确指定的响应延迟/失败、上传暂停与浏览器固定时间。
+- `test_audit_ui.py`：Python Playwright + unittest 的 17 个核心用例。统一桌面 `1440×900`、手机 `390×844`；真实 Vue、真实 API，仅下表明确指定的响应延迟/失败、上传暂停与浏览器固定时间。
 - `serve_web.py` 提供正式构建产物与真实 API 的本地代理；`prepare_before.py`、`capture_baseline.py` 用于 PR base 基准截图；`fixture-input.json` 只含匿名主数据 ID。
 
-`SCM_UI_API_BASE`、`SCM_UI_BASE_URL`、`SCM_UI_FIXTURE_INPUT`、`SCM_UI_FIXTURE`、`SCM_UI_SCREENSHOTS` 由启动脚本传入。`SCM_UI_USERNAME` 与 `SCM_UI_PASSWORD` 只能由运行进程环境提供，不能写入 manifest、命令文本或产物。`SCM_UI_CHROMIUM` 可指定 CI 上的 Chromium 路径；默认 `/usr/bin/chromium`。浏览器依赖和 poppler-utils（pdftotext）由 CI 安装，不加入生产 npm 依赖。
+`SCM_UI_API_BASE`、`SCM_UI_BASE_URL`、`SCM_UI_FIXTURE_INPUT`、`SCM_UI_FIXTURE`、`SCM_UI_SCREENSHOTS` 由启动脚本传入。`SCM_UI_USERNAME` 与 `SCM_UI_PASSWORD` 只能由运行进程环境提供，不能写入 manifest、命令文本或产物。`SCM_UI_CHROMIUM` 可指定 Chromium 路径；默认由 Playwright 使用安装的配套浏览器。浏览器依赖和 poppler-utils（pdftotext）由 CI 安装，不加入生产 npm 依赖。
 
 准备与执行（均在隔离服务就绪、后端与前端修复完成之后）：
 
@@ -31,7 +31,7 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 
 准备脚本创建 DEV 核价草稿、PROD+BOM 生效包，继续创建并审核需求订单 → MRP → 采购单 → 采购入库过账，再排出并审核 `OUTSOURCE`、`BUY` 各一单。另建主仓草稿盘点与工厂仓已审核盘点，供状态对照；第二份有不同成本的 PROD 草稿用于竞态，独立历史款/颜色用于快照。`fixtures/identity_seed.py` 经真实角色、菜单、用户接口建七个身份：六种审批访问身份及无成本编辑者，密码复用运行进程环境、不落盘。所有单据经项目接口创建；不读取生产业务数据。
 
-## 16 个核心用例
+## 17 个核心用例
 
 每项运行时写入自己的 `test_XX_…/evidence.json` 与下列 PNG。单号/数量/金额均来自匿名 fixture。导出测试另存实际 XLSX，并记 SHA-256。所有浏览器 context 收集并**断言 console error、未处理 pageerror、外域请求均为零**；业务错误通过真实 R 错误码或标注的 HTTP 200 故障 envelope 展示，不把浏览器内部网络错误忽略成通过。
 
@@ -54,6 +54,8 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 | 15 / U2 | 仅包编辑无成本权限：成本 GET 403，详情 unitCost 不泄漏；真实伪造非 null cost 的 PUT 不改变成本；UI 无核价 tab，合法说明保存发 cost=null | `pack-editor-without-cost-authority` |
 | 16 / U2 | 独立款已生效后停用一个颜色、改款名/色名，再发布新版本使旧版 VOIDED；旧详情仍 SNAPSHOT 且色码/名称一致。API及UI实际下载 PDF，pdftotext 断言含旧名、不含新名；UI仍能选择已停用历史颜色 | `voided-pack-with-frozen-context`、`snapshot-disabled-color-export-option`；两个真实 PDF 与 SHA-256 |
 
+| 17 / 逐页补验 | 打开其余已修改列表：款式/供应商/核价/MRP/BUY、库存明细/汇总/日志、待到料及各类型出入库；打开并取消款式/供应商/采购/出入库/物料选择器、SKU/证照/变更/排单/报工/异常表单。每页核对真实 GET；整例断言零写请求。上游提醒接口真实404展示不可用并可重试，不伪装为空待办 | `styles-list`、`supplier-new-open-cancel`、`costing-list`、`stock-material-summary-custody`、`stock-ledger-valued-or-unknown`、`inventory-list-…`、`inventory-new-…`、`order-schedule-four-place-price`、`upstream-real-unimplemented-error` 等 |
+
 注：用例 06 是“真实落账后成功结果不可见”的确定性 UI 故障，不声称验证了浏览器真实网络超时。用例 07 的第二会话通过真实 API 发出，不声称两个浏览器都操作了计划弹窗。没有全局 API mock。
 
 需要新前端的稳定观察点：`cost-load-error`、`cost-buy-price`、`techpack-version-${id}`、`bom-inspector`、`bom-row`、`bom-row-card`、`order-batch-price`、`order-apply-price`、`order-size-price-${size}`、`order-apply-size-price-${size}`、`audit-for-me-toggle`。BOM 行需可键盘 focus。其他选择器依据现有 Vue 的角色、标签、路由或类名；修复后仅在真实 DOM 已变更时调整，不为让测试通过弱化业务断言。
@@ -74,4 +76,4 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 
 不启用 HAR、Playwright tracing、video、storage_state；不保存 API 请求体/响应体或 HTTP headers。JSON 写入拒绝凭据字段和值；console 文本替换已知秘密与 Bearer，URL 仅保留路径。密码填入/点击登录失败的 Playwright call log 也先脱敏再交给 unittest。截图遮住密码与用户名输入；截图路由仅记 pathname。合成业务 payload 只在内存或匿名 manifest 中使用。
 
-失败时尽力保存 `failure-state.png`，JSON `passed=false`；子用例失败也计入。发现数量为 16 不代表运行通过。已过账单据不在测试末尾逆向清理，隔离数据库由主代理服务生命周期脚本统一销毁。
+失败时尽力保存 `failure-state.png`，JSON `passed=false`；子用例失败也计入。发现数量为 17 不代表运行通过。已过账单据不在测试末尾逆向清理，隔离数据库由主代理服务生命周期脚本统一销毁。

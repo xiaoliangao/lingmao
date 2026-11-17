@@ -2,7 +2,9 @@
 
 入口为通用 [CI 工作流](../../.github/workflows/ci.yml)，使用 `ubuntu-latest`、Java 21、Node 24.22.1、pnpm 11.25.0、PostgreSQL 16、Redis 7 与 Python Playwright 1.62.0。生产依赖和现有启动入口不变。
 
-流水线依次安装锁定依赖，执行 `./mvnw verify`（含真实数据库迁移、架构检查、单测和集成测试），再执行 `pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`。类型检查实际调用 `vue-tsc --noEmit` 和 `tsc --noEmit`，不以打包成功替代。原型沿用 `docs/原型/check.mjs` 的浏览器自检，重新生成 HTML 后检查工作树无漂移。
+流水线依次安装锁定依赖，执行 `./mvnw verify`（含真实数据库迁移、架构检查、单测和集成测试），再执行 `pnpm typecheck`、`pnpm lint`、`pnpm test`、`pnpm build`。类型检查实际调用 `vue-tsc --noEmit` 和 `tsc --noEmit`，不以打包成功替代。原型由 `check-prototype.py` 启动配套 Playwright 浏览器，再调用现有 `docs/原型/check.mjs` 的自检与截图；原本的本机 CHROME 入口保留，重新生成 HTML 后检查工作树无漂移。
+
+独立检查按自身前置条件继续执行：前后端构建成功后，即使原型或运维检查失败，真实服务与页面仍可收集证据。任何失败仍使整个任务失败；没有 `continue-on-error`，运维日志管道启用 `pipefail`，不会因 `tee` 成功掩盖脚本错误。
 
 ## 真实服务与浏览器
 

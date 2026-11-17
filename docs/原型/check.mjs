@@ -22,9 +22,14 @@ for (const f of readdirSync(join(here, 'src')).filter((x) => /^\d.*\.js$/.test(x
   for (const [, n] of readFileSync(join(here, 'src', f), 'utf8').matchAll(/^(?:async\s+)?function\s+([\w$]+)/gm)) { if (fnSeen.has(n)) fnDup.push(`${n}（${fnSeen.get(n)}、${f}）`); else fnSeen.set(n, f) }
 }
 if (fnDup.length) { console.log('✗ 顶层函数重名，后面的会盖掉前面的：' + fnDup.join('；')); process.exitCode = 1 }
-const profile = mkdtempSync(join(tmpdir(), 'scm-proto-'))
+// CI may supply a loopback browser managed by Playwright; local CHROME entry remains available.
+const debugUrl = process.env.PROTO_CDP_URL
+if (debugUrl && !/^http:\/\/127\.0\.0\.1:\d+$/.test(debugUrl)) throw new Error('PROTO_CDP_URL must be a loopback HTTP origin')
+const profile = debugUrl ? null : mkdtempSync(join(tmpdir(), 'scm-proto-'))
 const port = 9300 + Math.floor(Math.random() * 500)
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--window-size=1440,900', '--no-first-run', 'about:blank'], { stdio: 'ignore' })
+const chrome = debugUrl ? null : spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--window-size=1440,900', '--no-first-run', 'about:blank'], { stdio: ['ignore', 'ignore', 'inherit'] })
+let launchError
+chrome?.on('error', (error) => { launchError = error })
 let ws, id = 0
 const pending = new Map(), errors = []
 const send = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; pending.set(n, { resolve, reject }); ws.send(JSON.stringify({ id: n, method, params })) })
@@ -32,7 +37,13 @@ const evaluate = async (expr) => { const r = await send('Runtime.evaluate', { ex
 
 try {
   let target
-  for (let i = 0; i < 50 && !target; i++) { try { target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === 'page') } catch { await sleep(100) } }
+  for (let i = 0; i < 100 && !target; i++) {
+    if (launchError) throw launchError
+    if (chrome?.exitCode != null) throw new Error(`Chrome exited before CDP was ready: ${chrome.exitCode}`)
+    try { target = (await (await fetch(`${debugUrl || `http://127.0.0.1:${port}`}/json/list`)).json()).find((t) => t.type === 'page') } catch { /* poll until the browser has a page target */ }
+    if (!target) await sleep(100)
+  }
+  if (!target) throw new Error('No browser page target became available for the prototype check')
   ws = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise((r) => ws.addEventListener('open', r))
   ws.addEventListener('message', (m) => {
@@ -67,5 +78,5 @@ try {
   console.log(bad ? `\n${bad} 项没过` : '\n全部通过')
   process.exitCode = bad ? 1 : 0
 } finally {
-  ws?.close(); chrome.kill(); await sleep(300); rmSync(profile, { recursive: true, force: true })
+  ws?.close(); chrome?.kill(); await sleep(300); if (profile) rmSync(profile, { recursive: true, force: true })
 }

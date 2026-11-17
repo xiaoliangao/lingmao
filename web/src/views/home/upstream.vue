@@ -15,7 +15,7 @@ import { useColumns } from '@/composables/useColumns'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import type { DocRef } from '@/types/biz'
 import type { UpstreamDocType, UpstreamRow } from '@/types/home'
-import type { RequestOptions } from '@/utils/request'
+import { ApiError, type RequestOptions } from '@/utils/request'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateTime } from '@/utils/format'
 
@@ -61,6 +61,7 @@ const ownerName = ref<string | null>(null)
 
 const rows = ref<UpstreamRow[]>([])
 const loading = ref(false)
+const loadError = ref<string | null>(null)
 const tableRef = ref<TableInstance>()
 const selected = ref<UpstreamRow[]>([])
 
@@ -71,6 +72,7 @@ let seq = 0
 async function load() {
   const my = ++seq
   loading.value = true
+  loadError.value = null
   try {
     const list = await upstreamApi.list({
       type: query.type || undefined,
@@ -80,6 +82,13 @@ async function load() {
     if (my === seq) {
       rows.value = list.rows
       canSeeAll.value = list.canSeeAll
+    }
+  } catch (error) {
+    if (my === seq) {
+      loadError.value = error instanceof ApiError && error.code === 404
+        ? '上游提醒接口暂未提供，暂不能取得待处理事项。'
+        : `上游提醒加载失败：${error instanceof Error ? error.message : '请重试'}`
+      selected.value = []
     }
   } finally {
     if (my === seq) loading.value = false
@@ -193,7 +202,11 @@ const emptyText = computed(() =>
       </FilterItem>
     </FilterBar>
 
+    <el-alert v-if="loadError" data-testid="upstream-load-error" :title="loadError" type="warning" :closable="false">
+      <el-button :loading="loading" @click="load">重试</el-button>
+    </el-alert>
     <el-table
+      v-else
       ref="tableRef"
       v-loading="loading"
       :data="rows"
@@ -238,7 +251,7 @@ const emptyText = computed(() =>
       </el-table-column>
     </el-table>
 
-    <BatchBar :rows="selected" :table="tableRef" :actions="batchActions" :row-name="rowName" unit="张" @done="load" />
+    <BatchBar v-if="!loadError" :rows="selected" :table="tableRef" :actions="batchActions" :row-name="rowName" unit="张" @done="load" />
 
     <el-dialog v-model="handleVisible" title="标成已处理" width="420px" :before-close="guard.beforeClose">
       <p v-if="handling" class="dim tip">{{ handling.doc.typeLabel }} {{ handling.doc.no }} 的 {{ handling.notices.length }} 条提醒</p>

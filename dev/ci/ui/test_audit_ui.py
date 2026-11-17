@@ -14,6 +14,7 @@ import re
 import time
 import unittest
 from datetime import date, datetime, timedelta, timezone
+from contextlib import ExitStack
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlsplit
 from uuid import uuid4
@@ -49,7 +50,7 @@ class AuditUi(unittest.TestCase):
         cls.artifacts.mkdir(parents=True, exist_ok=True)
         cls.pw = sync_playwright().start()
         cls.browser = cls.pw.chromium.launch(
-            executable_path=os.environ.get("SCM_UI_CHROMIUM", "/usr/bin/chromium"), headless=True)
+            executable_path=os.environ.get("SCM_UI_CHROMIUM"), headless=True)
         expect.set_options(timeout=12000)
 
     @classmethod
@@ -470,7 +471,8 @@ class AuditUi(unittest.TestCase):
             expected_no = self.api.request("GET", endpoint)["no"]
             self.page.goto(self.ui_base + route)
             self.assertEqual(urlsplit(self.page.url).path, route)
-            expect(self.page.locator(".page-header h1")).to_contain_text(expected_no)
+            header = ".page-header" if name == "buy-production" else ".page-header h1"
+            expect(self.page.locator(header)).to_contain_text(expected_no)
             self.shot("real-flow-" + name)
 
     def test_07_node_revision_conflict_and_mobile_layout(self):
@@ -797,7 +799,8 @@ class AuditUi(unittest.TestCase):
                     expect(page.locator(".el-table__body-wrapper").get_by_text(current["no"], exact=True).first).to_be_visible()
                     self.shot(biz_type.lower() + "-designated-in-real-list", page)
                     page.locator(".el-table__body-wrapper").get_by_text(current["no"], exact=True).first.click()
-                    expect(page.locator(".page-header h1")).to_contain_text(current["no"])
+                    header = ".page-header" if biz_type == "PRODUCTION_ORDER" else ".page-header h1"
+                    expect(page.locator(header)).to_contain_text(current["no"])
                     expect(page.get_by_role("button", name="审核", exact=True)).to_be_visible()
                     self.shot(biz_type.lower() + "-designated-can-audit", page)
                     audit_path = f"{base}/{current['id']}/audit"
@@ -905,6 +908,227 @@ class AuditUi(unittest.TestCase):
                   replacementPackId=replacement, colorId=old_color["id"], contextSource="SNAPSHOT", status="VOIDED",
                   apiPdfSha256=hashlib.sha256(raw).hexdigest(), uiPdfSha256=hashlib.sha256(target.read_bytes()).hexdigest(),
                   containsOriginalNames=True, containsLiveRenamedValues=False)
+
+
+    def test_17_remaining_changed_pages_and_open_cancel(self):
+        page = self.page
+        mutations = []
+
+        def record_mutation(request):
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"} and urlsplit(request.url).path.startswith("/api/"):
+                mutations.append({"method": request.method, "path": urlsplit(request.url).path})
+
+        page.on("request", record_mutation)
+
+        def read_result(response, path, expected_code=0):
+            envelope = response.json()
+            self.assertEqual(envelope["code"], expected_code, f"Real GET failed: {path}")
+            self.note("real smoke GET", path=path, code=envelope["code"])
+            return envelope.get("data")
+
+        def reads_during(paths, action):
+            # All expectations are armed before the real UI action; no timing sleeps.
+            with ExitStack() as stack:
+                waits = [(path, stack.enter_context(page.expect_response(
+                    lambda response, target=path: self.response_for(response, "GET", target)))) for path in paths]
+                action()
+            return {path: read_result(wait.value, path) for path, wait in waits}
+
+        def ready_table(scope, column, data):
+            expect(scope.get_by_role("columnheader", name=column, exact=True).first).to_be_visible()
+            rows = data.get("list", []) if isinstance(data, dict) else data
+            if rows:
+                expect(scope.locator(".el-table__body-wrapper tr.el-table__row:visible").first).to_be_visible()
+            else:
+                expect(scope.locator(".el-table__empty-text:visible").first).to_have_text(re.compile(r"\S"))
+
+        def go(route, api_path, shot_name=None, column=None):
+            result = reads_during([api_path], lambda: page.goto(self.ui_base + route))[api_path]
+            self.assertEqual(urlsplit(page.url).path, urlsplit(route).path)
+            expect(page.locator(".page-header h1")).to_have_text(re.compile(r"\S"))
+            if column:
+                ready_table(page, column, result)
+            if shot_name:
+                self.shot(shot_name)
+            return result
+
+        def cancel(dialog):
+            dialog.get_by_role("button", name="取消", exact=True).click()
+            expect(dialog).not_to_be_visible()
+
+        def sku_picker(trigger, name):
+            result = reads_during(["/api/materials/pick", "/api/material-categories/tree"], trigger)
+            picker = page.get_by_role("dialog", name="从物料库选", exact=True)
+            ready_table(picker, "物料", result["/api/materials/pick"])
+            self.shot(name)
+            cancel(picker)
+
+        # Master lists and a new style's actual head/detail selectors, without saving.
+        go("/styles", "/api/styles", "styles-list", "款号")
+        reads_during(["/api/categories/tree", "/api/size-groups/options"],
+                     lambda: page.get_by_role("button", name="新建款式", exact=True).click())
+        expect(page.locator(".page-header h1")).to_have_text("新建款式")
+        expect(page.get_by_label("款式名称", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="建款式", exact=True)).to_be_enabled()
+        self.shot("style-new-head-and-files")
+        sku_picker(lambda: page.get_by_role("button", name="从物料库选", exact=True).click(), "style-new-material-picker")
+        page.locator(".page-header").get_by_role("button", name="取消", exact=True).click()
+        page.wait_for_url(self.ui_base + "/styles")
+
+        go("/suppliers", "/api/suppliers", "suppliers-list", "简称")
+        reads_during(["/api/categories/tree"], lambda: page.get_by_role("button", name="新建供应商", exact=True).click())
+        dialog = page.get_by_role("dialog", name="新建供应商", exact=True)
+        expect(dialog.get_by_label("简称", exact=True)).to_be_visible()
+        self.shot("supplier-new-open-cancel")
+        cancel(dialog)
+
+        go("/costing", "/api/style-costs", "costing-list", "核算版本")
+        go("/mrp", "/api/mrp-calcs", "mrp-list", "单号")
+        reads_during(["/api/mrp-calcs/reserve-pcts"], lambda: page.get_by_role("button", name="备料比", exact=True).click())
+        dialog = page.get_by_role("dialog", name="备料比", exact=True)
+        expect(dialog.get_by_role("button", name="保存", exact=True)).to_be_visible()
+        self.shot("mrp-reserve-dialog")
+        cancel(dialog)
+        pick = reads_during(["/api/mrp-calcs/order-options"], lambda: page.get_by_role("button", name="选订单算料", exact=True).click())
+        dialog = page.get_by_role("dialog", name="选订单算料", exact=True)
+        ready_table(dialog, "订单号", pick["/api/mrp-calcs/order-options"])
+        self.shot("mrp-order-picker")
+        cancel(dialog)
+        go("/fp-purchases", "/api/production-orders", "buy-production-list", "单号")
+
+        # One stock page, three independent real endpoints. UNKNOWN remains unknown.
+        go("/stock", "/api/stocks", "stock-detail", "仓库")
+        stock_summary = reads_during(["/api/stocks/summary"],
+            lambda: page.locator(".page-header").get_by_text("按物料", exact=True).click())
+        ready_table(page, "工厂净托管", stock_summary["/api/stocks/summary"])
+        expect(page.get_by_text("不代表工厂当前实盘余料", exact=False)).to_be_visible()
+        self.shot("stock-material-summary-custody")
+        stock_logs = reads_during(["/api/stock-logs"],
+            lambda: page.locator(".page-header").get_by_text("日志", exact=True).click())
+        ready_table(page, "单价 / 金额", stock_logs["/api/stock-logs"])
+        if any(row["valuationStatus"] == "UNKNOWN" for row in stock_logs["/api/stock-logs"]["list"]):
+            expect(page.get_by_text("估值未知", exact=True).first).to_be_visible()
+        self.shot("stock-ledger-valued-or-unknown")
+
+        go("/stock-in?tab=pending", "/api/purchase-orders/pending-items", "pending-arrivals", "采购单")
+        # Both panels mount under stock-in; full navigation gives each shown panel a
+        # captured real GET instead of assuming v-show tab changes refetch.
+        for route, kind, label_pairs, new_types in (
+            ("/stock-in?tab=docs", "IN", (("采购入库", "PURCHASE_IN"), ("退料入库", "RETURN_IN"), ("其他入库", "OTHER_IN")), ("退料入库", "其他入库")),
+            ("/stock-out", "OUT", (("领料出库", "ISSUE_OUT"), ("采购退货", "PURCHASE_RETURN"), ("调拨", "TRANSFER"), ("其他出库", "OTHER_OUT")), ("调拨", "其他出库")),
+        ):
+            with self.subTest(surface=kind):
+                go(route, "/api/inventory-docs", "inventory-" + kind.lower() + "-all-types", "单号")
+                for label, doc_type in label_pairs:
+                    with page.expect_response(lambda response: self.response_for(response, "GET", "/api/inventory-docs")) as filtered:
+                        page.locator(".filter-bar:visible .el-segmented").first.get_by_text(label, exact=True).click()
+                    data = read_result(filtered.value, "/api/inventory-docs")
+                    params = parse_qs(urlsplit(filtered.value.url).query)
+                    self.assertEqual(params.get("kind"), [kind])
+                    self.assertEqual(params.get("docType"), [doc_type])
+                    ready_table(page, "单号", data)
+                    self.shot("inventory-list-" + doc_type.lower())
+                for label in new_types:
+                    page.locator(".page-header").get_by_role("button", name="新建", exact=True).click()
+                    reads_during(["/api/companies/options", "/api/warehouses/options"],
+                        lambda target=label: page.get_by_role("menuitem", name=target, exact=True).click())
+                    dialog = page.get_by_role("dialog", name="新建" + label, exact=True)
+                    expect(dialog.get_by_role("columnheader", name="物料", exact=True)).to_be_visible()
+                    expect(dialog.get_by_role("button", name="存草稿", exact=True)).to_be_visible()
+                    self.shot("inventory-new-" + next(code.lower() for text, code in label_pairs if text == label))
+                    if label in {"其他入库", "调拨"}:
+                        sku_picker(lambda: dialog.get_by_role("button", name="从物料库选", exact=True).click(),
+                                   "inventory-picker-" + kind.lower())
+                    cancel(dialog)
+                if kind == "OUT":
+                    page.locator(".page-header").get_by_role("button", name="新建", exact=True).click()
+                    data = reads_during(["/api/production-orders/issue-options"],
+                        lambda: page.get_by_role("menuitem", name="领料出库（选生产单）", exact=True).click())
+                    picker = page.get_by_role("dialog", name="选择生产单领料出库", exact=True)
+                    ready_table(picker, "生产单号", data["/api/production-orders/issue-options"])
+                    self.shot("inventory-production-source-picker")
+                    picker.locator(".el-dialog__headerbtn").click()
+                    expect(picker).not_to_be_visible()
+
+        # Previously changed attachment-bearing material SKU and supplier cert forms.
+        material_id = self.fixture.get("materialId", 1)
+        material = go(f"/materials/{material_id}", f"/api/materials/{material_id}")
+        expect(page.get_by_role("columnheader", name="SKU 码", exact=True)).to_be_visible()
+        self.shot("material-detail-skus")
+        sku = next(item for item in material["skus"] if item["id"] == self.fixture["materialSkuId"])
+        row = page.locator(".el-table__body-wrapper tr.el-table__row").filter(has=page.get_by_text(sku["code"], exact=True)).first
+        row.get_by_role("button", name="编辑", exact=True).click()
+        dialog = page.get_by_role("dialog", name="编辑 SKU " + sku["code"], exact=True)
+        expect(dialog.get_by_role("button", name="保存", exact=True)).to_be_visible()
+        self.shot("material-sku-edit-upload-surface")
+        cancel(dialog)
+
+        supplier_id = self.fixture.get("supplierId", 1)
+        reads_during([f"/api/suppliers/{supplier_id}", f"/api/suppliers/{supplier_id}/certs"],
+                     lambda: page.goto(f"{self.ui_base}/suppliers/{supplier_id}"))
+        expect(page.get_by_role("tab", name=re.compile(r"^资质"))).to_be_visible()
+        self.shot("supplier-detail-certificates")
+        page.get_by_role("button", name="加一份证照", exact=True).click()
+        dialog = page.get_by_role("dialog", name="加一份证照", exact=True)
+        expect(dialog.get_by_role("button", name="选文件", exact=True)).to_be_visible()
+        self.shot("supplier-certificate-new")
+        cancel(dialog)
+
+        # Procurement head/lines + selector: never click store/submit or select rows.
+        reads_during(["/api/companies/options", "/api/warehouses/options"], lambda: page.goto(self.ui_base + "/purchases/new"))
+        expect(page.locator(".page-header h1")).to_have_text("新建采购单")
+        expect(page.get_by_role("button", name="存草稿", exact=True)).to_be_enabled()
+        expect(page.get_by_role("columnheader", name="单价", exact=True)).to_be_visible()
+        self.shot("purchase-new-head-lines")
+        sku_picker(lambda: page.get_by_role("button", name="从物料库选", exact=True).click(), "purchase-material-picker")
+        page.locator(".page-header").get_by_role("button", name="取消", exact=True).click()
+        page.wait_for_url(self.ui_base + "/purchases")
+
+        # Previously opened detail routes, but these changed dialogs were not pictured.
+        matrix_id = self.fixture["matrixOrderId"]
+        go(f"/orders/{matrix_id}", f"/api/orders/{matrix_id}")
+        reads_during(["/api/orders/style-options"], lambda: page.get_by_role("button", name="提变更", exact=True).click())
+        dialog = page.get_by_role("dialog", name=re.compile(r"^提变更 "))
+        expect(dialog.get_by_role("checkbox", name="整款改单价", exact=True).first).to_be_visible()
+        self.shot("order-change-explicit-price-and-files")
+        cancel(dialog)
+        reads_during(["/api/production-orders/schedule-prefill"], lambda: page.get_by_role("button", name="排单", exact=True).click())
+        dialog = page.get_by_role("dialog", name=re.compile(r"^排单 "))
+        expect(dialog.locator(".sku-matrix").first).to_be_visible()
+        expect(dialog.locator(".el-loading-mask:visible")).to_have_count(0)
+        self.shot("order-schedule-four-place-price")
+        cancel(dialog)
+
+        prod_id = self.fixture["lifecycle"]["productionIds"]["OUTSOURCE"]
+        go(f"/production/{prod_id}", f"/api/production-orders/{prod_id}")
+        page.get_by_role("button", name="报进度", exact=True).click()
+        dialog = page.get_by_role("dialog", name="报进度", exact=True)
+        expect(dialog.get_by_role("button", name="取消", exact=True)).to_be_visible()
+        self.shot("production-node-report-open-cancel")
+        cancel(dialog)
+        self.open_more("上报异常")
+        dialog = page.get_by_role("dialog", name="上报异常", exact=True)
+        expect(dialog.get_by_role("button", name="取消", exact=True)).to_be_visible()
+        self.shot("production-issue-open-cancel")
+        cancel(dialog)
+
+        # Unimplemented API is a visible failure, never a fabricated successful empty list.
+        with page.expect_response(lambda response: self.response_for(response, "GET", "/api/board/upstream")) as unavailable:
+            page.goto(self.ui_base + "/upstream")
+        read_result(unavailable.value, "/api/board/upstream", expected_code=404)
+        alert = page.get_by_test_id("upstream-load-error")
+        expect(alert).to_contain_text("接口暂未提供")
+        expect(page.get_by_text("没有待处理的上游变更。", exact=False)).not_to_be_visible()
+        self.shot("upstream-real-unimplemented-error")
+        with page.expect_response(lambda response: self.response_for(response, "GET", "/api/board/upstream")) as retried:
+            alert.get_by_role("button", name="重试", exact=True).click()
+        read_result(retried.value, "/api/board/upstream", expected_code=404)
+        expect(alert).to_be_visible()
+        self.note("unimplemented board contract stays explicit", route="/upstream", code=404, retry=True, fabricatedEmpty=False)
+
+        self.assertEqual(mutations, [], "Open/cancel smoke unexpectedly sent a business mutation")
+        self.note("all added forms cancelled without mutation", mutationCount=0)
+        # Parent tearDown still asserts zero console errors, zero page errors and local-only requests.
 
 
 if __name__ == "__main__":
