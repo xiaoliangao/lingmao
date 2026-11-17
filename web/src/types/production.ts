@@ -234,7 +234,7 @@ export interface ProductionRow {
 export interface ProductionQuery {
   /** 两个菜单的列表必传；看板不传 = 两种都看 */
   kind?: ProductionKind
-  /** 单号、订单号、款号、款名、加工厂；有空格 = 按几个单号精确查 */
+  /** 单号、订单号、款号、款名、加工厂；一次查几个（README §3.2）时单号、订单号、款号精确查 */
   keyword?: string
   status?: ProductionStatus[]
   /** 和 status=RUNNING 一起用：true 部分回货、false 生产中（没回过货）；不传都要 */

@@ -16,8 +16,9 @@ import java.util.List;
 @Mapper
 public interface InvCountMapper extends BaseMapper<InvCount> {
 
-    /** 列表（XML）：明细条数、已填、盘盈、盘亏现算 */
-    IPage<CountRowVO> selectRowPage(IPage<CountRowVO> page, @Param("q") CountQuery query, @Param("scope") DataScope scope);
+    /** 列表（XML）：明细条数、已填、盘盈、盘亏现算；codes 是关键字里的几个单号（Keywords） */
+    IPage<CountRowVO> selectRowPage(IPage<CountRowVO> page, @Param("q") CountQuery query, @Param("codes") List<String> codes,
+                                    @Param("scope") DataScope scope);
 
 
     @Select("SELECT * FROM inv_count WHERE id = #{id} FOR UPDATE")

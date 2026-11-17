@@ -10,6 +10,7 @@ import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
@@ -153,7 +154,7 @@ public class InvDocServiceImpl implements InvDocService {
 
     @Override
     public PageResult<InvDocRowVO> page(InvDocQuery query) {
-        IPage<InvDocRowVO> page = invDocMapper.selectRowPage(query.toPage(), query, InvTexts.codesIn(query.getKeyword()),
+        IPage<InvDocRowVO> page = invDocMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()));
         fillRows(page.getRecords());
         return PageResult.of(page);
@@ -829,7 +830,7 @@ public class InvDocServiceImpl implements InvDocService {
     @Override
     public byte[] export(InvDocQuery query) {
         Page<InvDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, InvTexts.codesIn(query.getKeyword()),
+        List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();
         Map<Long, List<InvDocItem>> items = docs.isEmpty() ? Map.of()
                 : itemMapper.selectByDocs(docs.stream().map(InvDocRowVO::getId).toList()).stream()

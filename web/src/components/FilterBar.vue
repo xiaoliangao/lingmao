@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, watch } from 'vue'
 import type { ColumnsState } from '@/composables/useColumns'
+import BatchKeyword from './BatchKeyword.vue'
 import { FILTER_BAR, type FilterEntry } from './filterBar'
 
 /**
@@ -11,6 +12,8 @@ import { FILTER_BAR, type FilterEntry } from './filterBar'
  * - left 插槽放在最左边，一般放状态分段（el-segmented），它变了页面自己 search；right 插槽在搜索框左边
  * - 传了 columns（useColumns 的返回值）最右边多一个"显示列"，各人自己挑显示哪些列
  * - 搜索框按提示文字的长短放宽（210 ~ 360px），提示文字写全也看得见
+ * - 传了 batch（能一起查的是什么，如 "单号、款号"），搜索框里多一个"批量"：粘几个单号、编码一起查（BatchKeyword.vue）。
+ *   列表接口照 docs/api/README §3.2 支持了的才传；提示文字里不用再写"空格隔开查几个"
  *
  *   const { query, search, ... } = useTable({ fetch: userApi.page, query: { username: '', status: undefined as number | undefined, createDate: null } })
  *
@@ -24,14 +27,19 @@ import { FILTER_BAR, type FilterEntry } from './filterBar'
  * 不传 v-model:keyword 就没有搜索框；没有 FilterItem 就没有"筛选"按钮
  */
 const keyword = defineModel<string>('keyword')
-const props = withDefaults(defineProps<{ placeholder?: string; columns?: ColumnsState }>(), { placeholder: '搜索' })
+const props = withDefaults(defineProps<{ placeholder?: string; columns?: ColumnsState; batch?: string }>(), { placeholder: '搜索' })
 const emit = defineEmits<{ search: [] }>()
 
-/** 搜索框宽度：汉字按一个字宽、字母数字按半个算（12.5px 的字），加上放大镜和左右留白 66px */
+/** 搜索框宽度：汉字按一个字宽、字母数字按半个算（12.5px 的字），加上放大镜和左右留白 66px；有"批量"再加 44px */
 const searchWidth = computed(() => {
   const chars = [...props.placeholder].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 0xff ? 1 : 0.55), 0)
-  return `${Math.min(360, Math.max(210, Math.ceil(chars * 12.5 + 66)))}px`
+  const extra = props.batch ? 44 : 0
+  return `${Math.min(360 + extra, Math.max(210, Math.ceil(chars * 12.5 + 66)) + extra)}px`
 })
+
+function setKeyword(value: string) {
+  keyword.value = value
+}
 
 // ---------- FilterItem 登记进来 ----------
 const entries = shallowReactive<FilterEntry[]>([])
@@ -153,7 +161,11 @@ onBeforeUnmount(() => {
       clearable
       @keyup.enter="emit('search')"
       @clear="emit('search')"
-    />
+    >
+      <template v-if="batch" #suffix>
+        <BatchKeyword :model-value="keyword ?? ''" :noun="batch" @update:model-value="setKeyword" @search="emit('search')" />
+      </template>
+    </el-input>
 
     <el-popover v-if="columns" trigger="click" placement="bottom-end" :width="200">
       <template #reference>

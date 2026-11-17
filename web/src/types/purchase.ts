@@ -68,7 +68,7 @@ export interface MrpCalcRow {
 }
 
 export interface MrpCalcQuery {
-  /** 算料单号、订单号、款号；有空格 = 按几个单号精确查 */
+  /** 算料单号、订单号、款号；一次查几个（README §3.2）时这三个都精确查 */
   keyword?: string
   status?: MrpStatus[]
   createBy?: number | null
@@ -306,7 +306,7 @@ export interface PurchaseRow {
 }
 
 export interface PurchaseQuery {
-  /** 采购单号、供应商、物料编码 / 名称 / SKU 码、订单号、款号、算料单号；有空格 = 按几个单号精确查 */
+  /** 采购单号、供应商、物料编码 / 名称 / SKU 码、订单号、款号、算料单号；一次查几个（README §3.2）时单号、款号、物料编码精确查 */
   keyword?: string
   status?: PurchaseStatus[]
   purchaseType?: PurchaseType
@@ -556,7 +556,7 @@ export interface PendingArrivalRow extends MaterialSkuBrief {
 export interface PendingArrivalQuery {
   /** 页签：LATE 已逾期 / NEAR 3 天内 / CUT 赶不上开裁；不传 = 全部 */
   tab?: 'LATE' | 'NEAR' | 'CUT'
-  /** 采购单号、物料编码 / 名称 / SKU 码、供应商、订单号、款号、算料单号；有空格 = 按几个单号查 */
+  /** 采购单号、物料编码 / 名称 / SKU 码、供应商、订单号、款号、算料单号；一次查几个（README §3.2）时单号、款号、物料编码精确查 */
   keyword?: string
   supplierId?: number | null
   buyerId?: number | null

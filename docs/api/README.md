@@ -65,7 +65,8 @@
 ### 3.2 列表
 
 - **分页**：`page` 从 1 起，`size` 最多 500，返回 `{ list, total }`。列表页用 `composables/useTable.ts`。
-- **关键字**：`keyword`。单据列表里关键字有空格，就按几个单号精确查（PRD §5.4）。
+- **关键字**：`keyword`，按各接口写的字段包含查（不分大小写）。
+- **一次查几个**（PRD §5.4）：关键字里有分隔符（空白、半角全角逗号、顿号、分号；从 Excel 粘一列进来是换行）就再拆开，按列表上的单号、款号、编码这些列精确查（不分大小写），和整句包含查 OR 起来（名称里本来就有空格、逗号）。一次最多 200 个，多了回 400。哪些列算，看各接口文档的关键字说明。后端用 `common/page/Keywords.codes`；前端 `FilterBar` 传 `batch`（能一起查的是什么，如 `"单号、款号"`），搜索框里多一个"批量"，一行一个，口径在 `utils/keywords.ts`；选物料、选款式的 `DataPick` 自带
 - **多选条件**：数组参数发成 `status=A&status=B`，`request.ts` 已经这样配了。
 - **日期范围**：`xxxFrom`、`xxxTo`，`yyyy-MM-dd`，两头都含。组件用 `DateRange`。
 - **选出来的 id**：查询类型里写成 `number | null`（`UserSelect`、`SupplierSelect` 清空后是 `null`）。值是 `null` 的参数 axios 不发，等于没筛。
@@ -214,3 +215,4 @@ cd web && pnpm dev:mock
 |---|---|
 | 11-15 | 初稿：通用约定、单据公共、菜单、mock、交接 |
 | 11-17 | §3.3 加"主体"：`/api/auth/me` 返回 `defaultCompany`，单据的 `companyId` 必填、页面默认填它；§3.5 带批量条的列表行上有 `version`，批量条逐条调的接口都收 `RequestOptions` |
+| 11-17 | §3.2 "一次查几个"写全：逗号、顿号、分号、换行也算分隔，单号、款号、编码都精确查，和整句包含查一起，最多 200 个；搜索框的"批量"（`FilterBar` 的 `batch`） |

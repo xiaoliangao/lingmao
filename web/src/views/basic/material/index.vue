@@ -159,7 +159,7 @@ function onSaved(id: number) {
       </nav>
 
       <div class="main">
-        <FilterBar v-model:keyword="query.keyword" placeholder="编码、名称、货号、成分；空格隔开查几个编码" @search="search">
+        <FilterBar v-model:keyword="query.keyword" placeholder="编码、名称、货号、成分" batch="编码" @search="search">
           <template #left>
             <el-segmented v-model="query.status" :options="STATUS_OPTIONS" @change="search" />
           </template>

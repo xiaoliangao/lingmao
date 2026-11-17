@@ -38,8 +38,9 @@ public interface MaterialMapper extends BaseMapper<Material> {
                                          @Param("supplierId") Long supplierId, @Param("itemNo") String supplierItemNo,
                                          @Param("excludeId") Long excludeId);
 
-    /** 选物料 SKU：启用物料的启用 SKU */
-    IPage<MaterialPickVO> selectPickPage(IPage<MaterialPickVO> page, @Param("q") MaterialPickQuery query);
+    /** 选物料 SKU：启用物料的启用 SKU；codes 是关键字里的几个 SKU 码 / 物料编码（Keywords） */
+    IPage<MaterialPickVO> selectPickPage(IPage<MaterialPickVO> page, @Param("q") MaterialPickQuery query,
+                                         @Param("codes") List<String> codes);
 
     /** 按编码找供应商（导入），不看状态 */
     List<SupplierBrief> selectSuppliersByCodes(@Param("codes") Collection<String> codes);

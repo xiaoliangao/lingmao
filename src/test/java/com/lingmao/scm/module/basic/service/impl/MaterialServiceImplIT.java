@@ -147,7 +147,7 @@ class MaterialServiceImplIT {
         assertThat(materialService.duplicates(null, null, null, null, null)).isEmpty();
     }
 
-    /** 列表：一级分类连同下面的二级一起查、空格隔开查几个编码；选 SKU：停用的 SKU 不出来，单价没填取物料的参考价 */
+    /** 列表：一级分类连同下面的二级一起查、几个编码一起查（空格、顿号、换行隔开）；选 SKU：停用的 SKU 不出来，单价没填取物料的参考价，几个 SKU 码一起查 */
     @Test
     void pageAndPick_sql() {
         Leaf leaf = leafCategory();
@@ -170,6 +170,8 @@ class MaterialServiceImplIT {
         MaterialQuery byCodes = new MaterialQuery();
         byCodes.setKeyword(code.toLowerCase() + " " + otherCode);
         assertThat(materialService.page(byCodes).getList()).extracting(MaterialListVO::getId).containsExactlyInAnyOrder(id, other);
+        byCodes.setKeyword(code + "、\n" + otherCode.toLowerCase() + "，");
+        assertThat(materialService.page(byCodes).getList()).extracting(MaterialListVO::getId).containsExactlyInAnyOrder(id, other);
 
         long skuB = jdbcTemplate.queryForObject("SELECT id FROM bas_material_sku WHERE material_id = ? AND color_id = ?",
                 Long.class, id, colorB);
@@ -181,6 +183,11 @@ class MaterialServiceImplIT {
             assertThat(p.getColorId()).isEqualTo(colorA);
             assertThat(p.getPrice()).isEqualByComparingTo("18.5");
         });
+        // 从 Excel 粘一列 SKU 码进来：按 SKU 码精确查，没有的码不影响
+        String skuA = jdbcTemplate.queryForObject("SELECT code FROM bas_material_sku WHERE material_id = ? AND color_id = ?",
+                String.class, id, colorA);
+        pick.setKeyword(skuA.toLowerCase() + "\r\nNO-SUCH-SKU");
+        assertThat(materialService.pick(pick).getList()).extracting(MaterialPickVO::getSkuCode).containsExactly(skuA);
     }
 
     // ---------- 造数据 ----------

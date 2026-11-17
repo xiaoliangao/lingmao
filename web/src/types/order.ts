@@ -88,7 +88,7 @@ export interface OrderRow {
 }
 
 export interface OrderQuery {
-  /** 单号、合同号、款号；有空格 = 按几个单号精确查 */
+  /** 单号、合同号、款号；一次查几个（README §3.2）时单号、款号精确查 */
   keyword?: string
   status?: OrderStatus[]
   /** 字典 order_type */
@@ -565,7 +565,7 @@ export interface OrderChangeRow {
 }
 
 export interface OrderChangeQuery {
-  /** 变更单号、订单号、SKU 码；有空格 = 按几个单号查 */
+  /** 变更单号、订单号、SKU 码；一次查几个（README §3.2）时变更单号、订单号精确查 */
   keyword?: string
   status?: ChangeStatus[]
   /** 和 status=DRAFT 一起用：true 只要被驳回的（页面的"已驳回"），false 只要没被驳回的（页面的"草稿"）；不给 = 都要 */

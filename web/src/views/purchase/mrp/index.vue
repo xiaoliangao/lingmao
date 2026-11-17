@@ -175,7 +175,7 @@ async function createCalc() {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="算料单号、订单号、款号" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="算料单号、订单号、款号" batch="单号、款号" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>

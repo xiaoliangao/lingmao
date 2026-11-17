@@ -51,7 +51,7 @@ public interface StockLogMapper extends BaseMapper<StockLog> {
     int countMovesSince(@Param("warehouseId") long warehouseId, @Param("skuIds") Collection<Long> skuIds,
                         @Param("since") OffsetDateTime since, @Param("countId") long countId);
 
-    /** 库存日志（XML） */
-    IPage<StockLogRowVO> selectRowPage(IPage<StockLogRowVO> page, @Param("q") StockLogQuery query);
+    /** 库存日志（XML）；codes 是关键字里的几个单号 / SKU 码（Keywords） */
+    IPage<StockLogRowVO> selectRowPage(IPage<StockLogRowVO> page, @Param("q") StockLogQuery query, @Param("codes") List<String> codes);
 
 }

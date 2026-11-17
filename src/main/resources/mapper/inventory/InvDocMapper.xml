@@ -40,9 +40,7 @@
                             WHERE i.doc_id = d.id
                               AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
                                    OR m.name ILIKE '%' || #{q.keyword} || '%' OR i.dye_lot ILIKE '%' || #{q.keyword} || '%'))
-                 <if test="codes != null and codes.size() > 0">
-                     OR upper(d.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                 </if>)
+                 <if test="codes != null">OR upper(d.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach> OR upper(d.source_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         ORDER BY d.id DESC
     </select>

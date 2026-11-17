@@ -290,7 +290,7 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
 
 <template>
   <div>
-    <FilterBar v-model:keyword="query.keyword" placeholder="采购单号、物料、供应商、订单号、款号" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="采购单号、物料、供应商、订单号、款号" batch="单号、款号" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.riskTab" :options="riskOptions" @change="search" />
       </template>

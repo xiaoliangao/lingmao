@@ -197,13 +197,6 @@ class MaterialServiceImplTest {
                 .satisfies(ref -> assertThat(ref.material().code()).isEqualTo("ML0001"));
     }
 
-    /** 关键字里有空格就按几个编码查（大写、去重），没有空格按包含查 */
-    @Test
-    void codesIn_splitsOnWhitespace() {
-        assertThat(MaterialServiceImpl.codesIn("ml0001  ml0002 ML0001")).containsExactly("ML0001", "ML0002");
-        assertThat(MaterialServiceImpl.codesIn("全棉")).isNull();
-    }
-
     private void stubLeafCategory() {
         MaterialCategory leaf = new MaterialCategory();
         leaf.setId(5L);

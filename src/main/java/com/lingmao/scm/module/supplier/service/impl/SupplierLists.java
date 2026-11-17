@@ -2,6 +2,7 @@ package com.lingmao.scm.module.supplier.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.module.supplier.dto.SupplierQuery;
 import com.lingmao.scm.module.supplier.dto.SupplierRowVO;
 import com.lingmao.scm.module.supplier.entity.CertSummary;
@@ -54,8 +55,16 @@ class SupplierLists {
         QueryWrapper<Supplier> wrapper = new QueryWrapper<>();
         if (StringUtils.hasText(query.getKeyword())) {
             String like = likePattern(query.getKeyword());
-            wrapper.and(w -> w.apply("code ILIKE {0}", like).or().apply("name ILIKE {0}", like)
-                    .or().apply("short_name ILIKE {0}", like).or().apply("contact ILIKE {0}", like));
+            List<String> codes = Keywords.codes(query.getKeyword());
+            wrapper.and(w -> {
+                w.apply("code ILIKE {0}", like).or().apply("name ILIKE {0}", like)
+                        .or().apply("short_name ILIKE {0}", like).or().apply("contact ILIKE {0}", like);
+                if (codes != null) {
+                    // 几个编码一起精确查（Keywords）
+                    w.or().apply("upper(code) IN (" + IntStream.range(0, codes.size()).mapToObj(i -> "{" + i + "}")
+                            .collect(Collectors.joining(",")) + ")", codes.toArray());
+                }
+            });
         }
         if (StringUtils.hasText(query.getCategory())) {
             inCategory(wrapper, List.of(query.getCategory()));

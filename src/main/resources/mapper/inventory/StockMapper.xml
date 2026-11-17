@@ -13,10 +13,7 @@
         <if test="q.keyword != null and q.keyword.trim() != ''">
             AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
                  OR m.name ILIKE '%' || #{q.keyword} || '%' OR w.name ILIKE '%' || #{q.keyword} || '%'
-                 <if test="codes != null and codes.size() > 0">
-                     OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                 </if>)
+                 <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach> OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
     </sql>
 

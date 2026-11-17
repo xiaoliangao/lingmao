@@ -175,7 +175,7 @@ async function exportSelected() {
       </template>
     </PageHeader>
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="编码、名称、联系人" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="编码、名称、联系人" batch="编码" @search="search">
       <template #left>
         <el-segmented v-model="query.category" :options="categoryOptions" @change="search" />
       </template>

@@ -21,21 +21,13 @@
         JOIN bas_size_group g ON g.id = s.size_group_id
     </sql>
 
-    <!-- 关键字：有空格时按几个款号查，名称、花名包含整个关键字的也算；没空格查款号、名称、花名、品名。品类含下级（Service 算好 id） -->
+    <!-- 关键字：款号、名称、花名、品名包含整个关键字；有分隔符时再加上按几个款号精确查（Keywords）。品类含下级（Service 算好 id） -->
     <sql id="listWhere">
         <where>
             <if test="q.keyword != null and q.keyword.trim() != ''">
-                <choose>
-                    <when test="codes != null and codes.size() > 0">
-                        AND (upper(s.code) IN
-                        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                        OR s.name ILIKE '%' || #{q.keyword} || '%' OR s.alias_name ILIKE '%' || #{q.keyword} || '%')
-                    </when>
-                    <otherwise>
-                        AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
-                        OR s.alias_name ILIKE '%' || #{q.keyword} || '%' OR s.product_name ILIKE '%' || #{q.keyword} || '%')
-                    </otherwise>
-                </choose>
+                AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
+                     OR s.alias_name ILIKE '%' || #{q.keyword} || '%' OR s.product_name ILIKE '%' || #{q.keyword} || '%'
+                     <if test="codes != null">OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
             </if>
             <if test="categoryIds != null">
                 AND s.category_id IN <foreach collection="categoryIds" item="id" open="(" separator="," close=")">#{id}</foreach>
@@ -80,7 +72,8 @@
         <if test="q.keyword != null and q.keyword.trim() != ''">
             AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
             OR s.alias_name ILIKE '%' || #{q.keyword} || '%'
-            <if test="!brands.isEmpty()">OR s.brand IN <foreach collection="brands" item="b" open="(" separator="," close=")">#{b}</foreach></if>)
+            <if test="!brands.isEmpty()">OR s.brand IN <foreach collection="brands" item="b" open="(" separator="," close=")">#{b}</foreach></if>
+            <if test="codes != null">OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         <if test="categoryIds != null">
             AND s.category_id IN <foreach collection="categoryIds" item="id" open="(" separator="," close=")">#{id}</foreach>

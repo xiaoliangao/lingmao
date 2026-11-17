@@ -3,6 +3,7 @@ package com.lingmao.scm.module.inventory.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.service.MaterialService;
@@ -39,14 +40,14 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public PageResult<StockRowVO> page(StockQuery query) {
-        IPage<StockRowVO> page = stockMapper.selectRowPage(query.toPage(), query, InvTexts.codesIn(query.getKeyword()));
+        IPage<StockRowVO> page = stockMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
         fillBriefs(page.getRecords());
         return PageResult.of(page);
     }
 
     @Override
     public PageResult<StockSummaryRowVO> summary(StockQuery query) {
-        IPage<StockSummaryRowVO> page = stockMapper.selectSummaryPage(query.toPage(), query, InvTexts.codesIn(query.getKeyword()));
+        IPage<StockSummaryRowVO> page = stockMapper.selectSummaryPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
         fillBriefs(page.getRecords());
         return PageResult.of(page);
     }
@@ -61,7 +62,7 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public PageResult<StockLogRowVO> logs(StockLogQuery query) {
-        IPage<StockLogRowVO> page = stockLogMapper.selectRowPage(query.toPage(), query);
+        IPage<StockLogRowVO> page = stockLogMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
         fillLogs(page.getRecords());
         return PageResult.of(page);
     }
@@ -88,21 +89,21 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public byte[] export(StockQuery query) {
-        List<StockRowVO> rows = stockMapper.selectRowPage(all(), query, InvTexts.codesIn(query.getKeyword())).getRecords();
+        List<StockRowVO> rows = stockMapper.selectRowPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
         fillBriefs(rows);
         return excel.stocks(rows);
     }
 
     @Override
     public byte[] exportSummary(StockQuery query) {
-        List<StockSummaryRowVO> rows = stockMapper.selectSummaryPage(all(), query, InvTexts.codesIn(query.getKeyword())).getRecords();
+        List<StockSummaryRowVO> rows = stockMapper.selectSummaryPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
         fillBriefs(rows);
         return excel.summary(rows);
     }
 
     @Override
     public byte[] exportLogs(StockLogQuery query) {
-        List<StockLogRowVO> rows = stockLogMapper.selectRowPage(all(), query).getRecords();
+        List<StockLogRowVO> rows = stockLogMapper.selectRowPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
         fillLogs(rows);
         return excel.logs(rows);
     }

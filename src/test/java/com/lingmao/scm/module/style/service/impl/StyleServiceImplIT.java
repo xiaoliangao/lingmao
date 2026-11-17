@@ -175,6 +175,10 @@ class StyleServiceImplIT {
         assertThat(styleService.pick(byBrand).getList()).extracting(StylePickVO::getId).containsExactly(r.id());
         byBrand.setKeyword(f.brand());
         assertThat(styleService.pick(byBrand).getList()).isEmpty();
+        // 几个款号一起查
+        StylePickQuery byCodes = new StylePickQuery();
+        byCodes.setKeyword(r.code().toLowerCase() + "，NO-SUCH-STYLE");
+        assertThat(styleService.pick(byCodes).getList()).extracting(StylePickVO::getId).containsExactly(r.id());
     }
 
     /** 规则：条码有值时全表唯一（部分唯一索引），Service 先查给出是哪个 SKU；空的不算重复 */

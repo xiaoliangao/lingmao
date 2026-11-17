@@ -123,7 +123,7 @@ async function quickAct(row: OrderChangeRow, action: 'audit' | 'reject') {
   <div>
     <PageHeader />
 
-    <FilterBar v-model:keyword="query.keyword" placeholder="变更单号、订单号、SKU 码" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="变更单号、订单号、SKU 码" batch="单号" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.tabKey" :options="tabOptions" @change="search" />
       </template>

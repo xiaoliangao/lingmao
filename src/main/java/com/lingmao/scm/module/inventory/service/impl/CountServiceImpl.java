@@ -12,6 +12,7 @@ import com.lingmao.scm.common.excel.ExcelImport;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
@@ -127,7 +128,7 @@ public class CountServiceImpl implements CountService {
 
     @Override
     public PageResult<CountRowVO> page(CountQuery query) {
-        IPage<CountRowVO> page = countMapper.selectRowPage(query.toPage(), query, DataScope.current(query.isMine()));
+        IPage<CountRowVO> page = countMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
         fillRows(page.getRecords());
         return PageResult.of(page);
     }
@@ -722,7 +723,7 @@ public class CountServiceImpl implements CountService {
     @Override
     public byte[] export(CountQuery query) {
         Page<CountRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<CountRowVO> rows = countMapper.selectRowPage(all, query, DataScope.current(query.isMine())).getRecords();
+        List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())).getRecords();
         fillRows(rows);
         return excel.export(rows);
     }

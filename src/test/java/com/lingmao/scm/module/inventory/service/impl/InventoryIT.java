@@ -12,6 +12,7 @@ import com.lingmao.scm.module.inventory.dto.CountCreateReq;
 import com.lingmao.scm.module.inventory.dto.CountCreatedVO;
 import com.lingmao.scm.module.inventory.dto.CountDetailVO;
 import com.lingmao.scm.module.inventory.dto.CountQuery;
+import com.lingmao.scm.module.inventory.dto.CountRowVO;
 import com.lingmao.scm.module.inventory.dto.CountSaveReq;
 import com.lingmao.scm.module.inventory.dto.InvDocCreateReq;
 import com.lingmao.scm.module.inventory.dto.InvDocDetailVO;
@@ -273,6 +274,8 @@ class InventoryIT {
         assertThat(stockService.summary(sq).getList()).singleElement()
                 .satisfies(r -> assertThat(r.getMaterialQty()).isEqualByComparingTo("5"));
         StockLogQuery lq = new StockLogQuery();
+        lq.setKeyword(no.toLowerCase() + "，CK00000000000");
+        assertThat(stockService.logs(lq).getList()).hasSize(1);
         lq.setKeyword(no);
         assertThat(stockService.logs(lq).getList()).singleElement().satisfies(r -> {
             assertThat(r.getDocType()).isEqualTo("INV_DOC");
@@ -286,6 +289,8 @@ class InventoryIT {
         CountCreateReq req = countReq(f, CountPurpose.DAILY, List.of(f.skuA, f.skuB));
         CountCreatedVO created = countService.create(req);
         CountQuery cq = new CountQuery();
+        cq.setKeyword(created.no() + "\nPD00000000000");
+        assertThat(countService.page(cq).getList()).extracting(CountRowVO::getId).containsExactly(created.id());
         cq.setKeyword(created.no());
         assertThat(countService.page(cq).getList()).singleElement().satisfies(r -> {
             assertThat(r.getScopeText()).isEqualTo("手选 2 种");

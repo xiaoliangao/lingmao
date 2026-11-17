@@ -6,6 +6,7 @@ import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.config.TradeFeature;
@@ -53,7 +54,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -91,7 +91,7 @@ public class MaterialServiceImpl implements MaterialService {
     @Override
     public PageResult<MaterialListVO> page(MaterialQuery query) {
         query.setKeyword(Texts.trim(query.getKeyword()));
-        IPage<MaterialListVO> page = materialMapper.selectListPage(query.toPage(), query, codesIn(query.getKeyword()));
+        IPage<MaterialListVO> page = materialMapper.selectListPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
         List<MaterialListVO> rows = page.getRecords();
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.MATERIAL,
                 rows.stream().map(MaterialListVO::getId).toList(), Attachment.IMAGE);
@@ -285,7 +285,7 @@ public class MaterialServiceImpl implements MaterialService {
     @Override
     public PageResult<MaterialPickVO> pick(MaterialPickQuery query) {
         query.setKeyword(Texts.trim(query.getKeyword()));
-        IPage<MaterialPickVO> page = materialMapper.selectPickPage(query.toPage(), query);
+        IPage<MaterialPickVO> page = materialMapper.selectPickPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
         List<MaterialPickVO> rows = page.getRecords();
         Map<Long, AttachmentVO> skuImages = attachmentService.firsts(BizType.MATERIAL_SKU,
                 rows.stream().map(MaterialPickVO::getSkuId).toList(), Attachment.IMAGE);
@@ -385,7 +385,7 @@ public class MaterialServiceImpl implements MaterialService {
     @Override
     public byte[] export(MaterialQuery query) {
         query.setKeyword(Texts.trim(query.getKeyword()));
-        List<Long> ids = materialMapper.selectIds(query, codesIn(query.getKeyword()), Excel.MAX_EXPORT_ROWS + 1);
+        List<Long> ids = materialMapper.selectIds(query, Keywords.codes(query.getKeyword()), Excel.MAX_EXPORT_ROWS + 1);
         if (ids.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException("要导出的超过 " + Excel.MAX_EXPORT_ROWS / 10_000 + " 万行了，请缩小筛选范围再导出");
         }
@@ -561,17 +561,6 @@ public class MaterialServiceImpl implements MaterialService {
             }
         }
         return new ArrayList<>(specs.values());
-    }
-
-    /** 关键字里有空格：拆成几个编码（大写）一起查；没有空格返回 null，按包含查 */
-    static List<String> codesIn(String keyword) {
-        if (keyword == null || !keyword.matches(".*\\s.*")) {
-            return null;
-        }
-        return new ArrayList<>(Arrays.stream(keyword.split("\\s+"))
-                .filter(s -> !s.isEmpty())
-                .map(s -> s.toUpperCase(Locale.ROOT))
-                .collect(Collectors.toCollection(LinkedHashSet::new)));
     }
 
     private void lock(long id) {

@@ -21,21 +21,13 @@
         LEFT JOIN sup_supplier s ON s.id = m.default_supplier_id
     </sql>
 
-    <!-- 关键字：有空格时按几个编码查，名称包含整个关键字的也算；没空格查编码、名称、货号、成分。分类含下级 -->
+    <!-- 关键字：编码、名称、货号、成分包含整个关键字；有分隔符时再加上按几个编码精确查（Keywords）。分类含下级 -->
     <sql id="listWhere">
         <where>
             <if test="q.keyword != null and q.keyword.trim() != ''">
-                <choose>
-                    <when test="codes != null and codes.size() > 0">
-                        AND (upper(m.code) IN
-                        <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                        OR m.name ILIKE '%' || #{q.keyword} || '%')
-                    </when>
-                    <otherwise>
-                        AND (m.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%'
-                        OR m.supplier_item_no ILIKE '%' || #{q.keyword} || '%' OR m.composition ILIKE '%' || #{q.keyword} || '%')
-                    </otherwise>
-                </choose>
+                AND (m.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%'
+                     OR m.supplier_item_no ILIKE '%' || #{q.keyword} || '%' OR m.composition ILIKE '%' || #{q.keyword} || '%'
+                     <if test="codes != null">OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
             </if>
             <if test="q.categoryId != null">AND (m.category_id = #{q.categoryId} OR c.parent_id = #{q.categoryId})</if>
             <if test="q.materialType != null and q.materialType != ''">AND m.material_type = #{q.materialType}</if>
@@ -100,9 +92,11 @@
         JOIN bas_material_category c ON c.id = m.category_id
         LEFT JOIN bas_color cl ON cl.id = k.color_id
         WHERE k.status = 1 AND m.status = 1
+        <!-- 有分隔符时再按几个 SKU 码、物料编码精确查：粘一列 SKU 码进来一次勾完 -->
         <if test="q.keyword != null and q.keyword.trim() != ''">
             AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%'
-            OR m.supplier_item_no ILIKE '%' || #{q.keyword} || '%' OR cl.name ILIKE '%' || #{q.keyword} || '%')
+            OR m.supplier_item_no ILIKE '%' || #{q.keyword} || '%' OR cl.name ILIKE '%' || #{q.keyword} || '%'
+            <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach> OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         <if test="q.categoryId != null">AND (m.category_id = #{q.categoryId} OR c.parent_id = #{q.categoryId})</if>
         ORDER BY m.code, k.code

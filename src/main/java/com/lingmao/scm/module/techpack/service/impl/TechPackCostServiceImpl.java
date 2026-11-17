@@ -3,6 +3,7 @@ package com.lingmao.scm.module.techpack.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.basic.dto.TreeNode;
 import com.lingmao.scm.module.basic.service.CategoryService;
@@ -24,13 +25,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Deque;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -57,7 +54,7 @@ public class TechPackCostServiceImpl implements TechPackCostService {
 
     @Override
     public PageResult<StyleCostRowVO> styleCosts(StyleCostQuery query) {
-        IPage<StyleCostRowVO> page = techPackMapper.selectStyleCostPage(query.toPage(), query, codesIn(query.getKeyword()),
+        IPage<StyleCostRowVO> page = techPackMapper.selectStyleCostPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 withDescendants(query.getCategoryId()));
         List<StyleCostRowVO> rows = page.getRecords();
         if (!rows.isEmpty()) {
@@ -84,16 +81,6 @@ public class TechPackCostServiceImpl implements TechPackCostService {
             }
         }
         return PageResult.of(page);
-    }
-
-    /** 关键字有空格 = 几个款号一起查（和款式列表一样）；返回大写的款号，没有空格是 null */
-    static List<String> codesIn(String keyword) {
-        if (keyword == null || !keyword.strip().matches(".*\\s.*")) {
-            return null;
-        }
-        return new ArrayList<>(Arrays.stream(keyword.strip().split("\\s+"))
-                .map(s -> s.toUpperCase(Locale.ROOT))
-                .collect(Collectors.toCollection(LinkedHashSet::new)));
     }
 
     /** 品类连同下级的 id（品类就几十个，整棵取了在内存里找）；不筛是 null */

@@ -10,6 +10,7 @@ import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.mybatis.Updates;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.config.TradeFeature;
 import com.lingmao.scm.module.basic.dto.ColorOption;
@@ -60,14 +61,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -124,7 +122,7 @@ public class StyleServiceImpl implements StyleService {
     @Override
     public PageResult<StyleListVO> page(StyleQuery query) {
         query.setKeyword(trim(query.getKeyword()));
-        IPage<StyleListVO> page = styleMapper.selectListPage(query.toPage(), query, codesIn(query.getKeyword()),
+        IPage<StyleListVO> page = styleMapper.selectListPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 categories.withDescendants(query.getCategoryId()));
         List<StyleListVO> rows = page.getRecords();
         List<Long> ids = rows.stream().map(StyleListVO::getId).toList();
@@ -463,7 +461,8 @@ public class StyleServiceImpl implements StyleService {
         query.setKeyword(trim(query.getKeyword()));
         // 品牌按名称搜：字典里名称对得上的品牌 value 交给 SQL（款式上存的是 value）
         List<String> brands = query.getKeyword() == null ? List.of() : dicts.valuesLabelled(StyleDicts.BRAND, query.getKeyword());
-        IPage<StylePickVO> page = styleMapper.selectPickPage(query.toPage(), query, categories.withDescendants(query.getCategoryId()), brands);
+        IPage<StylePickVO> page = styleMapper.selectPickPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
+                categories.withDescendants(query.getCategoryId()), brands);
         List<StylePickVO> rows = page.getRecords();
         List<Long> ids = rows.stream().map(StylePickVO::getId).toList();
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, ids, Attachment.IMAGE);
@@ -488,7 +487,7 @@ public class StyleServiceImpl implements StyleService {
     @Override
     public byte[] export(StyleQuery query) {
         query.setKeyword(trim(query.getKeyword()));
-        List<Long> ids = styleMapper.selectIds(query, codesIn(query.getKeyword()),
+        List<Long> ids = styleMapper.selectIds(query, Keywords.codes(query.getKeyword()),
                 categories.withDescendants(query.getCategoryId()), Excel.MAX_EXPORT_ROWS + 1);
         if (ids.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException("要导出的超过 " + Excel.MAX_EXPORT_ROWS / 10_000 + " 万行了，请缩小筛选范围再导出");
@@ -779,17 +778,6 @@ public class StyleServiceImpl implements StyleService {
     private static String codesText(List<String> codes) {
         String text = String.join("、", codes);
         return text.length() <= 400 ? text : text.substring(0, 400) + "…（共 " + codes.size() + " 个）";
-    }
-
-    /** 关键字里有空格：拆成几个款号（大写）一起查；没有空格返回 null，按包含查 */
-    static List<String> codesIn(String keyword) {
-        if (keyword == null || !keyword.matches(".*\\s.*")) {
-            return null;
-        }
-        return new ArrayList<>(Arrays.stream(keyword.split("\\s+"))
-                .filter(t -> !t.isEmpty())
-                .map(t -> t.toUpperCase(Locale.ROOT))
-                .collect(Collectors.toCollection(LinkedHashSet::new)));
     }
 
     /** 按 id 取名字；id 为空返回 null（nicknames 空集合时给的是 Map.of()，get(null) 会抛空指针） */

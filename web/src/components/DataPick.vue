@@ -5,12 +5,15 @@ import { styleApi } from '@/api/style'
 import type { MaterialPickRow, TreeNode } from '@/types/basic'
 import type { PageResult } from '@/types/system'
 import { STYLE_STATUS, TECH_PACK_STATUS, type StylePickRow } from '@/types/style'
-import { useTable } from '@/composables/useTable'
+import { PAGE_SIZES, useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
 import { formatPrice } from '@/utils/format'
+import { hasSeparator, MAX_CODES } from '@/utils/keywords'
+import BatchKeyword from './BatchKeyword.vue'
 
 /**
  * 从物料库里挑数据，一次勾多条（用户 11-14 定，原型 3e-pick.js 的 DataPick）：搜索 + 一级分类 + 分页。
+ * 搜索框带"批量"：粘一列 SKU 码 / 款号进来，一页最多放 200 条，表头全选一次勾完。
  * 翻页、换分类、换关键字时已经勾的留着；have 里的（单上已经有的）灰掉不能再勾。
  * 点"加入"发出 pick（勾的行，按勾的先后），对话框自己关。每次打开都从头来。
  *
@@ -39,6 +42,7 @@ const SOURCES = {
     title: '从物料库选',
     noun: '物料',
     placeholder: '物料名称、编码、SKU 码、颜色、供应商货号',
+    batch: 'SKU 码、物料编码',
     groups: materialCategoryApi.enabledTree,
     fetch: materialApi.pick,
     key: (row: PickRow) => (row as MaterialPickRow).skuId,
@@ -47,6 +51,7 @@ const SOURCES = {
     title: '从款式库选',
     noun: '款式',
     placeholder: '款号、名称、花名、品牌',
+    batch: '款号',
     groups: categoryApi.enabledTree,
     fetch: styleApi.pick,
     key: (row: PickRow) => (row as StylePickRow).id,
@@ -70,13 +75,24 @@ async function onOpen() {
   query.keyword = ''
   query.categoryId = undefined
   chosen.value = new Map()
-  search()
+  find()
   groups.value = await source.value.groups()
 }
 
 function pickGroup(id: number | undefined) {
   query.categoryId = id
-  search()
+  find()
+}
+
+/** 几个编码一起查（关键字里有分隔符）时一页放 200 条，好一次全选；改了条数由 useTable 的 watch 去查 */
+function find() {
+  const want = hasSeparator(query.keyword) ? MAX_CODES : PAGE_SIZES[0]!
+  if (size.value === want) {
+    search()
+  } else {
+    size.value = want
+    page.value = 1
+  }
 }
 
 const keyOf = (row: PickRow) => source.value.key(row)
@@ -115,8 +131,9 @@ const rowClass = ({ row }: { row: PickRow }) => (isHad(row) ? 'is-had' : chosen.
 
 <template>
   <el-dialog v-model="visible" :title="source.title" width="880px" append-to-body @open="onOpen">
-    <el-input v-model="query.keyword" :placeholder="source.placeholder" clearable class="dpk-search" @keyup.enter="search" @clear="search">
+    <el-input v-model="query.keyword" :placeholder="source.placeholder" clearable class="dpk-search" @keyup.enter="find" @clear="find">
       <template #prefix><el-icon><Search /></el-icon></template>
+      <template #suffix><BatchKeyword v-model="query.keyword" :noun="source.batch" @search="find" /></template>
     </el-input>
     <div class="dpk-chips" role="group" aria-label="分类">
       <button type="button" :class="{ on: query.categoryId === undefined }" @click="pickGroup(undefined)">全部</button>

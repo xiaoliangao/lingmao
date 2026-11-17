@@ -277,7 +277,7 @@ function doExport() {
 
     <!-- 1. 明细视图 -->
     <template v-if="viewMode === 'detail'">
-      <FilterBar v-model:keyword="detailTable.query.keyword" placeholder="SKU 码、物料编码、名称、仓库" :columns="detailCols" @search="detailTable.search">
+      <FilterBar v-model:keyword="detailTable.query.keyword" placeholder="SKU 码、物料编码、名称、仓库" batch="SKU 码、物料编码" :columns="detailCols" @search="detailTable.search">
         <template #left>
           <el-segmented v-model="detailTable.query.whType" :options="WH_TYPE_OPTIONS" @change="detailTable.search" />
         </template>
@@ -346,7 +346,7 @@ function doExport() {
 
     <!-- 2. 按物料汇总视图 -->
     <template v-else-if="viewMode === 'summary'">
-      <FilterBar v-model:keyword="summaryTable.query.keyword" placeholder="SKU 码、物料编码、名称" :columns="summaryCols" @search="summaryTable.search">
+      <FilterBar v-model:keyword="summaryTable.query.keyword" placeholder="SKU 码、物料编码、名称" batch="SKU 码、物料编码" :columns="summaryCols" @search="summaryTable.search">
         <template #right>
           <el-checkbox v-model="summaryTable.query.includeZero" @change="summaryTable.search">含 0 库存</el-checkbox>
         </template>
@@ -394,7 +394,7 @@ function doExport() {
 
     <!-- 3. 库存日志视图 -->
     <template v-else>
-      <FilterBar v-model:keyword="logTable.query.keyword" placeholder="单号、SKU 码、物料名称、缸号" :columns="logCols" @search="logTable.search">
+      <FilterBar v-model:keyword="logTable.query.keyword" placeholder="单号、SKU 码、物料名称、缸号" batch="单号、SKU 码" :columns="logCols" @search="logTable.search">
         <FilterItem label="仓库" :text="warehouseName(logTable.query.warehouseId)" @clear="logTable.query.warehouseId = undefined">
           <el-select v-model="logTable.query.warehouseId" filterable clearable placeholder="全部仓库" :value-on-clear="undefined">
             <el-option v-for="w in filteredWhOptions" :key="w.id" :label="w.name" :value="w.id" />

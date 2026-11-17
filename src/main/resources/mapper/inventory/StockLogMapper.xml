@@ -29,7 +29,9 @@
             AND (l.doc_no ILIKE '%' || #{q.keyword} || '%' OR l.dye_lot ILIKE '%' || #{q.keyword} || '%'
                  OR EXISTS (SELECT 1 FROM bas_material_sku k JOIN bas_material m ON m.id = k.material_id
                             WHERE k.id = l.material_sku_id
-                              AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%')))
+                              AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.name ILIKE '%' || #{q.keyword} || '%'
+                                   <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach> OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>))
+                 <if test="codes != null">OR upper(l.doc_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         ORDER BY l.id DESC
     </select>

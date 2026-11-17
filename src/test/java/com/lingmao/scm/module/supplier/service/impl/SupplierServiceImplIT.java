@@ -318,6 +318,10 @@ class SupplierServiceImplIT {
         query.setMissingCredit(true);
         assertThat(supplierService.page(query).getList()).isEmpty();
         query.setMissingCredit(null);
+        // 几个编码一起查
+        query.setKeyword(vo.getCode().toLowerCase() + " GYS-NONE");
+        assertThat(supplierService.page(query).getList()).extracting(SupplierRowVO::getId).containsExactly(id);
+        query.setKeyword(req.getShortName());
         query.setToApprove(true);
         assertThat(supplierService.page(query).getList()).isEmpty();
 

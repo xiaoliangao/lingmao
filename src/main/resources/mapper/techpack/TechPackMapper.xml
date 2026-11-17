@@ -16,17 +16,9 @@
                OR (p.stage = 'DEV' AND NOT EXISTS (SELECT 1 FROM tp_tech_pack x
                                                    WHERE x.style_id = p.style_id AND x.stage = 'PROD' AND x.status = 'EFFECTIVE')))
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            <choose>
-                <when test="codes != null and codes.size() > 0">
-                    AND (upper(s.code) IN
-                    <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                    OR s.name ILIKE '%' || #{q.keyword} || '%' OR s.alias_name ILIKE '%' || #{q.keyword} || '%')
-                </when>
-                <otherwise>
-                    AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
-                    OR s.alias_name ILIKE '%' || #{q.keyword} || '%')
-                </otherwise>
-            </choose>
+            AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
+                 OR s.alias_name ILIKE '%' || #{q.keyword} || '%'
+                 <if test="codes != null">OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         <if test="categoryIds != null">
             AND s.category_id IN <foreach collection="categoryIds" item="id" open="(" separator="," close=")">#{id}</foreach>

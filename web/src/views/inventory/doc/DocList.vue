@@ -173,7 +173,7 @@ defineExpose({ reload: load, exportAll, exporting })
 
 <template>
   <div>
-    <FilterBar v-model:keyword="query.keyword" placeholder="单号、源单号、物料、缸号" :columns="cols" @search="search">
+    <FilterBar v-model:keyword="query.keyword" placeholder="单号、源单号、物料、缸号" batch="单号" :columns="cols" @search="search">
       <template #left>
         <el-segmented v-model="query.docTypeTab" :options="TYPE_OPTIONS" @change="search" />
       </template>

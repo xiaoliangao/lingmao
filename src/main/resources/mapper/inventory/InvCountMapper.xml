@@ -41,7 +41,8 @@
                             JOIN bas_material m ON m.id = k.material_id
                             WHERE i.count_id = c.id
                               AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
-                                   OR m.name ILIKE '%' || #{q.keyword} || '%')))
+                                   OR m.name ILIKE '%' || #{q.keyword} || '%'))
+                 <if test="codes != null">OR upper(c.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         ORDER BY c.id DESC
     </select>

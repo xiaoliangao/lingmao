@@ -153,6 +153,8 @@ class TechPackServiceImplIT {
             assertThat(r.getStage()).isEqualTo(PackStage.PROD);
             assertThat(r.getTotal()).isEqualByComparingTo(cost.getSummary().total());
         });
+        query.setKeyword(styleCode(f.style).toLowerCase() + "，NO-SUCH-STYLE");
+        assertThat(costService.styleCosts(query).getList()).extracting(StyleCostRowVO::getTechPackId).containsExactly(prod);
 
         long v2 = techPackService.revise(prod);
         TechPackDetailVO v2Draft = techPackService.detail(v2);
