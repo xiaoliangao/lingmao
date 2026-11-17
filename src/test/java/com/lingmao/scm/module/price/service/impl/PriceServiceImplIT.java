@@ -7,11 +7,15 @@ import com.lingmao.scm.common.exception.GlobalExceptionHandler;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.basic.service.MaterialService;
+import com.lingmao.scm.module.biz.entity.BizType;
+import com.lingmao.scm.module.price.dto.DocPrices;
 import com.lingmao.scm.module.price.dto.MaterialPriceKey;
+import com.lingmao.scm.module.price.dto.PriceLine;
 import com.lingmao.scm.module.price.dto.PriceQuery;
 import com.lingmao.scm.module.price.dto.PriceRef;
 import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
+import com.lingmao.scm.module.price.dto.PriceSource;
 import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.service.PriceService;
 import com.lingmao.scm.module.supplier.service.SupplierService;
@@ -352,6 +356,43 @@ class PriceServiceImplIT {
     }
 
     // ------------------------------------------------------------------ 造数据
+
+    /**
+     * 单据审核记价（RFC 006 §5）：物料层现价 19.00。一张单上卡其、藏青都 20.00 → 物料层记一条（同一组只记一次）；
+     * 下一张单卡其 21.00、藏青 20.00（和现价一样）→ 只给卡其记到 SKU，藏青跳过；单位不是物料现在采购单位的行不记，退回给单据。
+     * 反审核按来源作废这张单记的
+     */
+    @Test
+    void recordFromDoc_levelsAndVoid() {
+        long supplier = supplier();
+        long material = material("METER");
+        long khaki = sku(material, "KQ");
+        long navy = sku(material, "ZQ");
+        record(materialPrice(supplier, material, null, "19.00", today.minusDays(10), null));
+
+        PriceSource first = new PriceSource(BizType.PURCHASE_ORDER, 9_001L, "CG-IT-1");
+        DocPrices one = priceService.recordFromDoc(first, today, List.of(docLine(supplier, material, khaki, "20.00", "METER", "涨价"),
+                docLine(supplier, material, navy, "20.00", "METER", "涨价")));
+        assertThat(one.recorded()).singleElement().satisfies(r -> assertThat(r.materialSkuId()).isNull());
+        assertThat(priceOf(priceService.currentMaterial(supplier, material, navy, today))).isEqualByComparingTo("20.00");
+
+        PriceSource second = new PriceSource(BizType.PURCHASE_ORDER, 9_002L, "CG-IT-2");
+        DocPrices two = priceService.recordFromDoc(second, today, List.of(docLine(supplier, material, khaki, "21.00", "METER", "加急"),
+                docLine(supplier, material, navy, "20.00", "METER", null), docLine(supplier, material, navy, "5.00", "KG", "旧单位")));
+        assertThat(two.recorded()).singleElement().satisfies(r -> {
+            assertThat(r.materialSkuId()).isEqualTo(khaki);
+            assertThat(r.price()).isEqualByComparingTo("21.00");
+        });
+        assertThat(two.unitChanged()).singleElement().satisfies(l -> assertThat(l.unit()).isEqualTo("KG"));
+        assertThat(priceOf(priceService.currentMaterial(supplier, material, navy, today))).isEqualByComparingTo("20.00");
+
+        assertThat(priceService.voidFromDoc(second, "CG-IT-2 反审核")).isEqualTo(1);
+        assertThat(priceOf(priceService.currentMaterial(supplier, material, khaki, today))).isEqualByComparingTo("20.00");
+    }
+
+    private static PriceLine docLine(long supplier, long material, long sku, String price, String unit, String reason) {
+        return new PriceLine(supplier, material, sku, new BigDecimal(price), unit, new BigDecimal("13"), true, true, reason);
+    }
 
     private R<Void> deleteFails(Runnable delete, String uri) {
         DataIntegrityViolationException e = catchThrowableOfType(DataIntegrityViolationException.class, delete::run);

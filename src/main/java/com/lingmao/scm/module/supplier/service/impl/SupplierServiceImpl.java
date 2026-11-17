@@ -577,7 +577,7 @@ public class SupplierServiceImpl implements SupplierService {
 
     private static SupplierRef toRef(Supplier s) {
         return new SupplierRef(s.getId(), s.getCode(), s.getName(), s.getShortName(), s.getStatus(),
-                s.getTaxPct(), s.getSettleMethod(), s.getCreditDays(), s.getInvoiceType());
+                s.getTaxPct(), s.getSettleMethod(), s.getCreditDays(), s.getInvoiceType(), s.getBuyerId(), s.getContact(), s.getPhone());
     }
 
     @Override

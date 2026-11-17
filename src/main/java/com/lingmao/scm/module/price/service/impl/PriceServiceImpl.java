@@ -9,11 +9,14 @@ import com.lingmao.scm.module.basic.dto.MaterialRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.price.dto.CurrentPriceVO;
+import com.lingmao.scm.module.price.dto.DocPrices;
 import com.lingmao.scm.module.price.dto.MaterialPriceKey;
+import com.lingmao.scm.module.price.dto.PriceLine;
 import com.lingmao.scm.module.price.dto.PriceQuery;
 import com.lingmao.scm.module.price.dto.PriceRef;
 import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
+import com.lingmao.scm.module.price.dto.PriceSource;
 import com.lingmao.scm.module.price.entity.Price;
 import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.mapper.CurrentMaterialHit;
@@ -38,8 +41,11 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -291,6 +297,93 @@ public class PriceServiceImpl implements PriceService {
     @Override
     public Optional<PriceRef> currentProcess(long supplierId, long styleId, String processMode, LocalDate date) {
         return Optional.ofNullable(priceMapper.selectCurrentProcess(supplierId, styleId, processMode, date)).map(PriceRef::of);
+    }
+
+    @Override
+    @Transactional
+    public DocPrices recordFromDoc(PriceSource source, LocalDate effectiveDate, List<PriceLine> lines) {
+        if (lines.isEmpty()) {
+            return new DocPrices(List.of(), List.of());
+        }
+        Map<Long, String> units = materialService.materialRefs(lines.stream().map(PriceLine::materialId).distinct().toList())
+                .stream().collect(Collectors.toMap(MaterialRef::id, MaterialRef::purchaseUnit));
+        List<PriceLine> unitChanged = new ArrayList<>();
+        List<DocLine> skuLevel = new ArrayList<>();
+        Map<List<Long>, List<DocLine>> byMaterial = new LinkedHashMap<>();
+        for (PriceLine l : lines) {
+            String unit = units.get(l.materialId());
+            if (!Objects.equals(unit, l.unit())) {
+                unitChanged.add(l);
+                continue;
+            }
+            DocLine d = new DocLine(l, findMaterial(l.supplierId(), l.materialId(), l.materialSkuId(), unit, effectiveDate).orElse(null));
+            if (d.current() != null && d.current().materialSkuId() != null) {
+                if (d.changed()) {
+                    skuLevel.add(d);
+                }
+            } else {
+                byMaterial.computeIfAbsent(List.of(l.supplierId(), l.materialId()), k -> new ArrayList<>()).add(d);
+            }
+        }
+        Map<List<Object>, PriceRef> recorded = new LinkedHashMap<>();
+        skuLevel.forEach(d -> recordLine(source, effectiveDate, d, d.line().materialSkuId(), recorded));
+        for (List<DocLine> group : byMaterial.values()) {
+            // 现价是物料层的（或者没有）：这张单里各颜色同价就记物料层一条，不同价的各记到 SKU（不然后记的盖掉先记的，别的颜色也被改了）
+            boolean samePrice = group.stream().map(d -> d.line().price().stripTrailingZeros()).distinct().count() == 1;
+            if (samePrice) {
+                if (group.getFirst().changed()) {
+                    recordLine(source, effectiveDate, group.getFirst(), null, recorded);
+                }
+            } else {
+                group.stream().filter(DocLine::changed).forEach(d -> recordLine(source, effectiveDate, d, d.line().materialSkuId(), recorded));
+            }
+        }
+        return new DocPrices(List.copyOf(recorded.values()), unitChanged);
+    }
+
+    /** 单据上的一行和它的现价（单据日期的；可能是 SKU 层、物料层，没有是 null） */
+    private record DocLine(PriceLine line, PriceRef current) {
+        boolean changed() {
+            return current == null || current.price().compareTo(line.price()) != 0;
+        }
+    }
+
+    /** 记一条（skuId 是 null 记物料层）；同一组同一个价在这张单里已经记过就不再记 */
+    private void recordLine(PriceSource source, LocalDate date, DocLine d, Long skuId, Map<List<Object>, PriceRef> recorded) {
+        PriceLine l = d.line();
+        List<Object> key = Arrays.asList(l.supplierId(), l.materialId(), skuId, l.price().stripTrailingZeros());
+        if (recorded.containsKey(key)) {
+            return;
+        }
+        String reason = trim(l.reason());
+        if (d.current() == null) {
+            reason = reason == null ? "第一次报价" : reason;
+        } else if (reason == null) {
+            throw new IllegalStateException(source.no() + " 的单价和现价不一样却没写改价原因：保存时漏了检查");
+        }
+        Price p = new Price();
+        p.setType(PriceType.MATERIAL);
+        p.setSupplierId(l.supplierId());
+        p.setMaterialId(l.materialId());
+        p.setMaterialSkuId(skuId);
+        p.setUnit(l.unit());
+        p.setPrice(l.price());
+        p.setTaxPct(l.taxPct());
+        p.setTaxIncluded(l.taxIncluded());
+        p.setFreightIncluded(l.freightIncluded());
+        p.setEffectiveDate(date);
+        p.setReason(reason);
+        p.setSourceType(source.type().name());
+        p.setSourceId(source.id());
+        p.setSourceNo(source.no());
+        priceMapper.insert(p);
+        recorded.put(key, PriceRef.of(p));
+    }
+
+    @Override
+    @Transactional
+    public int voidFromDoc(PriceSource source, String reason) {
+        return priceMapper.voidBySource(source.type().name(), source.id(), reason, LoginUser.currentUserId(), OffsetDateTime.now(clock));
     }
 
     private Optional<PriceRef> findMaterial(long supplierId, long materialId, Long skuId, String unit, LocalDate date) {

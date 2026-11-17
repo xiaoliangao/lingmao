@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -154,6 +155,20 @@ public class DictDataServiceImpl implements DictDataService {
         texts.forEach((value, text) -> {
             int updated = dictDataMapper.update(new DictData(), new LambdaUpdateWrapper<DictData>()
                     .set(DictData::getTextValue, StringUtils.hasText(text) ? text.strip() : null)
+                    .eq(DictData::getTypeCode, typeCode)
+                    .eq(DictData::getValue, value));
+            if (updated == 0) {
+                throw new BizException("「" + value + "」不在字典里了，可能刚被删了，请刷新");
+            }
+        });
+    }
+
+    @Override
+    @Transactional
+    public void updateNumValues(String typeCode, Map<String, BigDecimal> nums) {
+        nums.forEach((value, num) -> {
+            int updated = dictDataMapper.update(new DictData(), new LambdaUpdateWrapper<DictData>()
+                    .set(DictData::getNumValue, num)
                     .eq(DictData::getTypeCode, typeCode)
                     .eq(DictData::getValue, value));
             if (updated == 0) {

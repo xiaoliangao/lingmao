@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  采购单列表、导出、待到料、入库 / 退货块（docs/api/03 §3.3、§3.4）。供应商、仓库、主体、物料、入库单只读 JOIN（架构 §3.2 规则 4）；
+  第一行物料的显示字段、人名、按钮、要料日期由 Service 填
+-->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.purchase.mapper.PurchaseOrderMapper">
+
+    <!-- 一个采购行（别名 i）配不配关键字：物料编码、名称、SKU 码；来源算料单号、订单号、款号（自己生成它的算料行，或者把它用作在途的算料行） -->
+    <sql id="lineKeyword">
+        EXISTS (SELECT 1 FROM bas_material_sku k JOIN bas_material m ON m.id = k.material_id
+                WHERE k.id = i.material_sku_id
+                  AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
+                       OR m.name ILIKE '%' || #{q.keyword} || '%'
+                       <if test="codes != null">
+                           OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                           OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                       </if>))
+        OR EXISTS (SELECT 1 FROM mrp_calc_item ci JOIN mrp_calc mc ON mc.id = ci.calc_id
+                   WHERE (ci.id = i.calc_item_id
+                          OR ci.id IN (SELECT t.calc_item_id FROM mrp_calc_transit t WHERE t.purchase_item_id = i.id))
+                     AND (mc.no ILIKE '%' || #{q.keyword} || '%' OR ci.order_nos ILIKE '%' || #{q.keyword} || '%'
+                          OR ci.style_codes ILIKE '%' || #{q.keyword} || '%'
+                          <if test="codes != null">
+                              OR upper(mc.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                              OR string_to_array(upper(ci.order_nos), ',')
+                                 &amp;&amp; ARRAY[<foreach collection="codes" item="code" separator=",">#{code}</foreach>]::text[]
+                              OR string_to_array(upper(ci.style_codes), ',')
+                                 &amp;&amp; ARRAY[<foreach collection="codes" item="code" separator=",">#{code}</foreach>]::text[]
+                          </if>))
+    </sql>
+
+    <sql id="where">
+        WHERE true
+        <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.buyer_id = #{scope.userId})</if>
+        <if test="q.status != null and q.status.size() > 0">
+            AND o.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
+        </if>
+        <if test="q.purchaseType != null">AND o.purchase_type = #{q.purchaseType}</if>
+        <if test="q.supplierId != null">AND o.supplier_id = #{q.supplierId}</if>
+        <if test="q.buyerId != null">AND o.buyer_id = #{q.buyerId}</if>
+        <if test="q.orderDateFrom != null">AND o.order_date &gt;= #{q.orderDateFrom}</if>
+        <if test="q.orderDateTo != null">AND o.order_date &lt;= #{q.orderDateTo}</if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND o.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (o.no ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
+                 OR s.short_name ILIKE '%' || #{q.keyword} || '%'
+                 <if test="codes != null">
+                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                 </if>
+                 OR EXISTS (SELECT 1 FROM pur_order_item i WHERE i.purchase_order_id = o.id AND (<include refid="lineKeyword"/>)))
+        </if>
+    </sql>
+
+    <sql id="rowColumns">
+        SELECT o.id, o.no, o.supplier_id, s.short_name AS supplier_name, s.status AS supplier_status, o.purchase_type,
+               COALESCE(agg.item_count, 0) AS item_count, agg.first_sku_id, o.total_qty, o.total_amount, o.order_date,
+               o.delivery_date, o.warehouse_id, w.name AS warehouse_name, COALESCE(agg.received_qty, 0) AS received_qty,
+               o.buyer_id, c.short_name AS company_name, o.status, o.version, o.create_by, o.create_time
+        FROM pur_order o
+        JOIN sup_supplier s ON s.id = o.supplier_id
+        JOIN bas_warehouse w ON w.id = o.warehouse_id
+        JOIN bas_company c ON c.id = o.company_id
+        LEFT JOIN LATERAL (SELECT COUNT(*) AS item_count, SUM(i.received_qty - i.returned_qty) AS received_qty,
+                                  (array_agg(i.material_sku_id ORDER BY i.seq))[1] AS first_sku_id
+                           FROM pur_order_item i WHERE i.purchase_order_id = o.id) agg ON true
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.purchase.dto.PurchaseRowVO">
+        <include refid="rowColumns"/>
+        <include refid="where"/>
+        ORDER BY o.id DESC
+    </select>
+
+    <select id="selectRows" resultType="com.lingmao.scm.module.purchase.dto.PurchaseRowVO">
+        <include refid="rowColumns"/>
+        <include refid="where"/>
+        ORDER BY o.id DESC
+    </select>
+
+    <select id="selectPendingRows" resultType="com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO">
+        SELECT i.id AS purchase_item_id, o.id AS purchase_order_id, o.no AS purchase_no, o.purchase_type, o.supplier_id,
+               s.short_name AS supplier_name, o.buyer_id, o.warehouse_id, w.name AS warehouse_name, i.material_sku_id,
+               i.purchase_unit, i.qty, i.received_qty, i.returned_qty, COALESCE(i.line_due_date, o.delivery_date) AS due_date,
+               i.expect_date, i.follow_note, i.calc_item_id, o.create_by
+        FROM pur_order_item i
+        JOIN pur_order o ON o.id = i.purchase_order_id
+        JOIN sup_supplier s ON s.id = o.supplier_id
+        JOIN bas_warehouse w ON w.id = o.warehouse_id
+        WHERE o.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty &lt; i.qty
+        <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.buyer_id = #{scope.userId})</if>
+        <if test="q.supplierId != null">AND o.supplier_id = #{q.supplierId}</if>
+        <if test="q.buyerId != null">AND o.buyer_id = #{q.buyerId}</if>
+        <if test="q.dueDateFrom != null">AND COALESCE(i.line_due_date, o.delivery_date) &gt;= #{q.dueDateFrom}</if>
+        <if test="q.dueDateTo != null">AND COALESCE(i.line_due_date, o.delivery_date) &lt;= #{q.dueDateTo}</if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (o.no ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
+                 OR s.short_name ILIKE '%' || #{q.keyword} || '%'
+                 <if test="codes != null">
+                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                 </if>
+                 OR <include refid="lineKeyword"/>)
+        </if>
+    </select>
+
+    <select id="selectStockDocs" resultType="com.lingmao.scm.module.purchase.dto.PurchaseStockDocVO">
+        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.doc_date, w.name AS warehouse_name,
+               COALESCE(agg.purchase_qty, 0) AS purchase_qty, agg.dye_lots_text, d.logistics_no
+        FROM inv_doc d
+        LEFT JOIN bas_warehouse w ON w.id = CASE WHEN d.kind = 'IN' THEN d.to_warehouse_id ELSE d.from_warehouse_id END
+        LEFT JOIN LATERAL (SELECT SUM(i.purchase_qty) AS purchase_qty,
+                                  string_agg(DISTINCT i.dye_lot, ',' ORDER BY i.dye_lot) AS dye_lots_text
+                           FROM inv_doc_item i WHERE i.doc_id = d.id) agg ON true
+        WHERE d.source_type = 'PURCHASE_ORDER' AND d.source_id = #{id} AND d.status &lt;&gt; 'VOIDED'
+        ORDER BY d.id
+    </select>
+</mapper>

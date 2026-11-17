@@ -2,15 +2,19 @@ package com.lingmao.scm.module.price.service;
 
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.price.dto.CurrentPriceVO;
+import com.lingmao.scm.module.price.dto.DocPrices;
 import com.lingmao.scm.module.price.dto.MaterialPriceKey;
+import com.lingmao.scm.module.price.dto.PriceLine;
 import com.lingmao.scm.module.price.dto.PriceQuery;
 import com.lingmao.scm.module.price.dto.PriceRef;
 import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
+import com.lingmao.scm.module.price.dto.PriceSource;
 import com.lingmao.scm.module.price.entity.PriceType;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -23,7 +27,7 @@ import java.util.Optional;
  * 而且只认物料<b>现在的</b>采购单位的记录（物料改过采购单位，旧单位的价不再当现价）。
  * 取不到返回空，调用方退回到物料 SKU 单价、物料参考单价（PRD §6.10 规则 3）；生产单、核价手填。
  * <p>
- * 单据审核时记价的 recordFromDoc 签名在 RFC 006 §4、规则在 §5，第一张审核时记价的单据开工时加到这里（不提前写没人调的代码）
+ * 单据审核时记价的 recordFromDoc 规则在 RFC 006 §5；第一张用它的是采购单（11-17），加工价等生产单开工时加
  */
 public interface PriceService {
 
@@ -62,4 +66,15 @@ public interface PriceService {
 
     /** 加工价现价：工厂 × 款式 × 加工方式。核价按成品采购算时 processMode = FULL（包工包料）。没有返回 empty */
     Optional<PriceRef> currentProcess(long supplierId, long styleId, String processMode, LocalDate date);
+
+    /**
+     * 单据最后一级审核时记价（RFC 006 §5，在审核的事务里调）：逐行和单据日期的现价比，一样的跳过；
+     * 现价是 SKU 单独定的记到 SKU；否则这张单里同一物料各行的价都一样就记物料层一条，不一样的各记到 SKU。
+     * 同一组（供应商、物料、SKU、单价）只记一条；没有现价的原因写"第一次报价"。生效日期 = effectiveDate，来源 = source。
+     * 不查录价权限：是单据审核带出来的
+     */
+    DocPrices recordFromDoc(PriceSource source, LocalDate effectiveDate, List<PriceLine> lines);
+
+    /** 单据反审核时作废它审核时记的价（docs/api/03 §3.3.6）：来源是这张单、没作废的都作废。不查录价权限。返回作废了几条 */
+    int voidFromDoc(PriceSource source, String reason);
 }

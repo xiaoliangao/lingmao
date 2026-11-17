@@ -16,6 +16,7 @@ import com.lingmao.scm.module.basic.dto.MaterialDupVO;
 import com.lingmao.scm.module.basic.dto.MaterialListVO;
 import com.lingmao.scm.module.basic.dto.MaterialPickQuery;
 import com.lingmao.scm.module.basic.dto.MaterialPickVO;
+import com.lingmao.scm.module.basic.dto.MaterialPurchaseInfo;
 import com.lingmao.scm.module.basic.dto.MaterialQuery;
 import com.lingmao.scm.module.basic.dto.MaterialRef;
 import com.lingmao.scm.module.basic.dto.MaterialSaveReq;
@@ -321,6 +322,18 @@ public class MaterialServiceImpl implements MaterialService {
         Map<Long, Color> colors = colorsOf(skus.values());
         return ids.stream().map(skus::get)
                 .map(k -> MaterialSkuRef.of(k, materials.get(k.getMaterialId()), colors.get(k.getColorId()))).toList();
+    }
+
+    @Override
+    public Map<Long, MaterialPurchaseInfo> purchaseInfos(Collection<Long> skuIds) {
+        List<Long> ids = skuIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<MaterialSku> skus = materialSkuMapper.selectByIds(ids);
+        Map<Long, Material> materials = materialMapper.selectByIds(skus.stream().map(MaterialSku::getMaterialId).distinct().toList())
+                .stream().collect(Collectors.toMap(Material::getId, Function.identity()));
+        return skus.stream().collect(Collectors.toMap(MaterialSku::getId, k -> MaterialPurchaseInfo.of(k, materials.get(k.getMaterialId()))));
     }
 
     @Override

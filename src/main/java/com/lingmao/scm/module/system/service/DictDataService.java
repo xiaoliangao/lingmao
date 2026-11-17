@@ -7,6 +7,7 @@ import com.lingmao.scm.module.system.dto.DictDataVO;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -40,4 +41,7 @@ public interface DictDataService {
 
     /** 只改几项的 text_value（工艺标准里改部位的测量方法）。texts：value → 新文字，空白存 null；类型下没有的 value 报 1000 */
     void updateTextValues(String typeCode, Map<String, String> texts);
+
+    /** 只改几项的数值列（算料页改物料类型的备料比）。nums：value → 新数值；类型下没有的 value 报 1000。数值不进缓存，不用清 */
+    void updateNumValues(String typeCode, Map<String, BigDecimal> nums);
 }

@@ -108,6 +108,13 @@ public class DocNoticeServiceImpl implements DocNoticeService {
     }
 
     @Override
+    public void deleteByDoc(BizType docType, long docId) {
+        noticeMapper.delete(new LambdaQueryWrapper<DocNotice>()
+                .eq(DocNotice::getDocType, docType)
+                .eq(DocNotice::getDocId, docId));
+    }
+
+    @Override
     public List<DocNoticeGroup> pendingByDoc(Collection<BizType> docTypes, Long ownerId) {
         if (docTypes == null || docTypes.isEmpty()) {
             return List.of();

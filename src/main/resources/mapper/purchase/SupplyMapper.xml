@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  算可用量要的数（架构 §5.4）：物料仓库存、采购行、已确认的算料单占着的。库存、仓库、物料只读 JOIN（架构 §3.2 规则 4）。
+  结果是 record，按列的顺序对构造参数：SELECT 的列顺序不能动
+-->
+<mapper namespace="com.lingmao.scm.module.purchase.mapper.SupplyMapper">
+
+    <select id="selectMaterialStock" resultType="com.lingmao.scm.module.purchase.mapper.SupplyMapper$SkuQty">
+        SELECT s.material_sku_id AS sku_id, SUM(s.qty) AS qty
+        FROM inv_stock s
+        JOIN bas_warehouse w ON w.id = s.warehouse_id
+        WHERE w.type = 'MATERIAL' AND s.owner_type = 'OWN'
+          AND s.material_sku_id IN <foreach collection="skuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY s.material_sku_id
+    </select>
+
+    <select id="selectLines" resultType="com.lingmao.scm.module.purchase.mapper.SupplyMapper$LineRow">
+        SELECT i.id, o.id AS po_id, o.no AS po_no, o.purchase_type, o.status AS po_status, i.material_sku_id AS sku_id,
+               o.warehouse_id, w.type AS warehouse_type, i.qty, i.received_qty, i.returned_qty, i.conversion_factor AS factor,
+               COALESCE(i.expect_date, i.line_due_date, o.delivery_date) AS eta,
+               i.calc_item_id AS owner_item_id, ci.calc_id AS owner_calc_id, c.status AS owner_calc_status
+        FROM pur_order_item i
+        JOIN pur_order o ON o.id = i.purchase_order_id
+        JOIN bas_warehouse w ON w.id = o.warehouse_id
+        LEFT JOIN mrp_calc_item ci ON ci.id = i.calc_item_id
+        LEFT JOIN mrp_calc c ON c.id = ci.calc_id
+        WHERE i.material_sku_id IN <foreach collection="skuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+          AND o.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED')
+          AND ((o.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty &lt; i.qty)
+               OR c.status = 'CONFIRMED'
+               <if test="calcIds != null and calcIds.size() > 0">
+                   OR ci.calc_id IN <foreach collection="calcIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+               </if>
+               OR EXISTS (SELECT 1 FROM mrp_calc_transit t
+                          JOIN mrp_calc_item ti ON ti.id = t.calc_item_id
+                          JOIN mrp_calc tc ON tc.id = ti.calc_id
+                          WHERE t.purchase_item_id = i.id
+                            AND (tc.status = 'CONFIRMED'
+                                 <if test="calcIds != null and calcIds.size() > 0">
+                                     OR tc.id IN <foreach collection="calcIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+                                 </if>)))
+    </select>
+
+    <select id="selectActiveUses" resultType="com.lingmao.scm.module.purchase.mapper.SupplyMapper$UseRow">
+        SELECT t.id, ci.calc_id, t.calc_item_id, t.purchase_item_id AS line_id, t.qty
+        FROM mrp_calc_transit t
+        JOIN mrp_calc_item ci ON ci.id = t.calc_item_id
+        JOIN mrp_calc c ON c.id = ci.calc_id
+        WHERE c.status = 'CONFIRMED'
+          AND ci.material_sku_id IN <foreach collection="skuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <select id="selectActiveItems" resultType="com.lingmao.scm.module.purchase.mapper.SupplyMapper$HeldRow">
+        SELECT ci.id, ci.calc_id, ci.material_sku_id AS sku_id, ci.use_stock_qty, ci.issued_qty
+        FROM mrp_calc_item ci
+        JOIN mrp_calc c ON c.id = ci.calc_id
+        WHERE c.status = 'CONFIRMED' AND ci.block = 'PURCHASE'
+          AND ci.material_sku_id IN <foreach collection="skuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <select id="selectSafetySkus" resultType="java.lang.Long">
+        SELECT k.id
+        FROM bas_material_sku k
+        JOIN bas_material m ON m.id = k.material_id
+        WHERE k.safety_stock &gt; 0 AND k.status = 1 AND m.status = 1
+        ORDER BY k.id
+    </select>
+</mapper>

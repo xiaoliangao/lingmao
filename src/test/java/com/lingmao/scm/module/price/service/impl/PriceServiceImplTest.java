@@ -262,7 +262,7 @@ class PriceServiceImplTest {
 
     private void stubSupplier() {
         when(supplierService.getRef(SUPPLIER)).thenReturn(new SupplierRef(SUPPLIER, "GYS0001", "测试面料有限公司", "测试面料",
-                SupplierStatus.ACTIVE, new BigDecimal("13.00"), "MONTHLY", 30, "SPECIAL"));
+                SupplierStatus.ACTIVE, new BigDecimal("13.00"), "MONTHLY", 30, "SPECIAL", null, null, null));
     }
 
     /** 一个面料：库存、采购单位都是米 */

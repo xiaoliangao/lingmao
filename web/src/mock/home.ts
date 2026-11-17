@@ -2,15 +2,14 @@ import type { DocRef } from '@/types/biz'
 import type { DeliveryRow, HomeKpi, HomeTodos, TodoGroup, UpstreamList, UpstreamRow } from '@/types/home'
 import { mock } from './index'
 import { productionUpstreamRows } from './production'
-import { purchaseUpstreamRows } from './purchase'
 
 /**
  * 首页、上游已变更的假接口（docs/api/06）。
- * - "上游已变更"不另存一份：从生产、采购两个 mock 的提醒里现取，在 /upstream 或单据详情里处理掉，这里跟着少
+ * - "上游已变更"不另存一份：从生产 mock 的提醒里现取（算料单、采购单的已经是真后端，不在这里），在 /upstream 或单据详情里处理掉，这里跟着少
  * - 待办、上游已变更：canSeeAll = true（看得到"全部 / 我的"和负责人筛选）；选"我的"或别的负责人时只剩"待我审核"一组，看得出筛了
  * 名称都是编的
  */
-const upstreamRows = (): UpstreamRow[] => [...productionUpstreamRows(), ...purchaseUpstreamRows()]
+const upstreamRows = (): UpstreamRow[] => productionUpstreamRows()
 
 const ref = (r: Omit<DocRef, 'kind' | 'parentId' | 'ownerId' | 'ownerName'> & Partial<DocRef>): DocRef => ({
   kind: null,

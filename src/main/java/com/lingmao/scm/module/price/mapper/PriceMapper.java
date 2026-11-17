@@ -57,4 +57,10 @@ public interface PriceMapper extends BaseMapper<Price> {
     @Update("UPDATE prc_price SET voided = true, void_reason = #{reason}, void_by = #{by}, void_time = #{time} "
             + "WHERE id = #{id} AND NOT voided")
     int voidById(@Param("id") long id, @Param("reason") String reason, @Param("by") Long by, @Param("time") OffsetDateTime time);
+
+    /** 单据反审核时作废它审核时记的价：来源是这张单、没作废的 */
+    @Update("UPDATE prc_price SET voided = true, void_reason = #{reason}, void_by = #{by}, void_time = #{time} "
+            + "WHERE source_type = #{sourceType} AND source_id = #{sourceId} AND NOT voided")
+    int voidBySource(@Param("sourceType") String sourceType, @Param("sourceId") long sourceId, @Param("reason") String reason,
+                     @Param("by") Long by, @Param("time") OffsetDateTime time);
 }

@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  算料单列表、选订单、订单 × 生产 BOM 展开（docs/api/03 §3.2）。订单、款式、资料包、物料只读 JOIN（架构 §3.2 规则 4）。
+  结果是 record 的按列的顺序对构造参数：SELECT 的列顺序不能动
+-->
+<mapper namespace="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper">
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.purchase.dto.MrpCalcRowVO">
+        SELECT c.id, c.no, c.status, c.need_date, c.create_by, c.create_time,
+               COALESCE(agg.buy_count, 0) AS buy_count, COALESCE(agg.converted_count, 0) AS converted_count,
+               nx.id AS next_calc_id, nx.no AS next_calc_no
+        FROM mrp_calc c
+        LEFT JOIN LATERAL (SELECT COUNT(*) FILTER (WHERE i.suggest_qty &gt; 0) AS buy_count,
+                                  COUNT(*) FILTER (WHERE i.suggest_qty &gt; 0 AND i.converted_qty &gt;= i.suggest_qty) AS converted_count
+                           FROM mrp_calc_item i WHERE i.calc_id = c.id AND i.block = 'PURCHASE') agg ON true
+        LEFT JOIN LATERAL (SELECT n.id, n.no FROM mrp_calc n
+                           WHERE n.prev_calc_id = c.id AND n.status IN ('DRAFT', 'CONFIRMED')
+                           ORDER BY n.id DESC LIMIT 1) nx ON true
+        WHERE true
+        <if test="scope.self">AND c.create_by = #{scope.userId}</if>
+        <if test="q.status != null and q.status.size() > 0">
+            AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
+        </if>
+        <if test="q.createBy != null">AND c.create_by = #{q.createBy}</if>
+        <if test="q.createDateFrom != null">AND (c.create_time AT TIME ZONE 'Asia/Shanghai')::date &gt;= #{q.createDateFrom}</if>
+        <if test="q.createDateTo != null">AND (c.create_time AT TIME ZONE 'Asia/Shanghai')::date &lt;= #{q.createDateTo}</if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (c.no ILIKE '%' || #{q.keyword} || '%'
+                 OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order o ON o.id = co.order_id
+                            WHERE co.calc_id = c.id AND o.no ILIKE '%' || #{q.keyword} || '%')
+                 OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order_item oi ON oi.order_id = co.order_id
+                            JOIN sty_style s ON s.id = oi.style_id
+                            WHERE co.calc_id = c.id AND s.code ILIKE '%' || #{q.keyword} || '%')
+                 <if test="codes != null">
+                     OR upper(c.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                     OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order o ON o.id = co.order_id
+                                WHERE co.calc_id = c.id
+                                  AND upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
+                     OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order_item oi ON oi.order_id = co.order_id
+                                JOIN sty_style s ON s.id = oi.style_id
+                                WHERE co.calc_id = c.id
+                                  AND upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
+                 </if>)
+        </if>
+        ORDER BY c.id DESC
+    </select>
+
+    <select id="selectOrderHeads" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$OrderHead">
+        SELECT o.id, o.no, o.status, o.commit_date
+        FROM ord_order o
+        WHERE o.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY o.no
+    </select>
+
+    <!-- 配料按 BOM 行的配料方式对：固定的颜色、尺码都空；随款色的对颜色；随尺码的对尺码；都随的两个都对 -->
+    <select id="selectDemand" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$DemandRow">
+        SELECT oi.order_id, o.no AS order_no, s.code AS style_code, k.code AS style_sku_code, oi.tech_pack_id, b.seq AS bom_seq,
+               b.source, b.supplier_id, b.material_id, m.code AS material_code, bs.material_sku_id AS sku_id, oi.qty,
+               CASE WHEN b.usage_mode = 'BY_SIZE' THEN bz.usage_qty ELSE b.usage_qty END AS usage, b.loss_pct
+        FROM ord_order_item oi
+        JOIN ord_order o ON o.id = oi.order_id
+        JOIN sty_style s ON s.id = oi.style_id
+        JOIN sty_style_sku k ON k.id = oi.style_sku_id
+        LEFT JOIN tp_bom_item b ON b.tech_pack_id = oi.tech_pack_id
+        LEFT JOIN bas_material m ON m.id = b.material_id
+        LEFT JOIN tp_bom_item_sku bs ON bs.bom_item_id = b.id
+             AND bs.color_id IS NOT DISTINCT FROM (CASE WHEN b.sku_mode IN ('BY_COLOR', 'BY_COLOR_SIZE') THEN k.color_id END)
+             AND bs.size_code IS NOT DISTINCT FROM (CASE WHEN b.sku_mode IN ('BY_SIZE', 'BY_COLOR_SIZE') THEN k.size_code END)
+        LEFT JOIN tp_bom_item_size bz ON bz.bom_item_id = b.id AND bz.size_code = k.size_code
+        WHERE oi.qty &gt; 0
+          AND oi.order_id IN <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY oi.order_id, oi.seq, b.seq
+    </select>
+
+    <select id="selectOrderOptions" resultType="com.lingmao.scm.module.purchase.dto.MrpOrderOptionVO">
+        SELECT o.id AS order_id, o.no AS order_no, o.order_type, o.total_qty, o.commit_date
+        FROM ord_order o
+        WHERE o.status IN ('APPROVED', 'RUNNING')
+        <if test="keyword != null and keyword.trim() != ''">
+            AND (o.no ILIKE '%' || #{keyword} || '%'
+                 OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
+                            WHERE i.order_id = o.id AND s.code ILIKE '%' || #{keyword} || '%')
+                 <if test="codes != null">
+                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                     OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
+                                WHERE i.order_id = o.id
+                                  AND upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
+                 </if>)
+        </if>
+        ORDER BY o.order_date DESC, o.no DESC
+    </select>
+
+    <select id="selectOrderStyles" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$OrderStyle">
+        SELECT oi.order_id, s.code AS style_code
+        FROM ord_order_item oi
+        JOIN sty_style s ON s.id = oi.style_id
+        WHERE oi.qty &gt; 0
+          AND oi.order_id IN <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY oi.order_id, s.code
+        ORDER BY oi.order_id, min(oi.seq)
+    </select>
+
+    <select id="selectCalcOrders" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$CalcOrder">
+        SELECT co.calc_id, o.id AS order_id, o.no AS order_no, o.commit_date
+        FROM mrp_calc_order co
+        JOIN ord_order o ON o.id = co.order_id
+        WHERE co.calc_id IN <foreach collection="calcIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY co.calc_id, o.no
+    </select>
+
+    <select id="selectOrderCalcs" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$OrderCalc">
+        SELECT co.order_id, c.id AS calc_id, c.no AS calc_no, c.status, c.close_reason, c.create_by
+        FROM mrp_calc_order co
+        JOIN mrp_calc c ON c.id = co.calc_id
+        WHERE co.order_id IN <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY co.order_id, c.id
+    </select>
+</mapper>

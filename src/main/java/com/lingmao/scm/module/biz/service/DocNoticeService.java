@@ -34,6 +34,9 @@ public interface DocNoticeService {
     /** 没处理的条数：详情的 pendingNotices */
     int countPending(BizType docType, long docId);
 
+    /** 删草稿时连它收到的提醒一起删（不然首页"上游已变更"里还挂着一张没了的单） */
+    void deleteByDoc(BizType docType, long docId);
+
     /**
      * 首页"上游已变更"（06-首页 §2.5）：没处理的提醒按单据分组，一张单一组，组里新的在前，组按最新一条倒序。
      * docTypes 限定哪几种单据；ownerId 是 null 时所有人的（有"全部"范围的人看全部时）

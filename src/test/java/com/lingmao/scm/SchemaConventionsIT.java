@@ -70,7 +70,9 @@ class SchemaConventionsIT {
             Map.entry("inv_stock.location_id", "货位：0 = 不分货位，二期才有货位表（数据库设计 §13.3）"),
             Map.entry("inv_stock_log.owner_id", "物权方，同 inv_stock"),
             Map.entry("inv_stock_log.location_id", "货位，同 inv_stock"),
-            Map.entry("inv_count_item.owner_id", "物权方，同 inv_stock"));
+            Map.entry("inv_count_item.owner_id", "物权方，同 inv_stock"),
+            Map.entry("mrp_calc_item.owner_id", "物权方，同 inv_stock：TRADE 关时都是自有 0"),
+            Map.entry("pur_order_item.owner_id", "物权方，同 inv_stock"));
 
     @Autowired
     private JdbcTemplate jdbc;
