@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.order.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -17,6 +18,8 @@ public class StyleOrderRowVO {
     private Integer techPackVersion;
     private LocalDate requiredDate;
     private LocalDate commitDate;
+    /** 取跟单员名字用，不返回 */
+    @JsonIgnore
     private Long merchId;
     private String merchName;
 }
