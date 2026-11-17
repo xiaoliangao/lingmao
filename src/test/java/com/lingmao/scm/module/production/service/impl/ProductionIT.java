@@ -228,6 +228,77 @@ class ProductionIT {
         assertThat(productionOrderService.myFollow()).extracting(row -> row.id()).contains(prdId);
     }
 
+    /**
+     * docs/api/05 §3.4.1 / Q12：BUY 不必然免领料；本例在订单锁版前准备全部工厂自备料的 BOM，
+     * 包工包料排单 → 审核 → 无领料回货 → 作废回货，累计退回且仍保留排单占用。
+     */
+    @Test
+    void buyWithOnlyFactoryMaterials_scheduleAuditReceiveAndVoid_withoutIssuingMaterials() {
+        Fixture f = fixture();
+        assertThat(jdbcTemplate.update("""
+                UPDATE tp_bom_item SET source='FACTORY'
+                WHERE tech_pack_id IN (SELECT id FROM tp_tech_pack WHERE style_id=?)""", f.style)).isEqualTo(1);
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long orderId = approvedOrder(f, commit);
+        long lineM = orderLine(orderId, f.skuM);
+        long lineL = orderLine(orderId, f.skuL);
+        ScheduleReq req = scheduleReq(f, orderId, commit.minusDays(10), Map.of(lineM, 60, lineL, 40));
+        req.getBlocks().getFirst().setProcessMode("FULL");
+        DocRef created = scheduleService.schedule(req).getFirst();
+        long prdId = created.id();
+        assertThat(created.no()).startsWith("CP");
+        ProductionDetailVO d = productionOrderService.detail(prdId);
+        assertThat(d.getKind()).isEqualTo("BUY");
+        assertThat(d.getProcessMode()).isEqualTo("FULL");
+        assertThat(d.getStatus()).isEqualTo("DRAFT");
+        assertThat(scheduled(orderId)).isEqualTo(100);
+
+        productionOrderService.act(prdId, "submit", new DocActionReq(d.getVersion(), null));
+        productionOrderService.act(prdId, "audit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null));
+        d = productionOrderService.detail(prdId);
+        assertThat(d.getStatus()).isEqualTo("APPROVED");
+        assertThat(d.getNodes()).isNotEmpty();
+        assertThat(d.getIssueStatus()).isNull();
+        assertThat(d.getActions()).doesNotContain("issue", "returnMaterial");
+        assertThat(productionOrderService.materials(prdId).rows()).isEmpty();
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId,
+                stockReq(InvDocType.ISSUE_OUT, f, "1")))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
+                    assertThat(e.getMessage()).contains("没有我方采购的料");
+                });
+        assertThat(productionOrderService.materials(prdId).docs()).isEmpty();
+
+        long itemM = prdItem(prdId, lineM);
+        long itemL = prdItem(prdId, lineL);
+        var receipt = receiptService.receive(prdId, receiptReq(Map.of(itemM, 60, itemL, 40), itemL, 2));
+        assertThat(receipt.status()).isEqualTo("DONE");
+        d = productionOrderService.detail(prdId);
+        assertThat(d.getReturnedQty()).isEqualTo(100);
+        assertThat(d.getDefectQty()).isEqualTo(2);
+        assertThat(orderStatus(orderId)).isEqualTo("DONE");
+        assertThat(jdbcTemplate.queryForObject("SELECT sum(returned_qty) FROM ord_order_item WHERE order_id=?",
+                Integer.class, orderId)).isEqualTo(100);
+
+        receiptService.voidReceipt(prdId, receipt.id(), "回货登记有误");
+        d = productionOrderService.detail(prdId);
+        assertThat(d.getStatus()).isEqualTo("APPROVED");
+        assertThat(d.getReturnedQty()).isZero();
+        assertThat(d.getDefectQty()).isZero();
+        assertThat(d.getItems()).allSatisfy(i -> {
+            assertThat(i.getReturnedQty()).isZero();
+            assertThat(i.getDefectQty()).isZero();
+        });
+        assertThat(orderStatus(orderId)).isEqualTo("RUNNING");
+        assertThat(jdbcTemplate.queryForObject("SELECT sum(returned_qty) FROM ord_order_item WHERE order_id=?",
+                Integer.class, orderId)).isZero();
+        assertThat(scheduled(orderId)).isEqualTo(100);
+        assertThat(receiptService.list(prdId)).singleElement().satisfies(r -> assertThat(r.getStatus()).isEqualTo("VOIDED"));
+        assertThat(productionOrderService.materials(prdId).docs()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM inv_stock_log WHERE material_sku_id=?",
+                Integer.class, f.sku)).isZero();
+    }
+
     /** 删草稿：件数退回订单的待排单，订单记一条；作废同样退回（docs/api/05 §3.2.5、§3.2.6） */
     @Test
     void deleteAndVoid_refundScheduled() {

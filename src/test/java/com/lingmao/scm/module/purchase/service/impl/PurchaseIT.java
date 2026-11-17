@@ -298,6 +298,14 @@ class PurchaseIT {
         assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("20");
         assertThat(jdbcTemplate.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?",
                 BigDecimal.class, f.warehouse, f.sku)).isEqualByComparingTo("20");
+        // 原缺陷在反方向：若先持库存再等采购头，此 NOWAIT 探针必失败。
+        assertWaitsOnPoBeforeRow(f.user, po, () -> invDocService.act(doc, "unaudit", new DocActionReq(1, null)), """
+                SELECT id FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?
+                  AND owner_type='OWN' AND owner_id=0 AND location_id=0 FOR UPDATE NOWAIT""", f.warehouse, f.sku);
+        assertThat(invDocService.detail(doc).getStatus()).isEqualTo("DRAFT");
+        assertThat(purchaseOrderService.detail(po).getReceivedQty()).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?",
+                BigDecimal.class, f.warehouse, f.sku)).isZero();
     }
 
     /** RFC010：重算确认必须先锁待改挂采购行的单头，再锁行，不能与采购审核形成头/行反序。 */

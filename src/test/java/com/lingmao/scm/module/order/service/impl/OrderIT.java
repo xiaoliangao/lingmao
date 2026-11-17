@@ -32,6 +32,8 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -235,6 +237,36 @@ class OrderIT {
         assertThat(changeService.counts(cq)).containsEntry("APPROVED", 2L);
     }
 
+    /** 审核/作废的非 SKU 变更详情：不对 Map.of() 查 null，不拼 SKU 已排产提示。 */
+    @ParameterizedTest
+    @CsvSource({"DUE,APPROVED", "PRICE,APPROVED", "TECH_PACK,APPROVED",
+            "DUE,VOIDED", "PRICE,VOIDED", "TECH_PACK,VOIDED"})
+    void finalizedNonSkuChangeDetailsRemainReadable(ChangeType type, String status) {
+        Fixture f = fixture();
+        long orderId = approvedOrder(f, Map.of(f.sku("A", "M"), 100));
+        OrderChangeCreateReq req = changeReq(orderId);
+        switch (type) {
+            case DUE -> req.setRequiredDate(LocalDate.now().plusDays(70));
+            case PRICE -> req.setPrices(List.of(new OrderChangeForm.Price(f.style, new BigDecimal("90.1234"))));
+            case TECH_PACK -> req.setTechPacks(List.of(new OrderChangeForm.TechPack(f.style, packV2(f))));
+            default -> throw new IllegalArgumentException("Test covers only non-SKU changes");
+        }
+        long changeId = changeService.create(req).id();
+        if (status.equals("APPROVED")) {
+            changeService.act(changeId, "submit", new DocActionReq(0, null));
+            changeService.act(changeId, "audit", new DocActionReq(1, null));
+        } else {
+            changeService.act(changeId, "void", new DocActionReq(0, "测试撤销"));
+        }
+        var detail = changeService.detail(changeId);
+        assertThat(detail.getStatus()).isEqualTo(status);
+        assertThat(detail.getChangeTypes()).containsExactly(type);
+        assertThat(detail.getItems()).singleElement().satisfies(item -> {
+            assertThat(item.getStyleSkuId()).isNull();
+            assertThat(item.getText()).isNotBlank().doesNotContain("已排");
+        });
+    }
+
     /** 规则（docs/api/02 §3.9、§3.10、§3.11）：导入按分单号一组一张草稿，有一处不对整批不导（1003）；导出一张订单一行；款式页签 */
     @Test
     void importExportAndByStyle() throws IOException {
@@ -399,11 +431,11 @@ class OrderIT {
         String[][] colorDefs = {{"A", "IT 甲色"}, {"B", "IT 乙色"}, {"C", "IT 丙色"}};
         for (int i = 0; i < colorDefs.length; i++) {
             String code = colorDefs[i][0];
-            // bas_color 的编码全局唯一：库里存随机码，SKU 码里用 A/B/C 好认
-            colorCodes.put(code, code3());
             colorNames.put(code, colorDefs[i][1] + s);
-            long color = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                    colorCodes.get(code), colorNames.get(code));
+            // 短编码空间不能靠随机数保证隔离：用库内序列取候选，唯一索引原子认领。
+            FixtureColor inserted = insertColor(colorNames.get(code));
+            colorCodes.put(code, inserted.code());
+            long color = inserted.id();
             colors.put(code, color);
             jdbcTemplate.update("INSERT INTO sty_style_color (style_id, color_id, seq) VALUES (?, ?, ?)", style, color, i + 1);
             for (String size : List.of("M", "L")) {
@@ -495,9 +527,22 @@ class OrderIT {
         return jdbcTemplate.queryForObject(sql, Integer.class, args);
     }
 
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
+    private record FixtureColor(long id, String code) {}
+
+    private FixtureColor insertColor(String name) {
+        String digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        for (int attempt = 0; attempt < 36 * 36 * 36; attempt++) {
+            long sequence = jdbcTemplate.queryForObject(
+                    "SELECT nextval(pg_get_serial_sequence('bas_color', 'id'))", Long.class);
+            int value = (int) (sequence % (36 * 36 * 36));
+            String code = "" + digits.charAt(value / (36 * 36))
+                    + digits.charAt(value / 36 % 36) + digits.charAt(value % 36);
+            List<Long> ids = jdbcTemplate.queryForList("""
+                    INSERT INTO bas_color (id, code, name) OVERRIDING SYSTEM VALUE VALUES (?, ?, ?)
+                    ON CONFLICT (code) DO NOTHING RETURNING id""", Long.class, sequence, code, name);
+            if (!ids.isEmpty()) return new FixtureColor(ids.getFirst(), code);
+        }
+        throw new IllegalStateException("No unused three-character color code for test fixture");
     }
 
     /** 一张"数据"表，全是文字格子；null 的格子不建 */
