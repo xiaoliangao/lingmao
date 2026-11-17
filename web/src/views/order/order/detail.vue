@@ -17,6 +17,7 @@ import MoreActions, { type MoreItem } from '@/components/doc/MoreActions.vue'
 import { isItem, runDocAction } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useTabsStore } from '@/stores/tabs'
+import { useUserStore } from '@/stores/user'
 import type { DocAction } from '@/types/biz'
 import type { FileVO } from '@/types/system'
 import { ORDER_LOG_ACTIONS, ORDER_SOURCE, ORDER_STATUS, type OrderAction, type OrderChangeRow, type OrderDetail, type OrderStyle } from '@/types/order'
@@ -41,6 +42,7 @@ import OrderScheduleDialog from './OrderScheduleDialog.vue'
 const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
+const user = useUserStore()
 
 const id = Number(route.params.id)
 const path = route.path
@@ -55,6 +57,7 @@ const pickTab = (value: unknown): TabName | undefined => (TABS.includes(value as
 const detail = ref<OrderDetail | null>(null)
 const kitting = ref<OrderKitting | null>(null)
 const changes = ref<OrderChangeRow[]>([])
+const canViewChanges = computed(() => user.hasPerm('order:change:list'))
 const notFound = ref(false)
 const tab = ref<TabName>(pickTab(route.query.tab) ?? 'lines')
 
@@ -105,6 +108,10 @@ async function loadKitting() {
 }
 
 async function loadChanges() {
+  if (!canViewChanges.value) {
+    changes.value = []
+    return
+  }
   try {
     changes.value = (await orderChangeApi.page({ orderId: id, page: 1, size: 100 })).list
   } catch {
@@ -289,7 +296,7 @@ function openKitting() {
       <div class="body">
         <div v-if="detail.pendingChange" class="chg-banner">
           <span>变更单 <span class="code">{{ detail.pendingChange.no }}</span> 待审核：{{ detail.pendingChange.summary }}</span>
-          <el-button size="small" @click="router.push(`/order-changes/${detail.pendingChange.id}`)">去看</el-button>
+          <el-button v-if="canViewChanges" size="small" @click="router.push(`/order-changes/${detail.pendingChange.id}`)">去看</el-button>
         </div>
 
         <p class="sub num">
@@ -339,11 +346,13 @@ function openKitting() {
 
           <el-tab-pane :label="changes.length ? `变更 ${changes.length}` : '变更'" name="changes">
             <ChangeTable
+              v-if="canViewChanges"
               :rows="changes"
               :show-order="false"
               empty-text="没有变更。订单审核后要改数量、颜色、交期、单价，点「提变更」"
               @act="quickChangeAct"
             />
+            <BlankState v-else title="当前账号没有查看变更单的权限" />
           </el-tab-pane>
 
           <el-tab-pane label="操作记录" name="logs" lazy>

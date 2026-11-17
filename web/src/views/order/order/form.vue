@@ -423,7 +423,7 @@ const backTo = editing ? `/orders/${id}` : '/orders'
           <el-collapse class="sku-values">
             <el-collapse-item title="逐 SKU 单价 / 行交期 / 备注" name="sku-values">
               <el-table :data="b.opt.skus.filter((sk) => (b.qtys[sk.id] ?? 0) > 0)" size="small">
-                <el-table-column label="SKU" min-width="170"><template #default="{ row }">{{ row.skuCode }} · {{ row.sizeCode }}</template></el-table-column>
+                <el-table-column label="SKU" min-width="170"><template #default="{ row }">{{ row.code }} · {{ row.sizeCode }}</template></el-table-column>
                 <el-table-column label="单价" width="150"><template #default="{ row }"><el-input-number v-model="valuesOf(b, row.id).price" :min="0" :max="MAX_UNIT_PRICE" :precision="4" :controls="false" size="small" /></template></el-table-column>
                 <el-table-column label="行交期" width="175"><template #default="{ row }"><el-date-picker v-model="valuesOf(b, row.id).lineDueDate" type="date" value-format="YYYY-MM-DD" placeholder="同要求交期" size="small" /></template></el-table-column>
                 <el-table-column label="备注" min-width="180"><template #default="{ row }"><el-input v-model="valuesOf(b, row.id).remark" maxlength="120" size="small" /></template></el-table-column>

@@ -293,6 +293,7 @@ class AuditUi(unittest.TestCase):
         expect(self.page.get_by_test_id("cost-load-error")).not_to_be_visible()
         expect(note).to_have_value("成本重试时仍未保存的说明")
         self.note("cost:null retained real cost", faultCount=fail["count"], before=cost_values(before), retryCode=0)
+        expect(self.page.locator(".el-message:visible")).to_have_count(0)
         self.shot("cost-retry-success")
         self.page.get_by_role("tab", name=re.compile("物料清单")).click()
         panel = self.page.get_by_test_id("bom-inspector")
@@ -319,7 +320,10 @@ class AuditUi(unittest.TestCase):
         expect(quantity).to_have_value("17.125")
         self.page.locator(".ptab").filter(has=self.page.locator(f'a[href="/stock-takes/{count_id}"]')).get_by_role("button").click()
         expect(self.page.get_by_text("有没保存的修改", exact=False)).to_be_visible()
+        self.shot("count-close-unsaved-warning")
         self.page.get_by_role("button", name="继续编辑", exact=True).click()
+        expect(self.page.locator(".el-message-box:visible")).to_have_count(0)
+        expect(quantity).to_have_value("17.125")
         self.shot("count-dirty-survives-activation")
         with self.page.expect_response(lambda r: self.response_for(r, "PUT", path)) as response:
             self.page.get_by_role("button", name="保存", exact=True).click()
@@ -343,6 +347,7 @@ class AuditUi(unittest.TestCase):
         with self.page.expect_response(lambda r: self.response_for(r, "POST", path + "/refresh-book")) as refreshed:
             dialog.get_by_role("button", name="重新取", exact=True).click()
         self.assertEqual(refreshed.value.json()["code"], 0)
+        expect(dialog).not_to_be_visible()
         expect(quantity).to_have_value("")
         current = self.api.request("GET", path)
         self.assertIsNone(current["items"][0]["countedQty"])
@@ -491,15 +496,22 @@ class AuditUi(unittest.TestCase):
         expect(dialog).not_to_be_visible()
         self.page.get_by_role("button", name="登记回货", exact=True).click()
         expect(dialog.get_by_role("button", name="重试原登记", exact=True)).to_be_visible()
-        with self.page.expect_response(lambda r: self.response_for(r, "POST", route_path)) as retried:
+        with self.page.expect_response(lambda r: self.response_for(r, "GET", f"/api/production-orders/{prod_id}")) as retry_loaded, \
+                self.page.expect_response(lambda r: self.response_for(r, "POST", route_path)) as retried:
             dialog.get_by_role("button", name="重试原登记", exact=True).click()
         self.assertEqual(retried.value.json()["code"], 0)
+        # The successful retry refreshes the detail asynchronously. Consume that
+        # response before the later browser reload can discard its resource ID.
+        retry_detail = retry_loaded.value.json()
+        self.assertEqual(retry_detail["code"], 0)
+        expect(dialog).not_to_be_visible()
         self.assertEqual(sent[0], sent[1])
         self.assertTrue(re.fullmatch(r"[0-9a-fA-F-]{36}", sent[0]["clientActionId"]))
         self.assertEqual(retried.value.json()["data"]["id"], saved_result[0]["id"])
         after = self.api.request("GET", f"/api/production-orders/{prod_id}")
         expected_increment = sum(x["qty"] for x in sent[0]["items"])
         self.assertEqual(after["returnedQty"] - before["returnedQty"], expected_increment)
+        self.assertEqual(retry_detail["data"]["returnedQty"], after["returnedQty"])
         new_action = copy.deepcopy(sent[0])
         new_action["clientActionId"] = str(uuid4())
         new_result = self.api.request("POST", route_path, new_action)
@@ -508,8 +520,9 @@ class AuditUi(unittest.TestCase):
         self.assertEqual(final["returnedQty"] - before["returnedQty"], expected_increment * 2)
         with self.page.expect_response(lambda r: self.response_for(r, "GET", f"/api/production-orders/{prod_id}")) as reloaded:
             self.page.reload()
-        self.assertEqual(reloaded.value.json()["code"], 0)
-        self.assertEqual(reloaded.value.json()["data"]["returnedQty"], final["returnedQty"])
+        reloaded_detail = reloaded.value.json()
+        self.assertEqual(reloaded_detail["code"], 0)
+        self.assertEqual(reloaded_detail["data"]["returnedQty"], final["returnedQty"])
         expect(self.page.locator(".page-header")).to_contain_text(before["no"])
         # A production detail opens its progress tab; the SKU table is on a
         # different tab. Wait for the live detail action instead of a hidden pane.
@@ -561,6 +574,10 @@ class AuditUi(unittest.TestCase):
         self.assertTrue(contained and all(contained), "Node date editors must stay inside their own table cells")
         self.note("node-plan date editors fit their cells", editorCount=len(contained), tolerancePx=1)
         self.shot("node-plan-conflict-keeps-local")
+        self.page.get_by_role("button", name="继续编辑本地草稿", exact=True).click()
+        expect(self.page.locator(".el-message-box:visible")).to_have_count(0)
+        expect(first_input).to_have_value(local)
+        self.shot("node-plan-date-controls-contained")
         self.note("two sessions cannot overwrite independent plan revision", old=before["planRevision"], current=remote["planRevision"], code=1002)
         mobile = self.new_context(mobile=True).new_page()
         mobile.goto(f"{self.ui_base}/mobile/{prod_id}")
@@ -729,7 +746,8 @@ class AuditUi(unittest.TestCase):
         self.shot("late-cost-discarded-current-pack-saved")
         costs = self.page.locator(".other-cost-table")
         expect(costs.locator(".el-table__body-wrapper tr.el-table__row")).to_have_count(len(current_cost["otherItems"]))
-        costs.scroll_into_view_if_needed()
+        cost_rows = costs.locator(".el-table__body-wrapper tr.el-table__row")
+        cost_rows.first.evaluate("element => element.scrollIntoView({block: 'center', inline: 'nearest'})")
         editors = costs.locator(".el-table__body-wrapper .el-input-number")
         expect(editors).to_have_count(len(current_cost["otherItems"]))
         contained = editors.evaluate_all("""elements => elements.map(element => {
@@ -739,9 +757,35 @@ class AuditUi(unittest.TestCase):
             return input.width > 0 && input.left >= bounds.left - 1 && input.right <= bounds.right + 1;
         })""")
         self.assertTrue(contained and all(contained), "Cost amount editors must stay inside their own table cells")
-        expect(costs.locator(".el-table__body-wrapper tr.el-table__row").first).to_be_in_viewport(ratio=1)
+        # A table row includes border pixels at the scroll viewport edge. Check
+        # the actual editable contents against every clipping ancestor instead
+        # of requiring the decorative row rectangle to have an exact 1.0 ratio.
+        controls = cost_rows.locator("input, button")
+        expect(controls).to_have_count(4 * len(current_cost["otherItems"]))
+        visible_controls = controls.evaluate_all("""elements => elements.map(element => {
+            const rect = element.getBoundingClientRect();
+            const clip = {left: 0, top: 0, right: innerWidth, bottom: innerHeight};
+            for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+                const style = getComputedStyle(parent), box = parent.getBoundingClientRect();
+                if (/^(auto|scroll|hidden|clip)$/.test(style.overflowX)) {
+                    clip.left = Math.max(clip.left, box.left + parent.clientLeft);
+                    clip.right = Math.min(clip.right, box.left + parent.clientLeft + parent.clientWidth);
+                }
+                if (/^(auto|scroll|hidden|clip)$/.test(style.overflowY)) {
+                    clip.top = Math.max(clip.top, box.top + parent.clientTop);
+                    clip.bottom = Math.min(clip.bottom, box.top + parent.clientTop + parent.clientHeight);
+                }
+            }
+            return rect.width > 0 && rect.height > 0 && rect.left >= clip.left - 1 &&
+                rect.right <= clip.right + 1 && rect.top >= clip.top - 1 && rect.bottom <= clip.bottom + 1 &&
+                element.scrollWidth <= element.clientWidth + 1;
+        })""")
+        self.assertTrue(all(visible_controls), "Cost controls and their text must remain fully visible within clipping ancestors")
+        for index, item in enumerate(current_cost["otherItems"]):
+            expect(editors.nth(index).locator("input")).to_have_value(str(item["amount"]))
         self.shot("other-cost-row-complete-and-contained")
-        self.note("other-cost amount editors fit their cells", editorCount=len(contained), tolerancePx=1)
+        self.note("other-cost amount editors fit their cells", editorCount=len(contained),
+                  visibleControlCount=len(visible_controls), tolerancePx=1)
         self.note("late response cannot hydrate another pack or erase its dirty input", oldPackId=old_id, currentPackId=current_id)
 
     def test_12_sku_batch_edit_requires_action_and_respects_size_scope(self):
@@ -893,6 +937,12 @@ class AuditUi(unittest.TestCase):
                     self.assertIn("audit", actors["designated"].request("GET", f"{base}/{current['id']}")["actions"])
                     self.assertEqual(actors["outsider"].envelope("GET", f"{base}/{current['id']}")["code"], 404)
                     page = self.new_context(actor=actors["designated"]).new_page()
+                    change_reads = []
+                    if biz_type == "ORDER":
+                        self.assertEqual(actors["designated"].envelope("GET", query_path(
+                            "/api/order-changes", {"orderId": current["id"], "page": 1, "size": 100}))["code"], 403)
+                        page.on("request", lambda request, captured=change_reads: captured.append(urlsplit(request.url).path)
+                                if request.method == "GET" and urlsplit(request.url).path == "/api/order-changes" else None)
                     with page.expect_response(lambda r: self.response_for(r, "GET", base)) as listed:
                         page.goto(self.ui_base + ui_route + "?status=PENDING&auditForMe=1")
                     self.assertEqual(listed.value.json()["code"], 0)
@@ -907,6 +957,14 @@ class AuditUi(unittest.TestCase):
                     self.shot(biz_type.lower() + "-designated-can-audit", page)
                     audit_path = f"{base}/{current['id']}/audit"
                     if biz_type == "ORDER":
+                        page.get_by_role("tab", name="变更", exact=True).click()
+                        expect(page.get_by_text("当前账号没有查看变更单的权限", exact=True)).to_be_visible()
+                        self.assertEqual(change_reads, [], "Order access must not request a separately forbidden change list")
+                        expect(page.locator(".el-message--error").filter(has_text="没有权限")).to_have_count(0)
+                        self.shot("order-approver-change-permission-explained", page)
+                        page.get_by_role("tab", name=re.compile(r"^明细")).click()
+                        self.note("order approver can view order without requesting forbidden change list",
+                                  changesReadCode=403, browserChangeReadCount=len(change_reads))
                         with page.expect_response(lambda r: self.response_for(r, "GET", f"/api/board/orders/{current['id']}/review")) as review:
                             page.get_by_role("button", name="审核", exact=True).click()
                         self.assertEqual(review.value.json()["code"], 404)
@@ -1075,12 +1133,26 @@ class AuditUi(unittest.TestCase):
         page.locator('.filter-bar [aria-label="视图"]').get_by_text("表格", exact=True).click()
         ready_table(page, "款号", styles)
         self.shot("styles-list")
-        reads_during(["/api/categories/tree", "/api/size-groups/options"],
-                     lambda: page.get_by_role("button", name="新建款式", exact=True).click())
+        with page.expect_response(lambda r: self.response_for(r, "GET", "/api/styles/code-preview")) as previewed:
+            reads_during(["/api/categories/tree", "/api/size-groups/options"],
+                         lambda: page.get_by_role("button", name="新建款式", exact=True).click())
+        preview = previewed.value.json()
+        self.assertIn(preview["code"], (0, 1000))
         expect(page.locator(".page-header h1")).to_have_text("新建款式")
         expect(page.get_by_label("款式名称", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="建款式", exact=True)).to_be_enabled()
+        expect(page.get_by_text("正在算款号……", exact=True)).not_to_be_visible()
+        if preview["code"] == 0:
+            expect(page.get_by_text("保存时编号，大概是", exact=False)).to_be_visible()
+        else:
+            expect(page.get_by_text(preview["msg"], exact=True)).to_be_visible()
+        self.note("real new-style preview completed", code=preview["code"])
         self.shot("style-new-head-and-files")
+        files_heading = page.get_by_role("heading", name="颜色、图片、附件", exact=True)
+        files_heading.scroll_into_view_if_needed()
+        expect(page.locator(".image-upload")).to_be_visible()
+        expect(page.get_by_text("设计附件（图稿、设计说明）", exact=True)).to_be_visible()
+        self.shot("style-new-color-image-and-files-surface")
         sku_picker(lambda: page.get_by_role("button", name="从物料库选", exact=True).click(), "style-new-material-picker")
         page.locator(".page-header").get_by_role("button", name="取消", exact=True).click()
         page.wait_for_url(self.ui_base + "/styles")
@@ -1090,6 +1162,10 @@ class AuditUi(unittest.TestCase):
         dialog = page.get_by_role("dialog", name="新建供应商", exact=True)
         expect(dialog.get_by_label("简称", exact=True)).to_be_visible()
         self.shot("supplier-new-open-cancel")
+        dialog.get_by_role("button", name="取消", exact=True).scroll_into_view_if_needed()
+        expect(dialog.get_by_role("button", name="取消", exact=True)).to_be_in_viewport(ratio=1)
+        expect(dialog.get_by_role("button", name="新建供应商", exact=True)).to_be_in_viewport(ratio=1)
+        self.shot("supplier-new-lower-fields-and-footer")
         cancel(dialog)
 
         go("/costing", "/api/style-costs", "costing-list", "核算版本")
@@ -1101,7 +1177,25 @@ class AuditUi(unittest.TestCase):
         cancel(dialog)
         pick = reads_during(["/api/mrp-calcs/order-options"], lambda: page.get_by_role("button", name="选订单算料", exact=True).click())
         dialog = page.get_by_role("dialog", name="选订单算料", exact=True)
-        ready_table(dialog, "订单号", pick["/api/mrp-calcs/order-options"])
+        options = pick["/api/mrp-calcs/order-options"]
+        ready_table(dialog, "订单号", options)
+        option_rows = options["list"] if isinstance(options, dict) else options
+        labels = {"DRAFT": "草稿", "CONFIRMED": "已确认", "CLOSED": "已关闭"}
+        expected_calcs = [f"{calc['no']} {labels[calc['status']]}" for option in option_rows for calc in option["calcs"]]
+        self.assertTrue(expected_calcs, "The real fixture must exercise an already calculated order")
+        calcs = dialog.locator(".calc")
+        expect(calcs).to_have_text(expected_calcs)
+        fits = calcs.evaluate_all("""elements => elements.map(element => {
+            const cell = element.closest('td'), table = element.closest('.el-table__body-wrapper');
+            if (!cell || !table) return false;
+            const box = element.getBoundingClientRect(), bounds = cell.getBoundingClientRect(), area = table.getBoundingClientRect();
+            const line = parseFloat(getComputedStyle(element).lineHeight);
+            return box.width > 0 && box.left >= Math.max(0, bounds.left, area.left) - 1 &&
+                box.right <= Math.min(innerWidth, bounds.right, area.right) + 1 &&
+                box.height <= line + 1 && element.scrollWidth <= element.clientWidth + 1;
+        })""")
+        self.assertTrue(all(fits), "MRP numbers and complete statuses must fit on one visible line")
+        self.note("MRP picker number and status visible on one line", count=len(fits), tolerancePx=1)
         self.shot("mrp-order-picker")
         cancel(dialog)
         go("/fp-purchases", "/api/production-orders", "buy-production-list", "单号")
@@ -1195,7 +1289,9 @@ class AuditUi(unittest.TestCase):
         self.shot("supplier-detail-certificates")
         page.get_by_role("button", name="加一份证照", exact=True).click()
         dialog = page.get_by_role("dialog", name="加一份证照", exact=True)
-        expect(dialog.get_by_role("button", name="选文件", exact=True)).to_be_visible()
+        # Element Plus gives both its upload wrapper and the native trigger the
+        # button role. Assert the actual trigger rather than an ambiguous pair.
+        expect(dialog.locator("button").filter(has_text=re.compile(r"^选文件$"))).to_be_visible()
         self.shot("supplier-certificate-new")
         cancel(dialog)
 
