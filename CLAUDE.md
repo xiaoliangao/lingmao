@@ -68,7 +68,7 @@ PRD 还是草稿，§2 分期和 §12 待决问题等甲方确认，但不等全
 - 跑测试：平时 `mvn -q test`，只跑单元测试，不碰数据库。`mvn -q verify` 再跑集成测试（`*IT`，要先起 dev compose）：连 `scm_test`（库名不以 `_test` 结尾就拒绝跑），每次先清空、从 V1 执行全部迁移，所以新迁移跑一遍 verify 就验证了。单跑一个：`mvn verify -Dtest=NONE -Dsurefire.failIfNoSpecifiedTests=false -Dit.test=XxxIT`。不要用 `-Dtest='!…'` 这种只写排除的写法：surefire 会把 `*IT` 也当单元测试跑一遍。
 - 开发库 `scm` 只执行提交过的迁移（用户在 IDEA 里、或 Claude 在 18080 起应用时自动执行）：没提交的迁移在开发库上跑过，之后一改，校验和就对不上，应用起不来。`scm_test` 要空库时：`docker exec scm-dev-postgres psql -U scm -d scm -c 'DROP DATABASE scm_test' -c 'CREATE DATABASE scm_test'`。
 - 测写操作（POST/PUT/DELETE）只用临时数据，测完物理删除；用户的数据只发 GET。
-- 前端：`cd web && pnpm install && pnpm dev`。
+- 前端：`cd web && pnpm install && pnpm dev`。开发库是空的时候先灌示例主数据（`dev/seed-demo.sql`，用法在文件开头）：`pnpm dev:mock` 的假单据指向的款式 1、物料、供应商、仓库都在里面。
 
 ## 部署
 
