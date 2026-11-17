@@ -183,6 +183,7 @@ public class CountServiceImpl implements CountService {
         WarehouseVO warehouse = warehouseService.getById(count.getWarehouseId());
 
         CountDetailVO vo = docHeaderService.fill(new CountDetailVO(), BizType.INV_COUNT, count, count.getStatus());
+        vo.setCompanyName(companyService.getById(count.getCompanyId()).getShortName());
         vo.setWarehouseId(warehouse.getId());
         vo.setWarehouseName(warehouse.getName());
         vo.setWarehouseType(warehouse.getType());

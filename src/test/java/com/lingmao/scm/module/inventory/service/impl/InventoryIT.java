@@ -121,6 +121,7 @@ class InventoryIT {
         assertThat(count("SELECT COUNT(*) FROM inv_stock_log WHERE material_sku_id = ?", f.skuA)).isEqualTo(4);
 
         InvDocDetailVO back = invDocService.detail(in);
+        assertThat(back.getCompanyName()).startsWith("IT 主体");
         assertThat(back.getStatus()).isEqualTo("DRAFT");
         assertThat(back.isPosted()).isTrue();
         assertThat(back.getActions()).containsExactly("edit", "audit", "void");

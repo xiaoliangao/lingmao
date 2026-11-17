@@ -198,6 +198,7 @@ public class InvDocServiceImpl implements InvDocService {
                 ? stockOf(doc.getFromWarehouseId(), skuIds) : Map.of();
 
         InvDocDetailVO vo = docHeaderService.fill(new InvDocDetailVO(), BizType.INV_DOC, doc, doc.getStatus());
+        vo.setCompanyName(companyService.getById(doc.getCompanyId()).getShortName());
         vo.setKind(doc.getKind());
         vo.setDocType(doc.getDocType());
         vo.setSource(sourceRef(doc));
