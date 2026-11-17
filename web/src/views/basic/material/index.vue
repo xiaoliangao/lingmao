@@ -15,7 +15,6 @@ import type { BatchAction } from '@/components/batchBar'
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
 import { formatPrice, formatQty } from '@/utils/format'
-import { download } from '@/utils/request'
 import { STATUS_OPTIONS, statusParam, type StatusFilter } from '../common'
 import MaterialForm from './MaterialForm.vue'
 
@@ -27,8 +26,9 @@ const router = useRouter()
 const types = useDict('material_type')
 const units = useDict('unit')
 
-const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile } = useTable({
-  fetch: ({ status, ...rest }) => materialApi.page({ ...rest, status: statusParam(status) }),
+const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
+  normalize: ({ status, ...rest }) => ({ ...rest, status: statusParam(status) }),
+  fetch: materialApi.page,
   query: { keyword: '', categoryId: undefined as number | undefined, materialType: '', status: 1 as StatusFilter },
   exportUrl: '/api/materials/export',
   exportName: '物料.xlsx',
@@ -110,7 +110,7 @@ const exportingPicked = ref(false)
 async function exportPicked() {
   exportingPicked.value = true
   try {
-    await download('/api/materials/export', { ids: selected.value.map((m) => m.id) }, '物料.xlsx')
+    await exportSelected(selected.value.map((row) => row.id))
   } finally {
     exportingPicked.value = false
   }

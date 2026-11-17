@@ -1,13 +1,15 @@
 <script setup lang="ts">
+import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { productionApi } from '@/api/production'
 import ImageUpload from '@/components/ImageUpload.vue'
-import { todayStr } from '@/components/doc/docUtils'
+import { reloadOnConflict, todayStr } from '@/components/doc/docUtils'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import type { NodeReportAction, ProductionNode } from '@/types/production'
 import type { FileVO } from '@/types/system'
 import { formatDate } from '@/utils/format'
+import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 
 /**
@@ -30,6 +32,7 @@ const planVisible = defineModel<boolean>('planVisible', { required: true })
 const props = defineProps<{
   orderId: number
   totalQty: number
+  planRevision: number
   nodes: ProductionNode[]
   initialNodeId?: number | null
 }>()
@@ -75,16 +78,21 @@ watch(reportVisible, (on) => {
   resetReportForm(currentNode.value)
 })
 
-function selectNode(node: ProductionNode) {
+async function selectNode(node: ProductionNode) {
+  if (node.id === activeNodeId.value) return
+  if (reportGuard.dirty.value) {
+    try { await ElMessageBox.confirm('此节点有没保存的修改或上传中的照片，换节点后会丢弃。', '换节点', { confirmButtonText: '放弃并换节点', cancelButtonText: '继续编辑' }) } catch { return }
+  }
+  reportGuard.discardUploads()
   activeNodeId.value = node.id
   resetReportForm(node)
 }
 
-const disableFuture = (d: Date) => d.getTime() > Date.now()
+const disableFuture = (d: Date) => isFutureBusinessDay(d)
 
 async function submitReport(action: NodeReportAction) {
   const node = currentNode.value
-  if (!node) return
+  if (!node || !(await reportGuard.waitForUploads())) return
   if (action === 'START' && !reportForm.actualStart) {
     ElMessage.warning('填实际开始')
     return
@@ -120,10 +128,12 @@ interface PlanRow {
 }
 const planRows = ref<PlanRow[]>([])
 const savingPlan = ref(false)
+const editingPlanRevision = ref(0)
 const planGuard = useUnsavedChanges(planRows, planVisible)
 
 watch(planVisible, (on) => {
   if (!on) return
+  editingPlanRevision.value = props.planRevision
   planRows.value = props.nodes.map((n) => ({
     nodeId: n.id,
     nodeName: n.nodeName,
@@ -144,12 +154,15 @@ async function savePlan() {
   try {
     await productionApi.updatePlan(
       props.orderId,
-      planRows.value.map(({ nodeId, planStart, planFinish }) => ({ nodeId, planStart, planFinish })),
+      { planRevision: editingPlanRevision.value, nodes: planRows.value.map(({ nodeId, planStart, planFinish }) => ({ nodeId, planStart, planFinish })) },
     )
     ElMessage.success('节点计划改好了')
     planGuard.markSaved()
     planVisible.value = false
     emit('updated')
+  } catch (e) {
+    reloadOnConflict(e, async () => { planGuard.markSaved(); planVisible.value = false; emit('updated') })
+    if (!(e instanceof ApiError)) throw e
   } finally {
     savingPlan.value = false
   }

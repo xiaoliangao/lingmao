@@ -393,23 +393,18 @@ function appendSize(g, z) {
   if (g.sizes.includes(z)) fail(g.name + ' 里已经有 ' + z)
   g.sizes.push(z)
 }
-function removeSize(g, z) {
-  if (sizeGroupUsed(g.id)) fail('已经有款式用这个尺码组，只能在末尾追加尺码')
-  if (g.sizes.length === 1) fail('至少留一个尺码；整组不要了就删除尺码组')
-  g.sizes.splice(g.sizes.indexOf(z), 1)
-  if (g.base === z) g.base = g.sizes[Math.floor((g.sizes.length - 1) / 2)]
+function removeSize(g) {
+  fail(g.name + ' 建好后不能删除已有尺码，只能在末尾追加；未被引用的整组可删除重建')
 }
-// 改名、换基码、删除都只能在没有款式用的时候（基码决定核价取哪个码的用量）
+// PRD §6.1.3（11-15）：组名可改；尺码与基码建好即锁定，和是否引用无关。
 function renameSizeGroup(g, name) {
   name = (name || '').trim()
-  if (sizeGroupUsed(g.id)) fail('已经有款式用这个尺码组，不能改名')
   if (!name) fail('尺码组名称要填')
   if (db.sizeGroups.some((x) => x !== g && x.name === name)) fail('已经有「' + name + '」')
   g.name = name
 }
-function setBaseSize(g, z) {
-  if (sizeGroupUsed(g.id)) fail('已经有款式用这个尺码组，基码不能换')
-  g.base = z
+function setBaseSize(g) {
+  fail(g.name + ' 建好后基码不能换；未被引用的整组可删除重建')
 }
 function removeSizeGroup(g) {
   if (sizeGroupUsed(g.id)) fail(`已经有 ${sizeGroupUsed(g.id)} 个款式用这个尺码组，不能删，只能停用`)
@@ -1325,15 +1320,14 @@ route('/basics', {
             <span v-if="sg.g === g" class="row g4" style="width:180px"><input class="inp" style="height:26px;width:130px" v-model="sg.v" @keydown.enter="doRenameGroup"><button class="btn sm" @click="doRenameGroup">好</button></span>
             <b v-else style="width:96px;font-weight:500">{{ g.name }}</b>
             <St v-if="g.status === '停用'" s="停用"/>
-            <span class="chips"><span v-for="z in g.sizes" :key="z" class="chip" style="cursor:default">{{ z }}<Ico v-if="!sizeGroupUsed(g.id)" n="x" :s="11" style="cursor:pointer" @click="run(() => removeSize(g, z))"/></span></span>
+            <span class="chips"><span v-for="z in g.sizes" :key="z" class="chip" style="cursor:default">{{ z }}</span></span>
             <span class="dim row g4" style="font-size:12px">基码
-              <Pick v-if="!sizeGroupUsed(g.id)" class="sel" style="height:24px" :modelValue="baseSizeOf(g.id)" @change="run(() => setBaseSize(g, $event))"><option v-for="z in g.sizes" :key="z">{{ z }}</option></Pick>
-              <template v-else>{{ baseSizeOf(g.id) }} · {{ sizeGroupUsed(g.id) }} 个款在用</template></span>
+              {{ baseSizeOf(g.id) }} · {{ sizeGroupUsed(g.id) }} 个款在用</span>
             <span style="flex:1"></span>
             <input class="inp" style="width:72px" v-model="newSize[g.id]" @keydown.enter="addSize(g)">
-            <button class="btn sm" @click="addSize(g)">{{ sizeGroupUsed(g.id) ? '追加尺码' : '加尺码' }}</button>
+            <button class="btn sm" @click="addSize(g)">追加尺码</button>
             <span class="row g4">
-              <button v-if="!sizeGroupUsed(g.id)" class="btn ghost sm" @click="sg.g = g; sg.v = g.name">改名</button>
+              <button class="btn ghost sm" @click="sg.g = g; sg.v = g.name">改名</button>
               <button class="btn ghost sm" @click="toggleCat(g)">{{ g.status === '停用' ? '启用' : '停用' }}</button>
               <button v-if="!sizeGroupUsed(g.id)" class="btn ghost sm danger" @click="delGroup(g)">删除</button></span>
           </div>

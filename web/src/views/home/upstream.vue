@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type TableInstance } from 'element-plus'
@@ -116,7 +117,7 @@ const rowKey = (row: UpstreamRow) => `${row.doc.type}-${row.doc.id}`
 /** 变更内容里的日期只写月-日，不是今年的带年份 */
 const shortDay = (value: string) => {
   const date = formatDate(value)
-  return date.startsWith(`${new Date().getFullYear()}-`) ? date.slice(5) : date
+  return date.startsWith(`${Number(businessToday().slice(0, 4))}-`) ? date.slice(5) : date
 }
 
 function open(ref: DocRef) {

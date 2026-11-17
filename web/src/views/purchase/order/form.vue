@@ -324,6 +324,7 @@ async function submit(poId: number, ver: number): Promise<boolean> {
 }
 
 async function save(andSubmit: boolean) {
+  if (!(await guard.waitForUploads())) return
   const form = buildForm(andSubmit)
   if (!form) return
   saving.value = true
@@ -352,6 +353,7 @@ async function save(andSubmit: boolean) {
 
 /** 去别的页，关掉这个表单页签（取消是明确不要了，不再问） */
 async function leave(to: string) {
+  guard.discardUploads()
   guard.markSaved()
   await router.push(to)
   tabs.close(path, to)

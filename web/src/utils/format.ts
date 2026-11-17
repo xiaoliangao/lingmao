@@ -3,6 +3,8 @@
  * 后端的 BigDecimal 到前端是 JSON 数字，手里的数也可能是字符串，两种都收；空值显示成空串。
  */
 
+import { businessToday } from './businessDate'
+
 type NumberInput = number | string | null | undefined
 
 // 先变成十进制字符串再交给 Intl：Intl 直接按字符串里的十进制数取舍，不经过浮点数（1.005 → 1.01，不会变成 1.00）
@@ -88,7 +90,7 @@ export function formatDateTime(value: DateInput): string {
  */
 export function formatDateRange(range: readonly (string | null | undefined)[] | null | undefined): string {
   const [start, end] = range ?? []
-  const year = String(new Date().getFullYear())
+  const year = businessToday().slice(0, 4)
   const short = (value: string | null | undefined) => {
     const date = formatDate(value)
     return date.startsWith(`${year}-`) ? date.slice(5) : date

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
@@ -18,7 +19,6 @@ import type { BatchAction } from '@/components/batchBar'
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
 import { formatDate, formatPrice } from '@/utils/format'
-import { download } from '@/utils/request'
 
 /**
  * 开发 › 款式（RFC 005 §9，原型 5a-home-style.js 的 /styles）：图卡、表格两种视图，记住上次选的；
@@ -35,9 +35,10 @@ const STATUS_OPTIONS = [
   ...(['ENABLED', 'DRAFT', 'DISABLED'] as StyleStatus[]).map((value) => ({ label: STYLE_STATUS[value].label, value })),
 ]
 
-const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile } = useTable({
-  fetch: ({ status, techPackStatus, designerId, ...rest }) =>
-    styleApi.page({ ...rest, status: status || undefined, techPackStatus: techPackStatus || undefined, designerId: designerId ?? undefined }),
+const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
+  normalize: ({ status, techPackStatus, designerId, ...rest }) =>
+    ({ ...rest, status: status || undefined, techPackStatus: techPackStatus || undefined, designerId: designerId ?? undefined }),
+  fetch: styleApi.page,
   query: {
     keyword: '',
     status: '' as StyleStatus | '',
@@ -96,7 +97,7 @@ const categoryName = computed(() => {
   }
   return query.categoryId === undefined ? '' : (find(categories.value) ?? '已选')
 })
-const thisYear = new Date().getFullYear()
+const thisYear = Number(businessToday().slice(0, 4))
 const YEARS = Array.from({ length: 8 }, (_, i) => thisYear + 2 - i)
 
 /** 选了设计师以后小标签上的字：名字从按他筛出来的行里取 */
@@ -160,7 +161,7 @@ const exportingPicked = ref(false)
 async function exportPicked() {
   exportingPicked.value = true
   try {
-    await download('/api/styles/export', { ids: selected.value.map((s) => s.id) }, '款式.xlsx')
+    await exportSelected(selected.value.map((row) => row.id))
   } finally {
     exportingPicked.value = false
   }

@@ -3,6 +3,7 @@ import { showBizError } from '@/composables/useBizError'
 import { DOC_ACTION_CONFIRM, DOC_ACTION_LABEL, REASON_REQUIRED, type DocAction, type DocActionReq } from '@/types/biz'
 import { ErrorCode, LIST_ERROR_CODES } from '@/utils/errorCodes'
 import { ApiError, type RequestOptions } from '@/utils/request'
+import { businessToday, addBusinessDays } from '@/utils/businessDate'
 
 /**
  * 单据详情页共用的小东西（docs/api/README.md §4.2）：状态动作、版本冲突、日期默认值。
@@ -18,24 +19,9 @@ import { ApiError, type RequestOptions } from '@/utils/request'
  *   自己发 silent 请求的（"存草稿并提交"）：catch (e) { if (e instanceof ApiError) showSilentError(e) }
  */
 
-/** 今天，yyyy-MM-dd（本机日期；表单默认值用，后端照样会查） */
-export function todayStr(): string {
-  return dateStr(new Date())
-}
-
-/** 某天（默认今天）加几天，yyyy-MM-dd：要求交期默认今天 + 60 天这种 */
-export function addDaysStr(baseDate: string | null | undefined, days: number): string {
-  const base = baseDate ? new Date(`${baseDate}T00:00:00`) : new Date()
-  if (Number.isNaN(base.getTime())) return todayStr()
-  base.setDate(base.getDate() + days)
-  return dateStr(base)
-}
-
-function dateStr(date: Date): string {
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${m}-${d}`
-}
+/** Business default dates always use Asia/Shanghai, independent of the browser zone. */
+export const todayStr = businessToday
+export const addDaysStr = addBusinessDays
 
 /** 按条件拼按钮清单：[can('void') && { … }, …].filter(isItem)，把 false 去掉、类型收窄 */
 export function isItem<T>(item: T | false | null | undefined): item is T {
@@ -72,16 +58,15 @@ export function showSilentError(error: ApiError) {
   }
 }
 
-/**
- * 1002（状态变了、别人改过，version 对不上）：消息 request.ts 已经弹过了，这里重新取详情拿新的 version（README §3.1）。
- * 是 1002 返回 true（调用方就此打住），别的错误返回 false（调用方照常往外抛）
- */
+/** A conflict never silently discards a draft or upgrades its version. */
 export function reloadOnConflict(error: unknown, reload?: () => unknown): boolean {
-  if (error instanceof ApiError && error.code === ErrorCode.STATE_CHANGED) {
-    void reload?.()
-    return true
+  if (!(error instanceof ApiError) || error.code !== ErrorCode.STATE_CHANGED) return false
+  if (reload) {
+    void ElMessageBox.confirm('服务器上的内容已变化。本地输入仍保留；载入最新会放弃本地未保存的修改。', '保存冲突', {
+      confirmButtonText: '放弃并载入最新', cancelButtonText: '继续编辑本地草稿', type: 'warning',
+    }).then(() => reload()).catch(() => {})
   }
-  return false
+  return true
 }
 
 /**
@@ -90,7 +75,7 @@ export function reloadOnConflict(error: unknown, reload?: () => unknown): boolea
  * - 作废、结案、反审核、取消结案：照 DOC_ACTION_CONFIRM 说后果再确认，不要求写原因；note 是这张单据自己要多说的一句
  * - 别的直接做
  * 做成了提示一句、返回 true（调用方刷新详情）；取消了、出错了返回 false。
- * 出错时显示原因（showSilentError），1002 时再调 reload 重新取详情，拿新的 version
+ * 出错时显示原因（showSilentError），1002 时保留本地输入；用户明确放弃后才调 reload 重新取详情
  */
 export async function runDocAction(
   action: DocAction,

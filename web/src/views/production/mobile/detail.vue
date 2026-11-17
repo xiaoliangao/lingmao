@@ -143,6 +143,7 @@ const lastReportText = computed(() => {
 })
 
 async function submitNode(action: NodeReportAction) {
+  if (!(await reportGuard.waitForUploads())) return
   const node = selectedNode.value
   if (!node) return
   if (action === 'START' && !reportForm.actualStart) return void ElMessage.warning('填实际开始')
@@ -167,6 +168,7 @@ async function submitNode(action: NodeReportAction) {
 }
 
 async function submitIssue() {
+  if (!(await issueGuard.waitForUploads())) return
   if (!issueForm.issueType) return void ElMessage.warning('选异常类型')
   if (!issueForm.description.trim()) return void ElMessage.warning('写一下怎么回事')
   if (!issueForm.photos.length) return void ElMessage.warning('至少拍一张照片')

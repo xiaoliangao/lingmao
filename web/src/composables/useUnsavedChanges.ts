@@ -1,7 +1,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTabsStore } from '@/stores/tabs'
+import { provideUploadScope } from './usePendingUploads'
 
 /**
  * 表单有没保存的修改时，丢掉之前问一声（"有没保存的修改，……以后就没了"，点"继续编辑"就留着）：
@@ -24,11 +25,12 @@ import { useTabsStore } from '@/stores/tabs'
  * source 可以是 reactive 对象、ref（如勾选的 id 数组）或 getter；按 JSON 比较，表单里放普通的值就行
  */
 export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Ref<boolean>) {
+  const uploads = provideUploadScope()
   const serialize = () => JSON.stringify(toValue(source) ?? null)
   const snapshot = ref(serialize())
 
   /** 有没保存的修改 */
-  const dirty = computed(() => (active ? active.value : true) && serialize() !== snapshot.value)
+  const dirty = computed(() => (active ? active.value : true) && (serialize() !== snapshot.value || uploads.pending.value > 0))
 
   /** 记下现在的样子：之后再改才算有修改 */
   function markSaved() {
@@ -48,6 +50,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
       active,
       (on) => {
         if (on) markSaved()
+        else uploads.discard()
       },
       { flush: 'sync' },
     )
@@ -59,7 +62,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
       done()
       return
     }
-    confirmDiscard('有没保存的修改，关掉以后就没了。', '关掉对话框', '不保存，关掉').then(done, () => {})
+    confirmDiscard('有没保存的修改，关掉以后就没了（包括正在上传的文件）。', '关掉对话框', '不保存，关掉').then(() => { uploads.discard(); done() }, () => {})
   }
 
   // 整页的表单：按这一页的地址登记到页签里，关页签、离开首页这一侧时由那边来问
@@ -81,6 +84,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
     }
     try {
       await confirmDiscard('有没保存的修改，离开以后就没了。', '离开这一页', '不保存，离开')
+      uploads.discard()
       return true
     } catch {
       return false
@@ -98,5 +102,10 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
   onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
   onBeforeUnmount(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
-  return { dirty, markSaved, beforeClose }
+  async function waitForUploads() {
+    const ok = await uploads.wait()
+    if (!ok) ElMessage.warning('有文件未完成上传，本次未保存。请重试上传后再保存')
+    return ok
+  }
+  return { dirty, markSaved, beforeClose, pendingUploads: uploads.pending, waitForUploads, discardUploads: uploads.discard }
 }

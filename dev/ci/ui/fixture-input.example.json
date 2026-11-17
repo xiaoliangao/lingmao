@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "database": "lingmao_ui_test",
+  "companyId": 0,
+  "userId": 0,
+  "styleId": 0,
+  "styleSkuIdsSameSizeDifferentColor": [0, 0],
+  "warehouseId": 0,
+  "materialSkuId": 0,
+  "brand": null,
+  "notes": "Replace zero IDs with an isolated fixture's real IDs; style must be fresh and enabled, warehouse must have no open count. No credentials belong here."
+}

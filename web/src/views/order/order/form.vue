@@ -11,7 +11,7 @@ import SkuMatrix from '@/components/SkuMatrix.vue'
 import UserSelect from '@/components/UserSelect.vue'
 import CompanySelect from '@/components/doc/CompanySelect.vue'
 import DocAttachments from '@/components/doc/DocAttachments.vue'
-import { addDaysStr, showSilentError, todayStr } from '@/components/doc/docUtils'
+import { addDaysStr, reloadOnConflict, showSilentError, todayStr } from '@/components/doc/docUtils'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
@@ -21,12 +21,13 @@ import type { StylePickRow } from '@/types/style'
 import type { FileVO } from '@/types/system'
 import { formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
+import { applySkuValues, buildSkuRows, hydrateSkuValues, lineAmountCents, MAX_UNIT_PRICE, validateOrderCapacity, type SkuValues } from '@/utils/orderSku'
 import { orNull } from '@/views/basic/common'
 
 /**
  * 需求订单整页表单（/orders/new、/orders/:id/edit，docs/api/02 §1.2、§3.5、§4.2）。
  * - 单头两列；主体空着 = 后端用我的默认主体（登录信息里没有默认主体，前端选不上）
- * - 一个款一块：单价（占位写吊牌价，不预填）、按尺码填单价、行交期、行备注、SkuMatrix 矩阵。保存时展开到每个 SKU
+ * - 一个款一块，逐 SKU 保存单价/交期/备注；整款与尺码输入仅在显式应用时修改对应 SKU。
  * - 新建页带 ?styleId= 先把这个款加进来（款式详情的"下订单"）；页签留着时再带别的款进来，加到后面
  * - 存草稿 / 提交审核：新建成功后不管提交过没过，这张草稿已经有了——提交没过就转到它的编辑页再弹原因，
  *   不留在"新建"上（不然再点一次又建一张）。编辑页保存后记下新的 version，提交没过留在页上接着改
@@ -49,16 +50,20 @@ interface StyleBlock {
   remark: string
   /** 款式 SKU id → 件数 */
   qtys: Record<number, number>
+  values: Record<number, SkuValues>
 }
 
 const loaded = ref(!editing)
 const notFound = ref(false)
+const loadError = ref<string | null>(null)
 const saving = ref(false)
 const version = ref(0)
 const orderNo = ref('')
 
 const head = reactive({
   companyId: user.defaultCompanyId,
+  customerId: null as number | null,
+  customerOrderNo: null as string | null,
   orderType: 'STOCK',
   brand: null as string | null,
   contractNo: '',
@@ -82,10 +87,20 @@ const guard = useUnsavedChanges(() => ({ head, files: files.value, blocks: block
 
 const skuCells = (opt: OrderStyleOption) => opt.skus.map((s) => ({ id: s.id, colorId: s.colorId, sizeCode: s.sizeCode, status: s.status }))
 
-function priceOf(b: StyleBlock, sizeCode: string): number | null {
-  return b.bySizePrice ? (b.sizePrices[sizeCode] ?? null) : b.unitPrice
+function valuesOf(b: StyleBlock, skuId: number): SkuValues {
+  return b.values[skuId] ??= { price: null, lineDueDate: null, remark: null }
 }
-
+function mixedValues(b: StyleBlock): boolean {
+  const rows = buildSkuRows(b.opt.skus.map((s) => s.id), b.qtys, b.values)
+  return (['price', 'lineDueDate', 'remark'] as const).some((key) => new Set(rows.map((r) => r[key])).size > 1)
+}
+function applyPrice(b: StyleBlock, size?: string) {
+  const ids = b.opt.skus.filter((s) => !size || s.sizeCode === size).map((s) => s.id)
+  applySkuValues(b.values, ids, { price: size ? b.sizePrices[size] ?? null : b.unitPrice })
+}
+function applyDetails(b: StyleBlock) {
+  applySkuValues(b.values, b.opt.skus.map((s) => s.id), { lineDueDate: b.lineDueDate, remark: orNull(b.remark) })
+}
 function blockQty(b: StyleBlock): number {
   return Object.values(b.qtys).reduce((s, q) => s + (q > 0 ? q : 0), 0)
 }
@@ -93,8 +108,8 @@ function blockQty(b: StyleBlock): number {
 function blockAmount(b: StyleBlock): number {
   return b.opt.skus.reduce((sum, sk) => {
     const q = b.qtys[sk.id] ?? 0
-    const p = priceOf(b, sk.sizeCode)
-    return q > 0 && p != null ? sum + q * p : sum
+    const p = b.values[sk.id]?.price
+    return Number.isSafeInteger(q) && q > 0 && p != null && Number.isFinite(p) && p >= 0 && p <= MAX_UNIT_PRICE ? sum + Number(lineAmountCents(p, q)) / 100 : sum
   }, 0)
 }
 
@@ -114,7 +129,7 @@ async function appendStyles(styleIds: number[]) {
   if (!fresh.length) return
   const opts = await orderApi.styleOptions(fresh)
   for (const opt of opts) {
-    blocks.value.push({ opt, unitPrice: null, bySizePrice: false, sizePrices: {}, lineDueDate: null, remark: '', qtys: {} })
+    blocks.value.push({ opt, unitPrice: null, bySizePrice: false, sizePrices: {}, lineDueDate: null, remark: '', qtys: {}, values: {} })
   }
 }
 
@@ -125,10 +140,16 @@ function onPickedStyles(rows: MaterialPickRow[] | StylePickRow[]) {
 const queryStyleId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : null)
 
 async function init() {
+  loadError.value = null
+  notFound.value = false
+  loaded.value = false
   if (id === null) {
-    const sid = queryStyleId(route.query.styleId)
-    if (sid) await appendStyles([sid])
-    guard.markSaved()
+    try {
+      const sid = queryStyleId(route.query.styleId)
+      if (sid) await appendStyles([sid])
+      loaded.value = true
+      guard.markSaved()
+    } catch (e) { loadError.value = e instanceof Error ? e.message : '款式加载失败，请重试' }
     return
   }
   try {
@@ -137,6 +158,8 @@ async function init() {
     orderNo.value = d.no
     Object.assign(head, {
       companyId: d.companyId,
+      customerId: d.customerId,
+      customerOrderNo: d.customerOrderNo,
       orderType: d.orderType,
       brand: d.brand,
       contractNo: d.contractNo ?? '',
@@ -154,7 +177,7 @@ async function init() {
     const optMap = new Map(opts.map((o) => [o.styleId, o]))
     blocks.value = d.styles.flatMap((st) => {
       const opt = optMap.get(st.styleId)
-      if (!opt) return []
+      if (!opt) throw new Error(`款式 ${st.styleCode} 的矩阵信息加载不全，请重试；原明细不会被删除`)
       const items = d.items.filter((i) => i.styleId === st.styleId)
       const qtys: Record<number, number> = {}
       const sizePrices: Record<string, number | null> = {}
@@ -162,16 +185,22 @@ async function init() {
         qtys[it.styleSkuId] = it.qty
         sizePrices[it.sizeCode] = it.price
       }
-      const first = items[0]
-      const bySizePrice = new Set(items.map((i) => i.price)).size > 1
-      return [{ opt, unitPrice: first?.price ?? null, bySizePrice, sizePrices, lineDueDate: first?.lineDueDate ?? null, remark: first?.remark ?? '', qtys }]
+      if (items.some((item) => !opt.skus.some((sku) => sku.id === item.styleSkuId))) {
+        throw new Error(`款式 ${st.styleCode} 的部分历史 SKU 无法加载，请重试；原明细不会被删除`)
+      }
+      const prices = new Set(items.map((i) => i.price))
+      const dates = new Set(items.map((i) => i.lineDueDate))
+      const remarks = new Set(items.map((i) => i.remark))
+      return [{ opt, unitPrice: prices.size === 1 ? items[0]?.price ?? null : null, bySizePrice: false, sizePrices,
+        lineDueDate: dates.size === 1 ? items[0]?.lineDueDate ?? null : null,
+        remark: remarks.size === 1 ? items[0]?.remark ?? '' : '', qtys, values: hydrateSkuValues(items) }]
     })
     tabs.rename(path, `编辑 ${d.no}`)
     loaded.value = true
     guard.markSaved()
   } catch (e) {
     if (e instanceof ApiError && e.code === 404) notFound.value = true
-    else throw e
+    else loadError.value = e instanceof Error ? e.message : '订单加载失败，请重试'
   }
 }
 
@@ -188,13 +217,7 @@ watch(
 )
 
 function buildItems(): OrderItemForm[] {
-  return blocks.value.flatMap((b) =>
-    b.opt.skus.flatMap((sk) => {
-      const qty = b.qtys[sk.id] ?? 0
-      if (qty <= 0) return []
-      return [{ styleSkuId: sk.id, qty, price: priceOf(b, sk.sizeCode), lineDueDate: b.lineDueDate, remark: orNull(b.remark) }]
-    }),
-  )
+  return blocks.value.flatMap((b) => buildSkuRows(b.opt.skus.map((s) => s.id), b.qtys, b.values))
 }
 
 function buildForm(): OrderForm | null {
@@ -207,11 +230,13 @@ function buildForm(): OrderForm | null {
     ElMessage.warning('至少填一格件数')
     return null
   }
+  const capacityError = validateOrderCapacity(items)
+  if (capacityError) { ElMessage.warning(capacityError); return null }
   return {
     companyId: head.companyId,
     orderType: head.orderType,
-    customerId: null,
-    customerOrderNo: null,
+    customerId: head.customerId,
+    customerOrderNo: head.customerOrderNo,
     contractNo: orNull(head.contractNo),
     brand: head.brand,
     orderDate: head.orderDate,
@@ -238,6 +263,7 @@ async function submit(orderId: number, ver: number): Promise<boolean> {
 }
 
 async function save(andSubmit: boolean) {
+  if (!(await guard.waitForUploads())) return
   const form = buildForm()
   if (!form) return
   saving.value = true
@@ -259,6 +285,8 @@ async function save(andSubmit: boolean) {
     }
     ElMessage.success(andSubmit ? '订单建好了，已提交审核' : '订单草稿存好了')
     await leave(`/orders/${saved.id}`)
+  } catch (e) {
+    if (!reloadOnConflict(e, init) && !(e instanceof ApiError)) throw e
   } finally {
     saving.value = false
   }
@@ -266,6 +294,7 @@ async function save(andSubmit: boolean) {
 
 /** 去别的页，关掉这个表单页签（取消是明确不要了，不再问） */
 async function leave(to: string) {
+  guard.discardUploads()
   guard.markSaved()
   await router.push(to)
   tabs.close(path, to)
@@ -290,6 +319,7 @@ const backTo = editing ? `/orders/${id}` : '/orders'
       <el-button @click="leave('/orders')">回订单列表</el-button>
     </BlankState>
 
+    <el-alert v-else-if="loadError" :title="loadError" type="error" :closable="false"><el-button @click="init">重试</el-button></el-alert>
     <div v-else v-loading="!loaded" class="page">
       <el-form label-position="top" class="form-grid order-head">
         <el-form-item label="主体" required>
@@ -355,14 +385,17 @@ const backTo = editing ? `/orders/${id}` : '/orders'
               <span class="dim">单价</span>
               <el-input-number
                 v-model="b.unitPrice"
+                data-testid="order-batch-price"
+                :max="MAX_UNIT_PRICE"
                 size="small"
                 :min="0"
-                :precision="2"
+                :precision="4"
                 :controls="false"
                 :disabled="b.bySizePrice"
                 :placeholder="pricePlaceholder(b.opt)"
               />
             </label>
+            <el-button data-testid="order-apply-price" size="small" :disabled="b.bySizePrice" @click="applyPrice(b)">应用整款单价</el-button>
             <el-checkbox v-model="b.bySizePrice" @change="onBySizeChange(b, Boolean($event))">按尺码填单价</el-checkbox>
             <label class="ctrl">
               <span class="dim">行交期</span>
@@ -372,18 +405,31 @@ const backTo = editing ? `/orders/${id}` : '/orders'
               <span class="dim">行备注</span>
               <el-input v-model="b.remark" size="small" maxlength="120" />
             </label>
+            <el-button size="small" @click="applyDetails(b)">应用整款交期 / 备注</el-button>
           </div>
+          <p v-if="mixedValues(b)" class="dim">多个值：各 SKU 的单价、行交期和备注分别保留；批量输入后点「应用」才覆盖。</p>
           <SkuMatrix v-model="b.qtys" :sizes="b.opt.sizes" :colors="b.opt.colors" :skus="skuCells(b.opt)">
             <template v-if="b.bySizePrice" #prepend="{ sizes }">
               <tr class="price-row">
                 <td class="dim">单价</td>
                 <td v-for="sz in sizes" :key="sz">
-                  <el-input-number v-model="b.sizePrices[sz]" size="small" :min="0" :precision="2" :controls="false" :placeholder="pricePlaceholder(b.opt)" />
+                  <el-input-number :data-testid="`order-size-price-${sz}`" :max="MAX_UNIT_PRICE" v-model="b.sizePrices[sz]" size="small" :min="0" :precision="4" :controls="false" :placeholder="pricePlaceholder(b.opt)" />
+                  <el-button :data-testid="`order-apply-size-price-${sz}`" size="small" link @click="applyPrice(b, sz)">应用本尺码</el-button>
                 </td>
                 <td />
               </tr>
             </template>
           </SkuMatrix>
+          <el-collapse class="sku-values">
+            <el-collapse-item title="逐 SKU 单价 / 行交期 / 备注" name="sku-values">
+              <el-table :data="b.opt.skus.filter((sk) => (b.qtys[sk.id] ?? 0) > 0)" size="small">
+                <el-table-column label="SKU" min-width="170"><template #default="{ row }">{{ row.skuCode }} · {{ row.sizeCode }}</template></el-table-column>
+                <el-table-column label="单价" width="150"><template #default="{ row }"><el-input-number v-model="valuesOf(b, row.id).price" :min="0" :max="MAX_UNIT_PRICE" :precision="4" :controls="false" size="small" /></template></el-table-column>
+                <el-table-column label="行交期" width="175"><template #default="{ row }"><el-date-picker v-model="valuesOf(b, row.id).lineDueDate" type="date" value-format="YYYY-MM-DD" placeholder="同要求交期" size="small" /></template></el-table-column>
+                <el-table-column label="备注" min-width="180"><template #default="{ row }"><el-input v-model="valuesOf(b, row.id).remark" maxlength="120" size="small" /></template></el-table-column>
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
         </div>
       </section>
 

@@ -80,10 +80,12 @@ function statusParams(tab: TabKey): Pick<ProductionQuery, 'status' | 'returned'>
   return tab ? { status: [tab] } : {}
 }
 
-const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
-  fetch: ({ tabKey, page, size, ...rest }) => {
-    void loadCounts(rest)
-    return productionApi.page({ ...rest, page, size, kind, ...statusParams(tabKey ?? '') })
+const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
+  normalize: ({ tabKey, ...rest }) => ({ ...rest, kind, ...statusParams(tabKey ?? '') }),
+  fetch: (params) => {
+    const { status: _status, returned: _returned, page: _page, size: _size, ...countsQuery } = params
+    void loadCounts(countsQuery)
+    return productionApi.page(params)
   },
   query: {
     keyword: '',
@@ -95,17 +97,22 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
     dueDateFrom: undefined as string | undefined,
     dueDateTo: undefined as string | undefined,
     mine: false,
+    auditForMe: route.query.auditForMe === '1',
   },
+  exportUrl: '/api/production-orders/export',
+  exportName: `${kindMeta.label}.xlsx`,
 })
 
 // keep-alive：从首页、看板再点进来时地址参数变了，重新筛；别的页面的地址变化不管
 watch(
-  () => [route.query.status, route.query.risk],
+  () => [route.query.status, route.query.risk, route.query.auditForMe],
   () => {
     if (route.path !== kindMeta.path) return
     const tab = pickTab(route.query.status)
     const risk = pickRisk(route.query.risk)
-    if (tab !== query.tabKey || risk !== query.risk) {
+    const auditForMe = route.query.auditForMe === '1'
+    if (tab !== query.tabKey || risk !== query.risk || auditForMe !== query.auditForMe) {
+      query.auditForMe = auditForMe
       query.tabKey = tab
       query.risk = risk
       search()
@@ -179,23 +186,8 @@ const batchActions: BatchAction<ProductionRow>[] = [
   },
 ]
 
-/** 导出用和列表一样的筛选（不分页） */
-function currentFilter(): ProductionQuery {
-  const { tabKey, keyword, ...rest } = query
-  return { ...rest, keyword: keyword.trim() || undefined, kind, ...statusParams(tabKey) }
-}
-
-const exporting = ref(false)
-async function exportFile(ids?: number[]) {
-  exporting.value = true
-  try {
-    await productionApi.export(ids ? { kind, ids } : currentFilter(), `${kindMeta.label}.xlsx`)
-  } finally {
-    exporting.value = false
-  }
-}
 const exportAll = () => exportFile()
-const exportPicked = () => exportFile(selected.value.map((r) => r.id))
+const exportPicked = () => exportSelected(selected.value.map((r) => r.id))
 </script>
 
 <template>
@@ -228,7 +220,8 @@ const exportPicked = () => exportFile(selected.value.map((r) => r.id))
         <DictSelect v-model="query.brand" type="brand" clearable />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="MINE_OPTIONS" @change="search" />
+        <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审批</el-checkbox>
+        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="MINE_OPTIONS" @change="search" />
       </template>
     </FilterBar>
 

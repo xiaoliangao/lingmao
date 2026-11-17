@@ -85,7 +85,7 @@ comp('MrpReserve', {
     return { f, ok }
   },
   template: `<Modal t="备料比" :w="480" @close="$emit('close')">
-    <p class="dim" style="margin-bottom:12px;font-size:12px">需求 = 毛需求 × (1 + 损耗) × (1 + 备料比)</p>
+    <p class="dim" style="margin-bottom:12px;font-size:12px">毛需求 = 基础量 × (1 + 损耗)；需求 = 毛需求 × (1 + 备料比)</p>
     <div class="form"><label v-for="(v, t) in f" :key="t" class="f">{{ t }}（%）<input class="inp num" type="number" min="0" max="50" v-model.number="f[t]"></label></div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">保存</button></template>
   </Modal>`,
@@ -168,7 +168,7 @@ route('/mrp/:no', {
       </div>
       <div class="sec" data-c="我方采购"><h3>我方采购<span class="acts dim" style="font-size:12px">预计金额 {{ fm(tot.amt) }}　已转采购 {{ fm(tot.conv) }}</span></h3>
         <div style="overflow-x:auto"><table class="tbl inset flat mrp-buy">
-          <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">毛需求</th><th class="num">需求</th><th class="num">可用库存</th><th class="num">本次用库存</th><th class="num" title="交期赶得上要料日期的在途，去掉别的算料单占着的">可用在途</th><th class="num">本次用在途</th><th class="num" title="预计到货晚于要料日期，不扣">赶不上的在途</th><th class="num">净需求</th><th class="num">建议采购</th><th class="num">参考单价</th><th class="num">预计金额</th><th class="num">已转采购</th><th class="num">已入库</th><th v-if="edit" style="width:32px"></th></tr></thead>
+          <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num" title="未含损耗的订单数量×单位用量">基础量</th><th class="num">需求</th><th class="num">可用库存</th><th class="num">本次用库存</th><th class="num" title="交期赶得上要料日期的在途，去掉别的算料单占着的">可用在途</th><th class="num">本次用在途</th><th class="num" title="预计到货晚于要料日期，不扣">赶不上的在途</th><th class="num">净需求</th><th class="num">建议采购</th><th class="num">参考单价</th><th class="num">预计金额</th><th class="num">已转采购</th><th class="num">已入库</th><th v-if="edit" style="width:32px"></th></tr></thead>
           <tbody>
             <template v-for="r in buy" :key="mrpKey(r)">
             <tr :class="{ sel: picked.includes(mrpKey(r)) }">

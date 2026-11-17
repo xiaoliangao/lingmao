@@ -89,6 +89,8 @@ export interface OrderRow {
 }
 
 export interface OrderQuery {
+  /** 当前待我审批；忽略 mine / owner，仍要求模块列表权限 */
+  auditForMe?: boolean
   /** 单号、合同号、款号；一次查几个（README §3.2）时单号、款号精确查 */
   keyword?: string
   status?: OrderStatus[]
@@ -211,7 +213,7 @@ export interface OrderDetail extends DocHeader<OrderStatus, OrderAction> {
 
 // ---------------------------------------------------------------- 需求订单：新建、保存
 
-/** 明细的一行。页面上一个款一个单价（可以按尺码另填）、一个行交期、一个备注，保存时展开到这个款的每个 SKU */
+/** 明细的一行。逐 SKU 独立保留单价、行交期与备注；整款/尺码控件仅显式应用时批改 */
 export interface OrderItemForm {
   styleSkuId: number
   /** 正整数；0 的格子不发 */

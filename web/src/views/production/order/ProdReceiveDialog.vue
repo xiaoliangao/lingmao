@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { isFutureBusinessDay } from '@/utils/businessDate'
+import { computed, reactive, ref, shallowRef, toRaw, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { warehouseApi } from '@/api/basic'
 import { productionApi } from '@/api/production'
 import ImageUpload from '@/components/ImageUpload.vue'
@@ -16,9 +17,12 @@ import {
   type ProductionReceipt,
   type ReceiptItem,
   type ReceiptItemForm,
+  type ReceiptForm,
 } from '@/types/production'
 import type { FileVO } from '@/types/system'
 import { formatDate, formatDateTime, formatQty } from '@/utils/format'
+import { ApiError } from '@/utils/request'
+import { newClientAction, unknownActionResult } from '@/utils/clientAction'
 import { orNull } from '@/views/basic/common'
 
 /**
@@ -47,6 +51,8 @@ const emit = defineEmits<{
 // ---------- 登记回货 ----------
 const warehouses = ref<WarehouseOption[]>([])
 const submitting = ref(false)
+const pendingAction = shallowRef<ReceiptForm | null>(null)
+const uncertain = ref(false)
 
 const form = reactive({
   receiptDate: todayStr(),
@@ -85,7 +91,7 @@ const totalQty = computed(() => sum(form.qtys))
 const totalDefect = computed(() => sum(form.defects))
 
 watch(createVisible, async (on) => {
-  if (!on) return
+  if (!on || pendingAction.value) return
   form.receiptDate = todayStr()
   form.logisticsNo = ''
   form.remark = ''
@@ -107,9 +113,11 @@ watch(createVisible, async (on) => {
   }
 })
 
-const disableFuture = (d: Date) => d.getTime() > Date.now()
+const disableFuture = (d: Date) => isFutureBusinessDay(d)
 
 async function submitReceipt() {
+  if (pendingAction.value) { await sendReceipt(pendingAction.value); return }
+  if (!(await guard.waitForUploads())) return
   const items: ReceiptItemForm[] = []
   for (const it of props.doc.items) {
     const qty = form.qtys[it.id] ?? 0
@@ -125,24 +133,46 @@ async function submitReceipt() {
     ElMessage.warning('一个数都没填')
     return
   }
+  const request = newClientAction({
+    receiptDate: form.receiptDate,
+    warehouseId: form.warehouseId,
+    logisticsNo: orNull(form.logisticsNo),
+    remark: orNull(form.remark),
+    photos: structuredClone(toRaw(form.photos)),
+    items,
+  })
+  pendingAction.value = request
+  await sendReceipt(request)
+}
+
+async function sendReceipt(request: ReceiptForm) {
   submitting.value = true
   try {
-    const res = await productionApi.receive(props.doc.id, {
-      receiptDate: form.receiptDate,
-      warehouseId: form.warehouseId,
-      logisticsNo: orNull(form.logisticsNo),
-      remark: orNull(form.remark),
-      photos: form.photos,
-      items,
-    })
+    const res = await productionApi.receive(props.doc.id, request)
+    pendingAction.value = null
+    uncertain.value = false
     const done = res.status === 'DONE' ? `，${PRODUCTION_KIND[props.doc.kind].label}完成` : ''
-    ElMessage.success(`${res.no} 已登记：${formatQty(totalQty.value)} 件${done}`)
+    ElMessage.success(`${res.no} 已登记：${formatQty(request.items.reduce((sum, row) => sum + row.qty, 0))} 件${done}`)
     guard.markSaved()
     createVisible.value = false
     emit('updated')
+  } catch (e) {
+    uncertain.value = unknownActionResult(e instanceof ApiError ? e.code : undefined)
+    if (!uncertain.value) pendingAction.value = null
+    if (!(e instanceof ApiError)) throw e
   } finally {
     submitting.value = false
   }
+}
+
+async function restartReceipt() {
+  try {
+    await ElMessageBox.confirm('上一笔结果尚未确认。请先核对回货记录；只有确实还要登记另一笔时才继续，新的登记可能再次增加回货数。', '重新登记一笔', { confirmButtonText: '确认新登记', cancelButtonText: '保留原登记' })
+    pendingAction.value = null
+    uncertain.value = false
+    guard.discardUploads()
+    emit('updated')
+  } catch { /* 保留原请求 */ }
 }
 
 // ---------- 回货单 ----------
@@ -182,6 +212,8 @@ async function voidCurrentReceipt() {
     :close-on-click-modal="false"
     :before-close="guard.beforeClose"
   >
+    <el-alert v-if="uncertain" type="warning" :closable="false" title="登记结果尚未确认。重试会复用原登记内容，不会重复记数；关窗后重开仍保留原登记。"><el-button link @click="restartReceipt">重新登记一笔</el-button></el-alert>
+    <div :inert="!!pendingAction || submitting">
     <el-form label-position="top" class="head-grid">
       <el-form-item label="回货日期" required>
         <el-date-picker v-model="form.receiptDate" type="date" value-format="YYYY-MM-DD" :disabled-date="disableFuture" :clearable="false" />
@@ -225,9 +257,10 @@ async function voidCurrentReceipt() {
       </el-form-item>
     </el-form>
 
+    </div>
     <template #footer>
       <el-button @click="createVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submitReceipt">登记</el-button>
+      <el-button type="primary" :loading="submitting" @click="submitReceipt">{{ uncertain ? '重试原登记' : '登记' }}</el-button>
     </template>
   </el-dialog>
 

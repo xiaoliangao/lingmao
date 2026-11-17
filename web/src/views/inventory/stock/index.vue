@@ -22,7 +22,7 @@ import {
 } from '@/types/inventory'
 import type { SkuSupply } from '@/types/purchase'
 import { docRoute } from '@/utils/docRoute'
-import { formatDate, formatDateRange, formatDateTime, formatQty } from '@/utils/format'
+import { formatDate, formatDateRange, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
 
 /**
  * 库存（/stock，docs/api/04 §1.5、§3.6、§4）：明细 / 按物料 / 日志三个视图，认 ?view=log（只认 /stock 自己的地址）。
@@ -60,7 +60,7 @@ const detailCols = useColumns('stock', [
 ])
 const summaryCols = useColumns('stock-summary', [
   { key: 'material', label: '物料仓合计' },
-  { key: 'factory', label: '工厂仓合计' },
+  { key: 'factory', label: '工厂净托管' },
   { key: 'total', label: '合计' },
   { key: 'safety', label: '最小库存' },
   { key: 'materialType', label: '物料类型', hidden: true },
@@ -71,6 +71,7 @@ const logCols = useColumns('stock-log', [
   { key: 'material', label: '物料' },
   { key: 'changeQty', label: '变动数量' },
   { key: 'balance', label: '结存' },
+  { key: 'valuation', label: '估值 / 金额' },
   { key: 'dyeLot', label: '缸号' },
   { key: 'operator', label: '操作人' },
   { key: 'createTime', label: '记账时间', hidden: true },
@@ -86,7 +87,10 @@ const reorderCount = ref(0)
 // ---------- 视图 1：库存明细 ----------
 const detailTable = useTable({
   immediate: viewMode.value === 'detail',
-  fetch: ({ whType, ...rest }) => stockApi.page({ ...rest, warehouseType: whType || undefined }),
+  normalize: ({ whType, ...rest }) => ({ ...rest, warehouseType: whType || undefined }),
+  fetch: stockApi.page,
+  exportUrl: '/api/stocks/export',
+  exportName: '库存明细.xlsx',
   query: {
     keyword: '',
     whType: 'MATERIAL' as '' | 'MATERIAL' | 'FACTORY',
@@ -126,6 +130,8 @@ const detailRowClass = ({ row }: { row: StockRow }) => (isBelowSafety(row) ? 'cl
 const summaryTable = useTable({
   immediate: false,
   fetch: (params) => stockApi.summary(params),
+  exportUrl: '/api/stocks/summary/export',
+  exportName: '库存汇总.xlsx',
   query: {
     keyword: '',
     includeZero: false,
@@ -137,6 +143,8 @@ const logDateRange = ref<[string, string] | null>(null)
 const logTable = useTable({
   immediate: false,
   fetch: (params) => stockLogApi.page(params),
+  exportUrl: '/api/stock-logs/export',
+  exportName: '库存日志.xlsx',
   query: {
     keyword: '',
     warehouseId: undefined as number | undefined,
@@ -234,32 +242,15 @@ function goLogDoc(row: StockLogRow) {
 }
 
 function doExport() {
-  if (viewMode.value === 'detail') {
-    void stockApi.export({
-      keyword: detailTable.query.keyword || undefined,
-      warehouseType: detailTable.query.whType || undefined,
-      warehouseId: detailTable.query.warehouseId,
-      includeZero: detailTable.query.includeZero || undefined,
-    })
-  } else if (viewMode.value === 'summary') {
-    void stockApi.exportSummary({
-      keyword: summaryTable.query.keyword || undefined,
-      includeZero: summaryTable.query.includeZero || undefined,
-    })
-  } else {
-    void stockLogApi.export({
-      keyword: logTable.query.keyword || undefined,
-      warehouseId: logTable.query.warehouseId,
-      changeType: logTable.query.changeType.length ? logTable.query.changeType : undefined,
-      bizDateFrom: logTable.query.bizDateFrom,
-      bizDateTo: logTable.query.bizDateTo,
-    })
-  }
+  if (viewMode.value === 'detail') void detailTable.exportFile()
+  else if (viewMode.value === 'summary') void summaryTable.exportFile()
+  else void logTable.exportFile()
 }
 </script>
 
 <template>
   <div>
+    <el-alert title="工厂仓显示我方物料的净托管账面量（领料减退料），不代表工厂当前实盘余料。历史日志未知价格 / 单位显示未知，不按零计价。" type="info" :closable="false" />
     <PageHeader>
       <template #title>
         <el-segmented :model-value="viewMode" :options="VIEW_OPTIONS" @change="switchView" />
@@ -371,7 +362,7 @@ function doExport() {
         <el-table-column v-if="summaryCols.show.material" label="物料仓合计" width="130" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.materialQty) }} {{ units.labelOf(row.stockUnit) }}</template>
         </el-table-column>
-        <el-table-column v-if="summaryCols.show.factory" label="工厂仓合计" width="130" class-name="num" align="right">
+        <el-table-column v-if="summaryCols.show.factory" label="工厂净托管" width="130" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.factoryQty) }}</template>
         </el-table-column>
         <el-table-column v-if="summaryCols.show.total" label="合计" width="120" class-name="num" align="right">
@@ -431,12 +422,19 @@ function doExport() {
         <el-table-column v-if="logCols.show.changeQty" label="变动数量" width="120" class-name="num" align="right">
           <template #default="{ row }">
             <span :class="row.changeQty >= 0 ? 'gain' : 'loss'">
-              {{ row.changeQty >= 0 ? '+' : '' }}{{ formatQty(row.changeQty) }} {{ units.labelOf(row.stockUnit) }}
+              {{ row.changeQty >= 0 ? '+' : '' }}{{ formatQty(row.changeQty) }} {{ row.stockUnit == null ? '单位未知' : units.labelOf(row.stockUnit) }}
             </span>
           </template>
         </el-table-column>
         <el-table-column v-if="logCols.show.balance" label="结存" width="100" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.balanceQty) }}</template>
+        </el-table-column>
+        <el-table-column v-if="logCols.show.valuation" label="单价 / 金额" width="180" class-name="num" align="right">
+          <template #default="{ row }">
+            <span v-if="row.valuationStatus === 'UNKNOWN'" class="dim">估值未知</span>
+            <template v-else>{{ row.unitPrice == null ? '—' : formatPrice(row.unitPrice) }} / {{ row.amount == null ? '—' : formatMoney(row.amount) }} {{ row.currency || '' }}</template>
+            <small v-if="row.reversalOfLogId" class="dim"> · 冲销 #{{ row.reversalOfLogId }}</small>
+          </template>
         </el-table-column>
         <el-table-column v-if="logCols.show.dyeLot" label="缸号" width="110">
           <template #default="{ row }">{{ row.dyeLot || '—' }}</template>

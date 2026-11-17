@@ -22,6 +22,7 @@ import type { FileVO } from '@/types/system'
 import { ORDER_LOG_ACTIONS, ORDER_SOURCE, ORDER_STATUS, type OrderAction, type OrderChangeRow, type OrderDetail, type OrderStyle } from '@/types/order'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import { formatDate, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
+import { businessToday } from '@/utils/businessDate'
 import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
 import ChangeTable from '../change/ChangeTable.vue'
@@ -135,9 +136,8 @@ const dueDate = computed(() => (detail.value ? (approved.value && detail.value.c
 const daysLeft = computed(() => {
   const d = detail.value
   if (!d || (d.status !== 'APPROVED' && d.status !== 'RUNNING')) return null
-  const due = new Date(`${dueDate.value}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const due = new Date(`${dueDate.value}T00:00:00Z`)
+  const today = new Date(`${businessToday()}T00:00:00Z`)
   return Math.round((due.getTime() - today.getTime()) / 86400000)
 })
 
@@ -164,15 +164,18 @@ const subOf = (skuId: number) => {
 /** 款的单价：都一样写一个数，不一样写"按尺码" */
 function priceText(st: OrderStyle): string {
   const prices = new Set(itemsOf(st.styleId).map((i) => i.price))
-  if (prices.size > 1) return '按尺码定价'
+  if (prices.size > 1) return '多个单价（逐 SKU）'
   const p = [...prices][0]
   return p == null ? '没填单价' : `单价 ${formatPrice(p)}`
 }
 
-/** 行交期、行备注（一个款一样，取第一行） */
+/** 混合值不以第一行冒充整款；完整值可展开逐 SKU 查看。 */
 function lineNote(st: OrderStyle): string {
-  const first = itemsOf(st.styleId)[0]
-  return [first?.lineDueDate ? `行交期 ${formatDate(first.lineDueDate)}` : '', first?.remark ?? ''].filter(Boolean).join(' · ')
+  const rows = itemsOf(st.styleId)
+  const dates = new Set(rows.map((row) => row.lineDueDate))
+  const remarks = new Set(rows.map((row) => row.remark))
+  return [dates.size > 1 ? '多个行交期' : rows[0]?.lineDueDate ? `行交期 ${formatDate(rows[0].lineDueDate)}` : '',
+    remarks.size > 1 ? '多个行备注' : rows[0]?.remark ?? ''].filter(Boolean).join(' · ')
 }
 
 // ---------- 按钮 ----------
@@ -318,6 +321,14 @@ function openKitting() {
                 </p>
                 <p v-if="lineNote(st)" class="dim small">{{ lineNote(st) }}</p>
                 <SkuMatrix :model-value="qtysOf(st.styleId)" :sizes="st.sizes" :colors="colorsOf(st.styleId)" :skus="cellsOf(st.styleId)" readonly :sub="subOf" />
+                <el-collapse><el-collapse-item title="逐 SKU 单价 / 行交期 / 备注">
+                  <el-table :data="itemsOf(st.styleId)" size="small">
+                    <el-table-column prop="skuCode" label="SKU" min-width="160" />
+                    <el-table-column label="单价" width="130"><template #default="{ row }">{{ row.price == null ? '未填' : formatPrice(row.price) }}</template></el-table-column>
+                    <el-table-column label="行交期" width="140"><template #default="{ row }">{{ row.lineDueDate || '同要求交期' }}</template></el-table-column>
+                    <el-table-column prop="remark" label="备注" min-width="160" />
+                  </el-table>
+                </el-collapse-item></el-collapse>
               </div>
             </section>
           </el-tab-pane>

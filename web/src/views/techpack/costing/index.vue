@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { categoryApi } from '@/api/basic'
@@ -72,7 +73,7 @@ const categoryName = computed(() => {
   return query.categoryId === undefined ? '' : (find(categories.value) ?? '已选')
 })
 
-const thisYear = new Date().getFullYear()
+const thisYear = Number(businessToday().slice(0, 4))
 const YEARS = Array.from({ length: 8 }, (_, i) => thisYear + 2 - i)
 
 onMounted(async () => {

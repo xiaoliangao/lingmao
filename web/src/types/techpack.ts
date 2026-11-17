@@ -329,6 +329,8 @@ export type ProcessForm = Omit<ProcessRow, 'id' | 'seq'>
 
 /** GET /api/tech-packs/{id}：一个版本的单头和尺寸指示、物料清单、工艺指示三个页签。核价另取（要看成本的权限） */
 export interface TechPackDetail {
+  contextSource: 'LIVE' | 'SNAPSHOT' | 'LEGACY'
+  contextNotice: string | null
   id: number
   styleId: number
   styleCode: string
@@ -357,7 +359,7 @@ export interface TechPackDetail {
   sizes: string[]
   /** 尺码组的基码：尺寸指示里标出来，单件成本按它的用量算 */
   baseSize: string
-  /** 款式现在启用的颜色，按顺序；随款色配料按它出行，"按颜色"视图、导出 PDF 按它选 */
+  /** 本版次的颜色集合，按顺序；随款色配料按它出行，"按颜色"视图、导出 PDF 按它选 */
   colors: ColorOption[]
   /** 尺寸指示选部位的下拉：字典 size_point 启用的项和它的默认测量方法（工艺标准里填的）。只读的版本也给，数量不多 */
   pointOptions: { label: string; method: string | null }[]

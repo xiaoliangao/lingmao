@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessToday } from '@/utils/businessDate'
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
@@ -40,7 +41,7 @@ const editing = id !== null
 const classes = useDict('style_class')
 const sources = useDict('style_source')
 
-const thisYear = new Date().getFullYear()
+const thisYear = Number(businessToday().slice(0, 4))
 const form = reactive<StyleCreateForm>({
   codeMode: 'AUTO',
   code: '',
@@ -256,6 +257,7 @@ function body() {
 }
 
 async function save() {
+  if (!(await guard.waitForUploads())) return
   try {
     await formRef.value?.validate()
   } catch {
@@ -283,6 +285,7 @@ async function save() {
 
 /** 去别的页，关掉这个表单页签（取消是明确不要了，不再问） */
 async function leave(to: string) {
+  guard.discardUploads()
   guard.markSaved()
   await router.push(to)
   tabs.close(path, to)
@@ -386,7 +389,7 @@ const title = computed(() => (editing ? `编辑款式 ${names.code}` : '新建�
         <div class="grid">
           <el-form-item label="尺码组" prop="sizeGroupId">
             <el-select v-model="form.sizeGroupId" filterable :disabled="editing && skuCount > 0">
-              <el-option v-for="g in sizeGroupOptions" :key="g.id" :label="`${g.name}　${g.sizes.join(' ')}`" :value="g.id" />
+              <el-option v-for="g in sizeGroupOptions" :key="g.id" :label="`${g.name}\u3000${g.sizes.join(' ')}`" :value="g.id" />
             </el-select>
             <p v-if="editing && skuCount > 0" class="hint">已经生成 {{ skuCount }} 个 SKU，不能换尺码组</p>
           </el-form-item>
@@ -394,7 +397,7 @@ const title = computed(() => (editing ? `编辑款式 ${names.code}` : '新建�
             <el-input-number v-model="form.tagPrice" :min="0" :precision="2" :controls="false" :value-on-clear="null" />
           </el-form-item>
           <el-form-item label="参考成本价（元）">
-            <el-input-number v-model="form.refCost" :min="0" :precision="2" :controls="false" :value-on-clear="null" placeholder="一期手填" />
+            <el-input-number v-model="form.refCost" :min="0" :precision="4" :controls="false" :value-on-clear="null" placeholder="一期手填" />
           </el-form-item>
           <el-form-item label="主力面料">
             <div class="pick-row">

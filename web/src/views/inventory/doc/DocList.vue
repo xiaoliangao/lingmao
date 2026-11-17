@@ -15,7 +15,7 @@ import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import type { WarehouseOption } from '@/types/basic'
-import { INV_DOC_STATUS, INV_DOC_TYPE, type InvDocKind, type InvDocQuery, type InvDocRow, type InvDocStatus, type InvDocType } from '@/types/inventory'
+import { INV_DOC_STATUS, INV_DOC_TYPE, type InvDocKind, type InvDocRow, type InvDocStatus, type InvDocType } from '@/types/inventory'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
 
 /**
@@ -63,8 +63,11 @@ const partnerName = ref<string | null>(null)
 const tableRef = ref<TableInstance>()
 const selected = ref<InvDocRow[]>([])
 
-const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
-  fetch: ({ docTypeTab, statusTab, ...rest }) => invDocApi.page({ ...rest, kind: props.kind, docType: docTypeTab || undefined, status: statusTab ? [statusTab] : undefined }),
+const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
+  normalize: ({ docTypeTab, statusTab, ...rest }) => ({ ...rest, kind: props.kind, docType: docTypeTab || undefined, status: statusTab ? [statusTab] : undefined }),
+  fetch: invDocApi.page,
+  exportUrl: '/api/inventory-docs/export',
+  exportName: `${docName.value}.xlsx`,
   query: {
     keyword: '',
     docTypeTab: '' as InvDocType | '',
@@ -134,39 +137,8 @@ const batchActions: BatchAction<InvDocRow>[] = [
   },
 ]
 
-/** 导出用的条件：和列表一样（不翻页） */
-function exportQuery(): InvDocQuery {
-  return {
-    kind: props.kind,
-    keyword: query.keyword.trim() || undefined,
-    docType: query.docTypeTab || undefined,
-    status: query.statusTab ? [query.statusTab] : undefined,
-    warehouseId: query.warehouseId,
-    partnerId: query.partnerId,
-    docDateFrom: query.docDateFrom,
-    docDateTo: query.docDateTo,
-    mine: query.mine,
-  }
-}
-
-const exporting = ref(false)
-async function exportAll() {
-  exporting.value = true
-  try {
-    await invDocApi.export(exportQuery())
-  } finally {
-    exporting.value = false
-  }
-}
-
-async function exportPicked() {
-  exporting.value = true
-  try {
-    await invDocApi.export({ kind: props.kind, ids: selected.value.map((r) => r.id) })
-  } finally {
-    exporting.value = false
-  }
-}
+const exportAll = () => exportFile()
+const exportPicked = () => exportSelected(selected.value.map((r) => r.id))
 
 defineExpose({ reload: load, exportAll, exporting })
 </script>

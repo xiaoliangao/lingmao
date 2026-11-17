@@ -2,7 +2,7 @@ import { download, http, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
   BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
-  MobileOrderRow, NodePlanItem, NodeReport, NodeReportForm, NodeReportResult, ProductionCounts, ProductionDetail, ProductionForm,
+  MobileOrderRow, NodePlanReq, NodeReport, NodeReportForm, NodeReportResult, ProductionCounts, ProductionDetail, ProductionForm,
   ProductionIssue, ProductionMaterials, ProductionQuery, ProductionReceipt, ProductionRow, ReceiptCreated, ReceiptForm,
 } from '@/types/production'
 import { attachmentBody } from './basic'
@@ -34,7 +34,7 @@ export const productionApi = {
   // ---------- 进度节点 ----------
 
   /** 改节点计划（已下单、生产中）：全部节点一起发；计划完成早于计划开始 400 */
-  updatePlan: (id: number, nodes: NodePlanItem[]) => http.put<void>(`${base}/${id}/nodes`, { nodes }),
+  updatePlan: (id: number, data: NodePlanReq) => http.put<{ planRevision: number }>(`${base}/${id}/nodes`, data),
   /** 报进度（电脑、手机共用）。已经报过完成的节点再"只报开始" 1000 */
   report: (id: number, nodeId: number, { photos, ...data }: NodeReportForm) =>
     http.post<NodeReportResult>(`${base}/${id}/nodes/${nodeId}/reports`, { ...data, photos: attachmentBody(photos) }),

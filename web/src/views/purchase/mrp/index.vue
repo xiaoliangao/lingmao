@@ -12,6 +12,7 @@ import UserSelect from '@/components/UserSelect.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
 import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
+import { statusQuery } from '@/utils/query'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { MRP_STATUS, type MrpCalcRow, type MrpOrderOption, type MrpStatus, type ReservePct } from '@/types/purchase'
 import { formatDate, formatDateRange, formatQty } from '@/utils/format'
@@ -42,7 +43,8 @@ const dateRange = ref<[string, string] | null>(null)
 const creatorName = ref<string | null>(null)
 
 const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
-  fetch: ({ statusTab, ...rest }) => mrpApi.page({ ...rest, status: statusTab ? [statusTab] : undefined }),
+  normalize: (query) => statusQuery(query),
+  fetch: mrpApi.page,
   query: {
     keyword: '',
     statusTab: pickStatus(route.query.status),

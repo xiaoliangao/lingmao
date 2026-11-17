@@ -170,6 +170,7 @@ function openSku(sku: MaterialSku) {
 }
 
 async function saveSku() {
+  if (!(await skuGuard.waitForUploads())) return
   const sku = skuEditing.value!
   await materialApi.updateSku(id, sku.id, {
     supplierColorNo: orNull(skuForm.supplierColorNo),
@@ -292,7 +293,7 @@ const LOG_ACTIONS = {
         <section class="panel">
           <div class="panel-head">图片<span class="acts dim">第一张是主图</span></div>
           <div class="panel-body">
-            <ImageUpload :model-value="detail.images" :disabled="!canEdit" @update:model-value="saveImages" />
+            <ImageUpload :model-value="detail.images" :disabled="!canEdit" :save="saveImages" />
           </div>
         </section>
         <section class="panel">

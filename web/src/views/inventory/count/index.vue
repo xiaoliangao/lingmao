@@ -10,6 +10,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
+import { statusQuery } from '@/utils/query'
 import type { WarehouseOption } from '@/types/basic'
 import {
   COUNT_PURPOSE_LABEL,
@@ -52,8 +53,8 @@ const createVisible = ref(false)
 const createPurpose = ref<CountPurpose>('DAILY')
 
 const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile } = useTable({
-  fetch: ({ statusTab, ...rest }) =>
-    countApi.page({ ...rest, status: statusTab ? [statusTab] : undefined }),
+  normalize: (query) => statusQuery(query),
+  fetch: countApi.page,
   query: {
     keyword: '',
     statusTab: pickStatus(route.query.status),

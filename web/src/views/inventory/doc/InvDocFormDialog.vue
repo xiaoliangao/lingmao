@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { companyApi, warehouseApi } from '@/api/basic'
@@ -246,7 +247,7 @@ async function onPickedSkus(rows: MaterialPickRow[] | StylePickRow[]) {
 }
 
 function disableFuture(d: Date) {
-  return d.getTime() > Date.now()
+  return isFutureBusinessDay(d)
 }
 
 async function save() {

@@ -56,3 +56,11 @@ docs/private/
 ### 甲方给的表（真实数据，不进公开仓库；原件应放 docs/private/）
 docs/原型/*.xls
 docs/原型/*.xlsx
+
+### CI regression artifacts (uploaded by Actions, never committed) ###
+test-artifacts/
+playwright-report/
+test-results/
+dev/ci/ui/screenshots/
+__pycache__/
+*.pyc

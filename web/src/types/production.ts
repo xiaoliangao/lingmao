@@ -180,6 +180,11 @@ export interface NodeReportResult {
 }
 
 /** 改节点计划：全部节点一起发 */
+export interface NodePlanReq {
+  planRevision: number
+  nodes: NodePlanItem[]
+}
+
 export interface NodePlanItem {
   nodeId: number
   planStart: string
@@ -232,6 +237,8 @@ export interface ProductionRow {
 }
 
 export interface ProductionQuery {
+  /** 当前待我审批；忽略 mine / owner，仍要求模块列表权限 */
+  auditForMe?: boolean
   /** 两个菜单的列表必传；看板不传 = 两种都看 */
   kind?: ProductionKind
   /** 单号、订单号、款号、款名、加工厂；一次查几个（README §3.2）时单号、订单号、款号精确查 */
@@ -292,6 +299,8 @@ export interface OpenIssueBrief {
 
 /** GET /api/production-orders/{id} */
 export interface ProductionDetail extends DocHeader<ProductionStatus, ProductionAction> {
+  /** 节点计划的独立修订号，不使用单据 version */
+  planRevision: number
   kind: ProductionKind
   factoryId: number
   factoryCode: string
@@ -567,6 +576,8 @@ export interface ReceiptItemForm {
 
 /** 登记回货（POST /api/production-orders/{id}/receipts） */
 export interface ReceiptForm {
+  /** 未知结果时保留原 UUID 和完整请求体 */
+  clientActionId: string
   /** 不能晚于今天 */
   receiptDate: string
   warehouseId: number | null

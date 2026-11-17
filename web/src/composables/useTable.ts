@@ -2,16 +2,19 @@ import { onMounted, reactive, ref, shallowRef, toRaw, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { PageParams } from '@/api/system'
 import type { PageResult } from '@/types/system'
-import { download } from '@/utils/request'
+import { ApiError, download } from '@/utils/request'
+import { cleanQuery } from '@/utils/query'
 
 /** 每页条数的选项（PRD §5.4） */
 export const PAGE_SIZES = [20, 50, 100]
 
-export interface UseTableOptions<Row, Q extends object> {
+export interface UseTableOptions<Row, Q extends object, P extends object = Partial<Q>> {
   /** 列表接口：收"去掉空值的查询条件 + page、size"，返回 { list, total } */
-  fetch: (params: Partial<Q> & PageParams) => Promise<PageResult<Row>>
+  fetch: (params: P & PageParams) => Promise<PageResult<Row>>
   /** 查询条件的初始值，重置时回到它。数组条件（多选、日期范围）发出去是 key=a&key=b，后端用 List 接 */
   query: Q
+  /** Map UI-only fields once, before both list and export. */
+  normalize?: (query: Partial<Q>) => P
   /** 导出接口，如 /api/suppliers/export。不传就没有导出 */
   exportUrl?: string
   /** 导出的文件名：后端响应头里带了文件名就用后端的，取不到才用它 */
@@ -36,7 +39,7 @@ export interface UseTableOptions<Row, Q extends object> {
  *
  * el-pagination 上不要再写 @change：翻页、改条数由这里的 watch 去查，再写一个就查两次
  */
-export function useTable<Row, Q extends object>(options: UseTableOptions<Row, Q>) {
+export function useTable<Row, Q extends object, P extends object = Partial<Q>>(options: UseTableOptions<Row, Q, P>) {
   const initial = structuredClone(toRaw(options.query))
   const query = reactive(structuredClone(initial)) as Q
   const page = ref(1)
@@ -45,22 +48,28 @@ export function useTable<Row, Q extends object>(options: UseTableOptions<Row, Q>
   const total = ref(0)
   const loading = ref(false)
   const exporting = ref(false)
+  const error = ref<string | null>(null)
 
   /** 表格里现在这批数据是按什么条件查的。导出用它：筛选框改了还没点查询时，导出的仍是看到的这批 */
-  let shownParams: Partial<Q> | null = null
+  let shownParams: P | null = null
   /** 查询的序号：连着查了两次，先发的那次后回来时，不能盖掉后发的结果 */
   let seq = 0
 
   async function load() {
     const current = ++seq
-    const params = clean(query)
+    const clean = cleanQuery(toRaw(query))
+    const params = cleanQuery(options.normalize ? options.normalize(clean) : clean) as P
     loading.value = true
     try {
       const result = await options.fetch({ ...params, page: page.value, size: size.value })
       if (current !== seq) return
       list.value = result.list
       total.value = result.total
-      shownParams = params
+      shownParams = structuredClone(params)
+      error.value = null
+    } catch (e) {
+      if (current === seq) error.value = e instanceof Error ? e.message : '查询失败，请重试'
+      if (!(e instanceof ApiError)) throw e
     } finally {
       if (current === seq) loading.value = false
     }
@@ -84,34 +93,32 @@ export function useTable<Row, Q extends object>(options: UseTableOptions<Row, Q>
   // el-pagination 会把页码退回上一页，也是走这里
   watch([page, size], () => load())
 
-  async function exportFile() {
+  async function exportRows(ids?: readonly number[]) {
     if (!options.exportUrl) return
-    if (shownParams && total.value === 0) {
+    if (!shownParams) {
+      ElMessage.info('请先成功查询，再导出当前结果')
+      return
+    }
+    if (total.value === 0) {
       ElMessage.info('没有符合条件的数据，不用导出')
       return
     }
     exporting.value = true
     try {
-      await download(options.exportUrl, shownParams ?? clean(query), options.exportName ?? '导出.xlsx')
+      const params = { ...structuredClone(shownParams), ...(ids ? { ids: [...ids] } : {}) }
+      await download(options.exportUrl, params, options.exportName ?? '导出.xlsx')
+    } catch (e) {
+      if (!(e instanceof ApiError)) throw e
     } finally {
       exporting.value = false
     }
   }
+  const exportFile = () => exportRows()
+  const exportSelected = (ids: readonly number[]) => exportRows(ids)
 
   if (options.immediate ?? true) {
     onMounted(load)
   }
 
-  return { query, page, size, pageSizes: PAGE_SIZES, list, total, loading, load, search, reset, exporting, exportFile }
-}
-
-/** 去掉没填的条件（空串、null、undefined、空数组），字符串去掉首尾空格。数组复制一份，存下来以后不会跟着筛选框变 */
-function clean<Q extends object>(query: Q): Partial<Q> {
-  const params: Record<string, unknown> = {}
-  for (const [key, raw] of Object.entries(query)) {
-    const value: unknown = typeof raw === 'string' ? raw.trim() : raw
-    if (value === '' || value == null || (Array.isArray(value) && value.length === 0)) continue
-    params[key] = Array.isArray(value) ? [...value] : value
-  }
-  return params as Partial<Q>
+  return { query, page, size, pageSizes: PAGE_SIZES, list, total, loading, error, load, search, reset, exporting, exportFile, exportSelected }
 }

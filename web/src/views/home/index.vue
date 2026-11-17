@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { homeApi } from '@/api/home'
@@ -41,14 +42,15 @@ const store = useUserStore()
 
 const now = new Date()
 const greeting = (() => {
-  const hour = now.getHours()
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hourCycle: 'h23' }).format(now))
   if (hour >= 5 && hour < 11) return '早上好'
   if (hour >= 11 && hour < 13) return '中午好'
   if (hour >= 13 && hour < 18) return '下午好'
   return '晚上好'
 })()
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
-const todayText = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 星期${WEEKDAYS[now.getDay()]}`
+const day = businessToday(now)
+const todayText = `${day.slice(0, 4)} 年 ${Number(day.slice(5, 7))} 月 ${Number(day.slice(8, 10))} 日 星期${WEEKDAYS[new Date(`${day}T00:00:00Z`).getUTCDay()]}`
 const sub = computed(() => `${greeting}，${store.info?.nickname ?? ''}`)
 
 // ---------- 快捷入口：只出有那个菜单的 ----------
