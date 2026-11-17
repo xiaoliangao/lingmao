@@ -33,6 +33,8 @@ public class CountRowVO {
     private int lossCount;
     private String status;
     private Integer version;
+    /** 制单人 id：算 actions（撤回只给制单人）用，不返回 */
+    @JsonIgnore
     private Long createBy;
     private List<String> actions = List.of();
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")

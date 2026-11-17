@@ -37,6 +37,8 @@ public class InvDocRowVO {
     private BigDecimal totalAmount;
     private LocalDate docDate;
     private String reason;
+    /** 制单人 id：取 createByName 用，不返回 */
+    @JsonIgnore
     private Long createBy;
     private String createByName;
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
