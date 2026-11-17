@@ -9,11 +9,12 @@ import java.util.List;
  * 只在 PackOwners 一处加分支。
  *
  * @param colorIds     启用的颜色，按顺序
+ * @param productName  品名、composition 成分：PDF 表头
  * @param lockedReason 不能再建、改、生效资料包的原因（款式停用了）；null = 能改
  */
 public record PackOwner(String code, String name, String aliasName, Integer year, String season, String sampleNo,
                         long sizeGroupId, List<Long> colorIds, BigDecimal tagPrice, Long defaultFactoryId,
-                        String lockedReason) {
+                        String productName, String composition, String lockedReason) {
 
     public boolean locked() {
         return lockedReason != null;

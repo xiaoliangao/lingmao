@@ -26,7 +26,7 @@ final class PackFixtures {
 
     static PackOwner owner(String lockedReason) {
         return new PackOwner("FS001", "风衣", null, 2026, "AUTUMN", null, 1L, List.of(KHAKI, BLACK), new BigDecimal("299"), 30L,
-                lockedReason);
+                "风衣", "100% 棉", lockedReason);
     }
 
     static PackOwners.Ctx ctx() {

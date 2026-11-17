@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.techpack.controller;
 
+import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
@@ -12,12 +13,18 @@ import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.dto.VersionLockReq;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
+import com.lingmao.scm.module.techpack.service.TechPackPdfService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
+import com.lingmao.scm.security.LoginUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,9 +36,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/** 资料包（docs/api/01 §3）。导出 PDF 在 TechPackPdfController */
+/** 资料包（docs/api/01 §3） */
 @Tag(name = "资料包")
 @RestController
 @RequestMapping("/api/tech-packs")
@@ -40,6 +48,7 @@ public class TechPackController {
 
     private final TechPackService techPackService;
     private final TechPackCostService costService;
+    private final TechPackPdfService pdfService;
 
     @Operation(summary = "一个款的版本列表和概况（默认选哪一版、能建哪个阶段、单件成本）")
     @GetMapping
@@ -118,6 +127,24 @@ public class TechPackController {
     public R<TechPackCostVO> cost(@PathVariable("id") long id,
                                   @Parameter(description = "按哪个颜色算，不给 = 款式第一个颜色") @RequestParam(value = "colorId", required = false) Long colorId) {
         return R.ok(costService.cost(id, colorId));
+    }
+
+    @Operation(summary = "导出 PDF 工艺单（含价格要看成本的权限，没有 403；草稿也能导）")
+    @GetMapping("/{id:\\d+}/pdf")
+    @PreAuthorize("hasAuthority('techpack:pack:list')")
+    public ResponseEntity<byte[]> pdf(@PathVariable("id") long id,
+                                      @Parameter(description = "只出这个颜色的物料清单，不给 = 全部颜色") @RequestParam(value = "colorId", required = false) Long colorId,
+                                      @Parameter(description = "含单价、单件成本、核价和工序工价") @RequestParam(value = "price", defaultValue = "false") boolean price,
+                                      @Parameter(description = "附工艺标准文件") @RequestParam(value = "appendix", defaultValue = "true") boolean appendix) {
+        if (price && !LoginUser.hasAuthority("techpack:cost:query")) {
+            throw new BizException(403, "导出含价格的工艺单要有看成本的权限：不勾「含价格」再导，或者找管理员开权限");
+        }
+        TechPackPdfService.PdfFile file = pdfService.export(id, colorId, price, appendix);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(file.fileName(), StandardCharsets.UTF_8).build().toString())
+                .body(file.content());
     }
 
     @Operation(summary = "操作记录，新的在前")

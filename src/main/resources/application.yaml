@@ -68,5 +68,9 @@ lingmao:
     dir: ${UPLOAD_DIR:./uploads}   # 上传文件存放目录；开发时在项目下的 uploads/（不进 git），生产挂载到容器外
     # 文件地址的签名密钥，和 Nginx 共用（架构 §8）。没配置启动失败（FileUrlSigner）；真实值在 application-local.yaml（服务器上在 .env）
     sign-key: ${FILE_SIGN_KEY:}
+  pdf:
+    # 导出 PDF 用的中文字体所在的目录（架构 §11.1），要有 NotoSansSC-Regular.ttf、NotoSansSC-Bold.ttf。
+    # 本机由 dev/fetch-font.sh 下到 dev/fonts/；部署包的应用镜像里在 /app/fonts/，PDF_FONT_DIR 指过去
+    font-dir: ${PDF_FONT_DIR:dev/fonts}
   backup:
     dir: ${BACKUP_DIR:}            # 备份目录（部署包里只读挂载），管理后台据此显示最近备份；开发环境不配

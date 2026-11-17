@@ -10,6 +10,7 @@ import java.util.List;
  *
  * @param colorIds 款式上启用的颜色，按款式上的顺序；随款色配料、"按颜色"视图、核价默认的第一个颜色都按它
  * @param status   停用的款式不能再建、改、生效资料包（草稿款可以）
+ * @param productName 品名、composition 成分：PDF 表头
  */
 public record StylePackInfo(long id,
                             String code,
@@ -22,5 +23,7 @@ public record StylePackInfo(long id,
                             List<Long> colorIds,
                             BigDecimal tagPrice,
                             Long defaultFactoryId,
+                            String productName,
+                            String composition,
                             StyleStatus status) {
 }

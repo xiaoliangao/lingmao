@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  资料包工艺单（PRD §6.4.6、架构 §11.1）。数据是 TechPackPdfServiceImpl 拼好的 PdfSheet：选项已经套进去，这里只管怎么摆。
+  版式照原型的 TpPrintBody（docs/原型/src/5a-home-style.js）：表头 → 尺寸标准指示 + 面料用量 → 每个颜色一张物料清单 → 核价 → 车间缝制、后道、注意事项 → 签字栏。
+  按 XML 解析：标签要闭合，不用 HTML 实体。字体有常规和粗体两档（PdfRenderer）
+-->
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title th:text="${sheet.title}">工艺单</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 12mm 10mm 14mm 10mm;
+      @bottom-center {
+        content: element(footer);
+      }
+    }
+    body { font-family: 'SCM Sans'; font-size: 8.5pt; color: #2b2622; line-height: 1.45; }
+    #footer { position: running(footer); font-size: 7.5pt; color: #6d655d; text-align: center; }
+    #footer .page::after { content: counter(page); }
+    #footer .pages::after { content: counter(pages); }
+    h1 { font-size: 16pt; font-weight: bold; text-align: center; margin: 0 0 3mm 0; letter-spacing: 2pt; }
+    h2 { font-size: 11pt; font-weight: bold; margin: 5mm 0 2mm 0; padding: 1mm 2mm; background: #efe9e1; border-left: 2pt solid #8a5a32; }
+    h2 small, h3 small { font-size: 8pt; font-weight: normal; color: #6d655d; margin-left: 3mm; }
+    h3 { font-size: 9.5pt; font-weight: bold; margin: 3mm 0 1.5mm 0; color: #5b3a1f; }
+    .mark { float: right; border: 1pt solid #b3261e; color: #b3261e; font-size: 12pt; padding: 0.5mm 3mm; margin-top: -1mm; }
+    table { width: 100%; border-collapse: collapse; -fs-table-paginate: paginate; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
+    th, td { border: 0.5pt solid #b9b0a5; padding: 1mm 1.2mm; vertical-align: top; text-align: left; }
+    th { background: #f6f2ec; font-weight: normal; color: #4a423b; }
+    .num { text-align: right; }
+    .code { font-size: 8pt; }
+    .base { background: #fbf3e6; }
+    .dim { color: #6d655d; }
+    .top { width: 100%; }
+    .top td.cell { border: none; padding: 0; vertical-align: top; }
+    .meta th { width: 17mm; white-space: nowrap; }
+    .meta td { width: 33%; }
+    .top td.pic { width: 44mm; padding-left: 4mm; text-align: center; }
+    .pic img { max-width: 42mm; max-height: 56mm; }
+    .fab { margin: 2mm 0 0 0; padding: 1.5mm 2mm; background: #f6f2ec; }
+    .craft th { width: 22mm; }
+    .craft .text { white-space: pre-wrap; }
+    .craft img { max-width: 80mm; max-height: 60mm; margin: 1mm 2mm 0 0; }
+    .pb { page-break-before: always; }
+    .sign { margin-top: 10mm; width: 100%; }
+    .sign td { border: none; color: #4a423b; width: 33%; padding: 0 3mm; }
+    .sign span { display: block; border-bottom: 0.5pt solid #2b2622; height: 7mm; }
+  </style>
+</head>
+<body>
+<div id="footer">
+  <span th:text="${sheet.meta.styleCode + ' · ' + sheet.meta.packName}">款号</span>
+  <span> · 第 </span><span class="page"></span><span> 页，共 </span><span class="pages"></span><span> 页</span>
+</div>
+
+<span class="mark" th:if="${sheet.statusMark != null}" th:text="${sheet.statusMark}">草稿</span>
+<h1 th:text="${sheet.title}">工艺单</h1>
+
+<table class="top"><tr>
+  <td class="cell">
+    <table class="meta">
+      <tr><th>样衣编号</th><td class="code" th:text="${sheet.meta.sampleNo}">—</td><th>款式编码</th><td class="code" th:text="${sheet.meta.styleCode}">—</td></tr>
+      <tr><th>款式名称</th><td th:text="${sheet.meta.styleName}">—</td><th>花名</th><td th:text="${sheet.meta.aliasName}">—</td></tr>
+      <tr><th>日期</th><td th:text="${sheet.meta.date}">—</td><th>资料包</th><td th:text="${sheet.meta.packName}">—</td></tr>
+      <tr><th>颜色</th><td th:text="${sheet.meta.colors}">—</td><th>尺码</th><td th:text="${sheet.meta.sizes}">—</td></tr>
+      <tr><th>品名</th><td th:text="${sheet.meta.productName}">—</td><th>排版利用率</th><td th:text="${sheet.meta.utilPct}">—</td></tr>
+      <tr><th>成分</th><td colspan="3" th:text="${sheet.meta.composition}">—</td></tr>
+      <tr th:if="${sheet.meta.versionNote != null}"><th>本版说明</th><td colspan="3" th:text="${sheet.meta.versionNote}">—</td></tr>
+    </table>
+  </td>
+  <td class="cell pic" th:if="${sheet.image != null}"><img th:src="${sheet.image}" alt=""/></td>
+</tr></table>
+
+<th:block th:if="${sheet.spec != null}">
+  <h2>尺寸标准指示<small th:text="${'单位 cm · 基码 ' + sheet.spec.baseSize}">单位 cm</small></h2>
+  <table>
+    <thead><tr>
+      <th>部位</th><th>测量方法</th>
+      <th th:each="z : ${sheet.sizes}" class="num" th:classappend="${z == sheet.spec.baseSize} ? 'base' : ''" th:text="${z}">M</th>
+      <th class="num">公差 ±</th><th>备注</th>
+    </tr></thead>
+    <tbody>
+      <tr th:each="r : ${sheet.spec.rows}">
+        <td th:text="${r.point}">部位</td>
+        <td th:text="${r.method}">方法</td>
+        <td th:each="v, i : ${r.values}" class="num" th:classappend="${sheet.sizes[i.index] == sheet.spec.baseSize} ? 'base' : ''" th:text="${v}">0</td>
+        <td class="num" th:text="${r.tolerance}">0</td>
+        <td th:text="${r.remark}">备注</td>
+      </tr>
+    </tbody>
+  </table>
+</th:block>
+<p class="fab" th:if="${sheet.fabricUsage != null}" th:text="${'面料用量　' + sheet.fabricUsage}">面料用量</p>
+
+<th:block th:each="b, bi : ${sheet.boms}">
+  <h2 th:classappend="${bi.index == 0} ? 'pb' : ''">物料清单<small th:text="${b.colorName + '（' + b.colorCode + '）'}">颜色</small></h2>
+  <table>
+    <thead><tr>
+      <th class="num">#</th><th>部位</th><th>物料 SKU</th><th>物料</th><th>单位</th>
+      <th th:each="z : ${sheet.sizes}" class="num" th:text="${z}">M</th>
+      <th class="num">损耗</th><th>来源</th><th>备注</th>
+      <th:block th:if="${sheet.price}"><th class="num">单价</th><th class="num">单件成本</th></th:block>
+    </tr></thead>
+    <tbody>
+      <tr th:each="r : ${b.rows}">
+        <td class="num" th:text="${r.seq}">1</td>
+        <td th:text="${r.part}">部位</td>
+        <td class="code" th:text="${r.skuCodes}">SKU</td>
+        <td th:text="${r.materialName}">物料</td>
+        <td th:text="${r.unit}">米</td>
+        <td th:each="u : ${r.usages}" class="num" th:text="${u}">0</td>
+        <td class="num" th:text="${r.lossPct}">0%</td>
+        <td th:text="${r.source}">来源</td>
+        <td th:text="${r.remark}">备注</td>
+        <th:block th:if="${sheet.price}"><td class="num" th:text="${r.price}">0</td><td class="num" th:text="${r.cost}">0</td></th:block>
+      </tr>
+      <tr th:if="${#lists.isEmpty(b.rows)}"><td th:colspan="${#lists.size(sheet.sizes) + (sheet.price ? 10 : 8)}" class="dim">还没有物料</td></tr>
+    </tbody>
+  </table>
+</th:block>
+
+<th:block th:if="${sheet.cost != null}">
+  <h2>核价<small th:text="${sheet.cost.basis}">按基码用量</small></h2>
+  <table>
+    <tr>
+      <th>面料</th><td class="num" th:text="${sheet.cost.fabric}">0</td>
+      <th>辅料</th><td class="num" th:text="${sheet.cost.trim}">0</td>
+      <th>加工费</th><td class="num" th:text="${sheet.cost.labor}">0</td>
+      <th>其他费用</th><td class="num" th:text="${sheet.cost.other}">0</td>
+      <th>单件成本</th><td class="num" th:text="${sheet.cost.total}">0</td>
+    </tr>
+    <tr th:if="${sheet.cost.otherItems != null}"><th>其他费用</th><td colspan="9" th:text="${sheet.cost.otherItems}">明细</td></tr>
+  </table>
+</th:block>
+
+<th:block th:each="g, gi : ${sheet.craftGroups}">
+  <h2 th:classappend="${gi.index == 0} ? 'pb' : ''" th:text="${g.name}">车间缝制</h2>
+  <table class="craft" th:if="${!#lists.isEmpty(g.items)}">
+    <tr th:each="it : ${g.items}">
+      <th th:text="${it.label}">段</th>
+      <td>
+        <div th:if="${it.packingMode != null}" th:text="${'包装方式：' + it.packingMode}">包装方式</div>
+        <div class="text" th:if="${it.text != null}" th:text="${it.text}">文字</div>
+        <div th:if="${!#lists.isEmpty(it.images)}"><img th:each="src : ${it.images}" th:src="${src}" alt=""/></div>
+        <div class="dim" th:each="s : ${it.skippedImages}" th:text="${s}">放不进的图</div>
+      </td>
+    </tr>
+  </table>
+  <th:block th:if="${!#lists.isEmpty(g.processes)}">
+    <h3>工序工价</h3>
+    <table>
+      <thead><tr><th class="num">序号</th><th>类别</th><th>工序</th><th>工艺要求</th><th class="num">工时（秒）</th><th class="num">工价</th><th>备注</th></tr></thead>
+      <tbody>
+        <tr th:each="p : ${g.processes}">
+          <td class="num" th:text="${p.seq}">1</td>
+          <td th:text="${p.category}">类别</td>
+          <td th:text="${p.name}">工序</td>
+          <td th:text="${p.requirement}">要求</td>
+          <td class="num" th:text="${p.stdSeconds}">0</td>
+          <td class="num" th:text="${p.price}">0</td>
+          <td th:text="${p.remark}">备注</td>
+        </tr>
+        <tr><td colspan="4">合计 = 参考加工价</td><td class="num" th:text="${g.stdSecondsTotal}">0</td><td class="num" th:text="${g.laborTotal}">0</td><td></td></tr>
+      </tbody>
+    </table>
+  </th:block>
+</th:block>
+
+<table class="sign"><tr>
+  <td>制单<span></span></td><td>审核<span></span></td><td>工厂确认<span></span></td>
+</tr></table>
+</body>
+</html>

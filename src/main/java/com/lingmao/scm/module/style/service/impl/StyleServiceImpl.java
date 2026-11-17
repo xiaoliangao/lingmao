@@ -546,7 +546,7 @@ public class StyleServiceImpl implements StyleService {
         for (Style s : styleMapper.selectByIds(distinct)) {
             infos.put(s.getId(), new StylePackInfo(s.getId(), s.getCode(), s.getName(), s.getAliasName(), s.getYear(),
                     s.getSeason(), s.getSampleNo(), s.getSizeGroupId(), colors.getOrDefault(s.getId(), List.of()),
-                    s.getTagPrice(), s.getDefaultFactoryId(), s.getStatus()));
+                    s.getTagPrice(), s.getDefaultFactoryId(), s.getProductName(), s.getComposition(), s.getStatus()));
         }
         return infos;
     }

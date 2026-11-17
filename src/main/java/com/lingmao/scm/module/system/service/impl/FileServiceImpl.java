@@ -19,6 +19,7 @@ import java.nio.file.Paths;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -95,6 +96,16 @@ public class FileServiceImpl implements FileService {
             }
             return null;
         }
+    }
+
+    @Override
+    public Optional<Path> localPath(String url) {
+        String path = signer.strip(url);
+        if (path == null || !path.startsWith(FileUrlSigner.PREFIX)) {
+            return Optional.empty();
+        }
+        Path file = root.resolve(path.substring(FileUrlSigner.PREFIX.length())).normalize();
+        return file.startsWith(root) && Files.isRegularFile(file) ? Optional.of(file) : Optional.empty();
     }
 
     private static String urlOf(String datePath, String fileName) {

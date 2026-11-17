@@ -57,6 +57,25 @@ class FileServiceImplTest {
         assertThat(Files.readAllBytes(saved(vo.url()))).containsExactly(1, 2, 3);
     }
 
+    /**
+     * 规则：导出 PDF 时按地址找上传的文件，带不带签名都认；外部地址、文件不在了、../ 跑出上传目录的都是空，
+     * 不能借这个读服务器上别的文件
+     */
+    @Test
+    void localPath_onlyInsideUploadDir() throws Exception {
+        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+        FileVO vo = service.upload(new MockMultipartFile("file", "说明.pdf", "application/pdf", new byte[]{1}));
+        Files.writeString(tempDir.getParent().resolve("secret-" + tempDir.getFileName() + ".txt"), "x");
+
+        assertThat(service.localPath(vo.url())).contains(saved(vo.url()));
+        assertThat(service.localPath(SIGNER.strip(vo.url()))).contains(saved(vo.url()));
+        assertThat(service.localPath("/files/2026/11/05/none.pdf")).isEmpty();
+        assertThat(service.localPath("/files/../secret-" + tempDir.getFileName() + ".txt")).isEmpty();
+        assertThat(service.localPath("https://example.com/a.pdf")).isEmpty();
+        assertThat(service.localPath(null)).isEmpty();
+        Files.delete(tempDir.getParent().resolve("secret-" + tempDir.getFileName() + ".txt"));
+    }
+
     /** 规则（RFC 001 §10）：jpg 在旁边生成 _s 缩略图，长边 320、比例不变，返回 thumbUrl；缩略图是另一个地址，单独签名 */
     @Test
     void upload_jpg_createsThumbnail() throws Exception {

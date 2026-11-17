@@ -5,6 +5,10 @@ import com.lingmao.scm.module.basic.dto.SizeGroupVO;
 import com.lingmao.scm.module.basic.entity.Color;
 import com.lingmao.scm.module.basic.service.ColorService;
 import com.lingmao.scm.module.basic.service.SizeGroupService;
+import com.lingmao.scm.module.biz.dto.AttachmentVO;
+import com.lingmao.scm.module.biz.entity.Attachment;
+import com.lingmao.scm.module.biz.entity.BizType;
+import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.style.dto.StylePackInfo;
 import com.lingmao.scm.module.style.entity.StyleStatus;
 import com.lingmao.scm.module.style.service.StyleService;
@@ -30,6 +34,7 @@ class PackOwners {
     private final StyleService styleService;
     private final SizeGroupService sizeGroupService;
     private final ColorService colorService;
+    private final AttachmentService attachmentService;
 
     /** 主人 + 算出来的尺码、基码、颜色：详情、核价、生效检查都要 */
     record Ctx(PackOwner owner, List<String> sizes, String baseSize, List<ColorOption> colors) {
@@ -59,6 +64,11 @@ class PackOwners {
         return owners;
     }
 
+    /** 主图（PDF 表头）：款式图的第一张；没有是 null */
+    AttachmentVO mainImage(TechPack pack) {
+        return attachmentService.firsts(BizType.STYLE, List.of(pack.getStyleId()), Attachment.IMAGE).get(pack.getStyleId());
+    }
+
     Ctx context(PackOwner owner) {
         SizeGroupVO group = sizeGroupService.getById(owner.sizeGroupId());
         Map<Long, Color> colors = colorService.byIds(owner.colorIds());
@@ -70,6 +80,6 @@ class PackOwners {
     private static PackOwner toOwner(StylePackInfo s) {
         String locked = s.status() == StyleStatus.DISABLED ? "款式 " + s.code() + " 已经停用了，资料包不能再建、改、生效" : null;
         return new PackOwner(s.code(), s.name(), s.aliasName(), s.year(), s.season(), s.sampleNo(), s.sizeGroupId(),
-                s.colorIds(), s.tagPrice(), s.defaultFactoryId(), locked);
+                s.colorIds(), s.tagPrice(), s.defaultFactoryId(), s.productName(), s.composition(), locked);
     }
 }

@@ -1,4 +1,5 @@
-# 后端镜像：Java 21 运行时 + 打好的 jar。jar 由 deploy/build-package.sh 在本机打好，放在构建目录的 app.jar。
+# 后端镜像：Java 21 运行时 + 打好的 jar + 导出 PDF 用的中文字体。jar 由 deploy/build-package.sh 在本机打好，放在构建目录的 app.jar；
+# 字体（思源黑体的 Noto Sans SC 常规、粗体，SIL OFL 授权，授权书 OFL.txt 一起放）由 dev/fetch-font.sh 下好，放在构建目录的 fonts/。
 # 基础镜像是 Ubuntu 系的 eclipse-temurin，不用 alpine：不知道部署方服务器的系统和内核版本，Debian / Ubuntu 系兼容面最宽（架构 §12.1）。
 # 里面自带 curl（compose.yml 的健康检查、安装和升级脚本用它查 /api/version）和时区数据。
 # 下面的 ENTRYPOINT 换掉了基础镜像自带的那个（它只负责导入自定义的 CA 证书，我们用不到）
@@ -12,7 +13,8 @@ RUN groupadd --gid 10001 app \
 
 WORKDIR /app
 COPY app.jar app.jar
-ENV TZ=Asia/Shanghai
+COPY fonts/ fonts/
+ENV TZ=Asia/Shanghai PDF_FONT_DIR=/app/fonts
 USER app
 EXPOSE 8080
 

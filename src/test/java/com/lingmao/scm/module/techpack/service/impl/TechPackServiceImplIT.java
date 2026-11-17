@@ -11,7 +11,9 @@ import com.lingmao.scm.module.techpack.dto.BomSkuForm;
 import com.lingmao.scm.module.techpack.dto.CraftSectionForm;
 import com.lingmao.scm.module.techpack.dto.CraftTextsReq;
 import com.lingmao.scm.module.techpack.dto.PointOption;
+import com.lingmao.scm.module.techpack.dto.ProcessForm;
 import com.lingmao.scm.module.techpack.dto.PublishProblem;
+import com.lingmao.scm.module.techpack.dto.SpecPointForm;
 import com.lingmao.scm.module.techpack.dto.StyleCostQuery;
 import com.lingmao.scm.module.techpack.dto.StyleCostRowVO;
 import com.lingmao.scm.module.techpack.dto.TechPackCostVO;
@@ -25,19 +27,29 @@ import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.service.CraftStandardService;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
+import com.lingmao.scm.module.techpack.service.TechPackPdfService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.LoginUser;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +74,10 @@ class TechPackServiceImplIT {
     private TechPackCostService costService;
     @Autowired
     private CraftStandardService craftStandardService;
+    @Autowired
+    private TechPackPdfService pdfService;
+    @Value("${lingmao.upload.dir}")
+    private String uploadDir;
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -242,6 +258,60 @@ class TechPackServiceImplIT {
         assertThatThrownBy(() -> craftStandardService.saveTexts(texts)).isInstanceOf(BizException.class);
     }
 
+    /**
+     * 规则（PRD §6.4.6、架构 §11.1）：导出的工艺单读回文字——不含价格时没有单价、单件成本、工序工价；草稿印"草稿"；
+     * 物料清单按颜色出，SKU 写成"物料名-颜色"；工艺标准的图片一张一页附在后面，不附就没有；只出一个颜色时没有别的颜色；每次导出记一条操作记录
+     */
+    @Test
+    void exportPdf() throws Exception {
+        Fixture f = fixture();
+        long id = techPackService.create(f.style, PackStage.PROD);
+        TechPackSaveReq req = saveReq(0, f, null);
+        SpecPointForm spec = new SpecPointForm();
+        spec.setPoint("后中长");
+        spec.setMethod("后领中量到底边");
+        spec.setToleranceCm(new BigDecimal("0.5"));
+        spec.setValues(Map.of("S", new BigDecimal("64"), "M", new BigDecimal("66"), "L", new BigDecimal("68")));
+        req.setSpecPoints(List.of(spec));
+        ProcessForm process = new ProcessForm();
+        process.setName("合肩缝");
+        process.setStdSeconds(40);
+        process.setPrice(new BigDecimal("1.2"));
+        req.setProcesses(List.of(process));
+        techPackService.save(id, req);
+        String code = jdbcTemplate.queryForObject("SELECT code FROM sty_style WHERE id = ?", String.class, f.style);
+
+        Path dir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve("it-techpack");
+        Files.createDirectories(dir);
+        Path png = dir.resolve("std-" + suffix() + ".png");
+        ImageIO.write(new BufferedImage(400, 200, BufferedImage.TYPE_INT_RGB), "png", png.toFile());
+        Long attachment = jdbcTemplate.queryForObject("""
+                INSERT INTO biz_attachment (doc_type, doc_id, category, sort, file_url, file_name, file_size)
+                VALUES ('CRAFT_STANDARD', 0, 'FILE', 0, ?, '做工标准.png', 100) RETURNING id""",
+                Long.class, "/files/it-techpack/" + png.getFileName());
+        try {
+            TechPackPdfService.PdfFile plain = pdfService.export(id, null, false, true);
+            assertThat(plain.fileName()).isEqualTo(code + "-IT 资料包款-工艺单-V1.pdf");
+            String text = flat(plain.content());
+            assertThat(text).contains("工艺单", "草稿", "尺寸标准指示", "后中长", "面料用量", "IT资料包面料-IT甲色", "IT资料包面料-IT乙色",
+                    "缝制要求", "针距3cm12针", "附页1·做工标准");
+            assertThat(text).doesNotContain("18.50", "单件成本", "合肩缝", "核价");
+
+            TechPackPdfService.PdfFile priced = pdfService.export(id, f.colorA, true, false);
+            String pricedText = flat(priced.content());
+            assertThat(pricedText).contains("18.50/米", "28.58", "核价", "合肩缝", "IT资料包面料-IT甲色")
+                    .doesNotContain("IT资料包面料-IT乙色", "附页");
+            assertThat(count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ? AND action = 'export-pdf'", id))
+                    .isEqualTo(2);
+            // 留一份在 target/ 下，改版式时打开看
+            Files.write(Paths.get("target", "techpack-it-plain.pdf"), plain.content());
+            Files.write(Paths.get("target", "techpack-it-priced.pdf"), priced.content());
+        } finally {
+            jdbcTemplate.update("DELETE FROM biz_attachment WHERE id = ?", attachment);
+            Files.deleteIfExists(png);
+        }
+    }
+
     // ---------------------------------------------------------------- 数据
 
     /** 一个款式（两个颜色、S/M/L 基码 M）、一个面料（两个颜色的 SKU，SKU 价 18.5）、一家供应商 */
@@ -336,6 +406,13 @@ class TechPackServiceImplIT {
     private int count(String sql, Object... args) {
         Integer n = jdbcTemplate.queryForObject(sql, Integer.class, args);
         return n == null ? 0 : n;
+    }
+
+    /** PDF 里的文字，去掉所有空白（表格里折行的地方会断开） */
+    private static String flat(byte[] pdf) throws Exception {
+        try (PDDocument doc = Loader.loadPDF(pdf)) {
+            return new PDFTextStripper().getText(doc).replaceAll("\\s+", "");
+        }
     }
 
     private static String suffix() {
