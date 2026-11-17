@@ -14,6 +14,9 @@
  *   <StatusTag :tone="row.status === 1 ? 'active' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
  *
  * dot：只出一个小圆点（图卡角上这种放不下字的地方），字放进 title
+ *
+ * 放在表格里，列宽至少：2 个字 80、3 个字 92、4 个字 104（标签 29.5 + 每字 12，格子左右各留 12）；
+ * 做第一列、最后一列再加 12（铺满页面的表格两头留 24）。窄了格子末尾会出省略号，鼠标移上去还弹一遍状态
  */
 type Tone = 'active' | 'progress' | 'pending' | 'done' | 'off' | 'closed' | 'void' | 'danger'
 withDefaults(defineProps<{ tone?: Tone; dot?: boolean }>(), { tone: 'active', dot: false })

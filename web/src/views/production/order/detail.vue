@@ -486,7 +486,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                 <el-table-column label="日期" width="100" class-name="num">
                   <template #default="{ row }">{{ formatDate(row.docDate) }}</template>
                 </el-table-column>
-                <el-table-column label="状态" width="86">
+                <el-table-column label="状态" width="96">
                   <template #default="{ row }">
                     <StatusTag :tone="INV_DOC_STATUS[(row as ProductionStockDoc).status].tone">
                       {{ INV_DOC_STATUS[(row as ProductionStockDoc).status].label }}
@@ -526,7 +526,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               <el-table-column label="处理措施" min-width="150">
                 <template #default="{ row }">{{ row.measure || '—' }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="86">
+              <el-table-column label="状态" width="96">
                 <template #default="{ row }">
                   <StatusTag :tone="ISSUE_STATUS[(row as ProductionIssue).status].tone">{{ ISSUE_STATUS[(row as ProductionIssue).status].label }}</StatusTag>
                 </template>
@@ -563,7 +563,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               <el-table-column label="登记" min-width="150" class-name="num">
                 <template #default="{ row }">{{ row.createByName ?? '—' }} {{ formatDateTime(row.createTime) }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="86">
+              <el-table-column label="状态" width="96">
                 <template #default="{ row }">
                   <StatusTag :tone="RECEIPT_STATUS[(row as ProductionReceipt).status].tone">{{ RECEIPT_STATUS[(row as ProductionReceipt).status].label }}</StatusTag>
                 </template>

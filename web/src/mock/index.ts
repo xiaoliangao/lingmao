@@ -92,9 +92,13 @@ installMock((config) => {
     if (!matched) continue
     const params = Object.fromEntries(route.keys.map((key, i) => [key, decodeURIComponent(matched[i + 1]!)]))
     const body = typeof config.data === 'string' ? JSON.parse(config.data || 'null') : config.data
+    // 返回的数据过一遍 JSON，和走网络一样每次都是新对象：handler 直接把内存里的假数据交出去的话，页面拿到的是同一个对象，
+    // 之后 handler 改它（开始处理、关闭）不经过 Vue，页面重新取回来又是同一个引用，Vue 认为没变、不重画，状态就卡在旧的
     return delay()
       .then(() => route.handler({ params, query: parseQuery(config, url), body }))
-      .then((data): R<unknown> | Blob => (data instanceof Blob ? data : { code: 0, msg: 'ok', data: data ?? null }))
+      .then((data): R<unknown> | Blob =>
+        data instanceof Blob ? data : { code: 0, msg: 'ok', data: data == null ? null : JSON.parse(JSON.stringify(data)) },
+      )
       .catch((e: unknown): R<unknown> => {
         if (e instanceof MockError) return { code: e.code, msg: e.message, data: e.data }
         console.error('[mock]', method.toUpperCase(), url.pathname, e)

@@ -82,7 +82,7 @@ function choose(row: IssueOption) {
       <el-table-column label="件数" width="84" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
       </el-table-column>
-      <el-table-column label="领料状态" width="96">
+      <el-table-column label="领料状态" width="108">
         <template #default="{ row }">
           <StatusTag v-if="row.issueStatus" :tone="MATERIAL_ISSUE_STATUS[(row as IssueOption).issueStatus!].tone">
             {{ MATERIAL_ISSUE_STATUS[(row as IssueOption).issueStatus!].label }}
