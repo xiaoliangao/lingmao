@@ -1,4 +1,3 @@
-import type { ApprovalRule, ApprovalRuleForm } from '@/types/biz'
 import type {
   OrderAuditReq,
   OrderChangeCreateForm,
@@ -17,42 +16,6 @@ import type {
   StyleOrderRow,
 } from '@/types/order'
 import { fail, mock, page } from './index'
-
-let ruleSeq = 10
-const approvalRules: ApprovalRule[] = [
-  { id: 1, bizType: 'PURCHASE_ORDER', overAmount: 50000, roleId: 1, roleName: '总经理', userId: null, userName: null },
-  { id: 2, bizType: 'PRODUCTION_ORDER', overAmount: 100000, roleId: 1, roleName: '总经理', userId: null, userName: null },
-]
-
-mock('get', '/api/approval-rules', () => approvalRules)
-mock('post', '/api/approval-rules', ({ body }) => {
-  const f = body as ApprovalRuleForm
-  const id = ++ruleSeq
-  approvalRules.push({
-    id,
-    bizType: f.bizType,
-    overAmount: f.overAmount ?? 0,
-    roleId: f.roleId,
-    roleName: f.roleId ? '总经理' : null,
-    userId: f.userId,
-    userName: f.userId ? '管理员' : null,
-  })
-  return id
-})
-mock('put', '/api/approval-rules/:id', ({ params, body }) => {
-  const hit = approvalRules.find((r) => r.id === Number(params.id)) ?? fail(404, '规则不存在')
-  const f = body as ApprovalRuleForm
-  hit.bizType = f.bizType
-  hit.overAmount = f.overAmount ?? 0
-  hit.roleId = f.roleId
-  hit.userId = f.userId
-  return null
-})
-mock('delete', '/api/approval-rules/:id', ({ params }) => {
-  const idx = approvalRules.findIndex((r) => r.id === Number(params.id))
-  if (idx >= 0) approvalRules.splice(idx, 1)
-  return null
-})
 
 let orderSeq = 500
 const orders: OrderDetail[] = [
@@ -212,6 +175,7 @@ function toOrderRow(d: OrderDetail): OrderRow {
     source: d.source,
     createByName: d.createByName,
     createTime: d.createTime,
+    version: d.version,
     actions: d.actions,
   }
 }

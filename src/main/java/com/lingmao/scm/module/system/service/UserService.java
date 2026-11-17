@@ -27,6 +27,9 @@ public interface UserService {
      */
     Map<Long, String> nicknames(Collection<Long> ids);
 
+    /** 账号在不在、启用没有（删除了的算不在）：审批规则选审批人、提交时检查规则用 */
+    boolean isEnabled(long id);
+
     /** 新增用户，返回新 id。用户名已存在抛 BizException */
     Long create(UserCreateReq req);
 

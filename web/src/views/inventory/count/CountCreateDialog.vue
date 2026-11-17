@@ -92,7 +92,7 @@ async function init() {
   openWhs.value = opens
   categories.value = tree
 
-  form.companyId = comps[0]?.id ?? null
+  form.companyId = user.defaultCompanyId
   form.purpose = props.defaultPurpose
   form.scope = props.defaultPurpose === 'OPENING' ? 'PICKED' : 'ALL'
   form.categoryIds = []

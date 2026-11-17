@@ -185,25 +185,19 @@ const canSchedule = (row: OrderRow) => row.status !== 'DRAFT' && row.status !== 
 const tableRef = ref<TableInstance>()
 const selected = ref<OrderRow[]>([])
 
-/** 列表行上没有 version：批量提交、审核前取一次详情 */
+/** 用行上的 version：列表取到以后别人改过，后端回 1002，批量条留着勾、报原因 */
 const batchActions: BatchAction<OrderRow>[] = [
   {
     label: '提交',
     perm: 'order:order:submit',
     can: (r) => r.actions.includes('submit'),
-    run: async (r, o) => {
-      const d = await orderApi.get(r.id)
-      await orderApi.act(r.id, 'submit', { version: d.version }, o)
-    },
+    run: (r, o) => orderApi.act(r.id, 'submit', { version: r.version }, o),
   },
   {
     label: '审核',
     can: (r) => r.actions.includes('audit'),
     confirm: '承诺交期按要求交期定，要另定的进详情审。',
-    run: async (r, o) => {
-      const d = await orderApi.get(r.id)
-      await orderApi.audit(r.id, { version: d.version, commitDate: d.commitDate ?? d.requiredDate }, o)
-    },
+    run: (r, o) => orderApi.audit(r.id, { version: r.version, commitDate: r.commitDate ?? r.requiredDate }, o),
   },
 ]
 
@@ -219,9 +213,9 @@ async function exportPicked() {
 
 // ---------- Excel 导入（单头在 #head 里，02 §3.9） ----------
 const importVisible = ref(false)
-/** 主体空着 = 后端用我的默认主体；业务员、跟单员默认我。跟单员必填，没选时"开始导入"灰掉（不拿别的 id 顶上） */
+/** 主体默认我的默认主体，必填（没有默认主体时要选了才能导）；业务员、跟单员默认我，清空 = 导入的人 */
 const importHead = reactive({
-  companyId: null as number | null,
+  companyId: user.defaultCompanyId,
   orderType: 'STOCK',
   brand: null as string | null,
   requiredDate: addDaysStr(todayStr(), 60),
@@ -230,8 +224,8 @@ const importHead = reactive({
 })
 
 const importReadyHead = computed<OrderImportHead | null>(() => {
-  const { merchId, ...rest } = importHead
-  return merchId && rest.orderType && rest.requiredDate ? { ...rest, merchId } : null
+  const { companyId, ...rest } = importHead
+  return companyId && rest.orderType && rest.requiredDate ? { ...rest, companyId } : null
 })
 const importUrl = computed(() => (importReadyHead.value ? orderApi.importUrl(importReadyHead.value) : ''))
 
@@ -397,8 +391,8 @@ function onImported(count: number) {
     >
       <template #head>
         <el-form label-position="top" class="form-grid import-head">
-          <el-form-item label="主体">
-            <CompanySelect v-model="importHead.companyId" clearable placeholder="我的默认主体" />
+          <el-form-item label="主体" required>
+            <CompanySelect v-model="importHead.companyId" placeholder="选主体" />
           </el-form-item>
           <el-form-item label="订单类型" required>
             <DictSelect v-model="importHead.orderType" type="order_type" />
@@ -409,10 +403,10 @@ function onImported(count: number) {
           <el-form-item label="要求交期" required>
             <el-date-picker v-model="importHead.requiredDate" type="date" value-format="YYYY-MM-DD" :clearable="false" />
           </el-form-item>
-          <el-form-item label="业务员" required>
+          <el-form-item label="业务员">
             <UserSelect v-model="importHead.salesId" :label="user.info?.nickname" />
           </el-form-item>
-          <el-form-item label="跟单员" required>
+          <el-form-item label="跟单员">
             <UserSelect v-model="importHead.merchId" :label="user.info?.nickname" />
           </el-form-item>
         </el-form>

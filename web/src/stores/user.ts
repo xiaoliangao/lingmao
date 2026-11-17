@@ -11,6 +11,8 @@ export const useUserStore = defineStore('user', () => {
   const perms = computed(() => new Set(info.value?.perms ?? []))
   /** 超级管理员：能进管理后台 */
   const isAdmin = computed(() => info.value?.roles.includes('admin') ?? false)
+  /** 默认主体的 id：新建单据的主体默认填它，没有是 null（让人选） */
+  const defaultCompanyId = computed(() => info.value?.defaultCompany?.id ?? null)
   /** 业务菜单（首页这一侧）和管理后台的菜单，按顶层目录分开 */
   const workbenchMenus = computed(() => (info.value?.menus ?? []).filter((m) => !m.adminOnly))
   const adminMenus = computed(() => (info.value?.menus ?? []).filter((m) => m.adminOnly))
@@ -40,5 +42,5 @@ export const useUserStore = defineStore('user', () => {
     return perms.value.has(perm)
   }
 
-  return { token, info, isAdmin, workbenchMenus, adminMenus, login, fetchMe, logout, hasPerm }
+  return { token, info, isAdmin, defaultCompanyId, workbenchMenus, adminMenus, login, fetchMe, logout, hasPerm }
 })

@@ -206,8 +206,8 @@ async function init() {
   companies.value = comps
   warehouses.value = whs
   if (id === null) {
-    // 接口要求带主体：先放第一个（多主体的自己换）。用户上还没有"默认主体"
-    head.companyId = comps[0]?.id ?? null
+    // 主体必填：默认我的默认主体，没有（不止一个启用的主体、又没设）就空着让人选
+    head.companyId = user.defaultCompanyId
     head.warehouseId = warehouseOptions.value.find((w) => w.type === 'MATERIAL')?.id ?? null
     guard.markSaved()
     return

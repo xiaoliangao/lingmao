@@ -8,6 +8,8 @@ import com.lingmao.scm.module.basic.dto.CompanySaveReq;
 import com.lingmao.scm.module.basic.entity.Company;
 import com.lingmao.scm.module.basic.mapper.CompanyMapper;
 import com.lingmao.scm.module.basic.service.CompanyService;
+import com.lingmao.scm.module.system.dto.CompanyBrief;
+import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +18,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-public class CompanyServiceImpl implements CompanyService {
+public class CompanyServiceImpl implements CompanyService, DefaultCompanyProvider {
 
     private final CompanyMapper companyMapper;
 
@@ -40,6 +42,23 @@ public class CompanyServiceImpl implements CompanyService {
                         .eq(Company::getStatus, Statuses.ENABLED)
                         .orderByAsc(Company::getCode))
                 .stream().map(CompanyOption::from).toList();
+    }
+
+    /** 默认主体（RFC 003 §3.1）：用户设的启用就用它；没设或停用了，启用的只有一个就用那个；都不是返回 null，单据上自己选 */
+    @Override
+    public CompanyBrief resolve(Long preferredId) {
+        if (preferredId != null) {
+            Company preferred = companyMapper.selectById(preferredId);
+            if (preferred != null && preferred.getStatus() == Statuses.ENABLED) {
+                return brief(preferred);
+            }
+        }
+        // 只取两行就够判断"是不是只有一个"
+        List<Company> enabled = companyMapper.selectList(new LambdaQueryWrapper<Company>()
+                .eq(Company::getStatus, Statuses.ENABLED)
+                .orderByAsc(Company::getCode)
+                .last("LIMIT 2"));
+        return enabled.size() == 1 ? brief(enabled.getFirst()) : null;
     }
 
     @Override
@@ -98,6 +117,11 @@ public class CompanyServiceImpl implements CompanyService {
         if (enabled.contains(id) && enabled.size() <= 1) {
             throw new BizException("这是最后一个启用的主体公司，不能" + action + "：单据上必须有主体。先建好或启用另一个");
         }
+    }
+
+    /** 页面上显示简称，和下拉（CompanyOption）一致 */
+    private static CompanyBrief brief(Company company) {
+        return new CompanyBrief(company.getId(), company.getShortName());
     }
 
     private static void fill(Company company, CompanySaveReq req) {

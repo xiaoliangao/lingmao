@@ -81,6 +81,11 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public boolean isEnabled(long id) {
+        return sysUserMapper.exists(new LambdaQueryWrapper<SysUser>().eq(SysUser::getId, id).eq(SysUser::getStatus, 1));
+    }
+
+    @Override
     @Transactional
     public Long create(UserCreateReq req) {
         boolean exists = sysUserMapper.exists(new LambdaQueryWrapper<SysUser>()

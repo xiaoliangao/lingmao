@@ -8,7 +8,8 @@ import java.util.List;
 
 /**
  * 主体公司（RFC 003 §3.1）。至少留一个启用的：停用、删除前锁住全部启用的行再数。
- * 给第 3 批单据用的 defaultForUser 等第一张单据开工时再加（RFC 003 §3.1）
+ * 用户的默认主体由同一个实现类实现 system 的 DefaultCompanyProvider（/api/auth/me 要用，system 调不了 basic）；
+ * 单据域要取默认主体时注入 DefaultCompanyProvider
  */
 public interface CompanyService {
 

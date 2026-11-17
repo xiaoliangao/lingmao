@@ -18,10 +18,11 @@ import { onMounted, ref } from 'vue'
 
 /**
  * 选主体（我方公司）：启用的主体，能搜。订单、采购单、出入库、盘点的单头用。v-model 是主体 id。
- * 空着发 null = 后端用我的默认主体（docs/api/02 §3.5）：登录信息里没有默认主体，前端没法预先选上，占位写"我的默认主体"。
+ * 单据上主体必填：新建时默认填我的默认主体（user.defaultCompanyId，登录信息里的 defaultCompany），没有就空着让人选。
  * 主体就几个，一次取全，同一次打开的页面共用一份
  *
- *   <CompanySelect v-model="form.companyId" clearable placeholder="我的默认主体" />
+ *   const head = reactive({ companyId: user.defaultCompanyId, … })
+ *   <CompanySelect v-model="head.companyId" placeholder="选主体" />
  */
 const model = defineModel<number | null>()
 
@@ -31,7 +32,7 @@ onMounted(async () => {
   try {
     options.value = await loadOptions()
   } catch {
-    // 消息拦截器已经弹过了；下拉空着，主体留空用默认的
+    // 消息拦截器已经弹过了；下拉空着，保存时提示先选主体
   }
 })
 </script>

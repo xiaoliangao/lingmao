@@ -13,6 +13,11 @@ export interface UserInfo {
   roles: string[]
   perms: string[]
   menus: MenuNode[]
+  /**
+   * 默认主体（我方公司）：新建需求订单、采购单、盘点单时主体默认填它（用 user.defaultCompanyId）。
+   * 用户上设的停用了、或者没设，启用的只有一个就是那个；不止一个时是 null，单据上自己选
+   */
+  defaultCompany: { id: number; name: string } | null
 }
 
 export interface MenuNode {

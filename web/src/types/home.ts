@@ -208,6 +208,13 @@ export interface UpstreamQuery {
   ownerId?: number | null
 }
 
+/** GET /api/board/upstream：按最新一条提醒的时间倒序，不分页 */
+export interface UpstreamList {
+  /** 能不能看全部人的，和待办的 canSeeAll 同一个规则（06 §5）。true 时出"全部 / 我的"和负责人筛选 */
+  canSeeAll: boolean
+  rows: UpstreamRow[]
+}
+
 /** 一行 = 一张下游单据和它还没处理的提醒 */
 export interface UpstreamRow {
   /** 下游单据；负责人（生产跟单、采购员、算料单制单人）在 ownerName */

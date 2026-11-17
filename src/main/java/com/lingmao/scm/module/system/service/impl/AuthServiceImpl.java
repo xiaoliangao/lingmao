@@ -7,6 +7,7 @@ import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.service.AuthService;
+import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginFailCounter;
@@ -28,6 +29,7 @@ public class AuthServiceImpl implements AuthService {
     private final LoginSessionStore loginSessionStore;
     private final PermissionService permissionService;
     private final LoginFailCounter loginFailCounter;
+    private final DefaultCompanyProvider defaultCompanyProvider;
 
     @Override
     public String login(LoginReq req) {
@@ -63,7 +65,8 @@ public class AuthServiceImpl implements AuthService {
         return new UserInfoVO(user.getId(), user.getUsername(), user.getNickname(),
                 permissionService.loadRoleCodes(userId),
                 permissionService.loadPermissions(userId),
-                permissionService.loadMenuTree(userId));
+                permissionService.loadMenuTree(userId),
+                defaultCompanyProvider.resolve(user.getDefaultCompanyId()));
     }
 
     @Override

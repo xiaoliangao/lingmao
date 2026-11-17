@@ -6,6 +6,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.basic.dto.CompanySaveReq;
 import com.lingmao.scm.module.basic.entity.Company;
 import com.lingmao.scm.module.basic.mapper.CompanyMapper;
+import com.lingmao.scm.module.system.dto.CompanyBrief;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -91,6 +92,22 @@ class CompanyServiceImplTest {
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("编码建好就不能改");
         verify(companyMapper, never()).update(any(), any());
+    }
+
+    /** 规则（RFC 003 §3.1）：用户设的默认主体停用了，启用的只有一个就用那个；不止一个返回 null，单据上自己选 */
+    @Test
+    void resolve_preferredDisabled_fallsBackToOnlyEnabled() {
+        Company disabled = company(2L, "OLD");
+        disabled.setStatus(0);
+        Company only = company(1L, "LM");
+        only.setShortName("领");
+        when(companyMapper.selectById(2L)).thenReturn(disabled);
+        when(companyMapper.selectList(any())).thenReturn(List.of(only));
+
+        assertThat(companyService.resolve(2L)).isEqualTo(new CompanyBrief(1L, "领"));
+
+        when(companyMapper.selectList(any())).thenReturn(List.of(only, company(3L, "LM2")));
+        assertThat(companyService.resolve(2L)).isNull();
     }
 
     private static Company company(Long id, String code) {

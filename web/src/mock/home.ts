@@ -1,5 +1,5 @@
 import type { DocRef } from '@/types/biz'
-import type { DeliveryRow, HomeKpi, HomeTodos, TodoGroup, UpstreamRow } from '@/types/home'
+import type { DeliveryRow, HomeKpi, HomeTodos, TodoGroup, UpstreamList, UpstreamRow } from '@/types/home'
 import { mock } from './index'
 import { productionUpstreamRows } from './production'
 import { purchaseUpstreamRows } from './purchase'
@@ -7,7 +7,7 @@ import { purchaseUpstreamRows } from './purchase'
 /**
  * 首页、上游已变更的假接口（docs/api/06）。
  * - "上游已变更"不另存一份：从生产、采购两个 mock 的提醒里现取，在 /upstream 或单据详情里处理掉，这里跟着少
- * - 待办：canSeeAll = true（看得到"全部 / 我的"和负责人筛选）；选"我的"或别的负责人时只剩"待我审核"一组，看得出筛了
+ * - 待办、上游已变更：canSeeAll = true（看得到"全部 / 我的"和负责人筛选）；选"我的"或别的负责人时只剩"待我审核"一组，看得出筛了
  * 名称都是编的
  */
 const upstreamRows = (): UpstreamRow[] => [...productionUpstreamRows(), ...purchaseUpstreamRows()]
@@ -121,8 +121,12 @@ mock('get', '/api/board/home/deliveries', () => {
   return list
 })
 
-mock('get', '/api/board/upstream', ({ query }) =>
-  upstreamRows().filter(
-    (r) => (!query.type || r.doc.type === query.type) && (!query.ownerId || String(r.doc.ownerId) === query.ownerId),
-  ),
-)
+mock('get', '/api/board/upstream', ({ query }) => {
+  const list: UpstreamList = {
+    canSeeAll: true,
+    rows: upstreamRows().filter(
+      (r) => (!query.type || r.doc.type === query.type) && (!query.ownerId || String(r.doc.ownerId) === query.ownerId),
+    ),
+  }
+  return list
+})

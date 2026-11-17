@@ -27,9 +27,9 @@ export function docApi(base: string) {
     references: (id: number) => http.get<DocRef[]>(`${base}/${id}/references`),
     /** 上游变更提醒，没处理的在前 */
     notices: (id: number) => http.get<DocNotice[]>(`${base}/${id}/notices`),
-    /** 处理一条提醒（看过了、改好了），remark 选填 */
-    handleNotice: (id: number, noticeId: number, remark: string | null) =>
-      http.post<void>(`${base}/${id}/notices/${noticeId}/handle`, { remark }),
+    /** 处理一条提醒（看过了、改好了），remark 选填。批量条逐条调时传 { silent: true } */
+    handleNotice: (id: number, noticeId: number, remark: string | null, options?: RequestOptions) =>
+      http.post<void>(`${base}/${id}/notices/${noticeId}/handle`, { remark }, options),
   }
 }
 

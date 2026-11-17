@@ -21,7 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -57,6 +60,20 @@ public class RoleServiceImpl implements RoleService {
             throw new BizException(404, "角色不存在: " + id);
         }
         return role;
+    }
+
+    @Override
+    public Map<Long, String> names(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        return sysRoleMapper.selectNamesByIds(ids).stream().collect(Collectors.toMap(SysRole::getId, SysRole::getName));
+    }
+
+    @Override
+    public boolean isEnabled(long id) {
+        // 逻辑删除的条件 MyBatis-Plus 自动加
+        return sysRoleMapper.exists(new LambdaQueryWrapper<SysRole>().eq(SysRole::getId, id).eq(SysRole::getStatus, 1));
     }
 
     @Override

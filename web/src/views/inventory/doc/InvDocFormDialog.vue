@@ -9,6 +9,7 @@ import SupplierSelect from '@/components/SupplierSelect.vue'
 import { todayStr } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useUserStore } from '@/stores/user'
 import type { CompanyOption, MaterialPickRow, WarehouseOption } from '@/types/basic'
 import { INV_DOC_TYPE, type InvDocDetail, type InvDocItemForm, type InvDocType } from '@/types/inventory'
 import type { IssueOption } from '@/types/production'
@@ -29,6 +30,7 @@ import PickProductionDialog from './PickProductionDialog.vue'
  * - 手建的单单价选填、显示金额；源单生成的草稿单价按源单算，不显示单价；领料草稿能改超领原因
  */
 const visible = defineModel<boolean>({ required: true })
+const user = useUserStore()
 
 const props = defineProps<{
   docType: InvDocType
@@ -174,7 +176,8 @@ async function init() {
     }))
   } else {
     Object.assign(head, {
-      companyId: comps[0]?.id ?? 1,
+      // 默认我的默认主体；没有就先放第一个（下拉里能换）
+      companyId: user.defaultCompanyId ?? comps[0]?.id ?? 1,
       docDate: todayStr(),
       fromWarehouseId: fromOptions.value[0]?.id ?? null,
       toWarehouseId: null,

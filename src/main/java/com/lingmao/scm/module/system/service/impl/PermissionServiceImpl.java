@@ -42,6 +42,11 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
+    public List<Long> loadRoleIds(Long userId) {
+        return sysRoleMapper.selectIdsByUserId(userId);
+    }
+
+    @Override
     public List<MenuVO> loadMenuTree(Long userId) {
         return MenuVO.tree(sysMenuMapper.selectMenusByUserId(userId));
     }

@@ -1,10 +1,12 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.module.system.dto.CompanyBrief;
 import com.lingmao.scm.module.system.dto.LoginReq;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
+import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginFailCounter;
@@ -47,6 +49,9 @@ class AuthServiceImplTest {
 
     @Mock
     private LoginFailCounter loginFailCounter;
+
+    @Mock
+    private DefaultCompanyProvider defaultCompanyProvider;
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -168,17 +173,21 @@ class AuthServiceImplTest {
         verify(jwtUtil).createToken(1L, jti.getValue());
     }
 
+    /** 规则：不带密码；默认主体按用户上设的默认主体问 basic（DefaultCompanyProvider），新建单据时主体默认填它 */
     @Test
     void me_returnsUserInfoWithoutPassword() {
-        when(sysUserMapper.selectById(1L)).thenReturn(admin());
+        SysUser user = admin();
+        user.setDefaultCompanyId(3L);
+        when(sysUserMapper.selectById(1L)).thenReturn(user);
         when(permissionService.loadRoleCodes(1L)).thenReturn(List.of("admin"));
         when(permissionService.loadPermissions(1L)).thenReturn(Set.of("system:user:list"));
         when(permissionService.loadMenuTree(1L)).thenReturn(List.of());
+        when(defaultCompanyProvider.resolve(3L)).thenReturn(new CompanyBrief(3L, "测试主体"));
 
         UserInfoVO info = authService.me(1L);
 
         assertThat(info).isEqualTo(new UserInfoVO(1L, "admin", null,
-                List.of("admin"), Set.of("system:user:list"), List.of()));
+                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体")));
     }
 
     @Test

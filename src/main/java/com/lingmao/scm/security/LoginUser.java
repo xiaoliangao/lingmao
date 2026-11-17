@@ -1,6 +1,7 @@
 package com.lingmao.scm.security;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /** 当前登录的是谁：用户 id，以及这次登录的 token 编号（退出时要用） */
@@ -19,5 +20,23 @@ public record LoginUser(Long userId, String jti) {
     public static Long currentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth != null && auth.getPrincipal() instanceof LoginUser user ? user.userId() : null;
+    }
+
+    /**
+     * 当前用户有没有这个权限标识（菜单、按钮的权限码，或者 data:all）：Service 里要按权限分支时用（多级审批的第 1 级、
+     * 详情的 actions、数据范围），和 @PreAuthorize("hasAuthority(...)") 看的是同一份。
+     * 权限是 JwtAuthFilter 每个请求从库里现取的，收回权限下一个请求就生效。没登录返回 false
+     */
+    public static boolean hasAuthority(String authority) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof LoginUser)) {
+            return false;
+        }
+        for (GrantedAuthority granted : auth.getAuthorities()) {
+            if (granted.getAuthority().equals(authority)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -58,7 +58,7 @@ const version = ref(0)
 const orderNo = ref('')
 
 const head = reactive({
-  companyId: null as number | null,
+  companyId: user.defaultCompanyId,
   orderType: 'STOCK',
   brand: null as string | null,
   contractNo: '',
@@ -198,8 +198,8 @@ function buildItems(): OrderItemForm[] {
 }
 
 function buildForm(): OrderForm | null {
-  if (!head.orderType || !head.orderDate || !head.requiredDate || !head.salesId || !head.merchId || !head.currency) {
-    ElMessage.warning('订单类型、下单日期、要求交期、业务员、跟单员、币种要填')
+  if (!head.companyId || !head.orderType || !head.orderDate || !head.requiredDate || !head.salesId || !head.merchId || !head.currency) {
+    ElMessage.warning('主体、订单类型、下单日期、要求交期、业务员、跟单员、币种要填')
     return null
   }
   const items = buildItems()
@@ -292,8 +292,8 @@ const backTo = editing ? `/orders/${id}` : '/orders'
 
     <div v-else v-loading="!loaded" class="page">
       <el-form label-position="top" class="form-grid order-head">
-        <el-form-item label="主体">
-          <CompanySelect v-model="head.companyId" clearable placeholder="我的默认主体" />
+        <el-form-item label="主体" required>
+          <CompanySelect v-model="head.companyId" placeholder="选主体" />
         </el-form-item>
         <el-form-item label="订单类型" required>
           <DictSelect v-model="head.orderType" type="order_type" />

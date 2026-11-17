@@ -16,6 +16,9 @@ public interface PermissionService {
 
     List<String> loadRoleCodes(Long userId);
 
+    /** 用户的启用角色 id（停用、删除的角色不算）：多级审批里"规则加的级"看审批角色在不在里面（架构 §4.8） */
+    List<Long> loadRoleIds(Long userId);
+
     /** 侧边栏菜单树（只有目录和菜单） */
     List<MenuVO> loadMenuTree(Long userId);
 }

@@ -81,6 +81,8 @@ export interface OrderRow {
   source: OrderSource
   createByName: string | null
   createTime: string
+  /** 批量提交、审核直接带它，不用先取一次详情 */
+  version: number
   /** 批量条的"提交""审核"按它判断 */
   actions: OrderAction[]
 }
@@ -220,7 +222,8 @@ export interface OrderItemForm {
 
 /** 新建、保存草稿共用的列。保存是整体覆盖：没填的发 null，明细发全部 */
 export interface OrderForm {
-  companyId: number | null
+  /** 必填：页面默认填我的默认主体（user.defaultCompanyId） */
+  companyId: number
   /** 字典 order_type；TRADE 关时没有"客户订单" */
   orderType: string
   /** TRADE 关着，一律发 null */
@@ -294,15 +297,16 @@ export interface OrderStyleOption {
 
 /** 导入时整批订单共用的单头（导入对话框里填，拼进导入地址的查询参数）。模板里只有明细的列（PRD §6.5.2） */
 export interface OrderImportHead {
-  /** 不给 = 我的默认主体 */
-  companyId: number | null
+  /** 必填：默认填我的默认主体（user.defaultCompanyId） */
+  companyId: number
   orderType: string
   brand: string | null
   /** 要求交期；行交期没填的用它 */
   requiredDate: string
   /** 业务员；不给 = 导入的人（原型的导入对话框里没有这一项） */
   salesId: number | null
-  merchId: number
+  /** 跟单员；不给 = 导入的人（同业务员） */
+  merchId: number | null
 }
 
 // ---------------------------------------------------------------- 需求订单：审核

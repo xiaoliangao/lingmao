@@ -13,7 +13,7 @@ public interface AuthService {
     String login(LoginReq req);
 
     /**
-     * 当前登录用户的信息：基本信息、角色、权限标识、侧边栏菜单
+     * 当前登录用户的信息：基本信息、角色、权限标识、侧边栏菜单、默认主体
      */
     UserInfoVO me(Long userId);
 

@@ -2,7 +2,7 @@
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type TableInstance } from 'element-plus'
-import { homeApi, upstreamApi } from '@/api/home'
+import { upstreamApi } from '@/api/home'
 import BatchBar from '@/components/BatchBar.vue'
 import type { BatchAction } from '@/components/batchBar'
 import FilterBar from '@/components/FilterBar.vue'
@@ -63,18 +63,8 @@ const loading = ref(false)
 const tableRef = ref<TableInstance>()
 const selected = ref<UpstreamRow[]>([])
 
-/**
- * 能不能看全部人的：后端在待办接口里给（有那种单据审核权限的人），这一页的接口不带，借待办的 canSeeAll 用。
- * 取不到就当不能（只是少了筛选，内容照样按后端的范围出）
- */
+/** 能不能看全部人的（有那种单据审核权限的人）：列表接口一起给，和首页待办的 canSeeAll 同一个规则 */
 const canSeeAll = ref(false)
-async function loadScope() {
-  try {
-    canSeeAll.value = (await homeApi.todos({ mine: true })).canSeeAll
-  } catch {
-    canSeeAll.value = false
-  }
-}
 
 let seq = 0
 async function load() {
@@ -86,14 +76,16 @@ async function load() {
       mine: query.mine || undefined,
       ownerId: !query.mine && query.ownerId ? query.ownerId : undefined,
     })
-    if (my === seq) rows.value = list
+    if (my === seq) {
+      rows.value = list.rows
+      canSeeAll.value = list.canSeeAll
+    }
   } finally {
     if (my === seq) loading.value = false
   }
 }
 
 onMounted(() => {
-  void loadScope()
   void load()
 })
 let activatedOnce = false
