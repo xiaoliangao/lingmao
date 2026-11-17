@@ -42,7 +42,7 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 | 03 / U3 | 盘点实盘 `17.125` 切页签仍在，关页签提示。真实 `+1/-1` 流水净量为零但 revision 变化，提交 `1002`；重取提示清空实盘，回读实盘 null/revision 增加。提交后 `+1` 正常收发不被审核覆盖；反审清测量基准 | `count-dirty-survives-activation`、`count-refresh-clears-warning`、`count-refresh-cleared` |
 | 04 / U4 | 订单/采购/盘点各两状态，`DRAFT + 多单号` 查询与 XLSX 单号全集相等；搜索框改字未 Enter，导出仍用成功查询快照；订单勾选导出保留条件且只含选中行 | `orders-applied-filter`、`purchases-applied-filter`、`counts-applied-filter` |
 | 05 / U5 | 真实登录：内部 query/hash 正常回跳；`//`、外域绝对 URL、脚本协议、反斜杠、控制字符、重复 redirect 数组安全回首页；无外域请求/脚本执行 | `redirect-internal` 等 7 张；不截登录凭据 |
-| 06 / U6 | 采购来源入库同动作重放返回原 ID、不重复库存；同键异体 `1002`，流水价/额/库存单位非空且 RECORDED。回货先 `route.fetch()` 真实落账，**再扣留成功结果并回失败 envelope**；UI 重试同 UUID+原 payload 仅记一次，新 UUID 的真实第二批再记一次。查看真实 MRP/采购/入库/BUY 页面并核对单号 | `receipt-outcome-unknown`、`receipt-retry-recorded-once`、`real-flow-mrp`、`real-flow-purchase`、`real-flow-inventory`、`real-flow-buy-production` |
+| 06 / U6 | 采购来源入库同动作重放返回原 ID、不重复库存；同键异体 `1002`，流水价/额/库存单位非空且 RECORDED。回货先 `route.fetch()` 真实落账，**再扣留成功结果并回失败 envelope**；未知结果关窗重开后，UI 重试同 UUID+原 payload 仅记一次，新 UUID 的真实第二批再记一次。查看真实 MRP/采购/入库/BUY 页面并核对单号 | `receipt-outcome-unknown`、`receipt-retry-recorded-once`、`real-flow-mrp`、`real-flow-purchase`、`real-flow-inventory`、`real-flow-buy-production` |
 | 07 / U6 | 两会话改节点计划：独立 `planRevision` 增加且单头 version 不变，旧计划 `1002`、输入保留；手机 390 px 页面无横向溢出，异常入口存在 | `node-plan-conflict-keeps-local`、`mobile-390-no-horizontal-overflow` |
 | 08 / U7 | 真实物料 1/200 编码成功、201 编码 `400`；Excel 换行粘贴归一为空格；真实空列表和超限错误有反馈，带空格物料名恢复成功 | `multi-code-paste-results`、`real-query-empty-state`、`201-codes-error-feedback` |
 | 09 / U8 | 浏览器固定 UTC `2026-12-31T16:30:00`，上海/UTC/洛杉矶的新单业务日均为 `2027-01-01`；今天/近7天/近30天/本月实际请求字符串一致。只改浏览器时间、不写单据 | 每时区 `default-date-…`、`range-month-…` |
@@ -65,7 +65,7 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 - U3：盘点加行/导入后的基准、历史 PENDING 无 revision 的拒审、两个用户同时提交，以及刷新/关闭浏览器提示。
 - U4：组合负责人/日期/品牌、查询失败和过期响应的快照、清空/重置、采购/盘点勾选导出。现有用例覆盖状态＋多单号＋未提交关键字以及订单勾选。
 - U5：真实会话过期 `401` 后的重登路径；已有 7 类回跳不代替这个场景。
-- U6：真实网络超时/断连；未知结果后关闭重开、显式开启新动作；报工不改变计划 revision、手机实际报工/异常提交。
+- U6：真实网络超时/断连；显式开启新动作；报工不改变计划 revision、手机实际报工/异常提交。
 - U7：物料空单位导入 `1003`、MOQ/包装取整、采购退货反审上限错误清单；批量查询大样本性能/EXPLAIN 必须由性能验证另记，不能把 200 码返回当 SLA。
 - U9：上传失败及重试、非资料包图片入口；上传期间放弃版本/迟到响应已有用例13，六身份三域权限与真实审批入口已有用例14。首页board仍按API06明确未实现，不把三列表入口说成完整首页待办。
 - CI 断言通过后仍须逐张检查 PNG 的遮挡/错位/溢出，并将实际 run/commit 与证据绑定；没有截图与实际响应证据时不能将其登记为浏览器通过。

@@ -238,9 +238,13 @@ class AuditUi(unittest.TestCase):
         note.fill("成本失败仅保存说明 " + uuid4().hex[:8])
         self.shot("cost-error-with-retry")
         path = f"/api/tech-packs/{pack_id}"
-        with self.page.expect_response(lambda r: self.response_for(r, "PUT", path)) as response:
-            self.page.get_by_role("button", name="保存", exact=True).click()
+        # Keep the fault active through saveDraft's independent cost reload.
+        with self.page.expect_response(lambda r: self.response_for(r, "GET", path + "/cost")) as automatic_cost:
+            with self.page.expect_response(lambda r: self.response_for(r, "PUT", path)) as response:
+                self.page.get_by_role("button", name="保存", exact=True).click()
         self.assertEqual(response.value.json()["code"], 0)
+        self.assertEqual(automatic_cost.value.json()["code"], 500)
+        expect(self.page.get_by_test_id("cost-load-error")).to_be_visible()
         self.assertIsNone(response.value.request.post_data_json["cost"])
         self.assertEqual(cost_values(self.api.request("GET", path + "/cost")), cost_values(before))
         note.fill("成本重试时仍未保存的说明")
@@ -435,8 +439,12 @@ class AuditUi(unittest.TestCase):
         self.assertEqual(failed.value.json()["code"], 500)
         expect(dialog).to_be_visible()
         self.shot("receipt-outcome-unknown")
+        dialog.get_by_role("button", name="取消", exact=True).click()
+        expect(dialog).not_to_be_visible()
+        self.page.get_by_role("button", name="登记回货", exact=True).click()
+        expect(dialog.get_by_role("button", name="重试原登记", exact=True)).to_be_visible()
         with self.page.expect_response(lambda r: self.response_for(r, "POST", route_path)) as retried:
-            dialog.get_by_role("button", name=re.compile(r"^(登记|重试原登记|重试)$")).click()
+            dialog.get_by_role("button", name="重试原登记", exact=True).click()
         self.assertEqual(retried.value.json()["code"], 0)
         self.assertEqual(sent[0], sent[1])
         self.assertTrue(re.fullmatch(r"[0-9a-fA-F-]{36}", sent[0]["clientActionId"]))
@@ -880,7 +888,7 @@ class AuditUi(unittest.TestCase):
         self.shot("voided-pack-with-frozen-context")
         self.page.get_by_role("button", name="导出 PDF", exact=True).click()
         dialog = self.page.get_by_role("dialog", name="导出工艺单", exact=True)
-        dialog.get_by_placeholder("全部颜色", exact=True).click()
+        dialog.get_by_role("combobox").click()
         self.page.get_by_role("option", name=f"{old_color['code']} {old_color['name']}", exact=True).click()
         dialog.get_by_role("checkbox", name="附工艺标准", exact=True).uncheck()
         self.shot("snapshot-disabled-color-export-option")
