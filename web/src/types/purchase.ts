@@ -612,7 +612,7 @@ export interface OrderKitting {
 // ---------------------------------------------------------------- 补货提醒、物料的在途
 
 /**
- * 补货清单的一行：设了安全库存、物料仓库存 + 全部在途 − 已被占用 < 安全库存的物料 SKU（PRD §6.6.7）。
+ * 补货清单的一行：设了最小库存、物料仓库存 + 全部在途 − 已被占用 < 最小库存的物料 SKU（PRD §6.6.7）。
  * 这里的在途不看赶不赶得上开裁；数量都是库存单位，只有 suggestQty 是采购单位
  */
 export interface ReorderRow extends MaterialSkuBrief {
@@ -627,7 +627,7 @@ export interface ReorderRow extends MaterialSkuBrief {
   /** 别的算料单占着的（库存 + 在途） */
   heldQty: number
   safetyStock: number
-  /** 差多少 = 安全库存 −（库存 + 在途 − 已被占用） */
+  /** 差多少 = 最小库存 −（库存 + 在途 − 已被占用） */
   gapQty: number
   purchaseUnit: string
   conversionFactor: number
@@ -647,7 +647,7 @@ export interface ReorderPickItem {
   qty: number
 }
 
-/** 库存页的"在途"列、"低于安全库存"标黄：库存那边算不了，按 SKU 来问采购（GET /api/material-supply） */
+/** 库存页的"在途"列、"低于最小库存"标黄：库存那边算不了，按 SKU 来问采购（GET /api/material-supply） */
 export interface SkuSupply {
   materialSkuId: number
   /** 按交货仓库分的在途（已审核、没入齐的采购行，库存单位）；没有在途是空数组 */
@@ -655,6 +655,6 @@ export interface SkuSupply {
   /** 别的算料单占着的 */
   heldQty: number
   safetyStock: number | null
-  /** 物料仓库存 + 送物料仓的在途 − 已被占用 < 安全库存（没设安全库存是 false）：库存页这一行（物料仓的）标黄 */
+  /** 物料仓库存 + 送物料仓的在途 − 已被占用 < 最小库存（没设最小库存是 false）：库存页这一行（物料仓的）标黄 */
   belowSafety: boolean
 }

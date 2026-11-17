@@ -7,6 +7,7 @@ import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.config.TradeFeature;
 import com.lingmao.scm.module.basic.dto.MaterialCreateReq;
 import com.lingmao.scm.module.basic.dto.MaterialSaveReq;
+import com.lingmao.scm.module.basic.dto.MaterialTypeReq;
 import com.lingmao.scm.module.basic.entity.Color;
 import com.lingmao.scm.module.basic.entity.Material;
 import com.lingmao.scm.module.basic.entity.MaterialCategory;
@@ -17,7 +18,9 @@ import com.lingmao.scm.module.basic.mapper.MaterialMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialSkuMapper;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.system.dto.DictDataSaveReq;
 import com.lingmao.scm.module.system.dto.DictOption;
+import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.service.DictDataService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
@@ -77,7 +80,7 @@ class MaterialServiceImplTest {
     void setUp() {
         materialService = new MaterialServiceImpl(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
                 serialNoGenerator, new DictChecks(dictDataService), new TradeFeature(false),
-                attachmentService, docLogService, materialImport);
+                attachmentService, docLogService, materialImport, dictDataService);
     }
 
     /**
@@ -195,6 +198,41 @@ class MaterialServiceImplTest {
         assertThat(materialService.skuRefs(List.of(7L))).singleElement()
                 .satisfies(ref -> assertThat(ref.colorName()).isNull())
                 .satisfies(ref -> assertThat(ref.material().code()).isEqualTo("ML0001"));
+    }
+
+    /**
+     * 规则（PRD §6.1.5 规则 6，Q40）：当场加物料类型，值接着已有的 CUSTOM_ 编号往下编，排在最后，备料比不填 = 3；
+     * 名称和已有的重复（停用的也算）不让加，提示去哪启用
+     */
+    @Test
+    void addType_nextCustomValue_duplicateLabelRejected() {
+        when(dictDataService.listWithText("material_type")).thenReturn(List.of(
+                dict("面料", "FABRIC", 1, 1), dict("拉链头", "CUSTOM_2", 9, 1), dict("鞋带", "CUSTOM_1", 8, 0)));
+        MaterialTypeReq req = new MaterialTypeReq();
+        req.setLabel(" 织带 ");
+
+        DictOption added = materialService.addType(req);
+
+        ArgumentCaptor<DictDataSaveReq> saved = ArgumentCaptor.captor();
+        verify(dictDataService).create(saved.capture());
+        assertThat(saved.getValue().getValue()).isEqualTo("CUSTOM_3");
+        assertThat(saved.getValue().getLabel()).isEqualTo("织带");
+        assertThat(saved.getValue().getSort()).isEqualTo(10);
+        assertThat(saved.getValue().getNumValue()).isEqualByComparingTo("3");
+        assertThat(added).isEqualTo(new DictOption("织带", "CUSTOM_3", 1));
+
+        req.setLabel("鞋带");
+        assertThatThrownBy(() -> materialService.addType(req)).isInstanceOf(BizException.class).hasMessageContaining("停用着");
+        verify(dictDataService, times(1)).create(any());
+    }
+
+    private static DictData dict(String label, String value, int sort, int status) {
+        DictData d = new DictData();
+        d.setLabel(label);
+        d.setValue(value);
+        d.setSort(sort);
+        d.setStatus(status);
+        return d;
     }
 
     private void stubLeafCategory() {

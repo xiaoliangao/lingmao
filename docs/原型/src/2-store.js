@@ -604,7 +604,8 @@ const upstreamPending = () => [...db.productions, ...db.mrps, ...db.purchases].f
 
 /* ---------- 算料 ---------- */
 // 毛需求 = Σ 订单 SKU 数 × 尺码用量；需求 = Σ 毛需求 ×（1 + 损耗）×（1 + 备料比）。按 来源 + 物料 SKU + 物权 汇总
-// 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %），默认 0，PRD §4.3 的例子就是 0
+// 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %）。真系统物料类型默认 3%（Q18）；原型的示例数据按 0 算，
+// 和 PRD §4.3 的例子一致（那块卡其布物料上的备料比设成了 0）。当场新加的物料类型是 3
 const reserveOf = (sku) => +(db.reserve?.[matOfSku(sku)?.type] || 0)
 function calcNeeds(orderNos, useActive) {
   const acc = {}
@@ -1418,9 +1419,9 @@ function selftest() {
   const out = [], ok = (name, cond, got) => out.push({ name, ok: !!cond, got })
   const err = (fn) => { try { fn(); return '' } catch (e) { return e.message + ' ' + e.list.join('；') } }
   const o = order('DD202611050001') // 订单 4，PRD 贯穿例子
-  // 补货提醒（§6.6.7，函数在 5e-price.js）：卡其布库存 120、安全库存 300 → 缺 180；生成备货采购单审核后算上在途，不再提醒。撤掉，不影响下面算料
+  // 补货提醒（§6.6.7，函数在 5e-price.js）：卡其布库存 120、最小库存 300 → 缺 180；生成备货采购单审核后算上在途，不再提醒。撤掉，不影响下面算料
   const rk = reorderRows().find((r) => r.sku === 'ML0012-KQ')
-  ok('补货：卡其布低于安全库存，缺 180、建议补 180', rk?.gap === 180 && rk.qty === 180, rk)
+  ok('补货：卡其布低于最小库存，缺 180、建议补 180', rk?.gap === 180 && rk.qty === 180, rk)
   const [rp] = reorderToPurchases([rk])
   ok('补货：一键生成备货采购单，单价取档案价 18.5', rp.type === '备货采购' && rp.lines[0].qty === 180 && rp.lines[0].price === 18.5, rp.lines[0])
   doAction('purchase', rp, '提交'); doAction('purchase', rp, '审核')

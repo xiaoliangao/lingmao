@@ -16,10 +16,12 @@ import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuSaveReq;
 import com.lingmao.scm.module.basic.dto.MaterialSkuVO;
+import com.lingmao.scm.module.basic.dto.MaterialTypeReq;
 import com.lingmao.scm.module.basic.dto.SkuBatchReq;
 import com.lingmao.scm.module.biz.dto.AttachmentReq;
 import com.lingmao.scm.module.biz.dto.AttachmentVO;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
+import com.lingmao.scm.module.system.dto.DictOption;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Collection;
@@ -39,6 +41,12 @@ public interface MaterialService {
 
     /** 新建物料和第一批 SKU，返回物料 id */
     Long create(MaterialCreateReq req);
+
+    /**
+     * 当场加一个物料类型（字典 material_type 的一项，PRD §6.1.5 规则 6）：名称不能和已有的重复，停用的也算；
+     * 值自动编 CUSTOM_1、CUSTOM_2……，备料比不填 = 3
+     */
+    DictOption addType(MaterialTypeReq req);
 
     /** 只改物料自己的列。分类、库存单位和原来不一样报 1000 */
     void update(long id, MaterialSaveReq req);

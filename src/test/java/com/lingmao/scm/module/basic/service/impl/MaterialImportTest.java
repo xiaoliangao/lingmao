@@ -35,6 +35,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -150,6 +151,34 @@ class MaterialImportTest {
         assertThat(skus.getAllValues().get(1).getColorId()).isEqualTo(color.getValue().getId());
         assertThat(skus.getAllValues().get(2).getColorId()).isNull();
         verify(serialNoGenerator).raiseTo("ML", 12);
+    }
+
+    /**
+     * 规则（Q31，甲方 11-17）：损耗按整列判断写法。"默认损耗"不是 0 的都在 1 和 2 之间，按系数导（1.03 → 3%）、进提示；
+     * "采购损耗"有 3、5，按百分数原样导。单看 1.5 分不清，所以 1.5 和 3 混在一列时按百分数
+     */
+    @Test
+    void importFile_lossAsFactorOrPercent() throws IOException {
+        Map<String, Object[][]> sheets = new LinkedHashMap<>();
+        sheets.put("物料信息", new Object[][]{{"物料类型", "物料分类", "物料编码", "物料名称", "单位", "默认损耗", "采购损耗"},
+                {"面料", "面料>梭织", "ML0007", "全棉府绸", "米", 1.03, 3},
+                {"面料", "面料>梭织", "ML0008", "涤纶里布", "米", 1.05, 5},
+                {"面料", "面料>梭织", "ML0009", "罗纹", "米", 0, 0}});
+
+        ImportResult result = materialImport.importFile(xlsx(sheets));
+
+        ArgumentCaptor<Material> materials = ArgumentCaptor.captor();
+        verify(materialMapper, times(3)).insert(materials.capture());
+        assertThat(materials.getAllValues()).extracting(Material::getDefaultLossPct)
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(new BigDecimal("3"), new BigDecimal("5"), BigDecimal.ZERO);
+        assertThat(materials.getAllValues()).extracting(Material::getReservePct)
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(new BigDecimal("3"), new BigDecimal("5"), BigDecimal.ZERO);
+        assertThat(result.notes()).extracting(ImportError::message)
+                .anySatisfy(m -> assertThat(m).contains("「默认损耗」这一列的数都在 1 和 2 之间，按系数导入"))
+                .noneSatisfy(m -> assertThat(m).contains("「采购损耗」"));
+
+        assertThat(MaterialImport.factorColumn(List.of(new BigDecimal("1.5"), new BigDecimal("3")))).isFalse();
+        assertThat(MaterialImport.factorColumn(List.of(BigDecimal.ONE, BigDecimal.ZERO))).isFalse();   // 全是 1：当 1%
     }
 
     /** 规则：有不认识的列（多半是改了名），整个文件不收，1003，一行都不写 */

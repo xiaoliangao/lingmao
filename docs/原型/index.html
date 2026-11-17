@@ -2279,7 +2279,8 @@ const upstreamPending = () => [...db.productions, ...db.mrps, ...db.purchases].f
 
 /* ---------- 算料 ---------- */
 // 毛需求 = Σ 订单 SKU 数 × 尺码用量；需求 = Σ 毛需求 ×（1 + 损耗）×（1 + 备料比）。按 来源 + 物料 SKU + 物权 汇总
-// 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %），默认 0，PRD §4.3 的例子就是 0
+// 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %）。真系统物料类型默认 3%（Q18）；原型的示例数据按 0 算，
+// 和 PRD §4.3 的例子一致（那块卡其布物料上的备料比设成了 0）。当场新加的物料类型是 3
 const reserveOf = (sku) => +(db.reserve?.[matOfSku(sku)?.type] || 0)
 function calcNeeds(orderNos, useActive) {
   const acc = {}
@@ -3093,9 +3094,9 @@ function selftest() {
   const out = [], ok = (name, cond, got) => out.push({ name, ok: !!cond, got })
   const err = (fn) => { try { fn(); return '' } catch (e) { return e.message + ' ' + e.list.join('；') } }
   const o = order('DD202611050001') // 订单 4，PRD 贯穿例子
-  // 补货提醒（§6.6.7，函数在 5e-price.js）：卡其布库存 120、安全库存 300 → 缺 180；生成备货采购单审核后算上在途，不再提醒。撤掉，不影响下面算料
+  // 补货提醒（§6.6.7，函数在 5e-price.js）：卡其布库存 120、最小库存 300 → 缺 180；生成备货采购单审核后算上在途，不再提醒。撤掉，不影响下面算料
   const rk = reorderRows().find((r) => r.sku === 'ML0012-KQ')
-  ok('补货：卡其布低于安全库存，缺 180、建议补 180', rk?.gap === 180 && rk.qty === 180, rk)
+  ok('补货：卡其布低于最小库存，缺 180、建议补 180', rk?.gap === 180 && rk.qty === 180, rk)
   const [rp] = reorderToPurchases([rk])
   ok('补货：一键生成备货采购单，单价取档案价 18.5', rp.type === '备货采购' && rp.lines[0].qty === 180 && rp.lines[0].price === 18.5, rp.lines[0])
   doAction('purchase', rp, '提交'); doAction('purchase', rp, '审核')
@@ -8330,7 +8331,7 @@ route('/stock', {
     const unitTxt = (r) => unitOf(r.sku)
     const XC = {
       明细: [{ k: 'w', t: '仓库', f: (r) => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuParts(r.sku).name }, { k: 'color', t: '颜色', f: (r) => skuParts(r.sku).color }, { k: 'spec', t: '规格', f: (r) => skuParts(r.sku).spec },
-        ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'qty', t: '数量', f: (r) => rnd(r.qty, 3) }, { k: 'unit', t: '单位', f: unitTxt }, { k: 'safety', t: '安全库存', f: (r) => safety(r.sku) ?? '' }, { k: 'last', t: '最近变动', f: (r) => r.last || '' }],
+        ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'qty', t: '数量', f: (r) => rnd(r.qty, 3) }, { k: 'unit', t: '单位', f: unitTxt }, { k: 'safety', t: '最小库存', f: (r) => safety(r.sku) ?? '' }, { k: 'last', t: '最近变动', f: (r) => r.last || '' }],
       按物料: [{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuName(r.sku) }, ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'mat', t: '物料仓', f: (r) => rnd(r.mat, 3) }, { k: 'fac', t: '工厂仓', f: (r) => rnd(r.fac, 3) }, { k: 'all', t: '合计', f: (r) => rnd(r.mat + r.fac, 3) }, { k: 'unit', t: '单位', f: unitTxt }],
       日志: [{ k: 'at', t: '日期' }, { k: 'type', t: '类型' }, { k: 'no', t: '单号', c: 'code' }, { k: 'wh', t: '仓库', f: (x) => whName(x.wh) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (x) => skuName(x.sku) },
         ...(TRADE ? [{ k: 'owner', t: '物权', f: (x) => ownerName(x.owner) }] : []), { k: 'delta', t: '变动' }, { k: 'bal', t: '结存' }, { k: 'lot', t: '缸号' }, { k: 'who', t: '操作人', f: (x) => userName(x.who) }],
@@ -8341,7 +8342,7 @@ route('/stock', {
     return { s, whs, rows, summary, owners, logs, safety, XC, xrows, LOG_TYPES }
   },
   template: `<div>
-    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于安全库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><a class="btn" href="#/stock-takes" data-c="库存：去盘点">盘点</a><button class="btn" data-c="库存：导入期初" title="每个仓库建一张「期初录入」盘点单，审核后进库存" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
+    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于最小库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><a class="btn" href="#/stock-takes" data-c="库存：去盘点">盘点</a><button class="btn" data-c="库存：导入期初" title="每个仓库建一张「期初录入」盘点单，审核后进库存" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
       <Pick class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
@@ -8354,9 +8355,9 @@ route('/stock', {
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存。SKU、物料名、仓库都能搜，几个编码用空格隔开" :cols="[
         { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku },
-        ...(TRADE ? [{ k: 'owner', t: '物权' }] : []), { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '安全库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
+        ...(TRADE ? [{ k: 'owner', t: '物权' }] : []), { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '最小库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
         <template #owner="{ r }"><span :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</span></template>
-        <template #qty="{ r }"><span :class="{ amber: safety(r.sku) && wh(r.w).type === '物料仓' && belowSafety(r.sku) }" :title="safety(r.sku) && belowSafety(r.sku) ? '物料仓库存 + 在途 − 已被占用 低于安全库存，去补货提醒生成备货采购单' : null">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
+        <template #qty="{ r }"><span :class="{ amber: safety(r.sku) && wh(r.w).type === '物料仓' && belowSafety(r.sku) }" :title="safety(r.sku) && belowSafety(r.sku) ? '物料仓库存 + 在途 − 已被占用 低于最小库存，去补货提醒生成备货采购单' : null">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
       </Tbl>
     </div>
     <div v-if="s.view === '按物料'" data-c="库存汇总">
@@ -9107,7 +9108,7 @@ function lastBuyOf(r) {
 const lastProdOf = (code) => db.productions.filter((p) => p.style === code && prodKind(p) === '外发加工单' && !['草稿', '待审核', '已作废'].includes(p.status)) // 成品采购单价含料，不和工价比.sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null
 
 /* ---------- 补货提醒（PRD §6.6.7） ---------- */
-// 设了安全库存的物料 SKU：物料仓库存 + 全部在途 − 已被占用 < 安全库存。这里在途不看赶不赶得上开裁：补货看的是会不会断
+// 设了最小库存的物料 SKU：物料仓库存 + 全部在途 − 已被占用 < 最小库存。这里在途不看赶不赶得上开裁：补货看的是会不会断
 function reorderRows() {
   return db.materials.filter((m) => m.status !== '停用').flatMap((m) => m.skus.filter((k) => k.safety > 0 && k.status !== '停用').map((k) => {
     const stock = rnd(sum(materialWhs(), (w) => stockQty(w, k.code, '自有')), 3), tr = transitRows(k.code, '自有')
@@ -9129,14 +9130,14 @@ function reorderToPurchases(rows) {
   const by = {}
   rows.forEach((r) => (by[r.sup] ||= []).push(r))
   return Object.entries(by).map(([s, rs]) => {
-    const p = createPurchase({ supplier: s, type: '备货采购', note: '补货：低于安全库存', lines: rs.map((r) => ({ sku: r.sku, qty: r.qty })) })
+    const p = createPurchase({ supplier: s, type: '备货采购', note: '补货：低于最小库存', lines: rs.map((r) => ({ sku: r.sku, qty: r.qty })) })
     act(p, '由补货提醒生成')
     return p
   })
 }
 // 补货清单里每个 SKU 已经开了、还没审核的备货采购单（防止重复生成）
 const reorderDrafts = (sku) => db.purchases.filter((p) => p.type === '备货采购' && ['草稿', '待审核'].includes(p.status) && p.lines.some((l) => l.sku === sku))
-TODOS.push(() => [(homeBoss() || me()?.role === '采购') && { t: '物料低于安全库存', n: reorderRows().length, to: '/reorder', i: 'box', tone: 'amber' }].filter(Boolean))
+TODOS.push(() => [(homeBoss() || me()?.role === '采购') && { t: '物料低于最小库存', n: reorderRows().length, to: '/reorder', i: 'box', tone: 'amber' }].filter(Boolean))
 
 /* ---------- 种子：报价、调价历史（和物料参考单价、种子单据的价对得上），再把种子里审核过的单据补记一遍 ---------- */
 as('u2', '2026-03-02', () => {
@@ -9367,7 +9368,7 @@ comp('StylePrice', {
   </div>`,
 })
 
-/* ---------- 补货清单：首页待办"物料低于安全库存"点进来 ---------- */
+/* ---------- 补货清单：首页待办"物料低于最小库存"点进来 ---------- */
 route('/reorder', {
   setup() {
     const rows = computed(() => reorderRows())
@@ -9386,7 +9387,7 @@ route('/reorder', {
     <Head t="补货提醒" :back="['库存', '/stock']"><button class="btn pri" :disabled="!picked.length" @click="gen">生成备货采购单<span v-if="picked.length">（{{ picked.length }}）</span></button></Head>
     <div class="page">
       <table class="tbl inset flat" data-c="补货清单">
-        <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">库存</th><th class="num">在途</th><th class="num">已被占用</th><th class="num">安全库存</th><th class="num">差多少</th><th class="num">补货量</th><th class="num">单价</th><th>已开的备货单</th></tr></thead>
+        <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">库存</th><th class="num">在途</th><th class="num">已被占用</th><th class="num">最小库存</th><th class="num">差多少</th><th class="num">补货量</th><th class="num">单价</th><th>已开的备货单</th></tr></thead>
         <tbody>
           <tr v-for="r in rows" :key="r.sku" :class="{ sel: st(r).on }">
             <td><input type="checkbox" v-model="st(r).on" style="accent-color:var(--accent)"></td>
@@ -9399,7 +9400,7 @@ route('/reorder', {
             <td class="num">{{ st(r).sup ? fm(poDefaultPrice(st(r).sup, r.sku)) : '—' }}</td>
             <td><a v-for="p in reorderDrafts(r.sku)" :key="p.no" class="code" :href="'#/purchases/' + p.no" style="margin-right:6px">{{ p.no }}<span class="dim">（{{ p.status }}）</span></a><span v-if="!reorderDrafts(r.sku).length" class="dim">—</span></td>
           </tr>
-          <tr v-if="!rows.length"><td colspan="11" class="empty">没有低于安全库存的物料：库存加在途都在安全库存以上</td></tr>
+          <tr v-if="!rows.length"><td colspan="11" class="empty">没有低于最小库存的物料：库存加在途都在最小库存以上</td></tr>
         </tbody>
       </table>
     </div>
@@ -11150,7 +11151,7 @@ function updateMaterial(m, f) {
   for (const x of skus) {
     const k = m.skus.find((y) => y.code === x.code)
     if ((x.supColor || '') !== (k.supColor || '')) changes.push(`${k.code} 供应商色号 ${k.supColor || '空'} → ${x.supColor || '空'}`)
-    if ((x.safety ?? '') !== (k.safety ?? '')) changes.push(`${k.code} 安全库存 ${k.safety ?? '空'} → ${x.safety ?? '空'}`)
+    if ((x.safety ?? '') !== (k.safety ?? '')) changes.push(`${k.code} 最小库存 ${k.safety ?? '空'} → ${x.safety ?? '空'}`)
     if ((x.price ?? '') !== (k.price ?? '')) changes.push(`${k.code} 单价 ${k.price ?? '空'} → ${x.price ?? '空'}`)
     if ((x.status || '启用') !== (k.status || '启用')) changes.push(`${k.code} ${x.status}`)
   }
@@ -11914,8 +11915,8 @@ route('/materials', {
   </div>`,
 }, { mod: 'materials', t: '物料' })
 
-/* 新建、编辑物料共用：传 m 就是编辑（编码不变；SKU 只改供应商色号、单价、安全库存、停用，加 SKU 用「批量加 SKU」）
- * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、安全库存 */
+/* 新建、编辑物料共用：传 m 就是编辑（编码不变；SKU 只改供应商色号、单价、最小库存、停用，加 SKU 用「批量加 SKU」）
+ * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、最小库存 */
 comp('MaterialForm', {
   props: { cat: String, m: Object },
   emits: ['close'],
@@ -11942,13 +11943,23 @@ comp('MaterialForm', {
       const m = run(() => createMaterial(body))
       if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
     }
-    return { f, code, lock, sups, cats, toggle, save, rows, colors, preview }
+    // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比默认 3%（Q18），加完直接选上
+    async function addType() {
+      const t = (await askText('新增物料类型', '下拉里找不到的类型当场加；备料比默认 3%，以后在算料页的「备料比」里能改。', '如 织带', '新增'))?.trim()
+      if (!t) return
+      if (db.dicts.物料类型.includes(t)) return toast('已经有物料类型「' + t + '」了，直接选它', null, true)
+      db.dicts.物料类型.push(t)
+      db.reserve[t] = 3
+      f.type = t
+      toast('加了物料类型「' + t + '」，已经选上')
+    }
+    return { f, code, lock, sups, cats, toggle, save, rows, colors, preview, addType }
   },
   template: `<Modal :t="m ? '编辑物料 ' + m.code : '新建物料'" :w="720" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
       <label class="f">分类<Pick class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.parent }} / {{ c.name }}</option></Pick></label>
       <label class="f">编码<input class="inp code" :value="code" disabled :title="m ? '编码定了不改' : '按分类自动编'"></label>
-      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></Pick></label>
+      <div class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></Pick><a href="javascript:" style="font-size:12px" @click="addType">下拉里没有？新增物料类型</a></div>
       <label class="f full">名称<input class="inp" v-model="f.name" placeholder="如：220g 斜纹棉"></label>
       <label class="f">库存单位<Pick class="sel" v-model="f.unit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
       <label class="f">采购单位<Pick class="sel" v-model="f.purUnit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
@@ -11970,14 +11981,14 @@ comp('MaterialForm', {
       <template v-if="!m">
         <div class="f full">颜色<div class="chips"><button v-for="c in colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
         <div v-if="f.colors.length" class="f full" data-c="新建 SKU">
-          <table class="tbl inset flat"><thead><tr><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（不填 = 参考单价）</th><th class="num">安全库存（{{ f.unit }}）</th></tr></thead>
+          <table class="tbl inset flat"><thead><tr><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（不填 = 参考单价）</th><th class="num">最小库存（{{ f.unit }}）</th></tr></thead>
             <tbody><tr v-for="c in f.colors" :key="c"><td><Sw :c="c"/></td><td><input class="inp" style="height:26px;width:90px" v-model="rows[c].spec" placeholder="如 15cm"></td>
               <td><input class="inp" style="height:26px;width:100px" v-model="rows[c].supColor"></td><td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="rows[c].price" :placeholder="f.price ?? ''"></td>
               <td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="rows[c].safety"></td></tr></tbody></table></div>
         <div class="f full" data-c="物料图片">物料图片<Pics v-model="f.images" :colors="f.colors" tip="布样、色卡、辅料实物都可以拍；给图标上颜色，按颜色出图"/></div>
       </template>
       <div v-else class="f full" data-c="编辑 SKU">SKU
-        <table class="tbl inset flat" style="margin-top:4px"><thead><tr><th>SKU</th><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（每{{ f.purUnit }}）</th><th class="num">安全库存（{{ f.unit }}）</th><th>状态</th></tr></thead>
+        <table class="tbl inset flat" style="margin-top:4px"><thead><tr><th>SKU</th><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（每{{ f.purUnit }}）</th><th class="num">最小库存（{{ f.unit }}）</th><th>状态</th></tr></thead>
           <tbody><tr v-for="k in f.skus" :key="k.code"><td class="code">{{ k.code }}</td><td><Sw v-if="k.color" :c="k.color"/><span v-else class="dim">—</span></td><td>{{ k.spec || '—' }}</td>
             <td><input class="inp" style="height:26px;width:100px" v-model="k.supColor"></td><td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.price" :placeholder="f.price ?? ''"></td>
             <td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.safety"></td>
@@ -12023,7 +12034,7 @@ route('/materials/:code', {
         <section v-if="tab === 'skus'" data-c="物料SKU">
           <Tbl inset flat :rows="m.skus" :cols="[
             { k: 'code', t: 'SKU', c: 'code', img: k => k.code }, { k: 'color', t: '颜色' }, { k: 'spec', t: '规格', f: k => k.spec || '—' }, { k: 'supColor', t: '供应商色号', f: k => k.supColor || '—' },
-            { k: 'price', t: '单价', c: 'num', f: k => k.price != null ? fm(k.price) : '同参考价' }, { k: 'safety', t: '安全库存', c: 'num', f: k => k.safety ? fq(k.safety) : '—' },
+            { k: 'price', t: '单价', c: 'num', f: k => k.price != null ? fm(k.price) : '同参考价' }, { k: 'safety', t: '最小库存', c: 'num', f: k => k.safety ? fq(k.safety) : '—' },
             { k: 'wl', t: '物料仓', c: 'num', f: k => fq(skuStock(k.code, '物料仓')) }, { k: 'gc', t: '工厂仓', c: 'num', f: k => fq(skuStock(k.code, '工厂仓')) },
             { k: 'img', t: '图片' }, { k: 'status', t: '状态' }, { k: 'act', t: '' }]">
             <template #color="{ r }"><Sw v-if="r.color" :c="r.color"/><span v-else class="dim">—</span></template>
@@ -12592,7 +12603,7 @@ IMPORTS.materials = {
     { k: 'spec', t: '规格', tip: '如 15cm、18L；填了生成规格码', text: true, w: 8 },
     { k: 'supColor', t: '供应商色号', text: true, ex: 'C-1032' },
     { k: 'skuPrice', t: 'SKU 单价', num: true, tip: '不填 = 参考单价', w: 8 },
-    { k: 'safety', t: '安全库存', num: true, tip: '库存单位', w: 8 },
+    { k: 'safety', t: '最小库存', num: true, tip: '库存单位', w: 8 },
     { k: 'note', t: '备注', w: 20 },
   ],
   example: () => [
@@ -13162,12 +13173,12 @@ const FLOW_STRIP = [
 ]
 const FLOW_SECS = [
   { no: '01', t: '资料准备', menu: '资料 → 基础、物料、供应商',
-    flow: [flN('基础', '颜色、尺码组、品类、季节、款号大类、仓库、字典', { to: '/basics' }), '被引用', flN('物料 + SKU', '按颜色 × 规格生成 SKU，可设安全库存', { to: '/materials' }), '',
+    flow: [flN('基础', '颜色、尺码组、品类、季节、款号大类、仓库、字典', { to: '/basics' }), '被引用', flN('物料 + SKU', '按颜色 × 规格生成 SKU，可设最小库存', { to: '/materials' }), '',
       flN('供应商', '待准入：补信用代码、营业执照、联系人、开户行账号', { to: '/suppliers' }), '申请准入', flN('准入审批中', '另一个有审批权限的人批'), '通过', flN('合作中', '才能下采购单、生产单', { end: true })],
     branches: [{ lbl: '改资料', flow: [flN('合作过的供应商', '改全称、信用代码、结算、账期、税率、发票、开户行、账号'), '先挂起', flN('待批改动', '另一个人批准或驳回', { to: '/suppliers?f=待审批' }), '批准', flN('生效', '', { end: true })] }],
     steps: [
       '先在"基础"里建颜色、尺码组、品类、季节、款号大类（服饰 FS、鞋子 XZ）。颜色编码进 SKU 码，大类进款号，定了不改。',
-      '建物料：选分类，填门幅、克重、成分、单位换算；按颜色和规格生成物料 SKU。SKU 上可以设安全库存，低于它会提醒补货（第 06 段）。',
+      '建物料：选分类，填门幅、克重、成分、单位换算；按颜色和规格生成物料 SKU。SKU 上可以设最小库存，低于它会提醒补货（第 06 段）。',
       '建供应商：先是"待准入"。统一社会信用代码、营业执照、联系人、开户行和账号补齐了，才能"申请准入"；有审批权限的另一个人通过，才变"合作中"。自己提的不能自己批。',
       '合作过的供应商改上面那几项关键信息，先挂成"待批改动"，批准才生效；别的字段保存就生效。不合作了停用，出了问题拉黑。',
       '上线时不用一条条录：供应商、物料、款式、期初库存、需求订单都有 Excel 模板，整批导入，有一行不对整批不进。直接导成"合作中"的供应商只给上线搬历史数据用，导入的人要有审批权限。',
@@ -13231,7 +13242,7 @@ const FLOW_SECS = [
       { lbl: '出库', flow: [flN('物料出库单', '领料出库、采购退货、调拨、其他出库（报废、卖余料）', { to: '/stock-out' }), '审核过账', flN('减库存', '库存不够整张不过；采购退货回写采购单', { end: true })] },
       { lbl: '盘点', flow: [flN('物料盘点单', '日常盘点或期初录入；建单时拍下账面数', { to: '/stock-takes' }), '填实盘数、提交', flN('待审核', '有审核权限的人审'), '审核过账',
         flN('盘盈、盘亏', '按「实盘 − 账面」补到现在的库存上', { end: true, to: '/stock' })] },
-      { lbl: '补货', flow: [flN('低于安全库存', '库存 + 在途 − 已占用 < 安全库存'), '首页待办', flN('补货提醒', '勾选要补的料', { to: '/reorder' }), '一键',
+      { lbl: '补货', flow: [flN('低于最小库存', '库存 + 在途 − 已占用 < 最小库存'), '首页待办', flN('补货提醒', '勾选要补的料', { to: '/reorder' }), '一键',
         flN('备货采购单', '按默认供应商拆；可填"计划用于款号"', { end: true })] },
     ],
     steps: [
@@ -13242,7 +13253,7 @@ const FLOW_SECS = [
       '物料出库单：领料出库（物料仓 → 工厂仓，见第 07 段）、采购退货（回写采购单的已退货）、调拨（仓到仓）、其他出库（报废、卖余料、其他）。入库单统一 RK 开头，出库单统一 CK 开头；审核就过账，库存不能为负。',
       '物料盘点单：选仓库和范围（全部、按物料分类、手选物料），建单时把每种料的账面数拍下来；导出盘点表去仓库点数，填好实盘数导回来，提交审核。审核过账按「实盘 − 账面」补到现在的库存上，流水记盘盈、盘亏；盘点期间照常收发，补完哪一行变负数整张不过。一个仓同时只能有一张没审核的盘点单。',
       '上线前录期初库存：建一张用途是「期初录入」的盘点单（或在库存页导入 Excel，每个仓库自动建一张），实盘数就是期初数，审核后进库存，流水记"期初"。',
-      '没有需求订单也能先备料：库存加在途低于安全库存，就进首页待办"物料低于安全库存"；在补货提醒页勾选，按默认供应商拆成备货采购单。备的料进公共库存，不预留给哪张订单，以后算料自动扣。',
+      '没有需求订单也能先备料：库存加在途低于最小库存，就进首页待办"物料低于最小库存"；在补货提醒页勾选，按默认供应商拆成备货采购单。备的料进公共库存，不预留给哪张订单，以后算料自动扣。',
     ] },
 
   { no: '07', t: '生产', menu: '生产 → 外发加工单、成品采购单、看板、手机报工',
@@ -13319,7 +13330,7 @@ const FLOW_SECS = [
       ['谁能做', '角色 × 模块设"看、改、审"三档，在"设置 › 角色权限"里改；后台兜底，按钮也跟着藏。供应商准入、关键信息改动也要审，不能批自己提的。'],
       ['多级审批', '需求订单、采购单、生产单金额超过门槛，再加一级，审批人可以是角色或指定的人，在"设置 › 审批"里配。提交时定下审批流；没审完一直是待审核，详情右边看得到审到第几级、在等谁。同一个人连着几级都能审的，审一次都过。'],
       ['看到哪些单', '业务、采购、生产跟单只看自己是制单人、业务员、跟单员、采购员的单；其他角色看全部，也能切到"我的"。'],
-      ['首页待办', '待我审核（轮到我这一级的）、逾期、节点延期、到料逾期、上游变更、供应商待审批、供应商新增风险、物料低于安全库存，点进去直接处理。'],
+      ['首页待办', '待我审核（轮到我这一级的）、逾期、节点延期、到料逾期、上游变更、供应商待审批、供应商新增风险、物料低于最小库存，点进去直接处理。'],
       ['留痕', '每张单据右边有操作记录：谁、什么时候、改了什么；设置里能汇总查。'],
     ] },
 ]
@@ -13353,7 +13364,7 @@ route('/flow', {
         <div v-for="(row, ri) in FLOW_STRIP" :key="ri" class="fl-strip" :style="{ '--n': row.length }">
           <button v-for="g in row" :key="g[0]" class="fl-stage" :class="flTag(g[3])" @click="jump(g[0])"><span class="fl-n">{{ g[0] }}<template v-if="g[3]"> · {{ g[3] }}</template></span><b>{{ g[1] }}</b><ul><li v-for="x in g[2]" :key="x">{{ x }}</li></ul></button>
         </div>
-        <p class="fl-spine"><b>一期的主线</b>：款式和生产 BOM 生效 → 需求订单审核 → 排单生成外发加工单或成品采购单，同时算料生成采购单（单价都从价格档案带）→ 待到料、入库 → 领料出库给加工厂 → 报进度 → 回货 → 需求订单完成、结案。没有需求订单时，按安全库存先备料；物料盘点单管盘盈盘亏和期初。</p>
+        <p class="fl-spine"><b>一期的主线</b>：款式和生产 BOM 生效 → 需求订单审核 → 排单生成外发加工单或成品采购单，同时算料生成采购单（单价都从价格档案带）→ 待到料、入库 → 领料出库给加工厂 → 报进度 → 回货 → 需求订单完成、结案。没有需求订单时，按最小库存先备料；物料盘点单管盘盈盘亏和期初。</p>
       </section>
       <section v-for="s in FLOW_SECS" :key="s.no" :id="'fl-' + s.no" class="fl-sec" :data-c="s.t">
         <h2><span class="fl-no">{{ s.no }}</span>{{ s.t }}<span class="fl-tag" :class="flTag(s.ph)">{{ s.ph || '一期' }}</span><span class="fl-menu">菜单：{{ s.menu }}</span></h2>
@@ -13392,7 +13403,7 @@ const MOD_INFO = {
       ['待解决的意见', '原型上的批注还没解决的，按页面分组；点一条跳到那一页并高亮，改好了点「解决」（只在原型里有）'],
       ['下单与回货、在制品类', '近 12 周下单、回货趋势和在制品类占比（报表看板，二期）。悬停看数，点图例隐藏一条线；点某一周看那周下的订单，点品类在看板里看它的生产单'],
       ['近期交期', '7 天内要交的需求订单、生产单（外发加工单、成品采购单），逾期没交的排前面，带回货进度'],
-      ['其他提醒', '各模块要处理的个数，如生产单临期、物料低于安全库存、样衣待评审'],
+      ['其他提醒', '各模块要处理的个数，如生产单临期、物料低于最小库存、样衣待评审'],
       ['上游变更待处理', '订单变更后受影响的生产单、算料单、采购单，看完点「已处理」'],
     ],
     up: [
@@ -13668,18 +13679,18 @@ const MOD_INFO = {
   },
   stock: {
     perm: '物料出入库、盘点、库存',
-    what: '看物料仓、工厂仓里每种料现在有多少，查每一笔进出流水；设了安全库存的料不够了，在补货提醒里一键生成备货采购单。',
+    what: '看物料仓、工厂仓里每种料现在有多少，查每一笔进出流水；设了最小库存的料不够了，在补货提醒里一键生成备货采购单。',
     has: [
-      ['明细', '仓库、SKU、物料、数量、安全库存、最近变动；点一行看这一格的流水'],
+      ['明细', '仓库、SKU、物料、数量、最小库存、最近变动；点一行看这一格的流水'],
       ['按物料', '每个 SKU 在物料仓、工厂仓各有多少，合计多少'],
       ['日志', '日期、类型（入库单、出库单的类型和盘盈、盘亏、期初）、单号、仓库、物料、变动、结存、缸号、操作人；能按缸号查'],
-      ['补货提醒', '库存、在途、已被占用、安全库存、差多少、补货量、单价、已开的备货单'],
+      ['补货提醒', '库存、在途、已被占用、最小库存、差多少、补货量、单价、已开的备货单'],
     ],
     up: [
       ['stockin', '物料入库单审核过账才加库存'],
       ['stockout', '物料出库单审核过账才减库存'],
       ['stocktake', '盘点单审核过账，按实盘和账面的差补上'],
-      ['materials', '安全库存在物料 SKU 上设；补货默认找物料的默认供应商'],
+      ['materials', '最小库存在物料 SKU 上设；补货默认找物料的默认供应商'],
       ['purchases', '补货提醒的在途：已审核、没到齐的采购行'],
       ['mrp', '已被占用：已确认算料单占着的库存和在途'],
     ],
@@ -13687,7 +13698,7 @@ const MOD_INFO = {
       ['purchases', '补货提醒勾选的料，按供应商拆成备货采购单'],
       ['mrp', '算料先扣这里的可用库存'],
       ['stocktake', '盘点单建单时拍下这里的账面数'],
-      ['home', '低于安全库存进首页待办，给采购和管理层'],
+      ['home', '低于最小库存进首页待办，给采购和管理层'],
       ['orders', '需求订单审核时，按可用库存列出缺口最大的料'],
     ],
     tip: '库存不能直接改数：入库、出库都开单，盘盈、盘亏开盘点单，审核过账才生效。',
@@ -13931,7 +13942,7 @@ const MOD_INFO = {
     what: '管面料、辅料、包材的档案。每种物料按颜色和规格分成 SKU（如 ML0018-HE），资料包、采购、库存都按 SKU 记。',
     has: [
       ['列表', '编码、名称、分类、单位换算、默认供应商、参考单价、SKU 数、库存'],
-      ['详情 · SKU', 'SKU 码、颜色、规格、供应商色号、单价、安全库存、物料仓和工厂仓库存'],
+      ['详情 · SKU', 'SKU 码、颜色、规格、供应商色号、单价、最小库存、物料仓和工厂仓库存'],
       ['详情 · 用到它的款式', '哪些款的生效资料包用了它、哪个版本、哪个部位'],
       ['详情 · 价格记录', '价格档案：各供应商的现价、上一次、调价原因、来源；采购成交记录'],
       ['详情 · 右侧', '门幅、克重、成分、默认供应商、档案现价、起订量、最小包装、采购周期'],
@@ -13945,7 +13956,7 @@ const MOD_INFO = {
       ['styles', '资料包 BOM 每行选一个物料和 SKU'],
       ['mrp', '算料按 BOM 里的物料算需求；行上没指定供应商的，按物料默认供应商拆'],
       ['purchases', '单价默认取价格档案现价；交货日期按采购周期往后推'],
-      ['stock', 'SKU 设了安全库存，库存加在途低于它就进补货提醒'],
+      ['stock', 'SKU 设了最小库存，库存加在途低于它就进补货提醒'],
     ],
     tip: '有过采购、出入库或资料包以后，单位和换算系数就不能改；要换单位，新建一个物料',
   },

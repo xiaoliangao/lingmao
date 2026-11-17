@@ -33,14 +33,14 @@ public class SupplyController {
         return R.ok(mrpService.kitting(orderIds));
     }
 
-    @Operation(summary = "补货清单：低于安全库存的物料，差得多的在前，不分页")
+    @Operation(summary = "补货清单：低于最小库存的物料，差得多的在前，不分页")
     @GetMapping("/reorder-items")
     @PreAuthorize("hasAuthority('purchase:order:list')")
     public R<List<ReorderRowVO>> reorderItems() {
         return R.ok(supplyService.reorderItems());
     }
 
-    @Operation(summary = "几个 SKU 的在途（按交货仓库）、已被占用、是否低于安全库存（库存页用）")
+    @Operation(summary = "几个 SKU 的在途（按交货仓库）、已被占用、是否低于最小库存（库存页用）")
     @GetMapping("/material-supply")
     @PreAuthorize("hasAnyAuthority('inventory:stock:list', 'purchase:order:list')")
     public R<List<SkuSupplyVO>> materialSupply(@RequestParam("skuIds") List<Long> skuIds) {

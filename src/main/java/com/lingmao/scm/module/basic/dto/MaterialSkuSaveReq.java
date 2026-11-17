@@ -23,9 +23,9 @@ public class MaterialSkuSaveReq {
     @Digits(integer = 10, fraction = 4, message = "单价最多 4 位小数")
     private BigDecimal price;
 
-    /** 安全库存，库存单位 */
-    @DecimalMin(value = "0", message = "安全库存不能是负数")
-    @Digits(integer = 11, fraction = 3, message = "安全库存最多 3 位小数")
+    /** 最小库存，库存单位 */
+    @DecimalMin(value = "0", message = "最小库存不能是负数")
+    @Digits(integer = 11, fraction = 3, message = "最小库存最多 3 位小数")
     private BigDecimal safetyStock;
 
     @Size(max = 255, message = "备注最长 255 个字")

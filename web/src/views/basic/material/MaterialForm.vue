@@ -5,6 +5,7 @@ import { materialApi, materialCategoryApi, type MaterialForm } from '@/api/basic
 import { MATERIAL_SOURCE_LABEL, type MaterialDetail, type MaterialSource, type TreeNode } from '@/types/basic'
 import DictSelect from '@/components/DictSelect.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
+import { reloadDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { orNull } from '../common'
 import SkuPicker from './SkuPicker.vue'
@@ -24,6 +25,9 @@ type Num = number | null | undefined
 
 /** 一期代工开关按"关"做（RFC 003 §3.3），默认来源不给选客供 */
 const SOURCE_OPTIONS: MaterialSource[] = ['PURCHASE', 'FACTORY']
+/** 新建物料时默认损耗率预填 3（甲方 11-17：成衣损耗一般 3% 或 5%，PRD Q18）；当场加物料类型时备料比也默认 3 */
+const DEFAULT_LOSS_PCT = 3
+const DEFAULT_RESERVE_PCT = 3
 
 const visible = ref(false)
 const detail = ref<MaterialDetail | null>(null)
@@ -98,7 +102,7 @@ async function openCreate(categoryId?: number | null) {
   detail.value = null
   // 左边选的是二级分类就带上；选的是一级或"全部"就空着
   const leaf = categories.value.some((g) => g.children?.some((c) => c.id === categoryId))
-  Object.assign(form, structuredClone(EMPTY), { categoryId: leaf ? categoryId : null })
+  Object.assign(form, structuredClone(EMPTY), { categoryId: leaf ? categoryId : null, defaultLossPct: DEFAULT_LOSS_PCT })
   visible.value = true
 }
 
@@ -189,6 +193,33 @@ async function save() {
   }
 }
 
+/** 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6）：加的是字典"物料类型"的一项，加完直接选上 */
+const typeSelect = ref<InstanceType<typeof DictSelect>>()
+const typeDialog = reactive({ visible: false, label: '', reservePct: DEFAULT_RESERVE_PCT as Num, saving: false })
+
+function openAddType() {
+  typeSelect.value?.blur()
+  Object.assign(typeDialog, { visible: true, label: '', reservePct: DEFAULT_RESERVE_PCT })
+}
+
+async function addType() {
+  const label = typeDialog.label.trim()
+  if (!label) {
+    ElMessage.warning('请填物料类型的名称')
+    return
+  }
+  typeDialog.saving = true
+  try {
+    const option = await materialApi.addType({ label, reservePct: typeDialog.reservePct ?? null })
+    await reloadDict('material_type')
+    form.materialType = option.value
+    typeDialog.visible = false
+    ElMessage.success(`加了物料类型「${option.label}」，已经选上`)
+  } finally {
+    typeDialog.saving = false
+  }
+}
+
 defineExpose({ openCreate, openEdit })
 </script>
 
@@ -217,7 +248,11 @@ defineExpose({ openCreate, openEdit })
         />
       </el-form-item>
       <el-form-item label="物料类型" prop="materialType">
-        <DictSelect v-model="form.materialType" type="material_type" />
+        <DictSelect ref="typeSelect" v-model="form.materialType" type="material_type">
+          <template #footer>
+            <el-button link type="primary" @click="openAddType">新增物料类型</el-button>
+          </template>
+        </DictSelect>
       </el-form-item>
       <el-form-item label="编码">
         <span class="fixed code">{{ detail ? detail.material.code : codePreview }}</span>
@@ -309,6 +344,22 @@ defineExpose({ openCreate, openEdit })
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="saving" @click="save">{{ detail ? '保存' : '新建物料' }}</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="typeDialog.visible" title="新增物料类型" width="min(360px, 96vw)" append-to-body>
+    <el-form label-position="top" @submit.prevent="addType">
+      <el-form-item label="名称" required>
+        <el-input v-model="typeDialog.label" maxlength="64" placeholder="如 织带" />
+      </el-form-item>
+      <el-form-item label="备料比（%）">
+        <el-input-number v-model="typeDialog.reservePct" :min="0" :max="100" :controls="false" :value-on-clear="null" placeholder="不填 = 3" />
+        <span class="dim hint">这类物料上没设备料比时，算料按它多备</span>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="typeDialog.visible = false">取消</el-button>
+      <el-button type="primary" :loading="typeDialog.saving" @click="addType">新增</el-button>
     </template>
   </el-dialog>
 </template>

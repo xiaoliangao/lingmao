@@ -24,6 +24,7 @@ import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuSaveReq;
 import com.lingmao.scm.module.basic.dto.MaterialSkuVO;
+import com.lingmao.scm.module.basic.dto.MaterialTypeReq;
 import com.lingmao.scm.module.basic.dto.SkuBatchReq;
 import com.lingmao.scm.module.basic.dto.SkuSpecReq;
 import com.lingmao.scm.module.basic.entity.Color;
@@ -43,6 +44,10 @@ import com.lingmao.scm.module.biz.entity.Attachment;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.system.dto.DictDataSaveReq;
+import com.lingmao.scm.module.system.dto.DictOption;
+import com.lingmao.scm.module.system.entity.DictData;
+import com.lingmao.scm.module.system.service.DictDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +80,10 @@ public class MaterialServiceImpl implements MaterialService {
     static final int CODE_WIDTH = 4;
     /** 取到的号已经被导入的老编码占了，最多再取几次（RFC 003 §7.1） */
     static final int MAX_TRIES = 100;
+    /** 当场加的物料类型，字典值 = CUSTOM_ + 序号（PRD §6.1.5 规则 6） */
+    static final String CUSTOM_TYPE = "CUSTOM_";
+    /** 当场加物料类型时备料比的默认值 %（Q18：采购时多买的一般 3%） */
+    static final BigDecimal DEFAULT_RESERVE_PCT = BigDecimal.valueOf(3);
 
     private final MaterialMapper materialMapper;
     private final MaterialSkuMapper materialSkuMapper;
@@ -86,6 +95,7 @@ public class MaterialServiceImpl implements MaterialService {
     private final AttachmentService attachmentService;
     private final DocLogService docLogService;
     private final MaterialImport materialImport;
+    private final DictDataService dictDataService;
 
     // ---------- 物料 ----------
 
@@ -129,6 +139,30 @@ public class MaterialServiceImpl implements MaterialService {
         List<MaterialSku> skus = insertSkus(material, req.getColorIds(), req.getSpecs());
         docLogService.add(BizType.MATERIAL, material.getId(), "create", skuCodes(skus));
         return material.getId();
+    }
+
+    @Override
+    @Transactional
+    public DictOption addType(MaterialTypeReq req) {
+        String label = req.getLabel().strip();
+        List<DictData> types = dictDataService.listWithText(TYPE_DICT);
+        for (DictData t : types) {
+            if (t.getLabel().strip().equals(label)) {
+                throw new BizException(Integer.valueOf(1).equals(t.getStatus()) ? "已经有物料类型「" + label + "」了，直接选它"
+                        : "物料类型「" + label + "」已经有了、停用着：找管理员在 管理后台 › 字典 里启用");
+            }
+        }
+        int next = types.stream().map(DictData::getValue).filter(v -> v.matches(CUSTOM_TYPE + "\\d+"))
+                .mapToInt(v -> Integer.parseInt(v.substring(CUSTOM_TYPE.length()))).max().orElse(0) + 1;
+        DictDataSaveReq item = new DictDataSaveReq();
+        item.setTypeCode(TYPE_DICT);
+        item.setLabel(label);
+        item.setValue(CUSTOM_TYPE + next);
+        item.setSort(types.stream().map(DictData::getSort).filter(Objects::nonNull).max(Integer::compare).orElse(0) + 1);
+        item.setNumValue(Objects.requireNonNullElse(req.getReservePct(), DEFAULT_RESERVE_PCT));
+        item.setRemark("新建物料时加的");
+        dictDataService.create(item);
+        return new DictOption(label, item.getValue(), 1);
     }
 
     @Override

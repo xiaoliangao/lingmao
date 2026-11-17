@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 
 /**
  * 物料 SKU（bas_material_sku，数据库设计 §5.10）：物料 × 颜色 × 规格。
- * SKU 码、颜色、规格建好不改（SKU 码由它们拼出来）；能改的是色号、货号、单价、安全库存、备注
+ * SKU 码、颜色、规格建好不改（SKU 码由它们拼出来）；能改的是色号、货号、单价、最小库存、备注
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -43,7 +43,7 @@ public class MaterialSku extends AuditEntity {
     /** 单价，按采购单位、含税；空 = 用物料参考单价 */
     private BigDecimal price;
 
-    /** 安全库存，库存单位 */
+    /** 最小库存，库存单位 */
     private BigDecimal safetyStock;
 
     @TableField(updateStrategy = FieldStrategy.NEVER)

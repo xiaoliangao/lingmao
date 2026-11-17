@@ -148,7 +148,7 @@ export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone:
   ARRIVAL_CUT: { label: '到料晚于开裁', to: '/stock-in?tab=pending&risk=CUT', tone: 'danger' },
   UPSTREAM: { label: '上游订单已变更，待处理', to: '/upstream', tone: 'pending' },
   CERT_EXPIRING: { label: '供应商证照 30 天内到期', to: '/suppliers?certExpiring=1', tone: null },
-  REORDER: { label: '物料低于安全库存', to: '/reorder', tone: null },
+  REORDER: { label: '物料低于最小库存', to: '/reorder', tone: null },
 }
 
 export interface TodoCount {

@@ -63,7 +63,7 @@ class StockExcel {
             ExcelColumn.text("规格", Row::getSpec, Row::setSpec),
             ExcelColumn.decimal("库存", 3, Row::getQty, Row::setQty),
             ExcelColumn.text("单位", Row::getUnit, Row::setUnit),
-            ExcelColumn.decimal("安全库存", 3, Row::getSafetyStock, Row::setSafetyStock),
+            ExcelColumn.decimal("最小库存", 3, Row::getSafetyStock, Row::setSafetyStock),
             ExcelColumn.text("最近变动", Row::getTime, Row::setTime));
 
     private static final ExcelSchema<Row> SUMMARY = ExcelSchema.of("库存汇总", Row::new,
@@ -76,7 +76,7 @@ class StockExcel {
             ExcelColumn.decimal("工厂仓", 3, Row::getFactoryQty, Row::setFactoryQty),
             ExcelColumn.decimal("合计", 3, Row::getQty, Row::setQty),
             ExcelColumn.text("单位", Row::getUnit, Row::setUnit),
-            ExcelColumn.decimal("安全库存", 3, Row::getSafetyStock, Row::setSafetyStock));
+            ExcelColumn.decimal("最小库存", 3, Row::getSafetyStock, Row::setSafetyStock));
 
     private static final ExcelSchema<Row> LOGS = ExcelSchema.of("库存日志", Row::new,
             ExcelColumn.date("日期", Row::getBizDate, Row::setBizDate),

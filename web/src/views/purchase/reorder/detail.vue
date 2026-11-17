@@ -13,7 +13,7 @@ import { PURCHASE_STATUS, type ReorderPickItem, type ReorderRow } from '@/types/
 import { formatPrice, formatQty } from '@/utils/format'
 
 /**
- * 补货提醒（/reorder，docs/api/03 §1.4、§3.3.8、§3.6）：低于安全库存的物料，勾选后按供应商拆成备货采购单草稿。
+ * 补货提醒（/reorder，docs/api/03 §1.4、§3.3.8、§3.6）：低于最小库存的物料，勾选后按供应商拆成备货采购单草稿。
  * 行上能改供应商（换了重取单价）、补货量。切走再切回来不重新取：手改的量和供应商留着；要最新的点「重新取」。
  * 没有筛选，页头下面一行只有"显示列"
  */
@@ -32,7 +32,7 @@ const cols = useColumns('reorder', [
   { key: 'stock', label: '物料仓库存' },
   { key: 'transit', label: '在途' },
   { key: 'held', label: '已被占用' },
-  { key: 'safety', label: '安全库存' },
+  { key: 'safety', label: '最小库存' },
   { key: 'gap', label: '差多少' },
   { key: 'qty', label: '补货量' },
   { key: 'price', label: '参考单价' },
@@ -139,7 +139,7 @@ async function generateStockPos() {
       :data="rows"
       row-key="materialSkuId"
       scrollbar-always-on
-      empty-text="没有低于安全库存的物料"
+      empty-text="没有低于最小库存的物料"
       @selection-change="selected = $event"
     >
       <el-table-column type="selection" width="40" fixed="left" />
@@ -177,7 +177,7 @@ async function generateStockPos() {
       <el-table-column v-if="cols.show.held" label="已被占用" width="96" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.heldQty) }}</template>
       </el-table-column>
-      <el-table-column v-if="cols.show.safety" label="安全库存" width="96" class-name="num" align="right">
+      <el-table-column v-if="cols.show.safety" label="最小库存" width="96" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.safetyStock) }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.gap" label="差多少" width="104" class-name="num" align="right">

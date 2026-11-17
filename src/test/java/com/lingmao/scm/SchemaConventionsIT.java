@@ -213,7 +213,7 @@ class SchemaConventionsIT {
                 SELECT label || '=' || num_value::int FROM sys_dict_data
                 WHERE type_code = 'material_type' AND deleted = false ORDER BY sort
                 """, String.class))
-                .containsExactly("面料=0", "里料=0", "辅料=0", "包材=0", "标签吊牌=0", "配件=0", "工艺=0", "鞋底=0");
+                .containsExactly("面料=3", "里料=3", "辅料=3", "包材=3", "标签吊牌=3", "配件=3", "工艺=3", "鞋底=3");   // V24（Q18）
         assertThat(jdbc.queryForMap("""
                 SELECT t.num_label, d.num_value::int AS days FROM sys_dict_type t
                 JOIN sys_dict_data d ON d.type_code = t.code AND d.deleted = false

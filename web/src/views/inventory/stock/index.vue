@@ -26,7 +26,7 @@ import { formatDate, formatDateRange, formatDateTime, formatQty } from '@/utils/
 
 /**
  * 库存（/stock，docs/api/04 §1.5、§3.6、§4）：明细 / 按物料 / 日志三个视图，认 ?view=log（只认 /stock 自己的地址）。
- * - 明细的在途、低于安全库存（标黄）要等 supplyApi.bySkus 回来：和主表分开取，没回来、取不到都写"—"，不拖住主表
+ * - 明细的在途、低于最小库存（标黄）要等 supplyApi.bySkus 回来：和主表分开取，没回来、取不到都写"—"，不拖住主表
  * - 页头：补货提醒（n）、盘点（去新建日常盘点）、导入期初库存、导出
  * - 点明细的一行：弹它的库存日志（带上仓库和 SKU）
  */
@@ -53,7 +53,7 @@ const materialTypes = useDict('material_type')
 const detailCols = useColumns('stock', [
   { key: 'qty', label: '数量' },
   { key: 'transit', label: '在途' },
-  { key: 'safety', label: '安全库存' },
+  { key: 'safety', label: '最小库存' },
   { key: 'updated', label: '最近变动' },
   { key: 'warehouseCode', label: '仓库编码', hidden: true },
   { key: 'materialType', label: '物料类型', hidden: true },
@@ -62,7 +62,7 @@ const summaryCols = useColumns('stock-summary', [
   { key: 'material', label: '物料仓合计' },
   { key: 'factory', label: '工厂仓合计' },
   { key: 'total', label: '合计' },
-  { key: 'safety', label: '安全库存' },
+  { key: 'safety', label: '最小库存' },
   { key: 'materialType', label: '物料类型', hidden: true },
 ])
 const logCols = useColumns('stock-log', [
@@ -79,7 +79,7 @@ const logCols = useColumns('stock-log', [
 const viewFromQuery = (): View => (route.query.view === 'log' ? 'logs' : 'detail')
 const viewMode = ref<View>(viewFromQuery())
 const warehouses = ref<WarehouseOption[]>([])
-/** 在途、低于安全库存：null = 还没回来或取不到，那两列写"—" */
+/** 在途、低于最小库存：null = 还没回来或取不到，那两列写"—" */
 const supplyMap = ref<Record<number, SkuSupply> | null>(null)
 const reorderCount = ref(0)
 
@@ -326,7 +326,7 @@ function doExport() {
         <el-table-column v-if="detailCols.show.transit" label="在途" width="100" class-name="num" align="right">
           <template #default="{ row }">{{ transitText(row as StockRow) }}</template>
         </el-table-column>
-        <el-table-column v-if="detailCols.show.safety" label="安全库存" width="110" class-name="num" align="right">
+        <el-table-column v-if="detailCols.show.safety" label="最小库存" width="110" class-name="num" align="right">
           <template #default="{ row }">{{ row.safetyStock == null ? '—' : formatQty(row.safetyStock) }}</template>
         </el-table-column>
         <el-table-column v-if="detailCols.show.updated" label="最近变动" width="160" class-name="num">
@@ -377,7 +377,7 @@ function doExport() {
         <el-table-column v-if="summaryCols.show.total" label="合计" width="120" class-name="num" align="right">
           <template #default="{ row }"><strong>{{ formatQty(row.totalQty) }}</strong></template>
         </el-table-column>
-        <el-table-column v-if="summaryCols.show.safety" label="安全库存" width="120" class-name="num" align="right">
+        <el-table-column v-if="summaryCols.show.safety" label="最小库存" width="120" class-name="num" align="right">
           <template #default="{ row }">{{ row.safetyStock == null ? '—' : formatQty(row.safetyStock) }}</template>
         </el-table-column>
       </el-table>

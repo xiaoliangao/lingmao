@@ -119,7 +119,7 @@ public class MaterialImport {
         private BigDecimal reservePct;
         private BigDecimal moq;
         private Integer leadDays;
-        /** 物料级的"最小库存"：SKU 表没填时作 SKU 的安全库存 */
+        /** 物料级的"最小库存"：SKU 表没填时作 SKU 的最小库存 */
         private BigDecimal safetyStock;
         private String frozen;
         private BigDecimal widthCm;
@@ -321,6 +321,8 @@ public class MaterialImport {
         Map<String, SupplierBrief> suppliers = suppliersByCode(lines.stream().map(l -> l.data().getSupplierCode())
                 .filter(Objects::nonNull).distinct().toList());
         List<Integer> customerSuppliedRows = new ArrayList<>();
+        boolean lossFactors = factorColumn(lines.stream().map(l -> l.data().getDefaultLossPct()).toList());
+        boolean reserveFactors = factorColumn(lines.stream().map(l -> l.data().getReservePct()).toList());
 
         for (ExcelImport.Line<MaterialRow> line : lines) {
             MaterialRow r = line.data();
@@ -390,8 +392,8 @@ public class MaterialImport {
             m.setMinPackQty(Objects.requireNonNullElse(r.getMinPackQty(), BigDecimal.ONE));
             m.setLeadDays(r.getLeadDays());
             m.setYear(r.getYear());
-            m.setDefaultLossPct(r.getDefaultLossPct());
-            m.setReservePct(r.getReservePct());
+            m.setDefaultLossPct(lossPct(r.getDefaultLossPct(), lossFactors, sheet, row, "默认损耗"));
+            m.setReservePct(lossPct(r.getReservePct(), reserveFactors, sheet, row, "采购损耗"));
             m.setStatus("是".equals(r.getFrozen()) ? Statuses.DISABLED : Statuses.ENABLED);
             m.setRemark(r.getRemark());
             m.setLegacyAttrs(legacy.isEmpty() ? null : legacy);
@@ -404,6 +406,43 @@ public class MaterialImport {
             sheet.note(customerSuppliedRows.getFirst(), "物料来源", rowsText(customerSuppliedRows)
                     + "的物料来源「客供」按「我方采购」导入：系统没有打开代工功能");
         }
+        if (lossFactors) {
+            sheet.note(0, "默认损耗", "「默认损耗」这一列的数都在 1 和 2 之间，按系数导入：1.03 = 3%");
+        }
+        if (reserveFactors) {
+            sheet.note(0, "采购损耗", "「采购损耗」这一列的数都在 1 和 2 之间，按系数导入：1.03 = 3%");
+        }
+    }
+
+    /**
+     * 领猫的损耗可能写成系数（甲方 11-17：成衣损耗 1.03、1.05，PRD Q31）。按整列判断，不按格：单看 1.5 分不清是 1.5% 还是 1.5 倍。
+     * 不是 0 的数都在 [1, 2) 里、至少一个大于 1，就整列按系数读；否则按百分数（3 = 3%）
+     */
+    static boolean factorColumn(List<BigDecimal> values) {
+        boolean aboveOne = false;
+        for (BigDecimal v : values) {
+            if (v == null || v.signum() == 0) {
+                continue;
+            }
+            if (v.compareTo(BigDecimal.ONE) < 0 || v.compareTo(BigDecimal.TWO) >= 0) {
+                return false;
+            }
+            aboveOne |= v.compareTo(BigDecimal.ONE) > 0;
+        }
+        return aboveOne;
+    }
+
+    /** 系数换成百分数（1.035 → 3.5，1 → 0）；百分数原样。库里存 2 位小数，多了报错 */
+    private static BigDecimal lossPct(BigDecimal value, boolean factor, ExcelImport<MaterialRow> sheet, int row, String column) {
+        if (value == null || value.signum() == 0) {
+            return value;
+        }
+        BigDecimal pct = factor ? value.subtract(BigDecimal.ONE).movePointRight(2) : value;
+        if (pct.stripTrailingZeros().scale() > 2) {
+            sheet.error(row, column, factor ? "按系数换成百分数是 " + pct.stripTrailingZeros().toPlainString() + "%，最多 2 位小数"
+                    : "最多 2 位小数");
+        }
+        return pct;
     }
 
     private void checkSkus(ExcelImport<SkuRow> sheet, Plan plan) {
@@ -663,15 +702,15 @@ public class MaterialImport {
                         .note("参考单价，按采购单位、含税；0 当没填"),
                 ExcelColumn.choice("单位", units, MaterialRow::getStockUnit, MaterialRow::setStockUnit).required()
                         .note("库存单位，建好不能改"),
-                ExcelColumn.decimal("默认损耗", 2, MaterialRow::getDefaultLossPct, MaterialRow::setDefaultLossPct).percent()
-                        .nonNegative().check(MaterialImport::atMost100).note("百分数，3 表示 3%"),
-                ExcelColumn.decimal("采购损耗", 2, MaterialRow::getReservePct, MaterialRow::setReservePct).percent()
-                        .nonNegative().check(MaterialImport::atMost100).note("当备料比，百分数"),
+                ExcelColumn.decimal("默认损耗", 4, MaterialRow::getDefaultLossPct, MaterialRow::setDefaultLossPct).percent()
+                        .nonNegative().check(MaterialImport::atMost100).note("百分数（3 = 3%）或系数（1.03 = 3%），一列里统一一种"),
+                ExcelColumn.decimal("采购损耗", 4, MaterialRow::getReservePct, MaterialRow::setReservePct).percent()
+                        .nonNegative().check(MaterialImport::atMost100).note("当备料比；百分数或系数，同默认损耗"),
                 ExcelColumn.decimal("起订量", 3, MaterialRow::getMoq, MaterialRow::setMoq).nonNegative().note("按采购单位；0 当没填"),
                 ExcelColumn.integer("采购周期", MaterialRow::getLeadDays, MaterialRow::setLeadDays)
                         .check(d -> d < 0 || d > 3650 ? "采购周期是 0-3650 天" : null),
                 ExcelColumn.decimal("最小库存", 3, MaterialRow::getSafetyStock, MaterialRow::setSafetyStock).nonNegative()
-                        .note("SKU 表没填最小库存时，作 SKU 的安全库存"),
+                        .note("SKU 表没填最小库存时，作 SKU 的最小库存"),
                 ExcelColumn.text("是否冻结", MaterialRow::getFrozen, MaterialRow::setFrozen).maxLength(8).note("是 = 停用"),
                 ExcelColumn.decimal("门幅", 2, MaterialRow::getWidthCm, MaterialRow::setWidthCm).nonNegative().note("cm；0 当没填"),
                 ExcelColumn.decimal("克重", 2, MaterialRow::getWeightGsm, MaterialRow::setWeightGsm).nonNegative().note("g/㎡；0 当没填"),
@@ -715,7 +754,7 @@ public class MaterialImport {
                 ExcelColumn.decimal("克重", 2, SkuRow::getWeightGsm, SkuRow::setWeightGsm).nonNegative()
                         .note("只用来核对：和「物料信息」的不一样时列在提示里"),
                 ExcelColumn.decimal("最小库存", 3, SkuRow::getSafetyStock, SkuRow::setSafetyStock).nonNegative()
-                        .note("当安全库存，按库存单位；0 时取「物料信息」的最小库存"),
+                        .note("SKU 的最小库存（低于它提醒补货），按库存单位；0 时取「物料信息」的"),
                 ExcelColumn.decimal("SKU成本价", 4, SkuRow::getPrice, SkuRow::setPrice).nonNegative()
                         .note("0 当没填 = 和物料同价"),
                 ExcelColumn.text("SKU信息备注", SkuRow::getRemark, SkuRow::setRemark).maxLength(255)

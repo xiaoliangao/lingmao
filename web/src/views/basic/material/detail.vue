@@ -262,7 +262,7 @@ const LOG_ACTIONS = {
                   <span v-else class="dim">同参考价</span>
                 </template>
               </el-table-column>
-              <el-table-column :label="`安全库存（${stockUnit}）`" min-width="104" class-name="num" align="right">
+              <el-table-column :label="`最小库存（${stockUnit}）`" min-width="104" class-name="num" align="right">
                 <template #default="{ row }">{{ row.safetyStock != null ? formatQty(row.safetyStock) : '—' }}</template>
               </el-table-column>
               <el-table-column label="状态" width="84">
@@ -337,7 +337,7 @@ const LOG_ACTIONS = {
         <el-form-item :label="`单价（元 / ${purchaseUnit}）`">
           <el-input-number v-model="skuForm.price" :min="0" :controls="false" :value-on-clear="null" placeholder="不填 = 参考单价" />
         </el-form-item>
-        <el-form-item :label="`安全库存（${stockUnit}）`">
+        <el-form-item :label="`最小库存（${stockUnit}）`">
           <el-input-number v-model="skuForm.safetyStock" :min="0" :controls="false" :value-on-clear="null" />
         </el-form-item>
         <el-form-item label="备注" class="full">

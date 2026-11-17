@@ -551,7 +551,7 @@ export interface StockRow extends MaterialSkuBrief {
   warehouseName: string
   warehouseType: WarehouseType
   qty: number
-  /** SKU 上设的安全库存，没设是 null。低于没低于由采购那边算（supplyApi.bySkus），库存这边算不了在途和占用 */
+  /** SKU 上设的最小库存，没设是 null。低于没低于由采购那边算（supplyApi.bySkus），库存这边算不了在途和占用 */
   safetyStock: number | null
   /** 最近变动时间 2026-11-15 10:30:00 */
   updateTime: string

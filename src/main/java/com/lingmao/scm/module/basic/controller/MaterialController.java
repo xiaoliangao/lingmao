@@ -15,11 +15,13 @@ import com.lingmao.scm.module.basic.dto.MaterialQuery;
 import com.lingmao.scm.module.basic.dto.MaterialSaveReq;
 import com.lingmao.scm.module.basic.dto.MaterialSkuSaveReq;
 import com.lingmao.scm.module.basic.dto.MaterialSkuVO;
+import com.lingmao.scm.module.basic.dto.MaterialTypeReq;
 import com.lingmao.scm.module.basic.dto.SkuBatchReq;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.biz.dto.AttachmentReq;
 import com.lingmao.scm.module.biz.dto.AttachmentVO;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
+import com.lingmao.scm.module.system.dto.DictOption;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -118,6 +120,14 @@ public class MaterialController {
         return R.ok(materialService.create(req));
     }
 
+    @Operation(summary = "当场加一个物料类型：新建、编辑物料时下拉里找不到用（PRD §6.1.5 规则 6），返回新的选项")
+    @PostMapping("/types")
+    @PreAuthorize("hasAnyAuthority('basic:material:add', 'basic:material:edit')")
+    @OperLog(module = "物料", action = "新增物料类型")
+    public R<DictOption> addType(@Valid @RequestBody MaterialTypeReq req) {
+        return R.ok(materialService.addType(req));
+    }
+
     @Operation(summary = "修改物料自己的列（分类、库存单位不能改）")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('basic:material:edit')")
@@ -170,7 +180,7 @@ public class MaterialController {
         return R.ok(materialService.addSkus(id, req));
     }
 
-    @Operation(summary = "修改 SKU：色号、货号、单价、安全库存、备注")
+    @Operation(summary = "修改 SKU：色号、货号、单价、最小库存、备注")
     @PutMapping("/{id}/skus/{skuId}")
     @PreAuthorize("hasAuthority('basic:material:edit')")
     @OperLog(module = "物料", action = "改 SKU")

@@ -1036,7 +1036,7 @@ route('/stock', {
     const unitTxt = (r) => unitOf(r.sku)
     const XC = {
       明细: [{ k: 'w', t: '仓库', f: (r) => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuParts(r.sku).name }, { k: 'color', t: '颜色', f: (r) => skuParts(r.sku).color }, { k: 'spec', t: '规格', f: (r) => skuParts(r.sku).spec },
-        ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'qty', t: '数量', f: (r) => rnd(r.qty, 3) }, { k: 'unit', t: '单位', f: unitTxt }, { k: 'safety', t: '安全库存', f: (r) => safety(r.sku) ?? '' }, { k: 'last', t: '最近变动', f: (r) => r.last || '' }],
+        ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'qty', t: '数量', f: (r) => rnd(r.qty, 3) }, { k: 'unit', t: '单位', f: unitTxt }, { k: 'safety', t: '最小库存', f: (r) => safety(r.sku) ?? '' }, { k: 'last', t: '最近变动', f: (r) => r.last || '' }],
       按物料: [{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuName(r.sku) }, ...(TRADE ? [{ k: 'owner', t: '物权', f: (r) => ownerName(r.owner) }] : []), { k: 'mat', t: '物料仓', f: (r) => rnd(r.mat, 3) }, { k: 'fac', t: '工厂仓', f: (r) => rnd(r.fac, 3) }, { k: 'all', t: '合计', f: (r) => rnd(r.mat + r.fac, 3) }, { k: 'unit', t: '单位', f: unitTxt }],
       日志: [{ k: 'at', t: '日期' }, { k: 'type', t: '类型' }, { k: 'no', t: '单号', c: 'code' }, { k: 'wh', t: '仓库', f: (x) => whName(x.wh) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (x) => skuName(x.sku) },
         ...(TRADE ? [{ k: 'owner', t: '物权', f: (x) => ownerName(x.owner) }] : []), { k: 'delta', t: '变动' }, { k: 'bal', t: '结存' }, { k: 'lot', t: '缸号' }, { k: 'who', t: '操作人', f: (x) => userName(x.who) }],
@@ -1047,7 +1047,7 @@ route('/stock', {
     return { s, whs, rows, summary, owners, logs, safety, XC, xrows, LOG_TYPES }
   },
   template: `<div>
-    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于安全库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><a class="btn" href="#/stock-takes" data-c="库存：去盘点">盘点</a><button class="btn" data-c="库存：导入期初" title="每个仓库建一张「期初录入」盘点单，审核后进库存" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
+    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于最小库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><a class="btn" href="#/stock-takes" data-c="库存：去盘点">盘点</a><button class="btn" data-c="库存：导入期初" title="每个仓库建一张「期初录入」盘点单，审核后进库存" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
       <Pick class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
@@ -1060,9 +1060,9 @@ route('/stock', {
     <div v-if="s.view === '明细'" data-c="库存明细">
       <Tbl :rows="rows" link @row="r => s.log = r" empty="没有库存。SKU、物料名、仓库都能搜，几个编码用空格隔开" :cols="[
         { k: 'w', t: '仓库', f: r => whName(r.w) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: r => skuName(r.sku), img: r => r.sku },
-        ...(TRADE ? [{ k: 'owner', t: '物权' }] : []), { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '安全库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
+        ...(TRADE ? [{ k: 'owner', t: '物权' }] : []), { k: 'qty', t: '数量', c: 'num' }, { k: 'safety', t: '最小库存', c: 'num', f: r => safety(r.sku) ? fq(safety(r.sku)) : '—' }, { k: 'last', t: '最近变动', f: r => fd(r.last) }]">
         <template #owner="{ r }"><span :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</span></template>
-        <template #qty="{ r }"><span :class="{ amber: safety(r.sku) && wh(r.w).type === '物料仓' && belowSafety(r.sku) }" :title="safety(r.sku) && belowSafety(r.sku) ? '物料仓库存 + 在途 − 已被占用 低于安全库存，去补货提醒生成备货采购单' : null">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
+        <template #qty="{ r }"><span :class="{ amber: safety(r.sku) && wh(r.w).type === '物料仓' && belowSafety(r.sku) }" :title="safety(r.sku) && belowSafety(r.sku) ? '物料仓库存 + 在途 − 已被占用 低于最小库存，去补货提醒生成备货采购单' : null">{{ fq(r.qty) }}</span> <span class="dim">{{ unitOf(r.sku) }}</span></template>
       </Tbl>
     </div>
     <div v-if="s.view === '按物料'" data-c="库存汇总">

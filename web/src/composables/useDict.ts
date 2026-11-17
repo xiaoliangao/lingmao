@@ -1,4 +1,4 @@
-import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { computed, reactive, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { dictApi } from '@/api/system'
 import type { DictOption } from '@/types/system'
 
@@ -8,6 +8,19 @@ import type { DictOption } from '@/types/system'
  */
 const TTL = 5 * 60 * 1000
 const cache = new Map<string, { at: number; options: Promise<DictOption[]> }>()
+/** 每个类型的版本号：reloadDict 加一，开着的页面里用这个类型的 useDict 都重新取 */
+const versions = reactive<Record<string, number>>({})
+
+/**
+ * 刚加了选项（如新建物料时当场加的物料类型）：扔掉缓存重新取，开着的下拉、列表里的 labelOf 跟着换，不用等 5 分钟。
+ * 返回新取的选项，等它回来再选新值，下拉里不会先闪一下值本身
+ */
+export function reloadDict(type: string): Promise<DictOption[]> {
+  cache.delete(type)
+  const options = loadDict(type)
+  versions[type] = (versions[type] ?? 0) + 1
+  return options
+}
 
 export function loadDict(type: string): Promise<DictOption[]> {
   const hit = cache.get(type)
@@ -31,9 +44,10 @@ export function useDict(type: MaybeRefOrGetter<string>) {
   const loading = ref(false)
 
   watch(
-    () => toValue(type),
-    async (code) => {
-      options.value = []
+    () => [toValue(type), versions[toValue(type)] ?? 0] as const,
+    async ([code], old) => {
+      // 只是重新取（版本号变了）时先留着旧的选项，下拉不闪成空
+      if (code !== old?.[0]) options.value = []
       loading.value = !!code
       if (!code) return
       try {

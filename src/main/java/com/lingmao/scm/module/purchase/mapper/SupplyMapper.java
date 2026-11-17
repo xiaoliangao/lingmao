@@ -49,6 +49,6 @@ public interface SupplyMapper {
     /** 已确认的算料单"我方采购"里这些 SKU 的行 */
     List<HeldRow> selectActiveItems(@Param("skuIds") Collection<Long> skuIds);
 
-    /** 设了安全库存（> 0）、物料和 SKU 都启用的 SKU：补货提醒只看它们 */
+    /** 设了最小库存（> 0）、物料和 SKU 都启用的 SKU：补货提醒只看它们 */
     List<Long> selectSafetySkus();
 }

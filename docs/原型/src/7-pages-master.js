@@ -298,7 +298,7 @@ function updateMaterial(m, f) {
   for (const x of skus) {
     const k = m.skus.find((y) => y.code === x.code)
     if ((x.supColor || '') !== (k.supColor || '')) changes.push(`${k.code} 供应商色号 ${k.supColor || '空'} → ${x.supColor || '空'}`)
-    if ((x.safety ?? '') !== (k.safety ?? '')) changes.push(`${k.code} 安全库存 ${k.safety ?? '空'} → ${x.safety ?? '空'}`)
+    if ((x.safety ?? '') !== (k.safety ?? '')) changes.push(`${k.code} 最小库存 ${k.safety ?? '空'} → ${x.safety ?? '空'}`)
     if ((x.price ?? '') !== (k.price ?? '')) changes.push(`${k.code} 单价 ${k.price ?? '空'} → ${x.price ?? '空'}`)
     if ((x.status || '启用') !== (k.status || '启用')) changes.push(`${k.code} ${x.status}`)
   }
@@ -1062,8 +1062,8 @@ route('/materials', {
   </div>`,
 }, { mod: 'materials', t: '物料' })
 
-/* 新建、编辑物料共用：传 m 就是编辑（编码不变；SKU 只改供应商色号、单价、安全库存、停用，加 SKU 用「批量加 SKU」）
- * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、安全库存 */
+/* 新建、编辑物料共用：传 m 就是编辑（编码不变；SKU 只改供应商色号、单价、最小库存、停用，加 SKU 用「批量加 SKU」）
+ * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、最小库存 */
 comp('MaterialForm', {
   props: { cat: String, m: Object },
   emits: ['close'],
@@ -1090,13 +1090,23 @@ comp('MaterialForm', {
       const m = run(() => createMaterial(body))
       if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
     }
-    return { f, code, lock, sups, cats, toggle, save, rows, colors, preview }
+    // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比默认 3%（Q18），加完直接选上
+    async function addType() {
+      const t = (await askText('新增物料类型', '下拉里找不到的类型当场加；备料比默认 3%，以后在算料页的「备料比」里能改。', '如 织带', '新增'))?.trim()
+      if (!t) return
+      if (db.dicts.物料类型.includes(t)) return toast('已经有物料类型「' + t + '」了，直接选它', null, true)
+      db.dicts.物料类型.push(t)
+      db.reserve[t] = 3
+      f.type = t
+      toast('加了物料类型「' + t + '」，已经选上')
+    }
+    return { f, code, lock, sups, cats, toggle, save, rows, colors, preview, addType }
   },
   template: `<Modal :t="m ? '编辑物料 ' + m.code : '新建物料'" :w="720" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
       <label class="f">分类<Pick class="sel" v-model="f.cat"><option v-for="c in cats" :key="c.code" :value="c.code">{{ c.parent }} / {{ c.name }}</option></Pick></label>
       <label class="f">编码<input class="inp code" :value="code" disabled :title="m ? '编码定了不改' : '按分类自动编'"></label>
-      <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></Pick></label>
+      <div class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.物料类型" :key="x">{{ x }}</option></Pick><a href="javascript:" style="font-size:12px" @click="addType">下拉里没有？新增物料类型</a></div>
       <label class="f full">名称<input class="inp" v-model="f.name" placeholder="如：220g 斜纹棉"></label>
       <label class="f">库存单位<Pick class="sel" v-model="f.unit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
       <label class="f">采购单位<Pick class="sel" v-model="f.purUnit" :disabled="!!lock"><option v-for="x in db.dicts.单位" :key="x">{{ x }}</option></Pick></label>
@@ -1118,14 +1128,14 @@ comp('MaterialForm', {
       <template v-if="!m">
         <div class="f full">颜色<div class="chips"><button v-for="c in colors" :key="c.code" class="chip" :class="{ on: f.colors.includes(c.code) }" @click="toggle(c.code)"><Sw :c="c.code"/></button></div></div>
         <div v-if="f.colors.length" class="f full" data-c="新建 SKU">
-          <table class="tbl inset flat"><thead><tr><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（不填 = 参考单价）</th><th class="num">安全库存（{{ f.unit }}）</th></tr></thead>
+          <table class="tbl inset flat"><thead><tr><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（不填 = 参考单价）</th><th class="num">最小库存（{{ f.unit }}）</th></tr></thead>
             <tbody><tr v-for="c in f.colors" :key="c"><td><Sw :c="c"/></td><td><input class="inp" style="height:26px;width:90px" v-model="rows[c].spec" placeholder="如 15cm"></td>
               <td><input class="inp" style="height:26px;width:100px" v-model="rows[c].supColor"></td><td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="rows[c].price" :placeholder="f.price ?? ''"></td>
               <td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="rows[c].safety"></td></tr></tbody></table></div>
         <div class="f full" data-c="物料图片">物料图片<Pics v-model="f.images" :colors="f.colors" tip="布样、色卡、辅料实物都可以拍；给图标上颜色，按颜色出图"/></div>
       </template>
       <div v-else class="f full" data-c="编辑 SKU">SKU
-        <table class="tbl inset flat" style="margin-top:4px"><thead><tr><th>SKU</th><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（每{{ f.purUnit }}）</th><th class="num">安全库存（{{ f.unit }}）</th><th>状态</th></tr></thead>
+        <table class="tbl inset flat" style="margin-top:4px"><thead><tr><th>SKU</th><th>颜色</th><th>规格</th><th>供应商色号</th><th class="num">单价（每{{ f.purUnit }}）</th><th class="num">最小库存（{{ f.unit }}）</th><th>状态</th></tr></thead>
           <tbody><tr v-for="k in f.skus" :key="k.code"><td class="code">{{ k.code }}</td><td><Sw v-if="k.color" :c="k.color"/><span v-else class="dim">—</span></td><td>{{ k.spec || '—' }}</td>
             <td><input class="inp" style="height:26px;width:100px" v-model="k.supColor"></td><td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.price" :placeholder="f.price ?? ''"></td>
             <td class="num"><input class="inp num" style="height:26px;width:90px" type="number" v-model.number="k.safety"></td>
@@ -1171,7 +1181,7 @@ route('/materials/:code', {
         <section v-if="tab === 'skus'" data-c="物料SKU">
           <Tbl inset flat :rows="m.skus" :cols="[
             { k: 'code', t: 'SKU', c: 'code', img: k => k.code }, { k: 'color', t: '颜色' }, { k: 'spec', t: '规格', f: k => k.spec || '—' }, { k: 'supColor', t: '供应商色号', f: k => k.supColor || '—' },
-            { k: 'price', t: '单价', c: 'num', f: k => k.price != null ? fm(k.price) : '同参考价' }, { k: 'safety', t: '安全库存', c: 'num', f: k => k.safety ? fq(k.safety) : '—' },
+            { k: 'price', t: '单价', c: 'num', f: k => k.price != null ? fm(k.price) : '同参考价' }, { k: 'safety', t: '最小库存', c: 'num', f: k => k.safety ? fq(k.safety) : '—' },
             { k: 'wl', t: '物料仓', c: 'num', f: k => fq(skuStock(k.code, '物料仓')) }, { k: 'gc', t: '工厂仓', c: 'num', f: k => fq(skuStock(k.code, '工厂仓')) },
             { k: 'img', t: '图片' }, { k: 'status', t: '状态' }, { k: 'act', t: '' }]">
             <template #color="{ r }"><Sw v-if="r.color" :c="r.color"/><span v-else class="dim">—</span></template>
@@ -1740,7 +1750,7 @@ IMPORTS.materials = {
     { k: 'spec', t: '规格', tip: '如 15cm、18L；填了生成规格码', text: true, w: 8 },
     { k: 'supColor', t: '供应商色号', text: true, ex: 'C-1032' },
     { k: 'skuPrice', t: 'SKU 单价', num: true, tip: '不填 = 参考单价', w: 8 },
-    { k: 'safety', t: '安全库存', num: true, tip: '库存单位', w: 8 },
+    { k: 'safety', t: '最小库存', num: true, tip: '库存单位', w: 8 },
     { k: 'note', t: '备注', w: 20 },
   ],
   example: () => [

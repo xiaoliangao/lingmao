@@ -1,5 +1,5 @@
 import { http, type RequestOptions } from '@/utils/request'
-import type { FileVO, PageResult } from '@/types/system'
+import type { DictOption, FileVO, PageResult } from '@/types/system'
 import type { Attachment, DocLog } from '@/types/biz'
 import type {
   Color, ColorOption, Company, CompanyOption, MaterialDetail, MaterialDup, MaterialPickRow, MaterialRow, MaterialSku, MaterialSource, SizeGroup,
@@ -189,6 +189,8 @@ export const materialApi = {
   /** 颜色 × 规格两两组合建 SKU；都不选就是一个不带颜色、规格的 SKU */
   create: (data: MaterialForm & { colorIds: number[]; specs: SkuSpec[] }) => http.post<number>('/api/materials', data),
   update: (id: number, data: MaterialForm) => http.put<void>(`/api/materials/${id}`, data),
+  /** 新建、编辑物料时当场加一个物料类型（字典 material_type 的一项），返回新选项；名称重复 1000。备料比不填 = 3 */
+  addType: (data: { label: string; reservePct: number | null }) => http.post<DictOption>('/api/materials/types', data),
   replaceImages: (id: number, files: FileVO[]) => http.put<Attachment[]>(`/api/materials/${id}/images`, attachmentBody(files)),
   addSkus: (id: number, data: { colorIds: number[]; specs: SkuSpec[] }) => http.post<MaterialSku[]>(`/api/materials/${id}/skus`, data),
   updateSku: (id: number, skuId: number, data: SkuForm) => http.put<void>(`/api/materials/${id}/skus/${skuId}`, data),

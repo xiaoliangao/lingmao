@@ -78,7 +78,7 @@ export const countApi = {
 // ---------- 库存、库存日志 ----------
 
 export const stockApi = {
-  /** 库存明细：仓库 × SKU（要 inventory:stock:list）。在途、低于安全库存另调 supplyApi.bySkus */
+  /** 库存明细：仓库 × SKU（要 inventory:stock:list）。在途、低于最小库存另调 supplyApi.bySkus */
   page: (params: PageParams & StockQuery) => http.get<PageResult<StockRow>>('/api/stocks', params),
   /** 按物料汇总：所有仓合计 */
   summary: (params: PageParams & StockQuery) => http.get<PageResult<StockSummaryRow>>('/api/stocks/summary', params),

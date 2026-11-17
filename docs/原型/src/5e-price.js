@@ -143,7 +143,7 @@ function lastBuyOf(r) {
 const lastProdOf = (code) => db.productions.filter((p) => p.style === code && prodKind(p) === '外发加工单' && !['草稿', '待审核', '已作废'].includes(p.status)) // 成品采购单价含料，不和工价比.sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null
 
 /* ---------- 补货提醒（PRD §6.6.7） ---------- */
-// 设了安全库存的物料 SKU：物料仓库存 + 全部在途 − 已被占用 < 安全库存。这里在途不看赶不赶得上开裁：补货看的是会不会断
+// 设了最小库存的物料 SKU：物料仓库存 + 全部在途 − 已被占用 < 最小库存。这里在途不看赶不赶得上开裁：补货看的是会不会断
 function reorderRows() {
   return db.materials.filter((m) => m.status !== '停用').flatMap((m) => m.skus.filter((k) => k.safety > 0 && k.status !== '停用').map((k) => {
     const stock = rnd(sum(materialWhs(), (w) => stockQty(w, k.code, '自有')), 3), tr = transitRows(k.code, '自有')
@@ -165,14 +165,14 @@ function reorderToPurchases(rows) {
   const by = {}
   rows.forEach((r) => (by[r.sup] ||= []).push(r))
   return Object.entries(by).map(([s, rs]) => {
-    const p = createPurchase({ supplier: s, type: '备货采购', note: '补货：低于安全库存', lines: rs.map((r) => ({ sku: r.sku, qty: r.qty })) })
+    const p = createPurchase({ supplier: s, type: '备货采购', note: '补货：低于最小库存', lines: rs.map((r) => ({ sku: r.sku, qty: r.qty })) })
     act(p, '由补货提醒生成')
     return p
   })
 }
 // 补货清单里每个 SKU 已经开了、还没审核的备货采购单（防止重复生成）
 const reorderDrafts = (sku) => db.purchases.filter((p) => p.type === '备货采购' && ['草稿', '待审核'].includes(p.status) && p.lines.some((l) => l.sku === sku))
-TODOS.push(() => [(homeBoss() || me()?.role === '采购') && { t: '物料低于安全库存', n: reorderRows().length, to: '/reorder', i: 'box', tone: 'amber' }].filter(Boolean))
+TODOS.push(() => [(homeBoss() || me()?.role === '采购') && { t: '物料低于最小库存', n: reorderRows().length, to: '/reorder', i: 'box', tone: 'amber' }].filter(Boolean))
 
 /* ---------- 种子：报价、调价历史（和物料参考单价、种子单据的价对得上），再把种子里审核过的单据补记一遍 ---------- */
 as('u2', '2026-03-02', () => {
@@ -403,7 +403,7 @@ comp('StylePrice', {
   </div>`,
 })
 
-/* ---------- 补货清单：首页待办"物料低于安全库存"点进来 ---------- */
+/* ---------- 补货清单：首页待办"物料低于最小库存"点进来 ---------- */
 route('/reorder', {
   setup() {
     const rows = computed(() => reorderRows())
@@ -422,7 +422,7 @@ route('/reorder', {
     <Head t="补货提醒" :back="['库存', '/stock']"><button class="btn pri" :disabled="!picked.length" @click="gen">生成备货采购单<span v-if="picked.length">（{{ picked.length }}）</span></button></Head>
     <div class="page">
       <table class="tbl inset flat" data-c="补货清单">
-        <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">库存</th><th class="num">在途</th><th class="num">已被占用</th><th class="num">安全库存</th><th class="num">差多少</th><th class="num">补货量</th><th class="num">单价</th><th>已开的备货单</th></tr></thead>
+        <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num">库存</th><th class="num">在途</th><th class="num">已被占用</th><th class="num">最小库存</th><th class="num">差多少</th><th class="num">补货量</th><th class="num">单价</th><th>已开的备货单</th></tr></thead>
         <tbody>
           <tr v-for="r in rows" :key="r.sku" :class="{ sel: st(r).on }">
             <td><input type="checkbox" v-model="st(r).on" style="accent-color:var(--accent)"></td>
@@ -435,7 +435,7 @@ route('/reorder', {
             <td class="num">{{ st(r).sup ? fm(poDefaultPrice(st(r).sup, r.sku)) : '—' }}</td>
             <td><a v-for="p in reorderDrafts(r.sku)" :key="p.no" class="code" :href="'#/purchases/' + p.no" style="margin-right:6px">{{ p.no }}<span class="dim">（{{ p.status }}）</span></a><span v-if="!reorderDrafts(r.sku).length" class="dim">—</span></td>
           </tr>
-          <tr v-if="!rows.length"><td colspan="11" class="empty">没有低于安全库存的物料：库存加在途都在安全库存以上</td></tr>
+          <tr v-if="!rows.length"><td colspan="11" class="empty">没有低于最小库存的物料：库存加在途都在最小库存以上</td></tr>
         </tbody>
       </table>
     </div>
