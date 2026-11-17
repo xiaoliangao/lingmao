@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  按款看成本（docs/api/01 §3.13）：一个款一行，取生产已生效版，没有取研发已生效版；两个都没有的款不列。
+  款号、名称、花名、吊牌价和筛选用的品类、品牌、年份、季节只读 JOIN sty_style（架构 §3.2 规则 4）；成本由 TechPackCostService 逐行算。
+-->
+<mapper namespace="com.lingmao.scm.module.techpack.mapper.TechPackMapper">
+
+    <select id="selectStyleCostPage" resultType="com.lingmao.scm.module.techpack.dto.StyleCostRowVO">
+        SELECT s.id AS style_id, s.code AS style_code, s.name AS style_name, s.alias_name, s.tag_price,
+               p.id AS tech_pack_id, p.stage, p.version
+        FROM tp_tech_pack p
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE p.status = 'EFFECTIVE'
+          AND (p.stage = 'PROD'
+               OR (p.stage = 'DEV' AND NOT EXISTS (SELECT 1 FROM tp_tech_pack x
+                                                   WHERE x.style_id = p.style_id AND x.stage = 'PROD' AND x.status = 'EFFECTIVE')))
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            <choose>
+                <when test="codes != null and codes.size() > 0">
+                    AND (upper(s.code) IN
+                    <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                    OR s.name ILIKE '%' || #{q.keyword} || '%' OR s.alias_name ILIKE '%' || #{q.keyword} || '%')
+                </when>
+                <otherwise>
+                    AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
+                    OR s.alias_name ILIKE '%' || #{q.keyword} || '%')
+                </otherwise>
+            </choose>
+        </if>
+        <if test="categoryIds != null">
+            AND s.category_id IN <foreach collection="categoryIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.brand != null and q.brand != ''">AND s.brand = #{q.brand}</if>
+        <if test="q.year != null">AND s.year = #{q.year}</if>
+        <if test="q.season != null and q.season != ''">AND s.season = #{q.season}</if>
+        <if test="q.stage != null">AND p.stage = #{q.stage}</if>
+        ORDER BY s.code DESC, s.id DESC
+    </select>
+</mapper>

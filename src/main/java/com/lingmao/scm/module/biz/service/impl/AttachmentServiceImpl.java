@@ -9,6 +9,7 @@ import com.lingmao.scm.module.biz.entity.Attachment;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.mapper.AttachmentMapper;
 import com.lingmao.scm.module.biz.service.AttachmentService;
+import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -102,6 +103,11 @@ public class AttachmentServiceImpl implements AttachmentService {
             throw new BizException(400, "只能用本系统上传的文件，这个地址不行：" + url);
         }
         return path;
+    }
+
+    @Override
+    public void copy(BizType type, long fromDocId, long toDocId) {
+        attachmentMapper.copy(type, fromDocId, toDocId, LoginUser.currentUserId());
     }
 
     private AttachmentVO toVO(Attachment row) {

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @Service //告诉 Spring "这是一个要交给你管理的对象"。启动时 Spring 会创建它的唯一一个实例，谁需要 DictDataService，就把这个实例给谁。
@@ -137,5 +139,26 @@ public class DictDataServiceImpl implements DictDataService {
         if (exists) {
             throw new BizException("存储值已存在: " + value);
         }
+    }
+
+    @Override
+    public List<DictData> listWithText(String typeCode) {
+        return dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
+                .eq(DictData::getTypeCode, typeCode)
+                .orderByAsc(DictData::getSort, DictData::getId));
+    }
+
+    @Override
+    @Transactional
+    public void updateTextValues(String typeCode, Map<String, String> texts) {
+        texts.forEach((value, text) -> {
+            int updated = dictDataMapper.update(new DictData(), new LambdaUpdateWrapper<DictData>()
+                    .set(DictData::getTextValue, StringUtils.hasText(text) ? text.strip() : null)
+                    .eq(DictData::getTypeCode, typeCode)
+                    .eq(DictData::getValue, value));
+            if (updated == 0) {
+                throw new BizException("「" + value + "」不在字典里了，可能刚被删了，请刷新");
+            }
+        });
     }
 }

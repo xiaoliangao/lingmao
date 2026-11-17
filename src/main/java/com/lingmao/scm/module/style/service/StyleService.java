@@ -12,10 +12,12 @@ import com.lingmao.scm.module.style.dto.StyleListVO;
 import com.lingmao.scm.module.style.dto.StylePickQuery;
 import com.lingmao.scm.module.style.dto.StylePickVO;
 import com.lingmao.scm.module.style.dto.StyleQuery;
+import com.lingmao.scm.module.style.dto.StylePackInfo;
 import com.lingmao.scm.module.style.dto.StyleRef;
 import com.lingmao.scm.module.style.dto.StyleSaveReq;
 import com.lingmao.scm.module.style.dto.StyleSkuSaveReq;
 import com.lingmao.scm.module.style.dto.StyleSkuVO;
+import com.lingmao.scm.module.style.entity.TechPackStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Collection;
@@ -26,8 +28,8 @@ import java.util.Map;
  * 款式、颜色、SKU（RFC 005）。款号建好不改；状态照转换表（StyleServiceImpl.FLOW）比较并交换，每个动作写一条操作记录；
  * 颜色只追加；SKU = 启用的颜色 × 尺码组的尺码，一键生成只补缺。
  * <p>
- * 给别的域用的是最后两个方法：checkUsable、refs（价格档案用）。第 3 批需求订单、资料包开工时再加 checkOrderable、updateTechPackStatus
- * （RFC 005 §4）。
+ * 给别的域用的在最后："给别的域"下面。checkUsable、refs 给价格档案；packInfo、packInfos、updateTechPackStatus 给资料包；
+ * 需求订单开工时再加 checkOrderable（RFC 005 §4）。
  */
 public interface StyleService {
 
@@ -117,4 +119,13 @@ public interface StyleService {
 
     /** 一批款式的 id、款号、名称，给列表显示用。id → StyleRef；查不到的（被删了）不在 map 里；get(null) 返回 null，不抛 */
     Map<Long, StyleRef> refs(Collection<Long> ids);
+
+    /** 资料包用的款式：款号款名、尺码组、启用的颜色、吊牌价、默认加工厂、状态。不存在 404 */
+    StylePackInfo packInfo(long id);
+
+    /** 批量版（按款看成本一页几十个款）；查不到的不在 map 里 */
+    Map<Long, StylePackInfo> packInfos(Collection<Long> ids);
+
+    /** 资料包生效时回写款式上的资料包状态（列表能按它筛，选款式时看它）。不存在 404；不写操作记录（资料包那边记了） */
+    void updateTechPackStatus(long styleId, TechPackStatus status);
 }

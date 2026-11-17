@@ -35,6 +35,7 @@ import com.lingmao.scm.module.style.dto.StyleListVO;
 import com.lingmao.scm.module.style.dto.StylePickQuery;
 import com.lingmao.scm.module.style.dto.StylePickVO;
 import com.lingmao.scm.module.style.dto.StyleQuery;
+import com.lingmao.scm.module.style.dto.StylePackInfo;
 import com.lingmao.scm.module.style.dto.StyleRef;
 import com.lingmao.scm.module.style.dto.StyleSaveReq;
 import com.lingmao.scm.module.style.dto.StyleSkuSaveReq;
@@ -518,6 +519,46 @@ public class StyleServiceImpl implements StyleService {
                         .in(Style::getId, distinct))
                 .forEach(s -> refs.put(s.getId(), new StyleRef(s.getId(), s.getCode(), s.getName())));
         return refs;
+    }
+
+    @Override
+    public StylePackInfo packInfo(long id) {
+        StylePackInfo info = packInfos(List.of(id)).get(id);
+        if (info == null) {
+            throw new BizException(404, NOT_FOUND);
+        }
+        return info;
+    }
+
+    @Override
+    public Map<Long, StylePackInfo> packInfos(Collection<Long> ids) {
+        List<Long> distinct = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        Map<Long, StylePackInfo> infos = new HashMap<>();
+        if (distinct.isEmpty()) {
+            return infos;
+        }
+        Map<Long, List<Long>> colors = styleColorMapper.selectList(new LambdaQueryWrapper<StyleColor>()
+                        .in(StyleColor::getStyleId, distinct)
+                        .eq(StyleColor::getStatus, ENABLED_FLAG)
+                        .orderByAsc(StyleColor::getStyleId, StyleColor::getSeq, StyleColor::getId))
+                .stream().collect(Collectors.groupingBy(StyleColor::getStyleId, LinkedHashMap::new,
+                        Collectors.mapping(StyleColor::getColorId, Collectors.toList())));
+        for (Style s : styleMapper.selectByIds(distinct)) {
+            infos.put(s.getId(), new StylePackInfo(s.getId(), s.getCode(), s.getName(), s.getAliasName(), s.getYear(),
+                    s.getSeason(), s.getSampleNo(), s.getSizeGroupId(), colors.getOrDefault(s.getId(), List.of()),
+                    s.getTagPrice(), s.getDefaultFactoryId(), s.getStatus()));
+        }
+        return infos;
+    }
+
+    @Override
+    public void updateTechPackStatus(long styleId, TechPackStatus status) {
+        int updated = styleMapper.update(new Style(), new LambdaUpdateWrapper<Style>()
+                .set(Style::getTechPackStatus, status)
+                .eq(Style::getId, styleId));
+        if (updated == 0) {
+            throw new BizException(404, NOT_FOUND);
+        }
     }
 
     // ------------------------------------------------------------------ 内部

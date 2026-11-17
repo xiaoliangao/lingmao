@@ -268,11 +268,11 @@ class PriceServiceImplTest {
     /** 一个面料：库存、采购单位都是米 */
     private static MaterialRef material(int status) {
         return new MaterialRef(MATERIAL, "ML0012", "测试斜纹棉", "FABRIC", "METER", "METER", BigDecimal.ONE,
-                new BigDecimal("18.00"), "PURCHASE", BigDecimal.ZERO, BigDecimal.ZERO, status);
+                new BigDecimal("18.00"), "PURCHASE", BigDecimal.ZERO, BigDecimal.ZERO, null, status);
     }
 
     private static MaterialSkuRef sku(long id, MaterialRef material, int status) {
-        return new MaterialSkuRef(id, "ML0012-KQ", material, 3L, "KQ", "卡其", null, null, null, status);
+        return new MaterialSkuRef(id, "ML0012-KQ", material, 3L, "KQ", "卡其", null, null, null, null, status);
     }
 
     private static Price price(String value, LocalDate date, Long skuId) {

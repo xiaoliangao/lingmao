@@ -8,6 +8,7 @@ import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
 
 import java.util.List;
+import java.util.Map;
 
 public interface DictDataService {
 
@@ -30,4 +31,13 @@ public interface DictDataService {
 
     /** 内置项不能删 */
     void delete(Long id);
+
+    /**
+     * 一个类型下的全部项（停用的也在），带 text_value（长文字：尺寸部位的默认测量方法），按 sort 排。
+     * 不走缓存：缓存里的 DictOption 不带长文字；用它的只有工艺标准抽屉、资料包详情，量也小
+     */
+    List<DictData> listWithText(String typeCode);
+
+    /** 只改几项的 text_value（工艺标准里改部位的测量方法）。texts：value → 新文字，空白存 null；类型下没有的 value 报 1000 */
+    void updateTextValues(String typeCode, Map<String, String> texts);
 }

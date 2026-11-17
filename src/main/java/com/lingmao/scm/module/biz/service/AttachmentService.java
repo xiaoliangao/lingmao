@@ -35,4 +35,10 @@ public interface AttachmentService {
 
     /** 删一条记录时，同一个事务里把它所有分类的附件一起删（RFC 003 §2） */
     void deleteByDoc(BizType type, long docId);
+
+    /**
+     * 把一条记录所有分类的附件抄给另一条（资料包修订、转生产 BOM 时，工艺指示的插图跟着复制，架构 §4.9）：
+     * 新行指向同一个文件，不复制文件本身。toDocId 原来的附件不动，调用方给的是新建的记录
+     */
+    void copy(BizType type, long fromDocId, long toDocId);
 }
