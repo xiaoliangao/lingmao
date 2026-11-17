@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  订单变更单列表、各状态条数（docs/api/02 §3.14）。订单号跟着订单 JOIN；关键字里的 SKU 码只读 JOIN 款式 SKU（架构 §3.2 规则 4）。
+  "已驳回"不是一个状态：草稿且 reject_reason 不空。作废了的驳回原因不再返回
+-->
+<mapper namespace="com.lingmao.scm.module.order.mapper.OrderChangeMapper">
+
+    <sql id="where">
+        WHERE true
+        <if test="scope.self">
+            AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId}
+                 OR c.create_by = #{scope.userId})
+        </if>
+        <if test="withStatus and q.status != null and q.status.size() > 0">
+            AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
+        </if>
+        <if test="withStatus and q.rejected != null">
+            AND (c.status = 'DRAFT' AND c.reject_reason IS NOT NULL) = #{q.rejected}
+        </if>
+        <if test="q.orderId != null">AND c.order_id = #{q.orderId}</if>
+        <if test="q.changeType != null">AND (',' || c.change_types || ',') LIKE '%,' || #{q.changeType} || ',%'</if>
+        <if test="q.createDateFrom != null">
+            AND c.create_time &gt;= (CAST(#{q.createDateFrom} AS date)::timestamp AT TIME ZONE 'Asia/Shanghai')
+        </if>
+        <if test="q.createDateTo != null">
+            AND c.create_time &lt; ((CAST(#{q.createDateTo} AS date) + 1)::timestamp AT TIME ZONE 'Asia/Shanghai')
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (c.no ILIKE '%' || #{q.keyword} || '%' OR o.no ILIKE '%' || #{q.keyword} || '%'
+                 OR EXISTS (SELECT 1 FROM ord_change_item ci JOIN sty_style_sku k ON k.id = ci.style_sku_id
+                            WHERE ci.change_id = c.id AND k.code ILIKE '%' || #{q.keyword} || '%')
+                 <if test="codes != null">
+                     OR upper(c.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                 </if>)
+        </if>
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.order.dto.OrderChangeRowVO">
+        <bind name="withStatus" value="true"/>
+        SELECT c.id, c.no, c.status, CASE WHEN c.status = 'DRAFT' THEN c.reject_reason END AS reject_reason,
+               c.order_id, o.no AS order_no, c.change_types AS change_types_text, c.reason, c.responsible_party, c.fee_note,
+               c.create_by, c.create_time, c.audit_by, c.audit_time
+        FROM ord_change c
+        JOIN ord_order o ON o.id = c.order_id
+        <include refid="where"/>
+        ORDER BY c.create_time DESC, c.id DESC
+    </select>
+
+    <select id="selectCounts" resultType="com.lingmao.scm.common.page.StatusCount">
+        <bind name="withStatus" value="false"/>
+        SELECT c.status, COUNT(*) AS count
+        FROM ord_change c
+        JOIN ord_order o ON o.id = c.order_id
+        <include refid="where"/>
+        GROUP BY c.status
+        UNION ALL
+        SELECT 'REJECTED', COUNT(*)
+        FROM ord_change c
+        JOIN ord_order o ON o.id = c.order_id
+        <include refid="where"/>
+          AND c.status = 'DRAFT' AND c.reject_reason IS NOT NULL
+        HAVING COUNT(*) &gt; 0
+    </select>
+</mapper>

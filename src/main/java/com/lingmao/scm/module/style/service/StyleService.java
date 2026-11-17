@@ -12,6 +12,7 @@ import com.lingmao.scm.module.style.dto.StyleListVO;
 import com.lingmao.scm.module.style.dto.StylePickQuery;
 import com.lingmao.scm.module.style.dto.StylePickVO;
 import com.lingmao.scm.module.style.dto.StyleQuery;
+import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.dto.StylePackInfo;
 import com.lingmao.scm.module.style.dto.StyleRef;
 import com.lingmao.scm.module.style.dto.StyleSaveReq;
@@ -125,6 +126,15 @@ public interface StyleService {
 
     /** 批量版（按款看成本一页几十个款）；查不到的不在 map 里 */
     Map<Long, StylePackInfo> packInfos(Collection<Long> ids);
+
+    /** 需求订单用的款式：主图、状态、尺码、全部颜色和 SKU（停用的也在）。按请求的顺序；查不到的（被删了）不在 map 里 */
+    Map<Long, StyleOrderInfo> orderInfos(Collection<Long> ids);
+
+    /** 几个款式 SKU 各是哪个款的：SKU id → 款式 id；查不到的不在 map 里（订单保存时按 SKU 找款） */
+    Map<Long, Long> styleIdsOfSkus(Collection<Long> skuIds);
+
+    /** 款号 → 款式 id（导入订单时按款号找款，不分大小写）：key 是大写的款号；查不到的不在 map 里 */
+    Map<String, Long> idsByCodes(Collection<String> codes);
 
     /** 资料包生效时回写款式上的资料包状态（列表能按它筛，选款式时看它）。不存在 404；不写操作记录（资料包那边记了） */
     void updateTechPackStatus(long styleId, TechPackStatus status);

@@ -3,12 +3,15 @@ package com.lingmao.scm.module.techpack.service;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
 import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
+import com.lingmao.scm.module.techpack.dto.PackBrief;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
 import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 资料包（docs/api/01、PRD §6.4、架构 §4.7 §4.9）：一个款式一个阶段的一个版本，草稿整版保存，生效后只读，要改就修订出新草稿。
@@ -57,4 +60,12 @@ public interface TechPackService {
 
     /** 这一版在不在（款式没有数据范围，看得到资料包就看得到款式）：不在 404 */
     void checkVisible(long id);
+
+    // ---------- 给需求订单 ----------
+
+    /** 几个款现在生效的生产 BOM：款式 id → PackBrief；没有的款不在 map 里 */
+    Map<Long, PackBrief> effectiveProd(Collection<Long> styleIds);
+
+    /** 几个版本：id → PackBrief（订单锁定的、变更单换的）；查不到的不在 map 里 */
+    Map<Long, PackBrief> briefs(Collection<Long> packIds);
 }

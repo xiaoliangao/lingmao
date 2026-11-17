@@ -36,6 +36,7 @@ import com.lingmao.scm.module.style.dto.StyleListVO;
 import com.lingmao.scm.module.style.dto.StylePickQuery;
 import com.lingmao.scm.module.style.dto.StylePickVO;
 import com.lingmao.scm.module.style.dto.StyleQuery;
+import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.dto.StylePackInfo;
 import com.lingmao.scm.module.style.dto.StyleRef;
 import com.lingmao.scm.module.style.dto.StyleSaveReq;
@@ -64,13 +65,16 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static com.lingmao.scm.module.style.entity.StyleStatus.DISABLED;
@@ -548,6 +552,84 @@ public class StyleServiceImpl implements StyleService {
                     s.getTagPrice(), s.getDefaultFactoryId(), s.getProductName(), s.getComposition(), s.getStatus()));
         }
         return infos;
+    }
+
+    @Override
+    public Map<Long, StyleOrderInfo> orderInfos(Collection<Long> ids) {
+        List<Long> distinct = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        Map<Long, StyleOrderInfo> infos = new LinkedHashMap<>();
+        if (distinct.isEmpty()) {
+            return infos;
+        }
+        Map<Long, Style> styles = styleMapper.selectByIds(distinct).stream()
+                .collect(Collectors.toMap(Style::getId, Function.identity()));
+        Map<Long, List<StyleColor>> styleColors = styleColorMapper.selectList(new LambdaQueryWrapper<StyleColor>()
+                        .in(StyleColor::getStyleId, distinct)
+                        .orderByAsc(StyleColor::getStyleId, StyleColor::getSeq, StyleColor::getId))
+                .stream().collect(Collectors.groupingBy(StyleColor::getStyleId));
+        Map<Long, List<StyleSku>> skus = styleSkuMapper.selectList(new LambdaQueryWrapper<StyleSku>()
+                        .in(StyleSku::getStyleId, distinct))
+                .stream().collect(Collectors.groupingBy(StyleSku::getStyleId));
+        Set<Long> colorIds = new HashSet<>();
+        styleColors.values().forEach(list -> list.forEach(sc -> colorIds.add(sc.getColorId())));
+        skus.values().forEach(list -> list.forEach(k -> colorIds.add(k.getColorId())));
+        Map<Long, Color> colors = colorService.byIds(colorIds);
+        Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, distinct, Attachment.IMAGE);
+        Map<Long, List<String>> sizeGroups = new HashMap<>();
+        for (Long id : distinct) {
+            Style s = styles.get(id);
+            if (s == null) {
+                continue;
+            }
+            List<String> sizes = sizeGroups.computeIfAbsent(s.getSizeGroupId(), g -> sizeGroupService.getById(g).sizes());
+            List<StyleColor> onStyle = styleColors.getOrDefault(id, List.of());
+            Map<Long, Integer> colorOrder = new HashMap<>();
+            onStyle.forEach(sc -> colorOrder.put(sc.getColorId(), sc.getSeq()));
+            List<StyleOrderInfo.Color> colorList = onStyle.stream().map(sc -> {
+                Color c = colors.get(sc.getColorId());
+                return new StyleOrderInfo.Color(sc.getColorId(), c == null ? null : c.getCode(), c == null ? null : c.getName(),
+                        c == null ? null : c.getHex(), Integer.valueOf(ENABLED_FLAG).equals(sc.getStatus()));
+            }).toList();
+            List<StyleOrderInfo.Sku> skuList = skus.getOrDefault(id, List.of()).stream()
+                    .sorted(Comparator.comparing((StyleSku k) -> colorOrder.getOrDefault(k.getColorId(), Integer.MAX_VALUE))
+                            .thenComparing(k -> indexOrLast(sizes, k.getSizeCode()))
+                            .thenComparing(StyleSku::getCode))
+                    .map(k -> new StyleOrderInfo.Sku(k.getId(), k.getColorId(), k.getSizeCode(), k.getCode(),
+                            Integer.valueOf(ENABLED_FLAG).equals(k.getStatus())))
+                    .toList();
+            infos.put(id, new StyleOrderInfo(id, s.getCode(), s.getName(), s.getAliasName(), images.get(id), s.getStatus(),
+                    s.getTechPackStatus(), sizes, colorList, skuList, s.getTagPrice(), s.getDefaultFactoryId()));
+        }
+        return infos;
+    }
+
+    @Override
+    public Map<Long, Long> styleIdsOfSkus(Collection<Long> skuIds) {
+        List<Long> distinct = skuIds == null ? List.of() : skuIds.stream().filter(Objects::nonNull).distinct().toList();
+        Map<Long, Long> styles = new HashMap<>();
+        if (!distinct.isEmpty()) {
+            styleSkuMapper.selectList(new LambdaQueryWrapper<StyleSku>()
+                            .select(StyleSku::getId, StyleSku::getStyleId)
+                            .in(StyleSku::getId, distinct))
+                    .forEach(k -> styles.put(k.getId(), k.getStyleId()));
+        }
+        return styles;
+    }
+
+    @Override
+    public Map<String, Long> idsByCodes(Collection<String> codes) {
+        List<String> upper = codes == null ? List.of() : codes.stream().filter(Objects::nonNull)
+                .map(c -> c.strip().toUpperCase(Locale.ROOT)).distinct().toList();
+        Map<String, Long> ids = new HashMap<>();
+        if (upper.isEmpty()) {
+            return ids;
+        }
+        String placeholders = IntStream.range(0, upper.size()).mapToObj(i -> "{" + i + "}").collect(Collectors.joining(","));
+        styleMapper.selectList(new LambdaQueryWrapper<Style>()
+                        .select(Style::getId, Style::getCode)
+                        .apply("upper(code) IN (" + placeholders + ")", upper.toArray()))
+                .forEach(st -> ids.put(st.getCode().toUpperCase(Locale.ROOT), st.getId()));
+        return ids;
     }
 
     @Override

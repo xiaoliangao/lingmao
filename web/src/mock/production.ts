@@ -14,6 +14,7 @@ import type {
   ReceiptForm,
 } from '@/types/production'
 import type { DocNotice } from '@/types/biz'
+import type { SchedulePrefill, ScheduleQuote, ScheduleReq } from '@/types/order'
 import type { ProductionAction, ProductionStatus } from '@/types/production'
 import { PRODUCTION_KIND, PRODUCTION_STATUS } from '@/types/production'
 import type { UpstreamRow } from '@/types/home'
@@ -742,36 +743,162 @@ mock('delete', '/api/production-orders/:id', ({ params }) => {
   return null
 })
 
-// 生产看板
-mock('get', '/api/production-board/cards', () => {
+// 生产看板：卡片、按单、按工厂都按同一组筛选条件（种类、加工厂、跟单、交期）算；按工厂不看加工厂
+function boardRows(query: Record<string, string | string[]>, withFactory = true): ProductionRow[] {
+  const q = (key: string) => String(query[key] ?? '')
+  return prdOrders.map(toPrdRow).filter((r) => {
+    const due = r.expectDate ?? r.dueDate
+    return (!q('kind') || r.kind === q('kind'))
+      && (!withFactory || !q('factoryId') || r.factoryId === Number(q('factoryId')))
+      && (!q('merchId') || r.merchId === Number(q('merchId')))
+      && (!q('dueDateFrom') || due >= q('dueDateFrom'))
+      && (!q('dueDateTo') || due <= q('dueDateTo'))
+  })
+}
+
+mock('get', '/api/production-board/cards', ({ query }) => {
+  const rows = boardRows(query)
+  const running = rows.filter((r) => r.status === 'RUNNING')
   const c: BoardCards = {
-    runningCount: 1,
-    runningQty: 180,
-    waitingCount: 1,
-    nearCount: 1,
-    lateCount: 0,
-    nodeLateCount: 0,
-    issueCount: 1,
-    monthReturnedQty: 120,
+    runningCount: running.length,
+    runningQty: running.reduce((n, r) => n + r.totalQty - r.returnedQty, 0),
+    waitingCount: rows.filter((r) => r.status === 'APPROVED').length,
+    nearCount: rows.filter((r) => r.risk.near).length,
+    lateCount: rows.filter((r) => r.risk.late).length,
+    nodeLateCount: rows.filter((r) => r.risk.nodeLate).length,
+    issueCount: rows.filter((r) => r.risk.issue).length,
+    monthReturnedQty: rows.reduce((n, r) => n + r.returnedQty, 0),
     nearDays: 7,
   }
   return c
 })
 
 mock('get', '/api/production-board/orders', ({ query }) => {
-  let rows = prdOrders.map(toPrdRow)
-  if (query.card === 'ISSUE') rows = rows.filter((r) => r.risk.issue)
+  let rows = boardRows(query)
+  if (query.card === 'RUNNING') rows = rows.filter((r) => r.status === 'RUNNING')
+  else if (query.card === 'WAITING') rows = rows.filter((r) => r.status === 'APPROVED')
   else if (query.card === 'NEAR') rows = rows.filter((r) => r.risk.near)
   else if (query.card === 'LATE') rows = rows.filter((r) => r.risk.late)
+  else if (query.card === 'NODE_LATE') rows = rows.filter((r) => r.risk.nodeLate)
+  else if (query.card === 'ISSUE') rows = rows.filter((r) => r.risk.issue)
   return page(rows, query)
 })
 
-mock('get', '/api/production-board/factories', () => {
-  const list: BoardFactoryRow[] = [
-    { factoryId: 3, factoryShortName: '示例制衣一厂', categoryNames: ['成衣厂', '加工厂'], wipCount: 1, wipQty: 180, lateCount: 0 },
-    { factoryId: 4, factoryShortName: '示例制衣二厂', categoryNames: ['成衣厂'], wipCount: 1, wipQty: 100, lateCount: 0 },
+mock('get', '/api/production-board/factories', ({ query }) => {
+  const factories: BoardFactoryRow[] = [
+    { factoryId: 3, factoryShortName: '示例制衣一厂', categoryNames: ['成衣厂', '加工厂'], wipCount: 0, wipQty: 0, lateCount: 0 },
+    { factoryId: 4, factoryShortName: '示例制衣二厂', categoryNames: ['成衣厂'], wipCount: 0, wipQty: 0, lateCount: 0 },
   ]
-  return list
+  for (const r of boardRows(query, false)) {
+    const f = factories.find((x) => x.factoryId === r.factoryId)
+    if (!f || (r.status !== 'APPROVED' && r.status !== 'RUNNING')) continue
+    f.wipCount += 1
+    f.wipQty += r.totalQty - r.returnedQty
+    if (r.risk.late) f.lateCount += 1
+  }
+  return factories.sort((a, b) => b.wipQty - a.wipQty)
+})
+
+// 排单（docs/api/02 §3.12，后端在生产那边，第 4 批做）。需求订单已经是真接口了，这里用一张静态的订单明细：
+// 打开排单对话框能看样子，生成的生产单是假的
+const SCHEDULE_ITEMS = [
+  { id: 1001, styleSkuId: 11, skuCode: 'FS2611150101-KQ-S', colorId: 1, sizeCode: 'S', qty: 80, scheduledQty: 60 },
+  { id: 1002, styleSkuId: 12, skuCode: 'FS2611150101-KQ-M', colorId: 1, sizeCode: 'M', qty: 140, scheduledQty: 100 },
+  { id: 1003, styleSkuId: 13, skuCode: 'FS2611150101-KQ-L', colorId: 1, sizeCode: 'L', qty: 120, scheduledQty: 80 },
+  { id: 1004, styleSkuId: 14, skuCode: 'FS2611150101-KQ-XL', colorId: 1, sizeCode: 'XL', qty: 60, scheduledQty: 40 },
+  { id: 1005, styleSkuId: 21, skuCode: 'FS2611150101-BK-M', colorId: 2, sizeCode: 'M', qty: 120, scheduledQty: 80 },
+  { id: 1006, styleSkuId: 22, skuCode: 'FS2611150101-BK-L', colorId: 2, sizeCode: 'L', qty: 80, scheduledQty: 40 },
+]
+
+mock('get', '/api/production-orders/schedule-prefill', ({ query }) => {
+  const pf: SchedulePrefill = {
+    orderId: Number(query.orderId ?? 101),
+    orderNo: 'DD202611150001',
+    commitDate: '2026-12-05',
+    requiredDate: '2026-12-05',
+    defaultDueDate: '2026-11-28',
+    merchId: 1,
+    merchName: '管理员',
+    styles: [
+      {
+        styleId: 1,
+        styleCode: 'FS2611150101',
+        styleName: '双排扣廓形短风衣',
+        image: null,
+        techPackId: 202,
+        techPackVersion: 1,
+        laborTotal: 36,
+        defaultFactoryId: 3,
+        defaultFactoryName: '示例制衣一厂',
+        sizes: ['S', 'M', 'L', 'XL'],
+        colors: [
+          { id: 1, code: 'KQ', name: '卡其', hex: '#c3b091' },
+          { id: 2, code: 'BK', name: '藏青黑', hex: '#23272e' },
+        ],
+        skus: SCHEDULE_ITEMS.map((it) => ({
+          orderItemId: it.id,
+          styleSkuId: it.styleSkuId,
+          colorId: it.colorId,
+          sizeCode: it.sizeCode,
+          orderQty: it.qty,
+          scheduledQty: it.scheduledQty,
+          remainQty: Math.max(0, it.qty - it.scheduledQty),
+          maxQty: Math.max(0, Math.floor(it.qty * 1.03) - it.scheduledQty),
+        })),
+      },
+    ],
+  }
+  return pf
+})
+
+mock('get', '/api/production-orders/schedule-quote', ({ query }) => {
+  const factoryId = Number(query.factoryId ?? 3)
+  const q: ScheduleQuote = {
+    factoryId,
+    factoryName: '示例制衣一厂',
+    usable: true,
+    reason: null,
+    settleMethod: 'MONTHLY',
+    taxPct: 13,
+    defaultMode: 'CMT',
+    prices: [
+      { processMode: 'CMT', price: 38, priceSourceId: 10, effectiveDate: '2026-11-01' },
+      { processMode: 'HALF', price: 45, priceSourceId: 11, effectiveDate: '2026-11-01' },
+      { processMode: 'FULL', price: 108, priceSourceId: 12, effectiveDate: '2026-11-01' },
+    ],
+  }
+  return q
+})
+
+mock('post', '/api/production-orders/schedule', ({ body }) => {
+  const req = body as ScheduleReq
+  // 超排的样子（1004）：同一订单行几块加起来超过 ⌊订单数 × 1.03⌋ − 已排
+  const sums = new Map<number, number>()
+  req.blocks.forEach((b) => b.items.forEach((it) => sums.set(it.orderItemId, (sums.get(it.orderItemId) ?? 0) + it.qty)))
+  const over = SCHEDULE_ITEMS.flatMap((it) => {
+    const thisQty = sums.get(it.id) ?? 0
+    const maxQty = Math.floor(it.qty * 1.03)
+    return it.scheduledQty + thisQty > maxQty
+      ? [{ sku: it.skuCode, orderQty: it.qty, scheduledQty: it.scheduledQty, thisQty, maxQty, message: `最多还能排 ${Math.max(0, maxQty - it.scheduledQty)} 件` }]
+      : []
+  })
+  if (over.length) fail(1004, '超排了', over)
+  return req.blocks.map((b, idx) => {
+    const isBuy = b.processMode === 'FULL'
+    return {
+      type: 'PRODUCTION_ORDER' as const,
+      kind: isBuy ? 'BUY' : 'OUTSOURCE',
+      parentId: null,
+      typeLabel: isBuy ? '成品采购单' : '外发加工单',
+      id: 501 + idx,
+      no: `${isBuy ? 'CP' : 'JG'}20261115000${idx + 2}`,
+      status: 'DRAFT',
+      statusLabel: '草稿',
+      statusTone: 'off' as const,
+      ownerId: b.merchId,
+      ownerName: '管理员',
+    }
+  })
 })
 
 /** 首页"上游已变更"（mock/home.ts）汇总用：生产单里还没处理的提醒，一张单一行；处理掉以后这里跟着少 */

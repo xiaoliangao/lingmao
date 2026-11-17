@@ -1,0 +1,39 @@
+package com.lingmao.scm.module.order.dto;
+
+import com.lingmao.scm.module.biz.dto.DocHeaderVO;
+import com.lingmao.scm.module.order.entity.OrderSource;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+
+/** GET /api/orders/{id}（前端 OrderDetail）。件数是 0 的行（变更单减掉的）不在 items 里 */
+@Data
+@EqualsAndHashCode(callSuper = true)
+public class OrderDetailVO extends DocHeaderVO {
+    private String orderType;
+    private Long customerId;
+    private String customerName;
+    private String customerOrderNo;
+    private String contractNo;
+    private String brand;
+    private LocalDate orderDate;
+    private LocalDate requiredDate;
+    private LocalDate commitDate;
+    private Long salesId;
+    private String salesName;
+    private Long merchId;
+    private String merchName;
+    private String currency;
+    private String deliveryReq;
+    private Integer totalQty;
+    private BigDecimal totalAmount;
+    private OrderSource source;
+    private int scheduledQty;
+    private int returnedQty;
+    private List<OrderStyleVO> styles = List.of();
+    private List<OrderItemVO> items = List.of();
+    private PendingChange pendingChange;
+}

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  需求订单列表、各状态条数、款式详情的订单页签（docs/api/02 §3.2、§3.11）。主体简称、款号、资料包版本号只读 JOIN（架构 §3.2 规则 4）；
+  已排产、已回货用 LATERAL 现算；人名、款式缩略图由 Service 填
+-->
+<mapper namespace="com.lingmao.scm.module.order.mapper.OrderMapper">
+
+    <!-- 列表和条数共用的条件；条数不看状态（withStatus = false） -->
+    <sql id="where">
+        WHERE true
+        <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
+        <if test="withStatus and q.status != null and q.status.size() > 0">
+            AND o.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
+        </if>
+        <if test="q.orderType != null and q.orderType != ''">AND o.order_type = #{q.orderType}</if>
+        <if test="q.brand != null and q.brand != ''">AND o.brand = #{q.brand}</if>
+        <if test="q.salesId != null">AND o.sales_id = #{q.salesId}</if>
+        <if test="q.merchId != null">AND o.merch_id = #{q.merchId}</if>
+        <if test="q.styleId != null">
+            AND EXISTS (SELECT 1 FROM ord_order_item i WHERE i.order_id = o.id AND i.style_id = #{q.styleId} AND i.qty &gt; 0)
+        </if>
+        <if test="q.orderDateFrom != null">AND o.order_date &gt;= #{q.orderDateFrom}</if>
+        <if test="q.orderDateTo != null">AND o.order_date &lt;= #{q.orderDateTo}</if>
+        <if test="q.unscheduled">
+            AND o.status = 'APPROVED'
+            AND NOT EXISTS (SELECT 1 FROM ord_order_item i WHERE i.order_id = o.id AND i.scheduled_qty &gt; 0)
+        </if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND o.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            AND (o.no ILIKE '%' || #{q.keyword} || '%' OR o.contract_no ILIKE '%' || #{q.keyword} || '%'
+                 OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
+                            WHERE i.order_id = o.id AND s.code ILIKE '%' || #{q.keyword} || '%')
+                 <if test="codes != null">
+                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                     OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
+                                WHERE i.order_id = o.id
+                                  AND upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
+                 </if>)
+        </if>
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.order.dto.OrderRowVO">
+        <bind name="withStatus" value="true"/>
+        SELECT o.id, o.no, o.status, o.order_type, o.brand, o.contract_no, o.order_date, o.required_date, o.commit_date,
+               o.currency, o.total_qty, o.total_amount, o.sales_id, o.merch_id, c.short_name AS company_name, o.source,
+               o.create_by, o.create_time, o.version,
+               COALESCE(agg.scheduled_qty, 0) AS scheduled_qty, COALESCE(agg.returned_qty, 0) AS returned_qty
+        FROM ord_order o
+        JOIN bas_company c ON c.id = o.company_id
+        LEFT JOIN LATERAL (SELECT SUM(i.scheduled_qty) AS scheduled_qty, SUM(i.returned_qty) AS returned_qty
+                           FROM ord_order_item i WHERE i.order_id = o.id) agg ON true
+        <include refid="where"/>
+        ORDER BY o.order_date DESC, o.no DESC
+    </select>
+
+    <select id="selectCounts" resultType="com.lingmao.scm.common.page.StatusCount">
+        <bind name="withStatus" value="false"/>
+        SELECT o.status, COUNT(*) AS count
+        FROM ord_order o
+        <include refid="where"/>
+        GROUP BY o.status
+    </select>
+
+    <select id="selectStylePage" resultType="com.lingmao.scm.module.order.dto.StyleOrderRowVO">
+        SELECT o.id AS order_id, o.no, o.status, o.order_type, o.brand, agg.qty, agg.tech_pack_version,
+               o.required_date, o.commit_date, o.merch_id
+        FROM ord_order o
+        JOIN LATERAL (SELECT SUM(i.qty) AS qty, MAX(p.version) AS tech_pack_version
+                      FROM ord_order_item i
+                      LEFT JOIN tp_tech_pack p ON p.id = i.tech_pack_id
+                      WHERE i.order_id = o.id AND i.style_id = #{styleId}) agg ON true
+        WHERE agg.qty &gt; 0
+        <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
+        ORDER BY o.order_date DESC, o.no DESC
+    </select>
+</mapper>

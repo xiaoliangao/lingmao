@@ -35,6 +35,7 @@ import com.lingmao.scm.module.techpack.dto.PackOwner;
 import com.lingmao.scm.module.techpack.dto.ProcessVO;
 import com.lingmao.scm.module.techpack.dto.PublishProblem;
 import com.lingmao.scm.module.techpack.dto.SpecPointVO;
+import com.lingmao.scm.module.techpack.dto.PackBrief;
 import com.lingmao.scm.module.techpack.dto.TechPackBriefVO;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
 import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
@@ -46,6 +47,7 @@ import com.lingmao.scm.module.techpack.entity.CraftText;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.entity.TechPack;
+import com.lingmao.scm.module.techpack.mapper.BomItemSkuMapper;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import com.lingmao.scm.module.techpack.service.CraftStandardService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
@@ -65,6 +67,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -115,6 +119,7 @@ public class TechPackServiceImpl implements TechPackService {
     private static final String NOT_FOUND = "这一版资料包不存在，可能已经被删除了";
 
     private final TechPackMapper techPackMapper;
+    private final BomItemSkuMapper bomItemSkuMapper;
     private final PackContent packContent;
     private final PackOwners packOwners;
     private final PackForms packForms;
@@ -356,6 +361,58 @@ public class TechPackServiceImpl implements TechPackService {
     @Override
     public List<BomDefaultVO> bomDefaults(long id, List<BomDefaultReq> items) {
         return bomPricing.defaults(getEntity(id).getStage(), items);
+    }
+
+    // ---------------------------------------------------------------- 给需求订单
+
+    @Override
+    public Map<Long, PackBrief> effectiveProd(Collection<Long> styleIds) {
+        List<Long> ids = styleIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return new HashMap<>();
+        }
+        List<TechPack> packs = techPackMapper.selectList(new LambdaQueryWrapper<TechPack>()
+                .in(TechPack::getStyleId, ids)
+                .eq(TechPack::getStage, PackStage.PROD)
+                .eq(TechPack::getStatus, EFFECTIVE));
+        Map<Long, PackBrief> byStyle = new HashMap<>();
+        briefsOf(packs).values().forEach(b -> byStyle.put(b.styleId(), b));
+        return byStyle;
+    }
+
+    @Override
+    public Map<Long, PackBrief> briefs(Collection<Long> packIds) {
+        List<Long> ids = packIds.stream().filter(Objects::nonNull).distinct().toList();
+        return ids.isEmpty() ? new HashMap<>() : briefsOf(techPackMapper.selectByIds(ids));
+    }
+
+    /** 每一版按款色配料的行都配了的款色 = 各行配了的款色取交集；没有这种行是 null（哪个颜色都行） */
+    private Map<Long, PackBrief> briefsOf(List<TechPack> packs) {
+        Map<Long, PackBrief> briefs = new HashMap<>();
+        if (packs.isEmpty()) {
+            return briefs;
+        }
+        Map<Long, Map<Long, Set<Long>>> rows = new HashMap<>();
+        for (BomItemSkuMapper.ColorRow r : bomItemSkuMapper.selectColorRows(packs.stream().map(TechPack::getId).toList())) {
+            Set<Long> colors = rows.computeIfAbsent(r.techPackId(), k -> new HashMap<>())
+                    .computeIfAbsent(r.bomItemId(), k -> new HashSet<>());
+            if (r.colorId() != null) {
+                colors.add(r.colorId());
+            }
+        }
+        for (TechPack p : packs) {
+            Set<Long> covered = null;
+            for (Set<Long> colors : rows.getOrDefault(p.getId(), Map.of()).values()) {
+                if (covered == null) {
+                    covered = new HashSet<>(colors);
+                } else {
+                    covered.retainAll(colors);
+                }
+            }
+            briefs.put(p.getId(), new PackBrief(p.getId(), p.getStyleId(), p.getStage(), p.getVersion(), p.getStatus(),
+                    covered == null ? null : Set.copyOf(covered)));
+        }
+        return briefs;
     }
 
     // ---------------------------------------------------------------- 内部
