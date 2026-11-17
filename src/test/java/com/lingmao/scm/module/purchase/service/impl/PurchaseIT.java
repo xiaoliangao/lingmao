@@ -230,6 +230,115 @@ class PurchaseIT {
         assertThat(mrpService.detail(next.id()).getItems().getFirst().getConvertedQty()).isEqualByComparingTo("35");
     }
 
+    /**
+     * RFC010 §4.3 / 审查 L3：两单各需 150，共用一条 300 的在途。先建的 B 草稿在 A 确认后必须重算，
+     * 所以 calc.id 是 B 在先、use.id 是 A 在先；到货 200 分为 A150/B50，退 100 后为 A100/B0。
+     * 此时 B 重算仍有自己的 150 在途，不能把 A 已到的 100 再扣一次；新单确认前旧占用不释放。
+     */
+    @Test
+    void sharedTransit_partialNetReceiptsAndRecalc_allocateOnceByUseId() {
+        Fixture f = fixture(null);
+        long po = approvedStockPo(f, "300", LocalDate.now().plusDays(3));
+        long orderA = approvedOrder(f, LocalDate.now().plusDays(60));
+        long orderB = approvedOrder(f, LocalDate.now().plusDays(60));
+        MrpCreateReq requestA = new MrpCreateReq(); requestA.setOrderIds(List.of(orderA));
+        MrpCreateReq requestB = new MrpCreateReq(); requestB.setOrderIds(List.of(orderB));
+        long calcB = mrpService.create(requestB).id();
+        long calcA = mrpService.create(requestA).id();
+        mrpService.confirm(calcA, new DocActionReq(0, null));
+
+        // 两张草稿都曾看到 300；A 确认后，B 不能凭旧可用量直接确认。
+        assertThatThrownBy(() -> mrpService.confirm(calcB, new DocActionReq(0, null)))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
+                    assertThat(e.getMessage()).contains("可用量已变化");
+                });
+        assertThat(mrpService.detail(calcB).getStatus()).isEqualTo("DRAFT");
+        mrpService.recalc(calcB, new DocActionReq(0, null));
+        MrpCalcDetailVO b = mrpService.detail(calcB);
+        assertThat(b.getItems().getFirst().getAvailTransitQty()).isEqualByComparingTo("150");
+        mrpService.confirm(calcB, new DocActionReq(b.getVersion(), null));
+        assertThat(calcB).isLessThan(calcA);
+        long useA = jdbcTemplate.queryForObject("""
+                SELECT t.id FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id=t.calc_item_id
+                WHERE i.calc_id=?""", Long.class, calcA);
+        long useB = jdbcTemplate.queryForObject("""
+                SELECT t.id FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id=t.calc_item_id
+                WHERE i.calc_id=?""", Long.class, calcB);
+        assertThat(useA).as("到货先分给更小的 use.id，不按 calc.id 排序").isLessThan(useB);
+        assertSharedTransit(f, po, calcA, calcB, "0", "0", "0", "0");
+
+        receive(f, po, "200");
+        assertSharedTransit(f, po, calcA, calcB, "200", "0", "150", "50");
+        invDocService.fromSource(BizType.PURCHASE_ORDER, po, stockReq(f, po, InvDocType.PURCHASE_RETURN, "100"));
+        assertSharedTransit(f, po, calcA, calcB, "200", "100", "100", "0");
+
+        long nextB = mrpService.recalc(calcB, new DocActionReq(mrpService.detail(calcB).getVersion(), null)).id();
+        MrpCalcDetailVO next = mrpService.detail(nextB);
+        assertThat(next.getStatus()).isEqualTo("DRAFT");
+        assertThat(next.getPrevCalcId()).isEqualTo(calcB);
+        assertThat(mrpService.detail(calcB).getStatus()).isEqualTo("CONFIRMED");
+        assertSharedTransit(f, po, calcA, calcB, "200", "100", "100", "0");
+        assertThat(next.getItems()).singleElement().satisfies(row -> {
+            assertThat(row.getAvailStockQty()).as("A 已到的 100 仍占着库存，B 不再分一次").isZero();
+            assertThat(row.getUseStockQty()).isZero();
+            assertThat(row.getAvailTransitQty()).as("未到 200 - A 未到占用 50 = B 可用 150").isEqualByComparingTo("150");
+            assertThat(row.getUseTransitQty()).isEqualByComparingTo("150");
+            assertThat(row.getNetQty()).isZero();
+            assertThat(row.getSuggestQty()).isZero();
+        });
+
+        mrpService.confirm(nextB, new DocActionReq(next.getVersion(), null));
+        assertThat(mrpService.detail(calcB)).satisfies(old -> {
+            assertThat(old.getStatus()).isEqualTo("CLOSED");
+            assertThat(old.getCloseReason()).isEqualTo("RECALC");
+            assertThat(old.getItems().getFirst().getTransitUses().getFirst().arrivedQty()).isZero();
+        });
+        assertThat(mrpService.detail(nextB).getStatus()).isEqualTo("CONFIRMED");
+        assertSharedTransit(f, po, calcA, nextB, "200", "100", "100", "0");
+    }
+
+    /** 同一来源行的已到只分一次；草稿不抢占、关闭的旧单不再占用，库存 + 在途没有虚增的公共可用量。 */
+    private void assertSharedTransit(Fixture f, long po, long firstCalc, long secondCalc,
+                                     String received, String returned, String firstArrived, String secondArrived) {
+        var purchase = purchaseOrderService.detail(po).getItems().getFirst();
+        assertThat(purchase.getReceivedQty()).isEqualByComparingTo(received);
+        assertThat(purchase.getReturnedQty()).isEqualByComparingTo(returned);
+        BigDecimal net = new BigDecimal(received).subtract(new BigDecimal(returned));
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (int i = 0; i < 2; i++) {
+            var row = mrpService.detail(i == 0 ? firstCalc : secondCalc).getItems().getFirst();
+            String arrived = i == 0 ? firstArrived : secondArrived;
+            assertThat(row.getUseStockQty()).isZero();
+            assertThat(row.getUseTransitQty()).isEqualByComparingTo("150");
+            assertThat(row.getReceivedQty()).as("备货采购只经 transitUses 计到货，不另作自购入库").isZero();
+            assertThat(row.getTransitUses()).singleElement().satisfies(use -> {
+                assertThat(use.purchaseItemId()).isEqualTo(purchase.getId());
+                assertThat(use.qty()).isEqualByComparingTo("150");
+                assertThat(use.arrivedQty()).isEqualByComparingTo(arrived);
+            });
+            allocated = allocated.add(row.getTransitUses().getFirst().arrivedQty());
+            assertThat(row.getShortQty()).isEqualByComparingTo(new BigDecimal("150").subtract(new BigDecimal(arrived)));
+        }
+        assertThat(allocated).as("两单到货之和只等于来源净入库").isEqualByComparingTo(net);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(qty), 0) FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?
+                  AND owner_type='OWN' AND owner_id=0 AND location_id=0""", BigDecimal.class, f.warehouse, f.sku))
+                .isEqualByComparingTo(net);
+        assertThat(supplyService.materialSupply(List.of(f.sku))).singleElement().satisfies(supply -> {
+            assertThat(supply.heldQty()).isEqualByComparingTo("300");
+            assertThat(supply.transits()).singleElement().satisfies(transit -> {
+                assertThat(transit.warehouseId()).isEqualTo(f.warehouse);
+                assertThat(transit.qty()).isEqualByComparingTo(new BigDecimal("300").subtract(net));
+                assertThat(net.add(transit.qty()).subtract(supply.heldQty())).as("公共可用库存加在途").isZero();
+            });
+        });
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT DISTINCT i.calc_id FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id=t.calc_item_id
+                JOIN mrp_calc c ON c.id=i.calc_id WHERE t.purchase_item_id=? AND c.status='CONFIRMED'""",
+                Long.class, purchase.getId())).containsExactlyInAnyOrder(firstCalc, secondCalc);
+    }
+
     @Test
     void reverseReturnAfterReplacementCannotBreakReceiptCap_andRollsBackAll() {
         Fixture f = fixture(null);

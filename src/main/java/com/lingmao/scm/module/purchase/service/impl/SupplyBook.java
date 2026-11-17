@@ -161,13 +161,15 @@ final class SupplyBook {
         return stockOf(skuId).subtract(heldStock(skuId, excluded)).subtract(ownReceivedOf(skuId, prevCalcId)).max(BigDecimal.ZERO);
     }
 
-    /** 一条在途上别人占着的：它是没排除的已确认算料单生成的，整条没到的都占着；不然是别人用着的（不超过没到的） */
+    /** 一条在途上别人占着的：它是没排除的已确认算料单生成的，整条没到的都占着；不然只计别人用着且尚未到的部分。 */
     BigDecimal heldTransit(Line l, Set<Long> excluded) {
         BigDecimal pending = l.pendingStock();
         if (l.ownerConfirmed() && !excluded.contains(l.ownerCalcId())) {
             return pending;
         }
-        BigDecimal used = sum(uses.stream().filter(u -> u.lineId() == l.id() && !excluded.contains(u.calcId())).map(Use::qty).toList());
+        // 已到的那部分已计入 heldStock；排除自己/上一张重算时，不能再占一次剩余在途。
+        BigDecimal used = sum(uses.stream().filter(u -> u.lineId() == l.id() && !excluded.contains(u.calcId()))
+                .map(u -> u.qty().subtract(arrivedOf(u.id()))).toList());
         return pending.min(used);
     }
 
