@@ -544,7 +544,7 @@ export interface PendingArrivalRow extends MaterialSkuBrief {
    * 没排单按承诺交期倒推；没人用的备货采购是 null（PRD §6.6.3）
    */
   needDate: string | null
-  /** 赶不上开裁：arriveDate 比要料日期晚几天；赶得上、没有要料日期是 0 */
+  /** 晚于开裁：arriveDate 比要料日期晚几天；赶得上、没有要料日期是 0 */
   cutLateDays: number
   orderNos: string[]
   styleCodes: string[]
@@ -554,7 +554,7 @@ export interface PendingArrivalRow extends MaterialSkuBrief {
 }
 
 export interface PendingArrivalQuery {
-  /** 页签：LATE 已逾期 / NEAR 3 天内 / CUT 赶不上开裁；不传 = 全部 */
+  /** 页签：LATE 已逾期 / NEAR 3 天内 / CUT 晚于开裁；不传 = 全部 */
   tab?: 'LATE' | 'NEAR' | 'CUT'
   /** 采购单号、物料编码 / 名称 / SKU 码、供应商、订单号、款号、算料单号；一次查几个（README §3.2）时单号、款号、物料编码精确查 */
   keyword?: string

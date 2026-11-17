@@ -834,7 +834,7 @@ function poLineNeed(p, i) {
   const users = liveMrps().filter((m) => m.rows.some((r) => (r.transitUse || []).some((u) => u.po === p.no && u.i === i)))
   return needDateOf(users.flatMap((m) => m.orders))
 }
-// 到料跟踪：未入齐的采购行；cutLate = 预计到货（没填用交期）比要料日期晚几天（赶不上开裁），0 = 赶得上或没有要料日期
+// 到料跟踪：未入齐的采购行；cutLate = 预计到货（没填用交期）比要料日期晚几天（晚于开裁），0 = 赶得上或没有要料日期
 function arrivals() {
   return db.purchases.filter((p) => ['已审核', '部分到货'].includes(p.status)).flatMap((p) => p.lines.map((l, i) => ({ p, l, i })))
     .filter(({ l }) => l.received < l.qty - 0.0005)
@@ -1503,14 +1503,14 @@ function selftest() {
   ok('在途：预计到货晚于要料日期的不扣，列成"赶不上的在途"，照样要买', he3.availTransit === 0 && he3.lateTransit === rnd(500 - he.useTransit, 3) && he3.purQty > 0, [he3.availTransit, he3.lateTransit, he3.purQty])
   removeDraft(db.mrps, mb3)
   bp.lines[0].expect = null
-  // 赶不上开裁（§6.6.3）：排单后要料日期 = 生产单的裁剪计划开始；排单改了加工价要写原因
+  // 晚于开裁（§6.6.3）：排单后要料日期 = 生产单的裁剪计划开始；排单改了加工价要写原因
   const blk = { style: '27CF001', factory: 'GYS0004', mode: '清加工', price: 40, due: '2027-03-10', qty: { 'HE|S': 20, 'HE|M': 30, 'HE|L': 30, 'HE|XL': 20, 'HE|XXL': 20 } }
   ok('加工价：排单改了单价不写原因被拦', err(() => scheduleOrder(ob, [blk])).includes('改价原因'))
   const [pb] = scheduleOrder(ob, [{ ...blk, price: 38 }])
   doAction('production', pb, '提交'); doAction('production', pb, '审核')
   const cut = prodCutDate(pb), arr = () => arrivals().find((x) => x.p === bp && x.i === 0)
   bp.lines[0].expect = addDays(cut, 1)
-  ok('到料：预计到货比开裁晚 1 天，标出"赶不上开裁"', arr()?.need === cut && arr().cutLate === 1, [cut, arr()?.need, arr()?.cutLate])
+  ok('到料：预计到货比开裁晚 1 天，标出"晚于开裁"', arr()?.need === cut && arr().cutLate === 1, [cut, arr()?.need, arr()?.cutLate])
   pb.nodes.find((n) => n.name === '裁剪').ps = addDays(cut, 2)
   ok('到料：开裁往后挪了就不标', arr()?.cutLate === 0, arr()?.cutLate)
   // 甲方 11-11 反馈：款号规则、设计师编号、供应商准入审批、关键信息改动、企查查、合同（后几个的函数在 7-pages-master.js、7b-contracts.js）

@@ -64,7 +64,7 @@ export type TodoGroupKey = 'AUDIT' | 'PRODUCTION_LATE' | 'CUT_RISK' | 'ARRIVAL_L
 export const TODO_GROUP: Record<TodoGroupKey, { label: string; tone: StatusTone }> = {
   AUDIT: { label: '待我审核', tone: 'pending' },
   PRODUCTION_LATE: { label: '生产延期', tone: 'danger' },
-  CUT_RISK: { label: '赶不上开裁', tone: 'danger' },
+  CUT_RISK: { label: '晚于开裁', tone: 'danger' },
   ARRIVAL_LATE: { label: '到料逾期', tone: 'danger' },
   UPSTREAM: { label: '上游已变更', tone: 'pending' },
   UNSCHEDULED: { label: '待排单', tone: 'pending' },
@@ -76,7 +76,7 @@ export const TODO_GROUP: Record<TodoGroupKey, { label: string; tone: StatusTone 
 export interface TodoItem {
   /**
    * 点了去哪：docRoute(ref)。异常的 type 是 PRODUCTION_ISSUE、parentId 是生产单；证照是 SUPPLIER；
-   * 到料逾期、赶不上开裁（采购员看到的）是 PURCHASE_ORDER
+   * 到料逾期、晚于开裁（采购员看到的）是 PURCHASE_ORDER
    */
   ref: DocRef
   /** 第一行，后端拼好：如"需求订单 DD2611150001""JG2611150003 女式风衣""卡其布 还差 120 米" */
@@ -145,7 +145,7 @@ export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone:
   PRODUCTION_NODE_LATE: { label: '生产单节点延期', to: '/board?card=NODE_LATE', tone: 'danger' },
   PRODUCTION_ISSUE: { label: '生产单有没关闭的异常', to: '/board?card=ISSUE', tone: 'pending' },
   ARRIVAL_LATE: { label: '到料逾期', to: '/stock-in?tab=pending&risk=LATE', tone: 'danger' },
-  ARRIVAL_CUT: { label: '到料赶不上开裁', to: '/stock-in?tab=pending&risk=CUT', tone: 'danger' },
+  ARRIVAL_CUT: { label: '到料晚于开裁', to: '/stock-in?tab=pending&risk=CUT', tone: 'danger' },
   UPSTREAM: { label: '上游订单已变更，待处理', to: '/upstream', tone: 'pending' },
   CERT_EXPIRING: { label: '供应商证照 30 天内到期', to: '/suppliers?certExpiring=1', tone: null },
   REORDER: { label: '物料低于安全库存', to: '/reorder', tone: null },

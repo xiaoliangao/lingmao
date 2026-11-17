@@ -610,8 +610,8 @@ route('/stock-in', {
     const s = reactive({ view: nav.query.tab === 'docs' ? 'docs' : 'wait', tab: nav.query.f || 'all', q: '', buyer: '', flt: newFlt(), add: '', recv: null })
     const all = computed(() => arrivals().filter((x) => (!s.buyer || x.p.buyer === s.buyer) && passFlt(s.flt, { date: x.date, party: x.p.supplier })
       && matchQ(s.q, x.p.no, x.l.sku, skuName(x.l.sku), supName(x.p.supplier), srcText(x.l), x.l.src?.mrp || '')).sort((a, b) => a.left - b.left))
-    // 赶不上开裁（PRD §6.6.3）：预计到货晚于要料日期（生产单裁剪的计划开始），采购交期没过也标出来
-    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length], ['cut', '赶不上开裁', all.value.filter((x) => x.cutLate > 0).length]])
+    // 晚于开裁（PRD §6.6.3）：预计到货晚于要料日期（生产单裁剪的计划开始），采购交期没过也标出来
+    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length], ['cut', '晚于开裁', all.value.filter((x) => x.cutLate > 0).length]])
     const rows = computed(() => all.value.filter((x) => s.tab === 'all' || (s.tab === 'cut' ? x.cutLate > 0 : x.risk === s.tab)))
     const views = computed(() => [['wait', '待到料', arrivals().length], ['docs', '入库单', db.stockDocs.filter((d) => STOCK_TYPES[d.type] === 'RK').length]])
     const news = SD_SIDES.RK.news.map((t) => ({ t, fn: () => { s.add = t } }))
@@ -631,7 +631,7 @@ route('/stock-in', {
           { k: 'src', t: '订单 / 款', c: 'code' }, { k: 'recv', t: '已到 / 采购', c: 'num', f: x => fq(x.l.received) + ' / ' + fq(x.l.qty) },
           { k: 'left', t: '未到', c: 'num', f: x => fq(rnd(x.l.qty - x.l.received, 3)) + ' ' + purUnit(x.l.sku) },
           { k: 'due', t: '交期' }, { k: 'exp', t: '预计到货' }, { k: 'need', t: '要料日期' }, { k: 'note', t: '跟进' }, { k: 'act', t: '' }]">
-          <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于生产单裁剪的计划开始">赶不上开裁，晚 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
+          <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于生产单裁剪的计划开始">晚于开裁 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
           <template #po="{ r }"><a :href="'#/purchases/' + r.p.no">{{ r.p.no }}</a><div class="dim" style="font-size:12px">{{ userName(r.p.buyer) }}</div></template>
           <template #src="{ r }"><template v-if="r.l.src">{{ (r.l.src.orders || []).join(' ') || '—' }}<div class="dim" style="font-size:12px">{{ (r.l.src.styles || []).join(' ') }}</div></template><span v-else class="dim">—</span></template>
           <template #sku="{ r }"><span class="row"><Thumb :code="r.l.sku" :s="32"/><span class="col"><span>{{ skuName(r.l.sku) }}</span><small class="code dim">{{ r.l.sku }}</small></span></span></template>

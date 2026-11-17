@@ -120,7 +120,7 @@ const riskOptions = computed(() => [
   { label: `全部 ${countText(counts.value?.all)}`, value: '' },
   { label: `已逾期 ${countText(counts.value?.late)}`, value: 'LATE' },
   { label: `3 天内 ${countText(counts.value?.near)}`, value: 'NEAR' },
-  { label: `赶不上开裁 ${countText(counts.value?.cut)}`, value: 'CUT' },
+  { label: `晚于开裁 ${countText(counts.value?.cut)}`, value: 'CUT' },
 ])
 
 const filtered = computed(() => !!(query.keyword.trim() || query.riskTab || query.supplierId || query.buyerId || query.dueDateFrom))
@@ -371,7 +371,7 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
           <el-tooltip v-else content="没被算料用上的备货采购没有要料日期" placement="top">
             <span class="dim">—</span>
           </el-tooltip>
-          <div v-if="row.cutLateDays > 0" class="danger small">赶不上开裁，晚 {{ row.cutLateDays }} 天</div>
+          <div v-if="row.cutLateDays > 0" class="danger small">晚于开裁 {{ row.cutLateDays }} 天</div>
         </template>
       </el-table-column>
       <el-table-column v-if="cols.show.follow" label="跟进" min-width="160" column-key="note">

@@ -2509,7 +2509,7 @@ function poLineNeed(p, i) {
   const users = liveMrps().filter((m) => m.rows.some((r) => (r.transitUse || []).some((u) => u.po === p.no && u.i === i)))
   return needDateOf(users.flatMap((m) => m.orders))
 }
-// 到料跟踪：未入齐的采购行；cutLate = 预计到货（没填用交期）比要料日期晚几天（赶不上开裁），0 = 赶得上或没有要料日期
+// 到料跟踪：未入齐的采购行；cutLate = 预计到货（没填用交期）比要料日期晚几天（晚于开裁），0 = 赶得上或没有要料日期
 function arrivals() {
   return db.purchases.filter((p) => ['已审核', '部分到货'].includes(p.status)).flatMap((p) => p.lines.map((l, i) => ({ p, l, i })))
     .filter(({ l }) => l.received < l.qty - 0.0005)
@@ -3178,14 +3178,14 @@ function selftest() {
   ok('在途：预计到货晚于要料日期的不扣，列成"赶不上的在途"，照样要买', he3.availTransit === 0 && he3.lateTransit === rnd(500 - he.useTransit, 3) && he3.purQty > 0, [he3.availTransit, he3.lateTransit, he3.purQty])
   removeDraft(db.mrps, mb3)
   bp.lines[0].expect = null
-  // 赶不上开裁（§6.6.3）：排单后要料日期 = 生产单的裁剪计划开始；排单改了加工价要写原因
+  // 晚于开裁（§6.6.3）：排单后要料日期 = 生产单的裁剪计划开始；排单改了加工价要写原因
   const blk = { style: '27CF001', factory: 'GYS0004', mode: '清加工', price: 40, due: '2027-03-10', qty: { 'HE|S': 20, 'HE|M': 30, 'HE|L': 30, 'HE|XL': 20, 'HE|XXL': 20 } }
   ok('加工价：排单改了单价不写原因被拦', err(() => scheduleOrder(ob, [blk])).includes('改价原因'))
   const [pb] = scheduleOrder(ob, [{ ...blk, price: 38 }])
   doAction('production', pb, '提交'); doAction('production', pb, '审核')
   const cut = prodCutDate(pb), arr = () => arrivals().find((x) => x.p === bp && x.i === 0)
   bp.lines[0].expect = addDays(cut, 1)
-  ok('到料：预计到货比开裁晚 1 天，标出"赶不上开裁"', arr()?.need === cut && arr().cutLate === 1, [cut, arr()?.need, arr()?.cutLate])
+  ok('到料：预计到货比开裁晚 1 天，标出"晚于开裁"', arr()?.need === cut && arr().cutLate === 1, [cut, arr()?.need, arr()?.cutLate])
   pb.nodes.find((n) => n.name === '裁剪').ps = addDays(cut, 2)
   ok('到料：开裁往后挪了就不标', arr()?.cutLate === 0, arr()?.cutLate)
   // 甲方 11-11 反馈：款号规则、设计师编号、供应商准入审批、关键信息改动、企查查、合同（后几个的函数在 7-pages-master.js、7b-contracts.js）
@@ -7904,8 +7904,8 @@ route('/stock-in', {
     const s = reactive({ view: nav.query.tab === 'docs' ? 'docs' : 'wait', tab: nav.query.f || 'all', q: '', buyer: '', flt: newFlt(), add: '', recv: null })
     const all = computed(() => arrivals().filter((x) => (!s.buyer || x.p.buyer === s.buyer) && passFlt(s.flt, { date: x.date, party: x.p.supplier })
       && matchQ(s.q, x.p.no, x.l.sku, skuName(x.l.sku), supName(x.p.supplier), srcText(x.l), x.l.src?.mrp || '')).sort((a, b) => a.left - b.left))
-    // 赶不上开裁（PRD §6.6.3）：预计到货晚于要料日期（生产单裁剪的计划开始），采购交期没过也标出来
-    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length], ['cut', '赶不上开裁', all.value.filter((x) => x.cutLate > 0).length]])
+    // 晚于开裁（PRD §6.6.3）：预计到货晚于要料日期（生产单裁剪的计划开始），采购交期没过也标出来
+    const tabs = computed(() => [['all', '全部', all.value.length], ['late', '已逾期', all.value.filter((x) => x.risk === 'late').length], ['near', '3 天内', all.value.filter((x) => x.risk === 'near').length], ['cut', '晚于开裁', all.value.filter((x) => x.cutLate > 0).length]])
     const rows = computed(() => all.value.filter((x) => s.tab === 'all' || (s.tab === 'cut' ? x.cutLate > 0 : x.risk === s.tab)))
     const views = computed(() => [['wait', '待到料', arrivals().length], ['docs', '入库单', db.stockDocs.filter((d) => STOCK_TYPES[d.type] === 'RK').length]])
     const news = SD_SIDES.RK.news.map((t) => ({ t, fn: () => { s.add = t } }))
@@ -7925,7 +7925,7 @@ route('/stock-in', {
           { k: 'src', t: '订单 / 款', c: 'code' }, { k: 'recv', t: '已到 / 采购', c: 'num', f: x => fq(x.l.received) + ' / ' + fq(x.l.qty) },
           { k: 'left', t: '未到', c: 'num', f: x => fq(rnd(x.l.qty - x.l.received, 3)) + ' ' + purUnit(x.l.sku) },
           { k: 'due', t: '交期' }, { k: 'exp', t: '预计到货' }, { k: 'need', t: '要料日期' }, { k: 'note', t: '跟进' }, { k: 'act', t: '' }]">
-          <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于生产单裁剪的计划开始">赶不上开裁，晚 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
+          <template #need="{ r }"><template v-if="r.need">{{ fd(r.need) }}<div v-if="r.cutLate" class="flag red" style="display:flex" title="预计到货（没填用交期）晚于生产单裁剪的计划开始">晚于开裁 {{ r.cutLate }} 天</div></template><span v-else class="dim" title="没被算料用上的备货采购没有要料日期">—</span></template>
           <template #po="{ r }"><a :href="'#/purchases/' + r.p.no">{{ r.p.no }}</a><div class="dim" style="font-size:12px">{{ userName(r.p.buyer) }}</div></template>
           <template #src="{ r }"><template v-if="r.l.src">{{ (r.l.src.orders || []).join(' ') || '—' }}<div class="dim" style="font-size:12px">{{ (r.l.src.styles || []).join(' ') }}</div></template><span v-else class="dim">—</span></template>
           <template #sku="{ r }"><span class="row"><Thumb :code="r.l.sku" :s="32"/><span class="col"><span>{{ skuName(r.l.sku) }}</span><small class="code dim">{{ r.l.sku }}</small></span></span></template>
@@ -13226,7 +13226,7 @@ const FLOW_SECS = [
     flow: [flN('算料单', '按生产 BOM 算需求；自动扣库存和赶得上的在途', { to: '/mrp' }), '确认', flN('采购单', '按供应商拆；单价默认取价格档案', { to: '/purchases' }), '提交、审核',
       flN('已审核', '改过的单价记进价格档案'), '到货', flN('物料入库单', '采购入库：实收数、缸号、卷数', { to: '/stock-in' }), '审核过账', flN('库存', '按仓库 × SKU', { end: true, to: '/stock' })],
     branches: [
-      { lbl: '盯料', flow: [flN('待到料', '物料入库单的第一个页签：还没入齐的采购明细', { to: '/stock-in' }), '和开裁日期比', flN('赶不上开裁', '预计到货晚于裁剪的计划开始，标红、显示晚几天', { to: '/stock-in?f=cut' }), '到了',
+      { lbl: '盯料', flow: [flN('待到料', '物料入库单的第一个页签：还没入齐的采购明细', { to: '/stock-in' }), '和开裁日期比', flN('晚于开裁', '预计到货晚于裁剪的计划开始，标红、显示晚几天', { to: '/stock-in?f=cut' }), '到了',
         flN('行上点「入库」', '生成这一行的采购入库单', { end: true })] },
       { lbl: '出库', flow: [flN('物料出库单', '领料出库、采购退货、调拨、其他出库（报废、卖余料）', { to: '/stock-out' }), '审核过账', flN('减库存', '库存不够整张不过；采购退货回写采购单', { end: true })] },
       { lbl: '盘点', flow: [flN('物料盘点单', '日常盘点或期初录入；建单时拍下账面数', { to: '/stock-takes' }), '填实盘数、提交', flN('待审核', '有审核权限的人审'), '审核过账',
@@ -13238,7 +13238,7 @@ const FLOW_SECS = [
       '选需求订单算料：毛需求 = 订单件数 × 尺码用量，加损耗和备料比得出需求。只算我方采购的料；工厂自备的算在加工费里。',
       '需求先扣可用库存，再自动扣赶得上的在途：在途的预计到货不晚于要料日期（这批生产单"裁剪"的计划开始；还没排单的按承诺交期倒推）才算赶得上，已经被别的算料单占了的不再扣。赶不上的单独列出来，不扣。自动带出的数可以改。',
       '确认后一键生成采购单，按供应商拆开；单价默认取价格档案里这家的现价，改了要写原因。金额超过 5 万，管理层审完还要总经理再审一级（多级审批，见第 11 段）。审核时改过的单价自动记进价格档案（第 09 段）。',
-      '物料入库单的第一个页签「待到料」盯还没到的料：除了和采购交期比，还和生产单的开裁日期比，赶不上开裁的标出来，可以只看这些。到货在行上点「入库」，生成采购入库单，审核后进库存；采购单变"部分到货"或"已到齐"。入库单还有退料入库（工厂剩料退回物料仓）和其他入库（期初、样品、其他）。',
+      '物料入库单的第一个页签「待到料」盯还没到的料：除了和采购交期比，还和生产单的开裁日期比，晚于开裁的标出来，可以只看这些。到货在行上点「入库」，生成采购入库单，审核后进库存；采购单变"部分到货"或"已到齐"。入库单还有退料入库（工厂剩料退回物料仓）和其他入库（期初、样品、其他）。',
       '物料出库单：领料出库（物料仓 → 工厂仓，见第 07 段）、采购退货（回写采购单的已退货）、调拨（仓到仓）、其他出库（报废、卖余料、其他）。入库单统一 RK 开头，出库单统一 CK 开头；审核就过账，库存不能为负。',
       '物料盘点单：选仓库和范围（全部、按物料分类、手选物料），建单时把每种料的账面数拍下来；导出盘点表去仓库点数，填好实盘数导回来，提交审核。审核过账按「实盘 − 账面」补到现在的库存上，流水记盘盈、盘亏；盘点期间照常收发，补完哪一行变负数整张不过。一个仓同时只能有一张没审核的盘点单。',
       '上线前录期初库存：建一张用途是「期初录入」的盘点单（或在库存页导入 Excel，每个仓库自动建一张），实盘数就是期初数，审核后进库存，流水记"期初"。',
@@ -13602,7 +13602,7 @@ const MOD_INFO = {
     perm: ['物料出入库、盘点、库存', '算料、采购单'], scoped: true,
     what: '物料进仓的单据：采购入库、退料入库、其他入库（甲方 11-14 和出库单分开）。第一个页签「待到料」是原来的到料跟踪：该到没到的采购料，和采购交期、开裁日期比，点「入库」就开采购入库单。审核就是过账。',
     has: [
-      ['页签 · 待到料', '采购单、供应商、物料、订单 / 款、已到 / 采购、未到、交期、预计到货、要料日期、跟进；全部、已逾期、3 天内、赶不上开裁'],
+      ['页签 · 待到料', '采购单、供应商、物料、订单 / 款、已到 / 采购、未到、交期、预计到货、要料日期、跟进；全部、已逾期、3 天内、晚于开裁'],
       ['待到料 · 入库', '每行一个「入库」：带这一行未到的数，填缸号、卷数，入库并过账'],
       ['页签 · 入库单', '单号、类型、入仓、往来、源单、物料、日期、状态；按类型、状态、日期、仓库、往来筛，缸号也能搜'],
       ['详情', '物料、数量、采购单位、单价、金额、缸号、卷数；右栏入仓、往来、源单、送货单号、物流单号、原因'],
@@ -13622,7 +13622,7 @@ const MOD_INFO = {
       ['finance', '待定：采购入库汇总进供应商对账'],
       ['home', '到料逾期进首页，给负责的采购员；草稿入库单进仓管的待审核'],
     ],
-    tip: '赶不上开裁：预计到货（没填按交期）晚于生产单裁剪的计划开始，采购交期没过也会标红。盘盈不走其他入库，开物料盘点单。进了对账单的采购入库不能反审核、作废。',
+    tip: '晚于开裁：预计到货（没填按交期）晚于生产单裁剪的计划开始，采购交期没过也会标红。盘盈不走其他入库，开物料盘点单。进了对账单的采购入库不能反审核、作废。',
   },
   stockout: {
     perm: '物料出入库、盘点、库存', scoped: true,
@@ -13713,7 +13713,7 @@ const MOD_INFO = {
     ],
     down: [
       ['stockout', '领料生成领料出库单，从物料仓发到加工厂的工厂仓'],
-      ['stockin', '剩料退回生成退料入库单；裁剪节点的计划开始就是开裁日期，待到料按它标「赶不上开裁」'],
+      ['stockin', '剩料退回生成退料入库单；裁剪节点的计划开始就是开裁日期，待到料按它标「晚于开裁」'],
       ['orders', '第一张审核下单，订单变生产中；订单的生产单都完成，订单变已完成'],
       ['suppliers', '审核时单价和档案现价不一样，自动记一条进价格档案（加工价）'],
       ['mobile', '审核下单后，这张单出现在生产跟单的手机报工里'],
