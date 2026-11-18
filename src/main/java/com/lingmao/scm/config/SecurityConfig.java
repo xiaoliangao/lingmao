@@ -39,7 +39,7 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                         // 版本号：升级脚本、登录页在登录之前就要用
                         .requestMatchers(HttpMethod.GET, "/api/version").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
@@ -57,6 +57,7 @@ public class SecurityConfig {
     private void writeUnauthorized(HttpServletRequest request, HttpServletResponse response,
                                    AuthenticationException e) throws IOException {
         response.setContentType("application/json;charset=UTF-8");
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         jsonMapper.writeValue(response.getWriter(), R.fail(401, "未登录或登录已过期"));
     }
 }

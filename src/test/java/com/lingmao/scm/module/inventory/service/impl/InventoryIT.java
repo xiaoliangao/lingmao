@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.inventory.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.excel.Excel;
@@ -70,7 +71,7 @@ class InventoryIT {
     private static final long USER = 900_401L;
     private static final List<String> PERMS = List.of("inventory:doc:list", "inventory:doc:add", "inventory:doc:edit",
             "inventory:doc:remove", "inventory:doc:audit", "inventory:count:list", "inventory:count:add", "inventory:count:edit",
-            "inventory:count:remove", "inventory:count:submit", "inventory:count:audit");
+            "inventory:count:remove", "inventory:count:submit", "inventory:count:audit", "inventory:count:import", "techpack:cost:query");
 
     @Autowired
     private InvDocService invDocService;
@@ -83,12 +84,13 @@ class InventoryIT {
 
     @BeforeEach
     void login() {
+        TestIdentity.grant(jdbcTemplate, USER, PERMS);
         loginAs();
     }
 
     @AfterEach
     void logout() {
-        SecurityContextHolder.clearContext();
+        TestIdentity.clear();
     }
 
     private static void loginAs() {
@@ -435,6 +437,7 @@ class InventoryIT {
                 Long.class, material, "ITM" + s + "-B");
         long counter = jdbcTemplate.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES (?, 'x', 'IT 盘点人') RETURNING id",
                 Long.class, "it-count-" + s);
+        TestIdentity.company(company);
         return new Fixture(company, warehouseA, warehouseB, skuA, skuB, counter);
     }
 
@@ -506,7 +509,7 @@ class InventoryIT {
                     try {
                         return task.call();
                     } finally {
-                        SecurityContextHolder.clearContext();
+                        TestIdentity.clear();
                     }
                 }));
             }

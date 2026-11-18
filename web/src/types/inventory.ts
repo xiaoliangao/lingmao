@@ -117,7 +117,7 @@ export interface InvDocRow {
   itemCount: number
   /** 各行库存单位数量直接相加，只显示 */
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   /** 实际发生日期 yyyy-MM-dd */
   docDate: string
   /** 其他入库、其他出库是字典值（stock_in_reason / stock_out_reason），别的是手填的一行字或 null */
@@ -159,8 +159,8 @@ export interface InvDocItem extends MaterialSkuBrief {
   purchaseQty: number | null
   conversionFactor: number | null
   /** 元 / 库存单位；采购入库、退货 = 采购单价 ÷ 换算系数（后端算，前端不传）。手建的单选填，没填是 null */
-  price: number | null
-  amount: number | null
+  price?: number | null
+  amount?: number | null
   /** 缸号：只记录，库存不按它分（Q07） */
   dyeLot: string | null
   rolls: number | null
@@ -191,7 +191,7 @@ export interface InvDocDetail extends DocHeader<InvDocStatus, InvDocAction> {
   supplierDeliveryNo: string | null
   logisticsNo: string | null
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   /** 过过账（有库存日志）：草稿时 actions 给 void 不给 remove */
   posted: boolean
   items: InvDocItem[]
@@ -209,7 +209,7 @@ export interface InvDocItemForm {
   /** 采购单位数量：只有采购入库、采购退货填 */
   purchaseQty: number | null
   /** 元 / 库存单位，手建的单选填；源单生成的发什么都按源单算 */
-  price: number | null
+  price?: number | null
   dyeLot: string | null
   rolls: number | null
   overReason: string | null
@@ -255,7 +255,7 @@ export interface InvDocDraftItem extends MaterialSkuBrief {
   purchaseUnit: string | null
   conversionFactor: number | null
   /** 采购单价（元 / 采购单位），采购的两种才有 */
-  price: number | null
+  price?: number | null
   /** "本次"的默认值：采购入库 = 未入库；领料 = 还差（应领 − 已领）；采购退货、退料 = 0 */
   suggestQty: number
   /**
@@ -276,6 +276,8 @@ export interface InvDocDraftItem extends MaterialSkuBrief {
 
 /** 带出来的单头默认值 + 明细 */
 export interface InvDocDraft {
+  /** 来源投影直接给出主体；仓管无需读取普通采购/生产详情。 */
+  companyId: string
   docType: InvDocType
   /** 源单 */
   source: DocRef
@@ -606,8 +608,8 @@ export const STOCK_CHANGE_TYPE_LABEL: Record<StockChangeType, string> = {
 /** 库存日志的一行：只增不改，反审核是反方向再记一条；调拨一张单两条（出仓一条、入仓一条） */
 export interface StockLogRow extends Omit<MaterialSkuBrief, 'stockUnit'> {
   stockUnit: string | null
-  unitPrice: number | null
-  amount: number | null
+  unitPrice?: number | null
+  amount?: number | null
   currency: string | null
   valuationStatus: 'UNKNOWN' | 'RECORDED'
   reversalOfLogId: string | null

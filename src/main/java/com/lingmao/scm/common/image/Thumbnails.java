@@ -20,7 +20,7 @@ import java.util.Set;
  * <p>
  * 大照片不整张解码：按整数倍隔行隔列地读（ImageReadParam 的 subsampling），只解出两倍目标大小左右，
  * 一张 4000×3000 的照片解出来是 666×500，几百 KB 内存；再对半缩几次、最后一步缩到 320，比一步缩下去清楚。
- * 读不出来（坏图、CMYK 的 jpg、只有扩展名是 jpg）抛 IOException，调用方记 warn、照样让上传成功。
+ * 读不出来（坏图、无法解码的 jpg、只有扩展名是 jpg）抛 IOException，由上传服务拒绝并清理文件。
  */
 public final class Thumbnails {
 

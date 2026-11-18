@@ -273,6 +273,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             throw new BizException(404, NOT_FOUND);
         }
         Order o = orderMapper.selectById(c.getOrderId());
+        com.lingmao.scm.common.scope.CompanyContext.target(c.getCompanyId());
         DataScope.current(false).check(o.getCreateBy(), o.getSalesId(), o.getMerchId(), c.getCreateBy());
         return o;
     }
@@ -293,7 +294,10 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             throw new BizException(404, "订单不存在");
         }
         DataScope.current(false).check(o.getCreateBy(), o.getSalesId(), o.getMerchId());
+        com.lingmao.scm.common.scope.CompanyContext.target(o.getCompanyId());
         List<OrderChangeItem> items = diff(o, req);
+        if (items.stream().anyMatch(i -> i.getChangeType() == ChangeType.PRICE))
+            com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.ORDER);
         check(o, null, req.isCancel(), req.getResponsibleParty(), items);
         OrderChange c = new OrderChange();
         c.setOrderId(o.getId());
@@ -317,6 +321,17 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             throw new BizException(ErrorCodes.STATE_CHANGED, STALE);
         }
         Order o = orderMapper.lockById(c.getOrderId());
+        if (!com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.ORDER)) {
+            var preserved = changeItemMapper.selectByChange(id).stream().filter(i -> i.getChangeType() == ChangeType.PRICE).toList();
+            var byStyle = preserved.stream().collect(Collectors.toMap(OrderChangeItem::getStyleId, OrderChangeItem::getToPrice));
+            var currentItems = itemMapper.selectByOrder(o.getId());
+            for (var requested : req.getPrices()) {
+                BigDecimal prior = byStyle.containsKey(requested.styleId()) ? byStyle.get(requested.styleId())
+                        : uniformPrice(OrderServiceImpl.active(rowsOf(currentItems, requested.styleId())));
+                com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.ORDER, prior, requested.price());
+            }
+            req.setPrices(preserved.stream().map(i -> new OrderChangeForm.Price(i.getStyleId(), i.getToPrice())).toList());
+        }
         List<OrderChangeItem> items = diff(o, req);
         check(o, id, req.isCancel(), req.getResponsibleParty(), items);
         applyForm(c, req, items);
@@ -337,7 +352,8 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         c.setChangeTypes(typesText(f.isCancel(), items));
         c.setReason(f.getReason().strip());
         c.setResponsibleParty(f.getResponsibleParty());
-        c.setFeeNote(OrderTexts.blankToNull(f.getFeeNote()));
+        c.setFeeNote(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.ORDER,
+                c.getFeeNote(), OrderTexts.blankToNull(f.getFeeNote())));
     }
 
     private void insertItems(long changeId, List<OrderChangeItem> items) {
@@ -441,11 +457,16 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             ci.setFromQty(from);
             ci.setToQty(q.qty());
             if (from == 0) {
-                if (infos == null) {
-                    infos = styleService.orderInfos(styles);
+                if (newPrices.containsKey(styleId)) {
+                    ci.setToPrice(newPrices.get(styleId));
+                } else if (!com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.ORDER)) {
+                    // Restoring quantity is not a financial decision. Keep this SKU's own old
+                    // quote, including null; a genuinely new optional quote remains unfilled.
+                    ci.setToPrice(row == null ? null : row.getPrice());
+                } else {
+                    if (infos == null) infos = styleService.orderInfos(styles);
+                    ci.setToPrice(defaultPrice(rows, infos.get(styleId), q.styleSkuId()));
                 }
-                ci.setToPrice(newPrices.containsKey(styleId) ? newPrices.get(styleId)
-                        : defaultPrice(rows, infos.get(styleId), q.styleSkuId()));
             }
             items.add(ci);
         }

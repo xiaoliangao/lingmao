@@ -70,6 +70,11 @@ const materialFixed = computed(() => !!adjusting.value || subject.value?.kind ==
 const styleFixed = computed(() => !!adjusting.value || subject.value?.kind === 'style')
 
 function open(from: PriceSubject, row?: PriceRow) {
+  const allowed = recordableTypes(from.kind, user.hasPerm)
+  if (!allowed.length || (row && !allowed.includes(row.type))) {
+    ElMessage.warning('请由有对应价格查看和维护权限的人员办理')
+    return
+  }
   Object.assign(form, blank())
   Object.assign(names, { supplier: '', material: '', materialCode: '', sku: '', style: '' })
   subject.value = from

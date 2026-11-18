@@ -126,7 +126,7 @@ export interface MaterialRow {
   defaultSupplierId: string | null
   defaultSupplierName: string | null
   supplierItemNo: string | null
-  refPrice: number | null
+  refPrice?: number | null
   status: EnableStatus
   skuCount: number
   updateTime: string
@@ -149,7 +149,7 @@ export interface Material {
   texture: string | null
   defaultSupplierId: string | null
   supplierItemNo: string | null
-  refPrice: number | null
+  refPrice?: number | null
   moq: number | null
   minPackQty: number
   leadDays: number | null
@@ -178,7 +178,7 @@ export interface MaterialSku {
   supplierColorNo: string | null
   supplierItemNo: string | null
   /** 空 = 和物料的参考单价一样 */
-  price: number | null
+  price?: number | null
   safetyStock: number | null
   status: EnableStatus
   remark: string | null
@@ -213,7 +213,7 @@ export interface MaterialPickRow {
   stockUnit: string
   purchaseUnit: string
   conversionFactor: number
-  price: number | null
+  price?: number | null
   image: Attachment | null
 }
 

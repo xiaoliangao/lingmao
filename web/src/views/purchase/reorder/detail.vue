@@ -12,6 +12,8 @@ import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { PURCHASE_STATUS, type ReorderPickItem, type ReorderRow } from '@/types/purchase'
 import { formatPrice, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 import { useUserStore } from '@/stores/user'
 
 /**
@@ -200,7 +202,7 @@ async function generateStockPos() {
           </div>
         </template>
       </el-table-column>
-      <el-table-column v-if="cols.show.price" label="参考单价" width="96" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && cols.show.price" label="参考单价" width="96" class-name="num" align="right">
         <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.drafts" label="已开的备货单" min-width="200">

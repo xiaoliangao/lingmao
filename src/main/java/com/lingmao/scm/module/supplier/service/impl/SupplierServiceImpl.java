@@ -312,10 +312,10 @@ public class SupplierServiceImpl implements SupplierService {
     private static void applyNormal(Supplier s, SupplierSaveReq req) {
         s.setShortName(trim(req.getShortName()));
         s.setLevel(trim(req.getLevel()));
-        s.setContact(trim(req.getContact()));
-        s.setPhone(trim(req.getPhone()));
-        s.setWechat(trim(req.getWechat()));
-        s.setAddress(trim(req.getAddress()));
+        s.setContact(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.CONTACT, s.getContact(), trim(req.getContact())));
+        s.setPhone(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.CONTACT, s.getPhone(), trim(req.getPhone())));
+        s.setWechat(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.CONTACT, s.getWechat(), trim(req.getWechat())));
+        s.setAddress(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.CONTACT, s.getAddress(), trim(req.getAddress())));
         s.setBuyerId(req.getBuyerId());
         s.setRemark(trim(req.getRemark()));
     }
@@ -331,15 +331,14 @@ public class SupplierServiceImpl implements SupplierService {
         s.setCreditDays(req.getCreditDays());
         s.setInvoiceType(trim(req.getInvoiceType()));
         s.setTaxPct(req.getTaxPct());
-        s.setBankName(trim(req.getBankName()));
-        s.setBankAccountName(trim(req.getBankAccountName()));
+        s.setBankName(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.BANK, s.getBankName(), trim(req.getBankName())));
+        s.setBankAccountName(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.BANK, s.getBankAccountName(), trim(req.getBankAccountName())));
         String currentAccount = current == null ? null : current.getBankAccount();
         String account = BankAccounts.normalize(req.getBankAccount());
-        if (!SupplierPerms.has(SupplierPerms.BANK)
-                || account != null && currentAccount != null && account.equals(BankAccounts.mask(currentAccount))) {
+        if (account != null && currentAccount != null && account.equals(BankAccounts.mask(currentAccount))) {
             account = currentAccount;
         }
-        s.setBankAccount(account);
+        s.setBankAccount(com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.BANK, currentAccount, account));
     }
 
     /** 保存前的检查：信用代码格式和唯一、字典值、新选的擅长品类是不是启用的。current 新建时是 null */

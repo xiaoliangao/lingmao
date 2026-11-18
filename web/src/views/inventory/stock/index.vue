@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import VirtualDataTable, { type VirtualColumn } from '@/components/VirtualDataTable.vue'
+import StockLogExportDialog from '@/components/StockLogExportDialog.vue'
 import { useSeekTable } from '@/composables/useSeekTable'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -26,6 +27,8 @@ import {
 import type { SkuSupply } from '@/types/purchase'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 库存（/stock，docs/api/04 §1.5、§3.6、§4）：明细 / 按物料 / 日志三个视图，认 ?view=log（只认 /stock 自己的地址）。
@@ -143,11 +146,11 @@ const summaryTable = useTable({
 
 // ---------- 视图 3：库存日志 ----------
 const logDateRange = ref<[string, string] | null>(null)
+const exportDialog = ref<InstanceType<typeof StockLogExportDialog>>()
 const logTable = useSeekTable({
   immediate: false,
   fetch: (params) => stockLogApi.seek(params),
-  exportUrl: '/api/stock-logs/export',
-  exportName: '库存日志.xlsx',
+  exporter: (filters) => exportDialog.value?.open(filters),
   query: {
     keyword: '',
     warehouseId: undefined as string | undefined,
@@ -165,7 +168,7 @@ const logVirtualColumns = computed<VirtualColumn[]>(() => [
   ...(logCols.show.material ? [{ key: 'material', label: '物料', width: 240 }] : []),
   ...(logCols.show.changeQty ? [{ key: 'changeQty', label: '变动数量', width: 130 }] : []),
   ...(logCols.show.balance ? [{ key: 'balanceQty', label: '结存', width: 100 }] : []),
-  ...(logCols.show.valuation ? [{ key: 'valuation', label: '单价 / 金额', width: 200 }] : []),
+  ...(canSeeCost.value && logCols.show.valuation ? [{ key: 'valuation', label: '单价 / 金额', width: 200 }] : []),
   ...(logCols.show.dyeLot ? [{ key: 'dyeLot', label: '缸号', width: 110 }] : []),
   ...(logCols.show.operator ? [{ key: 'operatorName', label: '操作人', width: 100, fixed: 'right' as const }] : []),
   ...(logCols.show.createTime ? [{ key: 'createTime', label: '记账时间', width: 170 }] : []),
@@ -285,7 +288,8 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
         </el-button>
         <el-button v-perm="'inventory:count:add'" @click="router.push('/stock-takes?new=DAILY')">盘点</el-button>
         <el-button v-perm="'inventory:count:add'" @click="router.push('/stock-takes?new=OPENING')">导入期初库存</el-button>
-        <el-button v-perm="'inventory:stock:export'" icon="Download" @click="doExport">导出</el-button>
+        <el-button v-if="viewMode === 'logs'" v-perm="'inventory:stock:export'" @click="exportDialog?.open()">导出任务</el-button>
+        <el-button v-perm="'inventory:stock:export'" icon="Download" :loading="viewMode === 'logs' && logTable.exporting.value" @click="doExport">导出</el-button>
       </template>
     </PageHeader>
 
@@ -441,6 +445,8 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
         <el-button :disabled="!logTable.hasMore.value || logTable.loading.value" @click="logTable.next">下一页</el-button>
       </div>
     </template>
+
+    <StockLogExportDialog v-if="user.hasPerm('inventory:stock:export')" ref="exportDialog" />
 
     <!-- 单格库存流水浮窗 -->
     <el-dialog v-model="cellLogVisible" :title="cellLogTitle" width="860px">

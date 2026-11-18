@@ -133,7 +133,7 @@ class PurchaseOrderServiceImplTest {
                 materialService, supplierService, priceService, warehouseService, companyService, defaultCompanyProvider, styleService,
                 dictDataService, userService, docHeaderService, docLogService, docNoticeService, attachmentService, approvalService,
                 referenceService, serialNoGenerator, Clock.systemDefaultZone());
-        login("purchase:order:edit", "purchase:order:submit", "purchase:order:audit", "purchase:order:close", "inventory:doc:add");
+        login("purchase:order:edit", "purchase:order:submit", "purchase:order:audit", "purchase:order:close", "inventory:doc:add", "techpack:cost:query");
     }
 
     @AfterEach
@@ -240,7 +240,8 @@ class PurchaseOrderServiceImplTest {
                 BigDecimal.ONE, null, null, null, null, 9L, null, null, new BigDecimal("20"), true);
         when(materialService.purchaseInfos(any())).thenReturn(Map.of(100L, info));
         when(priceService.currentMaterials(any(), any())).thenReturn(Map.of(new MaterialPriceKey(9L, 50L, 100L),
-                new PriceRef(77L, new BigDecimal(price), "METER", new BigDecimal("13"), true, true, LocalDate.of(2026, 11, 1), 100L)));
+                new PriceRef(77L, new BigDecimal(price), "METER", new BigDecimal("13"), true, true, LocalDate.of(2026, 11, 1), 100L,
+                        com.lingmao.scm.module.price.entity.PriceType.MATERIAL)));
     }
 
     private static PurchaseOrder po(DocStatus status) {

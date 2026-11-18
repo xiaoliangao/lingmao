@@ -4,6 +4,7 @@ const CREATED_RESOURCES = new Set([
   '/api/purchase-orders/from-mrp', '/api/purchase-orders/from-reorder',
   '/api/inventory-docs', '/api/inventory-counts', '/api/production-orders/schedule',
   '/api/materials', '/api/styles', '/api/suppliers', '/api/tech-packs',
+  '/api/export-jobs/stock-logs',
 ])
 const IDEMPOTENT_CHILDREN = [
   /^\/api\/materials\/\d+\/skus$/,
@@ -14,6 +15,7 @@ const IDEMPOTENT_CHILDREN = [
   /^\/api\/production-orders\/\d+\/issues$/,
   /^\/api\/inventory-docs\/from-(purchase|production)\/\d+$/,
   /^\/api\/production-orders\/\d+\/receipts$/,
+  /^\/api\/export-jobs\/\d+\/(cancel|retry)$/,
 ]
 export function canReplayWrite(method: string, url: string): boolean {
   if (method.toLowerCase() !== 'post') return false

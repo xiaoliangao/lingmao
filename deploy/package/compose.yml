@@ -29,6 +29,7 @@ services:
     environment:
       TZ: Asia/Shanghai
       SCM_HTTPS_PORT: ${SCM_HTTPS_PORT:-443}
+      SCM_PUBLIC_SCHEME: ${SCM_PUBLIC_SCHEME:-}
       # 文件地址的签名密钥，和 app 用同一个（架构 §8）；改名成 SCM_ 开头，配置模板才会替换它
       SCM_FILE_SIGN_KEY: ${FILE_SIGN_KEY:?.env 里没有 FILE_SIGN_KEY}
       NGINX_ENVSUBST_FILTER: ^SCM_    # 配置模板里只替换 SCM_ 开头的变量，$host 这些 Nginx 自己的变量不动
@@ -40,6 +41,9 @@ services:
     # Docker 会把"app"转给服务器的 DNS 去查：有的 DNS（代理软件、把查不到的域名劫持到广告页的运营商 DNS）会回一个假地址，
     # Nginx 连着假地址一直等，页面收不到上面那句提示。写成 127.0.0.1，查不到的名字马上失败，Nginx 马上回提示
     dns: 127.0.0.1
+    networks:
+      edge:
+        ipv4_address: ${SCM_EDGE_WEB_IP:-172.30.250.2}
     mem_limit: 64m
     logging: *logging
     healthcheck:
@@ -64,9 +68,12 @@ services:
       FILE_SIGN_KEY: ${FILE_SIGN_KEY:?.env 里没有 FILE_SIGN_KEY}
       INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD:-}
       UPLOAD_DIR: /data/uploads
+      EXPORT_DIR: /data/exports
+      LINGMAO_PROXY_TRUSTED_CIDRS: ${SCM_EDGE_WEB_IP:-172.30.250.2}/32
       BACKUP_DIR: /backups
     volumes:
       - ./data/uploads:/data/uploads
+      - ./data/exports:/data/exports   # 私有导出不挂给 Nginx；下载必须重新校验账号和当前权限
       - ./logs:/data/logs
       - ./backups:/backups:ro           # 只读：管理后台显示最近一次备份的时间和大小
     depends_on:
@@ -75,6 +82,9 @@ services:
       redis:
         condition: service_healthy
     stop_grace_period: 30s              # 等正在处理的请求做完再停
+    networks:
+      - default
+      - edge
     mem_limit: 1200m                    # 堆最多用 75%，见 deploy/app.Dockerfile
     logging: *logging
     healthcheck:
@@ -126,7 +136,7 @@ services:
       retries: 5
       start_period: 30s
 
-  # 只放登录状态和缓存。不落盘：丢了大家重新登录一次就行（架构 §9）
+  # 共享限流和缓存。会话吊销存 PostgreSQL；限流键不能被 LRU 静默逐出。
   redis:
     image: redis:7
     restart: unless-stopped
@@ -138,7 +148,7 @@ services:
     command:
       - sh
       - -c
-      - exec redis-server --requirepass "$$REDISCLI_AUTH" --save '' --appendonly no --maxmemory 96mb --maxmemory-policy allkeys-lru
+      - exec redis-server --requirepass "$$REDISCLI_AUTH" --save '' --appendonly no --maxmemory 96mb --maxmemory-policy noeviction
     mem_limit: 128m
     logging: *logging
     healthcheck:
@@ -169,3 +179,9 @@ services:
         condition: service_healthy
     mem_limit: 256m
     logging: *logging
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${SCM_EDGE_SUBNET:-172.30.250.0/28}

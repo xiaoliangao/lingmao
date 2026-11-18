@@ -24,6 +24,8 @@ import DocLogList from '@/components/DocLogList.vue'
 import PriceHistory from '@/components/price/PriceHistory.vue'
 import SupplierFormDialog from './SupplierFormDialog.vue'
 import CertDialog from './CertDialog.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost, canSeeProductionPrice, canSeeSupplierContact } = useFieldAccess()
 
 /**
  * 供应商详情（RFC 004 §12，原型 /suppliers/:code）。左边：状态横条、待批改动、资质 / 改动记录 / 价格记录 / 操作记录四个页签；
@@ -112,7 +114,7 @@ async function toggleAccount() {
   }
   revealing.value = true
   try {
-    fullAccount.value = (await supplierApi.bank(id)).bankAccount
+    fullAccount.value = (await supplierApi.bank(id)).bankAccount ?? null
   } finally {
     revealing.value = false
   }
@@ -488,7 +490,7 @@ reloadAll()
             </el-table>
           </el-tab-pane>
 
-          <el-tab-pane v-if="store.hasPerm('price:price:list')" label="价格记录" name="prices" lazy>
+          <el-tab-pane v-if="(canSeeCost || canSeeProductionPrice) && store.hasPerm('price:price:list')" label="价格记录" name="prices" lazy>
             <PriceHistory :subject="{ kind: 'supplier', id, code: supplier.code, name: supplier.shortName }" />
           </el-tab-pane>
 
@@ -504,13 +506,13 @@ reloadAll()
           <dt>全称</dt><dd>{{ supplier.name }}</dd>
           <dt>信用代码</dt><dd class="code">{{ supplier.creditCode || '—' }}</dd>
           <dt>擅长品类</dt><dd>{{ goodAtText || '—' }}</dd>
-          <dt>联系人</dt><dd>{{ supplier.contact || '—' }}</dd>
+          <template v-if="canSeeSupplierContact"><dt>联系人</dt><dd>{{ supplier.contact || '—' }}</dd>
           <dt>电话</dt><dd>{{ supplier.phone || '—' }}</dd>
           <dt>微信</dt><dd>{{ supplier.wechat || '—' }}</dd>
-          <dt>地址</dt><dd>{{ supplier.address || '—' }}</dd>
+          <dt>地址</dt><dd>{{ supplier.address || '—' }}</dd></template>
           <dt>结算</dt><dd>{{ settleText || '—' }}</dd>
           <dt>发票</dt><dd>{{ invoiceText || '—' }}</dd>
-          <dt>开户行</dt><dd>{{ supplier.bankName || '—' }}</dd>
+          <template v-if="canSeeBank"><dt>开户行</dt><dd>{{ supplier.bankName || '—' }}</dd>
           <dt>账号</dt>
           <dd>
             <span class="code">{{ fullAccount ?? (supplier.bankAccount || '—') }}</span>
@@ -518,7 +520,7 @@ reloadAll()
               {{ fullAccount ? '隐藏' : '显示' }}
             </el-button>
           </dd>
-          <dt>收款户名</dt><dd>{{ supplier.bankAccountName || '—' }}</dd>
+          <dt>收款户名</dt><dd>{{ supplier.bankAccountName || '—' }}</dd></template>
           <dt>负责采购员</dt><dd>{{ supplier.buyerName || '—' }}</dd>
           <dt>准入</dt><dd>{{ supplier.admitTime ? `${supplier.admitByName ?? ''} · ${formatDate(supplier.admitTime)}` : '—' }}</dd>
           <dt>建档</dt><dd>{{ supplier.createByName ?? '系统' }} · {{ formatDate(supplier.createTime) }}</dd>

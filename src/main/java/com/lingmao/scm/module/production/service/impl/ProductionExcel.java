@@ -51,7 +51,9 @@ class ProductionExcel {
             r.setStatus(status == RUNNING && o.getReturnedQty() > 0 ? "部分回货" : ProductionRules.STATUS.label(status).text());
             rows.add(r);
         }
-        return Excel.export(schema(kind), rows);
+        var columns = schema(kind);
+        return Excel.export(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.PRODUCTION)
+                ? columns : columns.without(kind.getPriceLabel(), "金额"), rows);
     }
 
     @Data

@@ -15,6 +15,8 @@ import { bindCompanyApi } from '@/utils/companyScope'
 import { createLatestRequest } from '@/utils/requestScope'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { restoreDraftValue } from '@/utils/draft'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeProductionPrice, canSeeCost } = useFieldAccess()
 const scheduleApi = bindCompanyApi(scheduleApiBase, () => props.companyId)
 
 /**
@@ -105,7 +107,7 @@ function makeBlock(st: ScheduleStyle, pf: SchedulePrefill, fill: boolean): Block
 }
 
 /** 这块现在这种加工方式在档案里的现价；没有是 null */
-const archiveOf = (b: BlockDraft) => b.quote?.prices.find((p) => p.processMode === b.processMode) ?? null
+const archiveOf = (b: BlockDraft) => b.quote?.prices?.find((p) => p.processMode === b.processMode) ?? null
 const priceChanged = (b: BlockDraft) => {
   const archive = archiveOf(b)?.price
   return archive != null && b.unitPrice != null && Math.abs(b.unitPrice - archive) > 0.00005
@@ -226,6 +228,7 @@ function addTerm(b: BlockDraft, value: string) {
 }
 
 function buildBlocks(): ScheduleBlock[] | null {
+  if (!canSeeProductionPrice.value) return warn('排单需要确认加工价，请由有生产价格权限的人员办理')
   const out: ScheduleBlock[] = []
   for (const b of activeBlocks.value) {
     const name = b.style.styleCode
@@ -282,6 +285,7 @@ async function submit() {
 
 <template>
   <el-dialog v-model="visible" :title="`排单 ${prefill?.orderNo ?? ''}`" width="840px" :before-close="guard.beforeClose">
+    <el-alert v-if="!canSeeProductionPrice" title="排单需要确认加工价，请由有生产价格权限的人员办理" type="info" :closable="false" />
     <div v-loading="loading" class="blocks">
       <p v-if="!loading && prefill && !blocks.length" class="dim">每个款都排完了</p>
       <section v-for="(b, idx) in blocks" :key="b.uid" class="block">
@@ -312,15 +316,15 @@ async function submit() {
               <el-option v-for="m in modes.enabled.value" :key="m.value" :label="m.label" :value="m.value" />
             </el-select>
           </el-form-item>
-          <el-form-item :label="b.processMode === PROCESS_MODE_FULL ? '成品单价（元/件）' : '加工费（元/件）'" required>
+          <el-form-item v-if="canSeeProductionPrice" :label="b.processMode === PROCESS_MODE_FULL ? '成品单价（元/件）' : '加工费（元/件）'" required>
             <el-input-number v-model="b.unitPrice" :min="0" :precision="4" :controls="false" :disabled="b.quoting" />
             <span class="field-tip dim">
               <template v-if="archiveOf(b)?.price != null">档案现价 {{ formatPrice(archiveOf(b)!.price) }}</template>
               <template v-else-if="b.factoryId && !b.quoting">档案里没有这家这种方式的价</template>
-              <template v-if="b.processMode !== PROCESS_MODE_FULL"> · 工价合计 {{ formatMoney(b.style.laborTotal) }}</template>
+              <template v-if="canSeeCost && b.processMode !== PROCESS_MODE_FULL"> · 工价合计 {{ formatMoney(b.style.laborTotal) }}</template>
             </span>
           </el-form-item>
-          <el-form-item v-if="priceChanged(b)" label="改价原因" required>
+          <el-form-item v-if="canSeeProductionPrice && priceChanged(b)" label="改价原因" required>
             <el-input v-model="b.priceChangeReason" maxlength="100" placeholder="单价和档案现价不一样：写为什么" />
           </el-form-item>
           <el-form-item label="交期" required>

@@ -79,6 +79,10 @@ class ScheduleServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        new com.lingmao.scm.security.LoginUser(1L, "unit-schedule"), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("production:price:query"))));
         // 订单行 11：100 件，已排 50；锁定的生产 BOM 是 9
         when(orderService.lockForProduction(5L)).thenReturn(new OrderForProduction(5L, "DD202611170001", DocStatus.APPROVED, 1L,
                 LocalDate.of(2026, 12, 20), LocalDate.of(2026, 12, 25), 3L,
@@ -87,6 +91,9 @@ class ScheduleServiceImplTest {
                 List.of("M"), List.of(new StyleOrderInfo.Color(21L, "RED", "红", "#c00", true)),
                 List.of(new StyleOrderInfo.Sku(101L, 21L, "M", "A01-RED-M", true)), null, null)));
     }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
 
     /** 规则（PRD §6.5.5，Q09）：同一个 SKU 已排产 + 这次 ≤ ⌊订单数 × 1.03⌋，超了 1004，data 说清最多还能排多少，一张都不建 */
     @Test
@@ -140,7 +147,8 @@ class ScheduleServiceImplTest {
         when(supplierService.categories(Set.of(8L))).thenReturn(Map.of(8L, List.of("GARMENT")));
         when(dictDataService.listByType("process_mode")).thenReturn(List.of(new DictOption("清加工", "CMT", 1)));
         when(priceService.currentProcess(8L, 1L, "CMT", TODAY)).thenReturn(Optional.of(
-                new PriceRef(66L, new BigDecimal("35.00"), "PIECE", null, true, true, TODAY.minusDays(30), null)));
+                new PriceRef(66L, new BigDecimal("35.00"), "PIECE", null, true, true, TODAY.minusDays(30), null,
+                        com.lingmao.scm.module.price.entity.PriceType.PROCESS)));
         when(userService.isEnabled(3L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.schedule(req(40, new BigDecimal("38"), " ")))

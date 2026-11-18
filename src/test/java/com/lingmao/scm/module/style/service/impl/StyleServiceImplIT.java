@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.style.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -61,6 +62,16 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 class StyleServiceImplIT {
 
     private static final List<String> SIZES = List.of("S", "M", "L", "XL", "XXL");
+
+    @org.junit.jupiter.api.BeforeEach
+    void loginFixture() {
+        var permissions = List.of("style:style:import", "style:style:add", "style:style:edit", "techpack:cost:query");
+        TestIdentity.grant(jdbcTemplate, 900502L, permissions);
+        TestIdentity.login(900502L, permissions);
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearIdentity() { TestIdentity.clear(); }
 
     @Autowired
     private StyleService styleService;

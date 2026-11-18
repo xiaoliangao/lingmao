@@ -65,6 +65,8 @@ import {
 } from '@/types/production'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import { formatDate, formatMoney, formatPrice, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeProductionPrice } = useFieldAccess()
 
 /**
  * 生产单表格：外发加工单 / 成品采购单列表和看板"按单"共用（docs/api/05 §1.4，两边的行都是 ProductionRow）。
@@ -174,10 +176,10 @@ defineExpose({
     <el-table-column v-if="columns.show.qty" label="数量" width="90" class-name="num" align="right">
       <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
     </el-table-column>
-    <el-table-column v-if="columns.show.unitPrice" label="单价" width="100" class-name="num" align="right">
+    <el-table-column v-if="canSeeProductionPrice && (columns.show.unitPrice)" label="单价" width="100" class-name="num" align="right">
       <template #default="{ row }">{{ formatPrice(row.unitPrice) }}</template>
     </el-table-column>
-    <el-table-column v-if="mode === 'list' && columns.show.amount" label="金额" width="120" class-name="num" align="right">
+    <el-table-column v-if="canSeeProductionPrice && (mode === 'list' && columns.show.amount)" label="金额" width="120" class-name="num" align="right">
       <template #default="{ row }">{{ formatMoney(row.totalAmount) }}</template>
     </el-table-column>
     <el-table-column v-if="columns.show.due" label="交期" width="130" class-name="num">

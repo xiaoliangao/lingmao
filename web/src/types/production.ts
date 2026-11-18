@@ -212,8 +212,8 @@ export interface ProductionRow {
   styleName: string
   image: Attachment | null
   totalQty: number
-  unitPrice: number
-  totalAmount: number
+  unitPrice?: number
+  totalAmount?: number
   dueDate: string
   /** 异常填了新交期才有，列表上交期显示它、原交期划掉 */
   expectDate: string | null
@@ -310,8 +310,8 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   /** 草稿、待审核时不是合作中，提交、审核会被拦，页面标出来 */
   factoryStatus: SupplierStatus
   /** 打印用：工厂的联系人、电话，没有是 null */
-  factoryContact: string | null
-  factoryPhone: string | null
+  factoryContact?: string | null
+  factoryPhone?: string | null
   /** 字典 process_mode：外发加工单只会是清加工、半包，成品采购单只会是 FULL */
   processMode: string
   orderId: string
@@ -332,17 +332,17 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   /** 异常填了新交期才有；原交期 dueDate 保留 */
   expectDate: string | null
   daysLeft: number | null
-  unitPrice: number
+  unitPrice?: number
   /** 默认单价取自哪条价格档案；手填的是 null */
   priceSourceId: string | null
   /** 价格档案里这家工厂 × 这个款 × 这种加工方式现在的价（按下单日期）；没有是 null。和 unitPrice 不一样时页面标"改价" */
-  archivePrice: number | null
+  archivePrice?: number | null
   priceChangeReason: string | null
   /** 税率 %，默认带工厂 */
   taxPct: number
   taxIncluded: boolean
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   merchId: string
   merchName: string | null
   /** 字典 settle_method */
@@ -374,10 +374,11 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
 export interface ProductionForm {
   version: number
   companyId: string
+  expectedCompanyId?: string
   factoryId: string
   /** 只能在同一种单里换：外发加工单清加工 ↔ 半包；成品采购单固定 FULL */
   processMode: string
-  unitPrice: number | null
+  unitPrice?: number | null
   /** 单价用的是档案现价时带上那条的 id（ScheduleModePrice.priceSourceId）；手填的发 null */
   priceSourceId: string | null
   /** 单价和档案现价不一样时必填 */

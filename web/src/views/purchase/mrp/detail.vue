@@ -24,6 +24,8 @@ import { formatDate, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
 import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 const mrpApi = bindCompanyApi(mrpApiBase, () => detail.value?.companyId)
 const purchaseApi = bindCompanyApi(purchaseApiBase, () => detail.value?.companyId)
 
@@ -350,7 +352,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
           <router-link v-for="o in detail.orders" :key="o.orderId" :to="`/orders/${o.orderId}`" class="code">{{ o.orderNo }}</router-link>
           <span class="code dim">{{ detail.styleCodes.join('、') }}</span>
           <span>要料 {{ detail.needDate ? formatDate(detail.needDate) : '—' }}</span>
-          <span class="num">预计 {{ formatMoney(detail.estAmount) }} · 已转采购 {{ formatMoney(detail.convertedAmount) }}</span>
+          <span v-if="canSeeCost" class="num">预计 {{ formatMoney(detail.estAmount) }} · 已转采购 {{ formatMoney(detail.convertedAmount) }}</span>
           <span v-if="detail.prevCalcId">由 <router-link :to="`/mrp/${detail.prevCalcId}`" class="code">{{ detail.prevCalcNo }}</router-link> 重新算料</span>
         </p>
 
@@ -507,10 +509,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
                 <span class="dim"> {{ units.labelOf(row.purchaseUnit) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="参考单价" width="84" class-name="num" align="right">
+            <el-table-column v-if="canSeeCost" label="参考单价" width="84" class-name="num" align="right">
               <template #default="{ row }">{{ row.refPrice == null ? '—' : formatPrice(row.refPrice) }}</template>
             </el-table-column>
-            <el-table-column label="预计金额" width="96" class-name="num" align="right">
+            <el-table-column v-if="canSeeCost" label="预计金额" width="96" class-name="num" align="right">
               <template #default="{ row }">{{ row.estAmount == null ? '—' : formatMoney(row.estAmount) }}</template>
             </el-table-column>
             <el-table-column label="已转采购" width="84" class-name="num" align="right">

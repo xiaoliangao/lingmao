@@ -58,6 +58,8 @@ class A1CostBatchIT {
     @Autowired TechPackMapper packs;
     @Autowired PackOwners owners;
     @Autowired PriceService prices;
+    @Autowired TechPackPdfServiceImpl pdf;
+    @Autowired com.lingmao.scm.module.system.service.DictDataService dictionaries;
     private final Probe probe = new Probe();
     private final List<Long> packIds = new ArrayList<>();
     private final List<Long> styleIds = new ArrayList<>();
@@ -215,6 +217,35 @@ class A1CostBatchIT {
         List<JsonNode> result = new ArrayList<>(); result.add(root);
         if (root.has("Plans")) root.get("Plans").forEach(child -> result.addAll(nodes(child)));
         return result;
+    }
+
+    /** A2 PDF integration: increasing actual style colors must not increase database round trips. */
+    @Test
+    void pdfOneAndFiftyColorsReuseOneCostInputSnapshot() throws Exception {
+        long style = styleIds.getFirst();
+        for (int index = 1; index < colors.size(); index++)
+            jdbc.update("INSERT INTO sty_style_color(style_id,color_id,seq,status) VALUES (?,?,?,1)", style, colors.get(index), index + 1);
+        var pack = packs.selectById(packIds.getFirst()); var context = owners.context(pack);
+        assertThat(context.colors()).hasSize(50);
+        // Match the reference-dictionary cache state; BOM, material and price SQL remains uncached.
+        for (String dictionary : List.of("unit", "season", "process_category")) dictionaries.listByType(dictionary);
+        List<String> small = new ArrayList<>(), large = new ArrayList<>();
+        PdfSheet first, fifty;
+        probe.active.set(small);
+        try { first = pdf.sheet(pack, context, context.colors().subList(0, 1), true); }
+        finally { probe.active.remove(); }
+        probe.active.set(large);
+        try { fifty = pdf.sheet(pack, context, context.colors(), true); }
+        finally { probe.active.remove(); }
+        assertThat(large).hasSize(small.size());
+        assertThat(fifty.getBoms()).hasSize(50);
+        assertThat(fifty.getBoms().getFirst()).usingRecursiveComparison().isEqualTo(first.getBoms().getFirst());
+        assertThat(fifty.getCost()).usingRecursiveComparison().isEqualTo(first.getCost());
+        assertThat(fifty.getCost().getTotal()).isEqualTo("8.10");
+        Path artifacts = Path.of("target", "a2-production"); Files.createDirectories(artifacts);
+        Files.writeString(artifacts.resolve("pdf-color-query-count.json"), json.writeValueAsString(Map.of(
+                "oneColorSelects", small.size(), "fiftyColorSelects", large.size(), "firstColorCost", fifty.getCost().getTotal(),
+                "one", small, "fifty", large)));
     }
 
     @AfterAll

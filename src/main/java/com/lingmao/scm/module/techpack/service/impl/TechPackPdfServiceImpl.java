@@ -134,15 +134,16 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
                 StringUtils.hasText(pack.getVersionNote()) ? pack.getVersionNote() : null);
 
         Map<Long, TechPackCostVO> costs = new HashMap<>();
+        CostCalculator.Inputs costInputs = price ? costCalculator.preload(List.of(pack), Map.of(pack.getId(), ctx)).get(pack.getId()) : null;
         if (price) {
-            colors.forEach(c -> costs.put(c.id(), costCalculator.compute(pack, ctx, c.id(), false)));
+            colors.forEach(c -> costs.put(c.id(), costCalculator.computePrepared(pack, ctx, c.id(), costInputs)));
         }
         List<PdfSheet.BomTable> boms = colors.stream().map(c -> new PdfSheet.BomTable(c.name(), c.code(),
                 bomRows(content.bom(), c, ctx, materials, skus, units, price ? costs.get(c.id()) : null))).toList();
 
         return new PdfSheet(title(owner), statusMark(pack.getStatus()), meta, image(packOwners.mainImage(pack)),
                 spec(content, ctx), fabricUsage(content.bom(), ctx, materials, units), ctx.sizes(), boms, price,
-                price ? cost(pack, ctx, colors) : null, craftGroups(pack, content, price));
+                price ? cost(pack, ctx, colors, costs, costInputs) : null, craftGroups(pack, content, price));
     }
 
     // ---------------------------------------------------------------- 各块
@@ -227,11 +228,12 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
     }
 
     /** 核价按导出的第一个颜色算（没有颜色按款式第一个） */
-    private PdfSheet.Cost cost(TechPack pack, Ctx ctx, List<ColorOption> colors) {
+    private PdfSheet.Cost cost(TechPack pack, Ctx ctx, List<ColorOption> colors,
+                              Map<Long, TechPackCostVO> costs, CostCalculator.Inputs inputs) {
         ColorOption color = colors.isEmpty() ? null : colors.getFirst();
-        TechPackCostVO vo = costCalculator.compute(pack, ctx, color == null ? ctx.firstColorId() : color.id(), false);
+        TechPackCostVO vo = color == null ? costCalculator.computePrepared(pack, ctx, ctx.firstColorId(), inputs) : costs.get(color.id());
         CostSummary s = vo.getSummary();
-        List<CostItem> items = packContent.loadCostItems(pack.getId());
+        List<CostItem> items = inputs.items();
         String other = items.isEmpty() ? null : items.stream()
                 .map(i -> i.getName() + " " + money(i.getAmount()) + (StringUtils.hasText(i.getRemark()) ? "（" + i.getRemark() + "）" : ""))
                 .collect(Collectors.joining("；"));

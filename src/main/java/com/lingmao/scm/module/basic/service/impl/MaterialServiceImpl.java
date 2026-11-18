@@ -240,7 +240,7 @@ public class MaterialServiceImpl implements MaterialService {
         MaterialSku sku = getSku(id, skuId);
         sku.setSupplierColorNo(Texts.trim(req.getSupplierColorNo()));
         sku.setSupplierItemNo(Texts.trim(req.getSupplierItemNo()));
-        sku.setPrice(req.getPrice());
+        sku.setPrice(com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST, sku.getPrice(), req.getPrice()));
         sku.setSafetyStock(req.getSafetyStock());
         sku.setRemark(Texts.trim(req.getRemark()));
         materialSkuMapper.update(sku, Updates.replaceById(sku));
@@ -472,7 +472,8 @@ public class MaterialServiceImpl implements MaterialService {
         material.setTexture(Texts.trim(req.getTexture()));
         material.setDefaultSupplierId(req.getDefaultSupplierId());   // 只当默认值，外键保证存在，不查状态（架构 A23）
         material.setSupplierItemNo(Texts.trim(req.getSupplierItemNo()));
-        material.setRefPrice(req.getRefPrice());
+        material.setRefPrice(com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST,
+                material.getRefPrice(), req.getRefPrice()));
         material.setMoq(req.getMoq());
         material.setMinPackQty(Objects.requireNonNullElse(req.getMinPackQty(), BigDecimal.ONE));
         material.setLeadDays(req.getLeadDays());

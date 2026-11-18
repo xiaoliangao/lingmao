@@ -18,7 +18,9 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      proxy: { '/api': target, '/files': target },
+      // Keep the browser's Host (including port) aligned with Origin for the server's same-origin checks.
+      // Vite's string shorthand would silently enable changeOrigin and make these requests cross-origin upstream.
+      proxy: { '/api': { target, changeOrigin: false }, '/files': { target, changeOrigin: false } },
     },
     build: {
       // Element Plus 单独打一个包：它很少变，浏览器缓存住以后，发新版只需要重新下载业务代码

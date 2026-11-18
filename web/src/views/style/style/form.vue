@@ -23,6 +23,8 @@ import { useUserStore } from '@/stores/user'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import DesignFiles from './DesignFiles.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 新建、编辑款式（/styles/new、/styles/:id/edit，RFC 005 §9）：字段多，整页表单，照原型 StyleForm 的分组。
@@ -397,7 +399,7 @@ const title = computed(() => (editing ? `编辑款式 ${names.code}` : '新建�
           <el-form-item label="吊牌价（元）">
             <el-input-number v-model="form.tagPrice" :min="0" :precision="2" :controls="false" :value-on-clear="null" />
           </el-form-item>
-          <el-form-item label="参考成本价（元）">
+          <el-form-item v-if="canSeeCost" label="参考成本价（元）">
             <el-input-number v-model="form.refCost" :min="0" :precision="4" :controls="false" :value-on-clear="null" placeholder="一期手填" />
           </el-form-item>
           <el-form-item label="主力面料">

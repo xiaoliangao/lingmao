@@ -59,7 +59,7 @@ import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
  * - 版本：地址上的 techPackId 只在第一次进来、或者地址变了时用；之后按用户自己选的，概况刷新（保存、生效后）不跳回地址那一版。
  *   新建、修订、转生产以后切到新的那一版；删了草稿回到 defaultPackId。overview 由款式详情取，这里改了东西发 changed 让它重取
  * - 四个子页签共用一份表单、一个"保存"；只有 actions 里有 edit 的草稿能改。没保存的修改：换版本先问，离开由 useUnsavedChanges 管
- * - 参考单价、单件成本、工价没有看成本权限也显示（01 §4.4、§4.5：BOM 的单价不受看成本权限管）；核价子页签、PDF 含价格才要 techpack:cost:query
+ * - 参考单价、单件成本、工序工价、核价和含价 PDF 都按 techpack:cost:query 控制；无权保存省略财务字段
  * - 核价按上次保存的算（01 §6），改了没保存时提示一句
  * - 工艺标准（公司通用的默认文字、测量方法、附页文件）不单开一页，从这里拉出抽屉 CraftStandardDrawer：版本条上的"工艺标准"、
  *   还没有资料包时的空状态、导出 PDF 对话框"附工艺标准"旁边的"看附页文件"。要 techpack:standard:list
@@ -116,7 +116,7 @@ const draft = reactive({
   craftSections: [] as CraftSectionForm[],
   processes: [] as ProcessForm[],
   costMode: 'OUTSOURCE' as CostMode,
-  buyPrice: null as number | null,
+  buyPrice: null as number | null | undefined,
   costItems: [] as CostItemForm[],
 })
 
@@ -145,14 +145,14 @@ function hydrateDraft(d: TechPackDetail) {
       images: hit?.images.map(({ url, thumbUrl, name, size }) => ({ url, thumbUrl, name, size })) ?? [],
     }
   })
-  draft.processes = d.processes.map(({ id: _id, seq: _seq, ...rest }) => ({ ...rest, images: [...rest.images] }))
+  draft.processes = d.processes.map(({ seq: _seq, ...rest }) => ({ ...rest, images: [...rest.images] }))
   draft.costMode = 'OUTSOURCE'
   draft.buyPrice = null
   draft.costItems = []
   guard.markSaved()
 }
 
-/** 主表和核价独立加载；核价失败/未授权时，保存其他页签只能发送 cost:null。 */
+/** 主表和核价独立加载；核价失败不构造核价内容，未授权时请求层省略 cost。 */
 let costSeq = 0
 let loadSeq = 0
 const costRequest = useLatestRequest()
@@ -329,6 +329,7 @@ function buildSaveForm(): TechPackSaveForm {
     packingMode: draft.packingMode,
     specPoints: draft.specPoints.map((sp) => ({ ...sp, point: sp.point.trim(), method: orNull(sp.method), remark: orNull(sp.remark) })),
     bomItems: draft.bomItems.map((b) => ({
+      id: /^[1-9]\d*$/.test(b.id) ? b.id : undefined,
       part: b.part,
       materialId: b.materialId,
       skuMode: b.skuMode,
@@ -347,12 +348,12 @@ function buildSaveForm(): TechPackSaveForm {
     })),
     craftSections: draft.craftSections.map((cs) => ({ section: cs.section, content: orNull(cs.content), images: cs.images })),
     processes: draft.processes.map((p) => ({ ...p, name: p.name.trim(), requirement: orNull(p.requirement), remark: orNull(p.remark) })),
-    // 没有看成本权限的一律发 null：后端不动核价，免得把别人填的清掉（01 §3.5）
+    // 未载入核价时不构造它；无权限时请求层完全省略 cost，服务器保留既有值。
     cost: canSeeCost.value && costDraftPackId.value === d.id
       ? {
           costMode: draft.costMode,
           buyPrice: draft.buyPrice,
-          items: draft.costItems.filter((i) => i.name.trim()).map((i) => ({ name: i.name.trim(), amount: i.amount ?? 0, remark: orNull(i.remark) })),
+          items: draft.costItems.filter((i) => i.name.trim()).map((i) => ({ name: i.name.trim(), amount: i.amount, remark: orNull(i.remark) })),
         }
       : null,
   }
@@ -495,7 +496,7 @@ function colorOf(colorId: string | null) {
 function onSaveBomRow(saved: BomDraftRow) {
   const old = editingBomIdx.value != null ? draft.bomItems[editingBomIdx.value] : undefined
   const row: BomItem = {
-    id: old?.id ?? String(--tempId),
+    id: old?.materialId === saved.materialId ? old.id : String(--tempId),
     seq: 0,
     part: saved.part,
     materialId: saved.materialId,
@@ -618,7 +619,7 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
     defaults.forEach((def, i) => {
       const row = draft.bomItems.find((b) => b.id === added[i]?.id)
       if (!row) return
-      const prices = new Map(def.skuPrices.map((p) => [p.materialSkuId, p.refPrice]))
+      const prices = new Map((def.skuPrices ?? []).map((p) => [p.materialSkuId, p.refPrice]))
       Object.assign(row, {
         unit: def.unit,
         supplierId: def.supplierId,
@@ -675,7 +676,7 @@ function bomProblems(b: BomItem): string[] {
 
 /** 单件成本：草稿上按输入即时算（保存后以后端为准）。基码用量 ×（1 + 损耗）× 单价；随款色取第一个款色的 SKU 价，随尺码取基码的 */
 function unitCostOf(b: BomItem): number | null {
-  if (!editable.value) return b.unitCost
+  if (!editable.value) return b.unitCost ?? null
   const d = detail.value
   if (!d || b.source !== 'PURCHASE') return null
   const usage = b.usageMode === 'UNIFORM' ? b.usageQty : b.sizeUsages[d.baseSize]
@@ -857,8 +858,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
             来源：研发 V{{ detail.sourceVersion }}
           </button>
           <span v-if="detail.publishTime" class="dim">{{ detail.publishByName }} {{ formatDateTime(detail.publishTime) }} 生效</span>
-          <span class="num">参考加工价 ¥{{ formatMoney(detail.laborTotal) }}</span>
-          <span v-if="detail.unitCost != null" class="num">单件成本 <strong>¥{{ formatMoney(detail.unitCost) }}</strong></span>
+          <span v-if="canSeeCost" class="num">参考加工价 ¥{{ formatMoney(detail.laborTotal) }}</span>
+          <span v-if="canSeeCost && detail.unitCost != null" class="num">单件成本 <strong>¥{{ formatMoney(detail.unitCost) }}</strong></span>
           <label class="inline-field">
             <span class="dim">排版利用率 %</span>
             <el-input-number v-if="editable" v-model="draft.utilPct" size="small" :min="0" :max="100" :precision="1" :controls="false" />
@@ -991,7 +992,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <div class="expand">
                     <table class="mini">
                       <thead>
-                        <tr><th>配到</th><th>物料 SKU</th><th class="num">单独单价</th></tr>
+                        <tr><th>配到</th><th>物料 SKU</th><th v-if="canSeeCost" class="num">单独单价</th></tr>
                       </thead>
                       <tbody>
                         <tr v-for="sk in (row as BomItem).skus" :key="`${sk.colorId}-${sk.sizeCode}`">
@@ -1000,7 +1001,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                             <span class="code">{{ sk.skuCode }}</span> {{ [sk.skuColorName, sk.skuSpec].filter(Boolean).join(' ') }}
                             <template v-if="sk.skuStatus === 0">（已停用，生效时会被拦）</template>
                           </td>
-                          <td class="num">{{ sk.refPrice == null ? '用行上的' : formatPrice(sk.refPrice) }}</td>
+                          <td v-if="canSeeCost" class="num">{{ sk.refPrice == null ? '用行上的' : formatPrice(sk.refPrice) }}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -1058,10 +1059,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <el-table-column label="供应商" min-width="100">
                 <template #default="{ row }">{{ row.supplierName ?? '—' }}</template>
               </el-table-column>
-              <el-table-column label="参考单价" width="86" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" label="参考单价" width="86" class-name="num" align="right">
                 <template #default="{ row }">{{ row.refPrice == null ? '—' : formatPrice(row.refPrice) }}</template>
               </el-table-column>
-              <el-table-column label="单件成本" width="86" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" label="单件成本" width="86" class-name="num" align="right">
                 <template #default="{ row }">{{ unitCostOf(row as BomItem) == null ? '—' : formatMoney(unitCostOf(row as BomItem)) }}</template>
               </el-table-column>
               <el-table-column label="备注" min-width="100">
@@ -1167,7 +1168,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                     <span v-else>{{ row.stdSeconds ?? '—' }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="工价（元）" width="96" class-name="num" align="right">
+                <el-table-column v-if="canSeeCost" label="工价（元）" width="96" class-name="num" align="right">
                   <template #default="{ row }">
                     <el-input-number v-if="editable" v-model="row.price" size="small" :min="0" :precision="4" :controls="false" />
                     <span v-else>{{ row.price == null ? '—' : formatPrice(row.price) }}</span>
@@ -1187,7 +1188,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   </template>
                 </el-table-column>
               </el-table>
-              <p class="proc-total num">总工时 {{ totalProcessSeconds }} 秒 · 参考加工价 ¥{{ formatMoney(totalProcessLabor) }}</p>
+              <p class="proc-total num">总工时 {{ totalProcessSeconds }} 秒<template v-if="canSeeCost"> · 参考加工价 ¥{{ formatMoney(totalProcessLabor) }}</template></p>
             </div>
           </el-tab-pane>
 
@@ -1240,10 +1241,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <el-table-column label="损耗 %" width="66" class-name="num" align="right">
                     <template #default="{ row }">{{ formatQty(row.lossPct) }}</template>
                   </el-table-column>
-                  <el-table-column label="单价" width="86" class-name="num" align="right">
+                  <el-table-column v-if="canSeeCost" label="单价" width="86" class-name="num" align="right">
                     <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
                   </el-table-column>
-                  <el-table-column label="单件成本" width="110" class-name="num" align="right">
+                  <el-table-column v-if="canSeeCost" label="单件成本" width="110" class-name="num" align="right">
                     <template #default="{ row }">
                       <template v-if="row.counted">{{ formatMoney(row.cost) }}</template>
                       <span v-else class="dim">{{ notCountedText(row as CostRow) }}</span>
@@ -1285,7 +1286,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                       <span v-else>{{ row.name }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="金额（元/件）" width="120" class-name="num" align="right">
+                  <el-table-column v-if="canSeeCost" label="金额（元/件）" width="120" class-name="num" align="right">
                     <template #default="{ row }">
                       <el-input-number v-if="editable" v-model="row.amount" size="small" :min="0" :precision="2" :controls="false" />
                       <span v-else>{{ formatMoney(row.amount) }}</span>

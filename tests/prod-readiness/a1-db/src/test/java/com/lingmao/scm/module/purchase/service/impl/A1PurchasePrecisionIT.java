@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.purchase.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.entity.BizType;
@@ -45,14 +46,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class A1PurchasePrecisionIT {
     private static final List<String> PERMISSIONS = List.of("purchase:order:list", "purchase:order:add",
             "purchase:order:submit", "purchase:order:audit", "inventory:doc:list", "inventory:doc:add",
-            "inventory:doc:audit", "inventory:doc:edit");
+            "inventory:doc:audit", "inventory:doc:edit", "techpack:cost:query");
     @Autowired PurchaseOrderService purchases;
     @Autowired InvDocService inventory;
     @Autowired JdbcTemplate jdbc;
     @Autowired Clock clock;
     @Autowired JsonMapper json;
 
-    @AfterEach void logout() { SecurityContextHolder.clearContext(); }
+    @AfterEach void logout() { TestIdentity.clear(); }
 
     @Test
     void threeFractionalReceiptsAndThreeReturnsEndAtExactQuantityAndMoney() throws Exception {
@@ -85,10 +86,11 @@ class A1PurchasePrecisionIT {
             List<Future<Void>> futures = new ArrayList<>();
             for (long id : drafts) futures.add(pool.submit((Callable<Void>) () -> {
                 login(f.user());
+                TestIdentity.company(f.company());
                 ready.countDown();
                 assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
                 try { inventory.act(id, "audit", new DocActionReq(0, null)); return null; }
-                finally { SecurityContextHolder.clearContext(); }
+                finally { TestIdentity.clear(); }
             }));
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();
@@ -189,6 +191,8 @@ class A1PurchasePrecisionIT {
         long company = jdbc.queryForObject("INSERT INTO bas_company(code,name,short_name) VALUES (?,?,'A1 精度') RETURNING id",
                 Long.class, suffix.substring(0, 6).toUpperCase(), "A1 精度 " + suffix);
         long user = jdbc.queryForObject("INSERT INTO sys_user(username,password,nickname,default_company_id) VALUES (?,'x','A1 精度',?) RETURNING id", Long.class, "a1-precision-" + suffix, company);
+        TestIdentity.grant(jdbc, user, PERMISSIONS);
+        TestIdentity.company(company);
         login(user);
         long warehouse = jdbc.queryForObject("INSERT INTO bas_warehouse(code,name,type) VALUES (?,?,'MATERIAL') RETURNING id", Long.class, "A1P" + suffix, "A1 精度仓 " + suffix);
         long supplier = jdbc.queryForObject("INSERT INTO sup_supplier(code,name,short_name,status,settle_method,tax_pct) VALUES (?,?,'A1','ACTIVE','MONTHLY',13) RETURNING id", Long.class, "A1P" + suffix, "A1 精度供应商 " + suffix);

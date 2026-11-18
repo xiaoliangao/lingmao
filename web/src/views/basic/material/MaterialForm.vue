@@ -10,6 +10,8 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { orNull } from '../common'
 import SkuPicker from './SkuPicker.vue'
 import { invalidSpecs, specsOf, type SpecCodeOverrides } from './sku'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 新建、修改物料的对话框（RFC 003 §7）。新建时顺带选颜色、填规格建第一批 SKU；修改时分类、库存单位灰掉（建好不改）。
@@ -303,7 +305,7 @@ defineExpose({ openCreate, openEdit })
       <el-form-item label="供应商货号">
         <el-input v-model="form.supplierItemNo" maxlength="64" />
       </el-form-item>
-      <el-form-item label="参考单价（元 / 采购单位）">
+      <el-form-item v-if="canSeeCost" label="参考单价（元 / 采购单位）">
         <el-input-number v-model="form.refPrice" :min="0" :controls="false" :value-on-clear="null" />
       </el-form-item>
       <el-form-item label="起订量（采购单位）">

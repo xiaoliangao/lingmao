@@ -17,6 +17,8 @@ import { useTable } from '@/composables/useTable'
 import type { WarehouseOption } from '@/types/basic'
 import { INV_DOC_STATUS, INV_DOC_TYPE, type InvDocKind, type InvDocRow, type InvDocStatus, type InvDocType } from '@/types/inventory'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 物料入库单、出库单列表（docs/api/04 §1.3、§1.5）：一张表按 kind 分，两个菜单页各放一个。
@@ -208,7 +210,7 @@ defineExpose({ reload: load, exportAll, exporting })
       <el-table-column v-if="cols.show.qty" label="数量" width="100" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
       </el-table-column>
-      <el-table-column v-if="cols.show.amount" label="金额" width="120" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && (cols.show.amount)" label="金额" width="120" class-name="num" align="right">
         <template #default="{ row }">{{ row.totalAmount ? formatMoney(row.totalAmount) : '—' }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.date" label="日期" width="104" class-name="num">

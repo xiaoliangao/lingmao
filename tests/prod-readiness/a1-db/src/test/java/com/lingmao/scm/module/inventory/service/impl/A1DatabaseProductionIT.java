@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.inventory.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
@@ -79,7 +80,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class A1DatabaseProductionIT {
     private static final List<String> PERMISSIONS = List.of("inventory:doc:list", "inventory:doc:add",
-            "inventory:doc:edit", "inventory:doc:remove", "inventory:doc:audit", "inventory:stock:list");
+            "inventory:doc:edit", "inventory:doc:remove", "inventory:doc:audit", "inventory:stock:list", "techpack:cost:query");
     private static final Path ARTIFACTS = Path.of("target", "a1-production");
 
     @Autowired JdbcTemplate jdbc;
@@ -92,8 +93,11 @@ class A1DatabaseProductionIT {
     @Autowired SqlSessionFactory sessions;
     @Autowired Flyway flyway;
     @Autowired Clock clock;
+    @Autowired javax.sql.DataSource dataSource;
+    @org.springframework.beans.factory.annotation.Value("${spring.datasource.hikari.maximum-pool-size:5}") int poolSize;
     private final SqlProbe sqlProbe = new SqlProbe();
     private long user;
+    private long currentCompany;
 
     @BeforeAll
     void installSqlProbe() throws Exception {
@@ -103,13 +107,16 @@ class A1DatabaseProductionIT {
 
     @BeforeEach
     void login() {
+        TestIdentity.clear();
+        currentCompany = 0;
         user = jdbc.queryForObject("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 真实事务') RETURNING id",
                 Long.class, "a1-" + UUID.randomUUID());
+        TestIdentity.grant(jdbc, user, PERMISSIONS);
         login(user);
     }
 
     @AfterEach
-    void logout() { SecurityContextHolder.clearContext(); }
+    void logout() { TestIdentity.clear(); }
 
     @Test
     void t01_twentyConcurrentTransactionsAllocateUniqueNumbersAndRollbackTogether() throws Exception {
@@ -268,7 +275,9 @@ class A1DatabaseProductionIT {
         request.getItems().getFirst().setQty(new BigDecimal("3"));
         request.getItems().getFirst().setPrice(new BigDecimal("0.3350"));
         String forged = json.writeValueAsString(request).replace("\"price\":0.3350", "\"price\":0.3350,\"amount\":999999");
-        HttpResult created = createHttp(user, forged, UUID.randomUUID().toString(), null, PERMISSIONS);
+        assertThat(createHttp(user, forged, UUID.randomUUID().toString(), null, PERMISSIONS).code()).isEqualTo(400);
+        assertThat(count("SELECT count(*) FROM inv_doc WHERE company_id=?", f.company())).isZero();
+        HttpResult created = createHttp(user, json.writeValueAsString(request), UUID.randomUUID().toString(), null, PERMISSIONS);
         assertThat(created.code()).isZero();
         long id = Long.parseLong(created.body().get("data").get("id").stringValue());
         assertThat(jdbc.queryForObject("SELECT amount FROM inv_doc_item WHERE doc_id=?", BigDecimal.class, id)).isEqualByComparingTo("1.01");
@@ -291,6 +300,7 @@ class A1DatabaseProductionIT {
         int version = documents.detail(id).getVersion();
         jdbc.update("INSERT INTO inv_closed_period(company_id,period_start,closed_by,reason) VALUES (?,'2020-01-01',?,'A1 冻结验证')", f.company(), user);
         HttpResult result = perform(post("/api/inventory-docs/" + id + "/unaudit").contentType(MediaType.APPLICATION_JSON)
+                .header("X-Company-Id", Long.toString(f.company()))
                 .content(json.writeValueAsString(new DocActionReq(version, "冻结后反审核"))), user, PERMISSIONS);
         assertThat(result.code()).isEqualTo(1002);
         String response = json.writeValueAsString(result.body());
@@ -329,6 +339,7 @@ class A1DatabaseProductionIT {
         try (var pool = Executors.newFixedThreadPool(2)) {
             Future<?> writer = pool.submit(() -> {
                 login(user);
+                TestIdentity.company(f.company());
                 try {
                     tx.executeWithoutResult(status -> {
                         documents.act(id, "audit", new DocActionReq(0, null));
@@ -336,7 +347,7 @@ class A1DatabaseProductionIT {
                         try { assertThat(release.await(10, TimeUnit.SECONDS)).isTrue(); }
                         catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new IllegalStateException(failure); }
                     });
-                } finally { SecurityContextHolder.clearContext(); }
+                } finally { TestIdentity.clear(); }
             });
             try {
                 assertThat(posted.await(10, TimeUnit.SECONDS)).isTrue();
@@ -466,7 +477,7 @@ class A1DatabaseProductionIT {
     }
 
     @Test
-    void migrationsAreRepeatableAndEveryOnlineIndexIsValid() {
+    void migrationsAreRepeatableAndEveryOnlineIndexIsValid() throws Exception {
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThat(count("""
                 SELECT count(*) FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
@@ -474,8 +485,22 @@ class A1DatabaseProductionIT {
                    'idx_inv_log_doc_prefix','idx_mrp_calc_status_time','idx_ord_order_status_date','idx_pur_order_status_date')
                   AND i.indisvalid AND i.indisready
                 """)).isEqualTo(7);
-        assertThat(jdbc.queryForObject("SHOW statement_timeout", String.class)).isEqualTo("30s");
-        assertThat(jdbc.queryForObject("SHOW lock_timeout", String.class)).isEqualTo("5s");
+        // Check every pooled session: a migration must not RESET one borrowed connection to unbounded waits.
+        List<Connection> borrowed = new ArrayList<>();
+        try {
+            for (int i = 0; i < poolSize; i++) borrowed.add(dataSource.getConnection());
+            for (Connection connection : borrowed) try (var statement = connection.createStatement()) {
+                for (var setting : Map.of("statement_timeout", "30s", "lock_timeout", "5s",
+                        "idle_in_transaction_session_timeout", "30s").entrySet()) {
+                    try (var result = statement.executeQuery("SHOW " + setting.getKey())) {
+                        assertThat(result.next()).isTrue();
+                        assertThat(result.getString(1)).as(setting.getKey()).isEqualTo(setting.getValue());
+                    }
+                }
+            }
+        } finally {
+            for (Connection connection : borrowed) connection.close();
+        }
     }
 
     private Fixture fixture() {
@@ -491,6 +516,8 @@ class A1DatabaseProductionIT {
                 """, Long.class, "A1M" + suffix, category);
         long a = jdbc.queryForObject("INSERT INTO bas_material_sku(material_id,code,spec,spec_code) VALUES (?,?,'A','A') RETURNING id", Long.class, material, "A1A" + suffix);
         long b = jdbc.queryForObject("INSERT INTO bas_material_sku(material_id,code,spec,spec_code) VALUES (?,?,'B','B') RETURNING id", Long.class, material, "A1B" + suffix);
+        currentCompany = company;
+        TestIdentity.company(company);
         return new Fixture(company, warehouse, a, b);
     }
 
@@ -519,7 +546,7 @@ class A1DatabaseProductionIT {
     private HttpResult createHttp(long id, String body, String key, String company, List<String> permissions) throws Exception {
         var request = post("/api/inventory-docs").contentType(MediaType.APPLICATION_JSON).content(body);
         if (key != null) request.header("Idempotency-Key", key);
-        if (company != null) request.header("X-Company-Id", company);
+        request.header("X-Company-Id", company == null ? Long.toString(currentCompany) : company);
         return perform(request, id, permissions);
     }
 
@@ -582,9 +609,10 @@ class A1DatabaseProductionIT {
             List<Future<T>> futures = new ArrayList<>();
             for (Callable<T> task : tasks) futures.add(pool.submit(() -> {
                 login(user);
+                if (currentCompany != 0) TestIdentity.company(currentCompany);
                 ready.countDown();
                 assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
-                try { return task.call(); } finally { SecurityContextHolder.clearContext(); }
+                try { return task.call(); } finally { TestIdentity.clear(); }
             }));
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
             start.countDown();

@@ -11,6 +11,8 @@ import subprocess
 import time
 from urllib.parse import urlsplit
 from playwright.async_api import async_playwright
+from security_checks import run_security
+from export_checks import run_exports
 
 ROOT = Path(__file__).resolve().parents[3]
 ARTIFACTS = ROOT / 'target/test-artifacts/a3'
@@ -19,7 +21,7 @@ FIXTURE = ROOT / 'web/node_modules/.a3-prod-readiness'
 async def run():
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     FIXTURE.mkdir(parents=True, exist_ok=True)
-    for name in ['fixture.html', 'fixture.ts', 'Fixture.vue']:
+    for name in ['fixture.html', 'fixture.ts', 'Fixture.vue', 'SecurityFixture.vue', 'ExportFixture.vue']:
         shutil.copyfile(Path(__file__).with_name(name), FIXTURE / name)
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -53,6 +55,23 @@ async def run():
                     tab.on('console', record_console)
                 observed.on('page', observe_page)
             observe_context(context)
+            if os.environ.get('SCM_UI_SECURITY_ONLY') == '1' or os.environ.get('SCM_UI_EXPORT_ONLY') == '1':
+                await context.close()
+                try:
+                    if os.environ.get('SCM_UI_EXPORT_ONLY') != '1': await run_security(browser, url, ARTIFACTS, observe_context, metrics)
+                    await run_exports(browser, url, ARTIFACTS, observe_context, metrics)
+                    assert not errors, errors
+                    assert not console_errors, console_errors
+                finally:
+                    metrics['page_errors'] = errors
+                    metrics['console_errors_expected'] = []
+                    metrics['console_errors_unexpected'] = console_errors
+                    metrics['console_error_counts'] = {'expected': 0, 'unexpected': len(console_errors)}
+                    name = 'export-results.json' if os.environ.get('SCM_UI_EXPORT_ONLY') == '1' else 'security-results.json'
+                    (ARTIFACTS / name).write_text(json.dumps(metrics, ensure_ascii=False, indent=2))
+                    await browser.close()
+                print(json.dumps(metrics, ensure_ascii=False, indent=2))
+                return
             aborted = []
             write_keys = []
             write_bodies = []
@@ -530,6 +549,8 @@ async def run():
             assert metrics['cookie_logout_calls'] == 1 and session['token'] == '' and session['epoch'] != logout_epoch
             metrics['checks']['cookie_logout_contract'] = True
             await refresh_context.close()
+            await run_security(browser, url, ARTIFACTS, observe_context, metrics)
+            await run_exports(browser, url, ARTIFACTS, observe_context, metrics)
             metrics['request_failures'] = aborted
             metrics['page_errors'] = errors
             def expected_console(record):
@@ -553,6 +574,11 @@ async def run():
             await browser.close()
         (ARTIFACTS / 'results.json').write_text(json.dumps(metrics, ensure_ascii=False, indent=2))
         print(json.dumps(metrics, ensure_ascii=False, indent=2))
+    except Exception:
+        metrics['page_errors'] = locals().get('errors', [])
+        metrics['console_errors'] = locals().get('console_errors', [])
+        (ARTIFACTS / 'failure-results.json').write_text(json.dumps(metrics, ensure_ascii=False, indent=2))
+        raise
     finally:
         process.terminate()
         try: process.wait(timeout=10)

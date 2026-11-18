@@ -34,6 +34,8 @@ import OrderAuditDialog from './OrderAuditDialog.vue'
 import OrderChangeDialog from './OrderChangeDialog.vue'
 import OrderScheduleDialog from './OrderScheduleDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
 const orderApi = bindCompanyApi(orderApiBase, () => detail.value?.companyId)
 const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.companyId)
 
@@ -310,7 +312,7 @@ function openKitting() {
         </div>
 
         <p class="sub num">
-          {{ formatQty(detail.totalQty) }} 件 · {{ detail.currency }} {{ formatMoney(detail.totalAmount) }} ·
+          {{ formatQty(detail.totalQty) }} 件<template v-if="canSeeOrderPrice"> · {{ detail.currency }} {{ formatMoney(detail.totalAmount) }}</template> ·
           {{ approved && detail.commitDate ? '承诺交期' : '要求交期' }} {{ formatDate(dueDate) }}
           <DaysLeftTag :days-left="daysLeft" />
           <button v-if="kitting" type="button" class="tag-btn" :disabled="!kitting.calcIds.length" @click="openKitting">
@@ -330,7 +332,7 @@ function openKitting() {
                   <span v-else-if="st.currentPackVersion != null" class="dim">资料包 V{{ st.currentPackVersion }}</span>
                   <span v-else class="danger">资料包未生效</span>
                 </span>
-                <span class="st-sum num">{{ priceText(st) }} · {{ formatQty(st.qty) }} 件<template v-if="st.amount != null"> · {{ formatMoney(st.amount) }}</template></span>
+                <span class="st-sum num"><template v-if="canSeeOrderPrice">{{ priceText(st) }} · </template>{{ formatQty(st.qty) }} 件<template v-if="canSeeOrderPrice && st.amount != null"> · {{ formatMoney(st.amount) }}</template></span>
               </div>
               <div class="panel-body">
                 <p v-if="st.techPackVersion != null && st.currentPackVersion != null && st.techPackVersion !== st.currentPackVersion" class="warn small">
@@ -341,7 +343,7 @@ function openKitting() {
                 <el-collapse><el-collapse-item title="逐 SKU 单价 / 行交期 / 备注">
                   <el-table :data="itemsOf(st.styleId)" size="small">
                     <el-table-column prop="skuCode" label="SKU" min-width="160" />
-                    <el-table-column label="单价" width="130"><template #default="{ row }">{{ row.price == null ? '未填' : formatPrice(row.price) }}</template></el-table-column>
+                    <el-table-column v-if="canSeeOrderPrice" label="单价" width="130"><template #default="{ row }">{{ row.price == null ? '未填' : formatPrice(row.price) }}</template></el-table-column>
                     <el-table-column label="行交期" width="140"><template #default="{ row }">{{ row.lineDueDate || '同要求交期' }}</template></el-table-column>
                     <el-table-column prop="remark" label="备注" min-width="160" />
                   </el-table>

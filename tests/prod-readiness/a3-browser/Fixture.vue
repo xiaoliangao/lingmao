@@ -24,7 +24,7 @@ import { claimChunkReload } from '@/utils/chunkRecovery'
 import { businessToday, pickerDay, pickerDate } from '@/utils/businessDate'
 
 const user = useUserStore()
-user.info = { id: '9007199254740993', username: 'synthetic', nickname: '回归测试', roles: [], perms: [], menus: [], defaultCompany: { id: '1', name: '测试主体' } }
+user.info = { id: '9007199254740993', username: 'synthetic', nickname: '回归测试', roles: [], perms: ['techpack:cost:query', 'order:price:query', 'production:price:query', 'supplier:supplier:contact', 'supplier:supplier:bank'], menus: [], defaultCompany: { id: '1', name: '测试主体' } }
 setSessionSubject(user.info.id)
 restorePendingWrites()
 const columns: VirtualColumn[] = Array.from({ length: 55 }, (_, i) => ({ key: `c${i}`, label: `字段 ${i}`, width: i === 0 ? 160 : 120, fixed: i === 0 ? 'left' : i === 54 ? 'right' : undefined }))

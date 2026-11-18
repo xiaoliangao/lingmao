@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.LoginReq;
+import com.lingmao.scm.module.system.dto.AuthTokens;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
@@ -12,6 +13,8 @@ import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginFailCounter;
 import com.lingmao.scm.security.LoginSessionStore;
+import com.lingmao.scm.security.RefreshSessionService;
+import com.lingmao.scm.security.AuthRejected;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,9 +33,11 @@ public class AuthServiceImpl implements AuthService {
     private final PermissionService permissionService;
     private final LoginFailCounter loginFailCounter;
     private final DefaultCompanyProvider defaultCompanyProvider;
+    private final RefreshSessionService refreshSessions;
 
     @Override
-    public String login(LoginReq req) {
+    @Transactional
+    public AuthTokens login(LoginReq req) {
         String username = req.getUsername();
         // 锁住了就不再比对密码：不然锁定期间照样能一直试，锁就白加了
         if (loginFailCounter.isLocked(username)) {
@@ -52,9 +57,15 @@ public class AuthServiceImpl implements AuthService {
         }
         loginFailCounter.clear(username);
         String jti = UUID.randomUUID().toString();
-        loginSessionStore.save(jti, user.getId());
-        return jwtUtil.createToken(user.getId(), jti);
+        loginSessionStore.save(jti, user.getId(), user.getPassword());
+        return refreshSessions.issue(jwtUtil.createToken(user.getId(), jti));
     }
+
+    @Override
+    public AuthTokens refresh(String refreshToken, String browserToken) { return refreshSessions.rotate(refreshToken, browserToken); }
+
+    @Override
+    public void revokeRefresh(String refreshToken, String browserToken) { refreshSessions.revoke(refreshToken, browserToken); }
 
     @Override
     public UserInfoVO me(Long userId) {
@@ -70,6 +81,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public void logout(String jti) {
         loginSessionStore.remove(jti);
     }
@@ -84,6 +96,7 @@ public class AuthServiceImpl implements AuthService {
         if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
             throw new BizException("旧密码不对");
         }
-        sysUserMapper.updatePassword(userId, passwordEncoder.encode(newPassword));
+        if (sysUserMapper.changePasswordIfCurrent(userId, user.getPassword(), passwordEncoder.encode(newPassword)) != 1)
+            throw new AuthRejected();
     }
 }

@@ -8,6 +8,8 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class OrderSaveReq extends OrderForm {
+    /** Explicit original company when the user intentionally moves a draft to another company. */
+    private Long expectedCompanyId;
     @NotNull(message = "缺少 version，请刷新后再试")
     private Integer version;
 }

@@ -30,7 +30,10 @@ public class JwtUtil {
 
     /** 给某个用户签发 token，jti 是这张 token 的编号 */
     public String createToken(Long userId, String jti) {
-        Instant now = Instant.now();
+        return createToken(userId, jti, Instant.now());
+    }
+
+    public String createToken(Long userId, String jti, Instant now) {
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .id(jti)

@@ -33,10 +33,10 @@ import com.lingmao.scm.module.system.dto.DictDataSaveReq;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.FieldPermissions;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
@@ -95,6 +95,7 @@ public class StyleExcel {
     private final DictDataService dictDataService;
     private final TradeFeature tradeFeature;
     private final DocLogService docLogService;
+    private final com.lingmao.scm.module.system.service.FileImportService imports;
 
     // ---------- 行对象 ----------
 
@@ -250,7 +251,7 @@ public class StyleExcel {
         }).toList();
 
         return Excel.exportBook()
-                .sheet(styleSchema(), rows)
+                .sheet(FieldPermissions.has(FieldPermissions.COST) ? styleSchema() : styleSchema().without("参考成本价", "财务成本价"), rows)
                 .sheet(skuSchema(), skuRows)
                 .toBytes();
     }
@@ -261,9 +262,13 @@ public class StyleExcel {
     private record Planned(Style style, List<Color> colors, List<String> sizes) {
     }
 
-    /** 整个文件一个事务：新建的品牌、款式、颜色、SKU 一起提交，有一处不对一行都不导 */
-    @Transactional
+    private record ImportPlan(List<Planned> plans, Map<String, Integer> brands, ImportResult result) { }
+
     public ImportResult importFile(MultipartFile file) {
+        return imports.execute("style", "global", "style:style:import", file, Map.of(), () -> parseFile(file), this::writeImport);
+    }
+
+    private ImportPlan parseFile(MultipartFile file) {
         ExcelImport<StyleRow> sheet = Excel.read(styleSchema(), file);
         sheet.checkUnique(StyleRow::getCode, "款号");
         List<ExcelImport.Line<StyleRow>> lines = sheet.lines();
@@ -309,7 +314,7 @@ public class StyleExcel {
             s.setMainMaterialId(matchMaterial(r.getMainMaterial(), lookups, sheet, row));
             s.setDefaultFactoryId(matchFactory(r.getDefaultFactory(), lookups, sheet, row));
             s.setTagPrice(r.getTagPrice());
-            s.setRefCost(r.getRefCost());
+            s.setRefCost(FieldPermissions.price(FieldPermissions.COST, null, r.getRefCost()));
             s.setLaunchDate(r.getLaunchDate());
             s.setProductName(r.getProductName());
             s.setComposition(r.getComposition());
@@ -332,14 +337,18 @@ public class StyleExcel {
                     legacy.put(k, v);
                 }
             });
+            FieldPermissions.preserve(FieldPermissions.COST, null, legacy.get("财务成本价"));
             s.setLegacyAttrs(legacy.isEmpty() ? null : legacy);
             plans.add(new Planned(s, colors, group == null ? List.of() : group.sizes()));
         }
         sheet.dataOrThrow();
+        return new ImportPlan(plans, newBrands, ImportResult.of(plans.size(), sheet.notes()));
+    }
 
+    private ImportResult writeImport(ImportPlan imported) {
         // 都没问题了才建品牌：品牌是甲方的名字，不进公开仓库的迁移，导款式时建（数据库设计 §3.2）
-        newBrands.keySet().forEach(this::createBrand);
-        for (Planned plan : plans) {
+        imported.brands().keySet().forEach(this::createBrand);
+        for (Planned plan : imported.plans()) {
             Style s = plan.style();
             styleMapper.insert(s);
             int seq = 1;
@@ -355,7 +364,7 @@ public class StyleExcel {
             docLogService.add(BizType.STYLE, s.getId(), "import", null, s.getStatus(),
                     skus.isEmpty() ? null : "生成 " + skus.size() + " 个 SKU");
         }
-        return ImportResult.of(plans.size(), sheet.notes());
+        return imported.result();
     }
 
     /** 导入要查的东西：一次查好，不每行查 */

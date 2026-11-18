@@ -14,6 +14,8 @@ import java.util.List;
 @Data
 public class OrderRowVO {
     private Long id;
+    @JsonIgnore
+    private Long companyId;
     private String no;
     private String status;
     private String orderType;

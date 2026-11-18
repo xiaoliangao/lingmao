@@ -11,6 +11,7 @@ export function useSeekTable<Row, Q extends object>(options: {
   fetch: (params: Partial<Q> & { cursor?: string; size: number }) => Promise<SeekResult<Row>>
   exportUrl?: string
   exportName?: string
+  exporter?: (filters: Partial<Q>) => Promise<void> | void
   immediate?: boolean
 }) {
   const query = reactive(structuredClone(options.query)) as Q
@@ -46,10 +47,14 @@ export function useSeekTable<Row, Q extends object>(options: {
   function next() { if (!loading.value && hasMore.value && nextCursor) { cursors[page.value] = nextCursor; page.value++; void load() } }
   function previous() { if (!loading.value && page.value > 1) { page.value--; void load() } }
   async function exportFile() {
-    if (!options.exportUrl || !shown || error.value) { ElMessage.info('请先成功查询，再导出当前结果'); return }
+    if ((!options.exportUrl && !options.exporter) || !shown || error.value) { ElMessage.info('请先成功查询，再导出当前结果'); return }
     if (exporting.value) return
     exporting.value = true
-    try { await download(options.exportUrl, shown, options.exportName ?? '导出.xlsx') } finally { exporting.value = false }
+    const snapshot = structuredClone(shown)
+    try {
+      if (options.exporter) await options.exporter(snapshot)
+      else await download(options.exportUrl!, snapshot, options.exportName ?? '导出.xlsx')
+    } finally { exporting.value = false }
   }
   watch(size, search)
   if (options.immediate ?? true) onMounted(search)

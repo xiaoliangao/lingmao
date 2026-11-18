@@ -236,6 +236,9 @@ class SchemaConventionsIT {
             "style:style:remove", "style:style:import"));
     private static final Set<String> PRICE_VIEW = Set.of("price:price:list");
     private static final Set<String> BANK = Set.of("supplier:supplier:bank");
+    private static final Set<String> CONTACT = Set.of("supplier:supplier:contact");
+    private static final Set<String> ORDER_PRICE = Set.of("order:price:query");
+    private static final Set<String> PRODUCTION_PRICE = Set.of("production:price:query");
 
     /** 第 3、4 批（V17，docs/api 各模块的菜单一节）照 PRD §3.1：看 = list、export；改 = 看 + 新建、编辑、删除、提交、作废、导入 */
     private static final Set<String> PACK_VIEW = Set.of("techpack:pack:list");
@@ -279,24 +282,24 @@ class SchemaConventionsIT {
         ROLE_PERMS.put("dev_lead", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
                 PACK_EDIT, COST, STANDARD_EDIT, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("sales", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
-                PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, PURCHASE_VIEW, PRODUCTION_VIEW));
+                PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, ORDER_PRICE, PURCHASE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("merchandiser", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:process:edit"),
-                PACK_VIEW, STANDARD_VIEW, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT));
-        ROLE_PERMS.put("buyer", union(BASICS_VIEW, MATERIAL_EDIT, SUPPLIER_EDIT, BANK, STYLE_VIEW, PRICE_VIEW,
+                PACK_VIEW, STANDARD_VIEW, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE));
+        ROLE_PERMS.put("buyer", union(BASICS_VIEW, MATERIAL_EDIT, SUPPLIER_EDIT, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:material:edit"),
                 PACK_VIEW, COST, ORDER_VIEW, CHANGE_VIEW, PURCHASE_EDIT, PURCHASE_CLOSE, STOCK_VIEW, COUNT_VIEW,
-                PRODUCTION_VIEW));
+                PRODUCTION_VIEW, PRODUCTION_PRICE));
         ROLE_PERMS.put("warehouse", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW,
                 PACK_VIEW, PURCHASE_VIEW, STOCK_EDIT, COUNT_EDIT, PRODUCTION_VIEW));
-        ROLE_PERMS.put("finance", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, BANK, STYLE_VIEW, PRICE_VIEW,
-                PACK_VIEW, COST, ORDER_VIEW, CHANGE_VIEW, PURCHASE_VIEW, STOCK_VIEW, COUNT_VIEW, PRODUCTION_VIEW));
+        ROLE_PERMS.put("finance", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
+                PACK_VIEW, COST, ORDER_VIEW, ORDER_PRICE, CHANGE_VIEW, PURCHASE_VIEW, STOCK_VIEW, COUNT_VIEW, PRODUCTION_VIEW, PRODUCTION_PRICE));
         ROLE_PERMS.put("manager", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, Set.of("supplier:supplier:admit"),
-                BANK, STYLE_VIEW, PRICE_VIEW, Set.of("price:material:edit", "price:process:edit"),
+                BANK, CONTACT, STYLE_VIEW, PRICE_VIEW, Set.of("price:material:edit", "price:process:edit"),
                 PACK_VIEW, COST, STANDARD_VIEW, ORDER_VIEW, Set.of("order:order:audit"), CHANGE_VIEW,
-                Set.of("order:change:audit"), PURCHASE_VIEW, Set.of("purchase:order:audit"), PURCHASE_CLOSE, STOCK_VIEW,
+                Set.of("order:change:audit"), ORDER_PRICE, PURCHASE_VIEW, Set.of("purchase:order:audit"), PURCHASE_CLOSE, STOCK_VIEW,
                 COUNT_VIEW, Set.of("inventory:count:audit"), PRODUCTION_VIEW,
-                Set.of("production:order:audit", "production:order:close")));
+                Set.of("production:order:audit", "production:order:close"), PRODUCTION_PRICE));
     }
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包""工艺标准"（V18 起是资料包里的抽屉）是 visible = false 的，不出现 */

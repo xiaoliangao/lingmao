@@ -27,6 +27,8 @@ import { useUserStore } from '@/stores/user'
 import { ORDER_SOURCE, ORDER_STATUS, type OrderImportHead, type OrderQuery, type OrderRow, type OrderStatus } from '@/types/order'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
 
 /**
  * 需求订单列表（/orders，docs/api/02 §1.1，原型 route('/orders')）。
@@ -326,7 +328,7 @@ function onImported(count: number) {
       <el-table-column v-if="cols.show.qty" label="数量" width="90" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
       </el-table-column>
-      <el-table-column v-if="cols.show.amount" label="金额" width="130" class-name="num" align="right">
+      <el-table-column v-if="canSeeOrderPrice && (cols.show.amount)" label="金额" width="130" class-name="num" align="right">
         <template #default="{ row }">
           <span v-if="row.currency !== 'CNY'" class="dim">{{ row.currency }} </span>{{ formatMoney(row.totalAmount) }}
         </template>

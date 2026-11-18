@@ -14,6 +14,8 @@ import java.util.List;
 @Data
 public class PurchaseRowVO {
     private Long id;
+    @JsonIgnore
+    private Long companyId;
     private String no;
     private Long supplierId;
     private String supplierName;

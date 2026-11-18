@@ -62,7 +62,7 @@
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.order.dto.OrderRowVO">
         <bind name="withStatus" value="true"/>
-        SELECT o.id, o.no, o.status, o.order_type, o.brand, o.contract_no, o.order_date, o.required_date, o.commit_date,
+        SELECT o.id, o.company_id, o.no, o.status, o.order_type, o.brand, o.contract_no, o.order_date, o.required_date, o.commit_date,
                o.currency, o.total_qty, o.total_amount, o.sales_id, o.merch_id, c.short_name AS company_name, o.source,
                o.create_by, o.create_time, o.version,
                COALESCE(agg.scheduled_qty, 0) AS scheduled_qty, COALESCE(agg.returned_qty, 0) AS returned_qty

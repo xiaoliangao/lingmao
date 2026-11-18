@@ -18,6 +18,8 @@ import { useDict } from '@/composables/useDict'
 import { formatPrice, formatQty } from '@/utils/format'
 import { STATUS_OPTIONS, statusParam, type StatusFilter } from '../common'
 import MaterialForm from './MaterialForm.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 资料 › 物料（RFC 003 §7、§12）：左边物料分类，右边列表；点一行进详情。
@@ -208,7 +210,7 @@ function onSaved(id: string) {
           <el-table-column label="供应商货号" min-width="110" class-name="code">
             <template #default="{ row }">{{ row.supplierItemNo ?? '—' }}</template>
           </el-table-column>
-          <el-table-column label="参考单价" min-width="110" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="参考单价" min-width="110" class-name="num" align="right">
             <template #default="{ row }">
               {{ row.refPrice != null ? `${formatPrice(row.refPrice)} / ${units.labelOf(row.purchaseUnit)}` : '—' }}
             </template>

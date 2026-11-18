@@ -14,7 +14,7 @@ import './styles/element.css'
 import App from './App.vue'
 import router from './router'
 import { vPerm } from './directives/perm'
-import { ApiError } from './utils/request'
+import { ApiError, enableCookieSessionRefresh } from './utils/request'
 
 import { installChunkRecovery } from './utils/chunkRecovery'
 import { accountChanged, hasUnsavedForms, updateAvailable } from './utils/uiHealth'
@@ -22,6 +22,7 @@ import { onSessionChanged, startSessionSync } from './utils/token'
 import { installImeGuard } from './utils/ime'
 
 startSessionSync()
+enableCookieSessionRefresh()
 onSessionChanged(() => { accountChanged.value = true })
 installImeGuard(document)
 installChunkRecovery({ onUpdate: () => { updateAvailable.value = true }, hasUnsavedChanges: hasUnsavedForms, onRouterError: (handler) => router.onError(handler) })

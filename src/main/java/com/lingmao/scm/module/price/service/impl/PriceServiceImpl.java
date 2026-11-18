@@ -33,6 +33,7 @@ import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.FieldPermissions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,6 +90,11 @@ public class PriceServiceImpl implements PriceService {
 
     @Override
     public PageResult<PriceRowVO> page(PriceQuery query) {
+        if (query.getType() != null) PricePerms.checkRead(query.getType());
+        else if (!FieldPermissions.has(FieldPermissions.COST)) {
+            FieldPermissions.require(FieldPermissions.PRODUCTION);
+            query.setType(PriceType.PROCESS);
+        } else if (!FieldPermissions.has(FieldPermissions.PRODUCTION)) query.setType(PriceType.MATERIAL);
         IPage<PriceRowVO> page;
         if (Boolean.TRUE.equals(query.getCurrent())) {
             // 物料价只认物料现在的采购单位：先看命中的是哪些物料，问 basic 要单位，当参数传进 SQL（不跨域 JOIN）
@@ -150,6 +156,7 @@ public class PriceServiceImpl implements PriceService {
     @Override
     public CurrentPriceVO currentFor(PriceType type, long supplierId, Long materialId, Long materialSkuId, Long styleId,
                                      String processMode, LocalDate date) {
+        PricePerms.checkRead(type);
         BigDecimal taxPct = supplierService.getRef(supplierId).taxPct();
         LocalDate day = date != null ? date : LocalDate.now(clock);
         if (type == PriceType.MATERIAL) {

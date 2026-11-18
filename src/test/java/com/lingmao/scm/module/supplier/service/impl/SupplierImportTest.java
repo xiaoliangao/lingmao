@@ -86,7 +86,7 @@ class SupplierImportTest {
     @BeforeEach
     void setUp() {
         service = new SupplierExcelServiceImpl(supplierMapper, serialNoGenerator, docLogService, userService, dicts, lists,
-                goodAtCategories, warehouseService, SupplierFixtures.CLOCK);
+                goodAtCategories, warehouseService, SupplierFixtures.CLOCK, com.lingmao.scm.DirectFileImports.INSTANCE);
         lenient().when(dicts.options(SupplierDicts.SUPPLIER_CATEGORY)).thenReturn(List.of(
                 new DictOption("面料商", "FABRIC", 1), new DictOption("辅料商", "TRIM", 1),
                 new DictOption("成衣厂", "GARMENT", 1), new DictOption("加工厂", "PROCESSOR", 1),
@@ -116,7 +116,7 @@ class SupplierImportTest {
      */
     @Test
     void import_lingmaoTwoSheets_ok() throws IOException {
-        SupplierFixtures.loginAs(9, "import", "admit");
+        SupplierFixtures.loginAs(9, "import", "admit", "bank", "contact");
 
         ImportResult result = service.importExcel(file(true,
                 new Object[]{"GYS0101", "测试面料有限公司甲", "测试甲", null, "面料", "A级", "月结", "否",

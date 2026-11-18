@@ -19,6 +19,8 @@ import { formatMoney, formatQty } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
 import PickProductionDialog from './PickProductionDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 const invDocApi = bindCompanyApi(invDocApiBase, () => head.companyId)
 
 /**
@@ -61,7 +63,7 @@ interface LineRow {
   purchaseUnit: string | null
   qty: number | null
   purchaseQty: number | null
-  price: number | null
+  price?: number | null
   dyeLot: string
   rolls: number | null
   overReason: string
@@ -98,7 +100,7 @@ const isPurchaseDoc = computed(() => activeType.value === 'PURCHASE_IN' || activ
 /** 退料入库新建时能挂源生产单（选了就走生成接口） */
 const canPickSource = computed(() => !props.editingDoc && meta.value.source === 'PRODUCTION_ORDER' && !meta.value.sourceRequired)
 const showOverReason = computed(() => activeType.value === 'ISSUE_OUT')
-const lineAmount = (l: LineRow) => (l.qty !== null && l.price !== null ? l.qty * l.price : null)
+const lineAmount = (l: LineRow) => (l.qty != null && l.price != null ? l.qty * l.price : null)
 const short = (l: LineRow) => l.fromStockQty !== null && (l.qty ?? 0) > l.fromStockQty
 
 const fromOptions = computed(() => {
@@ -397,12 +399,12 @@ async function save() {
         </template>
       </el-table-column>
 
-      <el-table-column v-if="!isSourceDoc" label="单价" width="104" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && (!isSourceDoc)" label="单价" width="104" class-name="num" align="right">
         <template #default="{ row }">
           <el-input-number v-model="row.price" size="small" :min="0" :precision="4" :controls="false" :value-on-clear="null" placeholder="选填" />
         </template>
       </el-table-column>
-      <el-table-column v-if="!isSourceDoc" label="金额" width="96" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && (!isSourceDoc)" label="金额" width="96" class-name="num" align="right">
         <template #default="{ row }">{{ lineAmount(row as LineRow) === null ? '—' : formatMoney(lineAmount(row as LineRow) ?? 0) }}</template>
       </el-table-column>
 

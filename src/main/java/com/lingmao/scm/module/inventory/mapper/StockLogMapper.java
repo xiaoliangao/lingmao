@@ -17,6 +17,12 @@ import java.util.Set;
 
 @Mapper
 public interface StockLogMapper extends BaseMapper<StockLog> {
+    @Select("SELECT COALESCE(max(id),0) FROM inv_stock_log")
+    long exportWatermark();
+
+    List<StockLogRowVO> selectExportBatch(@Param("q") StockLogQuery query, @Param("codes") List<String> codes,
+            @Param("prefix") String prefix, @Param("watermark") long watermark,
+            @Param("afterTime") OffsetDateTime afterTime, @Param("afterId") Long afterId, @Param("limit") int limit);
 
     /** 每个明细/仓库键最近尚未冲销的事件；库存单头CAS锁保证同单不会并发反审。 */
     @Select("<script>SELECT DISTINCT ON (l.warehouse_id, l.material_sku_id, l.inv_doc_item_id, l.count_item_id) l.* "

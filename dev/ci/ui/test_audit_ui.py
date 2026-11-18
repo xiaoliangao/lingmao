@@ -1021,11 +1021,17 @@ class AuditUi(unittest.TestCase):
         before = self.api.request("GET", path + "/cost")
         self.assertEqual(editor.envelope("GET", path + "/cost")["code"], 403)
         detail = editor.request("GET", path)
-        self.assertIsNone(detail["unitCost"])
+        self.assertNotIn("unitCost", detail)
+        self.assertNotIn("buyPrice", detail)
+        for item in detail["bomItems"]:
+            self.assertNotIn("refPrice", item)
+            for sku in item["skus"]:
+                self.assertNotIn("refPrice", sku)
         forged = pack_update(detail, {"costMode": "BUY", "buyPrice": 999.9999,
                                       "items": [{"name": "无权限伪造成本", "amount": 99.99, "remark": None}]})
         forged["versionNote"] = "有包编辑权限的合法说明"
-        editor.request("PUT", path, forged)
+        self.assertEqual(editor.envelope("PUT", path, forged)["code"], 403)
+        self.assertEqual(editor.request("GET", path)["versionLock"], detail["versionLock"])
         self.assertEqual(cost_values(self.api.request("GET", path + "/cost")), cost_values(before))
         page = self.new_context(actor=editor).new_page()
         page.goto(f"{self.ui_base}/styles/{self.fixture['styleId']}?tab=techpack&techPackId={pack_id}&sub=craft")
@@ -1035,10 +1041,10 @@ class AuditUi(unittest.TestCase):
         with page.expect_response(lambda r: self.response_for(r, "PUT", path)) as saved:
             page.get_by_role("button", name="保存", exact=True).click()
         self.assertEqual(saved.value.json()["code"], 0)
-        self.assertIsNone(saved.value.request.post_data_json["cost"])
+        self.assertNotIn("cost", saved.value.request.post_data_json)
         self.assertEqual(cost_values(self.api.request("GET", path + "/cost")), cost_values(before))
         self.shot("pack-editor-without-cost-authority", page)
-        self.note("Service ignores forged cost while saving permitted fields; UI sends null", costReadCode=403,
+        self.note("Service rejects forged cost without a version change; ordinary UI edit omits financial fields", costReadCode=403,
                   original=cost_values(before), final=cost_values(self.api.request("GET", path + "/cost")))
 
     def test_16_historical_snapshot_survives_disabled_color_and_real_pdf(self):
@@ -1272,9 +1278,59 @@ class AuditUi(unittest.TestCase):
         if any(row["valuationStatus"] == "UNKNOWN" for row in log_page["list"]):
             expect(page.get_by_text("估值未知", exact=True).first).to_be_visible()
         self.shot("stock-ledger-valued-or-unknown")
+        export_create_path = "/api/export-jobs/stock-logs"
+        job_reads = []
+
+        def record_export_read(response):
+            if response.request.method == "GET" and re.fullmatch(r"/api/export-jobs/[0-9]+", urlsplit(response.url).path):
+                job_reads.append(response)
+
+        # Observe the UI's real polling before creation, including a fast worker.
+        page.on("response", record_export_read)
+        try:
+            with page.expect_response(lambda response: self.response_for(response, "POST", export_create_path)) as created:
+                page.locator(".page-header").get_by_role("button", name="导出", exact=True).click()
+            self.assertEqual(created.value.status, 202)
+            created_body = created.value.json()
+            self.assertEqual(created_body["code"], 0)
+            job = created_body["data"]
+            self.assertIsInstance(job["id"], str)
+            self.assertRegex(job["id"], r"^[1-9][0-9]*$")
+            self.assertEqual(job["kind"], "STOCK_LOGS")
+            self.assertIn(job["status"], ("PENDING", "PROCESSING", "RETRY_WAIT", "SUCCEEDED"))
+            self.assertRegex(created.value.request.headers.get("idempotency-key", ""),
+                             r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+            self.assertFalse({"page", "size", "cursor"}.intersection(created.value.request.post_data_json))
+            job_path = f"/api/export-jobs/{job['id']}"
+            export_dialog = page.get_by_role("dialog", name="库存日志导出", exact=True)
+            expect(export_dialog).to_be_visible()
+            expect(export_dialog.locator(".export-status dd.code")).to_contain_text(job["id"])
+            # A create response may already be complete; still verify the actual status endpoint through the UI.
+            if job["status"] == "SUCCEEDED":
+                export_dialog.get_by_role("button", name="刷新状态", exact=True).click()
+            expect(export_dialog.locator(".export-status-heading strong")).to_have_text("文件已就绪", timeout=60000)
+            self.poll(lambda: any(self.response_for(response, "GET", job_path) for response in job_reads))
+            observed = []
+            for response in job_reads:
+                self.assertTrue(self.response_for(response, "GET", job_path), "The export dialog polled a different task")
+                self.assertEqual(response.status, 200)
+                status = read_result(response, job_path)
+                self.assertEqual(status["id"], job["id"])
+                self.assertEqual(status["kind"], "STOCK_LOGS")
+                observed.append(status)
+            completed = observed[-1]
+            self.assertEqual(completed["status"], "SUCCEEDED")
+            self.assertGreater(completed["rows"], 0)
+            self.assertIsNone(completed["errorCode"])
+            self.assertEqual(completed["downloadUrl"], job_path + "/file")
+            expect(export_dialog.locator(".export-status")).to_have_attribute("aria-busy", "false")
+            expect(export_dialog.get_by_role("button", name="下载文件", exact=True)).to_be_enabled()
+            self.shot("stock-ledger-export-job-ready")
+        finally:
+            page.remove_listener("response", record_export_read)
         with page.expect_download() as ledger_download, page.expect_response(
-                lambda response: self.response_for(response, "GET", "/api/stock-logs/export")) as ledger_export:
-            page.locator(".page-header").get_by_role("button", name="导出", exact=True).click()
+                lambda response: self.response_for(response, "GET", job_path + "/file")) as ledger_export:
+            export_dialog.get_by_role("button", name="下载文件", exact=True).click()
         self.assertEqual(ledger_export.value.status, 200)
         ledger_file = self.case_dir / "stock-ledger-values.xlsx"
         ledger_download.value.save_as(str(ledger_file))
@@ -1285,8 +1341,13 @@ class AuditUi(unittest.TestCase):
         self.assertTrue(set(value_headers).issubset(ledger_rows[0]))
         self.assertTrue(any("RECORDED" in row for row in ledger_rows[1:]))
         self.assertTrue(any("UNKNOWN" in row for row in ledger_rows[1:]))
+        self.assertEqual(completed["rows"], len(ledger_rows) - 1)
         self.note("real browser stock ledger export contains valuation facts", headers=value_headers,
-                  recordedPresent=True, unknownPresent=True, sha256=hashlib.sha256(ledger_bytes).hexdigest())
+                  recordedPresent=True, unknownPresent=True, sha256=hashlib.sha256(ledger_bytes).hexdigest(),
+                  jobId=job["id"], createStatus=202, polledStatuses=[status["status"] for status in observed],
+                  finalStatus=completed["status"], exportedRows=completed["rows"])
+        export_dialog.get_by_role("button", name="关闭", exact=True).click()
+        expect(export_dialog).not_to_be_visible()
 
         go("/stock-in?tab=pending", "/api/purchase-orders/pending-items", "pending-arrivals", "采购单")
         # Both panels mount under stock-in; full navigation gives each shown panel a
@@ -1406,8 +1467,9 @@ class AuditUi(unittest.TestCase):
         expect(alert).to_be_visible()
         self.note("unimplemented board contract stays explicit", route="/upstream", code=404, retry=True, fabricatedEmpty=False)
 
-        self.assertEqual(mutations, [], "Open/cancel smoke unexpectedly sent a business mutation")
-        self.note("all added forms cancelled without mutation", mutationCount=0)
+        self.assertEqual(mutations, [{"method": "POST", "path": export_create_path}],
+                         "Open/cancel smoke sent a business mutation or duplicated the intentional export job")
+        self.note("all added forms cancelled without mutation", businessMutationCount=0, exportJobCreateCount=1)
         # Parent tearDown still asserts zero console errors, zero page errors and local-only requests.
 
     def test_18_home_unavailable_is_not_a_successful_empty_state(self):

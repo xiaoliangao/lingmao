@@ -56,6 +56,8 @@ import ProdIssueDialogs from './ProdIssueDialogs.vue'
 import ProdNodeDialogs from './ProdNodeDialogs.vue'
 import ProdReceiveDialog from './ProdReceiveDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeProductionPrice, canSeeSupplierContact } = useFieldAccess()
 const productionApi = bindCompanyApi(productionApiBase, () => detail.value?.companyId)
 
 /**
@@ -129,7 +131,7 @@ const statusTag = computed(() => {
 const audited = computed(() => !!detail.value && !['DRAFT', 'PENDING', 'VOIDED'].includes(detail.value.status))
 const priceChanged = computed(() => {
   const d = detail.value
-  return !!d && d.archivePrice !== null && Math.abs(d.unitPrice - d.archivePrice) > 0.00005
+  return canSeeProductionPrice.value && !!d && d.unitPrice != null && d.archivePrice != null && Math.abs(d.unitPrice - d.archivePrice) > 0.00005
 })
 /** 不是我审、在等别人审：页头写一句 */
 const waitingText = computed(() => {
@@ -611,13 +613,13 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               </dd>
               <dt>加工方式</dt>
               <dd>{{ modes.labelOf(detail.processMode) }}</dd>
-              <dt>{{ kindMeta.priceLabel }}</dt>
+              <template v-if="canSeeProductionPrice"><dt>{{ kindMeta.priceLabel }}</dt>
               <dd class="num">
                 {{ formatPrice(detail.unitPrice) }}
                 <div v-if="priceChanged" class="warn small">改价：{{ detail.priceChangeReason ?? '—' }}（档案 {{ formatPrice(detail.archivePrice) }}）</div>
               </dd>
               <dt>金额</dt>
-              <dd class="num">{{ formatMoney(detail.totalAmount) }}</dd>
+              <dd class="num">{{ formatMoney(detail.totalAmount) }}</dd></template>
               <dt>税率</dt>
               <dd class="num">{{ detail.taxPct }}%（{{ detail.taxIncluded ? '含税' : '不含税' }}）</dd>
               <dt>下单日期</dt>
@@ -736,7 +738,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
       <PrintSheet ref="printRef" :title="kindMeta.label" :no="detail.no">
         <template #meta>
           <span>加工厂：{{ detail.factoryName }}</span>
-          <span>联系人：{{ detail.factoryContact ?? '—' }} {{ detail.factoryPhone ?? '' }}</span>
+          <span v-if="canSeeSupplierContact">联系人：{{ detail.factoryContact ?? '—' }} {{ detail.factoryPhone ?? '' }}</span>
           <span>款式：{{ detail.styleCode }} {{ detail.styleName }}</span>
           <span>加工方式：{{ modes.labelOf(detail.processMode) }}</span>
           <span>需求订单：{{ detail.orderNo }}</span>
@@ -744,9 +746,9 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
           <span>下单日期：{{ formatDate(detail.orderDate) }}</span>
           <span>交期：{{ formatDate(detail.expectDate ?? detail.dueDate) }}</span>
           <span>生产跟单：{{ detail.merchName ?? '—' }}</span>
-          <span>{{ kindMeta.priceLabel }}：{{ formatPrice(detail.unitPrice) }} 元/件</span>
+          <span v-if="canSeeProductionPrice">{{ kindMeta.priceLabel }}：{{ formatPrice(detail.unitPrice) }} 元/件</span>
           <span>数量：{{ formatQty(detail.totalQty) }} 件</span>
-          <span>
+          <span v-if="canSeeProductionPrice">
             金额：{{ formatMoney(detail.totalAmount) }} 元（{{ settles.labelOf(detail.settleMethod) }} · 税率 {{ detail.taxPct }}%
             {{ detail.taxIncluded ? '含税' : '不含税' }}）
           </span>

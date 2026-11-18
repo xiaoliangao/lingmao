@@ -12,6 +12,7 @@ import { onSessionChanged } from './token'
 import { readWriteReceipts, removeWriteReceipt, requestFingerprint, storeWriteReceipt, type WriteReceipt } from './pendingWrite'
 import { currentCompanyScope } from './companyScope'
 import { canReplayWrite } from './writePolicy'
+import { visibleWriteBody } from './fieldAccess'
 
 /** 后端所有接口的统一返回体 */
 export interface R<T> {
@@ -31,6 +32,8 @@ export interface RequestOptions {
   /** The page's document company, never a mutable cross-tab default. */
   companyId?: string
   idempotencyKey?: string
+  /** A recovery snapshot must record the actual key selected after matching any existing receipt. */
+  recordWriteKey?: (key: string) => boolean
   /** Explicitly declared calculations such as BOM defaults, although transported as POST. */
   readOnly?: boolean
   /** Internal wrapper context captured before an asynchronous company lookup. */
@@ -282,7 +285,7 @@ export interface PendingWriteNotice {
 export const pendingWriteNotices = ref<PendingWriteNotice[]>([])
 export const pendingWriteDialog = ref(false)
 const pendingWrites = new Map<string, PendingWrite>()
-const RESOURCE_NAMES: Record<string, string> = { orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式' }
+const RESOURCE_NAMES: Record<string, string> = { orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式', 'export-jobs': '导出任务' }
 function pendingNotice(action: PendingWrite, conflict = false) {
   const existing = pendingWriteNotices.value.find((notice) => notice.key === action.key)
   const replayable = !conflict && canReplayWrite(action.scope.split('|')[2] ?? '', action.url)
@@ -366,8 +369,12 @@ function prepareRequest(config: RequestConfig): RequestConfig {
   const bodyCompany = payload && typeof payload === 'object' && 'companyId' in payload && typeof payload.companyId === 'string' ? payload.companyId : undefined
   const paramsCompany = config.params && typeof config.params.companyId === 'string' ? config.params.companyId as string : undefined
   const pageCompany = config.companyId ?? currentCompanyScope()
-  if (bodyCompany && pageCompany && bodyCompany !== pageCompany) throw new ApiError(409, '表单主体与当前单据不一致，请重新核对主体')
-  const company = pageCompany ?? bodyCompany ?? paramsCompany
+  // Only these draft PUTs support an explicit company change. Every other route retains equality.
+  const draftUpdate = (config.method ?? '').toLowerCase() === 'put' && /^\/api\/(orders|purchase-orders|production-orders)\/[1-9]\d*$/.test(config.url ?? '')
+  const expectedCompany = draftUpdate && payload && typeof payload === 'object' && 'expectedCompanyId' in payload && typeof payload.expectedCompanyId === 'string' ? payload.expectedCompanyId : undefined
+  if (expectedCompany && pageCompany && expectedCompany !== pageCompany) throw new ApiError(409, '已保存主体与页面装载时不一致，请重新核对主体')
+  if (!expectedCompany && bodyCompany && pageCompany && bodyCompany !== pageCompany) throw new ApiError(409, '表单主体与当前单据不一致，请重新核对主体')
+  const company = expectedCompany ?? pageCompany ?? bodyCompany ?? paramsCompany
   const headers = { ...config.headers, ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}), ...(company ? { 'X-Company-Id': company } : {}) }
   return { ...config, authEpoch: epoch, companyId: company, headers, signal: config.signal ?? (readOnly ? currentReadScope()?.signal : undefined) }
 }
@@ -393,6 +400,9 @@ function transport<T>(prepared: RequestConfig, epoch: string): Promise<AxiosResp
   })
 }
 export function request<T>(config: RequestConfig): Promise<T> {
+  if (!config.readOnly && !['get', 'head'].includes((config.method ?? 'get').toLowerCase()) && !(config.data instanceof FormData)) {
+    config = { ...config, data: visibleWriteBody(config.url ?? '', config.data) }
+  }
   let prepared: RequestConfig
   try {
     validateKeywords((config.params as { keyword?: unknown } | undefined)?.keyword)
@@ -447,7 +457,10 @@ async function performWrite<T>(config: RequestConfig, prepared: RequestConfig, s
     pendingWriteDialog.value = true
     throw new ApiError(1002, '请先在待确认操作中核对前次提交，再开始新动作')
   }
-  if (action?.promise) return action.promise as Promise<T>
+  if (action?.promise) {
+    if (config.recordWriteKey && !config.recordWriteKey(action.key)) throw clientFailure(409, '无法保存原提交凭据，请恢复浏览器存储后核对')
+    return action.promise as Promise<T>
+  }
   if (action && !canReplayWrite(method, url)) {
     pendingWrites.set(action.key, action)
     pendingNotice(action)
@@ -458,6 +471,7 @@ async function performWrite<T>(config: RequestConfig, prepared: RequestConfig, s
     const explicit = config.idempotencyKey ?? (payload && typeof payload === 'object' && 'clientActionId' in payload && typeof payload.clientActionId === 'string' ? payload.clientActionId : undefined)
     action = { scope, identity, key: explicit ?? clientActionUuid(), fingerprint, body, url, companyId: prepared.companyId, createdAt: Date.now() }
   }
+  if (config.recordWriteKey && !config.recordWriteKey(action.key)) throw clientFailure(409, '无法保存原提交凭据，本次尚未发送，请恢复浏览器存储后重试')
   const { scope: receiptScope, identity: owner, key, fingerprint: digest, url: endpoint, companyId, createdAt } = action
   if (!storeWriteReceipt({ scope: receiptScope, identity: owner, key, fingerprint: digest, url: endpoint, companyId, createdAt })) {
     throw clientFailure(409, '无法记录提交凭据，本次尚未发送。请允许浏览器存储后重试')

@@ -136,9 +136,9 @@ export interface MrpItem extends MaterialSkuBrief {
   /** 建议采购量，采购单位：净需求 ÷ 换算系数，向上取整到最小包装，不小于起订量；草稿里能直接改（不小于已转采购） */
   suggestQty: number
   /** 参考单价（元 / 采购单位）：这家供应商的价格档案现价，没有用 SKU 单价、物料参考单价；都没有是 null */
-  refPrice: number | null
+  refPrice?: number | null
   /** 预计金额 = 建议采购量 × 参考单价 */
-  estAmount: number | null
+  estAmount?: number | null
   /** 已转采购量，采购单位：生成采购单时加，采购单草稿改数量、删除、作废时跟着改 */
   convertedQty: number
   /** 这一行（连同重新算料带过来的）生成的采购行净入库（已入库 − 已退货），库存单位 */
@@ -186,8 +186,8 @@ export interface MrpCalcDetail extends DocHeader<MrpStatus, MrpAction> {
   closeByName: string | null
   closeTime: string | null
   /** 我方采购的预计金额合计、已转采购的金额合计（按参考单价） */
-  estAmount: number
-  convertedAmount: number
+  estAmount?: number
+  convertedAmount?: number
   /** 我方采购、工厂自备都在这里，按 block 分开画 */
   items: MrpItem[]
   /** 重新算料出来的单：和上一张比需求变了的行（没变是空数组）；不是重新算料出来的是 null */
@@ -287,7 +287,7 @@ export interface PurchaseRow {
   itemCount: number
   /** 各行采购单位数量直接相加，只显示 */
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   orderDate: string
   deliveryDate: string
   warehouseId: string
@@ -332,12 +332,12 @@ export interface PurchaseItem extends MaterialSkuBrief {
   conversionFactor: number
   qty: number
   /** 元 / 采购单位 */
-  price: number
-  amount: number
+  price?: number
+  amount?: number
   /** 默认单价取自哪条价格档案；手填、没有档案是 null */
   priceSourceId: string | null
   /** 价格档案里这家供应商在下单日的现价（"档案 18.50"）；没有档案是 null。和 price 不一样时要有改价原因 */
-  archivePrice: number | null
+  archivePrice?: number | null
   priceChangeReason: string | null
   /** 行交期，null = 用单头交货日期 */
   lineDueDate: string | null
@@ -391,8 +391,8 @@ export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction
   supplierShortName: string
   supplierStatus: SupplierStatus
   /** 打印用：供应商的联系人、电话，没有是 null */
-  supplierContact: string | null
-  supplierPhone: string | null
+  supplierContact?: string | null
+  supplierPhone?: string | null
   purchaseType: PurchaseType
   /** 从哪张算料单生成的；手建的、补货生成的是 null */
   calcId: string | null
@@ -414,7 +414,7 @@ export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction
   taxIncluded: boolean
   freightIncluded: boolean
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   /** 净入库合计（已入库 − 已退货），采购单位；到货进度 = receivedQty / totalQty */
   receivedQty: number
   returnedQty: number
@@ -426,13 +426,15 @@ export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction
 
 /** 新建、改草稿的一行。保存是整体覆盖：没填的发 null */
 export interface PurchaseItemForm {
+  /** Existing line identity preserves its server-owned price when that field is omitted. */
+  id?: string
   /** 从算料单生成的行原样带回（物料不能换，数量能改，算料单的已转采购跟着改）；手加的行是 null */
   calcItemId: string | null
   materialSkuId: string
   /** 采购单位 */
   qty: number | null
   /** null = 用默认单价（价格档案现价 → SKU 单价 → 物料参考单价）；和档案现价不一样时 priceChangeReason 必填 */
-  price: number | null
+  price?: number | null
   priceChangeReason: string | null
   lineDueDate: string | null
   expectDate: string | null
@@ -462,6 +464,7 @@ export interface PurchaseForm {
 /** 改草稿（PUT /api/purchase-orders/{id}） */
 export interface PurchaseUpdateForm extends PurchaseForm {
   version: number
+  expectedCompanyId?: string
 }
 
 export type PurchaseCreated = DocSaved
@@ -479,10 +482,10 @@ export interface PurchaseDefaultsQuery {
 export interface PurchaseLineDefault {
   materialSkuId: string
   /** 默认单价（元 / 采购单位）：价格档案现价 → SKU 单价 → 物料参考单价；都没有是 null（要手填） */
-  price: number | null
+  price?: number | null
   priceSourceId: string | null
   /** 档案现价；null = 这家还没有这种料的档案价（第一次报价），改价不用写原因 */
-  archivePrice: number | null
+  archivePrice?: number | null
   purchaseUnit: string
   conversionFactor: number
   /** 物料的采购周期（天），没设是 null */
@@ -636,7 +639,7 @@ export interface ReorderRow extends MaterialSkuBrief {
   /** 建议补货量，采购单位：差多少换成采购单位，按最小包装和起订量取整 */
   suggestQty: number
   /** 默认供应商的默认单价（元 / 采购单位）；换了供应商用 purchaseApi.defaults 重取 */
-  price: number | null
+  price?: number | null
   /** 已经开了、还没审核的备货采购单里有这个 SKU 的（防重复生成；有的话这一行默认不勾） */
   openDrafts: { id: string; no: string; status: PurchaseStatus }[]
 }

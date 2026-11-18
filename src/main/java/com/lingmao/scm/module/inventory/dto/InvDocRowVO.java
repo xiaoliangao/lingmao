@@ -16,6 +16,8 @@ import java.util.List;
 @Data
 public class InvDocRowVO {
     private Long id;
+    @JsonIgnore
+    private Long companyId;
     private String no;
     private InvDocKind kind;
     private InvDocType docType;

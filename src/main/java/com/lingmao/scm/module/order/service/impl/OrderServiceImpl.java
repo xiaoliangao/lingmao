@@ -1,5 +1,8 @@
 package com.lingmao.scm.module.order.service.impl;
 
+import com.lingmao.scm.common.scope.CompanyContext;
+import com.lingmao.scm.security.FieldPermissions;
+
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -173,6 +176,7 @@ public class OrderServiceImpl implements OrderService {
     private final ReferenceService referenceService;
     private final SerialNoGenerator serialNoGenerator;
     private final Clock clock;
+    private final com.lingmao.scm.module.system.service.FileImportService imports;
 
     // ---------- 查询 ----------
 
@@ -506,6 +510,7 @@ public class OrderServiceImpl implements OrderService {
                 && !(o.getStatus() == PENDING && isMyTurn(o.getId()))) {
             throw new BizException(404, NOT_FOUND);
         }
+        com.lingmao.scm.common.scope.CompanyContext.target(o.getCompanyId());
         return o;
     }
 
@@ -519,6 +524,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public DocSaved create(OrderCreateReq req) {
+        com.lingmao.scm.common.scope.CompanyContext.create(req.getCompanyId());
         Order o = new Order();
         applyForm(o, req, null);
         o.setSource(OrderSource.MANUAL);
@@ -545,6 +551,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public int update(long id, OrderSaveReq req) {
         Order o = lock(id);
+        com.lingmao.scm.common.scope.CompanyContext.save(o.getCompanyId(), req.getCompanyId(), req.getExpectedCompanyId());
         FLOW.next("edit", o.getStatus());
         if (!o.getVersion().equals(req.getVersion())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, STALE);
@@ -691,7 +698,8 @@ public class OrderServiceImpl implements OrderService {
             item.setStyleId(styleId);
             item.setStyleSkuId(r.getStyleSkuId());
             item.setQty(r.getQty());
-            item.setPrice(NumericLimits.price(r.getPrice(), "第 " + item.getSeq() + " 行："));
+            item.setPrice(NumericLimits.price(com.lingmao.scm.security.FieldPermissions.price(
+                    com.lingmao.scm.security.FieldPermissions.ORDER, item.getPrice(), r.getPrice()), "第 " + item.getSeq() + " 行："));
             item.setAmount(Num.amount(r.getQty(), item.getPrice()));
             item.setLineDueDate(r.getLineDueDate());
             item.setRemark(OrderTexts.blankToNull(r.getRemark()));
@@ -801,7 +809,10 @@ public class OrderServiceImpl implements OrderService {
         List<Order> sources = orderMapper.selectByIds(ids);
         if (sources.size() != ids.size()) throw new BizException(404, "来源订单不存在");
         DataScope scope = DataScope.current(false);
-        for (Order source : sources) scope.check(source.getCreateBy(), source.getSalesId(), source.getMerchId());
+        for (Order source : sources) {
+            scope.check(source.getCreateBy(), source.getSalesId(), source.getMerchId());
+            com.lingmao.scm.common.scope.CompanyContext.target(source.getCompanyId());
+        }
     }
 
     @Override
@@ -810,6 +821,13 @@ public class OrderServiceImpl implements OrderService {
         if (ids.isEmpty()) return;
         List<Order> orders = orderMapper.selectByIds(ids);
         if (orders.size() != ids.size()) throw new BizException(404, "有需求订单不存在，请重新选择");
+        DataScope scope = DataScope.current(false);
+        for (Order order : orders) {
+            scope.check(order.getCreateBy(), order.getSalesId(), order.getMerchId());
+            com.lingmao.scm.common.scope.CompanyContext.target(order.getCompanyId());
+        }
+        if (orders.stream().map(Order::getCompanyId).distinct().count() > 1)
+            throw new BizException(400, "不同主体的订单请分别算料");
         List<String> problems = orders.stream().filter(o -> o.getStatus() != APPROVED && o.getStatus() != RUNNING)
                 .map(o -> "订单 " + o.getNo() + " 只能在已审核或生产中状态算料").toList();
         if (!problems.isEmpty()) throw new BizException(ErrorCodes.BIZ_ERROR, problems.getFirst(), problems);
@@ -1042,8 +1060,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional
     public ImportResult importExcel(OrderImportHead head, MultipartFile file) {
+        CompanyContext.create(head.getCompanyId());
+        importHead(head);
+        return imports.execute("order", "company:" + head.getCompanyId(), "order:order:import", file, head, () -> {
+            var parsed = excel.read(file);
+            parsed.forEach(order -> order.lines().forEach(line -> FieldPermissions.price(FieldPermissions.ORDER, null, line.price())));
+            return parsed;
+        }, parsed -> writeImport(head, parsed));
+    }
+
+    private Order importHead(OrderImportHead head) {
         Long me = LoginUser.currentUserId();
         OrderForm form = new OrderCreateReq();
         form.setCompanyId(head.getCompanyId());
@@ -1056,8 +1083,11 @@ public class OrderServiceImpl implements OrderService {
         form.setCurrency("CNY");
         Order template = new Order();
         applyForm(template, form, null);
+        return template;
+    }
 
-        List<OrderExcel.Parsed> orders = excel.read(file);
+    private ImportResult writeImport(OrderImportHead head, List<OrderExcel.Parsed> orders) {
+        Order template = importHead(head);
         List<String> notes = new ArrayList<>();
         int total = 0;
         for (OrderExcel.Parsed p : orders) {
@@ -1073,7 +1103,7 @@ public class OrderServiceImpl implements OrderService {
                 i.setStyleId(l.styleId());
                 i.setStyleSkuId(l.styleSkuId());
                 i.setQty(l.qty());
-                i.setPrice(Num.price(l.price()));
+                i.setPrice(Num.price(FieldPermissions.price(FieldPermissions.ORDER, null, l.price())));
                 i.setAmount(Num.amount(l.qty(), i.getPrice()));
                 i.setLineDueDate(l.lineDueDate());
                 items.add(i);
@@ -1094,6 +1124,7 @@ public class OrderServiceImpl implements OrderService {
         Page<OrderRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<OrderRowVO> rows = orderMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();
+        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, OrderRowVO::getId, OrderRowVO::getCompanyId);
         fillRows(rows);
         return excel.export(rows);
     }

@@ -22,6 +22,8 @@ import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
 import InvDocFormDialog from './InvDocFormDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 const invDocApi = bindCompanyApi(invDocApiBase, () => detail.value?.companyId)
 
 /**
@@ -160,7 +162,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
           <span v-if="detail.fromWarehouseName || detail.toWarehouseName">
             {{ detail.fromWarehouseName ?? '' }}<template v-if="detail.fromWarehouseName && detail.toWarehouseName"> → </template>{{ detail.toWarehouseName ?? '' }}
           </span>
-          <span class="num">{{ formatQty(detail.totalQty) }}<template v-if="detail.totalAmount"> · {{ formatMoney(detail.totalAmount) }}</template></span>
+          <span class="num">{{ formatQty(detail.totalQty) }}<template v-if="canSeeCost && detail.totalAmount != null"> · {{ formatMoney(detail.totalAmount) }}</template></span>
         </p>
 
         <el-table :data="detail.items" row-key="id">
@@ -186,10 +188,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
               <span v-else class="dim">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="单价" width="90" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="单价" width="90" class-name="num" align="right">
             <template #default="{ row }">{{ row.price === null ? '—' : formatPrice(row.price) }}</template>
           </el-table-column>
-          <el-table-column label="金额" width="100" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
             <template #default="{ row }">{{ row.amount === null ? '—' : formatMoney(row.amount) }}</template>
           </el-table-column>
           <el-table-column label="缸号" width="110">

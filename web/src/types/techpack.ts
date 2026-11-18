@@ -131,7 +131,7 @@ export interface TechPackOverview {
    */
   unmatchedColors: ColorOption[]
   /** 资料包核价：生产已生效版的单件成本，没有就取研发已生效版。没有看成本权限、两个阶段都没生效是 null */
-  unitCost: number | null
+  unitCost?: number | null
   unitCostPackId: string | null
   unitCostStage: PackStage | null
 }
@@ -178,7 +178,7 @@ export interface BomSku {
   /** 物料 SKU 停用了：页面标红，生效时会被拦 */
   skuStatus: EnableStatus
   /** 这个 SKU 单独的参考单价，元 / 库存单位；null = 用行上的（一种拉链三个长度三个价就落在这里） */
-  refPrice: number | null
+  refPrice?: number | null
   /** SKU 图，没有用物料主图，都没有是 null */
   image: Attachment | null
 }
@@ -187,7 +187,7 @@ export interface BomSkuForm {
   colorId: string | null
   sizeCode: string | null
   materialSkuId: string
-  refPrice: number | null
+  refPrice?: number | null
 }
 
 /** 物料清单的一行（tp_bom_item） */
@@ -219,24 +219,26 @@ export interface BomItem {
   /** 简称 */
   supplierName: string | null
   /** 参考单价，元 / 库存单位（价格档案、物料单价是按采购单位的，带过来时已经换算好）；没有是 null */
-  refPrice: number | null
+  refPrice?: number | null
   /** 默认单价取自哪条价格档案；手改了也留着 */
   priceSourceId: string | null
-  priceTaxIncluded: boolean
-  priceFreightIncluded: boolean
+  priceTaxIncluded?: boolean
+  priceFreightIncluded?: boolean
   remark: string | null
   skus: BomSku[]
   /**
    * 单件成本 = 基码用量 ×（1 + 损耗率）× 单价；随款色的行取第一个款色的 SKU 单价，随尺码的行取基码那个 SKU 的。
    * 工厂自备、客供的行，或者算不出来（没单价、没用量）是 null
    */
-  unitCost: number | null
+  unitCost?: number | null
   /** 缩略图：第一个配料 SKU 的图，没有用物料主图 */
   image: Attachment | null
 }
 
 /** 保存时一行 BOM。单位不用传，后端取物料的库存单位存一份 */
 export interface BomItemForm {
+  /** Existing line identity; new local rows omit it. */
+  id?: string
   part: string
   materialId: string
   skuMode: BomSkuMode
@@ -246,10 +248,10 @@ export interface BomItemForm {
   lossPct: number
   source: MaterialSource
   supplierId: string | null
-  refPrice: number | null
+  refPrice?: number | null
   priceSourceId: string | null
-  priceTaxIncluded: boolean
-  priceFreightIncluded: boolean
+  priceTaxIncluded?: boolean
+  priceFreightIncluded?: boolean
   remark: string | null
   skus: BomSkuForm[]
 }
@@ -281,14 +283,14 @@ export interface BomDefault {
   /** 物料的默认物料来源 */
   source: MaterialSource
   /** 行上的默认参考单价，元 / 库存单位；都没有是 null */
-  refPrice: number | null
+  refPrice?: number | null
   priceSourceId: string | null
-  priceTaxIncluded: boolean
-  priceFreightIncluded: boolean
+  priceTaxIncluded?: boolean
+  priceFreightIncluded?: boolean
   /** 默认单价从哪来：ARCHIVE 价格档案现价 / SKU 物料 SKU 单价 / MATERIAL 物料参考单价 / NONE 都没有 */
   priceFrom: 'ARCHIVE' | 'SKU' | 'MATERIAL' | 'NONE'
   /** 单价和行上不一样的 SKU（价格档案里单独定了价、SKU 有自己的单价），写进配料的 refPrice；和行上一样的不在这里 */
-  skuPrices: { materialSkuId: string; refPrice: number }[]
+  skuPrices?: { materialSkuId: string; refPrice: number }[]
 }
 
 /** 工艺指示的一段。九段都会返回，没写的 content 是 '' */
@@ -320,12 +322,12 @@ export interface ProcessRow {
   /** 标准工时，秒 */
   stdSeconds: number | null
   /** 工价，元 / 件 */
-  price: number | null
+  price?: number | null
   remark: string | null
   images: FileVO[]
 }
 
-export type ProcessForm = Omit<ProcessRow, 'id' | 'seq'>
+export type ProcessForm = Omit<ProcessRow, 'id' | 'seq'> & { id?: string }
 
 /** GET /api/tech-packs/{id}：一个版本的单头和尺寸指示、物料清单、工艺指示三个页签。核价另取（要看成本的权限） */
 export interface TechPackDetail {
@@ -369,9 +371,9 @@ export interface TechPackDetail {
   processes: ProcessRow[]
   /** 工序工价合计：总工时（秒）、参考加工价（元 / 件） */
   stdSecondsTotal: number
-  laborTotal: number
-  /** 单件成本（和核价页签的合计一样）。没有看成本权限是 null，页面不显示 */
-  unitCost: number | null
+  laborTotal?: number
+  /** 单件成本（和核价页签的合计一样）。没有看成本权限时字段省略，页面不显示 */
+  unitCost?: number | null
   actions: TechPackAction[]
 }
 
@@ -395,13 +397,13 @@ export interface CostRow {
   unit: string
   lossPct: number
   /** 用的单价，元 / 库存单位：配料上单独的价 > 行上的价；都没有是 null */
-  price: number | null
-  priceTaxIncluded: boolean
-  priceFreightIncluded: boolean
+  price?: number | null
+  priceTaxIncluded?: boolean
+  priceFreightIncluded?: boolean
   /** 计不计入合计：只有我方采购的行计入；工厂自备的显示"含在加工价里"，客供的显示"客户出" */
   counted: boolean
   /** 单件成本；不计入的是 0 */
-  cost: number
+  cost?: number
   /** 研发估：研发版里同部位、同物料那一行的单件成本；研发版没有这一行是 null。没有研发版（dev 为 null）时不用看 */
   devCost: number | null
 }
@@ -412,7 +414,7 @@ export interface CostItem {
   seq: number
   name: string
   /** 元 / 件 */
-  amount: number
+  amount?: number
   remark: string | null
   /** 研发版里同名那一项的金额；没有是 null */
   devAmount: number | null
@@ -420,7 +422,7 @@ export interface CostItem {
 
 export interface CostItemForm {
   name: string
-  amount: number
+  amount?: number
   remark: string | null
 }
 
@@ -441,7 +443,7 @@ export interface TechPackCost {
   colorId: string | null
   costMode: CostMode
   /** 存着的成品单价，元 / 件；没填是 null */
-  buyPrice: number | null
+  buyPrice?: number | null
   /**
    * 价格档案里款式默认加工厂做这个款"包工包料"的现价；款式没设默认加工厂、档案里没有是 null。
    * 按成品采购算且没填成品单价时加工费用它；按外发算时页面显示成一行"成品采购参考价"，不计入
@@ -452,7 +454,7 @@ export interface TechPackCost {
   fabricRows: CostRow[]
   trimRows: CostRow[]
   /** 工序工价合计（不管按什么算都给，加工费那块的说明里显示"n 道工序"） */
-  laborTotal: number
+  laborTotal?: number
   processCount: number
   otherItems: CostItem[]
   summary: CostSummary
@@ -469,7 +471,7 @@ export interface TechPackCost {
 export interface TechPackCostForm {
   costMode: CostMode
   /** 成品单价，元 / 件；按外发算时也照存 */
-  buyPrice: number | null
+  buyPrice?: number | null
   items: CostItemForm[]
 }
 
@@ -486,7 +488,7 @@ export interface TechPackSaveForm {
   /** 九段都发，没写的 content 发 null、images 发 [] */
   craftSections: CraftSectionForm[]
   processes: ProcessForm[]
-  /** 核价的手填部分。null = 这次不动核价（没有看成本权限的人一律发 null）；有权限的人发整份 */
+  /** 核价的手填部分。null = 这次不动核价（没有看成本权限的人省略该字段）；有权限的人发整份 */
   cost: TechPackCostForm | null
 }
 

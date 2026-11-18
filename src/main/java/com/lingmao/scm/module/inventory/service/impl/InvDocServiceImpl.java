@@ -285,6 +285,7 @@ public class InvDocServiceImpl implements InvDocService {
             throw new BizException(404, "单据不存在");
         }
         DataScope.current(false).check(doc.getCreateBy());
+        com.lingmao.scm.common.scope.CompanyContext.target(doc.getCompanyId());
         return doc;
     }
 
@@ -295,6 +296,7 @@ public class InvDocServiceImpl implements InvDocService {
             throw new BizException(404, "单据不存在");
         }
         DataScope.current(false).check(doc.getCreateBy());
+        com.lingmao.scm.common.scope.CompanyContext.target(doc.getCompanyId());
         return doc;
     }
 
@@ -303,6 +305,7 @@ public class InvDocServiceImpl implements InvDocService {
     @Override
     @Transactional
     public InvDocCreatedVO create(InvDocCreateReq req) {
+        com.lingmao.scm.common.scope.CompanyContext.create(req.getCompanyId());
         InvDocType type = req.getDocType();
         if (type.isSourceRequired()) {
             throw new BizException(400, type.getLabel() + "要从" + type.getSource().getLabel() + "生成");
@@ -325,6 +328,7 @@ public class InvDocServiceImpl implements InvDocService {
     public int update(long id, InvDocSaveReq req) {
         InvDoc doc = lock(id);
         FLOW.next("edit", doc.getStatus());
+        com.lingmao.scm.common.scope.CompanyContext.save(doc.getCompanyId(), req.getCompanyId(), null);
         if (!doc.getVersion().equals(req.getVersion())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这张单已经被别人改过，请刷新后再改");
         }
@@ -483,12 +487,16 @@ public class InvDocServiceImpl implements InvDocService {
         for (int n = 0; n < reqs.size(); n++) {
             InvDocItemReq r = reqs.get(n);
             int seq = n + 1;
+            InvDocItem previous = r.getId() == null ? null : existing.get(r.getId());
+            BigDecimal priorPrice = previous != null && Objects.equals(previous.getMaterialSkuId(), r.getMaterialSkuId())
+                    && Objects.equals(previous.getDyeLot(), InvTexts.blankToNull(r.getDyeLot())) ? previous.getPrice() : null;
             InvDocItem item = keptOrNew(r, seq, existing, posted);
             if (r.getQty() == null) {
                 throw new BizException(400, "第 " + seq + " 行要填数量");
             }
             item.setQty(NumericLimits.quantity(r.getQty(), "第 " + seq + " 行："));
-            item.setPrice(NumericLimits.price(r.getPrice(), "第 " + seq + " 行："));
+            item.setPrice(NumericLimits.price(com.lingmao.scm.security.FieldPermissions.price(
+                    com.lingmao.scm.security.FieldPermissions.COST, priorPrice, r.getPrice()), "第 " + seq + " 行："));
             item.setAmount(NumericLimits.amount(item.getPrice() == null ? null : r.getQty().multiply(item.getPrice())
                     .setScale(2, RoundingMode.HALF_UP), "第 " + seq + " 行："));
             item.setPurchaseUnit(null);
@@ -656,8 +664,10 @@ public class InvDocServiceImpl implements InvDocService {
     public InvDocDraftVO prefill(BizType source, long sourceId, InvDocType docType, List<Long> itemIds, Long fromWarehouseId) {
         checkSource(source, docType);
         SourceDraft d = handler(source).prefill(docType, sourceId, itemIds, fromWarehouseId);
+        com.lingmao.scm.common.scope.CompanyContext.target(d.companyId());
         Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(d.items().stream().map(SourceDraft.Item::materialSkuId).toList());
         InvDocDraftVO vo = new InvDocDraftVO();
+        vo.setCompanyId(d.companyId());
         vo.setDocType(docType);
         vo.setSource(d.source());
         vo.setPartnerId(d.partnerId());
@@ -708,6 +718,7 @@ public class InvDocServiceImpl implements InvDocService {
         List<Long> itemIds = req.getItems() == null ? req.getItemIds()
                 : nullIfEmpty(req.getItems().stream().map(InvDocFromSourceReq.Item::getSourceItemId).filter(Objects::nonNull).toList());
         SourceDraft d = handler.prefill(type, sourceId, itemIds, req.getFromWarehouseId());
+        com.lingmao.scm.common.scope.CompanyContext.target(d.companyId());
 
         InvDoc doc = new InvDoc();
         doc.setKind(type.getKind());
@@ -769,6 +780,7 @@ public class InvDocServiceImpl implements InvDocService {
         InvDocType type = doc.getDocType();
         List<Long> itemIds = nullIfEmpty(reqs.stream().map(InvDocItemReq::getSourceItemId).filter(Objects::nonNull).toList());
         SourceDraft d = handler.prefill(type, doc.getSourceId(), itemIds, doc.getFromWarehouseId());
+        com.lingmao.scm.common.scope.CompanyContext.target(d.companyId());
         List<InvDocItem> items = new ArrayList<>();
         for (int n = 0; n < reqs.size(); n++) {
             InvDocItemReq r = reqs.get(n);
@@ -779,6 +791,7 @@ public class InvDocServiceImpl implements InvDocService {
                 throw new BizException(400, "第 " + seq + " 行要填数量");
             }
             InvDocItem built = sourceItem(type, s, qty, seq, r.getOverReason());
+            com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST, built.getPrice(), r.getPrice());
             InvDocItem item = keptOrNew(r, seq, existing, posted);
             item.setSourceItemId(built.getSourceItemId());
             item.setQty(built.getQty());
@@ -859,6 +872,7 @@ public class InvDocServiceImpl implements InvDocService {
         Page<InvDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();
+        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), docs, InvDocRowVO::getId, InvDocRowVO::getCompanyId);
         Map<Long, List<InvDocItem>> items = docs.isEmpty() ? Map.of()
                 : itemMapper.selectByDocs(docs.stream().map(InvDocRowVO::getId).toList()).stream()
                 .collect(Collectors.groupingBy(InvDocItem::getDocId));

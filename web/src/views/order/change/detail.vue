@@ -31,6 +31,8 @@ import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
 import OrderChangeDialog from '../order/OrderChangeDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
 const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.companyId)
 
 /**
@@ -171,7 +173,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(CHANGE_STATUS).map(([k, v
         <section class="panel">
           <div class="panel-head">改了什么<span class="dim head-sub">{{ typesText }}</span></div>
           <div v-if="detail.cancel" class="panel-body danger">取消整张订单</div>
-          <el-table v-else :data="detail.items" row-key="id" empty-text="没有改动">
+          <el-table v-else :data="detail.items.filter(item => canSeeOrderPrice || item.changeType !== 'PRICE')" row-key="id" empty-text="没有改动">
             <el-table-column label="类型" width="100">
               <template #default="{ row }">{{ CHANGE_TYPE[(row as ChangeItemView).changeType] }}</template>
             </el-table-column>
@@ -206,8 +208,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(CHANGE_STATUS).map(([k, v
               <dd>{{ detail.reason }}</dd>
               <dt>责任方</dt>
               <dd>{{ RESPONSIBLE_PARTY[detail.responsibleParty] }}</dd>
-              <dt>费用说明</dt>
-              <dd>{{ detail.feeNote || '—' }}</dd>
+              <template v-if="canSeeOrderPrice">
+                <dt>费用说明</dt>
+                <dd>{{ detail.feeNote || '—' }}</dd>
+              </template>
               <dt>制单</dt>
               <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
               <dt>审核</dt>

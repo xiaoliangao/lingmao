@@ -23,10 +23,41 @@
             <if test="q.createdDateTo != null">AND l.create_time &lt; ((CAST(#{q.createdDateTo} AS date) + 1)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
             <if test="afterTime != null">AND (l.create_time, l.id) &lt; (#{afterTime}, #{afterId})</if>
         </if>
+        <if test="exportSnapshot">AND l.id &lt;= #{watermark}</if>
+    </sql>
+
+    <!-- Shared literal keyword matching: list, seek and export must select identical rows. -->
+    <sql id="keywordFilter">
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
+            AND l.id IN (
+                SELECT l.id FROM inv_stock_log l WHERE true
+                <include refid="keywordScope"/>
+                AND (upper(l.doc_no) LIKE #{keywordPrefix}
+                     <if test="codes != null">OR upper(l.doc_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
+                UNION
+                SELECT l.id FROM inv_stock_log l WHERE true
+                <include refid="keywordScope"/>
+                AND l.dye_lot ILIKE #{keywordContains}
+                UNION
+                SELECT l.id FROM inv_stock_log l WHERE true
+                <include refid="keywordScope"/>
+                AND l.material_sku_id IN (
+                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordPrefix}
+                    <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                    UNION
+                    SELECT k.id FROM bas_material m JOIN bas_material_sku k ON k.material_id = m.id
+                    WHERE m.name ILIKE #{keywordContains}
+                    <if test="codes != null">OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                )
+            )
+        </if>
     </sql>
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.StockLogRowVO">
         <bind name="seek" value="false"/>
+        <bind name="exportSnapshot" value="false"/>
         SELECT l.id, l.biz_date, l.create_time, l.change_type,
                CASE WHEN l.inv_doc_id IS NOT NULL THEN 'INV_DOC' ELSE 'INV_COUNT' END AS doc_type,
                d.kind AS doc_kind, COALESCE(l.inv_doc_id, l.count_id) AS doc_id, l.doc_no,
@@ -36,45 +67,13 @@
         JOIN bas_warehouse w ON w.id = l.warehouse_id
         LEFT JOIN inv_doc d ON d.id = l.inv_doc_id
         WHERE true
-        <if test="q.warehouseId != null">AND l.warehouse_id = #{q.warehouseId}</if>
-        <if test="q.materialSkuId != null">AND l.material_sku_id = #{q.materialSkuId}</if>
-        <if test="q.changeType != null and q.changeType.size() > 0">
-            AND l.change_type IN <foreach collection="q.changeType" item="t" open="(" separator="," close=")">#{t}</foreach>
-        </if>
-        <if test="q.bizDateFrom != null">AND l.biz_date &gt;= #{q.bizDateFrom}</if>
-        <if test="q.bizDateTo != null">AND l.biz_date &lt;= #{q.bizDateTo}</if>
-        <if test="q.ids != null and q.ids.size() > 0">
-            AND l.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
-        </if>
-        <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
-            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
-            AND l.id IN (
-                SELECT l.id FROM inv_stock_log l WHERE true
-                <include refid="keywordScope"/>
-                AND (upper(l.doc_no) LIKE #{keywordPrefix}
-                     <if test="codes != null">OR upper(l.doc_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
-                UNION
-                SELECT l.id FROM inv_stock_log l WHERE true
-                <include refid="keywordScope"/>
-                AND l.dye_lot ILIKE #{keywordContains}
-                UNION
-                SELECT l.id FROM inv_stock_log l WHERE true
-                <include refid="keywordScope"/>
-                AND l.material_sku_id IN (
-                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordPrefix}
-                    <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
-                    UNION
-                    SELECT k.id FROM bas_material m JOIN bas_material_sku k ON k.material_id = m.id
-                    WHERE m.name ILIKE #{keywordContains}
-                    <if test="codes != null">OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
-                )
-            )
-        </if>
+        <include refid="keywordScope"/>
+        <include refid="keywordFilter"/>
         ORDER BY l.id DESC
     </select>
     <select id="selectSeek" resultType="com.lingmao.scm.module.inventory.dto.StockLogRowVO">
         <bind name="seek" value="true"/>
+        <bind name="exportSnapshot" value="false"/>
         SELECT l.id, l.biz_date, l.create_time, l.change_type,
                CASE WHEN l.inv_doc_id IS NOT NULL THEN 'INV_DOC' ELSE 'INV_COUNT' END AS doc_type,
                d.kind AS doc_kind, COALESCE(l.inv_doc_id, l.count_id) AS doc_id, l.doc_no,
@@ -84,44 +83,25 @@
         JOIN bas_warehouse w ON w.id = l.warehouse_id
         LEFT JOIN inv_doc d ON d.id = l.inv_doc_id
         WHERE true
-        <if test="q.warehouseId != null">AND l.warehouse_id = #{q.warehouseId}</if>
-        <if test="q.materialSkuId != null">AND l.material_sku_id = #{q.materialSkuId}</if>
-        <if test="q.changeType != null and q.changeType.size() > 0">
-            AND l.change_type IN <foreach collection="q.changeType" item="t" open="(" separator="," close=")">#{t}</foreach>
-        </if>
-        <if test="q.bizDateFrom != null">AND l.biz_date &gt;= #{q.bizDateFrom}</if>
-        <if test="q.bizDateTo != null">AND l.biz_date &lt;= #{q.bizDateTo}</if>
-        <if test="q.ids != null and q.ids.size() > 0">
-            AND l.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
-        </if>
-        <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
-            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
-            AND l.id IN (
-                SELECT l.id FROM inv_stock_log l WHERE true
-                <include refid="keywordScope"/>
-                AND (upper(l.doc_no) LIKE #{keywordPrefix}
-                     <if test="codes != null">OR upper(l.doc_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
-                UNION
-                SELECT l.id FROM inv_stock_log l WHERE true
-                <include refid="keywordScope"/>
-                AND l.dye_lot ILIKE #{keywordContains}
-                UNION
-                SELECT l.id FROM inv_stock_log l WHERE true
-                <include refid="keywordScope"/>
-                AND l.material_sku_id IN (
-                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordPrefix}
-                    <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
-                    UNION
-                    SELECT k.id FROM bas_material m JOIN bas_material_sku k ON k.material_id = m.id
-                    WHERE m.name ILIKE #{keywordContains}
-                    <if test="codes != null">OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
-                )
-            )
-        </if>
-        <if test="q.createdDateFrom != null">AND l.create_time &gt;= (CAST(#{q.createdDateFrom} AS date)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
-        <if test="q.createdDateTo != null">AND l.create_time &lt; ((CAST(#{q.createdDateTo} AS date) + 1)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
-        <if test="afterTime != null">AND (l.create_time, l.id) &lt; (#{afterTime}, #{afterId})</if>
+        <include refid="keywordScope"/>
+        <include refid="keywordFilter"/>
+        ORDER BY l.create_time DESC, l.id DESC
+        LIMIT #{limit}
+    </select>
+    <select id="selectExportBatch" resultType="com.lingmao.scm.module.inventory.dto.StockLogRowVO">
+        <bind name="seek" value="true"/>
+        <bind name="exportSnapshot" value="true"/>
+        SELECT l.id, l.biz_date, l.create_time, l.change_type,
+               CASE WHEN l.inv_doc_id IS NOT NULL THEN 'INV_DOC' ELSE 'INV_COUNT' END AS doc_type,
+               d.kind AS doc_kind, COALESCE(l.inv_doc_id, l.count_id) AS doc_id, l.doc_no,
+               l.warehouse_id, w.name AS warehouse_name, l.material_sku_id, l.change_qty, l.balance_qty, l.dye_lot, l.create_by,
+               l.unit_price, l.amount, l.stock_unit, l.currency, l.valuation_status, l.reversal_of_log_id
+        FROM inv_stock_log l
+        JOIN bas_warehouse w ON w.id = l.warehouse_id
+        LEFT JOIN inv_doc d ON d.id = l.inv_doc_id
+        WHERE true
+        <include refid="keywordScope"/>
+        <include refid="keywordFilter"/>
         ORDER BY l.create_time DESC, l.id DESC
         LIMIT #{limit}
     </select>

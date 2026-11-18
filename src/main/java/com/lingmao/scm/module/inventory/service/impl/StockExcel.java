@@ -139,26 +139,22 @@ class StockExcel {
         }).toList());
     }
 
+    ExcelSchema<Row> logSchema(boolean financialColumns) { return financialColumns ? LOGS : LOGS.without("单价", "金额"); }
+
+    List<Row> logRows(List<StockLogRowVO> logs, Map<String, String> units) {
+        return logs.stream().map(l -> {
+            Row r = row(l, units);
+            r.setBizDate(l.getBizDate()); r.setChangeType(l.getChangeType().getLabel()); r.setDocNo(l.getDocNo());
+            r.setWarehouse(l.getWarehouseName()); r.setDyeLot(l.getDyeLot()); r.setQty(l.getChangeQty());
+            r.setBalanceQty(l.getBalanceQty()); r.setUnitPrice(l.getUnitPrice()); r.setAmount(l.getAmount());
+            r.setCurrency(l.getCurrency()); r.setValuationStatus(l.getValuationStatus());
+            r.setReversalOfLogId(l.getReversalOfLogId() == null ? null : l.getReversalOfLogId().toString());
+            r.setOperator(l.getOperatorName()); r.setTime(l.getCreateTime() == null ? null : TIME.format(l.getCreateTime())); return r;
+        }).toList();
+    }
+
     byte[] logs(List<StockLogRowVO> logs) {
         Map<String, String> units = InvTexts.labels(dictDataService, "unit");
-        return Excel.export(LOGS, logs.stream().map(l -> {
-            Row r = row(l, units);
-            r.setBizDate(l.getBizDate());
-            r.setChangeType(l.getChangeType().getLabel());
-            r.setDocNo(l.getDocNo());
-            r.setWarehouse(l.getWarehouseName());
-            r.setDyeLot(l.getDyeLot());
-            r.setQty(l.getChangeQty());
-            r.setBalanceQty(l.getBalanceQty());
-            r.setUnitPrice(l.getUnitPrice());
-            r.setAmount(l.getAmount());
-            r.setCurrency(l.getCurrency());
-            r.setValuationStatus(l.getValuationStatus());
-            // 用文本保留BIGINT引用；NULL价额直接导出为空，不从当前源单倒填。
-            r.setReversalOfLogId(l.getReversalOfLogId() == null ? null : l.getReversalOfLogId().toString());
-            r.setOperator(l.getOperatorName());
-            r.setTime(l.getCreateTime() == null ? null : TIME.format(l.getCreateTime()));
-            return r;
-        }).toList());
+        return Excel.export(logSchema(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST)), logRows(logs, units));
     }
 }

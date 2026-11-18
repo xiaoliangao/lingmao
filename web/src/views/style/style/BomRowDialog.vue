@@ -22,6 +22,8 @@ import {
 } from '@/types/techpack'
 import { formatPrice } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 改物料清单的一行（docs/api/01 §4.4，原型 BomRowForm）：物料、配料方式和配料、用量方式和用量、损耗、来源、供应商、单价、含税含运、备注。
@@ -75,15 +77,15 @@ const form = reactive({
   source: 'PURCHASE' as MaterialSource,
   supplierId: null as string | null,
   supplierName: null as string | null,
-  refPrice: null as number | null,
+  refPrice: null as number | null | undefined,
   priceSourceId: null as string | null,
-  priceTaxIncluded: true,
-  priceFreightIncluded: true,
+  priceTaxIncluded: true as boolean | undefined,
+  priceFreightIncluded: true as boolean | undefined,
   remark: '',
 })
 
 /** 配料：格子（'FIXED' | 'C:款色' | 'S:尺码' | 'CS:款色:尺码'）→ 选的物料 SKU 和它单独的单价（null = 用行上的） */
-const skuMap = reactive<Record<string, { materialSkuId: string; refPrice: number | null }>>({})
+const skuMap = reactive<Record<string, { materialSkuId: string; refPrice?: number | null }>>({})
 const guard = useUnsavedChanges(() => ({ form, skuMap }), visible)
 
 /** 这个物料的 SKU（配料下拉） */
@@ -215,7 +217,7 @@ async function applyDefaults(full: boolean) {
   form.priceTaxIncluded = def.priceTaxIncluded
   form.priceFreightIncluded = def.priceFreightIncluded
   // 和行上一样的不在 skuPrices 里：没列到的配料用行上的价（null）
-  const prices = new Map(def.skuPrices.map((p) => [p.materialSkuId, p.refPrice]))
+  const prices = new Map((def.skuPrices ?? []).map((p) => [p.materialSkuId, p.refPrice]))
   for (const entry of Object.values(skuMap)) entry.refPrice = prices.get(entry.materialSkuId) ?? null
 }
 
@@ -381,7 +383,7 @@ function submit() {
               </el-option>
             </el-select>
             <span v-if="skuOf(skuMap[slot.key]?.materialSkuId)?.status === 0" class="danger small">已停用，生效时会被拦</span>
-            <span v-if="skuMap[slot.key]?.refPrice != null" class="dim num small">单价 {{ formatPrice(skuMap[slot.key]?.refPrice) }}</span>
+            <span v-if="canSeeCost && skuMap[slot.key]?.refPrice != null" class="dim num small">单价 {{ formatPrice(skuMap[slot.key]?.refPrice) }}</span>
           </div>
         </div>
       </el-form-item>
@@ -410,11 +412,11 @@ function submit() {
         <SupplierSelect :model-value="form.supplierId" :label="form.supplierName" clearable @update:model-value="onSupplierChange" />
       </el-form-item>
 
-      <el-form-item :label="`参考单价（元 / ${units.labelOf(form.unit) || '库存单位'}）`">
+      <el-form-item v-if="canSeeCost" :label="`参考单价（元 / ${units.labelOf(form.unit) || '库存单位'}）`">
         <el-input-number v-model="form.refPrice" :min="0" :precision="4" :controls="false" />
         <span v-if="purchaseHint" class="dim small">{{ purchaseHint }}</span>
       </el-form-item>
-      <el-form-item label="单价口径">
+      <el-form-item v-if="canSeeCost" label="单价口径">
         <div class="checks">
           <el-checkbox v-model="form.priceTaxIncluded">含税</el-checkbox>
           <el-checkbox v-model="form.priceFreightIncluded">含运费</el-checkbox>

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -66,7 +67,7 @@ class SupplierServiceImplIT {
 
     private static final long USER_A = 900_001L;
     private static final long USER_B = 900_002L;
-    private static final String[] ALL = {"list", "add", "edit", "remove", "import", "export", "admit", "bank"};
+    private static final String[] ALL = {"list", "add", "edit", "remove", "import", "export", "admit", "bank", "contact"};
 
     @Autowired
     private SupplierService supplierService;
@@ -87,6 +88,9 @@ class SupplierServiceImplIT {
 
     @BeforeEach
     void login() {
+        var permissions = java.util.Arrays.stream(ALL).map(p -> "supplier:supplier:" + p).toList();
+        TestIdentity.grant(jdbcTemplate, USER_A, permissions);
+        TestIdentity.grant(jdbcTemplate, USER_B, permissions);
         SupplierFixtures.loginAs(USER_A, ALL);
     }
 

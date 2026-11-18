@@ -78,6 +78,12 @@ public final class ExcelSchema<R> {
         return name;
     }
 
+    /** Drop entire export columns before any workbook bytes are written. */
+    public ExcelSchema<R> without(String... headers) {
+        Set<String> excluded = Set.of(headers);
+        return new ExcelSchema<>(name, factory, columns.stream().filter(c -> !excluded.contains(c.header())).toList());
+    }
+
     boolean isIgnored(String normalizedHeader) {
         return ignored.contains(normalizedHeader);
     }

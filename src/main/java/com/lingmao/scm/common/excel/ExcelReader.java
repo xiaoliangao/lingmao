@@ -5,6 +5,7 @@ import org.apache.poi.EmptyFileException;
 import org.apache.poi.EncryptedDocumentException;
 import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -13,6 +14,7 @@ import org.apache.poi.ss.usermodel.WorkbookFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,19 +32,20 @@ final class ExcelReader {
      * 不限的话一个 10MB 的"压缩炸弹"能解出几 GB，整个应用内存撑爆（POI 默认上限是 4GB）。
      * 这是 POI 的全局设置，整个应用只有这里读 Excel
      */
-    private static final long MAX_ENTRY_BYTES = 100L * 1024 * 1024;
-
     static {
-        ZipSecureFile.setMaxEntrySize(MAX_ENTRY_BYTES);
+        ZipSecureFile.setMaxEntrySize(ExcelArchiveGuard.MAX_ENTRY_BYTES);
+        ZipSecureFile.setMaxFileCount(ExcelArchiveGuard.MAX_FILES);
     }
 
     private ExcelReader() {
     }
 
-    /** 打开文件：只要 POI 打得开就收（改了扩展名的 .xls 也行），打不开的说清原因 */
+    /** Check the actual OOXML archive and its allocation bounds before opening it with POI. */
     static Workbook open(InputStream in) {
         try {
-            return WorkbookFactory.create(in);
+            return WorkbookFactory.create(new ByteArrayInputStream(ExcelArchiveGuard.inspect(in)));
+        } catch (BizException e) {
+            throw e;
         } catch (EmptyFileException e) {
             throw new BizException("文件是空的");
         } catch (EncryptedDocumentException e) {
@@ -115,7 +118,18 @@ final class ExcelReader {
             int rowNumber = index + 1;
             R data = schema.newRow();
             columns.forEach((col, column) -> {
-                String problem = column.readInto(data, row.getCell(col), texts.get(col));
+                Cell cell = row.getCell(col);
+                String value = texts.get(col);
+                boolean textColumn = column.kind() == ExcelColumn.Kind.TEXT || column.kind() == ExcelColumn.Kind.CHOICE;
+                boolean formula = cell != null && cell.getCellType() == CellType.FORMULA;
+                String problem;
+                if (formula || textColumn && dangerousPrefix(value)) {
+                    problem = "不允许公式或公式前缀，请粘贴为值；纯文字请在前面加英文单引号";
+                } else {
+                    // Our exports escape literal formula prefixes. Preserve the original text on a round trip.
+                    if (textColumn && value.startsWith("'") && dangerousPrefix(value.substring(1))) value = value.substring(1).strip();
+                    problem = column.readInto(data, cell, value);
+                }
                 if (problem != null) {
                     errors.add(new ImportError(sheetName, rowNumber, column.header(), problem));
                 }
@@ -172,5 +186,10 @@ final class ExcelReader {
     /** 单元格显示的文字，去掉首尾空白。网页上复制来的不换行空格（ ）也算空白 */
     private static String textOf(Cell cell, DataFormatter formatter) {
         return formatter.formatCellValue(cell).replace(' ', ' ').strip();
+    }
+
+    private static boolean dangerousPrefix(String value) {
+        String start = value.replace(' ', ' ').stripLeading();
+        return !start.isEmpty() && "=+-@".indexOf(start.charAt(0)) >= 0;
     }
 }

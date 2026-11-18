@@ -1,6 +1,8 @@
 package com.lingmao.scm.module.price.dto;
 
 import com.lingmao.scm.module.price.entity.Price;
+import com.lingmao.scm.module.price.entity.PriceType;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -13,11 +15,11 @@ import java.time.LocalDate;
  */
 public record PriceRef(long id, BigDecimal price, String unit, BigDecimal taxPct,
                        boolean taxIncluded, boolean freightIncluded, LocalDate effectiveDate,
-                       Long materialSkuId) {
+                       Long materialSkuId, @JsonIgnore PriceType type) {
 
     public static PriceRef of(Price p) {
         return new PriceRef(p.getId(), p.getPrice(), p.getUnit(), p.getTaxPct(),
                 Boolean.TRUE.equals(p.getTaxIncluded()), Boolean.TRUE.equals(p.getFreightIncluded()), p.getEffectiveDate(),
-                p.getMaterialSkuId());
+                p.getMaterialSkuId(), p.getType());
     }
 }

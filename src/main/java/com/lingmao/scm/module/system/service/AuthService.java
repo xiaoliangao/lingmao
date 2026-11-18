@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.service;
 
 import com.lingmao.scm.module.system.dto.LoginReq;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
+import com.lingmao.scm.module.system.dto.AuthTokens;
 
 
 public interface AuthService {
@@ -10,7 +11,9 @@ public interface AuthService {
      * 登录成功返回 token；用户名或密码不对、账号停用、输错太多次被锁住都抛 BizException。
      * 同一个用户名连续输错 5 次锁 15 分钟，锁住期间密码对了也不让进
      */
-    String login(LoginReq req);
+    AuthTokens login(LoginReq req);
+    AuthTokens refresh(String refreshToken, String browserToken);
+    void revokeRefresh(String refreshToken, String browserToken);
 
     /**
      * 当前登录用户的信息：基本信息、角色、权限标识、侧边栏菜单、默认主体
@@ -23,7 +26,7 @@ public interface AuthService {
     void logout(String jti);
 
     /**
-     * 自己改密码：旧密码不对抛 BizException（1000）。别的设备上已经登录的不踢下线，token 最长 2 小时自己过期
+     * 自己改密码：旧密码不对抛 BizException（1000）；提交后所有设备的旧访问令牌和刷新会话立即失效。
      */
     void changePassword(Long userId, String oldPassword, String newPassword);
 }

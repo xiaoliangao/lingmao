@@ -6,7 +6,9 @@ import type {
   InvDocDetail, InvDocDraft, InvDocForm, InvDocFromSourceReq, InvDocQuery, InvDocRow, StockLogQuery, StockLogRow, StockQty, StockQuery,
   StockRow, StockSummaryRow,
 } from '@/types/inventory'
-import { docApi, documentOptions } from './biz'
+import { docApi } from './biz'
+import { currentCompanyScope } from '@/utils/companyScope'
+import { sessionEpoch } from '@/utils/token'
 import type { SeekResult } from '@/composables/useSeekTable'
 import type { PageParams } from './system'
 
@@ -20,6 +22,14 @@ import type { PageParams } from './system'
 // ---------- 物料入库单、物料出库单 ----------
 
 const docBase = '/api/inventory-docs'
+
+/** Source projection is authorized for warehouse users even when ordinary purchase/production detail is not. */
+async function sourceOptions(url: string, data: InvDocFromSourceReq, options?: RequestOptions): Promise<RequestOptions> {
+  const captured = { ...options, authEpoch: options?.authEpoch ?? sessionEpoch(), companyId: options?.companyId ?? currentCompanyScope() }
+  if (captured.companyId) return captured
+  const draft = await http.get<InvDocDraft>(url, { docType: data.docType, itemIds: data.itemIds ?? undefined, fromWarehouseId: data.fromWarehouseId ?? undefined }, captured)
+  return { ...captured, companyId: draft.companyId }
+}
 
 export const invDocApi = {
   /** act(id, 'audit' | 'unaudit' | 'void', { version })、remove（删没过过账的草稿）、logs、attachments、references、notices */
@@ -40,13 +50,19 @@ export const invDocApi = {
   prefillFromPurchase: (purchaseOrderId: string, params: { docType: 'PURCHASE_IN' | 'PURCHASE_RETURN'; itemIds?: string[] }) =>
     http.get<InvDocDraft>(`${docBase}/from-purchase/${purchaseOrderId}`, params),
   /** 由采购单生成（存草稿，或 post = true 时马上过账）。"待到料"勾几行点"入库"时按采购单分，每张调一次 */
-  fromPurchase: async (purchaseOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) =>
-    http.post<InvDocCreated>(`${docBase}/from-purchase/${purchaseOrderId}`, snapshotRequestBody(data), await documentOptions('/api/purchase-orders', purchaseOrderId, options)),
+  fromPurchase: async (purchaseOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) => {
+    const url = `${docBase}/from-purchase/${purchaseOrderId}`
+    const frozen = snapshotRequestBody(data)
+    return http.post<InvDocCreated>(url, frozen, await sourceOptions(url, frozen, options))
+  },
   /** 领料出库、退料入库：带出明细（生产单那边算的应领、已领）。领料的 fromWarehouseId 不传 = 第一个启用的物料仓 */
   prefillFromProduction: (productionOrderId: string, params: { docType: 'ISSUE_OUT' | 'RETURN_IN'; fromWarehouseId?: string }) =>
     http.get<InvDocDraft>(`${docBase}/from-production/${productionOrderId}`, params),
-  fromProduction: async (productionOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) =>
-    http.post<InvDocCreated>(`${docBase}/from-production/${productionOrderId}`, snapshotRequestBody(data), await documentOptions('/api/production-orders', productionOrderId, options)),
+  fromProduction: async (productionOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) => {
+    const url = `${docBase}/from-production/${productionOrderId}`
+    const frozen = snapshotRequestBody(data)
+    return http.post<InvDocCreated>(url, frozen, await sourceOptions(url, frozen, options))
+  },
 }
 
 // ---------- 物料盘点单 ----------

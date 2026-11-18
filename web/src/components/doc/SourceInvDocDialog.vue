@@ -24,8 +24,9 @@ import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import { showSilentError, todayStr } from './docUtils'
 import { bindCompanyApi } from '@/utils/companyScope'
-import { documentOptions } from '@/api/biz'
 import { restoreDraftValue } from '@/utils/draft'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 const invDocApi = bindCompanyApi(invDocApiBase, () => sourceCompanyId.value)
 
 /**
@@ -189,12 +190,11 @@ async function init() {
   loading.value = true
   loadError.value = null
   try {
-    const sourceBase = props.sourceKind === 'PURCHASE' ? '/api/purchase-orders' : '/api/production-orders'
-    const [whs, d, sourceContext] = await read.run(() => Promise.all([warehouseApi.options(), prefill(sourceId), documentOptions(sourceBase, sourceId)]))
+    const [whs, d] = await read.run(() => Promise.all([warehouseApi.options(), prefill(sourceId)]))
     if (!read.current()) return
     if (seq !== initSeq || key !== actionKey.value || !visible.value) return
     warehouses.value = whs
-    sourceCompanyId.value = sourceContext.companyId
+    sourceCompanyId.value = d.companyId
     draft.value = d
     Object.assign(head, {
       docDate: todayStr(),
@@ -249,6 +249,7 @@ async function onFromWarehouseChange(whId: string | null) {
   try {
     const d = await read.run(() => prefill(sourceId, whId))
     if (!read.current()) return
+    if (d.companyId !== sourceCompanyId.value) throw new ApiError(409, '来源单主体已变化，请关闭后重新打开')
     draft.value = d
     rows.value = toRows(d).map((r) => {
       const old = kept.get(r.materialSkuId)
@@ -476,7 +477,7 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
           </template>
         </el-table-column>
 
-        <el-table-column v-if="isPurchase" label="单价" width="80" class-name="num" align="right">
+        <el-table-column v-if="canSeeCost && (isPurchase)" label="单价" width="80" class-name="num" align="right">
           <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
         </el-table-column>
 

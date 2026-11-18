@@ -1,6 +1,6 @@
 /** SKU 行是保存的单位；批量输入只在显式应用时修改它们。 */
 export interface SkuValues {
-  price: number | null
+  price?: number | null
   lineDueDate: string | null
   remark: string | null
 }

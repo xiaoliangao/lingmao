@@ -2,6 +2,7 @@ package com.lingmao.scm.module.price.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.price.entity.PriceType;
+import com.lingmao.scm.security.FieldPermissions;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -26,9 +27,14 @@ final class PricePerms {
 
     /** 没有这一类的改价权限 → 403。提示里写角色页上那个勾的名字（V16 的按钮名） */
     static void checkEdit(PriceType type) {
+        checkRead(type);
         if (!has(editOf(type))) {
             throw new BizException(403, "你没有改" + type.getLabel() + "的权限：找管理员在角色里勾上「录、作废" + type.getLabel() + "」");
         }
+    }
+
+    static void checkRead(PriceType type) {
+        FieldPermissions.require(type == PriceType.PROCESS ? FieldPermissions.PRODUCTION : FieldPermissions.COST);
     }
 
     /** 当前登录的人有没有这个权限码；没登录（定时任务）一律没有 */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { priceApi } from '@/api/price'
@@ -10,6 +10,9 @@ import { useUserStore } from '@/stores/user'
 import { formatDate, formatPrice } from '@/utils/format'
 import PriceForm from './PriceForm.vue'
 import { EDIT_PERM, changePct, recordableTypes, shortDay, skuLabel, styleLabel, today, type PriceSubject } from './price'
+import { priceReadPermission } from '@/utils/fieldAccess'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost, canSeeProductionPrice } = useFieldAccess()
 
 /**
  * 价格记录页签（RFC 006 §9，原型 5e-price.js 的 PriceHistory）：物料、供应商、款式详情里共用。
@@ -33,7 +36,10 @@ const modes = useDict('process_mode')
 
 const filter = computed(() => {
   const { kind, id } = props.subject
-  return kind === 'supplier' ? { supplierId: id } : kind === 'material' ? { materialId: id } : { styleId: id }
+  const target = kind === 'supplier' ? { supplierId: id } : kind === 'material' ? { materialId: id } : { styleId: id }
+  const type = kind === 'material' || (!canSeeProductionPrice.value && canSeeCost.value) ? 'MATERIAL' as const
+    : kind === 'style' || (!canSeeCost.value && canSeeProductionPrice.value) ? 'PROCESS' as const : undefined
+  return { ...target, type }
 })
 
 const currentTable = useTable({
@@ -44,13 +50,16 @@ const historyTable = useTable({
   fetch: (params) => priceApi.page({ ...params, ...filter.value, includeVoided: true }),
   query: {},
 })
-const { list: currentList, total: currentTotal, page: currentPage, size: currentSize, loading: currentLoading } = currentTable
-const { list: historyList, total: historyTotal, page: historyPage, size: historySize, loading: historyLoading } = historyTable
+const { list: loadedCurrent, total: currentTotal, page: currentPage, size: currentSize, loading: currentLoading } = currentTable
+const { list: loadedHistory, total: historyTotal, page: historyPage, size: historySize, loading: historyLoading } = historyTable
+const currentList = computed(() => loadedCurrent.value.filter((row) => user.hasPerm(priceReadPermission(row.type))))
+const historyList = computed(() => loadedHistory.value.filter((row) => user.hasPerm(priceReadPermission(row.type))))
 
 function reload() {
   currentTable.search()
   historyTable.search()
 }
+watch(filter, reload)
 
 defineExpose({ reload })
 
@@ -58,7 +67,7 @@ const bySupplier = computed(() => props.subject.kind === 'supplier')
 /** 物料价、加工价都有才显示类型列（只有供应商页会两种都有） */
 const mixed = computed(() => new Set([...currentList.value, ...historyList.value].map((row) => row.type)).size > 1)
 const canRecord = computed(() => recordableTypes(props.subject.kind, user.hasPerm).length > 0)
-const canEdit = (row: PriceRow) => user.hasPerm(EDIT_PERM[row.type])
+const canEdit = (row: PriceRow) => user.hasPerm(EDIT_PERM[row.type]) && user.hasPerm(priceReadPermission(row.type))
 
 /** 第三列：供应商页是"物料 / 款式"，物料页是 SKU，款式页是加工方式 */
 const whatLabel = computed(() => ({ supplier: '物料 / 款式', material: '颜色 / SKU', style: '加工方式' })[props.subject.kind])

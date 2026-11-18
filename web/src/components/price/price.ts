@@ -1,4 +1,5 @@
 import type { PriceRow, PriceType } from '@/types/price'
+import { priceReadPermission } from '@/utils/fieldAccess'
 
 /** 价格记录页签（PriceHistory）和录价对话框（PriceForm）共用的小件 */
 
@@ -15,7 +16,7 @@ export const EDIT_PERM: Record<PriceType, string> = { MATERIAL: 'price:material:
 /** 从这一页能录哪几种：有权限，而且对话框里选得到要录的东西（物料页只有物料价，款式页只有加工价） */
 export function recordableTypes(kind: PriceSubject['kind'], hasPerm: (perm: string) => boolean): PriceType[] {
   const reachable: PriceType[] = kind === 'material' ? ['MATERIAL'] : kind === 'style' ? ['PROCESS'] : ['MATERIAL', 'PROCESS']
-  return reachable.filter((type) => hasPerm(EDIT_PERM[type]))
+  return reachable.filter((type) => hasPerm(EDIT_PERM[type]) && hasPerm(priceReadPermission(type)))
 }
 
 /**

@@ -128,6 +128,7 @@ class PurchaseExcel {
                 out.add(r);
             }
         }
-        return Excel.export(EXPORT, out);
+        return Excel.export(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST)
+                ? EXPORT : EXPORT.without("单价", "金额", "改价原因"), out);
     }
 }

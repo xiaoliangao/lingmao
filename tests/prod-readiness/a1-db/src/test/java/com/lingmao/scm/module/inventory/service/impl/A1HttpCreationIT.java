@@ -2,6 +2,7 @@ package com.lingmao.scm.module.inventory.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
 import com.lingmao.scm.TestColors;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.module.basic.dto.MaterialCreateReq;
 import com.lingmao.scm.module.style.dto.StyleCreateReq;
@@ -42,7 +43,7 @@ class A1HttpCreationIT {
     private static final List<String> PERMISSIONS = List.of("basic:material:add", "basic:material:edit", "basic:material:list",
             "style:style:add", "style:style:edit", "style:style:list", "supplier:supplier:add", "supplier:supplier:list", "supplier:supplier:edit",
             "techpack:pack:add", "techpack:pack:edit", "techpack:pack:list", "purchase:order:add", "purchase:order:list",
-            "production:node:edit", "production:issue:edit", "production:order:list");
+            "production:node:edit", "production:issue:edit", "production:order:list", "techpack:cost:query");
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired JsonMapper json;
@@ -52,18 +53,21 @@ class A1HttpCreationIT {
     @Autowired FileUrlSigner signer;
     private final List<Long> brands = new ArrayList<>();
     private long user;
+    private Long currentCompany;
     private String suffix;
 
     @BeforeEach void login() {
+        TestIdentity.clear();
         suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         user = jdbc.queryForObject("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 HTTP') RETURNING id", Long.class, "a1-http-" + suffix);
+        TestIdentity.grant(jdbc, user, PERMISSIONS);
         SecurityContextHolder.getContext().setAuthentication(auth());
     }
 
     @AfterEach void cleanup() {
         for (long id : brands) jdbc.update("DELETE FROM sys_dict_data WHERE id=? AND type_code='brand'", id);
         if (!brands.isEmpty()) dictCache.evictAfterCommit("brand");
-        SecurityContextHolder.clearContext();
+        TestIdentity.clear();
     }
 
     @Test void materialAutoNumberAndSkuCreationReplayTheOriginalIds() throws Exception {
@@ -118,13 +122,14 @@ class A1HttpCreationIT {
 
     @Test void sourceMrpOwnershipIsRecheckedWithoutRequiringOriginalStateOrVersion() throws Exception {
         long company = jdbc.queryForObject("INSERT INTO bas_company(code,name,short_name) VALUES (?,?,'A1') RETURNING id", Long.class, suffix.substring(0, 6).toUpperCase(), "A1 HTTP " + suffix);
+        currentCompany = company;
         jdbc.update("UPDATE sys_user SET default_company_id=? WHERE id=?", company, user);
         jdbc.update("INSERT INTO bas_warehouse(code,name,type) VALUES (?,?,'MATERIAL')", "A1H" + suffix, "A1 来源仓 " + suffix);
         long supplier = jdbc.queryForObject("INSERT INTO sup_supplier(code,name,short_name,status,settle_method,tax_pct) VALUES (?,?,'A1','ACTIVE','MONTHLY',13) RETURNING id", Long.class, "A1" + suffix, "A1 来源 " + suffix);
         long material = createMaterial();
         jdbc.update("UPDATE bas_material SET default_supplier_id=?,ref_price=20 WHERE id=?", supplier, material);
         long sku = jdbc.queryForObject("SELECT id FROM bas_material_sku WHERE material_id=? LIMIT 1", Long.class, material);
-        long calc = jdbc.queryForObject("INSERT INTO mrp_calc(no,status,create_by) VALUES (?,'CONFIRMED',?) RETURNING id", Long.class, "A1M" + suffix, user);
+        long calc = jdbc.queryForObject("INSERT INTO mrp_calc(no,company_id,status,create_by) VALUES (?,?,'CONFIRMED',?) RETURNING id", Long.class, "A1M" + suffix, company, user);
         long line = jdbc.queryForObject("""
                 INSERT INTO mrp_calc_item(calc_id,seq,material_sku_id,supplier_id,gross_qty,need_qty,net_qty,
                     purchase_unit,conversion_factor,suggest_qty,ref_price,est_amount)
@@ -136,7 +141,8 @@ class A1HttpCreationIT {
         assertThat(created.get("code").intValue()).as(created.toString()).isZero();
         jdbc.update("UPDATE mrp_calc SET status='CLOSED' WHERE id=?", calc);
         assertThat(send("/api/purchase-orders/from-mrp", body, key, null)).isEqualTo(created);
-        assertThat(send("/api/purchase-orders/from-mrp", body, key, Long.toString(company)).get("code").intValue()).isEqualTo(1002);
+        assertThat(send("/api/purchase-orders/from-mrp", body, key, Long.toString(company)).get("code").intValue()).isZero();
+        assertThat(send("/api/purchase-orders/from-mrp", body, key, Long.toString(company + 1)).get("code").intValue()).isEqualTo(1002);
         jdbc.update("UPDATE mrp_calc SET create_by=NULL WHERE id=?", calc);
         assertThat(send("/api/purchase-orders/from-mrp", body, key, null).get("code").intValue()).isEqualTo(404);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pur_order WHERE calc_id=?", Integer.class, calc)).isEqualTo(1);
@@ -146,6 +152,7 @@ class A1HttpCreationIT {
         long style = createStyle();
         long sku = jdbc.queryForObject("SELECT id FROM sty_style_sku WHERE style_id=? LIMIT 1", Long.class, style);
         long company = jdbc.queryForObject("INSERT INTO bas_company(code,name,short_name) VALUES (?,?,'A1') RETURNING id", Long.class, suffix.substring(0,6).toUpperCase(), "A1 生产 " + suffix);
+        currentCompany = company;
         long factory = jdbc.queryForObject("INSERT INTO sup_supplier(code,name,short_name,status) VALUES (?,?,'A1','ACTIVE') RETURNING id", Long.class, "A1F" + suffix, "A1 工厂 " + suffix);
         long pack = jdbc.queryForObject("INSERT INTO tp_tech_pack(style_id,stage,version,status) VALUES (?,'PROD',1,'EFFECTIVE') RETURNING id", Long.class, style);
         long order = jdbc.queryForObject("""
@@ -244,7 +251,7 @@ class A1HttpCreationIT {
         var request = post(path).with(authentication(auth()));
         if (body != null) request.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body));
         if (key != null) request.header("Idempotency-Key", key);
-        if (company != null) request.header("X-Company-Id", company);
+        if (company != null || currentCompany != null) request.header("X-Company-Id", company == null ? currentCompany.toString() : company);
         return json.readTree(mvc.perform(request).andReturn().getResponse().getContentAsString());
     }
 

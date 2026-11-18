@@ -8,6 +8,7 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class PurchaseSaveReq extends PurchaseForm {
+    private Long expectedCompanyId;
     @NotNull(message = "缺少版本号，请刷新")
     private Integer version;
 }

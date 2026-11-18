@@ -416,10 +416,12 @@ public class MrpServiceImpl implements MrpService {
     }
 
     /** 数据范围（PRD §3.2）：本人范围的看制单人是自己的 */
-    private static MrpCalc visible(MrpCalc c) {
+    private MrpCalc visible(MrpCalc c) {
         if (c == null || !DataScope.current(false).canSee(c.getCreateBy())) {
             throw new BizException(404, NOT_FOUND);
         }
+        engine.checkSourceVisible(calcOrders(List.of(c.getId())).getOrDefault(c.getId(), List.of()).stream()
+                .map(MrpCalcMapper.CalcOrder::orderId).toList());
         return c;
     }
 

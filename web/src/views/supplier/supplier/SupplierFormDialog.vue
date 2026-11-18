@@ -7,6 +7,8 @@ import { useUserStore } from '@/stores/user'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import DictSelect from '@/components/DictSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeSupplierContact } = useFieldAccess()
 
 /**
  * 新建、编辑供应商（RFC 004 §12）。编码自动编、状态走准入审批和停用拉黑，都不在这里改。
@@ -123,7 +125,7 @@ function payload(): SupplierForm {
   if (data.creditCode) data.creditCode = data.creditCode.replace(/\s+/g, '').toUpperCase()
   if (data.bankAccount) data.bankAccount = data.bankAccount.replace(/\s+/g, '')
   // 没有 bank 权限：后端不收账号，也不把遮过的值发回去
-  if (!canSeeBank.value) data.bankAccount = null
+  // 无权字段由请求层按供应商域完全省略，保留服务器既有值。
   return data
 }
 
@@ -199,19 +201,19 @@ defineExpose({ open })
           no-data-text="还没有品类，先在基础资料里建"
         />
       </el-form-item>
-      <el-form-item label="联系人">
+      <el-form-item v-if="canSeeSupplierContact" label="联系人">
         <el-input v-model="form.contact" maxlength="50" />
       </el-form-item>
-      <el-form-item label="电话">
+      <el-form-item v-if="canSeeSupplierContact" label="电话">
         <el-input v-model="form.phone" maxlength="32" />
       </el-form-item>
-      <el-form-item label="微信">
+      <el-form-item v-if="canSeeSupplierContact" label="微信">
         <el-input v-model="form.wechat" maxlength="64" />
       </el-form-item>
       <el-form-item label="负责采购员">
         <UserSelect v-model="form.buyerId" :label="editing?.buyerName" clearable />
       </el-form-item>
-      <el-form-item label="地址" class="full">
+      <el-form-item v-if="canSeeSupplierContact" label="地址" class="full">
         <el-input v-model="form.address" maxlength="255" />
       </el-form-item>
       <el-form-item>
@@ -230,15 +232,15 @@ defineExpose({ open })
         <template #label>税率（%）<i v-if="gate" class="kmark">改了要审批</i></template>
         <el-input-number v-model="form.taxPct" :min="0" :max="100" :precision="2" :controls="false" align="left" class="num-input" placeholder="如 13" />
       </el-form-item>
-      <el-form-item>
+      <el-form-item v-if="canSeeBank">
         <template #label>开户行<i v-if="gate" class="kmark">改了要审批</i></template>
         <el-input v-model="form.bankName" maxlength="100" />
       </el-form-item>
-      <el-form-item>
+      <el-form-item v-if="canSeeBank">
         <template #label>收款户名<i v-if="gate" class="kmark">改了要审批</i></template>
         <el-input v-model="form.bankAccountName" maxlength="100" placeholder="一般和全称一样" />
       </el-form-item>
-      <el-form-item class="full">
+      <el-form-item v-if="canSeeBank" class="full">
         <template #label>账号<i v-if="gate" class="kmark">改了要审批</i></template>
         <el-input
           v-model="form.bankAccount"

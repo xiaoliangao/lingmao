@@ -20,10 +20,12 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -116,7 +118,7 @@ class DictDataServiceImplTest {
     @Test
     void listByType_cacheHit_noDbQuery() {
         List<DictOption> cached = List.of(new DictOption("春季", "1", 1));
-        when(dictCache.get("season")).thenReturn(cached);
+        when(dictCache.getOrLoad(eq("season"), any())).thenReturn(cached);
 
         assertThat(dictDataService.listByType("season")).isEqualTo(cached);
         verify(dictDataMapper, never()).selectList(any());
@@ -136,14 +138,15 @@ class DictDataServiceImplTest {
         old.setLabel("旧款季");
         old.setValue("9");
         old.setStatus(0);
-        when(dictCache.get("season")).thenReturn(null);
+        when(dictCache.getOrLoad(eq("season"), any()))
+                .thenAnswer(inv -> inv.<Supplier<List<DictOption>>>getArgument(1).get());
         when(dictDataMapper.selectList(any())).thenReturn(List.of(spring, old));
 
         List<DictOption> options = dictDataService.listByType("season");
 
         assertThat(options).containsExactly(new DictOption("春季", "1", 1), new DictOption("旧款季", "9", 0));
         assertThat(options).extracting(DictOption::enabled).containsExactly(true, false);
-        verify(dictCache).put("season", options);
+        verify(dictDataMapper).selectList(any());
     }
 
     /** 规则：字典项不能挪到别的类型（挪了等于改了它的身份，和改 value 一样，RFC 003 §4.2） */
@@ -209,7 +212,7 @@ class DictDataServiceImplTest {
     /** 规则：TRADE 关时，下拉选项里没有"客户来样"（缓存里是全的，取出来再滤） */
     @Test
     void listByType_tradeOff_hidesCustomerSample() {
-        when(dictCache.get("style_source")).thenReturn(List.of(
+        when(dictCache.getOrLoad(eq("style_source"), any())).thenReturn(List.of(
                 new DictOption("自主开发", "OWN", 1), new DictOption("客户来样", "CUSTOMER_SAMPLE", 1)));
 
         assertThat(dictDataService.listByType("style_source")).extracting(DictOption::value).containsExactly("OWN");

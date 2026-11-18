@@ -34,6 +34,7 @@ public class StockController {
 
     private final StockService stockService;
     private final Clock clock;
+    private final com.lingmao.scm.module.inventory.service.StockLogExportService logExporter;
 
     @Operation(summary = "库存明细：仓库 × 物料 SKU（物料仓、工厂仓）")
     @GetMapping("/api/stocks")
@@ -88,7 +89,12 @@ public class StockController {
     @Operation(summary = "导出库存日志")
     @GetMapping("/api/stock-logs/export")
     @PreAuthorize("hasAuthority('inventory:stock:export')")
-    public ResponseEntity<byte[]> exportLogs(@Valid StockLogQuery query) {
-        return Excel.download(Excel.exportFileName("库存日志", LocalDate.now(clock)), stockService.exportLogs(query));
+    public void exportLogs(@Valid StockLogQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        var plan = logExporter.prepareSync(query);
+        response.setContentType(Excel.CONTENT_TYPE);
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Content-Disposition", org.springframework.http.ContentDisposition.attachment()
+                .filename(Excel.exportFileName("库存日志", LocalDate.now(clock)), java.nio.charset.StandardCharsets.UTF_8).build().toString());
+        logExporter.write(plan, response.getOutputStream(), rows -> {});
     }
 }

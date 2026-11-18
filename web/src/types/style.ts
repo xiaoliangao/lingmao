@@ -118,7 +118,7 @@ export interface StyleDetail {
   execStandard: string | null
   safetyCategory: string | null
   tagPrice: number | null
-  refCost: number | null
+  refCost?: number | null
   defaultFactoryId: string | null
   defaultFactoryCode: string | null
   /** 简称 */

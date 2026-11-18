@@ -36,6 +36,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 
 import static com.lingmao.scm.module.techpack.service.impl.PackFixtures.KHAKI;
 import static com.lingmao.scm.module.techpack.service.impl.PackFixtures.ctx;
@@ -167,7 +168,9 @@ class TechPackPdfServiceImplTest {
         cost.setTrimRows(List.of());
         cost.setSummary(new CostSummary(new BigDecimal("28.58"), BigDecimal.ZERO, new BigDecimal("1.2"), BigDecimal.ZERO,
                 new BigDecimal("29.78")));
-        when(costCalculator.compute(eq(pack), any(), eq(KHAKI), eq(false))).thenReturn(cost);
+        var inputs = new CostCalculator.Inputs(List.of(), List.of(), List.of(), Map.of(), Map.of(), null, null);
+        when(costCalculator.preload(eq(List.of(pack)), any())).thenReturn(Map.of(pack.getId(), inputs));
+        when(costCalculator.computePrepared(eq(pack), any(), eq(KHAKI), eq(inputs))).thenReturn(cost);
 
         PdfSheet sheet = service.sheet(pack, ctx(), ctx().colors().subList(0, 1), true);
 

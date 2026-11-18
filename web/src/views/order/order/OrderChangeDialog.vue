@@ -24,6 +24,8 @@ import { MAX_UNIT_PRICE, validateOrderCapacity } from '@/utils/orderSku'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
 const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => props.order.companyId)
 
 /**
@@ -62,7 +64,7 @@ const form = reactive({
   /** 款式 SKU id → 新件数 */
   qtys: {} as Record<string, number>,
   /** 款 id → 新单价 */
-  prices: {} as Record<string, number | null>,
+  prices: {} as Record<string, number | null | undefined>,
   priceChanges: {} as Record<string, boolean>,
   /** 款 id → 资料包 id */
   packs: {} as Record<string, string | null>,
@@ -198,18 +200,18 @@ function buildForm(): OrderChangeForm | null {
     return null
   }
   if (form.cancel) {
-    return { cancel: true, reason: form.reason.trim(), responsibleParty: form.responsibleParty, feeNote: orNull(form.feeNote), requiredDate: null, quantities: [], prices: [], techPacks: [] }
+    return { cancel: true, reason: form.reason.trim(), responsibleParty: form.responsibleParty, ...(canSeeOrderPrice.value ? { feeNote: orNull(form.feeNote), prices: [] } : {}), requiredDate: null, quantities: [], techPacks: [] }
   }
   const quantities = styleOpts.value.flatMap((opt) =>
     opt.skus
       .filter((s) => itemBySku.value.has(s.id) || (form.qtys[s.id] ?? 0) > 0)
       .map((s) => ({ styleSkuId: s.id, qty: form.qtys[s.id] ?? 0 })),
   )
-  const prices = props.order.styles.flatMap((s) => {
+  const prices = (canSeeOrderPrice.value ? props.order.styles : []).flatMap((s) => {
     const next = form.prices[s.styleId]
     return form.priceChanges[s.styleId] && next != null ? [{ styleId: s.styleId, price: next }] : []
   })
-  if (props.order.styles.some((style) => form.priceChanges[style.styleId] && form.prices[style.styleId] == null)) {
+  if (canSeeOrderPrice.value && props.order.styles.some((style) => form.priceChanges[style.styleId] && form.prices[style.styleId] == null)) {
     ElMessage.warning('已勾选改单价的款要填写新单价'); return null
   }
   const capacityError = validateOrderCapacity(quantities.filter((row) => row.qty > 0).map((row) => {
@@ -227,10 +229,9 @@ function buildForm(): OrderChangeForm | null {
     cancel: false,
     reason: form.reason.trim(),
     responsibleParty: form.responsibleParty,
-    feeNote: orNull(form.feeNote),
+    ...(canSeeOrderPrice.value ? { feeNote: orNull(form.feeNote), prices } : {}),
     requiredDate: form.requiredDate !== props.order.requiredDate ? form.requiredDate : null,
     quantities,
-    prices,
     techPacks,
   }
 }
@@ -301,7 +302,7 @@ const title = computed(() => (props.editing ? `改变更单 ${props.editing.no}`
             <span class="code">{{ opt.code }}</span>
             <strong>{{ opt.name }}</strong>
             <span class="gap" />
-            <label class="ctrl">
+            <label v-if="canSeeOrderPrice" class="ctrl">
               <span class="dim">单价</span>
               <el-checkbox v-model="form.priceChanges[opt.styleId]">整款改单价</el-checkbox>
               <el-input-number v-model="form.prices[opt.styleId]" :disabled="!form.priceChanges[opt.styleId]" :max="MAX_UNIT_PRICE" size="small" :min="0" :precision="4" :controls="false" :placeholder="mixedPrice(opt.styleId) ? '多个值（保留原值）' : origPrice(opt.styleId) == null ? '' : formatPrice(origPrice(opt.styleId))" />
@@ -332,7 +333,7 @@ const title = computed(() => (props.editing ? `改变更单 ${props.editing.no}`
         <el-form-item label="原因" required class="full">
           <el-input v-model="form.reason" type="textarea" :autosize="{ minRows: 2 }" maxlength="200" />
         </el-form-item>
-        <el-form-item label="费用说明" class="full">
+        <el-form-item v-if="canSeeOrderPrice" label="费用说明" class="full">
           <el-input v-model="form.feeNote" maxlength="160" placeholder="如：已裁片损失由我方承担" />
         </el-form-item>
         <el-form-item v-if="!editing" label="变更依据（审批截图、邮件、聊天记录）" class="full">

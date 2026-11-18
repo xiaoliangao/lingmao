@@ -7,7 +7,7 @@
 <mapper namespace="com.lingmao.scm.module.inventory.mapper.InvCountMapper">
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.CountRowVO">
-        SELECT c.id, c.no, c.warehouse_id, w.name AS warehouse_name, c.purpose, c.scope, c.count_date, c.counter_id,
+        SELECT c.id, c.company_id, c.no, c.warehouse_id, w.name AS warehouse_name, c.purpose, c.scope, c.count_date, c.counter_id,
                c.status, c.version, c.create_by, c.create_time,
                agg.item_count, agg.filled_count, agg.gain_count, agg.loss_count, cat.category_names
         FROM <choose>

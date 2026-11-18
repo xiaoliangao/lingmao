@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { authApi } from '@/api/auth'
 import type { UserInfo } from '@/types/system'
 import { clearToken, getToken, setToken, setSessionSubject } from '@/utils/token'
+import { setFieldPermissionCheck } from '@/utils/fieldAccess'
 
 /** 当前登录的人：token、基本信息、权限、菜单 */
 export const useUserStore = defineStore('user', () => {
@@ -42,6 +43,7 @@ export const useUserStore = defineStore('user', () => {
   function hasPerm(perm: string) {
     return perms.value.has(perm)
   }
+  setFieldPermissionCheck(hasPerm)
 
   return { token, info, isAdmin, defaultCompanyId, workbenchMenus, adminMenus, login, fetchMe, logout, hasPerm }
 })

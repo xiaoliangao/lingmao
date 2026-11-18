@@ -12,6 +12,8 @@ import { useDict } from '@/composables/useDict'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { formatPrice } from '@/utils/format'
 import { hasSeparator, MAX_CODES, pasteCodes } from '@/utils/keywords'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 从物料库里挑数据，一次勾多条（用户 11-14 定，原型 3e-pick.js 的 DataPick）：搜索 + 一级分类 + 分页。
@@ -190,7 +192,7 @@ watch(() => props.kind, () => { if (visible.value) void onOpen() })
         <el-table-column label="单位" width="70">
           <template #default="{ row }">{{ units.labelOf(row.stockUnit) }}</template>
         </el-table-column>
-        <el-table-column label="单价" class-name="num" width="100">
+        <el-table-column v-if="canSeeCost" label="单价" class-name="num" width="100">
           <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
         </el-table-column>
       </template>

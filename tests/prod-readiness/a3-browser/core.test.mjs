@@ -9,6 +9,7 @@ import { validateKeywords } from '../../../web/src/utils/keywords.ts'
 import { containsSecrets, restoreDraftValue } from '../../../web/src/utils/draft.ts'
 import { sha256 } from '../../../web/src/utils/sha256.ts'
 import { canReplayWrite } from '../../../web/src/utils/writePolicy.ts'
+import { visibleWriteBody } from '../../../web/src/utils/fieldAccess.ts'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 
@@ -87,6 +88,10 @@ test('only server-protected writes can replay; read-only POST and CAS actions ca
   for (const url of ['/api/orders', '/api/materials', '/api/styles/9007199254740993/skus/generate', '/api/inventory-docs/from-purchase/9007199254740993', '/api/production-orders/1/nodes/2/reports']) assert.equal(canReplayWrite('post', url), true)
   for (const [method, url] of [['post', '/api/tech-packs/1/bom-defaults'], ['post', '/api/orders/1/audit'], ['put', '/api/orders/1'], ['post', '/api/roles']]) assert.equal(canReplayWrite(method, url), false)
 })
+test('export task create, cancel and retry are protected; arbitrary export mutations cannot replay', () => {
+  for (const path of ['/api/export-jobs/stock-logs', '/api/export-jobs/9007199254740993/cancel', '/api/export-jobs/9007199254740993/retry']) assert.equal(canReplayWrite('post', path), true)
+  for (const [method, path] of [['post', '/api/export-jobs/9007199254740993/file'], ['post', '/api/export-jobs/9007199254740993'], ['put', '/api/export-jobs/9007199254740993/retry'], ['post', '/api/export-jobs/stock-logs/extra']]) assert.equal(canReplayWrite(method, path), false)
+})
 test('batch search accepts 100 distinct codes and rejects 101', () => {
   validateKeywords(Array.from({ length: 100 }, (_, i) => `A${i}`).join(','))
   assert.throws(() => validateKeywords(Array.from({ length: 101 }, (_, i) => `A${i}`).join(' ')), /100/)
@@ -108,4 +113,50 @@ test('draft restore keeps reactive containers and never writes dangerous prototy
   assert.deepEqual(maps.qtys, { '9007199254740993': 12 })
   assert.deepEqual(maps.sizeUsages, { XL: 2 })
   assert.deepEqual(maps.skuMap.FIXED, { materialSkuId: '9007199254740993', refPrice: null })
+})
+test('financial visibility keeps sales, production and cost grants independent', () => {
+  const order = permission => permission === 'order:price:query'
+  const production = permission => permission === 'production:price:query'
+  const cost = permission => permission === 'techpack:cost:query'
+  const body = { id: '9007199254740993', version: 3, companyId: '1', items: [{ id: '9007199254740995', qty: 7, price: 12.3, refCost: 4 }], totalAmount: 86.1, tagPrice: 88 }
+  assert.equal(visibleWriteBody('/api/orders', body, order).items[0].price, 12.3)
+  assert.equal(visibleWriteBody('/api/orders', body, order).items[0].refCost, undefined)
+  assert.equal(visibleWriteBody('/api/orders', body, cost).items[0].price, undefined)
+  assert.equal(visibleWriteBody('/api/production-orders/1', { unitPrice: 12.3 }, order).unitPrice, undefined)
+  assert.equal(visibleWriteBody('/api/production-orders/1', { unitPrice: 12.3 }, production).unitPrice, 12.3)
+  assert.equal(visibleWriteBody('/api/materials', { refPrice: 12.3 }, production).refPrice, undefined)
+  assert.equal(visibleWriteBody('/api/materials', { refPrice: 12.3 }, cost).refPrice, 12.3)
+  assert.deepEqual(visibleWriteBody('/api/orders', body, () => false), { id: '9007199254740993', version: 3, companyId: '1', items: [{ id: '9007199254740995', qty: 7 }], tagPrice: 88 })
+  assert.equal(body.items[0].price, 12.3, 'caller data must not be mutated')
+})
+test('price archives use their entity type and protected fields are omitted rather than zeroed', () => {
+  const production = permission => permission === 'production:price:query'
+  assert.equal(visibleWriteBody('/api/prices', { type: 'PROCESS', price: 17.5 }, production).price, 17.5)
+  assert.equal(visibleWriteBody('/api/prices', { type: 'MATERIAL', price: 17.5 }, production).price, undefined)
+  const saved = visibleWriteBody('/api/tech-packs/1', { versionLock: 7, bomItems: [{ id: '9007199254740993', materialId: '2', refPrice: 5, priceTaxIncluded: false, priceFreightIncluded: false, skus: [{ materialSkuId: '3', colorId: '4', sizeCode: 'M', refPrice: 6 }] }], processes: [{ id: '9007199254740995', name: '车缝', price: 9 }], cost: { buyPrice: 19 } }, () => false)
+  assert.deepEqual(saved, { versionLock: 7, bomItems: [{ id: '9007199254740993', materialId: '2', skus: [{ materialSkuId: '3', colorId: '4', sizeCode: 'M' }] }], processes: [{ id: '9007199254740995', name: '车缝' }] })
+  assert.equal(visibleWriteBody('/api/orders', { items: [{ qty: 1 }] }, () => true).items[0].price, undefined)
+  assert.deepEqual(visibleWriteBody('/api/production-orders/1', { taxPct: 13, taxIncluded: true }, () => false), { taxPct: 13, taxIncluded: true })
+  assert.deepEqual(visibleWriteBody('/api/approval-rules/1', { overAmount: 5000 }, () => false), { overAmount: 5000 })
+})
+test('scheduling uses the production price domain', () => {
+  const body = { blocks: [{ unitPrice: 17.25, priceSourceId: '9007199254740993', items: [{ orderItemId: '8', qty: 2 }] }] }
+  const url = '/api/production-orders/schedule'
+  assert.equal(visibleWriteBody(url, body, permission => permission === 'production:price:query').blocks[0].unitPrice, 17.25)
+  for (const grant of ['order:price:query', 'techpack:cost:query']) assert.deepEqual(visibleWriteBody(url, body, permission => permission === grant), { blocks: [{ items: [{ orderItemId: '8', qty: 2 }] }] })
+})
+test('order change fee notes and the entire price array require the order price grant', () => {
+  const body = { version: 3, feeNote: '合成费用说明', quantities: [{ styleSkuId: '9007199254740993', qty: 4 }], prices: [{ styleId: '11', price: 19.5 }] }
+  for (const grant of ['', 'techpack:cost:query', 'production:price:query']) {
+    assert.deepEqual(visibleWriteBody('/api/order-changes/707', body, permission => permission === grant), { version: 3, quantities: body.quantities })
+  }
+  assert.deepEqual(visibleWriteBody('/api/order-changes/707', body, permission => permission === 'order:price:query'), body)
+  assert.deepEqual(visibleWriteBody('/api/production-orders/1', { feeNote: 'unrelated domain' }, () => false), { feeNote: 'unrelated domain' })
+})
+test('supplier contact and bank omission does not affect unrelated user phone fields', () => {
+  const body = { name: '合成供应商', contact: '联系人', phone: 'test-only', wechat: 'test-only', address: 'test-only', bankName: 'test-only', bankAccount: 'test-only', bankAccountName: 'test-only' }
+  assert.deepEqual(visibleWriteBody('/api/suppliers/1', body, () => false), { name: '合成供应商' })
+  const contact = visibleWriteBody('/api/suppliers', body, permission => permission === 'supplier:supplier:contact')
+  assert.equal(contact.contact, '联系人'); assert.equal(contact.bankName, undefined)
+  assert.equal(visibleWriteBody('/api/users/1', { phone: 'test-only' }, () => false).phone, 'test-only')
 })

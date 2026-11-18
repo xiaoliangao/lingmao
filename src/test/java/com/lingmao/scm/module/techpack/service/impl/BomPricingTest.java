@@ -107,6 +107,7 @@ class BomPricingTest {
     }
 
     private static PriceRef archive(long id, String price) {
-        return new PriceRef(id, new BigDecimal(price), "KG", new BigDecimal("13"), true, false, LocalDate.of(2026, 1, 1), null);
+        return new PriceRef(id, new BigDecimal(price), "KG", new BigDecimal("13"), true, false, LocalDate.of(2026, 1, 1), null,
+                com.lingmao.scm.module.price.entity.PriceType.MATERIAL);
     }
 }

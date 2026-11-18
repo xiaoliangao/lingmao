@@ -108,7 +108,7 @@
     </sql>
 
     <sql id="rowColumns">
-        SELECT o.id, o.no, o.supplier_id, s.short_name AS supplier_name, s.status AS supplier_status, o.purchase_type,
+        SELECT o.id, o.company_id, o.no, o.supplier_id, s.short_name AS supplier_name, s.status AS supplier_status, o.purchase_type,
                COALESCE(agg.item_count, 0) AS item_count, agg.first_sku_id, o.total_qty, o.total_amount, o.order_date,
                o.delivery_date, o.warehouse_id, w.name AS warehouse_name, COALESCE(agg.received_qty, 0) AS received_qty,
                o.buyer_id, c.short_name AS company_name, o.status, o.version, o.create_by, o.create_time

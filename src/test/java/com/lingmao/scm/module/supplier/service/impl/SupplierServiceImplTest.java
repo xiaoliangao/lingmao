@@ -91,22 +91,19 @@ class SupplierServiceImplTest {
         SupplierFixtures.logout();
     }
 
-    /** 规则：没有 bank 权限的人保存时，请求里的账号不收（传了别的号也不改、不挂起改动）（RFC 004 §5） */
+    /** A2：无银行权限却显式提交另一个账号时拒绝整次修改，不改库、不挂起改动。 */
     @Test
-    void update_withoutBankPermission_accountIgnored() {
+    void update_withoutBankPermission_changedAccountRejected() {
         SupplierFixtures.loginAs(7, "edit");
         Supplier current = SupplierFixtures.supplier(1, ACTIVE);
         stubLoaded(current);
-        when(supplierMapper.update(any(Supplier.class), any())).thenReturn(1);
         SupplierSaveReq req = SupplierFixtures.reqOf(current);
         req.setBankAccount("6217000099998888777");
 
-        SupplierSaveResult result = service.update(1L, req);
-
-        assertThat(result.pending()).isEmpty();
-        assertThat(result.applied()).isEmpty();
+        assertThatThrownBy(() -> service.update(1L, req))
+                .isInstanceOf(com.lingmao.scm.security.FieldPermissionDenied.class);
         verify(changeMapper, never()).insert(any(SupplierChange.class));
-        verify(supplierMapper, times(1)).update(any(Supplier.class), any());
+        verify(supplierMapper, never()).update(any(Supplier.class), any());
     }
 
     /** 规则：有 bank 权限的人把遮过的样子（6222****3333）原样传回来，当作没改，不会把遮过的值存进去 */

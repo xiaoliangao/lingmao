@@ -715,7 +715,8 @@ public class StyleServiceImpl implements StyleService {
         s.setExecStandard(execStandard);
         s.setSafetyCategory(safetyCategory);
         s.setTagPrice(req.getTagPrice());
-        s.setRefCost(req.getRefCost());
+        s.setRefCost(com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST,
+                s.getRefCost(), req.getRefCost()));
         s.setDefaultFactoryId(req.getDefaultFactoryId());
         s.setLaunchDate(req.getLaunchDate());
         s.setRemark(trim(req.getRemark()));

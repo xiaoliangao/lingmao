@@ -14,6 +14,7 @@ import java.util.Map;
 /** 保存时一行 BOM（前端 BomItemForm）。部位、物料必填在 Service 里按行号报；单位不用传，后端取物料的库存单位 */
 @Data
 public class BomItemForm {
+    private Long id;
     @Size(max = 64, message = "部位最长 64 个字")
     private String part;
     private Long materialId;

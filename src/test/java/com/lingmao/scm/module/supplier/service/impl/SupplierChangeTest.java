@@ -98,7 +98,7 @@ class SupplierChangeTest {
     /** 规则：合作中的一次改了电话和账期——电话（普通字段）直接生效，账期（关键字段）挂起一份改动，返回里分开说 */
     @Test
     void update_active_phoneAppliedCreditDaysPending() {
-        SupplierFixtures.loginAs(7, "edit");
+        SupplierFixtures.loginAs(7, "edit", "contact");
         Supplier current = SupplierFixtures.supplier(1, ACTIVE);
         stubLoaded(current);
         when(supplierMapper.update(any(Supplier.class), any())).thenReturn(1);

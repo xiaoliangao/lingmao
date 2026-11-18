@@ -43,9 +43,11 @@
 
 ### 3.1 请求和返回
 
-- 地址都以 `/api` 开头。`utils/request.ts` 自动带上登录的 token；没登录、登录过期回 401，自动跳登录页。登录成功仍全页重载；回跳只接受单字符串、单斜线开头且解析后同源的内部 path/query/hash，拒绝外站、`//`、反斜线及控制字符，不合法时用默认首页/手机页。
+- 地址都以 `/api` 开头。`utils/request.ts` 自动带上登录的 token；接入 A2 刷新会话后，401 先尝试一次 Cookie 刷新及允许的原请求重放，刷新失败才跳登录页。登录成功仍全页重载；回跳只接受单字符串、单斜线开头且解析后同源的内部 path/query/hash，拒绝外站、`//`、反斜线及控制字符，不合法时用默认首页/手机页。
 - 返回体 `R { code, msg, data }`，`code = 0` 才算成功。`http.get / post / put / delete` 直接拿到 `data`。
 - 出错时请求函数抛 `ApiError`，消息已经弹过了，调用方只管自己的流程（关不关对话框、要不要刷新）。批量条逐条调时传 `{ silent: true }`，出错不弹，由批量条汇总。
+
+登录 `POST /api/auth/login` 仍返回 `R<string>` access token，同时设置 HttpOnly / SameSite=Strict 刷新和浏览器绑定 Cookie。`POST /api/auth/refresh` 与 `POST /api/auth/logout` 均发送空 JSON `{}` 及 `X-Requested-With: XMLHttpRequest`；登出在 access 过期时也撤销有效刷新会话。前端通过同会话跨标签锁与同页 SingleFlight 合并刷新，重放保留原主体、请求体、幂等键；重放后的 403/500 仍是业务失败，不能据此再次刷新或登出。改密、重置、停用或删除使既有会话失效。升级时旧无版本会话要求重新登录，精确 Cookie 和轮换窗口见 [生产加固公共契约](../architecture/production-contract.md#登录刷新与日志导出接线a2--a3)。
 
 | code | 意思 | 前端怎么处理 |
 |---|---|---|
@@ -83,6 +85,7 @@
 - **字典**：存的是 value。显示用 `useDict(type).labelOf(value)`，下拉用 `DictSelect`。字典类型写在字段注释里。
 - **文件**：上传 `POST /api/files` 得到 `FileVO`，地址带签名，原样用，不要自己拼 `/files/...`。挂在记录上的图片、附件是整组替换：`PUT …/images` 或 `…/attachments`，传 `FileVO` 数组（`attachmentBody`）。尚有上传中/失败待重试文件时保存须等待或禁用并提示，不能默默丢弃；关闭、换记录后迟到的上传响应不能写入新表单。
 - **保存是整体覆盖**：单据草稿保存单头、全部明细与 `version`，已加载且可编辑的空字段按契约发 `null`。未加载、请求失败、未授权不等于用户清空，不能用默认空数组/零值覆盖原数据；资料包成本的 `cost=null` 特指保留原成本（01 §3.5）。KeepAlive 激活不重新 hydrate dirty 表单，只有干净页面可自动刷新；载入和保存成功后才重置 dirty 基线。
+- **受控字段**：本轮 A2 收紧为后端物理剥离。`techpack:cost:query` 控制物料、BOM、采购和库存成本；`order:price:query` 单独控制订单销售报价；`production:price:query` 单独控制生产成交/参考价及 PROCESS 加工价档案。权限不互相隐含授予。供应商联系方式由 `supplier:supplier:contact` 控制，银行信息由 `supplier:supplier:bank` 控制。无权限字段不返回掩码/null，详情、列表、嵌套快照、系统摘要、导出保持一致。编辑请求不得把省略字段清零或越权改价，详见 `docs/architecture/production-contract.md`。
 - **新建、保存的返回**：新建单据返回 `DocSaved { id, no, version }`（有的多几个字段），保存草稿返回新的 `version`。"存草稿并提交"拿它接着调 `submit`，不用再取一次详情。
 - **主体**：单据上的 `companyId` 必填。新建时默认填我的默认主体：登录信息（`GET /api/auth/me`）里的 `defaultCompany`，页面用 `user.defaultCompanyId`。它是 `null`（没设默认主体、启用的主体又不止一个）时空着，让人选。
 

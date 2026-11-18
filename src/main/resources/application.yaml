@@ -29,7 +29,12 @@ spring:
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
       database: ${REDIS_DB:0}      # 开发用 0 号库；生产用另一个库号
+      connect-timeout: 1s
+      timeout: 1s
   jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+      fail-on-trailing-tokens: true
     time-zone: Asia/Shanghai
     date-format: "yyyy-MM-dd'T'HH:mm:ssXXX"
 

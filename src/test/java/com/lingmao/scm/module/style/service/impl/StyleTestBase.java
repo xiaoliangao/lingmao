@@ -176,7 +176,7 @@ abstract class StyleTestBase {
         skuGenerator = new SkuGenerator(styleSkuMapper, CLOCK);
         styleExcel = new StyleExcel(styleMapper, styleColorMapper, styleSkuMapper, dicts, categories, skuGenerator,
                 categoryService, colorService, sizeGroupService, materialService, userService, dictDataService, tradeFeature,
-                docLogService);
+                docLogService, com.lingmao.scm.DirectFileImports.INSTANCE);
         service = new StyleServiceImpl(styleMapper, styleColorMapper, styleSkuMapper, codes, dicts, categories, skuGenerator,
                 styleExcel, categoryService, colorService, sizeGroupService, materialService, supplierService, userService,
                 tradeFeature, attachmentService, docLogService);

@@ -62,7 +62,7 @@
     </sql>
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.InvDocRowVO">
-        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.version,
+        SELECT d.id, d.company_id, d.no, d.kind, d.doc_type, d.status, d.version,
                d.from_warehouse_id, fw.name AS from_warehouse_name, d.to_warehouse_id, tw.name AS to_warehouse_name,
                d.partner_id, (SELECT p.short_name FROM sup_supplier p WHERE p.id = d.partner_id) AS partner_name, d.source_no, d.doc_date, d.reason, d.create_by, d.create_time,
                agg.first_sku_id, agg.item_count, agg.total_qty, agg.total_amount

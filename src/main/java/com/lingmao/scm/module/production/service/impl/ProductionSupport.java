@@ -114,6 +114,7 @@ class ProductionSupport {
                 && !(p.getStatus() == PENDING && isMyTurn(p.getId()))) {
             throw new BizException(404, NOT_FOUND);
         }
+        com.lingmao.scm.common.scope.CompanyContext.target(p.getCompanyId());
         return p;
     }
 

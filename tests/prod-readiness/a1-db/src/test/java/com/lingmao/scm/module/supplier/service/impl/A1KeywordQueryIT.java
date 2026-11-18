@@ -3,6 +3,7 @@ package com.lingmao.scm.module.supplier.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.page.Keywords;
@@ -87,6 +88,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -144,6 +146,7 @@ class A1KeywordQueryIT {
         String suffix = UUID.randomUUID().toString();
         user = id("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 query') RETURNING id", "kw-" + suffix);
         company = id("INSERT INTO bas_company(code,name,short_name) VALUES (?,'A1 query','A1 query') RETURNING id", "KW" + user);
+        TestIdentity.grant(jdbc, user, List.of("data:all", "production:receipt:add"));
         warehouse = id("INSERT INTO bas_warehouse(code,name,type) VALUES (?,'A1 query','MATERIAL') RETURNING id", "KW" + user);
         materialCategory = id("INSERT INTO bas_material_category(name,level) VALUES (?,1) RETURNING id", "A1 query " + suffix);
         styleCategory = id("INSERT INTO bas_category(name,level) VALUES (?,1) RETURNING id", "A1 query " + suffix);
@@ -276,11 +279,11 @@ class A1KeywordQueryIT {
     }
 
     @BeforeEach
-    void login() { login(user, true); }
+    void login() { TestIdentity.company(company); login(user, true); }
 
     @AfterAll
     void removeLargeFixture() {
-        SecurityContextHolder.clearContext();
+        TestIdentity.clear();
         jdbc.update("DELETE FROM prd_receipt_item WHERE receipt_id IN (SELECT id FROM prd_receipt WHERE prd_order_id>? AND prd_order_id<=?)", BASE, BASE + SIZE);
         jdbc.update("DELETE FROM prd_receipt WHERE prd_order_id>? AND prd_order_id<=?", BASE, BASE + SIZE);
         jdbc.update("DELETE FROM mrp_calc_order WHERE calc_id>? AND calc_id<=?", BASE, BASE + SIZE);
@@ -620,6 +623,35 @@ class A1KeywordQueryIT {
         SupplierQuery q = new SupplierQuery(); q.setKeyword(keyword);
         return result(suppliers.selectPage(new Page<>(1, 100), supplierLists.wrapper(q)));
     }
+    /** A2 integration: real async-export SQL must retain the indexed list filters and frozen upper ID. */
+    @Test
+    void stockExportUsesTheSameIndexedSnapshotFilters() throws Exception {
+        explain("export-doc-prefix", () -> export("ZL05321"), 10, "idx_inv_log_doc_prefix", 1);
+        explain("export-sku-prefix", () -> export("ZX05321"), 10, "idx_bas_mat_sku_code_prefix", 1);
+        explain("export-material-name", () -> export("needleFabric"), 1, "idx_bas_mat_text_trgm", 1);
+        explain("export-dye-lot", () -> export("needleDye"), 1, "idx_inv_log_dye_trgm", 1);
+        String codes = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "ZL" + String.format("%06d", n)).toList());
+        explain("export-100-exact-codes", () -> export(codes), 100, "idx_inv_log_doc_prefix", 1);
+        StockLogQuery query = new StockLogQuery(); query.setKeyword("ZL05321"); query.setWarehouseId(warehouse);
+        assertThat(stockLogs.selectExportBatch(query, null, Keywords.prefix(query.getKeyword()), BASE + 53214, null, null, 500))
+                .extracting(row -> row.getId()).containsExactlyInAnyOrderElementsOf(IntStream.range(53210, 53215).mapToObj(n -> BASE + n).toList());
+        query.setCreatedDateFrom(LocalDate.of(2027, 1, 1));
+        assertThat(stockLogs.selectExportBatch(query, null, Keywords.prefix(query.getKeyword()), Long.MAX_VALUE, null, null, 500)).isEmpty();
+        query.setCreatedDateFrom(null); query.setKeyword("%_");
+        assertThat(stockLogs.selectExportBatch(query, null, Keywords.prefix(query.getKeyword()), Long.MAX_VALUE, null, null, 500)).isEmpty();
+        Files.writeString(ARTIFACTS.resolve("export-summary.json"), json.writeValueAsString(planSummary.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("export-")).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))));
+        planAssertions.assertAll();
+    }
+
+    private Result export(String keyword) {
+        StockLogQuery query = new StockLogQuery(); query.setKeyword(keyword); query.setWarehouseId(warehouse);
+        query.setCreatedDateFrom(LocalDate.of(2026, 1, 1)); query.setCreatedDateTo(LocalDate.of(2026, 1, 3));
+        var rows = stockLogs.selectExportBatch(query, Keywords.codes(keyword), Keywords.prefix(keyword), BASE + SIZE,
+                OffsetDateTime.parse("2026-01-03T00:00:00Z"), Long.MAX_VALUE, 500);
+        return new Result(rows.size(), rows.stream().map(row -> row.getId()).toList());
+    }
+
     private Result seek(String keyword) {
         StockLogQuery q = new StockLogQuery(); q.setKeyword(keyword); q.setWarehouseId(warehouse);
         q.setCreatedDateFrom(LocalDate.of(2026, 1, 1)); q.setCreatedDateTo(LocalDate.of(2026, 1, 3));

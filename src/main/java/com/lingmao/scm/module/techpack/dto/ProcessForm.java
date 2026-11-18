@@ -11,6 +11,7 @@ import java.util.List;
 /** 保存时一行工序。工序名称必填在 Service 里按行号报 */
 @Data
 public class ProcessForm {
+    private Long id;
     @Size(max = 64, message = "工序类别最长 64 个字")
     private String category;
     @Size(max = 100, message = "工序名称最长 100 个字")

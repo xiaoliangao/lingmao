@@ -26,8 +26,8 @@ export interface SupplierRow {
   status: SupplierStatus
   /** 字典 supplier_category 的 value，按字典顺序 */
   categories: string[]
-  contact: string | null
-  phone: string | null
+  contact?: string | null
+  phone?: string | null
   settleMethod: string | null
   creditDays: number | null
   taxPct: number | null
@@ -83,17 +83,17 @@ export interface SupplierDetail {
   status: SupplierStatus
   categories: string[]
   goodAt: { id: string; name: string }[]
-  contact: string | null
-  phone: string | null
-  wechat: string | null
-  address: string | null
+  contact?: string | null
+  phone?: string | null
+  wechat?: string | null
+  address?: string | null
   settleMethod: string | null
   creditDays: number | null
   invoiceType: string | null
   taxPct: number | null
-  bankName: string | null
-  bankAccount: string | null
-  bankAccountName: string | null
+  bankName?: string | null
+  bankAccount?: string | null
+  bankAccountName?: string | null
   buyerId: string | null
   buyerName: string | null
   admitApplyBy: string | null
@@ -122,18 +122,18 @@ export interface SupplierForm {
   level: string | null
   categories: string[]
   goodAtIds: string[]
-  contact: string | null
-  phone: string | null
-  wechat: string | null
-  address: string | null
+  contact?: string | null
+  phone?: string | null
+  wechat?: string | null
+  address?: string | null
   settleMethod: string | null
   creditDays: number | null
   invoiceType: string | null
   taxPct: number | null
-  bankName: string | null
+  bankName?: string | null
   /** 没有 bank 权限的人改不了，后端也不收 */
-  bankAccount: string | null
-  bankAccountName: string | null
+  bankAccount?: string | null
+  bankAccountName?: string | null
   buyerId: string | null
   remark: string | null
 }
@@ -146,9 +146,9 @@ export interface SupplierSaveResult {
 }
 
 export interface SupplierBank {
-  bankName: string | null
-  bankAccount: string | null
-  bankAccountName: string | null
+  bankName?: string | null
+  bankAccount?: string | null
+  bankAccountName?: string | null
 }
 
 export interface SupplierCert {

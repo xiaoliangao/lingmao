@@ -41,6 +41,7 @@ public class StockServiceImpl implements StockService {
     private final MaterialService materialService;
     private final UserService userService;
     private final StockLogCursor logCursor;
+    private final com.lingmao.scm.module.inventory.service.StockLogExportService logExporter;
 
     @Override
     public PageResult<StockRowVO> page(StockQuery query) {
@@ -127,8 +128,10 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public byte[] exportLogs(StockLogQuery query) {
-        List<StockLogRowVO> rows = stockLogMapper.selectRowPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
-        fillLogs(rows);
-        return excel.logs(rows);
+        var plan = logExporter.prepareSync(query);
+        var output = new java.io.ByteArrayOutputStream();
+        try { logExporter.write(plan, output, rows -> {}); }
+        catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
+        return output.toByteArray();
     }
 }
