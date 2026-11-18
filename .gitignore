@@ -38,8 +38,9 @@ application-local.yml
 .env
 deploy/deploy.local
 
-### 上传的文件 ###
+### 上传的文件、后台导出的文件（本机跑应用时生成） ###
 uploads/
+exports/
 
 ### 本机开发环境的数据（dev/compose.yml） ###
 dev/data/
