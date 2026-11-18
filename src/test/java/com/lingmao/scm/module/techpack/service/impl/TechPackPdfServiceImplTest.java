@@ -47,7 +47,6 @@ import static com.lingmao.scm.module.techpack.service.impl.PackFixtures.sku;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -150,7 +149,7 @@ class TechPackPdfServiceImplTest {
             assertThat(g.getItems()).extracting(PdfSheet.CraftItem::getLabel).containsExactly("缝制要求");
             assertThat(g.getProcesses()).isEmpty();
         });
-        verify(costCalculator, never()).compute(any(), any(), anyLong(), anyBoolean());
+        verify(costCalculator, never()).compute(any(), any(), anyLong());
     }
 
     /** 规则：含价格时行上有单价和单件成本，核价按第一个颜色算，工序工价放在车间缝制下面；草稿印"草稿"、日期是今天 */

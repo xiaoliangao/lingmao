@@ -12,7 +12,6 @@ import com.lingmao.scm.module.techpack.entity.CostMode;
 import com.lingmao.scm.module.techpack.entity.PackProcess;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.TechPack;
-import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,8 +42,6 @@ import static org.mockito.Mockito.when;
 class CostCalculatorTest {
 
     @Mock
-    private TechPackMapper techPackMapper;
-    @Mock
     private PackContent packContent;
     @Mock
     private MaterialService materialService;
@@ -57,13 +54,13 @@ class CostCalculatorTest {
 
     @BeforeEach
     void setUp() {
-        calculator = new CostCalculator(techPackMapper, packContent, materialService, priceService, supplierService,
+        calculator = new CostCalculator(packContent, materialService, priceService, supplierService,
                 Clock.fixed(Instant.parse("2026-11-17T02:00:00Z"), ZoneId.of("Asia/Shanghai")));
         when(supplierService.refs(anyCollection())).thenReturn(Map.of());
     }
 
     /**
-     * 规则（PRD §6.4.5）：面料块 = 面料、里料的行，辅料块 = 其余；只算我方采购的行，工厂自备的不计；
+     * 规则（PRD §6.4.5）：面料块 = 面料、里料的行，辅料块 = 其余；只算自购的行，厂购的不计；
      * 一行 = 基码用量 ×（1 + 损耗%）× 这个颜色配到的 SKU 单价（没有用行上的）；合计 = 四块相加，倍率 = 吊牌价 ÷ 合计
      */
     @Test
@@ -81,7 +78,7 @@ class CostCalculatorTest {
                 material(2, "TRIM", "0.35", "1", null), material(3, "TRIM", "6", "1", null)));
         when(materialService.skuRefs(anyCollection())).thenReturn(List.of());
 
-        TechPackCostVO khaki = calculator.compute(pack, ctx(), KHAKI, false);
+        TechPackCostVO khaki = calculator.compute(pack, ctx(), KHAKI);
         assertThat(khaki.getFabricRows()).singleElement().satisfies(r -> assertThat(r.getCost()).isEqualByComparingTo("31.20"));
         assertThat(khaki.getTrimRows()).extracting(r -> r.getCost().toPlainString()).containsExactly("2.10", "0.00");
         assertThat(khaki.getTrimRows().get(1).isCounted()).isFalse();
@@ -89,7 +86,7 @@ class CostCalculatorTest {
         assertThat(khaki.getSummary().total()).isEqualByComparingTo("69.80");   // 31.20 + 2.10 + 32.50 + 4
         assertThat(khaki.getRatio()).isEqualByComparingTo("4.28");               // 299 / 69.80
 
-        TechPackCostVO black = calculator.compute(pack, ctx(), BLACK, false);
+        TechPackCostVO black = calculator.compute(pack, ctx(), BLACK);
         assertThat(black.getSummary().fabric()).isEqualByComparingTo("28.08");  // 1.5 × 1.04 × 18
     }
 
@@ -103,12 +100,12 @@ class CostCalculatorTest {
                 .thenReturn(Optional.of(new PriceRef(77L, new BigDecimal("85"), "PIECE", BigDecimal.TEN, true, true,
                         LocalDate.of(2026, 1, 1), null, com.lingmao.scm.module.price.entity.PriceType.PROCESS)));
 
-        TechPackCostVO byDefault = calculator.compute(pack(CostMode.BUY, null), ctx(), KHAKI, false);
+        TechPackCostVO byDefault = calculator.compute(pack(CostMode.BUY, null), ctx(), KHAKI);
         assertThat(byDefault.getBuyPriceDefault()).isEqualByComparingTo("85");
         assertThat(byDefault.getSummary().labor()).isEqualByComparingTo("85");
         assertThat(byDefault.getLaborTotal()).isEqualByComparingTo("30");
 
-        TechPackCostVO typed = calculator.compute(pack(CostMode.BUY, new BigDecimal("90")), ctx(), KHAKI, false);
+        TechPackCostVO typed = calculator.compute(pack(CostMode.BUY, new BigDecimal("90")), ctx(), KHAKI);
         assertThat(typed.getSummary().total()).isEqualByComparingTo("90");
     }
 

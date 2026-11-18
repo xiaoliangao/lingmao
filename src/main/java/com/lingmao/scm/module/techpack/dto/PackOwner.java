@@ -5,8 +5,7 @@ import java.util.List;
 
 /**
  * 资料包的主人（RFC 007 §6.2）：建版本、生效、修订、核价、PDF 要的款式信息都从这里取，不在各处直接问 StyleService。
- * 一期主人都是款式（PackOwners 用 StyleService 拼）；二期研发 BOM 挂样衣时，由 dev 实现 techpack 定义的 SamplePackOwner 给同一个记录，
- * 只在 PackOwners 一处加分支。
+ * 主人都是款式（PackOwners 用 StyleService 拼）。原来设想二期研发 BOM 挂样衣，甲方 11-18 答 Q24 研发不填物料清单，不挂了。
  *
  * @param colorIds     启用的颜色，按顺序
  * @param productName  品名、composition 成分：PDF 表头

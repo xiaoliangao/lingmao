@@ -64,7 +64,7 @@ class ProductionRulesTest {
         assertThat(ProductionRules.maxPieces(33)).isEqualTo(33);
     }
 
-    /** 规则（§3.4.1）：没有我方采购的料是 null；每种都领够 DONE；一点没领 NONE；其他 PARTIAL */
+    /** 规则（§3.4.1）：没有自购的料是 null；每种都领够 DONE；一点没领 NONE；其他 PARTIAL */
     @Test
     void issueStatus_byNeedAndIssued() {
         Map<Long, BigDecimal> need = Map.of(1L, new BigDecimal("10.5"), 2L, new BigDecimal("3"));
@@ -76,7 +76,7 @@ class ProductionRulesTest {
                 .isEqualTo(MaterialIssueStatus.DONE);
     }
 
-    /** 规则（§1.3）：报过进度、有下游的不出反审核；资料包里没有我方采购的料不出领料；领过料才出退料 */
+    /** 规则（§1.3）：报过进度、有下游的不出反审核；资料包里没有自购的料不出领料；领过料才出退料 */
     @Test
     void actions_followBlockedAndIssueStatus() {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(2L, "jti-2"), null,

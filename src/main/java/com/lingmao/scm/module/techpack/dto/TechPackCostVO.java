@@ -32,10 +32,4 @@ public class TechPackCostVO {
     private BigDecimal ratio;
     /** 计入的行单价口径不一（含税、含运有的有有的没有） */
     private boolean mixedBasis;
-    /** 生产版有研发来源时的"研发估"；别的是 null */
-    private DevCost dev;
-
-    /** 研发版算出来的四块和合计 */
-    public record DevCost(Long packId, Integer version, CostSummary summary) {
-    }
 }

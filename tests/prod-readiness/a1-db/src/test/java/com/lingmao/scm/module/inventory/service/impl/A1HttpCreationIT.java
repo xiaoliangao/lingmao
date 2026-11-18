@@ -102,18 +102,16 @@ class A1HttpCreationIT {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sty_style WHERE name=?", Integer.class, "A1 HTTP 款 " + suffix)).isEqualTo(1);
     }
 
-    @Test void techPackCreateReviseAndToProductionReplayOriginalScalarIds() throws Exception {
+    @Test void techPackCreateAndReviseReplayOriginalScalarIds() throws Exception {
         long style = createStyle();
-        JsonNode created = replayTwice("/api/tech-packs", Map.of("styleId", Long.toString(style), "stage", "DEV"));
+        JsonNode created = replayTwice("/api/tech-packs", Map.of("styleId", Long.toString(style)));
         assertThat(created.get("data").isString()).isTrue();
         long original = Long.parseLong(created.get("data").stringValue());
         // 生效版本是该生成接口的前置夹具；真正复制、取版号、落明细仍全部经 MVC/Service。
         jdbc.update("UPDATE tp_tech_pack SET status='EFFECTIVE' WHERE id=?", original);
         JsonNode revised = replayTwice("/api/tech-packs/" + original + "/revise", null);
-        JsonNode production = replayTwice("/api/tech-packs/" + original + "/to-prod", null);
         assertThat(revised.get("data").isString()).isTrue();
-        assertThat(production.get("data").isString()).isTrue();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM tp_tech_pack WHERE style_id=?", Integer.class, style)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM tp_tech_pack WHERE style_id=?", Integer.class, style)).isEqualTo(2);
         int claims = jdbc.queryForObject("SELECT count(*) FROM biz_http_action WHERE user_id=?", Integer.class, user);
         JsonNode defaults = send("/api/tech-packs/" + original + "/bom-defaults", Map.of("items", List.of()), null, null);
         assertThat(defaults.get("code").intValue()).isZero();

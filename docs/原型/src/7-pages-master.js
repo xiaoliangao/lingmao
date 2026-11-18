@@ -353,12 +353,12 @@ function addSeason(f) {
   if (db.seasons.some((x) => x.name === name)) fail('已经有「' + name + '」')
   db.seasons.push({ code, name, status: '启用' })
 }
-// 款号大类（甲方 11-11 反馈 3）：2 位大写字母，是款号的头两位（FS 服饰、XZ 鞋子）；进过款号的不能删、编码不能改，只能停用
+// 款号大类（甲方 11-11 反馈 3）：2 位大写字母，是款号的头两位（TS 通勤裤、FS 非通勤裤、XZ 鞋子）；进过款号的不能删、编码不能改，只能停用
 const bigCatUsed = (c) => db.styles.filter((s) => s.big === c).length
 const liveBigCats = (keep) => db.bigCats.filter((x) => x.status !== '停用' || x.code === keep)
 function addBigCat(f) {
   const code = (f.code || '').trim().toUpperCase(), name = (f.name || '').trim()
-  if (!/^[A-Z]{2}$/.test(code)) fail('大类编码是 2 位字母，是款号的头两位（如 FS = 服饰）')
+  if (!/^[A-Z]{2}$/.test(code)) fail('大类编码是 2 位字母，是款号的头两位（如 TS = 通勤裤）')
   if (!name) fail('名称要填')
   if (db.bigCats.some((x) => x.code === code)) fail('编码 ' + code + ' 已经有了')
   if (db.bigCats.some((x) => x.name === name)) fail('已经有「' + name + '」')
@@ -1085,13 +1085,13 @@ comp('MaterialForm', {
       const m = run(() => createMaterial(body))
       if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
     }
-    // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比默认 3%（Q18），加完直接选上
+    // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比由生产评估后填、先按 0（Q18），加完直接选上
     async function addType() {
-      const t = (await askText('新增物料类型', '下拉里找不到的类型当场加；备料比默认 3%，以后在算料页的「备料比」里能改。', '如 织带', '新增'))?.trim()
+      const t = (await askText('新增物料类型', '下拉里找不到的类型当场加；备料比由生产评估后在算料页的「备料比」里填，没填按 0。', '如 织带', '新增'))?.trim()
       if (!t) return
       if (db.dicts.物料类型.includes(t)) return toast('已经有物料类型「' + t + '」了，直接选它', null, true)
       db.dicts.物料类型.push(t)
-      db.reserve[t] = 3
+      db.reserve[t] = 0
       f.type = t
       toast('加了物料类型「' + t + '」，已经选上')
     }

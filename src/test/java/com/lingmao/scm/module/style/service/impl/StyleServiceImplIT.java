@@ -272,7 +272,7 @@ class StyleServiceImplIT {
         String brand = "IT新品牌" + ThreadLocalRandom.current().nextLong(1_000_000L);
         byte[] bytes = workbook(new Object[][]{
                 {"款号", "款式名称", "大类", "品牌", "品类", "年份", "季节", "尺码组", "颜色", "默认加工厂", "版型库单号"},
-                {code, "导入测试款", "服饰", brand, f.leafPath(), "2027", "春季", f.sizeGroupName(), f.colorCode(), shortName, "BX-01"}});
+                {code, "导入测试款", "非通勤裤", brand, f.leafPath(), "2027", "春季", f.sizeGroupName(), f.colorCode(), shortName, "BX-01"}});
 
         var imported = styleService.importExcel(new MockMultipartFile("file", "款式.xlsx", Excel.CONTENT_TYPE, bytes));
         fixtureBrandIds.add(jdbcTemplate.queryForObject(

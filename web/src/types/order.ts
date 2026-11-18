@@ -296,7 +296,7 @@ export interface OrderStyleOption {
   skus: OrderStyleSku[]
   /** 吊牌价，单价输入框的提示 */
   tagPrice: number | null
-  /** 不能下单的原因："草稿款不能下单""已停用""没有生效的生产 BOM：研发 BOM 只用来估价……"；能下是 null */
+  /** 不能下单的原因："草稿款不能下单""已停用""没有生效的生产 BOM：先在款式的资料包里建好……"；能下是 null */
   problem: string | null
 }
 

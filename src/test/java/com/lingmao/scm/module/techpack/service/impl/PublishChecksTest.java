@@ -43,18 +43,21 @@ class PublishChecksTest {
                 new PublishProblem(2, "L 码没填用量"));
     }
 
-    /** 规则：研发 BOM 只估价，可以不配 SKU；用量照样要填，物料停用照样拦 */
+    /** 规则：随款色的行一个都没配也要拦（原来研发 BOM 能不配 SKU，11-18 去掉了）；用量、物料停用照样拦 */
     @Test
-    void dev_skipsMatchingButNotUsageOrDisabled() {
+    void noSkuMatched_disabledMaterial_missingUsage_allListed() {
         MaterialRef disabled = new MaterialRef(5L, "WL5", "旧面料", "FABRIC", "METER", "METER", null, null, "PURCHASE", null, null,
                 null, 0);
         var noSku = row(item(5, BomSkuMode.BY_COLOR, null, "0", "18", MaterialSource.PURCHASE), List.of(), List.of());
 
-        List<PublishProblem> problems = PublishChecks.check(pack(PackStage.DEV, 1, null), ctx(), List.of(noSku),
+        List<PublishProblem> problems = PublishChecks.check(pack(PackStage.PROD, 1, null), ctx(), List.of(noSku),
                 Map.of(5L, disabled), Map.of());
 
-        assertThat(problems).extracting(PublishProblem::message)
-                .containsExactly("物料 旧面料 已停用", "S、M、L 码没填用量");
+        assertThat(problems).containsExactly(
+                new PublishProblem(1, "物料 旧面料 已停用"),
+                new PublishProblem(1, "卡其还没配料"),
+                new PublishProblem(1, "黑色还没配料"),
+                new PublishProblem(1, "S、M、L 码没填用量"));
     }
 
     /** 规则：停用的 SKU 只在用得到时拦——配给款式已经去掉的颜色（3 号）的不查 */

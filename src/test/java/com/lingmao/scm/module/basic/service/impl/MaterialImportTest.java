@@ -51,7 +51,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-/** 领猫两张表能导；表头不认识报错；分类对不上整批不导；颜色没有就建、进提示；客供改成我方采购、进提示（RFC 003 §9、§16） */
+/** 领猫两张表能导；表头不认识报错；分类对不上整批不导；颜色没有就建、进提示；客供改成自购、进提示（RFC 003 §9、§16） */
 @ExtendWith(MockitoExtension.class)
 class MaterialImportTest {
 
@@ -108,7 +108,7 @@ class MaterialImportTest {
     /**
      * 规则：领猫的"物料信息" + "物料信息SKU"能导。编码照用；三级路径对前两级、完整路径进附加属性；
      * SKU 码不填按 物料编码-颜色编码 拼；没有 SKU 行的物料建一个码等于物料编码的 SKU；
-     * 颜色 ZQ 系统里没有，新建并进提示；客供按我方采购导、进提示；导完把分类 ML 的流水推到 12
+     * 颜色 ZQ 系统里没有，新建并进提示；客供按自购导、进提示；导完把分类 ML 的流水推到 12
      */
     @Test
     void importFile_lingmaoTwoSheets() throws IOException {
@@ -124,7 +124,7 @@ class MaterialImportTest {
 
         assertThat(result.total()).isEqualTo(2);
         assertThat(result.notes()).extracting(ImportError::message).anySatisfy(m -> assertThat(m).contains("颜色 ZQ 系统里没有，按「ZQ 藏青」新建了"));
-        assertThat(result.notes()).extracting(ImportError::message).anySatisfy(m -> assertThat(m).contains("第 3 行的物料来源「客供」按「我方采购」导入"));
+        assertThat(result.notes()).extracting(ImportError::message).anySatisfy(m -> assertThat(m).contains("第 3 行的物料来源「客供」按「自购」导入"));
 
         ArgumentCaptor<Material> materials = ArgumentCaptor.captor();
         verify(materialMapper, times(2)).insert(materials.capture());

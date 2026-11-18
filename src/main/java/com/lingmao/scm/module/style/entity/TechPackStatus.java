@@ -3,13 +3,12 @@ package com.lingmao.scm.module.style.entity;
 import lombok.Getter;
 
 /**
- * 款式上的资料包状态（数据库设计 §8.1）：由资料包生效、作废时回写（第 3 批，RFC 005 §4 的 updateTechPackStatus）。
- * 这一批一直是 NONE
+ * 款式上的资料包状态（数据库设计 §8.1）：资料包生效时回写（RFC 005 §4 的 updateTechPackStatus）。
+ * 原来的 DEV（研发中）11-18 去掉了：研发不填物料清单（PRD Q24），V38 确认库里没有
  */
 @Getter
 public enum TechPackStatus {
     NONE("无"),
-    DEV("研发中"),
     PROD("已生效");
 
     private final String label;

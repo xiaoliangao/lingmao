@@ -64,7 +64,7 @@ final class SupplyBook {
     record Use(long id, long calcId, long calcItemId, long lineId, BigDecimal qty) {
     }
 
-    /** 已确认的算料单"我方采购"的一行：本次使用库存、已领 */
+    /** 已确认的算料单"自购"的一行：本次使用库存、已领 */
     record HeldItem(long id, long calcId, long skuId, BigDecimal useStockQty, BigDecimal issuedQty) {
     }
 
@@ -83,7 +83,7 @@ final class SupplyBook {
     /**
      * @param stock 物料仓库存（自有），skuId → 库存单位
      * @param uses  已确认的算料单的本次使用在途
-     * @param items 已确认的算料单"我方采购"的行
+     * @param items 已确认的算料单"自购"的行
      */
     SupplyBook(Map<Long, BigDecimal> stock, Collection<Line> lines, List<Use> uses, List<HeldItem> items) {
         this.stock = stock;

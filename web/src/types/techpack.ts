@@ -6,21 +6,18 @@ import type { FileVO } from '@/types/system'
 
 // ---------------------------------------------------------------- 枚举和叫法
 
-/** 阶段（tp_tech_pack.stage）：研发 BOM 只估价；生产 BOM 发工厂、算料，需求订单只认它（PRD §6.4.1） */
-export type PackStage = 'DEV' | 'PROD'
+/**
+ * 阶段（tp_tech_pack.stage）：一期只有生产 BOM，发工厂、算料，需求订单锁它（PRD §6.4.1）。
+ * 研发不填物料清单（甲方 11-18 答 Q24），二期生产单自己的资料包才有别的阶段；页面上不显示阶段
+ */
+export type PackStage = 'PROD'
 
-/** 原型里研发是琥珀色小标签、生产是蓝色小标签；阶段不是状态，页面上用普通的 el-tag 就行 */
-export const PACK_STAGE: Record<PackStage, { label: string; short: string }> = {
-  DEV: { label: '研发 BOM', short: '研发' },
-  PROD: { label: '生产 BOM', short: '生产' },
+/** 版本的叫法："V2" */
+export function packName(p: { version: number }): string {
+  return 'V' + p.version
 }
 
-/** 版本的叫法：研发的带"研发"两个字（"研发 V1"），生产的只写版本号（"V2"），和原型 tpName 一样 */
-export function packName(p: { stage: PackStage; version: number }): string {
-  return (p.stage === 'DEV' ? '研发 ' : '') + 'V' + p.version
-}
-
-/** 版本状态：草稿能改；生效后只读，要改点"修订"；同款同阶段新版本生效时，旧的自动变已作废（还能看、能导出） */
+/** 版本状态：草稿能改；生效后只读，要改点"修订"；新版本生效时，旧的自动变已作废（还能看、能导出） */
 export type PackStatus = 'DRAFT' | 'EFFECTIVE' | 'VOIDED'
 
 export const PACK_STATUS: Record<PackStatus, { label: string; tone: StatusTone }> = {
@@ -31,10 +28,10 @@ export const PACK_STATUS: Record<PackStatus, { label: string; tone: StatusTone }
 
 /**
  * 资料包详情的按钮（后端按"状态 ∩ 权限 ∩ 业务条件"算好）：
- * edit 改草稿、remove 删草稿、publish 生效（草稿）；revise 修订、toProd 转生产 BOM（已生效，且同阶段 / 生产阶段还没有草稿）。
+ * edit 改草稿、remove 删草稿、publish 生效（草稿）；revise 修订（已生效，且还没有草稿）。
  * 导出 PDF 不在这里：能看资料包就能导，"含价格"看 techpack:cost:query
  */
-export type TechPackAction = 'edit' | 'remove' | 'publish' | 'revise' | 'toProd'
+export type TechPackAction = 'edit' | 'remove' | 'publish' | 'revise'
 
 /** 配料方式（tp_bom_item.sku_mode）：用哪个物料 SKU 怎么定 */
 export type BomSkuMode = 'FIXED' | 'BY_COLOR' | 'BY_SIZE' | 'BY_COLOR_SIZE'
@@ -89,7 +86,6 @@ export const TECH_PACK_LOG_ACTIONS: Record<string, string> = {
   create: '新建',
   update: '保存',
   revise: '修订',
-  'to-prod': '转生产 BOM',
   publish: '生效',
   void: '被新版本替代',
   'export-pdf': '导出 PDF',
@@ -105,9 +101,6 @@ export interface TechPackBrief {
   status: PackStatus
   /** 本版说明，V2 起生效前必填 */
   versionNote: string | null
-  /** 生产 BOM 的研发来源（转生产 BOM 时记下，修订时照抄），页面显示"来源：研发 V1"；研发 BOM、直接建的生产 BOM 是 null */
-  sourcePackId: string | null
-  sourceVersion: number | null
   publishByName: string | null
   /** 2026-11-15 10:30:00；没生效过是 null */
   publishTime: string | null
@@ -119,21 +112,20 @@ export interface TechPackBrief {
 /** GET /api/tech-packs?styleId=：一个款的资料包概况。资料包页签、款式页顶上的"新颜色未配料"提示、基本信息里的"资料包核价"都用它 */
 export interface TechPackOverview {
   styleId: string
-  /** 全部版本：研发在前、生产在后，各自新版本在前 */
+  /** 全部版本，新版本在前 */
   packs: TechPackBrief[]
-  /** 打开页签默认选哪一版：生产草稿 > 生产已生效 > 研发草稿 > 研发已生效；一个版本都没有是 null */
+  /** 打开页签默认选哪一版：草稿 > 已生效 > 最新的一版；一个版本都没有是 null */
   defaultPackId: string | null
-  /** 能新建哪个阶段：有 techpack:pack:add、款式没停用、这个阶段还没有草稿。空数组 = 不出"建生产 BOM""建研发 BOM"按钮 */
-  creatableStages: PackStage[]
+  /** 能不能新建：有 techpack:pack:add、款式没停用、还没有草稿。一个版本都没有时才出"建生产 BOM"按钮，有了就点"修订" */
+  creatable: boolean
   /**
    * 已生效的生产 BOM 里"随款色""随款色和尺码"的行，还没给这些款色配料（款式后来加的颜色）。
    * 款式页顶上提示"新颜色 酒红 还没配料，订单不能下这个颜色"（PRD §6.2 规则 4）；没有生效的生产 BOM 时是空数组
    */
   unmatchedColors: ColorOption[]
-  /** 资料包核价：生产已生效版的单件成本，没有就取研发已生效版。没有看成本权限、两个阶段都没生效是 null */
+  /** 资料包核价：已生效版的单件成本，unitCostPackId 是那一版。没有看成本权限、还没有生效的版本是 null */
   unitCost?: number | null
   unitCostPackId: string | null
-  unitCostStage: PackStage | null
 }
 
 // ---------------------------------------------------------------- 详情的四个页签
@@ -214,7 +206,7 @@ export interface BomItem {
   /** 损耗率 %，3 表示 3% */
   lossPct: number
   source: MaterialSource
-  /** 供应商；工厂自备的行一般是 null */
+  /** 供应商；厂购的行一般是 null */
   supplierId: string | null
   /** 简称 */
   supplierName: string | null
@@ -228,7 +220,7 @@ export interface BomItem {
   skus: BomSku[]
   /**
    * 单件成本 = 基码用量 ×（1 + 损耗率）× 单价；随款色的行取第一个款色的 SKU 单价，随尺码的行取基码那个 SKU 的。
-   * 工厂自备、客供的行，或者算不出来（没单价、没用量）是 null
+   * 厂购、客供的行，或者算不出来（没单价、没用量）是 null
    */
   unitCost?: number | null
   /** 缩略图：第一个配料 SKU 的图，没有用物料主图 */
@@ -267,7 +259,7 @@ export interface BomDefaultReq {
 
 /**
  * 一行 BOM 的默认值（按请求的顺序一一对应）。单价规则（PRD §6.4.3）：
- * 生产 BOM 先取价格档案里这家供应商的现价，没有带物料 SKU 单价，再没有带物料参考单价；研发 BOM 不看价格档案。都换算成元 / 库存单位
+ * 先取价格档案里这家供应商的现价，没有带物料 SKU 单价，再没有带物料参考单价。都换算成元 / 库存单位
  */
 export interface BomDefault {
   materialId: string
@@ -343,8 +335,6 @@ export interface TechPackDetail {
   version: number
   status: PackStatus
   versionNote: string | null
-  sourcePackId: string | null
-  sourceVersion: number | null
   /** 排版利用率 %，只记录 */
   utilPct: number | null
   /** 包装方式，字典 packing_mode */
@@ -400,12 +390,10 @@ export interface CostRow {
   price?: number | null
   priceTaxIncluded?: boolean
   priceFreightIncluded?: boolean
-  /** 计不计入合计：只有我方采购的行计入；工厂自备的显示"含在加工价里"，客供的显示"客户出" */
+  /** 计不计入合计：只有自购的行计入；厂购的显示"含在加工价里"，客供的显示"客户出" */
   counted: boolean
   /** 单件成本；不计入的是 0 */
   cost?: number
-  /** 研发估：研发版里同部位、同物料那一行的单件成本；研发版没有这一行是 null。没有研发版（dev 为 null）时不用看 */
-  devCost: number | null
 }
 
 /** 核价的"其他费用"一项（tp_cost_item）：印绣花外加工、运费、包装这类按件摊的钱 */
@@ -416,8 +404,6 @@ export interface CostItem {
   /** 元 / 件 */
   amount?: number
   remark: string | null
-  /** 研发版里同名那一项的金额；没有是 null */
-  devAmount: number | null
 }
 
 export interface CostItemForm {
@@ -463,8 +449,6 @@ export interface TechPackCost {
   ratio: number | null
   /** 参考单价的口径不一样（有的含税有的不含、有的含运有的不含）：照录入的数加总，页面上标出来（PRD §6.4.5） */
   mixedBasis: boolean
-  /** 生产版有研发来源时的"研发估"一列；研发版本身、没有来源的生产版是 null */
-  dev: { packId: string; version: number; summary: CostSummary } | null
 }
 
 /** 保存时的核价部分：没有看成本权限的人发 null（见 TechPackSaveForm.cost） */
@@ -510,7 +494,7 @@ export interface PdfOptions {
 
 // ---------------------------------------------------------------- 按款看成本（/costing）
 
-/** 一个款一行：取生产已生效版，没有取研发已生效版；两个都没有的款不列 */
+/** 一个款一行：取已生效的生产 BOM；没有的款不列 */
 export interface StyleCostRow {
   styleId: string
   styleCode: string
@@ -540,8 +524,6 @@ export interface StyleCostQuery {
   year?: number | null
   /** 字典 season */
   season?: string
-  /** 只看取到的是研发版还是生产版的 */
-  stage?: PackStage
 }
 
 // ---------------------------------------------------------------- 工艺标准（/api/craft-standards，资料包页签上的抽屉 CraftStandardDrawer）

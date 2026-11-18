@@ -8,7 +8,7 @@ import type { Attachment, DocNotice, DocRef, StatusTone } from '@/types/biz'
 export interface HomeDevKpi {
   /** 没停用的款 */
   styleCount: number
-  /** 资料包草稿，研发、生产两个阶段都算 */
+  /** 资料包草稿 */
   packDraftCount: number
 }
 

@@ -189,7 +189,7 @@ class A4AuditScaleIT {
                 INSERT INTO sty_style(code,name,style_class,brand,category_id,year,season,source,size_group_id)
                 VALUES (?,'A4 scale style','FS','A4_SCALE',?,2026,'SPRING','OWN',?) RETURNING id
                 """, "A4T" + suffix, category, sizes);
-        long pack = number(connection, "INSERT INTO tp_tech_pack(style_id,stage,version) VALUES (?,'DEV',1) RETURNING id", style);
+        long pack = number(connection, "INSERT INTO tp_tech_pack(style_id,stage,version) VALUES (?,'PROD',1) RETURNING id", style);
         execute(connection, """
                 INSERT INTO tp_bom_item(tech_pack_id,seq,part,material_id,sku_mode,usage_mode,usage_qty,unit,ref_price)
                 SELECT ?,n,'MAIN',?,'BY_SIZE','UNIFORM',20,'METER',10 FROM generate_series(1,10) n

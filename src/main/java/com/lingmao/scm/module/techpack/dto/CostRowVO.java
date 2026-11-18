@@ -27,10 +27,8 @@ public class CostRowVO {
     private BigDecimal price;
     private Boolean priceTaxIncluded;
     private Boolean priceFreightIncluded;
-    /** 只有我方采购的行计入合计 */
+    /** 只有自购的行计入合计 */
     private boolean counted;
     /** 单件成本，两位小数；不计入的是 0 */
     private BigDecimal cost;
-    /** 研发版里同部位、同物料那一行的单件成本；没有是 null */
-    private BigDecimal devCost;
 }

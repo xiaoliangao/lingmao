@@ -43,7 +43,7 @@ export const MRP_LOG_ACTION: Record<string, string> = {
   converted: '已转采购变了',
 }
 
-/** 结果块：PURCHASE 我方采购（要算、要买）/ FACTORY 工厂自备（只列不算）。TRADE 开时多一块 CUSTOMER 待客户提供，关着时不出现 */
+/** 结果块：PURCHASE 自购（要算、要买）/ FACTORY 厂购（只列不算）。TRADE 开时多一块 CUSTOMER 待客户提供，关着时不出现 */
 export type MrpBlock = 'PURCHASE' | 'FACTORY'
 
 /** 列表的一行 */
@@ -54,7 +54,7 @@ export interface MrpCalcRow {
   orderNos: string[]
   /** 订单里的款号，去重 */
   styleCodes: string[]
-  /** 我方采购里建议采购量 > 0 的行数（"要买 n 种"） */
+  /** 自购里建议采购量 > 0 的行数（"要买 n 种"） */
   buyCount: number
   /** 其中已经全转了采购的行数（"转采购"进度 convertedCount / buyCount） */
   convertedCount: number
@@ -143,14 +143,14 @@ export interface MrpItem extends MaterialSkuBrief {
   convertedQty: number
   /** 这一行（连同重新算料带过来的）生成的采购行净入库（已入库 − 已退货），库存单位 */
   receivedQty: number
-  /** 齐料还差多少 = 需求 − 本次使用库存 − 本次使用在途里已到的 − 已入库，不小于 0。0 显示"齐"，> 0 显示"差 n"（PRD §6.6.3）；工厂自备的行是 0 */
+  /** 齐料还差多少 = 需求 − 本次使用库存 − 本次使用在途里已到的 − 已入库，不小于 0。0 显示"齐"，> 0 显示"差 n"（PRD §6.6.3）；厂购的行是 0 */
   shortQty: number
   /** 用到它的订单号、款号 */
   orderNos: string[]
   styleCodes: string[]
   transitUses: MrpTransitUse[]
   lateTransits: MrpLateTransit[]
-  /** 能勾去生成采购单：我方采购、建议采购量 > 已转采购、算料单没关闭、没有重新算料的草稿 */
+  /** 能勾去生成采购单：自购、建议采购量 > 已转采购、算料单没关闭、没有重新算料的草稿 */
   canConvert: boolean
 }
 
@@ -185,10 +185,10 @@ export interface MrpCalcDetail extends DocHeader<MrpStatus, MrpAction> {
   /** 手动关闭的人；自动关闭是 null */
   closeByName: string | null
   closeTime: string | null
-  /** 我方采购的预计金额合计、已转采购的金额合计（按参考单价） */
+  /** 自购的预计金额合计、已转采购的金额合计（按参考单价） */
   estAmount?: number
   convertedAmount?: number
-  /** 我方采购、工厂自备都在这里，按 block 分开画 */
+  /** 自购、厂购都在这里，按 block 分开画 */
   items: MrpItem[]
   /** 重新算料出来的单：和上一张比需求变了的行（没变是空数组）；不是重新算料出来的是 null */
   diff: MrpDiffRow[] | null
@@ -597,15 +597,15 @@ export const KITTING_STATUS: Record<KittingStatus, { label: string; tone: Status
 }
 
 /**
- * 一张需求订单的齐料状态（PRD §6.6.3）：看含这张订单的已确认算料单，"我方采购"每一行
+ * 一张需求订单的齐料状态（PRD §6.6.3）：看含这张订单的已确认算料单，"自购"每一行
  * 已入库 + 本次使用在途里已到的 + 本次使用库存 ≥ 需求就算齐（就是 MrpItem.shortQty = 0）。
  * 草稿、手动关闭、被重新算料换掉的不算；因领完料关闭的直接算齐料；一张都没有是未算料。
- * 一张算料单有几张订单的，几张订单看到的是同一组行（一期不按订单拆行）；我方采购一行都没有也算齐料
+ * 一张算料单有几张订单的，几张订单看到的是同一组行（一期不按订单拆行）；自购一行都没有也算齐料
  */
 export interface OrderKitting {
   orderId: string
   status: KittingStatus
-  /** 齐了的行数 / 我方采购的行数；未算料时都是 0 */
+  /** 齐了的行数 / 自购的行数；未算料时都是 0 */
   readyCount: number
   totalCount: number
   /** 标签上的字："部分到料 3/5"、"齐料"、"未算料" */

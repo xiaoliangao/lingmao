@@ -46,7 +46,7 @@ public interface SupplyMapper {
     /** 已确认的算料单在这些 SKU 上的本次使用在途 */
     List<UseRow> selectActiveUses(@Param("skuIds") Collection<Long> skuIds);
 
-    /** 已确认的算料单"我方采购"里这些 SKU 的行 */
+    /** 已确认的算料单"自购"里这些 SKU 的行 */
     List<HeldRow> selectActiveItems(@Param("skuIds") Collection<Long> skuIds);
 
     /** 设了最小库存（> 0）、物料和 SKU 都启用的 SKU：补货提醒只看它们 */

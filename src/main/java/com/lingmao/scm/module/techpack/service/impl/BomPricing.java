@@ -13,10 +13,6 @@ import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
-import com.lingmao.scm.module.techpack.entity.BomItem;
-import com.lingmao.scm.module.techpack.entity.BomItemSku;
-import com.lingmao.scm.module.techpack.entity.PackStage;
-import com.lingmao.scm.module.techpack.service.impl.PackContent.BomRow;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -36,10 +32,7 @@ import java.util.stream.Collectors;
 
 /**
  * BOM 行的默认单价（PRD §6.4.3、docs/api/01 §3.9）。取价规则只写在这里，前端不直接调价格档案：
- * <ul>
- *   <li>生产 BOM：价格档案里这家供应商这个 SKU 的现价 &gt; 这家供应商这个物料的现价 &gt; 物料 SKU 单价 &gt; 物料参考单价</li>
- *   <li>研发 BOM：不看价格档案，物料 SKU 单价 &gt; 物料参考单价</li>
- * </ul>
+ * 价格档案里这家供应商这个 SKU 的现价 &gt; 这家供应商这个物料的现价 &gt; 物料 SKU 单价 &gt; 物料参考单价。
  * 价格档案、物料单价都按采购单位，这里除以换算系数换成元 / 库存单位（4 位小数）。
  * 行上的价按这一行配到的第一个 SKU 取（还没配料就按物料取）；其他 SKU 取到的价和行上不一样的，单独记在配料上
  */
@@ -73,7 +66,7 @@ class BomPricing {
      * 加行、换物料、换供应商、换配料时的默认值，按请求的顺序。供应商没给用物料的默认供应商。
      * 物料停用了 → 1000；SKU 不是这个物料的 → 1000
      */
-    List<BomDefaultVO> defaults(PackStage stage, List<BomDefaultReq> reqs) {
+    List<BomDefaultVO> defaults(List<BomDefaultReq> reqs) {
         Map<Long, MaterialRef> materials = CostCalculator.byId(
                 materialService.materialRefs(reqs.stream().map(BomDefaultReq::getMaterialId).collect(Collectors.toSet())),
                 MaterialRef::id);
@@ -91,7 +84,7 @@ class BomPricing {
             rowSkus.forEach(s -> checkBelongs(s, m));
             lines.add(new Line(m, req.getSupplierId() != null ? req.getSupplierId() : m.defaultSupplierId(), rowSkus));
         }
-        Map<MaterialPriceKey, PriceRef> archive = archive(stage, lines);
+        Map<MaterialPriceKey, PriceRef> archive = archive(lines);
         Set<Long> supplierIds = lines.stream().map(Line::supplierId).filter(Objects::nonNull).collect(Collectors.toSet());
         Map<Long, SupplierRef> suppliers = supplierIds.isEmpty() ? Map.of() : supplierService.refs(supplierIds);
 
@@ -119,35 +112,6 @@ class BomPricing {
             result.add(vo);
         }
         return result;
-    }
-
-    /**
-     * 转生产 BOM：按生产 BOM 的规则重新取价（docs/api/01 §3.8），供应商用行上的，用量、损耗、配料照抄。
-     * 一个价都取不到的行留着研发版的单价（手填的估价比空着有用）
-     */
-    void repriceForProd(List<BomRow> bom) {
-        if (bom.isEmpty()) {
-            return;
-        }
-        Map<Long, MaterialRef> materials = CostCalculator.byId(materialService.materialRefs(
-                bom.stream().map(r -> r.item().getMaterialId()).collect(Collectors.toSet())), MaterialRef::id);
-        Map<Long, MaterialSkuRef> skus = skuRefs(bom.stream().flatMap(r -> r.skus().stream())
-                .map(BomItemSku::getMaterialSkuId).toList());
-        List<Line> lines = bom.stream().map(r -> new Line(materials.get(r.item().getMaterialId()), r.item().getSupplierId(),
-                r.skus().stream().map(BomItemSku::getMaterialSkuId).distinct().map(skus::get).toList())).toList();
-        Map<MaterialPriceKey, PriceRef> archive = archive(PackStage.PROD, lines);
-        for (int i = 0; i < bom.size(); i++) {
-            Priced priced = price(lines.get(i), archive);
-            if (FROM_NONE.equals(priced.from())) {
-                continue;
-            }
-            BomItem item = bom.get(i).item();
-            item.setRefPrice(priced.refPrice());
-            item.setPriceSourceId(priced.archive() == null ? null : priced.archive().id());
-            item.setPriceTaxIncluded(priced.taxIncluded());
-            item.setPriceFreightIncluded(priced.freightIncluded());
-            bom.get(i).skus().forEach(s -> s.setRefPrice(priced.skuPrices().get(s.getMaterialSkuId())));
-        }
     }
 
     /** 一行：物料、取价用的供应商（可能没有）、配到的 SKU（去重、按顺序） */
@@ -193,11 +157,8 @@ class BomPricing {
         return new Hit(null, FROM_NONE, null);
     }
 
-    /** 生产 BOM 才查价格档案；一次查全部行（PriceService.currentMaterials 一条 SQL） */
-    private Map<MaterialPriceKey, PriceRef> archive(PackStage stage, List<Line> lines) {
-        if (stage != PackStage.PROD) {
-            return Map.of();
-        }
+    /** 查价格档案；一次查全部行（PriceService.currentMaterials 一条 SQL） */
+    private Map<MaterialPriceKey, PriceRef> archive(List<Line> lines) {
         Set<MaterialPriceKey> keys = new HashSet<>();
         for (Line line : lines) {
             if (line.supplierId() == null) {

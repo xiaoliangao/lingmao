@@ -94,7 +94,7 @@ class TechPackServiceImplTest {
     void create_disabledStyle_rejected() {
         when(packOwners.style(100L)).thenReturn(PackFixtures.owner("款式 FS001 已经停用了，资料包不能再建、改、生效"));
 
-        assertThatThrownBy(() -> service.create(100L, PackStage.PROD))
+        assertThatThrownBy(() -> service.create(100L))
                 .isInstanceOfSatisfying(BizException.class, e -> {
                     assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
                     assertThat(e.getMessage()).contains("已经停用了");
@@ -111,7 +111,7 @@ class TechPackServiceImplTest {
         draft.setStatus(PackStatus.DRAFT);
         when(techPackMapper.selectOne(any())).thenReturn(draft);
 
-        assertThatThrownBy(() -> service.create(100L, PackStage.PROD))
+        assertThatThrownBy(() -> service.create(100L))
                 .isInstanceOf(BizException.class).hasMessage("生产 BOM 已经有草稿 V3，改那一版就行");
         verify(techPackMapper, never()).insert(any(TechPack.class));
     }

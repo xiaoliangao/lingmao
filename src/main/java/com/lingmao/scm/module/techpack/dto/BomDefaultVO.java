@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * 一行 BOM 的默认值（前端 BomDefault，docs/api/01 §3.9）。单价都换算成元 / 库存单位；
- * 生产 BOM 先取价格档案里这家供应商的现价，没有带物料 SKU 单价，再没有带物料参考单价；研发 BOM 不看价格档案
+ * 先取价格档案里这家供应商的现价，没有带物料 SKU 单价，再没有带物料参考单价
  */
 @Data
 public class BomDefaultVO {

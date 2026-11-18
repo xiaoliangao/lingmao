@@ -150,7 +150,7 @@ function onSupplierChange(row: MrpItem, supplierId: string | null | undefined) {
 async function removeLine(row: MrpItem) {
   const d = detail.value
   if (!d) return
-  await confirmRemove(`删掉 ${row.skuCode}`, '这种料这次不由我方采购（比如改成工厂自备）才删；删了以后重新算料会再算出来。')
+  await confirmRemove(`删掉 ${row.skuCode}`, '这种料这次不自购（比如改成厂购）才删；删了以后重新算料会再算出来。')
   try {
     detail.value = await mrpApi.removeItem(id, row.id, d.version)
     ElMessage.success(`删掉了 ${row.skuCode}`)
@@ -378,8 +378,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
         </section>
 
         <section class="panel">
-          <div class="panel-head">我方采购<span class="dim head-sub">{{ purchaseRows.length }} 种</span></div>
-          <el-table ref="tableRef" :data="purchaseRows" row-key="id" :row-class-name="rowClass" empty-text="没有要我方采购的料" @selection-change="selected = $event">
+          <div class="panel-head">自购<span class="dim head-sub">{{ purchaseRows.length }} 种</span></div>
+          <el-table ref="tableRef" :data="purchaseRows" row-key="id" :row-class-name="rowClass" empty-text="没有要自购的料" @selection-change="selected = $event">
             <el-table-column type="selection" width="40" :selectable="canCheck" />
             <el-table-column type="expand" width="1" class-name="expand-hidden">
               <template #default="{ row }">
@@ -533,7 +533,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
         </section>
 
         <section v-if="factoryRows.length" class="panel">
-          <div class="panel-head">工厂自备<span class="dim head-sub">只看，不采购</span></div>
+          <div class="panel-head">厂购<span class="dim head-sub">只看，不采购</span></div>
           <el-table :data="factoryRows" row-key="id">
             <el-table-column label="物料" min-width="220">
               <template #default="{ row }"><span class="code">{{ row.skuCode }}</span> {{ row.materialName }}</template>

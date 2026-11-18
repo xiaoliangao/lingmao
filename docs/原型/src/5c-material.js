@@ -29,7 +29,7 @@ function redoMrp(m) {
   if (m.status !== '已关闭') move('mrp', m, '关闭', '重新算料')
   const n = createMrp(m.orders)
   const old = new Map(m.rows.map((r) => [mrpKey(r), r]))
-  for (const r of n.rows) { const o = old.get(mrpKey(r)); if (o?.converted && r.src === '我方采购') { r.converted = o.converted; r.purQty = Math.max(r.purQty, o.converted) } }
+  for (const r of n.rows) { const o = old.get(mrpKey(r)); if (o?.converted && r.src === '自购') { r.converted = o.converted; r.purQty = Math.max(r.purQty, o.converted) } }
   const gone = m.rows.filter((r) => !n.rows.some((x) => mrpKey(x) === mrpKey(r)))
   n.prev = { no: m.no, rows: [...n.rows.map((r) => ({ r, from: old.get(mrpKey(r))?.need || 0, to: r.need })), ...gone.map((r) => ({ r, from: r.need, to: 0 }))]
     .map(({ r, from, to }) => ({ src: r.src, sku: r.sku, owner: r.owner, from, to, d: rnd(to - from, 3) })) }
@@ -47,7 +47,7 @@ route('/mrp', {
     const stylesOf = (m) => [...new Set(m.orders.flatMap((o) => orderStyles(order(o))))]
     const makers = computed(() => [...new Set(db.mrps.map(creatorOf).filter(Boolean))])
     const rows = computed(() => scoped.value.filter((m) => (s.tab === '全部' || m.status === s.tab) && (!s.by || creatorOf(m) === s.by) && passFlt(s.flt, { date: m.date }) && matchQ(s.q, m.no, ...m.orders, ...stylesOf(m))).slice().reverse())
-    const buyRows = (m) => m.rows.filter((r) => r.src === '我方采购' && r.purQty > 0)
+    const buyRows = (m) => m.rows.filter((r) => r.src === '自购' && r.purQty > 0)
     const reserveText = computed(() => Object.entries(db.reserve).filter(([, v]) => v > 0).map(([t, v]) => t + ' ' + v + '%').join('、'))
     return { s, tabs, rows, buyRows, stylesOf, makers, reserveText }
   },
@@ -115,7 +115,7 @@ route('/mrp/:no', {
   setup(p) {
     const m = computed(() => mrp(p.no))
     const rowsOf = (src) => (m.value ? m.value.rows.filter((r) => r.src === src) : [])
-    const buy = computed(() => rowsOf('我方采购'))
+    const buy = computed(() => rowsOf('自购'))
     const picked = reactive(buy.value.filter((r) => r.purQty > r.converted).map(mrpKey))
     const toggle = (r) => { const k = picked.indexOf(mrpKey(r)); k >= 0 ? picked.splice(k, 1) : picked.push(mrpKey(r)) }
     const open = computed(() => m.value.status !== '已关闭')
@@ -138,7 +138,7 @@ route('/mrp/:no', {
       if (n?.no) { go('/mrp/' + n.no); toast(n.prev.rows.some((x) => x.d) ? `重新算好了，有 ${n.prev.rows.filter((x) => x.d).length} 种料变了` : '重新算好了，需求没变') }
     }
     async function close() { if (await ask('关闭 ' + m.value.no, '关闭后不能再生成采购单，"本次使用库存"的占用释放给别的算料单。', '关闭')) docAct('mrp', m.value, '关闭') }
-    async function delRow(r) { if (await ask('删掉这一行', `${skuName(r.sku)} 不再算进这张单（比如这种料改由工厂自备）。删了要重新算料才回得来。`, '删除', true)) run(() => removeMrpRow(m.value, r)) }
+    async function delRow(r) { if (await ask('删掉这一行', `${skuName(r.sku)} 不再算进这张单（比如这种料改由厂购）。删了要重新算料才回得来。`, '删除', true)) run(() => removeMrpRow(m.value, r)) }
     const more = computed(() => [{ t: '重新算料', fn: redo }, open.value && { t: '关闭', fn: close }].filter(Boolean))
     return { m, rowsOf, buy, picked, toggle, open, edit, left, suppliersFor, confirmer, changed, short, tr, tot, toPo, more, delRow, updateMrpRow, mrpKey, mrpRecv }
   },
@@ -166,7 +166,7 @@ route('/mrp/:no', {
           <template #d="{ r }"><b :class="r.d > 0 ? 'red' : 'green'">{{ r.d > 0 ? '+' : '' }}{{ fq(r.d) }}</b></template></Tbl>
         <p v-else class="dim">每种料的需求都没变。</p>
       </div>
-      <div class="sec" data-c="我方采购"><h3>我方采购<span class="acts dim" style="font-size:12px">预计金额 {{ fm(tot.amt) }}　已转采购 {{ fm(tot.conv) }}</span></h3>
+      <div class="sec" data-c="自购"><h3>自购<span class="acts dim" style="font-size:12px">预计金额 {{ fm(tot.amt) }}　已转采购 {{ fm(tot.conv) }}</span></h3>
         <div style="overflow-x:auto"><table class="tbl inset flat mrp-buy">
           <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num" title="未含损耗的订单数量×单位用量">基础量</th><th class="num">需求</th><th class="num">可用库存</th><th class="num">本次用库存</th><th class="num" title="交期赶得上要料日期的在途，去掉别的算料单占着的">可用在途</th><th class="num">本次用在途</th><th class="num" title="预计到货晚于要料日期，不扣">赶不上的在途</th><th class="num">净需求</th><th class="num">建议采购</th><th class="num">参考单价</th><th class="num">预计金额</th><th class="num">已转采购</th><th class="num">已入库</th><th v-if="edit" style="width:32px"></th></tr></thead>
           <tbody>
@@ -196,7 +196,7 @@ route('/mrp/:no', {
               <div v-if="r.transitLate?.length" class="amber" style="font-size:12.5px;margin-top:4px">赶不上的在途（要料日期 {{ fd(m.needDate) }}，不扣）：<span v-for="u in r.transitLate" :key="u.po + u.i" style="margin-right:14px"><a class="code" :href="'#/purchases/' + u.po">{{ u.po }}</a> 预计 {{ fd(u.date) }} 到 · {{ fq(u.free) }} {{ unitOf(r.sku) }}</span></div>
             </td></tr>
             </template>
-            <tr v-if="!buy.length"><td :colspan="edit ? 17 : 16" class="empty">资料包里没有我方采购的料</td></tr>
+            <tr v-if="!buy.length"><td :colspan="edit ? 17 : 16" class="empty">资料包里没有自购的料</td></tr>
           </tbody>
         </table></div>
       </div>
@@ -204,8 +204,8 @@ route('/mrp/:no', {
         <Tbl inset flat :rows="rowsOf('客供')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }, { k: 'del', t: '' }]">
           <template #gap="{ r }"><span :class="{ red: r.net > 0 }">{{ r.net > 0 ? fq(r.net) : '够了' }}</span></template>
           <template #del="{ r }"><button v-if="edit" class="btn ghost icon sm" title="删掉这一行" @click="delRow(r)"><Ico n="x" :s="12"/></button></template></Tbl></div>
-      <div class="sec" data-c="工厂自备" v-if="rowsOf('工厂自备').length"><h3>工厂自备</h3>
-        <Tbl inset flat :rows="rowsOf('工厂自备')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
+      <div class="sec" data-c="厂购" v-if="rowsOf('厂购').length"><h3>厂购</h3>
+        <Tbl inset flat :rows="rowsOf('厂购')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
       <div class="sec"><DocFiles :doc="m"/></div>
       <div class="sec"><h3>操作记录</h3><Log :items="m.log"/></div>
     </div>
@@ -236,7 +236,7 @@ function updatePurchase(p, f) {
   if (!ch.length) fail('没有改动')
   act(p, '改：' + ch.join('；'))
 }
-const mrpRowOf = (l) => mrp(l.src.mrp)?.rows.find((x) => x.src === '我方采购' && x.sku === l.sku && x.owner === (l.owner || '自有'))
+const mrpRowOf = (l) => mrp(l.src.mrp)?.rows.find((x) => x.src === '自购' && x.sku === l.sku && x.owner === (l.owner || '自有'))
 function shiftMrp(lines, k, why) {
   for (const l of lines.filter((x) => x.src?.mrp)) {
     const r = mrpRowOf(l)

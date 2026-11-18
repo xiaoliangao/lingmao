@@ -43,7 +43,7 @@ public interface TechPackMapper extends BaseMapper<TechPack> {
 
     List<PackSizeRef> referencedSizesBatch(@Param("packIds") Collection<Long> packIds);
 
-    /** 按款看成本（resources/mapper/techpack/TechPackMapper.xml）：每个款取生产已生效版，没有取研发已生效版 */
+    /** 按款看成本（resources/mapper/techpack/TechPackMapper.xml）：每个款取已生效的生产 BOM */
     IPage<StyleCostRowVO> selectStyleCostPage(IPage<StyleCostRowVO> page, @Param("q") StyleCostQuery query,
                                               @Param("codes") List<String> codes, @Param("categoryIds") List<Long> categoryIds);
 }

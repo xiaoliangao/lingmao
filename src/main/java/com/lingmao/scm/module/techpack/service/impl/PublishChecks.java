@@ -9,7 +9,6 @@ import com.lingmao.scm.module.techpack.entity.BomItemSize;
 import com.lingmao.scm.module.techpack.entity.BomItemSku;
 import com.lingmao.scm.module.techpack.entity.BomSkuMode;
 import com.lingmao.scm.module.techpack.entity.BomUsageMode;
-import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.BomRow;
 import com.lingmao.scm.module.techpack.service.impl.PackOwners.Ctx;
@@ -26,7 +25,7 @@ import java.util.stream.Collectors;
  * 生效前检查（PRD §6.4.3、docs/api/01 §3.7）：一次列全，不通过不让生效。row 是物料清单第几行，0 说的是整个资料包。
  * <ol>
  *   <li>V2 起要写本版说明；至少一行 BOM</li>
- *   <li>随款色的行款式每个启用颜色都配了，随尺码的行每个尺码都配了，固定的行配了一个（研发 BOM 只估价，可以只选物料、不配 SKU）</li>
+ *   <li>随款色的行款式每个启用颜色都配了，随尺码的行每个尺码都配了，固定的行配了一个</li>
  *   <li>统一用量的行填了用量，分码的行每个尺码都有用量</li>
  *   <li>用到的物料、SKU 都没停用（款式上停用了的颜色的配料用不到，不查）</li>
  * </ol>
@@ -53,9 +52,7 @@ final class PublishChecks {
             if (m != null && !Integer.valueOf(1).equals(m.status())) {
                 problems.add(new PublishProblem(row, "物料 " + m.name() + " 已停用"));
             }
-            if (pack.getStage() != PackStage.DEV) {
-                matched(r, ctx).forEach(msg -> problems.add(new PublishProblem(row, msg)));
-            }
+            matched(r, ctx).forEach(msg -> problems.add(new PublishProblem(row, msg)));
             usage(r.item(), r.sizes(), ctx.sizes()).forEach(msg -> problems.add(new PublishProblem(row, msg)));
             Set<Long> colorIds = Set.copyOf(ctx.colorIds());
             r.skus().stream()

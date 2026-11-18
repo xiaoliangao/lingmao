@@ -225,7 +225,7 @@ public class MrpServiceImpl implements MrpService {
         return vo;
     }
 
-    /** 还有没转完的行（我方采购、建议采购 > 已转采购） */
+    /** 还有没转完的行（自购、建议采购 > 已转采购） */
     private static boolean convertible(List<MrpCalcItem> items) {
         return items.stream().anyMatch(MrpServiceImpl::convertibleRow);
     }
@@ -268,7 +268,7 @@ public class MrpServiceImpl implements MrpService {
             return arrived.getOrDefault(useId, BigDecimal.ZERO);
         }
 
-        /** 齐料还差 = 需求 − 本次使用库存 − 用的在途里已到的 − 已入库，不小于 0；工厂自备的是 0 */
+        /** 齐料还差 = 需求 − 本次使用库存 − 用的在途里已到的 − 已入库，不小于 0；厂购的是 0 */
         BigDecimal shortOf(MrpCalcItem i, List<MrpCalcTransit> uses) {
             if (i.getBlock() != MrpBlock.PURCHASE) {
                 return BigDecimal.ZERO;
@@ -603,7 +603,7 @@ public class MrpServiceImpl implements MrpService {
             return detail(id);
         }
         if (item.getBlock() != MrpBlock.PURCHASE) {
-            throw new BizException("工厂自备的料不用我们买，这一行不能改");
+            throw new BizException("厂购的料不用我们买，这一行不能改");
         }
         if (c.getStatus() == CONFIRMED) {
             if (stockChanged || transitChanged || suggestChanged) {
@@ -961,7 +961,7 @@ public class MrpServiceImpl implements MrpService {
         }
         List<Integer> done = items.stream().filter(i -> !convertibleRow(i)).map(MrpCalcItem::getSeq).toList();
         if (!done.isEmpty()) {
-            throw new BizException(PurTexts.rows(done) + "不用再买了（已经全转了采购，或者是工厂自备的）");
+            throw new BizException(PurTexts.rows(done) + "不用再买了（已经全转了采购，或者是厂购的）");
         }
         List<Integer> noSupplier = items.stream().filter(i -> i.getSupplierId() == null).map(MrpCalcItem::getSeq).toList();
         if (!noSupplier.isEmpty()) {

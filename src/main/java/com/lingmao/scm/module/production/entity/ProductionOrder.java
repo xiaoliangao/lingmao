@@ -65,7 +65,7 @@ public class ProductionOrder extends DocEntity {
 
     private String terms;
 
-    /** null = 不用领料（资料包里没有我方采购的料） */
+    /** null = 不用领料（资料包里没有自购的料） */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private MaterialIssueStatus issueStatus;
 

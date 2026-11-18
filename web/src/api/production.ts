@@ -43,7 +43,7 @@ export const productionApi = {
 
   // ---------- 领料页签 ----------
 
-  /** 应领、已领、还差（只算我方采购的行）和挂在这张单上的领料、退料单 */
+  /** 应领、已领、还差（只算自购的行）和挂在这张单上的领料、退料单 */
   materials: (id: string) => http.get<ProductionMaterials>(`${base}/${id}/materials`),
   /** 给 04 选生产单用：领料列还有没领齐的，returnable = true 列已领 > 0 的（要 inventory:doc:add） */
   issueOptions: (params: PageParams & IssueOptionQuery) => http.get<PageResult<IssueOption>>(`${base}/issue-options`, params),

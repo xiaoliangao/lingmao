@@ -61,7 +61,7 @@ class StyleImportTest extends StyleTestBase {
     @Test
     void importFile_oneRowThreeColors_fifteenSkus() throws IOException {
         ImportResult result = styleExcel.importFile(xlsx(new Object[][]{HEADERS,
-                {"27CF009", "测试双排扣风衣", "小风衣", "服饰", "测试品牌", "测试女装/测试上衣/测试衬衫", 2027, "春季", "甲某", "测试字母码",
+                {"27CF009", "测试双排扣风衣", "小风衣", "非通勤裤", "测试品牌", "测试女装/测试上衣/测试衬衫", 2027, "春季", "甲某", "测试字母码",
                         "KQ,藏青，黑", null, "A"}}));
 
         assertThat(result.total()).isEqualTo(1);

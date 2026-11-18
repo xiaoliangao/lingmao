@@ -196,7 +196,6 @@ function smpConvert(s, f) {
   Object.assign(s, { status: '已转大货', style: st.code, convertedAt: clock.today, convertedBy: db.me })
   act(s, '转大货 → ' + st.code)
   act(st, '由样衣 ' + s.no + ' 转大货')
-  if (s.devBom) carryDevTp(st.code, s.devBom)
   return st
 }
 
@@ -231,19 +230,6 @@ db.samples = [
     log: [{ at: '2026-11-06', who: '许然', text: '新建' }] },
 ]
 if (style('27CF001')) style('27CF001').sample = 'YY26070003'
-// 样衣的研发 BOM（打样估价用）：转大货时带到款式上，复制成生产 BOM V1 草稿（§6.3.3、§6.4.1）
-{
-  const s = db.samples.find((x) => x.no === 'YY26100005')
-  if (s) s.devBom = {
-    bom: [
-      { part: '大身', mat: 'ML0018', mode: '随款色', map: { YM: 'ML0018-YM', HE: 'ML0018-HE' }, um: '分码', uses: SZ(1.5, 1.6, 1.7, 1.8, 1.9), loss: 3, src: '我方采购', supplier: 'GYS0001', price: 21.5 },
-      { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 6, loss: 2, src: '我方采购', supplier: 'GYS0002', price: 0.38 },
-      ...['BX0001', 'BX0002', 'BP0001', 'BD0001'].map((k, i) => label(k, { part: ['主唛', '洗唛', '吊牌', '包装袋'][i] })),
-    ],
-    ops: [{ cat: '车缝', name: '整件加工（估）', req: '', sec: 2800, price: 36, note: '按打样工厂口头报价估' }],
-    note: '打样估价：帆布按 21.5 估',
-  }
-}
 
 SEARCH.push(() => db.samples.map((s) => ({ t: s.no + ' ' + s.name, sub: '样衣', to: '/samples/' + s.no, i: 'scissors' })))
 TODOS.push(() => [{ t: '样衣待评审', n: db.samples.filter((s) => smpState(s) === '待评审').length, to: '/samples?s=待评审', i: 'scissors' }])
@@ -344,7 +330,6 @@ route('/samples/:no', {
           <dt>面料</dt><dd>{{ s.fabric || '—' }}</dd>
           <dt>预估吊牌价</dt><dd>{{ fm(s.tagPrice) }}</dd>
           <dt>预估成本</dt><dd>{{ fm(s.estCost) }}</dd>
-          <dt>研发 BOM</dt><dd>{{ s.devBom ? s.devBom.bom.length + ' 行物料 · ' + s.devBom.ops.length + ' 道工序（转大货时复制成生产 BOM 草稿）' : '没有' }}</dd>
           <template v-if="s.style"><dt>转大货</dt><dd><a class="code" :href="'#/styles/' + s.style">{{ s.style }}</a> · {{ fd(s.convertedAt) }}</dd></template>
         </dl>
         <DocFiles :doc="s"/>
@@ -418,7 +403,7 @@ comp('SmpConvert', {
     // 款号按新规则：大类 + 今天 + 样衣设计师的编号 + 流水；编不出来就提示，手填照样能转
     const auto = computed(() => { try { return { code: nextStyleCode(f.big, p.s.designer) } } catch (e) { return { err: e.message + (e.list?.[0] ? '：' + e.list[0] : '') } } })
     const factories = computed(() => db.suppliers.filter((x) => isFactory(x) && x.status === '合作中'))
-    function save() { const st = run(() => smpConvert(p.s, { ...f })); if (st?.code) { emit('close'); go('/styles/' + st.code); toast(`${st.code} 已生成，${st.skus.length} 个 SKU，` + (p.s.devBom ? '研发 BOM 已复制成生产 BOM V1 草稿，核对后发布' : '样衣没有研发 BOM，资料包还要建')) } }
+    function save() { const st = run(() => smpConvert(p.s, { ...f })); if (st?.code) { emit('close'); go('/styles/' + st.code); toast(`${st.code} 已生成，${st.skus.length} 个 SKU；资料包（物料清单、工艺）在款式里建`) } }
     return { f, auto, factories, save }
   },
   template: `<Modal t="转大货" :w="460" @close="$emit('close')">
@@ -453,8 +438,8 @@ db.quotes = [
   { id: 'BJ12', mat: 'MZ0003', sup: 'GYS0001', price: 48.5, lead: 18, moq: 100, at: '2026-09-02' },
   { id: 'BJ13', mat: 'BX0001', sup: 'GYS0003', price: 0.18, lead: 7, moq: 2000, at: '2026-06-18', chosen: true },
 ]
-// 调价记录不再单独记，都在价格档案里（§6.10，5e-price.js）；核价用生产 BOM，还没有就用研发 BOM 估
-const costTp = (code) => activeTp(code) || tpsOf(code)[0] || activeTp(code, '研发') || tpsOf(code, '研发')[0]
+// 调价记录不再单独记，都在价格档案里（§6.10，5e-price.js）；核价用生效的资料包，没有就用最新草稿
+const costTp = (code) => activeTp(code) || tpsOf(code)[0]
 function costDefaults(code) {
   const s = style(code)
   const prices = db.orders.filter((o) => o.status !== '已取消').flatMap((o) => o.lines).filter((l) => l.style === code && l.price).map((l) => l.price)
@@ -495,14 +480,13 @@ function quoteAdd(f) {
   return add(db.quotes, { id: 'BJ' + String(db.quotes.length + 1).padStart(2, '0'), lead: null, moq: null, at: clock.today, chosen: false, ...f })
 }
 
-// 按款看成本：用生产 BOM（生效的，没有就最新草稿），还没有生产 BOM 的用研发 BOM 估
+// 按款看成本：用资料包（生效的，没有就最新草稿）
 route('/costing', {
   setup() {
     const s = reactive({ q: '' })
     const rows = computed(() => db.styles.filter((x) => matchQ(s.q, x.code, x.name, x.alias)).map((x) => { const tp = costTp(x.code); return { s: x, tp, k: tp && tpCost(tp) } }))
-    const tpText = (x) => (x.tp ? tpStage(x.tp) + ' ' + tpName(x.tp) + (x.tp.status === '已生效' ? '' : ' 草稿') : '')
     const money = (x, key) => (x.k ? fm(x.k[key]) : '—')
-    return { s, rows, tpText, money, costRatio, costLink }
+    return { s, rows, money, costRatio, costLink }
   },
   template: `<div>
     <Head t="核价"/>
@@ -517,7 +501,7 @@ route('/costing', {
           { k: 'total', t: '单件成本', c: 'num' }, { k: 'tag', t: '吊牌价', c: 'num', f: x => fm(x.s.tagPrice) },
           { k: 'ratio', t: '倍率', c: 'num', f: x => (x.k && costRatio(x.s, x.k.total)) || '—' }]">
           <template #code="{ r }"><span class="row"><Thumb :code="r.s.code" :s="26"/><span class="code">{{ r.s.code }}</span><span class="mut">{{ r.s.name }}{{ r.s.alias ? '（' + r.s.alias + '）' : '' }}</span></span></template>
-          <template #tp="{ r }"><span v-if="r.tp" class="row g4"><span class="pill" :class="tpStage(r.tp) === '研发' ? 'amber' : 'blue'">{{ tpStage(r.tp) }}</span>{{ tpName(r.tp) }}<span v-if="r.tp.status !== '已生效'" class="dim">草稿</span></span><span v-else class="dim">没有资料包</span></template>
+          <template #tp="{ r }"><span v-if="r.tp" class="row g4">{{ tpName(r.tp) }}<span v-if="r.tp.status !== '已生效'" class="dim">草稿</span></span><span v-else class="dim">没有资料包</span></template>
           <template #total="{ r }"><b v-if="r.k" style="font-weight:600">{{ fm(r.k.total) }}</b><span v-else class="dim">—</span></template>
         </Tbl>
       </div>
@@ -533,7 +517,7 @@ route('/costing/:code', {
     const tab = ref('quote'), adding = ref(false)
     const c = computed(() => costOf(p.code))
     const sizes = computed(() => sizesOf(s.value.sizeGroup))
-    const mats = computed(() => (c.value ? [...new Set(c.value.tp.bom.filter((r) => r.src !== '工厂自备').map((r) => r.mat))] : []))
+    const mats = computed(() => (c.value ? [...new Set(c.value.tp.bom.filter((r) => r.src !== '厂购').map((r) => r.mat))] : []))
     const quotesOf = (m) => db.quotes.filter((q) => q.mat === m).sort((a, b) => a.price - b.price)
     const logOf = (m) => pricesOf({ kind: '物料价', mat: m }).filter((x) => !x.void).sort(byNewPrice).slice(0, 5)
     const lines = computed(() => db.orders.filter((o) => !['已取消', '草稿'].includes(o.status) && o.lines.some((l) => l.style === p.code)).map((o) => {
@@ -554,7 +538,7 @@ route('/costing/:code', {
     <div class="detail">
       <div class="body">
         <div class="title"><Thumb :code="s.code" :s="44"/>{{ s.name }}</div>
-        <div class="sub"><span v-if="c">资料包 {{ tpName(c.tp) }}{{ c.tp.status === '已生效' ? '' : ' 草稿' }}<template v-if="tpStage(c.tp) === '研发'">（还没有生产 BOM，按研发估）</template></span><span>吊牌价 {{ fm(s.tagPrice) }}</span></div>
+        <div class="sub"><span v-if="c">资料包 {{ tpName(c.tp) }}{{ c.tp.status === '已生效' ? '' : ' 草稿' }}</span><span>吊牌价 {{ fm(s.tagPrice) }}</span></div>
         <Tabs v-model="tab" :items="[['quote', '询价比价'], ['margin', '订单毛利', lines.length]]"/>
         <div v-if="!c" class="empty">这个款还没有资料包，算不了成本<p style="margin-top:14px"><a class="btn" :href="'#/styles/' + s.code">去建资料包</a></p></div>
         <template v-else>

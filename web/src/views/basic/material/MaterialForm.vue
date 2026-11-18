@@ -27,9 +27,6 @@ type Num = number | null | undefined
 
 /** 一期代工开关按"关"做（RFC 003 §3.3），默认来源不给选客供 */
 const SOURCE_OPTIONS: MaterialSource[] = ['PURCHASE', 'FACTORY']
-/** 新建物料时默认损耗率预填 3（甲方 11-17：成衣损耗一般 3% 或 5%，PRD Q18）；当场加物料类型时备料比也默认 3 */
-const DEFAULT_LOSS_PCT = 3
-const DEFAULT_RESERVE_PCT = 3
 
 const visible = ref(false)
 const detail = ref<MaterialDetail | null>(null)
@@ -104,7 +101,8 @@ async function openCreate(categoryId?: string | null) {
   detail.value = null
   // 左边选的是二级分类就带上；选的是一级或"全部"就空着
   const leaf = categories.value.some((g) => g.children?.some((c) => c.id === categoryId))
-  Object.assign(form, structuredClone(EMPTY), { categoryId: leaf ? categoryId : null, defaultLossPct: DEFAULT_LOSS_PCT })
+  // 损耗率、备料比由生产评估后填，新建时不预填（PRD Q18，甲方 11-18）
+  Object.assign(form, structuredClone(EMPTY), { categoryId: leaf ? categoryId : null })
   visible.value = true
 }
 
@@ -197,11 +195,11 @@ async function save() {
 
 /** 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6）：加的是字典"物料类型"的一项，加完直接选上 */
 const typeSelect = ref<InstanceType<typeof DictSelect>>()
-const typeDialog = reactive({ visible: false, label: '', reservePct: DEFAULT_RESERVE_PCT as Num, saving: false })
+const typeDialog = reactive({ visible: false, label: '', reservePct: undefined as Num, saving: false })
 
 function openAddType() {
   typeSelect.value?.blur()
-  Object.assign(typeDialog, { visible: true, label: '', reservePct: DEFAULT_RESERVE_PCT })
+  Object.assign(typeDialog, { visible: true, label: '', reservePct: undefined })
 }
 
 async function addType() {
@@ -326,7 +324,7 @@ defineExpose({ openCreate, openEdit })
       </el-form-item>
 
       <el-form-item label="默认损耗率（%）">
-        <el-input-number v-model="form.defaultLossPct" :min="0" :max="100" :controls="false" :value-on-clear="null" placeholder="不填 = 0" />
+        <el-input-number v-model="form.defaultLossPct" :min="0" :max="100" :controls="false" :value-on-clear="null" placeholder="由生产评估，不填 = 0" />
       </el-form-item>
       <el-form-item label="备料比（%）">
         <el-input-number v-model="form.reservePct" :min="0" :max="100" :controls="false" :value-on-clear="null" placeholder="不填按物料类型" />
@@ -355,7 +353,7 @@ defineExpose({ openCreate, openEdit })
         <el-input v-model="typeDialog.label" maxlength="64" placeholder="如 织带" />
       </el-form-item>
       <el-form-item label="备料比（%）">
-        <el-input-number v-model="typeDialog.reservePct" :min="0" :max="100" :controls="false" :value-on-clear="null" placeholder="不填 = 3" />
+        <el-input-number v-model="typeDialog.reservePct" :min="0" :max="100" :controls="false" :value-on-clear="null" placeholder="由生产评估，不填 = 0" />
         <span class="dim hint">这类物料上没设备料比时，算料按它多备</span>
       </el-form-item>
     </el-form>

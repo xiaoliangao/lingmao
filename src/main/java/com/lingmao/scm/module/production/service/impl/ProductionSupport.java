@@ -217,7 +217,7 @@ class ProductionSupport {
         return out;
     }
 
-    /** 排单时定的领料状态：锁定的生产 BOM 里有我方采购的料是 NONE，没有是 null（不用领料） */
+    /** 排单时定的领料状态：锁定的生产 BOM 里有自购的料是 NONE，没有是 null（不用领料） */
     MaterialIssueStatus initialIssueStatus(long prdOrderId) {
         return needs(List.of(prdOrderId)).isEmpty() ? null : MaterialIssueStatus.NONE;
     }

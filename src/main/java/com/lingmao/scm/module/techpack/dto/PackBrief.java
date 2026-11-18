@@ -17,7 +17,7 @@ public record PackBrief(long id, long styleId, PackStage stage, int version, Pac
         return colorIds == null || colorIds.contains(colorId);
     }
 
-    /** "V2"（研发的"研发 V2"） */
+    /** "V2" */
     public String versionName() {
         return stage.versionName(version);
     }

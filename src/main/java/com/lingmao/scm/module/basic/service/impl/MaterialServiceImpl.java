@@ -82,8 +82,6 @@ public class MaterialServiceImpl implements MaterialService {
     static final int MAX_TRIES = 100;
     /** 当场加的物料类型，字典值 = CUSTOM_ + 序号（PRD §6.1.5 规则 6） */
     static final String CUSTOM_TYPE = "CUSTOM_";
-    /** 当场加物料类型时备料比的默认值 %（Q18：采购时多买的一般 3%） */
-    static final BigDecimal DEFAULT_RESERVE_PCT = BigDecimal.valueOf(3);
 
     private final MaterialMapper materialMapper;
     private final MaterialSkuMapper materialSkuMapper;
@@ -159,7 +157,8 @@ public class MaterialServiceImpl implements MaterialService {
         item.setLabel(label);
         item.setValue(CUSTOM_TYPE + next);
         item.setSort(types.stream().map(DictData::getSort).filter(Objects::nonNull).max(Integer::compare).orElse(0) + 1);
-        item.setNumValue(Objects.requireNonNullElse(req.getReservePct(), DEFAULT_RESERVE_PCT));
+        // 备料比由生产评估后填，没填 = 0（Q18，甲方 11-18），和预置的物料类型一样存 0
+        item.setNumValue(Objects.requireNonNullElse(req.getReservePct(), BigDecimal.ZERO));
         item.setRemark("新建物料时加的");
         dictDataService.create(item);
         return new DictOption(label, item.getValue(), 1);

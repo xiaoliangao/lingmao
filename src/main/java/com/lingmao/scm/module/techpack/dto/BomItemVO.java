@@ -39,7 +39,7 @@ public class BomItemVO {
     private Boolean priceFreightIncluded;
     private String remark;
     private List<BomSkuVO> skus;
-    /** 单件成本 = 基码用量 ×（1 + 损耗率）× 单价；工厂自备、客供的行和算不出来的是 null。不受看成本权限管（架构 §4.9） */
+    /** 单件成本 = 基码用量 ×（1 + 损耗率）× 单价；厂购、客供的行和算不出来的是 null。不受看成本权限管（架构 §4.9） */
     private BigDecimal unitCost;
     /** 第一个配料 SKU 的图，没有用物料主图 */
     private AttachmentVO image;

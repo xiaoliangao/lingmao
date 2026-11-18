@@ -430,7 +430,7 @@ IMPORTS.styles = {
     { k: 'code', t: '款号', tip: '不填按规则自动编（大类 + 导入当天 yyMMdd + 设计师编号 + 2 位流水，如 FS2611080701），设计师要有编号；领猫里的老款号照填，系统查重', ex: '27CF009', text: true, w: 14 },
     { k: 'name', t: '款式名称', req: true, ex: '双排扣短风衣', w: 18 },
     { k: 'alias', t: '花名', tip: '选填：款式的俗称，工艺单表头上有', ex: '小短风', w: 12 },
-    { k: 'big', t: '大类', tip: '款号头两位：编码或名称（FS 服饰、XZ 鞋子），要是启用的；不填 = 第一个启用的大类', opts: () => liveBigCats().map((x) => x.code), ex: 'FS', w: 8 },
+    { k: 'big', t: '大类', tip: '款号头两位：编码或名称（TS 通勤裤、FS 非通勤裤、XZ 鞋子），要是启用的；不填 = 第一个启用的大类', opts: () => liveBigCats().map((x) => x.code), ex: 'FS', w: 8 },
     { k: 'cat', t: '品类', req: true, tip: '品类名称或 1 位编码，要是启用的品类', ex: '风衣' },
     { k: 'year', t: '年份', req: true, int: true, tip: '4 位年份', ex: 2027, w: 8 },
     { k: 'season', t: '季节', req: true, tip: '春 / 夏 / 秋 / 冬，或编码 C / X / Q / D', ex: '春', w: 8 },
@@ -626,7 +626,7 @@ route('/styles/:code', {
       s.value.status === '草稿' && { t: '删除', danger: true, fn: del },
     ].filter(Boolean) : [])
     const unmatched = computed(() => (s.value ? unmatchedColors(s.value) : []))
-    const tpc = computed(() => activeTp(p.code) || activeTp(p.code, '研发'))
+    const tpc = computed(() => activeTp(p.code))
     const made = computed(() => s.value?.log?.[0])
     return { s, tab, editing, orders, more, unmatched, tpc, made }
   },
@@ -676,7 +676,7 @@ route('/styles/:code', {
           <dt>主力面料</dt><dd><a v-if="s.mainMat" :href="'#/materials/' + s.mainMat"><span class="code">{{ s.mainMat }}</span> {{ mat(s.mainMat)?.name }}</a><template v-else>—</template></dd>
           <dt>吊牌价</dt><dd>{{ fm(s.tagPrice) }}</dd>
           <dt>参考成本价</dt><dd>{{ fm(s.cost) }}</dd>
-          <template v-if="canSeeCost()"><dt>资料包核价</dt><dd><a v-if="tpc" :href="'#/styles/' + s.code + '?tab=tp&sub=cost&tpv=' + tpc.id">{{ (tpStage(tpc) === '研发' ? '研发估 ' : '') + fm(tpCost(tpc).total) + ' · ' + tpName(tpc) }}</a><template v-else>资料包还没生效</template></dd></template>
+          <template v-if="canSeeCost()"><dt>资料包核价</dt><dd><a v-if="tpc" :href="'#/styles/' + s.code + '?tab=tp&sub=cost&tpv=' + tpc.id">{{ fm(tpCost(tpc).total) + ' · ' + tpName(tpc) }}</a><template v-else>资料包还没生效</template></dd></template>
           <dt>默认加工厂</dt><dd>{{ s.factory ? supName(s.factory) : '—' }}</dd>
           <dt>上市日期</dt><dd>{{ s.launch ? fd(s.launch) : '—' }}</dd>
           <dt>品名</dt><dd>{{ s.product || '—' }}</dd>
@@ -739,7 +739,8 @@ comp('StyleSkus', {
   </section>`,
 })
 
-/* ---------- 资料包（PRD §6.4，甲方 11-14 改）：版本 + 四个页签 —— 尺寸指示、物料清单（BOM、按颜色展开、研发 vs 生产）、工艺指示（含工序工价）、核价；导出 PDF 工艺单
+/* ---------- 资料包（PRD §6.4，甲方 11-14 改）：版本 + 四个页签 —— 尺寸指示、物料清单（BOM、按颜色展开）、工艺指示（含工序工价）、核价；导出 PDF 工艺单
+ * 只有生产 BOM 一种（甲方 11-18 答 Q24：研发不填物料清单，转大货后建标准资料包）
  * 定位到某一版的某个页签：/styles/款号?tab=tp&sub=spec|bom|craft|cost&tpv=资料包 id（侧边栏「核价」列表点一行就这样跳过来）
  * 草稿能改，已生效的只读，要改点「修订」出新版本；核价页签要有看成本的权限（设置 › 角色权限「成本（核价）」） ---------- */
 const TP_TABS = [['spec', '尺寸指示'], ['bom', '物料清单'], ['craft', '工艺指示'], ['cost', '核价']]
@@ -747,16 +748,15 @@ comp('TechPack', {
   props: { code: String },
   setup(p) {
     const s = computed(() => style(p.code))
-    // 版本按阶段排：研发在前（打样估价），生产在后（订单、算料用它）；key = 资料包 id
-    const tps = computed(() => [...tpsOf(p.code, '研发'), ...tpsOf(p.code)])
-    const pickKey = () => { const l = tps.value, prod = l.filter((t) => tpStage(t) === '生产'); return (prod.find((t) => t.status === '草稿') || prod.find((t) => t.status === '已生效') || l.find((t) => t.status === '草稿') || l.find((t) => t.status === '已生效') || l[0])?.id }
+    // 版本新的在前；key = 资料包 id。默认看草稿，没有草稿看生效的
+    const tps = computed(() => tpsOf(p.code))
+    const pickKey = () => { const l = tps.value; return (l.find((t) => t.status === '草稿') || l.find((t) => t.status === '已生效') || l[0])?.id }
     const key = ref(tps.value.some((t) => t.id === nav.query.tpv) ? nav.query.tpv : pickKey())
     const tp = computed(() => tps.value.find((t) => t.id === key.value))
     watch(tps, (l) => { if (!tp.value && l.length) key.value = pickKey() })
     // 老数据补齐：工艺指示缺的段按设置里的默认文字补上，其他费用补空表
     watch(tp, (t) => { if (t) { t.craft ||= {}; Object.entries(craftDefaults()).forEach(([k, v]) => { t.craft[k] ||= v }); t.costs ||= [] } }, { immediate: true })
     const edit = computed(() => tp.value?.status === '草稿')
-    const stage = computed(() => (tp.value ? tpStage(tp.value) : '生产'))
     const view = ref(TP_TABS.some(([k]) => k === nav.query.sub) ? nav.query.sub : 'bom')
     const tabs = computed(() => TP_TABS.filter(([k]) => k !== 'cost' || canSeeCost()).map(([k, t]) => [k, t, k === 'spec' ? tp.value.spec.rows.length : k === 'bom' ? tp.value.bom.length : null]))
     const bomView = ref('list'), byColor = ref(s.value.colors[0]), open = ref(null), adding = ref(false), editing = ref(null), exporting = ref(false)
@@ -764,23 +764,13 @@ comp('TechPack', {
     const verText = (t) => tpName(t) + ({ 已生效: ' 生效中', 草稿: ' 草稿', 已作废: ' 已作废' }[t.status] || '')
     const useText = (r) => (r.um === '统一' ? fq(r.use) : `${fq(r.uses[sizes.value[0]])}–${fq(r.uses[sizes.value[sizes.value.length - 1]])}`)
     function revise() { const t = run(() => reviseTp(tp.value)); if (t?.ver) { key.value = t.id; toast(`修订出 ${tpName(t)}，尺寸、物料、工艺、其他费用都带过来了，改完点「生效」`) } }
-    function publish() { if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效` + (stage.value === '研发' ? '，要下大货就点「转生产 BOM」' : '')) }
-    function create(st) { const t = createTechpack(p.code, [], [], '', null, st); key.value = t.id; view.value = 'bom'; adding.value = true }
-    function toProd() { const t = run(() => toProdTp(tp.value)); if (t?.id) { key.value = t.id; toast(`复制成生产 ${tpName(t)} 草稿：单价按价格档案重新取了，改完点「生效」`) } }
+    function publish() { if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效，可以下需求订单了`) }
+    function create() { const t = createTechpack(p.code, [], [], '', null); key.value = t.id; view.value = 'bom'; adding.value = true }
     async function dropDraft() {
       const t = tp.value
       if (!(await ask(`删除草稿 ${tpName(t)}`, '这一版改的内容都不要了，删除后找不回来；已生效的版本不受影响。', '删除', true))) return
       if (run(() => removeTpDraft(t))) { key.value = pickKey(); toast(`删除了草稿 ${tpName(t)}`) }
     }
-    // 研发 vs 生产：看生产版时和它的来源研发版（没有就用生效的研发版）比；看研发版时和生效的生产版比
-    const pair = computed(() => {
-      const t = tp.value
-      if (!t) return null
-      const dev = stage.value === '研发' ? t : (t.source && tpOf(p.code, t.source.ver, '研发')) || activeTp(p.code, '研发') || tpsOf(p.code, '研发')[0]
-      const prod = stage.value === '生产' ? t : activeTp(p.code) || tpsOf(p.code)[0]
-      return dev && prod ? { dev, prod } : null
-    })
-    watch(pair, (x) => { if (!x && bomView.value === 'cmp') bomView.value = 'list' })
     const matSkus = (r) => mat(r.mat).skus.filter((k) => k.status !== '停用' || Object.values(r.map || {}).includes(k.code))
     const supsFor = (r) => db.suppliers.filter((x) => x.status === '合作中' || x.code === r.supplier)
     const setPrice = (r, v) => { r.price = v === '' ? null : +v }
@@ -807,42 +797,33 @@ comp('TechPack', {
     function moveSpec(i, d) { moveItem(tp.value.spec.rows, i, i + d); sp.value = i + d }
     function grade() { const r = run(() => gradeSpec(tp.value)); if (r) toast(`按档差算了 ${r[0]} 行` + (r[1] ? `；${r[1]} 行没填档差，没动` : '') + '，算完每格还能改') }
 
-    // 核价：和侧边栏「核价」列表同一个算法（tpCost）；生产版有来源研发版时多一列研发估
+    // 核价：和侧边栏「核价」列表同一个算法（tpCost）
     const k = computed(() => tp.value && tpCost(tp.value))
-    const devTp = computed(() => (stage.value === '生产' && tp.value?.source ? tpOf(p.code, tp.value.source.ver, '研发') : null))
-    const dk = computed(() => devTp.value && tpCost(devTp.value))
-    const devRow = (x) => dk.value?.rows.find((y) => y.r.part === x.r.part && y.r.mat === x.r.mat)
-    const devRowText = (x) => { const y = devRow(x); return !y ? '研发没有' : y.counted ? fm(y.cost) : '—' }
-    const devOther = (c) => { const y = devTp.value?.costs?.find((z) => z.name === c.name); return y ? fm(y.amt) : '—' }
     // 成品采购参考价（甲方 11-14）：默认工厂 × 包工包料 在价格档案里的现价，含料；只看看，不算进单件成本，没有就不出这一行
     const cpRef = computed(() => (s.value.factory ? curProcPrice(s.value.factory, s.value.code, '包工包料') : null))
-    const costGroups = computed(() => ['面料', '辅料'].map((g) => ({ g, rows: k.value.rows.filter((x) => x.kind === g), sum: g === '面料' ? k.value.fabric : k.value.trim, dev: dk.value && (g === '面料' ? dk.value.fabric : dk.value.trim) })))
+    const costGroups = computed(() => ['面料', '辅料'].map((g) => ({ g, rows: k.value.rows.filter((x) => x.kind === g), sum: g === '面料' ? k.value.fabric : k.value.trim })))
     const ratio = computed(() => (s.value.tagPrice && k.value.total ? rnd(s.value.tagPrice / k.value.total, 2) : null))
-    const devDiff = computed(() => { if (!dk.value) return ''; const d = rnd(k.value.total - dk.value.total, 2); return d === 0 ? '和研发估一样' : (d > 0 ? '比研发估高 ' : '比研发估低 ') + fm(Math.abs(d)) })
     const addCost = () => tp.value.costs.push({ name: '', amt: null, note: '' })
     const setAmt = (c, v) => { c.amt = v === '' ? null : +v }
     const rowThumb = (r) => r.sku || Object.values(r.map || {})[0] || r.mat
-    return { s, tps, key, tp, edit, stage, view, tabs, pair, bomView, byColor, open, adding, editing, exporting, sizes, verText, useText, revise, publish, create, toProd, dropDraft, matSkus, supsFor, setPrice,
+    return { s, tps, key, tp, edit, view, tabs, bomView, byColor, open, adding, editing, exporting, sizes, verText, useText, revise, publish, create, dropDraft, matSkus, supsFor, setPrice,
       hl, hover, cur, drag, dragStart, dragOver, dropAt, addOp, sp, base, fcm, setVal, setNum, setPt, addSpec, moveSpec, grade, specLetter, OP_CATS,
-      k, devTp, dk, devRowText, devOther, cpRef, costGroups, ratio, devDiff, addCost, setAmt, rowThumb, CRAFT_SECS, PACK_WAYS }
+      k, cpRef, costGroups, ratio, addCost, setAmt, rowThumb, CRAFT_SECS, PACK_WAYS }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">还没有资料包：生产 BOM 生效后才能下订单
-      <p style="margin-top:14px;justify-content:center" class="row" data-c="建资料包"><button class="btn pri" @click="create('生产')">建生产 BOM</button><button class="btn" @click="create('研发')">建研发 BOM</button></p></div>
+      <p style="margin-top:14px;justify-content:center" class="row" data-c="建资料包"><button class="btn pri" @click="create">建资料包</button></p></div>
     <template v-else-if="tp">
       <div class="row tp-bar" data-c="资料包版本">
         <Seg v-model="key" :items="tps.map(t => [t.id, verText(t)])"/>
         <span style="flex:1"></span>
         <button v-if="edit" class="btn pri" @click="publish">生效</button>
-        <button v-if="stage === '研发' && tp.status === '已生效'" class="btn pri" title="复制成生产 BOM 草稿，单价按价格档案重新取；之后两边各改各的" @click="toProd">转生产 BOM</button>
         <button v-if="tp.status === '已生效'" class="btn" title="复制出新版本草稿：尺寸、物料、工艺、其他费用一起带过去" @click="revise">修订</button>
         <button class="btn" title="生成工艺单 PDF，发给工厂" @click="exporting = true"><Ico n="download" :s="14"/>导出 PDF</button>
         <button v-if="edit" class="btn ghost danger" @click="dropDraft">删除草稿</button>
       </div>
       <div class="tpmeta" data-c="资料包版本信息">
-        <span class="pill" :class="stage === '研发' ? 'amber' : 'blue'">{{ stage }} BOM</span>
         <St :s="tp.status"/>
-        <span v-if="tp.source">来源：<a @click="key = (tpOf(code, tp.source.ver, '研发') || {}).id || key">研发 V{{ tp.source.ver }}</a></span>
         <span v-if="tp.publishedAt">生效：{{ userName(tp.publishedBy) }} · {{ fd(tp.publishedAt) }}</span>
         <span v-else-if="edit" class="dim">还没生效</span>
         <span class="row g4">排版利用率 <input v-if="edit" class="inp num" style="width:64px;height:26px" type="number" v-model.number="tp.util" placeholder="—"><template v-else>{{ tp.util != null && tp.util !== '' ? tp.util : '—' }}</template>%</span>
@@ -855,8 +836,8 @@ comp('TechPack', {
         <Seg v-model="view" :items="tabs"/>
         <span style="flex:1"></span>
         <template v-if="view === 'bom'">
-          <Seg v-model="bomView" :items="[['list', 'BOM'], ['color', '按颜色'], ...(pair ? [['cmp', '研发 vs 生产']] : [])]"/>
-          <button v-if="edit && bomView !== 'cmp'" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
+          <Seg v-model="bomView" :items="[['list', 'BOM'], ['color', '按颜色']]"/>
+          <button v-if="edit" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
         </template>
         <template v-if="view === 'spec' && edit">
           <button class="btn" title="填了基码尺寸和档差的行，把其他码算出来" @click="grade">按档差生成</button>
@@ -865,19 +846,16 @@ comp('TechPack', {
       </div>
 
       <template v-if="view === 'bom'">
-        <div v-if="bomView !== 'cmp' && cur" class="bomtop" data-c="BOM 图">
+        <div v-if="cur" class="bomtop" data-c="BOM 图">
           <BomFigure :code="s.code" :color="byColor" :rows="tp.bom" :hl="cur.i" @hover="hover"/>
           <div class="matcard">
             <div class="row g4"><button v-for="c in s.colors" :key="c" class="gthumb" :class="{ on: c === byColor }" :title="colorName(c)" @click="byColor = c"><Thumb :code="s.code" :color="c" :s="34"/></button><span class="mut" style="margin-left:6px">{{ colorName(byColor) }}</span></div>
             <div class="row" style="gap:14px;align-items:flex-start"><Thumb :code="cur.sku || cur.r.mat" :s="96"/>
               <div class="col" style="gap:4px;min-width:0"><b style="font-size:15px">{{ cur.i + 1 }} · {{ cur.r.part }}</b><span>{{ cur.sku ? skuName(cur.sku) : mat(cur.r.mat).name }}</span><span v-if="!cur.sku" class="flag red">{{ colorName(byColor) }}还没配料</span><span v-else class="code dim">{{ cur.sku }}</span></div></div>
             <dl class="props"><dt>用量</dt><dd>{{ useText(cur.r) }} {{ mat(cur.r.mat).unit }} · 损耗 {{ cur.r.loss }}%</dd><dt>来源</dt><dd :class="{ amber: cur.r.src === '客供' }">{{ cur.r.src }}</dd>
-              <dt>供应商</dt><dd>{{ supName(cur.r.supplier || mat(cur.r.mat).supplier) }}</dd><dt>参考单价</dt><dd>{{ fm(cur.r.price ?? rowRefPrice(cur.r, stage)) }}/{{ mat(cur.r.mat).purUnit }}</dd><template v-if="cur.r.note"><dt>备注</dt><dd>{{ cur.r.note }}</dd></template></dl>
+              <dt>供应商</dt><dd>{{ supName(cur.r.supplier || mat(cur.r.mat).supplier) }}</dd><dt>参考单价</dt><dd>{{ fm(cur.r.price ?? rowRefPrice(cur.r)) }}/{{ mat(cur.r.mat).purUnit }}</dd><template v-if="cur.r.note"><dt>备注</dt><dd>{{ cur.r.note }}</dd></template></dl>
           </div>
         </div>
-
-        <div v-if="bomView === 'cmp' && pair" class="sec" style="margin-top:0;padding-top:0;border-top:none" data-c="研发 vs 生产对比"><h3>研发 V{{ pair.dev.ver }} vs 生产 V{{ pair.prod.ver }}</h3>
-          <TpCompare :dev="pair.dev" :prod="pair.prod"/></div>
 
         <div v-if="bomView === 'list'" data-c="资料包：物料清单">
           <table class="tbl inset flat">
@@ -892,10 +870,10 @@ comp('TechPack', {
                     <span v-else class="row g4"><span class="dim">随款色</span><template v-for="c in s.colors" :key="c"><Sw v-if="r.map[c]" :c="skuOf(r.map[c])?.color" :n="false"/><span v-else class="flag red">缺</span></template></span></td>
                   <td class="num">{{ useText(r) }} <span class="dim">{{ mat(r.mat).unit }}</span></td>
                   <td class="num">{{ r.loss }}%</td>
-                  <td><span :class="{ amber: r.src === '客供', dim: r.src === '工厂自备' }">{{ r.src }}</span></td>
-                  <td>{{ r.src === '工厂自备' ? '—' : supName(r.supplier || mat(r.mat).supplier) }}</td>
-                  <td class="num">{{ fm(r.price ?? rowRefPrice(r, stage)) }}<span class="dim">/{{ mat(r.mat).purUnit }}</span><span v-if="r.price != null" class="dim" :title="stage === '研发' ? '手填的估价' : '这一行改过单价'">*</span></td>
-                  <td class="num">{{ r.src === '我方采购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup), stage)) : '—' }}</td>
+                  <td><span :class="{ amber: r.src === '客供', dim: r.src === '厂购' }">{{ r.src }}</span></td>
+                  <td>{{ r.src === '厂购' ? '—' : supName(r.supplier || mat(r.mat).supplier) }}</td>
+                  <td class="num">{{ fm(r.price ?? rowRefPrice(r)) }}<span class="dim">/{{ mat(r.mat).purUnit }}</span><span v-if="r.price != null" class="dim" title="这一行改过单价">*</span></td>
+                  <td class="num">{{ r.src === '自购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup))) : '—' }}</td>
                   <td v-if="edit" class="num"><span class="row g4" style="justify-content:flex-end"><button class="btn ghost sm" @click.stop="editing = r">改</button><button class="btn ghost icon sm" title="删除这一行" @click.stop="tp.bom.splice(i, 1); open = null"><Ico n="trash" :s="13"/></button></span></td>
                 </tr>
                 <tr v-if="open === i"><td :colspan="edit ? 2 : 1"></td><td :colspan="edit ? 10 : 9" style="padding:10px 0 14px;white-space:normal">
@@ -911,7 +889,7 @@ comp('TechPack', {
                       <label class="f">损耗 %<input class="inp num" v-model.number="r.loss"></label>
                       <label class="f">来源<Pick class="sel" v-model="r.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></Pick></label>
                       <label class="f">供应商<Pick class="sel" v-model="r.supplier"><option value="">按物料默认</option><option v-for="x in supsFor(r)" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
-                      <label class="f">{{ stage === '研发' ? '估价' : '参考单价' }}（元/{{ mat(r.mat).purUnit }}）<input class="inp num" type="number" :value="r.price ?? ''" :placeholder="rowRefPrice(r, stage)" @change="setPrice(r, $event.target.value)"></label>
+                      <label class="f">参考单价（元/{{ mat(r.mat).purUnit }}）<input class="inp num" type="number" :value="r.price ?? ''" :placeholder="rowRefPrice(r)" @change="setPrice(r, $event.target.value)"></label>
                       <label class="f">备注<input class="inp" v-model="r.note"></label>
                     </div>
                     <div v-else-if="r.note" class="mut">备注：{{ r.note }}</div>
@@ -1020,16 +998,16 @@ comp('TechPack', {
         <div v-if="!canSeeCost()" class="empty">核价要有看成本的权限：找管理员在 设置 › 角色权限 里开「成本（核价）」</div>
         <template v-else>
           <div class="cost-top" data-c="核价：单件成本">
-            <div class="cost-k"><small>单件成本（{{ k.base }} 码）</small><b>{{ fm(k.total) }}</b><small v-if="dk" :class="k.total > dk.total ? 'red' : k.total < dk.total ? 'green' : ''">{{ devDiff }}</small></div>
+            <div class="cost-k"><small>单件成本（{{ k.base }} 码）</small><b>{{ fm(k.total) }}</b></div>
             <div class="cost-k"><small>吊牌价</small><b>{{ fm(s.tagPrice) }}</b></div>
             <div class="cost-k"><small>倍率（吊牌价 ÷ 单件成本）</small><b>{{ ratio == null ? '—' : ratio }}</b></div>
             <a class="cost-more" :href="'#/costing/' + s.code" title="待定模块，甲方确认后再做">询价比价、订单毛利（待定）<Ico n="right" :s="13"/></a>
           </div>
           <table class="tbl inset flat cost-tbl" data-c="核价：明细">
-            <thead><tr><th>部位 / 项目</th><th>物料</th><th>来源</th><th class="num">用量（{{ k.base }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件成本</th><th v-if="dk" class="num">研发估 V{{ devTp.ver }}</th></tr></thead>
+            <thead><tr><th>部位 / 项目</th><th>物料</th><th>来源</th><th class="num">用量（{{ k.base }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件成本</th></tr></thead>
             <tbody>
               <template v-for="g in costGroups" :key="g.g">
-                <tr class="cg"><td colspan="6">{{ g.g }}</td><td class="num">{{ fm(g.sum) }}</td><td v-if="dk" class="num">{{ fm(g.dev) }}</td></tr>
+                <tr class="cg"><td colspan="6">{{ g.g }}</td><td class="num">{{ fm(g.sum) }}</td></tr>
                 <tr v-for="x in g.rows" :key="x.i" :class="{ off: !x.counted }">
                   <td>{{ x.r.part }}</td>
                   <td><span class="row"><Thumb :code="rowThumb(x.r)" :s="24"/>{{ mat(x.r.mat).name }}</span></td>
@@ -1037,15 +1015,14 @@ comp('TechPack', {
                   <td class="num">{{ fq(x.use) }} <span class="dim">{{ mat(x.r.mat).unit }}</span></td>
                   <td class="num">{{ x.r.loss }}%</td>
                   <td class="num">{{ fm(x.price) }}<span class="dim">/{{ mat(x.r.mat).purUnit }}</span></td>
-                  <td class="num"><template v-if="x.counted">{{ fm(x.cost) }}</template><span v-else class="dim">{{ x.r.src === '工厂自备' ? '含在加工价里' : '客户出' }}</span></td>
-                  <td v-if="dk" class="num dim">{{ devRowText(x) }}</td>
+                  <td class="num"><template v-if="x.counted">{{ fm(x.cost) }}</template><span v-else class="dim">{{ x.r.src === '厂购' ? '含在加工价里' : '客户出' }}</span></td>
                 </tr>
-                <tr v-if="!g.rows.length"><td :colspan="dk ? 8 : 7" class="dim">物料清单里没有{{ g.g }}</td></tr>
+                <tr v-if="!g.rows.length"><td colspan="7" class="dim">物料清单里没有{{ g.g }}</td></tr>
               </template>
-              <tr class="cg"><td colspan="6">加工费</td><td class="num">{{ fm(k.labor) }}</td><td v-if="dk" class="num">{{ fm(dk.labor) }}</td></tr>
-              <tr><td>工序工价合计</td><td colspan="5"><a @click="view = 'craft'">工艺指示 › 工序工价，{{ tp.ops.length }} 道工序</a></td><td class="num">{{ fm(k.labor) }}</td><td v-if="dk" class="num dim">{{ fm(dk.labor) }}</td></tr>
-              <tr v-if="cpRef != null" data-c="核价：成品采购参考价"><td>成品采购参考价</td><td colspan="5" class="mut">价格档案 · {{ supName(s.factory) }} 包工包料现价，含料；只作参考，不计入单件成本</td><td class="num mut">{{ fm(cpRef) }}</td><td v-if="dk"></td></tr>
-              <tr class="cg"><td colspan="6"><span class="row" style="gap:10px">其他费用<button v-if="edit" class="btn sm" @click="addCost"><Ico n="plus" :s="12"/>加一项</button></span></td><td class="num">{{ fm(k.other) }}</td><td v-if="dk" class="num">{{ fm(dk.other) }}</td></tr>
+              <tr class="cg"><td colspan="6">加工费</td><td class="num">{{ fm(k.labor) }}</td></tr>
+              <tr><td>工序工价合计</td><td colspan="5"><a @click="view = 'craft'">工艺指示 › 工序工价，{{ tp.ops.length }} 道工序</a></td><td class="num">{{ fm(k.labor) }}</td></tr>
+              <tr v-if="cpRef != null" data-c="核价：成品采购参考价"><td>成品采购参考价</td><td colspan="5" class="mut">价格档案 · {{ supName(s.factory) }} 包工包料现价，含料；只作参考，不计入单件成本</td><td class="num mut">{{ fm(cpRef) }}</td></tr>
+              <tr class="cg"><td colspan="6"><span class="row" style="gap:10px">其他费用<button v-if="edit" class="btn sm" @click="addCost"><Ico n="plus" :s="12"/>加一项</button></span></td><td class="num">{{ fm(k.other) }}</td></tr>
               <tr v-for="(c, i) in tp.costs" :key="'c' + i">
                 <template v-if="edit">
                   <td><input class="inp cell" style="width:140px" v-model="c.name" placeholder="如：印绣花、运费"></td>
@@ -1053,11 +1030,10 @@ comp('TechPack', {
                   <td class="num"><input class="inp cell num" style="width:80px" type="number" :value="c.amt ?? ''" placeholder="元/件" @change="setAmt(c, $event.target.value)"></td>
                 </template>
                 <template v-else><td>{{ c.name || '—' }}</td><td colspan="5" class="mut">{{ c.note || '' }}</td><td class="num">{{ fm(c.amt) }}</td></template>
-                <td v-if="dk" class="num dim">{{ devOther(c) }}</td>
               </tr>
-              <tr v-if="!tp.costs.length"><td :colspan="dk ? 8 : 7" class="dim">{{ edit ? '印绣花外加工、运费、包装这类按件摊的钱，点「加一项」' : '没有其他费用' }}</td></tr>
+              <tr v-if="!tp.costs.length"><td colspan="7" class="dim">{{ edit ? '印绣花外加工、运费、包装这类按件摊的钱，点「加一项」' : '没有其他费用' }}</td></tr>
             </tbody>
-            <tfoot><tr><td colspan="6">单件成本 = 面料 + 辅料 + 加工费 + 其他费用</td><td class="num">{{ fm(k.total) }}</td><td v-if="dk" class="num">{{ fm(dk.total) }}</td></tr></tfoot>
+            <tfoot><tr><td colspan="6">单件成本 = 面料 + 辅料 + 加工费 + 其他费用</td><td class="num">{{ fm(k.total) }}</td></tr></tfoot>
           </table>
         </template>
       </div>
@@ -1077,7 +1053,7 @@ comp('BomRowForm', {
   setup(p, { emit }) {
     const s = style(p.tp.style)
     const sizes = sizesOf(s.sizeGroup)
-    const f = reactive({ part: '大身', mat: '', mode: '随款色', sku: '', map: {}, um: '统一', use: 1, uses: {}, loss: 0, src: '我方采购', supplier: '', price: null, note: '', ...(p.row ? JSON.parse(JSON.stringify(p.row)) : {}) })
+    const f = reactive({ part: '大身', mat: '', mode: '随款色', sku: '', map: {}, um: '统一', use: 1, uses: {}, loss: 0, src: '自购', supplier: '', price: null, note: '', ...(p.row ? JSON.parse(JSON.stringify(p.row)) : {}) })
     f.uses = Object.fromEntries(sizes.map((z) => [z, f.uses?.[z] ?? null]))
     if (!f.map) f.map = {}
     const mats = computed(() => db.materials.filter((x) => x.status === '启用' || x.code === f.mat))
@@ -1123,7 +1099,7 @@ comp('BomRowForm', {
       <label class="f">损耗 %<input class="inp num" type="number" v-model.number="f.loss"></label>
       <label class="f">物料来源<Pick class="sel" v-model="f.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></Pick></label>
       <label class="f">供应商<Pick class="sel" v-model="f.supplier"><option value="">按物料默认</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
-      <label class="f">{{ tpStage(tp) === '研发' ? '估价' : '参考单价' }}（元/{{ m?.purUnit }}）<input class="inp num" type="number" v-model.number="f.price" :placeholder="m ? '带出 ' + rowRefPrice(f, tpStage(tp)) : ''"></label>
+      <label class="f">参考单价（元/{{ m?.purUnit }}）<input class="inp num" type="number" v-model.number="f.price" :placeholder="m ? '带出 ' + rowRefPrice(f) : ''"></label>
       <label class="f full">备注<input class="inp" v-model="f.note" placeholder="如：注意对格"></label>
     </div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ row ? '保存' : '加上' }}</button></template>
@@ -1150,7 +1126,7 @@ comp('TpPrintBody', {
     const files = computed(() => (p.appendix ? db.craftStd.files : []))
     const fileTitle = (f) => f.name.replace(/\.[^.]+$/, '')
     const cellNum = (v) => (numSet(v) ? rnd(+v, 1) : '')
-    const notCounted = (x) => (x.r.src === '工厂自备' ? '含在加工价里' : '客户出')
+    const notCounted = (x) => (x.r.src === '厂购' ? '含在加工价里' : '客户出')
     return { s, sizes, cs, k, title, fabrics, craft, secs, files, fileTitle, cellNum, notCounted, isImg, PACK_WAYS }
   },
   template: `<div class="tps" data-c="工艺单内容">
@@ -1160,7 +1136,7 @@ comp('TpPrintBody', {
         <table class="sheet-tbl tps-meta"><tbody>
           <tr><th>样衣编号</th><td class="code">{{ s.sample || '—' }}</td><th>款式编码</th><td class="code">{{ s.code }}</td></tr>
           <tr><th>款式名称</th><td>{{ s.name }}</td><th>花名</th><td>{{ s.alias || '—' }}</td></tr>
-          <tr><th>日期</th><td>{{ tp.publishedAt || clock.today }}</td><th>资料包</th><td>{{ tpStage(tp) }} V{{ tp.ver }}{{ tp.status === '已生效' ? '' : '（' + tp.status + '）' }}</td></tr>
+          <tr><th>日期</th><td>{{ tp.publishedAt || clock.today }}</td><th>资料包</th><td>V{{ tp.ver }}{{ tp.status === '已生效' ? '' : '（' + tp.status + '）' }}</td></tr>
           <tr><th>颜色</th><td>{{ cs.map(c => colorName(c)).join('、') }}</td><th>尺码</th><td>{{ sizes.join(' / ') }}</td></tr>
           <tr><th>品名</th><td>{{ s.product || catOf(s.cat).name }}</td><th>排版利用率</th><td>{{ tp.util ? tp.util + '%' : '—' }}</td></tr>
           <tr><th>成分</th><td colspan="3">{{ s.comp || '—' }}</td></tr>

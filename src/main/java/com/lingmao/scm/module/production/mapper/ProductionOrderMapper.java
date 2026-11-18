@@ -86,7 +86,7 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
                                             @Param("scope") DataScope scope);
 
     /**
-     * 应领的原料：锁定的生产 BOM 里物料来源 = 我方采购的行，每个明细 SKU 对上的物料 SKU、件数、单件用量、损耗率（和算料 MrpCalcMapper.selectDemand
+     * 应领的原料：锁定的生产 BOM 里物料来源 = 自购的行，每个明细 SKU 对上的物料 SKU、件数、单件用量、损耗率（和算料 MrpCalcMapper.selectDemand
      * 同一种对法）。按尺码配用量但这个尺码没填的，usage 是 null
      */
     List<NeedRow> selectNeeds(@Param("ids") Collection<Long> prdOrderIds);

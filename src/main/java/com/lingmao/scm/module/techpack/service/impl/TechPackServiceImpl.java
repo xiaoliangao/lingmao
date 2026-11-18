@@ -91,12 +91,11 @@ public class TechPackServiceImpl implements TechPackService {
 
     /**
      * 状态转换表（docs/api/01 §2）。按钮顺序就是这里的顺序；void 是生效时旧版跟着走的，不出按钮（不在 ACTION_PERMS 里）。
-     * 删草稿、修订、转生产 BOM 状态不变（修订、转生产 BOM 是从这一版复制出新草稿），写成到自己
+     * 删草稿、修订状态不变（修订是从这一版复制出新草稿），写成到自己
      */
     static final StatusFlow<PackStatus> FLOW = StatusFlow.of(PackStatus.class)
             .on("edit", DRAFT).to(DRAFT)
             .on("publish", DRAFT).to(EFFECTIVE)
-            .on("toProd", EFFECTIVE).to(EFFECTIVE)
             .on("revise", EFFECTIVE).to(EFFECTIVE)
             .on("remove", DRAFT).to(DRAFT)
             .on("void", EFFECTIVE).to(VOIDED)
@@ -106,7 +105,6 @@ public class TechPackServiceImpl implements TechPackService {
     static final Map<String, String> ACTION_PERMS = Map.of(
             "edit", "techpack:pack:edit",
             "publish", "techpack:pack:publish",
-            "toProd", "techpack:pack:add",
             "revise", "techpack:pack:add",
             "remove", "techpack:pack:remove");
 
@@ -114,7 +112,6 @@ public class TechPackServiceImpl implements TechPackService {
     static final String LOG_CREATE = "create";
     static final String LOG_UPDATE = "update";
     static final String LOG_REVISE = "revise";
-    static final String LOG_TO_PROD = "to-prod";
     static final String LOG_PUBLISH = "publish";
     static final String LOG_VOID = "void";
 
@@ -147,26 +144,22 @@ public class TechPackServiceImpl implements TechPackService {
     public TechPackOverviewVO overview(long styleId) {
         PackOwner owner = packOwners.style(styleId);
         List<TechPack> packs = techPackMapper.selectList(new LambdaQueryWrapper<TechPack>().eq(TechPack::getStyleId, styleId));
-        packs.sort(Comparator.comparing(TechPack::getStage).thenComparing(TechPack::getVersion, Comparator.reverseOrder()));
+        packs.sort(Comparator.comparing(TechPack::getVersion, Comparator.reverseOrder()));
 
+        TechPack draft = find(packs, PackStage.PROD, DRAFT);
+        TechPack prod = find(packs, PackStage.PROD, EFFECTIVE);
         TechPackOverviewVO vo = new TechPackOverviewVO();
         vo.setStyleId(styleId);
         vo.setPacks(briefs(packs));
-        vo.setDefaultPackId(Stream.of(find(packs, PackStage.PROD, DRAFT), find(packs, PackStage.PROD, EFFECTIVE),
-                        find(packs, PackStage.DEV, DRAFT), find(packs, PackStage.DEV, EFFECTIVE))
-                .filter(Objects::nonNull).findFirst().map(TechPack::getId)
+        vo.setDefaultPackId(Stream.of(draft, prod).filter(Objects::nonNull).findFirst().map(TechPack::getId)
                 .orElse(packs.isEmpty() ? null : packs.getFirst().getId()));
-        vo.setCreatableStages(owner.locked() || !LoginUser.hasAuthority("techpack:pack:add") ? List.of()
-                : Stream.of(PackStage.values()).filter(stage -> find(packs, stage, DRAFT) == null).toList());
+        vo.setCreatable(!owner.locked() && LoginUser.hasAuthority("techpack:pack:add") && draft == null);
 
-        TechPack prod = find(packs, PackStage.PROD, EFFECTIVE);
         Ctx ctx = packOwners.context(owner);
         vo.setUnmatchedColors(prod == null ? List.of() : unmatchedColors(packContent.loadBom(prod.getId()), ctx.colors()));
-        TechPack costed = prod != null ? prod : find(packs, PackStage.DEV, EFFECTIVE);
-        if (costed != null && LoginUser.hasAuthority(COST_PERM)) {
-            vo.setUnitCost(costCalculator.unitCost(costed, packOwners.context(costed)));
-            vo.setUnitCostPackId(costed.getId());
-            vo.setUnitCostStage(costed.getStage());
+        if (prod != null && LoginUser.hasAuthority(COST_PERM)) {
+            vo.setUnitCost(costCalculator.unitCost(prod, packOwners.context(prod)));
+            vo.setUnitCostPackId(prod.getId());
         }
         return vo;
     }
@@ -187,8 +180,6 @@ public class TechPackServiceImpl implements TechPackService {
         vo.setVersion(pack.getVersion());
         vo.setStatus(pack.getStatus());
         vo.setVersionNote(pack.getVersionNote());
-        vo.setSourcePackId(pack.getSourcePackId());
-        vo.setSourceVersion(at(sourceVersions(List.of(pack)), pack.getSourcePackId()));
         vo.setUtilPct(pack.getUtilPct());
         vo.setPackingMode(pack.getPackingMode());
         vo.setPublishBy(pack.getPublishBy());
@@ -235,11 +226,11 @@ public class TechPackServiceImpl implements TechPackService {
 
     @Override
     @Transactional
-    public long create(long styleId, PackStage stage) {
+    public long create(long styleId) {
         PackOwner owner = packOwners.style(styleId);
         rejectLocked(owner);
-        rejectDraftExists(styleId, stage);
-        TechPack pack = newDraft(styleId, stage, null);
+        rejectDraftExists(styleId, PackStage.PROD);
+        TechPack pack = newDraft(styleId, PackStage.PROD);
         pack.setPackingMode(craftStandardService.defaultPackingMode());
         insert(pack);
         List<CraftText> texts = new ArrayList<>();
@@ -328,7 +319,7 @@ public class TechPackServiceImpl implements TechPackService {
                     + problems.size() + " 处要改", problems);
         }
 
-        // 先把同阶段旧的已生效版作废，再让这一版生效：一个阶段只能有一个已生效（uk_tp_pack_effective）
+        // 先把旧的已生效版作废，再让这一版生效：只能有一个已生效（uk_tp_pack_effective）
         TechPack old = techPackMapper.selectOne(new LambdaQueryWrapper<TechPack>().eq(TechPack::getStyleId, pack.getStyleId())
                 .eq(TechPack::getStage, pack.getStage()).eq(TechPack::getStatus, EFFECTIVE));
         if (old != null) {
@@ -345,8 +336,7 @@ public class TechPackServiceImpl implements TechPackService {
                 .setSql("version_lock = version_lock + 1")
                 .eq(TechPack::getVersionLock, versionLock));
         docLogService.add(BizType.TECH_PACK, id, LOG_PUBLISH, DRAFT, to, null);
-        styleService.updateTechPackStatus(pack.getStyleId(),
-                pack.getStage() == PackStage.PROD || hasEffective(pack.getStyleId(), PackStage.PROD) ? TechPackStatus.PROD : TechPackStatus.DEV);
+        styleService.updateTechPackStatus(pack.getStyleId(), TechPackStatus.PROD);
     }
 
     @Override
@@ -354,25 +344,13 @@ public class TechPackServiceImpl implements TechPackService {
     public long revise(long id) {
         TechPack source = lock(id);
         FLOW.next("revise", source.getStatus());
-        return copy(source, source.getStage(), source.getSourcePackId(), LOG_REVISE,
-                "从 " + source.getStage().versionName(source.getVersion()) + " 修订");
-    }
-
-    @Override
-    @Transactional
-    public long toProd(long id) {
-        TechPack source = lock(id);
-        FLOW.next("toProd", source.getStatus());
-        if (source.getStage() != PackStage.DEV) {
-            throw new BizException(ErrorCodes.STATE_CHANGED, "只有研发 BOM 能转生产 BOM，请刷新后再试");
-        }
-        return copy(source, PackStage.PROD, source.getId(), LOG_TO_PROD,
-                "从 " + source.getStage().versionName(source.getVersion()) + " 转来");
+        return copy(source, LOG_REVISE, "从 " + source.getStage().versionName(source.getVersion()) + " 修订");
     }
 
     @Override
     public List<BomDefaultVO> bomDefaults(long id, List<BomDefaultReq> items) {
-        return bomPricing.defaults(getEntity(id).getStage(), items);
+        getEntity(id);
+        return bomPricing.defaults(items);
     }
 
     // ---------------------------------------------------------------- 给需求订单
@@ -481,47 +459,40 @@ public class TechPackServiceImpl implements TechPackService {
 
     // ---------------------------------------------------------------- 内部
 
-    /**
-     * 修订、转生产 BOM：复制成 stage 的下一版草稿。四个页签、核价的手填部分、工艺指示的插图都带过去，本版说明清空；
-     * 转生产 BOM 的单价按生产 BOM 的规则重新取
-     */
-    private long copy(TechPack source, PackStage stage, Long sourcePackId, String logAction, String remark) {
+    /** 修订：复制成同阶段的下一版草稿。四个页签、核价的手填部分、工艺指示的插图都带过去，本版说明清空 */
+    private long copy(TechPack source, String logAction, String remark) {
         PackOwner owner = packOwners.of(source);
         rejectLocked(owner);
-        rejectDraftExists(source.getStyleId(), stage);
-        TechPack pack = newDraft(source.getStyleId(), stage, sourcePackId);
+        rejectDraftExists(source.getStyleId(), source.getStage());
+        TechPack pack = newDraft(source.getStyleId(), source.getStage());
         pack.setUtilPct(source.getUtilPct());
         pack.setPackingMode(source.getPackingMode());
         pack.setCostMode(source.getCostMode());
         pack.setBuyPrice(source.getBuyPrice());
         insert(pack);
         Content content = packContent.load(source.getId());
-        if (stage == PackStage.PROD && source.getStage() == PackStage.DEV) {
-            bomPricing.repriceForProd(content.bom());
-        }
         packContent.write(pack.getId(), content, true);
         attachmentService.copy(BizType.TECH_PACK, source.getId(), pack.getId());
         docLogService.add(BizType.TECH_PACK, pack.getId(), logAction, null, DRAFT, remark);
         return pack.getId();
     }
 
-    private TechPack newDraft(long styleId, PackStage stage, Long sourcePackId) {
+    private TechPack newDraft(long styleId, PackStage stage) {
         TechPack pack = new TechPack();
         pack.setStyleId(styleId);
         pack.setStage(stage);
         pack.setVersion(techPackMapper.maxVersion(styleId, stage) + 1);
         pack.setStatus(DRAFT);
-        pack.setSourcePackId(sourcePackId);
         pack.setCostMode(CostMode.OUTSOURCE);
         return pack;
     }
 
-    /** 两个人同时建同一阶段的草稿：唯一索引拦下后到的（一个阶段一个草稿、版本号不重） */
+    /** 两个人同时建草稿：唯一索引拦下后到的（一个款一个草稿、版本号不重） */
     private void insert(TechPack pack) {
         try {
             techPackMapper.insert(pack);
         } catch (DuplicateKeyException e) {
-            throw new BizException(ErrorCodes.STATE_CHANGED, "别人刚建了这个阶段的草稿，请刷新后再试");
+            throw new BizException(ErrorCodes.STATE_CHANGED, "别人刚建了草稿，请刷新后再试");
         }
     }
 
@@ -539,12 +510,7 @@ public class TechPackServiceImpl implements TechPackService {
         }
     }
 
-    private boolean hasEffective(long styleId, PackStage stage) {
-        return techPackMapper.exists(new LambdaQueryWrapper<TechPack>().eq(TechPack::getStyleId, styleId)
-                .eq(TechPack::getStage, stage).eq(TechPack::getStatus, EFFECTIVE));
-    }
-
-    /** 按钮 = 状态允许的 ∩ 有权限的 ∩ 业务条件（修订、转生产 BOM 要款式没停用、目标阶段没有草稿） */
+    /** 按钮 = 状态允许的 ∩ 有权限的 ∩ 业务条件（修订要款式没停用、还没有草稿） */
     private List<String> actions(TechPack pack, PackOwner owner) {
         List<String> actions = new ArrayList<>();
         for (String action : FLOW.actions(pack.getStatus())) {
@@ -554,7 +520,6 @@ public class TechPackServiceImpl implements TechPackService {
             }
             boolean ok = switch (action) {
                 case "revise" -> !owner.locked() && !draftExists(pack.getStyleId(), pack.getStage());
-                case "toProd" -> pack.getStage() == PackStage.DEV && !owner.locked() && !draftExists(pack.getStyleId(), PackStage.PROD);
                 default -> true;
             };
             if (ok) {
@@ -570,7 +535,6 @@ public class TechPackServiceImpl implements TechPackService {
     }
 
     private List<TechPackBriefVO> briefs(List<TechPack> packs) {
-        Map<Long, Integer> sources = sourceVersions(packs);
         Map<Long, String> names = userService.nicknames(packs.stream().flatMap(p -> Stream.of(p.getPublishBy(), p.getCreateBy()))
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         return packs.stream().map(p -> {
@@ -580,8 +544,6 @@ public class TechPackServiceImpl implements TechPackService {
             b.setVersion(p.getVersion());
             b.setStatus(p.getStatus());
             b.setVersionNote(p.getVersionNote());
-            b.setSourcePackId(p.getSourcePackId());
-            b.setSourceVersion(at(sources, p.getSourcePackId()));
             b.setPublishByName(at(names, p.getPublishBy()));
             b.setPublishTime(p.getPublishTime());
             b.setCreateByName(at(names, p.getCreateBy()));
@@ -589,15 +551,6 @@ public class TechPackServiceImpl implements TechPackService {
             b.setUpdateTime(p.getUpdateTime());
             return b;
         }).toList();
-    }
-
-    /** 来源版本的版本号：来源 id → 版本号 */
-    private Map<Long, Integer> sourceVersions(Collection<TechPack> packs) {
-        Set<Long> ids = packs.stream().map(TechPack::getSourcePackId).filter(Objects::nonNull).collect(Collectors.toSet());
-        if (ids.isEmpty()) {
-            return Map.of();
-        }
-        return techPackMapper.selectByIds(ids).stream().collect(Collectors.toMap(TechPack::getId, TechPack::getVersion));
     }
 
     /** 已生效的生产 BOM 里按款色配料的行，有哪些款色一行都没配（款式后来加的颜色） */

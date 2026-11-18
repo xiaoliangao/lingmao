@@ -23,7 +23,7 @@ public class StyleCostController {
 
     private final TechPackCostService costService;
 
-    @Operation(summary = "一个款一行：取生产已生效版，没有取研发已生效版；款号倒序")
+    @Operation(summary = "一个款一行：取已生效的生产 BOM，没有的款不列；款号倒序")
     @GetMapping
     @PreAuthorize("hasAuthority('techpack:cost:query')")
     public R<PageResult<StyleCostRowVO>> page(@Valid StyleCostQuery query) {

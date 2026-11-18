@@ -13,10 +13,10 @@ import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import type { TreeNode } from '@/types/basic'
-import { PACK_STAGE, packName, type PackStage, type StyleCostRow } from '@/types/techpack'
+import { packName, type StyleCostRow } from '@/types/techpack'
 
 /**
- * 开发 › 核价（/costing，docs/api/01 §1.2、§3.13，原型 /costing）：一款一行，取生产已生效版、没有取研发已生效版的单件成本构成。
+ * 开发 › 核价（/costing，docs/api/01 §1.2、§3.13，原型 /costing）：一款一行，取已生效的生产 BOM 的单件成本构成。
  * 点一行去款式详情资料包那一版的核价子页签
  */
 import { formatMoney } from '@/utils/format'
@@ -38,17 +38,10 @@ const cols = useColumns('costing', [
   { key: 'ratio', label: '倍率' },
 ])
 
-const STAGE_OPTIONS = [
-  { label: '全部阶段', value: '' },
-  { label: '生产 BOM', value: 'PROD' },
-  { label: '研发 BOM', value: 'DEV' },
-]
-
 const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
-  fetch: ({ stage, ...rest }) => styleCostApi.page({ ...rest, stage: stage || undefined }),
+  fetch: styleCostApi.page,
   query: {
     keyword: '',
-    stage: '' as PackStage | '',
     categoryId: undefined as string | undefined,
     brand: '',
     year: undefined as number | undefined,
@@ -100,9 +93,6 @@ function openCostTab(row: StyleCostRow) {
     <PageHeader />
 
     <FilterBar v-model:keyword="query.keyword" placeholder="款号、名称、花名" :columns="cols" @search="search">
-      <template #left>
-        <el-segmented v-model="query.stage" :options="STAGE_OPTIONS" @change="search" />
-      </template>
       <FilterItem label="品类" :text="categoryName" @clear="query.categoryId = undefined">
         <el-tree-select
           v-model="query.categoryId"
@@ -134,7 +124,7 @@ function openCostTab(row: StyleCostRow) {
       row-key="styleId"
       row-class-name="clickable"
       scrollbar-always-on
-      :empty-text="query.keyword || query.categoryId || query.brand || query.year || query.season || query.stage ? '没有符合条件的款式：换个条件，或者清空筛选' : '还没有生效的资料包：资料包生效后，这里按款列出单件成本'"
+      :empty-text="query.keyword || query.categoryId || query.brand || query.year || query.season ? '没有符合条件的款式：换个条件，或者清空筛选' : '还没有生效的资料包：资料包生效后，这里按款列出单件成本'"
       @row-click="openCostTab"
     >
       <el-table-column label="款号" width="220" fixed="left">
@@ -153,8 +143,7 @@ function openCostTab(row: StyleCostRow) {
       </el-table-column>
       <el-table-column v-if="cols.show.pack" label="核算版本" width="120">
         <template #default="{ row }">
-          <span class="stage-tag" :class="row.stage.toLowerCase()">{{ PACK_STAGE[(row as StyleCostRow).stage].short }}</span>
-          <span class="code"> {{ packName(row as StyleCostRow) }}</span>
+          <span class="code">{{ packName(row as StyleCostRow) }}</span>
         </template>
       </el-table-column>
       <el-table-column v-if="cols.show.fabric" label="面料" width="104" class-name="num" align="right">
@@ -210,22 +199,6 @@ function openCostTab(row: StyleCostRow) {
 
 .thumb.blank {
   background: var(--lm-greige-2);
-}
-
-.stage-tag {
-  padding: 1px 5px;
-  font-size: 11px;
-  border-radius: 4px;
-}
-
-.stage-tag.prod {
-  color: var(--lm-accent-2);
-  background: var(--lm-accent-bg);
-}
-
-.stage-tag.dev {
-  color: var(--lm-pending-text);
-  background: var(--lm-pending-bg);
 }
 
 :deep(.el-table__row.clickable) {

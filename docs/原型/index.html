@@ -1488,7 +1488,7 @@ const db = reactive({
     { id: 'F', name: '均码', sizes: ['F'], base: 'F', status: '启用' },
   ],
   seasons: [{ code: 'C', name: '春' }, { code: 'X', name: '夏' }, { code: 'Q', name: '秋' }, { code: 'D', name: '冬' }],
-  bigCats: [{ code: 'FS', name: '服饰', status: '启用' }, { code: 'XZ', name: '鞋子', status: '启用' }], // 款号大类，2 位字母，进款号
+  bigCats: [{ code: 'FS', name: '非通勤裤', status: '启用' }, { code: 'TS', name: '通勤裤', status: '启用' }, { code: 'XZ', name: '鞋子', status: '启用' }], // 款号大类，2 位字母，进款号
   dnoUsed: {}, // 进过款号的设计师编号 → 用户 id，锁定不能改、不能给别人
   categories: [
     { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'trench' },
@@ -1529,7 +1529,7 @@ const db = reactive({
     安全类别: ['A 类', 'B 类', 'C 类'],
     色系: ['黑白灰', '棕', '蓝', '红', '黄', '绿', '紫'],
     物料类型: ['面料', '里料', '辅料', '标签吊牌', '包材'],
-    物料来源: TRADE ? ['我方采购', '客供', '工厂自备'] : ['我方采购', '工厂自备'],
+    物料来源: TRADE ? ['自购', '客供', '厂购'] : ['自购', '厂购'],
     币种: ['人民币', '美元', '港币', '欧元'],
     发票类型: ['增值税专用发票', '增值税普通发票', '不开票'],
     证照类型: ['营业执照', '验厂报告', '环保证明', '其他'],
@@ -1953,13 +1953,12 @@ function addStyleColor(s, c, silent) {
   sizesOf(s.sizeGroup).forEach((z) => s.skus.push({ code: `${s.code}-${c}-${z}`, color: c, size: z, status: '启用' }))
   if (!silent) act(s, '加颜色 ' + colorName(c) + '，新增 ' + sizesOf(s.sizeGroup).length + ' 个 SKU')
 }
-// 资料包分研发、生产两个阶段（PRD §6.4.1）：研发 BOM 只估价；需求订单、算料、生产单只认生产 BOM。没写 stage 的是生产
-// 版本号按阶段各自从 V1 编；不传 stage 的查找都只看生产，stage = '全部' 两个阶段都要
-const tpStage = (t) => t.stage || '生产'
-const tpName = (t) => (tpStage(t) === '研发' ? '研发 ' : '') + 'V' + t.ver
-const tpsOf = (code, stage = '生产') => db.techpacks.filter((t) => t.style === code && (stage === '全部' || tpStage(t) === stage)).sort((a, b) => b.ver - a.ver)
-const activeTp = (code, stage = '生产') => db.techpacks.find((t) => t.style === code && tpStage(t) === stage && t.status === '已生效')
-const tpOf = (code, ver, stage = '生产') => db.techpacks.find((t) => t.style === code && tpStage(t) === stage && t.ver === ver)
+// 资料包只有生产 BOM 一种（PRD §6.4.1，甲方 11-18 答 Q24：研发不填物料清单，只有转大货后的标准资料包）：
+// 发工厂、算料都按它，需求订单锁它。版本号每个款从 V1 编
+const tpName = (t) => 'V' + t.ver
+const tpsOf = (code) => db.techpacks.filter((t) => t.style === code).sort((a, b) => b.ver - a.ver)
+const activeTp = (code) => db.techpacks.find((t) => t.style === code && t.status === '已生效')
+const tpOf = (code, ver) => db.techpacks.find((t) => t.style === code && t.ver === ver)
 const tpState = (code) => (activeTp(code) ? '已生效' : tpsOf(code).length ? '草稿' : '无')
 // 资料包已生效、但有"随款色"行没给这个颜色配料
 function unmatchedColors(s) {
@@ -1973,25 +1972,25 @@ const rowSku = (r, color) => (r.mode === '固定' ? r.sku : r.map[color])
 const rowUse = (r, size) => (r.um === '统一' ? +r.use || 0 : +r.uses[size] || 0)
 // 单件成本按基码（女装 M）的用量算（PRD §6.4.2）；sizes 是尺码组的尺码，基码不在里面时取中间那个
 const rowMidUse = (r, sizes, base) => (r.um === '统一' ? +r.use || 0 : +r.uses[base && sizes.includes(base) ? base : sizes[Math.floor((sizes.length - 1) / 2)]] || 0)
-// 参考单价（每采购单位，PRD §6.4.2）：行上没改过时，生产 BOM 带价格档案里这行供应商的现价（5e-price.js），
-// 没有、或者是研发 BOM，带物料 SKU 的单价，SKU 没单价用物料的参考单价
-const rowRefPrice = (r, stage = '生产') => {
+// 参考单价（每采购单位，PRD §6.4.2）：行上没改过时，带价格档案里这行供应商的现价（5e-price.js），
+// 没有就带物料 SKU 的单价，SKU 没单价用物料的参考单价
+const rowRefPrice = (r) => {
   const k = r.mode === '固定' ? r.sku : Object.values(r.map || {}).find(Boolean)
-  const arch = stage === '生产' && typeof curMatPrice === 'function' ? curMatPrice(r.supplier || mat(r.mat)?.supplier, r.mat, k) : null
+  const arch = typeof curMatPrice === 'function' ? curMatPrice(r.supplier || mat(r.mat)?.supplier, r.mat, k) : null
   return arch ?? (k ? skuPrice(k) : null) ?? mat(r.mat)?.price
 }
-const unitPrice = (r, stage) => { const m = mat(r.mat); return (r.price ?? rowRefPrice(r, stage)) / m.factor } // 折成库存单位
-const rowCost = (r, sizes, base, stage) => rnd(rowMidUse(r, sizes, base) * (1 + r.loss / 100) * unitPrice(r, stage), 2)
-// 只算我方采购的料：客供的料客户出，工厂自备的算在加工费里
-const tpMaterialCost = (tp) => { const g = style(tp.style).sizeGroup; return rnd(sum(tp.bom.filter((r) => r.src === '我方采购'), (r) => rowCost(r, sizesOf(g), baseSizeOf(g), tpStage(tp))), 2) }
+const unitPrice = (r) => { const m = mat(r.mat); return (r.price ?? rowRefPrice(r)) / m.factor } // 折成库存单位
+const rowCost = (r, sizes, base) => rnd(rowMidUse(r, sizes, base) * (1 + r.loss / 100) * unitPrice(r), 2)
+// 只算自购的料：客供的料客户出，厂购的算在加工费里
+const tpMaterialCost = (tp) => { const g = style(tp.style).sizeGroup; return rnd(sum(tp.bom.filter((r) => r.src === '自购'), (r) => rowCost(r, sizesOf(g), baseSizeOf(g))), 2) }
 const tpLabor = (tp) => rnd(sum(tp.ops, (o) => o.price), 2)
 // 核价（资料包的「核价」页签、侧边栏「核价」列表、询价比价页都用它）：按基码用量算单件成本，分面料、辅料、加工费、其他费用四块。
-// 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有我方采购的计入，工厂自备的列出来标"含在加工价里"。加工费 = 工序工价合计（参考加工价）
+// 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有自购的计入，厂购的列出来标"含在加工价里"。加工费 = 工序工价合计（参考加工价）
 const FABRIC_TYPES = ['面料', '里料']
 function tpCost(tp) {
-  const g = style(tp.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g), st = tpStage(tp)
-  const rows = tp.bom.map((r, i) => ({ r, i, kind: FABRIC_TYPES.includes(mat(r.mat)?.type) ? '面料' : '辅料', use: rowMidUse(r, sizes, base), price: r.price ?? rowRefPrice(r, st),
-    counted: r.src === '我方采购', cost: r.src === '我方采购' ? rowCost(r, sizes, base, st) : 0 }))
+  const g = style(tp.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g)
+  const rows = tp.bom.map((r, i) => ({ r, i, kind: FABRIC_TYPES.includes(mat(r.mat)?.type) ? '面料' : '辅料', use: rowMidUse(r, sizes, base), price: r.price ?? rowRefPrice(r),
+    counted: r.src === '自购', cost: r.src === '自购' ? rowCost(r, sizes, base) : 0 }))
   const part = (k) => rnd(sum(rows.filter((x) => x.kind === k), (x) => x.cost), 2)
   const fabric = part('面料'), trim = part('辅料'), labor = tpLabor(tp), other = rnd(sum(tp.costs || [], (c) => c.amt), 2)
   return { rows, base, fabric, trim, mat: rnd(fabric + trim, 2), labor, other, total: rnd(fabric + trim + labor + other, 2) }
@@ -2034,30 +2033,17 @@ const PACK_WAYS = ['平铺', '挂装', '折叠']
 const craftDefaults = () => Object.fromEntries(CRAFT_SECS.flatMap((g) => g.items).map(([k]) => [k, { text: db.craftStd.texts[k] || '', pics: [], ...(k === 'pack' ? { way: db.craftStd.packWay } : {}) }]))
 const craftHas = (tp) => Object.values(tp.craft || {}).some((x) => x.text || x.pics?.length)
 
-function createTechpack(styleCode, bom, ops, note, spec, stage = '生产') {
-  const ver = (tpsOf(styleCode, stage)[0]?.ver || 0) + 1
+function createTechpack(styleCode, bom, ops, note, spec) {
+  const ver = (tpsOf(styleCode)[0]?.ver || 0) + 1
   // spec = 尺寸指示；craft = 工艺指示的各段；ops = 工序工价（工艺指示页签最下面），每行 { cat, name, req 工艺要求, pics, sec, price, note }，合计 = 参考加工价；
-  // costs = 核价的其他费用 [{ name, amt 元/件, note }]；source = 从哪个研发版转来的
-  const tp = add(db.techpacks, { id: styleCode + (stage === '研发' ? '-R' : '-V') + ver, style: styleCode, stage, ver, source: null, status: '草稿', note: note || '', util: null,
+  // costs = 核价的其他费用 [{ name, amt 元/件, note }]
+  const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null,
     bom, ops, spec: spec || specTemplate(styleCode), craft: craftDefaults(), costs: [], log: [] })
   act(tp, ver === 1 ? '新建' : '由 V' + (ver - 1) + ' 修订')
   return tp
 }
-// 修订、转生产 BOM 时整版复制：物料清单、工序、尺寸指示、工艺指示、其他费用
+// 修订时整版复制：物料清单、工序、尺寸指示、工艺指示、其他费用
 const tpCopy = (tp) => JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec, craft: tp.craft || craftDefaults(), costs: tp.costs || [] }))
-// 转生产 BOM（PRD §6.4.1、架构 §4.7）：生效的研发版复制成生产版草稿（没有生产版就是 V1），记下来源；
-// 行上的手填估价不带过去，参考单价按价格档案重新取。之后两边各改各的
-function toProdTp(dev) {
-  if (tpStage(dev) !== '研发' || dev.status !== '已生效') fail('研发 BOM 生效以后才能转生产 BOM')
-  const draft = tpsOf(dev.style).find((t) => t.status === '草稿')
-  if (draft) fail(`生产 BOM 已经有草稿 V${draft.ver}，先把它改完或删掉`)
-  const c = tpCopy(dev)
-  c.bom.forEach((r) => { r.price = null })
-  const t = createTechpack(dev.style, c.bom, c.ops, '', c.spec, '生产')
-  Object.assign(t, { craft: c.craft, costs: c.costs, util: dev.util, source: { stage: '研发', ver: dev.ver } })
-  act(t, '由研发 V' + dev.ver + ' 转生产 BOM')
-  return t
-}
 function tpCheck(tp) {
   const s = style(tp.style), errs = []
   if (!tp.bom.length) errs.push('至少要有一行 BOM')
@@ -2077,16 +2063,16 @@ function tpCheck(tp) {
 function publishTp(tp) {
   const errs = tpCheck(tp)
   if (errs.length) fail('资料包还不能生效', errs)
-  db.techpacks.filter((t) => t.style === tp.style && tpStage(t) === tpStage(tp) && t.status === '已生效').forEach((t) => { t.status = '已作废'; act(t, '被 ' + tpName(tp) + ' 替代') }) // 同款同阶段只留一个生效版
+  db.techpacks.filter((t) => t.style === tp.style && t.status === '已生效').forEach((t) => { t.status = '已作废'; act(t, '被 ' + tpName(tp) + ' 替代') }) // 同款只留一个生效版
   move('techpack', tp, '生效')
   tp.publishedAt = clock.today
   tp.publishedBy = db.me
 }
 function reviseTp(tp) {
-  if (tpsOf(tp.style, tpStage(tp)).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
+  if (tpsOf(tp.style).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
   const c = tpCopy(tp)
-  const t = createTechpack(tp.style, c.bom, c.ops, '', c.spec, tpStage(tp))
-  Object.assign(t, { craft: c.craft, costs: c.costs, util: tp.util, source: tp.source })
+  const t = createTechpack(tp.style, c.bom, c.ops, '', c.spec)
+  Object.assign(t, { craft: c.craft, costs: c.costs, util: tp.util })
   return t
 }
 // 删掉草稿版本（修订出来不想要了）；生效过、作废了的版本只能看
@@ -2136,7 +2122,7 @@ function submitOrder(o) {
   orderStyles(o).forEach((c) => {
     const s = style(c)
     if (s.status !== '启用') errs.push(`${c} 是「${s.status}」，不能下单`)
-    else if (!activeTp(c)) errs.push(`${c} 没有生效的生产 BOM` + (activeTp(c, '研发') ? '：研发 BOM 只用来估价，先在资料包里点「转生产 BOM」' : '')) // 研发 BOM 订单不能用（PRD §6.4.1）
+    else if (!activeTp(c)) errs.push(`${c} 没有生效的生产 BOM：先在款式的资料包里建好、点「生效」`) // 订单只认生效的生产 BOM（PRD §6.4.1）
     else unmatchedColors(s).forEach((col) => { if (o.lines.some((l) => l.style === c && l.color === col)) errs.push(`${c} 的 ${colorName(col)} 还没配料`) })
   })
   if (errs.length) fail('需求订单还不能提交', errs)
@@ -2165,7 +2151,7 @@ function unauditOrder(o) {
 }
 // 审核对话框：资料包、缺口最大的 5 种料、默认加工厂在手件数
 function reviewInfo(o) {
-  const rows = calcNeeds([o.no], true).filter((a) => a.src !== '工厂自备')
+  const rows = calcNeeds([o.no], true).filter((a) => a.src !== '厂购')
   const short = rows.map((a) => ({ ...a, avail: availFor(a.sku, a.owner), gap: 0 })).map((a) => ({ ...a, gap: rnd(a.need - a.avail, 3) }))
     .filter((a) => a.gap > 0).sort((a, b) => b.gap * unitPriceOfSku(b.sku) - a.gap * unitPriceOfSku(a.sku)).slice(0, 5)
   const loads = orderStyles(o).map((c) => style(c).factory).filter(Boolean)
@@ -2279,8 +2265,8 @@ const upstreamPending = () => [...db.productions, ...db.mrps, ...db.purchases].f
 
 /* ---------- 算料 ---------- */
 // gross 是未含损耗基础量；PRD 的毛需求含损耗，need 再含备料比。按 来源 + 物料 SKU + 物权 汇总
-// 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %）。真系统物料类型默认 3%（Q18）；原型的示例数据按 0 算，
-// 和 PRD §4.3 的例子一致（那块卡其布物料上的备料比设成了 0）。当场新加的物料类型是 3
+// 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %）。真系统的备料比由生产评估后填，没填按 0（Q18，甲方 11-18）；
+// 原型的示例数据也按 0 算，和 PRD §4.3 的例子一致。当场新加的物料类型也是 0
 const reserveOf = (sku) => +(db.reserve?.[matOfSku(sku)?.type] || 0)
 function calcNeeds(orderNos, useActive) {
   const acc = {}
@@ -2369,7 +2355,7 @@ function setUseTransit(r, v) {
   let left = r.useTransit
   r.transitUse = (r.transitOk || []).map((x) => { const q = rnd(Math.min(left, x.free), 3); left = rnd(left - q, 3); return { po: x.po, i: x.i, qty: q, date: x.date } }).filter((u) => u.qty > 0)
   r.net = rnd(r.need - r.useStock - r.useTransit, 3)
-  if (r.src === '我方采购') r.purQty = Math.max(suggestPur(r.sku, r.net), r.converted || 0)
+  if (r.src === '自购') r.purQty = Math.max(suggestPur(r.sku, r.net), r.converted || 0)
 }
 // 建议采购量：净需求换成采购单位，向上取整到最小包装，不小于起订量
 function suggestPur(sku, net) {
@@ -2386,7 +2372,7 @@ function createMrp(orderNos) {
   const no = nextNo('SL'), needDate = needDateOf(orderNos)
   const rows = calcNeeds(orderNos).map((a) => {
     const need = a.need
-    if (a.src === '工厂自备') return a
+    if (a.src === '厂购') return a
     const avail = availFor(a.sku, a.owner, no)
     const useStock = Math.min(avail, need)
     // 在途：赶得上要料日期的自动扣（先到的先用），赶不上的单独列出来、不扣
@@ -2396,7 +2382,7 @@ function createMrp(orderNos) {
     const r = { ...a, need, avail, useStock, transitOk: ok.map(({ po, i, date, free }) => ({ po, i, date, free })), availTransit: rnd(sum(ok, (x) => x.free), 3),
       transitLate: late, lateTransit: rnd(sum(late, (x) => x.free), 3), useTransit: 0, transitUse: [], net: need, purQty: 0, converted: 0 }
     setUseTransit(r, r.availTransit)
-    if (a.src !== '我方采购') r.purQty = 0
+    if (a.src !== '自购') r.purQty = 0
     return r
   })
   const m = add(db.mrps, { no, company: myCompany(), orders: [...orderNos], date: clock.today, needDate, status: '草稿', rows, upstream: null, note: '', log: [] })
@@ -2417,7 +2403,7 @@ function updateMrpRow(r, field, v, m) {
 }
 function mrpToPurchases(m, idxs) {
   if (m.status === '已关闭') fail('算料单已关闭')
-  const rows = idxs.map((i) => m.rows[i]).filter((r) => r && r.src === '我方采购' && r.purQty - r.converted > 0)
+  const rows = idxs.map((i) => m.rows[i]).filter((r) => r && r.src === '自购' && r.purQty - r.converted > 0)
   if (!rows.length) fail('勾选的行没有要买的')
   const bad = [...new Set(rows.map((r) => r.supplier))].filter((s) => !canUseSupplier(s, '采购'))
   if (bad.length) fail('有供应商现在不能下单，先在行上换一家', bad.map((s) => `${supName(s)}：${sup(s)?.status || '未选'}`))
@@ -2438,11 +2424,11 @@ function mrpRecv(m, r) {
   const nos = mrpChain(m)
   return rnd(sum(db.purchases.flatMap((p) => p.lines).filter((l) => nos.includes(l.src?.mrp) && l.sku === r.sku && (l.owner || '自有') === r.owner), (l) => l.received * matOfSku(r.sku).factor), 3)
 }
-// 齐料（PRD §6.6.3）：订单关联算料单"我方采购"每一行，自己采购的已入库 + 本次使用在途里已经到货的 + 本次使用库存 ≥ 需求；重新算料换掉的旧单不算
+// 齐料（PRD §6.6.3）：订单关联算料单"自购"每一行，自己采购的已入库 + 本次使用在途里已经到货的 + 本次使用库存 ≥ 需求；重新算料换掉的旧单不算
 function kitState(o) {
   const ms = mrpsOf(o).filter((m) => !m.next)
   if (!ms.length) return { t: '未算料', k: 'none' }
-  const rows = ms.flatMap((m) => m.rows.filter((r) => r.src === '我方采购').map((r) => ({ m, r })))
+  const rows = ms.flatMap((m) => m.rows.filter((r) => r.src === '自购').map((r) => ({ m, r })))
   const ok = rows.filter(({ m, r }) => mrpRecv(m, r) + useTransitSplit(r).got + r.useStock >= r.need - 0.001).length
   if (ok === rows.length) return { t: '齐料', k: 'ok' }
   return ok ? { t: `部分到料 ${ok}/${rows.length}`, k: 'part' } : { t: '未到料', k: 'no' }
@@ -2788,13 +2774,13 @@ function closeIssue(p, i, measure, party) {
   Object.assign(i, { measure, status: '已关闭', closedAt: clock.today, closedBy: db.me })
   act(p, '关闭异常：' + i.type + (i.party ? '，责任方 ' + i.party : ''))
 }
-// 领料建议 = 加工数 × BOM 用量 ×（1 + 损耗）− 已领。外发加工单算我方采购和客供；成品采购单的料工厂自己买，只领我方采购的行（主唛、吊牌这类，常常没有）
+// 领料建议 = 加工数 × BOM 用量 ×（1 + 损耗）− 已领。外发加工单算自购和客供；成品采购单的料工厂自己买，只领自购的行（主唛、吊牌这类，常常没有）
 function issuePlan(p) {
   const tp = tpOf(p.style, p.ver)
   if (!tp) return []
   const cust = order(p.order)?.customer, acc = {}, cp = prodKind(p) === '成品采购单'
   p.lines.forEach((l) => tp.bom.forEach((r) => {
-    if (r.src === '工厂自备' || (cp && r.src !== '我方采购')) return
+    if (r.src === '厂购' || (cp && r.src !== '自购')) return
     const sku = rowSku(r, l.color)
     if (!sku) return
     const owner = r.src === '客供' ? cust || '自有' : '自有'
@@ -2877,7 +2863,7 @@ const mxLines = (st, colors, price) => Object.entries(colors).flatMap(([c, q]) =
 const allQty = (o, st) => Object.fromEntries(o.lines.filter((l) => l.style === st).map((l) => [l.color + '|' + l.size, l.qty]))
 // 种子按开关演：TRADE 开（代工）用 a，关（只做自营）用 b；单号、款、数量两边一样
 const ifTrade = (a, b = {}) => (TRADE ? a : b)
-const label = (sku, extra) => ({ part: extra.part, mat: sku, mode: '固定', sku, um: '统一', use: 1, loss: 1, src: '我方采购', ...extra })
+const label = (sku, extra) => ({ part: extra.part, mat: sku, mode: '固定', sku, um: '统一', use: 1, loss: 1, src: '自购', ...extra })
 
 function seed() {
   as('u4', '2026-08-20', () => {
@@ -2904,11 +2890,11 @@ function seed() {
   // 新款号规则（甲方 11-11）：许然（设计师编号 07）11-06 建的款自动编成 FS2611060701；上面 27CF001 这些当作导入的历史款号，不改
   as('u4', '2026-11-06', () => createStyle({ big: 'FS', name: '落肩短风衣', cat: 'F', year: 2027, season: 'C', wave: '第 2 波', tag: '通勤', colors: ['YM', 'HE'], tagPrice: 829, cost: 300, factory: 'GYS0004', mainMat: 'ML0018', product: '风衣' }))
   const labels = [label('BX0001', { part: '主唛' }), label('BX0002', { part: '洗唛' }), label('BP0001', { part: '吊牌' }), label('BD0001', { part: '包装袋' })]
-  const thread = { part: '缝纫线', mat: 'FX0002', mode: '固定', sku: 'FX0002', um: '统一', use: 0.3, loss: 0, src: '工厂自备' }
+  const thread = { part: '缝纫线', mat: 'FX0002', mode: '固定', sku: 'FX0002', um: '统一', use: 0.3, loss: 0, src: '厂购' }
   const cf001 = (m) => [
-    { part: '大身', mat: 'ML0012', mode: '随款色', map: { KQ: 'ML0012-KQ', ZQ: 'ML0012-ZQ', HE: 'ML0012-HE' }, um: '分码', uses: SZ(2.25, m, 2.45, 2.55, 2.65), loss: 3, src: '我方采购', supplier: 'GYS0001', note: '注意对格' },
-    { part: '里布', mat: 'ML0015', mode: '随款色', map: { KQ: 'ML0015-MB', ZQ: 'ML0015-HE', HE: 'ML0015-HE' }, um: '统一', use: 1.6, loss: 2, src: ifTrade('客供', '我方采购') },
-    { part: '纽扣', mat: 'FK0021', mode: '随款色', map: { KQ: 'FK0021-KQ', ZQ: 'FK0021-HE', HE: 'FK0021-HE' }, um: '统一', use: 8, loss: 2, src: '我方采购', supplier: 'GYS0002' },
+    { part: '大身', mat: 'ML0012', mode: '随款色', map: { KQ: 'ML0012-KQ', ZQ: 'ML0012-ZQ', HE: 'ML0012-HE' }, um: '分码', uses: SZ(2.25, m, 2.45, 2.55, 2.65), loss: 3, src: '自购', supplier: 'GYS0001', note: '注意对格' },
+    { part: '里布', mat: 'ML0015', mode: '随款色', map: { KQ: 'ML0015-MB', ZQ: 'ML0015-HE', HE: 'ML0015-HE' }, um: '统一', use: 1.6, loss: 2, src: ifTrade('客供', '自购') },
+    { part: '纽扣', mat: 'FK0021', mode: '随款色', map: { KQ: 'FK0021-KQ', ZQ: 'FK0021-HE', HE: 'FK0021-HE' }, um: '统一', use: 8, loss: 2, src: '自购', supplier: 'GYS0002' },
     ...labels.map((x) => ({ ...x })), { ...thread },
   ]
   const cfOps = [['裁剪', '裁剪', 180, 2.5, '格子对齐后再开裁，左右前片对条对格'], ['车缝', '做领、上领', 420, 6, '领尖左右对称，止口 0.1cm 明线'], ['车缝', '做袖、上袖', 480, 6.5, '袖山吃势均匀，不起皱'], ['车缝', '前后片拼合、做门襟', 600, 9, '门襟顺直，不起涟'], ['车缝', '装里布', 420, 6, '里布下摆留 1cm 坐势'], ['整烫', '整烫', 240, 3, '面料不能烫出极光，垫布熨烫'], ['后道', '钉扣、剪线、查衫', 240, 3], ['包装', '挂吊牌、折叠入袋', 120, 2]]
@@ -2934,9 +2920,9 @@ function seed() {
     cf.util = 84
     publishTp(cf)
     publishTp(demoTp(createTechpack('26QJ012', [
-      { part: '大身', mat: 'ML0018', mode: '随款色', map: { HE: 'ML0018-HE', KQ: 'ML0018-KQ' }, um: '分码', uses: SZ(1.85, 1.95, 2.05, 2.15, 2.25), loss: 3, src: '我方采购', supplier: 'GYS0001' },
-      { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-60', um: '统一', use: 1, loss: 1, src: '我方采购', supplier: 'GYS0002' },
-      { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 4, loss: 2, src: '我方采购', supplier: 'GYS0002' },
+      { part: '大身', mat: 'ML0018', mode: '随款色', map: { HE: 'ML0018-HE', KQ: 'ML0018-KQ' }, um: '分码', uses: SZ(1.85, 1.95, 2.05, 2.15, 2.25), loss: 3, src: '自购', supplier: 'GYS0001' },
+      { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-60', um: '统一', use: 1, loss: 1, src: '自购', supplier: 'GYS0002' },
+      { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 4, loss: 2, src: '自购', supplier: 'GYS0002' },
       ...labels.map((x) => ({ ...x })), { ...thread },
     ], ops([['裁剪', '裁剪', 160, 2.5], ['车缝', '前后片拼合', 540, 10], ['车缝', '上拉链', 360, 6], ['车缝', '做袖、上袖', 420, 7], ['车缝', '做领', 360, 6], ['整烫', '整烫', 200, 3], ['后道', '钉扣、查衫', 300, 4.5], ['包装', '包装', 150, 3]])), {
       craft: {
@@ -2945,7 +2931,7 @@ function seed() {
       costs: [{ name: '洗水（酵素洗）', amt: 4.5, note: '外发洗水厂' }],
     }))
     publishTp(demoTp(createTechpack('26QW008', [
-      { part: '大身', mat: 'MZ0003', mode: '随款色', map: { MB: 'MZ0003-MB', HH: 'MZ0003-HH' }, um: '统一', use: 1.4, loss: 5, src: '工厂自备' },
+      { part: '大身', mat: 'MZ0003', mode: '随款色', map: { MB: 'MZ0003-MB', HH: 'MZ0003-HH' }, um: '统一', use: 1.4, loss: 5, src: '厂购' },
       ...labels.map((x) => ({ ...x })),
     ], ops([['车缝', '套口', 300, 8], ['车缝', '缝合', 360, 10], ['后道', '后整', 200, 6], ['包装', '包装', 120, 3]])), {
       craft: {
@@ -2954,8 +2940,8 @@ function seed() {
       },
     }))
     publishTp(demoTp(createTechpack('26DS021', [
-      { part: '大身', mat: 'MZ0003', mode: '随款色', map: { HE: 'MZ0003-HE', HH: 'MZ0003-HH', WL: 'MZ0003-WL' }, um: '分码', uses: SZ(1.5, 1.6, 1.7, 1.8, 1.9), loss: 4, src: '我方采购', supplier: 'GYS0009' },
-      { part: '领', mat: 'MZ0007', mode: '随款色', map: { HE: 'MZ0007-HE', HH: 'MZ0007-HH', WL: 'MZ0007-WL' }, um: '统一', use: 0.25, loss: 3, src: '工厂自备' },
+      { part: '大身', mat: 'MZ0003', mode: '随款色', map: { HE: 'MZ0003-HE', HH: 'MZ0003-HH', WL: 'MZ0003-WL' }, um: '分码', uses: SZ(1.5, 1.6, 1.7, 1.8, 1.9), loss: 4, src: '自购', supplier: 'GYS0009' },
+      { part: '领', mat: 'MZ0007', mode: '随款色', map: { HE: 'MZ0007-HE', HH: 'MZ0007-HH', WL: 'MZ0007-WL' }, um: '统一', use: 0.25, loss: 3, src: '厂购' },
       ...labels.map((x) => ({ ...x })),
     ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '拼缝、上帽', 600, 12], ['后道', '后整', 200, 5], ['包装', '包装', 120, 3]])), {
       craft: {
@@ -2964,9 +2950,9 @@ function seed() {
       costs: [{ name: '胸前印花（外加工）', amt: 6, note: '盛达印绣' }],
     }))
     demoTp(createTechpack('27CK002', [
-      { part: '大身', mat: 'ML0012', mode: '随款色', map: { HE: 'ML0012-HE' }, um: '分码', uses: SZ(1.2, 1.25, 1.3, 1.35, 1.4), loss: 3, src: '我方采购', supplier: 'GYS0001' },
-      { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-15', um: '统一', use: 1, loss: 1, src: '我方采购' },
-      { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 1, loss: 2, src: '我方采购' },
+      { part: '大身', mat: 'ML0012', mode: '随款色', map: { HE: 'ML0012-HE' }, um: '分码', uses: SZ(1.2, 1.25, 1.3, 1.35, 1.4), loss: 3, src: '自购', supplier: 'GYS0001' },
+      { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-15', um: '统一', use: 1, loss: 1, src: '自购' },
+      { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 1, loss: 2, src: '自购' },
       ...labels.map((x) => ({ ...x })),
     ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '做腰、上腰', 420, 7], ['车缝', '上拉链、合裆', 480, 8], ['后道', '锁眼钉扣', 160, 2], ['包装', '包装', 100, 2]])), {
       craft: {
@@ -3118,7 +3104,7 @@ function selftest() {
   ok('算料：卡其布未含损耗基础量 962', kq.gross === 962, kq.gross)
   ok('算料：需求 990.86', kq.need === 990.86, kq.need)
   ok('算料：可用 120、净需求 870.86、建议 871', kq.avail === 120 && kq.net === 870.86 && kq.purQty === 871, [kq.avail, kq.net, kq.purQty])
-  ok(TRADE ? '算料：里布客供，不用买' : '算料：里布我方采购（不做客供）', m.rows.filter((r) => r.sku.startsWith('ML0015')).every((r) => r.src === (TRADE ? '客供' : '我方采购')), m.rows.filter((r) => r.sku.startsWith('ML0015')).map((r) => r.src))
+  ok(TRADE ? '算料：里布客供，不用买' : '算料：里布自购（不做客供）', m.rows.filter((r) => r.sku.startsWith('ML0015')).every((r) => r.src === (TRADE ? '客供' : '自购')), m.rows.filter((r) => r.sku.startsWith('ML0015')).map((r) => r.src))
   move('mrp', m, '确认')
   ok('算料：第二张单可用库存为 0', availFor('ML0012-KQ', '自有') === 0, availFor('ML0012-KQ', '自有'))
   const [po] = mrpToPurchases(m, [m.rows.indexOf(kq)])
@@ -3150,15 +3136,14 @@ function selftest() {
   const e = err(() => removeDraft(db.orders, createOrder({ type: '补单', due: '2026-12-31', lines: [{ style: '27CF001', color: 'KQ', size: 'M', qty: 10 }] })))
   ok(TRADE ? '补单要选客户' : '补单不选客户也能建', TRADE ? e.includes('要选客户') : e === '', e)
   ok(TRADE ? '入库单有客供入库' : '入库单没有客供入库', ('客供入库' in STOCK_TYPES) === TRADE)
-  // 研发 / 生产 BOM（§6.4.1）：订单只认生产 BOM；研发 BOM 转生产 BOM 记来源，单价按价格档案重新取
+  // 订单只认生效的生产 BOM（§6.4.1）：资料包还是草稿的款，提交被拦
   const s9 = style('26DY009')
-  const d9 = createTechpack(s9.code, [{ part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 5, loss: 2, src: '我方采购', supplier: 'GYS0002', price: 0.4 }], [{ cat: '车缝', name: '整件加工（估）', req: '', sec: 1000, price: 20, note: '' }], '自检估价', null, '研发')
-  publishTp(d9)
+  const d9 = createTechpack(s9.code, [{ part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 5, loss: 2, src: '自购', supplier: 'GYS0002' }], [{ cat: '车缝', name: '整件加工', req: '', sec: 1000, price: 20, note: '' }], '', null)
   const o9 = createOrder({ type: '自营备货', due: '2027-03-31', lines: [{ style: s9.code, color: s9.colors[0], size: sizesOf(s9.sizeGroup)[0], qty: 10 }] })
-  ok('研发 BOM：订单锁研发 BOM 被拦，提示先转生产 BOM', ((e) => e.includes('没有生效的生产 BOM') && e.includes('转生产 BOM'))(err(() => submitOrder(o9))))
+  ok('资料包没生效：订单提交被拦', err(() => submitOrder(o9)).includes('没有生效的生产 BOM'))
   removeDraft(db.orders, o9)
-  const p9 = toProdTp(d9)
-  ok('研发 BOM：转成生产 BOM V1 草稿，记来源，单价按档案重新取', p9.status === '草稿' && p9.ver === 1 && p9.source?.stage === '研发' && p9.source.ver === 1 && p9.bom[0].price == null && rowRefPrice(p9.bom[0]) === 0.35 && d9.status === '已生效', [p9.status, p9.source, rowRefPrice(p9.bom[0])])
+  ok('参考单价：行上没填价，带价格档案的现价', rowRefPrice(d9.bom[0]) === 0.35, rowRefPrice(d9.bom[0]))
+  removeTpDraft(d9)
   // 价格档案（§6.10，函数在 5e-price.js）：验收 1-4
   ok('价格档案：采购单默认取档案现价 18.5', createPurchase({ supplier: 'GYS0001', lines: [{ sku: 'ML0012-ZQ', qty: 100 }] }).lines[0].price === 18.5)
   ok('价格档案：改成 19 不写改价原因被拦', err(() => createPurchase({ supplier: 'GYS0001', lines: [{ sku: 'ML0012-ZQ', qty: 100, price: 19 }] })).includes('改价原因'))
@@ -3320,7 +3305,7 @@ function selftest() {
   doAction('stock', th2, '反审核'); doAction('stock', th2, '作废')
   ok('对账：草稿对账单作废后，退货单能反审核、作废', th2.status === '已作废' && po2.lines[0].returned === 0, [th2.status, po2.lines[0].returned])
 
-  // 资料包（甲方 11-14）：新建带设置里的默认文字和测量方法；按档差生成；修订整版复制；核价 = 面料 + 辅料 + 加工 + 其他，工厂自备不计
+  // 资料包（甲方 11-14）：新建带设置里的默认文字和测量方法；按档差生成；修订整版复制；核价 = 面料 + 辅料 + 加工 + 其他，厂购不计
   const note0 = db.craftStd.texts.note
   db.craftStd.texts.note = '自检：注意事项默认文字'
   const t3 = createTechpack('27CT003', [], [], '', null)
@@ -3333,15 +3318,15 @@ function selftest() {
   ok('尺寸指示：按档差生成 S 63、L 65、XXL 67，没填档差的行跳过', gr[0] === 1 && gr[1] === 1 && t3.spec.rows[0].vals.S === 63 && t3.spec.rows[0].vals.L === 65 && t3.spec.rows[0].vals.XXL === 67 && t3.spec.rows[1].vals.S == null, [gr, t3.spec.rows[0].vals])
   removeTpDraft(t3)
   const cfa = activeTp('27CF001'), k = tpCost(cfa)
-  ok('核价：单件成本 = 面料 + 辅料 + 加工 + 其他费用 3.2；缝纫线工厂自备不计', k.total === rnd(k.fabric + k.trim + k.labor + k.other, 2) && k.other === 3.2 && k.mat === tpMaterialCost(cfa)
+  ok('核价：单件成本 = 面料 + 辅料 + 加工 + 其他费用 3.2；缝纫线厂购不计', k.total === rnd(k.fabric + k.trim + k.labor + k.other, 2) && k.other === 3.2 && k.mat === tpMaterialCost(cfa)
     && k.rows.find((x) => x.r.part === '缝纫线').cost === 0 && k.rows.find((x) => x.r.part === '里布').kind === '面料', [k.fabric, k.trim, k.labor, k.other, k.total])
   const v3 = reviseTp(cfa)
   ok('修订：新版本带着尺寸指示、工艺指示、其他费用（复制，不是同一份）', JSON.stringify([v3.spec, v3.craft, v3.costs]) === JSON.stringify([cfa.spec, cfa.craft, cfa.costs]) && v3.spec !== cfa.spec && v3.craft.detail !== cfa.craft.detail && v3.costs.length === 2)
   removeTpDraft(v3)
-  // 外发加工单、成品采购单（甲方 11-14）：一张表按加工方式分种类；成品采购单只领我方采购的料
+  // 外发加工单、成品采购单（甲方 11-14）：一张表按加工方式分种类；成品采购单只领自购的料
   const cp = db.productions.find((x) => x.style === '26QW008' && x.mode === '包工包料'), jg = db.productions.find((x) => x.style === '26DS021')
   ok('生产单：包工包料是成品采购单 CP 开头，半包是外发加工单 JG 开头，各自的单价名', cp?.no.startsWith('CP') && prodKind(cp) === '成品采购单' && jg?.no.startsWith('JG') && prodKind(jg) === '外发加工单' && prodKindOf(cp).price === '成品单价（含料）', [cp?.no, jg?.no])
-  ok('成品采购单：领料只算我方采购的行，面料工厂自备不领', issuePlan(cp).length > 0 && issuePlan(cp).every((r) => r.src === '我方采购'), issuePlan(cp).map((r) => r.sku + ' ' + r.src))
+  ok('成品采购单：领料只算自购的行，面料厂购不领', issuePlan(cp).length > 0 && issuePlan(cp).every((r) => r.src === '自购'), issuePlan(cp).map((r) => r.sku + ' ' + r.src))
   ok('排单：价格没填时按种类报单价名', err(() => scheduleOrder(order(cp.order), [{ style: '26QW008', factory: 'GYS0004', mode: '包工包料', due: '2026-12-01', qty: { 'MB|M': 1 } }])).includes('成品单价（含料）要填'))
   // 物料盘点单（甲方 11-14）：调整量 = 实盘 − 建单时的账面，加到现在的库存上；盘点后照常收发不受影响
   const pd = createStockTake({ wh: 'WL01', scope: { kind: '手选物料', skus: ['FX0002', 'BX0001'] } })
@@ -5959,7 +5944,7 @@ IMPORTS.styles = {
     { k: 'code', t: '款号', tip: '不填按规则自动编（大类 + 导入当天 yyMMdd + 设计师编号 + 2 位流水，如 FS2611080701），设计师要有编号；领猫里的老款号照填，系统查重', ex: '27CF009', text: true, w: 14 },
     { k: 'name', t: '款式名称', req: true, ex: '双排扣短风衣', w: 18 },
     { k: 'alias', t: '花名', tip: '选填：款式的俗称，工艺单表头上有', ex: '小短风', w: 12 },
-    { k: 'big', t: '大类', tip: '款号头两位：编码或名称（FS 服饰、XZ 鞋子），要是启用的；不填 = 第一个启用的大类', opts: () => liveBigCats().map((x) => x.code), ex: 'FS', w: 8 },
+    { k: 'big', t: '大类', tip: '款号头两位：编码或名称（TS 通勤裤、FS 非通勤裤、XZ 鞋子），要是启用的；不填 = 第一个启用的大类', opts: () => liveBigCats().map((x) => x.code), ex: 'FS', w: 8 },
     { k: 'cat', t: '品类', req: true, tip: '品类名称或 1 位编码，要是启用的品类', ex: '风衣' },
     { k: 'year', t: '年份', req: true, int: true, tip: '4 位年份', ex: 2027, w: 8 },
     { k: 'season', t: '季节', req: true, tip: '春 / 夏 / 秋 / 冬，或编码 C / X / Q / D', ex: '春', w: 8 },
@@ -6155,7 +6140,7 @@ route('/styles/:code', {
       s.value.status === '草稿' && { t: '删除', danger: true, fn: del },
     ].filter(Boolean) : [])
     const unmatched = computed(() => (s.value ? unmatchedColors(s.value) : []))
-    const tpc = computed(() => activeTp(p.code) || activeTp(p.code, '研发'))
+    const tpc = computed(() => activeTp(p.code))
     const made = computed(() => s.value?.log?.[0])
     return { s, tab, editing, orders, more, unmatched, tpc, made }
   },
@@ -6205,7 +6190,7 @@ route('/styles/:code', {
           <dt>主力面料</dt><dd><a v-if="s.mainMat" :href="'#/materials/' + s.mainMat"><span class="code">{{ s.mainMat }}</span> {{ mat(s.mainMat)?.name }}</a><template v-else>—</template></dd>
           <dt>吊牌价</dt><dd>{{ fm(s.tagPrice) }}</dd>
           <dt>参考成本价</dt><dd>{{ fm(s.cost) }}</dd>
-          <template v-if="canSeeCost()"><dt>资料包核价</dt><dd><a v-if="tpc" :href="'#/styles/' + s.code + '?tab=tp&sub=cost&tpv=' + tpc.id">{{ (tpStage(tpc) === '研发' ? '研发估 ' : '') + fm(tpCost(tpc).total) + ' · ' + tpName(tpc) }}</a><template v-else>资料包还没生效</template></dd></template>
+          <template v-if="canSeeCost()"><dt>资料包核价</dt><dd><a v-if="tpc" :href="'#/styles/' + s.code + '?tab=tp&sub=cost&tpv=' + tpc.id">{{ fm(tpCost(tpc).total) + ' · ' + tpName(tpc) }}</a><template v-else>资料包还没生效</template></dd></template>
           <dt>默认加工厂</dt><dd>{{ s.factory ? supName(s.factory) : '—' }}</dd>
           <dt>上市日期</dt><dd>{{ s.launch ? fd(s.launch) : '—' }}</dd>
           <dt>品名</dt><dd>{{ s.product || '—' }}</dd>
@@ -6268,7 +6253,8 @@ comp('StyleSkus', {
   </section>`,
 })
 
-/* ---------- 资料包（PRD §6.4，甲方 11-14 改）：版本 + 四个页签 —— 尺寸指示、物料清单（BOM、按颜色展开、研发 vs 生产）、工艺指示（含工序工价）、核价；导出 PDF 工艺单
+/* ---------- 资料包（PRD §6.4，甲方 11-14 改）：版本 + 四个页签 —— 尺寸指示、物料清单（BOM、按颜色展开）、工艺指示（含工序工价）、核价；导出 PDF 工艺单
+ * 只有生产 BOM 一种（甲方 11-18 答 Q24：研发不填物料清单，转大货后建标准资料包）
  * 定位到某一版的某个页签：/styles/款号?tab=tp&sub=spec|bom|craft|cost&tpv=资料包 id（侧边栏「核价」列表点一行就这样跳过来）
  * 草稿能改，已生效的只读，要改点「修订」出新版本；核价页签要有看成本的权限（设置 › 角色权限「成本（核价）」） ---------- */
 const TP_TABS = [['spec', '尺寸指示'], ['bom', '物料清单'], ['craft', '工艺指示'], ['cost', '核价']]
@@ -6276,16 +6262,15 @@ comp('TechPack', {
   props: { code: String },
   setup(p) {
     const s = computed(() => style(p.code))
-    // 版本按阶段排：研发在前（打样估价），生产在后（订单、算料用它）；key = 资料包 id
-    const tps = computed(() => [...tpsOf(p.code, '研发'), ...tpsOf(p.code)])
-    const pickKey = () => { const l = tps.value, prod = l.filter((t) => tpStage(t) === '生产'); return (prod.find((t) => t.status === '草稿') || prod.find((t) => t.status === '已生效') || l.find((t) => t.status === '草稿') || l.find((t) => t.status === '已生效') || l[0])?.id }
+    // 版本新的在前；key = 资料包 id。默认看草稿，没有草稿看生效的
+    const tps = computed(() => tpsOf(p.code))
+    const pickKey = () => { const l = tps.value; return (l.find((t) => t.status === '草稿') || l.find((t) => t.status === '已生效') || l[0])?.id }
     const key = ref(tps.value.some((t) => t.id === nav.query.tpv) ? nav.query.tpv : pickKey())
     const tp = computed(() => tps.value.find((t) => t.id === key.value))
     watch(tps, (l) => { if (!tp.value && l.length) key.value = pickKey() })
     // 老数据补齐：工艺指示缺的段按设置里的默认文字补上，其他费用补空表
     watch(tp, (t) => { if (t) { t.craft ||= {}; Object.entries(craftDefaults()).forEach(([k, v]) => { t.craft[k] ||= v }); t.costs ||= [] } }, { immediate: true })
     const edit = computed(() => tp.value?.status === '草稿')
-    const stage = computed(() => (tp.value ? tpStage(tp.value) : '生产'))
     const view = ref(TP_TABS.some(([k]) => k === nav.query.sub) ? nav.query.sub : 'bom')
     const tabs = computed(() => TP_TABS.filter(([k]) => k !== 'cost' || canSeeCost()).map(([k, t]) => [k, t, k === 'spec' ? tp.value.spec.rows.length : k === 'bom' ? tp.value.bom.length : null]))
     const bomView = ref('list'), byColor = ref(s.value.colors[0]), open = ref(null), adding = ref(false), editing = ref(null), exporting = ref(false)
@@ -6293,23 +6278,13 @@ comp('TechPack', {
     const verText = (t) => tpName(t) + ({ 已生效: ' 生效中', 草稿: ' 草稿', 已作废: ' 已作废' }[t.status] || '')
     const useText = (r) => (r.um === '统一' ? fq(r.use) : `${fq(r.uses[sizes.value[0]])}–${fq(r.uses[sizes.value[sizes.value.length - 1]])}`)
     function revise() { const t = run(() => reviseTp(tp.value)); if (t?.ver) { key.value = t.id; toast(`修订出 ${tpName(t)}，尺寸、物料、工艺、其他费用都带过来了，改完点「生效」`) } }
-    function publish() { if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效` + (stage.value === '研发' ? '，要下大货就点「转生产 BOM」' : '')) }
-    function create(st) { const t = createTechpack(p.code, [], [], '', null, st); key.value = t.id; view.value = 'bom'; adding.value = true }
-    function toProd() { const t = run(() => toProdTp(tp.value)); if (t?.id) { key.value = t.id; toast(`复制成生产 ${tpName(t)} 草稿：单价按价格档案重新取了，改完点「生效」`) } }
+    function publish() { if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效，可以下需求订单了`) }
+    function create() { const t = createTechpack(p.code, [], [], '', null); key.value = t.id; view.value = 'bom'; adding.value = true }
     async function dropDraft() {
       const t = tp.value
       if (!(await ask(`删除草稿 ${tpName(t)}`, '这一版改的内容都不要了，删除后找不回来；已生效的版本不受影响。', '删除', true))) return
       if (run(() => removeTpDraft(t))) { key.value = pickKey(); toast(`删除了草稿 ${tpName(t)}`) }
     }
-    // 研发 vs 生产：看生产版时和它的来源研发版（没有就用生效的研发版）比；看研发版时和生效的生产版比
-    const pair = computed(() => {
-      const t = tp.value
-      if (!t) return null
-      const dev = stage.value === '研发' ? t : (t.source && tpOf(p.code, t.source.ver, '研发')) || activeTp(p.code, '研发') || tpsOf(p.code, '研发')[0]
-      const prod = stage.value === '生产' ? t : activeTp(p.code) || tpsOf(p.code)[0]
-      return dev && prod ? { dev, prod } : null
-    })
-    watch(pair, (x) => { if (!x && bomView.value === 'cmp') bomView.value = 'list' })
     const matSkus = (r) => mat(r.mat).skus.filter((k) => k.status !== '停用' || Object.values(r.map || {}).includes(k.code))
     const supsFor = (r) => db.suppliers.filter((x) => x.status === '合作中' || x.code === r.supplier)
     const setPrice = (r, v) => { r.price = v === '' ? null : +v }
@@ -6336,42 +6311,33 @@ comp('TechPack', {
     function moveSpec(i, d) { moveItem(tp.value.spec.rows, i, i + d); sp.value = i + d }
     function grade() { const r = run(() => gradeSpec(tp.value)); if (r) toast(`按档差算了 ${r[0]} 行` + (r[1] ? `；${r[1]} 行没填档差，没动` : '') + '，算完每格还能改') }
 
-    // 核价：和侧边栏「核价」列表同一个算法（tpCost）；生产版有来源研发版时多一列研发估
+    // 核价：和侧边栏「核价」列表同一个算法（tpCost）
     const k = computed(() => tp.value && tpCost(tp.value))
-    const devTp = computed(() => (stage.value === '生产' && tp.value?.source ? tpOf(p.code, tp.value.source.ver, '研发') : null))
-    const dk = computed(() => devTp.value && tpCost(devTp.value))
-    const devRow = (x) => dk.value?.rows.find((y) => y.r.part === x.r.part && y.r.mat === x.r.mat)
-    const devRowText = (x) => { const y = devRow(x); return !y ? '研发没有' : y.counted ? fm(y.cost) : '—' }
-    const devOther = (c) => { const y = devTp.value?.costs?.find((z) => z.name === c.name); return y ? fm(y.amt) : '—' }
     // 成品采购参考价（甲方 11-14）：默认工厂 × 包工包料 在价格档案里的现价，含料；只看看，不算进单件成本，没有就不出这一行
     const cpRef = computed(() => (s.value.factory ? curProcPrice(s.value.factory, s.value.code, '包工包料') : null))
-    const costGroups = computed(() => ['面料', '辅料'].map((g) => ({ g, rows: k.value.rows.filter((x) => x.kind === g), sum: g === '面料' ? k.value.fabric : k.value.trim, dev: dk.value && (g === '面料' ? dk.value.fabric : dk.value.trim) })))
+    const costGroups = computed(() => ['面料', '辅料'].map((g) => ({ g, rows: k.value.rows.filter((x) => x.kind === g), sum: g === '面料' ? k.value.fabric : k.value.trim })))
     const ratio = computed(() => (s.value.tagPrice && k.value.total ? rnd(s.value.tagPrice / k.value.total, 2) : null))
-    const devDiff = computed(() => { if (!dk.value) return ''; const d = rnd(k.value.total - dk.value.total, 2); return d === 0 ? '和研发估一样' : (d > 0 ? '比研发估高 ' : '比研发估低 ') + fm(Math.abs(d)) })
     const addCost = () => tp.value.costs.push({ name: '', amt: null, note: '' })
     const setAmt = (c, v) => { c.amt = v === '' ? null : +v }
     const rowThumb = (r) => r.sku || Object.values(r.map || {})[0] || r.mat
-    return { s, tps, key, tp, edit, stage, view, tabs, pair, bomView, byColor, open, adding, editing, exporting, sizes, verText, useText, revise, publish, create, toProd, dropDraft, matSkus, supsFor, setPrice,
+    return { s, tps, key, tp, edit, view, tabs, bomView, byColor, open, adding, editing, exporting, sizes, verText, useText, revise, publish, create, dropDraft, matSkus, supsFor, setPrice,
       hl, hover, cur, drag, dragStart, dragOver, dropAt, addOp, sp, base, fcm, setVal, setNum, setPt, addSpec, moveSpec, grade, specLetter, OP_CATS,
-      k, devTp, dk, devRowText, devOther, cpRef, costGroups, ratio, devDiff, addCost, setAmt, rowThumb, CRAFT_SECS, PACK_WAYS }
+      k, cpRef, costGroups, ratio, addCost, setAmt, rowThumb, CRAFT_SECS, PACK_WAYS }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">还没有资料包：生产 BOM 生效后才能下订单
-      <p style="margin-top:14px;justify-content:center" class="row" data-c="建资料包"><button class="btn pri" @click="create('生产')">建生产 BOM</button><button class="btn" @click="create('研发')">建研发 BOM</button></p></div>
+      <p style="margin-top:14px;justify-content:center" class="row" data-c="建资料包"><button class="btn pri" @click="create">建资料包</button></p></div>
     <template v-else-if="tp">
       <div class="row tp-bar" data-c="资料包版本">
         <Seg v-model="key" :items="tps.map(t => [t.id, verText(t)])"/>
         <span style="flex:1"></span>
         <button v-if="edit" class="btn pri" @click="publish">生效</button>
-        <button v-if="stage === '研发' && tp.status === '已生效'" class="btn pri" title="复制成生产 BOM 草稿，单价按价格档案重新取；之后两边各改各的" @click="toProd">转生产 BOM</button>
         <button v-if="tp.status === '已生效'" class="btn" title="复制出新版本草稿：尺寸、物料、工艺、其他费用一起带过去" @click="revise">修订</button>
         <button class="btn" title="生成工艺单 PDF，发给工厂" @click="exporting = true"><Ico n="download" :s="14"/>导出 PDF</button>
         <button v-if="edit" class="btn ghost danger" @click="dropDraft">删除草稿</button>
       </div>
       <div class="tpmeta" data-c="资料包版本信息">
-        <span class="pill" :class="stage === '研发' ? 'amber' : 'blue'">{{ stage }} BOM</span>
         <St :s="tp.status"/>
-        <span v-if="tp.source">来源：<a @click="key = (tpOf(code, tp.source.ver, '研发') || {}).id || key">研发 V{{ tp.source.ver }}</a></span>
         <span v-if="tp.publishedAt">生效：{{ userName(tp.publishedBy) }} · {{ fd(tp.publishedAt) }}</span>
         <span v-else-if="edit" class="dim">还没生效</span>
         <span class="row g4">排版利用率 <input v-if="edit" class="inp num" style="width:64px;height:26px" type="number" v-model.number="tp.util" placeholder="—"><template v-else>{{ tp.util != null && tp.util !== '' ? tp.util : '—' }}</template>%</span>
@@ -6384,8 +6350,8 @@ comp('TechPack', {
         <Seg v-model="view" :items="tabs"/>
         <span style="flex:1"></span>
         <template v-if="view === 'bom'">
-          <Seg v-model="bomView" :items="[['list', 'BOM'], ['color', '按颜色'], ...(pair ? [['cmp', '研发 vs 生产']] : [])]"/>
-          <button v-if="edit && bomView !== 'cmp'" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
+          <Seg v-model="bomView" :items="[['list', 'BOM'], ['color', '按颜色']]"/>
+          <button v-if="edit" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
         </template>
         <template v-if="view === 'spec' && edit">
           <button class="btn" title="填了基码尺寸和档差的行，把其他码算出来" @click="grade">按档差生成</button>
@@ -6394,19 +6360,16 @@ comp('TechPack', {
       </div>
 
       <template v-if="view === 'bom'">
-        <div v-if="bomView !== 'cmp' && cur" class="bomtop" data-c="BOM 图">
+        <div v-if="cur" class="bomtop" data-c="BOM 图">
           <BomFigure :code="s.code" :color="byColor" :rows="tp.bom" :hl="cur.i" @hover="hover"/>
           <div class="matcard">
             <div class="row g4"><button v-for="c in s.colors" :key="c" class="gthumb" :class="{ on: c === byColor }" :title="colorName(c)" @click="byColor = c"><Thumb :code="s.code" :color="c" :s="34"/></button><span class="mut" style="margin-left:6px">{{ colorName(byColor) }}</span></div>
             <div class="row" style="gap:14px;align-items:flex-start"><Thumb :code="cur.sku || cur.r.mat" :s="96"/>
               <div class="col" style="gap:4px;min-width:0"><b style="font-size:15px">{{ cur.i + 1 }} · {{ cur.r.part }}</b><span>{{ cur.sku ? skuName(cur.sku) : mat(cur.r.mat).name }}</span><span v-if="!cur.sku" class="flag red">{{ colorName(byColor) }}还没配料</span><span v-else class="code dim">{{ cur.sku }}</span></div></div>
             <dl class="props"><dt>用量</dt><dd>{{ useText(cur.r) }} {{ mat(cur.r.mat).unit }} · 损耗 {{ cur.r.loss }}%</dd><dt>来源</dt><dd :class="{ amber: cur.r.src === '客供' }">{{ cur.r.src }}</dd>
-              <dt>供应商</dt><dd>{{ supName(cur.r.supplier || mat(cur.r.mat).supplier) }}</dd><dt>参考单价</dt><dd>{{ fm(cur.r.price ?? rowRefPrice(cur.r, stage)) }}/{{ mat(cur.r.mat).purUnit }}</dd><template v-if="cur.r.note"><dt>备注</dt><dd>{{ cur.r.note }}</dd></template></dl>
+              <dt>供应商</dt><dd>{{ supName(cur.r.supplier || mat(cur.r.mat).supplier) }}</dd><dt>参考单价</dt><dd>{{ fm(cur.r.price ?? rowRefPrice(cur.r)) }}/{{ mat(cur.r.mat).purUnit }}</dd><template v-if="cur.r.note"><dt>备注</dt><dd>{{ cur.r.note }}</dd></template></dl>
           </div>
         </div>
-
-        <div v-if="bomView === 'cmp' && pair" class="sec" style="margin-top:0;padding-top:0;border-top:none" data-c="研发 vs 生产对比"><h3>研发 V{{ pair.dev.ver }} vs 生产 V{{ pair.prod.ver }}</h3>
-          <TpCompare :dev="pair.dev" :prod="pair.prod"/></div>
 
         <div v-if="bomView === 'list'" data-c="资料包：物料清单">
           <table class="tbl inset flat">
@@ -6421,10 +6384,10 @@ comp('TechPack', {
                     <span v-else class="row g4"><span class="dim">随款色</span><template v-for="c in s.colors" :key="c"><Sw v-if="r.map[c]" :c="skuOf(r.map[c])?.color" :n="false"/><span v-else class="flag red">缺</span></template></span></td>
                   <td class="num">{{ useText(r) }} <span class="dim">{{ mat(r.mat).unit }}</span></td>
                   <td class="num">{{ r.loss }}%</td>
-                  <td><span :class="{ amber: r.src === '客供', dim: r.src === '工厂自备' }">{{ r.src }}</span></td>
-                  <td>{{ r.src === '工厂自备' ? '—' : supName(r.supplier || mat(r.mat).supplier) }}</td>
-                  <td class="num">{{ fm(r.price ?? rowRefPrice(r, stage)) }}<span class="dim">/{{ mat(r.mat).purUnit }}</span><span v-if="r.price != null" class="dim" :title="stage === '研发' ? '手填的估价' : '这一行改过单价'">*</span></td>
-                  <td class="num">{{ r.src === '我方采购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup), stage)) : '—' }}</td>
+                  <td><span :class="{ amber: r.src === '客供', dim: r.src === '厂购' }">{{ r.src }}</span></td>
+                  <td>{{ r.src === '厂购' ? '—' : supName(r.supplier || mat(r.mat).supplier) }}</td>
+                  <td class="num">{{ fm(r.price ?? rowRefPrice(r)) }}<span class="dim">/{{ mat(r.mat).purUnit }}</span><span v-if="r.price != null" class="dim" title="这一行改过单价">*</span></td>
+                  <td class="num">{{ r.src === '自购' ? fm(rowCost(r, sizes, baseSizeOf(s.sizeGroup))) : '—' }}</td>
                   <td v-if="edit" class="num"><span class="row g4" style="justify-content:flex-end"><button class="btn ghost sm" @click.stop="editing = r">改</button><button class="btn ghost icon sm" title="删除这一行" @click.stop="tp.bom.splice(i, 1); open = null"><Ico n="trash" :s="13"/></button></span></td>
                 </tr>
                 <tr v-if="open === i"><td :colspan="edit ? 2 : 1"></td><td :colspan="edit ? 10 : 9" style="padding:10px 0 14px;white-space:normal">
@@ -6440,7 +6403,7 @@ comp('TechPack', {
                       <label class="f">损耗 %<input class="inp num" v-model.number="r.loss"></label>
                       <label class="f">来源<Pick class="sel" v-model="r.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></Pick></label>
                       <label class="f">供应商<Pick class="sel" v-model="r.supplier"><option value="">按物料默认</option><option v-for="x in supsFor(r)" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
-                      <label class="f">{{ stage === '研发' ? '估价' : '参考单价' }}（元/{{ mat(r.mat).purUnit }}）<input class="inp num" type="number" :value="r.price ?? ''" :placeholder="rowRefPrice(r, stage)" @change="setPrice(r, $event.target.value)"></label>
+                      <label class="f">参考单价（元/{{ mat(r.mat).purUnit }}）<input class="inp num" type="number" :value="r.price ?? ''" :placeholder="rowRefPrice(r)" @change="setPrice(r, $event.target.value)"></label>
                       <label class="f">备注<input class="inp" v-model="r.note"></label>
                     </div>
                     <div v-else-if="r.note" class="mut">备注：{{ r.note }}</div>
@@ -6549,16 +6512,16 @@ comp('TechPack', {
         <div v-if="!canSeeCost()" class="empty">核价要有看成本的权限：找管理员在 设置 › 角色权限 里开「成本（核价）」</div>
         <template v-else>
           <div class="cost-top" data-c="核价：单件成本">
-            <div class="cost-k"><small>单件成本（{{ k.base }} 码）</small><b>{{ fm(k.total) }}</b><small v-if="dk" :class="k.total > dk.total ? 'red' : k.total < dk.total ? 'green' : ''">{{ devDiff }}</small></div>
+            <div class="cost-k"><small>单件成本（{{ k.base }} 码）</small><b>{{ fm(k.total) }}</b></div>
             <div class="cost-k"><small>吊牌价</small><b>{{ fm(s.tagPrice) }}</b></div>
             <div class="cost-k"><small>倍率（吊牌价 ÷ 单件成本）</small><b>{{ ratio == null ? '—' : ratio }}</b></div>
             <a class="cost-more" :href="'#/costing/' + s.code" title="待定模块，甲方确认后再做">询价比价、订单毛利（待定）<Ico n="right" :s="13"/></a>
           </div>
           <table class="tbl inset flat cost-tbl" data-c="核价：明细">
-            <thead><tr><th>部位 / 项目</th><th>物料</th><th>来源</th><th class="num">用量（{{ k.base }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件成本</th><th v-if="dk" class="num">研发估 V{{ devTp.ver }}</th></tr></thead>
+            <thead><tr><th>部位 / 项目</th><th>物料</th><th>来源</th><th class="num">用量（{{ k.base }} 码）</th><th class="num">损耗</th><th class="num">单价</th><th class="num">单件成本</th></tr></thead>
             <tbody>
               <template v-for="g in costGroups" :key="g.g">
-                <tr class="cg"><td colspan="6">{{ g.g }}</td><td class="num">{{ fm(g.sum) }}</td><td v-if="dk" class="num">{{ fm(g.dev) }}</td></tr>
+                <tr class="cg"><td colspan="6">{{ g.g }}</td><td class="num">{{ fm(g.sum) }}</td></tr>
                 <tr v-for="x in g.rows" :key="x.i" :class="{ off: !x.counted }">
                   <td>{{ x.r.part }}</td>
                   <td><span class="row"><Thumb :code="rowThumb(x.r)" :s="24"/>{{ mat(x.r.mat).name }}</span></td>
@@ -6566,15 +6529,14 @@ comp('TechPack', {
                   <td class="num">{{ fq(x.use) }} <span class="dim">{{ mat(x.r.mat).unit }}</span></td>
                   <td class="num">{{ x.r.loss }}%</td>
                   <td class="num">{{ fm(x.price) }}<span class="dim">/{{ mat(x.r.mat).purUnit }}</span></td>
-                  <td class="num"><template v-if="x.counted">{{ fm(x.cost) }}</template><span v-else class="dim">{{ x.r.src === '工厂自备' ? '含在加工价里' : '客户出' }}</span></td>
-                  <td v-if="dk" class="num dim">{{ devRowText(x) }}</td>
+                  <td class="num"><template v-if="x.counted">{{ fm(x.cost) }}</template><span v-else class="dim">{{ x.r.src === '厂购' ? '含在加工价里' : '客户出' }}</span></td>
                 </tr>
-                <tr v-if="!g.rows.length"><td :colspan="dk ? 8 : 7" class="dim">物料清单里没有{{ g.g }}</td></tr>
+                <tr v-if="!g.rows.length"><td colspan="7" class="dim">物料清单里没有{{ g.g }}</td></tr>
               </template>
-              <tr class="cg"><td colspan="6">加工费</td><td class="num">{{ fm(k.labor) }}</td><td v-if="dk" class="num">{{ fm(dk.labor) }}</td></tr>
-              <tr><td>工序工价合计</td><td colspan="5"><a @click="view = 'craft'">工艺指示 › 工序工价，{{ tp.ops.length }} 道工序</a></td><td class="num">{{ fm(k.labor) }}</td><td v-if="dk" class="num dim">{{ fm(dk.labor) }}</td></tr>
-              <tr v-if="cpRef != null" data-c="核价：成品采购参考价"><td>成品采购参考价</td><td colspan="5" class="mut">价格档案 · {{ supName(s.factory) }} 包工包料现价，含料；只作参考，不计入单件成本</td><td class="num mut">{{ fm(cpRef) }}</td><td v-if="dk"></td></tr>
-              <tr class="cg"><td colspan="6"><span class="row" style="gap:10px">其他费用<button v-if="edit" class="btn sm" @click="addCost"><Ico n="plus" :s="12"/>加一项</button></span></td><td class="num">{{ fm(k.other) }}</td><td v-if="dk" class="num">{{ fm(dk.other) }}</td></tr>
+              <tr class="cg"><td colspan="6">加工费</td><td class="num">{{ fm(k.labor) }}</td></tr>
+              <tr><td>工序工价合计</td><td colspan="5"><a @click="view = 'craft'">工艺指示 › 工序工价，{{ tp.ops.length }} 道工序</a></td><td class="num">{{ fm(k.labor) }}</td></tr>
+              <tr v-if="cpRef != null" data-c="核价：成品采购参考价"><td>成品采购参考价</td><td colspan="5" class="mut">价格档案 · {{ supName(s.factory) }} 包工包料现价，含料；只作参考，不计入单件成本</td><td class="num mut">{{ fm(cpRef) }}</td></tr>
+              <tr class="cg"><td colspan="6"><span class="row" style="gap:10px">其他费用<button v-if="edit" class="btn sm" @click="addCost"><Ico n="plus" :s="12"/>加一项</button></span></td><td class="num">{{ fm(k.other) }}</td></tr>
               <tr v-for="(c, i) in tp.costs" :key="'c' + i">
                 <template v-if="edit">
                   <td><input class="inp cell" style="width:140px" v-model="c.name" placeholder="如：印绣花、运费"></td>
@@ -6582,11 +6544,10 @@ comp('TechPack', {
                   <td class="num"><input class="inp cell num" style="width:80px" type="number" :value="c.amt ?? ''" placeholder="元/件" @change="setAmt(c, $event.target.value)"></td>
                 </template>
                 <template v-else><td>{{ c.name || '—' }}</td><td colspan="5" class="mut">{{ c.note || '' }}</td><td class="num">{{ fm(c.amt) }}</td></template>
-                <td v-if="dk" class="num dim">{{ devOther(c) }}</td>
               </tr>
-              <tr v-if="!tp.costs.length"><td :colspan="dk ? 8 : 7" class="dim">{{ edit ? '印绣花外加工、运费、包装这类按件摊的钱，点「加一项」' : '没有其他费用' }}</td></tr>
+              <tr v-if="!tp.costs.length"><td colspan="7" class="dim">{{ edit ? '印绣花外加工、运费、包装这类按件摊的钱，点「加一项」' : '没有其他费用' }}</td></tr>
             </tbody>
-            <tfoot><tr><td colspan="6">单件成本 = 面料 + 辅料 + 加工费 + 其他费用</td><td class="num">{{ fm(k.total) }}</td><td v-if="dk" class="num">{{ fm(dk.total) }}</td></tr></tfoot>
+            <tfoot><tr><td colspan="6">单件成本 = 面料 + 辅料 + 加工费 + 其他费用</td><td class="num">{{ fm(k.total) }}</td></tr></tfoot>
           </table>
         </template>
       </div>
@@ -6606,7 +6567,7 @@ comp('BomRowForm', {
   setup(p, { emit }) {
     const s = style(p.tp.style)
     const sizes = sizesOf(s.sizeGroup)
-    const f = reactive({ part: '大身', mat: '', mode: '随款色', sku: '', map: {}, um: '统一', use: 1, uses: {}, loss: 0, src: '我方采购', supplier: '', price: null, note: '', ...(p.row ? JSON.parse(JSON.stringify(p.row)) : {}) })
+    const f = reactive({ part: '大身', mat: '', mode: '随款色', sku: '', map: {}, um: '统一', use: 1, uses: {}, loss: 0, src: '自购', supplier: '', price: null, note: '', ...(p.row ? JSON.parse(JSON.stringify(p.row)) : {}) })
     f.uses = Object.fromEntries(sizes.map((z) => [z, f.uses?.[z] ?? null]))
     if (!f.map) f.map = {}
     const mats = computed(() => db.materials.filter((x) => x.status === '启用' || x.code === f.mat))
@@ -6652,7 +6613,7 @@ comp('BomRowForm', {
       <label class="f">损耗 %<input class="inp num" type="number" v-model.number="f.loss"></label>
       <label class="f">物料来源<Pick class="sel" v-model="f.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></Pick></label>
       <label class="f">供应商<Pick class="sel" v-model="f.supplier"><option value="">按物料默认</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
-      <label class="f">{{ tpStage(tp) === '研发' ? '估价' : '参考单价' }}（元/{{ m?.purUnit }}）<input class="inp num" type="number" v-model.number="f.price" :placeholder="m ? '带出 ' + rowRefPrice(f, tpStage(tp)) : ''"></label>
+      <label class="f">参考单价（元/{{ m?.purUnit }}）<input class="inp num" type="number" v-model.number="f.price" :placeholder="m ? '带出 ' + rowRefPrice(f) : ''"></label>
       <label class="f full">备注<input class="inp" v-model="f.note" placeholder="如：注意对格"></label>
     </div>
     <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="save">{{ row ? '保存' : '加上' }}</button></template>
@@ -6679,7 +6640,7 @@ comp('TpPrintBody', {
     const files = computed(() => (p.appendix ? db.craftStd.files : []))
     const fileTitle = (f) => f.name.replace(/\.[^.]+$/, '')
     const cellNum = (v) => (numSet(v) ? rnd(+v, 1) : '')
-    const notCounted = (x) => (x.r.src === '工厂自备' ? '含在加工价里' : '客户出')
+    const notCounted = (x) => (x.r.src === '厂购' ? '含在加工价里' : '客户出')
     return { s, sizes, cs, k, title, fabrics, craft, secs, files, fileTitle, cellNum, notCounted, isImg, PACK_WAYS }
   },
   template: `<div class="tps" data-c="工艺单内容">
@@ -6689,7 +6650,7 @@ comp('TpPrintBody', {
         <table class="sheet-tbl tps-meta"><tbody>
           <tr><th>样衣编号</th><td class="code">{{ s.sample || '—' }}</td><th>款式编码</th><td class="code">{{ s.code }}</td></tr>
           <tr><th>款式名称</th><td>{{ s.name }}</td><th>花名</th><td>{{ s.alias || '—' }}</td></tr>
-          <tr><th>日期</th><td>{{ tp.publishedAt || clock.today }}</td><th>资料包</th><td>{{ tpStage(tp) }} V{{ tp.ver }}{{ tp.status === '已生效' ? '' : '（' + tp.status + '）' }}</td></tr>
+          <tr><th>日期</th><td>{{ tp.publishedAt || clock.today }}</td><th>资料包</th><td>V{{ tp.ver }}{{ tp.status === '已生效' ? '' : '（' + tp.status + '）' }}</td></tr>
           <tr><th>颜色</th><td>{{ cs.map(c => colorName(c)).join('、') }}</td><th>尺码</th><td>{{ sizes.join(' / ') }}</td></tr>
           <tr><th>品名</th><td>{{ s.product || catOf(s.cat).name }}</td><th>排版利用率</th><td>{{ tp.util ? tp.util + '%' : '—' }}</td></tr>
           <tr><th>成分</th><td colspan="3">{{ s.comp || '—' }}</td></tr>
@@ -7141,7 +7102,7 @@ comp('OrderSchedule', {
     <div v-for="(b, i) in blocks" :key="i" class="sec" :style="i ? '' : 'margin-top:0'" data-c="排单块">
       <h3><Thumb :code="b.style" :s="24"/><span class="code">{{ b.style }}</span>{{ styleName(b.style) }}<span class="acts"><button class="btn ghost sm" @click="more(b.style)"><Ico n="plus" :s="12"/>再加一个工厂</button><button v-if="blocks.filter(x => x.style === b.style).length > 1" class="btn ghost icon sm" @click="blocks.splice(i, 1)"><Ico n="x" :s="12"/></button></span></h3>
       <div class="row" style="margin-bottom:10px" data-c="生成哪种单"><Seg :model-value="prodKind(b)" @update:model-value="k => setKind(b, k)" :items="KIND_SEG"/>
-        <small class="dim">{{ prodKind(b) === '成品采购单' ? '工厂自己买料，交成衣，单价含料；只发我方采购的料（如主唛、吊牌）' : '我方出料发给工厂，单价是加工费' }}</small></div>
+        <small class="dim">{{ prodKind(b) === '成品采购单' ? '工厂自己买料，交成衣，单价含料；只发自购的料（如主唛、吊牌）' : '我方出料发给工厂，单价是加工费' }}</small></div>
       <div class="form" style="grid-template-columns:2fr 1fr 1fr 1.3fr;margin-bottom:10px">
         <label class="f">加工厂<Pick class="sel" v-model="b.factory" @change="reprice(b)"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
         <label class="f">加工方式<Pick class="sel" v-model="b.mode" @change="reprice(b)" :disabled="prodKindOf(b).modes.length < 2"><option v-for="x in prodKindOf(b).modes" :key="x">{{ x }}</option></Pick></label>
@@ -7335,7 +7296,7 @@ function redoMrp(m) {
   if (m.status !== '已关闭') move('mrp', m, '关闭', '重新算料')
   const n = createMrp(m.orders)
   const old = new Map(m.rows.map((r) => [mrpKey(r), r]))
-  for (const r of n.rows) { const o = old.get(mrpKey(r)); if (o?.converted && r.src === '我方采购') { r.converted = o.converted; r.purQty = Math.max(r.purQty, o.converted) } }
+  for (const r of n.rows) { const o = old.get(mrpKey(r)); if (o?.converted && r.src === '自购') { r.converted = o.converted; r.purQty = Math.max(r.purQty, o.converted) } }
   const gone = m.rows.filter((r) => !n.rows.some((x) => mrpKey(x) === mrpKey(r)))
   n.prev = { no: m.no, rows: [...n.rows.map((r) => ({ r, from: old.get(mrpKey(r))?.need || 0, to: r.need })), ...gone.map((r) => ({ r, from: r.need, to: 0 }))]
     .map(({ r, from, to }) => ({ src: r.src, sku: r.sku, owner: r.owner, from, to, d: rnd(to - from, 3) })) }
@@ -7353,7 +7314,7 @@ route('/mrp', {
     const stylesOf = (m) => [...new Set(m.orders.flatMap((o) => orderStyles(order(o))))]
     const makers = computed(() => [...new Set(db.mrps.map(creatorOf).filter(Boolean))])
     const rows = computed(() => scoped.value.filter((m) => (s.tab === '全部' || m.status === s.tab) && (!s.by || creatorOf(m) === s.by) && passFlt(s.flt, { date: m.date }) && matchQ(s.q, m.no, ...m.orders, ...stylesOf(m))).slice().reverse())
-    const buyRows = (m) => m.rows.filter((r) => r.src === '我方采购' && r.purQty > 0)
+    const buyRows = (m) => m.rows.filter((r) => r.src === '自购' && r.purQty > 0)
     const reserveText = computed(() => Object.entries(db.reserve).filter(([, v]) => v > 0).map(([t, v]) => t + ' ' + v + '%').join('、'))
     return { s, tabs, rows, buyRows, stylesOf, makers, reserveText }
   },
@@ -7421,7 +7382,7 @@ route('/mrp/:no', {
   setup(p) {
     const m = computed(() => mrp(p.no))
     const rowsOf = (src) => (m.value ? m.value.rows.filter((r) => r.src === src) : [])
-    const buy = computed(() => rowsOf('我方采购'))
+    const buy = computed(() => rowsOf('自购'))
     const picked = reactive(buy.value.filter((r) => r.purQty > r.converted).map(mrpKey))
     const toggle = (r) => { const k = picked.indexOf(mrpKey(r)); k >= 0 ? picked.splice(k, 1) : picked.push(mrpKey(r)) }
     const open = computed(() => m.value.status !== '已关闭')
@@ -7444,7 +7405,7 @@ route('/mrp/:no', {
       if (n?.no) { go('/mrp/' + n.no); toast(n.prev.rows.some((x) => x.d) ? `重新算好了，有 ${n.prev.rows.filter((x) => x.d).length} 种料变了` : '重新算好了，需求没变') }
     }
     async function close() { if (await ask('关闭 ' + m.value.no, '关闭后不能再生成采购单，"本次使用库存"的占用释放给别的算料单。', '关闭')) docAct('mrp', m.value, '关闭') }
-    async function delRow(r) { if (await ask('删掉这一行', `${skuName(r.sku)} 不再算进这张单（比如这种料改由工厂自备）。删了要重新算料才回得来。`, '删除', true)) run(() => removeMrpRow(m.value, r)) }
+    async function delRow(r) { if (await ask('删掉这一行', `${skuName(r.sku)} 不再算进这张单（比如这种料改由厂购）。删了要重新算料才回得来。`, '删除', true)) run(() => removeMrpRow(m.value, r)) }
     const more = computed(() => [{ t: '重新算料', fn: redo }, open.value && { t: '关闭', fn: close }].filter(Boolean))
     return { m, rowsOf, buy, picked, toggle, open, edit, left, suppliersFor, confirmer, changed, short, tr, tot, toPo, more, delRow, updateMrpRow, mrpKey, mrpRecv }
   },
@@ -7472,7 +7433,7 @@ route('/mrp/:no', {
           <template #d="{ r }"><b :class="r.d > 0 ? 'red' : 'green'">{{ r.d > 0 ? '+' : '' }}{{ fq(r.d) }}</b></template></Tbl>
         <p v-else class="dim">每种料的需求都没变。</p>
       </div>
-      <div class="sec" data-c="我方采购"><h3>我方采购<span class="acts dim" style="font-size:12px">预计金额 {{ fm(tot.amt) }}　已转采购 {{ fm(tot.conv) }}</span></h3>
+      <div class="sec" data-c="自购"><h3>自购<span class="acts dim" style="font-size:12px">预计金额 {{ fm(tot.amt) }}　已转采购 {{ fm(tot.conv) }}</span></h3>
         <div style="overflow-x:auto"><table class="tbl inset flat mrp-buy">
           <thead><tr><th style="width:28px"></th><th>物料</th><th>供应商</th><th class="num" title="未含损耗的订单数量×单位用量">基础量</th><th class="num">需求</th><th class="num">可用库存</th><th class="num">本次用库存</th><th class="num" title="交期赶得上要料日期的在途，去掉别的算料单占着的">可用在途</th><th class="num">本次用在途</th><th class="num" title="预计到货晚于要料日期，不扣">赶不上的在途</th><th class="num">净需求</th><th class="num">建议采购</th><th class="num">参考单价</th><th class="num">预计金额</th><th class="num">已转采购</th><th class="num">已入库</th><th v-if="edit" style="width:32px"></th></tr></thead>
           <tbody>
@@ -7502,7 +7463,7 @@ route('/mrp/:no', {
               <div v-if="r.transitLate?.length" class="amber" style="font-size:12.5px;margin-top:4px">赶不上的在途（要料日期 {{ fd(m.needDate) }}，不扣）：<span v-for="u in r.transitLate" :key="u.po + u.i" style="margin-right:14px"><a class="code" :href="'#/purchases/' + u.po">{{ u.po }}</a> 预计 {{ fd(u.date) }} 到 · {{ fq(u.free) }} {{ unitOf(r.sku) }}</span></div>
             </td></tr>
             </template>
-            <tr v-if="!buy.length"><td :colspan="edit ? 17 : 16" class="empty">资料包里没有我方采购的料</td></tr>
+            <tr v-if="!buy.length"><td :colspan="edit ? 17 : 16" class="empty">资料包里没有自购的料</td></tr>
           </tbody>
         </table></div>
       </div>
@@ -7510,8 +7471,8 @@ route('/mrp/:no', {
         <Tbl inset flat :rows="rowsOf('客供')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'owner', t: '客户', f: r => custName(r.owner) }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'avail', t: '客供库存', c: 'num', f: r => fq(r.avail) }, { k: 'gap', t: '缺口', c: 'num' }, { k: 'del', t: '' }]">
           <template #gap="{ r }"><span :class="{ red: r.net > 0 }">{{ r.net > 0 ? fq(r.net) : '够了' }}</span></template>
           <template #del="{ r }"><button v-if="edit" class="btn ghost icon sm" title="删掉这一行" @click="delRow(r)"><Ico n="x" :s="12"/></button></template></Tbl></div>
-      <div class="sec" data-c="工厂自备" v-if="rowsOf('工厂自备').length"><h3>工厂自备</h3>
-        <Tbl inset flat :rows="rowsOf('工厂自备')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
+      <div class="sec" data-c="厂购" v-if="rowsOf('厂购').length"><h3>厂购</h3>
+        <Tbl inset flat :rows="rowsOf('厂购')" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, { k: 'need', t: '需求', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'styles', t: '款式', c: 'code', f: r => r.styles.join(' ') }]"/></div>
       <div class="sec"><DocFiles :doc="m"/></div>
       <div class="sec"><h3>操作记录</h3><Log :items="m.log"/></div>
     </div>
@@ -7542,7 +7503,7 @@ function updatePurchase(p, f) {
   if (!ch.length) fail('没有改动')
   act(p, '改：' + ch.join('；'))
 }
-const mrpRowOf = (l) => mrp(l.src.mrp)?.rows.find((x) => x.src === '我方采购' && x.sku === l.sku && x.owner === (l.owner || '自有'))
+const mrpRowOf = (l) => mrp(l.src.mrp)?.rows.find((x) => x.src === '自购' && x.sku === l.sku && x.owner === (l.owner || '自有'))
 function shiftMrp(lines, k, why) {
   for (const l of lines.filter((x) => x.src?.mrp)) {
     const r = mrpRowOf(l)
@@ -8547,7 +8508,7 @@ const PROD_DETAIL = {
       if (run(() => removeDraft(db.productions, x.value))) { go(prodKindOf(x.value).to); toast('删掉了') }
     }
     // 退料入库：工厂仓 → 物料仓，源单挂这张生产单，明细带出领过的料
-    // 成品采购单只领我方采购的料（主唛、吊牌这类）；资料包里没有就不出「领料」按钮
+    // 成品采购单只领自购的料（主唛、吊牌这类）；资料包里没有就不出「领料」按钮
     const canIssue = computed(() => prodKind(x.value) === '外发加工单' || issuePlan(x.value).length > 0)
     const backInit = computed(() => ({ src: x.value.no, partner: x.value.factory, from: factoryWh(x.value.factory)?.code, to: db.warehouses.find((w) => w.type === '物料仓' && w.status !== '停用')?.code,
       lines: issuePlan(x.value).filter((r) => r.issued > 0).map((r) => ({ sku: r.sku, owner: r.owner, qty: null, price: null, lot: '', rolls: null, note: '' })) }))
@@ -8601,7 +8562,7 @@ const PROD_DETAIL = {
         </section>
         <section v-if="tab === 'lines'" data-c="加工明细"><Matrix :st="x.style" :model-value="qtyMap" ro :colors="colors" :sub="sub"/></section>
         <section v-if="tab === 'mat'" data-c="领料">
-          <Tbl inset flat :rows="issuePlan(x)" :empty="prodKind(x) === '成品采购单' ? '成品采购单的料工厂自己买；资料包里没有标「我方采购」的料（如主唛、吊牌），不用领料' : '资料包里没有要发给工厂的料'" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
+          <Tbl inset flat :rows="issuePlan(x)" :empty="prodKind(x) === '成品采购单' ? '成品采购单的料工厂自己买；资料包里没有标「自购」的料（如主唛、吊牌），不用领料' : '资料包里没有要发给工厂的料'" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
             { k: 'need', t: '应领', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'issued', t: '已领', c: 'num', f: r => fq(r.issued) }, { k: 'suggest', t: '还差', c: 'num' }, { k: 'avail', t: '物料仓库存', c: 'num', f: r => fq(r.avail) }]">
             <template #suggest="{ r }"><span :class="{ amber: r.suggest > 0 }">{{ r.suggest > 0 ? fq(r.suggest) : '领齐' }}</span></template></Tbl>
           <div class="sec"><h3>领料出库、退料入库单</h3><Tbl inset flat :rows="docs" link @row="d => go(stockNoLink(d.no))" empty="还没领过料" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'flow', t: '出仓 → 入仓', f: d => whName(d.from) + ' → ' + whName(d.to) }, { k: 'n', t: '物料', f: d => d.lines.length + ' 种' }, { k: 'status', t: '状态' }]"><template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
@@ -8802,7 +8763,7 @@ comp('ProdIssueMat', {
       <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td v-if="TRADE" :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
         <td class="num">{{ fq(r.need) }}</td><td class="num">{{ fq(r.issued) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: have(r) < r.qty }">{{ fq(have(r)) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
-        <tr v-if="!rows.length"><td :colspan="TRADE ? 7 : 6" class="empty">{{ prodKind(p) === '成品采购单' ? '资料包里没有标「我方采购」的料，成品采购单不用领料' : '资料包里没有要发给工厂的料' }}</td></tr></tbody></table>
+        <tr v-if="!rows.length"><td :colspan="TRADE ? 7 : 6" class="empty">{{ prodKind(p) === '成品采购单' ? '资料包里没有标「自购」的料，成品采购单不用领料' : '资料包里没有要发给工厂的料' }}</td></tr></tbody></table>
     <label v-if="over" class="f" style="margin-top:12px">超领原因<input class="inp" v-model="f.reason" placeholder="比如：裁剪损耗大，补 5 米"></label>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">领料并过账</button></template>
   </Modal>`,
@@ -8975,7 +8936,7 @@ expose({ reportNode, issueMaterials, closeIssue, factoryWh, daysLeft2: (a, b) =>
 </script>
 <script>/* 5e-price.js */
 /* ============================================================
- * 价格档案（PRD §6.10，05.06 甲方 11-11 提前到一期）、研发 / 生产 BOM 对比（§6.4.1）、补货提醒（§6.6.7）
+ * 价格档案（PRD §6.10，05.06 甲方 11-11 提前到一期）、资料包定的 vs 实际花的（款式详情「价格」）、补货提醒（§6.6.7）
  * 物料价：供应商 × 物料（SKU 选填：不填 = 所有颜色同价）；加工价：工厂 × 款式 × 加工方式
  * 只增不改：调价加一条，录错了作废。下单默认取现价；采购单、生产单审核时，和现价不一样的价自动记进来
  * ============================================================ */
@@ -9088,27 +9049,21 @@ RULES.production.审核 = (p) => {
 APPROVE.purchase.check = (p) => checkPoPrices(p.supplier, p.date, p.lines)
 APPROVE.production.check = checkProdPrice
 
-/* ---------- 研发 BOM → 生产 BOM ---------- */
-// 样衣转大货（PRD §6.3.3）：样衣的研发 BOM 挂到新款上（研发 V1，已生效），再复制成生产 BOM V1 草稿
-function carryDevTp(styleCode, d) {
-  const c = JSON.parse(JSON.stringify(d))
-  const dev = createTechpack(styleCode, c.bom, c.ops, c.note || '', null, '研发')
-  Object.assign(dev, { util: c.util ?? null, status: '已生效', publishedAt: clock.today, publishedBy: db.me })
-  act(dev, '由样衣的研发 BOM 带过来')
-  return toProdTp(dev)
-}
-// 研发 vs 生产（以后核价拿来比"研发估的 vs 生产定的 vs 实际花的"）：按部位 + 物料对行，比基码用量、单价、单件成本
-function tpCompare(dev, prod) {
-  const g = style(prod.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g)
-  const key = (r) => r.part + '|' + r.mat
-  const side = (r, st) => r && { r, use: rnd(rowMidUse(r, sizes, base), 3), loss: r.loss, price: r.price ?? rowRefPrice(r, st), cost: r.src === '我方采购' ? rowCost(r, sizes, base, st) : 0, src: r.src }
-  const rows = [...new Set([...dev.bom, ...prod.bom].map(key))].map((k) => {
-    const x = side(dev.bom.find((r) => key(r) === k), '研发'), y = side(prod.bom.find((r) => key(r) === k), '生产')
-    return { part: (x || y).r.part, mat: (x || y).r.mat, dev: x, prod: y, dUse: x && y ? rnd(y.use - x.use, 3) : null, dPrice: x && y ? rnd(y.price - x.price, 4) : null, dCost: rnd((y?.cost || 0) - (x?.cost || 0), 2) }
+/* ---------- 资料包定的 vs 实际花的 ---------- */
+// 研发不填物料清单（甲方 11-18 答 Q24），没有"研发估的"可比：资料包（生产 BOM）每行按基码用量算的单件成本，
+// 对最近一次采购成交价按同样用量算的单件；加工对最近一张外发加工单的加工单价
+function tpActual(tp) {
+  const g = style(tp.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g)
+  const rows = tp.bom.map((r) => {
+    const use = rnd(rowMidUse(r, sizes, base), 3), own = r.src === '自购', cost = own ? rowCost(r, sizes, base) : 0
+    const b = own ? lastBuyOf(r) : null
+    const act = b && { b, price: b.l.price, cost: rnd(use * (1 + r.loss / 100) * b.l.price / mat(r.mat).factor, 2) }
+    return { r, use, price: r.price ?? rowRefPrice(r), cost, act, d: act ? rnd(act.cost - cost, 2) : null }
   })
-  const t = (tp) => ({ mat: tpMaterialCost(tp), labor: tpLabor(tp), all: rnd(tpMaterialCost(tp) + tpLabor(tp), 2) })
-  const a = t(dev), b = t(prod)
-  return { rows, dev: a, prod: b, d: { mat: rnd(b.mat - a.mat, 2), labor: rnd(b.labor - a.labor, 2), all: rnd(b.all - a.all, 2) } }
+  const lastProd = lastProdOf(tp.style), labor = tpLabor(tp), planMat = tpMaterialCost(tp)
+  const actMat = rnd(sum(rows, (x) => (x.act ? x.act.cost : x.cost)), 2), actLabor = lastProd ? lastProd.price : labor
+  const plan = { mat: planMat, labor, all: rnd(planMat + labor, 2) }, act = { mat: actMat, labor: actLabor, all: rnd(actMat + actLabor, 2) }
+  return { rows, lastProd, plan, act, dLabor: rnd(actLabor - labor, 2), dAll: rnd(act.all - plan.all, 2), miss: rows.some((x) => x.r.src === '自购' && !x.act) || !lastProd }
 }
 // 实际花的：最近一张审核过的采购单的成交价；最近一张外发加工单的加工单价
 function lastBuyOf(r) {
@@ -9116,7 +9071,8 @@ function lastBuyOf(r) {
   return db.purchases.filter((p) => !['草稿', '待审核', '已作废'].includes(p.status)).flatMap((p) => p.lines.filter((l) => skus.includes(l.sku)).map((l) => ({ p, l })))
     .sort((a, b) => (a.p.date < b.p.date ? 1 : a.p.date > b.p.date ? -1 : 0))[0] || null
 }
-const lastProdOf = (code) => db.productions.filter((p) => p.style === code && prodKind(p) === '外发加工单' && !['草稿', '待审核', '已作废'].includes(p.status)) // 成品采购单价含料，不和工价比.sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null
+// 成品采购单价含料，不和工价比
+const lastProdOf = (code) => db.productions.filter((p) => p.style === code && prodKind(p) === '外发加工单' && !['草稿', '待审核', '已作废'].includes(p.status)).sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null
 
 /* ---------- 补货提醒（PRD §6.6.7） ---------- */
 // 设了最小库存的物料 SKU：物料仓库存 + 全部在途 − 已被占用 < 最小库存。这里在途不看赶不赶得上开裁：补货看的是会不会断
@@ -9178,26 +9134,15 @@ as('u1', '2026-10-25', () => recordPrice({ kind: '加工价', sup: 'GYS0004', st
     .sort((x, y) => (x.a.at < y.a.at ? -1 : x.a.at > y.a.at ? 1 : 0))
     .forEach(({ d, f, a }) => as(a.who, a.at, () => f(d)))
 }
-// 研发 BOM 例子：26QJ012 先估过价（研发 V1），生产 V1 是从它转来的，用量、单价都改过；新款 FS 的研发 V1 刚估完价，等转生产
-as('u4', '2026-08-25', () => {
-  const dev = createTechpack('26QJ012', [
-    { part: '大身', mat: 'ML0018', mode: '随款色', map: { HE: 'ML0018-HE', KQ: 'ML0018-KQ' }, um: '分码', uses: SZ(1.75, 1.85, 1.95, 2.05, 2.15), loss: 3, src: '我方采购', supplier: 'GYS0001', price: 20.5 },
-    { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-60', um: '统一', use: 1, loss: 1, src: '我方采购', supplier: 'GYS0002', price: 2.4 },
-    { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 5, loss: 2, src: '我方采购', supplier: 'GYS0002', price: 0.38 },
-    ...['BX0001', 'BX0002', 'BP0001', 'BD0001'].map((k, i) => label(k, { part: ['主唛', '洗唛', '吊牌', '包装袋'][i] })),
-  ], [{ cat: '车缝', name: '整件加工（估）', req: '', sec: 3000, price: 40, note: '按工厂口头报价估' }], '打样估价：面料按 20.5 估', null, '研发')
-  publishTp(dev)
-  const prod = tpOf('26QJ012', 1)
-  if (prod) prod.source = { stage: '研发', ver: 1 }
-})
+// 转大货后刚建的资料包：新款 FS 的生产 BOM V1 还是草稿，版师在填
 {
   const fs = db.styles.find((s) => s.big === 'FS' && s.name === '落肩短风衣')
-  if (fs) as('u4', '2026-11-07', () => publishTp(createTechpack(fs.code, [
-    { part: '大身', mat: 'ML0018', mode: '随款色', map: { YM: 'ML0018-YM', HE: 'ML0018-HE' }, um: '分码', uses: SZ(1.9, 2, 2.1, 2.2, 2.3), loss: 3, src: '我方采购', supplier: 'GYS0001', price: 21.5 },
-    { part: '里布', mat: 'ML0015', mode: '随款色', map: { YM: 'ML0015-MB', HE: 'ML0015-HE' }, um: '统一', use: 1.5, loss: 2, src: '我方采购', supplier: 'GYS0001', price: 6.5 },
-    { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 6, loss: 2, src: '我方采购', supplier: 'GYS0002' },
+  if (fs) as('u4', '2026-11-07', () => createTechpack(fs.code, [
+    { part: '大身', mat: 'ML0018', mode: '随款色', map: { YM: 'ML0018-YM', HE: 'ML0018-HE' }, um: '分码', uses: SZ(1.9, 2, 2.1, 2.2, 2.3), loss: 3, src: '自购', supplier: 'GYS0001' },
+    { part: '里布', mat: 'ML0015', mode: '随款色', map: { YM: 'ML0015-MB', HE: 'ML0015-HE' }, um: '统一', use: 1.5, loss: 2, src: '自购', supplier: 'GYS0001' },
+    { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 6, loss: 2, src: '自购', supplier: 'GYS0002' },
     ...['BX0001', 'BX0002', 'BP0001', 'BD0001'].map((k, i) => label(k, { part: ['主唛', '洗唛', '吊牌', '包装袋'][i] })),
-  ], [{ cat: '车缝', name: '整件加工（估）', req: '', sec: 3200, price: 42, note: '' }], '打样估价', null, '研发')))
+  ], [{ cat: '车缝', name: '整件加工', req: '', sec: 3200, price: 42, note: '' }], '', null))
 }
 
 /* ---------- 价格记录：物料、供应商、款式详情里共用。<PriceHistory :sup="供应商" /> 或 :mat / :style ---------- */
@@ -9319,59 +9264,48 @@ comp('PriceForm', {
   </Modal>`,
 })
 
-/* 研发 vs 生产对比：<TpCompare :dev="研发版" :prod="生产版" actual/>（actual：再加一列"实际花的"：最近成交价、最近外发加工单的加工单价） */
-comp('TpCompare', {
-  props: { dev: Object, prod: Object, actual: Boolean },
+/* 资料包定的 vs 实际花的：<TpActual :tp="生产 BOM"/> */
+comp('TpActual', {
+  props: { tp: Object },
   setup(p) {
-    const c = computed(() => tpCompare(p.dev, p.prod))
-    const s = computed(() => style(p.prod.style))
-    const sizes = computed(() => sizesOf(s.value.sizeGroup)), base = computed(() => baseSizeOf(s.value.sizeGroup))
-    // 实际：生产 BOM 这一行的料最近一次成交价，按生产用量算单件
-    const act = (x) => { if (!x.prod || x.prod.src !== '我方采购') return null; const b = lastBuyOf(x.prod.r); if (!b) return null; const m = mat(x.mat); return { b, price: b.l.price, cost: rnd(x.prod.use * (1 + x.prod.loss / 100) * b.l.price / m.factor, 2) } }
-    const acts = computed(() => c.value.rows.map(act))
-    const lastProd = computed(() => lastProdOf(p.prod.style))
-    const actAll = computed(() => { const m = rnd(c.value.rows.reduce((t, x, i) => t + (x.prod?.src === '我方采购' ? acts.value[i]?.cost ?? x.prod.cost : 0), 0), 2); const l = lastProd.value?.price ?? c.value.prod.labor; return { mat: m, labor: l, all: rnd(m + l, 2), miss: c.value.rows.some((x, i) => x.prod?.src === '我方采购' && !acts.value[i]) } })
+    const c = computed(() => tpActual(p.tp))
+    const base = computed(() => baseSizeOf(style(p.tp.style).sizeGroup))
     const dc = (d) => (d > 0 ? 'red' : d < 0 ? 'green' : 'dim')
-    const ds = (d, f = fq) => (d == null ? '' : (d > 0 ? '+' : d < 0 ? '−' : '±') + f(Math.abs(d)))
-    return { c, s, sizes, base, acts, lastProd, actAll, dc, ds }
+    const ds = (d) => (d ? (d > 0 ? '+' : '−') + fm(Math.abs(d)) : '')
+    return { c, base, dc, ds }
   },
-  template: `<div data-c="研发 vs 生产">
+  template: `<div data-c="定的 vs 实际">
     <table class="tbl inset flat">
-      <thead><tr><th>部位</th><th>物料</th><th class="num">用量（{{ base }} 码）<div class="dim" style="font-weight:400">研发 → 生产</div></th><th class="num">单价<div class="dim" style="font-weight:400">研发 → 生产</div></th><th class="num">单件成本<div class="dim" style="font-weight:400">研发 → 生产</div></th><th class="num">差</th>
-        <th v-if="actual" class="num">实际成交价<div class="dim" style="font-weight:400">最近一张采购单</div></th><th v-if="actual" class="num">实际单件</th></tr></thead>
+      <thead><tr><th>部位</th><th>物料</th><th class="num">用量（{{ base }} 码）</th><th class="num">参考单价</th><th class="num">单件成本</th><th class="num">实际成交价<div class="dim" style="font-weight:400">最近一张采购单</div></th><th class="num">实际单件</th><th class="num">差</th></tr></thead>
       <tbody>
         <tr v-for="(x, i) in c.rows" :key="i">
-          <td>{{ x.part }}</td><td>{{ mat(x.mat).name }}<span v-if="!x.dev" class="flag amber" style="margin-left:6px">生产新加</span><span v-if="!x.prod" class="flag" style="margin-left:6px">生产去掉了</span><span v-if="(x.prod || x.dev).src !== '我方采购'" class="dim">　{{ (x.prod || x.dev).src }}</span></td>
-          <td class="num">{{ x.dev ? fq(x.dev.use) : '—' }} → {{ x.prod ? fq(x.prod.use) : '—' }} <span v-if="x.dUse" :class="dc(x.dUse)" style="font-size:12px">{{ ds(x.dUse) }}</span></td>
-          <td class="num">{{ x.dev ? fm(x.dev.price) : '—' }} → {{ x.prod ? fm(x.prod.price) : '—' }} <span v-if="x.dPrice" :class="dc(x.dPrice)" style="font-size:12px">{{ ds(x.dPrice, fm) }}</span></td>
-          <td class="num">{{ x.dev ? fm(x.dev.cost) : '—' }} → {{ x.prod ? fm(x.prod.cost) : '—' }}</td>
-          <td class="num"><b v-if="x.dCost" :class="dc(x.dCost)" style="font-weight:500">{{ ds(x.dCost, fm) }}</b><span v-else class="dim">—</span></td>
-          <td v-if="actual" class="num"><template v-if="acts[i]">{{ fm(acts[i].price) }} <a class="code dim" style="font-size:11px" :href="'#/purchases/' + acts[i].b.p.no">{{ acts[i].b.p.no }}</a></template><span v-else class="dim">{{ x.prod && x.prod.src === '我方采购' ? '还没买过' : '—' }}</span></td>
-          <td v-if="actual" class="num">{{ acts[i] ? fm(acts[i].cost) : '—' }}</td>
+          <td>{{ x.r.part }}</td><td>{{ mat(x.r.mat).name }}<span v-if="x.r.src !== '自购'" class="dim">　{{ x.r.src }}</span></td>
+          <td class="num">{{ fq(x.use) }}</td><td class="num">{{ fm(x.price) }}</td><td class="num">{{ x.r.src === '自购' ? fm(x.cost) : '—' }}</td>
+          <td class="num"><template v-if="x.act">{{ fm(x.act.price) }} <a class="code dim" style="font-size:11px" :href="'#/purchases/' + x.act.b.p.no">{{ x.act.b.p.no }}</a></template><span v-else class="dim">{{ x.r.src === '自购' ? '还没买过' : '—' }}</span></td>
+          <td class="num">{{ x.act ? fm(x.act.cost) : '—' }}</td>
+          <td class="num"><b v-if="x.d" :class="dc(x.d)" style="font-weight:500">{{ ds(x.d) }}</b><span v-else class="dim">—</span></td>
         </tr>
-        <tr><td>加工</td><td class="mut">工序工价合计</td><td></td><td></td><td class="num">{{ fm(c.dev.labor) }} → {{ fm(c.prod.labor) }}</td><td class="num"><b v-if="c.d.labor" :class="dc(c.d.labor)" style="font-weight:500">{{ ds(c.d.labor, fm) }}</b><span v-else class="dim">—</span></td>
-          <td v-if="actual" class="num"><template v-if="lastProd">{{ fm(lastProd.price) }} <a class="code dim" style="font-size:11px" :href="'#' + prodLink(lastProd)">{{ lastProd.no }}</a></template><span v-else class="dim">还没下过外发加工单</span></td><td v-if="actual" class="num">{{ fm(actAll.labor) }}</td></tr>
+        <tr><td>加工</td><td class="mut">工序工价合计</td><td></td><td></td><td class="num">{{ fm(c.plan.labor) }}</td>
+          <td class="num"><template v-if="c.lastProd">{{ fm(c.lastProd.price) }} <a class="code dim" style="font-size:11px" :href="'#' + prodLink(c.lastProd)">{{ c.lastProd.no }}</a></template><span v-else class="dim">还没下过外发加工单</span></td>
+          <td class="num">{{ c.lastProd ? fm(c.act.labor) : '—' }}</td><td class="num"><b v-if="c.dLabor" :class="dc(c.dLabor)" style="font-weight:500">{{ ds(c.dLabor) }}</b><span v-else class="dim">—</span></td></tr>
       </tbody>
-      <tfoot><tr><td>单件合计</td><td class="mut">物料 {{ fm(c.dev.mat) }} → {{ fm(c.prod.mat) }}</td><td></td><td></td><td class="num"><b>{{ fm(c.dev.all) }} → {{ fm(c.prod.all) }}</b></td><td class="num"><b :class="dc(c.d.all)">{{ ds(c.d.all, fm) || '—' }}</b></td>
-        <td v-if="actual"></td><td v-if="actual" class="num"><b>{{ fm(actAll.all) }}</b></td></tr></tfoot>
+      <tfoot><tr><td>单件合计</td><td class="mut">物料 {{ fm(c.plan.mat) }}</td><td></td><td></td><td class="num"><b>{{ fm(c.plan.all) }}</b></td><td class="mut">{{ c.miss ? '没买过的按资料包算' : '' }}</td><td class="num"><b>{{ fm(c.act.all) }}</b></td>
+        <td class="num"><b :class="dc(c.dAll)">{{ ds(c.dAll) || '—' }}</b></td></tr></tfoot>
     </table>
   </div>`,
 })
 
-/* 款式详情「价格」页签：研发估的 / 生产定的 / 实际花的，下面是这个款的加工价记录 */
+/* 款式详情「价格」页签：资料包定的 / 实际花的，下面是这个款的加工价记录 */
 comp('StylePrice', {
   props: { code: String },
   setup(p) {
-    const dev = computed(() => activeTp(p.code, '研发') || tpsOf(p.code, '研发')[0])
     const prod = computed(() => activeTp(p.code) || tpsOf(p.code)[0])
-    return { dev, prod }
+    return { prod }
   },
   template: `<div>
     <section class="sec" style="margin-top:0" data-c="成本对比"><h3>成本对比
-      <span class="dim" style="font-weight:400;font-size:12px" v-if="dev && prod">研发 V{{ dev.ver }}{{ dev.status === '已生效' ? '' : '（' + dev.status + '）' }} 对 生产 V{{ prod.ver }}{{ prod.status === '已生效' ? '' : '（' + prod.status + '）' }}</span></h3>
-      <TpCompare v-if="dev && prod" :dev="dev" :prod="prod" actual/>
-      <p v-else-if="prod" class="dim">这个款没有研发 BOM（导入的老款或直接下大货的款），只有生产 BOM：物料 {{ fm(tpMaterialCost(prod)) }}，加工 {{ fm(tpLabor(prod)) }}，单件 {{ fm(tpMaterialCost(prod) + tpLabor(prod)) }}。</p>
-      <p v-else-if="dev" class="dim">只有研发 BOM，估价单件 {{ fm(tpMaterialCost(dev) + tpLabor(dev)) }}；转生产 BOM 以后能对比。</p>
+      <span class="dim" style="font-weight:400;font-size:12px" v-if="prod">资料包 {{ tpName(prod) }}{{ prod.status === '已生效' ? '' : '（' + prod.status + '）' }}</span></h3>
+      <TpActual v-if="prod" :tp="prod"/>
       <p v-else class="dim">这个款还没有资料包，没有成本可比。</p>
     </section>
     <section class="sec" data-c="加工价"><h3>加工价</h3>
@@ -9419,7 +9353,7 @@ route('/reorder', {
 }, { mod: 'stock', t: '补货提醒' })
 
 expose({ dealsOf, curMatPrice, curProcPrice, curMatRec, curProcRec, pricesOf, priceWhat, priceUnit, priceSrcLink, recordPrice, voidPrice, canEditPrice, poPriceIssues, procPriceProblem,
-  tpCompare, carryDevTp, reorderRows, belowSafety, reorderToPurchases, reorderDrafts, poDefaultPrice, toProdTp, tpStage, tpName, transitRows, useTransitSplit, orderNeedDate, needDateOf })
+  tpActual, reorderRows, belowSafety, reorderToPurchases, reorderDrafts, poDefaultPrice, tpName, transitRows, useTransitSplit, orderNeedDate, needDateOf })
 </script>
 <script>/* 6-pages-later.js */
 /* ============================================================
@@ -9620,7 +9554,6 @@ function smpConvert(s, f) {
   Object.assign(s, { status: '已转大货', style: st.code, convertedAt: clock.today, convertedBy: db.me })
   act(s, '转大货 → ' + st.code)
   act(st, '由样衣 ' + s.no + ' 转大货')
-  if (s.devBom) carryDevTp(st.code, s.devBom)
   return st
 }
 
@@ -9655,19 +9588,6 @@ db.samples = [
     log: [{ at: '2026-11-06', who: '许然', text: '新建' }] },
 ]
 if (style('27CF001')) style('27CF001').sample = 'YY26070003'
-// 样衣的研发 BOM（打样估价用）：转大货时带到款式上，复制成生产 BOM V1 草稿（§6.3.3、§6.4.1）
-{
-  const s = db.samples.find((x) => x.no === 'YY26100005')
-  if (s) s.devBom = {
-    bom: [
-      { part: '大身', mat: 'ML0018', mode: '随款色', map: { YM: 'ML0018-YM', HE: 'ML0018-HE' }, um: '分码', uses: SZ(1.5, 1.6, 1.7, 1.8, 1.9), loss: 3, src: '我方采购', supplier: 'GYS0001', price: 21.5 },
-      { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 6, loss: 2, src: '我方采购', supplier: 'GYS0002', price: 0.38 },
-      ...['BX0001', 'BX0002', 'BP0001', 'BD0001'].map((k, i) => label(k, { part: ['主唛', '洗唛', '吊牌', '包装袋'][i] })),
-    ],
-    ops: [{ cat: '车缝', name: '整件加工（估）', req: '', sec: 2800, price: 36, note: '按打样工厂口头报价估' }],
-    note: '打样估价：帆布按 21.5 估',
-  }
-}
 
 SEARCH.push(() => db.samples.map((s) => ({ t: s.no + ' ' + s.name, sub: '样衣', to: '/samples/' + s.no, i: 'scissors' })))
 TODOS.push(() => [{ t: '样衣待评审', n: db.samples.filter((s) => smpState(s) === '待评审').length, to: '/samples?s=待评审', i: 'scissors' }])
@@ -9768,7 +9688,6 @@ route('/samples/:no', {
           <dt>面料</dt><dd>{{ s.fabric || '—' }}</dd>
           <dt>预估吊牌价</dt><dd>{{ fm(s.tagPrice) }}</dd>
           <dt>预估成本</dt><dd>{{ fm(s.estCost) }}</dd>
-          <dt>研发 BOM</dt><dd>{{ s.devBom ? s.devBom.bom.length + ' 行物料 · ' + s.devBom.ops.length + ' 道工序（转大货时复制成生产 BOM 草稿）' : '没有' }}</dd>
           <template v-if="s.style"><dt>转大货</dt><dd><a class="code" :href="'#/styles/' + s.style">{{ s.style }}</a> · {{ fd(s.convertedAt) }}</dd></template>
         </dl>
         <DocFiles :doc="s"/>
@@ -9842,7 +9761,7 @@ comp('SmpConvert', {
     // 款号按新规则：大类 + 今天 + 样衣设计师的编号 + 流水；编不出来就提示，手填照样能转
     const auto = computed(() => { try { return { code: nextStyleCode(f.big, p.s.designer) } } catch (e) { return { err: e.message + (e.list?.[0] ? '：' + e.list[0] : '') } } })
     const factories = computed(() => db.suppliers.filter((x) => isFactory(x) && x.status === '合作中'))
-    function save() { const st = run(() => smpConvert(p.s, { ...f })); if (st?.code) { emit('close'); go('/styles/' + st.code); toast(`${st.code} 已生成，${st.skus.length} 个 SKU，` + (p.s.devBom ? '研发 BOM 已复制成生产 BOM V1 草稿，核对后发布' : '样衣没有研发 BOM，资料包还要建')) } }
+    function save() { const st = run(() => smpConvert(p.s, { ...f })); if (st?.code) { emit('close'); go('/styles/' + st.code); toast(`${st.code} 已生成，${st.skus.length} 个 SKU；资料包（物料清单、工艺）在款式里建`) } }
     return { f, auto, factories, save }
   },
   template: `<Modal t="转大货" :w="460" @close="$emit('close')">
@@ -9877,8 +9796,8 @@ db.quotes = [
   { id: 'BJ12', mat: 'MZ0003', sup: 'GYS0001', price: 48.5, lead: 18, moq: 100, at: '2026-09-02' },
   { id: 'BJ13', mat: 'BX0001', sup: 'GYS0003', price: 0.18, lead: 7, moq: 2000, at: '2026-06-18', chosen: true },
 ]
-// 调价记录不再单独记，都在价格档案里（§6.10，5e-price.js）；核价用生产 BOM，还没有就用研发 BOM 估
-const costTp = (code) => activeTp(code) || tpsOf(code)[0] || activeTp(code, '研发') || tpsOf(code, '研发')[0]
+// 调价记录不再单独记，都在价格档案里（§6.10，5e-price.js）；核价用生效的资料包，没有就用最新草稿
+const costTp = (code) => activeTp(code) || tpsOf(code)[0]
 function costDefaults(code) {
   const s = style(code)
   const prices = db.orders.filter((o) => o.status !== '已取消').flatMap((o) => o.lines).filter((l) => l.style === code && l.price).map((l) => l.price)
@@ -9919,14 +9838,13 @@ function quoteAdd(f) {
   return add(db.quotes, { id: 'BJ' + String(db.quotes.length + 1).padStart(2, '0'), lead: null, moq: null, at: clock.today, chosen: false, ...f })
 }
 
-// 按款看成本：用生产 BOM（生效的，没有就最新草稿），还没有生产 BOM 的用研发 BOM 估
+// 按款看成本：用资料包（生效的，没有就最新草稿）
 route('/costing', {
   setup() {
     const s = reactive({ q: '' })
     const rows = computed(() => db.styles.filter((x) => matchQ(s.q, x.code, x.name, x.alias)).map((x) => { const tp = costTp(x.code); return { s: x, tp, k: tp && tpCost(tp) } }))
-    const tpText = (x) => (x.tp ? tpStage(x.tp) + ' ' + tpName(x.tp) + (x.tp.status === '已生效' ? '' : ' 草稿') : '')
     const money = (x, key) => (x.k ? fm(x.k[key]) : '—')
-    return { s, rows, tpText, money, costRatio, costLink }
+    return { s, rows, money, costRatio, costLink }
   },
   template: `<div>
     <Head t="核价"/>
@@ -9941,7 +9859,7 @@ route('/costing', {
           { k: 'total', t: '单件成本', c: 'num' }, { k: 'tag', t: '吊牌价', c: 'num', f: x => fm(x.s.tagPrice) },
           { k: 'ratio', t: '倍率', c: 'num', f: x => (x.k && costRatio(x.s, x.k.total)) || '—' }]">
           <template #code="{ r }"><span class="row"><Thumb :code="r.s.code" :s="26"/><span class="code">{{ r.s.code }}</span><span class="mut">{{ r.s.name }}{{ r.s.alias ? '（' + r.s.alias + '）' : '' }}</span></span></template>
-          <template #tp="{ r }"><span v-if="r.tp" class="row g4"><span class="pill" :class="tpStage(r.tp) === '研发' ? 'amber' : 'blue'">{{ tpStage(r.tp) }}</span>{{ tpName(r.tp) }}<span v-if="r.tp.status !== '已生效'" class="dim">草稿</span></span><span v-else class="dim">没有资料包</span></template>
+          <template #tp="{ r }"><span v-if="r.tp" class="row g4">{{ tpName(r.tp) }}<span v-if="r.tp.status !== '已生效'" class="dim">草稿</span></span><span v-else class="dim">没有资料包</span></template>
           <template #total="{ r }"><b v-if="r.k" style="font-weight:600">{{ fm(r.k.total) }}</b><span v-else class="dim">—</span></template>
         </Tbl>
       </div>
@@ -9957,7 +9875,7 @@ route('/costing/:code', {
     const tab = ref('quote'), adding = ref(false)
     const c = computed(() => costOf(p.code))
     const sizes = computed(() => sizesOf(s.value.sizeGroup))
-    const mats = computed(() => (c.value ? [...new Set(c.value.tp.bom.filter((r) => r.src !== '工厂自备').map((r) => r.mat))] : []))
+    const mats = computed(() => (c.value ? [...new Set(c.value.tp.bom.filter((r) => r.src !== '厂购').map((r) => r.mat))] : []))
     const quotesOf = (m) => db.quotes.filter((q) => q.mat === m).sort((a, b) => a.price - b.price)
     const logOf = (m) => pricesOf({ kind: '物料价', mat: m }).filter((x) => !x.void).sort(byNewPrice).slice(0, 5)
     const lines = computed(() => db.orders.filter((o) => !['已取消', '草稿'].includes(o.status) && o.lines.some((l) => l.style === p.code)).map((o) => {
@@ -9978,7 +9896,7 @@ route('/costing/:code', {
     <div class="detail">
       <div class="body">
         <div class="title"><Thumb :code="s.code" :s="44"/>{{ s.name }}</div>
-        <div class="sub"><span v-if="c">资料包 {{ tpName(c.tp) }}{{ c.tp.status === '已生效' ? '' : ' 草稿' }}<template v-if="tpStage(c.tp) === '研发'">（还没有生产 BOM，按研发估）</template></span><span>吊牌价 {{ fm(s.tagPrice) }}</span></div>
+        <div class="sub"><span v-if="c">资料包 {{ tpName(c.tp) }}{{ c.tp.status === '已生效' ? '' : ' 草稿' }}</span><span>吊牌价 {{ fm(s.tagPrice) }}</span></div>
         <Tabs v-model="tab" :items="[['quote', '询价比价'], ['margin', '订单毛利', lines.length]]"/>
         <div v-if="!c" class="empty">这个款还没有资料包，算不了成本<p style="margin-top:14px"><a class="btn" :href="'#/styles/' + s.code">去建资料包</a></p></div>
         <template v-else>
@@ -11217,12 +11135,12 @@ function addSeason(f) {
   if (db.seasons.some((x) => x.name === name)) fail('已经有「' + name + '」')
   db.seasons.push({ code, name, status: '启用' })
 }
-// 款号大类（甲方 11-11 反馈 3）：2 位大写字母，是款号的头两位（FS 服饰、XZ 鞋子）；进过款号的不能删、编码不能改，只能停用
+// 款号大类（甲方 11-11 反馈 3）：2 位大写字母，是款号的头两位（TS 通勤裤、FS 非通勤裤、XZ 鞋子）；进过款号的不能删、编码不能改，只能停用
 const bigCatUsed = (c) => db.styles.filter((s) => s.big === c).length
 const liveBigCats = (keep) => db.bigCats.filter((x) => x.status !== '停用' || x.code === keep)
 function addBigCat(f) {
   const code = (f.code || '').trim().toUpperCase(), name = (f.name || '').trim()
-  if (!/^[A-Z]{2}$/.test(code)) fail('大类编码是 2 位字母，是款号的头两位（如 FS = 服饰）')
+  if (!/^[A-Z]{2}$/.test(code)) fail('大类编码是 2 位字母，是款号的头两位（如 TS = 通勤裤）')
   if (!name) fail('名称要填')
   if (db.bigCats.some((x) => x.code === code)) fail('编码 ' + code + ' 已经有了')
   if (db.bigCats.some((x) => x.name === name)) fail('已经有「' + name + '」')
@@ -11949,13 +11867,13 @@ comp('MaterialForm', {
       const m = run(() => createMaterial(body))
       if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
     }
-    // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比默认 3%（Q18），加完直接选上
+    // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比由生产评估后填、先按 0（Q18），加完直接选上
     async function addType() {
-      const t = (await askText('新增物料类型', '下拉里找不到的类型当场加；备料比默认 3%，以后在算料页的「备料比」里能改。', '如 织带', '新增'))?.trim()
+      const t = (await askText('新增物料类型', '下拉里找不到的类型当场加；备料比由生产评估后在算料页的「备料比」里填，没填按 0。', '如 织带', '新增'))?.trim()
       if (!t) return
       if (db.dicts.物料类型.includes(t)) return toast('已经有物料类型「' + t + '」了，直接选它', null, true)
       db.dicts.物料类型.push(t)
-      db.reserve[t] = 3
+      db.reserve[t] = 0
       f.type = t
       toast('加了物料类型「' + t + '」，已经选上')
     }
@@ -13182,7 +13100,7 @@ const FLOW_SECS = [
       flN('供应商', '待准入：补信用代码、营业执照、联系人、开户行账号', { to: '/suppliers' }), '申请准入', flN('准入审批中', '另一个有审批权限的人批'), '通过', flN('合作中', '才能下采购单、生产单', { end: true })],
     branches: [{ lbl: '改资料', flow: [flN('合作过的供应商', '改全称、信用代码、结算、账期、税率、发票、开户行、账号'), '先挂起', flN('待批改动', '另一个人批准或驳回', { to: '/suppliers?f=待审批' }), '批准', flN('生效', '', { end: true })] }],
     steps: [
-      '先在"基础"里建颜色、尺码组、品类、季节、款号大类（服饰 FS、鞋子 XZ）。颜色编码进 SKU 码，大类进款号，定了不改。',
+      '先在"基础"里建颜色、尺码组、品类、季节、款号大类（通勤裤 TS、非通勤裤 FS、鞋子 XZ）。颜色编码进 SKU 码，大类进款号，定了不改。',
       '建物料：选分类，填门幅、克重、成分、单位换算；按颜色和规格生成物料 SKU。SKU 上可以设最小库存，低于它会提醒补货（第 06 段）。',
       '建供应商：先是"待准入"。统一社会信用代码、营业执照、联系人、开户行和账号补齐了，才能"申请准入"；有审批权限的另一个人通过，才变"合作中"。自己提的不能自己批。',
       '合作过的供应商改上面那几项关键信息，先挂成"待批改动"，批准才生效；别的字段保存就生效。不合作了停用，出了问题拉黑。',
@@ -13200,30 +13118,29 @@ const FLOW_SECS = [
 
   { no: '03', t: '样衣打样', ph: '二期', menu: '开发 → 样衣',
     flow: [flN('新建样衣', '品类、季节、颜色、参考图；生成第 1 版打样单', { ph: '二期', to: '/samples' }), '派单', flN('打样中', '内部版房或外部工厂', { ph: '二期' }), '报节点',
-      flN('待评审', '接单、纸样、裁剪、车版、送样都完成', { ph: '二期' }), '评审', flN('已通过', '或：改版、淘汰', { ph: '二期' }), '转大货', flN('款式 + 资料包', '款号按新规则编；研发 BOM 带过去，再复制成生产 BOM V1 草稿', { end: true })],
+      flN('待评审', '接单、纸样、裁剪、车版、送样都完成', { ph: '二期' }), '评审', flN('已通过', '或：改版、淘汰', { ph: '二期' }), '转大货', flN('款式', '款号按新规则编；资料包在款式里建', { end: true })],
     branches: [{ lbl: '改版时', flow: [flN('评审：改版', '要写意见', { ph: '二期' }), '自动', flN('下一版打样单', '回到"派单"', { ph: '二期' })] }],
     steps: ['设计师建样衣：名称、品类、季节、颜色、参考图，系统同时开出第 1 版打样单。', '派给内部版师或外部打样工厂，按要样日期往前排 5 个节点：接单、纸样、裁剪、车版、送样。',
       '每个节点做完点完成；全部完成，样衣就是"待评审"。', '评审给三种结论：通过；改版（写意见，自动开下一版打样单）；淘汰。',
-      '通过的样衣点"转大货"：按款号规则编号，带上字段和图片生成款式。样衣的研发 BOM 挂到款式上（研发 V1），再复制成生产 BOM V1 草稿，按大货改了再生效。'],
-    note: ['待商量', '样衣要不要简化，等和甲方的开发负责人商量（PRD §12）。'] },
+      '通过的样衣点"转大货"：按款号规则编号，带上字段和图片生成款式；物料清单、工艺这些在款式的资料包里填。'],
+    note: ['甲方 11-18 答复', '样衣精简成只留基础信息，其余转大货后在款式里填；研发阶段不填物料清单；一个样衣可以转成几个款（专用款、非专用款）。二期按这个重做，原型这一页还是旧样子。'] },
 
   { no: '04', t: '款式与资料包', menu: '开发 → 款式（详情里有资料包、价格）',
-    flow: [flN('款式', '款号 FS2611080701；颜色 × 尺码组 → SKU', { to: '/styles' }), '建资料包', flN('研发 BOM', '打样时估价用；没有研发阶段的款跳过'), '转生产 BOM',
-      flN('生产 BOM 草稿', '尺寸指示、物料清单、工艺指示、核价；单价按价格档案重新取'), '生效', flN('已生效', '只读；要改就修订出新版本'), '才能', flN('下需求订单', '只认生产 BOM', { end: true })],
+    flow: [flN('款式', '款号 FS2611080701；颜色 × 尺码组 → SKU', { to: '/styles' }), '建资料包',
+      flN('资料包草稿', '尺寸指示、物料清单、工艺指示、核价；单价带价格档案的现价'), '生效', flN('已生效', '只读；要改就修订出新版本'), '才能', flN('下需求订单', '只认生产 BOM', { end: true })],
     branches: [
-      { lbl: '核价', flow: [flN('资料包「核价」', '面料 + 辅料 + 加工费 + 其他费用 = 单件成本', { to: '/costing' }), '旁边', flN('吊牌价、倍率', '生产版对比研发估', { end: true })] },
+      { lbl: '核价', flow: [flN('资料包「核价」', '面料 + 辅料 + 加工费 + 其他费用 = 单件成本', { to: '/costing' }), '旁边', flN('吊牌价、倍率', '单件成本 ÷ 吊牌价', { end: true })] },
       { lbl: '发工厂', flow: [flN('导出 PDF 工艺单', '尺寸、物料清单（按颜色）、车间缝制、后道，附工艺标准', { to: '/styles/27CF001' }), '分享', flN('工厂', '手机上点分享发微信', { end: true })] },
-      { lbl: '看价格', flow: [flN('款式详情「价格」', '研发 BOM 和生产 BOM 逐行比：用量、单价、单件成本', { to: '/styles/26QJ012' }), '旁边', flN('实际花的', '最近的采购成交价、外发加工单价', { end: true })] },
+      { lbl: '看价格', flow: [flN('款式详情「价格」', '资料包每行的单价、单件成本', { to: '/styles/26QJ012' }), '旁边', flN('实际花的', '最近的采购成交价、外发加工单价', { end: true })] },
       { lbl: '待定', flow: [flN('询价比价', '同一种料比几家报价', { ph: '待定' }), '', flN('订单毛利', '和报价对比', { ph: '待定' })] },
     ],
     steps: [
-      '建款：款号默认 = 大类 + 建款日期 + 设计师编号 + 2 位流水，如 FS2611080701（服饰、26-11-08 建、07 号设计师、当天第 1 款）；也能手填，系统查重。设计师编号在"设置 › 用户"里填，用过就锁定。选颜色和尺码组，一键生成 SKU。',
-      '资料包分两个阶段：研发 BOM 是打样时估价用的；生产 BOM 发给工厂、算料都按它。没有研发阶段的款直接建生产 BOM。',
-      '研发 BOM 生效后点"转生产 BOM"：复制成生产 BOM 草稿，单价按价格档案重新取，再按大货改用量、单价。之后两边各改各的。',
+      '建款：款号默认 = 大类 + 建款日期 + 设计师编号 + 2 位流水，如 FS2611080701（非通勤裤、26-11-08 建、07 号设计师、当天第 1 款）；也能手填，系统查重。设计师编号在"设置 › 用户"里填，用过就锁定。选颜色和尺码组，一键生成 SKU。',
+      '资料包（也叫生产 BOM）转大货后建：发给工厂、算料都按它。研发阶段不填物料清单（甲方 11-18 答复）。',
       '每一版资料包四个页签：尺寸指示（部位、测量方法、各码尺寸；填了基码和档差能一键算出其他码）、物料清单（每行一种物料 SKU：各尺码用量、损耗、来源、按颜色配料）、工艺指示（车间缝制、后道、注意事项，每段能插图；新建时带设置里的公司默认文字）、核价。点"生效"后只读，要改就"修订"出新版本，四块一起带过去。',
-      '核价：面料、辅料按基码用量 × 单价，加工费 = 工序工价合计，再加其他费用（印绣花、运费、包装）= 单件成本，旁边是吊牌价和倍率；工厂自备的料含在加工价里，不另算。款式有默认工厂、价格档案里有这家的包工包料价时，下面多一行「成品采购参考价」，只作参考，不计入单件成本。侧边栏「核价」按款列出来。要有看成本的权限。',
+      '核价：面料、辅料按基码用量 × 单价，加工费 = 工序工价合计，再加其他费用（印绣花、运费、包装）= 单件成本，旁边是吊牌价和倍率；厂购的料含在加工价里，不另算。款式有默认工厂、价格档案里有这家的包工包料价时，下面多一行「成品采购参考价」，只作参考，不计入单件成本。侧边栏「核价」按款列出来。要有看成本的权限。',
       '「导出 PDF」出工艺单发给工厂：表头、尺寸标准指示、物料清单（一个颜色或全部）、车间缝制、后道，最后附设置里的工艺标准文件；默认不带价格。手机上导出后点分享发微信。',
-      '款式启用、生产 BOM 已生效、需求订单里每个颜色都配了料，才能提交需求订单。只有研发 BOM 的款会被拦下，提示先转生产 BOM。',
+      '款式启用、资料包已生效、需求订单里每个颜色都配了料，才能提交需求订单。',
     ] },
 
   { no: '05', t: '接单', menu: '订单 → 需求订单、变更',
@@ -13251,7 +13168,7 @@ const FLOW_SECS = [
         flN('备货采购单', '按默认供应商拆；可填"计划用于款号"', { end: true })] },
     ],
     steps: [
-      '选需求订单算料：毛需求 = 订单件数 × 尺码用量，加损耗和备料比得出需求。只算我方采购的料；工厂自备的算在加工费里。',
+      '选需求订单算料：毛需求 = 订单件数 × 尺码用量，加损耗和备料比得出需求。只算自购的料；厂购的算在加工费里。',
       '需求先扣可用库存，再自动扣赶得上的在途：在途的预计到货不晚于要料日期（这批生产单"裁剪"的计划开始；还没排单的按承诺交期倒推）才算赶得上，已经被别的算料单占了的不再扣。赶不上的单独列出来，不扣。自动带出的数可以改。',
       '确认后一键生成采购单，按供应商拆开；单价默认取价格档案里这家的现价，改了要写原因。金额超过 5 万，管理层审完还要总经理再审一级（多级审批，见第 11 段）。审核时改过的单价自动记进价格档案（第 09 段）。',
       '物料入库单的第一个页签「待到料」盯还没到的料：除了和采购交期比，还和生产单的开裁日期比，晚于开裁的标出来，可以只看这些。到货在行上点「入库」，生成采购入库单，审核后进库存；采购单变"部分到货"或"已到齐"。入库单还有退料入库（工厂剩料退回物料仓）和其他入库（期初、样品、其他）。',
@@ -13273,7 +13190,7 @@ const FLOW_SECS = [
       '在已审核的需求订单上点"排单"：每个款选生成哪种单（外发加工单或成品采购单），再选加工厂、数量、加工方式、交期。单价默认取价格档案里这家工厂做这个款、这种加工方式的现价，改了要写原因。',
       '两种单只是加工方式不同：清加工、半包是外发加工单（我方出料，单价是加工费）；包工包料是成品采购单（工厂自己买料、做好成衣卖给我们，单价是成品单价，含料）。字段、状态、进度节点、报工、异常、回货都一样；同时说两种时叫"生产单"。',
       '生产单提交审核（金额超过 10 万，管理层审完还要总经理再审一级）。审核下单时，系统从交期往前倒排 6 个节点：到料、裁剪、车缝、后整、包装、入仓。',
-      '料齐了就领料：系统按 加工数 × 用量 ×（1 + 损耗）− 已领 给出建议，开物料出库单（领料出库），从物料仓发到这个加工厂的工厂仓。成品采购单的料工厂自己买，只发资料包里标了"我方采购"的行（通常是主唛、吊牌、包装袋），没有就不用领。',
+      '料齐了就领料：系统按 加工数 × 用量 ×（1 + 损耗）− 已领 给出建议，开物料出库单（领料出库），从物料仓发到这个加工厂的工厂仓。成品采购单的料工厂自己买，只发资料包里标了"自购"的行（通常是主唛、吊牌、包装袋），没有就不用领。',
       '跟单员或工厂在手机上报进度（电脑上生产单的「报进度」是同一套）：选节点，填数量、拍照；还在做点「只报开始」，做完了点「报完成」，完成日期不选就是今天。出了问题报异常（要拍照），处理完关闭，记上责任方。',
       '工厂交货时登记回货：回货数和次品数，最多比加工数多 3%。全部回齐，生产单"已完成"；需求订单的生产单都完成，需求订单"已完成"。',
       '打印生产单时后面附上锁定版本的资料包工艺单（不带价格，默认附工艺标准），一起发给工厂。',
@@ -13311,7 +13228,7 @@ const FLOW_SECS = [
       '只增不改：调价就加一条，写生效日期和调价原因；录错了作废，不参与取价。现价 = 生效日期不晚于今天的最新一条。',
       '下采购单、排单时默认带现价（外发加工单是加工单价，成品采购单是成品单价，含料）；单据上改了价要写原因，审核时自动记进档案，来源就是这张单。',
       '谁能改：采购录物料价，生产跟单录加工价，管理层两种都能录；其他人只能看。',
-      '在哪看：物料、供应商详情的"价格记录"页签，下面还有成交记录（审核过的采购单、生产单，一单一行）；款式详情的"价格"页签，研发、生产、实际三方对比。',
+      '在哪看：物料、供应商详情的"价格记录"页签，下面还有成交记录（审核过的采购单、生产单，一单一行）；款式详情的"价格"页签，资料包定的和实际花的对比。',
     ] },
 
   { no: '10', t: '供应商风险与合同', ph: '待排期', menu: '资料 → 供应商（风险页签）、合同',
@@ -13453,14 +13370,14 @@ const MOD_INFO = {
       ['列表 · 页签', '待派单、打样中、待评审、已通过、已转大货、已淘汰'],
       ['详情 · 每一版', '打样方、要样日期、改版原因；接单、纸样、裁剪、车版、送样的计划和完成日期'],
       ['详情 · 评审', '每一版的结论（通过、改版、淘汰）、意见、评审人、照片'],
-      ['详情 · 右栏', '图片、来源、设计师、尺码组、面料、预估吊牌价、预估成本、研发 BOM、转大货款号'],
+      ['详情 · 右栏', '图片、来源、设计师、尺码组、面料、预估吊牌价、预估成本、转大货款号'],
     ],
     up: [
       ['basics', '品类、季节、颜色、尺码组从基础里取'],
       ['suppliers', '外部打样选成衣厂、加工厂，准入中的也能派'],
     ],
     down: [
-      ['styles', '转大货生成款式，研发 BOM 复制成生产 BOM V1 草稿'],
+      ['styles', '转大货生成款式，资料包在款式里建'],
       ['plans', '开发中、已通过的样衣算进企划表的「在开发」'],
       ['home', '首页开发卡片的「打样中」和这里的页签是同一个数，点进来就是那个页签；待评审的进待办提醒'],
     ],
@@ -13469,16 +13386,16 @@ const MOD_INFO = {
   },
   styles: {
     perm: ['款式、资料包', '成本（核价）', '价格档案'],
-    what: '款式是大货的档案：款号、颜色尺码（SKU）和资料包（尺寸指示、物料清单、工艺指示、核价）都在这里。需求订单、算料、生产单都按它取数，先建款、生效生产 BOM，才能下单。',
+    what: '款式是大货的档案：款号、颜色尺码（SKU）和资料包（尺寸指示、物料清单、工艺指示、核价）都在这里。需求订单、算料、生产单都按它取数，先建款、生效资料包，才能下单。',
     has: [
       ['列表', '款号、名称（花名）、品类、年份季节 · 波段、颜色 × 尺码、资料包版本、吊牌价、设计师、状态'],
-      ['详情 · 资料包', '研发、生产 BOM 各版本，每版四个页签：尺寸指示、物料清单、工艺指示、核价；导出 PDF 工艺单'],
+      ['详情 · 资料包', '各版本，每版四个页签：尺寸指示、物料清单、工艺指示、核价；导出 PDF 工艺单'],
       ['资料包 · 尺寸指示', '部位、测量方法、各码尺寸、档差、公差、备注；按档差从基码算出其他码'],
-      ['资料包 · 物料清单', '部位、物料、配色、用量、损耗、来源、供应商、参考单价、单件成本；按颜色展开、研发 vs 生产'],
+      ['资料包 · 物料清单', '部位、物料、配色、用量、损耗、来源、供应商、参考单价、单件成本；按颜色展开'],
       ['资料包 · 工艺指示', '车间缝制（裁剪、缝制、部位工艺细则、做工品质）、后道（锁钉、整烫、洗唛烫标、包装方式）、注意事项，每段能插图；工序工价（内部）'],
-      ['资料包 · 核价', '面料、辅料、加工费、其他费用，单件成本、吊牌价、倍率；生产版对比研发估'],
+      ['资料包 · 核价', '面料、辅料、加工费、其他费用，单件成本、吊牌价、倍率'],
       ['详情 · 颜色尺码', 'SKU 码、条码、单独吊牌价、已下单件数、启用或停用；加颜色先预览'],
-      ['详情 · 价格', '研发估的、生产定的、实际花的逐行对比；各工厂、各加工方式的加工价'],
+      ['详情 · 价格', '资料包定的、实际花的逐行对比；各工厂、各加工方式的加工价'],
       ['详情 · 右栏', '花名、大类、设计师、版师、尺码组、主力面料、吊牌价、参考成本价、资料包核价、默认加工厂'],
     ],
     up: [
@@ -13486,7 +13403,7 @@ const MOD_INFO = {
       ['settings', '设计师编号在设置 › 用户里填，自动编款号要用；工艺标准里的默认文字、部位测量方法带进新资料包'],
       ['materials', 'BOM 每行选物料和物料 SKU，按款色配料'],
       ['suppliers', '生产 BOM 参考单价取价格档案里这家的现价'],
-      ['samples', '二期：样衣转大货生成款式，研发 BOM 带过来'],
+      ['samples', '二期：样衣转大货生成款式'],
     ],
     down: [
       ['orders', '启用、生产 BOM 已生效的款才能下单；审核时锁定版本'],
@@ -13496,19 +13413,19 @@ const MOD_INFO = {
       ['suppliers', '价格页签能直接录、调这个款的加工价（价格档案）'],
       ['costing', '核价列表按款列出资料包核价页签的单件成本'],
     ],
-    tip: '订单只认生产 BOM：款式启用、生产 BOM 已生效、下单的颜色都配了料才能提交；研发 BOM 只用来打样估价。已生效的资料包只读，要改点「修订」，尺寸、物料、工艺、其他费用一起带到新版本。',
+    tip: '订单只认生效的资料包（生产 BOM）：款式启用、资料包已生效、下单的颜色都配了料才能提交；研发阶段不填物料清单。已生效的资料包只读，要改点「修订」，尺寸、物料、工艺、其他费用一起带到新版本。',
   },
   costing: {
     perm: '成本（核价）',
     what: '按款看成本：每个款资料包核价页签算出的单件成本列在一张表里，点一行进那个款的核价页签改。询价比价、订单毛利是待定模块，等甲方确认。',
     has: [
       ['列表', '款（含花名）、资料包阶段和版本、面料、辅料、加工、其他、单件成本、吊牌价、倍率'],
-      ['资料包 · 核价页签', '面料、辅料（我方采购的料按基码用量 × 单价）、加工费（工序工价合计）、其他费用（印绣花、运费、包装……）；工厂自备的料标「含在加工价里」不计'],
+      ['资料包 · 核价页签', '面料、辅料（自购的料按基码用量 × 单价）、加工费（工序工价合计）、其他费用（印绣花、运费、包装……）；厂购的料标「含在加工价里」不计'],
       ['待定 · 询价比价', '每种料各家的报价、交期、起订量、报价日期、在用哪家；价格档案最近 5 条'],
       ['待定 · 订单毛利', '这个款每张订单的数量、单价、不含税收入、成本、毛利；管理费率、对客报价、税率'],
     ],
     up: [
-      ['styles', '用生产 BOM 算，还没有生产 BOM 的按研发 BOM 估'],
+      ['styles', '用资料包算，没生效的用最新草稿'],
       ['suppliers', '生产 BOM 的物料单价取价格档案现价'],
       ['orders', '待定：订单毛利按这个款的订单数量和单价算'],
     ],
@@ -13516,7 +13433,7 @@ const MOD_INFO = {
       ['suppliers', '待定：「选这家」把报价记进价格档案（这家 × 物料）'],
       ['materials', '待定：同时把物料的默认供应商、参考单价换成这家'],
     ],
-    tip: '单件成本 = 面料 + 辅料 + 加工费 + 其他费用，只算我方采购的料，按基码用量算；倍率 = 吊牌价 ÷ 单件成本。',
+    tip: '单件成本 = 面料 + 辅料 + 加工费 + 其他费用，只算自购的料，按基码用量算；倍率 = 吊牌价 ÷ 单件成本。',
   },
   orders: {
     perm: '订单', scoped: true,
@@ -13570,9 +13487,9 @@ const MOD_INFO = {
     has: [
       ['列表', '算料单号、订单、款式、要买几种、转采购进度、制单人、日期、状态'],
       ['详情 · 单头', '制单、确认、备料比、要料日期（在途赶不赶得上按它判断）'],
-      ['详情 · 我方采购', '毛需求、需求、可用库存、可用在途、赶不上的在途、净需求、建议采购、已转采购、已入库'],
+      ['详情 · 自购', '毛需求、需求、可用库存、可用在途、赶不上的在途、净需求、建议采购、已转采购、已入库'],
       ['详情 · 和上一张比', '重新算料后，每种料的需求比上一张多了还是少了'],
-      ['详情 · 工厂自备', '工厂自己备的料和需求量，只列出来，不买'],
+      ['详情 · 厂购', '工厂自己备的料和需求量，只列出来，不买'],
     ],
     up: [
       ['orders', '只有已审核、生产中的订单能算料，可以几张一起算'],
@@ -13650,7 +13567,7 @@ const MOD_INFO = {
       ['手工新建', '其他出库（报废、卖余料、其他）、调拨（仓到仓）'],
     ],
     up: [
-      ['production', '领料出库按生产单的领料建议：外发加工单领我方采购和客供的料，成品采购单只领我方采购的'],
+      ['production', '领料出库按生产单的领料建议：外发加工单领自购和客供的料，成品采购单只领自购的'],
       ['purchases', '退货在采购单上点，生成采购退货并过账'],
       ['materials', '每行选物料 SKU，数量按库存单位'],
     ],
@@ -13724,7 +13641,7 @@ const MOD_INFO = {
       ['orders', '已审核的需求订单点「排单」，选「外发加工」生成，件数按颜色尺码，最多多排 3%'],
       ['styles', '用订单上的资料包版本；领料数按生产 BOM 的用量和损耗算'],
       ['suppliers', '加工厂要是合作中；加工单价默认取价格档案里工厂 × 款式 × 加工方式的现价'],
-      ['mrp', '齐料一列看订单的算料单：我方采购的料到齐了没有'],
+      ['mrp', '齐料一列看订单的算料单：自购的料到齐了没有'],
       ['changes', '订单变更审核后，生产单挂「上游已变更」提示，跟单照着调'],
     ],
     down: [
@@ -13741,7 +13658,7 @@ const MOD_INFO = {
     what: '成品采购单（甲方 11-14 从加工单拆出）：包工包料，工厂自己买料、做好成衣卖给我们，单价是成品单价（含料），单号 CP 开头。节点进度、异常、回货和外发加工单一样跟，只是基本不用领料。',
     has: [
       ['列表', '交期、节点进度、齐料、回货、跟单、状态；能按逾期、节点延期、有异常筛'],
-      ['详情 · 领料', '只列资料包里标「我方采购」的料（主唛、吊牌这类）；没有就不出「领料」按钮'],
+      ['详情 · 领料', '只列资料包里标「自购」的料（主唛、吊牌这类）；没有就不出「领料」按钮'],
       ['详情 · 进度、异常、回货', '和外发加工单一样'],
       ['详情 · 右侧', '需求订单号、资料包版本、成品单价（含料）和改价原因、结算、条款、合同'],
       ['打印', '成品采购单 + 锁定版本的工艺单（不带价格），默认附工艺标准'],
@@ -13752,7 +13669,7 @@ const MOD_INFO = {
       ['suppliers', '单价默认取价格档案里工厂 × 款式 × 包工包料的现价'],
     ],
     down: [
-      ['stockout', '有我方采购的料（主唛、吊牌）时，领料生成领料出库单'],
+      ['stockout', '有自购的料（主唛、吊牌）时，领料生成领料出库单'],
       ['orders', '和外发加工单一起算订单的生产中、已完成'],
       ['suppliers', '审核时单价和档案现价不一样，记进价格档案（包工包料的加工价）'],
       ['mobile', '审核下单后，这张单出现在生产跟单的手机报工里'],
@@ -13971,7 +13888,7 @@ const MOD_INFO = {
     has: [
       ['页签 · 颜色', '编码、名称、色系、用在几个款和物料'],
       ['页签 · 尺码组', '尺码、基码、几个款在用；建好即锁定尺码/顺序/基码，可追加尺码及改组名，未引用整组可删除重建'],
-      ['页签 · 款号大类、品类、季节', '编码和名称；款号大类是款号头两位（FS 服饰、XZ 鞋子）'],
+      ['页签 · 款号大类、品类、季节', '编码和名称；款号大类是款号头两位（TS 通勤裤、FS 非通勤裤、XZ 鞋子）'],
       ['页签 · 物料分类', '面料、辅料、包材下的小类；2 位编码是物料编码前缀'],
       ['页签 · 仓库、主体公司', '物料仓、工厂仓、成品仓和在库量；主体公司做单据抬头'],
       ['页签 · 字典', '加工方式、生产节点和天数、异常类型、结算方式等下拉选项'],

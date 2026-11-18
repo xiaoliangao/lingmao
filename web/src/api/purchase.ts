@@ -31,7 +31,7 @@ export const mrpApi = {
   create: async (orderIds: string[], options?: RequestOptions) => http.post<MrpCreated>(mrpBase, snapshotRequestBody({ orderIds }), orderIds[0] ? await documentOptions('/api/orders', orderIds[0], options) : options),
   /** 草稿里改一行（一次改一格），返回改完的整张详情 */
   updateItem: (id: string, itemId: string, data: MrpItemForm) => http.put<MrpCalcDetail>(`${mrpBase}/${id}/items/${itemId}`, data),
-  /** 草稿里删一行（特殊情况，如这种料改由工厂自备），返回删完的详情 */
+  /** 草稿里删一行（特殊情况，如这种料改由厂购），返回删完的详情 */
   removeItem: (id: string, itemId: string, version: number) =>
     http.delete<MrpCalcDetail>(`${mrpBase}/${id}/items/${itemId}?version=${version}`),
   /** 备注：没关闭时随时能改 */

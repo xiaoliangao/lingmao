@@ -6,7 +6,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 
-/** 按款看成本的一行（前端 StyleCostRow）：取生产已生效版，没有取研发已生效版；数和核价页签按第一个颜色算的一样 */
+/** 按款看成本的一行（前端 StyleCostRow）：取已生效的生产 BOM；数和核价页签按第一个颜色算的一样 */
 @Data
 public class StyleCostRowVO {
     private Long styleId;

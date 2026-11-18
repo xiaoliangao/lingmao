@@ -347,7 +347,7 @@ comp('OrderSchedule', {
     <div v-for="(b, i) in blocks" :key="i" class="sec" :style="i ? '' : 'margin-top:0'" data-c="排单块">
       <h3><Thumb :code="b.style" :s="24"/><span class="code">{{ b.style }}</span>{{ styleName(b.style) }}<span class="acts"><button class="btn ghost sm" @click="more(b.style)"><Ico n="plus" :s="12"/>再加一个工厂</button><button v-if="blocks.filter(x => x.style === b.style).length > 1" class="btn ghost icon sm" @click="blocks.splice(i, 1)"><Ico n="x" :s="12"/></button></span></h3>
       <div class="row" style="margin-bottom:10px" data-c="生成哪种单"><Seg :model-value="prodKind(b)" @update:model-value="k => setKind(b, k)" :items="KIND_SEG"/>
-        <small class="dim">{{ prodKind(b) === '成品采购单' ? '工厂自己买料，交成衣，单价含料；只发我方采购的料（如主唛、吊牌）' : '我方出料发给工厂，单价是加工费' }}</small></div>
+        <small class="dim">{{ prodKind(b) === '成品采购单' ? '工厂自己买料，交成衣，单价含料；只发自购的料（如主唛、吊牌）' : '我方出料发给工厂，单价是加工费' }}</small></div>
       <div class="form" style="grid-template-columns:2fr 1fr 1fr 1.3fr;margin-bottom:10px">
         <label class="f">加工厂<Pick class="sel" v-model="b.factory" @change="reprice(b)"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
         <label class="f">加工方式<Pick class="sel" v-model="b.mode" @change="reprice(b)" :disabled="prodKindOf(b).modes.length < 2"><option v-for="x in prodKindOf(b).modes" :key="x">{{ x }}</option></Pick></label>

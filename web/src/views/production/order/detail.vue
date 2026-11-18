@@ -464,9 +464,9 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
           </el-tab-pane>
 
           <el-tab-pane :label="`领料 ${detail.stockDocCount || ''}`" name="materials">
-            <BlankState v-if="detail.issueStatus === null" title="资料包里没有标「我方采购」的料，不用领料" />
+            <BlankState v-if="detail.issueStatus === null" title="资料包里没有标「自购」的料，不用领料" />
             <template v-else>
-              <el-table :data="matData?.rows ?? []" row-key="materialSkuId" empty-text="资料包里没有我方采购的料">
+              <el-table :data="matData?.rows ?? []" row-key="materialSkuId" empty-text="资料包里没有自购的料">
                 <el-table-column label="物料" min-width="200">
                   <template #default="{ row }">
                     <span class="code">{{ row.skuCode }}</span>

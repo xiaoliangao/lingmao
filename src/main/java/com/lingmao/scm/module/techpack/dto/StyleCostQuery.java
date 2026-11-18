@@ -1,7 +1,6 @@
 package com.lingmao.scm.module.techpack.dto;
 
 import com.lingmao.scm.common.page.PageQuery;
-import com.lingmao.scm.module.techpack.entity.PackStage;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -16,6 +15,4 @@ public class StyleCostQuery extends PageQuery {
     private String brand;
     private Integer year;
     private String season;
-    /** 只看取到的是研发版还是生产版的 */
-    private PackStage stage;
 }

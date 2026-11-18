@@ -101,7 +101,7 @@ const canOrder = computed(() => {
   const d = detail.value
   if (!d || d.status !== 'ENABLED' || !user.hasPerm('order:order:add')) return false
   const packs = tpOverview.value?.packs
-  return packs ? packs.some((p) => p.stage === 'PROD' && p.status === 'EFFECTIVE') : d.techPackStatus === 'PROD'
+  return packs ? packs.some((p) => p.status === 'EFFECTIVE') : d.techPackStatus === 'PROD'
 })
 
 /** 基本信息里的"资料包核价"：点了去那一版的核价子页签 */
@@ -400,7 +400,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
                 <dt>资料包核价</dt>
                 <dd>
                   <button v-if="tpOverview?.unitCost != null" type="button" class="link-btn num" @click="openCost">
-                    {{ tpOverview.unitCostStage === 'DEV' ? '研发估 ' : '' }}{{ formatPrice(tpOverview.unitCost) }} 元
+                    {{ formatPrice(tpOverview.unitCost) }} 元
                   </button>
                   <template v-else>资料包还没生效</template>
                 </dd>

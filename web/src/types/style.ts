@@ -11,12 +11,11 @@ export const STYLE_STATUS: Record<StyleStatus, { label: string; tone: 'active' |
   DISABLED: { label: '停用', tone: 'off' },
 }
 
-/** 资料包状态：第 3 批资料包做了以后由它回写，现在都是 NONE */
-export type TechPackStatus = 'NONE' | 'DEV' | 'PROD'
+/** 资料包状态：资料包生效、作废时回写。NONE 还没有生效的生产 BOM（只有草稿也算），PROD 有 */
+export type TechPackStatus = 'NONE' | 'PROD'
 
 export const TECH_PACK_STATUS: Record<TechPackStatus, { label: string; tone: 'off' | 'progress' | 'done' }> = {
   NONE: { label: '无', tone: 'off' },
-  DEV: { label: '研发中', tone: 'progress' },
   PROD: { label: '已生效', tone: 'done' },
 }
 

@@ -10,7 +10,7 @@ const IDEMPOTENT_CHILDREN = [
   /^\/api\/materials\/\d+\/skus$/,
   /^\/api\/styles\/\d+\/skus\/generate$/,
   /^\/api\/suppliers\/\d+\/certs$/,
-  /^\/api\/tech-packs\/\d+\/(revise|to-prod)$/,
+  /^\/api\/tech-packs\/\d+\/revise$/,
   /^\/api\/production-orders\/\d+\/nodes\/\d+\/reports$/,
   /^\/api\/production-orders\/\d+\/issues$/,
   /^\/api\/inventory-docs\/from-(purchase|production)\/\d+$/,

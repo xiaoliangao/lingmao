@@ -70,7 +70,7 @@ final class MrpCalculator {
     record PriceKey(long supplierId, long materialId, long skuId) {
     }
 
-    /** 汇总、扣减，按 我方采购 → 工厂自备、SKU 码排好，seq 从 1 起 */
+    /** 汇总、扣减，按 自购 → 厂购、SKU 码排好，seq 从 1 起 */
     static List<Row> calculate(List<Demand> demands, SupplyBook book, Inputs in) {
         Map<List<Object>, Group> groups = new LinkedHashMap<>();
         for (Demand d : demands.stream().sorted(Comparator.comparing(Demand::orderId).thenComparing(Demand::bomSeq)).toList()) {
@@ -98,7 +98,7 @@ final class MrpCalculator {
         return rows;
     }
 
-    /** 我方采购的算；工厂自备的只列毛需求、需求；客供（TRADE 关时不会有）不进结果 */
+    /** 自购的算；厂购的只列毛需求、需求；客供（TRADE 关时不会有）不进结果 */
     private static MrpBlock block(String source) {
         return switch (source) {
             case "PURCHASE" -> MrpBlock.PURCHASE;
@@ -187,7 +187,7 @@ final class MrpCalculator {
         return needDate == null || eta == null || !eta.isAfter(needDate);
     }
 
-    /** 工厂自备的行只列需求，别的数都是 0 */
+    /** 厂购的行只列需求，别的数都是 0 */
     private static void zero(MrpCalcItem item) {
         item.setAvailStockQty(BigDecimal.ZERO);
         item.setUseStockQty(BigDecimal.ZERO);

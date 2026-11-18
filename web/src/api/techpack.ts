@@ -2,7 +2,7 @@ import { download, http, type RequestOptions } from '@/utils/request'
 import type { FileVO, PageResult } from '@/types/system'
 import type { Attachment, DocLog } from '@/types/biz'
 import type {
-  BomDefault, BomDefaultReq, CraftStandard, CraftTextsForm, PackStage, PdfOptions, SizePointMethodForm, StyleCostQuery, StyleCostRow,
+  BomDefault, BomDefaultReq, CraftStandard, CraftTextsForm, PdfOptions, SizePointMethodForm, StyleCostQuery, StyleCostRow,
   TechPackCost, TechPackDetail, TechPackOverview, TechPackSaveForm,
 } from '@/types/techpack'
 import { attachmentBody } from './basic'
@@ -10,18 +10,18 @@ import type { PageParams } from './system'
 
 /**
  * 资料包（docs/api/01-资料包.md）。没有自己的列表页：在款式详情里当页签（/styles/:id?tab=techpack&techPackId=&sub=）。
- * 权限码：看 techpack:pack:list，新建 / 修订 / 转生产 techpack:pack:add，改草稿 :edit，删草稿 :remove，生效 :publish；
+ * 权限码：看 techpack:pack:list，新建 / 修订 techpack:pack:add，改草稿 :edit，删草稿 :remove，生效 :publish；
  * 核价、PDF 含价格要 techpack:cost:query
  */
 const base = '/api/tech-packs'
 
 export const techPackApi = {
-  /** 一个款的全部版本、默认选哪版、能建哪个阶段、新颜色未配料、资料包核价 */
+  /** 一个款的全部版本、默认选哪版、能不能新建、新颜色未配料、资料包核价 */
   overview: (styleId: string) => http.get<TechPackOverview>(base, { styleId }),
   /** 一个版本：单头 + 尺寸指示、物料清单、工艺指示（核价另取） */
   get: (id: string) => http.get<TechPackDetail>(`${base}/${id}`),
-  /** 新建一个阶段的下一版草稿，返回 id。这个阶段已经有草稿、款式停用了回 1000 */
-  create: (styleId: string, stage: PackStage) => http.post<string>(base, { styleId, stage }),
+  /** 新建下一版草稿（生产 BOM），返回 id。已经有草稿、款式停用了回 1000 */
+  create: (styleId: string) => http.post<string>(base, { styleId }),
   /** 保存草稿：整版覆盖，返回新的 versionLock（"有修改时点生效"接着用它生效）。不是草稿了、versionLock 对不上回 1002 */
   save: (id: string, form: TechPackSaveForm) =>
     http.put<number>(`${base}/${id}`, {
@@ -36,10 +36,8 @@ export const techPackApi = {
    * 出错自己用 showBizError 弹清单（照供应商"申请准入"的写法）
    */
   publish: (id: string, versionLock: number, options?: RequestOptions) => http.post<void>(`${base}/${id}/publish`, { versionLock }, options),
-  /** 修订：复制出同阶段的下一版草稿，返回新 id */
+  /** 修订：复制出下一版草稿，返回新 id */
   revise: (id: string) => http.post<string>(`${base}/${id}/revise`),
-  /** 转生产 BOM：生效的研发版复制成生产版草稿，单价按价格档案重新取，返回新 id */
-  toProd: (id: string) => http.post<string>(`${base}/${id}/to-prod`),
   /** 几行 BOM 的默认值（供应商、损耗、来源、参考单价……），按请求的顺序返回 */
   bomDefaults: (id: string, items: BomDefaultReq[], options?: RequestOptions) => http.post<BomDefault[]>(`${base}/${id}/bom-defaults`, { items }, { ...options, readOnly: true }),
   /** 核价页签，colorId 不给 = 款式的第一个颜色。没有 techpack:cost:query 回 403 */

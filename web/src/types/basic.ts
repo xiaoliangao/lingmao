@@ -102,8 +102,8 @@ export interface WarehouseOption {
 export type MaterialSource = 'PURCHASE' | 'FACTORY' | 'CUSTOMER_SUPPLIED'
 
 export const MATERIAL_SOURCE_LABEL: Record<MaterialSource, string> = {
-  PURCHASE: '我方采购',
-  FACTORY: '工厂自备',
+  PURCHASE: '自购',
+  FACTORY: '厂购',
   CUSTOMER_SUPPLIED: '客供',
 }
 

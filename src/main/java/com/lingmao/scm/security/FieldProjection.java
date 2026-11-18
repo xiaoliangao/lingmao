@@ -16,8 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 只裁剪 HTTP 返回的树；缓存里的 DTO、数据库快照和服务端计算都不改。 */
 public class FieldProjection {
-    private static final Set<String> COST = Set.of("refPrice", "refCost", "estCost", "unitCost", "unitCostPackId", "unitCostStage",
-            "estAmount", "convertedAmount", "devCost", "devAmount", "buyPrice", "buyPriceDefault", "laborTotal", "ratio",
+    private static final Set<String> COST = Set.of("refPrice", "refCost", "estCost", "unitCost", "unitCostPackId",
+            "estAmount", "convertedAmount", "buyPrice", "buyPriceDefault", "laborTotal", "ratio",
             "cost", "costMode");
     private static final Set<String> COST_TOTALS = Set.of("fabric", "trim", "labor", "other", "total");
     private static final Set<String> MONEY = Set.of("price", "unitPrice", "purchasePrice", "amount", "totalAmount", "archivePrice", "prevPrice", "nextPrice",

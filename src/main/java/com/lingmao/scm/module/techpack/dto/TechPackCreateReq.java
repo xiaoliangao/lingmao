@@ -1,14 +1,11 @@
 package com.lingmao.scm.module.techpack.dto;
 
-import com.lingmao.scm.module.techpack.entity.PackStage;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
-/** 建一个阶段的下一版草稿（POST /api/tech-packs） */
+/** 建下一版草稿（POST /api/tech-packs）：资料包只有生产 BOM 一种（PRD §6.4.1、Q24） */
 @Data
 public class TechPackCreateReq {
     @NotNull(message = "要选款式")
     private Long styleId;
-    @NotNull(message = "要选研发 BOM 还是生产 BOM")
-    private PackStage stage;
 }

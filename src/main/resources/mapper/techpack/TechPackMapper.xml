@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!--
-  按款看成本（docs/api/01 §3.13）：一个款一行，取生产已生效版，没有取研发已生效版；两个都没有的款不列。
+  按款看成本（docs/api/01 §3.13）：一个款一行，取已生效的生产 BOM；没有的款不列。
   款号、名称、花名、吊牌价和筛选用的品类、品牌、年份、季节只读 JOIN sty_style（架构 §3.2 规则 4）；成本由 TechPackCostService 逐行算。
 -->
 <mapper namespace="com.lingmao.scm.module.techpack.mapper.TechPackMapper">
@@ -32,10 +32,7 @@
                p.id AS tech_pack_id, p.stage, p.version
         FROM tp_tech_pack p
         JOIN sty_style s ON s.id = p.style_id
-        WHERE p.status = 'EFFECTIVE'
-          AND (p.stage = 'PROD'
-               OR (p.stage = 'DEV' AND NOT EXISTS (SELECT 1 FROM tp_tech_pack x
-                                                   WHERE x.style_id = p.style_id AND x.stage = 'PROD' AND x.status = 'EFFECTIVE')))
+        WHERE p.status = 'EFFECTIVE' AND p.stage = 'PROD'
         <if test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
@@ -49,7 +46,6 @@
         <if test="q.brand != null and q.brand != ''">AND s.brand = #{q.brand}</if>
         <if test="q.year != null">AND s.year = #{q.year}</if>
         <if test="q.season != null and q.season != ''">AND s.season = #{q.season}</if>
-        <if test="q.stage != null">AND p.stage = #{q.stage}</if>
         ORDER BY s.code DESC, s.id DESC
     </select>
 </mapper>

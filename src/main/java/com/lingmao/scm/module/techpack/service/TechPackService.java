@@ -8,7 +8,6 @@ import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
 import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
-import com.lingmao.scm.module.techpack.entity.PackStage;
 
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -31,10 +30,10 @@ public interface TechPackService {
     TechPackDetailVO detail(long id);
 
     /**
-     * 建这个阶段的下一版草稿，返回 id：版本号 = 这个阶段最大的 + 1，工艺指示带工艺标准的默认文字，包装方式带默认的。
-     * 这个阶段已经有草稿、款式停用 → 1000
+     * 建下一版草稿（生产 BOM），返回 id：版本号 = 这个款最大的 + 1，工艺指示带工艺标准的默认文字，包装方式带默认的。
+     * 已经有草稿、款式停用 → 1000
      */
-    long create(long styleId, PackStage stage);
+    long create(long styleId);
 
     /** 保存草稿，整版覆盖，返回新的 versionLock。不是草稿了、versionLock 对不上 → 1002；格式不对 → 1000（说是第几行） */
     int save(long id, TechPackSaveReq req);
@@ -43,16 +42,13 @@ public interface TechPackService {
     void delete(long id);
 
     /**
-     * 生效：检查没通过 → 1000，data 是 PublishProblem 清单，一次列全。成功后同阶段旧的已生效版变已作废，回写款式的资料包状态。
+     * 生效：检查没通过 → 1000，data 是 PublishProblem 清单，一次列全。成功后旧的已生效版变已作废，回写款式的资料包状态。
      * versionLock 对不上、不是草稿 → 1002；款式停用 → 1000
      */
     void publish(long id, int versionLock);
 
-    /** 修订：已生效版复制成同阶段的下一版草稿，返回新 id。不是已生效 → 1002；同阶段有草稿、款式停用 → 1000 */
+    /** 修订：已生效版复制成下一版草稿，返回新 id。不是已生效 → 1002；已有草稿、款式停用 → 1000 */
     long revise(long id);
-
-    /** 转生产 BOM：研发已生效版复制成生产阶段的下一版草稿，单价按生产 BOM 的规则重新取，返回新 id */
-    long toProd(long id);
 
     /** 几行 BOM 的默认值，按请求的顺序。物料停用了 → 1000 */
     List<BomDefaultVO> bomDefaults(long id, List<BomDefaultReq> items);

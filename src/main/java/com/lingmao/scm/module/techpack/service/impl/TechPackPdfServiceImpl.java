@@ -357,7 +357,7 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
         return dot < 0 ? "" : path.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
-    /** "27CF001-女式风衣-工艺单-V2.pdf"；研发版"研发V1"；文件名里不能有的字符换成下划线 */
+    /** "27CF001-女式风衣-工艺单-V2.pdf"；文件名里不能有的字符换成下划线 */
     static String fileName(PackOwner owner, TechPack pack) {
         String name = owner.code() + "-" + owner.name() + "-工艺单-" + pack.getStage().versionName(pack.getVersion()).replace(" ", "");
         return name.replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_") + ".pdf";

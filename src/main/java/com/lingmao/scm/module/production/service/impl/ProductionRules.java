@@ -177,7 +177,7 @@ final class ProductionRules {
     }
 
     /**
-     * 领料状态：need 是应领（物料 SKU → 库存单位），issued 是已领。没有应领的行（资料包里没有我方采购的料）是 null；
+     * 领料状态：need 是应领（物料 SKU → 库存单位），issued 是已领。没有应领的行（资料包里没有自购的料）是 null；
      * 每种都领够了 DONE，一种都没领过 NONE，其他 PARTIAL
      */
     static MaterialIssueStatus issueStatus(Map<Long, BigDecimal> need, Map<Long, BigDecimal> issued) {

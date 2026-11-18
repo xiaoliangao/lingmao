@@ -51,7 +51,7 @@ import java.util.stream.Collectors;
  * "物料信息"一行一个物料，"物料信息SKU"一行一个 SKU，表头用领猫的列名；我们多出来的采购单位、换算系数、最小包装量接在"物料信息"后面。
  * 领猫的"物料信息多单位"有就读（定采购单位和换算系数）；两张"多供应商"表只提示有几行没导（归价格档案的导入）。
  * <p>
- * 只新增：编码已存在算错误。有一处不对整批不导（1003）；新建了颜色、客供改成我方采购这类，导完列在提示里。
+ * 只新增：编码已存在算错误。有一处不对整批不导（1003）；新建了颜色、客供改成自购这类，导完列在提示里。
  * 导完把每个分类码的流水推到已用的最大号，之后新建不撞（RFC 003 §7.1）。
  * 导出：两张表的列和模板一样，导出来改了能导回去（编码已存在的要先删）
  */
@@ -364,7 +364,7 @@ public class MaterialImport {
             }
             String source = sourceOf(r.getSource());
             if (source == null) {
-                sheet.error(row, "物料来源", "物料来源只认 自购、我方采购、工厂自备、客供");
+                sheet.error(row, "物料来源", "物料来源只认 自购、厂购、客供");
             } else if (MaterialSource.valueOf(source).isTrade() && !tradeFeature.enabled()) {
                 source = MaterialSource.PURCHASE.name();
                 customerSuppliedRows.add(row);
@@ -413,7 +413,7 @@ public class MaterialImport {
         }
         if (!customerSuppliedRows.isEmpty()) {
             sheet.note(customerSuppliedRows.getFirst(), "物料来源", rowsText(customerSuppliedRows)
-                    + "的物料来源「客供」按「我方采购」导入：系统没有打开代工功能");
+                    + "的物料来源「客供」按「自购」导入：系统没有打开代工功能");
         }
         if (lossFactors) {
             sheet.note(0, "默认损耗", "「默认损耗」这一列的数都在 1 和 2 之间，按系数导入：1.03 = 3%");
@@ -701,7 +701,7 @@ public class MaterialImport {
                         .example("ML0001").note("照用领猫的编码；已经有的不导"),
                 ExcelColumn.text("供应商货号", MaterialRow::getSupplierItemNo, MaterialRow::setSupplierItemNo).maxLength(64),
                 ExcelColumn.text("物料来源", MaterialRow::getSource, MaterialRow::setSource).maxLength(32)
-                        .note("自购 / 工厂自备 / 客供，不填 = 自购"),
+                        .note("自购 / 厂购 / 客供，不填 = 自购"),
                 ExcelColumn.text("物料名称", MaterialRow::getName, MaterialRow::setName).required().maxLength(200),
                 ExcelColumn.text("供应商编号", MaterialRow::getSupplierCode, MaterialRow::setSupplierCode).code().maxLength(32)
                         .note("默认供应商，按供应商编码对；供应商要先导入"),
@@ -809,7 +809,7 @@ public class MaterialImport {
                 .map(DictOption::value).findFirst().orElse(null);
     }
 
-    /** 领猫的物料来源 → MaterialSource 的名字；认不出返回 null。不填 = 我方采购 */
+    /** 领猫的物料来源 → MaterialSource 的名字；认不出返回 null。不填 = 自购；老叫法"我方采购""工厂自备"也认（PRD Q12）*/
     static String sourceOf(String text) {
         if (text == null || text.isBlank()) {
             return MaterialSource.PURCHASE.name();
@@ -818,7 +818,7 @@ public class MaterialImport {
         if (t.equals("自购") || t.equals("我方采购") || t.equals("采购") || t.equalsIgnoreCase(MaterialSource.PURCHASE.name())) {
             return MaterialSource.PURCHASE.name();
         }
-        if (t.contains("自备") || t.contains("工厂") || t.equalsIgnoreCase(MaterialSource.FACTORY.name())) {
+        if (t.equals("厂购") || t.contains("自备") || t.contains("工厂") || t.equalsIgnoreCase(MaterialSource.FACTORY.name())) {
             return MaterialSource.FACTORY.name();
         }
         if (t.equals("客供") || t.equalsIgnoreCase(MaterialSource.CUSTOMER_SUPPLIED.name())) {

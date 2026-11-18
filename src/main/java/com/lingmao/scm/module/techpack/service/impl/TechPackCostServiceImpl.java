@@ -49,7 +49,7 @@ public class TechPackCostServiceImpl implements TechPackCostService {
         if (colorId != null && !ctx.colorIds().contains(colorId)) {
             throw new BizException("这个颜色不在这一版本的展示范围内，请刷新后再选");
         }
-        return costCalculator.compute(pack, ctx, colorId != null ? colorId : ctx.firstColorId(), true);
+        return costCalculator.compute(pack, ctx, colorId != null ? colorId : ctx.firstColorId());
     }
 
     @Override

@@ -98,54 +98,42 @@ class TechPackServiceImplIT {
     }
 
     /**
-     * 规则（docs/api/01 §3.4-3.8）：研发草稿保存 → 生效（款式变"研发中"）→ 转生产 BOM（单价按价格档案重新取、记来源）→ 生效（款式变"已生效"）
-     * → 修订出 V2，没写本版说明生效被拦。保存时 versionLock 对不上 → 1002
+     * 规则（docs/api/01 §3.4-3.8）：生产 BOM 草稿保存 → 生效（款式变"已生效"）→ 修订出 V2，没写本版说明生效被拦，写了生效、V1 作废。
+     * 保存时 versionLock 对不上 → 1002。没有研发 BOM、转生产 BOM（甲方 11-18 答 Q24）
      */
     @Test
-    void devToProdFlow() {
+    void prodFlow() {
         Fixture f = fixture();
-        long dev = techPackService.create(f.style, PackStage.DEV);
-        TechPackDetailVO draft = techPackService.detail(dev);
+        long prod = techPackService.create(f.style);
+        TechPackDetailVO draft = techPackService.detail(prod);
         assertThat(draft.getStatus()).isEqualTo(PackStatus.DRAFT);
         assertThat(draft.getVersion()).isEqualTo(1);
         assertThat(draft.getCraftSections()).hasSize(CraftSection.values().length);
         assertThat(draft.getActions()).containsExactly("edit", "publish", "remove");
 
-        int lock = techPackService.save(dev, saveReq(draft.getVersionLock(), f, null));
+        int lock = techPackService.save(prod, saveReq(draft.getVersionLock(), f, null));
         assertThat(lock).isEqualTo(draft.getVersionLock() + 1);
-        assertThatThrownBy(() -> techPackService.save(dev, saveReq(draft.getVersionLock(), f, null)))
+        assertThatThrownBy(() -> techPackService.save(prod, saveReq(draft.getVersionLock(), f, null)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.STATE_CHANGED));
-        TechPackDetailVO saved = techPackService.detail(dev);
+        TechPackDetailVO saved = techPackService.detail(prod);
         assertThat(saved.getBomItems()).hasSize(1);
         assertThat(saved.getBomItems().getFirst().getSkus()).hasSize(2);
         assertThat(saved.getBomItems().getFirst().getUnit()).isEqualTo("METER");
         // 单件成本 = 1.5 ×（1 + 3%）× 18.5 = 28.58
         assertThat(saved.getBomItems().getFirst().getUnitCost()).isEqualByComparingTo("28.58");
 
-        techPackService.publish(dev, lock);
-        assertThat(techPackStatus(f.style)).isEqualTo("DEV");
-        assertThat(techPackService.detail(dev).getActions()).containsExactly("toProd", "revise");
-
-        // 价格档案里这家供应商这个 SKU 现价 20：转生产 BOM 后行上取它
-        jdbcTemplate.update("""
-                INSERT INTO prc_price (type, supplier_id, material_id, material_sku_id, price, unit, tax_pct, effective_date)
-                VALUES ('MATERIAL', ?, ?, ?, 20, 'METER', 13, DATE '2026-01-01')""", f.supplier, f.material, f.skuA);
-        long prod = techPackService.toProd(dev);
-        TechPackDetailVO prodDraft = techPackService.detail(prod);
-        assertThat(prodDraft.getStage()).isEqualTo(PackStage.PROD);
-        assertThat(prodDraft.getVersion()).isEqualTo(1);
-        assertThat(prodDraft.getSourcePackId()).isEqualTo(dev);
-        assertThat(prodDraft.getBomItems().getFirst().getRefPrice()).isEqualByComparingTo("20");
-        assertThat(prodDraft.getBomItems().getFirst().getPriceSourceId()).isNotNull();
-
-        techPackService.publish(prod, prodDraft.getVersionLock());
+        assertThat(techPackStatus(f.style)).isEqualTo("NONE");
+        techPackService.publish(prod, lock);
         assertThat(techPackStatus(f.style)).isEqualTo("PROD");
+        TechPackDetailVO published = techPackService.detail(prod);
+        assertThat(published.getStage()).isEqualTo(PackStage.PROD);
+        assertThat(published.getActions()).containsExactly("revise");
+
         TechPackOverviewVO overview = techPackService.overview(f.style);
         assertThat(overview.getDefaultPackId()).isEqualTo(prod);
         assertThat(overview.getUnitCostPackId()).isEqualTo(prod);
+        assertThat(overview.isCreatable()).isTrue();   // 没有草稿就能建（docs/api/01 §3.2）；页面上有版本时只给"修订"
         TechPackCostVO cost = costService.cost(prod, null);
-        assertThat(cost.getDev()).isNotNull();
-        assertThat(cost.getDev().packId()).isEqualTo(dev);
         assertThat(cost.getSummary().total()).isEqualByComparingTo(overview.getUnitCost());
         // 按款看成本取的是生产已生效版，数和核价页签一样（PRD §6.4 验收 10）
         StyleCostQuery query = new StyleCostQuery();
@@ -162,7 +150,7 @@ class TechPackServiceImplIT {
         long v2 = techPackService.revise(prod);
         TechPackDetailVO v2Draft = techPackService.detail(v2);
         assertThat(v2Draft.getVersion()).isEqualTo(2);
-        assertThat(v2Draft.getSourcePackId()).isEqualTo(dev);
+        assertThat(techPackService.overview(f.style).isCreatable()).isFalse();   // 已经有草稿
         assertThatThrownBy(() -> techPackService.publish(v2, v2Draft.getVersionLock()))
                 .isInstanceOfSatisfying(BizException.class, e -> {
                     assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
@@ -178,7 +166,7 @@ class TechPackServiceImplIT {
     @Test
     void publishedContextFreezesColorsSizesAndOwner_legacyIsExplicit() throws Exception {
         Fixture f = fixture();
-        long id = techPackService.create(f.style, PackStage.PROD);
+        long id = techPackService.create(f.style);
         int lock = techPackService.save(id, saveReq(0, f, null));
         techPackService.publish(id, lock);
         TechPackDetailVO original = techPackService.detail(id);
@@ -206,7 +194,7 @@ class TechPackServiceImplIT {
     @Test
     void costAuthorizationPreservesHeadAndChildren() {
         Fixture f = fixture();
-        long id = techPackService.create(f.style, PackStage.PROD);
+        long id = techPackService.create(f.style);
         TechPackSaveReq initial = saveReq(0, f, null);
         var cost = new com.lingmao.scm.module.techpack.dto.TechPackCostForm();
         cost.setCostMode(com.lingmao.scm.module.techpack.entity.CostMode.BUY); cost.setBuyPrice(new BigDecimal("30"));
@@ -235,29 +223,28 @@ class TechPackServiceImplIT {
         assertThat(count("SELECT COUNT(*) FROM tp_cost_item WHERE tech_pack_id=?", id)).isZero();
     }
 
-    /** 规则：同款同阶段已经有草稿再建 → 1000；绕过检查直接插第二个草稿，部分唯一索引 uk_tp_pack_draft 拦住 */
+    /** 规则：同款已经有草稿再建 → 1000；绕过检查直接插第二个草稿，部分唯一索引 uk_tp_pack_draft 拦住 */
     @Test
-    void oneDraftPerStage() {
+    void oneDraftPerStyle() {
         Fixture f = fixture();
-        long dev = techPackService.create(f.style, PackStage.DEV);
-        assertThatThrownBy(() -> techPackService.create(f.style, PackStage.DEV))
+        techPackService.create(f.style);
+        assertThat(techPackService.overview(f.style).isCreatable()).isFalse();
+        assertThatThrownBy(() -> techPackService.create(f.style))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("已经有草稿"));
         assertThatThrownBy(() -> jdbcTemplate.update(
-                "INSERT INTO tp_tech_pack (style_id, stage, version, status) VALUES (?, 'DEV', 99, 'DRAFT')", f.style))
+                "INSERT INTO tp_tech_pack (style_id, stage, version, status) VALUES (?, 'PROD', 99, 'DRAFT')", f.style))
                 .isInstanceOf(DuplicateKeyException.class);
-        // 生产阶段不受研发草稿影响
-        assertThat(techPackService.create(f.style, PackStage.PROD)).isNotEqualTo(dev);
     }
 
     /** 规则：删草稿连同配料、分码用量、BOM 行、工艺文字一起删；已生效的不能删（1002） */
     @Test
     void deleteDraftWithChildren() {
         Fixture f = fixture();
-        long dev = techPackService.create(f.style, PackStage.DEV);
-        int lock = techPackService.save(dev, saveReq(0, f, null));
-        long other = techPackService.create(f.style, PackStage.PROD);
+        long other = techPackService.create(f.style);
         techPackService.save(other, saveReq(0, f, null));
         techPackService.publish(other, 1);
+        long dev = techPackService.create(f.style);
+        int lock = techPackService.save(dev, saveReq(0, f, null));
 
         int historyBefore = count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev);
         assertThat(historyBefore).isGreaterThan(0);
@@ -274,24 +261,23 @@ class TechPackServiceImplIT {
         assertThat(count("SELECT count(*) FROM tp_bom_item WHERE tech_pack_id = ?", other)).isEqualTo(1);
     }
 
-    /** 规则（docs/api/01 §3.9）：研发 BOM 不看价格档案，取 SKU 单价；换算成元 / 库存单位 */
+    /** 规则（docs/api/01 §3.9）：价格档案里没有取 SKU 单价；有了取档案的现价。换算成元 / 库存单位，供应商取物料的默认供应商 */
     @Test
-    void bomDefaults_devIgnoresArchive() {
+    void bomDefaults_archiveBeforeSkuPrice() {
         Fixture f = fixture();
-        jdbcTemplate.update("""
-                INSERT INTO prc_price (type, supplier_id, material_id, price, unit, tax_pct, effective_date)
-                VALUES ('MATERIAL', ?, ?, 99, 'METER', 13, DATE '2026-01-01')""", f.supplier, f.material);
-        long dev = techPackService.create(f.style, PackStage.DEV);
+        long prod = techPackService.create(f.style);
         BomDefaultReq req = new BomDefaultReq();
         req.setMaterialId(f.material);
         req.setSkuIds(List.of(f.skuA));
-        BomDefaultVO d = techPackService.bomDefaults(dev, List.of(req)).getFirst();
+        BomDefaultVO d = techPackService.bomDefaults(prod, List.of(req)).getFirst();
         assertThat(d.getSupplierId()).isEqualTo(f.supplier);
         assertThat(d.getRefPrice()).isEqualByComparingTo("18.5");
         assertThat(d.getPriceFrom()).isEqualTo(BomPricing.FROM_SKU);
         assertThat(d.getLossPct()).isEqualByComparingTo("3");
 
-        long prod = techPackService.create(f.style, PackStage.PROD);
+        jdbcTemplate.update("""
+                INSERT INTO prc_price (type, supplier_id, material_id, price, unit, tax_pct, effective_date)
+                VALUES ('MATERIAL', ?, ?, 99, 'METER', 13, DATE '2026-01-01')""", f.supplier, f.material);
         BomDefaultVO p = techPackService.bomDefaults(prod, List.of(req)).getFirst();
         assertThat(p.getRefPrice()).isEqualByComparingTo("99");
         assertThat(p.getPriceFrom()).isEqualTo(BomPricing.FROM_ARCHIVE);
@@ -313,8 +299,8 @@ class TechPackServiceImplIT {
         assertThatThrownBy(() -> craftStandardService.addPoint(point, null))
                 .isInstanceOf(BizException.class).hasMessageContaining("已经有了");
 
-        long dev = techPackService.create(f.style, PackStage.DEV);
-        TechPackDetailVO draft = techPackService.detail(dev);
+        long id = techPackService.create(f.style);
+        TechPackDetailVO draft = techPackService.detail(id);
         assertThat(draft.getPackingMode()).isEqualTo("FLAT");
         assertThat(draft.getCraftSections()).filteredOn(c -> c.section() == CraftSection.CUTTING)
                 .singleElement().satisfies(c -> assertThat(c.content()).isEqualTo("松布 24 小时"));
@@ -333,7 +319,7 @@ class TechPackServiceImplIT {
     @Test
     void exportPdf() throws Exception {
         Fixture f = fixture();
-        long id = techPackService.create(f.style, PackStage.PROD);
+        long id = techPackService.create(f.style);
         TechPackSaveReq req = saveReq(0, f, null);
         SpecPointForm spec = new SpecPointForm();
         spec.setPoint("后中长");

@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 
 /**
  * 资料包的主人（RFC 007 §6.2）：款式那边的东西集中在这里取，建版本、生效、修订、核价、PDF 都只用这里给的。
- * 二期研发 BOM 挂样衣时，style_id 为空的版本由 dev 实现的 SamplePackOwner 给同一个 PackOwner，只在这个类里加分支
+ * 主人都是款式（甲方 11-18 答 Q24：研发不填物料清单，样衣不挂资料包）
  */
 @Component
 @RequiredArgsConstructor

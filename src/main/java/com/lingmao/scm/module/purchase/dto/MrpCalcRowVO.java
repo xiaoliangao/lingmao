@@ -16,7 +16,7 @@ public class MrpCalcRowVO {
     private String status;
     private List<String> orderNos;
     private List<String> styleCodes;
-    /** 我方采购里建议采购 > 0 的行数 */
+    /** 自购里建议采购 > 0 的行数 */
     private int buyCount;
     /** 其中已经全转了采购的 */
     private int convertedCount;

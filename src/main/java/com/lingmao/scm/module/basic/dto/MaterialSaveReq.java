@@ -16,7 +16,7 @@ import java.math.BigDecimal;
 /**
  * 修改物料（PUT 整体覆盖），也是新建的公共部分（MaterialCreateReq 再加第一批 SKU）。
  * 分类、库存单位建好不改：修改时要和原来一样，不一样报 1000（RFC 003 §7.2）。
- * 采购单位不填 = 库存单位；换算系数不填 = 1；最小包装量不填 = 1；默认来源不填 = 我方采购
+ * 采购单位不填 = 库存单位；换算系数不填 = 1；最小包装量不填 = 1；默认来源不填 = 自购
  */
 @Data
 public class MaterialSaveReq {
@@ -94,8 +94,8 @@ public class MaterialSaveReq {
     @Size(max = 64, message = "季节最长 64")
     private String season;
 
-    /** MaterialSource：PURCHASE 我方采购 / FACTORY 工厂自备 / CUSTOMER_SUPPLIED 客供（TRADE 关时拒收） */
-    @Pattern(regexp = "^(PURCHASE|FACTORY|CUSTOMER_SUPPLIED)$", message = "默认来源只能是 我方采购、工厂自备、客供")
+    /** MaterialSource：PURCHASE 自购 / FACTORY 厂购 / CUSTOMER_SUPPLIED 客供（TRADE 关时拒收） */
+    @Pattern(regexp = "^(PURCHASE|FACTORY|CUSTOMER_SUPPLIED)$", message = "默认来源只能是 自购、厂购、客供")
     private String defaultSource;
 
     @DecimalMin(value = "0", message = "默认损耗不能是负数")

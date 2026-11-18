@@ -22,8 +22,6 @@ public class TechPackDetailVO {
     private Integer version;
     private PackStatus status;
     private String versionNote;
-    private Long sourcePackId;
-    private Integer sourceVersion;
     private BigDecimal utilPct;
     private String packingMode;
     private Long publishBy;
@@ -54,6 +52,6 @@ public class TechPackDetailVO {
     private BigDecimal laborTotal;
     /** 单件成本（核价合计，按第一个颜色）；没有看成本权限是 null */
     private BigDecimal unitCost;
-    /** edit、remove、publish、revise、toProd（docs/api/01 §2） */
+    /** edit、remove、publish、revise（docs/api/01 §2） */
     private List<String> actions;
 }

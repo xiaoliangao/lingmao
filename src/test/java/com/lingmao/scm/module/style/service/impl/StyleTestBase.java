@@ -126,7 +126,7 @@ abstract class StyleTestBase {
     void setUpBase() {
         build(false);
         lenient().when(dictDataService.listByType(anyString())).thenReturn(List.of());
-        lenient().when(dictDataService.listByType("style_class")).thenReturn(List.of(new DictOption("服饰", "FS", 1)));
+        lenient().when(dictDataService.listByType("style_class")).thenReturn(List.of(new DictOption("非通勤裤", "FS", 1)));
         lenient().when(dictDataService.listByType("brand")).thenReturn(List.of(new DictOption("测试品牌", "TB", 1)));
         lenient().when(dictDataService.listByType("season")).thenReturn(List.of(
                 new DictOption("春", "SPRING", 1), new DictOption("夏", "SUMMER", 1)));

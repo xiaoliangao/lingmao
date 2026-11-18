@@ -59,7 +59,7 @@ export const PRODUCTION_LOG_ACTION: Record<string, string> = {
   'export-pdf': '导出工艺单',
 }
 
-/** 领料状态（prd_order.issue_status），领料、退料过账时回写。资料包里没有我方采购的行时字段是 null（不用领料） */
+/** 领料状态（prd_order.issue_status），领料、退料过账时回写。资料包里没有自购的行时字段是 null（不用领料） */
 export type MaterialIssueStatus = 'NONE' | 'PARTIAL' | 'DONE'
 
 export const MATERIAL_ISSUE_STATUS: Record<MaterialIssueStatus, { label: string; tone: StatusTone }> = {
@@ -223,7 +223,7 @@ export interface ProductionRow {
   nodes: NodeDot[]
   /** 第一个没报完成的节点；都完成了、没节点是 null */
   currentNodeName: string | null
-  /** null = 不用领料（资料包里没有我方采购的行，成品采购单常见） */
+  /** null = 不用领料（资料包里没有自购的行，成品采购单常见） */
   issueStatus: MaterialIssueStatus | null
   returnedQty: number
   defectQty: number
@@ -394,7 +394,7 @@ export interface ProductionForm {
 
 // ---------------------------------------------------------------- 领料（"领料"页签）
 
-/** 应领、已领：只算资料包里物料来源 = 我方采购的行（PRD §6.7.1、Q12）。数量是库存单位 */
+/** 应领、已领：只算资料包里物料来源 = 自购的行（PRD §6.7.1、Q12）。数量是库存单位 */
 export interface MaterialPlanRow extends MaterialSkuBrief {
   /** 应领 = Σ 件数 × BOM 用量 ×（1 + 损耗率） */
   needQty: number
@@ -422,7 +422,7 @@ export interface ProductionStockDoc {
 }
 
 export interface ProductionMaterials {
-  /** 资料包里没有我方采购的行时是 []（成品采购单常见） */
+  /** 资料包里没有自购的行时是 []（成品采购单常见） */
   rows: MaterialPlanRow[]
   /** 草稿也列，作废的不列；新的在前 */
   docs: ProductionStockDoc[]

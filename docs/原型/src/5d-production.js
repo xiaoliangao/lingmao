@@ -151,7 +151,7 @@ const PROD_DETAIL = {
       if (run(() => removeDraft(db.productions, x.value))) { go(prodKindOf(x.value).to); toast('删掉了') }
     }
     // 退料入库：工厂仓 → 物料仓，源单挂这张生产单，明细带出领过的料
-    // 成品采购单只领我方采购的料（主唛、吊牌这类）；资料包里没有就不出「领料」按钮
+    // 成品采购单只领自购的料（主唛、吊牌这类）；资料包里没有就不出「领料」按钮
     const canIssue = computed(() => prodKind(x.value) === '外发加工单' || issuePlan(x.value).length > 0)
     const backInit = computed(() => ({ src: x.value.no, partner: x.value.factory, from: factoryWh(x.value.factory)?.code, to: db.warehouses.find((w) => w.type === '物料仓' && w.status !== '停用')?.code,
       lines: issuePlan(x.value).filter((r) => r.issued > 0).map((r) => ({ sku: r.sku, owner: r.owner, qty: null, price: null, lot: '', rolls: null, note: '' })) }))
@@ -205,7 +205,7 @@ const PROD_DETAIL = {
         </section>
         <section v-if="tab === 'lines'" data-c="加工明细"><Matrix :st="x.style" :model-value="qtyMap" ro :colors="colors" :sub="sub"/></section>
         <section v-if="tab === 'mat'" data-c="领料">
-          <Tbl inset flat :rows="issuePlan(x)" :empty="prodKind(x) === '成品采购单' ? '成品采购单的料工厂自己买；资料包里没有标「我方采购」的料（如主唛、吊牌），不用领料' : '资料包里没有要发给工厂的料'" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
+          <Tbl inset flat :rows="issuePlan(x)" :empty="prodKind(x) === '成品采购单' ? '成品采购单的料工厂自己买；资料包里没有标「自购」的料（如主唛、吊牌），不用领料' : '资料包里没有要发给工厂的料'" :cols="[{ k: 'sku', t: '物料', f: r => skuName(r.sku), img: r => r.sku }, { k: 'code', t: 'SKU', c: 'code', f: r => r.sku }, ...(TRADE ? [{ k: 'owner', t: '物权', f: r => ownerName(r.owner) }] : []),
             { k: 'need', t: '应领', c: 'num', f: r => fq(r.need) + ' ' + unitOf(r.sku) }, { k: 'issued', t: '已领', c: 'num', f: r => fq(r.issued) }, { k: 'suggest', t: '还差', c: 'num' }, { k: 'avail', t: '物料仓库存', c: 'num', f: r => fq(r.avail) }]">
             <template #suggest="{ r }"><span :class="{ amber: r.suggest > 0 }">{{ r.suggest > 0 ? fq(r.suggest) : '领齐' }}</span></template></Tbl>
           <div class="sec"><h3>领料出库、退料入库单</h3><Tbl inset flat :rows="docs" link @row="d => go(stockNoLink(d.no))" empty="还没领过料" :cols="[{ k: 'no', t: '单号', c: 'code' }, { k: 'type', t: '类型' }, { k: 'date', t: '日期', f: d => fd(d.date) }, { k: 'flow', t: '出仓 → 入仓', f: d => whName(d.from) + ' → ' + whName(d.to) }, { k: 'n', t: '物料', f: d => d.lines.length + ' 种' }, { k: 'status', t: '状态' }]"><template #status="{ r }"><St :s="r.status"/></template></Tbl></div>
@@ -406,7 +406,7 @@ comp('ProdIssueMat', {
       <tbody><tr v-for="r in rows" :key="r.sku + r.owner"><td><span class="row"><Thumb :code="r.sku" :s="30"/><span class="col"><span>{{ skuName(r.sku) }}</span><small class="code dim">{{ r.sku }}</small></span></span></td><td v-if="TRADE" :class="{ amber: r.owner !== '自有' }">{{ ownerName(r.owner) }}</td>
         <td class="num">{{ fq(r.need) }}</td><td class="num">{{ fq(r.issued) }}</td><td class="num">{{ fq(r.suggest) }} <span class="dim">{{ unitOf(r.sku) }}</span></td>
         <td class="num" :class="{ red: have(r) < r.qty }">{{ fq(have(r)) }}</td><td><input class="inp cell num" type="number" v-model.number="r.qty"></td></tr>
-        <tr v-if="!rows.length"><td :colspan="TRADE ? 7 : 6" class="empty">{{ prodKind(p) === '成品采购单' ? '资料包里没有标「我方采购」的料，成品采购单不用领料' : '资料包里没有要发给工厂的料' }}</td></tr></tbody></table>
+        <tr v-if="!rows.length"><td :colspan="TRADE ? 7 : 6" class="empty">{{ prodKind(p) === '成品采购单' ? '资料包里没有标「自购」的料，成品采购单不用领料' : '资料包里没有要发给工厂的料' }}</td></tr></tbody></table>
     <label v-if="over" class="f" style="margin-top:12px">超领原因<input class="inp" v-model="f.reason" placeholder="比如：裁剪损耗大，补 5 米"></label>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">领料并过账</button></template>
   </Modal>`,

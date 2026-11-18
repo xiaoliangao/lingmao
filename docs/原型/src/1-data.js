@@ -65,7 +65,7 @@ const db = reactive({
     { id: 'F', name: '均码', sizes: ['F'], base: 'F', status: '启用' },
   ],
   seasons: [{ code: 'C', name: '春' }, { code: 'X', name: '夏' }, { code: 'Q', name: '秋' }, { code: 'D', name: '冬' }],
-  bigCats: [{ code: 'FS', name: '服饰', status: '启用' }, { code: 'XZ', name: '鞋子', status: '启用' }], // 款号大类，2 位字母，进款号
+  bigCats: [{ code: 'FS', name: '非通勤裤', status: '启用' }, { code: 'TS', name: '通勤裤', status: '启用' }, { code: 'XZ', name: '鞋子', status: '启用' }], // 款号大类，2 位字母，进款号
   dnoUsed: {}, // 进过款号的设计师编号 → 用户 id，锁定不能改、不能给别人
   categories: [
     { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'trench' },
@@ -106,7 +106,7 @@ const db = reactive({
     安全类别: ['A 类', 'B 类', 'C 类'],
     色系: ['黑白灰', '棕', '蓝', '红', '黄', '绿', '紫'],
     物料类型: ['面料', '里料', '辅料', '标签吊牌', '包材'],
-    物料来源: TRADE ? ['我方采购', '客供', '工厂自备'] : ['我方采购', '工厂自备'],
+    物料来源: TRADE ? ['自购', '客供', '厂购'] : ['自购', '厂购'],
     币种: ['人民币', '美元', '港币', '欧元'],
     发票类型: ['增值税专用发票', '增值税普通发票', '不开票'],
     证照类型: ['营业执照', '验厂报告', '环保证明', '其他'],

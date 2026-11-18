@@ -149,7 +149,7 @@ public class OrderServiceImpl implements OrderService {
     /** 和前端 types/order.ts 的 ORDER_STATUS 一样 */
     static final StatusLabels<DocStatus> ORDER_STATUS = StatusLabels.DOC.rename(RUNNING, "生产中").rename(VOIDED, "已取消");
 
-    static final String NO_PROD_PACK = "没有生效的生产 BOM：研发 BOM 只用来估价，订单不能用";
+    static final String NO_PROD_PACK = "没有生效的生产 BOM：先在款式的资料包里建好、点生效";
 
     /** 生产进度能改的订单状态：结案、取消的不动（取消结案时按结案前的状态回去） */
     private static final Set<DocStatus> PRODUCTION_DRIVEN = Set.of(APPROVED, RUNNING, DONE);

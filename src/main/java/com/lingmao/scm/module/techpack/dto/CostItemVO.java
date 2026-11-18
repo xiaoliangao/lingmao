@@ -12,6 +12,4 @@ public class CostItemVO {
     private String name;
     private BigDecimal amount;
     private String remark;
-    /** 研发版里同名那一项的金额；没有是 null */
-    private BigDecimal devAmount;
 }

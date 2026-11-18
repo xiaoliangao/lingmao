@@ -231,7 +231,7 @@ class ProductionIT {
     }
 
     /**
-     * docs/api/05 §3.4.1 / Q12：BUY 不必然免领料；本例在订单锁版前准备全部工厂自备料的 BOM，
+     * docs/api/05 §3.4.1 / Q12：BUY 不必然免领料；本例在订单锁版前准备全部厂购料的 BOM，
      * 包工包料排单 → 审核 → 无领料回货 → 作废回货，累计退回且仍保留排单占用。
      */
     @Test
@@ -267,7 +267,7 @@ class ProductionIT {
                 stockReq(InvDocType.ISSUE_OUT, f, "1")))
                 .isInstanceOfSatisfying(BizException.class, e -> {
                     assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
-                    assertThat(e.getMessage()).contains("没有我方采购的料");
+                    assertThat(e.getMessage()).contains("没有自购的料");
                 });
         assertThat(productionOrderService.materials(prdId).docs()).isEmpty();
 
@@ -375,7 +375,7 @@ class ProductionIT {
     record Fixture(long company, long user, long warehouse, long factory, long style, long skuM, long skuL, long sku) {
     }
 
-    /** 主体、跟单（默认主体）、物料仓、合作中的成衣厂（带工厂仓）、面料商、一个款（一色两码）、一种面料、生效的生产 BOM（1.5 米 / 件，我方采购） */
+    /** 主体、跟单（默认主体）、物料仓、合作中的成衣厂（带工厂仓）、面料商、一个款（一色两码）、一种面料、生效的生产 BOM（1.5 米 / 件，自购） */
     private Fixture fixture() {
         String s = String.valueOf(ThreadLocalRandom.current().nextInt(100_000, 1_000_000));
         long company = jdbcTemplate.queryForObject("INSERT INTO bas_company (code, name, short_name) VALUES (?, ?, ?) RETURNING id",

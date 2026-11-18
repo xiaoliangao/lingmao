@@ -39,7 +39,7 @@ import static com.lingmao.scm.common.doc.DocStatus.RUNNING;
 /**
  * 领料出库、退料入库的源单这一边（docs/api/05 §3.4.3、04 §3.3）：数量都是库存单位，按物料 SKU 对行（没有源单明细 id）。
  * <ul>
- *   <li>领料：已下单、生产中；带出资料包里我方采购的每种料，本次默认 = 还差，不限上限（超了库存那边要写超领原因）</li>
+ *   <li>领料：已下单、生产中；带出资料包里自购的每种料，本次默认 = 还差，不限上限（超了库存那边要写超领原因）</li>
  *   <li>退料：已下单、生产中、已完成；带出已领 &gt; 0 的，本次 ≤ 已领</li>
  * </ul>
  * check 先锁住生产单，过账、回写都在库存单的同一个事务里；过账后重算领料状态、回写算料单的已领（料都领完了的订单的算料单自动关闭）
@@ -106,7 +106,7 @@ class ProductionStockHandler implements StockSourceHandler {
                     + "」，不能" + (issue ? "领料" : "退料"));
         }
         if (p.getIssueStatus() == null) {
-            throw new BizException(ProductionSupport.label(p) + " 的资料包里没有我方采购的料，不用领料");
+            throw new BizException(ProductionSupport.label(p) + " 的资料包里没有自购的料，不用领料");
         }
     }
 
@@ -134,7 +134,7 @@ class ProductionStockHandler implements StockSourceHandler {
         Map<Long, BigDecimal> thisQty = new LinkedHashMap<>();
         for (SourcePosting.Line l : posting.lines()) {
             if (issue && !need.containsKey(l.materialSkuId())) {
-                throw new BizException(400, "第 " + l.seq() + " 行不是" + p.getNo() + "资料包里我方采购的料");
+                throw new BizException(400, "第 " + l.seq() + " 行不是" + p.getNo() + "资料包里自购的料");
             }
             thisQty.merge(l.materialSkuId(), l.qty(), BigDecimal::add);
         }

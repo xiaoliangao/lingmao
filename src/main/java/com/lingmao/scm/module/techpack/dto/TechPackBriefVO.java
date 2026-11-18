@@ -15,9 +15,6 @@ public class TechPackBriefVO {
     private Integer version;
     private PackStatus status;
     private String versionNote;
-    /** 研发来源（转生产 BOM 时记下，修订时照抄）；"来源：研发 V1" */
-    private Long sourcePackId;
-    private Integer sourceVersion;
     private String publishByName;
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime publishTime;

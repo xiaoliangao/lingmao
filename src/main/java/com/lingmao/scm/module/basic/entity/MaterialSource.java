@@ -6,8 +6,8 @@ import lombok.Getter;
 /** 物料的默认来源（bas_material.default_source 存名字）：加进资料包物料清单时带出（PRD §6.1.5） */
 @Getter
 public enum MaterialSource {
-    PURCHASE("我方采购"),
-    FACTORY("工厂自备"),
+    PURCHASE("自购"),
+    FACTORY("厂购"),
     /** 客供：贸易代工用，TRADE 关时不收（TradeFeature） */
     CUSTOMER_SUPPLIED("客供");
 

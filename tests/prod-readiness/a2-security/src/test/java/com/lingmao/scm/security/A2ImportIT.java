@@ -58,7 +58,7 @@ class A2ImportIT extends A2BusinessFixture {
         String brand = "A2 import brand " + suffix(); brands.add(brand);
         TrackingFile style = file("款式", new Object[][] {
                 {"款号", "款式名称", "大类", "品牌", "品类", "年份", "季节", "尺码组", "颜色"},
-                {"A2IM" + suffix(), "new import style", "服饰", brand, f.categoryName(), 2026, "秋", f.sizeGroupName(), f.colorCode()}});
+                {"A2IM" + suffix(), "new import style", "非通勤裤", brand, f.categoryName(), 2026, "秋", f.sizeGroupName(), f.colorCode()}});
         assertThat(styles.importExcel(style).total()).isEqualTo(1); style.assertOutside();
         TrackingFile supplier = file("供应商管理", new Object[][] {
                 {"编码", "全称", "简称", "分类"}, {"A2IS" + suffix(), "new supplier " + suffix(), "new supplier", "面料商"}});

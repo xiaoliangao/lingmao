@@ -23,7 +23,6 @@ import {
   COST_MODE,
   CRAFT_GROUPS,
   CRAFT_SECTION_LABEL,
-  PACK_STAGE,
   PACK_STATUS,
   TECH_PACK_LOG_ACTIONS,
   packName,
@@ -34,7 +33,6 @@ import {
   type CostRow,
   type CraftSection,
   type CraftSectionForm,
-  type PackStage,
   type ProcessForm,
   type SpecPointForm,
   type TechPackAction,
@@ -285,16 +283,12 @@ async function switchPack(id: string) {
   await loadPack(id)
 }
 
-// ---------- 新建、修订、转生产、保存、生效、删除 ----------
+// ---------- 新建、修订、保存、生效、删除 ----------
 
-/** 这个阶段一个版本都还没有、又能建：出"建研发 BOM""建生产 BOM"（有版本的阶段走修订） */
-const newStageButtons = computed(() => {
-  const ov = props.overview
-  if (!ov) return []
-  return (['PROD', 'DEV'] as PackStage[]).filter((st) => ov.creatableStages.includes(st) && !ov.packs.some((p) => p.stage === st))
-})
+/** 一个版本都还没有、又能建：出"建生产 BOM"（有了版本走修订） */
+const canCreate = computed(() => !!props.overview?.creatable && !props.overview.packs.length)
 
-/** 新建、修订、转生产出来的新草稿：切过去，再让款式详情重取概况（概况到了 pickPack 看到它已经是当前的，不再切） */
+/** 新建、修订出来的新草稿：切过去，再让款式详情重取概况（概况到了 pickPack 看到它已经是当前的，不再切） */
 async function gotoNew(newId: string, message: string) {
   ElMessage.success(message)
   guard.markSaved()
@@ -303,21 +297,15 @@ async function gotoNew(newId: string, message: string) {
   emit('changed')
 }
 
-async function createStage(stage: PackStage) {
-  const newId = await techPackApi.create(props.styleId, stage)
-  await gotoNew(newId, `建了${PACK_STAGE[stage].label}草稿，填好点「生效」`)
+async function createPack() {
+  const newId = await techPackApi.create(props.styleId)
+  await gotoNew(newId, '建了生产 BOM 草稿，填好点「生效」')
 }
 
 async function revisePack() {
   if (!detail.value) return
   const newId = await techPackApi.revise(detail.value.id)
-  await gotoNew(newId, `修订出 ${packName({ stage: detail.value.stage, version: detail.value.version + 1 })}，尺寸、物料、工艺、其他费用都带过来了，改完点「生效」`)
-}
-
-async function convertToProd() {
-  if (!detail.value) return
-  const newId = await techPackApi.toProd(detail.value.id)
-  await gotoNew(newId, '复制成生产 BOM 草稿：单价按价格档案重新取了，改完点「生效」')
+  await gotoNew(newId, `修订出 ${packName({ version: detail.value.version + 1 })}，尺寸、物料、工艺、其他费用都带过来了，改完点「生效」`)
 }
 
 function buildSaveForm(): TechPackSaveForm {
@@ -395,7 +383,7 @@ async function publishPack() {
   saving.value = true
   try {
     await techPackApi.publish(d.id, lock, { silent: true })
-    ElMessage.success(d.stage === 'DEV' ? `${packName(d)} 已生效，要下大货就点「转生产 BOM」` : `${packName(d)} 已生效`)
+    ElMessage.success(`${packName(d)} 已生效`)
     await loadPack(d.id)
     emit('changed')
   } catch (e) {
@@ -749,20 +737,14 @@ function addOtherCost() {
 const costBlocks = computed(() =>
   costData.value
     ? [
-        { title: '面料', rows: costData.value.fabricRows, sum: costData.value.summary.fabric, dev: costData.value.dev?.summary.fabric },
-        { title: '辅料', rows: costData.value.trimRows, sum: costData.value.summary.trim, dev: costData.value.dev?.summary.trim },
+        { title: '面料', rows: costData.value.fabricRows, sum: costData.value.summary.fabric },
+        { title: '辅料', rows: costData.value.trimRows, sum: costData.value.summary.trim },
       ]
     : [],
 )
 
-/** 不计入的行写为什么（工厂自备含在加工价里、客供客户出） */
+/** 不计入的行写为什么（厂购含在加工价里、客供客户出） */
 const notCountedText = (row: CostRow) => (row.source === 'FACTORY' ? '含在加工价里' : '客户出')
-
-const devDiff = computed(() => {
-  const c = costData.value
-  if (!c?.dev) return null
-  return c.summary.total - c.dev.summary.total
-})
 
 // ---------- 导出 PDF ----------
 const pdfVisible = ref(false)
@@ -799,16 +781,14 @@ async function doExportPdf() {
 const loadLogs = () => techPackApi.logs(activePackId.value!)
 const LOG_STATUSES = Object.fromEntries(Object.entries(PACK_STATUS).map(([k, v]) => [k, v.label]))
 
-/** 版本条上的字："V2 生效中""V3 草稿""研发 V1 已作废" */
+/** 版本条上的字："V2 生效中""V3 草稿""V1 已作废" */
 const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', EFFECTIVE: '生效中', VOIDED: '已作废' }
 </script>
 
 <template>
   <div v-loading="loading" class="tp-wrap">
     <BlankState v-if="overview && !overview.packs.length" title="还没有资料包：生产 BOM 生效后才能下订单">
-      <el-button v-for="st in newStageButtons" :key="st" :type="st === 'PROD' ? 'primary' : 'default'" @click="createStage(st)">
-        建{{ PACK_STAGE[st].label }}
-      </el-button>
+      <el-button v-if="canCreate" type="primary" @click="createPack">建生产 BOM</el-button>
       <el-button v-if="canSeeStd" icon="Notebook" @click="craftStd?.open()">工艺标准</el-button>
     </BlankState>
 
@@ -832,13 +812,11 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           </button>
         </div>
         <div class="ver-acts">
-          <el-button v-for="st in newStageButtons" :key="st" size="small" icon="Plus" @click="createStage(st)">建{{ PACK_STAGE[st].label }}</el-button>
           <template v-if="detail">
             <el-button v-if="can('remove')" size="small" @click="removeDraft">删除草稿</el-button>
             <el-button size="small" icon="Printer" @click="openPdf">导出 PDF</el-button>
             <el-button v-if="canSeeStd" size="small" icon="Notebook" @click="craftStd?.open()">工艺标准</el-button>
             <el-button v-if="can('revise')" size="small" @click="revisePack">修订</el-button>
-            <el-button v-if="can('toProd')" size="small" @click="convertToProd">转生产 BOM</el-button>
             <el-button v-if="editable" size="small" :loading="saving" :disabled="!guard.dirty.value" @click="saveDraft()">保存</el-button>
             <el-button v-if="can('publish')" size="small" type="primary" :loading="saving" @click="publishPack">生效</el-button>
           </template>
@@ -852,11 +830,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
         </el-alert>
         <!-- 版本信息 -->
         <div class="pack-meta">
-          <el-tag size="small" :type="detail.stage === 'DEV' ? 'warning' : 'primary'" disable-transitions>{{ PACK_STAGE[detail.stage].short }}</el-tag>
           <StatusTag :tone="PACK_STATUS[detail.status].tone">{{ PACK_STATUS[detail.status].label }}</StatusTag>
-          <button v-if="detail.sourcePackId && detail.sourceVersion != null" type="button" class="link-btn" @click="switchPack(detail.sourcePackId)">
-            来源：研发 V{{ detail.sourceVersion }}
-          </button>
           <span v-if="detail.publishTime" class="dim">{{ detail.publishByName }} {{ formatDateTime(detail.publishTime) }} 生效</span>
           <span v-if="canSeeCost" class="num">参考加工价 ¥{{ formatMoney(detail.laborTotal) }}</span>
           <span v-if="canSeeCost && detail.unitCost != null" class="num">单件成本 <strong>¥{{ formatMoney(detail.unitCost) }}</strong></span>
@@ -1224,7 +1198,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 <div class="blk-head">
                   <strong>{{ blk.title }}</strong>
                   <span class="num">¥{{ formatMoney(blk.sum) }}</span>
-                  <span v-if="blk.dev != null" class="dim num">研发估 ¥{{ formatMoney(blk.dev) }}</span>
                 </div>
                 <el-table :data="blk.rows" row-key="bomItemId" :empty-text="`没有${blk.title}`">
                   <el-table-column label="部位" width="90">
@@ -1250,9 +1223,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                       <span v-else class="dim">{{ notCountedText(row as CostRow) }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column v-if="costData.dev" label="研发估" width="96" class-name="num" align="right">
-                    <template #default="{ row }">{{ row.devCost == null ? '研发没有' : formatMoney(row.devCost) }}</template>
-                  </el-table-column>
                 </el-table>
               </div>
 
@@ -1260,7 +1230,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 <div class="blk-head">
                   <strong>加工费</strong>
                   <span class="num">¥{{ formatMoney(costData.summary.labor) }}</span>
-                  <span v-if="costData.dev" class="dim num">研发估 ¥{{ formatMoney(costData.dev.summary.labor) }}</span>
                 </div>
                 <p class="blk-line">
                   <template v-if="costData.costMode === 'OUTSOURCE'">按外发：{{ costData.processCount }} 道工序的工价合计</template>
@@ -1275,7 +1244,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 <div class="blk-head">
                   <strong>其他费用</strong>
                   <span class="num">¥{{ formatMoney(costData.summary.other) }}</span>
-                  <span v-if="costData.dev" class="dim num">研发估 ¥{{ formatMoney(costData.dev.summary.other) }}</span>
                   <span class="gap" />
                   <el-button v-if="editable" size="small" icon="Plus" @click="addOtherCost">加一项</el-button>
                 </div>
@@ -1311,9 +1279,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 <span v-if="costData.mixedBasis" class="warn-txt">单价口径不一（有的含税有的不含），照录入的数加总</span>
                 <span v-if="costData.tagPrice != null">吊牌价 ¥{{ formatMoney(costData.tagPrice) }}</span>
                 <span v-if="costData.ratio != null">倍率 {{ costData.ratio }}</span>
-                <span v-if="devDiff != null && costData.dev" :class="{ 'danger': devDiff > 0 }">
-                  比研发估{{ devDiff >= 0 ? '高' : '低' }} {{ formatMoney(Math.abs(devDiff)) }}
-                </span>
               </div>
             </div>
           </el-tab-pane>

@@ -259,7 +259,7 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
 
     // ---------- 领料 ----------
 
-    @Operation(summary = "领料页签：应领、已领、还差（只算我方采购的料）、物料仓库存，挂在这张单上的领料退料单")
+    @Operation(summary = "领料页签：应领、已领、还差（只算自购的料）、物料仓库存，挂在这张单上的领料退料单")
     @GetMapping("/{id:\\d+}/materials")
     @PreAuthorize("hasAuthority('production:order:list')")
     public R<ProductionMaterialsVO> materials(@PathVariable("id") long id) {

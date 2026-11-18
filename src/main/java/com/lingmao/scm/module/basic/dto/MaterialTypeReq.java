@@ -17,7 +17,7 @@ public class MaterialTypeReq {
     @Size(max = 64, message = "名称最长 64")
     private String label;
 
-    /** 备料比 %，物料上没设备料比时用它；不填 = 3（Q18） */
+    /** 备料比 %，物料上没设备料比时用它；由生产评估后填，不填 = 0（Q18） */
     @DecimalMin(value = "0", message = "备料比不能是负数")
     @DecimalMax(value = "100", message = "备料比最多 100%")
     @Digits(integer = 3, fraction = 2, message = "备料比最多 2 位小数")

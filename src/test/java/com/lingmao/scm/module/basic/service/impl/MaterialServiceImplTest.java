@@ -201,7 +201,7 @@ class MaterialServiceImplTest {
     }
 
     /**
-     * 规则（PRD §6.1.5 规则 6，Q40）：当场加物料类型，值接着已有的 CUSTOM_ 编号往下编，排在最后，备料比不填 = 3；
+     * 规则（PRD §6.1.5 规则 6，Q40）：当场加物料类型，值接着已有的 CUSTOM_ 编号往下编，排在最后，备料比不填 = 0（Q18：由生产评估后填）；
      * 名称和已有的重复（停用的也算）不让加，提示去哪启用
      */
     @Test
@@ -218,7 +218,7 @@ class MaterialServiceImplTest {
         assertThat(saved.getValue().getValue()).isEqualTo("CUSTOM_3");
         assertThat(saved.getValue().getLabel()).isEqualTo("织带");
         assertThat(saved.getValue().getSort()).isEqualTo(10);
-        assertThat(saved.getValue().getNumValue()).isEqualByComparingTo("3");
+        assertThat(saved.getValue().getNumValue()).isEqualByComparingTo("0");
         assertThat(added).isEqualTo(new DictOption("织带", "CUSTOM_3", 1));
 
         req.setLabel("鞋带");

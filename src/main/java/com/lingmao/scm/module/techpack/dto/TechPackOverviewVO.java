@@ -1,7 +1,6 @@
 package com.lingmao.scm.module.techpack.dto;
 
 import com.lingmao.scm.module.basic.dto.ColorOption;
-import com.lingmao.scm.module.techpack.entity.PackStage;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -11,16 +10,15 @@ import java.util.List;
 @Data
 public class TechPackOverviewVO {
     private Long styleId;
-    /** 研发在前、生产在后，各自新版本在前 */
+    /** 新版本在前 */
     private List<TechPackBriefVO> packs;
-    /** 生产草稿 > 生产已生效 > 研发草稿 > 研发已生效；一个都没有是 null */
+    /** 草稿 > 已生效 > 最新的一版；一个都没有是 null */
     private Long defaultPackId;
-    /** 能新建哪个阶段：有新建权限、款式没停用、这个阶段还没有草稿 */
-    private List<PackStage> creatableStages;
+    /** 能不能新建：有新建权限、款式没停用、还没有草稿 */
+    private boolean creatable;
     /** 已生效的生产 BOM 里随款色的行还没配料的款色（款式后来加的颜色） */
     private List<ColorOption> unmatchedColors;
-    /** 生产已生效版的单件成本，没有取研发已生效版；没看成本权限、都没生效是 null */
+    /** 已生效版的单件成本；没看成本权限、还没有生效的版本是 null */
     private BigDecimal unitCost;
     private Long unitCostPackId;
-    private PackStage unitCostStage;
 }

@@ -6,7 +6,7 @@ import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
 
-/** 领料页签一行（前端 MaterialPlanRow）：只算资料包里物料来源 = 我方采购的行，数量是库存单位 */
+/** 领料页签一行（前端 MaterialPlanRow）：只算资料包里物料来源 = 自购的行，数量是库存单位 */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class MaterialPlanRowVO extends MaterialSkuBrief {

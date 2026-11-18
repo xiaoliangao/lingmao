@@ -194,7 +194,7 @@ class SchemaConventionsIT {
 
     /**
      * 规则：数据库设计 §3.2 的字典类型都在；内置项正好是 PRD §6.1.7 规则 2 的那 11 个；
-     * 品牌预置为空（甲方的名字不进公开仓库）；物料类型带上了 Q40 的配件、工艺、鞋底，备料比默认 0；生产节点带默认天数
+     * 品牌预置为空（甲方的名字不进公开仓库）；物料类型带上了 Q40 的配件、工艺、鞋底，备料比 0（由生产评估后填，V37 撤回 V24 的 3）；款式大类 TS、FS、XZ（V37，Q28）；生产节点带默认天数
      */
     @Test
     void dictPresets() {
@@ -218,7 +218,12 @@ class SchemaConventionsIT {
                 SELECT label || '=' || num_value::int FROM sys_dict_data
                 WHERE type_code = 'material_type' AND deleted = false ORDER BY sort
                 """, String.class))
-                .containsExactly("面料=3", "里料=3", "辅料=3", "包材=3", "标签吊牌=3", "配件=3", "工艺=3", "鞋底=3");   // V24（Q18）
+                .containsExactly("面料=0", "里料=0", "辅料=0", "包材=0", "标签吊牌=0", "配件=0", "工艺=0", "鞋底=0");   // V37（Q18）
+        assertThat(jdbc.queryForList("""
+                SELECT value || '=' || label FROM sys_dict_data
+                WHERE type_code = 'style_class' AND deleted = false ORDER BY sort
+                """, String.class))
+                .containsExactly("FS=非通勤裤", "TS=通勤裤", "XZ=鞋子");   // V37（Q28）
         assertThat(jdbc.queryForMap("""
                 SELECT t.num_label, d.num_value::int AS days FROM sys_dict_type t
                 JOIN sys_dict_data d ON d.type_code = t.code AND d.deleted = false

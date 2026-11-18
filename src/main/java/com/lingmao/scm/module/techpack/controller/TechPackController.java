@@ -68,13 +68,13 @@ public class TechPackController extends IdempotencyReplayGuard {
         return R.ok(techPackService.detail(id));
     }
 
-    @Operation(summary = "建一个阶段的下一版草稿，返回 id（这个阶段已有草稿、款式停用 1000）")
+    @Operation(summary = "建下一版草稿，返回 id（已有草稿、款式停用 1000）")
     @PostMapping
     @PreAuthorize("hasAuthority('techpack:pack:add')")
     @OperLog(module = "资料包", action = "新建")
     @IdempotentCreate("TECHPACK_CREATE")
     public R<Long> create(@Valid @RequestBody TechPackCreateReq req) {
-        return R.ok(techPackService.create(req.getStyleId(), req.getStage()));
+        return R.ok(techPackService.create(req.getStyleId()));
     }
 
     @Operation(summary = "保存草稿（整版覆盖），返回新的 versionLock。cost 是 null 时不动核价")
@@ -94,7 +94,7 @@ public class TechPackController extends IdempotencyReplayGuard {
         return R.ok();
     }
 
-    @Operation(summary = "生效（检查没通过 1000，data 是问题清单；同阶段旧的已生效版作废）")
+    @Operation(summary = "生效（检查没通过 1000，data 是问题清单；旧的已生效版作废）")
     @PostMapping("/{id:\\d+}/publish")
     @PreAuthorize("hasAuthority('techpack:pack:publish')")
     @OperLog(module = "资料包", action = "生效")
@@ -103,22 +103,13 @@ public class TechPackController extends IdempotencyReplayGuard {
         return R.ok();
     }
 
-    @Operation(summary = "修订：已生效版复制成同阶段的下一版草稿，返回新 id")
+    @Operation(summary = "修订：已生效版复制成下一版草稿，返回新 id")
     @PostMapping("/{id:\\d+}/revise")
     @PreAuthorize("hasAuthority('techpack:pack:add')")
     @OperLog(module = "资料包", action = "修订")
     @IdempotentCreate("TECHPACK_REVISE")
     public R<Long> revise(@PathVariable("id") long id) {
         return R.ok(techPackService.revise(id));
-    }
-
-    @Operation(summary = "转生产 BOM：研发已生效版复制成生产阶段的下一版草稿，单价按价格档案重新取，返回新 id")
-    @PostMapping("/{id:\\d+}/to-prod")
-    @PreAuthorize("hasAuthority('techpack:pack:add')")
-    @OperLog(module = "资料包", action = "转生产 BOM")
-    @IdempotentCreate("TECHPACK_TO_PROD")
-    public R<Long> toProd(@PathVariable("id") long id) {
-        return R.ok(techPackService.toProd(id));
     }
 
     @Operation(summary = "几行 BOM 的默认值（供应商、损耗、来源、单价），按请求的顺序")

@@ -22,9 +22,7 @@ import com.lingmao.scm.module.techpack.entity.BomUsageMode;
 import com.lingmao.scm.module.techpack.entity.CostItem;
 import com.lingmao.scm.module.techpack.entity.CostMode;
 import com.lingmao.scm.module.techpack.entity.PackProcess;
-import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.TechPack;
-import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.BomRow;
 import com.lingmao.scm.module.techpack.service.impl.PackOwners.Ctx;
 import lombok.RequiredArgsConstructor;
@@ -49,7 +47,7 @@ import java.util.stream.Collectors;
  * 所以几处的数一样（PRD §6.4 验收 10）。
  * <ul>
  *   <li>一行物料：基码用量（统一用量的行就是统一用量）×（1 + 损耗率%）× 单价，四舍五入到分；单价 = 这个颜色、基码配到的 SKU 上单独的价 &gt; 行上的价</li>
- *   <li>只有我方采购的行计入；面料块 = 物料类型是面料、里料的行，辅料块 = 其余的行</li>
+ *   <li>只有自购的行计入；面料块 = 物料类型是面料、里料的行，辅料块 = 其余的行</li>
  *   <li>加工费：按外发 = 工序工价合计；按成品采购 = 成品单价，没填用价格档案里默认加工厂"包工包料"的现价，都没有是 0</li>
  *   <li>合计 = 四块相加；倍率 = 吊牌价 ÷ 合计</li>
  * </ul>
@@ -64,7 +62,6 @@ class CostCalculator {
     /** 核价按成品采购算时，取价格档案里的哪种加工方式：包工包料（字典 process_mode） */
     static final String BUY_PROCESS_MODE = "FULL";
 
-    private final TechPackMapper techPackMapper;
     private final PackContent packContent;
     private final MaterialService materialService;
     private final PriceService priceService;
@@ -111,19 +108,19 @@ class CostCalculator {
 
     /** PDF 等按颜色重复核价时复用同一份批量输入，颜色仍逐次参与精确配料选择。 */
     TechPackCostVO computePrepared(TechPack pack, Ctx ctx, Long colorId, Inputs inputs) {
-        return compute(pack, ctx, colorId, false, inputs);
+        return compute(pack, ctx, colorId, inputs);
     }
 
-    /** 一个版本的核价。withDev：生产版有研发来源时，再算一遍研发版当"研发估" */
-    TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId, boolean withDev) {
+    /** 一个版本的核价 */
+    TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId) {
         List<BomRow> bom = packContent.loadBom(pack.getId());
         List<PackContent.ProcessRow> processes = packContent.loadProcesses(pack.getId());
         List<CostItem> items = packContent.loadCostItems(pack.getId());
-        return compute(pack, ctx, colorId, withDev, new Inputs(bom, processes.stream().map(PackContent.ProcessRow::process).toList(),
+        return compute(pack, ctx, colorId, new Inputs(bom, processes.stream().map(PackContent.ProcessRow::process).toList(),
                 items, materials(bom), skus(bom), factoryName(ctx.owner().defaultFactoryId()), buyPriceDefault(pack, ctx)));
     }
 
-    private TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId, boolean withDev, Inputs inputs) {
+    private TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId, Inputs inputs) {
         List<BomRow> bom = inputs.bom();
         List<PackProcess> processes = inputs.processes();
         List<CostItem> items = inputs.items();
@@ -167,21 +164,17 @@ class CostCalculator {
                 Num.money(items.stream().map(CostItem::getAmount).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add)));
         vo.setSummary(summary);
         vo.setRatio(Num.ratio(ctx.owner().tagPrice(), summary.total()));
-
-        if (withDev) {
-            fillDev(vo, pack, ctx, colorId);
-        }
         return vo;
     }
 
     /** 单件成本合计（按款式第一个颜色）：资料包详情、概况的"资料包核价"、按款看成本 */
     BigDecimal unitCost(TechPack pack, Ctx ctx) {
-        return compute(pack, ctx, ctx.firstColorId(), false).getSummary().total();
+        return compute(pack, ctx, ctx.firstColorId()).getSummary().total();
     }
 
     /**
      * 物料清单页签上一行的单件成本（docs/api/01 §4.4）：随款色的行取第一个款色的 SKU 单价，随尺码的行取基码那个 SKU 的。
-     * 工厂自备、客供的行，没单价、没用量的行是 null。不受看成本权限管（架构 §4.9）
+     * 厂购、客供的行，没单价、没用量的行是 null。不受看成本权限管（架构 §4.9）
      */
     static BigDecimal rowUnitCost(BomRow row, Long firstColorId, String baseSize) {
         BomItem item = row.item();
@@ -254,27 +247,6 @@ class CostCalculator {
         return r;
     }
 
-    /** 研发估：同一个方法算研发版；行按"部位 + 物料"对上第一行，其他费用按名称对上 */
-    private void fillDev(TechPackCostVO vo, TechPack pack, Ctx ctx, Long colorId) {
-        if (pack.getStage() != PackStage.PROD || pack.getSourcePackId() == null) {
-            return;
-        }
-        TechPack source = techPackMapper.selectById(pack.getSourcePackId());
-        if (source == null || source.getStage() != PackStage.DEV) {
-            return;
-        }
-        TechPackCostVO dev = compute(source, ctx, colorId, false);
-        vo.setDev(new TechPackCostVO.DevCost(source.getId(), source.getVersion(), dev.getSummary()));
-        Map<String, BigDecimal> devRows = new HashMap<>();
-        for (CostRowVO r : concat(dev.getFabricRows(), dev.getTrimRows())) {
-            devRows.putIfAbsent(r.getPart() + "|" + r.getMaterialId(), r.getCost());
-        }
-        concat(vo.getFabricRows(), vo.getTrimRows()).forEach(r -> r.setDevCost(devRows.get(r.getPart() + "|" + r.getMaterialId())));
-        Map<String, BigDecimal> devItems = new HashMap<>();
-        dev.getOtherItems().forEach(i -> devItems.putIfAbsent(i.getName(), i.getAmount()));
-        vo.getOtherItems().forEach(i -> i.setDevAmount(devItems.get(i.getName())));
-    }
-
     /** 默认加工厂做这个款"包工包料"的现价；款式没设默认加工厂、档案里没有是 null */
     private BigDecimal buyPriceDefault(TechPack pack, Ctx ctx) {
         Long factoryId = ctx.owner().defaultFactoryId();
@@ -319,12 +291,6 @@ class CostCalculator {
 
     private static BigDecimal sum(List<CostRowVO> rows) {
         return Num.money(rows.stream().map(CostRowVO::getCost).reduce(BigDecimal.ZERO, BigDecimal::add));
-    }
-
-    private static List<CostRowVO> concat(List<CostRowVO> a, List<CostRowVO> b) {
-        List<CostRowVO> all = new ArrayList<>(a);
-        all.addAll(b);
-        return all;
     }
 
     @SafeVarargs
