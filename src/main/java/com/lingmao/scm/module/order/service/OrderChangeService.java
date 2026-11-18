@@ -36,4 +36,7 @@ public interface OrderChangeService {
     void act(long id, String action, DocActionReq req);
 
     void checkVisible(long id);
+
+    /** 原成功操作的来源对象仍须在当前可见范围内；不重验可生成状态。 */
+    void checkSourceOrderVisible(long orderId);
 }

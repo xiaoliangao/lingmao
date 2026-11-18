@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -37,12 +38,12 @@ const user = useUserStore()
 const units = useDict('unit')
 
 const path = route.path
-const id = route.params.id ? Number(route.params.id) : null
+const id = route.params.id ? routeId(route.params.id) : null
 const editing = id !== null
 
 interface LineDraft {
-  calcItemId: number | null
-  materialSkuId: number
+  calcItemId: string | null
+  materialSkuId: string
   skuCode: string
   materialName: string
   colorSpec: string
@@ -73,21 +74,21 @@ const submitTried = ref(false)
 const deliveryTouched = ref(false)
 
 const head = reactive({
-  companyId: null as number | null,
-  supplierId: null as number | null,
+  companyId: null as string | null,
+  supplierId: null as string | null,
   supplierName: null as string | null,
   purchaseType: 'ORDER' as PurchaseType,
   buyerId: user.info?.id ?? null,
   buyerName: user.info?.nickname ?? null,
   orderDate: todayStr(),
   deliveryDate: null as string | null,
-  warehouseId: null as number | null,
+  warehouseId: null as string | null,
   settleMethod: null as string | null,
   taxPct: null as number | null,
   taxIncluded: true,
   freightIncluded: true,
   remark: '',
-  planStyles: [] as { id: number; code: string; name: string }[],
+  planStyles: [] as { id: string; code: string; name: string }[],
 })
 
 const lines = ref<LineDraft[]>([])
@@ -140,7 +141,7 @@ async function applyDefaults(fillHead: boolean) {
   }
 }
 
-async function onSupplierChange(supplierId: number | null | undefined) {
+async function onSupplierChange(supplierId: string | null | undefined) {
   const next = supplierId ?? null
   const prev = head.supplierId
   if (next === prev) return
@@ -312,7 +313,7 @@ function warn(msg: string): null {
 }
 
 /** 提交失败（缺单价、供应商停用……）：原因弹出来，返回 false，不往下走 */
-async function submit(poId: number, ver: number): Promise<boolean> {
+async function submit(poId: string, ver: number): Promise<boolean> {
   try {
     await purchaseApi.act(poId, 'submit', { version: ver }, { silent: true })
     return true

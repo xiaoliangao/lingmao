@@ -260,6 +260,9 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     }
 
     @Override
+    public void checkSourceOrderVisible(long orderId) { orderService.checkSourceVisible(List.of(orderId)); }
+
+    @Override
     public void checkVisible(long id) {
         visible(changeMapper.selectById(id));
     }

@@ -61,6 +61,8 @@ public class TechPackCostServiceImpl implements TechPackCostService {
             Map<Long, PackOwner> owners = packOwners.styles(rows.stream().map(StyleCostRowVO::getStyleId).toList());
             Map<Long, TechPack> packs = CostCalculator.byId(
                     techPackMapper.selectByIds(rows.stream().map(StyleCostRowVO::getTechPackId).toList()), TechPack::getId);
+            Map<Long, Ctx> contexts = packOwners.contexts(packs.values(), owners);
+            Map<Long, CostCalculator.Inputs> inputs = costCalculator.preload(packs.values(), contexts);
             Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE,
                     rows.stream().map(StyleCostRowVO::getStyleId).toList(), Attachment.IMAGE);
             for (StyleCostRowVO row : rows) {
@@ -70,8 +72,8 @@ public class TechPackCostServiceImpl implements TechPackCostService {
                 if (owner == null || pack == null) {
                     continue;
                 }
-                Ctx ctx = packOwners.context(pack);
-                CostSummary s = costCalculator.compute(pack, ctx, ctx.firstColorId(), false).getSummary();
+                Ctx ctx = contexts.get(pack.getId());
+                CostSummary s = costCalculator.computePrepared(pack, ctx, inputs.get(pack.getId())).getSummary();
                 row.setFabric(s.fabric());
                 row.setTrim(s.trim());
                 row.setLabor(s.labor());

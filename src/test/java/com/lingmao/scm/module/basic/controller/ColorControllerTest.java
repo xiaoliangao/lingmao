@@ -56,6 +56,6 @@ class ColorControllerTest {
                                 {"code": "KQ", "name": "卡其", "hex": "#C3B091"}
                                 """))
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data").value(3));
+                .andExpect(jsonPath("$.data").value("3"));
     }
 }

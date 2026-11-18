@@ -58,7 +58,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
   query: {
     keyword: '',
     statusTab: pickStatus(route.query.status),
-    warehouseId: undefined as number | undefined,
+    warehouseId: undefined as string | undefined,
     purpose: undefined as CountPurpose | undefined,
     countDateFrom: undefined as string | undefined,
     countDateTo: undefined as string | undefined,
@@ -126,7 +126,7 @@ function openRow(row: CountRow) {
   void router.push(`/stock-takes/${row.id}`)
 }
 
-function openCreated(newId: number) {
+function openCreated(newId: string) {
   void router.push(`/stock-takes/${newId}`)
 }
 

@@ -30,11 +30,11 @@ const reportVisible = defineModel<boolean>('reportVisible', { required: true })
 const planVisible = defineModel<boolean>('planVisible', { required: true })
 
 const props = defineProps<{
-  orderId: number
+  orderId: string
   totalQty: number
   planRevision: number
   nodes: ProductionNode[]
-  initialNodeId?: number | null
+  initialNodeId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -42,7 +42,7 @@ const emit = defineEmits<{
 }>()
 
 // ---------- 报进度 ----------
-const activeNodeId = ref<number | null>(null)
+const activeNodeId = ref<string | null>(null)
 const submitting = ref(false)
 
 const reportForm = reactive({
@@ -120,7 +120,7 @@ async function submitReport(action: NodeReportAction) {
 
 // ---------- 改节点计划 ----------
 interface PlanRow {
-  nodeId: number
+  nodeId: string
   nodeName: string
   planStart: string
   planFinish: string

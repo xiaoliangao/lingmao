@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { businessToday } from '@/utils/businessDate'
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -35,7 +36,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 const path = route.path
-const id = route.params.id ? Number(route.params.id) : null
+const id = route.params.id ? routeId(route.params.id) : null
 const editing = id !== null
 
 const classes = useDict('style_class')
@@ -96,11 +97,11 @@ const categories = shallowRef<TreeNode[]>([])
 const sizeGroups = shallowRef<SizeGroup[]>([])
 
 const categoryOptions = computed(() => {
-  const map = (nodes: TreeNode[] = []): { value: number; label: string; children: unknown[] }[] =>
+  const map = (nodes: TreeNode[] = []): { value: string; label: string; children: unknown[] }[] =>
     nodes.map((n) => ({ value: n.id, label: n.name, children: map(n.children) }))
   const options = map(categories.value)
   // 编辑旧款：品类停用了不在启用的树里，单独列出来，不换也能原样保存
-  const has = (nodes: { value: number; children: unknown[] }[]): boolean =>
+  const has = (nodes: { value: string; children: unknown[] }[]): boolean =>
     nodes.some((n) => n.value === form.categoryId || has(n.children as typeof nodes))
   if (form.categoryId && names.categoryName && !has(options)) {
     options.unshift({ value: form.categoryId, label: `${names.categoryName}（已停用）`, children: [] })

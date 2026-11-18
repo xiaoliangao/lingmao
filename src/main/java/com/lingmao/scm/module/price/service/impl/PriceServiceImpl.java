@@ -18,6 +18,7 @@ import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
 import com.lingmao.scm.module.price.dto.PriceSource;
 import com.lingmao.scm.module.price.dto.ProcessPriceLine;
+import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.entity.Price;
 import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.mapper.CurrentMaterialHit;
@@ -298,6 +299,18 @@ public class PriceServiceImpl implements PriceService {
     @Override
     public Optional<PriceRef> currentProcess(long supplierId, long styleId, String processMode, LocalDate date) {
         return Optional.ofNullable(priceMapper.selectCurrentProcess(supplierId, styleId, processMode, date)).map(PriceRef::of);
+    }
+
+    @Override
+    public Map<ProcessPriceKey, PriceRef> currentProcesses(Collection<ProcessPriceKey> keys, LocalDate date) {
+        List<ProcessPriceKey> wanted = keys.stream().filter(Objects::nonNull).distinct().toList();
+        Map<ProcessPriceKey, PriceRef> result = new HashMap<>();
+        for (int from = 0; from < wanted.size(); from += BATCH) {
+            for (Price price : priceMapper.selectCurrentProcesses(wanted.subList(from, Math.min(from + BATCH, wanted.size())), date)) {
+                result.put(new ProcessPriceKey(price.getSupplierId(), price.getStyleId(), price.getProcessMode()), PriceRef.of(price));
+            }
+        }
+        return result;
     }
 
     @Override

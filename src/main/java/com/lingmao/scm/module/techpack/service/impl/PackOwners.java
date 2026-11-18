@@ -14,6 +14,8 @@ import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.entity.StyleStatus;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.techpack.dto.PackOwner;
+import com.lingmao.scm.module.techpack.dto.PackColorRef;
+import com.lingmao.scm.module.techpack.dto.PackSizeRef;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.entity.PackOwnerSnapshot;
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 资料包的主人（RFC 007 §6.2）：款式那边的东西集中在这里取，建版本、生效、修订、核价、PDF 都只用这里给的。
@@ -105,6 +108,56 @@ class PackOwners {
                 live.sampleNo(), live.sizeGroupId(), colors.stream().map(ColorOption::id).toList(), live.tagPrice(),
                 live.defaultFactoryId(), live.productName(), live.composition(), live.lockedReason());
         return new Ctx(legacy, List.copyOf(sizes), current.baseSize(), colors);
+    }
+
+    /** 列表按批读取实时/旧版上下文；冻结版仍完全使用自己的快照。 */
+    Map<Long, Ctx> contexts(Collection<TechPack> packs, Map<Long, PackOwner> owners) {
+        Map<Long, Ctx> result = new HashMap<>();
+        List<TechPack> livePacks = packs.stream().filter(p -> p.getStatus() == PackStatus.DRAFT || p.getOwnerSnapshot() == null)
+                .filter(p -> owners.containsKey(p.getStyleId())).toList();
+        List<TechPack> legacy = livePacks.stream().filter(p -> p.getStatus() != PackStatus.DRAFT).toList();
+        Map<Long, SizeGroupVO> groups = sizeGroupService.getByIds(livePacks.stream()
+                .map(p -> owners.get(p.getStyleId()).sizeGroupId()).toList());
+        Map<Long, StyleOrderInfo> infos = styleService.orderInfos(legacy.stream().map(TechPack::getStyleId).toList());
+        List<Long> legacyIds = legacy.stream().map(TechPack::getId).toList();
+        Map<Long, List<Long>> referencedColors = legacyIds.isEmpty() ? Map.of() : techPackMapper.referencedColorsBatch(legacyIds).stream()
+                .collect(Collectors.groupingBy(PackColorRef::packId, Collectors.mapping(PackColorRef::colorId, Collectors.toList())));
+        Map<Long, List<String>> referencedSizes = legacyIds.isEmpty() ? Map.of() : techPackMapper.referencedSizesBatch(legacyIds).stream()
+                .collect(Collectors.groupingBy(PackSizeRef::packId, Collectors.mapping(PackSizeRef::sizeCode, Collectors.toList())));
+        LinkedHashSet<Long> allColors = new LinkedHashSet<>();
+        livePacks.forEach(p -> allColors.addAll(owners.get(p.getStyleId()).colorIds()));
+        infos.values().forEach(info -> info.colors().forEach(c -> allColors.add(c.id())));
+        referencedColors.values().forEach(allColors::addAll);
+        Map<Long, Color> known = colorService.byIds(allColors);
+        for (TechPack pack : packs) {
+            PackOwnerSnapshot frozen = pack.getOwnerSnapshot();
+            if (pack.getStatus() != PackStatus.DRAFT && frozen != null) {
+                result.put(pack.getId(), new Ctx(frozen.owner(), frozen.sizes(), frozen.baseSize(), frozen.colors()));
+                continue;
+            }
+            PackOwner live = owners.get(pack.getStyleId());
+            if (live == null) continue;
+            SizeGroupVO group = groups.get(live.sizeGroupId());
+            StyleOrderInfo info = pack.getStatus() == PackStatus.DRAFT ? null : infos.get(pack.getStyleId());
+            if (info == null) {
+                List<ColorOption> colors = live.colorIds().stream().map(known::get).filter(Objects::nonNull).map(ColorOption::from).toList();
+                result.put(pack.getId(), new Ctx(live, group.sizes(), group.baseSize(), colors));
+                continue;
+            }
+            LinkedHashSet<Long> colorIds = new LinkedHashSet<>();
+            info.colors().forEach(c -> colorIds.add(c.id()));
+            colorIds.addAll(referencedColors.getOrDefault(pack.getId(), List.of()));
+            List<ColorOption> colors = colorIds.stream().map(known::get).filter(Objects::nonNull).map(ColorOption::from).toList();
+            LinkedHashSet<String> sizes = new LinkedHashSet<>(info.sizes());
+            info.skus().forEach(s -> sizes.add(s.sizeCode()));
+            sizes.addAll(referencedSizes.getOrDefault(pack.getId(), List.of()));
+            sizes.remove(null);
+            PackOwner owner = new PackOwner(live.code(), live.name(), live.aliasName(), live.year(), live.season(),
+                    live.sampleNo(), live.sizeGroupId(), colors.stream().map(ColorOption::id).toList(), live.tagPrice(),
+                    live.defaultFactoryId(), live.productName(), live.composition(), live.lockedReason());
+            result.put(pack.getId(), new Ctx(owner, List.copyOf(sizes), group.baseSize(), colors));
+        }
+        return result;
     }
 
     static PackOwnerSnapshot snapshot(Ctx context) {

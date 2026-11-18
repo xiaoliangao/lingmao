@@ -7,7 +7,7 @@ export type EnableStatus = 0 | 1
 
 /** 主体公司（bas_company） */
 export interface Company {
-  id: number
+  id: string
   code: string
   name: string
   shortName: string
@@ -20,13 +20,13 @@ export interface Company {
 
 /** 主体公司下拉（GET /api/companies/options，登录即可） */
 export interface CompanyOption {
-  id: number
+  id: string
   code: string
   shortName: string
 }
 
 export interface Color {
-  id: number
+  id: string
   /** 2-3 位，进 SKU 码，建好不改 */
   code: string
   name: string
@@ -38,7 +38,7 @@ export interface Color {
 }
 
 export interface ColorOption {
-  id: number
+  id: string
   code: string
   name: string
   hex: string | null
@@ -46,8 +46,8 @@ export interface ColorOption {
 
 /** 品类、物料分类的树（物料分类的二级有 code，品类没有）。后端不发 null 字段：顶层没有 parentId */
 export interface TreeNode {
-  id: number
-  parentId?: number | null
+  id: string
+  parentId?: string | null
   code?: string | null
   name: string
   level: number
@@ -57,7 +57,7 @@ export interface TreeNode {
 }
 
 export interface SizeGroup {
-  id: number
+  id: string
   name: string
   baseSize: string
   status: EnableStatus
@@ -74,15 +74,15 @@ export const WAREHOUSE_TYPE_LABEL: Record<WarehouseType, string> = {
 }
 
 export interface Warehouse {
-  id: number
+  id: string
   code: string
   name: string
   type: WarehouseType
   /** 工厂仓绑的供应商 */
-  factoryId: number | null
+  factoryId: string | null
   factoryName: string | null
   address: string | null
-  keeperId: number | null
+  keeperId: string | null
   keeperName: string | null
   phone: string | null
   status: EnableStatus
@@ -91,11 +91,11 @@ export interface Warehouse {
 }
 
 export interface WarehouseOption {
-  id: number
+  id: string
   code: string
   name: string
   type: WarehouseType
-  factoryId: number | null
+  factoryId: string | null
 }
 
 /** 物料的默认来源。CUSTOMER_SUPPLIED（客供）是代工用的，代工开关关着时不收 */
@@ -109,10 +109,10 @@ export const MATERIAL_SOURCE_LABEL: Record<MaterialSource, string> = {
 
 /** 物料列表的一行（MaterialListVO） */
 export interface MaterialRow {
-  id: number
+  id: string
   code: string
   name: string
-  categoryId: number
+  categoryId: string
   categoryCode: string
   categoryName: string
   parentCategoryName: string | null
@@ -123,7 +123,7 @@ export interface MaterialRow {
   widthCm: number | null
   weightGsm: number | null
   composition: string | null
-  defaultSupplierId: number | null
+  defaultSupplierId: string | null
   defaultSupplierName: string | null
   supplierItemNo: string | null
   refPrice: number | null
@@ -135,10 +135,10 @@ export interface MaterialRow {
 
 /** 物料本身（bas_material） */
 export interface Material {
-  id: number
+  id: string
   code: string
   name: string
-  categoryId: number
+  categoryId: string
   materialType: string
   stockUnit: string
   purchaseUnit: string
@@ -147,7 +147,7 @@ export interface Material {
   weightGsm: number | null
   composition: string | null
   texture: string | null
-  defaultSupplierId: number | null
+  defaultSupplierId: string | null
   supplierItemNo: string | null
   refPrice: number | null
   moq: number | null
@@ -167,9 +167,9 @@ export interface Material {
 }
 
 export interface MaterialSku {
-  id: number
+  id: string
   code: string
-  colorId: number | null
+  colorId: string | null
   colorCode: string | null
   colorName: string | null
   colorHex: string | null
@@ -197,15 +197,15 @@ export interface MaterialDetail {
 
 /** 选物料 SKU 弹窗（DataPick）的一行：启用物料的启用 SKU。price 是 SKU 单价，空的用物料参考单价；image 是 SKU 图，没有用物料主图 */
 export interface MaterialPickRow {
-  skuId: number
+  skuId: string
   skuCode: string
-  materialId: number
+  materialId: string
   materialCode: string
   materialName: string
   materialType: string
-  categoryId: number
+  categoryId: string
   categoryName: string
-  colorId: number | null
+  colorId: string | null
   colorCode: string | null
   colorName: string | null
   colorHex: string | null
@@ -219,7 +219,7 @@ export interface MaterialPickRow {
 
 /** 建档查重的一条（只提示不拦） */
 export interface MaterialDup {
-  id: number
+  id: string
   code: string
   name: string
   supplierItemNo: string | null

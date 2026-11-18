@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -34,7 +35,7 @@ import { orNull } from '@/views/basic/common'
 const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const issueTypes = useDict('issue_type')
 
 type View = 'overview' | 'report' | 'issue'

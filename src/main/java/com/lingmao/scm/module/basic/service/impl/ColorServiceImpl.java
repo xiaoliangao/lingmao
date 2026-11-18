@@ -3,6 +3,7 @@ package com.lingmao.scm.module.basic.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.basic.dto.ColorOption;
 import com.lingmao.scm.module.basic.dto.ColorQuery;
@@ -33,7 +34,8 @@ public class ColorServiceImpl implements ColorService {
     public PageResult<Color> page(ColorQuery query) {
         String kw = Texts.trim(query.getKeyword());
         LambdaQueryWrapper<Color> wrapper = new LambdaQueryWrapper<Color>()
-                .and(kw != null, w -> w.likeRight(Color::getCode, kw.toUpperCase()).or().like(Color::getName, kw))
+                .and(kw != null, w -> w.apply("upper(code) LIKE {0}", Keywords.prefix(kw))
+                        .or().apply("name ILIKE {0}", Keywords.contains(kw, 32)))
                 .eq(query.getStatus() != null, Color::getStatus, query.getStatus())
                 .eq(Texts.trim(query.getFamily()) != null, Color::getFamily, query.getFamily())
                 .orderByAsc(Color::getCode);

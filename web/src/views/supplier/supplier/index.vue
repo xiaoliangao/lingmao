@@ -31,7 +31,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     category: '',
     status: [] as SupplierStatus[],
     level: undefined as string | undefined,
-    buyerId: undefined as number | null | undefined,
+    buyerId: undefined as string | null | undefined,
     toApprove: undefined as boolean | undefined,
     missingCredit: undefined as boolean | undefined,
     certExpiring: undefined as boolean | undefined,

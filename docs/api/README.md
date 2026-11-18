@@ -39,7 +39,7 @@
 
 ## 3. 通用约定
 
-已经做好的模块都是这么写的，新模块照旧。
+生产加固的新增公共契约见 [production-contract](../architecture/production-contract.md)；以下条款按本轮契约同步，运行证据另见阶段审查记录。
 
 ### 3.1 请求和返回
 
@@ -66,17 +66,19 @@
 
 - **分页**：`page` 从 1 起，`size` 最多 500，返回 `{ list, total }`。列表页用 `composables/useTable.ts`。
 - **关键字**：`keyword`，按各接口写的字段包含查（不分大小写）。
-- **一次查几个**（PRD §5.4）：关键字里有分隔符（空白、半角全角逗号、顿号、分号；从 Excel 粘一列进来是换行）就再拆开，按列表上的单号、款号、编码这些列精确查（不分大小写），和整句包含查 OR 起来（名称里本来就有空格、逗号）。一次最多 200 个，多了回 400。哪些列算，看各接口文档的关键字说明。后端用 `common/page/Keywords.codes`；前端就一个搜索框（`FilterBar`、`DataPick`），从 Excel 粘一列进来换行换成空格，口径在 `utils/keywords.ts`
+- **一次查几个**（PRD §5.4）：关键字里有分隔符（空白、半角全角逗号、顿号、分号；从 Excel 粘一列进来是换行）就再拆开，按列表上的单号、款号、编码这些列精确查（不分大小写），和整句包含查 OR 起来（名称里本来就有空格、逗号）。一次最多 100 个，多了回 400。哪些列算，看各接口文档的关键字说明。后端用 `common/page/Keywords.codes`；前端就一个搜索框（`FilterBar`、`DataPick`），从 Excel 粘一列进来换行换成空格，口径在 `utils/keywords.ts`
 - **多选条件**：数组参数发成 `status=A&status=B`，`request.ts` 已经这样配了。
 - **日期范围**：`xxxFrom`、`xxxTo`，`yyyy-MM-dd`，两头都含。组件用 `DateRange`。
-- **选出来的 id**：查询类型里写成 `number | null`（`UserSelect`、`SupplierSelect` 清空后是 `null`）。值是 `null` 的参数 axios 不发，等于没筛。
+- **选出来的 id**：查询类型里写成 `string | null`（`UserSelect`、`SupplierSelect` 清空后是 `null`）。值是 `null` 的参数 axios 不发，等于没筛。
 - **我的 / 全部**：普通列表按 DataScope，`mine=true` 进一步只看自己负责的。"全部"只表示当前获准范围，不会把 SELF 变成 ALL；审核权限也不等于 `data:all`（PRD §3.2）。
 - **待我审核**：订单、采购、生产的 Query 增加 `auditForMe?: boolean`（默认 false）。true 只取待审核且当前审批级匹配调用人的单据；当前审批人的对象级例外不受普通 SELF 归属限制，但仍须有对应模块 `:list`。这是独立的待审视角，不再叠加 `mine/ownerId` 的普通负责人筛选；其他筛选条件仍取交集，不能扩大成全部待审核。列表、计数和导出使用同一谓词；计数去掉状态条件及相应状态子条件。页面地址可用 `auditForMe=1`，API 参数按 boolean 发送。
 - **导出**：`GET /api/<资源>/export`，筛选参数和列表一样，再加 `ids` 只导勾选的。列表加载与导出共用规范化查询；导出使用最近一次成功展示列表的条件快照，含状态页签映射，不能读取尚未查询成功的筛选框值。勾选 ID 与该快照、数据权限取交集，不绕过筛选；去掉分页参数，用 `download()`。查询中或失败时不得把新条件冒充已展示结果。
 
 ### 3.3 字段
 
-- **时间**：日期 `2026-11-15`，时间 `2026-11-15 10:30:00`，都按东八区。显示用 `formatDate`、`formatDateTime`。默认今天、日期快捷区间及纯日期加减统一以 `Asia/Shanghai` 业务日计算，不使用 UTC 的 `toISOString().slice(0, 10)` 或浏览器本地时区替代业务日。
+- **主键、关联键**：BIGINT ID 以十进制字符串传输（包括数组、创建结果与审计人 ID）；前端原样用于路由、选择器和请求，不得先转 JS Number。`version`、页码、计数和数量不是 ID，继续用数字。
+
+- **时间**：纯业务日期为 `2026-11-15`，不转时间戳；事件时间为 ISO-8601 `2026-11-15T10:30:00+08:00`，显式携带偏移。显示用 `formatDate`、`formatDateTime`。默认今天、日期快捷区间及纯日期加减统一以 `Asia/Shanghai` 业务日计算，不使用 UTC 的 `toISOString().slice(0, 10)` 或浏览器本地时区替代业务日。
 - **数量、单价、金额**：JSON 里是普通数字，后端用 `BigDecimal`、数据库用精确数值列。单价最多四位小数、金额两位，按 `HALF_UP` 归一；显示分别用 `formatQty`、`formatPrice`、`formatMoney`，不能用金额格式把单价截成两位。前端计算只作即时预览，后端重算并在写库前校验字段及合计容量，超界返回可定位行的 400；订单具体上限与 Excel 错误口径见 02 §3.5。不能用 JS 浮点预览作为入账结果，也不能等数据库溢出返回 500。
 - **字典**：存的是 value。显示用 `useDict(type).labelOf(value)`，下拉用 `DictSelect`。字典类型写在字段注释里。
 - **文件**：上传 `POST /api/files` 得到 `FileVO`，地址带签名，原样用，不要自己拼 `/files/...`。挂在记录上的图片、附件是整组替换：`PUT …/images` 或 `…/attachments`，传 `FileVO` 数组（`attachmentBody`）。尚有上传中/失败待重试文件时保存须等待或禁用并提示，不能默默丢弃；关闭、换记录后迟到的上传响应不能写入新表单。

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -72,7 +73,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const modes = useDict('process_mode')
 const settles = useDict('settle_method')
@@ -101,7 +102,7 @@ const printRef = ref<InstanceType<typeof PrintSheet>>()
 
 const editVisible = ref(false)
 const reportNodeVisible = ref(false)
-const targetNodeId = ref<number | null>(null)
+const targetNodeId = ref<string | null>(null)
 const planNodeVisible = ref(false)
 const reportIssueVisible = ref(false)
 const closeIssueVisible = ref(false)
@@ -316,7 +317,7 @@ function onMore(command: MoreCommand) {
 
 // ---------- 颜色 × 尺码 ----------
 const matrixColors = computed<MatrixColor[]>(() => {
-  const seen = new Map<number, MatrixColor>()
+  const seen = new Map<string, MatrixColor>()
   for (const it of detail.value?.items ?? []) {
     if (!seen.has(it.colorId)) seen.set(it.colorId, { id: it.colorId, name: it.colorName, code: it.colorCode, hex: it.colorHex })
   }
@@ -324,15 +325,15 @@ const matrixColors = computed<MatrixColor[]>(() => {
 })
 const matrixCells = computed<MatrixCell[]>(() => (detail.value?.items ?? []).map((it) => ({ id: it.id, colorId: it.colorId, sizeCode: it.sizeCode })))
 const matrixQtys = computed(() => Object.fromEntries((detail.value?.items ?? []).map((it) => [it.id, it.qty])))
-const lineSub = (itemId: number) => {
+const lineSub = (itemId: string) => {
   if (!audited.value) return null
   const it = detail.value?.items.find((x) => x.id === itemId)
   return it ? `回 ${it.returnedQty} · 次 ${it.defectQty} · 未 ${it.remainQty}` : null
 }
 
 /** 打印表：颜色 × 尺码 */
-const qtyAt = (colorId: number, size: string) => detail.value?.items.find((i) => i.colorId === colorId && i.sizeCode === size)?.qty ?? 0
-const colorTotal = (colorId: number) => detail.value?.items.filter((i) => i.colorId === colorId).reduce((s, i) => s + i.qty, 0) ?? 0
+const qtyAt = (colorId: string, size: string) => detail.value?.items.find((i) => i.colorId === colorId && i.sizeCode === size)?.qty ?? 0
+const colorTotal = (colorId: string) => detail.value?.items.filter((i) => i.colorId === colorId).reduce((s, i) => s + i.qty, 0) ?? 0
 const sizeTotal = (size: string) => detail.value?.items.filter((i) => i.sizeCode === size).reduce((s, i) => s + i.qty, 0) ?? 0
 
 // ---------- 其他显示 ----------
@@ -347,7 +348,7 @@ const partyText = (i: ProductionIssue) => (i.responsibleParty ? RESPONSIBLE_PART
 
 // 传给子组件的取数函数在 script 里定义（模板里写引用 import 的箭头函数 vue-tsc 会报错）
 const loadNotices = () => productionApi.notices(id)
-const handleNotice = (noticeId: number, remark: string | null) => productionApi.handleNotice(id, noticeId, remark)
+const handleNotice = (noticeId: string, remark: string | null) => productionApi.handleNotice(id, noticeId, remark)
 const loadLogs = () => productionApi.logs(id)
 const loadFiles = () => productionApi.attachments(id)
 const saveFiles = (files: FileVO[]) => productionApi.replaceAttachments(id, files)

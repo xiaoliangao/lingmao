@@ -25,6 +25,13 @@ def main():
     sku_ids = f.get("styleSkuIdsSameSizeDifferentColor", [])
     if len(sku_ids) != 2 or len(set(sku_ids)) != 2 or any(not isinstance(x, int) or x <= 0 for x in sku_ids):
         raise RuntimeError("Two distinct synthetic style SKU IDs are required")
+    # Seed metadata uses integers; the public BIGINT contract uses decimal strings.
+    # Preserve versions/counts as numbers, and compare IDs without lossy conversion.
+    for key, value in list(f.items()):
+        if key.endswith("Id") and isinstance(value, int) and not isinstance(value, bool):
+            f[key] = str(value)
+    sku_ids = [str(value) for value in sku_ids]
+    f["styleSkuIdsSameSizeDifferentColor"] = sku_ids
     api = ApiClient(local_url("SCM_UI_API_BASE", required_port=18080))
     me = api.login()
     if me.get("id") != f["userId"]:
@@ -35,9 +42,9 @@ def main():
     if a["sizeCode"] != b["sizeCode"] or a["colorId"] == b["colorId"]:
         raise AssertionError("Fixture must use the same size in different colors")
     today = business_day()
-    f.update({"materialId": f.get("materialId", 1), "supplierId": f.get("supplierId", 1),
-              "factoryId": f.get("factoryId", 3), "buyFactoryId": f.get("buyFactoryId", 4),
-              "factoryWarehouseId": f.get("factoryWarehouseId", 3), "productWarehouseId": f.get("productWarehouseId", 2),
+    f.update({"materialId": f.get("materialId", "1"), "supplierId": f.get("supplierId", "1"),
+              "factoryId": f.get("factoryId", "3"), "buyFactoryId": f.get("buyFactoryId", "4"),
+              "factoryWarehouseId": f.get("factoryWarehouseId", "3"), "productWarehouseId": f.get("productWarehouseId", "2"),
               "businessDate": today.isoformat(), "orderTemplate": {
         "companyId": f["companyId"], "orderType": "STOCK", "customerId": None, "customerOrderNo": None,
         "contractNo": None, "brand": f.get("brand"), "orderDate": today.isoformat(),

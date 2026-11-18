@@ -87,7 +87,7 @@ const activeTodoGroup = ref<'ALL' | TodoGroupKey>('ALL')
 const FILTER_KEY = 'scm.home.todoFilter'
 interface TodoFilter {
   scope: 'ALL' | 'MINE'
-  ownerId: number | null
+  ownerId: string | null
   ownerName: string | null
 }
 function readFilter(): TodoFilter {
@@ -212,7 +212,7 @@ function onScopeChange() {
   void loadTodos()
 }
 
-function onOwnerChange(id: number | null | undefined) {
+function onOwnerChange(id: string | null | undefined) {
   todoFilter.ownerId = id ?? null
   if (!todoFilter.ownerId) todoFilter.ownerName = null
   else todoFilter.scope = 'ALL'

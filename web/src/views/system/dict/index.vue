@@ -27,7 +27,7 @@ function selectType(row: DictType | null) {
 }
 
 const typeDialog = ref(false)
-const typeEditingId = ref<number | null>(null)
+const typeEditingId = ref<string | null>(null)
 const typeForm = reactive({ code: '', name: '', remark: '', status: 1, numLabel: '' })
 const typeGuard = useUnsavedChanges(typeForm, typeDialog)
 
@@ -83,7 +83,7 @@ async function loadData() {
 }
 
 const dataDialog = ref(false)
-const dataEditingId = ref<number | null>(null)
+const dataEditingId = ref<string | null>(null)
 const dataForm = reactive({ label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined as number | undefined })
 /** 正在编辑的是内置项：不能停用 */
 const dataBuiltin = ref(false)

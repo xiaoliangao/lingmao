@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { showBizError } from '@/composables/useBizError'
 import { LIST_ERROR_CODES } from './errorCodes'
 import { clearToken, getToken } from './token'
+import { clientActionUuid } from './clientAction'
 
 /** 后端所有接口的统一返回体 */
 export interface R<T> {
@@ -14,7 +15,7 @@ export interface R<T> {
 /**
  * 单个请求的选项。silent：出错不弹提示，由调用方自己汇总（批量操作条 BatchBar 逐条调接口时就这样）。
  * 接口函数想让调用方能静默，就多收一个 options 原样传下来：
- *   disable: (id: number, options?: RequestOptions) => http.post<void>(`/api/materials/${id}/disable`, undefined, options)
+ *   disable: (id: string, options?: RequestOptions) => http.post<void>(`/api/materials/${id}/disable`, undefined, options)
  */
 export interface RequestOptions {
   silent?: boolean
@@ -57,6 +58,13 @@ const instance = axios.create({
 
 // 请求前：带上 token
 instance.interceptors.request.use((config) => {
+  // 公共契约接线：已有业务动作沿用原键；完整未知结果恢复由 A3 提供。
+  if (config.method?.toLowerCase() === 'post' && !(config.data instanceof FormData)) {
+    const body: unknown = config.data
+    const actionId = body && typeof body === 'object' && 'clientActionId' in body
+      && typeof body.clientActionId === 'string' ? body.clientActionId : undefined
+    config.headers['Idempotency-Key'] ??= actionId ?? clientActionUuid()
+  }
   const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`

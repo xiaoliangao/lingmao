@@ -44,10 +44,10 @@ const types = ref<PriceType[]>([])
 
 const blank = () => ({
   type: 'MATERIAL' as PriceType,
-  supplierId: null as number | null,
-  materialId: null as number | null,
-  materialSkuId: null as number | null,
-  styleId: null as number | null,
+  supplierId: null as string | null,
+  materialId: null as string | null,
+  materialSkuId: null as string | null,
+  styleId: null as string | null,
   processMode: null as string | null,
   price: null as number | null,
   taxPct: null as number | null,
@@ -157,7 +157,7 @@ const skuOptions = computed(() =>
 const current = ref<CurrentPrice | null>(null)
 let currentSeq = 0
 /** 税率是按哪家供应商带的：换了供应商才重新带，不盖掉手改的 */
-let taxFor: number | null = null
+let taxFor: string | null = null
 
 async function loadCurrent() {
   const mine = ++currentSeq

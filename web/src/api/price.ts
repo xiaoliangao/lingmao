@@ -12,7 +12,7 @@ export const priceApi = {
   /** 录价对话框的提示（要两个改价权限之一） */
   current: (params: CurrentPriceQuery, options?: RequestOptions) => http.get<CurrentPrice>(`${base}/current`, params, options),
   /** 录一条，返回 id。物料价要 price:material:edit，加工价要 price:process:edit */
-  record: (data: PriceSaveForm) => http.post<number>(base, data),
+  record: (data: PriceSaveForm) => http.post<string>(base, data),
   /** 作废（原因必填）。已经作废了是 1002 */
-  void: (id: number, reason: string) => http.post<void>(`${base}/${id}/void`, { reason }),
+  void: (id: string, reason: string) => http.post<void>(`${base}/${id}/void`, { reason }),
 }

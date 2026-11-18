@@ -10,7 +10,30 @@
         SELECT c.id, c.no, c.warehouse_id, w.name AS warehouse_name, c.purpose, c.scope, c.count_date, c.counter_id,
                c.status, c.version, c.create_by, c.create_time,
                agg.item_count, agg.filled_count, agg.gain_count, agg.loss_count, cat.category_names
-        FROM inv_count c
+        FROM <choose>
+            <when test="q.keyword != null and q.keyword.trim() != ''">
+            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
+            (
+                SELECT mc.* FROM inv_count mc WHERE upper(mc.no) LIKE #{keywordPrefix}
+                <if test="codes != null">OR upper(mc.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                UNION
+                SELECT mc.* FROM inv_count mc JOIN bas_warehouse mw ON mw.id = mc.warehouse_id
+                WHERE mw.name ILIKE #{keywordContains}
+                UNION
+                SELECT mc.* FROM inv_count mc JOIN sys_user mu ON mu.id = mc.counter_id
+                WHERE mu.nickname ILIKE #{keywordContains}
+                UNION
+                SELECT mc.* FROM inv_count_item mi JOIN inv_count mc ON mc.id = mi.count_id WHERE mi.material_sku_id IN (
+                    SELECT mk.id FROM bas_material_sku mk WHERE upper(mk.code) LIKE #{keywordPrefix}
+                    UNION
+                    SELECT mk.id FROM bas_material_sku mk JOIN bas_material mm ON mm.id = mk.material_id
+                    WHERE upper(mm.code) LIKE #{keywordPrefix} OR mm.name ILIKE #{keywordContains}
+                )
+            )
+            </when>
+            <otherwise>inv_count</otherwise>
+        </choose> c
         JOIN bas_warehouse w ON w.id = c.warehouse_id
         LEFT JOIN LATERAL (SELECT COUNT(*) AS item_count, COUNT(i.counted_qty) AS filled_count,
                                   COUNT(*) FILTER (WHERE i.counted_qty &gt; i.book_qty) AS gain_count,
@@ -32,17 +55,6 @@
         <if test="q.countDateTo != null">AND c.count_date &lt;= #{q.countDateTo}</if>
         <if test="q.ids != null and q.ids.size() > 0">
             AND c.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
-        </if>
-        <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (c.no ILIKE '%' || #{q.keyword} || '%' OR w.name ILIKE '%' || #{q.keyword} || '%'
-                 OR c.counter_id IN (SELECT u.id FROM sys_user u WHERE u.nickname ILIKE '%' || #{q.keyword} || '%')
-                 OR EXISTS (SELECT 1 FROM inv_count_item i
-                            JOIN bas_material_sku k ON k.id = i.material_sku_id
-                            JOIN bas_material m ON m.id = k.material_id
-                            WHERE i.count_id = c.id
-                              AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
-                                   OR m.name ILIKE '%' || #{q.keyword} || '%'))
-                 <if test="codes != null">OR upper(c.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         ORDER BY c.id DESC
     </select>

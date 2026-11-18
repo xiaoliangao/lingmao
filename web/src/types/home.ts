@@ -164,7 +164,7 @@ export interface HomeTodoQuery {
   /** true：只看负责人是我的 */
   mine?: boolean
   /** 只看负责人是这个人的（生产跟单、采购员……），和 mine 二选一 */
-  ownerId?: number | null
+  ownerId?: string | null
 }
 
 /** GET /api/board/home/todos */
@@ -205,7 +205,7 @@ export interface UpstreamQuery {
   /** 只看负责人是我的（有"全部"范围的人才有这个切换） */
   mine?: boolean
   /** 只看负责人是这个人的，和 mine 二选一（同 HomeTodoQuery） */
-  ownerId?: number | null
+  ownerId?: string | null
 }
 
 /** GET /api/board/upstream：按最新一条提醒的时间倒序，不分页 */

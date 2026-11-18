@@ -43,15 +43,15 @@ function openNew(type: InvDocType) {
   formVisible.value = true
 }
 
-function openDoc(id: number) {
+function openDoc(id: string) {
   void router.push(`/stock-in/${id}`)
 }
 
 // 退料入库挂了源生产单：走生成接口
 const returnVisible = ref(false)
-const returnProdId = ref<number | null>(null)
+const returnProdId = ref<string | null>(null)
 
-function openReturn(productionOrderId: number) {
+function openReturn(productionOrderId: string) {
   returnProdId.value = productionOrderId
   returnVisible.value = true
 }

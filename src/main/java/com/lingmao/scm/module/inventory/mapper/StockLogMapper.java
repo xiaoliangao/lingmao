@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
+import com.lingmao.scm.module.inventory.dto.PurchasePostingHistory;
 import com.lingmao.scm.module.inventory.entity.StockLog;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -24,6 +25,17 @@ public interface StockLogMapper extends BaseMapper<StockLog> {
             + "AND l.reversal_of_log_id IS NULL AND NOT EXISTS (SELECT 1 FROM inv_stock_log r WHERE r.reversal_of_log_id = l.id) "
             + "ORDER BY l.warehouse_id, l.material_sku_id, l.inv_doc_item_id, l.count_item_id, l.id DESC</script>")
     List<StockLog> reversibleOf(@Param("docId") Long docId, @Param("countId") Long countId);
+
+    /** 采购单锁已持有；只按未冲销原事件聚合，历史已反审草稿后来修改也不会污染本次累计。 */
+    @Select("<script>SELECT i.source_item_id, i.material_sku_id, l.change_type, i.purchase_qty, "
+            + "i.conversion_factor, i.purchase_price, l.change_qty AS quantity, l.amount, "
+            + "l.purchase_rounding_version AS rounding_version "
+            + "FROM inv_stock_log l JOIN inv_doc d ON d.id=l.inv_doc_id JOIN inv_doc_item i ON i.id=l.inv_doc_item_id "
+            + "WHERE d.source_type='PURCHASE_ORDER' AND d.source_id=#{sourceId} "
+            + "AND i.source_item_id IN <foreach collection='sourceItems' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "AND l.change_type IN ('PURCHASE_IN','PURCHASE_RETURN') AND l.reversal_of_log_id IS NULL "
+            + "AND NOT EXISTS (SELECT 1 FROM inv_stock_log r WHERE r.reversal_of_log_id=l.id) ORDER BY l.id</script>")
+    List<PurchasePostingHistory> purchaseHistory(@Param("sourceId") long sourceId, @Param("sourceItems") Collection<Long> sourceItems);
 
     /** 这张入库单 / 出库单过过账没有（审核过一次就有日志，反审核也不删） */
     @Select("SELECT EXISTS (SELECT 1 FROM inv_stock_log WHERE inv_doc_id = #{docId})")
@@ -61,5 +73,10 @@ public interface StockLogMapper extends BaseMapper<StockLog> {
 
     /** 库存日志（XML）；codes 是关键字里的几个单号 / SKU 码（Keywords） */
     IPage<StockLogRowVO> selectRowPage(IPage<StockLogRowVO> page, @Param("q") StockLogQuery query, @Param("codes") List<String> codes);
+
+    /** 一次只取 size+1，不执行 COUNT，不使用 OFFSET。 */
+    List<StockLogRowVO> selectSeek(@Param("q") StockLogQuery query, @Param("codes") List<String> codes,
+                                   @Param("prefix") String prefix, @Param("afterTime") OffsetDateTime afterTime,
+                                   @Param("afterId") Long afterId, @Param("limit") int limit);
 
 }

@@ -9,6 +9,7 @@ import struct
 import subprocess
 import shutil
 import zlib
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -69,6 +70,12 @@ class ApiClient:
         if not path.startswith("/api/") or path.startswith("//"):
             raise ValueError("Only relative /api/ paths are permitted")
         headers = {"Content-Type": content_type}
+        # 每次测试动作独立认领；旧记数动作按其 clientActionId 保持同键重试。
+        if method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            action_id = body.get("clientActionId") if isinstance(body, dict) else None
+            headers["Idempotency-Key"] = str(action_id or uuid.uuid4())
+        if isinstance(body, dict) and body.get("companyId") is not None:
+            headers["X-Company-Id"] = str(body["companyId"])
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         payload = raw_body if raw_body is not None else (

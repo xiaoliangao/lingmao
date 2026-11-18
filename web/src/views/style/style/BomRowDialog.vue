@@ -40,13 +40,13 @@ export interface BomDraftRow extends BomItemForm {
   unit: string
   supplierName: string | null
   /** 配料 SKU id → 显示用的码、颜色、规格、状态（页签上的表格要显示，不用再查） */
-  skuInfo: Record<number, { code: string; colorName: string | null; spec: string | null; status: number }>
+  skuInfo: Record<string, { code: string; colorName: string | null; spec: string | null; status: number }>
 }
 
 const visible = defineModel<boolean>({ required: true })
 
 const props = defineProps<{
-  packId: number
+  packId: string
   sizes: string[]
   baseSize: string
   colors: ColorOption[]
@@ -62,7 +62,7 @@ const units = useDict('unit')
 
 const form = reactive({
   part: '',
-  materialId: 0,
+  materialId: '',
   materialCode: '',
   materialName: '',
   materialType: '',
@@ -73,17 +73,17 @@ const form = reactive({
   sizeUsages: {} as Record<string, number>,
   lossPct: 0,
   source: 'PURCHASE' as MaterialSource,
-  supplierId: null as number | null,
+  supplierId: null as string | null,
   supplierName: null as string | null,
   refPrice: null as number | null,
-  priceSourceId: null as number | null,
+  priceSourceId: null as string | null,
   priceTaxIncluded: true,
   priceFreightIncluded: true,
   remark: '',
 })
 
 /** 配料：格子（'FIXED' | 'C:款色' | 'S:尺码' | 'CS:款色:尺码'）→ 选的物料 SKU 和它单独的单价（null = 用行上的） */
-const skuMap = reactive<Record<string, { materialSkuId: number; refPrice: number | null }>>({})
+const skuMap = reactive<Record<string, { materialSkuId: string; refPrice: number | null }>>({})
 const guard = useUnsavedChanges(() => ({ form, skuMap }), visible)
 
 /** 这个物料的 SKU（配料下拉） */
@@ -95,7 +95,7 @@ const picking = ref(false)
 /** 客供只在 TRADE 开时有，一期按关（01 §4.4） */
 const SOURCE_OPTIONS = (Object.keys(MATERIAL_SOURCE_LABEL) as MaterialSource[]).filter((s) => s !== 'CUSTOMER_SUPPLIED')
 
-function keyOf(colorId: number | null, sizeCode: string | null): string {
+function keyOf(colorId: string | null, sizeCode: string | null): string {
   if (colorId != null && sizeCode != null) return `CS:${colorId}:${sizeCode}`
   if (colorId != null) return `C:${colorId}`
   if (sizeCode != null) return `S:${sizeCode}`
@@ -106,13 +106,13 @@ function keyOf(colorId: number | null, sizeCode: string | null): string {
 const slots = computed(() => {
   if (form.skuMode === 'FIXED') return [{ key: 'FIXED', label: '全部颜色、尺码', colorId: null, sizeCode: null }]
   if (form.skuMode === 'BY_COLOR') {
-    return props.colors.map((c) => ({ key: keyOf(c.id, null), label: c.name, colorId: c.id as number | null, sizeCode: null as string | null }))
+    return props.colors.map((c) => ({ key: keyOf(c.id, null), label: c.name, colorId: c.id as string | null, sizeCode: null as string | null }))
   }
   if (form.skuMode === 'BY_SIZE') {
-    return props.sizes.map((sz) => ({ key: keyOf(null, sz), label: sz, colorId: null as number | null, sizeCode: sz as string | null }))
+    return props.sizes.map((sz) => ({ key: keyOf(null, sz), label: sz, colorId: null as string | null, sizeCode: sz as string | null }))
   }
   return props.colors.flatMap((c) =>
-    props.sizes.map((sz) => ({ key: keyOf(c.id, sz), label: `${c.name} · ${sz}`, colorId: c.id as number | null, sizeCode: sz as string | null })),
+    props.sizes.map((sz) => ({ key: keyOf(c.id, sz), label: `${c.name} · ${sz}`, colorId: c.id as string | null, sizeCode: sz as string | null })),
   )
 })
 
@@ -122,9 +122,9 @@ const skuOptions = computed(() => {
   const used = new Set(Object.values(skuMap).map((v) => v.materialSkuId))
   return materialSkus.value.filter((s) => s.status === 1 || used.has(s.id))
 })
-const skuOf = (id: number | undefined) => materialSkus.value.find((s) => s.id === id)
+const skuOf = (id: string | undefined) => materialSkus.value.find((s) => s.id === id)
 
-async function loadMaterialSkus(materialId: number) {
+async function loadMaterialSkus(materialId: string) {
   if (!materialId) {
     materialSkus.value = []
     return
@@ -167,7 +167,7 @@ function resetFromProps() {
   } else {
     Object.assign(form, {
       part: '',
-      materialId: 0,
+      materialId: '',
       materialCode: '',
       materialName: '',
       materialType: '',
@@ -262,13 +262,13 @@ async function onPickMaterial(rows: MaterialPickRow[] | StylePickRow[]) {
   await applyDefaults(true)
 }
 
-async function onSkuChange(key: string, skuId: number | null) {
+async function onSkuChange(key: string, skuId: string | null) {
   if (skuId == null) delete skuMap[key]
   else skuMap[key] = { materialSkuId: skuId, refPrice: null }
   await applyDefaults(false)
 }
 
-async function onSupplierChange(id: number | null | undefined) {
+async function onSupplierChange(id: string | null | undefined) {
   form.supplierId = id ?? null
   if (!form.supplierId) form.supplierName = null
   await applyDefaults(false)
@@ -374,7 +374,7 @@ function submit() {
               placeholder="选 SKU"
               class="slot-sel"
               :class="{ stopped: skuOf(skuMap[slot.key]?.materialSkuId)?.status === 0 }"
-              @update:model-value="(v: number | null) => onSkuChange(slot.key, v ?? null)"
+              @update:model-value="(v: string | null) => onSkuChange(slot.key, v ?? null)"
             >
               <el-option v-for="s in skuOptions" :key="s.id" :label="skuLabel(s)" :value="s.id" :disabled="s.status !== 1">
                 <span :class="{ danger: s.status !== 1 }">{{ skuLabel(s) }}<template v-if="s.status !== 1">（已停用）</template></span>

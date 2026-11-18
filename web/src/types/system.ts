@@ -7,7 +7,7 @@ export interface PageResult<T> {
 
 /** /api/auth/me 返回的当前用户 */
 export interface UserInfo {
-  id: number
+  id: string
   username: string
   nickname: string
   roles: string[]
@@ -17,12 +17,12 @@ export interface UserInfo {
    * 默认主体（我方公司）：新建需求订单、采购单、盘点单时主体默认填它（用 user.defaultCompanyId）。
    * 用户上设的停用了、或者没设，启用的只有一个就是那个；不止一个时是 null，单据上自己选
    */
-  defaultCompany: { id: number; name: string } | null
+  defaultCompany: { id: string; name: string } | null
 }
 
 export interface MenuNode {
-  id: number
-  parentId: number
+  id: string
+  parentId: string
   name: string
   type: 1 | 2 | 3
   path: string | null
@@ -38,14 +38,14 @@ export interface MenuNode {
 }
 
 export interface User {
-  id: number
+  id: string
   username: string
   nickname: string
   phone: string | null
   status: number
   createTime: string
   /** 默认主体公司：新建单据时带出来 */
-  defaultCompanyId: number | null
+  defaultCompanyId: string | null
   dept: string | null
   post: string | null
   /** 设计师编号，两位数字 01-99，进款号；不是设计师的为空 */
@@ -58,7 +58,7 @@ export interface User {
 export type DataScope = 'ALL' | 'SELF'
 
 export interface Role {
-  id: number
+  id: string
   code: string
   name: string
   sort: number
@@ -69,7 +69,7 @@ export interface Role {
 }
 
 export interface DictType {
-  id: number
+  id: string
   code: string
   name: string
   remark: string | null
@@ -80,7 +80,7 @@ export interface DictType {
 }
 
 export interface DictData {
-  id: number
+  id: string
   typeCode: string
   label: string
   value: string
@@ -105,14 +105,14 @@ export interface DictOption {
 
 /** 选人下拉的一项（GET /api/users/options） */
 export interface UserOption {
-  id: number
+  id: string
   username: string
   nickname: string
 }
 
 export interface OperLog {
-  id: number
-  userId: number | null
+  id: string
+  userId: string | null
   username: string | null
   module: string
   action: string

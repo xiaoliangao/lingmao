@@ -36,7 +36,7 @@ public class MaterialListVO {
     private Integer status;
     private Integer skuCount;
 
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime updateTime;
 
     private AttachmentVO image;

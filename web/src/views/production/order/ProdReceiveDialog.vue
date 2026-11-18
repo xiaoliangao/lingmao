@@ -56,22 +56,22 @@ const uncertain = ref(false)
 
 const form = reactive({
   receiptDate: todayStr(),
-  warehouseId: null as number | null,
+  warehouseId: null as string | null,
   logisticsNo: '',
   remark: '',
   photos: [] as FileVO[],
   /** 生产单明细 id → 这次回货（含次品） */
-  qtys: {} as Record<number, number>,
+  qtys: {} as Record<string, number>,
   /** 生产单明细 id → 其中次品 */
-  defects: {} as Record<number, number>,
+  defects: {} as Record<string, number>,
   /** 生产单明细 id → 分色分码备注 */
-  remarks: {} as Record<number, string>,
+  remarks: {} as Record<string, string>,
 })
 const guard = useUnsavedChanges(form, createVisible)
 
 const itemMap = computed(() => new Map(props.doc.items.map((it) => [it.id, it])))
 const matrixColors = computed<MatrixColor[]>(() => {
-  const seen = new Map<number, MatrixColor>()
+  const seen = new Map<string, MatrixColor>()
   for (const it of props.doc.items) {
     if (!seen.has(it.colorId)) seen.set(it.colorId, { id: it.colorId, name: it.colorName, code: it.colorCode, hex: it.colorHex })
   }
@@ -79,14 +79,14 @@ const matrixColors = computed<MatrixColor[]>(() => {
 })
 const matrixCells = computed<MatrixCell[]>(() => props.doc.items.map((it) => ({ id: it.id, colorId: it.colorId, sizeCode: it.sizeCode })))
 
-const maxOf = (id: number) => itemMap.value.get(id)?.maxReceiveQty
-const qtySub = (id: number) => {
+const maxOf = (id: string) => itemMap.value.get(id)?.maxReceiveQty
+const qtySub = (id: string) => {
   const it = itemMap.value.get(id)
   return it ? `加工 ${it.qty} · 已回 ${it.returnedQty}` : null
 }
-const defectError = (id: number, defect: number) => (defect > (form.qtys[id] ?? 0) ? '次品比这一格的回货还多' : null)
+const defectError = (id: string, defect: number) => (defect > (form.qtys[id] ?? 0) ? '次品比这一格的回货还多' : null)
 
-const sum = (m: Record<number, number>) => Object.values(m).reduce((s, q) => s + (q > 0 ? q : 0), 0)
+const sum = (m: Record<string, number>) => Object.values(m).reduce((s, q) => s + (q > 0 ? q : 0), 0)
 const totalQty = computed(() => sum(form.qtys))
 const totalDefect = computed(() => sum(form.defects))
 

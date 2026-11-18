@@ -39,20 +39,20 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  saved: [id: number]
+  saved: [id: string]
   /** 退料入库选了源生产单：走生成接口 */
-  fromProduction: [productionOrderId: number]
+  fromProduction: [productionOrderId: string]
 }>()
 
 const units = useDict('unit')
 
 interface LineRow {
   /** 改草稿时原来的行：保存时带回，后端按它认行 */
-  id: number | null
+  id: string | null
   /** 过过账的行（反审核回来的草稿）不能删 */
   posted: boolean
-  sourceItemId: number | null
-  materialSkuId: number
+  sourceItemId: string | null
+  materialSkuId: string
   skuCode: string
   materialName: string
   stockUnit: string
@@ -74,11 +74,11 @@ const skuPicking = ref(false)
 const prodPicking = ref(false)
 
 const head = reactive({
-  companyId: 1,
+  companyId: '1',
   docDate: todayStr(),
-  fromWarehouseId: null as number | null,
-  toWarehouseId: null as number | null,
-  partnerId: null as number | null,
+  fromWarehouseId: null as string | null,
+  toWarehouseId: null as string | null,
+  partnerId: null as string | null,
   partnerName: null as string | null,
   reason: '',
   supplierDeliveryNo: '',

@@ -13,8 +13,8 @@ import type { ColorOption } from '@/types/basic'
  *
  * 选中的颜色对象从 picked（defineExpose）取，拼 SKU 预览用
  */
-const props = withDefaults(defineProps<{ exclude?: number[] }>(), { exclude: () => [] })
-const model = defineModel<number[]>({ required: true })
+const props = withDefaults(defineProps<{ exclude?: string[] }>(), { exclude: () => [] })
+const model = defineModel<string[]>({ required: true })
 
 const colors = ref<ColorOption[]>([])
 const loaded = ref(false)
@@ -40,7 +40,7 @@ const shown = computed(() => {
 
 const picked = computed(() => model.value.map((id) => colors.value.find((c) => c.id === id)).filter((c): c is ColorOption => !!c))
 
-function toggle(id: number) {
+function toggle(id: string) {
   model.value = model.value.includes(id) ? model.value.filter((x) => x !== id) : [...model.value, id]
 }
 

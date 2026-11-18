@@ -5,6 +5,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.page.BusinessDateRange;
+import com.lingmao.scm.common.page.SeekPage;
+import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
@@ -37,6 +40,7 @@ public class StockServiceImpl implements StockService {
     private final StockExcel excel;
     private final MaterialService materialService;
     private final UserService userService;
+    private final StockLogCursor logCursor;
 
     @Override
     public PageResult<StockRowVO> page(StockQuery query) {
@@ -62,9 +66,29 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public PageResult<StockLogRowVO> logs(StockLogQuery query) {
+        if (query.getPage() > 1000 || (query.getPage() - 1) * query.getSize() > 10_000) {
+            throw new BizException(400, "流水较多，请使用游标翻页或缩小日期范围");
+        }
         IPage<StockLogRowVO> page = stockLogMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
         fillLogs(page.getRecords());
         return PageResult.of(page);
+    }
+
+    @Override
+    public SeekPage<StockLogRowVO> seekLogs(StockLogQuery query) {
+        if (query.getSize() < 1 || query.getSize() > 100) throw new BizException(400, "流水每页须为 1–100 条");
+        if (query.getIds() != null && query.getIds().size() > 100) throw new BizException(400, "一次最多查 100 个流水编号");
+        BusinessDateRange.validate(query.getBizDateFrom(), query.getBizDateTo());
+        BusinessDateRange.validate(query.getCreatedDateFrom(), query.getCreatedDateTo());
+        List<String> codes = Keywords.codes(query.getKeyword());
+        StockLogCursor.Position after = logCursor.decode(query);
+        List<StockLogRowVO> fetched = stockLogMapper.selectSeek(query, codes, Keywords.prefix(query.getKeyword()),
+                after == null ? null : after.createdAt(), after == null ? null : after.id(), (int) query.getSize() + 1);
+        boolean hasMore = fetched.size() > query.getSize();
+        List<StockLogRowVO> rows = hasMore ? fetched.subList(0, (int) query.getSize()) : fetched;
+        fillLogs(rows);
+        String next = hasMore ? logCursor.encode(query, new StockLogCursor.Position(rows.getLast().getCreateTime(), rows.getLast().getId())) : null;
+        return new SeekPage<>(rows, next, hasMore);
     }
 
     private void fillLogs(List<StockLogRowVO> rows) {

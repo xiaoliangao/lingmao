@@ -5,7 +5,7 @@ import type { PriceRow, PriceType } from '@/types/price'
 /** 从哪一页打开的：物料、供应商、款式详情。code、name 是给对话框显示、查 SKU 用的 */
 export interface PriceSubject {
   kind: 'supplier' | 'material' | 'style'
-  id: number
+  id: string
   code: string
   name: string
 }

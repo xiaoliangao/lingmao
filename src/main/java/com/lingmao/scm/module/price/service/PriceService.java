@@ -11,6 +11,7 @@ import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
 import com.lingmao.scm.module.price.dto.PriceSource;
 import com.lingmao.scm.module.price.dto.ProcessPriceLine;
+import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.entity.PriceType;
 
 import java.time.LocalDate;
@@ -67,6 +68,9 @@ public interface PriceService {
 
     /** 加工价现价：工厂 × 款式 × 加工方式。核价按成品采购算时 processMode = FULL（包工包料）。没有返回 empty */
     Optional<PriceRef> currentProcess(long supplierId, long styleId, String processMode, LocalDate date);
+
+    /** 内部计算批量读取加工现价；口径同 currentProcess，取不到的 key 不在返回里。 */
+    Map<ProcessPriceKey, PriceRef> currentProcesses(Collection<ProcessPriceKey> keys, LocalDate date);
 
     /**
      * 单据最后一级审核时记价（RFC 006 §5，在审核的事务里调）：逐行和单据日期的现价比，一样的跳过；

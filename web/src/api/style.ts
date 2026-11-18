@@ -12,17 +12,17 @@ export interface StyleQuery {
   /** 款号、名称、花名、品名；有空格 = 按几个款号查 */
   keyword?: string
   /** 含下级 */
-  categoryId?: number
+  categoryId?: string
   styleClass?: string
   brand?: string
   year?: number
   season?: string
   wave?: string
-  designerId?: number
+  designerId?: string
   status?: StyleStatus
   techPackStatus?: TechPackStatus
   /** 导出选中的 */
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 新建、修改共用的列。保存是整体覆盖：没填的发 null */
@@ -31,25 +31,25 @@ export interface StyleForm {
   aliasName: string | null
   styleClass: string
   brand: string
-  categoryId: number | null
+  categoryId: string | null
   year: number | null
   season: string
   wave: string | null
   styleTag: string | null
   series: string | null
   gender: string | null
-  designerId: number | null
-  patternMakerId: number | null
+  designerId: string | null
+  patternMakerId: string | null
   source: string | null
-  sizeGroupId: number | null
-  mainMaterialId: number | null
+  sizeGroupId: string | null
+  mainMaterialId: string | null
   productName: string | null
   composition: string | null
   execStandard: string | null
   safetyCategory: string | null
   tagPrice: number | null
   refCost: number | null
-  defaultFactoryId: number | null
+  defaultFactoryId: string | null
   /** yyyy-MM-dd */
   launchDate: string | null
   remark: string | null
@@ -59,44 +59,44 @@ export interface StyleForm {
 export interface StyleCreateForm extends StyleForm {
   codeMode: 'AUTO' | 'MANUAL'
   code: string | null
-  colorIds: number[]
+  colorIds: string[]
   images: FileVO[]
   files: FileVO[]
 }
 
 export const styleApi = {
   page: (params: PageParams & StyleQuery, options?: RequestOptions) => http.get<PageResult<StyleRow>>(base, params, options),
-  get: (id: number) => http.get<StyleDetail>(`${base}/${id}`),
-  logs: (id: number) => http.get<DocLog[]>(`${base}/${id}/logs`),
+  get: (id: string) => http.get<StyleDetail>(`${base}/${id}`),
+  logs: (id: string) => http.get<DocLog[]>(`${base}/${id}/logs`),
   /** 自动款号预览：不占号，保存时才取。设计师没编号、今天流水满了回 1000，消息说清楚怎么办 */
-  codePreview: (styleClass: string, designerId: number | null) =>
+  codePreview: (styleClass: string, designerId: string | null) =>
     http.get<string>(`${base}/code-preview`, { styleClass, designerId: designerId ?? undefined }, { silent: true }),
   /** 选款式的弹窗：启用的款式（includeDraft 时草稿也列，录加工价用），关键字查款号、名称、花名、品牌；品类含下级（登录即可） */
-  pick: (params: PageParams & { keyword?: string; categoryId?: number; includeDraft?: boolean }) =>
+  pick: (params: PageParams & { keyword?: string; categoryId?: string; includeDraft?: boolean }) =>
     http.get<PageResult<StylePickRow>>(`${base}/pick`, params),
   create: ({ images, files, ...data }: StyleCreateForm) =>
     http.post<StyleCreateResult>(base, { ...data, images: attachmentBody(images), files: attachmentBody(files) }),
-  update: (id: number, data: StyleForm) => http.put<void>(`${base}/${id}`, data),
-  remove: (id: number, options?: RequestOptions) => http.delete<void>(`${base}/${id}`, options),
-  enable: (id: number, options?: RequestOptions) => http.post<void>(`${base}/${id}/enable`, undefined, options),
-  disable: (id: number, options?: RequestOptions) => http.post<void>(`${base}/${id}/disable`, undefined, options),
-  replaceImages: (id: number, files: FileVO[]) => http.put<Attachment[]>(`${base}/${id}/images`, attachmentBody(files)),
-  replaceFiles: (id: number, files: FileVO[]) => http.put<Attachment[]>(`${base}/${id}/files`, attachmentBody(files)),
+  update: (id: string, data: StyleForm) => http.put<void>(`${base}/${id}`, data),
+  remove: (id: string, options?: RequestOptions) => http.delete<void>(`${base}/${id}`, options),
+  enable: (id: string, options?: RequestOptions) => http.post<void>(`${base}/${id}/enable`, undefined, options),
+  disable: (id: string, options?: RequestOptions) => http.post<void>(`${base}/${id}/disable`, undefined, options),
+  replaceImages: (id: string, files: FileVO[]) => http.put<Attachment[]>(`${base}/${id}/images`, attachmentBody(files)),
+  replaceFiles: (id: string, files: FileVO[]) => http.put<Attachment[]>(`${base}/${id}/files`, attachmentBody(files)),
 
   // ---------- 颜色、SKU ----------
-  addColors: (id: number, colorIds: number[]) => http.post<void>(`${base}/${id}/colors`, { colorIds }),
+  addColors: (id: string, colorIds: string[]) => http.post<void>(`${base}/${id}/colors`, { colorIds }),
   /** 传这个款上全部颜色的新顺序 */
-  reorderColors: (id: number, colorIds: number[]) => http.put<void>(`${base}/${id}/colors/order`, { colorIds }),
-  enableColor: (id: number, colorId: number) => http.post<void>(`${base}/${id}/colors/${colorId}/enable`),
-  disableColor: (id: number, colorId: number) => http.post<void>(`${base}/${id}/colors/${colorId}/disable`),
+  reorderColors: (id: string, colorIds: string[]) => http.put<void>(`${base}/${id}/colors/order`, { colorIds }),
+  enableColor: (id: string, colorId: string) => http.post<void>(`${base}/${id}/colors/${colorId}/enable`),
+  disableColor: (id: string, colorId: string) => http.post<void>(`${base}/${id}/colors/${colorId}/disable`),
   /** 只有还没生成 SKU 的颜色能去掉 */
-  removeColor: (id: number, colorId: number) => http.delete<void>(`${base}/${id}/colors/${colorId}`),
-  skus: (id: number) => http.get<StyleSku[]>(`${base}/${id}/skus`),
+  removeColor: (id: string, colorId: string) => http.delete<void>(`${base}/${id}/colors/${colorId}`),
+  skus: (id: string) => http.get<StyleSku[]>(`${base}/${id}/skus`),
   /** 按 启用的颜色 × 尺码组 补齐没有的 SKU，返回新生成了几个 */
-  generateSkus: (id: number) => http.post<number>(`${base}/${id}/skus/generate`),
-  updateSku: (id: number, skuId: number, data: { barcode: string | null; tagPrice: number | null }) =>
+  generateSkus: (id: string) => http.post<number>(`${base}/${id}/skus/generate`),
+  updateSku: (id: string, skuId: string, data: { barcode: string | null; tagPrice: number | null }) =>
     http.put<void>(`${base}/${id}/skus/${skuId}`, data),
-  removeSku: (id: number, skuId: number) => http.delete<void>(`${base}/${id}/skus/${skuId}`),
-  enableSku: (id: number, skuId: number) => http.post<void>(`${base}/${id}/skus/${skuId}/enable`),
-  disableSku: (id: number, skuId: number) => http.post<void>(`${base}/${id}/skus/${skuId}/disable`),
+  removeSku: (id: string, skuId: string) => http.delete<void>(`${base}/${id}/skus/${skuId}`),
+  enableSku: (id: string, skuId: string) => http.post<void>(`${base}/${id}/skus/${skuId}/enable`),
+  disableSku: (id: string, skuId: string) => http.post<void>(`${base}/${id}/skus/${skuId}/disable`),
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -31,7 +32,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 
 const types = useDict('material_type')
@@ -129,7 +130,7 @@ async function saveImages(files: FileVO[]) {
 
 // ---------- 批量加 SKU ----------
 const addVisible = ref(false)
-const addForm = reactive({ colorIds: [] as number[], specs: '', specCodes: {} as SpecCodeOverrides })
+const addForm = reactive({ colorIds: [] as string[], specs: '', specCodes: {} as SpecCodeOverrides })
 const addGuard = useUnsavedChanges(addForm, addVisible)
 const existingCodes = computed(() => detail.value?.skus.map((s) => s.code) ?? [])
 
@@ -188,7 +189,7 @@ async function saveSku() {
 }
 
 async function toggleSku(sku: MaterialSku) {
-  const api = { enable: (skuId: number) => materialApi.enableSku(id, skuId), disable: (skuId: number) => materialApi.disableSku(id, skuId) }
+  const api = { enable: (skuId: string) => materialApi.enableSku(id, skuId), disable: (skuId: string) => materialApi.disableSku(id, skuId) }
   if (await toggleStatus(sku, `SKU ${sku.code}`, api, sku.id, '停用后这个 SKU 不能再选进新单据，已有库存照常出库。')) refresh()
 }
 

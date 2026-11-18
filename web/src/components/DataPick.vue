@@ -30,7 +30,7 @@ import { hasSeparator, MAX_CODES, pasteCodes } from '@/utils/keywords'
  */
 type PickRow = MaterialPickRow | StylePickRow
 const props = withDefaults(
-  defineProps<{ kind?: 'sku' | 'style'; have?: number[]; single?: boolean; params?: Record<string, string | number | boolean> }>(),
+  defineProps<{ kind?: 'sku' | 'style'; have?: string[]; single?: boolean; params?: Record<string, string | number | boolean> }>(),
   { kind: 'sku', have: () => [], single: false, params: () => ({}) },
 )
 const emit = defineEmits<{ pick: [rows: MaterialPickRow[] | StylePickRow[]] }>()
@@ -61,11 +61,11 @@ const seasons = useDict('season')
 const groups = shallowRef<TreeNode[]>([])
 const { query, page, size, list, total, loading, search } = useTable({
   fetch: (params): Promise<PageResult<PickRow>> => source.value.fetch({ ...props.params, ...params }),
-  query: { keyword: '', categoryId: undefined as number | undefined },
+  query: { keyword: '', categoryId: undefined as string | undefined },
   immediate: false,
 })
 /** 勾了的：id → 行，Map 按勾的先后排 */
-const chosen = ref(new Map<number, PickRow>())
+const chosen = ref(new Map<string, PickRow>())
 const had = computed(() => new Set(props.have))
 
 async function onOpen() {
@@ -76,7 +76,7 @@ async function onOpen() {
   groups.value = await source.value.groups()
 }
 
-function pickGroup(id: number | undefined) {
+function pickGroup(id: string | undefined) {
   query.categoryId = id
   find()
 }

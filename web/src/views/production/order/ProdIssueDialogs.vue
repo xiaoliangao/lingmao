@@ -24,7 +24,7 @@ const reportVisible = defineModel<boolean>('reportVisible', { required: true })
 const closeVisible = defineModel<boolean>('closeVisible', { required: true })
 
 const props = defineProps<{
-  orderId: number
+  orderId: string
   /** 预计交期 ?? 交期：预计新交期的默认值从它往后推 */
   baseDueDate: string
   closingIssue: ProductionIssue | null

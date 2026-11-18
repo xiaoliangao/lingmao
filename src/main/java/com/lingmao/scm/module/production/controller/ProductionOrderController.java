@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.production.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.page.PageResult;
@@ -72,7 +76,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/production-orders")
 @RequiredArgsConstructor
-public class ProductionOrderController {
+public class ProductionOrderController extends IdempotencyReplayGuard {
 
     private final ProductionOrderService productionOrderService;
     private final ScheduleService scheduleService;
@@ -221,6 +225,7 @@ public class ProductionOrderController {
     @PostMapping("/schedule")
     @PreAuthorize("hasAuthority('production:order:add')")
     @OperLog(module = "生产单", action = "排单")
+    @IdempotentCreate("PRODUCTION_SCHEDULE")
     public R<List<DocRef>> schedule(@Valid @RequestBody ScheduleReq req) {
         return R.ok(scheduleService.schedule(req));
     }
@@ -239,6 +244,7 @@ public class ProductionOrderController {
     @PostMapping("/{id:\\d+}/nodes/{nodeId:\\d+}/reports")
     @PreAuthorize("hasAuthority('production:node:edit')")
     @OperLog(module = "生产单", action = "报进度")
+    @IdempotentCreate("PRODUCTION_NODE_REPORT")
     public R<NodeReportResult> report(@PathVariable("id") long id, @PathVariable("nodeId") long nodeId,
                                       @Valid @RequestBody NodeReportReq req) {
         return R.ok(nodeService.report(id, nodeId, req));
@@ -280,6 +286,7 @@ public class ProductionOrderController {
     @PostMapping("/{id:\\d+}/issues")
     @PreAuthorize("hasAuthority('production:issue:edit')")
     @OperLog(module = "生产单", action = "上报异常")
+    @IdempotentCreate("PRODUCTION_ISSUE_CREATE")
     public R<IssueCreated> reportIssue(@PathVariable("id") long id, @Valid @RequestBody IssueReq req) {
         return R.ok(issueService.report(id, req));
     }
@@ -384,5 +391,20 @@ public class ProductionOrderController {
                                 @Valid @RequestBody NoticeHandleReq req) {
         docCommonService.handleNotice(BizType.PRODUCTION_ORDER, id, noticeId, req.getRemark(), productionOrderService::checkVisible);
         return R.ok();
+    }
+
+    /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if (!"PRODUCTION_SCHEDULE".equals(operation)) {
+            productionOrderService.checkVisible(((Number) arguments[0]).longValue());
+            return;
+        }
+        scheduleService.checkSourceOrderVisible(((ScheduleReq) arguments[0]).getOrderId());
+        if (result.isArray()) {
+            result.forEach(row -> productionOrderService.checkVisible(row.get("id").longValue()));
+        } else {
+            productionOrderService.checkVisible(result.get("id").longValue());
+        }
     }
 }

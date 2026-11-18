@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -38,7 +39,7 @@ const tabs = useTabsStore()
 const user = useUserStore()
 
 const path = route.path
-const id = route.params.id ? Number(route.params.id) : null
+const id = route.params.id ? routeId(route.params.id) : null
 const editing = id !== null
 
 interface StyleBlock {
@@ -49,8 +50,8 @@ interface StyleBlock {
   lineDueDate: string | null
   remark: string
   /** 款式 SKU id → 件数 */
-  qtys: Record<number, number>
-  values: Record<number, SkuValues>
+  qtys: Record<string, number>
+  values: Record<string, SkuValues>
 }
 
 const loaded = ref(!editing)
@@ -62,7 +63,7 @@ const orderNo = ref('')
 
 const head = reactive({
   companyId: user.defaultCompanyId,
-  customerId: null as number | null,
+  customerId: null as string | null,
   customerOrderNo: null as string | null,
   orderType: 'STOCK',
   brand: null as string | null,
@@ -87,7 +88,7 @@ const guard = useUnsavedChanges(() => ({ head, files: files.value, blocks: block
 
 const skuCells = (opt: OrderStyleOption) => opt.skus.map((s) => ({ id: s.id, colorId: s.colorId, sizeCode: s.sizeCode, status: s.status }))
 
-function valuesOf(b: StyleBlock, skuId: number): SkuValues {
+function valuesOf(b: StyleBlock, skuId: string): SkuValues {
   return b.values[skuId] ??= { price: null, lineDueDate: null, remark: null }
 }
 function mixedValues(b: StyleBlock): boolean {
@@ -124,7 +125,7 @@ function onBySizeChange(b: StyleBlock, on: boolean) {
   for (const sz of b.opt.sizes) if (b.sizePrices[sz] == null) b.sizePrices[sz] = b.unitPrice
 }
 
-async function appendStyles(styleIds: number[]) {
+async function appendStyles(styleIds: string[]) {
   const fresh = styleIds.filter((sid) => !blocks.value.some((b) => b.opt.styleId === sid))
   if (!fresh.length) return
   const opts = await orderApi.styleOptions(fresh)
@@ -137,7 +138,7 @@ function onPickedStyles(rows: MaterialPickRow[] | StylePickRow[]) {
   void appendStyles((rows as StylePickRow[]).map((r) => r.id))
 }
 
-const queryStyleId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : null)
+const queryStyleId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? value : null)
 
 async function init() {
   loadError.value = null
@@ -179,7 +180,7 @@ async function init() {
       const opt = optMap.get(st.styleId)
       if (!opt) throw new Error(`款式 ${st.styleCode} 的矩阵信息加载不全，请重试；原明细不会被删除`)
       const items = d.items.filter((i) => i.styleId === st.styleId)
-      const qtys: Record<number, number> = {}
+      const qtys: Record<string, number> = {}
       const sizePrices: Record<string, number | null> = {}
       for (const it of items) {
         qtys[it.styleSkuId] = it.qty
@@ -251,7 +252,7 @@ function buildForm(): OrderForm | null {
 }
 
 /** 提交审核：静默请求，资料包检查没过（1000 + 清单）弹表格。返回提交上了没有 */
-async function submit(orderId: number, ver: number): Promise<boolean> {
+async function submit(orderId: string, ver: number): Promise<boolean> {
   try {
     await orderApi.act(orderId, 'submit', { version: ver }, { silent: true })
     return true

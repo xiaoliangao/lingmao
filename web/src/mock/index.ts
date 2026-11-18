@@ -11,7 +11,7 @@ import { installMock, type R } from '@/utils/request'
  *   import { mock, MockError, page } from './index'
  *   const orders: OrderRow[] = [...]
  *   mock('get', '/api/orders', ({ query }) => page(orders, query))
- *   mock('get', '/api/orders/:id', ({ params }) => orders.find((o) => o.id === Number(params.id)) ?? fail(404, '单据不存在'))
+ *   mock('get', '/api/orders/:id', ({ params }) => orders.find((o) => o.id === params.id) ?? fail(404, '单据不存在'))
  *   mock('post', '/api/orders/:id/submit', ({ params, body }) => { …; return null })
  *   mock('post', '/api/orders/:id/unaudit', () => fail(1005, '有下游单据，不能反审核', [someDocRef]))
  *   mock('get', '/api/orders/export', () => new Blob(['单号,状态\n'], { type: 'text/csv' }))     下载：返回 Blob，文件名用调用方给的

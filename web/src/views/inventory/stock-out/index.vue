@@ -21,7 +21,7 @@ const formVisible = ref(false)
 const formType = ref<InvDocType>('OTHER_OUT')
 const pickVisible = ref(false)
 const issueVisible = ref(false)
-const issueProdId = ref<number | null>(null)
+const issueProdId = ref<string | null>(null)
 
 function onNew(command: InvDocType | 'ISSUE') {
   if (command === 'ISSUE') {
@@ -37,7 +37,7 @@ function onPicked(order: IssueOption) {
   issueVisible.value = true
 }
 
-function openDoc(id: number) {
+function openDoc(id: string) {
   void router.push(`/stock-out/${id}`)
 }
 </script>

@@ -19,7 +19,7 @@ import { invalidSpecs, specsOf, type SpecCodeOverrides } from './sku'
  *   <MaterialForm ref="formDialog" @saved="onSaved" />
  *   formDialog.value?.openCreate(categoryId)      formDialog.value?.openEdit(detail)
  */
-const emit = defineEmits<{ saved: [id: number, created: boolean] }>()
+const emit = defineEmits<{ saved: [id: string, created: boolean] }>()
 
 type Num = number | null | undefined
 
@@ -35,7 +35,7 @@ const formRef = ref<FormInstance>()
 const categories = ref<TreeNode[]>([])
 
 const EMPTY = {
-  categoryId: null as number | null,
+  categoryId: null as string | null,
   materialType: '' as string | null,
   name: '',
   stockUnit: '' as string | null,
@@ -45,7 +45,7 @@ const EMPTY = {
   weightGsm: undefined as Num,
   composition: '',
   texture: '',
-  defaultSupplierId: null as number | null,
+  defaultSupplierId: null as string | null,
   supplierItemNo: '',
   refPrice: undefined as Num,
   moq: undefined as Num,
@@ -58,7 +58,7 @@ const EMPTY = {
   reservePct: undefined as Num,
   remark: '',
   // 新建时的第一批 SKU
-  colorIds: [] as number[],
+  colorIds: [] as string[],
   specs: '',
   specCodes: {} as SpecCodeOverrides,
 }
@@ -79,7 +79,7 @@ watch(sameUnit, (same) => {
 })
 
 /** 分类下拉：启用的物料分类，只能选二级（一级只是分组） */
-interface CategoryOption { value: number; label: string; disabled?: boolean; children?: CategoryOption[] }
+interface CategoryOption { value: string; label: string; disabled?: boolean; children?: CategoryOption[] }
 const categoryOptions = computed<CategoryOption[]>(() =>
   categories.value.map((group) => ({
     value: group.id,
@@ -97,7 +97,7 @@ const categoryCode = computed(() => {
 })
 const codePreview = computed(() => (categoryCode.value ? `${categoryCode.value}····` : '选了分类才有'))
 
-async function openCreate(categoryId?: number | null) {
+async function openCreate(categoryId?: string | null) {
   categories.value = await materialCategoryApi.enabledTree()
   detail.value = null
   // 左边选的是二级分类就带上；选的是一级或"全部"就空着

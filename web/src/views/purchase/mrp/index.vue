@@ -48,7 +48,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   query: {
     keyword: '',
     statusTab: pickStatus(route.query.status),
-    createBy: undefined as number | null | undefined,
+    createBy: undefined as string | null | undefined,
     createDateFrom: undefined as string | undefined,
     createDateTo: undefined as string | undefined,
     mine: false,

@@ -70,7 +70,7 @@ async function loadTree() {
   }
 }
 
-function idsOf(nodes: CategoryNode[], into = new Set<number>()) {
+function idsOf(nodes: CategoryNode[], into = new Set<string>()) {
   for (const node of nodes) {
     into.add(node.id)
     if (node.children) idsOf(node.children, into)

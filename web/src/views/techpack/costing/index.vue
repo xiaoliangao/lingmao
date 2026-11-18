@@ -48,7 +48,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   query: {
     keyword: '',
     stage: '' as PackStage | '',
-    categoryId: undefined as number | undefined,
+    categoryId: undefined as string | undefined,
     brand: '',
     year: undefined as number | undefined,
     season: '',
@@ -57,7 +57,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
 
 const categories = shallowRef<TreeNode[]>([])
 const categoryOptions = computed(() => {
-  const map = (nodes: TreeNode[] = []): { value: number; label: string; children: unknown[] }[] =>
+  const map = (nodes: TreeNode[] = []): { value: string; label: string; children: unknown[] }[] =>
     nodes.map((n) => ({ value: n.id, label: n.name, children: map(n.children) }))
   return map(categories.value)
 })

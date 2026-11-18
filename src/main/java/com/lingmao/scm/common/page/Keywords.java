@@ -15,25 +15,27 @@ import java.util.regex.Pattern;
  *   IPage<Row> page = mapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
  *
  *   <if test="q.keyword != null and q.keyword.trim() != ''">
- *       AND (d.no ILIKE '%' || #{q.keyword} || '%' OR …
+ *       AND (upper(d.no) LIKE #{keywordPrefix} OR …
  *            <if test="codes != null">OR upper(d.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
  *   </if>
  */
 public final class Keywords {
 
     /** 一次最多查几个：再多 GET 的地址就太长了（Nginx、Tomcat 默认 8KB）。前端 BatchKeyword.vue 同一个数 */
-    public static final int MAX_CODES = 200;
+    public static final int MAX_CODES = 100;
+    public static final int MAX_LENGTH = 8_192;
 
     private static final Pattern SEPARATORS = Pattern.compile("[\\s,，、;；]+");
 
     private Keywords() {
     }
 
-    /** 拆出来的编码（大写、去重、按原来的顺序）；没有分隔符（只是一个词）返回 null，只按包含查。超过 MAX_CODES 个回 400 */
+    /** 拆出来的编码（大写、去重、按原来的顺序）；没有分隔符时返回 null，编码按前缀查。超过 MAX_CODES 个回 400 */
     public static List<String> codes(String keyword) {
         if (keyword == null) {
             return null;
         }
+        if (keyword.length() > MAX_LENGTH) throw new BizException(400, "查询内容过长，请分批查询");
         String text = keyword.strip();
         if (!SEPARATORS.matcher(text).find()) {
             return null;
@@ -47,5 +49,38 @@ public final class Keywords {
             throw new BizException(400, "一次最多查 " + MAX_CODES + " 个，现在 " + codes.size() + " 个，分几次查");
         }
         return codes.isEmpty() ? null : codes;
+    }
+
+    /** 单个编码按转义后的前缀查；批量编码返回 null，只允许调用点的精确 IN 分支匹配。 */
+    public static String prefix(String keyword) {
+        if (keyword == null || keyword.isBlank()) return null;
+        if (codes(keyword) != null) return null;
+        return escapeLike(keyword.strip().toUpperCase(Locale.ROOT)) + "%";
+    }
+
+    /** 名称仍可按完整短语包含查，但用户输入的百分号、下划线和反斜杠都只是文字。 */
+    public static String contains(String keyword) {
+        return contains(keyword, MAX_LENGTH);
+    }
+
+    /** 有界 VARCHAR 放不下完整短语时不可能命中；批量长编码不再触发无意义的名称全文扫描。 */
+    public static String contains(String keyword, int maxCharacters) {
+        if (keyword == null || keyword.isBlank()) return null;
+        codes(keyword);
+        String text = keyword.strip();
+        if (text.codePointCount(0, text.length()) > maxCharacters) return null;
+        return "%" + escapeLike(text) + "%";
+    }
+
+    /** 历史 CSV 编码的 GIN 预筛选；调用点还须保留数组精确匹配，不能用这些包含模式代替精确语义。 */
+    public static List<CodePattern> batchContains(String keyword) {
+        List<String> codes = codes(keyword);
+        return codes == null ? List.of() : codes.stream().map(code -> new CodePattern(code, "%" + escapeLike(code) + "%")).toList();
+    }
+
+    public record CodePattern(String code, String contains) { }
+
+    private static String escapeLike(String text) {
+        return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 }

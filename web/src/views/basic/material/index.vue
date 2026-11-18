@@ -29,7 +29,7 @@ const units = useDict('unit')
 const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
   normalize: ({ status, ...rest }) => ({ ...rest, status: statusParam(status) }),
   fetch: materialApi.page,
-  query: { keyword: '', categoryId: undefined as number | undefined, materialType: '', status: 1 as StatusFilter },
+  query: { keyword: '', categoryId: undefined as string | undefined, materialType: '', status: 1 as StatusFilter },
   exportUrl: '/api/materials/export',
   exportName: '物料.xlsx',
 })
@@ -53,7 +53,7 @@ onActivated(() => {
   load()
 })
 
-function pickCategory(id: number | undefined) {
+function pickCategory(id: string | undefined) {
   query.categoryId = id
   tableRef.value?.clearSelection()
   search()
@@ -120,7 +120,7 @@ async function exportPicked() {
 const formDialog = ref<InstanceType<typeof MaterialForm>>()
 const importVisible = ref(false)
 
-function onSaved(id: number) {
+function onSaved(id: string) {
   load()
   open({ id } as MaterialRow)
 }

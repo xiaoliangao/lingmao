@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -48,6 +49,18 @@ public class SizeGroupServiceImpl implements SizeGroupService {
     @Override
     public SizeGroupVO getById(long id) {
         return toVOs(List.of(getEntity(id))).getFirst();
+    }
+
+    @Override
+    public Map<Long, SizeGroupVO> getByIds(Collection<Long> ids) {
+        List<Long> wanted = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        if (wanted.isEmpty()) return Map.of();
+        Map<Long, SizeGroupVO> found = toVOs(sizeGroupMapper.selectByIds(wanted)).stream()
+                .collect(Collectors.toMap(SizeGroupVO::id, group -> group));
+        for (Long id : wanted) {
+            if (!found.containsKey(id)) throw new BizException(404, "尺码组不存在: " + id);
+        }
+        return found;
     }
 
     @Override

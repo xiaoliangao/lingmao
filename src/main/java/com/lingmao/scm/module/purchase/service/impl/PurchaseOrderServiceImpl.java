@@ -818,6 +818,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     }
 
     @Override
+    public void checkSourceMrpVisible(long id) { mrpService.checkVisible(id); }
+
+    @Override
     @Transactional
     public List<DocSaved> fromMrp(FromMrpReq req) {
         List<MrpCalcItem> items = mrpService.lockForConvert(req.getCalcId(), req.getItemIds(), req.getVersion());

@@ -41,7 +41,7 @@ const props = withDefaults(defineProps<{ order: OrderDetail; defaultCancel?: boo
   defaultCancel: false,
   editing: null,
 })
-const emit = defineEmits<{ saved: [changeId: number] }>()
+const emit = defineEmits<{ saved: [changeId: string] }>()
 
 const router = useRouter()
 const loading = ref(false)
@@ -57,14 +57,14 @@ const form = reactive({
   feeNote: '',
   files: [] as FileVO[],
   /** 款式 SKU id → 新件数 */
-  qtys: {} as Record<number, number>,
+  qtys: {} as Record<string, number>,
   /** 款 id → 新单价 */
-  prices: {} as Record<number, number | null>,
-  priceChanges: {} as Record<number, boolean>,
+  prices: {} as Record<string, number | null>,
+  priceChanges: {} as Record<string, boolean>,
   /** 款 id → 资料包 id */
-  packs: {} as Record<number, number | null>,
+  packs: {} as Record<string, string | null>,
   /** 款 id → 新加的颜色 id */
-  addedColors: {} as Record<number, number[]>,
+  addedColors: {} as Record<string, string[]>,
 })
 const guard = useUnsavedChanges(form, visible)
 
@@ -72,9 +72,9 @@ const guard = useUnsavedChanges(form, visible)
 const PARTY_OPTIONS = (['SELF', 'FACTORY', 'SUPPLIER'] as ResponsibleParty[]).map((value) => ({ value, label: RESPONSIBLE_PARTY[value] }))
 
 const itemBySku = computed(() => new Map(props.order.items.map((i) => [i.styleSkuId, i])))
-const styleOf = (styleId: number) => props.order.styles.find((s) => s.styleId === styleId)
-const mixedPrice = (styleId: number) => new Set(props.order.items.filter((i) => i.styleId === styleId).map((i) => i.price)).size > 1
-const origPrice = (styleId: number) => mixedPrice(styleId) ? null : props.order.items.find((i) => i.styleId === styleId)?.price ?? null
+const styleOf = (styleId: string) => props.order.styles.find((s) => s.styleId === styleId)
+const mixedPrice = (styleId: string) => new Set(props.order.items.filter((i) => i.styleId === styleId).map((i) => i.price)).size > 1
+const origPrice = (styleId: string) => mixedPrice(styleId) ? null : props.order.items.find((i) => i.styleId === styleId)?.price ?? null
 
 /** 矩阵的行：订单里原有的颜色（能改）+ 新加的颜色 */
 function rowsOf(opt: OrderStyleOption): MatrixColor[] {
@@ -95,25 +95,25 @@ function addableColors(opt: OrderStyleOption) {
   return opt.colors.filter((c) => c.orderable && !shown.has(c.id))
 }
 
-function addColor(opt: OrderStyleOption, colorId: number) {
+function addColor(opt: OrderStyleOption, colorId: string) {
   form.addedColors[opt.styleId] = [...(form.addedColors[opt.styleId] ?? []), colorId]
 }
 
-function subOf(skuId: number) {
+function subOf(skuId: string) {
   const item = itemBySku.value.get(skuId)
   return item ? `原 ${item.qty} · 已排 ${item.scheduledQty}` : '新加'
 }
 
-function belowScheduled(skuId: number, qty: number) {
+function belowScheduled(skuId: string, qty: number) {
   const item = itemBySku.value.get(skuId)
   return item && qty < item.scheduledQty ? `已排 ${item.scheduledQty}` : null
 }
 
 /** 资料包两个选项：现在锁的、现在生效的（一样时只有一个） */
-function packOptions(styleId: number) {
+function packOptions(styleId: string) {
   const st = styleOf(styleId)
   if (!st) return []
-  const opts: { id: number; label: string }[] = []
+  const opts: { id: string; label: string }[] = []
   if (st.techPackId != null) opts.push({ id: st.techPackId, label: `V${st.techPackVersion}（现在锁的）` })
   if (st.currentPackId != null && st.currentPackId !== st.techPackId) opts.push({ id: st.currentPackId, label: `V${st.currentPackVersion}（现在生效的）` })
   return opts
@@ -225,7 +225,7 @@ function buildForm(): OrderChangeForm | null {
 }
 
 /** 提交：静默请求，1005（有下游单据）、检查没过弹出来。返回提交上了没有 */
-async function submitChange(changeId: number, version: number): Promise<boolean> {
+async function submitChange(changeId: string, version: number): Promise<boolean> {
   try {
     await orderChangeApi.act(changeId, 'submit', { version }, { silent: true })
     return true
@@ -243,7 +243,7 @@ async function save() {
   submitting.value = true
   try {
     const ch = props.editing
-    let changeId: number
+    let changeId: string
     let submitted: boolean
     if (ch) {
       const version = await orderChangeApi.update(ch.id, { ...body, version: ch.version })

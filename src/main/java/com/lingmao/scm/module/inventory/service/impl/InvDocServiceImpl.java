@@ -574,6 +574,10 @@ public class InvDocServiceImpl implements InvDocService {
         SourcePosting sourcePosting = handler == null ? null : sourcePosting(doc, items);
         if (handler != null) {
             handler.preparePosting(sourcePosting, false);
+            if (isPurchase(doc.getDocType())) {
+                PurchasePostingPrecision.allocate(doc, items, handler.purchasePostingBasis(sourcePosting),
+                        stockLogMapper, itemMapper);
+            }
         }
         ledger.post(posting(doc, items));
         docLogService.add(BizType.INV_DOC, doc.getId(), "audit", DRAFT, APPROVED, remark);
@@ -622,7 +626,8 @@ public class InvDocServiceImpl implements InvDocService {
                         i.getSeq(), i.getId(), null, i.getDyeLot(), i.getPrice(), i.getAmount()));
             }
         }
-        return new StockLedger.Posting(doc.getId(), null, doc.getNo(), doc.getDocDate(), moves);
+        return new StockLedger.Posting(doc.getId(), null, doc.getNo(), doc.getDocDate(), moves, false,
+                isPurchase(type) ? 1 : null);
     }
 
     private static SourcePosting sourcePosting(InvDoc doc, List<InvDocItem> items) {
@@ -780,6 +785,7 @@ public class InvDocServiceImpl implements InvDocService {
             item.setPurchaseUnit(built.getPurchaseUnit());
             item.setPurchaseQty(built.getPurchaseQty());
             item.setConversionFactor(built.getConversionFactor());
+            item.setPurchasePrice(built.getPurchasePrice());
             item.setPrice(built.getPrice());
             item.setAmount(built.getAmount());
             item.setOverReason(built.getOverReason());
@@ -816,9 +822,13 @@ public class InvDocServiceImpl implements InvDocService {
         item.setOwnerId(0L);
         item.setSourceItemId(s.sourceItemId());
         if (isPurchase(type)) {
+            if (s.conversionFactor() == null || s.conversionFactor().signum() <= 0) {
+                throw new BizException(400, "第 " + seq + " 行来源换算系数无效，请先核对采购单");
+            }
             item.setPurchaseUnit(s.purchaseUnit());
             item.setPurchaseQty(qty);
             item.setConversionFactor(s.conversionFactor());
+            item.setPurchasePrice(s.price());
             item.setQty(qty.multiply(s.conversionFactor()).setScale(3, RoundingMode.HALF_UP));
             if (s.price() != null) {
                 item.setPrice(s.price().divide(s.conversionFactor(), 4, RoundingMode.HALF_UP));

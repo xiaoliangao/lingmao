@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -46,7 +47,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const units = useDict('unit')
 
@@ -61,7 +62,7 @@ const logRef = ref<InstanceType<typeof DocLogList>>()
 
 const draftHead = reactive({
   countDate: '',
-  counterId: null as number | null,
+  counterId: null as string | null,
   counterName: '' as string | null,
   remark: '',
 })

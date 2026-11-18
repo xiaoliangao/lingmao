@@ -3,9 +3,11 @@ package com.lingmao.scm.module.inventory.service;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.inventory.dto.SourceDraft;
 import com.lingmao.scm.module.inventory.dto.SourcePosting;
+import com.lingmao.scm.module.inventory.dto.PurchasePostingBasis;
 import com.lingmao.scm.module.inventory.entity.InvDocType;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 入库单、出库单的源单那一边（架构 §5.2 "带出、回写源单都用接口反转依赖"）：inventory 不认识采购单、生产单，
@@ -39,6 +41,11 @@ public interface StockSourceHandler {
             check(posting);
             onPosted(posting);
         }
+    }
+
+    /** preparePosting 之后、库存余额锁之前；采购实现返回来源锁内当前累计数和冻结价格。 */
+    default Map<Long, PurchasePostingBasis> purchasePostingBasis(SourcePosting posting) {
+        return Map.of();
     }
 
     /** 正向回写源单（已入库、已退货、已领），在余额更新前重算源单状态 */

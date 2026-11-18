@@ -208,6 +208,11 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public R<Void> handleOther(Exception e, HttpServletRequest request) {
+        SQLException sql = sqlExceptionOf(e);
+        if (sql != null && "P2007".equals(sql.getSQLState())) {
+            log.warn("库存凭证期间已冻结: {} {}", request.getMethod(), request.getRequestURI());
+            return R.fail(ErrorCodes.STATE_CHANGED, "该库存凭证日期所属期间已冻结，请在开放期间办理调整，不能回写历史凭证");
+        }
         log.error("未处理异常: {} {}", request.getMethod(), request.getRequestURI(), e);
         return R.fail(500, TraceIdFilter.serverErrorMsg());
     }

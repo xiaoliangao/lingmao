@@ -75,7 +75,7 @@ onMounted(() => {
 // ---------- 新增、编辑 ----------
 const dialogVisible = ref(false)
 const saving = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const editingUserName = ref<string | null>(null)
 const form = reactive<ApprovalRuleForm & { mode: 'ROLE' | 'USER' }>({
   bizType: 'PURCHASE_ORDER',

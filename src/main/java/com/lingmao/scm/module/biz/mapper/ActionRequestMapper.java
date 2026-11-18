@@ -13,6 +13,10 @@ import java.util.UUID;
 public interface ActionRequestMapper {
     record Claim(long id, String requestHash, String result) { }
 
+    @Select("SELECT pg_try_advisory_xact_lock(#{key})")
+    @Options(flushCache = Options.FlushCachePolicy.TRUE)
+    boolean tryLock(long key);
+
     @Insert("INSERT INTO biz_action_request (user_id, operation, client_action_id, request_hash) "
             + "VALUES (#{userId}, #{operation}, #{actionId}, #{hash}) "
             + "ON CONFLICT (user_id, operation, client_action_id) DO NOTHING")

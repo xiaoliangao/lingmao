@@ -93,7 +93,7 @@ export function useTable<Row, Q extends object, P extends object = Partial<Q>>(o
   // el-pagination 会把页码退回上一页，也是走这里
   watch([page, size], () => load())
 
-  async function exportRows(ids?: readonly number[]) {
+  async function exportRows(ids?: readonly string[]) {
     if (!options.exportUrl) return
     if (!shownParams) {
       ElMessage.info('请先成功查询，再导出当前结果')
@@ -114,7 +114,7 @@ export function useTable<Row, Q extends object, P extends object = Partial<Q>>(o
     }
   }
   const exportFile = () => exportRows()
-  const exportSelected = (ids: readonly number[]) => exportRows(ids)
+  const exportSelected = (ids: readonly string[]) => exportRows(ids)
 
   if (options.immediate ?? true) {
     onMounted(load)

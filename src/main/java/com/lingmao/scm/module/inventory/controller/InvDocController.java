@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.inventory.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
@@ -52,7 +56,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/inventory-docs")
 @RequiredArgsConstructor
-public class InvDocController {
+public class InvDocController extends IdempotencyReplayGuard {
 
     private final InvDocService invDocService;
     private final DocCommonService docCommonService;
@@ -76,6 +80,7 @@ public class InvDocController {
     @PostMapping
     @PreAuthorize("hasAuthority('inventory:doc:add')")
     @OperLog(module = "物料出入库单", action = "新建")
+    @IdempotentCreate("INVENTORY_CREATE")
     public R<InvDocCreatedVO> create(@Valid @RequestBody InvDocCreateReq req) {
         return R.ok(invDocService.create(req));
     }
@@ -220,5 +225,15 @@ public class InvDocController {
                                 @Valid @RequestBody NoticeHandleReq req) {
         docCommonService.handleNotice(BizType.INV_DOC, id, noticeId, req.getRemark(), invDocService::checkVisible);
         return R.ok();
+    }
+
+    /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if (result.isArray()) {
+            result.forEach(row -> invDocService.checkVisible(row.get("id").longValue()));
+        } else {
+            invDocService.checkVisible(result.get("id").longValue());
+        }
     }
 }

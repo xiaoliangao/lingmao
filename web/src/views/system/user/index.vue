@@ -46,11 +46,11 @@ onMounted(load)
 
 // ---------- 新增 / 修改 ----------
 const dialogVisible = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
 const EMPTY_FORM = {
   username: '', password: '', nickname: '', phone: '', status: 1,
-  defaultCompanyId: null as number | null, dept: '', post: '', designerNo: '',
+  defaultCompanyId: null as string | null, dept: '', post: '', designerNo: '',
 }
 const form = reactive({ ...EMPTY_FORM })
 /** 设计师编号编过款号了：不能改、清空 */
@@ -95,7 +95,7 @@ async function openEdit(row: User) {
 }
 
 /** 选中的主体停用了：下拉里没有它，只剩一个 id，补一项"已停用"让人看得懂 */
-function companyLabel(id: number | null) {
+function companyLabel(id: string | null) {
   const found = companies.value.find((c) => c.id === id)
   return found ? `${found.code} ${found.shortName}` : '已停用的主体'
 }
@@ -146,7 +146,7 @@ async function resetPassword(row: User) {
 const roleDialogVisible = ref(false)
 const roleUser = ref<User | null>(null)
 const roleOptions = ref<Role[]>([])
-const checkedRoleIds = ref<number[]>([])
+const checkedRoleIds = ref<string[]>([])
 const roleGuard = useUnsavedChanges(checkedRoleIds, roleDialogVisible)
 
 async function openRoles(row: User) {

@@ -35,6 +35,9 @@ public class InvDocItem {
 
     private BigDecimal conversionFactor;
 
+    /** 元 / 采购单位；不从四位库存单价反推，旧草稿没有快照必须重载来源。 */
+    private BigDecimal purchasePrice;
+
     /** 元 / 库存单位 */
     private BigDecimal price;
 

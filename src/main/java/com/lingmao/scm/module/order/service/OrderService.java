@@ -67,6 +67,9 @@ public interface OrderService {
     /** 单据公共接口用：不存在、不在数据范围 404 */
     void checkVisible(long id);
 
+    /** 来源选择/幂等重放用：只查存在和当前数据范围，不重验成功后可能改变的业务状态。 */
+    void checkSourceVisible(Collection<Long> ids);
+
     /**
      * 变更单审核时写回订单（同一个事务，docs/api/02 §3.14）：锁住订单，核对每一处的"原"还是订单现在的值（对不上 1002），
      * 改件数、加 SKU、单价、资料包版本、要求交期，重算合计，版本号 +1；取消订单的有下游单据 1005，没有就变成已取消

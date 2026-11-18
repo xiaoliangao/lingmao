@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
@@ -38,7 +39,7 @@ const settleDict = useDict('settle_method')
 const invoiceDict = useDict('invoice_type')
 const certDict = useDict('cert_type')
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const supplier = ref<SupplierDetail | null>(null)
 const loading = ref(false)

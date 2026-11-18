@@ -12,7 +12,7 @@ import java.time.OffsetDateTime;
  */
 public record DictDataVO(Long id, String typeCode, String label, String value, Integer sort, Integer status, String remark,
                          BigDecimal numValue, Boolean builtin, boolean trade,
-                         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                         @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                          OffsetDateTime createTime) {
 
     public static DictDataVO of(DictData d, boolean trade) {

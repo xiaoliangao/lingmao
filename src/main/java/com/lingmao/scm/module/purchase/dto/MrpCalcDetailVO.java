@@ -23,7 +23,7 @@ public class MrpCalcDetailVO extends DocHeaderVO {
     private String nextCalcNo;
     private String closeReason;
     private String closeByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime closeTime;
     private BigDecimal estAmount;
     private BigDecimal convertedAmount;

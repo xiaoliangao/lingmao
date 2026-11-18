@@ -7,20 +7,20 @@ export const PRICE_TYPE_LABEL: Record<PriceType, string> = { MATERIAL: '物料�
 
 /** 列表的一行。名称是后端从各域批量取来填的；prevPrice、nextPrice、nextDate 只在"只看现价"时有 */
 export interface PriceRow {
-  id: number
+  id: string
   type: PriceType
-  supplierId: number
+  supplierId: string
   supplierCode: string | null
   /** 简称 */
   supplierName: string | null
-  materialId: number | null
+  materialId: string | null
   materialCode: string | null
   materialName: string | null
-  materialSkuId: number | null
+  materialSkuId: string | null
   skuCode: string | null
   skuColorName: string | null
   skuSpec: string | null
-  styleId: number | null
+  styleId: string | null
   /** 物料价是 null */
   styleCode: string | null
   styleName: string | null
@@ -40,14 +40,14 @@ export interface PriceRow {
   remark: string | null
   /** 单据记进来的（第 3、4 批起）：来源单据的类型、id、单号；手工录的是 null */
   sourceType: string | null
-  sourceId: number | null
+  sourceId: string | null
   sourceNo: string | null
   voided: boolean
   voidReason: string | null
-  voidBy: number | null
+  voidBy: string | null
   voidByName: string | null
   voidTime: string | null
-  createBy: number | null
+  createBy: string | null
   createByName: string | null
   createTime: string
   /** 现价那一行：上一条（生效日更早的）的价 */
@@ -59,10 +59,10 @@ export interface PriceRow {
 
 export interface PriceQuery {
   type?: PriceType
-  supplierId?: number
-  materialId?: number
-  materialSkuId?: number
-  styleId?: number
+  supplierId?: string
+  materialId?: string
+  materialSkuId?: string
+  styleId?: string
   processMode?: string
   /** true：每组一行的现价（还没生效的组显示最早那条） */
   current?: boolean
@@ -72,7 +72,7 @@ export interface PriceQuery {
 
 /** 一条价的要紧几项（取现价用） */
 export interface PriceRef {
-  id: number
+  id: string
   price: number
   unit: string
   taxPct: number
@@ -80,7 +80,7 @@ export interface PriceRef {
   freightIncluded: boolean
   effectiveDate: string
   /** 不是 null = 这个 SKU 单独定的价 */
-  materialSkuId: number | null
+  materialSkuId: string | null
 }
 
 /** 录价对话框的提示：那一天的现价（物料价先找 SKU 的、再找物料的）、单位、供应商的默认税率 */
@@ -92,10 +92,10 @@ export interface CurrentPrice {
 
 export interface CurrentPriceQuery {
   type: PriceType
-  supplierId: number
-  materialId?: number
-  materialSkuId?: number
-  styleId?: number
+  supplierId: string
+  materialId?: string
+  materialSkuId?: string
+  styleId?: string
   processMode?: string
   date?: string
 }
@@ -103,10 +103,10 @@ export interface CurrentPriceQuery {
 /** 录一条。税率不填 = 供应商的；含税、含运不填 = 含；生效日期不填 = 今天 */
 export interface PriceSaveForm {
   type: PriceType
-  supplierId: number
-  materialId: number | null
-  materialSkuId: number | null
-  styleId: number | null
+  supplierId: string
+  materialId: string | null
+  materialSkuId: string | null
+  styleId: string | null
   processMode: string | null
   price: number
   taxPct: number | null

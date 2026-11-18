@@ -41,14 +41,14 @@ const visible = defineModel<boolean>({ required: true })
 
 const props = defineProps<{
   sourceKind: 'PURCHASE' | 'PRODUCTION'
-  sourceId: number | null
+  sourceId: string | null
   docType: Extract<InvDocType, 'PURCHASE_IN' | 'PURCHASE_RETURN' | 'ISSUE_OUT' | 'RETURN_IN'>
   /** 采购单上只处理这几行（待到料、采购单详情勾的）；不传 = 能处理的全部行 */
-  itemIds?: number[]
+  itemIds?: string[]
 }>()
 
 const emit = defineEmits<{
-  created: [payload: { id: number; no: string; posted: boolean }]
+  created: [payload: { id: string; no: string; posted: boolean }]
 }>()
 
 const router = useRouter()
@@ -79,8 +79,8 @@ const rows = ref<DraftRow[]>([])
 
 const head = reactive({
   docDate: todayStr(),
-  fromWarehouseId: null as number | null,
-  toWarehouseId: null as number | null,
+  fromWarehouseId: null as string | null,
+  toWarehouseId: null as string | null,
   supplierDeliveryNo: '',
   logisticsNo: '',
   reason: '',
@@ -136,7 +136,7 @@ async function refreshFromStock() {
   }
 }
 
-function prefill(sourceId: number, fromWarehouseId?: number): Promise<InvDocDraft> {
+function prefill(sourceId: string, fromWarehouseId?: string): Promise<InvDocDraft> {
   if (props.sourceKind === 'PURCHASE') {
     return invDocApi.prefillFromPurchase(sourceId, { docType: props.docType as 'PURCHASE_IN' | 'PURCHASE_RETURN', itemIds: props.itemIds })
   }
@@ -204,7 +204,7 @@ watch(visible, (on) => {
 })
 
 /** 换了出仓。领料的还差跟着出仓变（04 §3.3.2），重新带出，已填的本次、原因按 SKU 留着；别的只重取出仓库存 */
-async function onFromWarehouseChange(whId: number | null) {
+async function onFromWarehouseChange(whId: string | null) {
   if (!visible.value || !whId || !props.sourceId) return
   if (props.docType !== 'ISSUE_OUT') {
     await refreshFromStock()
@@ -267,7 +267,7 @@ const blockedTip = computed(() => {
 })
 
 /** 草稿建好的提示带个链接，点了去单据详情 */
-function notifyDraft(id: number, no: string) {
+function notifyDraft(id: string, no: string) {
   const kindLabel = meta.value.kind === 'IN' ? '入库单' : '出库单'
   const base = meta.value.kind === 'IN' ? '/stock-in' : '/stock-out'
   const message = ElMessage.success({

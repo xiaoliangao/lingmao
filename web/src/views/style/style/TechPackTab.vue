@@ -63,7 +63,7 @@ import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
  *   还没有资料包时的空状态、导出 PDF 对话框"附工艺标准"旁边的"看附页文件"。要 techpack:standard:list
  */
 const props = defineProps<{
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
   styleImage?: FileVO | null
@@ -87,20 +87,20 @@ const SUB_TABS: readonly SubTab[] = ['spec', 'bom', 'craft', 'cost', 'logs']
 const canSeeCost = computed(() => user.hasPerm('techpack:cost:query'))
 const canSeeStd = computed(() => user.hasPerm('techpack:standard:list'))
 const craftStd = ref<InstanceType<typeof CraftStandardDrawer>>()
-const activePackId = ref<number | null>(null)
+const activePackId = ref<string | null>(null)
 const subTab = ref<SubTab>('bom')
 const bomView = ref<'bom' | 'color'>('bom')
-const viewColorId = ref<number | undefined>(undefined)
-const costColorId = ref<number | undefined>(undefined)
+const viewColorId = ref<string | undefined>(undefined)
+const costColorId = ref<string | undefined>(undefined)
 
 const loading = ref(false)
 const saving = ref(false)
 const detail = ref<TechPackDetail | null>(null)
 const costData = ref<TechPackCost | null>(null)
 const costState = ref<'idle' | 'loading' | 'ready' | 'error' | 'forbidden'>('idle')
-const costDraftPackId = ref<number | null>(null)
+const costDraftPackId = ref<string | null>(null)
 const loadError = ref<string | null>(null)
-const inspectedBomId = ref<number | null>(null)
+const inspectedBomId = ref<string | null>(null)
 const inspectedBom = computed(() => draft.bomItems.find((row) => row.id === inspectedBomId.value) ?? null)
 const inspectedSkus = computed(() => (inspectedBom.value?.skus ?? []).filter((sku) => bomView.value !== 'color' || sku.colorId == null || sku.colorId === viewColorId.value))
 
@@ -153,7 +153,7 @@ function hydrateDraft(d: TechPackDetail) {
 /** 主表和核价独立加载；核价失败/未授权时，保存其他页签只能发送 cost:null。 */
 let costSeq = 0
 let loadSeq = 0
-async function loadCost(packId: number, colorId?: number) {
+async function loadCost(packId: string, colorId?: string) {
   const current = ++costSeq
   if (!canSeeCost.value) { costState.value = 'forbidden'; costData.value = null; return }
   costState.value = 'loading'
@@ -178,7 +178,7 @@ async function loadCost(packId: number, colorId?: number) {
   }
 }
 
-async function loadPack(packId: number) {
+async function loadPack(packId: string) {
   const current = ++loadSeq
   ++costSeq
   costDraftPackId.value = null
@@ -204,17 +204,17 @@ async function loadPack(packId: number) {
 
 // ---------- 选哪一版：地址参数只在第一次、地址变了时用（01 §1.1） ----------
 const stylePath = `/styles/${props.styleId}`
-const queryId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : null)
+const queryId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? value : null)
 /** 地址上要的版本，等概况到了再切，切过就清掉 */
-let wantedPackId: number | null = queryId(route.query.techPackId)
+let wantedPackId: string | null = queryId(route.query.techPackId)
 const initialSub = route.query.sub
 if (typeof initialSub === 'string' && (SUB_TABS as readonly string[]).includes(initialSub)) subTab.value = initialSub as SubTab
 
 function pickPack() {
   const ov = props.overview
   if (!ov) return
-  const has = (id: number | null): id is number => id != null && ov.packs.some((p) => p.id === id)
-  let target: number | null
+  const has = (id: string | null): id is string => id != null && ov.packs.some((p) => p.id === id)
+  let target: string | null
   if (has(wantedPackId)) target = wantedPackId
   else target = has(activePackId.value) ? activePackId.value : ov.defaultPackId
   wantedPackId = null
@@ -244,7 +244,7 @@ watch(
 )
 
 /** 切到某一版的某个子页签（款式详情里点"资料包核价"） */
-async function open(packId: number, sub?: SubTab) {
+async function open(packId: string, sub?: SubTab) {
   if (sub) subTab.value = sub
   if (packId !== activePackId.value) await switchPack(packId)
 }
@@ -253,7 +253,7 @@ defineExpose({ open })
 const activeBrief = computed<TechPackBrief | undefined>(() => props.overview?.packs.find((p) => p.id === activePackId.value))
 
 /** 换版本：有没保存的修改先问 */
-async function switchPack(id: number) {
+async function switchPack(id: string) {
   if (saving.value) return
   if (id === activePackId.value && detail.value) return
   if (guard.dirty.value && detail.value) {
@@ -282,7 +282,7 @@ const newStageButtons = computed(() => {
 })
 
 /** 新建、修订、转生产出来的新草稿：切过去，再让款式详情重取概况（概况到了 pickPack 看到它已经是当前的，不再切） */
-async function gotoNew(newId: number, message: string) {
+async function gotoNew(newId: string, message: string) {
   ElMessage.success(message)
   guard.markSaved()
   activePackId.value = newId
@@ -474,7 +474,7 @@ function openEditBom(idx: number) {
   bomDialogVisible.value = true
 }
 
-function colorOf(colorId: number | null) {
+function colorOf(colorId: string | null) {
   return detail.value?.colors.find((c) => c.id === colorId)
 }
 
@@ -482,7 +482,7 @@ function colorOf(colorId: number | null) {
 function onSaveBomRow(saved: BomDraftRow) {
   const old = editingBomIdx.value != null ? draft.bomItems[editingBomIdx.value] : undefined
   const row: BomItem = {
-    id: old?.id ?? --tempId,
+    id: old?.id ?? String(--tempId),
     seq: 0,
     part: saved.part,
     materialId: saved.materialId,
@@ -536,13 +536,13 @@ function onSaveBomRow(saved: BomDraftRow) {
 async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
   const d = detail.value
   if (!d) return
-  const groups = new Map<number, MaterialPickRow[]>()
+  const groups = new Map<string, MaterialPickRow[]>()
   for (const r of rows as MaterialPickRow[]) groups.set(r.materialId, [...(groups.get(r.materialId) ?? []), r])
   const added: BomItem[] = []
   for (const picked of groups.values()) {
     const first = picked[0]!
     const fixed = picked.length === 1
-    const toSku = (p: MaterialPickRow, colorId: number | null): BomSku => {
+    const toSku = (p: MaterialPickRow, colorId: string | null): BomSku => {
       const color = colorOf(colorId)
       return {
         colorId,
@@ -566,7 +566,7 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
           return hit ? [toSku(hit, c.id)] : []
         })
     added.push({
-      id: --tempId,
+      id: String(--tempId),
       seq: 0,
       part: '',
       materialId: first.materialId,
@@ -685,7 +685,7 @@ const colorViewRows = computed<ColorViewRow[]>(() => {
   if (!d || colorId == null) return []
   const rows: ColorViewRow[] = []
   draft.bomItems.forEach((item, idx) => {
-    const bySku = new Map<number, ColorViewRow>()
+    const bySku = new Map<string, ColorViewRow>()
     for (const size of d.sizes) {
       const sku = item.skus.find((s) => (s.colorId == null || s.colorId === colorId) && (s.sizeCode == null || s.sizeCode === size))
       if (!sku) continue
@@ -721,7 +721,7 @@ const totalProcessLabor = computed(() => draft.processes.reduce((sum, p) => sum 
 const totalProcessSeconds = computed(() => draft.processes.reduce((sum, p) => sum + (Number(p.stdSeconds) || 0), 0))
 
 // ---------- 核价（按上次保存的算，01 §6） ----------
-async function onCostColorChange(colorId: number | undefined) {
+async function onCostColorChange(colorId: string | undefined) {
   if (detail.value) await loadCost(detail.value.id, colorId)
 }
 
@@ -749,7 +749,7 @@ const devDiff = computed(() => {
 
 // ---------- 导出 PDF ----------
 const pdfVisible = ref(false)
-const pdfForm = reactive({ colorId: undefined as number | undefined, price: false, appendix: true })
+const pdfForm = reactive({ colorId: undefined as string | undefined, price: false, appendix: true })
 const exportingPdf = ref(false)
 
 function openPdf() {

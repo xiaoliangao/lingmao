@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -44,7 +45,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 
 const orderTypes = useDict('order_type')
@@ -149,21 +150,21 @@ const daysLeft = computed(() => {
 })
 
 // ---------- 明细：一个款一块，只读矩阵 ----------
-function itemsOf(styleId: number) {
+function itemsOf(styleId: string) {
   return detail.value?.items.filter((i) => i.styleId === styleId) ?? []
 }
 
-function colorsOf(styleId: number) {
-  const seen = new Map<number, { id: number; code: string; name: string; hex: string | null }>()
+function colorsOf(styleId: string) {
+  const seen = new Map<string, { id: string; code: string; name: string; hex: string | null }>()
   for (const it of itemsOf(styleId)) if (!seen.has(it.colorId)) seen.set(it.colorId, { id: it.colorId, code: it.colorCode, name: it.colorName, hex: it.colorHex })
   return [...seen.values()]
 }
 
-const cellsOf = (styleId: number) => itemsOf(styleId).map((i) => ({ id: i.styleSkuId, colorId: i.colorId, sizeCode: i.sizeCode }))
-const qtysOf = (styleId: number) => Object.fromEntries(itemsOf(styleId).map((i) => [i.styleSkuId, i.qty]))
+const cellsOf = (styleId: string) => itemsOf(styleId).map((i) => ({ id: i.styleSkuId, colorId: i.colorId, sizeCode: i.sizeCode }))
+const qtysOf = (styleId: string) => Object.fromEntries(itemsOf(styleId).map((i) => [i.styleSkuId, i.qty]))
 const itemBySku = computed(() => new Map((detail.value?.items ?? []).map((i) => [i.styleSkuId, i])))
 /** 已审核以后每格小字"排 80 · 回 40" */
-const subOf = (skuId: number) => {
+const subOf = (skuId: string) => {
   const it = itemBySku.value.get(skuId)
   return approved.value && it ? `排 ${it.scheduledQty} · 回 ${it.returnedQty}` : null
 }

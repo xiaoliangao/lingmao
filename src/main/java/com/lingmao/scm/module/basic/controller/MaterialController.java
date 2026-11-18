@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.basic.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.log.OperLog;
@@ -47,7 +51,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/materials")
 @RequiredArgsConstructor
-public class MaterialController {
+public class MaterialController extends IdempotencyReplayGuard {
 
     private final MaterialService materialService;
     private final Clock clock;
@@ -116,6 +120,7 @@ public class MaterialController {
     @PostMapping
     @PreAuthorize("hasAuthority('basic:material:add')")
     @OperLog(module = "物料", action = "新增")
+    @IdempotentCreate("MATERIAL_CREATE")
     public R<Long> create(@Valid @RequestBody MaterialCreateReq req) {
         return R.ok(materialService.create(req));
     }
@@ -176,6 +181,7 @@ public class MaterialController {
     @PostMapping("/{id}/skus")
     @PreAuthorize("hasAuthority('basic:material:edit')")
     @OperLog(module = "物料", action = "加 SKU")
+    @IdempotentCreate("MATERIAL_SKUS_CREATE")
     public R<List<MaterialSkuVO>> addSkus(@PathVariable("id") Long id, @Valid @RequestBody SkuBatchReq req) {
         return R.ok(materialService.addSkus(id, req));
     }
@@ -224,5 +230,10 @@ public class MaterialController {
     public R<List<AttachmentVO>> replaceSkuImages(@PathVariable("id") Long id, @PathVariable("skuId") Long skuId,
                                                   @RequestBody List<@Valid AttachmentReq> files) {
         return R.ok(materialService.replaceSkuImages(id, skuId, files));
+    }
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if ("MATERIAL_CREATE".equals(operation)) materialService.detail(result.longValue());
+        else materialService.detail(((Number) arguments[0]).longValue());
     }
 }

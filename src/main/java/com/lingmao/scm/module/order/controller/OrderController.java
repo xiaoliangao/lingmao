@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.order.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.log.OperLog;
@@ -56,7 +60,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
-public class OrderController {
+public class OrderController extends IdempotencyReplayGuard {
 
     private final OrderService orderService;
     private final DocCommonService docCommonService;
@@ -100,6 +104,7 @@ public class OrderController {
     @PostMapping
     @PreAuthorize("hasAuthority('order:order:add')")
     @OperLog(module = "需求订单", action = "新建")
+    @IdempotentCreate("ORDER_CREATE")
     public R<DocSaved> create(@Valid @RequestBody OrderCreateReq req) {
         return R.ok(orderService.create(req));
     }
@@ -261,5 +266,15 @@ public class OrderController {
                                 @Valid @RequestBody NoticeHandleReq req) {
         docCommonService.handleNotice(BizType.ORDER, id, noticeId, req.getRemark(), orderService::checkVisible);
         return R.ok();
+    }
+
+    /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if (result.isArray()) {
+            result.forEach(row -> orderService.checkVisible(row.get("id").longValue()));
+        } else {
+            orderService.checkVisible(result.get("id").longValue());
+        }
     }
 }

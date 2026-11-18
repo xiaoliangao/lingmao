@@ -395,6 +395,9 @@ public class MrpServiceImpl implements MrpService {
     }
 
     @Override
+    public void checkSourceOrdersVisible(Collection<Long> ids) { engine.checkSourceVisible(ids); }
+
+    @Override
     public void checkVisible(long id) {
         getVisible(id);
     }

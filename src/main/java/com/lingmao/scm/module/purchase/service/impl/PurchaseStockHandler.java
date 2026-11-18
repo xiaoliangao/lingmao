@@ -13,6 +13,7 @@ import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.inventory.dto.InvOverRow;
 import com.lingmao.scm.module.inventory.dto.SourceDraft;
 import com.lingmao.scm.module.inventory.dto.SourcePosting;
+import com.lingmao.scm.module.inventory.dto.PurchasePostingBasis;
 import com.lingmao.scm.module.inventory.entity.InvDocType;
 import com.lingmao.scm.module.inventory.service.StockSourceHandler;
 import com.lingmao.scm.module.purchase.entity.PurchaseOrder;
@@ -167,6 +168,13 @@ class PurchaseStockHandler implements StockSourceHandler {
     @Override
     public void onUnposted(SourcePosting posting) {
         apply(posting, true);
+    }
+
+    @Override
+    public Map<Long, PurchasePostingBasis> purchasePostingBasis(SourcePosting posting) {
+        PurchaseOrder po = lock(posting.sourceId());
+        return itemMapper.selectByOrder(po.getId()).stream().collect(Collectors.toMap(PurchaseOrderItem::getId,
+                item -> new PurchasePostingBasis(item.getMaterialSkuId(), item.getConversionFactor(), item.getPrice(), item.netReceived())));
     }
 
     /**

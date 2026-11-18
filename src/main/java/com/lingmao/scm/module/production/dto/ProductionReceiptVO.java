@@ -23,11 +23,11 @@ public class ProductionReceiptVO {
     private int defectQty;
     private List<AttachmentVO> photos = List.of();
     private String createByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
     private String voidReason;
     private String voidByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime voidTime;
     private List<ReceiptItemVO> items = List.of();
     private List<String> actions = List.of();

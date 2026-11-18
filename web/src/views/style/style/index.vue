@@ -42,13 +42,13 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
   query: {
     keyword: '',
     status: '' as StyleStatus | '',
-    categoryId: undefined as number | undefined,
+    categoryId: undefined as string | undefined,
     styleClass: '',
     brand: '',
     year: undefined as number | undefined,
     season: '',
     wave: '',
-    designerId: undefined as number | null | undefined,
+    designerId: undefined as string | null | undefined,
     techPackStatus: '' as TechPackStatus | '',
   },
   exportUrl: '/api/styles/export',
@@ -82,7 +82,7 @@ const VIEW_OPTIONS = [
 // ---------- 筛选的选项 ----------
 const categories = shallowRef<TreeNode[]>([])
 const categoryOptions = computed(() => {
-  const map = (nodes: TreeNode[] = []): { value: number; label: string; children: unknown[] }[] =>
+  const map = (nodes: TreeNode[] = []): { value: string; label: string; children: unknown[] }[] =>
     nodes.map((n) => ({ value: n.id, label: n.name, children: map(n.children) }))
   return map(categories.value)
 })

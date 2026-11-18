@@ -370,13 +370,24 @@ class PurchaseIT {
         var pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            java.util.concurrent.Callable<com.lingmao.scm.module.inventory.dto.InvDocCreatedVO> action = () -> {
+            java.util.concurrent.Callable<java.util.Optional<com.lingmao.scm.module.inventory.dto.InvDocCreatedVO>> action = () -> {
                 loginAs(f.user); start.await();
-                try { return invDocService.fromSource(BizType.PURCHASE_ORDER, po, req); }
+                try { return java.util.Optional.of(invDocService.fromSource(BizType.PURCHASE_ORDER, po, req)); }
+                catch (com.lingmao.scm.common.idempotency.IdempotencyInProgress processing) {
+                    return java.util.Optional.empty();
+                }
                 finally { SecurityContextHolder.clearContext(); }
             };
             var one = pool.submit(action); var two = pool.submit(action); start.countDown();
-            assertThat(one.get(15, TimeUnit.SECONDS)).isEqualTo(two.get(15, TimeUnit.SECONDS));
+            var first = one.get(15, TimeUnit.SECONDS);
+            var second = two.get(15, TimeUnit.SECONDS);
+            assertThat(first.isPresent() || second.isPresent()).as("至少一个并发调用完成原始入账").isTrue();
+            // The processing response is deliberately immediate. After both
+            // transactions finish, the same UUID and body must replay one result.
+            var replay = invDocService.fromSource(BizType.PURCHASE_ORDER, po, req);
+            first.ifPresent(result -> assertThat(result).isEqualTo(replay));
+            second.ifPresent(result -> assertThat(result).isEqualTo(replay));
+            assertThat(invDocService.fromSource(BizType.PURCHASE_ORDER, po, req)).isEqualTo(replay);
         } finally { pool.shutdownNow(); }
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM inv_doc WHERE source_type='PURCHASE_ORDER' AND source_id=?", Long.class, po)).isEqualTo(1);
         assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("60");

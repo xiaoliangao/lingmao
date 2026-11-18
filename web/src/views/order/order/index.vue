@@ -91,8 +91,8 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     statusTab: pickStatus(route.query.status),
     orderType: '',
     brand: '',
-    salesId: undefined as number | null | undefined,
-    merchId: undefined as number | null | undefined,
+    salesId: undefined as string | null | undefined,
+    merchId: undefined as string | null | undefined,
     orderDateFrom: pickDate(route.query.orderDateFrom),
     orderDateTo: pickDate(route.query.orderDateTo),
     unscheduled: route.query.unscheduled === '1' ? true : (undefined as boolean | undefined),
@@ -130,7 +130,7 @@ watch(() => route.query.auditForMe, (value) => {
 
 // ---------- 齐料（另取，02 §3.13） ----------
 const KITTING_STATUSES: OrderStatus[] = ['APPROVED', 'RUNNING', 'DONE']
-const kittingMap = ref<Record<number, OrderKitting>>({})
+const kittingMap = ref<Record<string, OrderKitting>>({})
 let kittingSeq = 0
 watch(list, async (rows) => {
   const current = ++kittingSeq

@@ -25,7 +25,7 @@ export type StyleAction = 'enable' | 'disable' | 'edit' | 'remove'
 
 /** 列表的一行 */
 export interface StyleRow {
-  id: number
+  id: string
   code: string
   name: string
   aliasName: string | null
@@ -33,14 +33,14 @@ export interface StyleRow {
   styleClass: string
   /** 字典 brand 的 value */
   brand: string
-  categoryId: number
+  categoryId: string
   categoryName: string
   year: number
   season: string
   wave: string | null
-  designerId: number | null
+  designerId: string | null
   designerName: string | null
-  sizeGroupId: number
+  sizeGroupId: string
   sizeGroupName: string
   sizeCount: number
   colorCount: number
@@ -57,7 +57,7 @@ export interface StyleRow {
 
 /** 款式上的一个颜色。status 是在这个款上停没停用，colorStatus 是基础资料里的颜色停没停用；skuCount > 0 的只能停用 */
 export interface StyleColor {
-  colorId: number
+  colorId: string
   code: string
   name: string
   hex: string | null
@@ -68,10 +68,10 @@ export interface StyleColor {
 }
 
 export interface StyleSku {
-  id: number
+  id: string
   /** 款号-颜色编码-尺码 */
   code: string
-  colorId: number
+  colorId: string
   colorCode: string
   colorName: string
   colorHex: string | null
@@ -83,13 +83,13 @@ export interface StyleSku {
 }
 
 export interface StyleDetail {
-  id: number
+  id: string
   code: string
   name: string
   aliasName: string | null
   styleClass: string
   brand: string
-  categoryId: number
+  categoryId: string
   categoryName: string
   /** 女装/上衣/衬衫 */
   categoryPath: string
@@ -99,18 +99,18 @@ export interface StyleDetail {
   styleTag: string | null
   series: string | null
   gender: string | null
-  designerId: number | null
+  designerId: string | null
   designerName: string | null
-  patternMakerId: number | null
+  patternMakerId: string | null
   patternMakerName: string | null
   source: string
-  customerId: number | null
+  customerId: string | null
   customerStyleNo: string | null
   sampleNo: string | null
-  sizeGroupId: number
+  sizeGroupId: string
   sizeGroupName: string
   sizes: string[]
-  mainMaterialId: number | null
+  mainMaterialId: string | null
   mainMaterialCode: string | null
   mainMaterialName: string | null
   productName: string | null
@@ -119,7 +119,7 @@ export interface StyleDetail {
   safetyCategory: string | null
   tagPrice: number | null
   refCost: number | null
-  defaultFactoryId: number | null
+  defaultFactoryId: string | null
   defaultFactoryCode: string | null
   /** 简称 */
   defaultFactoryName: string | null
@@ -130,7 +130,7 @@ export interface StyleDetail {
   remark: string | null
   /** 领猫导入带过来的附加属性（等级、版型库单号……），只看 */
   legacyAttrs: Record<string, string> | null
-  createBy: number | null
+  createBy: string | null
   createByName: string | null
   createTime: string
   updateTime: string
@@ -144,14 +144,14 @@ export interface StyleDetail {
 
 /** 选款式的弹窗（DataPick kind="style"）的一行：启用的款式 */
 export interface StylePickRow {
-  id: number
+  id: string
   code: string
   name: string
   /** 只列启用的；带 includeDraft 时也有草稿 */
   status: StyleStatus
   aliasName: string | null
   brand: string
-  categoryId: number
+  categoryId: string
   categoryName: string
   year: number
   season: string
@@ -162,7 +162,7 @@ export interface StylePickRow {
 }
 
 export interface StyleCreateResult {
-  id: number
+  id: string
   code: string
   skuCount: number
 }

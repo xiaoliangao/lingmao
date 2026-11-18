@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -45,7 +46,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const units = useDict('unit')
 const settles = useDict('settle_method')
@@ -146,7 +147,7 @@ function goStockDoc(doc: PurchaseStockDoc) {
 
 // 传给子组件的取数函数在 script 里定义（模板里写引用 import 的箭头函数 vue-tsc 会报错）
 const loadNotices = () => purchaseApi.notices(id)
-const handleNotice = (noticeId: number, remark: string | null) => purchaseApi.handleNotice(id, noticeId, remark)
+const handleNotice = (noticeId: string, remark: string | null) => purchaseApi.handleNotice(id, noticeId, remark)
 const loadLogs = () => purchaseApi.logs(id)
 const loadFiles = () => purchaseApi.attachments(id)
 const saveFiles = (files: FileVO[]) => purchaseApi.replaceAttachments(id, files)

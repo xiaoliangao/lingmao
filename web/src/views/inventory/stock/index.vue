@@ -81,7 +81,7 @@ const viewFromQuery = (): View => (route.query.view === 'log' ? 'logs' : 'detail
 const viewMode = ref<View>(viewFromQuery())
 const warehouses = ref<WarehouseOption[]>([])
 /** 在途、低于最小库存：null = 还没回来或取不到，那两列写"—" */
-const supplyMap = ref<Record<number, SkuSupply> | null>(null)
+const supplyMap = ref<Record<string, SkuSupply> | null>(null)
 const reorderCount = ref(0)
 
 // ---------- 视图 1：库存明细 ----------
@@ -94,7 +94,7 @@ const detailTable = useTable({
   query: {
     keyword: '',
     whType: 'MATERIAL' as '' | 'MATERIAL' | 'FACTORY',
-    warehouseId: undefined as number | undefined,
+    warehouseId: undefined as string | undefined,
     includeZero: false,
   },
 })
@@ -147,7 +147,7 @@ const logTable = useTable({
   exportName: '库存日志.xlsx',
   query: {
     keyword: '',
-    warehouseId: undefined as number | undefined,
+    warehouseId: undefined as string | undefined,
     changeType: [] as StockChangeType[],
     bizDateFrom: undefined as string | undefined,
     bizDateTo: undefined as string | undefined,
@@ -178,7 +178,7 @@ watch(
   },
 )
 
-const warehouseName = (id: number | undefined) => (id ? (warehouses.value.find((w) => w.id === id)?.name ?? '已选') : '')
+const warehouseName = (id: string | undefined) => (id ? (warehouses.value.find((w) => w.id === id)?.name ?? '已选') : '')
 const changeTypeText = computed(() => logTable.query.changeType.map((t) => STOCK_CHANGE_TYPE_LABEL[t]).join('、'))
 
 async function loadMeta() {

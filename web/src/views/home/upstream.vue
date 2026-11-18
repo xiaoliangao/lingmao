@@ -55,7 +55,7 @@ const SCOPE_OPTIONS = [
 const query = reactive({
   type: '' as '' | UpstreamDocType,
   mine: false,
-  ownerId: null as number | null,
+  ownerId: null as string | null,
 })
 const ownerName = ref<string | null>(null)
 

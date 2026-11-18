@@ -13,7 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +43,19 @@ public class MaterialCategoryServiceImpl implements MaterialCategoryService {
             throw new BizException(404, "物料分类不存在: " + id);
         }
         return category;
+    }
+
+    @Override
+    public void requireExists(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return;
+        if (ids.stream().anyMatch(Objects::isNull)) throw new BizException(400, "物料分类不能为空");
+        List<Long> wanted = ids.stream().distinct().toList();
+        Set<Long> found = materialCategoryMapper.selectList(new LambdaQueryWrapper<MaterialCategory>()
+                        .select(MaterialCategory::getId).in(MaterialCategory::getId, wanted)).stream()
+                .map(MaterialCategory::getId).collect(Collectors.toSet());
+        for (Long id : wanted) {
+            if (!found.contains(id)) throw new BizException(404, "物料分类不存在: " + id);
+        }
     }
 
     @Override

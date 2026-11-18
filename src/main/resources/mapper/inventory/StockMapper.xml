@@ -10,17 +10,36 @@
         WHERE w.type IN ('MATERIAL', 'FACTORY')
         <if test="q.warehouseType != null and q.warehouseType != ''">AND w.type = #{q.warehouseType}</if>
         <if test="q.warehouseId != null">AND s.warehouse_id = #{q.warehouseId}</if>
-        <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
-                 OR m.name ILIKE '%' || #{q.keyword} || '%' OR w.name ILIKE '%' || #{q.keyword} || '%'
-                 <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach> OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
-        </if>
+    </sql>
+
+    <!-- 直接读取候选库存行，避免按候选 ID 再回扫全量库存；外层保留仓库/零库存过滤。 -->
+    <sql id="stockSource">
+        <choose>
+            <when test="q.keyword != null and q.keyword.trim() != ''">
+            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
+            (
+                SELECT sk.* FROM inv_stock sk WHERE sk.material_sku_id IN (
+                    SELECT mk.id FROM bas_material_sku mk WHERE upper(mk.code) LIKE #{keywordPrefix}
+                    <if test="codes != null">OR upper(mk.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                    UNION
+                    SELECT mk.id FROM bas_material_sku mk JOIN bas_material mm ON mm.id = mk.material_id
+                    WHERE upper(mm.code) LIKE #{keywordPrefix} OR mm.name ILIKE #{keywordContains}
+                    <if test="codes != null">OR upper(mm.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                )
+                UNION
+                SELECT sw.* FROM inv_stock sw JOIN bas_warehouse mw ON mw.id = sw.warehouse_id
+                WHERE mw.name ILIKE #{keywordContains}
+            )
+            </when>
+            <otherwise>inv_stock</otherwise>
+        </choose>
     </sql>
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.StockRowVO">
         SELECT s.id, s.warehouse_id, w.code AS warehouse_code, w.name AS warehouse_name, w.type AS warehouse_type,
                s.material_sku_id, s.qty, k.safety_stock, s.update_time
-        FROM inv_stock s
+        FROM <include refid="stockSource"/> s
         JOIN bas_warehouse w ON w.id = s.warehouse_id
         JOIN bas_material_sku k ON k.id = s.material_sku_id
         JOIN bas_material m ON m.id = k.material_id
@@ -37,7 +56,7 @@
                COALESCE(SUM(s.qty) FILTER (WHERE w.type = 'MATERIAL'), 0) AS material_qty,
                COALESCE(SUM(s.qty) FILTER (WHERE w.type = 'FACTORY'), 0) AS factory_qty,
                SUM(s.qty) AS total_qty
-        FROM inv_stock s
+        FROM <include refid="stockSource"/> s
         JOIN bas_warehouse w ON w.id = s.warehouse_id
         JOIN bas_material_sku k ON k.id = s.material_sku_id
         JOIN bas_material m ON m.id = k.material_id

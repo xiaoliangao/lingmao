@@ -10,6 +10,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
@@ -547,8 +548,12 @@ public class SupplierServiceImpl implements SupplierService {
         }
         if (StringUtils.hasText(keyword)) {
             String like = SupplierLists.likePattern(keyword);
-            wrapper.and(w -> w.apply("code ILIKE {0}", like).or().apply("name ILIKE {0}", like)
-                    .or().apply("short_name ILIKE {0}", like));
+            List<String> codes = Keywords.codes(keyword);
+            wrapper.and(w -> {
+                w.apply("upper(code) LIKE {0}", Keywords.prefix(keyword)).or().apply("name ILIKE {0}", like)
+                        .or().apply("short_name ILIKE {0}", like);
+                if (codes != null) w.or().in("upper(code)", codes);
+            });
         }
         wrapper.orderByAsc("code");
         List<Supplier> found = new ArrayList<>(supplierMapper.selectPage(new Page<>(1, OPTIONS_LIMIT, false), wrapper).getRecords());

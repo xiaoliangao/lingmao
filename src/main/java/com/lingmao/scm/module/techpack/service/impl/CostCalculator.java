@@ -6,6 +6,7 @@ import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
 import com.lingmao.scm.module.basic.entity.MaterialSource;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.price.dto.PriceRef;
+import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.service.PriceService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
@@ -70,14 +71,64 @@ class CostCalculator {
     private final SupplierService supplierService;
     private final Clock clock;
 
+    record Inputs(List<BomRow> bom, List<PackProcess> processes, List<CostItem> items,
+                  Map<Long, MaterialRef> materials, Map<Long, MaterialSkuRef> skus,
+                  String factoryName, BigDecimal buyPriceDefault) { }
+
+    /** 按一页版本一次读取内容、主档和现价；循环内只做相同的精确计算。 */
+    Map<Long, Inputs> preload(Collection<TechPack> packs, Map<Long, Ctx> contexts) {
+        List<TechPack> available = packs.stream().filter(p -> contexts.containsKey(p.getId())).toList();
+        List<Long> ids = available.stream().map(TechPack::getId).toList();
+        Map<Long, List<BomRow>> boms = packContent.loadBoms(ids);
+        Map<Long, List<PackProcess>> processes = packContent.loadProcessCosts(ids);
+        Map<Long, List<CostItem>> items = packContent.loadCostItems(ids);
+        List<BomRow> allBom = boms.values().stream().flatMap(Collection::stream).toList();
+        Map<Long, MaterialRef> materials = materials(allBom);
+        Map<Long, MaterialSkuRef> skus = skus(allBom);
+        Set<Long> factoryIds = contexts.values().stream().map(c -> c.owner().defaultFactoryId())
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, SupplierRef> factories = factoryIds.isEmpty() ? Map.of() : supplierService.refs(factoryIds);
+        List<ProcessPriceKey> keys = available.stream().filter(p -> p.getStyleId() != null
+                        && contexts.get(p.getId()).owner().defaultFactoryId() != null)
+                .map(p -> new ProcessPriceKey(contexts.get(p.getId()).owner().defaultFactoryId(), p.getStyleId(), BUY_PROCESS_MODE)).toList();
+        Map<ProcessPriceKey, PriceRef> prices = priceService.currentProcesses(keys, LocalDate.now(clock));
+        Map<Long, Inputs> result = new HashMap<>();
+        for (TechPack pack : available) {
+            Long factoryId = contexts.get(pack.getId()).owner().defaultFactoryId();
+            SupplierRef factory = factoryId == null ? null : factories.get(factoryId);
+            PriceRef price = factoryId == null || pack.getStyleId() == null ? null
+                    : prices.get(new ProcessPriceKey(factoryId, pack.getStyleId(), BUY_PROCESS_MODE));
+            result.put(pack.getId(), new Inputs(boms.getOrDefault(pack.getId(), List.of()), processes.getOrDefault(pack.getId(), List.of()),
+                    items.getOrDefault(pack.getId(), List.of()), materials, skus, factory == null ? null : factory.shortName(),
+                    price == null ? null : price.price()));
+        }
+        return result;
+    }
+
+    TechPackCostVO computePrepared(TechPack pack, Ctx ctx, Inputs inputs) {
+        return computePrepared(pack, ctx, ctx.firstColorId(), inputs);
+    }
+
+    /** PDF 等按颜色重复核价时复用同一份批量输入，颜色仍逐次参与精确配料选择。 */
+    TechPackCostVO computePrepared(TechPack pack, Ctx ctx, Long colorId, Inputs inputs) {
+        return compute(pack, ctx, colorId, false, inputs);
+    }
+
     /** 一个版本的核价。withDev：生产版有研发来源时，再算一遍研发版当"研发估" */
     TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId, boolean withDev) {
         List<BomRow> bom = packContent.loadBom(pack.getId());
         List<PackContent.ProcessRow> processes = packContent.loadProcesses(pack.getId());
         List<CostItem> items = packContent.loadCostItems(pack.getId());
-        Map<Long, MaterialRef> materials = materials(bom);
-        Map<Long, MaterialSkuRef> skus = skus(bom);
+        return compute(pack, ctx, colorId, withDev, new Inputs(bom, processes.stream().map(PackContent.ProcessRow::process).toList(),
+                items, materials(bom), skus(bom), factoryName(ctx.owner().defaultFactoryId()), buyPriceDefault(pack, ctx)));
+    }
 
+    private TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId, boolean withDev, Inputs inputs) {
+        List<BomRow> bom = inputs.bom();
+        List<PackProcess> processes = inputs.processes();
+        List<CostItem> items = inputs.items();
+        Map<Long, MaterialRef> materials = inputs.materials();
+        Map<Long, MaterialSkuRef> skus = inputs.skus();
         TechPackCostVO vo = new TechPackCostVO();
         vo.setTechPackId(pack.getId());
         vo.setBaseSize(ctx.baseSize());
@@ -85,8 +136,8 @@ class CostCalculator {
         vo.setCostMode(pack.getCostMode());
         vo.setBuyPrice(pack.getBuyPrice());
         vo.setDefaultFactoryId(ctx.owner().defaultFactoryId());
-        vo.setDefaultFactoryName(factoryName(ctx.owner().defaultFactoryId()));
-        vo.setBuyPriceDefault(buyPriceDefault(pack, ctx));
+        vo.setDefaultFactoryName(inputs.factoryName());
+        vo.setBuyPriceDefault(inputs.buyPriceDefault());
         vo.setTagPrice(ctx.owner().tagPrice());
 
         List<CostRowVO> fabric = new ArrayList<>();
@@ -104,7 +155,7 @@ class CostCalculator {
         vo.setTrimRows(trim);
         vo.setMixedBasis(bases.size() > 1);
 
-        BigDecimal laborTotal = laborTotal(processes.stream().map(PackContent.ProcessRow::process).toList());
+        BigDecimal laborTotal = laborTotal(processes);
         vo.setLaborTotal(laborTotal);
         vo.setProcessCount(processes.size());
         vo.setOtherItems(items.stream().map(CostCalculator::itemVO).toList());

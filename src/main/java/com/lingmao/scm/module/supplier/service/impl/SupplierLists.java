@@ -57,7 +57,7 @@ class SupplierLists {
             String like = likePattern(query.getKeyword());
             List<String> codes = Keywords.codes(query.getKeyword());
             wrapper.and(w -> {
-                w.apply("code ILIKE {0}", like).or().apply("name ILIKE {0}", like)
+                w.apply("upper(code) LIKE {0}", Keywords.prefix(query.getKeyword())).or().apply("name ILIKE {0}", like)
                         .or().apply("short_name ILIKE {0}", like).or().apply("contact ILIKE {0}", like);
                 if (codes != null) {
                     // 几个编码一起精确查（Keywords）
@@ -103,8 +103,7 @@ class SupplierLists {
 
     /** 关键字 → ILIKE 的样子：两头加 %，关键字里的 % _ \ 当普通字符（搜"100%"不会匹配所有 100 开头的） */
     static String likePattern(String keyword) {
-        String escaped = keyword.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
-        return "%" + escaped + "%";
+        return Keywords.contains(keyword, 100);
     }
 
     /** 一页的行：分类、待批改动、证照、采购员名字各查一次，不每行查 */

@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.techpack.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
@@ -44,7 +48,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/tech-packs")
 @RequiredArgsConstructor
-public class TechPackController {
+public class TechPackController extends IdempotencyReplayGuard {
 
     private final TechPackService techPackService;
     private final TechPackCostService costService;
@@ -68,6 +72,7 @@ public class TechPackController {
     @PostMapping
     @PreAuthorize("hasAuthority('techpack:pack:add')")
     @OperLog(module = "资料包", action = "新建")
+    @IdempotentCreate("TECHPACK_CREATE")
     public R<Long> create(@Valid @RequestBody TechPackCreateReq req) {
         return R.ok(techPackService.create(req.getStyleId(), req.getStage()));
     }
@@ -102,6 +107,7 @@ public class TechPackController {
     @PostMapping("/{id:\\d+}/revise")
     @PreAuthorize("hasAuthority('techpack:pack:add')")
     @OperLog(module = "资料包", action = "修订")
+    @IdempotentCreate("TECHPACK_REVISE")
     public R<Long> revise(@PathVariable("id") long id) {
         return R.ok(techPackService.revise(id));
     }
@@ -110,6 +116,7 @@ public class TechPackController {
     @PostMapping("/{id:\\d+}/to-prod")
     @PreAuthorize("hasAuthority('techpack:pack:add')")
     @OperLog(module = "资料包", action = "转生产 BOM")
+    @IdempotentCreate("TECHPACK_TO_PROD")
     public R<Long> toProd(@PathVariable("id") long id) {
         return R.ok(techPackService.toProd(id));
     }
@@ -152,5 +159,10 @@ public class TechPackController {
     @PreAuthorize("hasAuthority('techpack:pack:list')")
     public R<List<DocLogVO>> logs(@PathVariable("id") long id) {
         return R.ok(techPackService.logs(id));
+    }
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if (!"TECHPACK_CREATE".equals(operation)) techPackService.detail(((Number) arguments[0]).longValue());
+        techPackService.detail(result.longValue());
     }
 }

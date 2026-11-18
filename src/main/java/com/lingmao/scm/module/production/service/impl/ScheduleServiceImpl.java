@@ -87,6 +87,9 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     @Override
+    public void checkSourceOrderVisible(long orderId) { orderService.checkSourceVisible(List.of(orderId)); }
+
+    @Override
     public SchedulePrefillVO prefill(long orderId) {
         OrderForProduction o = orderService.getForProduction(orderId);
         checkOrder(o);

@@ -33,6 +33,9 @@ public interface MrpService {
     /** 不在数据范围里 404（单据公共接口用） */
     void checkVisible(long id);
 
+    /** 原成功操作的来源对象仍须在当前可见范围内；不重验可生成状态。 */
+    void checkSourceOrdersVisible(Collection<Long> ids);
+
     PageResult<MrpOrderOptionVO> orderOptions(String keyword, PageQuery page);
 
     DocSaved create(MrpCreateReq req);

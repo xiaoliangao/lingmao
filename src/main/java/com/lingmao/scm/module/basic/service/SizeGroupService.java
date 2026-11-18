@@ -4,6 +4,8 @@ import com.lingmao.scm.module.basic.dto.SizeGroupCreateReq;
 import com.lingmao.scm.module.basic.dto.SizeGroupVO;
 
 import java.util.List;
+import java.util.Collection;
+import java.util.Map;
 
 /**
  * 尺码组（RFC 003 §5.3）：新建时定全部尺码和基码（默认取中间那个），之后只能在末尾追加尺码，不能删、改、调顺序，基码不能换；
@@ -18,6 +20,9 @@ public interface SizeGroupService {
     List<SizeGroupVO> options();
 
     SizeGroupVO getById(long id);
+
+    /** 款式批量展开矩阵时一次取组头、一次取尺码；缺失引用仍报 404。 */
+    Map<Long, SizeGroupVO> getByIds(Collection<Long> ids);
 
     Long create(SizeGroupCreateReq req);
 

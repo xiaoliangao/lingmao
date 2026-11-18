@@ -32,8 +32,8 @@ export function confirmRemove(title: string, message: string) {
 export async function toggleStatus(
   row: { status: number },
   name: string,
-  api: { enable: (id: number) => Promise<void>; disable: (id: number) => Promise<void> },
-  id: number,
+  api: { enable: (id: string) => Promise<void>; disable: (id: string) => Promise<void> },
+  id: string,
   consequence: string,
 ): Promise<boolean> {
   if (row.status === 1) {

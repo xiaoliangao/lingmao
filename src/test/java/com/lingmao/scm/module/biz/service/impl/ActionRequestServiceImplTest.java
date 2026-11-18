@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -53,6 +54,7 @@ class ActionRequestServiceImplTest {
     }
 
     @Test void replay_returnsOriginalResultWithoutRepeatingBusiness() {
+        when(mapper.tryLock(anyLong())).thenReturn(true);
         Map<String, Integer> body = Map.of("qty", 5);
         when(mapper.lock(8L, "OP", id)).thenReturn(new ActionRequestMapper.Claim(1, service.hash("OP", 2, body), "{\"id\":31,\"no\":\"RC31\"}"));
         AtomicInteger calls = new AtomicInteger();
@@ -63,12 +65,14 @@ class ActionRequestServiceImplTest {
     }
 
     @Test void sameActionDifferentBody_isConflictAndDoesNotRunBusiness() {
+        when(mapper.tryLock(anyLong())).thenReturn(true);
         when(mapper.lock(8L, "OP", id)).thenReturn(new ActionRequestMapper.Claim(1, service.hash("OP", 2, Map.of("qty", 5)), "{}"));
         assertThatThrownBy(() -> service.execute("OP", 2, id, Map.of("qty", 6), Saved.class, () -> { throw new AssertionError(); }))
                 .isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
     }
 
     @Test void claim_runsOnceAndCompletesWithOriginalResponse() {
+        when(mapper.tryLock(anyLong())).thenReturn(true);
         Map<String, Integer> body = Map.of("qty", 5);
         String hash = service.hash("OP", 2, body);
         when(mapper.claim(8L, "OP", id, hash)).thenReturn(1);

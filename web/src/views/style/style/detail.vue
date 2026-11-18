@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -36,7 +37,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 
 const classes = useDict('style_class')
@@ -226,7 +227,7 @@ async function saveFiles(files: FileVO[]) {
 }
 
 // ---------- 颜色 ----------
-const adding = ref<number[]>([])
+const adding = ref<string[]>([])
 const colorPicker = ref<InstanceType<typeof ColorSelect>>()
 const addingPreview = computed(() => {
   const d = s.value

@@ -795,6 +795,16 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public void checkSourceVisible(Collection<Long> sourceIds) {
+        Set<Long> ids = new HashSet<>(sourceIds);
+        if (ids.isEmpty()) return;
+        List<Order> sources = orderMapper.selectByIds(ids);
+        if (sources.size() != ids.size()) throw new BizException(404, "来源订单不存在");
+        DataScope scope = DataScope.current(false);
+        for (Order source : sources) scope.check(source.getCreateBy(), source.getSalesId(), source.getMerchId());
+    }
+
+    @Override
     public void checkForMrp(Collection<Long> orderIds) {
         Set<Long> ids = new HashSet<>(orderIds);
         if (ids.isEmpty()) return;

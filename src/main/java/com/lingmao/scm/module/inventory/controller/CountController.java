@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.inventory.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.log.OperLog;
@@ -46,7 +50,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/inventory-counts")
 @RequiredArgsConstructor
-public class CountController {
+public class CountController extends IdempotencyReplayGuard {
 
     private final CountService countService;
     private final DocCommonService docCommonService;
@@ -77,6 +81,7 @@ public class CountController {
     @PostMapping
     @PreAuthorize("hasAuthority('inventory:count:add')")
     @OperLog(module = "物料盘点单", action = "新建")
+    @IdempotentCreate("COUNT_CREATE")
     public R<CountCreatedVO> create(@Valid @RequestBody CountCreateReq req) {
         return R.ok(countService.create(req));
     }
@@ -212,5 +217,15 @@ public class CountController {
     @OperLog(module = "物料盘点单", action = "换附件")
     public R<List<AttachmentVO>> replaceAttachments(@PathVariable("id") long id, @RequestBody List<@Valid AttachmentReq> files) {
         return R.ok(docCommonService.replaceAttachments(BizType.INV_COUNT, id, files, countService::checkVisible));
+    }
+
+    /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if (result.isArray()) {
+            result.forEach(row -> countService.checkVisible(row.get("id").longValue()));
+        } else {
+            countService.checkVisible(result.get("id").longValue());
+        }
     }
 }

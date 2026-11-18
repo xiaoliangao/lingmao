@@ -20,8 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -52,6 +54,19 @@ public class WarehouseServiceImpl implements WarehouseService {
         }
         fillKeeperNames(List.of(vo));
         return vo;
+    }
+
+    @Override
+    public Map<Long, String> names(Collection<Long> ids) {
+        List<Long> wanted = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        if (wanted.isEmpty()) return Map.of();
+        Map<Long, String> names = warehouseMapper.selectList(new LambdaQueryWrapper<Warehouse>()
+                        .select(Warehouse::getId, Warehouse::getName).in(Warehouse::getId, wanted)).stream()
+                .collect(Collectors.toMap(Warehouse::getId, Warehouse::getName));
+        for (Long id : wanted) {
+            if (!names.containsKey(id)) throw new BizException(404, "仓库不存在: " + id);
+        }
+        return names;
     }
 
     @Override

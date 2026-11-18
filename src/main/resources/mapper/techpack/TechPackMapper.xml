@@ -6,6 +6,27 @@
 -->
 <mapper namespace="com.lingmao.scm.module.techpack.mapper.TechPackMapper">
 
+    <select id="referencedColorsBatch" resultType="com.lingmao.scm.module.techpack.dto.PackColorRef">
+        SELECT DISTINCT b.tech_pack_id AS pack_id, s.color_id
+        FROM tp_bom_item_sku s JOIN tp_bom_item b ON b.id = s.bom_item_id
+        WHERE b.tech_pack_id IN <foreach collection="packIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+          AND s.color_id IS NOT NULL
+        ORDER BY pack_id, s.color_id
+    </select>
+
+    <select id="referencedSizesBatch" resultType="com.lingmao.scm.module.techpack.dto.PackSizeRef">
+        SELECT p.tech_pack_id AS pack_id, v.size_code FROM tp_spec_value v JOIN tp_spec_point p ON p.id = v.spec_point_id
+        WHERE p.tech_pack_id IN <foreach collection="packIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        UNION
+        SELECT b.tech_pack_id AS pack_id, s.size_code FROM tp_bom_item_size s JOIN tp_bom_item b ON b.id = s.bom_item_id
+        WHERE b.tech_pack_id IN <foreach collection="packIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        UNION
+        SELECT b.tech_pack_id AS pack_id, s.size_code FROM tp_bom_item_sku s JOIN tp_bom_item b ON b.id = s.bom_item_id
+        WHERE b.tech_pack_id IN <foreach collection="packIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+          AND s.size_code IS NOT NULL
+        ORDER BY pack_id, size_code
+    </select>
+
     <select id="selectStyleCostPage" resultType="com.lingmao.scm.module.techpack.dto.StyleCostRowVO">
         SELECT s.id AS style_id, s.code AS style_code, s.name AS style_name, s.alias_name, s.tag_price,
                p.id AS tech_pack_id, p.stage, p.version
@@ -16,8 +37,10 @@
                OR (p.stage = 'DEV' AND NOT EXISTS (SELECT 1 FROM tp_tech_pack x
                                                    WHERE x.style_id = p.style_id AND x.stage = 'PROD' AND x.status = 'EFFECTIVE')))
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
-                 OR s.alias_name ILIKE '%' || #{q.keyword} || '%'
+            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
+            AND (upper(s.code) LIKE #{keywordPrefix} OR s.name ILIKE #{keywordContains}
+                 OR s.alias_name ILIKE #{keywordContains}
                  <if test="codes != null">OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>
         <if test="categoryIds != null">

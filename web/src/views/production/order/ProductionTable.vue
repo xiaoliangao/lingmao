@@ -100,7 +100,7 @@ const issueTypes = useDict('issue_type')
 
 // ---------- 齐料（另取） ----------
 const KITTING_STATUSES: ProductionStatus[] = ['APPROVED', 'RUNNING', 'DONE']
-const kittingMap = ref<Record<number, OrderKitting>>({})
+const kittingMap = ref<Record<string, OrderKitting>>({})
 let kittingSeq = 0
 watch(
   () => props.rows,

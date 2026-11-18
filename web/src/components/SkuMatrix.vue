@@ -21,7 +21,7 @@ import { formatQty } from '@/utils/format'
  * - 插槽 #prepend（参数 sizes）：表头下面多加一行，如"按尺码填单价"：<tr><td>单价</td><td v-for="s in sizes">…</td><td /></tr>
  */
 export interface MatrixColor {
-  id: number
+  id: string
   name: string
   code?: string | null
   hex?: string | null
@@ -32,8 +32,8 @@ export interface MatrixColor {
 
 export interface MatrixCell {
   /** 格子 id，v-model 的键 */
-  id: number
-  colorId: number
+  id: string
+  colorId: string
   sizeCode: string
   /** 0 = 停用，格子灰掉；不给 = 启用 */
   status?: number
@@ -41,35 +41,35 @@ export interface MatrixCell {
 
 const props = withDefaults(
   defineProps<{
-    modelValue: Record<number, number>
+    modelValue: Record<string, number>
     sizes: string[]
     colors: MatrixColor[]
     skus: MatrixCell[]
     readonly?: boolean
     /** 每格的上限：{ 格子 id: 最多几件 } 或函数；没有上限的不给 */
-    max?: Record<number, number> | ((id: number) => number | null | undefined)
+    max?: Record<string, number> | ((id: string) => number | null | undefined)
     /** 调用方的检查：有问题返回一句话（格子标红、悬停显示） */
-    error?: (id: number, qty: number) => string | null
+    error?: (id: string, qty: number) => string | null
     /** 每格下面的小字 */
-    sub?: (id: number) => string | null
+    sub?: (id: string) => string | null
     /** 合计列、合计行的标题 */
     totalLabel?: string
   }>(),
   { readonly: false, max: undefined, error: undefined, sub: undefined, totalLabel: '合计' },
 )
 
-const emit = defineEmits<{ 'update:modelValue': [value: Record<number, number>] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: Record<string, number>] }>()
 
 /** 颜色 id|尺码 → 格子 */
 const cellMap = computed(() => new Map(props.skus.map((s) => [`${s.colorId}|${s.sizeCode}`, s])))
-const cellOf = (colorId: number, size: string) => cellMap.value.get(`${colorId}|${size}`)
+const cellOf = (colorId: string, size: string) => cellMap.value.get(`${colorId}|${size}`)
 
-const qtyOf = (id: number) => {
+const qtyOf = (id: string) => {
   const value = props.modelValue[id]
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
 }
 
-function maxOf(id: number): number | null {
+function maxOf(id: string): number | null {
   const max = props.max
   if (!max) return null
   const value = typeof max === 'function' ? max(id) : max[id]
@@ -77,14 +77,14 @@ function maxOf(id: number): number | null {
 }
 
 /** 这一格的问题：超上限、调用方的检查；没问题是 null */
-function problemOf(id: number): string | null {
+function problemOf(id: string): string | null {
   const qty = qtyOf(id)
   const max = maxOf(id)
   if (max != null && qty > max) return `最多 ${formatQty(max)} 件`
   return props.error?.(id, qty) ?? null
 }
 
-const subOf = (id: number) => props.sub?.(id) ?? null
+const subOf = (id: string) => props.sub?.(id) ?? null
 
 const editable = (color: MatrixColor, cell: MatrixCell) => !props.readonly && color.orderable !== false && cell.status !== 0
 
@@ -105,7 +105,7 @@ const grandTotal = computed(() => props.colors.reduce((sum, color) => sum + rowT
 const POSITIVE_INT = /^\d{0,7}$/
 
 /** 只收数字：不是就把输入框改回原来的数（不收这次输入），是就发出新的件数 */
-function onInput(id: number, event: Event) {
+function onInput(id: string, event: Event) {
   const input = event.target as HTMLInputElement
   const text = input.value.trim()
   if (!POSITIVE_INT.test(text)) {

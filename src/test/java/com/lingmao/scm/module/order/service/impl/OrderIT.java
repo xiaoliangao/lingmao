@@ -343,9 +343,9 @@ class OrderIT {
         OrderQuery single = new OrderQuery(); single.setKeyword(prefix + "000123");
         scenarios.put("single-code", single);
         OrderQuery batch = new OrderQuery();
-        batch.setKeyword(IntStream.rangeClosed(1, 200).mapToObj(n -> prefix + String.format("%06d", n))
+        batch.setKeyword(IntStream.rangeClosed(1, 100).mapToObj(n -> prefix + String.format("%06d", n))
                 .collect(java.util.stream.Collectors.joining(" ")));
-        scenarios.put("two-hundred-codes", batch);
+        scenarios.put("one-hundred-codes", batch);
         OrderQuery combined = new OrderQuery(); combined.setKeyword(f.styleCode);
         combined.setBrand("ITCAP-B"); combined.setMerchId(f.user); combined.setStyleId(f.style);
         combined.setStatus(List.of(com.lingmao.scm.common.doc.DocStatus.DRAFT));
@@ -364,7 +364,7 @@ class OrderIT {
             assertThat(actual.getList()).hasSizeLessThanOrEqualTo(20);
             if (scenario.getKey().equals("unfiltered-self")) assertThat(actual.getTotal()).isEqualTo(10000);
             if (scenario.getKey().equals("single-code")) assertThat(actual.getTotal()).isEqualTo(1);
-            if (scenario.getKey().equals("two-hundred-codes")) assertThat(actual.getTotal()).isEqualTo(200);
+            if (scenario.getKey().equals("one-hundred-codes")) assertThat(actual.getTotal()).isEqualTo(100);
             for (String method : List.of("selectRowPage", "selectCounts")) {
                 var statement = sqlSessionFactory.getConfiguration().getMappedStatement(
                         "com.lingmao.scm.module.order.mapper.OrderMapper." + method);

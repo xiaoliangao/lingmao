@@ -17,10 +17,10 @@ public record ChangeVO(Long id,
                        List<ChangeItem> items,
                        Long applyBy,
                        String applyByName,
-                       @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                       @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                        OffsetDateTime applyTime,
                        String auditByName,
-                       @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                       @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                        OffsetDateTime auditTime,
                        String rejectReason,
                        List<String> actions) {

@@ -2,6 +2,7 @@ package com.lingmao.scm.module.inventory.controller;
 
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.page.SeekPage;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
@@ -75,6 +76,13 @@ public class StockController {
     @PreAuthorize("hasAuthority('inventory:stock:list')")
     public R<PageResult<StockLogRowVO>> logs(@Valid StockLogQuery query) {
         return R.ok(stockService.logs(query));
+    }
+
+    @Operation(summary = "库存流水游标页：按记录时间、ID倒序，不附带全表计数")
+    @GetMapping("/api/stock-logs/seek")
+    @PreAuthorize("hasAuthority('inventory:stock:list')")
+    public R<SeekPage<StockLogRowVO>> seekLogs(@Valid StockLogQuery query) {
+        return R.ok(stockService.seekLogs(query));
     }
 
     @Operation(summary = "导出库存日志")

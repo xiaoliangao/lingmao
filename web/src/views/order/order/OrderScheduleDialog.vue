@@ -22,7 +22,7 @@ import { orNull } from '@/views/basic/common'
  *   <OrderScheduleDialog v-model="scheduleVisible" :order-id="id" @scheduled="onScheduled" />
  */
 const visible = defineModel<boolean>({ required: true })
-const props = defineProps<{ orderId: number }>()
+const props = defineProps<{ orderId: string }>()
 const emit = defineEmits<{ scheduled: [] }>()
 
 const modes = useDict('process_mode')
@@ -31,13 +31,13 @@ const termsDict = useDict('prod_terms')
 interface BlockDraft {
   uid: number
   style: ScheduleStyle
-  factoryId: number | null
+  factoryId: string | null
   factoryName: string | null
   processMode: string
   unitPrice: number | null
   priceChangeReason: string
   dueDate: string
-  merchId: number | null
+  merchId: string | null
   merchName: string | null
   settleMethod: string | null
   terms: string
@@ -45,7 +45,7 @@ interface BlockDraft {
   quote: ScheduleQuote | null
   quoting: boolean
   /** 订单行 id → 件数 */
-  qtys: Record<number, number>
+  qtys: Record<string, number>
 }
 
 let uid = 0
@@ -122,7 +122,7 @@ async function requote(b: BlockDraft, keepMode: boolean) {
   }
 }
 
-function onFactoryChange(b: BlockDraft, factoryId: number | null | undefined) {
+function onFactoryChange(b: BlockDraft, factoryId: string | null | undefined) {
   b.factoryId = factoryId ?? null
   void requote(b, true)
 }
@@ -157,18 +157,18 @@ function addFactory(b: BlockDraft) {
 // ---------- 矩阵：格子 id 是订单行 id ----------
 const cellsOf = (st: ScheduleStyle) => st.skus.map((s) => ({ id: s.orderItemId, colorId: s.colorId, sizeCode: s.sizeCode }))
 const maxMap = computed(() => new Map(blocks.value.flatMap((b) => b.style.skus.map((s) => [s.orderItemId, s.maxQty] as const))))
-const maxOf = (itemId: number) => maxMap.value.get(itemId)
+const maxOf = (itemId: string) => maxMap.value.get(itemId)
 
 /** 同一个订单行在几块里加起来 */
-const sumOf = (itemId: number) => blocks.value.reduce((sum, b) => sum + (b.qtys[itemId] ?? 0), 0)
-function crossBlockError(itemId: number): string | null {
+const sumOf = (itemId: string) => blocks.value.reduce((sum, b) => sum + (b.qtys[itemId] ?? 0), 0)
+function crossBlockError(itemId: string): string | null {
   const max = maxOf(itemId)
   const sum = sumOf(itemId)
   return max != null && sum > max && blocks.value.filter((b) => (b.qtys[itemId] ?? 0) > 0).length > 1
     ? `几块加起来 ${sum} 件，最多还能排 ${max}`
     : null
 }
-const remainSub = (itemId: number) => {
+const remainSub = (itemId: string) => {
   const sku = blocks.value.flatMap((b) => b.style.skus).find((s) => s.orderItemId === itemId)
   return sku ? `余 ${sku.remainQty}` : null
 }
@@ -210,7 +210,7 @@ function buildBlocks(): ScheduleBlock[] | null {
       terms: orNull(b.terms),
       remark: orNull(b.remark),
       items: Object.entries(b.qtys)
-        .map(([itemId, qty]) => ({ orderItemId: Number(itemId), qty }))
+        .map(([itemId, qty]) => ({ orderItemId: itemId, qty }))
         .filter((x) => x.qty > 0),
     })
   }

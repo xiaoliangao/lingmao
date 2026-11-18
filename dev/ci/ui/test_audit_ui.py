@@ -600,11 +600,11 @@ class AuditUi(unittest.TestCase):
         self.shot("mobile-390-no-horizontal-overflow", mobile)
 
     def test_08_keywords_limits_real_empty_and_error_feedback(self):
-        for count in (1, 200, 201):
+        for count in (1, 100, 101):
             codes = ["ML0001"] + [f"AUDITABSENT{i:03d}" for i in range(count - 1)]
             result = self.api.envelope("GET", query_path("/api/materials", {"keyword": " ".join(codes), "page": 1, "size": 500}))
-            self.assertEqual(result["code"], 0 if count <= 200 else 400)
-            if count <= 200:
+            self.assertEqual(result["code"], 0 if count <= 100 else 400)
+            if count <= 100:
                 self.assertIn("ML0001", {x["code"] for x in result["data"]["list"]})
             self.note("multi-code boundary", tokenCount=count, code=result["code"])
         self.page.goto(self.ui_base + "/materials")
@@ -624,16 +624,19 @@ class AuditUi(unittest.TestCase):
         expect(self.page.locator(".el-table__body-wrapper tr.el-table__row")).to_have_count(0)
         expect(self.page.get_by_text("没有符合条件的物料", exact=True)).to_be_visible()
         self.shot("real-query-empty-state")
-        error = self.search("/api/materials", " ".join("BAD" + str(i) for i in range(201)))
-        self.assertEqual(error.json()["code"], 400)
+        # Both the API and current UI must expose the same 100-code boundary.
+        # The UI may reject locally before transport; the real API rejection was
+        # asserted above, so no network response is required for this click.
+        search.fill(" ".join("BAD" + str(i) for i in range(101)))
+        search.press("Enter")
         expect(self.page.locator(".el-loading-mask:visible")).to_have_count(0)
         error_message = self.page.locator(".el-message--error")
-        expect(error_message).to_contain_text(error.json()["msg"])
+        expect(error_message).to_contain_text("100")
         # Real pointer hover pauses Element Plus's normal dismissal timer while
         # the visible error is captured; the error text/state are never injected.
         error_message.hover()
         expect(error_message).to_be_in_viewport(ratio=1)
-        self.shot("201-codes-error-feedback")
+        self.shot("101-codes-error-feedback")
         expect(error_message).to_be_visible()
         recovered = self.search("/api/materials", "220g 精梳斜纹棉布")
         self.assertEqual(recovered.json()["code"], 0)

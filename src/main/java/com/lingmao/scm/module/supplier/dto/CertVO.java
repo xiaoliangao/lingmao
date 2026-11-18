@@ -13,6 +13,6 @@ public record CertVO(Long id,
                      LocalDate validUntil,
                      String remark,
                      String createByName,
-                     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                      OffsetDateTime createTime) {
 }

@@ -18,7 +18,7 @@ import { formatPrice, formatQty } from '@/utils/format'
  * 没有筛选，页头下面一行只有"显示列"
  */
 interface EditableReorderRow extends ReorderRow {
-  supplierIdInput: number | null
+  supplierIdInput: string | null
   qtyInput: number
 }
 

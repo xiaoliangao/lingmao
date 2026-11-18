@@ -11,7 +11,7 @@ public record UserVO(Long id,
                      String nickname,
                      String phone,
                      Integer status,
-                     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                      OffsetDateTime createTime,
                      Long defaultCompanyId,
                      String dept,

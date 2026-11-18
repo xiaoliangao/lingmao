@@ -3,6 +3,8 @@ package com.lingmao.scm.module.techpack.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.module.techpack.dto.StyleCostQuery;
+import com.lingmao.scm.module.techpack.dto.PackColorRef;
+import com.lingmao.scm.module.techpack.dto.PackSizeRef;
 import com.lingmao.scm.module.techpack.dto.StyleCostRowVO;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.TechPack;
@@ -12,6 +14,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.ResultMap;
 
 import java.util.List;
+import java.util.Collection;
 
 @Mapper
 public interface TechPackMapper extends BaseMapper<TechPack> {
@@ -35,6 +38,10 @@ public interface TechPackMapper extends BaseMapper<TechPack> {
     @Select("SELECT DISTINCT s.color_id FROM tp_bom_item_sku s JOIN tp_bom_item b ON b.id=s.bom_item_id "
             + "WHERE b.tech_pack_id=#{id} AND s.color_id IS NOT NULL ORDER BY s.color_id")
     List<Long> referencedColors(@Param("id") long id);
+
+    List<PackColorRef> referencedColorsBatch(@Param("packIds") Collection<Long> packIds);
+
+    List<PackSizeRef> referencedSizesBatch(@Param("packIds") Collection<Long> packIds);
 
     /** 按款看成本（resources/mapper/techpack/TechPackMapper.xml）：每个款取生产已生效版，没有取研发已生效版 */
     IPage<StyleCostRowVO> selectStyleCostPage(IPage<StyleCostRowVO> page, @Param("q") StyleCostQuery query,

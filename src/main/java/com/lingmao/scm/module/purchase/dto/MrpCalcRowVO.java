@@ -24,7 +24,7 @@ public class MrpCalcRowVO {
     private Long nextCalcId;
     private String nextCalcNo;
     private String createByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
 
     /** 取制单人名字用，不返回 */

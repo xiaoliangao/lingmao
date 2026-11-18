@@ -2,6 +2,8 @@ package com.lingmao.scm.module.biz.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.common.idempotency.IdempotencyInProgress;
+import com.lingmao.scm.common.idempotency.RequestFingerprint;
 import com.lingmao.scm.module.biz.mapper.ActionRequestMapper;
 import com.lingmao.scm.module.biz.service.ActionRequestService;
 import com.lingmao.scm.security.LoginUser;
@@ -9,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -36,6 +40,15 @@ public class ActionRequestServiceImpl implements ActionRequestService {
         Long userId = LoginUser.currentUserId();
         if (userId == null) throw new BizException(401, "请先登录");
         if (actionId == null) throw new BizException(400, "缺少 clientActionId，请刷新后重新操作");
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
+            String key = attrs.getRequest().getHeader("Idempotency-Key");
+            if (key != null && !actionId.toString().equalsIgnoreCase(key)) {
+                throw new BizException(400, "Idempotency-Key 与 clientActionId 必须一致");
+            }
+        }
+        if (!mapper.tryLock(RequestFingerprint.lockKey("ACTION\n" + userId + "\n" + operation + "\n" + actionId))) {
+            throw new IdempotencyInProgress();
+        }
         String hash = hash(operation, targetId, request);
         int inserted = mapper.claim(userId, operation, actionId, hash);
         ActionRequestMapper.Claim claim = mapper.lock(userId, operation, actionId);

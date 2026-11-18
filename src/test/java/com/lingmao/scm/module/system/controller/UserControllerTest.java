@@ -85,7 +85,7 @@ class UserControllerTest {
 
         mockMvc.perform(get("/api/users/options").param("keyword", "zh"))
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data[0].id").value(2))
+                .andExpect(jsonPath("$.data[0].id").value("2"))
                 .andExpect(jsonPath("$.data[0].username").value("zhangsan"))
                 .andExpect(jsonPath("$.data[0].nickname").value("张三"))
                 .andExpect(jsonPath("$.data[0].phone").doesNotExist());

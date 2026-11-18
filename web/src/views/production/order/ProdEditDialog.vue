@@ -43,14 +43,14 @@ const quote = ref<ScheduleQuote | null>(null)
 const quoting = ref(false)
 
 const form = reactive({
-  companyId: null as number | null,
-  factoryId: null as number | null,
+  companyId: null as string | null,
+  factoryId: null as string | null,
   factoryName: null as string | null,
   processMode: '',
   unitPrice: null as number | null,
   priceChangeReason: '',
   dueDate: '',
-  merchId: null as number | null,
+  merchId: null as string | null,
   merchName: null as string | null,
   settleMethod: null as string | null,
   taxPct: null as number | null,
@@ -68,7 +68,7 @@ const modeOptions = computed(() =>
 )
 
 /** 当前加工厂 × 加工方式的档案现价：取到 quote 用 quote；还没取到、而且没换厂没换方式，先用详情里的 */
-const archive = computed<{ price: number | null; priceSourceId: number | null } | null>(() => {
+const archive = computed<{ price: number | null; priceSourceId: string | null } | null>(() => {
   if (quote.value) {
     const p = quote.value.prices.find((x) => x.processMode === form.processMode)
     return { price: p?.price ?? null, priceSourceId: p?.priceSourceId ?? null }
@@ -125,7 +125,7 @@ function applyModePrice() {
   }
 }
 
-function onFactoryChange(id: number | null | undefined) {
+function onFactoryChange(id: string | null | undefined) {
   form.factoryId = id ?? null
   void requote(true)
 }

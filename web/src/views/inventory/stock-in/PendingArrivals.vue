@@ -89,8 +89,8 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   query: {
     keyword: '',
     riskTab: pickRisk(route.query.risk),
-    supplierId: undefined as number | null | undefined,
-    buyerId: undefined as number | null | undefined,
+    supplierId: undefined as string | null | undefined,
+    buyerId: undefined as string | null | undefined,
     dueDateFrom: undefined as string | undefined,
     dueDateTo: undefined as string | undefined,
   },
@@ -221,8 +221,8 @@ async function saveFollow() {
 
 // ---------- 单行入库 ----------
 const receiveVisible = ref(false)
-const receivePoId = ref<number | null>(null)
-const receiveItemIds = ref<number[]>([])
+const receivePoId = ref<string | null>(null)
+const receiveItemIds = ref<string[]>([])
 
 function receiveOne(row: PendingArrivalRow) {
   receivePoId.value = row.purchaseOrderId
@@ -236,11 +236,11 @@ function onCreated() {
 }
 
 // ---------- 批量入库 ----------
-const pendingBatch = new Map<number, InvDocFromSourceReq>()
+const pendingBatch = new Map<string, InvDocFromSourceReq>()
 async function receivePicked() {
   const rows = picked.value.filter(canReceive)
   if (!rows.length) return
-  const groups = new Map<number, PendingArrivalRow[]>()
+  const groups = new Map<string, PendingArrivalRow[]>()
   for (const r of rows) groups.set(r.purchaseOrderId, [...(groups.get(r.purchaseOrderId) ?? []), r])
   receiving.value = true
   const created: string[] = []

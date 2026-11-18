@@ -103,6 +103,21 @@ class PackContent {
                 .eq(CostItem::getTechPackId, packId).orderByAsc(CostItem::getSeq, CostItem::getId));
     }
 
+    /** 核价只用工序价格与条数，不额外加载插图。 */
+    Map<Long, List<PackProcess>> loadProcessCosts(Collection<Long> packIds) {
+        if (packIds.isEmpty()) return Map.of();
+        return group(processMapper.selectList(new LambdaQueryWrapper<PackProcess>()
+                .in(PackProcess::getTechPackId, packIds)
+                .orderByAsc(PackProcess::getTechPackId, PackProcess::getSeq, PackProcess::getId)), PackProcess::getTechPackId);
+    }
+
+    Map<Long, List<CostItem>> loadCostItems(Collection<Long> packIds) {
+        if (packIds.isEmpty()) return Map.of();
+        return group(costItemMapper.selectList(new LambdaQueryWrapper<CostItem>()
+                .in(CostItem::getTechPackId, packIds)
+                .orderByAsc(CostItem::getTechPackId, CostItem::getSeq, CostItem::getId)), CostItem::getTechPackId);
+    }
+
     List<CraftText> loadTexts(long packId) {
         return craftTextMapper.selectList(new LambdaQueryWrapper<CraftText>().eq(CraftText::getTechPackId, packId));
     }

@@ -11,10 +11,10 @@ import java.time.OffsetDateTime;
 public record DocNoticeVO(Long id,
                           DocRef source,
                           String content,
-                          @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                          @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                           OffsetDateTime createTime,
                           String handledByName,
-                          @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                          @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                           OffsetDateTime handledTime,
                           String handleRemark) {
 }

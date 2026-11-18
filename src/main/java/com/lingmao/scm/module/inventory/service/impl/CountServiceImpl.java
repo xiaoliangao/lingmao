@@ -311,7 +311,7 @@ public class CountServiceImpl implements CountService {
         }
         checkCounter(req.getCounterId());
         checkNoOpenCount(warehouse.getId(), null);
-        categoryIds.forEach(materialCategoryService::getById);
+        materialCategoryService.requireExists(categoryIds);
 
         InvCount count = new InvCount();
         count.setNo(serialNoGenerator.daily(BizType.INV_COUNT.prefix(null)));

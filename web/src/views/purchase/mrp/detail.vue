@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, h, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
@@ -35,7 +36,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const units = useDict('unit')
 
@@ -51,7 +52,7 @@ const refsRef = ref<InstanceType<typeof DocRefs>>()
 /** 确认时后端说可用量变了：出黄条让人重新算料 */
 const staleAvail = ref(false)
 /** 生成采购单前拦下来的行（没选供应商、供应商不是合作中），标红 */
-const badRowIds = ref<Set<number>>(new Set())
+const badRowIds = ref<Set<string>>(new Set())
 
 const can = (a: MrpAction) => detail.value?.actions.includes(a) ?? false
 const isDraft = computed(() => detail.value?.status === 'DRAFT' && can('edit'))
@@ -131,7 +132,7 @@ async function saveCell(row: MrpItem) {
   }
 }
 
-function onSupplierChange(row: MrpItem, supplierId: number | null | undefined) {
+function onSupplierChange(row: MrpItem, supplierId: string | null | undefined) {
   row.supplierId = supplierId ?? null
   void saveCell(row)
 }
@@ -293,7 +294,7 @@ const diffClass = (qty: number) => (qty > 0 ? 'up' : qty < 0 ? 'down' : '')
 
 // ---------- 侧栏、页签（script 里定义，模板里不写引用 import 的箭头函数） ----------
 const loadNotices = () => mrpApi.notices(id)
-const handleNotice = (noticeId: number, text: string | null) => mrpApi.handleNotice(id, noticeId, text)
+const handleNotice = (noticeId: string, text: string | null) => mrpApi.handleNotice(id, noticeId, text)
 const loadRefs = () => mrpApi.references(id)
 const loadLogs = () => mrpApi.logs(id)
 const loadFiles = () => mrpApi.attachments(id)

@@ -64,8 +64,8 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   },
   query: {
     kindTab: '' as '' | ProductionKind,
-    factoryId: undefined as number | null | undefined,
-    merchId: undefined as number | null | undefined,
+    factoryId: undefined as string | null | undefined,
+    merchId: undefined as string | null | undefined,
     brand: '',
     dueDateFrom: undefined as string | undefined,
     dueDateTo: undefined as string | undefined,
