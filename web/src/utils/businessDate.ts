@@ -1,4 +1,4 @@
-/** Business dates are Shanghai calendar dates; they are never UTC instants. */
+/** 业务日期（单据日期、交期）都按东八区的日历日算，和浏览器在哪个时区无关；值是 "2026-11-17" 这种字符串 */
 const calendar = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' })
 
 export function businessToday(now: Date = new Date()): string {
@@ -25,7 +25,7 @@ export function businessMonth(value = businessToday()): [string, string] {
   return [start, date.toISOString().slice(0, 10)]
 }
 
-/** Element Plus expects Date objects in the browser zone; preserve the chosen calendar fields. */
+/** 给 Element Plus 日期控件用的 Date（浏览器本地时区），年月日照字符串里的 */
 export function pickerDate(value: string): Date {
   const [year, month, day] = value.split('-').map(Number)
   return new Date(year!, month! - 1, day!)

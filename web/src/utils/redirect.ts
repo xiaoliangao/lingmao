@@ -1,7 +1,7 @@
 function invalidRedirectText(value: string): boolean {
   return [...value].some((char) => char === '\\' || char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)
 }
-/** Only an internal absolute path can be used after login. Query arrays are not paths. */
+/** 登录后跳回哪：只认本站的绝对路径（/ 开头，不是 // 开头，没有反斜杠和控制字符），别的一律回首页，防止被带去外站 */
 export function safeRedirect(value: unknown, origin: string): string {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return '/'
   try {

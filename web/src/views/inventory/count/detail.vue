@@ -199,7 +199,7 @@ async function onPickedSkus(rows: MaterialPickRow[] | StylePickRow[]) {
 async function doRefreshBook() {
   if (!detail.value) return
   try {
-    await ElMessageBox.confirm('按仓库现在的库存重新拍账；所有已填实盘数会清空。请重新清点后再填写实盘数。', '重新取账面数', {
+    await ElMessageBox.confirm('取账面以后有过进出的行，按现在的库存重拍账面数、清空实盘数，要重数；没动过的行不变。', '重新取账面数', {
       confirmButtonText: '重新取',
       cancelButtonText: '取消',
     })
@@ -210,9 +210,11 @@ async function doRefreshBook() {
     const ok = await saveDraft(true)
     if (!ok) return
   }
+  const filled = new Set(detail.value.items.filter((i) => i.countedQty != null).map((i) => i.id))
   const updated = await countApi.refreshBook(id, { version: detail.value.version })
   syncFromDetail(updated)
-  ElMessage.success('账面数重新取好了，实盘数已清空，请重数后填写')
+  const cleared = updated.items.filter((i) => filled.has(i.id) && i.countedQty == null).length
+  ElMessage.success(cleared ? `重新取好了：${cleared} 行有过进出，实盘数已清空，要重数` : '重新取好了，没有行有过进出')
 }
 
 async function doSubmit() {
@@ -314,7 +316,6 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
 
     <div v-else-if="detail" class="page detail">
       <div class="body">
-        <el-alert v-if="editable && detail.purpose === 'DAILY'" :closable="false" type="info" title="取账后请完成实盘并提交；提交前库存发生收发时，需重新取账面数并重数。刷新账面会清空全部实盘数。" />
         <div class="toolbar">
           <el-segmented v-model="lineFilter" :options="filterOptions" />
         </div>
@@ -435,7 +436,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
       :template-url="countApi.sheetUrl(id)"
       :import-url="countApi.importUrl(id)"
       @success="refresh"
-    ><template #head><el-alert :closable="false" type="info" :title="detail.purpose === 'DAILY' ? '日常盘点：首次导入新 SKU 只加行和拍账，实盘数留空；重数后填写或再导入。已有行正常导入实盘数。' : '期初录入：导入数量作为实盘数。'" /></template></ImportDialog>
+    />
   </div>
 </template>
 

@@ -13,7 +13,7 @@ export interface UseTableOptions<Row, Q extends object, P extends object = Parti
   fetch: (params: P & PageParams) => Promise<PageResult<Row>>
   /** 查询条件的初始值，重置时回到它。数组条件（多选、日期范围）发出去是 key=a&key=b，后端用 List 接 */
   query: Q
-  /** Map UI-only fields once, before both list and export. */
+  /** 把页面自己用的字段（如状态分段）换成接口的条件；列表和导出都走它，导出才和看到的一样 */
   normalize?: (query: Partial<Q>) => P
   /** 导出接口，如 /api/suppliers/export。不传就没有导出 */
   exportUrl?: string

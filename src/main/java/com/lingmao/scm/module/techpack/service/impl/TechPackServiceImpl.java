@@ -201,7 +201,6 @@ public class TechPackServiceImpl implements TechPackService {
         vo.setUpdateTime(pack.getUpdateTime());
         vo.setVersionLock(pack.getVersionLock());
         vo.setContextSource(PackOwners.contextSource(pack));
-        vo.setContextNotice(PackOwners.contextNotice(pack));
         vo.setSizes(ctx.sizes());
         vo.setBaseSize(ctx.baseSize());
         vo.setColors(ctx.colors());
@@ -401,6 +400,15 @@ public class TechPackServiceImpl implements TechPackService {
 
     @Override
     public void checkRequirements(Collection<PackRequirement> requirements) {
+        checkRequirements(requirements, true);
+    }
+
+    @Override
+    public void checkLockedRequirements(Collection<PackRequirement> requirements) {
+        checkRequirements(requirements, false);
+    }
+
+    private void checkRequirements(Collection<PackRequirement> requirements, boolean strict) {
         if (requirements.isEmpty()) return;
         List<PackRequirement> requested = requirements.stream().distinct().toList();
         List<Long> packIds = requested.stream().map(PackRequirement::packId).filter(Objects::nonNull).distinct().toList();
@@ -418,10 +426,10 @@ public class TechPackServiceImpl implements TechPackService {
             StyleOrderInfo.Sku sku = style == null ? null : style.skus().stream()
                     .filter(s -> Objects.equals(s.id(), requirement.styleSkuId())).findFirst().orElse(null);
             if (pack == null || style == null || sku == null) {
-                problems.add("款式 SKU " + requirement.styleSkuId() + "：生产 BOM 或本款 SKU 不存在");
+                problems.add("有一行的款式 SKU 或锁定的生产 BOM 不存在了，请刷新后再试");
                 continue;
             }
-            problems.addAll(RequirementChecks.check(pack, style, sku, bom.getOrDefault(pack.getId(), List.of()), materials, skus));
+            problems.addAll(RequirementChecks.check(pack, style, sku, bom.getOrDefault(pack.getId(), List.of()), materials, skus, strict));
         }
         if (!problems.isEmpty()) throw new BizException(ErrorCodes.BIZ_ERROR,
                 "生产 BOM 有 " + problems.size() + " 处需要处理", problems);

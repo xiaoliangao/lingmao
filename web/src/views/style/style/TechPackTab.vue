@@ -830,7 +830,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 
       <el-alert v-if="loadError" :title="loadError" type="error" :closable="false"><el-button v-if="activePackId" @click="loadPack(activePackId)">重试</el-button></el-alert>
       <template v-if="detail">
-        <el-alert v-if="detail.contextNotice" :title="detail.contextNotice" type="info" :closable="false" />
         <el-alert v-if="costState === 'error'" data-testid="cost-load-error" title="核价加载失败；其他页签仍可保存，已保存成本会保留" type="warning" :closable="false">
           <el-button size="small" @click="loadCost(detail.id, costColorId)">重试核价</el-button>
         </el-alert>

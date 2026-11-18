@@ -371,8 +371,14 @@ class AuditUi(unittest.TestCase):
         assert_decimal_equal(self.domain.stock_qty(), balance + 1)
         self.api.request("POST", path + "/unaudit", {"version": approved["version"]})
         returned = self.api.request("GET", path)
-        self.assertIsNone(returned["items"][0]["bookRevision"])
-        self.note("post-submit movement retained; unaudit invalidates measurement", approved=True, bookRevisionAfterUnaudit=None)
+        self.assertEqual(returned["status"], "DRAFT")
+        assert_decimal_equal(self.domain.stock_qty(), balance + 1)
+        assert_decimal_equal(returned["items"][0]["countedQty"], balance)
+        self.assertIsInstance(returned["items"][0]["bookRevision"], int)
+        resubmitted = self.domain.submit("/api/inventory-counts", count_id)
+        self.assertEqual(resubmitted["status"], "PENDING")
+        self.note("post-submit movement retained; unaudit keeps counts and re-baselines", approved=True,
+                  bookRevisionAfterUnaudit=returned["items"][0]["bookRevision"])
 
     def test_04_exports_match_successful_filter_snapshot(self):
         order_draft = self.domain.new_order(marker="AUDIT-EXPORT")

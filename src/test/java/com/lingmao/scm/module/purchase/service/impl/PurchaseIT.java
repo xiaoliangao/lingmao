@@ -486,19 +486,21 @@ class PurchaseIT {
         }
     }
 
-    /** RFC010：算料调用同一实际 SKU 完整性门禁，档案停用不能通过需求展开 SQL 悄悄漏料。 */
+    /**
+     * RFC010 §4.2（11-17 定）：订单审核以后才停用的物料 SKU 不挡算料，需求照样算出来、不悄悄漏料；
+     * 拿它下采购单时才拦，提示已停用、要换一个
+     */
     @Test
-    void mrpRejectsDisabledMaterialSkuBeforeWritingCalc() {
+    void mrpKeepsMaterialSkuDisabledAfterOrderApproved() {
         Fixture f = fixture(null);
         long orderId = approvedOrder(f, LocalDate.now().plusDays(60));
         jdbcTemplate.update("UPDATE bas_material_sku SET status=0 WHERE id=?", f.sku);
         MrpCreateReq req = new MrpCreateReq(); req.setOrderIds(List.of(orderId));
-        assertThatThrownBy(() -> mrpService.create(req)).isInstanceOfSatisfying(BizException.class, e -> {
-            assertThat(e.getCode()).isEqualTo(1000);
-            assertThat(e.getData()).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(String.class))
-                    .hasSize(2).allSatisfy(problem -> assertThat(problem).contains("配料 SKU", "停用"));
-        });
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM mrp_calc WHERE create_by=?", Long.class, f.user)).isZero();
+        MrpCalcDetailVO d = mrpService.detail(mrpService.create(req).id());
+        assertThat(d.getItems()).filteredOn(i -> Long.valueOf(f.sku).equals(i.getMaterialSkuId())).singleElement()
+                .satisfies(i -> assertThat(i.getNeedQty()).isPositive());
+        assertThatThrownBy(() -> purchaseOrderService.create(poReq(f, "10", null)))
+                .isInstanceOf(BizException.class).hasMessageContaining("已停用");
     }
 
     /**

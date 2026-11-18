@@ -329,8 +329,8 @@ export type ProcessForm = Omit<ProcessRow, 'id' | 'seq'>
 
 /** GET /api/tech-packs/{id}：一个版本的单头和尺寸指示、物料清单、工艺指示三个页签。核价另取（要看成本的权限） */
 export interface TechPackDetail {
+  /** 颜色尺码取自哪里：LIVE 草稿取款式现在的，SNAPSHOT 生效时记下的，LEGACY 升级前生效的老版本 */
   contextSource: 'LIVE' | 'SNAPSHOT' | 'LEGACY'
-  contextNotice: string | null
   id: number
   styleId: number
   styleCode: string

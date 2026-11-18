@@ -307,11 +307,11 @@ public class ScheduleServiceImpl implements ScheduleService {
         List<ScheduleOverRow> over = new ArrayList<>();
         thisQty.forEach((lineId, qty) -> {
             OrderForProduction.Line l = lines.get(lineId);
-            int next = NumericLimits.pieces((long) l.scheduledQty() + qty, "订单行 " + lineId + " 累计已排：");
+            String sku = infos.get(l.styleId()).skus().stream().filter(s -> s.id() == l.styleSkuId())
+                    .map(StyleOrderInfo.Sku::code).findFirst().orElse(String.valueOf(l.styleSkuId()));
+            int next = NumericLimits.pieces((long) l.scheduledQty() + qty, sku + " 累计已排：");
             int max = ProductionRules.maxPieces(l.qty());
             if (next > max) {
-                String sku = infos.get(l.styleId()).skus().stream().filter(s -> s.id() == l.styleSkuId())
-                        .map(StyleOrderInfo.Sku::code).findFirst().orElse(String.valueOf(l.styleSkuId()));
                 int left = Math.max(max - l.scheduledQty(), 0);
                 over.add(new ScheduleOverRow(sku, l.qty(), l.scheduledQty(), qty, max,
                         left == 0 ? "已经排满了" : "最多还能排 " + left + " 件"));

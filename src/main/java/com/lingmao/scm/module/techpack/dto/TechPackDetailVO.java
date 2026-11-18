@@ -37,9 +37,8 @@ public class TechPackDetailVO {
     private OffsetDateTime updateTime;
     /** 乐观锁：保存、生效都带回来 */
     private Integer versionLock;
-    /** LIVE 草稿，SNAPSHOT 新生效版，LEGACY 无历史上下文快照的旧版。 */
+    /** 颜色尺码取自哪里：LIVE 草稿取款式现在的，SNAPSHOT 生效时记下的，LEGACY 升级前生效的老版本（没记，取现在的加上 BOM 里用到的） */
     private String contextSource;
-    private String contextNotice;
     /** 款式尺码组的尺码，按顺序 */
     private List<String> sizes;
     private String baseSize;

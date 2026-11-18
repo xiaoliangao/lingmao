@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.production.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.page.PageQuery;
 import lombok.Data;
@@ -33,7 +34,8 @@ public class ProductionQuery extends PageQuery {
     private LocalDate dueDateTo;
     private boolean mine;
     private boolean auditForMe;
-    @com.fasterxml.jackson.annotation.JsonIgnore
+    /** "待我审批"轮到我的单据 id：Service 查好了填进来，不用前端传的 */
+    @JsonIgnore
     private List<Long> approvalIds = List.of();
     private List<Long> ids;
     /** 看板的数字卡：RUNNING / WAITING / NEAR / LATE / NODE_LATE / ISSUE（看板列表才有） */

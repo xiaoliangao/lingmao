@@ -115,10 +115,6 @@ class PackOwners {
         return pack.getStatus() == PackStatus.DRAFT ? "LIVE" : pack.getOwnerSnapshot() == null ? "LEGACY" : "SNAPSHOT";
     }
 
-    static String contextNotice(TechPack pack) {
-        return "LEGACY".equals(contextSource(pack)) ? "旧版本没有生效时的色码快照；展示保留已知引用，不能证明原始全集" : null;
-    }
-
     private static PackOwner toOwner(StylePackInfo s) {
         String locked = s.status() == StyleStatus.DISABLED ? "款式 " + s.code() + " 已经停用了，资料包不能再建、改、生效" : null;
         return new PackOwner(s.code(), s.name(), s.aliasName(), s.year(), s.season(), s.sampleNo(), s.sizeGroupId(),

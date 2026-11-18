@@ -20,11 +20,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -95,11 +98,14 @@ class StockLedger {
     private record Short(Key key, List<Move> moves, BigDecimal stockQty, BigDecimal needQty) {
     }
 
-    /** 盘点拍账/提交共用的键锁；每个键ensure后立即锁，不能先插全部缺行再倒回锁旧行。 */
+    /**
+     * 盘点取账面、提交、反审核共用：按 SKU 顺序一个个锁库存行（自有、不分货位），返回 SKU → 库存行。
+     * 没有库存行的先建一行 0（不记日志、不加变动次数）再锁；不能先把缺的行都建完再回头锁，顺序会乱
+     */
     @Transactional(propagation = Propagation.MANDATORY)
-    public Map<Long, Stock> lockBalances(long warehouseId, java.util.Collection<Long> skuIds) {
-        Map<Long, Stock> out = new java.util.LinkedHashMap<>();
-        for (Long skuId : new java.util.TreeSet<>(skuIds)) {
+    public Map<Long, Stock> lockBalances(long warehouseId, Collection<Long> skuIds) {
+        Map<Long, Stock> out = new LinkedHashMap<>();
+        for (Long skuId : new TreeSet<>(skuIds)) {
             stockMapper.ensureOwn(warehouseId, skuId);
             out.put(skuId, stockMapper.lockOwn(warehouseId, skuId));
         }

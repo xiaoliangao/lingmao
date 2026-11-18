@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.order.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.page.PageQuery;
 import lombok.Data;
@@ -30,8 +31,8 @@ public class OrderQuery extends PageQuery {
     private boolean unscheduled;
     private boolean mine;
     private boolean auditForMe;
-    /** 仅由 Service 覆写的当前级审批集合，不采信客户端输入。 */
-    @com.fasterxml.jackson.annotation.JsonIgnore
+    /** "待我审批"轮到我的单据 id：Service 查好了填进来，不用前端传的 */
+    @JsonIgnore
     private List<Long> approvalIds = List.of();
     private List<Long> ids;
 }

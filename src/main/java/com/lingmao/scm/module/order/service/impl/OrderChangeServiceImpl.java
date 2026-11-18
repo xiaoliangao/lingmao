@@ -400,7 +400,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         Map<Long, BigDecimal> newPrices = new HashMap<>();
         for (OrderChangeForm.Price p : f.getPrices()) {
             requireStyle(styles, seen, p.styleId());
-            BigDecimal to = NumericLimits.price(p.price(), "款式 " + p.styleId() + "：");
+            BigDecimal to = NumericLimits.price(p.price(), "改价：");
             BigDecimal from = uniformPrice(OrderServiceImpl.active(rowsOf(rows, p.styleId())));
             newPrices.put(p.styleId(), to);
             if (from != null && from.compareTo(to) == 0) {
@@ -620,10 +620,10 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         List<PackRequirement> requirements = new ArrayList<>();
         infos.forEach((styleId, info) -> info.skus().stream().filter(k -> finalQty.getOrDefault(k.id(), 0) > 0)
                 .forEach(k -> requirements.add(new PackRequirement(targetPack.get(styleId), k.id()))));
-        techPackService.checkRequirements(requirements);
+        techPackService.checkLockedRequirements(requirements);
     }
 
-    /** 提变更时就验证最终各SKU和整单容量，审核写回仍复核。 */
+    /** 改完以后每个 SKU 的单价、金额和整单合计放不放得下（提变更时就查，审核写回时再查一次） */
     private static void checkValueLimits(List<OrderItem> rows, List<OrderChangeItem> changes) {
         Map<Long, OrderItem> finalRows = new LinkedHashMap<>();
         for (OrderItem row : rows) {
@@ -636,7 +636,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         }
         for (OrderChangeItem change : changes) {
             if (change.getChangeType() == ChangeType.PRICE) {
-                NumericLimits.price(change.getToPrice(), "款式 " + change.getStyleId() + "：");
+                NumericLimits.price(change.getToPrice(), "改价：");
                 finalRows.values().stream().filter(r -> Objects.equals(r.getStyleId(), change.getStyleId()))
                         .forEach(r -> r.setPrice(change.getToPrice()));
             }

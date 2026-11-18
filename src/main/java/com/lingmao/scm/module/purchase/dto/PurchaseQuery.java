@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.purchase.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.module.purchase.entity.PurchaseType;
@@ -26,7 +27,8 @@ public class PurchaseQuery extends PageQuery {
     private LocalDate orderDateTo;
     private boolean mine;
     private boolean auditForMe;
-    @com.fasterxml.jackson.annotation.JsonIgnore
+    /** "待我审批"轮到我的单据 id：Service 查好了填进来，不用前端传的 */
+    @JsonIgnore
     private List<Long> approvalIds = List.of();
     private List<Long> ids;
 }

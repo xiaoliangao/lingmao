@@ -449,7 +449,7 @@ export interface CountQuery {
 }
 
 export interface CountItem extends MaterialSkuBrief {
-  /** 拍账时的库存流水修订号；只读，旧数据/反审核后为 null */
+  /** 取账面时这个库存行的变动次数；只读，升级前的旧行是 null（提交时当作有过进出） */
   bookRevision: number | null
   id: number
   seq: number

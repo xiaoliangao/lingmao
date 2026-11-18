@@ -86,8 +86,7 @@ public final class Num {
         BigDecimal perUnit = ratio == null || ratio.signum() <= 0 ? BigDecimal.ONE : ratio;
         BigDecimal pack = minPack == null || minPack.signum() <= 0 ? BigDecimal.ONE : minPack;
         BigDecimal inPurchaseUnit = netNeed.divide(perUnit, QTY_SCALE, RoundingMode.HALF_UP);
-        // MOQ is a lower bound before packaging, not a replacement for an already rounded quantity.
-        // E.g. need=1, MOQ=10, pack=6 must order 12, not a non-pack multiple of 10.
+        // 先跟起订量取大，再按最小包装往上取整：要 1、起订 10、一包 6 → 12，不是不成整包的 10
         BigDecimal required = moq == null ? inPurchaseUnit : inPurchaseUnit.max(moq);
         BigDecimal packed = required.divide(pack, 0, RoundingMode.CEILING).multiply(pack);
         return qty(packed);

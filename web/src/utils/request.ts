@@ -11,7 +11,11 @@ export interface R<T> {
   data: T
 }
 
-/** Local request options keep Axios's upstream generic declarations untouched. */
+/**
+ * 单个请求的选项。silent：出错不弹提示，由调用方自己汇总（批量操作条 BatchBar 逐条调接口时就这样）。
+ * 接口函数想让调用方能静默，就多收一个 options 原样传下来：
+ *   disable: (id: number, options?: RequestOptions) => http.post<void>(`/api/materials/${id}/disable`, undefined, options)
+ */
 export interface RequestOptions {
   silent?: boolean
 }
@@ -151,13 +155,6 @@ async function readBody(response: AxiosResponse<unknown>): Promise<R<unknown> | 
 export function request<T>(config: RequestConfig): Promise<T> {
   return instance.request<R<T>>(config).then((response) => response.data.data)
 }
-
-/**
- * 单个请求的选项。silent：出错不弹提示，由调用方自己汇总（批量操作条 BatchBar 逐条调接口时就这样）。
- * 接口函数想让调用方能静默，就多收一个 options 原样传下来：
- *   disable: (id: number, options?: RequestOptions) => http.post<void>(`/api/materials/${id}/disable`, undefined, options)
- */
-
 
 export const http = {
   get: <T>(url: string, params?: object, options?: RequestOptions) => request<T>({ url, method: 'get', params, ...options }),

@@ -1,4 +1,4 @@
-/** Copy only effective filters; a successful query snapshot cannot follow later form edits. */
+/** 去掉没填的条件（空串、null、undefined、空数组），字符串去掉首尾空格；值都复制一份，存下来以后不会跟着筛选框变 */
 export function cleanQuery<Q extends object>(query: Q): Partial<Q> {
   const result: Record<string, unknown> = {}
   for (const [key, raw] of Object.entries(query)) {

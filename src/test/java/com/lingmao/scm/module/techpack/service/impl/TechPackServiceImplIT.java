@@ -197,9 +197,8 @@ class TechPackServiceImplIT {
         jdbcTemplate.update("UPDATE tp_tech_pack SET owner_snapshot=NULL WHERE id=?", id);
         TechPackDetailVO legacy = techPackService.detail(id);
         assertThat(legacy.getContextSource()).isEqualTo("LEGACY");
-        assertThat(legacy.getContextNotice()).contains("不能证明原始全集");
         assertThat(legacy.getColors()).extracting(c -> c.id()).contains(f.colorB);
-        assertThat(flat(pdfService.export(id, f.colorB, false, false).content())).contains("旧版本没有生效时的色码快照");
+        assertThat(flat(pdfService.export(id, f.colorB, false, false).content())).contains("IT乙色");
     }
 
     @Test

@@ -71,8 +71,14 @@ public interface TechPackService {
     /** 几个版本：id → PackBrief（订单锁定的、变更单换的）；查不到的不在 map 里 */
     Map<Long, PackBrief> briefs(Collection<Long> packIds);
 
-    /** 按实际使用 SKU 核对完整性；失败1000，一次列全。旧订单的已作废锁版仍可用。 */
+    /**
+     * 新订单提交、审核用：按实际下单的款式 SKU 查锁定的生产 BOM 配齐没有，用到的款式颜色 SKU、物料、物料 SKU 都不能停用。
+     * 有问题 1000，data 是清单，一次列全
+     */
     void checkRequirements(Collection<PackRequirement> requirements);
+
+    /** 已审核订单的算料、变更单用：只查配料、用量配齐没有（缺了会算错），下单以后才停用的款式颜色、物料不拦 */
+    void checkLockedRequirements(Collection<PackRequirement> requirements);
 
     /** 几个版本的工序工价合计（元 / 件，核价的"加工费"口径）：排单时外发加工的单价旁边提示用。查不到的不在 map 里 */
     Map<Long, BigDecimal> laborTotals(Collection<Long> packIds);

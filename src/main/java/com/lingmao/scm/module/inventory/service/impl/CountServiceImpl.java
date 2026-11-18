@@ -68,6 +68,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -485,8 +486,8 @@ public class CountServiceImpl implements CountService {
     }
 
     /**
-     * 重新取账面数：所有行在同键锁内重拍数量/修订戳，清空实盘数，必须重新数货；
-     * 全部、按分类的再把范围里新出现的 SKU 补进来。已有的行一行不删（手加的、过过账的都留着）
+     * 重新取账面数：取账面以后有过进出的行（和历史上没记变动次数的行）在同键锁内重拍账面数、变动次数，清空实盘数，要重数；
+     * 没动过的行实盘数留着。全部、按分类的再把范围里新出现的 SKU 补进来。已有的行一行不删（手加的、过过账的都留着）
      */
     @Override
     @Transactional
@@ -495,22 +496,27 @@ public class CountServiceImpl implements CountService {
         FLOW.next("refreshBook", count.getStatus());
         List<InvCountItem> existing = itemMapper.selectByCount(id);
         Set<Long> allSkus = existing.stream().map(InvCountItem::getMaterialSkuId)
-                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         if (count.getScope() != CountScope.PICKED) {
             allSkus.addAll(scopeSkus(count, categoryMapper.categoryIds(id)));
         }
         // 先收集全部键再一次排序加锁；新范围可能含比原明细更小的SKU，不能分两次倒序锁。
         Map<Long, Book> stock = books(count, allSkus);
         boolean opening = count.getPurpose() == CountPurpose.OPENING;
+        int moved = 0;
         for (InvCountItem i : existing) {
             Book book = stock.get(i.getMaterialSkuId());
             if (opening && book.qty().signum() != 0) {
                 throw new BizException("第 " + i.getSeq() + " 行已经有库存，请用日常盘点，不能重新录期初");
             }
+            if (i.getBookRevision() != null && i.getBookRevision() == book.revision()) {
+                continue;
+            }
             itemMapper.update(new InvCountItem(), new LambdaUpdateWrapper<InvCountItem>()
                     .set(InvCountItem::getBookQty, opening ? BigDecimal.ZERO : book.qty())
                     .set(InvCountItem::getBookRevision, book.revision())
                     .set(InvCountItem::getCountedQty, null).eq(InvCountItem::getId, i.getId()));
+            moved++;
         }
         int added = 0;
         if (count.getScope() != CountScope.PICKED) {
@@ -528,7 +534,14 @@ public class CountServiceImpl implements CountService {
             added = more.size();
         }
         bump(count, new LambdaUpdateWrapper<InvCount>().set(InvCount::getBookTime, OffsetDateTime.now(clock)));
-        docLogService.add(BizType.INV_COUNT, id, "refresh-book", added > 0 ? "新带出 " + added + " 种" : null);
+        List<String> notes = new ArrayList<>();
+        if (moved > 0) {
+            notes.add(moved + " 行有进出，已重拍、要重数");
+        }
+        if (added > 0) {
+            notes.add("新带出 " + added + " 种");
+        }
+        docLogService.add(BizType.INV_COUNT, id, "refresh-book", notes.isEmpty() ? null : String.join("；", notes));
         return detail(countMapper.selectById(id));
     }
 
@@ -590,12 +603,16 @@ public class CountServiceImpl implements CountService {
         if (unfilled > 0) {
             throw new BizException("还有 " + unfilled + " 行没填实盘数");
         }
+        // 取账面以后有过进出（哪怕一进一出净数不变），这一行数的可能是进出前或进出后的货，差异算不准
         Map<Long, Stock> balances = ledger.lockBalances(count.getWarehouseId(), items.stream().map(InvCountItem::getMaterialSkuId).toList());
-        List<String> stale = items.stream().filter(i -> i.getBookRevision() == null
-                        || !Objects.equals(i.getBookRevision(), balances.get(i.getMaterialSkuId()).getMovementRevision()))
-                .map(i -> "第 " + i.getSeq() + " 行计数期间有收发或未确认测量基准，请重新取账面并重数").toList();
+        List<InvCountItem> stale = items.stream().filter(i -> i.getBookRevision() == null
+                || !Objects.equals(i.getBookRevision(), balances.get(i.getMaterialSkuId()).getMovementRevision())).toList();
         if (!stale.isEmpty()) {
-            throw new BizException(ErrorCodes.STATE_CHANGED, "盘点测量基准已变化，请重新取账面并重数", stale);
+            Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(stale.stream().map(InvCountItem::getMaterialSkuId).toList());
+            List<String> rows = stale.stream().map(i -> "第 " + i.getSeq() + " 行 " + briefs.get(i.getMaterialSkuId()).getSkuCode()).toList();
+            throw new BizException(ErrorCodes.STATE_CHANGED, String.join("、", rows.subList(0, Math.min(rows.size(), 5)))
+                    + (rows.size() > 5 ? " 等 " + rows.size() + " 行" : "")
+                    + " 取账面以后有过进出：点\"重新取账面数\"，重数这几行再提交（别的行不用重数）", rows);
         }
         change(count, "submit", req);
     }
@@ -605,20 +622,28 @@ public class CountServiceImpl implements CountService {
         change(count, "audit", req);
         List<InvCountItem> items = itemMapper.selectByCount(count.getId());
         if (items.stream().anyMatch(i -> i.getBookRevision() == null)) {
-            throw new BizException(ErrorCodes.STATE_CHANGED, "这张历史盘点单没有确认测量基准，请退回草稿重新取账面并重数");
+            throw new BizException(ErrorCodes.STATE_CHANGED, "这张单是升级前提交的，没记取账面时的库存变动：先驳回或撤回，重新取账面数、重数后再提交");
         }
         ledger.post(posting(count, items));
     }
 
-    /** 反审核：调整退回去（退完是负的 1001），回到草稿。这个仓已经开了另一张盘点单的不行（回草稿就是两张没审核的） */
+    /**
+     * 反审核：调整退回去（退完是负的 1001），回到草稿。这个仓已经开了另一张盘点单的不行（回草稿就是两张没审核的）。
+     * 实盘数留着：提交时确认的差异还是对的（提交以后的进出账上、货上都有），所以把变动次数对齐到现在，
+     * 改错一个数再提交不用全部重数；回草稿以后再有进出的行，提交时照样拦
+     */
     private void unaudit(InvCount count, DocActionReq req) {
         FLOW.next("unaudit", count.getStatus());
         checkNoOpenCount(count.getWarehouseId(), count.getId());
         change(count, "unaudit", req);
-        ledger.post(posting(count, itemMapper.selectByCount(count.getId())).reversed());
-        itemMapper.update(new InvCountItem(), new LambdaUpdateWrapper<InvCountItem>()
-                .set(InvCountItem::getBookRevision, null).set(InvCountItem::getCountedQty, null)
-                .eq(InvCountItem::getCountId, count.getId()));
+        List<InvCountItem> items = itemMapper.selectByCount(count.getId());
+        ledger.post(posting(count, items).reversed());
+        Map<Long, Stock> balances = ledger.lockBalances(count.getWarehouseId(), items.stream().map(InvCountItem::getMaterialSkuId).toList());
+        for (InvCountItem i : items) {
+            itemMapper.update(new InvCountItem(), new LambdaUpdateWrapper<InvCountItem>()
+                    .set(InvCountItem::getBookRevision, balances.get(i.getMaterialSkuId()).getMovementRevision())
+                    .eq(InvCountItem::getId, i.getId()));
+        }
     }
 
     /** 盘点单的库存变动：一行一笔，调整量 = 实盘 − 账面；日志记盘盈、盘亏，期初录入记期初 */

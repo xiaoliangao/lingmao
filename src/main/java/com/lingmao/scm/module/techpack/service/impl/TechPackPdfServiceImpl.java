@@ -140,7 +140,7 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
         List<PdfSheet.BomTable> boms = colors.stream().map(c -> new PdfSheet.BomTable(c.name(), c.code(),
                 bomRows(content.bom(), c, ctx, materials, skus, units, price ? costs.get(c.id()) : null))).toList();
 
-        return new PdfSheet(title(owner), statusMark(pack.getStatus()), PackOwners.contextNotice(pack), meta, image(packOwners.mainImage(pack)),
+        return new PdfSheet(title(owner), statusMark(pack.getStatus()), meta, image(packOwners.mainImage(pack)),
                 spec(content, ctx), fabricUsage(content.bom(), ctx, materials, units), ctx.sizes(), boms, price,
                 price ? cost(pack, ctx, colors) : null, craftGroups(pack, content, price));
     }

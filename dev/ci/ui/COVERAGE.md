@@ -39,7 +39,7 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 |---|---|---|
 | 01 / U1 | 异色同 M 码的两行 `price/lineDueDate/remark` 不同，价格 `12.3456/23.4567`；只改单头后逐 SKU 精确回读不变。远端先保存、本地后保存得 `1002`，本地输入及远端数据均保留；三种金额容量超界得 `400` | `mixed-sku-before`、`mixed-sku-saved`、`mixed-sku-reopened-line-values`、`order-1002-keeps-local` |
 | 02 / U2 | **仅成本 GET 注入失败 envelope**；保存说明发送 `cost:null`，真实成本完全保留；重试真实 GET 成功。BOM 料卡随鼠标/键盘聚焦，主图缺失有空态 | `cost-error-with-retry`、`cost-retry-success`、`bom-keyboard-card-empty-image` |
-| 03 / U3 | 盘点实盘 `17.125` 切页签仍在，关页签提示。真实 `+1/-1` 流水净量为零但 revision 变化，提交 `1002`；重取提示清空实盘，回读实盘 null/revision 增加。提交后 `+1` 正常收发不被审核覆盖；反审清测量基准 | `count-close-unsaved-warning`、`count-dirty-survives-activation`、`count-refresh-clears-warning`、`count-refresh-cleared` |
+| 03 / U3 | 盘点实盘 `17.125` 切页签仍在，关页签提示。真实 `+1/-1` 流水净量为零但 revision 变化，提交 `1002`；重取提示清空有过进出的行，回读实盘 null/revision 增加。提交后 `+1` 正常收发不被审核覆盖；反审留着实盘、revision 对齐后能直接再提交 | `count-close-unsaved-warning`、`count-dirty-survives-activation`、`count-refresh-clears-warning`、`count-refresh-cleared` |
 | 04 / U4 | 订单/采购/盘点各两状态，`DRAFT + 多单号` 查询与 XLSX 单号全集相等；搜索框改字未 Enter，导出仍用成功查询快照；订单勾选导出保留条件且只含选中行 | `orders-applied-filter`、`purchases-applied-filter`、`counts-applied-filter` |
 | 05 / U5 | 真实登录：内部 query/hash 正常回跳；`//`、外域绝对 URL、脚本协议、反斜杠、控制字符、重复 redirect 数组安全回首页；无外域请求/脚本执行 | `redirect-internal` 等 7 张；不截登录凭据 |
 | 06 / U6 | 采购来源入库同动作重放返回原 ID、不重复库存；同键异体 `1002`，流水价/额/库存单位非空且 RECORDED。回货先 `route.fetch()` 真实落账，**再扣留成功结果并回失败 envelope**；未知结果关窗重开后，UI 重试同 UUID+原 payload 仅记一次，新 UUID 的真实第二批再记一次。查看真实 MRP/采购/入库/BUY 页面并核对单号 | `receipt-outcome-unknown`、`receipt-retry-recorded-once`、`real-flow-mrp`、`real-flow-purchase`、`real-flow-inventory`、`real-flow-buy-production` |
@@ -65,7 +65,7 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 ## 仍需补验，不能标为已覆盖
 
 - U1：null 单价、选项缺失/迟到响应、多款新增/移除、数量总容量边界、变更单六状态详情。显式整款/M 码批改已有用例12；null行交期/备注已有用例1/12，不代表null单价。
-- U2：同一包按颜色切换竞态、真实主图/坏图片、LEGACY无快照提示。无成本授权、跨包竞态、停用历史色/VOIDED快照与PDF已有用例11/15/16；BOM料卡仍只验无图和一个固定料行。
+- U2：同一包按颜色切换竞态、真实主图/坏图片、LEGACY 无快照的老版本（11-17 起不再显示提示）。无成本授权、跨包竞态、停用历史色/VOIDED快照与PDF已有用例11/15/16；BOM料卡仍只验无图和一个固定料行。
 - U3：盘点加行/导入后的基准、历史 PENDING 无 revision 的拒审、两个用户同时提交，以及刷新/关闭浏览器提示。
 - U4：组合负责人/日期/品牌、查询失败和过期响应的快照、清空/重置、采购/盘点勾选导出。现有用例覆盖状态＋多单号＋未提交关键字以及订单勾选。
 - U5：真实会话过期 `401` 后的重登路径；已有 7 类回跳不代替这个场景。

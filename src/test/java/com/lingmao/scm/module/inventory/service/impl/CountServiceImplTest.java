@@ -5,6 +5,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.basic.service.CompanyService;
 import com.lingmao.scm.module.basic.service.MaterialCategoryService;
+import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.basic.service.WarehouseService;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
@@ -129,7 +130,7 @@ class CountServiceImplTest {
         verify(countMapper, never()).update(any(), any());
     }
 
-    /** 数量恢复原值仍然发生过收发，必须重取并重数，不能只比较余额。 */
+    /** 取账面以后一进一出、数量回到原值，也算有过进出：拦下来要重数，不能只比数量 */
     @Test
     void submit_rejectsMovementRevisionEvenWhenQtySame() {
         InvCount c = count(DocStatus.DRAFT, CountPurpose.DAILY);
@@ -139,13 +140,17 @@ class CountServiceImplTest {
         when(countMapper.lockById(7L)).thenReturn(c);
         when(itemMapper.selectByCount(7L)).thenReturn(List.of(i));
         when(ledger.lockBalances(3L, List.of(11L))).thenReturn(Map.of(11L, now));
+        MaterialSkuBrief brief = new MaterialSkuBrief();
+        brief.setSkuCode("KQ-001");
+        when(materialService.skuBriefs(List.of(11L))).thenReturn(Map.of(11L, brief));
         assertThatThrownBy(() -> service.act(7L, "submit", new DocActionReq(0, null)))
-                .isInstanceOf(BizException.class).hasMessageContaining("重数").extracting("code").isEqualTo(1002);
+                .isInstanceOf(BizException.class).hasMessageContaining("第 1 行 KQ-001 取账面以后有过进出")
+                .extracting("code").isEqualTo(1002);
         verify(countMapper, never()).update(any(), any());
     }
 
     /**
-     * 规则（PRD §6.6.8 规则 2）：调整量 = 实盘 − 账面（快照），差异是 0 的行不动库存；日常盘点记盘盈、盘亏，期初录入记期初
+     * 规则（PRD §6.6.8 规则 1）：调整量 = 实盘 − 账面（快照），差异是 0 的行不动库存；日常盘点记盘盈、盘亏，期初录入记期初
      */
     @Test
     void posting_adjustsByDifference() {
@@ -159,7 +164,7 @@ class CountServiceImplTest {
                 .extracting(StockLedger.Move::changeType).containsExactly(StockChangeType.OPENING);
     }
 
-    /** 规则（PRD §6.6.8 规则 4）：反审核会回到草稿，这个仓已经开了另一张没审核的盘点单就不行（1000，说出是哪张），库存不动 */
+    /** 规则（PRD §6.6.8 规则 5）：反审核会回到草稿，这个仓已经开了另一张没审核的盘点单就不行（1000，说出是哪张），库存不动 */
     @Test
     void unaudit_blockedByAnotherOpenCount() {
         when(countMapper.selectById(7L)).thenReturn(count(DocStatus.APPROVED, CountPurpose.DAILY));

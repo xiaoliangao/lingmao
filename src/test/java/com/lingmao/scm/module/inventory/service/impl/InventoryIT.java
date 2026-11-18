@@ -12,6 +12,7 @@ import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.inventory.dto.CountCreateReq;
 import com.lingmao.scm.module.inventory.dto.CountCreatedVO;
 import com.lingmao.scm.module.inventory.dto.CountDetailVO;
+import com.lingmao.scm.module.inventory.dto.CountItemVO;
 import com.lingmao.scm.module.inventory.dto.CountQuery;
 import com.lingmao.scm.module.inventory.dto.CountRowVO;
 import com.lingmao.scm.module.inventory.dto.CountSaveReq;
@@ -47,6 +48,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -242,31 +244,47 @@ class InventoryIT {
         assertThat(countService.create(dailyReq).itemCount()).isEqualTo(1);
     }
 
-    /** 拍账后+1/-1的ABA必须失效，刷新清计数；提交以后收发仍按固定差额过账。 */
+    /** 取账面以后一进一出（净数不变）也要拦；重新取账面只重拍动过的行，别的行实盘留着；反审核不清实盘，改完能直接再提交 */
     @Test
-    void countMeasurementRejectsAbaAndRefreshClearsCount() {
+    void countMeasurementRejectsAbaAndRefreshResetsOnlyMovedRows() {
         Fixture f = fixture();
         audit(create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "10"));
-        long id = countService.create(countReq(f, CountPurpose.DAILY, List.of(f.skuA))).id();
-        fill(id, "9");
-        long before = countService.detail(id).getItems().getFirst().getBookRevision();
+        audit(create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuB, "5"));
+        long id = countService.create(countReq(f, CountPurpose.DAILY, List.of(f.skuA, f.skuB))).id();
+        fill(id, Map.of(f.skuA, "9", f.skuB, "4"));
+        long before = item(countService.detail(id), f.skuA).getBookRevision();
         audit(create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "1"));
         audit(create(f, InvDocType.OTHER_OUT, f.warehouseA, null, f.skuA, "1"));
         assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("10");
         int version = countService.detail(id).getVersion();
         assertThatThrownBy(() -> countService.act(id, "submit", new DocActionReq(version, null)))
-                .isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(1002);
+                    assertThat((List<?>) e.getData()).hasSize(1);
+                });
+
         CountDetailVO refreshed = countService.refreshBook(id, new DocActionReq(version, null));
-        assertThat(refreshed.getItems().getFirst().getCountedQty()).isNull();
-        assertThat(refreshed.getItems().getFirst().getBookRevision()).isGreaterThan(before);
-        fill(id, "9");
+        assertThat(item(refreshed, f.skuA)).satisfies(i -> {
+            assertThat(i.getCountedQty()).isNull();
+            assertThat(i.getBookRevision()).isGreaterThan(before);
+        });
+        assertThat(item(refreshed, f.skuB).getCountedQty()).isEqualByComparingTo("4");
+        fill(id, Map.of(f.skuA, "9", f.skuB, "4"));
         submitAndAudit(id);
         assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("9");
+        assertThat(stock(f.warehouseA, f.skuB)).isEqualByComparingTo("4");
+
         countService.act(id, "unaudit", new DocActionReq(countService.detail(id).getVersion(), null));
-        assertThat(countService.detail(id).getItems().getFirst()).satisfies(i -> {
-            assertThat(i.getCountedQty()).isNull(); assertThat(i.getBookRevision()).isNull();
-        });
         assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("10");
+        assertThat(countService.detail(id).getItems()).allSatisfy(i -> {
+            assertThat(i.getCountedQty()).isNotNull();
+            assertThat(i.getBookRevision()).isNotNull();
+        });
+        // 反审核以后改一个数直接再提交：B 少数了一件
+        fill(id, Map.of(f.skuA, "9", f.skuB, "3"));
+        submitAndAudit(id);
+        assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("9");
+        assertThat(stock(f.warehouseA, f.skuB)).isEqualByComparingTo("3");
     }
 
     @Test
@@ -524,6 +542,25 @@ class InventoryIT {
     }
 
     /** 每行都填同一个实盘数，存草稿 */
+    private void fill(long countId, Map<Long, String> counted) {
+        CountDetailVO d = countService.detail(countId);
+        CountSaveReq req = new CountSaveReq();
+        req.setVersion(d.getVersion());
+        req.setCountDate(d.getCountDate());
+        req.setCounterId(d.getCounterId());
+        req.setItems(d.getItems().stream().map(i -> {
+            CountSaveReq.Item item = new CountSaveReq.Item();
+            item.setMaterialSkuId(i.getMaterialSkuId());
+            item.setCountedQty(new BigDecimal(counted.get(i.getMaterialSkuId())));
+            return item;
+        }).toList());
+        countService.update(countId, req);
+    }
+
+    private static CountItemVO item(CountDetailVO detail, long skuId) {
+        return detail.getItems().stream().filter(i -> i.getMaterialSkuId() == skuId).findFirst().orElseThrow();
+    }
+
     private void fill(long countId, String counted) {
         CountDetailVO d = countService.detail(countId);
         CountSaveReq req = new CountSaveReq();

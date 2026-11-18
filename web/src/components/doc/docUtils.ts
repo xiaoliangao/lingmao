@@ -19,8 +19,9 @@ import { businessToday, addBusinessDays } from '@/utils/businessDate'
  *   自己发 silent 请求的（"存草稿并提交"）：catch (e) { if (e instanceof ApiError) showSilentError(e) }
  */
 
-/** Business default dates always use Asia/Shanghai, independent of the browser zone. */
+/** 今天，yyyy-MM-dd：按东八区算，不看浏览器时区（表单默认值用，后端照样会查） */
 export const todayStr = businessToday
+/** 某天（默认今天）加几天，yyyy-MM-dd：要求交期默认今天 + 60 天这种 */
 export const addDaysStr = addBusinessDays
 
 /** 按条件拼按钮清单：[can('void') && { … }, …].filter(isItem)，把 false 去掉、类型收窄 */
@@ -58,7 +59,12 @@ export function showSilentError(error: ApiError) {
   }
 }
 
-/** A conflict never silently discards a draft or upgrades its version. */
+/**
+ * 表单保存遇到 1002（状态变了、别人改过，version 对不上）：消息 request.ts 已经弹过了。
+ * 页面上有没保存的输入，不能直接重取把它冲掉：问一声，点"放弃并载入最新"才调 reload。
+ * 是 1002 返回 true（调用方就此打住），别的错误返回 false（调用方照常往外抛）。
+ * 详情页的状态动作没有本地输入，runDocAction 里直接重取，不用它
+ */
 export function reloadOnConflict(error: unknown, reload?: () => unknown): boolean {
   if (!(error instanceof ApiError) || error.code !== ErrorCode.STATE_CHANGED) return false
   if (reload) {
@@ -75,7 +81,7 @@ export function reloadOnConflict(error: unknown, reload?: () => unknown): boolea
  * - 作废、结案、反审核、取消结案：照 DOC_ACTION_CONFIRM 说后果再确认，不要求写原因；note 是这张单据自己要多说的一句
  * - 别的直接做
  * 做成了提示一句、返回 true（调用方刷新详情）；取消了、出错了返回 false。
- * 出错时显示原因（showSilentError），1002 时保留本地输入；用户明确放弃后才调 reload 重新取详情
+ * 出错时显示原因（showSilentError），1002 时再调 reload 重新取详情，拿新的 version
  */
 export async function runDocAction(
   action: DocAction,
@@ -111,7 +117,7 @@ export async function runDocAction(
   } catch (e) {
     if (!(e instanceof ApiError)) throw e
     showSilentError(e)
-    reloadOnConflict(e, options.reload)
+    if (e.code === ErrorCode.STATE_CHANGED) void options.reload?.()
     return false
   }
   ElMessage.success(`${docLabel} 已${label}`)

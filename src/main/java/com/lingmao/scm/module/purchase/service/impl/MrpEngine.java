@@ -90,7 +90,7 @@ class MrpEngine {
         List<Long> orderIds = heads.stream().map(MrpCalcMapper.OrderHead::id).toList();
         orderService.checkForMrp(orderIds);
         List<MrpCalcMapper.OrderLine> orderLines = calcMapper.selectOrderLines(orderIds);
-        techPackService.checkRequirements(orderLines.stream()
+        techPackService.checkLockedRequirements(orderLines.stream()
                 .map(l -> new PackRequirement(l.techPackId(), l.styleSkuId())).toList());
         Map<Long, LocalDate> commits = new HashMap<>();
         heads.forEach(h -> commits.put(h.id(), h.commitDate()));

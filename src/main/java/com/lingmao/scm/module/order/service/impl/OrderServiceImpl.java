@@ -27,6 +27,7 @@ import com.lingmao.scm.module.biz.dto.ApprovalView;
 import com.lingmao.scm.module.biz.dto.AttachmentVO;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
+import com.lingmao.scm.module.biz.dto.DocRef;
 import com.lingmao.scm.module.biz.dto.DocSaved;
 import com.lingmao.scm.module.biz.dto.StatusLabels;
 import com.lingmao.scm.module.biz.entity.Attachment;
@@ -935,7 +936,8 @@ public class OrderServiceImpl implements OrderService {
                 throw stale();
             }
             if (row != null && ci.getToQty() < row.getScheduledQty()) {
-                throw new BizException(reductionMessage(row, ci.getToQty(),
+                String sku = skuCode(row);
+                throw new BizException((sku.isEmpty() ? "" : sku + "：") + reductionMessage(row, ci.getToQty(),
                         referenceService.referrers(BizType.ORDER, o.getId())));
             }
             if (row == null) {
@@ -967,7 +969,7 @@ public class OrderServiceImpl implements OrderService {
                 throw new BizException(ErrorCodes.STATE_CHANGED, "目标生产 BOM 已更新，请重新确认变更版本");
             }
         }
-        techPackService.checkRequirements(active(rows).stream()
+        techPackService.checkLockedRequirements(active(rows).stream()
                 .map(row -> new PackRequirement(row.getTechPackId(), row.getStyleSkuId())).toList());
         int seq = rows.stream().filter(r -> r.getSeq() != null).mapToInt(OrderItem::getSeq).max().orElse(0);
         for (OrderItem r : added) {
@@ -996,14 +998,22 @@ public class OrderServiceImpl implements OrderService {
         docLogService.add(BizType.ORDER, o.getId(), "change", source + "：" + ChangeTexts.summary(false, texts));
     }
 
-    static String reductionMessage(OrderItem row, int target, List<com.lingmao.scm.module.biz.dto.DocRef> refs) {
+    /**
+     * 减到已排产以下的提示（前面由调用方加 SKU 码）：列出这张订单的生产单和状态，说清两种处理办法。
+     * 没开始做的撤回、反审核后作废重排；已经领料、报工、回货的不能减，结案后另下新单（结案不退已排量）
+     */
+    static String reductionMessage(OrderItem row, int target, List<DocRef> refs) {
         String production = refs.stream().filter(r -> r.type() == BizType.PRODUCTION_ORDER)
                 .map(r -> r.no() + "（" + r.statusLabel() + "）").collect(Collectors.joining("、"));
-        return "SKU " + row.getStyleSkuId() + " 已排 " + row.getScheduledQty() + " 件、已回 "
-                + Objects.requireNonNullElse(row.getReturnedQty(), 0) + " 件，不能改为 " + target + " 件。"
-                + (production.isBlank() ? "" : "关联生产单：" + production + "。")
-                + "未执行的生产单按现有条件撤回/反审核、作废后重排；已有领退、报工或回货的单保留实绩和锁定版本，"
-                + "可结案并记录原因，后续需求另开新单。结案不退已排量；不要改写已执行数量或直接换旧生产单BOM";
+        return "已排 " + row.getScheduledQty() + " 件、已回 " + Objects.requireNonNullElse(row.getReturnedQty(), 0)
+                + " 件，不能改成 " + target + " 件。先处理生产单" + (production.isBlank() ? "" : " " + production)
+                + "：没开始做的撤回或反审核后作废、重新排；已经领料、报工或回货的，结案后另下新单";
+    }
+
+    private String skuCode(OrderItem row) {
+        StyleOrderInfo info = styleService.orderInfos(List.of(row.getStyleId())).get(row.getStyleId());
+        return info == null ? "" : info.skus().stream().filter(k -> k.id() == row.getStyleSkuId()).map(StyleOrderInfo.Sku::code)
+                .findFirst().orElse("");
     }
 
     private static List<OrderItem> rowsOf(Collection<OrderItem> rows, Long styleId) {

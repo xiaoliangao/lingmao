@@ -26,9 +26,13 @@ class RequirementChecksTest {
         TechPack p = new TechPack(); p.setStyleId(1L); p.setStage(PackStage.PROD); p.setStatus(PackStatus.VOIDED); return p;
     }
     private List<String> check(TechPack p, StyleOrderInfo.Sku sku, PackContent.BomRow row, int enabled) {
+        return check(p, sku, row, enabled, true);
+    }
+
+    private List<String> check(TechPack p, StyleOrderInfo.Sku sku, PackContent.BomRow row, int enabled, boolean strict) {
         var m = material(2, "FABRIC", "5", "1", null);
         var ms = new MaterialSkuRef(21L, "MAT-M", m, null, null, null, null, null, BigDecimal.ONE, null, enabled);
-        return RequirementChecks.check(p, style, sku, List.of(row), Map.of(2L, m), Map.of(21L, ms));
+        return RequirementChecks.check(p, style, sku, List.of(row), Map.of(2L, m), Map.of(21L, ms), strict);
     }
 
     @Test void actualPairsOnly_noColorSizeCartesianProduct() {
@@ -44,6 +48,14 @@ class RequirementChecksTest {
                 List.of(sku(null, null, 21, "5")), List.of(size("M", "1")));
         assertThat(check(pack(), redL, row, 0)).anyMatch(s -> s.contains("BOM 第 1 行") && s.contains("已停用"))
                 .anyMatch(s -> s.contains("没有有效用量"));
+    }
+
+    /** 已审核订单算料、提变更：下单以后才停用的物料 SKU 不拦，缺用量照样拦（缺了会算错） */
+    @Test void lockedOrders_ignoreDisabledButStillRequireUsage() {
+        var row = row(item(2, BomSkuMode.FIXED, null, "0", "5", MaterialSource.PURCHASE),
+                List.of(sku(null, null, 21, "5")), List.of(size("M", "1")));
+        assertThat(check(pack(), redM, row, 0, false)).isEmpty();
+        assertThat(check(pack(), redL, row, 0, false)).singleElement().asString().contains("没有有效用量");
     }
 
     @Test void legacyUniformAcceptsNewSize_butFrozenVersionRequiresRevision() {
