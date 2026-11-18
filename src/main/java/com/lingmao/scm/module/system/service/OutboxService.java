@@ -7,6 +7,6 @@ public interface OutboxService {
     OutboxState state(long id);
     void cancel(long id);
     void retry(long id);
-    /** A small housekeeping lease; a false result means another instance owns the current run. */
+    /** 一个小的清理租约；返回 false 说明这一轮归别的实例。 */
     boolean housekeepingLease(String name, int seconds);
 }

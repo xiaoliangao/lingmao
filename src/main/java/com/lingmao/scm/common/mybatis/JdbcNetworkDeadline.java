@@ -1,6 +1,6 @@
 package com.lingmao.scm.common.mybatis;
 
-/** A short client-side network boundary for lifecycle probes and bounded background work. */
+/** 给探针和后台小批量任务用的短网络超时（客户端这边）。 */
 public final class JdbcNetworkDeadline implements AutoCloseable {
     private static final ThreadLocal<Integer> CURRENT = new ThreadLocal<>();
     private final Integer previous;

@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
 
-/** Uploaded binaries are immutable; store changes do not alter business attachment references. */
+/** 上传的文件不可变；存储变化不改业务附件的引用。 */
 public interface UploadStore {
     record Slot(String url, String thumbnailUrl) {}
     record Stored(long bytes, String sha256, String thumbnailUrl) {}

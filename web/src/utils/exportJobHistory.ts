@@ -5,7 +5,7 @@ const MAX_AGE = 7 * 24 * 60 * 60 * 1000
 const MAX_JOBS = 20
 export interface ExportJobReceipt { id: string; owner: string; createdAt: string; savedAt: number }
 
-/** Only job references are stored, never filter contents, prices, files or credentials. */
+/** 只存任务编号，不存筛选内容、价格、文件和凭据。 */
 export function readExportJobHistory(owner: string): ExportJobReceipt[] {
   const jobs: ExportJobReceipt[] = []
   try {
@@ -21,7 +21,7 @@ export function readExportJobHistory(owner: string): ExportJobReceipt[] {
   return jobs.sort((a, b) => b.savedAt - a.savedAt).slice(0, MAX_JOBS)
 }
 
-/** One key per job avoids two tabs replacing each other's history. Authorization remains server-side. */
+/** 一个任务一个键，两个页签不会互相覆盖历史。权限仍由服务端判断。 */
 export function rememberExportJob(job: { id: string; createdAt: string }, owner: string): boolean {
   const receipt: ExportJobReceipt = { id: job.id, createdAt: job.createdAt, owner, savedAt: Date.now() }
   const key = `${PREFIX}${job.id}`
@@ -29,7 +29,7 @@ export function rememberExportJob(job: { id: string; createdAt: string }, owner:
   const stored = writeStorage(key, serialized) && readStorage(key) === serialized
   if (stored) {
     const retained = readExportJobHistory(owner)
-    // Keep at most twenty references for this account; each removal affects one immutable job id.
+    // 这个账号最多留 20 条；每次只删一个不会变的任务编号。
     const oldest = retained.at(-1)?.savedAt
     if (retained.length === MAX_JOBS && oldest !== undefined) {
       try {

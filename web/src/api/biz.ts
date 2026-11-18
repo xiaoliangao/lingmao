@@ -5,7 +5,7 @@ import { attachmentBody } from './basic'
 import { currentCompanyScope } from '@/utils/companyScope'
 import { sessionEpoch } from '@/utils/token'
 
-/** A list row may omit companyId; resolve the target document rather than using a global default. */
+/** 列表行可能没有 companyId；取目标单据的，不用全局默认主体。 */
 export async function documentOptions(base: string, id: string, options?: RequestOptions): Promise<RequestOptions> {
   const captured = { ...options, authEpoch: options?.authEpoch ?? sessionEpoch(), companyId: options?.companyId ?? currentCompanyScope() }
   if (captured.companyId) return captured

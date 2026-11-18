@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Validate an explicit document selection after its DataScope-filtered query, before rendering bytes. */
+/** 导出勾选的单据时，在按数据范围过滤的查询之后、生成文件之前再核一遍。 */
 public final class ExportScope {
     private ExportScope() { }
 

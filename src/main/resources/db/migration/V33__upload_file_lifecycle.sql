@@ -19,15 +19,15 @@ CREATE INDEX IF NOT EXISTS idx_sys_upload_file_owner ON sys_upload_file(owner_us
 CREATE INDEX IF NOT EXISTS idx_sys_upload_file_cleanup ON sys_upload_file(tenant_key,touched_at,file_url)
     WHERE status IN ('WRITING','READY','DELETING');
 
--- Attachment references are checked during bounded cleanup, without scanning their complete history.
+-- 清理时按文件地址查引用，不扫附件的全部历史。
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_biz_attachment_file_url ON biz_attachment(file_url);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_biz_attachment_thumb_url ON biz_attachment(thumb_url);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sup_cert_file_url ON sup_supplier_cert(file_url);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tp_process_image_file_url ON tp_process_image(file_url);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tp_process_image_thumb_url ON tp_process_image(thumb_url);
 
--- An attachment reference and the cleaner take the same catalog row lock. Filesystem I/O is never in this transaction.
--- Old, uncatalogued files retain their existing lifecycle; only files created after this migration are managed here.
+-- 引用附件和清理任务抢同一行登记锁；文件系统操作从不在这个事务里。
+-- 没登记的旧文件照旧，只管这次迁移之后上传的文件。
 CREATE OR REPLACE FUNCTION scm_upload_reference_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE document jsonb; item record;
 BEGIN

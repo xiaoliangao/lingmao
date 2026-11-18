@@ -58,7 +58,7 @@ public class ProbeConfiguration {
         private final DrainState state; private final DataSource dataSource; private final Flyway flyway;
         private final HaltStrategy halt;
         private final Semaphore probe = new Semaphore(1);
-        // No waiting tasks: a timed-out JDBC call retains the only slot until it actually exits.
+        // 不排队：超时的 JDBC 调用真正退出之前，一直占着唯一的槽。
         private final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
                 new SynchronousQueue<>(), Thread.ofPlatform().daemon().name("readiness-probe").factory(),
                 new ThreadPoolExecutor.AbortPolicy());

@@ -8,7 +8,7 @@ import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.List;
 
-/** Forwarded values are accepted only from configured network peers; no DNS lookups. */
+/** 只接受配置里信任的上游转发来的头；不做 DNS 解析。 */
 @Component
 public class TrustedProxyResolver {
     private final List<Network> proxies;

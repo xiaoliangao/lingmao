@@ -16,9 +16,9 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * Preserves the explicit old identity before the existing save routine replaces rows.
- * These hints contain IDs only. The database accepts a link only to a same-root row
- * actually deleted in this transaction; values and matching by business keys are forbidden.
+ * 在原有的保存逻辑替换明细行之前，记下明确的旧行身份。
+ * 这里只放 id。数据库只接受本事务里真删掉的、同一个单头下的行作为旧行；
+ * 不按值、不按业务键去猜。
  */
 @Aspect @Component @Order(0)
 public class AuditReplacementAspect {

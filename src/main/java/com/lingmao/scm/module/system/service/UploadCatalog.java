@@ -1,6 +1,6 @@
 package com.lingmao.scm.module.system.service;
 
-/** Durable marker exists before the first byte is written, including for interrupted uploads. */
+/** 写第一个字节之前就有持久的登记，上传中断也找得到。 */
 public interface UploadCatalog {
     void begin(UploadStore.Slot slot);
     void ready(UploadStore.Slot slot, UploadStore.Stored stored);

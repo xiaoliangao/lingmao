@@ -16,7 +16,7 @@ import java.io.InputStream;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Inspect the bounded OOXML archive before POI allocates its workbook object graph. */
+/** POI 建工作簿对象之前，先检查 OOXML 压缩包，大小和条目都有上限。 */
 final class ExcelArchiveGuard {
     static final int MAX_FILES = 128;
     static final long MAX_ENTRY_BYTES = 16L * 1024 * 1024;
@@ -40,7 +40,7 @@ final class ExcelArchiveGuard {
         xml.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
         xml.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
         xml.setXMLResolver((publicId, systemId, base, namespace) -> { throw new XMLStreamException("External resources are forbidden"); });
-        // POI's streaming writer uses ZIP64 descriptors, which java.util.zip cannot reliably stream.
+        // POI 流式写出的文件用 ZIP64 数据描述符，java.util.zip 流式读不可靠。
         try (ZipArchiveInputStream zip = new ZipArchiveInputStream(new ByteArrayInputStream(bytes))) {
             ZipArchiveEntry entry;
             while ((entry = zip.getNextEntry()) != null) {

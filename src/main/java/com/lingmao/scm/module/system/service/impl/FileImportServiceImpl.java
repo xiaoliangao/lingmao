@@ -68,7 +68,7 @@ public final class FileImportServiceImpl implements FileImportService, Housekeep
             P plan;
             try { plan = withPermissions(initial, parse); }
             catch (RuntimeException invalid) {
-                // Another request may have committed this exact file while this pre-validation was reading.
+                // 预校验读文件的时候，别的请求可能已经把同一个文件导进去提交了。
                 replay = completed(key);
                 if (replay == null) throw invalid;
                 authorize(user, permission); return replay;
@@ -85,8 +85,8 @@ public final class FileImportServiceImpl implements FileImportService, Housekeep
                         DELETE FROM sys_import_receipt WHERE tenant_key=? AND user_id=? AND operation=? AND scope_key=?
                             AND file_hash=? AND options_hash=? AND expires_at<=clock_timestamp()
                         """, namespace.tenant(), user, operation, scope, key.file(), key.options());
-                // The parser may take seconds. DataScope must use the same live rights just checked above,
-                // rather than the request filter's earlier ALL/SELF snapshot.
+                // 解析可能要几秒。数据范围要用上面刚查过的实时权限，
+                // 不用请求过滤器早先拿到的 ALL/SELF 快照。
                 ImportResult result = withPermissions(current, () -> write.apply(plan));
                 jdbc.update("""
                         INSERT INTO sys_import_receipt(tenant_key,user_id,operation,scope_key,file_hash,options_hash,result)

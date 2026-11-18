@@ -65,7 +65,7 @@ public class DataLogServiceImpl implements DataLogService {
                     rs.getString("actor_user_id"), rs.getString("client_ip"), rs.getString("request_id"),
                     rs.getString("operation"), rs.getString("transaction_id"), rs.getObject("created_at", OffsetDateTime.class));
         }, parameters.toArray());
-        // Release sensitive history only after recording the controlled query target. Failure aborts the response.
+        // 先记下这次受控查询的对象，再放出敏感历史；记录失败就中止响应。
         Map<String,Object> metadata = new LinkedHashMap<>();
         metadata.put(root ? "rootTable" : "table", targetTable); metadata.put(root ? "rootId" : "rowId", targetId.toString());
         if (transactionId != null) metadata.put("transactionId", transactionId.toString());

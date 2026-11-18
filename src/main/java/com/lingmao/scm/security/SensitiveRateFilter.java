@@ -12,7 +12,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.time.Duration;
 
-/** Runs after authentication; shared office IPs do not share authenticated users' export/upload quotas. */
+/** 在认证之后执行；办公室共用一个 IP 时，各登录用户的导出、上传额度不共享。 */
 public final class SensitiveRateFilter extends OncePerRequestFilter {
     private final SharedRateLimiter limiter;
     private final TrustedProxyResolver proxy;

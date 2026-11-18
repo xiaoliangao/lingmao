@@ -7,7 +7,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.util.Objects;
 import java.util.Set;
 
-/** Expected page context only. DataScope and business permissions remain independent authorizations. */
+/** 只是页面期望的主体；数据范围和业务权限各自独立判断。 */
 public final class CompanyContext {
     private CompanyContext() { }
 

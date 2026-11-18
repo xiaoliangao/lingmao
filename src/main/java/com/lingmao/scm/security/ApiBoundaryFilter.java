@@ -68,8 +68,8 @@ public final class ApiBoundaryFilter extends OncePerRequestFilter {
 
     private static int publicPort(HttpServletRequest request, boolean secure) {
         if (!secure || request.isSecure()) return request.getServerPort();
-        // The trusted gateway preserves Host, including a non-default published HTTPS port.
-        // Never accept an independent client-supplied X-Forwarded-Port or X-Forwarded-Host.
+        // 受信网关保留 Host，含非默认的对外 HTTPS 端口。
+        // 不接受客户端另传的 X-Forwarded-Port、X-Forwarded-Host。
         String host = request.getHeader("Host");
         if (host != null) {
             try {

@@ -11,7 +11,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.util.concurrent.Semaphore;
 
-/** Admission happens before multipart parsing, POI/PDF construction and controller transactions. */
+/** 在解析 multipart、建 POI 或 PDF 对象、进 controller 事务之前做准入。 */
 public final class HeavyIoFilter extends OncePerRequestFilter {
     private final Semaphore permits = new Semaphore(2);
     private final JsonMapper json;

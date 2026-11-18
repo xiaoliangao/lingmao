@@ -1,8 +1,8 @@
 package com.lingmao.scm.common.lifecycle;
 
-/** Last-resort process termination when resource ownership cannot safely be handed off. */
+/** 资源没法安全交出时的最后手段：结束进程。 */
 @FunctionalInterface
 public interface HaltStrategy {
-    /** Production implementations never return. Tests may throw a sentinel instead of stopping their JVM. */
+    /** 生产实现不会返回；测试里可以抛一个哨兵异常，不真停 JVM。 */
     void halt(int status);
 }

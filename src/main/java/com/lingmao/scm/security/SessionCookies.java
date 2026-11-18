@@ -41,7 +41,7 @@ public class SessionCookies {
 
     public void requireRefreshHeader(HttpServletRequest request) {
         if (!"XMLHttpRequest".equals(request.getHeader("X-Requested-With"))) throw new AuthRejected();
-        // Cross-origin credentialed requests additionally require the explicitly configured CORS policy.
+        // 跨源带凭据的请求还要另外满足明确配置的 CORS 策略。
         if ("cross-site".equalsIgnoreCase(request.getHeader("Sec-Fetch-Site"))) throw new AuthRejected();
     }
 

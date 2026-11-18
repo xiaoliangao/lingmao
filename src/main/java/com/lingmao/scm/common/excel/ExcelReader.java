@@ -40,7 +40,7 @@ final class ExcelReader {
     private ExcelReader() {
     }
 
-    /** Check the actual OOXML archive and its allocation bounds before opening it with POI. */
+    /** 用 POI 打开之前，先检查真实的 OOXML 压缩包和它要占的内存上限。 */
     static Workbook open(InputStream in) {
         try {
             return WorkbookFactory.create(new ByteArrayInputStream(ExcelArchiveGuard.inspect(in)));
@@ -126,7 +126,7 @@ final class ExcelReader {
                 if (formula || textColumn && dangerousPrefix(value)) {
                     problem = "不允许公式或公式前缀，请粘贴为值；纯文字请在前面加英文单引号";
                 } else {
-                    // Our exports escape literal formula prefixes. Preserve the original text on a round trip.
+                    // 我们导出时给公式前缀加了转义，导回来时还原成原文。
                     if (textColumn && value.startsWith("'") && dangerousPrefix(value.substring(1))) value = value.substring(1).strip();
                     problem = column.readInto(data, cell, value);
                 }

@@ -11,7 +11,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
-/** Access registrations share a transaction with refresh rotation and credential versions. */
+/** 登记 access token、轮换刷新会话、凭据版本在同一个事务里。 */
 @Component
 public class LoginSessionStore implements SessionRegistry {
     private final JdbcTemplate jdbc;
@@ -27,7 +27,7 @@ public class LoginSessionStore implements SessionRegistry {
         this.clock = clock;
     }
 
-    /** A concurrent password reset must not authenticate a hash that is no longer current. */
+    /** 同时有人重置密码时，不能用已经不是当前的哈希登录。 */
     public void save(String jti, Long userId, String verifiedPasswordHash) {
         int inserted = jdbc.update("""
                 INSERT INTO sys_login_session(tenant_id,jti,user_id,session_version,expires_at)

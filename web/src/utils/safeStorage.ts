@@ -1,4 +1,4 @@
-/** Storage is an optional convenience. Quota errors and privacy mode cannot break a page. */
+/** 本机存储只是图方便。超出配额、隐私模式都不能让页面坏掉。 */
 export function readStorage(key: string, session = false): string | null {
   try { return (session ? sessionStorage : localStorage).getItem(key) } catch { return null }
 }

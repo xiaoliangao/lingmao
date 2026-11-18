@@ -3,7 +3,7 @@ package com.lingmao.scm.common.log;
 import java.util.regex.Pattern;
 import java.nio.charset.StandardCharsets;
 
-/** All scans run on a bounded prefix; no log payload or stack message is trusted. */
+/** 只扫有上限的前一段；日志内容和异常消息一律不信。 */
 public final class SafeLog {
     public static final int LIMIT = 4096;
     private static final String TRUNCATED = "…[truncated]";
@@ -46,7 +46,7 @@ public final class SafeLog {
         return safe.substring(0, utf8End(safe, byteLimit - TRUNCATED.getBytes(StandardCharsets.UTF_8).length)) + TRUNCATED;
     }
 
-    /** A bounded linear scan also masks quoted values cut off before their closing quote. */
+    /** 有上限的线性扫描；引号没闭合就被截断的值也遮掉。 */
     private static String redactValues(String value) {
         var keys = SECRET_KEY.matcher(value);
         StringBuilder out = new StringBuilder(value.length());

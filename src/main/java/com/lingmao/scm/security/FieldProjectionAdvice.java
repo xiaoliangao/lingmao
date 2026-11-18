@@ -10,7 +10,7 @@ import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
-/** Runs before ID normalization while the actual DTO types are still available. */
+/** 在 ID 转字符串之前执行，这时还拿得到真实的 DTO 类型。 */
 @RestControllerAdvice
 @Order(-200)
 public class FieldProjectionAdvice implements ResponseBodyAdvice<Object> {
@@ -21,7 +21,7 @@ public class FieldProjectionAdvice implements ResponseBodyAdvice<Object> {
             Class<? extends HttpMessageConverter<?>> converter, ServerHttpRequest request, ServerHttpResponse response) {
         if (!(body instanceof R<?> envelope) || envelope.getData() == null) return body;
         Object value = envelope.getData();
-        // Keep scalar Long and List<Long> identities for the following ID response advice.
+        // Long、List<Long> 这类 id 留给后面的 ID 响应处理。
         if (value instanceof Number || value instanceof String || value instanceof Boolean
                 || value instanceof java.util.Collection<?> c && c.stream().allMatch(v -> v == null || v instanceof Long)) return body;
         var data = projection.project(value, type.getDeclaringClass().getName());

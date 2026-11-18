@@ -25,7 +25,7 @@ public class InputBoundaryAdvice {
                 field.isEmpty() ? "请求体格式不对" : "请求体格式不对：字段 " + field));
     }
 
-    /** Keep useful DTO locations without echoing input values, arbitrary object keys or exception details. */
+    /** 留下有用的 DTO 字段位置，但不回显输入值、任意对象键和异常细节。 */
     private static String safeFieldPath(JacksonException failure) {
         StringBuilder path = new StringBuilder();
         for (JacksonException.Reference ref : failure.getPath()) {

@@ -7,7 +7,7 @@ import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitializat
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/** A single shared-schema installation cannot silently become an isolated multi-tenant database. */
+/** 共用一个 schema 的安装不能悄悄变成多租户隔离库。 */
 @Component
 @DependsOnDatabaseInitialization
 public class DeploymentNamespaceGuard implements InitializingBean {

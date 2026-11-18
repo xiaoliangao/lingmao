@@ -8,7 +8,7 @@ import { readStorage, writeStorage } from './safeStorage'
 const PREFIX = 'lingmao-export-create-v1:'
 export interface ExportCreateDraft { identity: string; key: string; filters: StockLogQuery; createdAt: number }
 
-/** Only these non-financial filters may enter an export or its per-tab recovery snapshot. */
+/** 只有这些不含价格的筛选条件能进导出和本页签的恢复快照。 */
 export function stockLogExportFilters(query: StockLogQuery): StockLogQuery {
   const value = JSON.parse(JSON.stringify(query)) as StockLogQuery
   const { warehouseId, materialSkuId, changeType, bizDateFrom, bizDateTo, keyword } = value
@@ -33,7 +33,7 @@ export function readExportCreate(identity: string): ExportCreateDraft | null {
     return { identity, key: value.key, createdAt: value.createdAt, filters: stockLogExportFilters(value.filters) }
   } catch { throw new Error('待确认的导出记录无法读取，请先核对前次任务，勿重复创建') }
 }
-/** The short-lived snapshot stays in this tab's sessionStorage and is removed after a definite result. */
+/** 这份短期快照存在本页签的 sessionStorage，结果确定后删掉。 */
 export function storeExportCreate(draft: ExportCreateDraft): boolean {
   const key = `${PREFIX}${draft.identity}`
   const raw = JSON.stringify(draft)

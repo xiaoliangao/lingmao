@@ -15,8 +15,8 @@ import java.time.Duration;
 import java.util.UUID;
 
 /**
- * Canonical X-Request-Id is validated or replaced with a UUID, echoed with the legacy X-Trace-Id,
- * and scoped to the servlet thread. Unknown filter failures return only a safe message and this ID.
+ * 校验请求带来的 X-Request-Id，不合格就换成 UUID；响应里同时回旧的 X-Trace-Id，
+ * 只在当前 servlet 线程里有效。过滤器里没预料到的失败只返回安全的提示和这个编号。
  */
 @Slf4j
 public class TraceIdFilter extends OncePerRequestFilter {
@@ -26,7 +26,7 @@ public class TraceIdFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Trace-Id";
     public static final String REQUEST_HEADER = "X-Request-Id";
 
-    /** One bounded opaque identifier, never an arbitrary string supplied by a client. */
+    /** 一个长度有上限、不透明的编号，不接受客户端随便传的字符串。 */
     public static String normalized(String value) {
         return isValid(value) ? value : UUID.randomUUID().toString();
     }

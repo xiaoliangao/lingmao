@@ -101,7 +101,7 @@ public class OperLogAspect {
         record.setIp(proxy.clientIp(request));
     }
 
-    /** Operation history stores parameter types only. Financial values belong to the permission-filtered DataLog. */
+    /** 操作日志只存参数类型。金额类的值记在按权限过滤的字段审计里。 */
     String toParamsJson(String[] names, Object[] args) {
         Map<String, Object> params = new LinkedHashMap<>();
         for (int i = 0; i < Math.min(args.length, 32); i++) {

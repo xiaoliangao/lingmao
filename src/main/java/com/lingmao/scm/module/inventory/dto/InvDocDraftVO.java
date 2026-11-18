@@ -12,7 +12,7 @@ import java.util.List;
 /** 由源单生成：带出来的单头默认值 + 明细（GET …/from-purchase/{id}、…/from-production/{id}，前端 InvDocDraft），不存库 */
 @Data
 public class InvDocDraftVO {
-    /** Source-company projection available to warehouse users without ordinary source-detail access. */
+    /** 来源单的主体；仓管没有来源单的普通查看权限时也能拿到。 */
     private Long companyId;
     private InvDocType docType;
     private DocRef source;

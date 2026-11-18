@@ -5,7 +5,7 @@ CREATE TABLE sys_deployment_namespace (
     tenant_id VARCHAR(64) NOT NULL UNIQUE
 );
 
--- Constant defaults are metadata-only on PostgreSQL 16. Never rewrite old migrations.
+-- PostgreSQL 16 上常量默认值只改元数据，不重写表。旧迁移一律不改。
 ALTER TABLE sys_user ADD COLUMN session_version BIGINT NOT NULL DEFAULT 0;
 CREATE FUNCTION scm_bump_session_version() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -52,7 +52,7 @@ CREATE INDEX idx_refresh_previous ON sys_refresh_session(previous_hash) WHERE pr
 CREATE INDEX idx_refresh_user ON sys_refresh_session(user_id);
 CREATE INDEX idx_refresh_expiry ON sys_refresh_session(expires_at);
 
--- New field permissions are independent of the cost permission.
+-- 新的字段权限和成本权限互相独立。
 INSERT INTO sys_menu(parent_id, name, type, perms, sort)
 SELECT p.id, v.name, 3, v.perms, v.sort
 FROM (VALUES ('/suppliers','看联系方式','supplier:supplier:contact',98),

@@ -23,7 +23,7 @@ function isReceipt(row: unknown): row is WriteReceipt {
     && (value.companyId === undefined || typeof value.companyId === 'string')
     && typeof value.createdAt === 'number' && Number.isFinite(value.createdAt)
 }
-/** One localStorage key per receipt: tabs never replace another tab's receipt array. */
+/** 一张收据一个 localStorage 键，页签之间不会互相覆盖。 */
 export function readWriteReceipts(): WriteReceipt[] {
   receiptsReadable = true
   const receipts: WriteReceipt[] = []
@@ -39,7 +39,7 @@ export function readWriteReceipts(): WriteReceipt[] {
   } catch { receiptsReadable = false }
   return receipts
 }
-/** No request bodies, access tokens, financial fields or contact details are persisted. */
+/** 不存请求内容、access token、价格和联系方式。 */
 export function storeWriteReceipt(receipt: WriteReceipt): boolean {
   const receipts = readWriteReceipts()
   if (!receiptsReadable || (receipts.length >= 100 && !receipts.some((row) => row.key === receipt.key))) return false

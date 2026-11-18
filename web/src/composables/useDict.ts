@@ -46,7 +46,7 @@ export function useDict(type: MaybeRefOrGetter<string>) {
   watch(
     () => [toValue(type), versions[toValue(type)] ?? 0] as const,
     async ([code], old, onCleanup) => {
-      // The cached transport belongs to all subscribers; only this subscriber becomes stale.
+      // 缓存的请求属于所有订阅者，只把这一个订阅者标成过期。
       let current = true
       onCleanup(() => { current = false })
       // 只是重新取（版本号变了）时先留着旧的选项，下拉不闪成空

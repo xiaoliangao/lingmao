@@ -69,7 +69,7 @@ public class PdfRenderer {
         return renderXhtml(engine.process(template, context));
     }
 
-    /** All templates share one renderer whose resources are supplied by the application. */
+    /** 所有模板共用一个渲染器，资源由应用自己提供。 */
     byte[] renderXhtml(String xhtml) {
         Map<String, byte[]> loaded = fonts();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -91,7 +91,7 @@ public class PdfRenderer {
         return out.toByteArray();
     }
 
-    /** Never open HTTP, file, jar, CSS, SVG or PDF resources from a rendered document. */
+    /** 渲染的文档里不打开任何 HTTP、文件、jar、CSS、SVG、PDF 资源。 */
     private static boolean embeddedRasterOnly(String uri, ExternalResourceType type) {
         return type == ExternalResourceType.IMAGE_RASTER && uri != null && uri.length() <= 16 * 1024 * 1024
                 && (uri.startsWith("data:image/png;base64,") || uri.startsWith("data:image/jpeg;base64,"));

@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-/** Namespaced, coalesced dictionary reads; committed changes invalidate the shared generation. */
+/** 字典读取按命名空间合并并发请求；提交的改动让共享的版本号失效。 */
 @Component
 public class DictCache {
 
@@ -72,9 +72,9 @@ public class DictCache {
     private void invalidate(Pending pending) {
         try { shared.invalidate(pending.key()); }
         catch (org.springframework.dao.DataAccessException unavailable) {
-            // The committed outbox row remains pending and survives process termination.
+            // 已提交的发件箱行还在待处理，进程挂了也不会丢。
         }
-        // The worker repeats this idempotent eviction and acknowledges it after this transaction releases its connection.
+        // 后台任务会再做一遍这个幂等的清除，等这个事务释放连接后再确认。
     }
     private record Pending(String key, long id) {}
 }

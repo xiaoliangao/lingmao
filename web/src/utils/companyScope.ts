@@ -1,4 +1,4 @@
-/** API methods start their HTTP request synchronously; each request captures this value. */
+/** 接口函数同步发出请求，每个请求在那一刻取这个值。 */
 let companyScope: string | undefined
 export function currentCompanyScope(): string | undefined { return companyScope }
 export function withCompanyScope<T>(companyId: string | undefined, run: () => T): T {
@@ -6,7 +6,7 @@ export function withCompanyScope<T>(companyId: string | undefined, run: () => T)
   companyScope = companyId
   try { return run() } finally { companyScope = previous }
 }
-/** Bind a page's loaded document/form, never the user's mutable default company. */
+/** 绑定页面加载的单据、表单的主体，不用用户可变的默认主体。 */
 export function bindCompanyApi<T extends object>(api: T, companyId: () => string | null | undefined): T {
   return new Proxy(api, {
     get(target, key, receiver) {

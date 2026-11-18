@@ -13,7 +13,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Locale;
 
-/** Runs after configuration loading but before any database, Redis or HTTP server is created. */
+/** 在读完配置之后、建数据库连接、Redis、HTTP 服务之前执行。 */
 public final class ProductionEnvironmentGuard implements EnvironmentPostProcessor, Ordered {
     @Override public int getOrder() { return Ordered.LOWEST_PRECEDENCE; }
     @Override public void postProcessEnvironment(ConfigurableEnvironment env, SpringApplication application) { validate(env); }

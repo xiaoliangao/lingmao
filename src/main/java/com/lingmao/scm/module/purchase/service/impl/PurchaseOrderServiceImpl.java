@@ -641,8 +641,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             PurchaseOrderItem item = line(seq, info, Num.qty(r.getQty()), price,
                     !priceVisible ? prior.getPriceSourceId() : a != null && !changed ? a.id() : null);
             if (!priceVisible) {
-                // A preserved quote includes its unit. Current master-data conversion must not
-                // silently turn the old price per metre into the same price per roll.
+                // 保住的报价带着它的单位。不能按现在主数据的换算，
+                // 把原来每米的价悄悄变成每卷的价。
                 item.setPurchaseUnit(prior.getPurchaseUnit());
                 item.setConversionFactor(prior.getConversionFactor());
             }

@@ -39,7 +39,7 @@ public class StockLogExportServiceImpl implements StockLogExportService {
         var filters = StockLogExportReq.from(query);
         var q = filters.query(); validate(q);
         long watermark = watermark();
-        // A bounded seek determines eligibility before the response has headers or XLSX bytes.
+        // 写出响应头和 XLSX 字节之前，先用有上限的 seek 查询判断能不能同步导出。
         var probe = mapper.selectExportBatch(q, Keywords.codes(q.getKeyword()), Keywords.codeContains(q.getKeyword()), watermark, null, null, 10_001);
         if (probe.size() > 10_000) throw new BizException("库存日志超过 10000 行，请创建后台导出任务");
         return new StockLogExportPlan(filters, watermark, FieldPermissions.has(FieldPermissions.COST), 10_000);

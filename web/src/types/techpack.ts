@@ -237,7 +237,7 @@ export interface BomItem {
 
 /** 保存时一行 BOM。单位不用传，后端取物料的库存单位存一份 */
 export interface BomItemForm {
-  /** Existing line identity; new local rows omit it. */
+  /** 已有行的 id；本地新加的行不带。 */
   id?: string
   part: string
   materialId: string

@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
-/** Two bounded export workers, separate short cache jobs and ten-second lease heartbeats. */
+/** 两个导出工作线程、单独的短清缓存任务，每 10 秒续一次租约。 */
 @Component
 public final class OutboxDispatcher implements SmartLifecycle, DrainParticipant {
     private static final Logger log = LoggerFactory.getLogger(OutboxDispatcher.class);
@@ -149,8 +149,8 @@ public final class OutboxDispatcher implements SmartLifecycle, DrainParticipant 
             log.info("outbox_completed id={} attempt={}", lease.id(), lease.attempt());
         } catch (Exception failure) {
             JobFailure safe = failure instanceof JobFailure known ? known : new JobFailure(JobFailure.Code.TEMPORARY_FAILURE, false);
-            // During forced shutdown, leave the durable lease for the next instance's reaper.
-            // Starting another JDBC round trip here would extend an already expired drain budget.
+            // 强制停机时把持久租约留给下一个实例去回收。
+            // 这里再发一次 JDBC 往返，会超出本来就用完的停机时间。
             failIfOwned(lease, safe);
             log.warn("Outbox task {} attempt {} ended: {}", lease.id(), lease.attempt(), safe.code());
         } catch (Error fatal) {
@@ -223,7 +223,7 @@ public final class OutboxDispatcher implements SmartLifecycle, DrainParticipant 
             try { workers.awaitTermination(Math.max(1, Math.min(TimeUnit.SECONDS.toNanos(3), deadline - System.nanoTime())), TimeUnit.NANOSECONDS); }
             catch (InterruptedException ignored) { interrupted = true; }
             if (!workers.isTerminated()) forceStop();
-            // No worker needs lease renewal now (or forceStop has revoked local ownership).
+            // 现在没有工作线程要续租（或者 forceStop 已经收回本机的所有权）。
             if (heartbeatSchedule != null) heartbeatSchedule.cancel(false);
             scheduler.shutdownNow();
             for (var executor : List.of(workers, scheduler)) {
@@ -243,8 +243,8 @@ public final class OutboxDispatcher implements SmartLifecycle, DrainParticipant 
         } finally { if (interrupted) Thread.currentThread().interrupt(); }
     }
     @Override public void stop(Runnable callback) { stop(); callback.run(); }
-    // Unlike final application refusal, this owner is restartable: start() creates new executors
-    // and resets admission. Pause it with Redis/other dependencies rather than consuming while they stop.
+    // 和应用最后的拒绝请求不同，这个可以重启：start() 新建线程池、重置准入。
+    // 跟着 Redis 等依赖一起暂停，不在它们停的时候还在消费。
     @Override public boolean isPauseable() { return true; }
     @Override public boolean isRunning() { return running; }
     @Override public int getPhase() { return Integer.MAX_VALUE - 2000; }

@@ -5,7 +5,7 @@ import { cleanQuery } from '@/utils/query'
 import { download } from '@/utils/request'
 
 export interface SeekResult<Row> { list: Row[]; nextCursor: string | null; hasMore: boolean }
-/** Cursor history belongs to one filter snapshot. Turning pages never performs COUNT/OFFSET. */
+/** 游标历史只属于一份筛选快照。翻页从不做 COUNT/OFFSET。 */
 export function useSeekTable<Row, Q extends object>(options: {
   query: Q
   fetch: (params: Partial<Q> & { cursor?: string; size: number }) => Promise<SeekResult<Row>>

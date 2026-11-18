@@ -5,7 +5,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.math.BigDecimal;
 import java.util.Objects;
 
-/** Independent business price domains; edit permission is still enforced by the original action. */
+/** 几个价格域各自独立；能不能改仍由原来的动作权限管。 */
 public final class FieldPermissions {
     public static final String COST = "techpack:cost:query";
     public static final String ORDER = "order:price:query";
@@ -23,7 +23,7 @@ public final class FieldPermissions {
         if (!has(permission)) throw new FieldPermissionDenied(label(permission));
     }
 
-    /** Hidden/null input preserves an existing amount; a new optional amount stays null. */
+    /** 没权限、没传的保留原值；新加的可选金额保持空。 */
     public static BigDecimal price(String permission, BigDecimal old, BigDecimal submitted) {
         if (has(permission)) return submitted;
         if (submitted != null && (old == null || old.compareTo(submitted) != 0))

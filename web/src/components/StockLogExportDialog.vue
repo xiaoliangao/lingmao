@@ -107,7 +107,7 @@ async function create() {
     const value = await exportJobApi.createStockLogs(draft.filters, {
       silent: true,
       idempotencyKey: draft.key,
-      // A matching receipt in another tab may already own the original key.
+      // 别的页签里内容相同的收据可能已经占用了原来的编号。
       recordWriteKey: (key) => { draft.key = key; return storeExportCreate(draft) },
     })
     if (!sameSession(epoch)) return

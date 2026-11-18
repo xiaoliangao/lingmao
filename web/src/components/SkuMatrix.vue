@@ -61,7 +61,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ 'update:modelValue': [value: Record<string, number>] }>()
 
-/** Each row tracks only its own reactive cells. A keystroke changes one column subtotal. */
+/** 每行只跟踪自己的响应式格子，敲一个键只改一列小计。 */
 const quantities = reactive<Record<string, number>>({})
 const columnTotals = reactive<Record<string, number>>({})
 const grandTotal = ref(0)

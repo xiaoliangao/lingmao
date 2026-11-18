@@ -30,14 +30,14 @@ export interface R<T> {
 export interface RequestOptions {
   silent?: boolean
   signal?: AbortSignal
-  /** The page's document company, never a mutable cross-tab default. */
+  /** 页面上单据的主体，不用跨页签可变的默认主体。 */
   companyId?: string
   idempotencyKey?: string
-  /** A recovery snapshot must record the actual key selected after matching any existing receipt. */
+  /** 恢复快照要记下核对已有收据之后实际用的编号。 */
   recordWriteKey?: (key: string) => boolean
-  /** Explicitly declared calculations such as BOM defaults, although transported as POST. */
+  /** 明确声明的计算接口（如 BOM 默认值），虽然用 POST 发。 */
   readOnly?: boolean
-  /** Internal wrapper context captured before an asynchronous company lookup. */
+  /** 内部用：异步查主体之前先记下的登录周期。 */
   authEpoch?: string
 }
 /** quietTransient：写操作遇到暂时故障先自己重试，拦截器不弹提示，最后由 performWrite 说一句 */
@@ -99,14 +99,14 @@ instance.interceptors.request.use((config) => {
 
 let refreshHandler: (() => Promise<string>) | undefined
 class SessionRefreshFailure extends Error {}
-/** Enabled only after the server cookie refresh contract is installed. */
+/** 服务端 Cookie 刷新接好之后才打开。 */
 export function configureSessionRefresh(handler: (() => Promise<string>) | undefined) { refreshHandler = handler }
 function assertRefreshSession(epoch: string) {
   if (sessionChanged() || sessionEpoch() !== epoch) throw new ApiError(409, '登录身份已变化，请重新打开本页')
 }
 const refreshOnce = singleFlight(async (failedToken: string, epoch: string) => {
   const rotate = async () => {
-    // A different tab may have completed its rotation while this tab waited for the lock.
+    // 等锁的时候，别的页签可能已经轮换完了。
     assertRefreshSession(epoch)
     if (getToken() !== failedToken) return getToken()
     if (!refreshHandler) throw new ApiError(401, '登录已过期，请重新登录')
@@ -119,7 +119,7 @@ const refreshOnce = singleFlight(async (failedToken: string, epoch: string) => {
     setToken(token, true)
     return token
   }
-  // On browsers without Web Locks the server's bounded successor replay window covers overlap.
+  // 浏览器没有 Web Locks 时，靠服务端有限的后继重放窗口兜住重叠。
   if (typeof navigator !== 'undefined' && navigator.locks?.request) {
     return navigator.locks.request(`lingmao:session-refresh:${epoch}`, { mode: 'exclusive' }, rotate)
   }
@@ -142,7 +142,7 @@ async function replayAfter401(response: AxiosResponse<unknown>, code: number): P
   if (!['get', 'head'].includes(method) && !config.readOnly && (!config.headers['Idempotency-Key'] || !canReplayWrite(method, config.url ?? ''))) return null
   config.replayed = true
   const sentToken = String(config.headers.Authorization ?? '').replace(/^Bearer /, '')
-  // A late 401 from the old access token must not rotate the newly issued cookie again.
+  // 旧 access token 迟到的 401 不能再轮换一次刚发的 Cookie。
   if (sentToken === getToken()) {
     try { await refreshOnce(sentToken, epoch) } catch (error) {
       if (error instanceof ApiError && error.code === 409) throw error
@@ -232,8 +232,8 @@ function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
   const retryAfter = Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 30) * 1000 : null
   const transient = [502, 503, 504].includes(body.code) || (body.code === 409 && retryAfter !== null)
   if (body.code === 401) {
-    // Concurrent failures share one logout/navigation. Reassigning location for each
-    // response aborts the login navigation and can leave the expired page visible.
+    // 同时失败的请求共用一次退出和跳转。每个响应都改一次 location，
+    // 会打断跳登录页，过期的页面可能一直留着。
     if (!redirectingToLogin) {
       clearToken()
       if (!location.pathname.startsWith('/login')) {
@@ -271,7 +271,7 @@ async function readBody(response: AxiosResponse<unknown>): Promise<R<unknown> | 
   return isR ? (data as R<unknown>) : null
 }
 
-/** Only shape defaults are normalized. Null monetary/cost blocks keep their meaning. */
+/** 只补齐结构上的默认值；金额、成本块是 null 时保留它的意思。 */
 function normalizePage<T>(data: T): T {
   if (data && typeof data === 'object' && 'list' in data && 'total' in data) {
     const page = data as { list: unknown; total: unknown }
@@ -417,7 +417,7 @@ function prepareRequest(config: RequestConfig): RequestConfig {
   const bodyCompany = payload && typeof payload === 'object' && 'companyId' in payload && typeof payload.companyId === 'string' ? payload.companyId : undefined
   const paramsCompany = config.params && typeof config.params.companyId === 'string' ? config.params.companyId as string : undefined
   const pageCompany = config.companyId ?? currentCompanyScope()
-  // Only these draft PUTs support an explicit company change. Every other route retains equality.
+  // 只有这几种草稿保存允许明确换主体，别的接口主体必须一致。
   const draftUpdate = (config.method ?? '').toLowerCase() === 'put' && /^\/api\/(orders|purchase-orders|production-orders)\/[1-9]\d*$/.test(config.url ?? '')
   const expectedCompany = draftUpdate && payload && typeof payload === 'object' && 'expectedCompanyId' in payload && typeof payload.expectedCompanyId === 'string' ? payload.expectedCompanyId : undefined
   if (expectedCompany && pageCompany && expectedCompany !== pageCompany) throw new ApiError(409, '已保存主体与页面装载时不一致，请重新核对主体')
@@ -426,11 +426,11 @@ function prepareRequest(config: RequestConfig): RequestConfig {
   const headers = { ...config.headers, ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}), ...(company ? { 'X-Company-Id': company } : {}) }
   return { ...config, authEpoch: epoch, companyId: company, headers, signal: config.signal ?? (readOnly ? currentReadScope()?.signal : undefined) }
 }
-/** Freeze JSON payloads before an API wrapper awaits a prerequisite; Vue proxies are supported. */
+/** 接口函数等前置请求之前，先把 JSON 请求体冻结下来；支持 Vue 代理对象。 */
 export function snapshotRequestBody<T>(body: T): T {
   return body === undefined ? body : JSON.parse(JSON.stringify(body)) as T
 }
-/** The same gate/controller lifecycle serves JSON, uploads and downloaded files. */
+/** JSON、上传、下载共用同一套闸门和取消控制。 */
 function transport<T>(prepared: RequestConfig, epoch: string): Promise<AxiosResponse<T>> {
   try {
     assertSession(prepared.url)

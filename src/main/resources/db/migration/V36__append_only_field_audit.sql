@@ -1,4 +1,4 @@
--- Expand only: new audit relation, nullable metadata and short bounded trigger installation.
+-- 只扩展：新建审计表、加可空的元数据列；装触发器的锁等待和执行时间都有上限。
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '30s';
 
@@ -24,11 +24,10 @@ CREATE INDEX idx_data_log_row ON sys_data_log(tenant_key,table_name,row_id,id DE
 CREATE INDEX idx_data_log_request ON sys_data_log(request_id,id DESC);
 CREATE INDEX idx_data_log_root ON sys_data_log(tenant_key,root_table,root_id,id DESC);
 CREATE INDEX idx_data_log_transaction ON sys_data_log(tenant_key,root_table,root_id,transaction_id,id DESC);
--- Replacement lookups execute once per saved child. A root/transaction index
--- alone repeatedly scans the growing DELETE/INSERT/REPLACE history of a large
--- BOM. Keep each proven old identity/parent in the searchable prefix instead.
--- TG_TABLE_NAME is a name-typed SPI parameter; put table_name after the identity
--- so its residual comparison cannot separate that prefix or the id ordering.
+-- 整组替换明细时，每存一行子表都要查一次旧行。只靠单头、事务的索引，
+-- 大 BOM 的 DELETE/INSERT/REPLACE 历史越长扫得越多，所以把核实过的旧行身份、父行放进可查的前缀。
+-- TG_TABLE_NAME 是 name 类型的 SPI 参数，table_name 放在身份列之后，
+-- 免得它的剩余比较把前缀和 id 排序拆开。
 CREATE INDEX idx_data_log_delete_bom_parent ON sys_data_log(
     tenant_key,root_table,root_id,transaction_id,((diff->'bom_item_id'->>'old')),id DESC,table_name)
     WHERE action='DELETE';
@@ -41,7 +40,7 @@ CREATE INDEX idx_data_log_deleted_identity ON sys_data_log(
 CREATE INDEX idx_data_log_replaced_bom_parent ON sys_data_log(
     tenant_key,root_table,root_id,transaction_id,row_id,id DESC)
     WHERE action='REPLACE' AND table_name='tp_bom_item';
-COMMENT ON TABLE sys_data_log IS 'Append-only field changes, committed or rolled back with the business mutation';
+COMMENT ON TABLE sys_data_log IS '只增不改的字段变更记录，随业务修改一起提交或回滚';
 ALTER TABLE sys_oper_log ALTER COLUMN trace_id TYPE VARCHAR(64);
 ALTER TABLE biz_doc_log ADD COLUMN request_id VARCHAR(64), ADD COLUMN client_ip VARCHAR(64);
 INSERT INTO sys_menu(parent_id,name,type,perms,sort,admin_only)
@@ -50,7 +49,7 @@ WHERE perms='system:log:list' AND NOT deleted;
 
 CREATE FUNCTION scm_reject_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    RAISE EXCEPTION USING ERRCODE='P2041', MESSAGE='Audit records are append-only';
+    RAISE EXCEPTION USING ERRCODE='P2041', MESSAGE='审计记录只能追加，不能修改或删除';
 END $$;
 CREATE TRIGGER data_log_append_only BEFORE UPDATE OR DELETE OR TRUNCATE ON sys_data_log
     FOR EACH STATEMENT EXECUTE FUNCTION scm_reject_audit_mutation();
@@ -58,8 +57,8 @@ CREATE TRIGGER oper_log_append_only BEFORE UPDATE OR DELETE OR TRUNCATE ON sys_o
     FOR EACH STATEMENT EXECUTE FUNCTION scm_reject_audit_mutation();
 CREATE TRIGGER doc_log_append_only BEFORE UPDATE OR TRUNCATE ON biz_doc_log
     FOR EACH STATEMENT EXECUTE FUNCTION scm_reject_audit_mutation();
--- Old application versions delete draft history as part of deleting the draft. Retain those rows
--- without aborting the old business transaction during an Expand-Contract rolling upgrade.
+-- 旧版本应用删草稿时会一起删它的操作记录。滚动升级期间保留这些行，
+-- 但不让旧版本的业务事务因此失败。
 CREATE FUNCTION scm_retain_doc_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$;
 CREATE TRIGGER doc_log_retain_delete BEFORE DELETE ON biz_doc_log
     FOR EACH ROW EXECUTE FUNCTION scm_retain_doc_history();
@@ -95,7 +94,7 @@ DECLARE
     hint_id TEXT;
     replaced_before JSONB;
 BEGIN
-    -- Passwords, session secrets and unbounded free-form import payloads never enter the audit store.
+    -- 密码、会话密钥、不限长度的导入原文从不进审计表。
     before_row := before_row - ARRAY['password','token','secret','app_secret','legacy_attrs','content','create_time','update_time','create_by','update_by'];
     after_row := after_row - ARRAY['password','token','secret','app_secret','legacy_attrs','content','create_time','update_time','create_by','update_by'];
     changes := scm_audit_diff(before_row,after_row);
@@ -130,8 +129,8 @@ BEGIN
         NULLIF(current_setting('scm.audit_ip',true),''),NULLIF(current_setting('scm.audit_request',true),''),
         NULLIF(current_setting('scm.audit_operation',true),''),txid_current());
 
-    -- Preserve physical events above. Add a semantic replacement only with a verified old identity,
-    -- never by assuming that a material/part/sequence is a unique logical business key.
+    -- 上面的物理事件照记。只有核实过旧行身份时才另记一条语义上的替换，
+    -- 不假设物料、部位、序号是唯一的业务键。
     IF TG_OP='INSERT' AND hints->>'rootTable'=root_table_name AND hints->>'rootId'=root_row_id::text THEN
         IF TG_TABLE_NAME IN ('tp_bom_item','tp_process','pur_order_item') THEN
             hint_id := hints->'tables'->TG_TABLE_NAME->>(actual_row->>'seq');
@@ -141,7 +140,7 @@ BEGIN
               WHERE tenant_key=namespace AND root_table=root_table_name AND root_id=root_row_id
                 AND transaction_id=txid_current() AND table_name='tp_bom_item' AND action='REPLACE'
                 AND row_id=(actual_row->>'bom_item_id')::bigint ORDER BY id DESC LIMIT 1;
-            -- These child dimensions have actual database UNIQUE constraints within one BOM row.
+            -- 这些子维度在同一个 BOM 行里有数据库真实的唯一约束。
             SELECT row_id INTO previous_id FROM sys_data_log
               WHERE tenant_key=namespace AND root_table=root_table_name AND root_id=root_row_id
                 AND transaction_id=txid_current() AND table_name=TG_TABLE_NAME AND action='DELETE'

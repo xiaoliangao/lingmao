@@ -5,8 +5,8 @@ public interface OutboxWork {
     String leaseToken();
     String requestId();
     int attempt();
-    /** Check cancellation, fencing and shutdown between bounded batches, never while holding a long business transaction. */
+    /** 两批之间检查：取消了没有、租约还归不归自己、是不是在停机；不在长业务事务里检查。 */
     void checkpoint();
-    /** The short final business update and message acknowledgement commit together under the fenced row lock. */
+    /** 最后那条短的业务更新和消息确认，在持有租约行锁时一起提交。 */
     void complete(Runnable businessUpdate);
 }

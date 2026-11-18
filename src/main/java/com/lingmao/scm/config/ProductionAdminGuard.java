@@ -9,7 +9,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/** An existing installation may remove its bootstrap password; a fresh production database may not. */
+/** 已有的安装可以去掉初始密码；全新的生产库不行。 */
 @Component @Profile("prod") @Order(Ordered.HIGHEST_PRECEDENCE)
 public class ProductionAdminGuard implements ApplicationRunner {
     private final JdbcTemplate jdbc; private final String password;

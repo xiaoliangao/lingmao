@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 public record SessionHousekeeping(JdbcTemplate jdbc, DeploymentNamespace namespace) implements HousekeepingTask {
     public SessionHousekeeping {
         jdbc = new JdbcTemplate(java.util.Objects.requireNonNull(jdbc.getDataSource()));
-        // Three bounded statements finish or fail within 30 seconds of the 60-second housekeeping lease.
+        // 三条语句各有超时，在 60 秒清理租约的前 30 秒内做完或失败。
         jdbc.setQueryTimeout(10);
     }
     @Override public String name() { return "session-cleanup"; }

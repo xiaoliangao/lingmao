@@ -23,7 +23,7 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
                 .eq(SysUser::getId, userId));
     }
 
-    /** A self-service change can only replace the exact hash checked against the old password. */
+    /** 自己改密码：只替换刚才用旧密码核对过的那个哈希。 */
     default int changePasswordIfCurrent(Long userId, String expectedHash, String encodedPassword) {
         return update(new SysUser(), new LambdaUpdateWrapper<SysUser>()
                 .set(SysUser::getPassword, encodedPassword)

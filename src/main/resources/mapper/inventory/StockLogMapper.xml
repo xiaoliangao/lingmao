@@ -26,7 +26,7 @@
         <if test="exportSnapshot">AND l.id &lt;= #{watermark}</if>
     </sql>
 
-    <!-- Shared literal keyword matching: list, seek and export must select identical rows. -->
+    <!-- 列表、游标翻页、导出共用的关键字条件，三处查出的行必须一样。 -->
     <sql id="keywordFilter">
         <if test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>

@@ -6,7 +6,7 @@ import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.UUID;
 
-/** Private export files are never mapped to public /files URLs; authorization remains in the job service. */
+/** 私有导出文件从不映射到公开的 /files 地址；权限由导出任务服务把关。 */
 public interface ExportFileStore {
     long MAX_BYTES = 250L * 1024 * 1024;
     ExportFileSlot allocate(long jobId, String leaseToken) throws IOException;

@@ -24,7 +24,7 @@ export function saveDraft(key: string, baseline: string, data: unknown): boolean
     return raw.length <= DRAFT_LIMIT && writeStorage(key, raw)
   } catch { return false }
 }
-/** Mutates existing reactive references, including nested arrays, without replacing a getter's shell. */
+/** 就地修改已有的响应式对象（含嵌套数组），不替换 getter 返回的外壳。 */
 const mapFields = new Set(['qtys', 'defects', 'remarks', 'sizeUsages', 'sizePrices', 'skuMap'])
 function safeValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(safeValue)

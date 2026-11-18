@@ -1,4 +1,4 @@
-/** SHA-256 fallback for supported intranet HTTP deployments without crypto.subtle. */
+/** 内网 HTTP 部署没有 crypto.subtle 时用的 SHA-256 备用实现。 */
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
   0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,

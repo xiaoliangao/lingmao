@@ -13,7 +13,7 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
-/** Content signatures and bounded Office ZIP inspection; browser MIME types are not evidence. */
+/** 按文件内容的特征和有上限的 Office ZIP 检查判断类型；浏览器给的 MIME 类型不作数。 */
 public final class UploadContent {
     private UploadContent() {}
     private static final long MAX_EXPANDED = 64L * 1024 * 1024;

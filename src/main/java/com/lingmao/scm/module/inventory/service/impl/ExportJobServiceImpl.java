@@ -69,7 +69,7 @@ public class ExportJobServiceImpl implements ExportJobService, OutboxHandler, Ho
     }
 
     private void reserve(long user) {
-        // A user row is a short shared admission lock; no remote I/O or export work happens in this transaction.
+        // 锁用户这一行作为很短的准入锁；这个事务里不做远程调用，也不做导出。
         jdbc.queryForObject("SELECT id FROM sys_user WHERE id=? AND NOT deleted AND status=1 FOR UPDATE", Long.class, user);
         Long count = jdbc.queryForObject("""
                 SELECT count(*) FROM sys_export_job j JOIN sys_outbox o ON o.id=j.outbox_id
@@ -101,8 +101,8 @@ public class ExportJobServiceImpl implements ExportJobService, OutboxHandler, Ho
 
     @Override @Transactional public ExportJobView retry(long id) {
         Job initial = owned(id); reserve(initial.owner());
-        // Re-read the current file generation after the same lock used by completion and expiry.
-        // Another retry may have finished while this request waited for the user's admission lock.
+        // 先拿和完成、过期同一把锁，再重读当前的文件版本：
+        // 等用户准入锁的时候，别的重推可能已经做完了。
         jdbc.queryForObject("SELECT id FROM sys_outbox WHERE tenant_key=? AND id=? FOR UPDATE", Long.class, namespace.tenant(), initial.outbox());
         Job job = owned(id);
         if (job.expires() != null && job.expires().isBefore(OffsetDateTime.now())) {

@@ -426,7 +426,7 @@ export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction
 
 /** 新建、改草稿的一行。保存是整体覆盖：没填的发 null */
 export interface PurchaseItemForm {
-  /** Existing line identity preserves its server-owned price when that field is omitted. */
+  /** 已有行的 id：没传价格时靠它保留服务端的价格。 */
   id?: string
   /** 从算料单生成的行原样带回（物料不能换，数量能改，算料单的已转采购跟着改）；手加的行是 null */
   calcItemId: string | null

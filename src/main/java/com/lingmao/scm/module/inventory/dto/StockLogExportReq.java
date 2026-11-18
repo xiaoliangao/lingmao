@@ -9,7 +9,7 @@ import lombok.Data;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Export filters deliberately have no pagination/cursor, owner or server-controlled fields. */
+/** 导出条件特意不带分页、游标、所属人和服务端控制的字段。 */
 @Data
 public class StockLogExportReq {
     @Positive(message = "仓库编号必须为正整数") private Long warehouseId;

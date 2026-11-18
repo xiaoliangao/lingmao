@@ -91,7 +91,7 @@ public class OutboxStore implements OutboxService {
 
     void complete(Lease lease, Runnable businessUpdate) {
         tx.executeWithoutResult(status -> {
-            // Fence the short commit against a reaper, another worker and a simultaneous cancellation.
+            // 这次短提交要挡住回收器、别的工作线程和同时发生的取消。
             var permitted = jdbc.queryForList("""
                     SELECT id FROM sys_outbox WHERE tenant_key=? AND id=? AND lease_token=?
                         AND status='PROCESSING' AND lease_until>clock_timestamp() AND NOT cancel_requested FOR UPDATE

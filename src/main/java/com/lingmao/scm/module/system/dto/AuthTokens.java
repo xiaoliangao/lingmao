@@ -1,4 +1,4 @@
 package com.lingmao.scm.module.system.dto;
 
-/** Internal transport: only accessToken is returned in JSON. */
+/** 只在服务端内部传；JSON 里只返回 accessToken。 */
 public record AuthTokens(String accessToken, String refreshToken, String browserToken, long maxAgeSeconds) { }

@@ -23,7 +23,7 @@ import type { PageParams } from './system'
 
 const docBase = '/api/inventory-docs'
 
-/** Source projection is authorized for warehouse users even when ordinary purchase/production detail is not. */
+/** 来源单的投影：仓管没有采购、生产详情的普通查看权限也能拿到。 */
 async function sourceOptions(url: string, data: InvDocFromSourceReq, options?: RequestOptions): Promise<RequestOptions> {
   const captured = { ...options, authEpoch: options?.authEpoch ?? sessionEpoch(), companyId: options?.companyId ?? currentCompanyScope() }
   if (captured.companyId) return captured

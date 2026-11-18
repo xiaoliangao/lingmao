@@ -6,7 +6,7 @@ import ch.qos.logback.core.LayoutBase;
 
 import java.time.Instant;
 
-/** The only console/file layout: structured bounded lines and stack locations without exception messages. */
+/** 控制台和文件唯一的日志格式：结构化、长度有上限，异常只记堆栈位置、不记消息。 */
 public final class SafeLogLayout extends LayoutBase<ILoggingEvent> {
     @Override public String doLayout(ILoggingEvent event) {
         StringBuilder out = new StringBuilder(512);

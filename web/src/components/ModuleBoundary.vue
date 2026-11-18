@@ -11,7 +11,7 @@ onErrorCaptured((error) => {
   if (error instanceof ApiError || isCancel(error)) return false
   trace.value = clientActionUuid()
   failed.value = true
-  // Error content can contain server data; only a local correlation id is logged.
+  // 错误内容可能带服务端数据，控制台只记一个本地关联编号。
   console.error(`Module render failure [${trace.value}]`)
   return false
 })

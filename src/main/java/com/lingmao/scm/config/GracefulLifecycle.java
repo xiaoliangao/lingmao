@@ -17,7 +17,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** First shutdown phase keeps the HTTP connector alive for failing readiness and bounded request drain. */
+/** 停机第一阶段保持 HTTP 连接器开着：就绪探针先报失败，再在限定时间内等请求做完。 */
 @Component
 public class GracefulLifecycle implements SmartLifecycle {
     private static final Logger log = LoggerFactory.getLogger(GracefulLifecycle.class);
@@ -63,8 +63,8 @@ public class GracefulLifecycle implements SmartLifecycle {
         Thread.setDefaultUncaughtExceptionHandler(previous);
     }
     @Override public void stop(Runnable callback) { try { stop(); } finally { callback.run(); } }
-    // Spring 7 pauses cached/live contexts without closing them. Refusal and participant drain
-    // are irreversible final-shutdown actions, so only a real context close may invoke them.
+    // Spring 7 会暂停缓存的、在用的上下文而不关闭。拒绝新请求、等参与者收尾都不能撤回，
+    // 只能在真正关闭上下文时做。
     @Override public boolean isPauseable() { return false; }
     @Override public boolean isRunning() { return running; }
     @Override public int getPhase() { return Integer.MAX_VALUE; }

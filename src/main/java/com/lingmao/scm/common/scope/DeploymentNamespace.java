@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
-/** Namespace comes only from deployment configuration, never from a request header. */
+/** 命名空间只来自部署配置，不取请求头。 */
 @Component
 public final class DeploymentNamespace {
     private final String tenant;
@@ -20,7 +20,7 @@ public final class DeploymentNamespace {
 
     public String tenant() { return tenant; }
 
-    /** Master dictionaries are shared across companies in this deployment. The scope is explicit. */
+    /** 主数据字典在这套部署里各主体共用，范围明确写出来。 */
     public String sharedKey(String domain, String value) {
         if (domain == null || !domain.matches("[a-z0-9-]{1,40}")) throw new IllegalArgumentException("Invalid key domain");
         if (value == null || value.length() > 512) throw new IllegalArgumentException("Invalid key value");

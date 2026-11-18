@@ -2,7 +2,7 @@ import { computed } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { FIELD_PERMISSIONS } from '@/utils/fieldAccess'
 
-/** Read visibility also governs editing; the server remains the authorization boundary. */
+/** 能不能看也决定能不能改；最终由服务端把关。 */
 export function useFieldAccess() {
   const user = useUserStore()
   return {

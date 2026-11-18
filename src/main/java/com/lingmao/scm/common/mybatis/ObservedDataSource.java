@@ -15,7 +15,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Locale;
 
-/** Observes real JDBC execution without parameter values; audit identity is reset on every pool borrow. */
+/** 观察真实的 JDBC 执行，不记参数值；每次从连接池借连接都重置审计身份。 */
 public final class ObservedDataSource extends DelegatingDataSource implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ObservedDataSource.class);
     private final long slowMillis;
@@ -27,11 +27,11 @@ public final class ObservedDataSource extends DelegatingDataSource implements Au
     private Connection observe(Connection connection) throws SQLException {
         try {
             Integer networkMillis = JdbcNetworkDeadline.currentMillis();
-            // Hikari tracks this setter and restores the pool's original value on close.
-            // Apply it before the audit-context SQL, so even the first round trip is bounded.
+            // Hikari 会记下这个设置，连接还回池时恢复原值。
+            // 在设置审计上下文的 SQL 之前就设好，第一次往返也有超时。
             if (networkMillis != null) connection.setNetworkTimeout(Runnable::run, networkMillis);
             AuditContext context = AuditContext.current();
-            // Session settings are overwritten even for anonymous/system work. No pooled identity can leak.
+            // 匿名、系统任务也一样覆盖会话设置，池里的连接不会带着上一个人的身份。
             try (PreparedStatement s = connection.prepareStatement("SELECT set_config('scm.audit_actor',?,false),"
                     + "set_config('scm.audit_ip',?,false),set_config('scm.audit_request',?,false),set_config('scm.audit_operation',?,false),"
                     + "set_config('scm.audit_replacements',?,false)")) {

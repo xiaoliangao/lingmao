@@ -1,6 +1,6 @@
 import { readStorage, writeStorage } from './safeStorage.ts'
 const KEY = 'lingmao-chunk-recovery'
-/** One automatic reload per tab session; repeated failures keep a usable update banner. */
+/** 每个页签会话只自动刷新一次；再失败就留着能用的更新提示条。 */
 export function claimChunkReload(): boolean {
   if (readStorage(KEY, true) !== null) return false
   return writeStorage(KEY, 'attempted', true)

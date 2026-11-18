@@ -9,7 +9,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
-/** Bounded sliding windows use Redis's clock, so different application instances make one decision. */
+/** 滑动窗口有上限，用 Redis 的时钟，多个应用实例做同一个判断。 */
 @Component
 public class RedisRateLimiter implements SharedRateLimiter {
     private static final DefaultRedisScript<Long> ACQUIRE = new DefaultRedisScript<>("""

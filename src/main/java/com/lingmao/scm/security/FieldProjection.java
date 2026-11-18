@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** The HTTP tree is projected; cached DTOs, database snapshots and server calculations are never mutated. */
+/** 只裁剪 HTTP 返回的树；缓存里的 DTO、数据库快照和服务端计算都不改。 */
 public class FieldProjection {
     private static final Set<String> COST = Set.of("refPrice", "refCost", "estCost", "unitCost", "unitCostPackId", "unitCostStage",
             "estAmount", "convertedAmount", "devCost", "devAmount", "buyPrice", "buyPriceDefault", "laborTotal", "ratio",
@@ -38,8 +38,8 @@ public class FieldProjection {
 
     private void visit(Object source, JsonNode node, String inherited, boolean supplier, String path) {
         if (node == null || node.isNull()) return;
-        // Audit rows have already been projected using the trusted persisted domain. A generic
-        // system-controller COST pass would incorrectly strip ORDER-only or PRODUCTION-only history.
+        // 审计行已经按库里存的价格域投影过了。再按系统 controller 统一裁一次 COST，
+        // 会把只属于 ORDER 或 PRODUCTION 的历史错删掉。
         if (source instanceof com.lingmao.scm.module.system.dto.DataLogView) return;
         if (node instanceof ArrayNode array) {
             List<?> values = source instanceof Collection<?> c ? new ArrayList<>(c) : List.of();
@@ -50,7 +50,7 @@ public class FieldProjection {
         String typeName = source == null ? "" : source.getClass().getName();
         String permission = domain(typeName, inherited);
         supplier |= typeName.contains(".supplier.");
-        // Archive domains come from the actual server row/PriceRef, never the caller's query parameter.
+        // 价格档案的域取自真实的数据行或 PriceRef，不取调用方的查询参数。
         if (typeName.startsWith("com.lingmao.scm.module.price.")) {
             Object type = property(source, "type");
             permission = "PROCESS".equals(String.valueOf(type)) ? FieldPermissions.PRODUCTION : FieldPermissions.COST;
@@ -99,7 +99,7 @@ public class FieldProjection {
         if (COST.contains(name) || name.contains("成本") || name.contains("倍率") || name.equals("其他价格")) return !FieldPermissions.has(FieldPermissions.COST);
         if (MONEY.contains(name) || name.contains("单价") || name.contains("金额") || name.contains("报价") || name.contains("参考价") || name.contains("底价"))
             return !FieldPermissions.has(permission);
-        // A material/BOM snapshot stays cost protected even inside an order/production envelope.
+        // 物料、BOM 的快照即使包在订单、生产的返回里，也按成本权限保护。
         if (path.contains("/legacyAttrs") && (name.contains("财务") || name.contains("未税"))) return !FieldPermissions.has(FieldPermissions.COST);
         return false;
     }

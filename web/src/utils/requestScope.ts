@@ -1,4 +1,4 @@
-/** A synchronous scope: API wrappers must start requests before returning their Promise. */
+/** 同步作用域：接口函数要在返回 Promise 之前发出请求。 */
 export interface ReadScope { signal: AbortSignal }
 let scope: ReadScope | undefined
 export function withReadScope<T>(value: ReadScope, run: () => T): T {
@@ -8,7 +8,7 @@ export function withReadScope<T>(value: ReadScope, run: () => T): T {
 }
 export function currentReadScope(): ReadScope | undefined { return scope }
 
-/** Aborts transport and rejects stale results even when an adapter ignores AbortSignal. */
+/** 中止请求，并丢掉过期的结果（即使适配器不理 AbortSignal）。 */
 export function createLatestRequest() {
   let controller: AbortController | undefined
   let sequence = 0

@@ -34,10 +34,10 @@ export function onSessionChanged(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
-/** A page keeps its own session. Another tab cannot silently change the identity of a write. */
+/** 页面用自己的会话。别的页签不能悄悄改掉一次写操作的身份。 */
 export function getToken(): string { return stale ? '' : session.token }
 export function sessionEpoch(): string { return session.epoch }
-/** Persistence ownership only; authorization is always enforced by the server. */
+/** 只用来区分本机存储归谁；权限一律由服务端判断。 */
 export function sessionIdentity(): string { return session.subject ? `user:${session.subject}` : `session:${session.epoch}` }
 export function setSessionSubject(subject: string) {
   session = { ...session, subject }

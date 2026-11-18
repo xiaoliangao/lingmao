@@ -20,7 +20,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
-/** Local coalescing plus a Redis lease protects multiple application instances. */
+/** 本机合并并发请求，加上 Redis 租约，多个应用实例也只加载一次。 */
 @Component
 public final class RedisSharedCache implements SharedCache {
     private static final DefaultRedisScript<Long> PUBLISH = new DefaultRedisScript<>("""
@@ -55,7 +55,7 @@ public final class RedisSharedCache implements SharedCache {
     @Override
     public String getOrLoad(String key, Duration ttl, Duration emptyTtl, Supplier<String> loader) {
         checkKey(key);
-        // A loader inside a write transaction may see uncommitted data. Do not publish or join it.
+        // 写事务里的加载器可能看到没提交的数据，不发布、也不加入别人的加载。
         if (TransactionSynchronizationManager.isActualTransactionActive()) return loader.get();
         CompletableFuture<String> mine = new CompletableFuture<>();
         CompletableFuture<String> active = flights.putIfAbsent(key, mine);
@@ -91,7 +91,7 @@ public final class RedisSharedCache implements SharedCache {
                     if (value == null) value = "null";
                     Duration lifetime = "null".equals(value) || "[]".equals(value) ? emptyTtl : ttl;
                     long millis = jitter(lifetime);
-                    // If an update committed while the loader ran, the old result must not be reinserted.
+                    // 加载期间如果有更新提交了，旧结果不能再写回去。
                     try {
                         redis.execute(PUBLISH, List.of(key, versionKey, lock), generation == null ? "0" : generation,
                                 value, Long.toString(millis), owner);
@@ -158,8 +158,8 @@ public final class RedisSharedCache implements SharedCache {
         checkKey(key);
         try { redis.execute(INVALIDATE, List.of(key, key + ":generation")); }
         catch (org.springframework.dao.DataAccessException unavailable) {
-            // DEL is allowed under noeviction/OOM. Removing both value and owner lease also fences an older loader.
-            // A disconnected Redis still throws, leaving the committed outbox message for durable retry.
+            // noeviction、内存满时也允许 DEL。值和加载租约一起删，也挡住更早的加载器。
+            // Redis 断了还是会抛异常，已提交的发件箱消息留着，之后重试。
             redis.delete(List.of(key, key + ":fill"));
             warnDegraded();
         }

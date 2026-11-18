@@ -272,7 +272,7 @@ public class MaterialImport {
 
     // ---------- 导入 ----------
 
-    /** Parse/validate first; colors, materials, SKUs, sequence and the successful hash receipt commit together. */
+    /** 先解析、校验；颜色、物料、SKU、流水号和成功回执一起提交。 */
     public ImportResult importFile(MultipartFile file) {
         return imports.execute("material", "global", "basic:material:import", file, Map.of(), () -> parseFile(file), plan -> {
             write(plan); return plan.result;

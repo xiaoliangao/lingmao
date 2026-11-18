@@ -1,4 +1,4 @@
-/** Server-backed idempotent POST routes, coordinated with A1. A UUID header alone is insufficient. */
+/** 服务端支持幂等的 POST 接口，和后端的 @IdempotentCreate 对齐。光有 UUID 请求头不够。 */
 const CREATED_RESOURCES = new Set([
   '/api/orders', '/api/order-changes', '/api/mrp-calcs', '/api/purchase-orders',
   '/api/purchase-orders/from-mrp', '/api/purchase-orders/from-reorder',

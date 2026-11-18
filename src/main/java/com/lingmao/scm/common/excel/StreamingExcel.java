@@ -10,13 +10,13 @@ import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** A valid XLSX emitted as rows arrive, without an in-memory workbook or a full temporary worksheet. */
+/** 边取数边写出合法的 XLSX，不在内存里建工作簿，也不落整张临时工作表。 */
 public final class StreamingExcel {
     private StreamingExcel() {}
     @FunctionalInterface public interface Producer<R> { void write(Sink<R> sink) throws IOException; }
     public interface Sink<R> {
         void row(R row) throws IOException;
-        /** Flush through the ZIP deflater and socket before the producer fetches its next database batch. */
+        /** 把压缩器和网络连接里的数据冲出去，再去数据库取下一批。 */
         void flush() throws IOException;
         long rows();
     }

@@ -1,6 +1,6 @@
 package com.lingmao.scm.common.log;
 
-/** Authenticated actor data travels with a borrowed database connection, never with client JSON. */
+/** 登录用户的信息随借出的数据库连接走，从不取自客户端 JSON。 */
 public record AuditContext(String actor, String ip, String requestId, String operation) {
     private static final ThreadLocal<AuditContext> CURRENT = new ThreadLocal<>();
     private static final ThreadLocal<String> REPLACEMENTS = new ThreadLocal<>();

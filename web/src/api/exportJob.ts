@@ -12,6 +12,6 @@ export const exportJobApi = {
   get: (id: string, options?: RequestOptions) => http.get<ExportJobView>(jobPath(id), undefined, options),
   cancel: (id: string, options?: RequestOptions) => http.post<ExportJobView>(`${jobPath(id)}/cancel`, {}, options),
   retry: (id: string, options?: RequestOptions) => http.post<ExportJobView>(`${jobPath(id)}/retry`, {}, options),
-  // Never navigate a server-provided downloadUrl: this authenticated same-origin route is fixed.
+  // 不跳转服务端给的 downloadUrl：走固定的、要登录的同源地址。
   download: (id: string, options?: RequestOptions) => download(`${jobPath(id)}/file`, undefined, '库存日志.xlsx', options),
 }

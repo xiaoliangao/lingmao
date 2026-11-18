@@ -22,7 +22,7 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
 
-/** One locked family row atomically rotates cookies and the registered access token. */
+/** 锁住一行会话族，原子地轮换 Cookie 和登记的 access token。 */
 @Service
 public class RefreshSessionService {
     private static final Duration LIFETIME = Duration.ofDays(7);
@@ -90,7 +90,7 @@ public class RefreshSessionService {
         if (versions.isEmpty() || versions.getFirst() != row.version) throw new AuthRejected();
 
         if (!same(presented, row.tokenHash)) {
-            // A fixed, browser-bound grace only replays the already committed successor. Never extend it.
+            // 固定的、绑定浏览器的宽限期只重放已提交的后继令牌，绝不延长。
             if (row.graceUntil == null || !now.isBefore(row.graceUntil.toInstant()) || row.replays >= 2)
                 throw new AuthRejected();
             jdbc.update("UPDATE sys_refresh_session SET grace_replays=grace_replays+1 WHERE id=?", row.id);

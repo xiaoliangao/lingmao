@@ -460,8 +460,8 @@ public class OrderChangeServiceImpl implements OrderChangeService {
                 if (newPrices.containsKey(styleId)) {
                     ci.setToPrice(newPrices.get(styleId));
                 } else if (!com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.ORDER)) {
-                    // Restoring quantity is not a financial decision. Keep this SKU's own old
-                    // quote, including null; a genuinely new optional quote remains unfilled.
+                    // 恢复数量不是价格决定。保留这个 SKU 自己原来的报价（空也保留）；
+                    // 真正新加的、可选的报价仍然空着。
                     ci.setToPrice(row == null ? null : row.getPrice());
                 } else {
                     if (infos == null) infos = styleService.orderInfos(styles);

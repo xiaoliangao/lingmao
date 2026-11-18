@@ -11,8 +11,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.List;
 
 /**
- * Account failures are namespaced and updated atomically. Five failures trigger 15/30/60 minute cooldowns;
- * successful authentication or an administrator reset clears them. A separate IP window protects the endpoint.
+ * 账号失败次数按命名空间原子更新。连续 5 次失败依次冷却 15、30、60 分钟；
+ * 登录成功或管理员重置后清零。另有按 IP 的窗口保护登录接口。
  */
 @Component
 @RequiredArgsConstructor
@@ -75,7 +75,7 @@ public class LoginFailCounter {
     }
 
     /**
-     * Repair legacy keys created before the atomic counter was installed, so they cannot lock an account forever.
+     * 修复装原子计数之前留下的旧键，免得它们把账号永远锁住。
      */
     private void repairExpire(String key) {
         if (Long.valueOf(NO_EXPIRE).equals(redis.getExpire(key))) {

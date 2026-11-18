@@ -1,8 +1,8 @@
-/** keyCode 229 covers older IME implementations that do not populate isComposing. */
+/** keyCode 229 照顾不填 isComposing 的老输入法。 */
 export function isComposing(event: Pick<KeyboardEvent, 'isComposing' | 'keyCode'>): boolean {
   return event.isComposing || event.keyCode === 229
 }
-/** Keep the IME's keyboard default intact; stop business handlers and composing form submits separately. */
+/** 不动输入法的键盘默认行为；分别拦下业务快捷键和输入中按回车提交表单。 */
 export function installImeGuard(target: Document): () => void {
   let composing = false
   let committingEnter = false
@@ -21,7 +21,7 @@ export function installImeGuard(target: Document): () => void {
     if ((enter || event.keyCode === 229) && (isComposing(event) || composing || (event.type === 'keyup' && suppressEnterUp))) {
       if (event.type === 'keydown' && enter) { committingEnter = true; suppressEnterUp = true }
       event.stopImmediatePropagation()
-      // Do not preventDefault: the IME still needs to commit the selected word.
+      // 不 preventDefault：输入法还要靠它把选中的词上屏。
     }
     if (event.type === 'keyup' && enter) { committingEnter = false; suppressEnterUp = false }
   }

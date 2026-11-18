@@ -36,7 +36,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
   const route = useRoute()
   const instance = getCurrentInstance()
   const component = (instance?.type as { __name?: string }).__name ?? 'form'
-  // Separate multiple guards in one component while keeping a stable key across reloads.
+  // 同一个组件里有几个守卫时分开记，重新加载后键不变。
   const owner = instance as (typeof instance & { draftCount?: number })
   const index = owner ? (owner.draftCount = (owner.draftCount ?? 0) + 1) : 1
   const draftKey = `lingmao-draft:${location.host}:${useUserStore().info?.id ?? 'anonymous'}:${route.path}:${component}:${index}`
