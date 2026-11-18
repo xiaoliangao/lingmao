@@ -18,12 +18,14 @@ import com.lingmao.scm.module.style.dto.StyleSkuSaveReq;
 import com.lingmao.scm.module.style.dto.StyleSkuVO;
 import com.lingmao.scm.module.style.entity.StyleStatus;
 import com.lingmao.scm.module.style.service.StyleService;
+import com.lingmao.scm.module.system.cache.DictCache;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -72,6 +74,23 @@ class StyleServiceImplIT {
     private FileUrlSigner signer;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private DictCache dictCache;
+
+    /** 品牌是迁移要求为空的共享字典；只清理本例创建的行，不能让类执行顺序影响预置数据检查。 */
+    private final List<Long> fixtureBrandIds = new ArrayList<>();
+
+    @AfterEach
+    void removeFixtureBrands() {
+        try {
+            for (Long id : fixtureBrandIds) {
+                // Service.delete 是逻辑删除；夹具应物理清理，SchemaConventionsIT 要核对所有品牌行均未预置。
+                jdbcTemplate.update("DELETE FROM sys_dict_data WHERE id = ? AND type_code = 'brand'", id);
+            }
+        } finally {
+            if (!fixtureBrandIds.isEmpty()) dictCache.evictAfterCommit("brand");
+        }
+    }
 
     /**
      * 规则（RFC 005 §10）：同一设计师同一天两个人同时建款，sys_serial 这一行的锁让他们排队，款号不重复、连着号；
@@ -244,7 +263,10 @@ class StyleServiceImplIT {
                 {"款号", "款式名称", "大类", "品牌", "品类", "年份", "季节", "尺码组", "颜色", "默认加工厂", "版型库单号"},
                 {code, "导入测试款", "服饰", brand, f.leafPath(), "2027", "春季", f.sizeGroupName(), f.colorCode(), shortName, "BX-01"}});
 
-        assertThat(styleService.importExcel(new MockMultipartFile("file", "款式.xlsx", Excel.CONTENT_TYPE, bytes)).total()).isEqualTo(1);
+        var imported = styleService.importExcel(new MockMultipartFile("file", "款式.xlsx", Excel.CONTENT_TYPE, bytes));
+        fixtureBrandIds.add(jdbcTemplate.queryForObject(
+                "SELECT id FROM sys_dict_data WHERE type_code = 'brand' AND label = ? AND deleted = false", Long.class, brand));
+        assertThat(imported.total()).isEqualTo(1);
 
         long id = jdbcTemplate.queryForObject("SELECT id FROM sty_style WHERE code = ?", Long.class, code);
         assertThat(jdbcTemplate.queryForObject("SELECT status FROM sty_style WHERE id = ?", String.class, id))
@@ -307,7 +329,7 @@ class StyleServiceImplIT {
         brand.setTypeCode("brand");
         brand.setLabel("IT品牌" + suffix);
         brand.setValue("ITB" + suffix.toUpperCase());
-        dictDataService.create(brand);
+        fixtureBrandIds.add(dictDataService.create(brand));
         return new Fixture(parentId, leafId, leafName, parentName + "/" + leafName, groupId, groupName, designerId, designerName,
                 designerNo, brand.getValue(), brand.getLabel(), colorId, colorCode);
     }

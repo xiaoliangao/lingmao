@@ -746,7 +746,8 @@ public class MrpServiceImpl implements MrpService {
     }
 
     /**
-     * 确认（§3.2.7）：按 SKU 加咨询锁排队，共享锁住要用的在途所在的采购单，用最新的数再算每行的可用库存、可用在途，
+     * 确认（§3.2.7）：按 SKU 加咨询锁排队，再按 ID 排序排他锁住在途及待改挂行的采购头，避免共享锁升级和头/行反序。
+     * 用最新的数再算每行的可用库存、可用在途，
      * 对不上 1000（data 是哪几行怎么变了）。过了改成已确认；是重新算料出来的，关上一张、把上一张生成的采购行转过来。
      * 调之前已经锁住这张和上一张
      */
@@ -758,10 +759,21 @@ public class MrpServiceImpl implements MrpService {
             calcMapper.lockSkus(skuIds);
         }
         List<MrpCalcTransit> uses = transitMapper.selectByCalc(c.getId());
+        Set<Long> poIds = new TreeSet<>();
         if (!uses.isEmpty()) {
-            Set<Long> poIds = poItemMapper.selectLineRefs(uses.stream().map(MrpCalcTransit::getPurchaseItemId).collect(Collectors.toSet()))
-                    .stream().map(PurchaseOrderItemMapper.LineRef::poId).collect(Collectors.toCollection(TreeSet::new));
-            poMapper.lockShared(poIds);
+            poItemMapper.selectLineRefs(uses.stream().map(MrpCalcTransit::getPurchaseItemId).collect(Collectors.toSet()))
+                    .stream().map(PurchaseOrderItemMapper.LineRef::poId).forEach(poIds::add);
+        }
+        if (c.getPrevCalcId() != null) {
+            List<Long> moving = itemMapper.selectByCalc(c.getPrevCalcId()).stream()
+                    .filter(i -> i.getBlock() == MrpBlock.PURCHASE && skuIds.contains(i.getMaterialSkuId()))
+                    .map(MrpCalcItem::getId).toList();
+            if (!moving.isEmpty()) {
+                poIds.addAll(poItemMapper.selectPoIdsOfCalcItems(moving));
+            }
+        }
+        if (!poIds.isEmpty()) {
+            poMapper.lockForUpdate(poIds);
         }
         Set<Long> excluded = excludedOf(c);
         SupplyBook book = supplyLoader.load(skuIds, excluded);

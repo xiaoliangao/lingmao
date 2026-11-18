@@ -4,6 +4,7 @@ import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.basic.dto.ColorOption;
 import com.lingmao.scm.module.biz.dto.DocRef;
@@ -42,7 +43,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -176,7 +176,8 @@ public class ScheduleServiceImpl implements ScheduleService {
                 if (l == null || l.styleId() != b.getStyleId() || !seen.add(i.getOrderItemId())) {
                     throw new BizException(400, "第 " + (n + 1) + " 块的明细和订单对不上，请刷新后再排");
                 }
-                thisQty.merge(l.id(), i.getQty(), Integer::sum);
+                long requested = thisQty.getOrDefault(l.id(), 0).longValue() + i.getQty();
+                thisQty.put(l.id(), NumericLimits.pieces(requested, "第 " + (n + 1) + " 块同一 SKU 累计排单："));
             }
             if (infos.get(b.getStyleId()) == null) {
                 throw new BizException(400, "第 " + (n + 1) + " 块的款式不存在了，请刷新后再排");
@@ -187,6 +188,8 @@ public class ScheduleServiceImpl implements ScheduleService {
             throw new BizException(400, "没有要排的件数");
         }
         checkOver(thisQty, lines, infos);
+        NumericLimits.pieces(o.items().stream().mapToLong(OrderForProduction.Line::scheduledQty).sum()
+                + thisQty.values().stream().mapToLong(Integer::longValue).sum(), "需求订单累计已排：");
 
         Map<Long, SupplierRef> factories = supplierService.refs(blocks.stream().map(b -> b.req().getFactoryId()).collect(Collectors.toSet()));
         Map<Long, List<String>> categories = supplierService.categories(factories.keySet());
@@ -215,7 +218,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             if (packId == null) {
                 problems.add(where + "订单还没锁定这个款的生产 BOM");
             }
-            BigDecimal price = b.getUnitPrice() == null ? null : Num.price(b.getUnitPrice());
+            BigDecimal price = NumericLimits.price(b.getUnitPrice(), where);
             PriceRef archive = priceService.currentProcess(f.id(), b.getStyleId(), mode, today).orElse(null);
             boolean changed = archive != null && price != null && price.compareTo(archive.price()) != 0;
             String reason = changed ? ProdTexts.blankToNull(b.getPriceChangeReason()) : null;
@@ -252,9 +255,9 @@ public class ScheduleServiceImpl implements ScheduleService {
             p.setTerms(ProdTexts.blankToNull(b.getTerms()));
             p.setRemark(ProdTexts.blankToNull(b.getRemark()));
             p.setStatus(DRAFT);
-            int total = blk.items().stream().mapToInt(ScheduleReq.Item::getQty).sum();
+            int total = NumericLimits.pieces(blk.items().stream().mapToLong(ScheduleReq.Item::getQty).sum(), where);
             p.setTotalQty(total);
-            p.setTotalAmount(price == null ? null : Num.amount(BigDecimal.valueOf(total), price));
+            p.setTotalAmount(NumericLimits.amount(price == null ? null : Num.amount(BigDecimal.valueOf(total), price), where));
             heads.add(p);
         }
         if (!problems.isEmpty()) {
@@ -262,7 +265,6 @@ public class ScheduleServiceImpl implements ScheduleService {
         }
 
         List<DocRef> out = new ArrayList<>();
-        Map<Long, Integer> scheduled = new HashMap<>();
         List<String> created = new ArrayList<>();
         Map<Long, String> names = userService.nicknames(heads.stream().map(ProductionOrder::getMerchId).collect(Collectors.toSet()));
         for (int n = 0; n < blocks.size(); n++) {
@@ -280,7 +282,6 @@ public class ScheduleServiceImpl implements ScheduleService {
                 item.setStyleSkuId(lines.get(r.getOrderItemId()).styleSkuId());
                 item.setQty(r.getQty());
                 items.add(item);
-                scheduled.merge(r.getOrderItemId(), r.getQty(), Integer::sum);
             }
             itemMapper.insert(items);
             MaterialIssueStatus issue = support.initialIssueStatus(p.getId());
@@ -292,7 +293,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             out.add(DocRef.of(BizType.PRODUCTION_ORDER, p.getId(), p.getNo(), DRAFT, ProductionRules.STATUS, p.getMerchId())
                     .withKind(p.getKind().name()).withOwnerName(names.get(p.getMerchId())));
         }
-        orderService.addScheduled(scheduled);
+        orderService.addScheduled(thisQty);
         docLogService.add(BizType.ORDER, o.id(), "schedule", "生成 " + String.join("、", created));
         return out;
     }
@@ -306,8 +307,9 @@ public class ScheduleServiceImpl implements ScheduleService {
         List<ScheduleOverRow> over = new ArrayList<>();
         thisQty.forEach((lineId, qty) -> {
             OrderForProduction.Line l = lines.get(lineId);
+            int next = NumericLimits.pieces((long) l.scheduledQty() + qty, "订单行 " + lineId + " 累计已排：");
             int max = ProductionRules.maxPieces(l.qty());
-            if (l.scheduledQty() + qty > max) {
+            if (next > max) {
                 String sku = infos.get(l.styleId()).skus().stream().filter(s -> s.id() == l.styleSkuId())
                         .map(StyleOrderInfo.Sku::code).findFirst().orElse(String.valueOf(l.styleSkuId()));
                 int left = Math.max(max - l.scheduledQty(), 0);

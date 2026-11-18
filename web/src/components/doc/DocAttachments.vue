@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, type UploadRequestOptions } from 'element-plus'
+import { provideUploadScope, useUploadScope } from '@/composables/usePendingUploads'
 import { fileApi } from '@/api/system'
 import type { Attachment } from '@/types/biz'
 import type { FileVO } from '@/types/system'
@@ -37,6 +38,9 @@ const emit = defineEmits<{
   changed: []
 }>()
 
+const uploads = props.save ? provideUploadScope() : useUploadScope()
+let mounted = true
+onBeforeUnmount(() => { mounted = false })
 const remoteFiles = ref<Attachment[]>([])
 const uploading = ref(0)
 const loading = ref(false)
@@ -89,24 +93,23 @@ async function applyList(next: FileVO[]) {
  */
 let queue: Promise<void> = Promise.resolve()
 function enqueue(change: (current: FileVO[]) => FileVO[]) {
-  queue = queue.then(() => applyList(change(list.value))).catch(() => {})
-  return queue
+  const work = queue.then(() => applyList(change(list.value)))
+  queue = work.catch(() => {})
+  return work
 }
 
-/** 这一批里已经传完、还没存的 */
-const uploaded: FileVO[] = []
-
 async function handleUpload(options: UploadRequestOptions) {
+  const task = uploads.begin()
   uploading.value++
+  let success = false
   try {
-    uploaded.push(await fileApi.upload(options.file))
+    const file = await fileApi.upload(options.file)
+    if (!mounted || !task.current()) return
+    await enqueue((current) => task.current() ? [...current, file] : current)
+    success = task.current()
   } finally {
     uploading.value--
-    // 这一批都传完了（成功的）一起存一次
-    if (uploading.value === 0 && uploaded.length) {
-      const batch = uploaded.splice(0)
-      await enqueue((current) => [...current, ...batch])
-    }
+    task.finish(success)
   }
 }
 

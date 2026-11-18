@@ -12,7 +12,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import UserSelect from '@/components/UserSelect.vue'
 import DocAttachments from '@/components/doc/DocAttachments.vue'
 import MoreActions, { type MoreItem } from '@/components/doc/MoreActions.vue'
-import { isItem, runDocAction } from '@/components/doc/docUtils'
+import { isItem, reloadOnConflict, runDocAction } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useTabsStore } from '@/stores/tabs'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
@@ -30,7 +30,6 @@ import {
 import type { StylePickRow } from '@/types/style'
 import type { FileVO } from '@/types/system'
 import { formatDate, formatDateTime, formatQty } from '@/utils/format'
-import { ErrorCode } from '@/utils/errorCodes'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
 
@@ -40,7 +39,7 @@ import { confirmRemove, orNull } from '@/views/basic/common'
  * - 页头：导出盘点表、导回实盘数、保存、提交、审核过账 / 驳回；加物料、没填的按账面数填、重新取账面数、撤回、反审核、删除在"更多"里
  * - 有没保存的改动时点提交、加物料、重新取账面数：先存再做
  * - "没填的按账面数填"只改页面，标成没保存，点保存才生效
- * - 1002：重新取详情；审核没过（1001 盘亏后库存是负的）弹清单
+ * - 1002：保留本地草稿，确认放弃后才取最新；审核没过（1001 盘亏后库存是负的）弹清单
  */
 const route = useRoute()
 const router = useRouter()
@@ -53,6 +52,7 @@ const units = useDict('unit')
 
 const detail = ref<CountDetail | null>(null)
 const notFound = ref(false)
+const loadError = ref<string | null>(null)
 const saving = ref(false)
 const lineFilter = ref<'ALL' | 'UNFILLED' | 'DIFF'>('ALL')
 const skuPicking = ref(false)
@@ -83,13 +83,14 @@ function syncFromDetail(d: CountDetail) {
 }
 
 async function load() {
+  loadError.value = null
   try {
     const d = await countApi.get(id)
     syncFromDetail(d)
     tabs.rename(path, `盘点 ${d.no}`)
   } catch (e) {
     if (e instanceof ApiError && e.code === 404) notFound.value = true
-    else throw e
+    else loadError.value = e instanceof Error ? e.message : '盘点单加载失败'
   }
 }
 
@@ -100,7 +101,7 @@ onActivated(() => {
     activated = true
     return
   }
-  if (!notFound.value) void refresh()
+  if (!notFound.value && !guard.dirty.value) void refresh()
 })
 
 async function refresh() {
@@ -174,11 +175,8 @@ async function saveDraft(silent = false): Promise<boolean> {
     await refresh()
     return true
   } catch (e) {
-    // 1002：别人刚改过，重新取（页面上没存的改动会被换掉，request.ts 已经提示过）
-    if (e instanceof ApiError && e.code === ErrorCode.STATE_CHANGED) {
-      await refresh()
-      return false
-    }
+    // 冲突只在用户明确放弃后重取，不能静默抹掉实盘数。
+    if (reloadOnConflict(e, refresh) || e instanceof ApiError) return false
     throw e
   } finally {
     saving.value = false
@@ -201,7 +199,7 @@ async function onPickedSkus(rows: MaterialPickRow[] | StylePickRow[]) {
 async function doRefreshBook() {
   if (!detail.value) return
   try {
-    await ElMessageBox.confirm('按仓库现在的库存重新取账面数，填了的实盘数留着。', '重新取账面数', {
+    await ElMessageBox.confirm('按仓库现在的库存重新拍账；所有已填实盘数会清空。请重新清点后再填写实盘数。', '重新取账面数', {
       confirmButtonText: '重新取',
       cancelButtonText: '取消',
     })
@@ -214,7 +212,7 @@ async function doRefreshBook() {
   }
   const updated = await countApi.refreshBook(id, { version: detail.value.version })
   syncFromDetail(updated)
-  ElMessage.success('账面数重新取好了')
+  ElMessage.success('账面数重新取好了，实盘数已清空，请重数后填写')
 }
 
 async function doSubmit() {
@@ -293,6 +291,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
 
 <template>
   <div>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false"><el-button @click="load">重试</el-button></el-alert>
     <PageHeader :title="detail ? detail.no : '物料盘点单'" :back="{ label: '物料盘点单', to: '/stock-takes' }">
       <template v-if="detail" #title>
         <StatusTag :tone="COUNT_STATUS[detail.status].tone">{{ COUNT_STATUS[detail.status].label }}</StatusTag>
@@ -315,6 +314,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
 
     <div v-else-if="detail" class="page detail">
       <div class="body">
+        <el-alert v-if="editable && detail.purpose === 'DAILY'" :closable="false" type="info" title="取账后请完成实盘并提交；提交前库存发生收发时，需重新取账面数并重数。刷新账面会清空全部实盘数。" />
         <div class="toolbar">
           <el-segmented v-model="lineFilter" :options="filterOptions" />
         </div>
@@ -435,7 +435,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
       :template-url="countApi.sheetUrl(id)"
       :import-url="countApi.importUrl(id)"
       @success="refresh"
-    />
+    ><template #head><el-alert :closable="false" type="info" :title="detail.purpose === 'DAILY' ? '日常盘点：首次导入新 SKU 只加行和拍账，实盘数留空；重数后填写或再导入。已有行正常导入实盘数。' : '期初录入：导入数量作为实盘数。'" /></template></ImportDialog>
   </div>
 </template>
 

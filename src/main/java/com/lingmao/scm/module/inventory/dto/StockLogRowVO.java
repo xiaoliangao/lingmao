@@ -31,6 +31,19 @@ public class StockLogRowVO extends MaterialSkuBrief {
     private BigDecimal changeQty;
     private BigDecimal balanceQty;
     private String dyeLot;
+    private BigDecimal unitPrice;
+    private BigDecimal amount;
+    private String currency;
+    private String valuationStatus;
+    private Long reversalOfLogId;
+
+    /** 物料名称/颜色仍取当前值，stockUnit必须保留事件快照（历史未知NULL），不能被主档填充覆盖。 */
+    @Override
+    public void fillFrom(MaterialSkuBrief brief) {
+        String frozenUnit = getStockUnit();
+        super.fillFrom(brief);
+        setStockUnit(frozenUnit);
+    }
     private String operatorName;
     /** 操作人 id，填 operatorName 用，不返回 */
     @JsonIgnore

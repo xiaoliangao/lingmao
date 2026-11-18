@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { orderApi, orderChangeApi } from '@/api/order'
 import ImageUpload from '@/components/ImageUpload.vue'
 import SkuMatrix, { type MatrixColor } from '@/components/SkuMatrix.vue'
-import { showSilentError } from '@/components/doc/docUtils'
+import { reloadOnConflict, showSilentError } from '@/components/doc/docUtils'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import type { DocRef } from '@/types/biz'
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/types/order'
 import type { FileVO } from '@/types/system'
 import { formatDate, formatPrice } from '@/utils/format'
+import { MAX_UNIT_PRICE, validateOrderCapacity } from '@/utils/orderSku'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 
@@ -59,6 +60,7 @@ const form = reactive({
   qtys: {} as Record<number, number>,
   /** 款 id → 新单价 */
   prices: {} as Record<number, number | null>,
+  priceChanges: {} as Record<number, boolean>,
   /** 款 id → 资料包 id */
   packs: {} as Record<number, number | null>,
   /** 款 id → 新加的颜色 id */
@@ -71,7 +73,8 @@ const PARTY_OPTIONS = (['SELF', 'FACTORY', 'SUPPLIER'] as ResponsibleParty[]).ma
 
 const itemBySku = computed(() => new Map(props.order.items.map((i) => [i.styleSkuId, i])))
 const styleOf = (styleId: number) => props.order.styles.find((s) => s.styleId === styleId)
-const origPrice = (styleId: number) => props.order.items.find((i) => i.styleId === styleId)?.price ?? null
+const mixedPrice = (styleId: number) => new Set(props.order.items.filter((i) => i.styleId === styleId).map((i) => i.price)).size > 1
+const origPrice = (styleId: number) => mixedPrice(styleId) ? null : props.order.items.find((i) => i.styleId === styleId)?.price ?? null
 
 /** 矩阵的行：订单里原有的颜色（能改）+ 新加的颜色 */
 function rowsOf(opt: OrderStyleOption): MatrixColor[] {
@@ -142,6 +145,7 @@ function resetForm() {
     files: [],
     qtys: Object.fromEntries(props.order.items.map((i) => [i.styleSkuId, i.qty])),
     prices: Object.fromEntries(props.order.styles.map((s) => [s.styleId, origPrice(s.styleId)])),
+    priceChanges: {},
     packs: Object.fromEntries(props.order.styles.map((s) => [s.styleId, s.techPackId])),
     addedColors: {},
   })
@@ -155,7 +159,7 @@ function resetForm() {
         form.addedColors[hit.styleId] = [...(form.addedColors[hit.styleId] ?? []), hit.colorId]
       }
     } else if (it.changeType === 'DUE' && it.toDate) form.requiredDate = it.toDate
-    else if (it.changeType === 'PRICE' && it.styleId != null) form.prices[it.styleId] = it.toPrice
+    else if (it.changeType === 'PRICE' && it.styleId != null) { form.prices[it.styleId] = it.toPrice; form.priceChanges[it.styleId] = true }
     else if (it.changeType === 'TECH_PACK' && it.styleId != null) form.packs[it.styleId] = it.toTechPackId
   }
 }
@@ -192,8 +196,18 @@ function buildForm(): OrderChangeForm | null {
   )
   const prices = props.order.styles.flatMap((s) => {
     const next = form.prices[s.styleId]
-    return next != null && next !== origPrice(s.styleId) ? [{ styleId: s.styleId, price: next }] : []
+    return form.priceChanges[s.styleId] && next != null ? [{ styleId: s.styleId, price: next }] : []
   })
+  if (props.order.styles.some((style) => form.priceChanges[style.styleId] && form.prices[style.styleId] == null)) {
+    ElMessage.warning('已勾选改单价的款要填写新单价'); return null
+  }
+  const capacityError = validateOrderCapacity(quantities.filter((row) => row.qty > 0).map((row) => {
+    const original = itemBySku.value.get(row.styleSkuId)
+    const styleId = original?.styleId ?? styleOpts.value.find((opt) => opt.skus.some((sku) => sku.id === row.styleSkuId))?.styleId
+    const replacement = prices.find((price) => price.styleId === styleId)
+    return { ...row, price: replacement?.price ?? original?.price ?? null, lineDueDate: original?.lineDueDate ?? null, remark: original?.remark ?? null }
+  }))
+  if (capacityError) { ElMessage.warning(capacityError); return null }
   const techPacks: ChangeTechPackForm[] = props.order.styles.flatMap((s) => {
     const next = form.packs[s.styleId]
     return next != null && next !== s.techPackId ? [{ styleId: s.styleId, techPackId: next }] : []
@@ -223,6 +237,7 @@ async function submitChange(changeId: number, version: number): Promise<boolean>
 }
 
 async function save() {
+  if (!(await guard.waitForUploads())) return
   const body = buildForm()
   if (!body) return
   submitting.value = true
@@ -244,6 +259,9 @@ async function save() {
     emit('saved', changeId)
     if (submitted) ElMessage.success('变更提交了，等审核')
     if (!ch) void router.push(`/order-changes/${changeId}`)
+  } catch (e) {
+    reloadOnConflict(e, () => { guard.markSaved(); visible.value = false; if (props.editing) emit('saved', props.editing.id) })
+    if (!(e instanceof ApiError)) throw e
   } finally {
     submitting.value = false
   }
@@ -274,7 +292,8 @@ const title = computed(() => (props.editing ? `改变更单 ${props.editing.no}`
             <span class="gap" />
             <label class="ctrl">
               <span class="dim">单价</span>
-              <el-input-number v-model="form.prices[opt.styleId]" size="small" :min="0" :precision="2" :controls="false" :placeholder="origPrice(opt.styleId) == null ? '' : formatPrice(origPrice(opt.styleId))" />
+              <el-checkbox v-model="form.priceChanges[opt.styleId]">整款改单价</el-checkbox>
+              <el-input-number v-model="form.prices[opt.styleId]" :disabled="!form.priceChanges[opt.styleId]" :max="MAX_UNIT_PRICE" size="small" :min="0" :precision="4" :controls="false" :placeholder="mixedPrice(opt.styleId) ? '多个值（保留原值）' : origPrice(opt.styleId) == null ? '' : formatPrice(origPrice(opt.styleId))" />
             </label>
             <label v-if="packOptions(opt.styleId).length > 1" class="ctrl">
               <span class="dim">资料包</span>

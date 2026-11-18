@@ -29,6 +29,7 @@ export interface ColumnsState<K extends string = string> {
   readonly show: Record<K, boolean>
   /** 和默认的不一样（"恢复默认"能不能点） */
   readonly changed: boolean
+  set(key: K, visible: boolean): void
   reset(): void
 }
 
@@ -82,6 +83,7 @@ export function useColumns<const K extends string>(page: string, defs: readonly 
     defs,
     show,
     changed: computed(() => diff.value.on.length + diff.value.off.length > 0),
+    set: (key: K, visible: boolean) => { show[key] = visible },
     reset: () => Object.assign(show, defaults()),
   }) as ColumnsState<K>
 }

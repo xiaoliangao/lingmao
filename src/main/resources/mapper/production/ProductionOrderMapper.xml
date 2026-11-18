@@ -46,10 +46,23 @@
 
     <!-- 种类、加工厂、跟单、品牌、数据范围：看板的本月回货也用 -->
     <sql id="baseWhere">
-        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <choose>
+            <when test="q.auditForMe">
+                AND p.status = 'PENDING'
+                <choose>
+                    <when test="q.approvalIds != null and q.approvalIds.size() > 0">
+                        AND p.id IN <foreach collection="q.approvalIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+                    </when>
+                    <otherwise>AND false</otherwise>
+                </choose>
+            </when>
+            <otherwise>
+                <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+            </otherwise>
+        </choose>
         <if test="q.kind != null and q.kind != ''">AND p.kind = #{q.kind}</if>
         <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
-        <if test="q.merchId != null">AND p.merch_id = #{q.merchId}</if>
+        <if test="!q.auditForMe and q.merchId != null">AND p.merch_id = #{q.merchId}</if>
         <if test="q.brand != null and q.brand != ''">AND s.brand = #{q.brand}</if>
     </sql>
 

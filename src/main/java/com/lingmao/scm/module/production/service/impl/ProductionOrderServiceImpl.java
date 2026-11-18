@@ -8,6 +8,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
@@ -129,6 +130,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public PageResult<ProductionRowVO> page(ProductionQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PRODUCTION_ORDER) : List.of());
         requireKind(query);
         query.setCard(null);
         IPage<ProductionRowVO> page = prdMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
@@ -139,6 +141,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public Map<String, Long> counts(ProductionQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PRODUCTION_ORDER) : List.of());
         requireKind(query);
         query.setCard(null);
         Map<String, Long> out = new LinkedHashMap<>();
@@ -174,6 +177,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         PackBrief pack = p.getTechPackId() == null ? null : techPackService.briefs(List.of(p.getTechPackId())).get(p.getTechPackId());
 
         ProductionDetailVO vo = docHeaderService.fill(new ProductionDetailVO(), BizType.PRODUCTION_ORDER, p, p.getStatus());
+        vo.setPlanRevision(p.getPlanRevision());
         vo.setCompanyName(companyService.getById(p.getCompanyId()).getShortName());
         vo.setKind(p.getKind().name());
         SupplierRef f = supplierService.getRef(p.getFactoryId());
@@ -310,6 +314,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public byte[] export(ProductionQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PRODUCTION_ORDER) : List.of());
         ProductionKind kind = requireKind(query);
         query.setCard(null);
         List<ProductionRowVO> rows = prdMapper.selectRows(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()),
@@ -401,7 +406,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         if (!settle.equals(p.getSettleMethod())) {
             checkDict("settle_method", settle, "结算方式");
         }
-        BigDecimal price = Num.price(req.getUnitPrice());
+        BigDecimal price = NumericLimits.price(req.getUnitPrice(), "生产单：");
         PriceRef archive = priceService.currentProcess(req.getFactoryId(), p.getStyleId(), mode, p.getOrderDate()).orElse(null);
         boolean changed = archive != null && price.compareTo(archive.price()) != 0;
         String reason = changed ? ProdTexts.blankToNull(req.getPriceChangeReason()) : null;
@@ -423,7 +428,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         p.setTaxIncluded(req.isTaxIncluded());
         p.setTerms(ProdTexts.blankToNull(req.getTerms()));
         p.setRemark(ProdTexts.blankToNull(req.getRemark()));
-        p.setTotalAmount(Num.amount(BigDecimal.valueOf(p.getTotalQty()), price));
+        p.setTotalAmount(NumericLimits.amount(Num.amount(BigDecimal.valueOf(p.getTotalQty()), price), "生产单："));
         UpdateWrapper<ProductionOrder> update = Updates.replaceById(p)
                 .eq("status", DRAFT.name())
                 .eq("version", req.getVersion())

@@ -13,6 +13,7 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class ProductionDetailVO extends DocHeaderVO {
+    private Integer planRevision;
     private String kind;
     private Long factoryId;
     private String factoryCode;

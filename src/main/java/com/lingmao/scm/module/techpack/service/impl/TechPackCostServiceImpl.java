@@ -45,9 +45,9 @@ public class TechPackCostServiceImpl implements TechPackCostService {
         if (pack == null) {
             throw new BizException(404, "这一版资料包不存在，可能已经被删除了");
         }
-        Ctx ctx = packOwners.context(packOwners.of(pack));
+        Ctx ctx = packOwners.context(pack);
         if (colorId != null && !ctx.colorIds().contains(colorId)) {
-            throw new BizException("这个颜色不是款式现在启用的颜色，请刷新后再选");
+            throw new BizException("这个颜色不在这一版本的展示范围内，请刷新后再选");
         }
         return costCalculator.compute(pack, ctx, colorId != null ? colorId : ctx.firstColorId(), true);
     }
@@ -70,7 +70,7 @@ public class TechPackCostServiceImpl implements TechPackCostService {
                 if (owner == null || pack == null) {
                     continue;
                 }
-                Ctx ctx = packOwners.context(owner);
+                Ctx ctx = packOwners.context(pack);
                 CostSummary s = costCalculator.compute(pack, ctx, ctx.firstColorId(), false).getSummary();
                 row.setFabric(s.fabric());
                 row.setTrim(s.trim());

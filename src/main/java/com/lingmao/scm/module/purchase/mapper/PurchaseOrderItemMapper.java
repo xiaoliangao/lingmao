@@ -43,6 +43,10 @@ public interface PurchaseOrderItemMapper extends BaseMapper<PurchaseOrderItem> {
     @Select("SELECT DISTINCT purchase_order_id FROM pur_order_item WHERE calc_item_id = #{calcItemId}")
     List<Long> selectPoIdsOfCalcItem(@Param("calcItemId") long calcItemId);
 
+    @Select("<script>SELECT DISTINCT purchase_order_id FROM pur_order_item WHERE calc_item_id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY purchase_order_id</script>")
+    List<Long> selectPoIdsOfCalcItems(@Param("ids") Collection<Long> ids);
+
     /** 指着这些算料行的采购行（没作废的采购单）：算料单详情的"已入库"、齐料 */
     @Select("<script>SELECT i.* FROM pur_order_item i JOIN pur_order o ON o.id = i.purchase_order_id "
             + "WHERE o.status &lt;&gt; 'VOIDED' AND i.calc_item_id IN "

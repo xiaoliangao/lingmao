@@ -9,6 +9,15 @@ import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import com.lingmao.scm.module.techpack.service.CraftStandardService;
+import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
+import com.lingmao.scm.module.techpack.dto.TechPackCostForm;
+import com.lingmao.scm.module.biz.service.AttachmentService;
+import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.security.LoginUser;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -37,6 +46,9 @@ class TechPackServiceImplTest {
     private PackContent packContent;
     @Mock
     private CraftStandardService craftStandardService;
+    @Mock private PackForms packForms;
+    @Mock private AttachmentService attachmentService;
+    @Mock private DocLogService docLogService;
 
     @InjectMocks
     private TechPackServiceImpl service;
@@ -44,6 +56,37 @@ class TechPackServiceImplTest {
     @BeforeAll
     static void initTableInfo() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), TechPack.class);
+    }
+
+    @AfterEach void logout() { SecurityContextHolder.clearContext(); }
+
+    @Test void save_unauthorizedCostIsIgnoredBeforeContentConversion() {
+        saveCost(false, new TechPackCostForm(), false);
+    }
+
+    @Test void save_authorizedNullKeepsCost_andExplicitEmptyCanClear() {
+        saveCost(true, null, false);
+        org.mockito.Mockito.clearInvocations(packContent);
+        saveCost(true, new TechPackCostForm(), true);
+    }
+
+    private void saveCost(boolean authorized, TechPackCostForm cost, boolean withCost) {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(1L, "test"), null,
+                authorized ? List.of(new SimpleGrantedAuthority("techpack:cost:query")) : List.of()));
+        TechPack p = new TechPack(); p.setId(3L); p.setStatus(PackStatus.DRAFT);
+        when(techPackMapper.selectById(3L)).thenReturn(p);
+        when(packOwners.of(p)).thenReturn(PackFixtures.owner(null));
+        when(packOwners.context(PackFixtures.owner(null))).thenReturn(PackFixtures.ctx());
+        TechPackSaveReq req = new TechPackSaveReq(); req.setVersionLock(0); req.setCost(cost); req.setCraftSections(List.of());
+        PackContent.Content content = new PackContent.Content(List.of(), List.of(), List.of(), List.of(), List.of());
+        when(packForms.toContent(req, PackFixtures.ctx().sizes())).thenAnswer(inv -> {
+            if (!authorized) assertThat(req.getCost()).isNull();
+            return content;
+        });
+        when(techPackMapper.update(any(TechPack.class), any())).thenReturn(1);
+        assertThat(service.save(3L, req)).isEqualTo(1);
+        verify(packContent).clear(3L, withCost);
+        verify(packContent).write(3L, content, withCost);
     }
 
     /** 规则（docs/api/01 §3.4）：款式停用了不能建资料包（1000，说是停用了），什么都不插 */

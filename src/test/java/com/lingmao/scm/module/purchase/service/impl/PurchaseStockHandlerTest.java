@@ -113,6 +113,32 @@ class PurchaseStockHandlerTest {
         verify(itemMapper, never()).addPosted(anyLong(), any(), any());
     }
 
+    /** 采购100，入100→退50→补50后，反审退货会净收150，必须在写累计前拒绝。 */
+    @Test
+    void onUnposted_returnAfterReplacement_cannotBreakNetCap() {
+        when(poMapper.lockById(5L)).thenReturn(po(DocStatus.DONE));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("150", "50")));
+
+        assertThatThrownBy(() -> handler.preparePosting(posting(InvDocType.PURCHASE_RETURN, "50"), true))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT);
+                    assertThat(e.getMessage()).contains("先撤销补收入库");
+                    assertThat((List<?>) e.getData()).singleElement().satisfies(o ->
+                            assertThat(((InvOverRow) o).maxQty()).isEqualByComparingTo("105"));
+                });
+        verify(itemMapper, never()).addPosted(anyLong(), any(), any());
+    }
+
+    @Test
+    void onUnposted_returnAfterUndoingReplacement_isAllowed() {
+        when(poMapper.lockById(5L)).thenReturn(po(DocStatus.RUNNING));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("100", "50")));
+        when(poMapper.update(any(), any())).thenReturn(1);
+
+        handler.preparePosting(posting(InvDocType.PURCHASE_RETURN, "50"), true);
+        verify(itemMapper).addPosted(11L, BigDecimal.ZERO, new BigDecimal("-50"));
+    }
+
     private static PurchaseOrder po(DocStatus status) {
         PurchaseOrder po = new PurchaseOrder();
         po.setId(5L);

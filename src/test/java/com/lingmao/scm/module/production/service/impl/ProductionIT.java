@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.production.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.file.FileUrlSigner;
@@ -36,6 +37,7 @@ import com.lingmao.scm.module.production.service.ProductionNodeService;
 import com.lingmao.scm.module.production.service.ProductionOrderService;
 import com.lingmao.scm.module.production.service.ProductionReceiptService;
 import com.lingmao.scm.module.production.service.ScheduleService;
+import com.lingmao.scm.module.production.dto.NodePlanReq;
 import com.lingmao.scm.module.purchase.service.NeedDateSource;
 import com.lingmao.scm.security.LoginUser;
 import org.junit.jupiter.api.AfterEach;
@@ -227,6 +229,77 @@ class ProductionIT {
         assertThat(productionOrderService.myFollow()).extracting(row -> row.id()).contains(prdId);
     }
 
+    /**
+     * docs/api/05 §3.4.1 / Q12：BUY 不必然免领料；本例在订单锁版前准备全部工厂自备料的 BOM，
+     * 包工包料排单 → 审核 → 无领料回货 → 作废回货，累计退回且仍保留排单占用。
+     */
+    @Test
+    void buyWithOnlyFactoryMaterials_scheduleAuditReceiveAndVoid_withoutIssuingMaterials() {
+        Fixture f = fixture();
+        assertThat(jdbcTemplate.update("""
+                UPDATE tp_bom_item SET source='FACTORY'
+                WHERE tech_pack_id IN (SELECT id FROM tp_tech_pack WHERE style_id=?)""", f.style)).isEqualTo(1);
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long orderId = approvedOrder(f, commit);
+        long lineM = orderLine(orderId, f.skuM);
+        long lineL = orderLine(orderId, f.skuL);
+        ScheduleReq req = scheduleReq(f, orderId, commit.minusDays(10), Map.of(lineM, 60, lineL, 40));
+        req.getBlocks().getFirst().setProcessMode("FULL");
+        DocRef created = scheduleService.schedule(req).getFirst();
+        long prdId = created.id();
+        assertThat(created.no()).startsWith("CP");
+        ProductionDetailVO d = productionOrderService.detail(prdId);
+        assertThat(d.getKind()).isEqualTo("BUY");
+        assertThat(d.getProcessMode()).isEqualTo("FULL");
+        assertThat(d.getStatus()).isEqualTo("DRAFT");
+        assertThat(scheduled(orderId)).isEqualTo(100);
+
+        productionOrderService.act(prdId, "submit", new DocActionReq(d.getVersion(), null));
+        productionOrderService.act(prdId, "audit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null));
+        d = productionOrderService.detail(prdId);
+        assertThat(d.getStatus()).isEqualTo("APPROVED");
+        assertThat(d.getNodes()).isNotEmpty();
+        assertThat(d.getIssueStatus()).isNull();
+        assertThat(d.getActions()).doesNotContain("issue", "returnMaterial");
+        assertThat(productionOrderService.materials(prdId).rows()).isEmpty();
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId,
+                stockReq(InvDocType.ISSUE_OUT, f, "1")))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
+                    assertThat(e.getMessage()).contains("没有我方采购的料");
+                });
+        assertThat(productionOrderService.materials(prdId).docs()).isEmpty();
+
+        long itemM = prdItem(prdId, lineM);
+        long itemL = prdItem(prdId, lineL);
+        var receipt = receiptService.receive(prdId, receiptReq(Map.of(itemM, 60, itemL, 40), itemL, 2));
+        assertThat(receipt.status()).isEqualTo("DONE");
+        d = productionOrderService.detail(prdId);
+        assertThat(d.getReturnedQty()).isEqualTo(100);
+        assertThat(d.getDefectQty()).isEqualTo(2);
+        assertThat(orderStatus(orderId)).isEqualTo("DONE");
+        assertThat(jdbcTemplate.queryForObject("SELECT sum(returned_qty) FROM ord_order_item WHERE order_id=?",
+                Integer.class, orderId)).isEqualTo(100);
+
+        receiptService.voidReceipt(prdId, receipt.id(), "回货登记有误");
+        d = productionOrderService.detail(prdId);
+        assertThat(d.getStatus()).isEqualTo("APPROVED");
+        assertThat(d.getReturnedQty()).isZero();
+        assertThat(d.getDefectQty()).isZero();
+        assertThat(d.getItems()).allSatisfy(i -> {
+            assertThat(i.getReturnedQty()).isZero();
+            assertThat(i.getDefectQty()).isZero();
+        });
+        assertThat(orderStatus(orderId)).isEqualTo("RUNNING");
+        assertThat(jdbcTemplate.queryForObject("SELECT sum(returned_qty) FROM ord_order_item WHERE order_id=?",
+                Integer.class, orderId)).isZero();
+        assertThat(scheduled(orderId)).isEqualTo(100);
+        assertThat(receiptService.list(prdId)).singleElement().satisfies(r -> assertThat(r.getStatus()).isEqualTo("VOIDED"));
+        assertThat(productionOrderService.materials(prdId).docs()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM inv_stock_log WHERE material_sku_id=?",
+                Integer.class, f.sku)).isZero();
+    }
+
     /** 删草稿：件数退回订单的待排单，订单记一条；作废同样退回（docs/api/05 §3.2.5、§3.2.6） */
     @Test
     void deleteAndVoid_refundScheduled() {
@@ -248,6 +321,52 @@ class ProductionIT {
         assertThat(productionOrderService.detail(b).getStatus()).isEqualTo("VOIDED");
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'ORDER' AND doc_id = ? AND action = 'schedule'",
                 Integer.class, orderId)).isEqualTo(4);
+    }
+
+    @Test
+    void nodePlanRevisionBlocksSecondDevice_butReportsDoNotChangePlanRevision() {
+        Fixture f = fixture();
+        long id = approvedProduction(f);
+        ProductionDetailVO d = productionOrderService.detail(id);
+        NodePlanReq req = new NodePlanReq(); req.setPlanRevision(d.getPlanRevision());
+        req.setNodes(d.getNodes().stream().map(n -> {
+            NodePlanReq.Item i = new NodePlanReq.Item(); i.setNodeId(n.getId());
+            i.setPlanStart(n.getPlanStart().plusDays(1)); i.setPlanFinish(n.getPlanFinish().plusDays(1)); return i;
+        }).toList());
+        assertThat(nodeService.updatePlan(id, req)).isEqualTo(1);
+        assertThatThrownBy(() -> nodeService.updatePlan(id, req)).isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+        assertThat(productionOrderService.detail(id).getNodes().getFirst().getPlanStart()).isEqualTo(req.getNodes().getFirst().getPlanStart());
+        nodeService.report(id, d.getNodes().getFirst().getId(), nodeReport(NodeReportAction.START, LocalDate.now(), null));
+        assertThat(productionOrderService.detail(id).getPlanRevision()).isEqualTo(1);
+        req.setPlanRevision(1);
+        assertThat(nodeService.updatePlan(id, req)).isEqualTo(1);
+    }
+
+    @Test
+    void receiptRetryPreservesOriginalResult_andRealSecondBatchRequiresNewId() {
+        Fixture f = fixture();
+        long id = approvedProduction(f);
+        long item = productionOrderService.detail(id).getItems().getFirst().getId();
+        ReceiptReq req = receiptReq(Map.of(item, 10), item, 0);
+        var first = receiptService.receive(id, req);
+        assertThat(receiptService.receive(id, req)).isEqualTo(first);
+        assertThat(receiptService.list(id)).hasSize(1);
+        assertThat(productionOrderService.detail(id).getReturnedQty()).isEqualTo(10);
+        req.getItems().getFirst().setQty(11);
+        assertThatThrownBy(() -> receiptService.receive(id, req)).isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+        req.getItems().getFirst().setQty(10); req.setClientActionId(java.util.UUID.randomUUID());
+        assertThat(receiptService.receive(id, req).id()).isNotEqualTo(first.id());
+        assertThat(productionOrderService.detail(id).getReturnedQty()).isEqualTo(20);
+    }
+
+    private long approvedProduction(Fixture f) {
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long order = approvedOrder(f, commit);
+        long id = scheduleService.schedule(scheduleReq(f, order, commit.minusDays(10),
+                Map.of(orderLine(order, f.skuM), 60, orderLine(order, f.skuL), 40))).getFirst().id();
+        productionOrderService.act(id, "submit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        return id;
     }
 
     // ---------------------------------------------------------------- 数据
@@ -286,8 +405,7 @@ class ProductionIT {
                                        default_factory_id)
                 VALUES (?, 'IT 生产款', 'FS', 'IT', ?, 2026, 'AUTUMN', 'OWN', ?, 299, 'ENABLED', ?) RETURNING id""",
                 Long.class, styleCode, category, sizeGroup, factory);
-        long color = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 生产色" + s);
+        long color = TestColors.insert(jdbcTemplate, "IT 生产色" + s);
         jdbcTemplate.update("INSERT INTO sty_style_color (style_id, color_id, seq) VALUES (?, ?, 1)", style, color);
         long skuM = jdbcTemplate.queryForObject("INSERT INTO sty_style_sku (style_id, code, color_id, size_code) VALUES (?, ?, ?, 'M') RETURNING id",
                 Long.class, style, styleCode + "-A-M", color);
@@ -381,6 +499,7 @@ class ProductionIT {
 
     private ReceiptReq receiptReq(Map<Long, Integer> qty, long defectItem, int defect) {
         ReceiptReq r = new ReceiptReq();
+        r.setClientActionId(java.util.UUID.randomUUID());
         r.setReceiptDate(LocalDate.now());
         r.setPhotos(List.of(photo("receipt")));
         r.setItems(qty.entrySet().stream().map(e -> {
@@ -407,6 +526,7 @@ class ProductionIT {
         i.setMaterialSkuId(f.sku);
         i.setQty(new BigDecimal(qty));
         InvDocFromSourceReq req = new InvDocFromSourceReq();
+        req.setClientActionId(java.util.UUID.randomUUID());
         req.setDocType(type);
         if (type == InvDocType.ISSUE_OUT) {
             req.setFromWarehouseId(f.warehouse);
@@ -436,9 +556,4 @@ class ProductionIT {
         return jdbcTemplate.queryForObject("SELECT sum(scheduled_qty) FROM ord_order_item WHERE order_id = ?", Integer.class, orderId);
     }
 
-    /** bas_color 的编码是 3 位、全局唯一 */
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
-    }
 }

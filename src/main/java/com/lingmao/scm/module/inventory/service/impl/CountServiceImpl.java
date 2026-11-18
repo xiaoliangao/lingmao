@@ -204,6 +204,7 @@ public class CountServiceImpl implements CountService {
             v.setId(i.getId());
             v.setSeq(i.getSeq());
             v.setBookQty(i.getBookQty());
+            v.setBookRevision(i.getBookRevision());
             v.setCountedQty(i.getCountedQty());
             v.setDiffQty(i.getCountedQty() == null ? null : i.getCountedQty().subtract(i.getBookQty()));
             v.setAdjustedQty(count.getStatus() == APPROVED ? adjusted.getOrDefault(i.getId(), BigDecimal.ZERO) : null);
@@ -327,7 +328,7 @@ public class CountServiceImpl implements CountService {
             categoryMapper.insert(categoryIds.stream().map(c -> new InvCountCategory(count.getId(), c)).toList());
         }
 
-        Map<Long, BigDecimal> books = scope == CountScope.PICKED ? pickedBooks(count, skuIds) : scopeBooks(count, categoryIds);
+        Map<Long, Book> books = scope == CountScope.PICKED ? pickedBooks(count, skuIds) : scopeBooks(count, categoryIds);
         List<InvCountItem> items = new ArrayList<>();
         books.forEach((skuId, book) -> items.add(newItem(count.getId(), items.size() + 1, skuId, book)));
         if (!items.isEmpty()) {
@@ -353,51 +354,56 @@ public class CountServiceImpl implements CountService {
     }
 
     /** "全部" / "按分类"：这个仓有库存记录的 SKU（数量是 0 的也带），账面数 = 现在的库存，按 SKU 码排 */
-    private Map<Long, BigDecimal> scopeBooks(InvCount count, List<Long> categoryIds) {
-        Map<Long, BigDecimal> books = new LinkedHashMap<>();
-        for (Stock s : stockMapper.selectForCount(count.getWarehouseId(), count.getScope() == CountScope.CATEGORY ? categoryIds : null)) {
-            books.put(s.getMaterialSkuId(), s.getQty());
-        }
-        return books;
+    private Map<Long, Book> scopeBooks(InvCount count, List<Long> categoryIds) {
+        return books(count, scopeSkus(count, categoryIds));
+    }
+
+    private List<Long> scopeSkus(InvCount count, List<Long> categoryIds) {
+        return stockMapper.selectForCount(count.getWarehouseId(), count.getScope() == CountScope.CATEGORY ? categoryIds : null)
+                .stream().map(Stock::getMaterialSkuId).toList();
     }
 
     /** 手选的 SKU：账面数 = 现在的库存；期初录入是 0，已经有库存的不能进 */
-    private Map<Long, BigDecimal> pickedBooks(InvCount count, List<Long> skuIds) {
+    private Map<Long, Book> pickedBooks(InvCount count, List<Long> skuIds) {
         if (skuIds.isEmpty()) {
             return Map.of();
         }
         materialService.skuRefs(skuIds);
-        Map<Long, BigDecimal> stock = stockOf(count.getWarehouseId(), skuIds);
+        Map<Long, Book> stock = books(count, skuIds);
         if (count.getPurpose() == CountPurpose.OPENING) {
-            List<Long> stocked = skuIds.stream().filter(k -> stock.getOrDefault(k, BigDecimal.ZERO).signum() != 0).toList();
+            List<Long> stocked = skuIds.stream().filter(k -> stock.get(k).qty().signum() != 0).toList();
             if (!stocked.isEmpty()) {
                 Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(stocked);
                 throw new BizException("这些物料在这个仓已经有库存，期初录入只录还没有库存的，有库存的请用日常盘点："
                         + stocked.stream().map(k -> briefs.get(k).getSkuCode()).collect(Collectors.joining("、")));
             }
         }
-        Map<Long, BigDecimal> books = new LinkedHashMap<>();
-        for (Long k : skuIds) {
-            books.put(k, count.getPurpose() == CountPurpose.OPENING ? BigDecimal.ZERO : stock.getOrDefault(k, BigDecimal.ZERO));
-        }
-        return books;
+        return stock;
     }
 
-    private Map<Long, BigDecimal> stockOf(long warehouseId, Collection<Long> skuIds) {
+    private record Book(BigDecimal qty, long revision) {
+    }
+
+    /** qty和revision一次在同一键锁内取得；期初也先读真实余额，检查已有库存后才存账面0。 */
+    private Map<Long, Book> books(InvCount count, Collection<Long> skuIds) {
         if (skuIds.isEmpty()) {
             return Map.of();
         }
-        return stockMapper.selectBySkus(warehouseId, skuIds).stream().collect(Collectors.toMap(Stock::getMaterialSkuId, Stock::getQty));
+        Map<Long, Stock> stock = ledger.lockBalances(count.getWarehouseId(), skuIds);
+        Map<Long, Book> out = new LinkedHashMap<>();
+        skuIds.forEach(k -> out.put(k, new Book(stock.get(k).getQty(), stock.get(k).getMovementRevision())));
+        return out;
     }
 
-    private static InvCountItem newItem(long countId, int seq, long skuId, BigDecimal book) {
+    private static InvCountItem newItem(long countId, int seq, long skuId, Book book) {
         InvCountItem item = new InvCountItem();
         item.setCountId(countId);
         item.setSeq(seq);
         item.setMaterialSkuId(skuId);
         item.setOwnerType(Stock.OWN);
         item.setOwnerId(0L);
-        item.setBookQty(book);
+        item.setBookQty(book.qty());
+        item.setBookRevision(book.revision());
         return item;
     }
 
@@ -464,10 +470,10 @@ public class CountServiceImpl implements CountService {
         List<InvCountItem> existing = itemMapper.selectByCount(id);
         Set<Long> have = existing.stream().map(InvCountItem::getMaterialSkuId).collect(Collectors.toSet());
         List<Long> skuIds = req.skuIds().stream().filter(Objects::nonNull).distinct().filter(k -> !have.contains(k)).toList();
-        Map<Long, BigDecimal> books = pickedBooks(count, skuIds);
+        Map<Long, Book> books = pickedBooks(count, skuIds);
         int seq = existing.stream().mapToInt(InvCountItem::getSeq).max().orElse(0);
         List<InvCountItem> added = new ArrayList<>();
-        for (Map.Entry<Long, BigDecimal> e : books.entrySet()) {
+        for (Map.Entry<Long, Book> e : books.entrySet()) {
             added.add(newItem(id, ++seq, e.getKey(), e.getValue()));
         }
         bump(count, null);
@@ -479,7 +485,7 @@ public class CountServiceImpl implements CountService {
     }
 
     /**
-     * 重新取账面数：所有行的账面数换成现在的库存（期初录入还是 0），已填的实盘数留着；
+     * 重新取账面数：所有行在同键锁内重拍数量/修订戳，清空实盘数，必须重新数货；
      * 全部、按分类的再把范围里新出现的 SKU 补进来。已有的行一行不删（手加的、过过账的都留着）
      */
     @Override
@@ -488,21 +494,30 @@ public class CountServiceImpl implements CountService {
         InvCount count = lock(id, req.version());
         FLOW.next("refreshBook", count.getStatus());
         List<InvCountItem> existing = itemMapper.selectByCount(id);
-        Map<Long, BigDecimal> stock = stockOf(count.getWarehouseId(), existing.stream().map(InvCountItem::getMaterialSkuId).toList());
+        Set<Long> allSkus = existing.stream().map(InvCountItem::getMaterialSkuId)
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (count.getScope() != CountScope.PICKED) {
+            allSkus.addAll(scopeSkus(count, categoryMapper.categoryIds(id)));
+        }
+        // 先收集全部键再一次排序加锁；新范围可能含比原明细更小的SKU，不能分两次倒序锁。
+        Map<Long, Book> stock = books(count, allSkus);
         boolean opening = count.getPurpose() == CountPurpose.OPENING;
         for (InvCountItem i : existing) {
-            BigDecimal book = opening ? BigDecimal.ZERO : stock.getOrDefault(i.getMaterialSkuId(), BigDecimal.ZERO);
-            if (book.compareTo(i.getBookQty()) != 0) {
-                itemMapper.update(new InvCountItem(), new LambdaUpdateWrapper<InvCountItem>()
-                        .set(InvCountItem::getBookQty, book).eq(InvCountItem::getId, i.getId()));
+            Book book = stock.get(i.getMaterialSkuId());
+            if (opening && book.qty().signum() != 0) {
+                throw new BizException("第 " + i.getSeq() + " 行已经有库存，请用日常盘点，不能重新录期初");
             }
+            itemMapper.update(new InvCountItem(), new LambdaUpdateWrapper<InvCountItem>()
+                    .set(InvCountItem::getBookQty, opening ? BigDecimal.ZERO : book.qty())
+                    .set(InvCountItem::getBookRevision, book.revision())
+                    .set(InvCountItem::getCountedQty, null).eq(InvCountItem::getId, i.getId()));
         }
         int added = 0;
         if (count.getScope() != CountScope.PICKED) {
             Set<Long> have = existing.stream().map(InvCountItem::getMaterialSkuId).collect(Collectors.toSet());
             int seq = existing.stream().mapToInt(InvCountItem::getSeq).max().orElse(0);
             List<InvCountItem> more = new ArrayList<>();
-            for (Map.Entry<Long, BigDecimal> e : scopeBooks(count, categoryMapper.categoryIds(id)).entrySet()) {
+            for (Map.Entry<Long, Book> e : stock.entrySet()) {
                 if (!have.contains(e.getKey())) {
                     more.add(newItem(id, ++seq, e.getKey(), e.getValue()));
                 }
@@ -565,6 +580,7 @@ public class CountServiceImpl implements CountService {
     }
 
     private void submit(InvCount count, DocActionReq req) {
+        count = lock(count.getId(), req.version());
         FLOW.next("submit", count.getStatus());
         List<InvCountItem> items = itemMapper.selectByCount(count.getId());
         if (items.isEmpty()) {
@@ -574,13 +590,24 @@ public class CountServiceImpl implements CountService {
         if (unfilled > 0) {
             throw new BizException("还有 " + unfilled + " 行没填实盘数");
         }
+        Map<Long, Stock> balances = ledger.lockBalances(count.getWarehouseId(), items.stream().map(InvCountItem::getMaterialSkuId).toList());
+        List<String> stale = items.stream().filter(i -> i.getBookRevision() == null
+                        || !Objects.equals(i.getBookRevision(), balances.get(i.getMaterialSkuId()).getMovementRevision()))
+                .map(i -> "第 " + i.getSeq() + " 行计数期间有收发或未确认测量基准，请重新取账面并重数").toList();
+        if (!stale.isEmpty()) {
+            throw new BizException(ErrorCodes.STATE_CHANGED, "盘点测量基准已变化，请重新取账面并重数", stale);
+        }
         change(count, "submit", req);
     }
 
     /** 审核过账：差异不为 0 的行把差异加到现在的库存上（调完是负的 1001） */
     private void audit(InvCount count, DocActionReq req) {
         change(count, "audit", req);
-        ledger.post(posting(count, itemMapper.selectByCount(count.getId())));
+        List<InvCountItem> items = itemMapper.selectByCount(count.getId());
+        if (items.stream().anyMatch(i -> i.getBookRevision() == null)) {
+            throw new BizException(ErrorCodes.STATE_CHANGED, "这张历史盘点单没有确认测量基准，请退回草稿重新取账面并重数");
+        }
+        ledger.post(posting(count, items));
     }
 
     /** 反审核：调整退回去（退完是负的 1001），回到草稿。这个仓已经开了另一张盘点单的不行（回草稿就是两张没审核的） */
@@ -589,6 +616,9 @@ public class CountServiceImpl implements CountService {
         checkNoOpenCount(count.getWarehouseId(), count.getId());
         change(count, "unaudit", req);
         ledger.post(posting(count, itemMapper.selectByCount(count.getId())).reversed());
+        itemMapper.update(new InvCountItem(), new LambdaUpdateWrapper<InvCountItem>()
+                .set(InvCountItem::getBookRevision, null).set(InvCountItem::getCountedQty, null)
+                .eq(InvCountItem::getCountId, count.getId()));
     }
 
     /** 盘点单的库存变动：一行一笔，调整量 = 实盘 − 账面；日志记盘盈、盘亏，期初录入记期初 */
@@ -670,23 +700,22 @@ public class CountServiceImpl implements CountService {
                 newRowOf.put(skuId, line.row());
             }
         }
-        Map<Long, BigDecimal> stock = stockOf(count.getWarehouseId(), newSkus);
+        InvCount locked = lock(id, count.getVersion());
+        FLOW.next("edit", locked.getStatus());
+        Map<Long, Book> stock = books(locked, newSkus);
         if (count.getPurpose() == CountPurpose.OPENING) {
             newRowOf.forEach((skuId, row) -> {
-                if (stock.getOrDefault(skuId, BigDecimal.ZERO).signum() != 0) {
+                if (stock.get(skuId).qty().signum() != 0) {
                     rows.error(row, "SKU 码", "这个仓已经有它的库存，期初录入只录还没有库存的，请用日常盘点");
                 }
             });
         }
         rows.dataOrThrow();
 
-        InvCount locked = lock(id, count.getVersion());
-        FLOW.next("edit", locked.getStatus());
         int seq = existing.stream().mapToInt(InvCountItem::getSeq).max().orElse(0);
         Map<Long, InvCountItem> added = new LinkedHashMap<>();
         for (Long skuId : newSkus) {
-            BigDecimal book = count.getPurpose() == CountPurpose.OPENING ? BigDecimal.ZERO : stock.getOrDefault(skuId, BigDecimal.ZERO);
-            added.put(skuId, newItem(id, ++seq, skuId, book));
+            added.put(skuId, newItem(id, ++seq, skuId, stock.get(skuId)));
         }
         if (!added.isEmpty()) {
             itemMapper.insert(new ArrayList<>(added.values()));
@@ -699,6 +728,11 @@ public class CountServiceImpl implements CountService {
             }
             Long skuId = skuIds.get(codeOf(r));
             InvCountItem item = bySku.containsKey(skuId) ? bySku.get(skuId) : added.get(skuId);
+            // 新行是在本次导入才拍账，文件里的旧计数不属于这个测量窗口。
+            if (count.getPurpose() == CountPurpose.DAILY && added.containsKey(skuId)) {
+                rows.note(line.row(), "实盘数", "新加物料已取账面；请从现在开始重新数货后填写或重新导回，旧实盘数未沿用");
+                continue;
+            }
             itemMapper.update(new InvCountItem(), new LambdaUpdateWrapper<InvCountItem>()
                     .set(InvCountItem::getCountedQty, r.getCountedQty())
                     .set(InvCountItem::getRemark, InvTexts.blankToNull(r.getRemark()))

@@ -6,6 +6,7 @@ import { fileApi } from '@/api/system'
 import type { CertForm, SupplierCert } from '@/types/supplier'
 import { MAX_UPLOAD_SIZE } from '@/utils/request'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { provideUploadScope } from '@/composables/usePendingUploads'
 import DictSelect from '@/components/DictSelect.vue'
 
 /**
@@ -28,6 +29,7 @@ const editing = ref<SupplierCert | null>(null)
 const formRef = ref<FormInstance>()
 const form = reactive<CertForm>({ certType: '', fileUrl: '', fileName: '', validUntil: null, remark: null })
 const guard = useUnsavedChanges(form, visible)
+const uploads = provideUploadScope()
 
 const rules: FormRules = {
   certType: [{ required: true, message: '请选证照类型', trigger: 'change' }],
@@ -52,18 +54,24 @@ function beforeUpload(file: File) {
 }
 
 async function upload(options: UploadRequestOptions) {
+  const task = uploads.begin()
+  let ok = false
   uploading.value = true
   try {
     const uploaded = await fileApi.upload(options.file)
+    if (!task.current() || !visible.value) return
     form.fileUrl = uploaded.url
     form.fileName = uploaded.name
     formRef.value?.validateField('fileUrl').catch(() => undefined)
+    ok = true
   } finally {
+    task.finish(ok)
     uploading.value = false
   }
 }
 
 async function save() {
+  if (!(await guard.waitForUploads())) return
   await formRef.value?.validate()
   saving.value = true
   try {

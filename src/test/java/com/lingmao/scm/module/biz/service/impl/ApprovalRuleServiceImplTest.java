@@ -34,6 +34,7 @@ class ApprovalRuleServiceImplTest {
     private RoleService roleService;
     @Mock
     private UserService userService;
+    @Mock private com.lingmao.scm.module.system.service.PermissionService permissionService;
 
     @InjectMocks
     private ApprovalRuleServiceImpl service;
@@ -62,6 +63,23 @@ class ApprovalRuleServiceImplTest {
         assertThatThrownBy(() -> service.create(req(BizType.PURCHASE_ORDER, 5L, null)))
                 .isInstanceOf(BizException.class).hasMessageContaining("不存在或已停用");
         verify(ruleMapper, never()).insert(any(ApprovalRule.class));
+    }
+
+    @Test void create_userWithoutModuleListCannotBeAssigned() {
+        when(approvalService.supports(BizType.PURCHASE_ORDER)).thenReturn(true);
+        when(userService.isEnabled(9L)).thenReturn(true);
+        when(permissionService.loadPermissions(9L)).thenReturn(java.util.Set.of("purchase:order:audit"));
+        assertThatThrownBy(() -> service.create(req(BizType.PURCHASE_ORDER, null, 9L)))
+                .isInstanceOf(BizException.class).hasMessageContaining("purchase:order:list");
+        verify(ruleMapper, never()).insert(any(ApprovalRule.class));
+    }
+
+    @Test void create_assignedUserNeedsListButNotAuditOrAllData() {
+        when(approvalService.supports(BizType.PURCHASE_ORDER)).thenReturn(true);
+        when(userService.isEnabled(9L)).thenReturn(true);
+        when(permissionService.loadPermissions(9L)).thenReturn(java.util.Set.of("purchase:order:list"));
+        service.create(req(BizType.PURCHASE_ORDER, null, 9L));
+        verify(ruleMapper).insert(any(ApprovalRule.class));
     }
 
     private static ApprovalRuleSaveReq req(BizType type, Long roleId, Long userId) {

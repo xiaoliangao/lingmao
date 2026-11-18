@@ -21,7 +21,7 @@ import java.util.Set;
  * <ul>
  *   <li>本次使用库存：占着库存；</li>
  *   <li>本次使用在途（mrp_calc_transit）：一条采购行上几张算料单用了 U，这行还没到的 P：min(P, U) 还是占着的在途，
- *       剩下 U − min(P, U) 已经到了，变成占着的库存。到了的先算给先确认的（use id 小的）；</li>
+ *       剩下 U − min(P, U) 已经到了，变成占着的库存。到了的按 use id 分配（建行顺序，不等于确认顺序）；</li>
  *   <li>它自己生成的采购行（calc_item_id 指着它的行）：没到的整条占着在途，到了的（净入库）占着库存。</li>
  * </ul>
  * 一张算料单占着的库存再减去它的订单已经领走的（issued_qty），不小于 0。只算送物料仓的：直发工厂仓的料不进公共的数（Q11）。
@@ -161,13 +161,15 @@ final class SupplyBook {
         return stockOf(skuId).subtract(heldStock(skuId, excluded)).subtract(ownReceivedOf(skuId, prevCalcId)).max(BigDecimal.ZERO);
     }
 
-    /** 一条在途上别人占着的：它是没排除的已确认算料单生成的，整条没到的都占着；不然是别人用着的（不超过没到的） */
+    /** 一条在途上别人占着的：它是没排除的已确认算料单生成的，整条没到的都占着；不然只计别人用着且尚未到的部分。 */
     BigDecimal heldTransit(Line l, Set<Long> excluded) {
         BigDecimal pending = l.pendingStock();
         if (l.ownerConfirmed() && !excluded.contains(l.ownerCalcId())) {
             return pending;
         }
-        BigDecimal used = sum(uses.stream().filter(u -> u.lineId() == l.id() && !excluded.contains(u.calcId())).map(Use::qty).toList());
+        // 已到的那部分已计入 heldStock；排除自己/上一张重算时，不能再占一次剩余在途。
+        BigDecimal used = sum(uses.stream().filter(u -> u.lineId() == l.id() && !excluded.contains(u.calcId()))
+                .map(u -> u.qty().subtract(arrivedOf(u.id()))).toList());
         return pending.min(used);
     }
 

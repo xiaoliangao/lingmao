@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage, type UploadRequestOptions } from 'element-plus'
+import { provideUploadScope, useUploadScope } from '@/composables/usePendingUploads'
 import { fileApi } from '@/api/system'
 import type { FileVO } from '@/types/system'
 import { formatFileSize } from '@/utils/format'
@@ -14,9 +15,12 @@ import { MAX_DESIGN_SOURCE_SIZE, MAX_UPLOAD_SIZE } from '@/utils/request'
  *   <DesignFiles v-model="form.files" />
  *   <DesignFiles :model-value="detail.files" :disabled="!canEdit" @update:model-value="saveFiles" />
  */
-const props = withDefaults(defineProps<{ max?: number; disabled?: boolean }>(), { max: 20, disabled: false })
+const props = withDefaults(defineProps<{ max?: number; disabled?: boolean; save?: (files: FileVO[]) => Promise<void> }>(), { max: 20, disabled: false })
 const model = defineModel<FileVO[]>({ default: () => [] })
 
+const uploads = props.save ? provideUploadScope() : useUploadScope()
+let mounted = true
+onBeforeUnmount(() => { mounted = false })
 const ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ai,.psd'
 const isSource = (name: string) => /\.(ai|psd)$/i.test(name)
 /** 图片、PDF 在新页签里看；别的下载 */
@@ -37,18 +41,36 @@ function beforeUpload(file: File) {
   return true
 }
 
+let queue: Promise<void> = Promise.resolve()
+function apply(change: (files: FileVO[]) => FileVO[], current: () => boolean) {
+  const work = queue.then(async () => {
+    if (!mounted || !current()) return
+    const next = change(model.value)
+    if (props.save) await props.save(next)
+    else model.value = next
+  })
+  queue = work.catch(() => {})
+  return work
+}
 async function upload(options: UploadRequestOptions) {
+  const task = uploads.begin()
   uploading.value++
+  let ok = false
   try {
-    const uploaded = await fileApi.upload(options.file)
-    model.value = [...model.value, uploaded]
+    const file = await fileApi.upload(options.file)
+    await apply((files) => [...files, file], task.current)
+    ok = task.current() && mounted
   } finally {
     uploading.value--
+    task.finish(ok)
   }
 }
-
-function remove(index: number) {
-  model.value = model.value.filter((_, i) => i !== index)
+async function remove(index: number) {
+  const file = model.value[index]
+  if (!file) return
+  const task = uploads.begin()
+  try { await apply((files) => files.filter((f) => f.url !== file.url), task.current); task.finish(true) }
+  catch { task.finish(false) }
 }
 </script>
 

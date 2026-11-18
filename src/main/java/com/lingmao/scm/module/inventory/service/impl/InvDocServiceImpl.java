@@ -10,6 +10,7 @@ import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
@@ -24,6 +25,7 @@ import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.dto.DocRef;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
+import com.lingmao.scm.module.biz.service.ActionRequestService;
 import com.lingmao.scm.module.biz.service.DocActions;
 import com.lingmao.scm.module.biz.service.DocHeaderService;
 import com.lingmao.scm.module.biz.service.DocLogService;
@@ -117,6 +119,7 @@ public class InvDocServiceImpl implements InvDocService {
     private final AttachmentService attachmentService;
     private final ReferenceService referenceService;
     private final SerialNoGenerator serialNoGenerator;
+    private final ActionRequestService actionRequestService;
     private final Clock clock;
     private final Map<BizType, StockSourceHandler> handlers = new EnumMap<>(BizType.class);
 
@@ -125,7 +128,8 @@ public class InvDocServiceImpl implements InvDocService {
                              WarehouseService warehouseService, CompanyService companyService, DictDataService dictDataService,
                              UserService userService, DocHeaderService docHeaderService, DocLogService docLogService,
                              AttachmentService attachmentService, ReferenceService referenceService,
-                             SerialNoGenerator serialNoGenerator, Clock clock, List<StockSourceHandler> sourceHandlers) {
+                             SerialNoGenerator serialNoGenerator, ActionRequestService actionRequestService,
+                             Clock clock, List<StockSourceHandler> sourceHandlers) {
         this.invDocMapper = invDocMapper;
         this.itemMapper = itemMapper;
         this.stockLogMapper = stockLogMapper;
@@ -142,6 +146,7 @@ public class InvDocServiceImpl implements InvDocService {
         this.attachmentService = attachmentService;
         this.referenceService = referenceService;
         this.serialNoGenerator = serialNoGenerator;
+        this.actionRequestService = actionRequestService;
         this.clock = clock;
         for (StockSourceHandler h : sourceHandlers) {
             if (handlers.put(h.sourceType(), h) != null) {
@@ -482,9 +487,10 @@ public class InvDocServiceImpl implements InvDocService {
             if (r.getQty() == null) {
                 throw new BizException(400, "第 " + seq + " 行要填数量");
             }
-            item.setQty(r.getQty());
-            item.setPrice(r.getPrice());
-            item.setAmount(r.getPrice() == null ? null : r.getQty().multiply(r.getPrice()).setScale(2, RoundingMode.HALF_UP));
+            item.setQty(NumericLimits.quantity(r.getQty(), "第 " + seq + " 行："));
+            item.setPrice(NumericLimits.price(r.getPrice(), "第 " + seq + " 行："));
+            item.setAmount(NumericLimits.amount(item.getPrice() == null ? null : r.getQty().multiply(item.getPrice())
+                    .setScale(2, RoundingMode.HALF_UP), "第 " + seq + " 行："));
             item.setPurchaseUnit(null);
             item.setPurchaseQty(null);
             item.setConversionFactor(null);
@@ -567,12 +573,9 @@ public class InvDocServiceImpl implements InvDocService {
         StockSourceHandler handler = doc.getSourceType() == null ? null : handler(BizType.valueOf(doc.getSourceType()));
         SourcePosting sourcePosting = handler == null ? null : sourcePosting(doc, items);
         if (handler != null) {
-            handler.check(sourcePosting);
+            handler.preparePosting(sourcePosting, false);
         }
         ledger.post(posting(doc, items));
-        if (handler != null) {
-            handler.onPosted(sourcePosting);
-        }
         docLogService.add(BizType.INV_DOC, doc.getId(), "audit", DRAFT, APPROVED, remark);
     }
 
@@ -585,10 +588,10 @@ public class InvDocServiceImpl implements InvDocService {
                 .setSql("version = version + 1")
                 .eq(InvDoc::getVersion, req.version()));
         List<InvDocItem> items = itemMapper.selectByDoc(doc.getId());
-        ledger.post(posting(doc, items).reversed());
         if (doc.getSourceType() != null) {
-            handler(BizType.valueOf(doc.getSourceType())).onUnposted(sourcePosting(doc, items));
+            handler(BizType.valueOf(doc.getSourceType())).preparePosting(sourcePosting(doc, items), true);
         }
+        ledger.post(posting(doc, items).reversed());
         docLogService.add(BizType.INV_DOC, doc.getId(), "unaudit", APPROVED, DRAFT, req.reason());
     }
 
@@ -612,11 +615,11 @@ public class InvDocServiceImpl implements InvDocService {
         for (InvDocItem i : items) {
             if (type.hasFrom()) {
                 moves.add(new StockLedger.Move(doc.getFromWarehouseId(), i.getMaterialSkuId(), i.getQty().negate(), change,
-                        i.getSeq(), i.getId(), null, i.getDyeLot()));
+                        i.getSeq(), i.getId(), null, i.getDyeLot(), i.getPrice(), i.getAmount() == null ? null : i.getAmount().negate()));
             }
             if (type.hasTo()) {
                 moves.add(new StockLedger.Move(doc.getToWarehouseId(), i.getMaterialSkuId(), i.getQty(), change,
-                        i.getSeq(), i.getId(), null, i.getDyeLot()));
+                        i.getSeq(), i.getId(), null, i.getDyeLot(), i.getPrice(), i.getAmount()));
             }
         }
         return new StockLedger.Posting(doc.getId(), null, doc.getNo(), doc.getDocDate(), moves);
@@ -684,6 +687,16 @@ public class InvDocServiceImpl implements InvDocService {
     @Override
     @Transactional
     public InvDocCreatedVO fromSource(BizType source, long sourceId, InvDocFromSourceReq req) {
+        checkSource(source, req.getDocType());
+        if (!LoginUser.hasAuthority("inventory:doc:add") || (req.isPost() && !LoginUser.hasAuthority("inventory:doc:audit"))) {
+            throw new BizException(403, "没有新建或审核库存单的权限");
+        }
+        String operation = source == BizType.PURCHASE_ORDER ? "INV_FROM_PURCHASE" : "INV_FROM_PRODUCTION";
+        return actionRequestService.execute(operation, sourceId, req.getClientActionId(), req, InvDocCreatedVO.class,
+                () -> createFromSource(source, sourceId, req));
+    }
+
+    private InvDocCreatedVO createFromSource(BizType source, long sourceId, InvDocFromSourceReq req) {
         InvDocType type = req.getDocType();
         checkSource(source, type);
         StockSourceHandler handler = handler(source);
@@ -814,6 +827,9 @@ public class InvDocServiceImpl implements InvDocService {
         } else {
             item.setQty(qty);
         }
+        NumericLimits.quantity(item.getQty(), "第 " + seq + " 行：");
+        NumericLimits.price(item.getPrice(), "第 " + seq + " 行换算后：");
+        NumericLimits.amount(item.getAmount(), "第 " + seq + " 行：");
         if (type == InvDocType.ISSUE_OUT && s.suggestQty() != null && qty.compareTo(s.suggestQty()) > 0) {
             if (overReason == null || overReason.isBlank()) {
                 throw new BizException(400, "第 " + seq + " 行领多了，要写原因");

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, h, reactive, ref, watch } from 'vue'
+import { isFutureBusinessDay } from '@/utils/businessDate'
+import { computed, h, reactive, ref, toRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { warehouseApi } from '@/api/basic'
 import { invDocApi, stockApi } from '@/api/inventory'
 import type { WarehouseOption } from '@/types/basic'
@@ -17,6 +18,7 @@ import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useUserStore } from '@/stores/user'
 import { formatPrice, formatQty } from '@/utils/format'
+import { newClientAction, unknownActionResult } from '@/utils/clientAction'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import { showSilentError, todayStr } from './docUtils'
@@ -63,7 +65,13 @@ interface DraftRow extends InvDocDraftItem {
   stockQty: number | null
 }
 
+const actionKey = computed(() => `${props.sourceKind}:${props.sourceId}:${props.docType}`)
+const pendingActions = ref<Record<string, InvDocFromSourceReq>>({})
+const uncertainKeys = ref<Record<string, boolean>>({})
+const pendingAction = computed(() => pendingActions.value[actionKey.value])
+const uncertain = computed(() => !!uncertainKeys.value[actionKey.value])
 const loading = ref(false)
+const loadError = ref<string | null>(null)
 const submitting = ref(false)
 const draft = ref<InvDocDraft | null>(null)
 const warehouses = ref<WarehouseOption[]>([])
@@ -147,11 +155,16 @@ function toRows(d: InvDocDraft): DraftRow[] {
   }))
 }
 
+let initSeq = 0
 async function init() {
+  const seq = ++initSeq
+  const key = actionKey.value
   if (!visible.value || !props.sourceId) return
   loading.value = true
+  loadError.value = null
   try {
     const [whs, d] = await Promise.all([warehouseApi.options(), prefill(props.sourceId)])
+    if (seq !== initSeq || key !== actionKey.value || !visible.value) return
     warehouses.value = whs
     draft.value = d
     Object.assign(head, {
@@ -164,10 +177,25 @@ async function init() {
       remark: '',
     })
     rows.value = toRows(d)
+    const original = pendingAction.value
+    if (original) {
+      Object.assign(head, { docDate: original.docDate ?? head.docDate, fromWarehouseId: original.fromWarehouseId, toWarehouseId: original.toWarehouseId,
+        supplierDeliveryNo: original.supplierDeliveryNo ?? '', logisticsNo: original.logisticsNo ?? '', reason: original.reason ?? '', remark: original.remark ?? '' })
+      for (const row of rows.value) {
+        const item = original.items?.find((i) => i.sourceItemId === row.sourceItemId && i.materialSkuId === row.materialSkuId)
+        row.thisQty = item?.qty ?? 0
+        row.dyeLotInput = item?.dyeLot ?? ''
+        row.rollsInput = item?.rolls ?? null
+        row.overReasonInput = item?.overReason ?? ''
+        row.remarkInput = item?.remark ?? ''
+      }
+    }
     await refreshFromStock()
     guard.markSaved()
+  } catch (e) {
+    if (seq === initSeq) loadError.value = e instanceof Error ? e.message : '来源明细加载失败'
   } finally {
-    loading.value = false
+    if (seq === initSeq) loading.value = false
   }
 }
 
@@ -227,7 +255,7 @@ function isShort(row: DraftRow): boolean {
 }
 
 function disableFutureDate(d: Date) {
-  return d.getTime() > Date.now()
+  return isFutureBusinessDay(d)
 }
 
 const activeRows = computed(() => rows.value.filter((r) => r.thisQty > 0))
@@ -263,7 +291,8 @@ function notifyDraft(id: number, no: string) {
 }
 
 async function submit(post: boolean) {
-  if (!props.sourceId || !draft.value || blockedTip.value) return
+  if (pendingAction.value) { await sendOriginal(toRaw(pendingAction.value)); return }
+  if (loadError.value || loading.value || !props.sourceId || !draft.value || blockedTip.value) return
   if (meta.value.from && !head.fromWarehouseId) {
     ElMessage.warning('选一个出库仓库')
     return
@@ -288,7 +317,7 @@ async function submit(post: boolean) {
     remark: orNull(r.remarkInput),
   }))
 
-  const req: InvDocFromSourceReq = {
+  const req: InvDocFromSourceReq = newClientAction({
     docType: props.docType,
     docDate: head.docDate,
     fromWarehouseId: head.fromWarehouseId,
@@ -300,33 +329,56 @@ async function submit(post: boolean) {
     items,
     itemIds: null,
     post,
-  }
+  })
+  pendingActions.value[actionKey.value] = req
+  await sendOriginal(req)
+}
 
+async function sendOriginal(req: InvDocFromSourceReq) {
+  const key = actionKey.value
+  const sourceId = props.sourceId
+  const kind = props.sourceKind
+  if (!sourceId) return
   submitting.value = true
   try {
     const res =
-      props.sourceKind === 'PURCHASE'
-        ? await invDocApi.fromPurchase(props.sourceId, req, { silent: true })
-        : await invDocApi.fromProduction(props.sourceId, req, { silent: true })
-    guard.markSaved()
-    visible.value = false
+      kind === 'PURCHASE'
+        ? await invDocApi.fromPurchase(sourceId, req, { silent: true })
+        : await invDocApi.fromProduction(sourceId, req, { silent: true })
+    delete pendingActions.value[key]
+    delete uncertainKeys.value[key]
+    if (key === actionKey.value) { guard.markSaved(); visible.value = false }
     const posted = res.status === 'APPROVED'
     if (posted) ElMessage.success(`${verb.value}了，库存已更新（${res.no}）`)
     else notifyDraft(res.id, res.no)
     emit('created', { id: res.id, no: res.no, posted })
   } catch (e) {
     // 1001 库存不够、1004 超上限弹清单表格，别的一行消息；对话框留着改
+    uncertainKeys.value[key] = unknownActionResult(e instanceof ApiError ? e.code : undefined)
+    if (!uncertainKeys.value[key]) delete pendingActions.value[key]
     if (e instanceof ApiError) showSilentError(e)
     else throw e
   } finally {
     submitting.value = false
   }
 }
+async function restartAction() {
+  try {
+    await ElMessageBox.confirm('请先核对原单据是否已生成。只有明确要另建一张时才继续，新动作可能再次记账。', '重新登记', { confirmButtonText: '确认新登记', cancelButtonText: '保留原登记' })
+    delete pendingActions.value[actionKey.value]
+    delete uncertainKeys.value[actionKey.value]
+    await init()
+  } catch { /* 保留原动作 */ }
+}
 </script>
 
 <template>
   <el-dialog v-model="visible" :title="dialogTitle" width="920px" :close-on-click-modal="false" :before-close="guard.beforeClose">
-    <div v-loading="loading">
+    <el-alert v-if="loadError" type="error" :closable="false" :title="loadError"><el-button @click="init">重试加载</el-button></el-alert>
+    <el-alert v-if="uncertain" type="warning" :closable="false" title="登记结果尚未确认。重试使用原动作和原内容，关窗重开仍保留。">
+      <el-button :loading="submitting" @click="submit(false)">重试原登记</el-button><el-button link @click="restartAction">重新登记</el-button>
+    </el-alert>
+    <div v-loading="loading" :inert="!!pendingAction || submitting">
       <el-form label-position="top" class="head-grid">
         <el-form-item label="日期">
           <el-date-picker v-model="head.docDate" type="date" value-format="YYYY-MM-DD" :disabled-date="disableFutureDate" :clearable="false" />

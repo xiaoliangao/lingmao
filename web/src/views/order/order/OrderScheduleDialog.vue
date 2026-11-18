@@ -275,7 +275,7 @@ async function submit() {
             </el-select>
           </el-form-item>
           <el-form-item :label="b.processMode === PROCESS_MODE_FULL ? '成品单价（元/件）' : '加工费（元/件）'" required>
-            <el-input-number v-model="b.unitPrice" :min="0" :precision="2" :controls="false" :disabled="b.quoting" />
+            <el-input-number v-model="b.unitPrice" :min="0" :precision="4" :controls="false" :disabled="b.quoting" />
             <span class="field-tip dim">
               <template v-if="archiveOf(b)?.price != null">档案现价 {{ formatPrice(archiveOf(b)!.price) }}</template>
               <template v-else-if="b.factoryId && !b.quoting">档案里没有这家这种方式的价</template>

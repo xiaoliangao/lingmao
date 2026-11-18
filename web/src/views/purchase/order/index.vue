@@ -15,6 +15,7 @@ import UserSelect from '@/components/UserSelect.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
 import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
+import { statusQuery } from '@/utils/query'
 import {
   PURCHASE_STATUS,
   PURCHASE_TYPE_LABEL,
@@ -56,9 +57,9 @@ const buyerName = ref<string | null>(null)
 
 const dateRange = ref<[string, string] | null>(null)
 
-const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile } = useTable({
-  fetch: ({ statusTab, ...rest }) =>
-    purchaseApi.page({ ...rest, status: statusTab ? [statusTab] : undefined }),
+const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
+  normalize: (query) => statusQuery(query),
+  fetch: purchaseApi.page,
   query: {
     keyword: '',
     statusTab: pickStatus(route.query.status),
@@ -68,6 +69,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     orderDateFrom: undefined as string | undefined,
     orderDateTo: undefined as string | undefined,
     mine: false,
+    auditForMe: route.query.auditForMe === '1',
   },
   exportUrl: '/api/purchase-orders/export',
   exportName: '采购单.xlsx',
@@ -84,6 +86,12 @@ watch(
     }
   },
 )
+
+watch(() => route.query.auditForMe, (value) => {
+  if (route.path !== '/purchases') return
+  const next = value === '1'
+  if (query.auditForMe !== next) { query.auditForMe = next; search() }
+})
 
 function onDateChange(val: [string, string] | null | undefined) {
   dateRange.value = val ?? null
@@ -139,7 +147,7 @@ const exportingPicked = ref(false)
 async function exportPicked() {
   exportingPicked.value = true
   try {
-    await purchaseApi.export({ ids: selected.value.map((r) => r.id) })
+    await exportSelected(selected.value.map((r) => r.id))
   } finally {
     exportingPicked.value = false
   }
@@ -174,7 +182,8 @@ async function exportPicked() {
         <UserSelect v-model="query.buyerId" v-model:label="buyerName" clearable placeholder="全部采购员" />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审批</el-checkbox>
+        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

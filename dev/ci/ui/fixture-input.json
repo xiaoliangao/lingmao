@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "database": "scm_smoke_test",
+  "companyId": 1,
+  "userId": 1,
+  "styleId": 1,
+  "styleSkuIdsSameSizeDifferentColor": [
+    12,
+    21
+  ],
+  "warehouseId": 1,
+  "materialSkuId": 101,
+  "brand": "DEMO",
+  "notes": "Anonymous dev/seed-demo.sql master IDs; only fresh isolated test databases; no credentials."
+}

@@ -4,6 +4,7 @@ import com.lingmao.scm.module.biz.dto.DocLogVO;
 import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
 import com.lingmao.scm.module.techpack.dto.PackBrief;
+import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
 import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
@@ -69,6 +70,9 @@ public interface TechPackService {
 
     /** 几个版本：id → PackBrief（订单锁定的、变更单换的）；查不到的不在 map 里 */
     Map<Long, PackBrief> briefs(Collection<Long> packIds);
+
+    /** 按实际使用 SKU 核对完整性；失败1000，一次列全。旧订单的已作废锁版仍可用。 */
+    void checkRequirements(Collection<PackRequirement> requirements);
 
     /** 几个版本的工序工价合计（元 / 件，核价的"加工费"口径）：排单时外发加工的单价旁边提示用。查不到的不在 map 里 */
     Map<Long, BigDecimal> laborTotals(Collection<Long> packIds);

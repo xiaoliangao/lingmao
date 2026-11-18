@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessToday, addBusinessDays, businessMonth, pickerDate } from '@/utils/businessDate'
 /**
  * 日期范围：Element Plus 的 daterange，只是把常用的设好——一个月的日历卡片，上面一排快捷项
  * （今天、近 7 天、近 30 天、本月），值是 "2026-11-01" 这种字符串。
@@ -11,24 +12,12 @@
  */
 const model = defineModel<[string, string] | null>()
 
-function day(offset: number) {
-  const date = new Date()
-  date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() + offset)
-  return date
-}
-
+const day = (offset: number) => pickerDate(addBusinessDays(businessToday(), offset))
 const SHORTCUTS = [
   { text: '今天', value: () => [day(0), day(0)] },
   { text: '近 7 天', value: () => [day(-6), day(0)] },
   { text: '近 30 天', value: () => [day(-29), day(0)] },
-  {
-    text: '本月',
-    value: () => {
-      const today = day(0)
-      return [new Date(today.getFullYear(), today.getMonth(), 1), new Date(today.getFullYear(), today.getMonth() + 1, 0)]
-    },
-  },
+  { text: '本月', value: () => businessMonth().map(pickerDate) },
 ]
 </script>
 

@@ -20,11 +20,11 @@ import { addDaysStr, todayStr } from '@/components/doc/docUtils'
 import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
+import { statusQuery } from '@/utils/query'
 import { useUserStore } from '@/stores/user'
 import { ORDER_SOURCE, ORDER_STATUS, type OrderImportHead, type OrderQuery, type OrderRow, type OrderStatus } from '@/types/order'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
-import { download } from '@/utils/request'
 
 /**
  * 需求订单列表（/orders，docs/api/02 §1.1，原型 route('/orders')）。
@@ -79,10 +79,12 @@ async function loadCounts(params: Omit<OrderQuery, 'status' | 'ids'>) {
   }
 }
 
-const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile } = useTable({
-  fetch: ({ statusTab, ...rest }) => {
-    void loadCounts(rest)
-    return orderApi.page({ ...rest, status: statusTab ? [statusTab] : undefined })
+const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
+  normalize: (query) => statusQuery(query),
+  fetch: (params) => {
+    const { status: _status, page: _page, size: _size, ...countsQuery } = params
+    void loadCounts(countsQuery)
+    return orderApi.page(params)
   },
   query: {
     keyword: '',
@@ -95,6 +97,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     orderDateTo: pickDate(route.query.orderDateTo),
     unscheduled: route.query.unscheduled === '1' ? true : (undefined as boolean | undefined),
     mine: false,
+    auditForMe: route.query.auditForMe === '1',
   },
   exportUrl: orderApi.exportUrl,
   exportName: '需求订单.xlsx',
@@ -118,6 +121,12 @@ watch(
     search()
   },
 )
+
+watch(() => route.query.auditForMe, (value) => {
+  if (route.path !== '/orders') return
+  const next = value === '1'
+  if (query.auditForMe !== next) { query.auditForMe = next; search() }
+})
 
 // ---------- 齐料（另取，02 §3.13） ----------
 const KITTING_STATUSES: OrderStatus[] = ['APPROVED', 'RUNNING', 'DONE']
@@ -205,7 +214,7 @@ const exportingPicked = ref(false)
 async function exportPicked() {
   exportingPicked.value = true
   try {
-    await download(orderApi.exportUrl, { ids: selected.value.map((r) => r.id) }, '需求订单.xlsx')
+    await exportSelected(selected.value.map((r) => r.id))
   } finally {
     exportingPicked.value = false
   }
@@ -270,7 +279,8 @@ function onImported(count: number) {
       </FilterItem>
 
       <template #right>
-        <el-segmented v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审批</el-checkbox>
+        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

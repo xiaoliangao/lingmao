@@ -306,6 +306,8 @@ export interface PurchaseRow {
 }
 
 export interface PurchaseQuery {
+  /** 当前待我审批；忽略 mine / owner，仍要求模块列表权限 */
+  auditForMe?: boolean
   /** 采购单号、供应商、物料编码 / 名称 / SKU 码、订单号、款号、算料单号；一次查几个（README §3.2）时单号、款号、物料编码精确查 */
   keyword?: string
   status?: PurchaseStatus[]

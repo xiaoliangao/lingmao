@@ -12,6 +12,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 由源单生成（POST …/from-purchase/{id}、…/from-production/{id}，前端 InvDocFromSourceReq）。单头没填的按带出的默认值建。
@@ -20,6 +21,9 @@ import java.util.List;
  */
 @Data
 public class InvDocFromSourceReq {
+
+    @NotNull(message = "缺少 clientActionId，请刷新后重新操作")
+    private UUID clientActionId;
 
     @NotNull(message = "请选类型")
     private InvDocType docType;

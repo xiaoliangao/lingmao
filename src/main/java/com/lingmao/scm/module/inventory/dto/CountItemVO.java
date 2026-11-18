@@ -13,6 +13,7 @@ public class CountItemVO extends MaterialSkuBrief {
     private Long id;
     private Integer seq;
     private BigDecimal bookQty;
+    private Long bookRevision;
     private BigDecimal countedQty;
     /** 实盘 − 账面；实盘没填是 null */
     private BigDecimal diffQty;

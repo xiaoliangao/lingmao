@@ -55,6 +55,14 @@ public class StockLog {
 
     private String dyeLot;
 
+    private BigDecimal unitPrice;
+    private BigDecimal amount;
+    private String stockUnit;
+    private String currency;
+    /** RECORDED 为凭证价值已记录，UNKNOWN 为未估值或历史未留存。 */
+    private String valuationStatus;
+    private Long reversalOfLogId;
+
     @TableField(fill = FieldFill.INSERT)
     private Long createBy;
 

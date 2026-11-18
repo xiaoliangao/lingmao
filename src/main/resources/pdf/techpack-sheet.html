@@ -58,6 +58,7 @@
 
 <span class="mark" th:if="${sheet.statusMark != null}" th:text="${sheet.statusMark}">草稿</span>
 <h1 th:text="${sheet.title}">工艺单</h1>
+<p class="dim" th:if="${sheet.contextNotice != null}" th:text="${sheet.contextNotice}"></p>
 
 <table class="top"><tr>
   <td class="cell">

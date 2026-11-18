@@ -97,6 +97,8 @@ class InvDocServiceImplTest {
     @Mock
     private SerialNoGenerator serialNoGenerator;
     @Mock
+    private com.lingmao.scm.module.biz.service.ActionRequestService actionRequestService;
+    @Mock
     private StockSourceHandler purchaseHandler;
 
     private InvDocServiceImpl service;
@@ -106,9 +108,10 @@ class InvDocServiceImplTest {
         when(purchaseHandler.sourceType()).thenReturn(BizType.PURCHASE_ORDER);
         service = new InvDocServiceImpl(invDocMapper, itemMapper, stockLogMapper, stockMapper, ledger, excel, materialService,
                 warehouseService, companyService, dictDataService, userService, docHeaderService, docLogService, attachmentService,
-                referenceService, serialNoGenerator, CLOCK, List.of(purchaseHandler));
+                referenceService, serialNoGenerator, actionRequestService,
+                CLOCK, List.of(purchaseHandler));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null,
-                Arrays.stream(new String[]{"inventory:doc:edit", "inventory:doc:remove", "inventory:doc:audit"})
+                Arrays.stream(new String[]{"inventory:doc:add", "inventory:doc:edit", "inventory:doc:remove", "inventory:doc:audit"})
                         .map(SimpleGrantedAuthority::new).toList()));
     }
 
@@ -167,6 +170,8 @@ class InvDocServiceImplTest {
      */
     @Test
     void fromPurchase_convertsUnitsAndChecksSource() {
+        when(actionRequestService.execute(any(), anyLong(), any(), any(), any(), any()))
+                .thenAnswer(inv -> inv.<java.util.function.Supplier<?>>getArgument(5).get());
         SourceDraft.Item roll = new SourceDraft.Item(501L, 10L, "ROLL", new BigDecimal("45.5"), new BigDecimal("910"),
                 new BigDecimal("2"), new BigDecimal("2.1"), new BigDecimal("2"), BigDecimal.ZERO, BigDecimal.ZERO, null, null);
         SourceDraft.Item other = new SourceDraft.Item(502L, 11L, "METER", BigDecimal.ONE, new BigDecimal("12"),
@@ -186,6 +191,7 @@ class InvDocServiceImplTest {
         });
 
         InvDocFromSourceReq req = new InvDocFromSourceReq();
+        req.setClientActionId(java.util.UUID.randomUUID());
         req.setDocType(InvDocType.PURCHASE_IN);
         req.setItems(List.of(sourceItem(501L, 10L, "1.5"), sourceItem(502L, 11L, "0")));
         var created = service.fromSource(BizType.PURCHASE_ORDER, 88L, req);

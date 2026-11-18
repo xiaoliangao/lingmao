@@ -231,9 +231,8 @@ public class ProductionOrderController {
     @PutMapping("/{id:\\d+}/nodes")
     @PreAuthorize("hasAuthority('production:node:edit')")
     @OperLog(module = "生产单", action = "改节点计划")
-    public R<Void> updatePlan(@PathVariable("id") long id, @Valid @RequestBody NodePlanReq req) {
-        nodeService.updatePlan(id, req);
-        return R.ok();
+    public R<Map<String, Integer>> updatePlan(@PathVariable("id") long id, @Valid @RequestBody NodePlanReq req) {
+        return R.ok(Map.of("planRevision", nodeService.updatePlan(id, req)));
     }
 
     @Operation(summary = "报进度（电脑、手机共用）：报开始 / 报完成；前面还有节点没报完成时照样报上，返回 warning")

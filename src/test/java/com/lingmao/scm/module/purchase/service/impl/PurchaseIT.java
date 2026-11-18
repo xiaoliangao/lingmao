@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.purchase.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
@@ -42,11 +43,18 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -78,6 +86,10 @@ class PurchaseIT {
     private ReferenceService referenceService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private DataSource dataSource;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @AfterEach
     void logout() {
@@ -220,6 +232,276 @@ class PurchaseIT {
     }
 
     /**
+     * RFC010 §4.3 / 审查 L3：两单各需 150，共用一条 300 的在途。先建的 B 草稿在 A 确认后必须重算，
+     * 所以 calc.id 是 B 在先、use.id 是 A 在先；到货 200 分为 A150/B50，退 100 后为 A100/B0。
+     * 此时 B 重算仍有自己的 150 在途，不能把 A 已到的 100 再扣一次；新单确认前旧占用不释放。
+     */
+    @Test
+    void sharedTransit_partialNetReceiptsAndRecalc_allocateOnceByUseId() {
+        Fixture f = fixture(null);
+        long po = approvedStockPo(f, "300", LocalDate.now().plusDays(3));
+        long orderA = approvedOrder(f, LocalDate.now().plusDays(60));
+        long orderB = approvedOrder(f, LocalDate.now().plusDays(60));
+        MrpCreateReq requestA = new MrpCreateReq(); requestA.setOrderIds(List.of(orderA));
+        MrpCreateReq requestB = new MrpCreateReq(); requestB.setOrderIds(List.of(orderB));
+        long calcB = mrpService.create(requestB).id();
+        long calcA = mrpService.create(requestA).id();
+        mrpService.confirm(calcA, new DocActionReq(0, null));
+
+        // 两张草稿都曾看到 300；A 确认后，B 不能凭旧可用量直接确认。
+        assertThatThrownBy(() -> mrpService.confirm(calcB, new DocActionReq(0, null)))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
+                    assertThat(e.getMessage()).contains("可用量已变化");
+                });
+        assertThat(mrpService.detail(calcB).getStatus()).isEqualTo("DRAFT");
+        mrpService.recalc(calcB, new DocActionReq(0, null));
+        MrpCalcDetailVO b = mrpService.detail(calcB);
+        assertThat(b.getItems().getFirst().getAvailTransitQty()).isEqualByComparingTo("150");
+        mrpService.confirm(calcB, new DocActionReq(b.getVersion(), null));
+        assertThat(calcB).isLessThan(calcA);
+        long useA = jdbcTemplate.queryForObject("""
+                SELECT t.id FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id=t.calc_item_id
+                WHERE i.calc_id=?""", Long.class, calcA);
+        long useB = jdbcTemplate.queryForObject("""
+                SELECT t.id FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id=t.calc_item_id
+                WHERE i.calc_id=?""", Long.class, calcB);
+        assertThat(useA).as("到货先分给更小的 use.id，不按 calc.id 排序").isLessThan(useB);
+        assertSharedTransit(f, po, calcA, calcB, "0", "0", "0", "0");
+
+        receive(f, po, "200");
+        assertSharedTransit(f, po, calcA, calcB, "200", "0", "150", "50");
+        invDocService.fromSource(BizType.PURCHASE_ORDER, po, stockReq(f, po, InvDocType.PURCHASE_RETURN, "100"));
+        assertSharedTransit(f, po, calcA, calcB, "200", "100", "100", "0");
+
+        long nextB = mrpService.recalc(calcB, new DocActionReq(mrpService.detail(calcB).getVersion(), null)).id();
+        MrpCalcDetailVO next = mrpService.detail(nextB);
+        assertThat(next.getStatus()).isEqualTo("DRAFT");
+        assertThat(next.getPrevCalcId()).isEqualTo(calcB);
+        assertThat(mrpService.detail(calcB).getStatus()).isEqualTo("CONFIRMED");
+        assertSharedTransit(f, po, calcA, calcB, "200", "100", "100", "0");
+        assertThat(next.getItems()).singleElement().satisfies(row -> {
+            assertThat(row.getAvailStockQty()).as("A 已到的 100 仍占着库存，B 不再分一次").isZero();
+            assertThat(row.getUseStockQty()).isZero();
+            assertThat(row.getAvailTransitQty()).as("未到 200 - A 未到占用 50 = B 可用 150").isEqualByComparingTo("150");
+            assertThat(row.getUseTransitQty()).isEqualByComparingTo("150");
+            assertThat(row.getNetQty()).isZero();
+            assertThat(row.getSuggestQty()).isZero();
+        });
+
+        mrpService.confirm(nextB, new DocActionReq(next.getVersion(), null));
+        assertThat(mrpService.detail(calcB)).satisfies(old -> {
+            assertThat(old.getStatus()).isEqualTo("CLOSED");
+            assertThat(old.getCloseReason()).isEqualTo("RECALC");
+            assertThat(old.getItems().getFirst().getTransitUses().getFirst().arrivedQty()).isZero();
+        });
+        assertThat(mrpService.detail(nextB).getStatus()).isEqualTo("CONFIRMED");
+        assertSharedTransit(f, po, calcA, nextB, "200", "100", "100", "0");
+    }
+
+    /** 同一来源行的已到只分一次；草稿不抢占、关闭的旧单不再占用，库存 + 在途没有虚增的公共可用量。 */
+    private void assertSharedTransit(Fixture f, long po, long firstCalc, long secondCalc,
+                                     String received, String returned, String firstArrived, String secondArrived) {
+        var purchase = purchaseOrderService.detail(po).getItems().getFirst();
+        assertThat(purchase.getReceivedQty()).isEqualByComparingTo(received);
+        assertThat(purchase.getReturnedQty()).isEqualByComparingTo(returned);
+        BigDecimal net = new BigDecimal(received).subtract(new BigDecimal(returned));
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (int i = 0; i < 2; i++) {
+            var row = mrpService.detail(i == 0 ? firstCalc : secondCalc).getItems().getFirst();
+            String arrived = i == 0 ? firstArrived : secondArrived;
+            assertThat(row.getUseStockQty()).isZero();
+            assertThat(row.getUseTransitQty()).isEqualByComparingTo("150");
+            assertThat(row.getReceivedQty()).as("备货采购只经 transitUses 计到货，不另作自购入库").isZero();
+            assertThat(row.getTransitUses()).singleElement().satisfies(use -> {
+                assertThat(use.purchaseItemId()).isEqualTo(purchase.getId());
+                assertThat(use.qty()).isEqualByComparingTo("150");
+                assertThat(use.arrivedQty()).isEqualByComparingTo(arrived);
+            });
+            allocated = allocated.add(row.getTransitUses().getFirst().arrivedQty());
+            assertThat(row.getShortQty()).isEqualByComparingTo(new BigDecimal("150").subtract(new BigDecimal(arrived)));
+        }
+        assertThat(allocated).as("两单到货之和只等于来源净入库").isEqualByComparingTo(net);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(qty), 0) FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?
+                  AND owner_type='OWN' AND owner_id=0 AND location_id=0""", BigDecimal.class, f.warehouse, f.sku))
+                .isEqualByComparingTo(net);
+        assertThat(supplyService.materialSupply(List.of(f.sku))).singleElement().satisfies(supply -> {
+            assertThat(supply.heldQty()).isEqualByComparingTo("300");
+            assertThat(supply.transits()).singleElement().satisfies(transit -> {
+                assertThat(transit.warehouseId()).isEqualTo(f.warehouse);
+                assertThat(transit.qty()).isEqualByComparingTo(new BigDecimal("300").subtract(net));
+                assertThat(net.add(transit.qty()).subtract(supply.heldQty())).as("公共可用库存加在途").isZero();
+            });
+        });
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT DISTINCT i.calc_id FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id=t.calc_item_id
+                JOIN mrp_calc c ON c.id=i.calc_id WHERE t.purchase_item_id=? AND c.status='CONFIRMED'""",
+                Long.class, purchase.getId())).containsExactlyInAnyOrder(firstCalc, secondCalc);
+    }
+
+    @Test
+    void reverseReturnAfterReplacementCannotBreakReceiptCap_andRollsBackAll() {
+        Fixture f = fixture(null);
+        long po = approvedStockPo(f, "100", LocalDate.now().plusDays(3));
+        receive(f, po, "100");
+        long returned = invDocService.fromSource(BizType.PURCHASE_ORDER, po, stockReq(f, po, InvDocType.PURCHASE_RETURN, "50")).id();
+        long replacement = invDocService.fromSource(BizType.PURCHASE_ORDER, po, stockReq(f, po, InvDocType.PURCHASE_IN, "50")).id();
+        long logs = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM inv_stock_log WHERE material_sku_id=?", Long.class, f.sku);
+        int version = invDocService.detail(returned).getVersion();
+        assertThatThrownBy(() -> invDocService.act(returned, "unaudit", new DocActionReq(version, null)))
+                .isInstanceOf(BizException.class).extracting("code").isEqualTo(1004);
+        assertThat(invDocService.detail(returned).getStatus()).isEqualTo("APPROVED");
+        assertThat(invDocService.detail(returned).getVersion()).isEqualTo(version);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM inv_stock_log WHERE material_sku_id=?", Long.class, f.sku)).isEqualTo(logs);
+        assertThat(purchaseOrderService.detail(po).getItems().getFirst().getReturnedQty()).isEqualByComparingTo("50");
+        assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("100");
+        invDocService.act(replacement, "unaudit", new DocActionReq(invDocService.detail(replacement).getVersion(), null));
+        invDocService.act(returned, "unaudit", new DocActionReq(version, null));
+        assertThat(purchaseOrderService.detail(po).getItems().getFirst().getReturnedQty()).isZero();
+        assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    void fromSourceRetryIsIdempotentIncludingConcurrentCallsAndRollback() throws Exception {
+        Fixture f = fixture(null);
+        long po = approvedStockPo(f, "100", LocalDate.now().plusDays(3));
+        InvDocFromSourceReq req = stockReq(f, po, InvDocType.PURCHASE_IN, "60");
+        var pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            java.util.concurrent.Callable<com.lingmao.scm.module.inventory.dto.InvDocCreatedVO> action = () -> {
+                loginAs(f.user); start.await();
+                try { return invDocService.fromSource(BizType.PURCHASE_ORDER, po, req); }
+                finally { SecurityContextHolder.clearContext(); }
+            };
+            var one = pool.submit(action); var two = pool.submit(action); start.countDown();
+            assertThat(one.get(15, TimeUnit.SECONDS)).isEqualTo(two.get(15, TimeUnit.SECONDS));
+        } finally { pool.shutdownNow(); }
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM inv_doc WHERE source_type='PURCHASE_ORDER' AND source_id=?", Long.class, po)).isEqualTo(1);
+        assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("60");
+        req.getItems().getFirst().setQty(new BigDecimal("61"));
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PURCHASE_ORDER, po, req))
+                .isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+        InvDocFromSourceReq rejected = stockReq(f, po, InvDocType.PURCHASE_IN, "50");
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PURCHASE_ORDER, po, rejected))
+                .isInstanceOf(BizException.class).extracting("code").isEqualTo(1004);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM biz_action_request WHERE client_action_id=?", Long.class, rejected.getClientActionId())).isZero();
+        rejected.getItems().getFirst().setQty(new BigDecimal("30"));
+        var retry = invDocService.fromSource(BizType.PURCHASE_ORDER, po, rejected);
+        assertThat(invDocService.fromSource(BizType.PURCHASE_ORDER, po, rejected)).isEqualTo(retry);
+        assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("90");
+    }
+
+    /** RFC010：等待采购源单锁的过账事务不能先占库存行，避免与采购审核的锁序相反。 */
+    @Test
+    void postingWaitsForSourceBeforeTakingStockLock() throws Exception {
+        Fixture f = fixture(null);
+        long po = approvedStockPo(f, "100", LocalDate.now().plusDays(3));
+        jdbcTemplate.update("INSERT INTO inv_stock (warehouse_id, material_sku_id, qty) VALUES (?, ?, 0)", f.warehouse, f.sku);
+        InvDocFromSourceReq req = stockReq(f, po, InvDocType.PURCHASE_IN, "20");
+        req.setPost(false);
+        long doc = invDocService.fromSource(BizType.PURCHASE_ORDER, po, req).id();
+        assertWaitsOnPoBeforeRow(f.user, po, () -> invDocService.act(doc, "audit", new DocActionReq(0, null)), """
+                SELECT id FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?
+                  AND owner_type='OWN' AND owner_id=0 AND location_id=0 FOR UPDATE NOWAIT""", f.warehouse, f.sku);
+        assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("20");
+        assertThat(jdbcTemplate.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?",
+                BigDecimal.class, f.warehouse, f.sku)).isEqualByComparingTo("20");
+        // 原缺陷在反方向：若先持库存再等采购头，此 NOWAIT 探针必失败。
+        assertWaitsOnPoBeforeRow(f.user, po, () -> invDocService.act(doc, "unaudit", new DocActionReq(1, null)), """
+                SELECT id FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?
+                  AND owner_type='OWN' AND owner_id=0 AND location_id=0 FOR UPDATE NOWAIT""", f.warehouse, f.sku);
+        assertThat(invDocService.detail(doc).getStatus()).isEqualTo("DRAFT");
+        assertThat(purchaseOrderService.detail(po).getReceivedQty()).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?",
+                BigDecimal.class, f.warehouse, f.sku)).isZero();
+    }
+
+    /** RFC010：重算确认必须先锁待改挂采购行的单头，再锁行，不能与采购审核形成头/行反序。 */
+    @Test
+    void recalcWaitsForPurchaseHeadBeforeRepointingItsItems() throws Exception {
+        Fixture f = fixture(null);
+        long orderId = approvedOrder(f, LocalDate.now().plusDays(60));
+        MrpCreateReq req = new MrpCreateReq(); req.setOrderIds(List.of(orderId));
+        long old = mrpService.create(req).id();
+        var original = mrpService.detail(old);
+        FromMrpReq from = new FromMrpReq(); from.setCalcId(old); from.setVersion(original.getVersion());
+        from.setItemIds(List.of(original.getItems().getFirst().getId()));
+        long po = purchaseOrderService.fromMrp(from).getFirst().id();
+        long next = mrpService.recalc(old, new DocActionReq(mrpService.detail(old).getVersion(), null)).id();
+        int version = mrpService.detail(next).getVersion();
+        assertWaitsOnPoBeforeRow(f.user, po, () -> mrpService.confirm(next, new DocActionReq(version, null)),
+                "SELECT id FROM pur_order_item WHERE purchase_order_id=? FOR UPDATE NOWAIT", po);
+        assertThat(purchaseOrderService.detail(po).getItems().getFirst().getCalcItemId())
+                .isEqualTo(mrpService.detail(next).getItems().getFirst().getId());
+        assertThat(mrpService.detail(old).getStatus()).isEqualTo("CLOSED");
+    }
+
+    private void assertWaitsOnPoBeforeRow(long user, long po, Runnable action, String probeSql, long... keys) throws Exception {
+        var pool = Executors.newSingleThreadExecutor();
+        CompletableFuture<Integer> workerPid = new CompletableFuture<>();
+        try (var blocker = dataSource.getConnection()) {
+            blocker.setAutoCommit(false);
+            int blockerPid;
+            try (var statement = blocker.createStatement(); var rows = statement.executeQuery("SELECT pg_backend_pid()")) {
+                rows.next(); blockerPid = rows.getInt(1);
+            }
+            try (var statement = blocker.prepareStatement("SELECT id FROM pur_order WHERE id=? FOR UPDATE")) {
+                statement.setLong(1, po); statement.executeQuery().close();
+            }
+            var posting = pool.submit(() -> {
+                loginAs(user);
+                try {
+                    new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                        jdbcTemplate.execute("SET LOCAL lock_timeout='8s'");
+                        workerPid.complete(jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
+                        action.run();
+                    });
+                } finally { SecurityContextHolder.clearContext(); }
+            });
+            try {
+                int pid = workerPid.get(5, TimeUnit.SECONDS);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                boolean blocked = false;
+                while (System.nanoTime() < deadline) {
+                    blocked = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                            "SELECT ? = ANY(pg_blocking_pids(?))", Boolean.class, blockerPid, pid));
+                    if (blocked) break;
+                    Thread.sleep(20);
+                }
+                assertThat(blocked).as("worker must be waiting on the held purchase head").isTrue();
+                try (var probe = dataSource.getConnection()) {
+                    probe.setAutoCommit(false);
+                    try (var statement = probe.prepareStatement(probeSql)) {
+                        for (int i = 0; i < keys.length; i++) statement.setLong(i + 1, keys[i]);
+                        try (var rows = statement.executeQuery()) { assertThat(rows.next()).isTrue(); }
+                    } finally { probe.rollback(); }
+                }
+            } finally { blocker.rollback(); }
+            posting.get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+            assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    /** RFC010：算料调用同一实际 SKU 完整性门禁，档案停用不能通过需求展开 SQL 悄悄漏料。 */
+    @Test
+    void mrpRejectsDisabledMaterialSkuBeforeWritingCalc() {
+        Fixture f = fixture(null);
+        long orderId = approvedOrder(f, LocalDate.now().plusDays(60));
+        jdbcTemplate.update("UPDATE bas_material_sku SET status=0 WHERE id=?", f.sku);
+        MrpCreateReq req = new MrpCreateReq(); req.setOrderIds(List.of(orderId));
+        assertThatThrownBy(() -> mrpService.create(req)).isInstanceOfSatisfying(BizException.class, e -> {
+            assertThat(e.getCode()).isEqualTo(1000);
+            assertThat(e.getData()).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(String.class))
+                    .hasSize(2).allSatisfy(problem -> assertThat(problem).contains("配料 SKU", "停用"));
+        });
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM mrp_calc WHERE create_by=?", Long.class, f.user)).isZero();
+    }
+
+    /**
      * 补货（PRD §6.6.7 验收 3）：最小库存 300、库存 120、起订量 100 → 差 180、建议 180；生成备货采购单草稿后行上挂着它；
      * 审核后库存 + 在途 = 300，不再提醒
      */
@@ -315,8 +597,7 @@ class PurchaseIT {
                 INSERT INTO sty_style (code, name, style_class, brand, category_id, year, season, source, size_group_id, tag_price, status)
                 VALUES (?, 'IT 采购款', 'FS', 'IT', ?, 2026, 'AUTUMN', 'OWN', ?, 299, 'ENABLED') RETURNING id""",
                 Long.class, styleCode, category, sizeGroup);
-        long color = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 采购色" + s);
+        long color = TestColors.insert(jdbcTemplate, "IT 采购色" + s);
         jdbcTemplate.update("INSERT INTO sty_style_color (style_id, color_id, seq) VALUES (?, ?, 1)", style, color);
         long skuM = jdbcTemplate.queryForObject("INSERT INTO sty_style_sku (style_id, code, color_id, size_code) VALUES (?, ?, ?, 'M') RETURNING id",
                 Long.class, style, styleCode + "-A-M", color);
@@ -421,22 +702,21 @@ class PurchaseIT {
 
     /** 到货入库并马上过账（数量按采购单位） */
     private void receive(Fixture f, long poId, String qty) {
+        invDocService.fromSource(BizType.PURCHASE_ORDER, poId, stockReq(f, poId, InvDocType.PURCHASE_IN, qty));
+    }
+
+    private InvDocFromSourceReq stockReq(Fixture f, long poId, InvDocType type, String qty) {
         long line = purchaseOrderService.detail(poId).getItems().getFirst().getId();
         InvDocFromSourceReq req = new InvDocFromSourceReq();
-        req.setDocType(InvDocType.PURCHASE_IN);
+        req.setClientActionId(java.util.UUID.randomUUID());
+        req.setDocType(type);
         InvDocFromSourceReq.Item i = new InvDocFromSourceReq.Item();
         i.setSourceItemId(line);
         i.setMaterialSkuId(f.sku);
         i.setQty(new BigDecimal(qty));
         req.setItems(List.of(i));
         req.setPost(true);
-        invDocService.fromSource(BizType.PURCHASE_ORDER, poId, req);
-    }
-
-    /** bas_color 的编码是 3 位、全局唯一 */
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
+        return req;
     }
 
     private ReorderRowVO reorderRow(Fixture f) {

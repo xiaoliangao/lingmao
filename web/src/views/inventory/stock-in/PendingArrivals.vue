@@ -17,6 +17,8 @@ import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import { PURCHASE_TYPE_LABEL, type PendingArrivalCounts, type PendingArrivalRow } from '@/types/purchase'
 import { formatDate, formatDateRange, formatQty } from '@/utils/format'
+import { newClientAction, unknownActionResult } from '@/utils/clientAction'
+import type { InvDocFromSourceReq } from '@/types/inventory'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 
@@ -234,6 +236,7 @@ function onCreated() {
 }
 
 // ---------- 批量入库 ----------
+const pendingBatch = new Map<number, InvDocFromSourceReq>()
 async function receivePicked() {
   const rows = picked.value.filter(canReceive)
   if (!rows.length) return
@@ -245,9 +248,7 @@ async function receivePicked() {
   try {
     for (const [poId, groupRows] of groups) {
       try {
-        const res = await invDocApi.fromPurchase(
-          poId,
-          {
+        const req = pendingBatch.get(poId) ?? newClientAction({
             docType: 'PURCHASE_IN',
             docDate: null,
             fromWarehouseId: null,
@@ -259,15 +260,17 @@ async function receivePicked() {
             items: null,
             itemIds: groupRows.map((r) => r.purchaseItemId),
             post: false,
-          },
-          { silent: true },
-        )
+          } satisfies Omit<InvDocFromSourceReq, 'clientActionId'>)
+        pendingBatch.set(poId, req)
+        const res = await invDocApi.fromPurchase(poId, req, { silent: true })
+        pendingBatch.delete(poId)
         created.push(res.no)
         // 这一组成了：取消勾；失败的组留着勾，处理好再点一次
         for (const r of groupRows) tableRef.value?.toggleRowSelection(r, false)
       } catch (e) {
         if (!(e instanceof ApiError)) throw e
-        failed.push({ no: groupRows[0]?.purchaseNo ?? String(poId), message: e.message })
+        if (!unknownActionResult(e.code)) pendingBatch.delete(poId)
+        failed.push({ no: groupRows[0]?.purchaseNo ?? String(poId), message: `${e.message}${pendingBatch.has(poId) ? '；结果未知，再点批量入库会重试此采购单的原登记' : ''}` })
       }
     }
   } finally {

@@ -107,6 +107,28 @@ class ScheduleServiceImplTest {
         verify(orderService, never()).addScheduled(any());
     }
 
+    @Test
+    void schedule_sameSkuAcrossBlocksCannotOverflowInt() {
+        when(orderService.lockForProduction(5L)).thenReturn(new OrderForProduction(5L, "DD202611170001", DocStatus.APPROVED, 1L,
+                TODAY, TODAY, 3L, List.of(new OrderForProduction.Line(11L, 1L, 101L, Integer.MAX_VALUE, 0, 0, 9L))));
+        ScheduleReq request = req(1_500_000_000, BigDecimal.ONE, null);
+        request.setBlocks(List.of(request.getBlocks().getFirst(), request.getBlocks().getFirst()));
+        assertThatThrownBy(() -> service.schedule(request)).isInstanceOf(BizException.class)
+                .hasMessageContaining("第 2 块同一 SKU 累计排单").extracting("code").isEqualTo(400);
+        verify(prdMapper, never()).insert(any(com.lingmao.scm.module.production.entity.ProductionOrder.class));
+        verify(orderService, never()).addScheduled(any());
+    }
+
+    @Test
+    void schedule_existingAndRequestedCannotOverflowInt() {
+        when(orderService.lockForProduction(5L)).thenReturn(new OrderForProduction(5L, "DD202611170001", DocStatus.APPROVED, 1L,
+                TODAY, TODAY, 3L, List.of(new OrderForProduction.Line(11L, 1L, 101L, Integer.MAX_VALUE, Integer.MAX_VALUE - 1, 0, 9L))));
+        assertThatThrownBy(() -> service.schedule(req(2, BigDecimal.ONE, null))).isInstanceOf(BizException.class)
+                .hasMessageContaining("累计已排").extracting("code").isEqualTo(400);
+        verify(prdMapper, never()).insert(any(com.lingmao.scm.module.production.entity.ProductionOrder.class));
+        verify(orderService, never()).addScheduled(any());
+    }
+
     /**
      * 规则（02 §3.7）：一块一块查完再一起报 1000，data 是清单：加工厂停用、单价和档案现价不一样没写原因都列出来；一张都不建
      */

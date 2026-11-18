@@ -70,7 +70,8 @@ class ProductionReceiptServiceImplTest {
 
     private ProductionReceiptServiceImpl service() {
         return new ProductionReceiptServiceImpl(receiptMapper, receiptItemMapper, itemMapper, support, orderService, styleService,
-                warehouseService, attachmentService, referenceService, userService, serialNoGenerator, Clock.systemDefaultZone());
+                warehouseService, attachmentService, referenceService, userService, serialNoGenerator,
+                org.mockito.Mockito.mock(com.lingmao.scm.module.biz.service.ActionRequestService.class), Clock.systemDefaultZone());
     }
 
     /** 规则（Q09）：一个 SKU 累计回货 ≤ ⌊件数 × 1.03⌋，超了 1004，data 说清已回多少、还能回多少；不建单、不回写 */
@@ -81,7 +82,7 @@ class ProductionReceiptServiceImplTest {
         when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line(100, 100)));
         when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
 
-        assertThatThrownBy(() -> service().receive(3L, req(5, 0)))
+        assertThatThrownBy(() -> service().receiveNew(3L, req(5, 0)))
                 .isInstanceOf(BizException.class)
                 .satisfies(e -> {
                     assertThat(((BizException) e).getCode()).isEqualTo(1004);
@@ -105,9 +106,41 @@ class ProductionReceiptServiceImplTest {
         when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line(100, 0)));
         when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
 
-        assertThatThrownBy(() -> service().receive(3L, req(5, 6)))
+        assertThatThrownBy(() -> service().receiveNew(3L, req(5, 6)))
                 .isInstanceOf(BizException.class).extracting("code").isEqualTo(400);
         verify(receiptMapper, never()).insert(any(ProductionReceipt.class));
+    }
+
+    @Test
+    void receive_existingAndRequestedCannotOverflowInt() {
+        lockedAs(DocStatus.RUNNING);
+        when(support.today()).thenReturn(TODAY);
+        when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line(Integer.MAX_VALUE, Integer.MAX_VALUE - 2)));
+        when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
+        assertThatThrownBy(() -> service().receiveNew(3L, req(3, 0))).isInstanceOf(BizException.class)
+                .hasMessageContaining("累计回货").extracting("code").isEqualTo(400);
+        verify(receiptMapper, never()).insert(any(ProductionReceipt.class));
+        verify(itemMapper, never()).addReturned(anyLong(), anyInt(), anyInt(), anyInt());
+        verify(orderService, never()).addReturned(any());
+    }
+
+    @Test
+    void receive_totalAcrossSkusCannotOverflowInt() {
+        lockedAs(DocStatus.RUNNING);
+        when(support.today()).thenReturn(TODAY);
+        ProductionOrderItem second = line(1_500_000_000, 0);
+        second.setId(32L); second.setOrderItemId(12L); second.setStyleSkuId(102L);
+        when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line(1_500_000_000, 0), second));
+        when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
+        ReceiptReq request = req(1_500_000_000, 0);
+        ReceiptReq.Item other = new ReceiptReq.Item();
+        other.setPrdOrderItemId(32L); other.setQty(1_500_000_000); other.setDefectQty(0);
+        request.setItems(List.of(request.getItems().getFirst(), other));
+        assertThatThrownBy(() -> service().receiveNew(3L, request)).isInstanceOf(BizException.class)
+                .hasMessageContaining("本次回货").extracting("code").isEqualTo(400);
+        verify(receiptMapper, never()).insert(any(ProductionReceipt.class));
+        verify(itemMapper, never()).addReturned(anyLong(), anyInt(), anyInt(), anyInt());
+        verify(orderService, never()).addReturned(any());
     }
 
     /** 规则（§2.1）：已结案的单不能登记回货（1000）；要登记先取消结案 */
@@ -115,7 +148,7 @@ class ProductionReceiptServiceImplTest {
     void receive_closed_1000() {
         lockedAs(DocStatus.CLOSED);
 
-        assertThatThrownBy(() -> service().receive(3L, req(5, 0)))
+        assertThatThrownBy(() -> service().receiveNew(3L, req(5, 0)))
                 .isInstanceOf(BizException.class)
                 .satisfies(e -> {
                     assertThat(((BizException) e).getCode()).isEqualTo(1000);
@@ -160,6 +193,7 @@ class ProductionReceiptServiceImplTest {
         i.setQty(qty);
         i.setDefectQty(defect);
         ReceiptReq r = new ReceiptReq();
+        r.setClientActionId(java.util.UUID.randomUUID());
         r.setReceiptDate(TODAY);
         r.setItems(List.of(i));
         return r;

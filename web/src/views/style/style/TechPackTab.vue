@@ -14,6 +14,7 @@ import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useUserStore } from '@/stores/user'
 import { MATERIAL_SOURCE_LABEL, type MaterialPickRow } from '@/types/basic'
+import type { FileVO } from '@/types/system'
 import type { StylePickRow } from '@/types/style'
 import {
   BOM_SKU_MODE,
@@ -65,6 +66,7 @@ const props = defineProps<{
   styleId: number
   styleCode: string
   styleName: string
+  styleImage?: FileVO | null
   overview: TechPackOverview | null
 }>()
 
@@ -95,6 +97,12 @@ const loading = ref(false)
 const saving = ref(false)
 const detail = ref<TechPackDetail | null>(null)
 const costData = ref<TechPackCost | null>(null)
+const costState = ref<'idle' | 'loading' | 'ready' | 'error' | 'forbidden'>('idle')
+const costDraftPackId = ref<number | null>(null)
+const loadError = ref<string | null>(null)
+const inspectedBomId = ref<number | null>(null)
+const inspectedBom = computed(() => draft.bomItems.find((row) => row.id === inspectedBomId.value) ?? null)
+const inspectedSkus = computed(() => (inspectedBom.value?.skus ?? []).filter((sku) => bomView.value !== 'color' || sku.colorId == null || sku.colorId === viewColorId.value))
 
 /** 四个子页签共用的表单（草稿能改的部分） */
 const draft = reactive({
@@ -119,7 +127,7 @@ const ALL_SECTIONS: CraftSection[] = ['CUTTING', 'SEWING', 'PART', 'QUALITY', 'B
 /** 尺寸指示每行换部位前的部位（换部位时判断测量方法是不是原部位的默认写法） */
 const prevPoint = new WeakMap<SpecPointForm, string>()
 
-function hydrateDraft(d: TechPackDetail, c: TechPackCost | null) {
+function hydrateDraft(d: TechPackDetail) {
   draft.versionNote = d.versionNote ?? ''
   draft.utilPct = d.utilPct
   draft.packingMode = d.packingMode
@@ -136,38 +144,59 @@ function hydrateDraft(d: TechPackDetail, c: TechPackCost | null) {
     }
   })
   draft.processes = d.processes.map(({ id: _id, seq: _seq, ...rest }) => ({ ...rest, images: [...rest.images] }))
-  draft.costMode = c?.costMode ?? 'OUTSOURCE'
-  draft.buyPrice = c?.buyPrice ?? null
-  draft.costItems = c?.otherItems.map((it) => ({ name: it.name, amount: it.amount, remark: it.remark })) ?? []
+  draft.costMode = 'OUTSOURCE'
+  draft.buyPrice = null
+  draft.costItems = []
   guard.markSaved()
 }
 
+/** 主表和核价独立加载；核价失败/未授权时，保存其他页签只能发送 cost:null。 */
+let costSeq = 0
+let loadSeq = 0
 async function loadCost(packId: number, colorId?: number) {
-  if (!canSeeCost.value) {
-    costData.value = null
-    return
-  }
+  const current = ++costSeq
+  if (!canSeeCost.value) { costState.value = 'forbidden'; costData.value = null; return }
+  costState.value = 'loading'
   try {
-    costData.value = await techPackApi.cost(packId, colorId)
-    costColorId.value = costData.value.colorId ?? colorId
+    const result = await techPackApi.cost(packId, colorId)
+    if (current !== costSeq || activePackId.value !== packId || detail.value?.id !== packId) return
+    costData.value = result
+    costColorId.value = result.colorId ?? colorId
+    if (costDraftPackId.value !== packId) {
+      const wasDirty = guard.dirty.value
+      draft.costMode = result.costMode
+      draft.buyPrice = result.buyPrice
+      draft.costItems = result.otherItems.map((it) => ({ name: it.name, amount: it.amount, remark: it.remark }))
+      costDraftPackId.value = packId
+      if (!wasDirty) guard.markSaved()
+    }
+    costState.value = 'ready'
   } catch {
+    if (current !== costSeq || activePackId.value !== packId) return
+    costState.value = 'error'
     costData.value = null
   }
 }
 
-/** 取的序号：连着点几个版本时，先发的后回来不能盖掉后点的 */
-let loadSeq = 0
 async function loadPack(packId: number) {
   const current = ++loadSeq
+  ++costSeq
+  costDraftPackId.value = null
+  costData.value = null
+  costState.value = 'idle'
+  loadError.value = null
+  inspectedBomId.value = null
   loading.value = true
+  detail.value = null
   try {
     const d = await techPackApi.get(packId)
-    if (current !== loadSeq) return
+    if (current !== loadSeq || activePackId.value !== packId) return
     detail.value = d
     viewColorId.value = d.colors[0]?.id
-    await loadCost(packId, costColorId.value && d.colors.some((c) => c.id === costColorId.value) ? costColorId.value : d.colors[0]?.id)
-    if (current !== loadSeq) return
-    hydrateDraft(d, costData.value)
+    hydrateDraft(d)
+    void loadCost(packId, costColorId.value && d.colors.some((c) => c.id === costColorId.value) ? costColorId.value : d.colors[0]?.id)
+  } catch (e) {
+    if (current === loadSeq) loadError.value = e instanceof Error ? e.message : '资料包加载失败'
   } finally {
     if (current === loadSeq) loading.value = false
   }
@@ -225,6 +254,7 @@ const activeBrief = computed<TechPackBrief | undefined>(() => props.overview?.pa
 
 /** 换版本：有没保存的修改先问 */
 async function switchPack(id: number) {
+  if (saving.value) return
   if (id === activePackId.value && detail.value) return
   if (guard.dirty.value && detail.value) {
     try {
@@ -237,6 +267,7 @@ async function switchPack(id: number) {
       return
     }
   }
+  guard.discardUploads()
   activePackId.value = id
   await loadPack(id)
 }
@@ -304,7 +335,7 @@ function buildSaveForm(): TechPackSaveForm {
     craftSections: draft.craftSections.map((cs) => ({ section: cs.section, content: orNull(cs.content), images: cs.images })),
     processes: draft.processes.map((p) => ({ ...p, name: p.name.trim(), requirement: orNull(p.requirement), remark: orNull(p.remark) })),
     // 没有看成本权限的一律发 null：后端不动核价，免得把别人填的清掉（01 §3.5）
-    cost: canSeeCost.value
+    cost: canSeeCost.value && costDraftPackId.value === d.id
       ? {
           costMode: draft.costMode,
           buyPrice: draft.buyPrice,
@@ -317,9 +348,10 @@ function buildSaveForm(): TechPackSaveForm {
 /** 保存草稿。返回新的 versionLock（生效接着用），没存上返回 null */
 async function saveDraft(toast = true): Promise<number | null> {
   const d = detail.value
-  if (!d) return null
+  if (!d || saving.value) return null
   saving.value = true
   try {
+    if (!(await guard.waitForUploads())) return null
     const lock = await techPackApi.save(d.id, buildSaveForm())
     guard.markSaved()
     if (toast) ElMessage.success(`${packName(d)} 已保存`)
@@ -330,7 +362,8 @@ async function saveDraft(toast = true): Promise<number | null> {
   } catch (e) {
     // 别人改过、已经生效了：重新取一遍（消息 request.ts 弹过了）
     if (reloadOnConflict(e, () => loadPack(d.id))) return null
-    throw e
+    if (!(e instanceof ApiError)) throw e
+    return null
   } finally {
     saving.value = false
   }
@@ -606,13 +639,19 @@ function bomProblems(b: BomItem): string[] {
   if (!d) return []
   const out: string[] = []
   if (b.materialStatus === 0) out.push('物料已停用')
-  if (b.skuMode === 'BY_COLOR' || b.skuMode === 'BY_COLOR_SIZE') {
+  if (b.skuMode === 'BY_COLOR_SIZE') {
+    const missing = d.colors.flatMap((color) => d.sizes.filter((size) => !b.skus.some((sku) => sku.colorId === color.id && sku.sizeCode === size)).map((size) => `${color.name}/${size}`))
+    if (missing.length) out.push(`${missing.join('、')} 没配料`)
+  } else if (b.skuMode === 'BY_COLOR') {
     const missing = d.colors.filter((c) => !b.skus.some((s) => s.colorId === c.id))
-    if (missing.length) out.push(`${missing.map((c) => c.name).join('、')}没配料`)
-  }
-  if (b.skuMode === 'BY_SIZE' || b.skuMode === 'BY_COLOR_SIZE') {
+    if (missing.length) out.push(`${missing.map((c) => c.name).join('、')} 没配料`)
+  } else if (b.skuMode === 'BY_SIZE') {
     const missing = d.sizes.filter((sz) => !b.skus.some((s) => s.sizeCode === sz))
     if (missing.length) out.push(`${missing.join('、')} 没配料`)
+  }
+  if (b.usageMode === 'BY_SIZE') {
+    const missing = d.sizes.filter((size) => b.sizeUsages[size] == null)
+    if (missing.length) out.push(`${missing.join('、')} 未填用量`)
   }
   if (b.skus.some((s) => s.skuStatus === 0)) out.push('有停用的 SKU')
   return out
@@ -763,6 +802,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           <button
             v-for="p in overview.packs"
             :key="p.id"
+            :data-testid="`techpack-version-${p.id}`"
+            :disabled="saving"
             type="button"
             role="tab"
             class="ver-pill"
@@ -787,7 +828,12 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
         </div>
       </div>
 
+      <el-alert v-if="loadError" :title="loadError" type="error" :closable="false"><el-button v-if="activePackId" @click="loadPack(activePackId)">重试</el-button></el-alert>
       <template v-if="detail">
+        <el-alert v-if="detail.contextNotice" :title="detail.contextNotice" type="info" :closable="false" />
+        <el-alert v-if="costState === 'error'" data-testid="cost-load-error" title="核价加载失败；其他页签仍可保存，已保存成本会保留" type="warning" :closable="false">
+          <el-button size="small" @click="loadCost(detail.id, costColorId)">重试核价</el-button>
+        </el-alert>
         <!-- 版本信息 -->
         <div class="pack-meta">
           <el-tag size="small" :type="detail.stage === 'DEV' ? 'warning' : 'primary'" disable-transitions>{{ PACK_STAGE[detail.stage].short }}</el-tag>
@@ -806,6 +852,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           <el-input
             v-if="editable"
             v-model="draft.versionNote"
+            :disabled="saving"
             size="small"
             maxlength="200"
             class="note-input"
@@ -814,7 +861,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           <span v-else-if="activeBrief?.versionNote" class="dim">说明：{{ activeBrief.versionNote }}</span>
         </div>
 
-        <el-tabs v-model="subTab">
+        <el-tabs v-model="subTab" :inert="saving || loading">
           <!-- 尺寸指示 -->
           <el-tab-pane :label="`尺寸指示（${draft.specPoints.length}）`" name="spec">
             <div v-if="editable" class="sub-toolbar">
@@ -903,6 +950,26 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               </el-select>
             </div>
 
+            <aside data-testid="bom-inspector" class="bom-inspector" aria-label="主图与物料查看">
+              <div class="bom-style-image">
+                <el-image v-if="styleImage" :src="styleImage.thumbUrl || styleImage.url" :preview-src-list="[styleImage.url]" preview-teleported fit="contain" />
+                <span v-else class="dim">暂无主图</span>
+                <small>{{ detail.styleCode }} {{ detail.styleName }} · 当前款式主图</small>
+              </div>
+              <div v-if="inspectedBom" data-testid="bom-row-card" class="bom-row-card" tabindex="0">
+                <strong>{{ inspectedBom.materialCode }} {{ inspectedBom.materialName }}</strong>
+                <p class="dim">{{ bomParts.labelOf(inspectedBom.part) }} · {{ inspectedBom.supplierName || '未指定供应商' }}</p>
+                <div v-for="sk in inspectedSkus" :key="`${sk.materialSkuId}-${sk.colorId}-${sk.sizeCode}`" class="bom-card-sku">
+                  <el-image v-if="sk.image || inspectedBom.image" :src="(sk.image || inspectedBom.image)!.url" :preview-src-list="[(sk.image || inspectedBom.image)!.url]" preview-teleported fit="contain" />
+                  <span v-else class="dim">暂无物料图</span>
+                  <span>{{ sk.skuCode }} · {{ [sk.skuColorName, sk.skuSpec].filter(Boolean).join(' / ') || '默认规格' }}<small v-if="sk.skuStatus === 0" class="danger">已停用</small></span>
+                </div>
+                <p v-if="!inspectedSkus.length" class="danger">当前颜色还没有配料</p>
+                <p v-for="problem in bomProblems(inspectedBom)" :key="problem" class="danger">{{ problem }}</p>
+              </div>
+              <span v-else class="dim">悬停、聚焦或点击物料编码查看料卡</span>
+            </aside>
+
             <el-table v-if="bomView === 'bom'" :data="draft.bomItems" row-key="id" empty-text="还没有物料：点「从物料库选」加">
               <el-table-column type="expand" width="32">
                 <template #default="{ row }">
@@ -949,7 +1016,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               </el-table-column>
               <el-table-column label="物料" min-width="170">
                 <template #default="{ row }">
-                  <span class="code" :class="{ danger: row.materialStatus === 0 }">{{ row.materialCode }}</span>
+                  <button type="button" data-testid="bom-row" class="link-btn code" :class="{ danger: row.materialStatus === 0 }" @mouseenter="inspectedBomId = row.id" @focus="inspectedBomId = row.id" @click="inspectedBomId = row.id">{{ row.materialCode }}</button>
                   {{ row.materialName }}
                 </template>
               </el-table-column>
@@ -1000,7 +1067,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 <template #default="{ row }">{{ bomParts.labelOf(row.item.part) }}</template>
               </el-table-column>
               <el-table-column label="物料" min-width="170">
-                <template #default="{ row }">{{ row.item.materialName }}</template>
+                <template #default="{ row }"><button type="button" data-testid="bom-row" class="link-btn" @mouseenter="inspectedBomId = row.item.id" @focus="inspectedBomId = row.item.id" @click="inspectedBomId = row.item.id">{{ row.item.materialName }}</button></template>
               </el-table-column>
               <el-table-column label="物料 SKU" min-width="170">
                 <template #default="{ row }">
@@ -1039,7 +1106,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                     </div>
                     <el-input v-if="editable" v-model="sectionFormOf(sec).content" type="textarea" :autosize="{ minRows: 3 }" />
                     <p v-else class="craft-text">{{ sectionFormOf(sec).content }}</p>
-                    <ImageUpload v-if="editable || sectionFormOf(sec).images.length" v-model="sectionFormOf(sec).images" :max="6" :disabled="!editable" />
+                    <ImageUpload :key="`${detail.id}-${sec}`" v-if="editable || sectionFormOf(sec).images.length" v-model="sectionFormOf(sec).images" :max="6" :disabled="!editable" />
                   </div>
                 </div>
               </div>
@@ -1112,6 +1179,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           <!-- 核价（按上次保存的算） -->
           <el-tab-pane v-if="canSeeCost" label="核价" name="cost">
             <el-alert v-if="guard.dirty.value" type="warning" :closable="false" show-icon class="mb-12" title="有没保存的修改，保存后核价才更新" />
+            <p v-if="costState === 'loading'" role="status" class="dim">核价加载中，其他页签可继续编辑…</p>
             <div v-if="costData" class="cost-pane">
               <div class="sub-toolbar">
                 <el-segmented v-model="draft.costMode" size="small" :disabled="!editable" :options="Object.entries(COST_MODE).map(([value, label]) => ({ label, value }))" />
@@ -1123,9 +1191,11 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <span class="dim">成品单价</span>
                   <el-input-number
                     v-model="draft.buyPrice"
+                    data-testid="cost-buy-price"
                     size="small"
                     :min="0"
-                    :precision="2"
+                    :max="9999999999.9999"
+                    :precision="4"
                     :controls="false"
                     :disabled="!editable"
                     :placeholder="costData.buyPriceDefault == null ? '' : `默认 ${formatMoney(costData.buyPriceDefault)}，取自价格档案`"
@@ -1193,7 +1263,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <span class="gap" />
                   <el-button v-if="editable" size="small" icon="Plus" @click="addOtherCost">加一项</el-button>
                 </div>
-                <el-table :data="draft.costItems" empty-text="没有其他费用">
+                <el-table :data="draft.costItems" empty-text="没有其他费用" class="other-cost-table">
                   <el-table-column label="名称" min-width="160">
                     <template #default="{ row }">
                       <el-input v-if="editable" v-model="row.name" size="small" placeholder="如：前胸刺绣" />
@@ -1279,6 +1349,14 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 </template>
 
 <style scoped>
+.bom-inspector { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--lm-line-soft); border-radius: var(--lm-radius); }
+.bom-style-image { display: flex; flex-direction: column; gap: 6px; min-width: 140px; max-width: 220px; }
+.bom-style-image .el-image { width: 120px; height: 120px; }
+.bom-row-card { flex: 1; min-width: 200px; }
+.bom-card-sku { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 0; }
+.bom-card-sku .el-image { width: 60px; height: 60px; }
+.bom-card-sku small { display: block; }
+
 .tp-wrap {
   display: flex;
   flex-direction: column;
@@ -1515,6 +1593,11 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 
 .cost-block {
   margin-bottom: 16px;
+}
+
+.other-cost-table :deep(.el-input-number) {
+  width: 100%;
+  min-width: 0;
 }
 
 .blk-head {

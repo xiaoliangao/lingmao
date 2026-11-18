@@ -198,6 +198,22 @@ class MaterialImportTest {
         verify(materialMapper, never()).insert(any(Material.class));
     }
 
+    /** 两个单位都空时仍返回带行列的 1003，不能在采购单位回退处抛空指针。 */
+    @Test
+    void importFile_missingBothUnits_reportsRowAndWritesNothing() throws IOException {
+        Map<String, Object[][]> sheets = new LinkedHashMap<>();
+        sheets.put("物料信息", new Object[][]{{"物料类型", "物料分类", "物料编码", "物料名称", "单位", "采购单位"},
+                {"面料", "面料>梭织", "ML0007", "测试面料", null, null}});
+        BizException e = catchThrowableOfType(BizException.class, () -> materialImport.importFile(xlsx(sheets)));
+        assertThat(e.getCode()).isEqualTo(ErrorCodes.IMPORT_INVALID);
+        assertThat(errors(e)).anySatisfy(error -> {
+            assertThat(error.row()).isEqualTo(2);
+            assertThat(error.column()).isEqualTo("单位");
+        });
+        verify(materialMapper, never()).insert(any(Material.class));
+        verify(materialSkuMapper, never()).insert(any(MaterialSku.class));
+    }
+
     /** 规则：有一行的分类对不上，整批不导（别的行对得上也不导），报出是哪一行 */
     @Test
     void importFile_categoryNotFound_wholeBatchRejected() throws IOException {

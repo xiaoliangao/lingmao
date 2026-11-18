@@ -4,6 +4,9 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.basic.dto.MaterialPurchaseInfo;
 import com.lingmao.scm.module.basic.service.MaterialService;
+import com.lingmao.scm.module.order.service.OrderService;
+import com.lingmao.scm.module.techpack.dto.PackRequirement;
+import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.module.price.dto.MaterialPriceKey;
 import com.lingmao.scm.module.price.dto.PriceRef;
 import com.lingmao.scm.module.price.service.PriceService;
@@ -40,6 +43,8 @@ class MrpEngine {
     static final Set<String> CALC_ORDER_STATUS = Set.of("APPROVED", "RUNNING");
 
     private final MrpCalcMapper calcMapper;
+    private final OrderService orderService;
+    private final TechPackService techPackService;
     private final MaterialService materialService;
     private final PriceService priceService;
     private final DictDataService dictDataService;
@@ -62,6 +67,7 @@ class MrpEngine {
 
     /** 订单都要在、都是已审核或生产中，不然 404 / 1000（选订单算料） */
     List<MrpCalcMapper.OrderHead> checkedHeads(Collection<Long> orderIds) {
+        orderService.checkForMrp(orderIds);
         List<MrpCalcMapper.OrderHead> heads = calcMapper.selectOrderHeads(new LinkedHashSet<>(orderIds));
         if (heads.size() != new HashSet<>(orderIds).size()) {
             throw new BizException(404, "有订单不存在了，请刷新后再选");
@@ -82,6 +88,10 @@ class MrpEngine {
      */
     Result compute(List<MrpCalcMapper.OrderHead> heads, Set<Long> excluded, Long prevCalcId) {
         List<Long> orderIds = heads.stream().map(MrpCalcMapper.OrderHead::id).toList();
+        orderService.checkForMrp(orderIds);
+        List<MrpCalcMapper.OrderLine> orderLines = calcMapper.selectOrderLines(orderIds);
+        techPackService.checkRequirements(orderLines.stream()
+                .map(l -> new PackRequirement(l.techPackId(), l.styleSkuId())).toList());
         Map<Long, LocalDate> commits = new HashMap<>();
         heads.forEach(h -> commits.put(h.id(), h.commitDate()));
         Map<Long, LocalDate> needs = needDates.of(commits);
@@ -110,7 +120,7 @@ class MrpEngine {
         List<MrpCalculator.Row> rows = MrpCalculator.calculate(demands, book, in);
 
         Map<Long, List<MrpSnapshot.Line>> lines = new LinkedHashMap<>();
-        calcMapper.selectOrderLines(orderIds).forEach(l -> lines.computeIfAbsent(l.orderId(), k -> new ArrayList<>())
+        orderLines.forEach(l -> lines.computeIfAbsent(l.orderId(), k -> new ArrayList<>())
                 .add(new MrpSnapshot.Line(l.styleSkuId(), l.qty(), l.techPackId())));
         List<MrpSnapshot.Order> orders = heads.stream().map(h -> new MrpSnapshot.Order(h.id(), h.no(), h.commitDate(),
                 needs.get(h.id()), lines.getOrDefault(h.id(), List.of()))).toList();

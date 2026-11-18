@@ -69,6 +69,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         steps.getFirst().setPerm(perm);
         for (ApprovalRule rule : matchedRules(type, amount)) {
             ensureUsable(rule);
+            ApprovalAccess.check(permissionService, type, rule.getRoleId(), rule.getUserId());
             ApprovalStep step = step(type, docId, round, steps.size() + 1, ApprovalStepStatus.WAITING);
             step.setRoleId(rule.getRoleId());
             step.setUserId(rule.getUserId());

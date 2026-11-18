@@ -33,6 +33,9 @@ class NumTest {
     /** 规则：建议采购量向上取整到最小包装量的倍数、不小于起订量，换算系数的 6 位小数误差不多进一包；净需求 ≤ 0 是 0 */
     @Test
     void suggestPurchase_packMoqAndRatio() {
+        assertThat(Num.suggestPurchase(BigDecimal.ONE, null, new BigDecimal("6"), new BigDecimal("10"))).isEqualByComparingTo("12");
+        assertThat(Num.suggestPurchase(new BigDecimal("0.1"), null, new BigDecimal("0.3"), new BigDecimal("0.5"))).isEqualByComparingTo("0.6");
+        assertThat(Num.suggestPurchase(BigDecimal.ZERO, null, new BigDecimal("6"), new BigDecimal("10"))).isEqualByComparingTo("0");
         assertThat(Num.suggestPurchase(new BigDecimal("101"), null, new BigDecimal("50"), null)).isEqualByComparingTo("150");
         assertThat(Num.suggestPurchase(new BigDecimal("30"), null, new BigDecimal("50"), new BigDecimal("200"))).isEqualByComparingTo("200");
         // 1 采购单位 = 0.333333 库存单位：1 ÷ 0.333333 = 3.000003，按 3 位取成 3.000，不进成 4
@@ -45,6 +48,8 @@ class NumTest {
     void caps_floor() {
         assertThat(Num.maxPieces(120, new BigDecimal("3"))).isEqualTo(123);
         assertThat(Num.maxPieces(120, null)).isEqualTo(120);
+        assertThat(Num.maxPieces(Integer.MAX_VALUE, new BigDecimal("3"))).isEqualTo(Integer.MAX_VALUE);
+        assertThat(Num.maxPieces(2_100_000_000, new BigDecimal("3"))).isEqualTo(Integer.MAX_VALUE);
         assertThat(Num.maxQty(new BigDecimal("100.0005"), new BigDecimal("5"))).isEqualByComparingTo("105.000");
         assertThat(Num.ratio(new BigDecimal("299"), new BigDecimal("100"))).isEqualByComparingTo("2.99");
         assertThat(Num.ratio(BigDecimal.ONE, BigDecimal.ZERO)).isNull();

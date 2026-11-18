@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
         </button>
       </template>
       <div class="cols" role="group" aria-label="显示哪些列">
-        <el-checkbox v-for="def in columns.defs" :key="def.key" v-model="columns.show[def.key]">{{ def.label }}</el-checkbox>
+        <el-checkbox v-for="def in columns.defs" :key="def.key" :model-value="columns.show[def.key]" @update:model-value="columns.set(def.key, $event === true)">{{ def.label }}</el-checkbox>
       </div>
       <footer class="cols-foot">
         <el-button size="small" text :disabled="!columns.changed" @click="columns.reset()">恢复默认</el-button>

@@ -309,6 +309,8 @@ export interface InvDocFromSourceItem {
  * post = true：建好马上审核过账（"入库并过账"），一个事务，审核不过（1001、1004）连单据也不建；要 inventory:doc:add 和 :audit
  */
 export interface InvDocFromSourceReq {
+  /** 同一动作重试保留 UUID 和原始请求体 */
+  clientActionId: string
   docType: InvDocType
   docDate: string | null
   fromWarehouseId: number | null
@@ -447,6 +449,8 @@ export interface CountQuery {
 }
 
 export interface CountItem extends MaterialSkuBrief {
+  /** 拍账时的库存流水修订号；只读，旧数据/反审核后为 null */
+  bookRevision: number | null
   id: number
   seq: number
   /** 账面数：建单时（或草稿里重新取账面数时）的库存快照；期初录入是 0 */
@@ -600,7 +604,13 @@ export const STOCK_CHANGE_TYPE_LABEL: Record<StockChangeType, string> = {
 }
 
 /** 库存日志的一行：只增不改，反审核是反方向再记一条；调拨一张单两条（出仓一条、入仓一条） */
-export interface StockLogRow extends MaterialSkuBrief {
+export interface StockLogRow extends Omit<MaterialSkuBrief, 'stockUnit'> {
+  stockUnit: string | null
+  unitPrice: number | null
+  amount: number | null
+  currency: string | null
+  valuationStatus: 'UNKNOWN' | 'RECORDED'
+  reversalOfLogId: number | null
   id: number
   /** 单据的实际发生日期 yyyy-MM-dd（列表的"日期"） */
   bizDate: string

@@ -11,6 +11,7 @@ import com.lingmao.scm.module.biz.service.ApprovalRuleService;
 import com.lingmao.scm.module.biz.service.ApprovalService;
 import com.lingmao.scm.module.system.service.RoleService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.module.system.service.PermissionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ public class ApprovalRuleServiceImpl implements ApprovalRuleService {
     private final ApprovalService approvalService;
     private final RoleService roleService;
     private final UserService userService;
+    private final PermissionService permissionService;
 
     @Override
     public List<ApprovalRuleVO> list() {
@@ -95,6 +97,7 @@ public class ApprovalRuleServiceImpl implements ApprovalRuleService {
         if (req.getUserId() != null && !userService.isEnabled(req.getUserId())) {
             throw new BizException("这个人不存在或已停用，换一个");
         }
+        ApprovalAccess.check(permissionService, req.getBizType(), req.getRoleId(), req.getUserId());
         rule.setBizType(req.getBizType());
         rule.setOverAmount(req.getOverAmount());
         rule.setRoleId(req.getRoleId());

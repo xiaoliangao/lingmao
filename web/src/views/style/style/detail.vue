@@ -422,7 +422,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
           </el-tab-pane>
 
           <el-tab-pane v-if="canSeePack" label="资料包" name="techpack" lazy>
-            <TechPackTab ref="techPack" :style-id="id" :style-code="s.code" :style-name="s.name" :overview="tpOverview" @changed="loadOverview" />
+            <TechPackTab ref="techPack" :style-id="id" :style-code="s.code" :style-name="s.name" :style-image="s.images[0] ?? null" :overview="tpOverview" @changed="loadOverview" />
           </el-tab-pane>
 
           <el-tab-pane :label="`颜色尺码（${skus.length}）`" name="skus">
@@ -537,13 +537,13 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
         <section class="panel">
           <div class="panel-head">图片<span class="acts dim">第一张是主图</span></div>
           <div class="panel-body">
-            <ImageUpload :model-value="s.images" :max="20" :disabled="!canEdit" @update:model-value="saveImages" />
+            <ImageUpload :model-value="s.images" :max="20" :disabled="!canEdit" :save="saveImages" />
           </div>
         </section>
         <section class="panel">
           <div class="panel-head">设计附件<span class="acts dim">图稿、设计说明</span></div>
           <div class="panel-body">
-            <DesignFiles :model-value="s.files" :disabled="!canEdit" @update:model-value="saveFiles" />
+            <DesignFiles :model-value="s.files" :disabled="!canEdit" :save="saveFiles" />
           </div>
         </section>
       </aside>

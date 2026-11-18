@@ -12,6 +12,7 @@ import UserSelect from '@/components/UserSelect.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
 import { useColumns } from '@/composables/useColumns'
 import { useTable } from '@/composables/useTable'
+import { statusQuery } from '@/utils/query'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { MRP_STATUS, type MrpCalcRow, type MrpOrderOption, type MrpStatus, type ReservePct } from '@/types/purchase'
 import { formatDate, formatDateRange, formatQty } from '@/utils/format'
@@ -42,7 +43,8 @@ const dateRange = ref<[string, string] | null>(null)
 const creatorName = ref<string | null>(null)
 
 const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
-  fetch: ({ statusTab, ...rest }) => mrpApi.page({ ...rest, status: statusTab ? [statusTab] : undefined }),
+  normalize: (query) => statusQuery(query),
+  fetch: mrpApi.page,
   query: {
     keyword: '',
     statusTab: pickStatus(route.query.status),
@@ -246,7 +248,7 @@ async function createCalc() {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="pickVisible" title="选订单算料" width="680px">
+    <el-dialog v-model="pickVisible" title="选订单算料" width="800px">
       <div class="pick-search">
         <el-input v-model="orderKeyword" placeholder="订单号、款号" clearable @keyup.enter="searchOrders" @clear="searchOrders" />
         <el-button @click="searchOrders">查询</el-button>
@@ -263,7 +265,7 @@ async function createCalc() {
         <el-table-column label="承诺交期" width="100" class-name="num">
           <template #default="{ row }">{{ row.commitDate ? formatDate(row.commitDate) : '—' }}</template>
         </el-table-column>
-        <el-table-column label="算过的" min-width="150">
+        <el-table-column label="算过的" min-width="220" :show-overflow-tooltip="false">
           <template #default="{ row }">
             <span v-for="c in (row as MrpOrderOption).calcs" :key="c.id" class="calc code">{{ c.no }} {{ MRP_STATUS[c.status].label }}</span>
             <span v-if="!(row as MrpOrderOption).calcs.length" class="dim">没算过</span>
@@ -300,5 +302,6 @@ async function createCalc() {
   margin-right: 6px;
   font-size: 12px;
   color: var(--lm-pending-text);
+  white-space: nowrap;
 }
 </style>

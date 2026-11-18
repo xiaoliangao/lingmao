@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { homeApi } from '@/api/home'
@@ -30,7 +31,7 @@ defineOptions({ name: 'HomePage' })
 
 /**
  * 首页（/home，docs/api/06 §1.1、§3）：概况四格、快捷入口、待处理事项、近期交期、其他提醒，超级管理员多一行备份情况。
- * - 概况、待办、近期交期三块分开取：一块慢了、出错了不挡别的（出错时那一块不显示 / 显示空）；切回首页三块都重取
+ * - 概况、待办、近期交期三块分开取：一块慢了、出错了不挡别的；失败明确显示并可重试，不冒充成功空态
  * - 待办：管理层（canSeeAll）多"全部 / 我的"和负责人筛选，选的值记在 localStorage（读写包 try/catch，取不到就用默认）
  * - "全部"里每组列前 4 条；选了一组列这组的全部，多出来的"还有 n 条"去 TODO_GROUP_MORE
  * - 概况的小数：0 灰色，不是 0 按文档上色；资料包草稿不能点（款式列表没有按资料包筛的条件）
@@ -41,14 +42,15 @@ const store = useUserStore()
 
 const now = new Date()
 const greeting = (() => {
-  const hour = now.getHours()
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hourCycle: 'h23' }).format(now))
   if (hour >= 5 && hour < 11) return '早上好'
   if (hour >= 11 && hour < 13) return '中午好'
   if (hour >= 13 && hour < 18) return '下午好'
   return '晚上好'
 })()
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
-const todayText = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 星期${WEEKDAYS[now.getDay()]}`
+const day = businessToday(now)
+const todayText = `${day.slice(0, 4)} 年 ${Number(day.slice(5, 7))} 月 ${Number(day.slice(8, 10))} 日 星期${WEEKDAYS[new Date(`${day}T00:00:00Z`).getUTCDay()]}`
 const sub = computed(() => `${greeting}，${store.info?.nickname ?? ''}`)
 
 // ---------- 快捷入口：只出有那个菜单的 ----------
@@ -73,7 +75,12 @@ function openQuick(to: string) {
 const kpi = ref<HomeKpi | null>(null)
 const todos = ref<HomeTodos | null>(null)
 const deliveries = ref<DeliveryRow[]>([])
+const loadingKpi = ref(false)
 const loadingTodos = ref(false)
+const loadingDeliveries = ref(false)
+const kpiFailed = ref(false)
+const todosFailed = ref(false)
+const deliveriesFailed = ref(false)
 const activeTodoGroup = ref<'ALL' | TodoGroupKey>('ALL')
 
 // 待办筛选：只对 canSeeAll 的人有用；记在本机
@@ -111,11 +118,21 @@ const SCOPE_OPTIONS = [
   { label: '我的', value: 'MINE' },
 ]
 
+let kpiSeq = 0
 async function loadKpi() {
+  const seq = ++kpiSeq
+  loadingKpi.value = true
+  kpiFailed.value = false
   try {
-    kpi.value = await homeApi.kpi()
+    const result = await homeApi.kpi()
+    if (seq === kpiSeq) kpi.value = result
   } catch {
-    kpi.value = null
+    if (seq === kpiSeq) {
+      kpi.value = null
+      kpiFailed.value = true
+    }
+  } finally {
+    if (seq === kpiSeq) loadingKpi.value = false
   }
 }
 
@@ -123,6 +140,7 @@ let todoSeq = 0
 async function loadTodos() {
   const seq = ++todoSeq
   loadingTodos.value = true
+  todosFailed.value = false
   try {
     const res = await homeApi.todos(
       todoFilter.scope === 'MINE' ? { mine: true } : todoFilter.ownerId ? { ownerId: todoFilter.ownerId } : {},
@@ -131,17 +149,30 @@ async function loadTodos() {
     todos.value = res
     if (activeTodoGroup.value !== 'ALL' && !res.groups.some((g) => g.key === activeTodoGroup.value)) activeTodoGroup.value = 'ALL'
   } catch {
-    if (seq === todoSeq) todos.value = null
+    if (seq === todoSeq) {
+      todos.value = null
+      todosFailed.value = true
+    }
   } finally {
     if (seq === todoSeq) loadingTodos.value = false
   }
 }
 
+let deliverySeq = 0
 async function loadDeliveries() {
+  const seq = ++deliverySeq
+  loadingDeliveries.value = true
+  deliveriesFailed.value = false
   try {
-    deliveries.value = await homeApi.deliveries()
+    const result = await homeApi.deliveries()
+    if (seq === deliverySeq) deliveries.value = result
   } catch {
-    deliveries.value = []
+    if (seq === deliverySeq) {
+      deliveries.value = []
+      deliveriesFailed.value = true
+    }
+  } finally {
+    if (seq === deliverySeq) loadingDeliveries.value = false
   }
 }
 
@@ -251,7 +282,11 @@ const backupLine = computed(() => {
     <div class="wrap">
       <el-alert v-if="backupAlert" type="error" :title="backupAlert" :closable="false" show-icon />
 
-      <section v-if="hasAnyKpi && kpi" class="kpi-grid">
+      <el-alert v-if="kpiFailed" data-testid="home-kpi-error" type="warning" title="概况暂不可用，未取得相关数据" :closable="false">
+        <el-button size="small" @click="loadKpi">重试概况</el-button>
+      </el-alert>
+      <p v-else-if="loadingKpi" role="status" class="dim">正在取得概况…</p>
+      <section v-else-if="hasAnyKpi && kpi" class="kpi-grid">
         <div v-if="kpi.dev" class="kpi-card">
           <button type="button" class="kpi-top" @click="router.push('/styles')">
             <span class="kpi-label">开发款式</span>
@@ -346,7 +381,10 @@ const backupLine = computed(() => {
             </div>
           </div>
 
-          <div v-if="todos && todos.groups.length" class="panel-body">
+          <BlankState v-if="todosFailed" data-testid="home-todos-error" title="待处理事项暂不可用，未取得待办数据">
+            <el-button size="small" @click="loadTodos">重试待办</el-button>
+          </BlankState>
+          <div v-else-if="todos && todos.groups.length" class="panel-body">
             <div v-if="todos.groups.length > 1" class="seg-wrap">
               <el-segmented v-model="activeTodoGroup" size="small" :options="todoSegOptions" />
             </div>
@@ -381,12 +419,15 @@ const backupLine = computed(() => {
               </button>
             </template>
           </div>
-          <BlankState v-else title="暂无待处理的事" />
+          <BlankState v-else :title="loadingTodos ? '正在取得待办…' : '暂无待处理的事'" />
         </section>
 
-        <section class="panel deliv-panel">
+        <section v-loading="loadingDeliveries" class="panel deliv-panel">
           <div class="panel-head">近期交期</div>
-          <div v-if="deliveries.length" class="panel-body">
+          <BlankState v-if="deliveriesFailed" data-testid="home-deliveries-error" title="近期交期暂不可用，未取得交期数据">
+            <el-button size="small" @click="loadDeliveries">重试交期</el-button>
+          </BlankState>
+          <div v-else-if="deliveries.length" class="panel-body">
             <ul class="deliv-list">
               <li v-for="d in deliveries" :key="`${d.ref.type}-${d.ref.id}`" @click="goRef(d)">
                 <img v-if="d.image" :src="d.image.thumbUrl ?? d.image.url" alt="" class="thumb" loading="lazy" />
@@ -404,12 +445,13 @@ const backupLine = computed(() => {
               </li>
             </ul>
           </div>
-          <BlankState v-else title="近 7 天没有要交的单" />
+          <BlankState v-else :title="loadingDeliveries ? '正在取得交期…' : '近 7 天没有要交的单'" />
         </section>
 
         <section class="panel remind-panel">
           <div class="panel-head">其他提醒</div>
-          <div v-if="todos?.counts.length" class="panel-body remind-grid">
+          <BlankState v-if="todosFailed" title="其他提醒暂不可用，未取得提醒数据" />
+          <div v-else-if="todos?.counts.length" class="panel-body remind-grid">
             <button
               v-for="c in todos.counts"
               :key="c.key"
@@ -422,7 +464,7 @@ const backupLine = computed(() => {
               <strong class="num">{{ c.count }}</strong>
             </button>
           </div>
-          <BlankState v-else title="没有别的要处理" />
+          <BlankState v-else :title="loadingTodos ? '正在取得提醒…' : '没有别的要处理'" />
         </section>
       </div>
 

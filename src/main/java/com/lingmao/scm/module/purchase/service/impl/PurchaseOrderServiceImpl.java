@@ -10,6 +10,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
@@ -187,6 +188,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public PageResult<PurchaseRowVO> page(PurchaseQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PURCHASE_ORDER) : List.of());
         IPage<PurchaseRowVO> page = poMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()));
         fillRows(page.getRecords());
@@ -422,8 +424,13 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     }
 
     static void totals(PurchaseOrder po, List<PurchaseOrderItem> items) {
-        po.setTotalQty(Num.qty(sum(items.stream().map(PurchaseOrderItem::getQty).toList())));
-        po.setTotalAmount(Num.money(sum(items.stream().map(PurchaseOrderItem::getAmount).toList())));
+        items.forEach(i -> {
+            NumericLimits.price(i.getPrice(), "第 " + i.getSeq() + " 行：");
+            NumericLimits.quantity(i.getQty(), "第 " + i.getSeq() + " 行：");
+            NumericLimits.amount(i.getAmount(), "第 " + i.getSeq() + " 行：");
+        });
+        po.setTotalQty(NumericLimits.quantity(Num.qty(sum(items.stream().map(PurchaseOrderItem::getQty).toList())), "采购合计"));
+        po.setTotalAmount(NumericLimits.amount(Num.money(sum(items.stream().map(PurchaseOrderItem::getAmount).toList())), "采购合计"));
     }
 
     @Override
@@ -601,7 +608,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             }
             PriceRef a = archive.get(info.skuId());
             BigDecimal archivePrice = a == null ? null : Num.price(a.price());
-            BigDecimal price = r.getPrice() != null ? Num.price(r.getPrice()) : archivePrice != null ? archivePrice : Num.price(info.price());
+            BigDecimal price = r.getPrice() != null ? NumericLimits.price(r.getPrice(), "第 " + (items.size() + 1) + " 行：")
+                    : archivePrice != null ? archivePrice : Num.price(info.price());
             if (price == null) {
                 throw new BizException(400, "第 " + seq + " 行没有单价");
             }
@@ -971,6 +979,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public byte[] export(PurchaseQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PURCHASE_ORDER) : List.of());
         List<PurchaseRowVO> rows = poMapper.selectRows(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
         if (rows.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException(400, "一次最多导出 " + Excel.MAX_EXPORT_ROWS + " 张，加个筛选条件再导");

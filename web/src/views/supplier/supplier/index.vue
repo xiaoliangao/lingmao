@@ -8,7 +8,6 @@ import { SUPPLIER_STATUS, type SupplierRow, type SupplierSaveResult, type Suppli
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/stores/user'
-import { download } from '@/utils/request'
 import PageHeader from '@/components/PageHeader.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
@@ -25,7 +24,7 @@ const categoryDict = useDict('supplier_category')
 const settleDict = useDict('settle_method')
 
 // ---------- 列表 ----------
-const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile } = useTable({
+const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected: exportSelectedRows } = useTable({
   fetch: supplierApi.page,
   query: {
     keyword: '',
@@ -147,7 +146,7 @@ const exportingSelected = ref(false)
 async function exportSelected() {
   exportingSelected.value = true
   try {
-    await download('/api/suppliers/export', { ids: selected.value.map((row) => row.id) }, '供应商.xlsx')
+    await exportSelectedRows(selected.value.map((row) => row.id))
   } finally {
     exportingSelected.value = false
   }

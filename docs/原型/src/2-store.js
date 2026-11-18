@@ -603,7 +603,7 @@ function auditChange(c) {
 const upstreamPending = () => [...db.productions, ...db.mrps, ...db.purchases].filter((d) => d.upstream && !d.upstream.done)
 
 /* ---------- 算料 ---------- */
-// 毛需求 = Σ 订单 SKU 数 × 尺码用量；需求 = Σ 毛需求 ×（1 + 损耗）×（1 + 备料比）。按 来源 + 物料 SKU + 物权 汇总
+// gross 是未含损耗基础量；PRD 的毛需求含损耗，need 再含备料比。按 来源 + 物料 SKU + 物权 汇总
 // 备料比按物料类型设（算料页「备料比」，存在 db.reserve，单位 %）。真系统物料类型默认 3%（Q18）；原型的示例数据按 0 算，
 // 和 PRD §4.3 的例子一致（那块卡其布物料上的备料比设成了 0）。当场新加的物料类型是 3
 const reserveOf = (sku) => +(db.reserve?.[matOfSku(sku)?.type] || 0)
@@ -700,8 +700,10 @@ function setUseTransit(r, v) {
 function suggestPur(sku, net) {
   if (net <= 0) return 0
   const m = matOfSku(sku)
-  const q = Math.ceil(rnd(net / m.factor / m.pack, 6)) * m.pack
-  return Math.max(rnd(q, 3), m.moq || 0)
+  const pack = m.pack > 0 ? m.pack : 1
+  const required = Math.max(rnd(net / (m.factor > 0 ? m.factor : 1), 3), m.moq || 0)
+  const q = Math.ceil(rnd(required / pack, 6)) * pack
+  return rnd(q, 3)
 }
 function createMrp(orderNos) {
   if (!orderNos.length) fail('先选订单')
@@ -1418,6 +1420,15 @@ seed()
 function selftest() {
   const out = [], ok = (name, cond, got) => out.push({ name, ok: !!cond, got })
   const err = (fn) => { try { fn(); return '' } catch (e) { return e.message + ' ' + e.list.join('；') } }
+  const packageMat = matOfSku('ML0012-KQ'), packageBefore = { factor: packageMat.factor, pack: packageMat.pack, moq: packageMat.moq }
+  try {
+    Object.assign(packageMat, { factor: 1, pack: 6, moq: 10 })
+    ok('采购建议：先满足MOQ10，再按6包装进成12', suggestPur('ML0012-KQ', 1) === 12)
+    ok('采购建议：无净需求不因MOQ额外采购', suggestPur('ML0012-KQ', 0) === 0)
+  } finally { Object.assign(packageMat, packageBefore) }
+  const unusedGroup = { id: 'AUDIT-UNUSED', name: '匿名未引用组', sizes: ['S', 'M'], base: 'M' }
+  ok('未引用尺码组也不能删除已有尺码', err(() => removeSize(unusedGroup, 'S')).includes('建好后不能删除'))
+  ok('未引用尺码组也不能换基码', err(() => setBaseSize(unusedGroup, 'S')).includes('建好后基码不能换'))
   const o = order('DD202611050001') // 订单 4，PRD 贯穿例子
   // 补货提醒（§6.6.7，函数在 5e-price.js）：卡其布库存 120、最小库存 300 → 缺 180；生成备货采购单审核后算上在途，不再提醒。撤掉，不影响下面算料
   const rk = reorderRows().find((r) => r.sku === 'ML0012-KQ')
@@ -1429,7 +1440,7 @@ function selftest() {
   doAction('purchase', rp, '反审核'); removeDraft(db.purchases, rp)
   const m = createMrp([o.no])
   const kq = m.rows.find((r) => r.sku === 'ML0012-KQ')
-  ok('算料：卡其布毛需求 962', kq.gross === 962, kq.gross)
+  ok('算料：卡其布未含损耗基础量 962', kq.gross === 962, kq.gross)
   ok('算料：需求 990.86', kq.need === 990.86, kq.need)
   ok('算料：可用 120、净需求 870.86、建议 871', kq.avail === 120 && kq.net === 870.86 && kq.purQty === 871, [kq.avail, kq.net, kq.purQty])
   ok(TRADE ? '算料：里布客供，不用买' : '算料：里布我方采购（不做客供）', m.rows.filter((r) => r.sku.startsWith('ML0015')).every((r) => r.src === (TRADE ? '客供' : '我方采购')), m.rows.filter((r) => r.sku.startsWith('ML0015')).map((r) => r.src))

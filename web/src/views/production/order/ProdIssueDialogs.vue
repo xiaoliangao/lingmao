@@ -65,6 +65,7 @@ watch(reportVisible, (on) => {
 })
 
 async function submitIssue() {
+  if (!(await reportGuard.waitForUploads())) return
   if (!issueForm.issueType) return void ElMessage.warning('选异常类型')
   if (!issueForm.description.trim()) return void ElMessage.warning('写一下怎么回事')
   if (!issueForm.photos.length) return void ElMessage.warning('至少传一张照片')

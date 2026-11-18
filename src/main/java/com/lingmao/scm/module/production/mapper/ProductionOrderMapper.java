@@ -150,6 +150,9 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
     @Update("UPDATE prd_order SET expect_date = #{date}, update_time = now() WHERE id = #{id}")
     void updateExpectDate(@Param("id") long id, @Param("date") LocalDate date);
 
+    @Update("UPDATE prd_order SET plan_revision=plan_revision+1, update_time=now() WHERE id=#{id} AND plan_revision=#{revision}")
+    int advancePlan(@Param("id") long id, @Param("revision") int revision);
+
     /** 一张订单的生产单（不含作废的），锁订单以后查：订单的生产进度、领料齐不齐 */
     @Select("SELECT * FROM prd_order WHERE order_id = #{orderId} AND status <> 'VOIDED' ORDER BY id")
     List<ProductionOrder> selectLiveByOrder(@Param("orderId") long orderId);

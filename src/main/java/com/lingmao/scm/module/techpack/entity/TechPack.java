@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.lingmao.scm.common.entity.AuditEntity;
+import com.lingmao.scm.common.mybatis.JsonbTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -17,7 +18,7 @@ import java.time.OffsetDateTime;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("tp_tech_pack")
+@TableName(value = "tp_tech_pack", autoResultMap = true)
 public class TechPack extends AuditEntity {
 
     @TableField(updateStrategy = FieldStrategy.NEVER)
@@ -49,6 +50,9 @@ public class TechPack extends AuditEntity {
 
     /** 成品单价，元/件（含料）；按成品采购算时用，没填时核价用价格档案里默认加工厂"包工包料"的现价 */
     private BigDecimal buyPrice;
+
+    @TableField(typeHandler = JsonbTypeHandler.class, updateStrategy = FieldStrategy.NEVER)
+    private PackOwnerSnapshot ownerSnapshot;
 
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Long publishBy;

@@ -11,12 +11,14 @@ export interface R<T> {
   data: T
 }
 
-// 给 axios 的请求配置加一个自己的选项。类型参数要和 axios 自己的声明一模一样，才能合并进去
-declare module 'axios' {
-  interface AxiosRequestConfig<D = any, P = any> {
-    /** true：出错时不弹提示，由调用方自己显示（比如导入对话框把错误清单放在对话框里）。401 照样回登录页 */
-    silent?: boolean
-  }
+/** Local request options keep Axios's upstream generic declarations untouched. */
+export interface RequestOptions {
+  silent?: boolean
+}
+type RequestConfig = AxiosRequestConfig<unknown> & RequestOptions
+
+function isSilent(config: AxiosRequestConfig<unknown> | undefined): boolean {
+  return !!config && 'silent' in config && config.silent === true
 }
 
 /** 接口出错。消息已经在下面的拦截器里弹过了（silent 的除外），调用方不用再提示 */
@@ -72,7 +74,7 @@ instance.interceptors.response.use(
     }
     throw fail(body ?? { code: -1, msg: '服务器返回的内容不对，请稍后再试', data: null }, response)
   },
-  async (error: AxiosError) => {
+  async (error: AxiosError<unknown, unknown>) => {
     // HTTP 状态不是 2xx。后端一律回 200，到这里多半是网关：升级期间 Nginx 回的也是 R，照普通错误处理
     const body = error.response ? await readBody(error.response) : null
     if (body && error.response) {
@@ -87,7 +89,7 @@ instance.interceptors.response.use(
     } else if (error.response) {
       message = `服务器出错了（HTTP ${error.response.status}），请稍后再试`
     }
-    if (!error.config?.silent) {
+    if (!isSilent(error.config)) {
       ElMessage.error(message)
     }
     throw new ApiError(-1, message)
@@ -98,7 +100,7 @@ instance.interceptors.response.use(
  * 只给 web/src/mock 用（pnpm dev:mock）：后端还没写的接口先由假数据回答。answer 返回 undefined = 不归 mock 管，照常发给后端；
  * 返回 R 就当后端回了这个（code 不是 0 照样走下面的出错处理），返回 Blob 就当下载到的文件。正式打包不会调它
  */
-export function installMock(answer: (config: InternalAxiosRequestConfig) => Promise<R<unknown> | Blob> | undefined) {
+export function installMock(answer: (config: InternalAxiosRequestConfig<unknown>) => Promise<R<unknown> | Blob> | undefined) {
   const real = axios.getAdapter(instance.defaults.adapter)
   instance.defaults.adapter = async (config) => {
     const answered = answer(config)
@@ -110,13 +112,13 @@ export function installMock(answer: (config: InternalAxiosRequestConfig) => Prom
 }
 
 /** 后端说出错了：401 回登录页，带清单的弹表格，其他弹一行消息。返回给调用方的 ApiError */
-function fail(body: R<unknown>, response: AxiosResponse): ApiError {
+function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
   if (body.code === 401) {
     clearToken()
     if (!location.pathname.startsWith('/login')) {
       location.href = `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
     }
-  } else if (!response.config.silent) {
+  } else if (!isSilent(response.config)) {
     if (LIST_ERROR_CODES.includes(body.code) && Array.isArray(body.data) && body.data.length > 0) {
       showBizError(body.code, body.msg, body.data)
     } else {
@@ -127,12 +129,12 @@ function fail(body: R<unknown>, response: AxiosResponse): ApiError {
   return new ApiError(body.code, body.msg, body.data ?? null, typeof traceId === 'string' ? traceId : null)
 }
 
-function isJson(response: AxiosResponse) {
+function isJson(response: AxiosResponse<unknown>) {
   return /json/i.test(String(response.headers['content-type'] ?? ''))
 }
 
 /** 从响应里读出 R。下载时 data 是 Blob，要先读成文本；读不出来（比如网关的 HTML 错误页）返回 null */
-async function readBody(response: AxiosResponse): Promise<R<unknown> | null> {
+async function readBody(response: AxiosResponse<unknown>): Promise<R<unknown> | null> {
   let data: unknown = response.data
   if (data instanceof Blob) {
     try {
@@ -146,7 +148,7 @@ async function readBody(response: AxiosResponse): Promise<R<unknown> | null> {
 }
 
 /** 发请求，直接拿到 R 里的 data */
-export function request<T>(config: AxiosRequestConfig): Promise<T> {
+export function request<T>(config: RequestConfig): Promise<T> {
   return instance.request<R<T>>(config).then((response) => response.data.data)
 }
 
@@ -155,7 +157,7 @@ export function request<T>(config: AxiosRequestConfig): Promise<T> {
  * 接口函数想让调用方能静默，就多收一个 options 原样传下来：
  *   disable: (id: number, options?: RequestOptions) => http.post<void>(`/api/materials/${id}/disable`, undefined, options)
  */
-export type RequestOptions = Pick<AxiosRequestConfig, 'silent'>
+
 
 export const http = {
   get: <T>(url: string, params?: object, options?: RequestOptions) => request<T>({ url, method: 'get', params, ...options }),

@@ -9,6 +9,7 @@ import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
 import { addDaysStr, todayStr } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useUserStore } from '@/stores/user'
 import { RESPONSIBLE_PARTY, type ResponsibleParty } from '@/types/order'
 import {
   NODE_STATE,
@@ -32,6 +33,7 @@ import { orNull } from '@/views/basic/common'
  */
 const route = useRoute()
 const router = useRouter()
+const user = useUserStore()
 const id = Number(route.params.id)
 const issueTypes = useDict('issue_type')
 
@@ -143,6 +145,7 @@ const lastReportText = computed(() => {
 })
 
 async function submitNode(action: NodeReportAction) {
+  if (!(await reportGuard.waitForUploads())) return
   const node = selectedNode.value
   if (!node) return
   if (action === 'START' && !reportForm.actualStart) return void ElMessage.warning('填实际开始')
@@ -167,6 +170,7 @@ async function submitNode(action: NodeReportAction) {
 }
 
 async function submitIssue() {
+  if (!(await issueGuard.waitForUploads())) return
   if (!issueForm.issueType) return void ElMessage.warning('选异常类型')
   if (!issueForm.description.trim()) return void ElMessage.warning('写一下怎么回事')
   if (!issueForm.photos.length) return void ElMessage.warning('至少拍一张照片')
@@ -191,7 +195,7 @@ async function submitIssue() {
 }
 
 function openDesktopPage() {
-  if (detail.value) void router.push(`${PRODUCTION_KIND[detail.value.kind].path}/${id}`)
+  if (detail.value && user.hasPerm('production:order:list')) void router.push(`${PRODUCTION_KIND[detail.value.kind].path}/${id}`)
 }
 </script>
 
@@ -250,7 +254,7 @@ function openDesktopPage() {
 
         <div class="bottom-actions">
           <button v-if="can('reportIssue')" type="button" class="full-btn danger-outline" @click="openIssueForm">上报异常</button>
-          <button type="button" class="full-btn" @click="openDesktopPage">在电脑上打开</button>
+          <button v-if="user.hasPerm('production:order:list')" type="button" class="full-btn" @click="openDesktopPage">在电脑上打开</button>
         </div>
       </div>
 

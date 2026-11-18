@@ -5,7 +5,7 @@
 #   sudo /opt/scm/scripts/check-restore.sh <备份文件>    用指定的备份
 #
 # 把备份恢复到一个临时库 scm_restore_check，逐张表数行数，和线上的库对比，最后删掉临时库（RFC 002 §9.5）。
-# 线上的库只会比备份多（备份以后又录了数据），业务表比备份少说明有问题。
+# 当前库可因物理删除/归档合法减少。跨时点行数只作诊断，不能证明备份完整或损坏。
 # 不影响线上：不停应用，不动线上的库，系统照常可以用。
 set -euo pipefail
 
@@ -66,7 +66,7 @@ if ! docker compose run --rm -T --no-deps -v "$src_dir:/restore-src:ro" backup \
 fi
 info "  恢复用了 $(($(date +%s) - started)) 秒"
 
-step "逐张表数行数，和线上对比"
+step "逐张表数行数；与当前库的差异仅供诊断"
 # join 要求两边都按表名排好序（只按表名：整行排序时 a_b|2 会排到 a|1 前面，join 就对不上了）
 count_rows "$db" | LC_ALL=C sort -t '|' -k 1,1 > "$work"/backup.txt
 count_rows scm | LC_ALL=C sort -t '|' -k 1,1 > "$work"/live.txt
@@ -81,17 +81,14 @@ LC_ALL=C join -t '|' -a 1 -a 2 -e '-' -o 0,1.2,2.2 "$work"/backup.txt "$work"/li
     note = ""
     if ($3 == "-") note = "线上没有这张表"
     else if ($2 == "-") note = "备份里没有（备份以后的新版本加的表）"
-    else if ($3 + 0 < $2 + 0) { note = "线上比备份少"; fewer++ }
+    else if ($3 + 0 < $2 + 0) note = "当前行数减少（可由合法删除/归档造成）"
     printf "  %-32s %10s %10s  %s\n", $1, $2, $3, note
   }
   END {
-    if (fewer > 0) {
-      print ""
-      print "  有表线上比备份少。sys_user_role、sys_role_menu 这类关联表，重新分配角色、权限时会删掉旧的行，少了是正常的；"
-      print "  业务表少了不正常，把上面这张表发给我们"
-    }
+    print ""
+    print "  跨时点行数差异不判定备份完整性；同快照数据对账、业务余额和上传文件须另验。"
   }'
 
 printf '%s check-restore 成功：%s，%s 张表\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$file" "$tables" >> backups/backup.log
 info "
-演练通过：$src_name 能完整恢复（$tables 张表）。临时库已经删掉，线上没受影响"
+恢复演练通过：$src_name 可恢复（$tables 张表）；数据对账未验证。退出时清理临时库，线上未修改"

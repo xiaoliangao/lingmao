@@ -49,6 +49,11 @@ class StockExcel {
         private String docNo;
         private String dyeLot;
         private BigDecimal balanceQty;
+        private BigDecimal unitPrice;
+        private BigDecimal amount;
+        private String currency;
+        private String valuationStatus;
+        private String reversalOfLogId;
         private String operator;
         private String time;
     }
@@ -90,6 +95,11 @@ class StockExcel {
             ExcelColumn.decimal("变动", 3, Row::getQty, Row::setQty),
             ExcelColumn.decimal("结存", 3, Row::getBalanceQty, Row::setBalanceQty),
             ExcelColumn.text("单位", Row::getUnit, Row::setUnit),
+            ExcelColumn.decimal("单价", 4, Row::getUnitPrice, Row::setUnitPrice),
+            ExcelColumn.decimal("金额", 2, Row::getAmount, Row::setAmount),
+            ExcelColumn.text("币种", Row::getCurrency, Row::setCurrency),
+            ExcelColumn.text("估值状态", Row::getValuationStatus, Row::setValuationStatus),
+            ExcelColumn.text("冲销原流水 ID", Row::getReversalOfLogId, Row::setReversalOfLogId).code(),
             ExcelColumn.text("操作人", Row::getOperator, Row::setOperator),
             ExcelColumn.text("时间", Row::getTime, Row::setTime));
 
@@ -140,6 +150,12 @@ class StockExcel {
             r.setDyeLot(l.getDyeLot());
             r.setQty(l.getChangeQty());
             r.setBalanceQty(l.getBalanceQty());
+            r.setUnitPrice(l.getUnitPrice());
+            r.setAmount(l.getAmount());
+            r.setCurrency(l.getCurrency());
+            r.setValuationStatus(l.getValuationStatus());
+            // 用文本保留BIGINT引用；NULL价额直接导出为空，不从当前源单倒填。
+            r.setReversalOfLogId(l.getReversalOfLogId() == null ? null : l.getReversalOfLogId().toString());
             r.setOperator(l.getOperatorName());
             r.setTime(l.getCreateTime() == null ? null : TIME.format(l.getCreateTime()));
             return r;

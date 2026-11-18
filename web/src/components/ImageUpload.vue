@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fileApi } from '@/api/system'
 import type { FileVO } from '@/types/system'
+import { provideUploadScope, useUploadScope } from '@/composables/usePendingUploads'
 import { compressImage } from '@/utils/image'
 import { MAX_UPLOAD_SIZE } from '@/utils/request'
 
@@ -14,7 +15,7 @@ import { MAX_UPLOAD_SIZE } from '@/utils/request'
  *   <ImageUpload v-model="form.images" :max="3" />
  *   <ImageUpload :model-value="detail.images" disabled />       只看，不能改
  */
-const props = withDefaults(defineProps<{ max?: number; disabled?: boolean }>(), { max: 9, disabled: false })
+const props = withDefaults(defineProps<{ max?: number; disabled?: boolean; save?: (files: FileVO[]) => Promise<void> }>(), { max: 9, disabled: false })
 const model = defineModel<FileVO[]>({ default: () => [] })
 
 /** 正在压缩、上传的图，传完以后换成真的图 */
@@ -25,6 +26,10 @@ interface Pending {
 }
 const pending = ref<Pending[]>([])
 let lastId = 0
+const uploads = props.save ? provideUploadScope() : useUploadScope()
+let mounted = true
+onBeforeUnmount(() => { mounted = false })
+watch(uploads.generation, () => { pending.value = [] })
 
 const input = ref<HTMLInputElement>()
 /** 还能再加几张 */
@@ -50,38 +55,60 @@ async function onPick(event: Event) {
 }
 
 async function add(files: File[]) {
+  const task = uploads.begin()
+  const current = () => mounted && task.current()
   const batch = files.map((file) => reactive<Pending>({ id: ++lastId, name: file.name, status: '压缩中' }))
   pending.value.push(...batch)
-  const uploads: Promise<FileVO | null>[] = []
-  // 一张一张压：手机上同时解码几张大照片，内存会不够。压好一张就开始传，传的同时压下一张
-  for (const [index, file] of files.entries()) {
-    const compressed = await compressImage(file)
-    if (compressed.size > MAX_UPLOAD_SIZE) {
-      ElMessage.error(`${file.name} 超过 ${MAX_UPLOAD_SIZE / 1024 / 1024}MB，传不了`)
-      uploads.push(Promise.resolve(null))
-      continue
+  let success = false
+  try {
+    const requests: Promise<FileVO | null>[] = []
+    for (const [index, file] of files.entries()) {
+      const compressed = await compressImage(file)
+      if (!current()) return
+      if (compressed.size > MAX_UPLOAD_SIZE) {
+        ElMessage.error(`${file.name} 超过 ${MAX_UPLOAD_SIZE / 1024 / 1024}MB，传不了`)
+        requests.push(Promise.resolve(null))
+        continue
+      }
+      batch[index]!.status = '上传中'
+      requests.push(fileApi.upload(compressed).catch(() => null))
     }
-    batch[index]!.status = '上传中'
-    // 传失败的那张，消息拦截器已经弹过了，跳过它，别的照常
-    uploads.push(fileApi.upload(compressed).catch(() => null))
-  }
-  const uploaded = (await Promise.all(uploads)).filter((file): file is FileVO => file !== null)
-  const ids = new Set(batch.map((item) => item.id))
-  pending.value = pending.value.filter((item) => !ids.has(item.id))
-  // 等这一批都传完，按选的顺序一起加：先传完的不会抢到前面去当主图
-  if (uploaded.length > 0) {
-    model.value = [...model.value, ...uploaded]
+    const results = await Promise.all(requests)
+    if (!current()) return
+    const uploaded = results.filter((file): file is FileVO => file !== null)
+    if (uploaded.length) await applyImages((files) => [...files, ...uploaded], current)
+    success = uploaded.length === files.length
+  } catch {
+    if (current()) ElMessage.error('图片处理失败，请重新选择图片')
+  } finally {
+    const ids = new Set(batch.map((item) => item.id))
+    pending.value = pending.value.filter((item) => !ids.has(item.id))
+    task.finish(success)
   }
 }
 
+let queue: Promise<void> = Promise.resolve()
+function applyImages(change: (files: FileVO[]) => FileVO[], current: () => boolean) {
+  const work = queue.then(async () => {
+    if (!mounted || !current()) return
+    const files = change(model.value)
+    if (props.save) await props.save(files)
+    else model.value = files
+  })
+  queue = work.catch(() => {})
+  return work
+}
+async function changeImages(change: (files: FileVO[]) => FileVO[]) {
+  const task = uploads.begin()
+  try { await applyImages(change, task.current); task.finish(true) } catch { task.finish(false) }
+}
 function setMain(index: number) {
-  const images = [...model.value]
-  const [picked] = images.splice(index, 1)
-  model.value = [picked!, ...images]
+  const picked = model.value[index]
+  if (picked) void changeImages((files) => [picked, ...files.filter((file) => file.url !== picked.url)])
 }
-
 function remove(index: number) {
-  model.value = model.value.filter((_, i) => i !== index)
+  const picked = model.value[index]
+  if (picked) void changeImages((files) => files.filter((file) => file.url !== picked.url))
 }
 </script>
 

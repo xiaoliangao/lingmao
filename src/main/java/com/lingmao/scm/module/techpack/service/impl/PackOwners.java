@@ -10,10 +10,14 @@ import com.lingmao.scm.module.biz.entity.Attachment;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.style.dto.StylePackInfo;
+import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.entity.StyleStatus;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.techpack.dto.PackOwner;
 import com.lingmao.scm.module.techpack.entity.TechPack;
+import com.lingmao.scm.module.techpack.entity.PackStatus;
+import com.lingmao.scm.module.techpack.entity.PackOwnerSnapshot;
+import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +25,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 
 /**
@@ -35,6 +40,7 @@ class PackOwners {
     private final SizeGroupService sizeGroupService;
     private final ColorService colorService;
     private final AttachmentService attachmentService;
+    private final TechPackMapper techPackMapper;
 
     /** 主人 + 算出来的尺码、基码、颜色：详情、核价、生效检查都要 */
     record Ctx(PackOwner owner, List<String> sizes, String baseSize, List<ColorOption> colors) {
@@ -75,6 +81,42 @@ class PackOwners {
         List<ColorOption> options = owner.colorIds().stream().map(colors::get).filter(Objects::nonNull)
                 .map(ColorOption::from).toList();
         return new Ctx(owner, group.sizes(), group.baseSize(), options);
+    }
+
+    /** 读取版次：草稿实时；新生效版冻结；旧版保留已知停用色码并明确为 LEGACY。 */
+    Ctx context(TechPack pack) {
+        if (pack.getStatus() == PackStatus.DRAFT) return context(of(pack));
+        PackOwnerSnapshot frozen = pack.getOwnerSnapshot();
+        if (frozen != null) return new Ctx(frozen.owner(), frozen.sizes(), frozen.baseSize(), frozen.colors());
+        PackOwner live = of(pack);
+        Ctx current = context(live);
+        StyleOrderInfo info = styleService.orderInfos(List.of(pack.getStyleId())).get(pack.getStyleId());
+        if (info == null) return current;
+        LinkedHashSet<Long> colorIds = new LinkedHashSet<>();
+        info.colors().forEach(c -> colorIds.add(c.id()));
+        colorIds.addAll(techPackMapper.referencedColors(pack.getId()));
+        Map<Long, Color> known = colorService.byIds(colorIds);
+        List<ColorOption> colors = colorIds.stream().map(known::get).filter(Objects::nonNull).map(ColorOption::from).toList();
+        LinkedHashSet<String> sizes = new LinkedHashSet<>(info.sizes());
+        info.skus().forEach(s -> sizes.add(s.sizeCode()));
+        sizes.addAll(techPackMapper.referencedSizes(pack.getId()));
+        sizes.remove(null);
+        PackOwner legacy = new PackOwner(live.code(), live.name(), live.aliasName(), live.year(), live.season(),
+                live.sampleNo(), live.sizeGroupId(), colors.stream().map(ColorOption::id).toList(), live.tagPrice(),
+                live.defaultFactoryId(), live.productName(), live.composition(), live.lockedReason());
+        return new Ctx(legacy, List.copyOf(sizes), current.baseSize(), colors);
+    }
+
+    static PackOwnerSnapshot snapshot(Ctx context) {
+        return new PackOwnerSnapshot(1, context.owner(), context.sizes(), context.baseSize(), context.colors());
+    }
+
+    static String contextSource(TechPack pack) {
+        return pack.getStatus() == PackStatus.DRAFT ? "LIVE" : pack.getOwnerSnapshot() == null ? "LEGACY" : "SNAPSHOT";
+    }
+
+    static String contextNotice(TechPack pack) {
+        return "LEGACY".equals(contextSource(pack)) ? "旧版本没有生效时的色码快照；展示保留已知引用，不能证明原始全集" : null;
     }
 
     private static PackOwner toOwner(StylePackInfo s) {

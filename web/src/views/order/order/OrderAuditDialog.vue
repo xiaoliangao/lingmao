@@ -12,7 +12,7 @@ import { ApiError } from '@/utils/request'
 
 /**
  * 订单审核（docs/api/02 §3.7、§3.8、§4.4，原型 OrderAudit）：三块评审信息只是参考，加一个承诺交期（每一级都填）。
- * 有款资料包没生效时"通过"灰掉。审核请求静默：资料包检查没过（1000 + 清单）弹表格；1002 关掉对话框、发 changed 让详情重取。
+ * 有款资料包没生效时"通过"灰掉。审核请求静默：资料包检查没过（1000 + 清单）弹表格；1002 保留承诺交期，用户确认放弃后才关窗重取。
  *
  *   <OrderAuditDialog v-model="auditVisible" :order="detail" @changed="refresh" />
  */
@@ -24,6 +24,8 @@ const units = useDict('unit')
 const loading = ref(false)
 const submitting = ref(false)
 const review = ref<OrderReview | null>(null)
+const reviewError = ref(false)
+let reviewSeq = 0
 const form = reactive({ commitDate: '' })
 const guard = useUnsavedChanges(form, visible)
 
@@ -32,18 +34,27 @@ const blocked = computed(() => (review.value?.packs ?? []).some((p) => p.problem
 /** 承诺交期不能早于下单日期（后端 400） */
 const disabledDate = (date: Date) => date < new Date(`${props.order.orderDate}T00:00:00`)
 
-watch(visible, async (on) => {
-  if (!on) return
+watch(visible, (on) => {
+  if (!on) { reviewSeq++; return }
   form.commitDate = props.order.commitDate ?? props.order.requiredDate
   guard.markSaved()
+  void loadReview()
+})
+async function loadReview() {
+  const seq = ++reviewSeq
   review.value = null
+  reviewError.value = false
   loading.value = true
   try {
-    review.value = await orderReviewApi.get(props.order.id)
+    const result = await orderReviewApi.get(props.order.id)
+    if (seq === reviewSeq && visible.value) review.value = result
+  } catch (e) {
+    if (seq === reviewSeq) reviewError.value = true
+    if (!(e instanceof ApiError)) throw e
   } finally {
-    loading.value = false
+    if (seq === reviewSeq) loading.value = false
   }
-})
+}
 
 /** 多级审批的中间一级：审过以后还在待审核，提示等谁 */
 function nextLevelLabel(): string | null {
@@ -68,11 +79,7 @@ async function pass() {
   } catch (e) {
     if (!(e instanceof ApiError)) throw e
     showSilentError(e)
-    if (reloadOnConflict(e)) {
-      guard.markSaved()
-      visible.value = false
-      emit('changed')
-    }
+    reloadOnConflict(e, () => { guard.markSaved(); visible.value = false; emit('changed') })
   } finally {
     submitting.value = false
   }
@@ -82,6 +89,10 @@ async function pass() {
 <template>
   <el-dialog v-model="visible" :title="`审核 ${order.no}`" width="640px" :before-close="guard.beforeClose">
     <div v-loading="loading" class="review">
+      <el-alert v-if="reviewError" title="评审信息暂不可用" type="warning" :closable="false">
+        当前未取得资料包、缺料和产能参考；审核仍由后台校验。<el-button link @click="loadReview">重试</el-button>
+      </el-alert>
+      <template v-if="review">
       <section>
         <h4>资料包</h4>
         <ul class="rows">
@@ -131,6 +142,7 @@ async function pass() {
         </ul>
       </section>
 
+      </template>
       <el-form label-position="top">
         <el-form-item :label="`承诺交期（要求交期 ${formatDate(order.requiredDate)}）`" required>
           <el-date-picker v-model="form.commitDate" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled-date="disabledDate" />

@@ -10,6 +10,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.page.StatusCount;
@@ -50,6 +51,7 @@ import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.module.techpack.dto.PackBrief;
+import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LoginUser;
@@ -68,6 +70,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -219,7 +222,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         vo.setFeeNote(c.getFeeNote());
         vo.setRejectReason(c.getStatus() == DRAFT ? c.getRejectReason() : null);
         vo.setItems(items.stream().map(ci -> {
-            OrderItem row = bySku.get(ci.getStyleSkuId());
+            OrderItem row = ci.getStyleSkuId() == null ? null : bySku.get(ci.getStyleSkuId());
             return itemVO(ci, n, row == null ? null : row.getScheduledQty());
         }).toList());
         vo.setSummary(ChangeTexts.summary(cancel, items.stream().map(ci -> ChangeTexts.text(ci, n, null)).toList()));
@@ -397,7 +400,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         Map<Long, BigDecimal> newPrices = new HashMap<>();
         for (OrderChangeForm.Price p : f.getPrices()) {
             requireStyle(styles, seen, p.styleId());
-            BigDecimal to = Num.price(p.price());
+            BigDecimal to = NumericLimits.price(p.price(), "款式 " + p.styleId() + "：");
             BigDecimal from = uniformPrice(OrderServiceImpl.active(rowsOf(rows, p.styleId())));
             newPrices.put(p.styleId(), to);
             if (from != null && from.compareTo(to) == 0) {
@@ -499,13 +502,6 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         return rows.stream().collect(Collectors.toMap(OrderItem::getStyleSkuId, Function.identity()));
     }
 
-    /** "先调整生产单"后面带上这张订单没作废的生产单号（生产那边按 ReferrerProvider 给），一张都没有是空串 */
-    private String productionNos(long orderId) {
-        List<String> nos = referenceService.referrers(BizType.ORDER, orderId).stream()
-                .filter(r -> r.type() == BizType.PRODUCTION_ORDER).map(DocRef::no).toList();
-        return nos.isEmpty() ? "" : " " + String.join("、", nos);
-    }
-
     /**
      * 新建、改草稿、提交都跑（docs/api/02 §3.14 的表）。订单状态、另一张没审完的、"没有改动"直接 1000；
      * 件数小于已排产、新加的颜色不能下、资料包不是现在生效的版本，一次列全：1000，消息用"；"连起来，data 是清单。
@@ -527,6 +523,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             throw new BizException("没有改动");
         }
         List<OrderItem> rows = itemMapper.selectByOrder(o.getId());
+        checkValueLimits(rows, items);
         Map<Long, OrderItem> bySku = bySku(rows);
         Set<Long> styles = rows.stream().map(OrderItem::getStyleId).collect(Collectors.toCollection(LinkedHashSet::new));
         Map<Long, StyleOrderInfo> infos = styleService.orderInfos(styles);
@@ -566,8 +563,8 @@ public class OrderChangeServiceImpl implements OrderChangeService {
                         throw stale();
                     }
                     if (row != null && ci.getToQty() < row.getScheduledQty()) {
-                        problems.add(skuCode(infos, ci) + " 已排 " + row.getScheduledQty() + " 件，不能改成 " + ci.getToQty() + "：先调整生产单"
-                                + productionNos(o.getId()));
+                        problems.add(skuCode(infos, ci) + "：" + OrderServiceImpl.reductionMessage(row, ci.getToQty(),
+                                referenceService.referrers(BizType.ORDER, o.getId())));
                     }
                     finalQty.put(ci.getStyleSkuId(), ci.getToQty());
                     if (ci.getFromQty() == 0) {
@@ -620,6 +617,43 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         if (!problems.isEmpty()) {
             throw new BizException(ErrorCodes.BIZ_ERROR, String.join("；", problems), problems);
         }
+        List<PackRequirement> requirements = new ArrayList<>();
+        infos.forEach((styleId, info) -> info.skus().stream().filter(k -> finalQty.getOrDefault(k.id(), 0) > 0)
+                .forEach(k -> requirements.add(new PackRequirement(targetPack.get(styleId), k.id()))));
+        techPackService.checkRequirements(requirements);
+    }
+
+    /** 提变更时就验证最终各SKU和整单容量，审核写回仍复核。 */
+    private static void checkValueLimits(List<OrderItem> rows, List<OrderChangeItem> changes) {
+        Map<Long, OrderItem> finalRows = new LinkedHashMap<>();
+        for (OrderItem row : rows) {
+            OrderItem copy = new OrderItem();
+            copy.setStyleId(row.getStyleId());
+            copy.setStyleSkuId(row.getStyleSkuId());
+            copy.setQty(row.getQty());
+            copy.setPrice(row.getPrice());
+            finalRows.put(row.getStyleSkuId(), copy);
+        }
+        for (OrderChangeItem change : changes) {
+            if (change.getChangeType() == ChangeType.PRICE) {
+                NumericLimits.price(change.getToPrice(), "款式 " + change.getStyleId() + "：");
+                finalRows.values().stream().filter(r -> Objects.equals(r.getStyleId(), change.getStyleId()))
+                        .forEach(r -> r.setPrice(change.getToPrice()));
+            }
+        }
+        for (OrderChangeItem change : changes) {
+            if (change.getChangeType() != ChangeType.QTY && change.getChangeType() != ChangeType.COLOR_SIZE) continue;
+            OrderItem row = finalRows.computeIfAbsent(change.getStyleSkuId(), id -> {
+                OrderItem added = new OrderItem();
+                added.setStyleId(change.getStyleId());
+                added.setStyleSkuId(id);
+                return added;
+            });
+            row.setQty(change.getToQty());
+            if (change.getFromQty() == 0) row.setPrice(change.getToPrice());
+        }
+        finalRows.values().forEach(r -> r.setAmount(Num.amount(r.getQty(), r.getPrice())));
+        OrderServiceImpl.totals(new Order(), new ArrayList<>(finalRows.values()));
     }
 
     private static String skuCode(Map<Long, StyleOrderInfo> infos, OrderChangeItem ci) {

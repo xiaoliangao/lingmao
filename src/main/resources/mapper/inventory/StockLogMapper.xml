@@ -10,7 +10,8 @@
         SELECT l.id, l.biz_date, l.create_time, l.change_type,
                CASE WHEN l.inv_doc_id IS NOT NULL THEN 'INV_DOC' ELSE 'INV_COUNT' END AS doc_type,
                d.kind AS doc_kind, COALESCE(l.inv_doc_id, l.count_id) AS doc_id, l.doc_no,
-               l.warehouse_id, w.name AS warehouse_name, l.material_sku_id, l.change_qty, l.balance_qty, l.dye_lot, l.create_by
+               l.warehouse_id, w.name AS warehouse_name, l.material_sku_id, l.change_qty, l.balance_qty, l.dye_lot, l.create_by,
+               l.unit_price, l.amount, l.stock_unit, l.currency, l.valuation_status, l.reversal_of_log_id
         FROM inv_stock_log l
         JOIN bas_warehouse w ON w.id = l.warehouse_id
         LEFT JOIN inv_doc d ON d.id = l.inv_doc_id

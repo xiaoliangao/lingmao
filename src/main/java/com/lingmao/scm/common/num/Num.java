@@ -86,19 +86,20 @@ public final class Num {
         BigDecimal perUnit = ratio == null || ratio.signum() <= 0 ? BigDecimal.ONE : ratio;
         BigDecimal pack = minPack == null || minPack.signum() <= 0 ? BigDecimal.ONE : minPack;
         BigDecimal inPurchaseUnit = netNeed.divide(perUnit, QTY_SCALE, RoundingMode.HALF_UP);
-        BigDecimal packed = inPurchaseUnit.divide(pack, 0, RoundingMode.CEILING).multiply(pack);
-        if (moq != null && packed.compareTo(moq) < 0) {
-            packed = moq;
-        }
+        // MOQ is a lower bound before packaging, not a replacement for an already rounded quantity.
+        // E.g. need=1, MOQ=10, pack=6 must order 12, not a non-pack multiple of 10.
+        BigDecimal required = moq == null ? inPurchaseUnit : inPurchaseUnit.max(moq);
+        BigDecimal packed = required.divide(pack, 0, RoundingMode.CEILING).multiply(pack);
         return qty(packed);
     }
 
     /**
      * 件数上限 = ⌊件数 × (1 + 溢装%)⌋，向下取整（Q09）：排单不能超过订单数的上限、回货不能超过生产单数的上限。
-     * 订单 120 件、溢装 3% → 123（123.6 往下取）
+     * 订单 120 件、溢装 3% → 123（123.6 往下取）；不能突破 INTEGER 件数的存储上限。
      */
     public static int maxPieces(int pieces, BigDecimal overPct) {
-        return addPct(BigDecimal.valueOf(pieces), overPct).setScale(0, RoundingMode.FLOOR).intValueExact();
+        return addPct(BigDecimal.valueOf(pieces), overPct).setScale(0, RoundingMode.FLOOR)
+                .min(BigDecimal.valueOf(Integer.MAX_VALUE)).intValueExact();
     }
 
     /** 物料数量上限 = 数量 × (1 + 超收%)，向下取到 3 位：采购入库的超收上限（默认 5%） */

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.inventory.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportError;
@@ -219,10 +220,12 @@ class InventoryIT {
                 "PDIT" + ThreadLocalRandom.current().nextInt(1_000_000), f.company, f.warehouseA, f.counter))
                 .isInstanceOf(DuplicateKeyException.class);
 
-        audit(create(f, InvDocType.OTHER_OUT, f.warehouseA, null, f.skuA, "2"));
         fill(daily.id(), "17");
-        submitAndAudit(daily.id());
-        // 账面 20、实盘 17，盘亏 3；建单以后出的 2 不受影响：20 − 2 − 3 = 15
+        CountDetailVO measured = countService.detail(daily.id());
+        countService.act(daily.id(), "submit", new DocActionReq(measured.getVersion(), null));
+        audit(create(f, InvDocType.OTHER_OUT, f.warehouseA, null, f.skuA, "2"));
+        countService.act(daily.id(), "audit", new DocActionReq(measured.getVersion() + 1, null));
+        // 账面20、实盘17已在提交时确认；提交以后的出库2不改变固定差额：20−2−3=15
         assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("15");
         CountDetailVO approved = countService.detail(daily.id());
         assertThat(approved.getLossCount()).isEqualTo(1);
@@ -237,6 +240,72 @@ class InventoryIT {
         countService.act(daily.id(), "void", new DocActionReq(back.getVersion(), null));
         // 作废的不算没审核的：这个仓能再开一张
         assertThat(countService.create(dailyReq).itemCount()).isEqualTo(1);
+    }
+
+    /** 拍账后+1/-1的ABA必须失效，刷新清计数；提交以后收发仍按固定差额过账。 */
+    @Test
+    void countMeasurementRejectsAbaAndRefreshClearsCount() {
+        Fixture f = fixture();
+        audit(create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "10"));
+        long id = countService.create(countReq(f, CountPurpose.DAILY, List.of(f.skuA))).id();
+        fill(id, "9");
+        long before = countService.detail(id).getItems().getFirst().getBookRevision();
+        audit(create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "1"));
+        audit(create(f, InvDocType.OTHER_OUT, f.warehouseA, null, f.skuA, "1"));
+        assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("10");
+        int version = countService.detail(id).getVersion();
+        assertThatThrownBy(() -> countService.act(id, "submit", new DocActionReq(version, null)))
+                .isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+        CountDetailVO refreshed = countService.refreshBook(id, new DocActionReq(version, null));
+        assertThat(refreshed.getItems().getFirst().getCountedQty()).isNull();
+        assertThat(refreshed.getItems().getFirst().getBookRevision()).isGreaterThan(before);
+        fill(id, "9");
+        submitAndAudit(id);
+        assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("9");
+        countService.act(id, "unaudit", new DocActionReq(countService.detail(id).getVersion(), null));
+        assertThat(countService.detail(id).getItems().getFirst()).satisfies(i -> {
+            assertThat(i.getCountedQty()).isNull(); assertThat(i.getBookRevision()).isNull();
+        });
+        assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("10");
+    }
+
+    @Test
+    void legacyPendingCountCannotPostWithoutMeasurementWatermark() {
+        Fixture f = fixture();
+        long id = countService.create(countReq(f, CountPurpose.DAILY, List.of(f.skuA))).id();
+        fill(id, "1");
+        countService.act(id, "submit", new DocActionReq(countService.detail(id).getVersion(), null));
+        jdbcTemplate.update("UPDATE inv_count_item SET book_revision=NULL WHERE count_id=?", id);
+        int version = countService.detail(id).getVersion();
+        assertThatThrownBy(() -> countService.act(id, "audit", new DocActionReq(version, null)))
+                .isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
+        assertThat(countService.detail(id).getStatus()).isEqualTo("PENDING");
+        assertThat(count("SELECT COUNT(*) FROM inv_stock_log WHERE count_id=?", id)).isZero();
+    }
+
+    /** 同明细2元→反审→改3元重审，历史事件不跟着改单；当前单位也不能冒充历史单位。 */
+    @Test
+    void stockValuationRemainsImmutableAcrossRepriceAndReversal() {
+        Fixture f = fixture();
+        InvDocItemReq initial = itemReq(f.skuA, "5"); initial.setPrice(new BigDecimal("2"));
+        long id = invDocService.create(createReq(f, InvDocType.OTHER_IN, null, f.warehouseA, List.of(initial))).id();
+        audit(id);
+        long original = jdbcTemplate.queryForObject("SELECT id FROM inv_stock_log WHERE inv_doc_id=?", Long.class, id);
+        invDocService.act(id, "unaudit", new DocActionReq(version(id), null));
+        InvDocDetailVO draft = invDocService.detail(id);
+        InvDocItemReq revised = itemReq(f.skuA, "5"); revised.setId(draft.getItems().getFirst().getId()); revised.setPrice(new BigDecimal("3"));
+        invDocService.update(id, saveReq(draft, List.of(revised)));
+        audit(id);
+        assertThat(jdbcTemplate.queryForList("SELECT unit_price FROM inv_stock_log WHERE inv_doc_id=? ORDER BY id", BigDecimal.class, id))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(new BigDecimal("2"), new BigDecimal("2"), new BigDecimal("3"));
+        assertThat(jdbcTemplate.queryForList("SELECT amount FROM inv_stock_log WHERE inv_doc_id=? ORDER BY id", BigDecimal.class, id))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(new BigDecimal("10"), new BigDecimal("-10"), new BigDecimal("15"));
+        assertThat(jdbcTemplate.queryForObject("SELECT reversal_of_log_id FROM inv_stock_log WHERE inv_doc_id=? AND change_qty<0", Long.class, id))
+                .isEqualTo(original);
+        jdbcTemplate.update("UPDATE inv_stock_log SET unit_price=NULL, amount=NULL, stock_unit=NULL, currency=NULL, valuation_status='UNKNOWN' WHERE id=?", original);
+        StockLogQuery query = new StockLogQuery(); query.setKeyword(draft.getNo());
+        assertThat(stockService.logs(query).getList()).filteredOn(r -> r.getId().equals(original)).singleElement()
+                .satisfies(r -> { assertThat(r.getStockUnit()).isNull(); assertThat(r.getUnitPrice()).isNull(); });
     }
 
     /**
@@ -341,8 +410,7 @@ class InventoryIT {
         long material = jdbcTemplate.queryForObject("""
                 INSERT INTO bas_material (code, name, category_id, material_type, stock_unit, purchase_unit)
                 VALUES (?, 'IT 库存面料', ?, 'FABRIC', 'METER', 'METER') RETURNING id""", Long.class, "ITM" + s, category);
-        long color = jdbcTemplate.queryForObject("INSERT INTO bas_color (code, name) VALUES (?, ?) RETURNING id", Long.class,
-                code3(), "IT 色" + s);
+        long color = TestColors.insert(jdbcTemplate, "IT 色" + s);
         long skuA = jdbcTemplate.queryForObject("INSERT INTO bas_material_sku (material_id, code, color_id) VALUES (?, ?, ?) RETURNING id",
                 Long.class, material, "ITM" + s + "-A", color);
         long skuB = jdbcTemplate.queryForObject("INSERT INTO bas_material_sku (material_id, code, spec) VALUES (?, ?, '150cm') RETURNING id",
@@ -352,11 +420,6 @@ class InventoryIT {
         return new Fixture(company, warehouseA, warehouseB, skuA, skuB, counter);
     }
 
-
-    private static String code3() {
-        ThreadLocalRandom r = ThreadLocalRandom.current();
-        return "" + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26)) + (char) ('A' + r.nextInt(26));
-    }
 
     private static InvDocCreateReq createReq(Fixture f, InvDocType type, Long from, Long to, List<InvDocItemReq> items) {
         InvDocCreateReq req = new InvDocCreateReq();

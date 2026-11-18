@@ -2,6 +2,7 @@ package com.lingmao.scm.module.production.service.impl;
 
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.biz.dto.AttachmentVO;
 import com.lingmao.scm.module.biz.entity.Attachment;
 import com.lingmao.scm.module.biz.entity.BizType;
@@ -17,6 +18,7 @@ import com.lingmao.scm.module.production.entity.ProductionNode;
 import com.lingmao.scm.module.production.entity.ProductionOrder;
 import com.lingmao.scm.module.production.mapper.NodeReportMapper;
 import com.lingmao.scm.module.production.mapper.ProductionNodeMapper;
+import com.lingmao.scm.module.production.mapper.ProductionOrderMapper;
 import com.lingmao.scm.module.production.service.ProductionNodeService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
@@ -40,6 +42,7 @@ import java.util.stream.Collectors;
 public class ProductionNodeServiceImpl implements ProductionNodeService {
 
     private final ProductionNodeMapper nodeMapper;
+    private final ProductionOrderMapper prdMapper;
     private final NodeReportMapper reportMapper;
     private final ProductionSupport support;
     private final AttachmentService attachmentService;
@@ -48,12 +51,16 @@ public class ProductionNodeServiceImpl implements ProductionNodeService {
     private final Clock clock;
 
     /**
-     * 改节点计划（§3.3.2）：全部节点一起发。不带 version：只有跟单员一个人改，报进度又随时在变，带了会互相顶掉
+     * 改节点计划（§3.3.2）：独立计划版本防双设备覆盖，报进度不影响该版本。
      */
     @Override
     @Transactional
-    public void updatePlan(long prdOrderId, NodePlanReq req) {
+    public int updatePlan(long prdOrderId, NodePlanReq req) {
         ProductionOrder p = support.lock(prdOrderId);
+        if (req.getPlanRevision() == null) throw new BizException(400, "缺少 planRevision，请刷新节点计划");
+        if (!Objects.equals(p.getPlanRevision(), req.getPlanRevision())) {
+            throw new BizException(ErrorCodes.STATE_CHANGED, "节点计划已被修改，请刷新后再改；本次计划未覆盖");
+        }
         if (!ProductionRules.LIVE.contains(p.getStatus())) {
             throw new BizException("审核下单以后、完成之前才能改节点计划");
         }
@@ -84,8 +91,12 @@ public class ProductionNodeServiceImpl implements ProductionNodeService {
             nodeMapper.updateById(u);
         }
         if (!changed.isEmpty()) {
+            if (prdMapper.advancePlan(prdOrderId, req.getPlanRevision()) != 1) {
+                throw new BizException(ErrorCodes.STATE_CHANGED, "节点计划已被修改，请刷新后再改");
+            }
             docLogService.add(BizType.PRODUCTION_ORDER, prdOrderId, "update-plan", String.join("；", changed));
         }
+        return req.getPlanRevision() + (changed.isEmpty() ? 0 : 1);
     }
 
     private static String range(LocalDate from, LocalDate to) {

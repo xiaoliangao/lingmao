@@ -32,13 +32,26 @@
 
     <sql id="where">
         WHERE true
-        <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.buyer_id = #{scope.userId})</if>
+        <choose>
+            <when test="q.auditForMe">
+                AND o.status = 'PENDING'
+                <choose>
+                    <when test="q.approvalIds != null and q.approvalIds.size() > 0">
+                        AND o.id IN <foreach collection="q.approvalIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+                    </when>
+                    <otherwise>AND false</otherwise>
+                </choose>
+            </when>
+            <otherwise>
+                <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.buyer_id = #{scope.userId})</if>
+            </otherwise>
+        </choose>
         <if test="q.status != null and q.status.size() > 0">
             AND o.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
         </if>
         <if test="q.purchaseType != null">AND o.purchase_type = #{q.purchaseType}</if>
         <if test="q.supplierId != null">AND o.supplier_id = #{q.supplierId}</if>
-        <if test="q.buyerId != null">AND o.buyer_id = #{q.buyerId}</if>
+        <if test="!q.auditForMe and q.buyerId != null">AND o.buyer_id = #{q.buyerId}</if>
         <if test="q.orderDateFrom != null">AND o.order_date &gt;= #{q.orderDateFrom}</if>
         <if test="q.orderDateTo != null">AND o.order_date &lt;= #{q.orderDateTo}</if>
         <if test="q.ids != null and q.ids.size() > 0">

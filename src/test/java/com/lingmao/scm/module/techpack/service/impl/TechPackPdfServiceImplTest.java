@@ -188,12 +188,11 @@ class TechPackPdfServiceImplTest {
     @Test
     void export_rejectsColorNotOnStyle() {
         when(techPackMapper.selectById(7L)).thenReturn(pack);
-        when(packOwners.of(pack)).thenReturn(ctx().owner());
-        when(packOwners.context(ctx().owner())).thenReturn(ctx());
+        when(packOwners.context(pack)).thenReturn(ctx());
 
         assertThatThrownBy(() -> service.export(7L, 99L, false, true))
                 .isInstanceOf(BizException.class)
-                .hasMessageContaining("不是款式现在启用的颜色");
+                .hasMessageContaining("不在这一版本的展示范围");
         verify(pdfRenderer, never()).render(any(), any());
         verify(docLogService, never()).add(any(), anyLong(), any(), any());
     }

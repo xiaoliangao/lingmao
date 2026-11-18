@@ -4,6 +4,7 @@ import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.common.num.NumericLimits;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.basic.dto.WarehouseVO;
 import com.lingmao.scm.module.basic.service.WarehouseService;
@@ -11,8 +12,10 @@ import com.lingmao.scm.module.biz.dto.AttachmentVO;
 import com.lingmao.scm.module.biz.entity.Attachment;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
+import com.lingmao.scm.module.biz.service.ActionRequestService;
 import com.lingmao.scm.module.biz.service.ReferenceService;
 import com.lingmao.scm.module.order.service.OrderService;
+import com.lingmao.scm.module.order.dto.OrderForProduction;
 import com.lingmao.scm.module.production.dto.ProductionReceiptVO;
 import com.lingmao.scm.module.production.dto.ReceiptCreated;
 import com.lingmao.scm.module.production.dto.ReceiptItemVO;
@@ -68,6 +71,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
     private final ReferenceService referenceService;
     private final UserService userService;
     private final SerialNoGenerator serialNoGenerator;
+    private final ActionRequestService actionRequestService;
     private final Clock clock;
 
     @Override
@@ -146,6 +150,13 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
     @Override
     @Transactional
     public ReceiptCreated receive(long prdOrderId, ReceiptReq req) {
+        if (!LoginUser.hasAuthority("production:receipt:add")) throw new BizException(403, "没有登记回货的权限");
+        support.getVisible(prdOrderId);
+        return actionRequestService.execute("PRODUCTION_RECEIPT", prdOrderId, req.getClientActionId(), req, ReceiptCreated.class,
+                () -> receiveNew(prdOrderId, req));
+    }
+
+    ReceiptCreated receiveNew(long prdOrderId, ReceiptReq req) {
         ProductionSupport.Locked l = support.lockWithOrder(prdOrderId);
         ProductionOrder p = l.prd();
         if (!ProductionRules.FLOW.allows("receive", p.getStatus())) {
@@ -179,8 +190,10 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             if (r.getDefectQty() > r.getQty()) {
                 throw new BizException(400, skuCode(style, line.getStyleSkuId()) + "：次品不能多于回货");
             }
+            int next = NumericLimits.pieces((long) line.getReturnedQty() + r.getQty(),
+                    "第 " + (n + 1) + " 行累计回货：");
             int max = ProductionRules.maxPieces(line.getQty());
-            if (line.getReturnedQty() + r.getQty() > max) {
+            if (next > max) {
                 int left = Math.max(max - line.getReturnedQty(), 0);
                 over.add(new ReceiptOverRow(skuCode(style, line.getStyleSkuId()), line.getQty(), line.getReturnedQty(), r.getQty(), max,
                         "加工 " + line.getQty() + " 件，已回 " + line.getReturnedQty() + "，" + (left == 0 ? "不能再回了" : "最多还能回 " + left + " 件")));
@@ -189,6 +202,10 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         if (!over.isEmpty()) {
             throw new BizException(ErrorCodes.OVER_LIMIT, "有 " + over.size() + " 个 SKU 回多了：每个 SKU 最多回到件数的 103%", over);
         }
+        int qty = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getQty).sum(), "本次回货：");
+        int defect = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getDefectQty).sum(), "本次次品：");
+        NumericLimits.pieces(lines.values().stream().mapToLong(ProductionOrderItem::getReturnedQty).sum() + qty, "生产单累计回货：");
+        NumericLimits.pieces(l.order().items().stream().mapToLong(OrderForProduction.Line::returnedQty).sum() + qty, "需求订单累计回货：");
 
         ProductionReceipt receipt = new ProductionReceipt();
         receipt.setNo(serialNoGenerator.daily(BizType.PRODUCTION_RECEIPT.prefix(null)));
@@ -205,8 +222,6 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
 
         List<ProductionReceiptItem> items = new ArrayList<>();
         Map<Long, Integer> toOrder = new HashMap<>();
-        int qty = 0;
-        int defect = 0;
         for (int n = 0; n < rows.size(); n++) {
             ReceiptReq.Item r = rows.get(n);
             ProductionOrderItem line = lines.get(r.getPrdOrderItemId());
@@ -223,8 +238,6 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
                 throw new BizException(ErrorCodes.STATE_CHANGED, "刚有人登记了回货，请刷新后再登记");
             }
             toOrder.merge(line.getOrderItemId(), r.getQty(), Integer::sum);
-            qty += r.getQty();
-            defect += r.getDefectQty();
         }
         receiptItemMapper.insert(items);
         attachmentService.replace(BizType.PRODUCTION_RECEIPT, receipt.getId(), Attachment.IMAGE, req.getPhotos());

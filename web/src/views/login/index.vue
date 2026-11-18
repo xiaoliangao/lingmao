@@ -5,6 +5,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { APP_MARK, APP_NAME } from '@/config'
 import { useVersion } from '@/composables/useVersion'
 import { useUserStore } from '@/stores/user'
+import { safeRedirect } from '@/utils/redirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,7 +26,7 @@ async function submit() {
   try {
     await store.login(form.username, form.password)
     // 整页跳转：重新加载一次，按这个人的权限生成路由和菜单
-    location.href = (route.query.redirect as string | undefined) ?? '/'
+    location.href = safeRedirect(route.query.redirect, location.origin)
   } finally {
     loading.value = false
   }

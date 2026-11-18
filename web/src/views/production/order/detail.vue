@@ -662,6 +662,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         :order-id="id"
         :total-qty="detail.totalQty"
         :nodes="detail.nodes"
+        :plan-revision="detail.planRevision"
         :initial-node-id="targetNodeId"
         @updated="refresh"
       />
