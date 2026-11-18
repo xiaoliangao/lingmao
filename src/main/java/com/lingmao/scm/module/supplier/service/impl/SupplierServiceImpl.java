@@ -549,7 +549,7 @@ public class SupplierServiceImpl implements SupplierService {
             String like = SupplierLists.likePattern(keyword);
             List<String> codes = Keywords.codes(keyword);
             wrapper.and(w -> {
-                w.apply("upper(code) LIKE {0}", Keywords.prefix(keyword)).or().apply("name ILIKE {0}", like)
+                w.apply("upper(code) LIKE {0}", Keywords.codeContains(keyword)).or().apply("name ILIKE {0}", like)
                         .or().apply("short_name ILIKE {0}", like);
                 if (codes != null) w.or().in("upper(code)", codes);
             });

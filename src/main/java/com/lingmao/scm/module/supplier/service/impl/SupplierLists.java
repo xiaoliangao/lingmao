@@ -57,7 +57,7 @@ class SupplierLists {
             String like = likePattern(query.getKeyword());
             List<String> codes = Keywords.codes(query.getKeyword());
             wrapper.and(w -> {
-                w.apply("upper(code) LIKE {0}", Keywords.prefix(query.getKeyword())).or().apply("name ILIKE {0}", like)
+                w.apply("upper(code) LIKE {0}", Keywords.codeContains(query.getKeyword())).or().apply("name ILIKE {0}", like)
                         .or().apply("short_name ILIKE {0}", like).or().apply("contact ILIKE {0}", like);
                 if (codes != null) {
                     // 几个编码一起精确查（Keywords）

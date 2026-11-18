@@ -25,14 +25,14 @@
         LEFT JOIN sup_supplier s ON s.id = m.default_supplier_id
     </sql>
 
-    <!-- 关键字：编码、货号按前缀；名称、成分包含完整短语；有分隔符时再加上按几个编码精确查（Keywords）。分类含下级 -->
+    <!-- 关键字：编码、货号按包含查；名称、成分包含完整短语；有分隔符时再加上按几个编码精确查（Keywords）。分类含下级 -->
     <sql id="listWhere">
         <where>
             <if test="q.keyword != null and q.keyword.trim() != ''">
-                <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+                <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
                 <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 255)"/>
-                AND (upper(m.code) LIKE #{keywordPrefix} OR m.name ILIKE #{keywordContains}
-                     OR upper(m.supplier_item_no) LIKE #{keywordPrefix} OR m.composition ILIKE #{keywordContains}
+                AND (upper(m.code) LIKE #{keywordCode} OR m.name ILIKE #{keywordContains}
+                     OR upper(m.supplier_item_no) LIKE #{keywordCode} OR m.composition ILIKE #{keywordContains}
                      <if test="codes != null">OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
             </if>
             <if test="q.categoryId != null">AND m.category_id IN (SELECT id FROM bas_material_category WHERE id = #{q.categoryId} OR parent_id = #{q.categoryId})</if>
@@ -111,15 +111,15 @@
                m.stock_unit, m.purchase_unit, m.conversion_factor, COALESCE(k.price, m.ref_price) AS price
         FROM <choose>
             <when test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 255)"/>
             (
-                SELECT kk.* FROM bas_material_sku kk WHERE upper(kk.code) LIKE #{keywordPrefix}
+                SELECT kk.* FROM bas_material_sku kk WHERE upper(kk.code) LIKE #{keywordCode}
                 <if test="codes != null">OR upper(kk.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                 UNION
                 SELECT kk.* FROM bas_material mm JOIN bas_material_sku kk ON kk.material_id=mm.id
-                WHERE upper(mm.code) LIKE #{keywordPrefix} OR mm.name ILIKE #{keywordContains}
-                   OR upper(mm.supplier_item_no) LIKE #{keywordPrefix}
+                WHERE upper(mm.code) LIKE #{keywordCode} OR mm.name ILIKE #{keywordContains}
+                   OR upper(mm.supplier_item_no) LIKE #{keywordCode}
                 <if test="codes != null">OR upper(mm.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                 UNION
                 SELECT kk.* FROM bas_color kc JOIN bas_material_sku kk ON kk.color_id=kc.id WHERE kk.color_id IS NOT NULL AND kc.name ILIKE #{keywordContains}

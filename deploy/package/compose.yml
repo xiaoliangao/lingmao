@@ -123,9 +123,9 @@ services:
       - -c
       - log_timezone=Asia/Shanghai
       - -c
-      # 原始 SQL、绑定参数和 ERROR 主消息都可能含银行/税号等业务值。
-      # 慢 SQL 由应用仅记录 operation/hash/耗时；DB 错误用安全应用日志、健康状态与退出码定位。
-      # 深诊断仅在隔离数据或受控临时维护中开启，不将原始语句日志常驻生产。
+      # 原始 SQL、绑定参数和语句报错（ERROR）都可能带银行账号、税号这些业务值，不进数据库日志；
+      # 慢 SQL 由应用记录（只记操作名、摘要和耗时）。log_min_messages=log 留下启动、关闭、检查点、
+      # FATAL / PANIC（磁盘满、连不上）这些，数据库起不来时 `docker compose logs postgres` 还能看到原因。
       - log_statement=none
       - -c
       - log_min_duration_statement=-1
@@ -138,7 +138,7 @@ services:
       - -c
       - log_min_error_statement=panic
       - -c
-      - log_min_messages=panic
+      - log_min_messages=log
     shm_size: 256mb                     # Docker 默认只给 64MB，并行查询会不够用
     volumes:
       - ./data/postgres:/var/lib/postgresql/data

@@ -34,7 +34,7 @@ SETTINGS = {
     'log_parameter_max_length_on_error': '0',
     'log_error_verbosity': 'terse',
     'log_min_error_statement': 'panic',
-    'log_min_messages': 'panic',
+    'log_min_messages': 'log',
 }
 
 

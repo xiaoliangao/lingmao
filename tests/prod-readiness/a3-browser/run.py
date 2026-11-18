@@ -77,7 +77,9 @@ async def run():
             write_bodies = []
             write_companies = []
             wrapper_writes = []
-            state = {'uncertain': False, 'refresh_fail': False}
+            # uncertain：接下来几次写请求超时（服务器没收到）；lost：服务器做完了但回应丢了
+            state = {'uncertain': 0, 'lost': 0, 'refresh_fail': False}
+            completed_keys = set()
             async def route_probe(route):
                 path = route.request.url.split(base, 1)[-1]
                 if path.startswith('/probe/auth-replay/'):
@@ -120,14 +122,23 @@ async def run():
                 if json.loads(route.request.post_data or '{}').get('amount') == 401 and route.request.headers.get('authorization') != 'Bearer synthetic-renewed':
                     await route.fulfill(json={'code': 401, 'msg': '', 'data': None})
                     return
-                if state['uncertain']:
-                    state['uncertain'] = False
+                if state['lost']:
+                    state['lost'] -= 1
+                    completed_keys.add(route.request.headers.get('idempotency-key'))
+                    await route.abort('timedout')
+                elif state['uncertain']:
+                    state['uncertain'] -= 1
                     await route.abort('timedout')
                 else:
                     await asyncio.sleep(.08)
+                    completed_keys.add(route.request.headers.get('idempotency-key'))
                     await route.fulfill(json={'code': 0, 'msg': '', 'data': {'id': '9007199254740993', 'no': 'DD-SYNTHETIC'}})
+            async def route_action_state(route):
+                key = urlsplit(route.request.url).path.rsplit('/', 1)[-1]
+                await route.fulfill(json={'code': 0, 'msg': '', 'data': {'done': key in completed_keys}})
             await context.route('**/probe/**', route_probe)
             await context.route('**/api/orders', route_write)
+            await context.route('**/api/http-actions/*', route_action_state)
             await context.route('**/api/tech-packs/*/bom-defaults', lambda route: route.fulfill(json={'code': 0, 'msg': '', 'data': []}))
             async def wrapper_detail(route):
                 await asyncio.sleep(.15)
@@ -309,37 +320,49 @@ async def run():
             await page.evaluate("window.__a3.setToken('synthetic-renewed')")
             metrics['checks']['api_wrapper_body_key_company_and_epoch_frozen'] = True
             metrics['checks']['write_mutex'] = True
-            state['uncertain'] = True
-            await page.evaluate('window.__a3.write(2).catch(() => null)')
-            unknown_key = write_keys[-1]
-            result = await page.evaluate('window.__a3.write(3).then(() => 0, e => e.code)')
-            assert result == 1002
-            assert await page.evaluate('window.__a3.changedCompany()') == 1002
-            await page.get_by_role('button', name='重试原提交并核对').click()
-            await page.get_by_role('button', name='已核对，开始新动作').wait_for()
-            assert write_keys[-1] == unknown_key and write_bodies[-1] == write_bodies[-2]
-            await page.get_by_role('button', name='已核对，开始新动作').click()
-            await page.evaluate('window.__a3.write(3)')
-            assert write_keys[-1] != unknown_key
-            metrics['checks']['uncertain_write_recovery'] = True
-            # Reload after an unknown result: metadata persists, request body/token do not.
-            state['uncertain'] = True
-            await page.evaluate('window.__a3.write(11).catch(() => null)')
+            # 网络断一次：自动用原编号重发，调用方拿到的就是成功，不留收据
+            state['uncertain'] = 1
+            before_write = metrics['write_calls']
+            assert await page.evaluate('window.__a3.write(2).then(r => r.no)') == 'DD-SYNTHETIC'
+            assert metrics['write_calls'] == before_write + 2
+            assert write_keys[-1] == write_keys[-2] and write_bodies[-1] == write_bodies[-2]
+            assert not (await page.evaluate('window.__a3.state()'))['pending']
+            assert await page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('lingmao-write-v1:')).length") == 0
+            metrics['checks']['uncertain_write_auto_retry'] = True
+            # 服务器做完了、三次回应都丢了；用户改了内容再提交：先核对上一次，已保存就拦下，不发第二张
+            state['lost'] = 3
+            assert await page.evaluate('window.__a3.write(3).then(() => 0, e => e.code)') == -1
+            lost_key = write_keys[-1]
+            assert write_keys[-3:] == [lost_key] * 3
+            before_write = metrics['write_calls']
+            settled = await page.evaluate("window.__a3.changedCompany()")
+            assert settled == 1002 and metrics['write_calls'] == before_write
+            assert await page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('lingmao-write-v1:')).length") == 0
+            metrics['checks']['uncertain_write_settled_before_new_content'] = True
+            # 三次都没到服务器：收据只有编号和摘要；刷新后同样内容再提交，用原编号重发
+            state['uncertain'] = 3
+            assert await page.evaluate('window.__a3.write(11).then(() => 0, e => e.code)') == -1
             persisted_key = write_keys[-1]
             receipt = await page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('lingmao-write-v1:')).map(k => JSON.parse(localStorage.getItem(k)))")
             assert len(receipt) == 1 and receipt[0]['key'] == persisted_key
             assert not any(field in receipt[0] for field in ['body', 'token', 'amount'])
             await page.reload()
             await page.wait_for_function('Boolean(window.__a3)')
-            before_write = metrics['write_calls']
-            assert await page.evaluate('window.__a3.write(12).then(() => 0, e => e.code)') == 1002
-            assert metrics['write_calls'] == before_write
-            await page.get_by_role('button', name='重试原提交并核对').wait_for()
-            assert await page.get_by_role('button', name='重试原提交并核对').is_disabled()
             await page.evaluate('window.__a3.write(11)')
             assert write_keys[-1] == persisted_key
-            assert await page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('lingmao-write-v1:')).map(k => JSON.parse(localStorage.getItem(k))).length") == 0
+            assert await page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('lingmao-write-v1:')).length") == 0
             metrics['checks']['unknown_write_reload_preserves_key'] = True
+            # 过了一分半还查不到成功记录：刷新后自动核对，通知"没有保存"，收据删掉
+            state['uncertain'] = 3
+            assert await page.evaluate('window.__a3.write(13).then(() => 0, e => e.code)') == -1
+            await page.evaluate("""() => { for (const k of Object.keys(localStorage).filter(k => k.startsWith('lingmao-write-v1:'))) {
+              const row = JSON.parse(localStorage.getItem(k)); row.createdAt -= 91000; localStorage.setItem(k, JSON.stringify(row)) } }""")
+            await page.reload()
+            await page.wait_for_function('Boolean(window.__a3)')
+            await page.get_by_text('有一笔提交没有保存').wait_for()
+            assert await page.evaluate("Object.keys(localStorage).filter(k => k.startsWith('lingmao-write-v1:')).length") == 0
+            await page.locator('.el-notification__closeBtn').first.click()
+            metrics['checks']['unknown_write_settles_as_not_saved'] = True
             await page.locator('#draft-remark').fill('未保存的合成草稿')
             await page.wait_for_timeout(900)
             await page.reload()
@@ -410,9 +433,11 @@ async def run():
             await failure.wait_for_url('**/login?**')
             assert metrics['refresh_calls'] == before_refresh + 1
             metrics['checks']['refresh_failure_logs_out'] = True
-            # Optional storage may fail without a blank screen; irreversible writes fail before transport.
+            # Optional storage may fail without a blank screen; a write still goes out when its receipt cannot be stored
+            # (private mode, full quota): it keeps the in-page retry/settle, only a reload loses the automatic check.
             storage_context = await browser.new_context()
             observe_context(storage_context)
+            await storage_context.route('**/api/orders', lambda route: route.fulfill(json={'code': 0, 'msg': '', 'data': {'id': '9007199254740993', 'no': 'DD-SYNTHETIC'}}))
             await storage_context.add_init_script("""
               const originalGet = Storage.prototype.getItem;
               Storage.prototype.getItem = function(key) { return key.startsWith('lingmao-cols:') ? '{broken' : originalGet.call(this, key); };
@@ -425,7 +450,7 @@ async def run():
             await storage_page.evaluate('window.__a3.hideColumn()')
             assert await storage_page.evaluate('window.__a3.columns()') == {'date': False, 'note': False}
             assert await storage_page.locator('#nav-button').is_visible()
-            assert await storage_page.evaluate('window.__a3.write(99).then(() => 0, e => e.code)') == 409
+            assert await storage_page.evaluate('window.__a3.write(99).then(() => 0, e => e.code)') == 0
             assert await storage_page.evaluate('window.__a3.chunk()') is False
             await storage_context.close()
             metrics['checks']['corrupt_storage_and_quota'] = True
@@ -439,12 +464,14 @@ async def run():
                 await route.abort('timedout')
             await fault_context.route('**/api/orders', uncertain_write)
             await fault_context.route('**/api/materials', uncertain_write)
+            # 核对接口也不通：收据一直留着
+            await fault_context.route('**/api/http-actions/*', lambda route: route.fulfill(status=503, json={'code': 503, 'msg': '合成网关故障', 'data': None}))
             fault_tabs = [await fault_context.new_page(), await fault_context.new_page()]
             for tab in fault_tabs:
                 await tab.goto(url)
                 await tab.wait_for_function('Boolean(window.__a3)')
             await asyncio.gather(fault_tabs[0].evaluate('window.__a3.write(55).catch(() => null)'), fault_tabs[1].evaluate('window.__a3.otherWrite(66).catch(() => null)'))
-            assert len(fault_calls) == 2
+            assert len(fault_calls) == 6  # 每笔自动用原编号重发两次
             await asyncio.gather(*(tab.reload() for tab in fault_tabs))
             for tab in fault_tabs:
                 await tab.wait_for_function('Boolean(window.__a3)')
@@ -460,8 +487,8 @@ async def run():
             await fault_tabs[0].reload()
             await fault_tabs[0].wait_for_function('Boolean(window.__a3)')
             assert len((await fault_tabs[0].evaluate('window.__a3.state()'))['pending']) == 3
-            assert await fault_tabs[0].evaluate('window.__a3.write(55).then(() => 0, e => e.code)') == 1002
-            assert len(fault_calls) == 2
+            assert await fault_tabs[0].evaluate('window.__a3.write(55).then(() => 0, e => e.code)') == -1
+            assert len(fault_calls) == 6
             await fault_context.close()
             metrics['checks']['two_tab_receipts_and_duplicate_scope'] = True
             # The cookie contract is exercised through two actual tabs in one browser context.
@@ -562,6 +589,7 @@ async def run():
                 if path in ['/probe/auth-replay/403', '/probe/auth-replay/500'] and re.search(r'status of (401|403|500)', text): return 'injected HTTP rejection'
                 if path in ['/probe/missing-lazy.js', '/probe/broken-image.png'] and ('404' in text or 'ERR_ABORTED' in text): return 'injected missing resource'
                 if path in ['/api/orders', '/api/materials'] and 'ERR_TIMED_OUT' in text: return 'injected uncertain write'
+                if path.startswith('/api/http-actions/') and 'status of 503' in text: return 'injected settle outage'
                 return None
             for record in console_errors: record['expected_reason'] = expected_console(record)
             metrics['console_errors_expected'] = [record for record in console_errors if record['expected_reason']]

@@ -21,7 +21,7 @@ public interface StockLogMapper extends BaseMapper<StockLog> {
     long exportWatermark();
 
     List<StockLogRowVO> selectExportBatch(@Param("q") StockLogQuery query, @Param("codes") List<String> codes,
-            @Param("prefix") String prefix, @Param("watermark") long watermark,
+            @Param("code") String code, @Param("watermark") long watermark,
             @Param("afterTime") OffsetDateTime afterTime, @Param("afterId") Long afterId, @Param("limit") int limit);
 
     /** 每个明细/仓库键最近尚未冲销的事件；库存单头CAS锁保证同单不会并发反审。 */
@@ -82,7 +82,7 @@ public interface StockLogMapper extends BaseMapper<StockLog> {
 
     /** 一次只取 size+1，不执行 COUNT，不使用 OFFSET。 */
     List<StockLogRowVO> selectSeek(@Param("q") StockLogQuery query, @Param("codes") List<String> codes,
-                                   @Param("prefix") String prefix, @Param("afterTime") OffsetDateTime afterTime,
+                                   @Param("code") String code, @Param("afterTime") OffsetDateTime afterTime,
                                    @Param("afterId") Long afterId, @Param("limit") int limit);
 
 }

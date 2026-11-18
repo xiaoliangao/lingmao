@@ -83,7 +83,7 @@ public class StockServiceImpl implements StockService {
         BusinessDateRange.validate(query.getCreatedDateFrom(), query.getCreatedDateTo());
         List<String> codes = Keywords.codes(query.getKeyword());
         StockLogCursor.Position after = logCursor.decode(query);
-        List<StockLogRowVO> fetched = stockLogMapper.selectSeek(query, codes, Keywords.prefix(query.getKeyword()),
+        List<StockLogRowVO> fetched = stockLogMapper.selectSeek(query, codes, Keywords.codeContains(query.getKeyword()),
                 after == null ? null : after.createdAt(), after == null ? null : after.id(), (int) query.getSize() + 1);
         boolean hasMore = fetched.size() > query.getSize();
         List<StockLogRowVO> rows = hasMore ? fetched.subList(0, (int) query.getSize()) : fetched;

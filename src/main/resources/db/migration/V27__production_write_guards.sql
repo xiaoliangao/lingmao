@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS biz_http_action (
 COMMENT ON TABLE biz_http_action IS 'HTTP建单动作幂等记录；认领、业务、完成同事务，禁止删除后复用历史动作键';
 COMMENT ON COLUMN biz_http_action.tenant_code IS '服务端部署命名空间，不接受客户端指定租户';
 COMMENT ON COLUMN biz_http_action.response_json IS '创建结果最小R响应；重放仍检查当前接口权限及对象可见性';
-CREATE INDEX IF NOT EXISTS idx_biz_http_action_user ON biz_http_action(user_id);
+-- 前端网络中断后按提交编号核对结果（GET /api/http-actions/{key}）：按本人 + 编号查，不分动作
+CREATE INDEX IF NOT EXISTS idx_biz_http_action_user ON biz_http_action(user_id, request_key);
+CREATE INDEX IF NOT EXISTS idx_biz_action_request_key ON biz_action_request(user_id, client_action_id);
 CREATE INDEX IF NOT EXISTS idx_biz_http_action_company ON biz_http_action(company_id);
 
 -- PostgreSQL 的 NUMERIC 支持 NaN，普通 >=0 检查挡不住 NaN；集中为现有精确数值列加有限数门禁。

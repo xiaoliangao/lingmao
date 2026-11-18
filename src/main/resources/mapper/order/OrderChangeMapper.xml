@@ -9,17 +9,17 @@
     <sql id="changeSource">
         <choose>
             <when test="q.keyword != null and q.keyword.trim() != ''">
-                <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+                <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
                 (
-                    SELECT cc.* FROM ord_change cc WHERE upper(cc.no) LIKE #{keywordPrefix}
+                    SELECT cc.* FROM ord_change cc WHERE upper(cc.no) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(cc.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                     UNION
                     SELECT cc.* FROM ord_order ko JOIN ord_change cc ON cc.order_id = ko.id
-                    WHERE upper(ko.no) LIKE #{keywordPrefix}
+                    WHERE upper(ko.no) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                     UNION
                     SELECT cc.* FROM sty_style_sku ks JOIN ord_change_item ci ON ci.style_sku_id = ks.id
-                    JOIN ord_change cc ON cc.id = ci.change_id WHERE upper(ks.code) LIKE #{keywordPrefix}
+                    JOIN ord_change cc ON cc.id = ci.change_id WHERE upper(ks.code) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                 )
             </when>

@@ -26,31 +26,31 @@
     <sql id="docSource">
         <choose>
             <when test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
             (
                 SELECT kd.* FROM inv_doc kd
-                WHERE (upper(kd.no) LIKE #{keywordPrefix}
+                WHERE (upper(kd.no) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(kd.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
                 UNION
                 SELECT kd.* FROM inv_doc kd
-                WHERE kd.source_no IS NOT NULL AND (upper(kd.source_no) LIKE #{keywordPrefix}
+                WHERE kd.source_no IS NOT NULL AND (upper(kd.source_no) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(kd.source_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
                 UNION
                 SELECT kd.* FROM inv_doc kd
-                WHERE kd.supplier_delivery_no IS NOT NULL AND (upper(kd.supplier_delivery_no) LIKE #{keywordPrefix}
+                WHERE kd.supplier_delivery_no IS NOT NULL AND (upper(kd.supplier_delivery_no) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(kd.supplier_delivery_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
                 UNION
                 SELECT kd.* FROM inv_doc kd
-                WHERE kd.logistics_no IS NOT NULL AND (upper(kd.logistics_no) LIKE #{keywordPrefix}
+                WHERE kd.logistics_no IS NOT NULL AND (upper(kd.logistics_no) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(kd.logistics_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
                 UNION
                 SELECT kd.* FROM inv_doc_item ki JOIN inv_doc kd ON kd.id = ki.doc_id WHERE ki.material_sku_id IN (
-                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordPrefix}
+                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                     UNION
                     SELECT k.id FROM bas_material m JOIN bas_material_sku k ON k.material_id=m.id
-                    WHERE upper(m.code) LIKE #{keywordPrefix} OR m.name ILIKE #{keywordContains}
+                    WHERE upper(m.code) LIKE #{keywordCode} OR m.name ILIKE #{keywordContains}
                     <if test="codes != null">OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                 )
                 UNION

@@ -301,78 +301,78 @@ class A1KeywordQueryIT {
         queries.put("production", this::production);
         queries.put("supplier", this::supplier);
         Map<String, String> prefixes = Map.of("material", "ZM", "style", "ZT", "order", "ZO", "purchase", "ZP", "production", "ZD", "supplier", "ZS");
-        Map<String, String> indexes = Map.of("material", "idx_bas_mat_code_prefix", "style", "idx_sty_style_code_prefix",
-                "order", "idx_ord_order_no_prefix", "purchase", "idx_pur_order_no_prefix", "production", "idx_prd_order_no_prefix", "supplier", "idx_sup_supplier_code_prefix");
+        Map<String, String> indexes = Map.of("material", "idx_bas_mat_code", "style", "idx_sty_style_code",
+                "order", "idx_ord_order_no", "purchase", "idx_pur_order_no", "production", "idx_prd_order_no", "supplier", "idx_sup_supplier_code");
         for (var entry : queries.entrySet()) {
             String key = entry.getKey();
             String codePrefix = prefixes.get(key);
-            explain(key + "-prefix", () -> entry.getValue().apply(codePrefix + "05321"), 10, indexes.get(key));
+            explain(key + "-contains", () -> entry.getValue().apply(codePrefix + "05321"), 10, indexes.get(key) + "_trgm");
             String hundred = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> codePrefix + String.format("%06d", n)).toList());
-            explain(key + "-100-exact-codes", () -> entry.getValue().apply(hundred), 100, indexes.get(key));
+            explain(key + "-100-exact-codes", () -> entry.getValue().apply(hundred), 100, indexes.get(key) + "_upper");
             assertThat(entry.getValue().apply(codePrefix + "0532," + codePrefix + "053210").ids()).containsExactly(BASE + 53210);
         }
         explain("material-name", () -> material("needleFabric"), 1, "idx_bas_mat_text_trgm");
         explain("style-name", () -> style("needleStyle"), 1, "idx_sty_style_text_trgm");
         explain("supplier-name", () -> supplier("needleSupplier"), 1, "idx_sup_supplier_text_trgm");
-        explain("order-contract", () -> order("ZC05321"), 10, "idx_ord_order_contract_prefix");
-        explain("order-related-style", () -> order("ZT05321"), 10, "idx_sty_style_code_prefix");
-        explain("material-supplier-item", () -> material("HW05321"), 10, "idx_bas_mat_item_prefix");
-        explain("purchase-related-sku", () -> purchase("ZX05321"), 10, "idx_bas_mat_sku_code_prefix");
-        explain("purchase-related-material", () -> purchase("ZM05321"), 10, "idx_bas_mat_code_prefix");
+        explain("order-contract", () -> order("ZC05321"), 10, "idx_ord_order_contract_trgm");
+        explain("order-related-style", () -> order("ZT05321"), 10, "idx_sty_style_code_trgm");
+        explain("material-supplier-item", () -> material("HW05321"), 10, "idx_bas_mat_item_trgm");
+        explain("purchase-related-sku", () -> purchase("ZX05321"), 10, "idx_bas_mat_sku_code_trgm");
+        explain("purchase-related-material", () -> purchase("ZM05321"), 10, "idx_bas_mat_code_trgm");
         explain("purchase-related-material-name", () -> purchase("needleFabric"), 1, "idx_bas_mat_text_trgm");
         explain("purchase-related-supplier", () -> purchase("needleSupplier"), 1, "idx_sup_supplier_text_trgm");
-        explain("purchase-related-mrp", () -> purchase("ZR05321"), 10, "idx_mrp_calc_no_prefix");
+        explain("purchase-related-mrp", () -> purchase("ZR05321"), 10, "idx_mrp_calc_no_trgm");
         explain("purchase-related-transit", () -> purchase("TRAFZ"), 1, "idx_mrp_item_snapshot_search");
         explain("purchase-snapshot-second-token", () -> purchase("FZ05321"), 10, "idx_mrp_item_snapshot_search");
         explain("purchase-snapshot-style", () -> purchase("ZT05321"), 10, "idx_mrp_item_snapshot_search");
         String snapshots = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "FZ" + String.format("%06d", n)).toList());
         explain("purchase-snapshot-100-exact", () -> purchase(snapshots), 100, "idx_mrp_item_snapshot_search");
-        explain("production-related-order", () -> production("ZO05321"), 10, "idx_ord_order_no_prefix");
-        explain("production-related-style", () -> production("ZT05321"), 10, "idx_sty_style_code_prefix");
+        explain("production-related-order", () -> production("ZO05321"), 10, "idx_ord_order_no_trgm");
+        explain("production-related-style", () -> production("ZT05321"), 10, "idx_sty_style_code_trgm");
         explain("production-related-style-name", () -> production("needleStyle"), 1, "idx_sty_style_text_trgm");
         explain("production-related-factory", () -> production("needleSupplier"), 1, "idx_sup_supplier_text_trgm");
-        explain("mrp-prefix", () -> mrp("ZR05321"), 10, "idx_mrp_calc_no_prefix");
-        explain("mrp-related-order", () -> mrp("ZO05321"), 10, "idx_ord_order_no_prefix");
-        explain("mrp-related-style", () -> mrp("ZT05321"), 10, "idx_sty_style_code_prefix");
-        explain("seek-doc-prefix", () -> seek("ZL05321"), 10, "idx_inv_log_doc_prefix", 1);
-        explain("seek-sku-prefix", () -> seek("ZX05321"), 10, "idx_bas_mat_sku_code_prefix", 1);
+        explain("mrp-contains", () -> mrp("ZR05321"), 10, "idx_mrp_calc_no_trgm");
+        explain("mrp-related-order", () -> mrp("ZO05321"), 10, "idx_ord_order_no_trgm");
+        explain("mrp-related-style", () -> mrp("ZT05321"), 10, "idx_sty_style_code_trgm");
+        explain("seek-doc-contains", () -> seek("ZL05321"), 10, "idx_inv_log_doc_trgm", 1);
+        explain("seek-sku-contains", () -> seek("ZX05321"), 10, "idx_bas_mat_sku_code_trgm", 1);
         explain("seek-material-name", () -> seek("needleFabric"), 1, "idx_bas_mat_text_trgm", 1);
         explain("seek-dye-lot", () -> seek("needleDye"), 1, "idx_inv_log_dye_trgm", 1);
         String logCodes = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "ZL" + String.format("%06d", n)).toList());
-        explain("seek-100-exact-codes", () -> seek(logCodes), 100, "idx_inv_log_doc_prefix", 1);
-        explain("inventory-doc-prefix", () -> inventoryDocument("ZL05321"), 10, "idx_inv_doc_no_prefix");
-        explain("inventory-doc-material-code", () -> inventoryDocument("ZM05321"), 10, "idx_bas_mat_code_prefix");
+        explain("seek-100-exact-codes", () -> seek(logCodes), 100, "idx_inv_log_doc_upper", 1);
+        explain("inventory-doc-contains", () -> inventoryDocument("ZL05321"), 10, "idx_inv_doc_no_trgm");
+        explain("inventory-doc-material-code", () -> inventoryDocument("ZM05321"), 10, "idx_bas_mat_code_trgm");
         explain("inventory-doc-material-name", () -> inventoryDocument("needleFabric"), 1, "idx_bas_mat_text_trgm");
-        explain("inventory-doc-source-no", () -> inventoryDocument("DOCSRC053210"), 1, "idx_inv_doc_source_prefix");
-        explain("inventory-doc-delivery-no", () -> inventoryDocument("DOCDEL053210"), 1, "idx_inv_doc_delivery_prefix");
-        explain("inventory-doc-logistics-no", () -> inventoryDocument("DOCLOG053210"), 1, "idx_inv_doc_logistics_prefix");
+        explain("inventory-doc-source-no", () -> inventoryDocument("DOCSRC053210"), 1, "idx_inv_doc_source_trgm");
+        explain("inventory-doc-delivery-no", () -> inventoryDocument("DOCDEL053210"), 1, "idx_inv_doc_delivery_trgm");
+        explain("inventory-doc-logistics-no", () -> inventoryDocument("DOCLOG053210"), 1, "idx_inv_doc_logistics_trgm");
         explain("inventory-doc-dye-lot", () -> inventoryDocument("needleDye"), 1, "idx_inv_doc_item_dye_trgm");
-        explain("inventory-doc-100-exact-codes", () -> inventoryDocument(logCodes), 100, "idx_inv_doc_no_prefix");
-        explain("sku-picker-code", () -> pickSku("ZX05321"), 10, "idx_bas_mat_sku_code_prefix");
+        explain("inventory-doc-100-exact-codes", () -> inventoryDocument(logCodes), 100, "idx_inv_doc_no_upper");
+        explain("sku-picker-code", () -> pickSku("ZX05321"), 10, "idx_bas_mat_sku_code_trgm");
         explain("sku-picker-material-name", () -> pickSku("needleFabric"), 1, "idx_bas_mat_text_trgm");
         explain("sku-picker-color", () -> pickSku("needleColor"), 1, "idx_bas_mat_sku_color");
-        explain("count-doc-prefix", () -> inventoryCount("ZN05321"), 10, "idx_inv_count_no_prefix");
-        explain("count-material-code", () -> inventoryCount("ZM05321"), 10, "idx_bas_mat_code_prefix");
+        explain("count-doc-contains", () -> inventoryCount("ZN05321"), 10, "idx_inv_count_no_trgm");
+        explain("count-material-code", () -> inventoryCount("ZM05321"), 10, "idx_bas_mat_code_trgm");
         explain("count-material-name", () -> inventoryCount("needleFabric"), 1, "idx_bas_mat_text_trgm");
         String countCodes = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "ZN" + String.format("%06d", n)).toList());
-        explain("count-100-exact-codes", () -> inventoryCount(countCodes), 100, "idx_inv_count_no_prefix");
+        explain("count-100-exact-codes", () -> inventoryCount(countCodes), 100, "idx_inv_count_no_upper");
         String skuCodes = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "ZX" + String.format("%06d", n)).toList());
         for (boolean summary : List.of(false, true)) {
             String prefix = summary ? "stock-summary-" : "stock-row-";
-            explain(prefix + "sku-code", () -> inventoryStock("ZX05321", summary), 10, "idx_bas_mat_sku_code_prefix");
-            explain(prefix + "material-code", () -> inventoryStock("ZM05321", summary), 10, "idx_bas_mat_code_prefix");
+            explain(prefix + "sku-code", () -> inventoryStock("ZX05321", summary), 10, "idx_bas_mat_sku_code_trgm");
+            explain(prefix + "material-code", () -> inventoryStock("ZM05321", summary), 10, "idx_bas_mat_code_trgm");
             explain(prefix + "material-name", () -> inventoryStock("needleFabric", summary), 1, "idx_bas_mat_text_trgm");
-            explain(prefix + "100-exact-codes", () -> inventoryStock(skuCodes, summary), 100, "idx_bas_mat_sku_code_prefix");
+            explain(prefix + "100-exact-codes", () -> inventoryStock(skuCodes, summary), 100, "idx_bas_mat_sku_code_upper");
         }
-        explain("order-change-no", () -> orderChange("ZH05321"), 10, "idx_ord_change_no_prefix");
-        explain("order-change-related-order", () -> orderChange("ZO05321"), 10, "idx_ord_order_no_prefix");
-        explain("order-change-related-sku", () -> orderChange("ZY05321"), 10, "idx_sty_sku_code_prefix");
+        explain("order-change-no", () -> orderChange("ZH05321"), 10, "idx_ord_change_no_trgm");
+        explain("order-change-related-order", () -> orderChange("ZO05321"), 10, "idx_ord_order_no_trgm");
+        explain("order-change-related-sku", () -> orderChange("ZY05321"), 10, "idx_sty_sku_code_trgm");
         String changeCodes = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "ZH" + String.format("%06d", n)).toList());
-        explain("order-change-100-exact-codes", () -> orderChange(changeCodes), 100, "idx_ord_change_no_prefix");
-        explain("techpack-style-code", () -> styleCost("ZT05321"), 10, "idx_sty_style_code_prefix");
+        explain("order-change-100-exact-codes", () -> orderChange(changeCodes), 100, "idx_ord_change_no_upper");
+        explain("techpack-style-code", () -> styleCost("ZT05321"), 10, "idx_sty_style_code_trgm");
         explain("techpack-style-name", () -> styleCost("needleStyle"), 1, "idx_sty_style_text_trgm");
         String styleCodes = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "ZT" + String.format("%06d", n)).toList());
-        explain("techpack-100-exact-codes", () -> styleCost(styleCodes), 100, "idx_sty_style_code_prefix");
+        explain("techpack-100-exact-codes", () -> styleCost(styleCodes), 100, "idx_sty_style_code_upper");
         Files.writeString(ARTIFACTS.resolve("summary.json"), json.writeValueAsString(planSummary));
         planAssertions.assertAll();
     }
@@ -386,7 +386,7 @@ class A1KeywordQueryIT {
         try {
             assertThat(material("LIT%_\\C").ids()).containsExactly(BASE + 99999);
             assertThat(material("100%_\\").ids()).containsExactly(BASE + 99999);
-            assertThat(material("M053210").ids()).isEmpty(); // 编码中间的子串不再匹配。
+            assertThat(material("M053210").ids()).containsExactly(BASE + 53210); // 编码按包含查，中间的子串也能找到。
             assertThat(supplier(unicodeBoundary).ids()).containsExactly(BASE + 99999);
             assertThat(supplier(unicodeBoundary + "🧵").ids()).isEmpty();
             OrderQuery dated = new OrderQuery();
@@ -433,8 +433,9 @@ class A1KeywordQueryIT {
             q.setKeyword("FZ053210"); // 不是当前订单表编码，也不是快照的第一个 token。
             assertThat(purchases.selectPendingRows(q, null, DataScope.current(false)))
                     .extracting(row -> row.getPurchaseItemId()).containsExactly(BASE + 53210);
-            q.setKeyword("Z053210"); // 不能把第二个 token 的中间片段当作前缀。
-            assertThat(purchases.selectPendingRows(q, null, DataScope.current(false))).isEmpty();
+            q.setKeyword("Z053210"); // 按包含查：第二个 token 中间的片段也能找到。
+            assertThat(purchases.selectPendingRows(q, null, DataScope.current(false)))
+                    .extracting(row -> row.getPurchaseItemId()).containsExactly(BASE + 53210);
         } finally { jdbc.update("DELETE FROM pur_order_item WHERE id=?", extra); }
     }
 
@@ -617,19 +618,19 @@ class A1KeywordQueryIT {
     /** A2 integration: real async-export SQL must retain the indexed list filters and frozen upper ID. */
     @Test
     void stockExportUsesTheSameIndexedSnapshotFilters() throws Exception {
-        explain("export-doc-prefix", () -> export("ZL05321"), 10, "idx_inv_log_doc_prefix", 1);
-        explain("export-sku-prefix", () -> export("ZX05321"), 10, "idx_bas_mat_sku_code_prefix", 1);
+        explain("export-doc-contains", () -> export("ZL05321"), 10, "idx_inv_log_doc_trgm", 1);
+        explain("export-sku-contains", () -> export("ZX05321"), 10, "idx_bas_mat_sku_code_trgm", 1);
         explain("export-material-name", () -> export("needleFabric"), 1, "idx_bas_mat_text_trgm", 1);
         explain("export-dye-lot", () -> export("needleDye"), 1, "idx_inv_log_dye_trgm", 1);
         String codes = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> "ZL" + String.format("%06d", n)).toList());
-        explain("export-100-exact-codes", () -> export(codes), 100, "idx_inv_log_doc_prefix", 1);
+        explain("export-100-exact-codes", () -> export(codes), 100, "idx_inv_log_doc_upper", 1);
         StockLogQuery query = new StockLogQuery(); query.setKeyword("ZL05321"); query.setWarehouseId(warehouse);
-        assertThat(stockLogs.selectExportBatch(query, null, Keywords.prefix(query.getKeyword()), BASE + 53214, null, null, 500))
+        assertThat(stockLogs.selectExportBatch(query, null, Keywords.codeContains(query.getKeyword()), BASE + 53214, null, null, 500))
                 .extracting(row -> row.getId()).containsExactlyInAnyOrderElementsOf(IntStream.range(53210, 53215).mapToObj(n -> BASE + n).toList());
         query.setCreatedDateFrom(LocalDate.of(2027, 1, 1));
-        assertThat(stockLogs.selectExportBatch(query, null, Keywords.prefix(query.getKeyword()), Long.MAX_VALUE, null, null, 500)).isEmpty();
+        assertThat(stockLogs.selectExportBatch(query, null, Keywords.codeContains(query.getKeyword()), Long.MAX_VALUE, null, null, 500)).isEmpty();
         query.setCreatedDateFrom(null); query.setKeyword("%_");
-        assertThat(stockLogs.selectExportBatch(query, null, Keywords.prefix(query.getKeyword()), Long.MAX_VALUE, null, null, 500)).isEmpty();
+        assertThat(stockLogs.selectExportBatch(query, null, Keywords.codeContains(query.getKeyword()), Long.MAX_VALUE, null, null, 500)).isEmpty();
         Files.writeString(ARTIFACTS.resolve("export-summary.json"), json.writeValueAsString(planSummary.entrySet().stream()
                 .filter(entry -> entry.getKey().startsWith("export-")).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))));
         planAssertions.assertAll();
@@ -638,7 +639,7 @@ class A1KeywordQueryIT {
     private Result export(String keyword) {
         StockLogQuery query = new StockLogQuery(); query.setKeyword(keyword); query.setWarehouseId(warehouse);
         query.setCreatedDateFrom(LocalDate.of(2026, 1, 1)); query.setCreatedDateTo(LocalDate.of(2026, 1, 3));
-        var rows = stockLogs.selectExportBatch(query, Keywords.codes(keyword), Keywords.prefix(keyword), BASE + SIZE,
+        var rows = stockLogs.selectExportBatch(query, Keywords.codes(keyword), Keywords.codeContains(keyword), BASE + SIZE,
                 OffsetDateTime.parse("2026-01-03T00:00:00Z"), Long.MAX_VALUE, 500);
         return new Result(rows.size(), rows.stream().map(row -> row.getId()).toList());
     }
@@ -646,7 +647,7 @@ class A1KeywordQueryIT {
     private Result seek(String keyword) {
         StockLogQuery q = new StockLogQuery(); q.setKeyword(keyword); q.setWarehouseId(warehouse);
         q.setCreatedDateFrom(LocalDate.of(2026, 1, 1)); q.setCreatedDateTo(LocalDate.of(2026, 1, 3));
-        var rows = stockLogs.selectSeek(q, Keywords.codes(keyword), Keywords.prefix(keyword), OffsetDateTime.parse("2026-01-03T00:00:00Z"), Long.MAX_VALUE, 101);
+        var rows = stockLogs.selectSeek(q, Keywords.codes(keyword), Keywords.codeContains(keyword), OffsetDateTime.parse("2026-01-03T00:00:00Z"), Long.MAX_VALUE, 101);
         return new Result(rows.size(), rows.stream().map(row -> row.getId()).toList());
     }
     private Result inventoryDocument(String keyword) {

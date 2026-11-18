@@ -24,6 +24,11 @@ public interface HttpActionRequestMapper {
     @Options(flushCache = Options.FlushCachePolicy.TRUE)
     Stored find(@Param("s") Scope scope);
 
+    /** 这个人的这次提交已经成功落库（认领、业务、完成同一事务，查到就是成功了） */
+    @Select("SELECT EXISTS (SELECT 1 FROM biz_http_action WHERE tenant_code = #{tenant} AND user_id = #{userId} "
+            + "AND request_key = #{key} AND state = 'COMPLETED')")
+    boolean completed(@Param("tenant") String tenant, @Param("userId") long userId, @Param("key") UUID key);
+
     @Insert("INSERT INTO biz_http_action (tenant_code,user_id,company_id,operation,request_key,request_hash,state) "
             + "VALUES (#{s.tenant},#{s.userId},#{s.companyId},#{s.operation},#{s.key},#{hash},'PROCESSING')")
     int claim(@Param("s") Scope scope, @Param("hash") String hash);

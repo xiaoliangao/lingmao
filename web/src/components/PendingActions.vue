@@ -1,29 +1,36 @@
 <script setup lang="ts">
-import { ElMessageBox } from 'element-plus'
+/**
+ * 右下角的"正在核对 n 笔提交"（docs/api/README §2「提交编号」）。建单时网络中断、不确定有没有保存的，
+ * 系统用提交编号自动问服务器，问出结果弹通知；还没问出来的（比如网络一直不通）在这里列着，不用人去点"确认"。
+ * App 打开时核对一次刷新前留下的
+ */
+import { onMounted } from 'vue'
 import { formatDateTime } from '@/utils/format'
-import { acknowledgeManualWrite, acknowledgePendingWrite, checkPendingWrite, pendingWriteDialog, pendingWriteNotices } from '@/utils/request'
-async function manualCheck(scope: string) {
-  try {
-    await ElMessageBox.confirm('请确认已在业务列表或详情核对本次结果。结束后再次提交会被视为新操作。', '核对提交结果', { confirmButtonText: '已核对，结束本次操作', cancelButtonText: '继续核对' })
-    acknowledgeManualWrite(scope)
-  } catch { /* Keep the unresolved receipt. */ }
-}
+import { pendingWriteNotices, resolvePendingWrites } from '@/utils/request'
+
+onMounted(() => { void resolvePendingWrites() })
 </script>
+
 <template>
-  <el-button v-if="pendingWriteNotices.length" class="pending-actions-trigger" type="warning" @click="pendingWriteDialog = true">{{ pendingWriteNotices.length }} 笔操作待确认</el-button>
-  <el-dialog v-model="pendingWriteDialog" title="待确认操作" width="min(600px, 94vw)">
-    <section v-for="notice in pendingWriteNotices" :key="notice.key" class="pending-action">
-      <h4>{{ notice.title }}</h4>
-      <p>{{ formatDateTime(notice.createdAt) }} · 提交编号 <span class="code">{{ notice.key }}</span></p>
-      <p>{{ notice.message }}</p>
-      <el-button v-if="notice.manualCheck" @click="manualCheck(notice.key)">已在业务页面核对结果</el-button>
-      <el-button v-if="notice.state !== 'confirmed'" :disabled="!notice.canRetry" :loading="notice.state === 'checking'" @click="checkPendingWrite(notice.key)">重试原提交并核对</el-button>
-      <el-button v-else type="primary" @click="acknowledgePendingWrite(notice.key)">已核对，开始新动作</el-button>
-    </section>
-  </el-dialog>
+  <el-popover v-if="pendingWriteNotices.length" placement="top-end" :width="320" trigger="click">
+    <template #reference>
+      <el-button class="pending-actions-trigger" round>正在核对 {{ pendingWriteNotices.length }} 笔提交</el-button>
+    </template>
+    <p class="pending-actions-tip">网络中断时不确定有没有保存的提交。系统会自动核对，有结果会提醒你，不会重复保存。</p>
+    <ul class="pending-actions-list">
+      <li v-for="notice in pendingWriteNotices" :key="notice.key">
+        <span>{{ notice.title }}</span>
+        <span class="pending-actions-time">{{ formatDateTime(notice.createdAt) }}{{ notice.checking ? ' · 核对中' : '' }}</span>
+      </li>
+    </ul>
+    <el-button size="small" @click="resolvePendingWrites()">现在核对</el-button>
+  </el-popover>
 </template>
+
 <style scoped>
-.pending-actions-trigger { position: fixed; right: 20px; bottom: 20px; z-index: 2200; }
-.pending-action { padding: 8px 0 16px; border-bottom: 1px solid var(--lm-line-soft); }
-.pending-action p { line-height: 1.6; color: var(--lm-muted); }
+.pending-actions-trigger { position: fixed; right: 20px; bottom: 20px; z-index: 2200; box-shadow: var(--lm-shadow-pop); }
+.pending-actions-tip { margin: 0 0 8px; line-height: 1.6; color: var(--lm-muted); }
+.pending-actions-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.pending-actions-list li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--lm-line-soft); }
+.pending-actions-time { color: var(--lm-muted); white-space: nowrap; }
 </style>

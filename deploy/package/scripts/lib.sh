@@ -211,12 +211,13 @@ make_dir() {
 }
 
 ensure_dirs() {
-  make_dir 755 "$TARGET"/data "$TARGET"/data/postgres "$TARGET"/data/uploads "$TARGET"/logs \
+  # data/exports 是后台导出生成的文件，只挂给应用（下载时应用重新查权限），不挂给 Nginx
+  make_dir 755 "$TARGET"/data "$TARGET"/data/postgres "$TARGET"/data/uploads "$TARGET"/data/exports "$TARGET"/logs \
     "$TARGET"/backups "$TARGET"/backups/daily "$TARGET"/backups/pre-upgrade "$TARGET"/backups/pre-restore
   make_dir 700 "$TARGET"/certs
-  # 应用不用 root 跑，上传和日志目录要交给它才写得进去
+  # 应用不用 root 跑，上传、导出和日志目录要交给它才写得进去
   if ! is_mac; then
-    chown "$APP_UID:$APP_UID" "$TARGET"/data/uploads "$TARGET"/logs
+    chown "$APP_UID:$APP_UID" "$TARGET"/data/uploads "$TARGET"/data/exports "$TARGET"/logs
   fi
 }
 

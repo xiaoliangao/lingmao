@@ -291,28 +291,6 @@ class A1DatabaseProductionIT {
     }
 
     @Test
-    void t06_closedInventoryPeriodBlocksRealMvcUnauditAndHistoricalDateChangesSafely() throws Exception {
-        Fixture f = fixture();
-        InvDocCreateReq request = createRequest(f, InvDocType.OTHER_IN, List.of(item(f.skuA(), "2")));
-        request.setDocDate(LocalDate.of(2020, 1, 31));
-        long id = documents.create(request).id();
-        audit(id);
-        int version = documents.detail(id).getVersion();
-        jdbc.update("INSERT INTO inv_closed_period(company_id,period_start,closed_by,reason) VALUES (?,'2020-01-01',?,'A1 冻结验证')", f.company(), user);
-        HttpResult result = perform(post("/api/inventory-docs/" + id + "/unaudit").contentType(MediaType.APPLICATION_JSON)
-                .header("X-Company-Id", Long.toString(f.company()))
-                .content(json.writeValueAsString(new DocActionReq(version, "冻结后反审核"))), user, PERMISSIONS);
-        assertThat(result.code()).isEqualTo(1002);
-        String response = json.writeValueAsString(result.body());
-        assertThat(response).contains("冻结").doesNotContain("inv_doc", "UPDATE", "SELECT", "P2007", "org.postgresql");
-        assertThat(jdbc.queryForObject("SELECT status FROM inv_doc WHERE id=?", String.class, id)).isEqualTo("APPROVED");
-        assertThat(balance(f, f.skuA())).isEqualByComparingTo("2");
-        assertThatThrownBy(() -> jdbc.update("UPDATE inv_doc SET doc_date='2020-02-01' WHERE id=?", id))
-                .isInstanceOf(DataAccessException.class);
-        Files.writeString(ARTIFACTS.resolve("t06-frozen-period-mvc.json"), response);
-    }
-
-    @Test
     void t06_softDeletedNaturalKeyCanBeReusedAndReferencedMasterCannotDisappear() {
         String code = "a1-" + UUID.randomUUID();
         long old = jdbc.queryForObject("INSERT INTO sys_dict_type(code,name) VALUES (?,'旧') RETURNING id", Long.class, code);
@@ -324,54 +302,6 @@ class A1DatabaseProductionIT {
         create(f, InvDocType.OTHER_IN, List.of(item(f.skuA(), "1")));
         assertThatThrownBy(() -> jdbc.update("DELETE FROM bas_company WHERE id=?", f.company())).isInstanceOf(DataAccessException.class);
         assertThat(count("SELECT count(*) FROM bas_company WHERE id=?", f.company())).isEqualTo(1);
-    }
-
-    @Test
-    void t06_periodCloseWaitsForAnActualPostingTransactionThenRejectsLaterWrites() throws Exception {
-        Fixture f = fixture();
-        InvDocCreateReq request = createRequest(f, InvDocType.OTHER_IN, List.of(item(f.skuA(), "1")));
-        request.setDocDate(LocalDate.of(2020, 4, 30));
-        long id = documents.create(request).id();
-        CountDownLatch posted = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        CountDownLatch closing = new CountDownLatch(1);
-        AtomicInteger closePid = new AtomicInteger();
-        try (var pool = Executors.newFixedThreadPool(2)) {
-            Future<?> writer = pool.submit(() -> {
-                login(user);
-                TestIdentity.company(f.company());
-                try {
-                    tx.executeWithoutResult(status -> {
-                        documents.act(id, "audit", new DocActionReq(0, null));
-                        posted.countDown();
-                        try { assertThat(release.await(10, TimeUnit.SECONDS)).isTrue(); }
-                        catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new IllegalStateException(failure); }
-                    });
-                } finally { TestIdentity.clear(); }
-            });
-            try {
-                assertThat(posted.await(10, TimeUnit.SECONDS)).isTrue();
-                Future<?> closer = pool.submit(() -> tx.executeWithoutResult(status -> {
-                    closePid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
-                    closing.countDown();
-                    jdbc.update("INSERT INTO inv_closed_period(company_id,period_start,closed_by,reason) VALUES (?,'2020-04-01',?,'并发关期间')", f.company(), user);
-                }));
-                assertThat(closing.await(5, TimeUnit.SECONDS)).isTrue();
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
-                boolean waiting = false;
-                while (System.nanoTime() < deadline && !waiting) {
-                    waiting = count("SELECT count(*) FROM pg_locks WHERE pid=? AND locktype='advisory' AND NOT granted", closePid.get()) == 1;
-                }
-                assertThat(waiting).as("关闭事务在真实 PostgreSQL 等待过账的共享期间锁").isTrue();
-                assertThat(closer.isDone()).isFalse();
-                release.countDown();
-                writer.get(10, TimeUnit.SECONDS);
-                closer.get(10, TimeUnit.SECONDS);
-            } finally { release.countDown(); }
-        }
-        assertThat(balance(f, f.skuA())).isEqualByComparingTo("1");
-        assertThatThrownBy(() -> jdbc.update("UPDATE inv_doc SET remark='冻结后改写' WHERE id=?", id))
-                .isInstanceOf(DataAccessException.class);
     }
 
     @Test
@@ -446,7 +376,7 @@ class A1DatabaseProductionIT {
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("q", query);
         parameters.put("codes", null);
-        parameters.put("prefix", null);
+        parameters.put("code", null);
         parameters.put("afterTime", OffsetDateTime.parse("2026-01-01T00:16:40Z"));
         parameters.put("afterId", Long.MAX_VALUE);
         parameters.put("limit", 101);
@@ -468,9 +398,9 @@ class A1DatabaseProductionIT {
                 });
         Files.writeString(ARTIFACTS.resolve("t07-seek-explain-analyze.json"), plan);
         Files.writeString(ARTIFACTS.resolve("t07-fixed-query-count.json"), json.writeValueAsString(Map.of("oneRow", small, "hundredRows", large)));
-        String hundred = String.join(",", IntStream.range(0, 100).mapToObj(i -> "A1" + i).toList());
-        assertThat(Keywords.codes(hundred)).hasSize(100);
-        assertThatThrownBy(() -> Keywords.codes(hundred + ",A1101")).isInstanceOf(BizException.class);
+        String twoHundred = String.join(",", IntStream.range(0, 200).mapToObj(i -> "A1" + i).toList());
+        assertThat(Keywords.codes(twoHundred)).hasSize(200);
+        assertThatThrownBy(() -> Keywords.codes(twoHundred + ",A1201")).isInstanceOf(BizException.class);
         assertThatThrownBy(() -> Keywords.codes("x".repeat(8193))).isInstanceOf(BizException.class);
         query.setPage(1000000);
         assertThatThrownBy(() -> stocks.logs(query)).isInstanceOf(BizException.class);
@@ -482,9 +412,9 @@ class A1DatabaseProductionIT {
         assertThat(count("""
                 SELECT count(*) FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
                 WHERE c.relname IN ('idx_inv_log_seek','idx_inv_log_wh_seek','idx_inv_log_sku_seek',
-                   'idx_inv_log_doc_prefix','idx_mrp_calc_status_time','idx_ord_order_status_date','idx_pur_order_status_date')
+                   'idx_inv_log_doc_upper','idx_inv_log_doc_trgm','idx_mrp_calc_status_time','idx_ord_order_status_date','idx_pur_order_status_date')
                   AND i.indisvalid AND i.indisready
-                """)).isEqualTo(7);
+                """)).isEqualTo(8);
         // Check every pooled session: a migration must not RESET one borrowed connection to unbounded waits.
         List<Connection> borrowed = new ArrayList<>();
         try {

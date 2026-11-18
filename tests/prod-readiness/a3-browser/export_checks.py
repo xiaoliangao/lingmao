@@ -54,6 +54,8 @@ async def run_exports(browser, url, artifacts, observe_context, metrics):
                 await route.fulfill(headers={'X-Request-Id': trace}, json={'code': 500, 'msg': '合成结果未知，请重试原提交核对', 'data': None})
                 return
             data, status = dict(jobs[job_id]), 202
+        elif path.startswith('/api/http-actions/'):
+            data, status = {'done': False}, 200
         elif re.fullmatch(r'/api/export-jobs/[1-9]\d*(/(cancel|retry|file))?', path):
             job_id = path.split('/')[3]
             assert job_id in jobs, path
@@ -339,7 +341,7 @@ async def run_exports(browser, url, artifacts, observe_context, metrics):
     await page.evaluate("""() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (this === sessionStorage && key.startsWith('lingmao-export-create-v1:')) throw new DOMException('synthetic quota', 'QuotaExceededError'); return original.call(this, key, value) } }""")
     before = len(writes)
     await page.get_by_role('button', name='导出', exact=True).click()
-    await expect(dialog(page).get_by_role('alert')).to_contain_text('无法保存原提交凭据')
+    await expect(dialog(page).get_by_role('alert')).to_contain_text('浏览器存不下提交编号')
     await dialog(page).screenshot(path=str(artifacts / 'export-submit-storage-blocked.png'))
     assert len(writes) == before, writes[before:]
     metrics['checks']['export_cannot_send_without_recovery_snapshot'] = True

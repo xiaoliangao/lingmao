@@ -29,12 +29,12 @@
     <!-- Shared literal keyword matching: list, seek and export must select identical rows. -->
     <sql id="keywordFilter">
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
             AND l.id IN (
                 SELECT l.id FROM inv_stock_log l WHERE true
                 <include refid="keywordScope"/>
-                AND (upper(l.doc_no) LIKE #{keywordPrefix}
+                AND (upper(l.doc_no) LIKE #{keywordCode}
                      <if test="codes != null">OR upper(l.doc_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
                 UNION
                 SELECT l.id FROM inv_stock_log l WHERE true
@@ -44,7 +44,7 @@
                 SELECT l.id FROM inv_stock_log l WHERE true
                 <include refid="keywordScope"/>
                 AND l.material_sku_id IN (
-                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordPrefix}
+                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                     UNION
                     SELECT k.id FROM bas_material m JOIN bas_material_sku k ON k.material_id = m.id

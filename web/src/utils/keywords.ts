@@ -4,7 +4,7 @@
  */
 
 /** 一次最多几个：再多 GET 地址太长 */
-export const MAX_CODES = 100
+export const MAX_CODES = 200
 
 const SEPARATORS = /[\s,，、;；]+/
 

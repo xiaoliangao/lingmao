@@ -92,9 +92,9 @@ test('export task create, cancel and retry are protected; arbitrary export mutat
   for (const path of ['/api/export-jobs/stock-logs', '/api/export-jobs/9007199254740993/cancel', '/api/export-jobs/9007199254740993/retry']) assert.equal(canReplayWrite('post', path), true)
   for (const [method, path] of [['post', '/api/export-jobs/9007199254740993/file'], ['post', '/api/export-jobs/9007199254740993'], ['put', '/api/export-jobs/9007199254740993/retry'], ['post', '/api/export-jobs/stock-logs/extra']]) assert.equal(canReplayWrite(method, path), false)
 })
-test('batch search accepts 100 distinct codes and rejects 101', () => {
-  validateKeywords(Array.from({ length: 100 }, (_, i) => `A${i}`).join(','))
-  assert.throws(() => validateKeywords(Array.from({ length: 101 }, (_, i) => `A${i}`).join(' ')), /100/)
+test('batch search accepts 200 distinct codes and rejects 201', () => {
+  validateKeywords(Array.from({ length: 200 }, (_, i) => `A${i}`).join(','))
+  assert.throws(() => validateKeywords(Array.from({ length: 201 }, (_, i) => `A${i}`).join(' ')), /200/)
 })
 test('draft restore keeps reactive containers and never writes dangerous prototype fields', () => {
   const lines = [{ qty: 1 }]

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { showBizError } from '@/composables/useBizError'
 import { LIST_ERROR_CODES } from './errorCodes'
 import { clearToken, getToken, sessionChanged, sessionEpoch, sessionIdentity, setToken } from './token'
@@ -10,6 +10,7 @@ import { singleFlight } from './singleFlight'
 import { validateKeywords } from './keywords'
 import { onSessionChanged } from './token'
 import { readWriteReceipts, removeWriteReceipt, requestFingerprint, storeWriteReceipt, type WriteReceipt } from './pendingWrite'
+import { formatDateTime } from './format'
 import { currentCompanyScope } from './companyScope'
 import { canReplayWrite } from './writePolicy'
 import { visibleWriteBody } from './fieldAccess'
@@ -39,10 +40,14 @@ export interface RequestOptions {
   /** Internal wrapper context captured before an asynchronous company lookup. */
   authEpoch?: string
 }
-type RequestConfig = AxiosRequestConfig<unknown> & RequestOptions & { replayed?: boolean }
+/** quietTransient：写操作遇到暂时故障先自己重试，拦截器不弹提示，最后由 performWrite 说一句 */
+type RequestConfig = AxiosRequestConfig<unknown> & RequestOptions & { replayed?: boolean; quietTransient?: boolean }
 
 function isSilent(config: AxiosRequestConfig<unknown> | undefined): boolean {
   return !!config && 'silent' in config && config.silent === true
+}
+function isQuietTransient(config: AxiosRequestConfig<unknown> | undefined): boolean {
+  return !!config && 'quietTransient' in config && config.quietTransient === true
 }
 
 /** 接口出错。消息已经在下面的拦截器里弹过了（silent 的除外），调用方不用再提示 */
@@ -54,6 +59,13 @@ export class ApiError extends Error {
     public readonly data: unknown = null,
     /** 这次请求的错误编号（响应头 X-Trace-Id），在服务器日志里 grep 它能找到这次请求的全部日志 */
     public readonly traceId: string | null = null,
+    /**
+     * 暂时故障：网络断、超时、网关 502/503/504（升级重启时）、同一笔提交还在处理（409 + Retry-After）。
+     * 请求可能到了也可能没到服务器，过一会儿用同一个提交编号再发一次是安全的
+     */
+    public readonly transient = false,
+    /** 服务器让等几毫秒再试（Retry-After），没给是 null */
+    public readonly retryAfter: number | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -190,10 +202,11 @@ instance.interceptors.response.use(
     } else if (error.response) {
       message = `服务器出错了（HTTP ${error.response.status}），请稍后再试`
     }
-    if (!isSilent(error.config)) {
+    const transient = !error.response || [502, 503, 504].includes(error.response.status)
+    if (!isSilent(error.config) && !(transient && isQuietTransient(error.config))) {
       ElMessage.error(message)
     }
-    throw new ApiError(-1, message)
+    throw new ApiError(-1, message, null, null, transient)
   },
 )
 
@@ -215,6 +228,9 @@ export function installMock(answer: (config: InternalAxiosRequestConfig<unknown>
 /** 后端说出错了：401 回登录页，带清单的弹表格，其他弹一行消息。返回给调用方的 ApiError */
 let redirectingToLogin = false
 function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
+  const seconds = Number(response.headers['retry-after'])
+  const retryAfter = Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 30) * 1000 : null
+  const transient = [502, 503, 504].includes(body.code) || (body.code === 409 && retryAfter !== null)
   if (body.code === 401) {
     // Concurrent failures share one logout/navigation. Reassigning location for each
     // response aborts the login navigation and can leave the expired page visible.
@@ -225,7 +241,7 @@ function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
         location.replace(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`)
       }
     }
-  } else if (!isSilent(response.config)) {
+  } else if (!isSilent(response.config) && !(transient && isQuietTransient(response.config))) {
     if (LIST_ERROR_CODES.includes(body.code) && Array.isArray(body.data) && body.data.length > 0) {
       showBizError(body.code, body.msg, body.data)
     } else {
@@ -234,7 +250,7 @@ function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
     }
   }
   const traceId = response.headers['x-request-id'] ?? response.headers['x-trace-id']
-  return new ApiError(body.code, body.msg, body.data ?? null, typeof traceId === 'string' ? traceId : null)
+  return new ApiError(body.code, body.msg, body.data ?? null, typeof traceId === 'string' ? traceId : null, transient, retryAfter)
 }
 
 function isJson(response: AxiosResponse<unknown>) {
@@ -266,94 +282,126 @@ function normalizePage<T>(data: T): T {
   }
   return data
 }
+/*
+ * 提交结果不确定时怎么办（docs/api/README §3.6）。
+ * 建单这类服务器支持按提交编号防重的写操作（writePolicy.canReplayWrite）：
+ *   1. 发之前把提交编号记进浏览器（只记编号、内容摘要、地址，不记表单内容），带上 Idempotency-Key；
+ *   2. 网络断、网关 502/503/504、"还在处理"时，用同一个编号自动再发两次（服务器认得编号，不会建两张）；
+ *   3. 还不确定就告诉用户"系统会自动核对"，到时间去问 GET /api/http-actions/{编号}：成功了、没保存都弹一条通知，收据删掉；
+ *   4. 同一个地方内容没改再点保存 = 用原编号重发；改了内容再保存，先核对上一次：上一次其实成功了就拦下，没保存就照常提交。
+ * 改单、删除、审核这类操作不记收据：服务器有版本号和状态检查，重复提交会被拦，结果不确定时请用户刷新看一下。
+ */
+/** 暂时故障后自动重发的间隔 */
+const RETRY_DELAYS = [1000, 3000]
+/**
+ * 每次请求超时 15 秒、间隔 1 秒和 3 秒，第三次最晚在第 34 秒发出；服务器一次提交最长 30 秒（事务超时）。
+ * 所以过了一分半还查不到成功记录，就是没保存。
+ */
+const SETTLE_AFTER = 90_000
+/** 收据最多留一天 */
+const RECEIPT_TTL = 24 * 60 * 60_000
 interface PendingWrite extends WriteReceipt {
-  body?: string
   promise?: Promise<unknown>
-  retry?: () => Promise<unknown>
-  confirmed?: boolean
+  /** 收据存进了浏览器（存不进去时只在这一页的内存里） */
+  persisted?: boolean
 }
 export interface PendingWriteNotice {
   key: string
-  scope: string
   title: string
   createdAt: number
-  state: 'unknown' | 'checking' | 'confirmed'
-  canRetry: boolean
-  manualCheck: boolean
-  message: string
+  checking: boolean
 }
+/** 还没核对出结果的提交，右下角显示"正在核对" */
 export const pendingWriteNotices = ref<PendingWriteNotice[]>([])
-export const pendingWriteDialog = ref(false)
 const pendingWrites = new Map<string, PendingWrite>()
-const RESOURCE_NAMES: Record<string, string> = { orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式', 'export-jobs': '导出任务' }
-function pendingNotice(action: PendingWrite, conflict = false) {
-  const existing = pendingWriteNotices.value.find((notice) => notice.key === action.key)
-  const replayable = !conflict && canReplayWrite(action.scope.split('|')[2] ?? '', action.url)
-  if (existing) { existing.canRetry = !!action.retry && replayable; existing.manualCheck = !replayable || !action.retry; if (conflict) existing.message = '同一页面发现多笔未确认操作。请在业务列表逐笔核对结果后结束对应操作，系统不会自动选择其中一笔重放。'; return }
-  pendingWriteNotices.value.push({
-    key: action.key,
-    scope: action.scope,
-    title: `${RESOURCE_NAMES[action.url.split('/')[2] ?? ''] ?? '业务'}提交`,
-    createdAt: action.createdAt,
-    state: 'unknown',
-    canRetry: !!action.retry && replayable,
-    manualCheck: !replayable || !action.retry,
-    message: conflict ? '同一页面发现多笔未确认操作。请在业务列表逐笔核对结果后结束对应操作，系统不会自动选择其中一笔重放。' : !replayable ? '此操作暂不支持安全重放。请先在对应业务列表或详情核对结果，再结束本次操作。' : action.retry ? '前次提交结果尚未确认，请重试原提交以核对结果。' : '前次提交结果尚未确认。请恢复原表单后再次提交以核对；系统会校验内容并沿用原提交凭据。',
-  })
+const checking = new Set<string>()
+/** 改单、审核这类操作连点两下：内容一样就合并成一次 */
+const inflight = new Map<string, Promise<unknown>>()
+const RESOURCE_NAMES: Record<string, string> = { orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式', 'tech-packs': '资料包', 'export-jobs': '导出任务' }
+const CHILD_NAMES: [RegExp, string][] = [
+  [/\/skus(\/generate)?$/, 'SKU'], [/\/certs$/, '供应商证照'], [/\/revise$/, '资料包改版'], [/\/to-prod$/, '大货资料包'],
+  [/\/reports$/, '报工'], [/\/issues$/, '生产问题'], [/\/receipts$/, '成品入库'], [/\/from-(purchase|production)\/\d+$/, '入库单'],
+  [/\/schedule$/, '排产'], [/\/from-(mrp|reorder)$/, '采购单'],
+]
+function writeTitle(url: string): string {
+  const path = url.split('?')[0] ?? ''
+  return CHILD_NAMES.find(([pattern]) => pattern.test(path))?.[1] ?? RESOURCE_NAMES[path.split('/')[2] ?? ''] ?? '提交'
 }
-/** Reload restores only a receipt/hash. Matching form data must be supplied again by the page. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/** 结果不确定：请求可能已经在服务器上做完了 */
+function uncertain(error: unknown): boolean {
+  return !(error instanceof ApiError) || error.transient || unknownActionResult(error.code)
+}
+function syncNotices() {
+  const identity = sessionIdentity()
+  pendingWriteNotices.value = [...pendingWrites.values()]
+    .filter((action) => action.identity === identity && !action.promise)
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((action) => ({ key: action.key, title: writeTitle(action.url), createdAt: action.createdAt, checking: checking.has(action.key) }))
+}
+/** 把别的标签页、刷新前留下的收据读进来；超过一天的直接删 */
 export function restorePendingWrites() {
   const identity = sessionIdentity()
+  const stored = new Set<string>()
   for (const receipt of readWriteReceipts()) {
+    if (Date.now() - receipt.createdAt > RECEIPT_TTL) { removeWriteReceipt(receipt.key); continue }
+    stored.add(receipt.key)
     if (receipt.identity !== identity || pendingWrites.has(receipt.key)) continue
-    pendingWrites.set(receipt.key, { ...receipt })
+    pendingWrites.set(receipt.key, { ...receipt, persisted: true })
   }
-  const owned = [...pendingWrites.values()].filter((action) => action.identity === identity)
-  const counts = new Map<string, number>()
-  for (const action of owned) counts.set(action.scope, (counts.get(action.scope) ?? 0) + 1)
-  for (const action of owned) if (!action.promise) pendingNotice(action, (counts.get(action.scope) ?? 0) > 1)
-  pendingWriteNotices.value = pendingWriteNotices.value.filter((notice) => pendingWrites.get(notice.key)?.identity === identity)
+  // 别的标签页已经核对掉的，这里也不再管
+  for (const [key, action] of pendingWrites) if (action.persisted && !action.promise && !checking.has(key) && !stored.has(key)) pendingWrites.delete(key)
+  syncNotices()
 }
-
 function forgetWrite(key: string) {
-  // If storage became unavailable, keep the receipt so a reload never silently issues a new key.
-  if (!removeWriteReceipt(key)) return false
+  removeWriteReceipt(key)
   pendingWrites.delete(key)
-  pendingWriteNotices.value = pendingWriteNotices.value.filter((item) => item.key !== key)
-  if (!pendingWriteNotices.value.length) pendingWriteDialog.value = false
-  return true
+  syncNotices()
 }
-export async function checkPendingWrite(key: string) {
-  const action = pendingWrites.get(key)
-  const notice = pendingWriteNotices.value.find((item) => item.key === key)
-  if (!action?.retry || !notice?.canRetry || notice.state === 'checking') return
-  if (sessionChanged() || action.identity !== sessionIdentity()) { notice.message = '账号已变化，请重新登录原账号后核对。'; return }
-  notice.state = 'checking'
-  try {
-    const result = await action.retry()
-    action.confirmed = true
-    notice.state = 'confirmed'
-    const no = result && typeof result === 'object' && 'no' in result && typeof result.no === 'string' ? result.no : ''
-    notice.message = `前次提交已确认成功${no ? `：${no}` : ''}。请到对应列表核对，再开始新动作。`
-  } catch (error) {
-    if (error instanceof ApiError && !unknownActionResult(error.code) && ![401, 403, 409, 1002].includes(error.code)) {
-      action.confirmed = true
-      notice.state = 'confirmed'
-      notice.message = `前次请求未成功：${error.message}。确认后可修改并重新提交。`
+type Settled = 'done' | 'not-done' | 'unknown'
+/** 问服务器这笔提交成功了没有。wait：还没到 SETTLE_AFTER、又查不到时，等到那时再问一次 */
+async function settle(action: PendingWrite, wait = false): Promise<Settled> {
+  const ask = () => request<{ done: boolean }>({ url: `/api/http-actions/${action.key}`, method: 'get', silent: true, signal: new AbortController().signal })
+    .then((state) => state.done, () => null)
+  let done = await ask()
+  const left = action.createdAt + SETTLE_AFTER - Date.now()
+  if (done === false && wait && left > 0) {
+    await sleep(left)
+    done = await ask()
+  }
+  if (done === true) return 'done'
+  return done === false && Date.now() - action.createdAt >= SETTLE_AFTER ? 'not-done' : 'unknown'
+}
+let resolveTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleResolve(delay: number) {
+  clearTimeout(resolveTimer)
+  resolveTimer = setTimeout(() => { void resolvePendingWrites() }, Math.min(Math.max(delay, 5000), SETTLE_AFTER + 2000))
+}
+/** 核对所有还没结果的提交（App 打开时、提交结果不确定一分半以后）。查出结果就弹通知、删收据；查不出过一会儿再来 */
+export async function resolvePendingWrites() {
+  restorePendingWrites()
+  const identity = sessionIdentity()
+  let next = Infinity
+  for (const action of [...pendingWrites.values()]) {
+    if (action.identity !== identity || action.promise || checking.has(action.key)) continue
+    checking.add(action.key)
+    syncNotices()
+    const outcome = await settle(action)
+    checking.delete(action.key)
+    const when = formatDateTime(action.createdAt)
+    if (outcome === 'done') {
+      forgetWrite(action.key)
+      ElNotification({ type: 'success', title: '提交已经保存了', message: `${when} 网络不稳时提交的${writeTitle(action.url)}已经保存成功，列表里能看到。` })
+    } else if (outcome === 'not-done') {
+      forgetWrite(action.key)
+      ElNotification({ type: 'warning', title: '有一笔提交没有保存', message: `${when} 提交的${writeTitle(action.url)}因为网络中断没有保存，需要的话请重新提交。`, duration: 0 })
     } else {
-      notice.state = 'unknown'
-      notice.message = error instanceof Error ? error.message : '仍未能确认，请稍后重试原提交。'
+      // 还没到时间就到时间再查；核对接口不通时隔半分钟再试，不一直问
+      next = Math.min(next, Math.max(action.createdAt + SETTLE_AFTER + 2000 - Date.now(), 30_000))
     }
   }
-}
-export function acknowledgePendingWrite(key: string) {
-  if (!pendingWrites.get(key)?.confirmed) return
-  if (!forgetWrite(key)) ElMessage.error('无法清除已确认的提交凭据，请恢复浏览器存储后重试')
-}
-export function acknowledgeManualWrite(key: string) {
-  const action = pendingWrites.get(key)
-  if (!action || !pendingWriteNotices.value.find((notice) => notice.key === key)?.manualCheck) return
-  if (!forgetWrite(key)) ElMessage.error('无法清除提交凭据，请恢复浏览器存储后重试')
+  syncNotices()
+  if (Number.isFinite(next)) scheduleResolve(next)
 }
 const activeRequests = new Set<AbortController>()
 onSessionChanged(() => { for (const controller of activeRequests) controller.abort() })
@@ -407,7 +455,6 @@ export function request<T>(config: RequestConfig): Promise<T> {
   try {
     validateKeywords((config.params as { keyword?: unknown } | undefined)?.keyword)
     prepared = prepareRequest(config)
-    restorePendingWrites()
   } catch (error) {
     const failure = error instanceof ApiError ? error : new ApiError(400, error instanceof Error ? error.message : '请求内容不合法')
     if (!config.silent) ElMessage.error(failure.message)
@@ -419,6 +466,12 @@ export function request<T>(config: RequestConfig): Promise<T> {
   if (config.readOnly || ['get', 'head'].includes(method) || config.url?.startsWith('/api/auth/') || config.data instanceof FormData) return send()
   return performWrite(config, prepared, send, method, epoch)
 }
+/** 内容摘要不算 clientActionId：重发时它要换成原来的编号 */
+function fingerprintBody(data: unknown): string {
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !('clientActionId' in data)) return JSON.stringify(data ?? null)
+  const { clientActionId: _ignored, ...rest } = data as Record<string, unknown>
+  return JSON.stringify(rest)
+}
 async function performWrite<T>(config: RequestConfig, prepared: RequestConfig, send: () => Promise<T>, method: string, epoch: string): Promise<T> {
   const clientFailure = (code: number, message: string) => {
     if (!config.silent) ElMessage.error(message)
@@ -426,71 +479,89 @@ async function performWrite<T>(config: RequestConfig, prepared: RequestConfig, s
   }
   const identity = sessionIdentity()
   const url = config.url ?? ''
-  // Neither company nor caller-created UUID may bypass an unresolved action on this page.
+  const title = writeTitle(url)
   const scope = `${identity}|${location.pathname}|${method}|${url.split('?')[0]}`
-  let action = [...pendingWrites.values()].find((item) => item.scope === scope)
-  let body = JSON.stringify(config.data ?? null)
-  prepared.data = config.data === undefined ? undefined : JSON.parse(body)
-  const payload = prepared.data
-  if (action && payload && typeof payload === 'object' && 'clientActionId' in payload) {
-    payload.clientActionId = action.key
-    body = JSON.stringify(payload)
-  }
+  prepared.data = config.data === undefined ? undefined : JSON.parse(JSON.stringify(config.data))
+  const payload = prepared.data as Record<string, unknown> | undefined
   let fingerprint: string
-  try { fingerprint = await requestFingerprint(body, prepared.companyId, url) } catch {
-    throw clientFailure(409, '无法生成安全提交凭据，本次尚未发送，请稍后重试')
+  try { fingerprint = await requestFingerprint(fingerprintBody(payload), prepared.companyId, url) } catch {
+    throw clientFailure(409, '无法生成提交编号，这次还没有发出去，请再点一次')
   }
   assertSession(config.url)
   if (epoch !== sessionEpoch()) throw new ApiError(409, '登录身份已变化，请重新打开本页')
-  // Digest work yields; another click may already have installed this action.
+  prepared.quietTransient = true
+
+  if (!canReplayWrite(method, url)) {
+    const twinKey = `${scope}|${fingerprint}`
+    const twin = inflight.get(twinKey)
+    if (twin) return twin as Promise<T>
+    prepared.headers = { ...prepared.headers, 'Idempotency-Key': config.idempotencyKey ?? (typeof payload?.clientActionId === 'string' ? payload.clientActionId : clientActionUuid()) }
+    const promise = send().catch((error: unknown) => {
+      if (error instanceof ApiError && error.transient && !config.silent) {
+        ElMessage.warning({ message: `${error.message}。刚才的操作不确定有没有成功，请刷新页面看一下结果再操作。`, duration: 8000 })
+      }
+      throw error
+    }).finally(() => inflight.delete(twinKey))
+    inflight.set(twinKey, promise)
+    return promise
+  }
+
   restorePendingWrites()
   const matches = [...pendingWrites.values()].filter((item) => item.scope === scope)
-  if (matches.length > 1) {
-    matches.forEach((item) => pendingNotice(item, true))
-    pendingWriteDialog.value = true
-    throw new ApiError(1002, '同一页面有多笔提交待核对，请先逐笔确认结果')
-  }
-  action = matches[0]
-  if (action && action.fingerprint !== fingerprint) {
-    pendingWrites.set(action.key, action)
-    pendingNotice(action)
-    pendingWriteDialog.value = true
-    throw new ApiError(1002, '请先在待确认操作中核对前次提交，再开始新动作')
-  }
+  let action = matches.find((item) => item.fingerprint === fingerprint)
   if (action?.promise) {
-    if (config.recordWriteKey && !config.recordWriteKey(action.key)) throw clientFailure(409, '无法保存原提交凭据，请恢复浏览器存储后核对')
+    if (config.recordWriteKey && !config.recordWriteKey(action.key)) throw clientFailure(409, '浏览器存不下提交编号，请允许网站存储后再试')
     return action.promise as Promise<T>
   }
-  if (action && !canReplayWrite(method, url)) {
-    pendingWrites.set(action.key, action)
-    pendingNotice(action)
-    pendingWriteDialog.value = true
-    throw new ApiError(1002, '此操作暂不支持安全重放，请先核对前次结果')
+  // 同一个地方上一次的提交结果还不确定、这次内容又改了：先核对上一次，免得建出两张
+  for (const previous of matches.filter((item) => item !== action && !item.promise)) {
+    if (!config.silent && Date.now() - previous.createdAt < SETTLE_AFTER) ElMessage.info('正在核对上一次提交的结果，最多等一分半钟…')
+    const outcome = await settle(previous, true)
+    if (outcome === 'unknown') throw clientFailure(-1, `上一次的${title}还没核对出结果（网络不通），这次先不提交，请稍后再试`)
+    forgetWrite(previous.key)
+    if (outcome === 'done') {
+      if (!config.silent) void ElMessageBox.alert(`上一次的${title}其实已经保存成功了，这次的修改没有提交，免得重复。请到列表里打开它再改。`, '上一次已经保存', { confirmButtonText: '知道了' }).catch(() => undefined)
+      throw new ApiError(1002, `上一次的${title}已经保存成功，这次没有重复提交`)
+    }
   }
   if (!action) {
-    const explicit = config.idempotencyKey ?? (payload && typeof payload === 'object' && 'clientActionId' in payload && typeof payload.clientActionId === 'string' ? payload.clientActionId : undefined)
-    action = { scope, identity, key: explicit ?? clientActionUuid(), fingerprint, body, url, companyId: prepared.companyId, createdAt: Date.now() }
+    const explicit = config.idempotencyKey ?? (typeof payload?.clientActionId === 'string' ? payload.clientActionId : undefined)
+    action = { scope, identity, key: explicit ?? clientActionUuid(), fingerprint, url, companyId: prepared.companyId, createdAt: Date.now() }
   }
-  if (config.recordWriteKey && !config.recordWriteKey(action.key)) throw clientFailure(409, '无法保存原提交凭据，本次尚未发送，请恢复浏览器存储后重试')
-  const { scope: receiptScope, identity: owner, key, fingerprint: digest, url: endpoint, companyId, createdAt } = action
-  if (!storeWriteReceipt({ scope: receiptScope, identity: owner, key, fingerprint: digest, url: endpoint, companyId, createdAt })) {
-    throw clientFailure(409, '无法记录提交凭据，本次尚未发送。请允许浏览器存储后重试')
+  const current = action
+  if (payload && typeof payload === 'object' && 'clientActionId' in payload) payload.clientActionId = current.key
+  if (config.recordWriteKey && !config.recordWriteKey(current.key)) throw clientFailure(409, '浏览器存不下提交编号，这次还没有发出去，请允许网站存储后再试')
+  // 存不进浏览器（无痕模式、存储满）也照常提交：只是刷新以后没法自动核对
+  current.persisted = storeWriteReceipt({ scope, identity, key: current.key, fingerprint, url, companyId: current.companyId, createdAt: current.createdAt })
+  prepared.headers = { ...prepared.headers, 'Idempotency-Key': current.key }
+  pendingWrites.set(current.key, current)
+  const attempt = async (): Promise<T> => {
+    let last: unknown
+    for (let tries = 0; tries <= RETRY_DELAYS.length; tries++) {
+      if (tries > 0) {
+        await sleep(last instanceof ApiError && last.retryAfter !== null ? last.retryAfter : RETRY_DELAYS[tries - 1]!)
+        if (sessionChanged() || epoch !== sessionEpoch()) break
+      }
+      try {
+        const value = await send()
+        forgetWrite(current.key)
+        return value
+      } catch (error) {
+        last = error
+        if (!uncertain(error)) { forgetWrite(current.key); throw error }
+        // 应用自己报的 500 不是网络问题，再发也一样；取消的请求不替用户重发
+        if (!(error instanceof ApiError && error.transient)) break
+      }
+    }
+    if (!config.silent && last instanceof ApiError && last.transient) {
+      const reason = last.code === 409 ? `服务器还在处理这次${title}` : `网络不稳定，还没确认这次${title}有没有保存成功`
+      ElMessage.warning({ message: `${reason}。系统一两分钟内会自动核对并提醒你；也可以稍后再点一次，不会重复保存。`, duration: 10_000 })
+    }
+    scheduleResolve(current.createdAt + SETTLE_AFTER + 2000 - Date.now())
+    throw last
   }
-  prepared.headers = { ...prepared.headers, 'Idempotency-Key': action.key }
-  action.body = body
-  action.retry = send
-  pendingWrites.set(action.key, action)
-  const notice = pendingWriteNotices.value.find((item) => item.key === key)
-  if (notice) notice.canRetry = canReplayWrite(method, url)
-  action.promise = send().then((value) => {
-    if (!forgetWrite(action.key)) { action.confirmed = true; pendingNotice(action); const saved = pendingWriteNotices.value.find((item) => item.key === action.key); if (saved) { saved.state = 'confirmed'; saved.message = '提交已成功，但浏览器未能清理凭据。请恢复存储后确认，再开始新动作。' } }
-    return value
-  }, (error: unknown) => {
-    if (error instanceof ApiError && !unknownActionResult(error.code) && ![401, 403, 409].includes(error.code)) forgetWrite(action.key)
-    else pendingNotice(action)
-    throw error
-  }).finally(() => { action.promise = undefined })
-  return action.promise as Promise<T>
+  current.promise = attempt().finally(() => { current.promise = undefined; syncNotices() })
+  return current.promise as Promise<T>
 }
 
 export const http = {

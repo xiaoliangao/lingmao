@@ -5,9 +5,11 @@ import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.idempotency.IdempotencyInProgress;
 import com.lingmao.scm.common.idempotency.RequestFingerprint;
 import com.lingmao.scm.module.biz.mapper.ActionRequestMapper;
+import com.lingmao.scm.module.biz.mapper.HttpActionRequestMapper;
 import com.lingmao.scm.module.biz.service.ActionRequestService;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +34,17 @@ import java.util.function.Supplier;
 @RequiredArgsConstructor
 public class ActionRequestServiceImpl implements ActionRequestService {
     private final ActionRequestMapper mapper;
+    private final HttpActionRequestMapper httpMapper;
     private final JsonMapper jsonMapper;
+    @Value("${lingmao.tenant-id:single}")
+    private String tenant;
+
+    @Override
+    public boolean completed(UUID key) {
+        Long userId = LoginUser.currentUserId();
+        if (userId == null) throw new BizException(401, "请先登录");
+        return httpMapper.completed(tenant, userId, key) || mapper.completed(userId, key);
+    }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)

@@ -4,7 +4,7 @@
 
 读取数据库日志前先关闭测试连接，再优雅停止整个测试实例并确认退出码为 0，等待全部日志生产者退出。原生模式随后关闭日志文件句柄再读；Docker 模式在容器停止后读取完整日志，最后删除容器及匿名卷。缺失断言不依赖固定 sleep，也不会在仍运行的 PostgreSQL 日志流上提前宣布通过。
 
-PostgreSQL 的 `terse` 只隐藏 DETAIL/CONTEXT，主 ERROR 仍可能含业务值，所以生产另设 `log_min_messages=panic`。代价是常规数据库错误不再进入 PostgreSQL 进程日志；运行故障通过应用安全异常类型、SQL 指纹/耗时、健康状态及退出码定位。需要原始 SQL 的深诊断只能在隔离数据或受控临时维护窗口进行。
+PostgreSQL 的 `terse` 只隐藏 DETAIL/CONTEXT，主 ERROR 仍可能含业务值，所以生产另设 `log_min_messages=log`：服务器日志的级别顺序里 ERROR、WARNING 排在 LOG 之下，语句报错不进 PostgreSQL 进程日志；启动、关闭、检查点和 FATAL/PANIC 照常记，数据库起不来时部署方能看到原因（11-18 从 `panic` 放宽）。语句级故障通过应用安全异常类型、SQL 指纹/耗时定位。需要原始 SQL 的深诊断只能在隔离数据或受控临时维护窗口进行。
 
 Nginx 门禁使用原有 HTTP、HTTPS 和公共 location 配置，实际覆盖签名文件 200/404、无效签名 403、符号链接 403、上游断开 503、HTTPS 下载、HTTP 跳转和不可信 request ID 规范化。测试的 `http` 层故意配置含完整 `$request` 的不安全日志，要求所有生产 server 都覆盖它，防止在同一层追加安全日志后仍写入镜像默认 combined 日志。
 

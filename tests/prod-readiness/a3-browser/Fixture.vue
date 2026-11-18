@@ -11,7 +11,7 @@ import { useTable } from '@/composables/useTable'
 import { useColumns } from '@/composables/useColumns'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useUserStore } from '@/stores/user'
-import { http, configureSessionRefresh, enableCookieSessionRefresh, fetchFile, pendingWriteNotices, checkPendingWrite, restorePendingWrites } from '@/utils/request'
+import { http, configureSessionRefresh, enableCookieSessionRefresh, fetchFile, pendingWriteNotices, resolvePendingWrites, restorePendingWrites } from '@/utils/request'
 import { getToken, sessionEpoch, setToken, setSessionSubject, onSessionChanged } from '@/utils/token'
 import { bindCompanyApi } from '@/utils/companyScope'
 import { techPackApi } from '@/api/techpack'
@@ -61,11 +61,11 @@ const testApi = {
   logout: user.logout,
   session: () => ({ token: getToken(), epoch: sessionEpoch() }),
   search: (keyword: string) => { table.query.keyword = keyword; search() },
-  state: () => ({ searches: searches.value, rows: table.list.value, sum: sum.value, sessionChange: sessionChange.value, pending: pendingWriteNotices.value.map(({ scope, state }) => ({ scope, state })) }),
+  state: () => ({ searches: searches.value, rows: table.list.value, sum: sum.value, sessionChange: sessionChange.value, pending: pendingWriteNotices.value.map(({ key, checking }) => ({ key, checking })) }),
   write: (amount: number) => http.post<{ id: string; no: string }>('/api/orders', { companyId: '1', amount }, { silent: true }),
   otherWrite: (amount: number) => http.post('/api/materials', { companyId: '1', amount }, { silent: true }),
   parallelWrite: () => Promise.all(Array.from({ length: 20 }, () => http.post<{ id: string; no: string }>('/api/orders', { companyId: '1', amount: 1 }, { silent: true }))),
-  checkPending: () => checkPendingWrite(pendingWriteNotices.value[0]!.key),
+  checkPending: resolvePendingWrites,
   setToken: (token: string) => { setToken(token); setSessionSubject(token === 'synthetic-other-account' ? '9007199254740995' : '9007199254740993') },
   columns: () => ({ date: display.show.date, note: display.show.note }),
   nativeSubmits: () => nativeSubmits.value,

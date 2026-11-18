@@ -14,9 +14,9 @@
         LEFT JOIN sup_supplier s ON s.id = w.factory_id
         <where>
             <if test="q.keyword != null and q.keyword.trim() != ''">
-                <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+                <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
                 <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
-                AND (upper(w.code) LIKE #{keywordPrefix} OR w.name ILIKE #{keywordContains})
+                AND (upper(w.code) LIKE #{keywordCode} OR w.name ILIKE #{keywordContains})
             </if>
             <if test="q.type != null and q.type != ''">AND w.type = #{q.type}</if>
             <if test="q.status != null">AND w.status = #{q.status}</if>

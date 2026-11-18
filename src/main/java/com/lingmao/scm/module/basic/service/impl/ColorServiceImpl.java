@@ -34,7 +34,7 @@ public class ColorServiceImpl implements ColorService {
     public PageResult<Color> page(ColorQuery query) {
         String kw = Texts.trim(query.getKeyword());
         LambdaQueryWrapper<Color> wrapper = new LambdaQueryWrapper<Color>()
-                .and(kw != null, w -> w.apply("upper(code) LIKE {0}", Keywords.prefix(kw))
+                .and(kw != null, w -> w.apply("upper(code) LIKE {0}", Keywords.codeContains(kw))
                         .or().apply("name ILIKE {0}", Keywords.contains(kw, 32)))
                 .eq(query.getStatus() != null, Color::getStatus, query.getStatus())
                 .eq(Texts.trim(query.getFamily()) != null, Color::getFamily, query.getFamily())

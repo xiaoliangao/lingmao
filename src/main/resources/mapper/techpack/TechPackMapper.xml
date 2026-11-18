@@ -37,9 +37,9 @@
                OR (p.stage = 'DEV' AND NOT EXISTS (SELECT 1 FROM tp_tech_pack x
                                                    WHERE x.style_id = p.style_id AND x.stage = 'PROD' AND x.status = 'EFFECTIVE')))
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
-            AND (upper(s.code) LIKE #{keywordPrefix} OR s.name ILIKE #{keywordContains}
+            AND (upper(s.code) LIKE #{keywordCode} OR s.name ILIKE #{keywordContains}
                  OR s.alias_name ILIKE #{keywordContains}
                  <if test="codes != null">OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>

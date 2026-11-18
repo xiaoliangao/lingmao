@@ -1,5 +1,5 @@
-SELECT set_config('lingmao.v35_lock_timeout', current_setting('lock_timeout'), false);
-SELECT set_config('lingmao.v35_statement_timeout', current_setting('statement_timeout'), false);
+SELECT set_config('lingmao.v34_lock_timeout', current_setting('lock_timeout'), false);
+SELECT set_config('lingmao.v34_statement_timeout', current_setting('statement_timeout'), false);
 SET lock_timeout = '5s';
 SET statement_timeout = '5min';
 ALTER TABLE sys_deployment_namespace ADD COLUMN IF NOT EXISTS export_store_uuid UUID;
@@ -13,5 +13,5 @@ BEGIN
         RAISE EXCEPTION 'Outbox 清理索引无效；请 CONCURRENTLY 删除无效同名索引后重试迁移';
     END IF;
 END $verify$;
-SELECT set_config('statement_timeout', current_setting('lingmao.v35_statement_timeout'), false);
-SELECT set_config('lock_timeout', current_setting('lingmao.v35_lock_timeout'), false);
+SELECT set_config('statement_timeout', current_setting('lingmao.v34_statement_timeout'), false);
+SELECT set_config('lock_timeout', current_setting('lingmao.v34_lock_timeout'), false);

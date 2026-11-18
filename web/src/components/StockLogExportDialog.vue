@@ -116,7 +116,7 @@ async function create() {
     else report(new Error('任务已创建，但未能清除待确认记录；请恢复浏览器存储后核对原提交'))
     if (alive && visible.value && selection === current) apply(value)
   } catch (cause) {
-    if (sameSession(epoch) && cause instanceof ApiError && !unknownActionResult(cause.code) && ![401, 403, 409].includes(cause.code) && clearExportCreate(owner)) createDraft.value = null
+    if (sameSession(epoch) && cause instanceof ApiError && !cause.transient && !unknownActionResult(cause.code) && clearExportCreate(owner)) createDraft.value = null
     if (alive && visible.value && selection === current && sameSession(epoch)) report(cause)
   } finally { creating.value = false }
 }

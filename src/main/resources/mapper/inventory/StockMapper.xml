@@ -16,15 +16,15 @@
     <sql id="stockSource">
         <choose>
             <when test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
             (
                 SELECT sk.* FROM inv_stock sk WHERE sk.material_sku_id IN (
-                    SELECT mk.id FROM bas_material_sku mk WHERE upper(mk.code) LIKE #{keywordPrefix}
+                    SELECT mk.id FROM bas_material_sku mk WHERE upper(mk.code) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(mk.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                     UNION
                     SELECT mk.id FROM bas_material_sku mk JOIN bas_material mm ON mm.id = mk.material_id
-                    WHERE upper(mm.code) LIKE #{keywordPrefix} OR mm.name ILIKE #{keywordContains}
+                    WHERE upper(mm.code) LIKE #{keywordCode} OR mm.name ILIKE #{keywordContains}
                     <if test="codes != null">OR upper(mm.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                 )
                 UNION

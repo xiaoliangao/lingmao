@@ -9,12 +9,11 @@
     <!-- 搜索先从各自可索引的标识、名称找到候选主键。外层仍统一执行数据范围、状态、日期过滤；候选不截断。 -->
     <sql id="keywordCtes">
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
-            <bind name="keywordTokenPrefix" value="keywordPrefix == null ? null : ('%,' + keywordPrefix)"/>
             WITH keyword_calc_items AS (
                 SELECT ci.id FROM mrp_calc mc JOIN mrp_calc_item ci ON ci.calc_id = mc.id
-                WHERE upper(mc.no) LIKE #{keywordPrefix}
+                WHERE upper(mc.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(mc.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
@@ -31,18 +30,17 @@
                         </foreach>
                     </when>
                     <otherwise>
-                        WHERE upper(ci.order_nos) LIKE #{keywordPrefix} OR upper(ci.order_nos) LIKE #{keywordTokenPrefix}
-                           OR upper(ci.style_codes) LIKE #{keywordPrefix} OR upper(ci.style_codes) LIKE #{keywordTokenPrefix}
+                        WHERE upper(ci.order_nos) LIKE #{keywordCode} OR upper(ci.style_codes) LIKE #{keywordCode}
                     </otherwise>
                 </choose>
             ), keyword_skus AS (
-                SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordPrefix}
+                SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
                 UNION
                 SELECT k.id FROM bas_material m JOIN bas_material_sku k ON k.material_id = m.id
-                WHERE upper(m.code) LIKE #{keywordPrefix} OR m.name ILIKE #{keywordContains}
+                WHERE upper(m.code) LIKE #{keywordCode} OR m.name ILIKE #{keywordContains}
                 <if test="codes != null">
                     OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
@@ -54,7 +52,7 @@
                 SELECT i.id, i.purchase_order_id FROM keyword_calc_items ci
                 JOIN mrp_calc_transit t ON t.calc_item_id = ci.id JOIN pur_order_item i ON i.id = t.purchase_item_id
             ), keyword_heads AS (
-                SELECT ko.id FROM pur_order ko WHERE upper(ko.no) LIKE #{keywordPrefix}
+                SELECT ko.id FROM pur_order ko WHERE upper(ko.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
@@ -93,7 +91,7 @@
             AND o.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         </if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
             AND o.id IN (SELECT id FROM keyword_heads UNION SELECT purchase_order_id FROM keyword_items)
         </if>
@@ -155,7 +153,7 @@
         <if test="q.dueDateFrom != null">AND COALESCE(i.line_due_date, o.delivery_date) &gt;= #{q.dueDateFrom}</if>
         <if test="q.dueDateTo != null">AND COALESCE(i.line_due_date, o.delivery_date) &lt;= #{q.dueDateTo}</if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
             AND i.id IN (SELECT id FROM keyword_items
                          UNION SELECT ki.id FROM pur_order_item ki JOIN keyword_heads kh ON kh.id = ki.purchase_order_id)

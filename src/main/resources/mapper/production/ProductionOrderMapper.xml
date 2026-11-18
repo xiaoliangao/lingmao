@@ -102,22 +102,22 @@
         </if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
             AND p.id IN (
-                SELECT kp.id FROM prd_order kp WHERE upper(kp.no) LIKE #{keywordPrefix}
+                SELECT kp.id FROM prd_order kp WHERE upper(kp.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(kp.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
                 UNION
                 SELECT kp.id FROM ord_order ko JOIN prd_order kp ON kp.order_id = ko.id
-                WHERE upper(ko.no) LIKE #{keywordPrefix}
+                WHERE upper(ko.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
                 UNION
                 SELECT kp.id FROM sty_style ks JOIN prd_order kp ON kp.style_id = ks.id
-                WHERE upper(ks.code) LIKE #{keywordPrefix} OR ks.name ILIKE #{keywordContains}
+                WHERE upper(ks.code) LIKE #{keywordCode} OR ks.name ILIKE #{keywordContains}
                 <if test="codes != null">
                     OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
@@ -232,16 +232,16 @@
         <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
             AND p.id IN (
-                SELECT kp.id FROM prd_order kp WHERE upper(kp.no) LIKE #{keywordPrefix}
+                SELECT kp.id FROM prd_order kp WHERE upper(kp.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(kp.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
                 UNION
                 SELECT kp.id FROM sty_style ks JOIN prd_order kp ON kp.style_id = ks.id
-                WHERE upper(ks.code) LIKE #{keywordPrefix}
+                WHERE upper(ks.code) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>

@@ -26,22 +26,22 @@
         <if test="q.createDateFrom != null">AND c.create_time &gt;= (CAST(#{q.createDateFrom} AS date)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
         <if test="q.createDateTo != null">AND c.create_time &lt; ((CAST(#{q.createDateTo} AS date) + 1)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             AND c.id IN (
-                SELECT kc.id FROM mrp_calc kc WHERE upper(kc.no) LIKE #{keywordPrefix}
+                SELECT kc.id FROM mrp_calc kc WHERE upper(kc.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(kc.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
                 UNION
                 SELECT co.calc_id FROM ord_order ko JOIN mrp_calc_order co ON co.order_id = ko.id
-                WHERE upper(ko.no) LIKE #{keywordPrefix}
+                WHERE upper(ko.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
                 UNION
                 SELECT co.calc_id FROM sty_style ks JOIN ord_order_item ki ON ki.style_id = ks.id
                 JOIN mrp_calc_order co ON co.order_id = ki.order_id
-                WHERE upper(ks.code) LIKE #{keywordPrefix}
+                WHERE upper(ks.code) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
@@ -82,15 +82,15 @@
         FROM ord_order o
         WHERE o.status IN ('APPROVED', 'RUNNING')
         <if test="keyword != null and keyword.trim() != ''">
-            <bind name="keywordPrefix" value="@com.lingmao.scm.common.page.Keywords@prefix(keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(keyword)"/>
             AND o.id IN (
-                SELECT ko.id FROM ord_order ko WHERE upper(ko.no) LIKE #{keywordPrefix}
+                SELECT ko.id FROM ord_order ko WHERE upper(ko.no) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
                 UNION
                 SELECT ki.order_id FROM sty_style ks JOIN ord_order_item ki ON ki.style_id = ks.id
-                WHERE upper(ks.code) LIKE #{keywordPrefix}
+                WHERE upper(ks.code) LIKE #{keywordCode}
                 <if test="codes != null">
                     OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
                 </if>
