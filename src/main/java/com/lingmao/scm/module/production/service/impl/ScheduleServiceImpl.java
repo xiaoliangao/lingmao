@@ -87,7 +87,11 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     @Override
+    public void checkSourceOrderVisible(long orderId) { orderService.checkSourceVisible(List.of(orderId)); }
+
+    @Override
     public SchedulePrefillVO prefill(long orderId) {
+        orderService.checkSourceVisible(List.of(orderId));
         OrderForProduction o = orderService.getForProduction(orderId);
         checkOrder(o);
         Map<Long, List<OrderForProduction.Line>> byStyle = new LinkedHashMap<>();
@@ -130,6 +134,7 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     @Override
     public ScheduleQuoteVO quote(long orderId, long styleId, long factoryId) {
+        orderService.checkSourceVisible(List.of(orderId));
         orderService.getForProduction(orderId);
         SupplierRef f = supplierService.getRef(factoryId);
         String problem = ProductionSupport.factoryProblem(f, supplierService.categories(List.of(factoryId))
@@ -154,6 +159,8 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     @Transactional
     public List<DocRef> schedule(ScheduleReq req) {
+        orderService.checkSourceVisible(List.of(req.getOrderId()));
+        com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.PRODUCTION);
         OrderForProduction o = orderService.lockForProduction(req.getOrderId());
         checkOrder(o);
         Map<Long, OrderForProduction.Line> lines = o.items().stream()

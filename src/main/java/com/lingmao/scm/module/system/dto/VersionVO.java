@@ -11,7 +11,7 @@ import java.time.ZoneId;
  * 升级脚本靠 version 判断新版本起来了没有；页面底部显示它，甲方报问题时说得清是哪个版本。
  */
 public record VersionVO(String version,
-                        @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                        @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                         OffsetDateTime buildTime) {
 
     /** 没经过打包脚本（开发环境）时的版本号 */

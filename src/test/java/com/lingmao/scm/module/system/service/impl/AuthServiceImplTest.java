@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.CompanyBrief;
 import com.lingmao.scm.module.system.dto.LoginReq;
+import com.lingmao.scm.module.system.dto.AuthTokens;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
@@ -11,6 +12,7 @@ import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginFailCounter;
 import com.lingmao.scm.security.LoginSessionStore;
+import com.lingmao.scm.security.RefreshSessionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -43,6 +45,9 @@ class AuthServiceImplTest {
 
     @Mock
     private LoginSessionStore loginSessionStore;
+
+    @Mock
+    private RefreshSessionService refreshSessions;
 
     @Mock
     private PermissionService permissionService;
@@ -164,13 +169,16 @@ class AuthServiceImplTest {
         when(sysUserMapper.selectOne(any())).thenReturn(admin());
         when(passwordEncoder.matches("right", "hashed")).thenReturn(true);
         when(jwtUtil.createToken(eq(1L),anyString())).thenReturn("token-for-1");
+        AuthTokens issued = new AuthTokens("token-for-1", "synthetic-refresh", "synthetic-browser", 604800);
+        when(refreshSessions.issue("token-for-1")).thenReturn(issued);
 
-        String token = authService.login(req("admin", "right"));
+        AuthTokens tokens = authService.login(req("admin", "right"));
 
-        assertThat(token).isEqualTo("token-for-1");
+        assertThat(tokens).isEqualTo(issued);
         ArgumentCaptor<String> jti = ArgumentCaptor.forClass(String.class);
-        verify(loginSessionStore).save(jti.capture(),eq(1L));
+        verify(loginSessionStore).save(jti.capture(),eq(1L),eq("hashed"));
         verify(jwtUtil).createToken(1L, jti.getValue());
+        verify(refreshSessions).issue("token-for-1");
     }
 
     /** 规则：不带密码；默认主体按用户上设的默认主体问 basic（DefaultCompanyProvider），新建单据时主体默认填它 */
@@ -210,6 +218,7 @@ class AuthServiceImplTest {
                 .hasMessage("旧密码不对")
                 .extracting("code").isEqualTo(1000);
         verify(sysUserMapper, never()).updatePassword(anyLong(), anyString());
+        verify(sysUserMapper, never()).changePasswordIfCurrent(anyLong(), anyString(), anyString());
     }
 
     /**
@@ -220,10 +229,12 @@ class AuthServiceImplTest {
         when(sysUserMapper.selectById(1L)).thenReturn(admin());
         when(passwordEncoder.matches("right-old", "hashed")).thenReturn(true);
         when(passwordEncoder.encode("new-pass-123")).thenReturn("encoded-new");
+        when(sysUserMapper.changePasswordIfCurrent(1L, "hashed", "encoded-new")).thenReturn(1);
 
         authService.changePassword(1L, "right-old", "new-pass-123");
 
-        verify(sysUserMapper).updatePassword(1L, "encoded-new");
+        verify(sysUserMapper).changePasswordIfCurrent(1L, "hashed", "encoded-new");
+        verify(sysUserMapper, never()).updatePassword(anyLong(), anyString());
         verify(sysUserMapper, never()).updateById(any(SysUser.class));
     }
 

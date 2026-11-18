@@ -263,7 +263,7 @@ public class TechPackServiceImpl implements TechPackService {
         rejectLocked(ctx.owner());
         // 字段授权在内容转换之前裁定，头与费用子表必须使用同一结果（RFC010 §4.1）。
         if (!LoginUser.hasAuthority(COST_PERM)) {
-            req.setCost(null);
+            PackFinancialAccess.preserve(req, pack, packContent.load(id));
         }
         Content content = packForms.toContent(req, ctx.sizes());
         boolean withCost = req.getCost() != null;

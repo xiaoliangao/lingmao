@@ -46,14 +46,14 @@ export const ORDER_LOG_ACTIONS: Record<string, string> = {
 
 /** 列表里"款式"一列的一个款：缩略图 + 款号 */
 export interface OrderStyleRef {
-  styleId: number
+  styleId: string
   styleCode: string
   image: Attachment | null
 }
 
 /** 列表的一行。齐料一列另调 03 的 kittingApi.byOrders（api/purchase.ts） */
 export interface OrderRow {
-  id: number
+  id: string
   no: string
   status: OrderStatus
   /** 字典 order_type */
@@ -69,14 +69,14 @@ export interface OrderRow {
   /** 字典 currency；金额不换算汇率，外币显示币种 */
   currency: string
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   /** 已排产、已回货件数（明细加总），排产、回货两列的进度条用 */
   scheduledQty: number
   returnedQty: number
   styles: OrderStyleRef[]
-  salesId: number
+  salesId: string
   salesName: string | null
-  merchId: number
+  merchId: string
   merchName: string | null
   companyName: string
   source: OrderSource
@@ -98,10 +98,10 @@ export interface OrderQuery {
   orderType?: string
   /** 字典 brand */
   brand?: string
-  salesId?: number | null
-  merchId?: number | null
+  salesId?: string | null
+  merchId?: string | null
   /** 含这个款的订单 */
-  styleId?: number | null
+  styleId?: string | null
   /** 下单日期，yyyy-MM-dd，两头都含 */
   orderDateFrom?: string
   orderDateTo?: string
@@ -110,12 +110,12 @@ export interface OrderQuery {
   /** 只看我是制单人、业务员、跟单员的 */
   mine?: boolean
   /** 导出选中的 */
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 款式详情"需求订单"页签的一行：这张订单里这个款的数 */
 export interface StyleOrderRow {
-  orderId: number
+  orderId: string
   no: string
   status: OrderStatus
   orderType: string
@@ -133,26 +133,26 @@ export interface StyleOrderRow {
 
 /** 明细的一行 = 一个款式 SKU（ord_order_item） */
 export interface OrderItem {
-  id: number
+  id: string
   seq: number
-  styleId: number
-  styleSkuId: number
+  styleId: string
+  styleSkuId: string
   /** 款号-颜色码-尺码 */
   skuCode: string
-  colorId: number
+  colorId: string
   colorCode: string
   colorName: string
   colorHex: string | null
   sizeCode: string
   qty: number
   /** 单价；没填是 null */
-  price: number | null
+  price?: number | null
   /** 金额 = 件数 × 单价，后端算；没单价是 null */
-  amount: number | null
+  amount?: number | null
   /** 行交期；null = 用单头的要求交期 */
   lineDueDate: string | null
   /** 审核时锁定的生产 BOM；审核前是 null */
-  techPackId: number | null
+  techPackId: string | null
   /** 已排产、已回货，下游回写 */
   scheduledQty: number
   returnedQty: number
@@ -161,7 +161,7 @@ export interface OrderItem {
 
 /** 明细里一个款的公共信息：页面按款画颜色 × 尺码矩阵，一个款一块 */
 export interface OrderStyle {
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
   aliasName: string | null
@@ -169,21 +169,21 @@ export interface OrderStyle {
   /** 尺码组的尺码，按顺序，矩阵的列 */
   sizes: string[]
   /** 审核时锁定的生产 BOM 版本；审核前是 null */
-  techPackId: number | null
+  techPackId: string | null
   techPackVersion: number | null
   /** 这个款现在生效的生产 BOM；没有是 null（提交会被拦）。审核前显示它，审核后和锁定的不一样时提示"现在生效的是 V3" */
-  currentPackId: number | null
+  currentPackId: string | null
   currentPackVersion: number | null
   /** 本款件数、金额 */
   qty: number
-  amount: number | null
+  amount?: number | null
 }
 
 /** GET /api/orders/{id} */
 export interface OrderDetail extends DocHeader<OrderStatus, OrderAction> {
   orderType: string
   /** 客户、客户订单号：贸易代工留的口子（TRADE 关时都是 null，页面不显示） */
-  customerId: number | null
+  customerId: string | null
   customerName: string | null
   customerOrderNo: string | null
   contractNo: string | null
@@ -192,15 +192,15 @@ export interface OrderDetail extends DocHeader<OrderStatus, OrderAction> {
   requiredDate: string
   /** 承诺交期。待审核时是上一级审批人填的（多级审批），审核对话框拿它当默认值；还没人填是 null */
   commitDate: string | null
-  salesId: number
+  salesId: string
   salesName: string | null
-  merchId: number
+  merchId: string
   merchName: string | null
   currency: string
   /** 送货要求 */
   deliveryReq: string | null
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   source: OrderSource
   scheduledQty: number
   returnedQty: number
@@ -208,17 +208,17 @@ export interface OrderDetail extends DocHeader<OrderStatus, OrderAction> {
   /** 全部明细，按款、颜色、尺码排好；页面按 styleId 分块 */
   items: OrderItem[]
   /** 没审完的变更单（草稿或待审核），顶上出提示"变更单 BG… 待审核：…"；没有是 null */
-  pendingChange: { id: number; no: string; status: DocStatus; summary: string } | null
+  pendingChange: { id: string; no: string; status: DocStatus; summary: string } | null
 }
 
 // ---------------------------------------------------------------- 需求订单：新建、保存
 
 /** 明细的一行。逐 SKU 独立保留单价、行交期与备注；整款/尺码控件仅显式应用时批改 */
 export interface OrderItemForm {
-  styleSkuId: number
+  styleSkuId: string
   /** 正整数；0 的格子不发 */
   qty: number
-  price: number | null
+  price?: number | null
   lineDueDate: string | null
   remark: string | null
 }
@@ -226,18 +226,18 @@ export interface OrderItemForm {
 /** 新建、保存草稿共用的列。保存是整体覆盖：没填的发 null，明细发全部 */
 export interface OrderForm {
   /** 必填：页面默认填我的默认主体（user.defaultCompanyId） */
-  companyId: number
+  companyId: string
   /** 字典 order_type；TRADE 关时没有"客户订单" */
   orderType: string
   /** TRADE 关着，一律发 null */
-  customerId: number | null
+  customerId: string | null
   customerOrderNo: string | null
   contractNo: string | null
   brand: string | null
   orderDate: string
   requiredDate: string
-  salesId: number | null
-  merchId: number | null
+  salesId: string | null
+  merchId: string | null
   /** 字典 currency，默认 CNY */
   currency: string
   deliveryReq: string | null
@@ -253,12 +253,14 @@ export interface OrderCreateForm extends OrderForm {
 /** 保存草稿多出来的：打开时拿到的版本号 */
 export interface OrderUpdateForm extends OrderForm {
   version: number
+  /** 页面装载时已保存的主体；X-Company-Id 同它，companyId 可明确改为新主体。 */
+  expectedCompanyId?: string
 }
 
 /** 录单矩阵里一个款的一个 SKU */
 export interface OrderStyleSku {
-  id: number
-  colorId: number
+  id: string
+  colorId: string
   sizeCode: string
   code: string
   /** 停用的 SKU 那一格灰掉、不能填 */
@@ -278,7 +280,7 @@ export interface OrderStyleColor extends ColorOption {
  * 草稿、停用、没有生效生产 BOM 的款也返回，problem 里写为什么不能下，页面标出来；提交时后端照样会拦
  */
 export interface OrderStyleOption {
-  styleId: number
+  styleId: string
   code: string
   name: string
   aliasName: string | null
@@ -286,7 +288,7 @@ export interface OrderStyleOption {
   status: StyleStatus
   techPackStatus: TechPackStatus
   /** 现在生效的生产 BOM；没有是 null */
-  currentPackId: number | null
+  currentPackId: string | null
   currentPackVersion: number | null
   sizes: string[]
   /** 款上的颜色，按顺序（停用的也在，orderable = false） */
@@ -301,15 +303,15 @@ export interface OrderStyleOption {
 /** 导入时整批订单共用的单头（导入对话框里填，拼进导入地址的查询参数）。模板里只有明细的列（PRD §6.5.2） */
 export interface OrderImportHead {
   /** 必填：默认填我的默认主体（user.defaultCompanyId） */
-  companyId: number
+  companyId: string
   orderType: string
   brand: string | null
   /** 要求交期；行交期没填的用它 */
   requiredDate: string
   /** 业务员；不给 = 导入的人（原型的导入对话框里没有这一项） */
-  salesId: number | null
+  salesId: string | null
   /** 跟单员；不给 = 导入的人（同业务员） */
-  merchId: number | null
+  merchId: string | null
 }
 
 // ---------------------------------------------------------------- 需求订单：审核
@@ -322,11 +324,11 @@ export interface OrderAuditReq extends DocActionReq {
 
 /** 评审：一个款审核后会锁哪一版生产 BOM */
 export interface OrderReviewPack {
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
   /** 现在生效的生产 BOM；没有是 null */
-  techPackId: number | null
+  techPackId: string | null
   version: number | null
   /** 不能审的原因（"没有生效的生产 BOM""黑色还没配料"）；能审是 null */
   problem: string | null
@@ -334,7 +336,7 @@ export interface OrderReviewPack {
 
 /** 评审：缺口大的一种料（按生产 BOM 粗算，和可用量比；PRD §6.5.4） */
 export interface OrderReviewShortage {
-  materialSkuId: number
+  materialSkuId: string
   skuCode: string
   materialName: string
   skuColorName: string | null
@@ -352,7 +354,7 @@ export interface OrderReviewShortage {
 
 /** 评审：一个默认加工厂手上的活 */
 export interface OrderReviewLoad {
-  factoryId: number
+  factoryId: string
   factoryName: string
   /** 这张订单里哪些款的默认加工厂是它 */
   styleCodes: string[]
@@ -381,9 +383,9 @@ export const PROCESS_MODE_FULL = 'FULL'
 
 /** 排单对话框里一个款的一个 SKU */
 export interface ScheduleSku {
-  orderItemId: number
-  styleSkuId: number
-  colorId: number
+  orderItemId: string
+  styleSkuId: string
+  colorId: string
   sizeCode: string
   orderQty: number
   scheduledQty: number
@@ -395,17 +397,17 @@ export interface ScheduleSku {
 
 /** 排单对话框里一个款（只列还有没排完的款） */
 export interface ScheduleStyle {
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
   image: Attachment | null
   /** 订单锁定的生产 BOM，生产单会带上它 */
-  techPackId: number
+  techPackId: string
   techPackVersion: number
   /** 锁定版本的工序工价合计（参考加工价），外发加工的单价旁边提示"工价合计 38.00" */
-  laborTotal: number
+  laborTotal?: number
   /** 款式的默认加工厂；没设是 null */
-  defaultFactoryId: number | null
+  defaultFactoryId: string | null
   defaultFactoryName: string | null
   sizes: string[]
   /** 这张订单里这个款有的颜色 */
@@ -415,14 +417,14 @@ export interface ScheduleStyle {
 
 /** GET /api/production-orders/schedule-prefill?orderId=：排单对话框打开时带出的东西 */
 export interface SchedulePrefill {
-  orderId: number
+  orderId: string
   orderNo: string
   commitDate: string | null
   requiredDate: string
   /** 默认交期 = 承诺交期 − 10 天（没有承诺交期按要求交期） */
   defaultDueDate: string
   /** 默认生产跟单 = 订单的跟单员 */
-  merchId: number
+  merchId: string
   merchName: string | null
   styles: ScheduleStyle[]
 }
@@ -432,8 +434,8 @@ export interface ScheduleModePrice {
   /** 字典 process_mode 的 value */
   processMode: string
   /** 价格档案里的现价，元 / 件；没有是 null（要手填） */
-  price: number | null
-  priceSourceId: number | null
+  price?: number | null
+  priceSourceId: string | null
   effectiveDate: string | null
 }
 
@@ -442,7 +444,7 @@ export interface ScheduleModePrice {
  * 一次给齐每种加工方式的现价，切加工方式不用再问
  */
 export interface ScheduleQuote {
-  factoryId: number
+  factoryId: string
   factoryName: string
   /** 能不能下大货单：合作中、分类里有成衣厂或加工厂才行；不能时 reason 写原因，对话框里标红 */
   usable: boolean
@@ -450,30 +452,30 @@ export interface ScheduleQuote {
   /** 工厂档案上的结算方式（字典 settle_method）、税率 %，排单不改就用它们 */
   settleMethod: string | null
   taxPct: number | null
-  prices: ScheduleModePrice[]
+  prices?: ScheduleModePrice[]
   /** 默认加工方式：按字典 process_mode 的顺序，档案里有现价的第一种；都没有是字典第一项（原型 firstMode） */
   defaultMode: string
 }
 
 /** 排单的一块 = 生成一张生产单（一个加工厂 + 一个款式） */
 export interface ScheduleBlockItem {
-  orderItemId: number
+  orderItemId: string
   qty: number
 }
 
 export interface ScheduleBlock {
-  styleId: number
-  factoryId: number
+  styleId: string
+  factoryId: string
   /** 字典 process_mode；FULL 生成成品采购单，别的生成外发加工单 */
   processMode: string
   /** 外发加工单是加工费，成品采购单是成品单价（含料），元 / 件 */
-  unitPrice: number
+  unitPrice?: number
   /** 带出来的那条价格档案（ScheduleModePrice.priceSourceId）；手填的、档案里没有的发 null */
-  priceSourceId: number | null
+  priceSourceId: string | null
   /** 单价和档案现价不一样时必填，审核生产单时记进价格档案（Q25） */
   priceChangeReason: string | null
   dueDate: string
-  merchId: number
+  merchId: string
   /** null = 按工厂档案的结算方式 */
   settleMethod: string | null
   /** 条款：质量要求、延期扣款…… */
@@ -484,7 +486,7 @@ export interface ScheduleBlock {
 }
 
 export interface ScheduleReq {
-  orderId: number
+  orderId: string
   blocks: ScheduleBlock[]
 }
 
@@ -547,19 +549,19 @@ export const RESPONSIBLE_PARTY: Record<ResponsibleParty, string> = {
 
 /** 变更单列表的一行 */
 export interface OrderChangeRow {
-  id: number
+  id: string
   no: string
   status: ChangeStatus
   /** 上次被驳回的原因；不是"驳回后还没重新提交"的是 null */
   rejectReason: string | null
-  orderId: number
+  orderId: string
   orderNo: string
   changeTypes: ChangeType[]
   /** 改了什么，后端拼好的一句话："27CF001-KQ-M：120 → 100；要求交期：03-20 → 03-25" */
   summary: string
   reason: string
   responsibleParty: ResponsibleParty
-  feeNote: string | null
+  feeNote?: string | null
   createByName: string | null
   createTime: string
   auditByName: string | null
@@ -573,7 +575,7 @@ export interface OrderChangeQuery {
   status?: ChangeStatus[]
   /** 和 status=DRAFT 一起用：true 只要被驳回的（页面的"已驳回"），false 只要没被驳回的（页面的"草稿"）；不给 = 都要 */
   rejected?: boolean
-  orderId?: number | null
+  orderId?: string | null
   changeType?: ChangeType
   /** 提交（制单）日期，yyyy-MM-dd，两头都含 */
   createDateFrom?: string
@@ -583,14 +585,14 @@ export interface OrderChangeQuery {
 
 /** 变更明细的一处改动（ord_change_item） */
 export interface ChangeItemView {
-  id: number
+  id: string
   seq: number
   changeType: Exclude<ChangeType, 'CANCEL'>
   /** 改的是订单哪一行；加新 SKU 时是 null */
-  orderItemId: number | null
-  styleId: number | null
+  orderItemId: string | null
+  styleId: string | null
   styleCode: string | null
-  styleSkuId: number | null
+  styleSkuId: string | null
   skuCode: string | null
   /** 数量、配色配码：原 → 新（加 SKU 时原是 0，减掉一个 SKU 时新是 0） */
   fromQty: number | null
@@ -599,12 +601,12 @@ export interface ChangeItemView {
   fromDate: string | null
   toDate: string | null
   /** 单价（按款）：原 → 新 */
-  fromPrice: number | null
-  toPrice: number | null
+  fromPrice?: number | null
+  toPrice?: number | null
   /** 资料包版本（按款）：原 → 新 */
-  fromTechPackId: number | null
+  fromTechPackId: string | null
   fromVersion: number | null
-  toTechPackId: number | null
+  toTechPackId: string | null
   toVersion: number | null
   /** 这一处的说明，如"27CF001-KQ-M：120 → 100（已排 80）" */
   text: string
@@ -612,7 +614,7 @@ export interface ChangeItemView {
 
 /** GET /api/order-changes/{id} */
 export interface OrderChangeDetail extends DocHeader<ChangeStatus, ChangeAction> {
-  orderId: number
+  orderId: string
   orderNo: string
   orderStatus: OrderStatus
   changeTypes: ChangeType[]
@@ -620,7 +622,7 @@ export interface OrderChangeDetail extends DocHeader<ChangeStatus, ChangeAction>
   cancel: boolean
   reason: string
   responsibleParty: ResponsibleParty
-  feeNote: string | null
+  feeNote?: string | null
   rejectReason: string | null
   summary: string
   items: ChangeItemView[]
@@ -628,20 +630,20 @@ export interface OrderChangeDetail extends DocHeader<ChangeStatus, ChangeAction>
 
 /** 数量、配色配码：一个 SKU 的新件数 */
 export interface ChangeQtyForm {
-  styleSkuId: number
+  styleSkuId: string
   qty: number
 }
 
 /** 单价：一个款的新单价（这个款的每个 SKU 都改成它） */
 export interface ChangePriceForm {
-  styleId: number
+  styleId: string
   price: number
 }
 
 /** 资料包版本：一个款换到哪一版（同款生产 BOM 的已生效版） */
 export interface ChangeTechPackForm {
-  styleId: number
-  techPackId: number
+  styleId: string
+  techPackId: string
 }
 
 /**
@@ -652,20 +654,21 @@ export interface OrderChangeForm {
   cancel: boolean
   reason: string
   responsibleParty: ResponsibleParty
-  feeNote: string | null
+  /** 无 order:price:query 时整字段省略，服务器保留旧费用说明。 */
+  feeNote?: string | null
   /** 新的要求交期；不改发 null */
   requiredDate: string | null
   /** 矩阵里每一格的新件数，没改的也发（新加的颜色、尺码也在里面）；改成 0 = 不要这个 SKU 了 */
   quantities: ChangeQtyForm[]
-  /** 要改单价的款；不改的不发 */
-  prices: ChangePriceForm[]
+  /** 要改单价的款；无 order:price:query 时整段省略，不发缺 price 的占位行。 */
+  prices?: ChangePriceForm[]
   /** 要换资料包版本的款；不换的不发 */
   techPacks: ChangeTechPackForm[]
 }
 
 /** 提变更多出来的：哪张订单、附件（变更依据：审批截图、邮件、聊天记录） */
 export interface OrderChangeCreateForm extends OrderChangeForm {
-  orderId: number
+  orderId: string
   files: FileVO[]
 }
 

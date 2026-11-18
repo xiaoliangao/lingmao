@@ -78,6 +78,12 @@ public final class ExcelSchema<R> {
         return name;
     }
 
+    /** 在写出任何字节之前整列去掉（如没有看价权限的列）。 */
+    public ExcelSchema<R> without(String... headers) {
+        Set<String> excluded = Set.of(headers);
+        return new ExcelSchema<>(name, factory, columns.stream().filter(c -> !excluded.contains(c.header())).toList());
+    }
+
     boolean isIgnored(String normalizedHeader) {
         return ignored.contains(normalizedHeader);
     }

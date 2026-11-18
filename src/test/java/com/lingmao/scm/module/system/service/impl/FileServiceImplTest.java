@@ -3,6 +3,9 @@ package com.lingmao.scm.module.system.service.impl;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.module.system.dto.FileVO;
+import com.lingmao.scm.module.system.service.UploadCatalog;
+import java.nio.charset.StandardCharsets;
+import static org.mockito.Mockito.mock;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,6 +33,8 @@ class FileServiceImplTest {
     private static final FileUrlSigner SIGNER = new FileUrlSigner("test-file-sign-key-0123456789abcdef", CLOCK);
 
     /** JUnit 给每个测试一个临时目录，测完自动删掉 */
+    private static final byte[] PDF = "%PDF-1.7\n%%EOF".getBytes(StandardCharsets.US_ASCII);
+
     @TempDir
     Path tempDir;
 
@@ -45,16 +50,16 @@ class FileServiceImplTest {
      */
     @Test
     void upload_ok_savesUnderDatePath() throws Exception {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
-        MockMultipartFile file = new MockMultipartFile("file", "说明.PDF", "application/pdf", new byte[]{1, 2, 3});
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
+        MockMultipartFile file = new MockMultipartFile("file", "说明.PDF", "application/pdf", PDF);
 
         FileVO vo = service.upload(file);
 
         assertThat(vo.url()).matches("/files/2026/11/05/[0-9a-f-]{36}\\.pdf\\?e=1794412800&s=[\\w-]{22}");
         assertThat(vo.thumbUrl()).isNull();                       // pdf 不做缩略图
         assertThat(vo.name()).isEqualTo("说明.PDF");
-        assertThat(vo.size()).isEqualTo(3);
-        assertThat(Files.readAllBytes(saved(vo.url()))).containsExactly(1, 2, 3);
+        assertThat(vo.size()).isEqualTo(PDF.length);
+        assertThat(Files.readAllBytes(saved(vo.url()))).isEqualTo(PDF);
     }
 
     /**
@@ -63,8 +68,8 @@ class FileServiceImplTest {
      */
     @Test
     void localPath_onlyInsideUploadDir() throws Exception {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
-        FileVO vo = service.upload(new MockMultipartFile("file", "说明.pdf", "application/pdf", new byte[]{1}));
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
+        FileVO vo = service.upload(new MockMultipartFile("file", "说明.pdf", "application/pdf", PDF));
         Files.writeString(tempDir.getParent().resolve("secret-" + tempDir.getFileName() + ".txt"), "x");
 
         assertThat(service.localPath(vo.url())).contains(saved(vo.url()));
@@ -79,7 +84,7 @@ class FileServiceImplTest {
     /** 规则（RFC 001 §10）：jpg 在旁边生成 _s 缩略图，长边 320、比例不变，返回 thumbUrl；缩略图是另一个地址，单独签名 */
     @Test
     void upload_jpg_createsThumbnail() throws Exception {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
         MockMultipartFile file = new MockMultipartFile("file", "面料.JPG", "image/jpeg", image(1000, 500, "jpg", false));
 
         FileVO vo = service.upload(file);
@@ -94,7 +99,7 @@ class FileServiceImplTest {
     /** 规则：png 的缩略图还是 png，透明的地方保持透明；竖图按高算长边 */
     @Test
     void upload_png_keepsAlpha() throws Exception {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
         MockMultipartFile file = new MockMultipartFile("file", "截图.png", "image/png", image(400, 800, "png", true));
 
         FileVO vo = service.upload(file);
@@ -110,7 +115,7 @@ class FileServiceImplTest {
     /** 规则：本来就比 320 小的图不放大，按原尺寸存一份缩略图（前端统一用 thumbUrl） */
     @Test
     void upload_smallImage_notEnlarged() throws Exception {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
         MockMultipartFile file = new MockMultipartFile("file", "小图.jpg", "image/jpeg", image(100, 60, "jpg", false));
 
         FileVO vo = service.upload(file);
@@ -120,25 +125,19 @@ class FileServiceImplTest {
         assertThat(thumb.getHeight()).isEqualTo(60);
     }
 
-    /** 规则：缩略图生成不了（坏图、只有扩展名是 jpg），原图照样存好、上传成功，thumbUrl 是 null，不留半截 _s 文件 */
+    /** 上传格式按内容校验；伪装成图片的字节被拒，原图和半截缩略图都不能留下。 */
     @Test
-    void upload_brokenImage_stillSucceedsWithoutThumbnail() throws Exception {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+    void upload_brokenImage_rejectedWithoutFiles() throws Exception {
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
         MockMultipartFile file = new MockMultipartFile("file", "坏图.jpg", "image/jpeg", new byte[]{1, 2, 3});
-
-        FileVO vo = service.upload(file);
-
-        assertThat(vo.thumbUrl()).isNull();
-        assertThat(Files.readAllBytes(saved(vo.url()))).containsExactly(1, 2, 3);
-        try (var files = Files.list(saved(vo.url()).getParent())) {
-            assertThat(files).hasSize(1);
-        }
+        assertThatThrownBy(() -> service.upload(file)).isInstanceOf(BizException.class).hasMessageContaining("文件内容与扩展名");
+        try (var files = Files.walk(tempDir)) { assertThat(files.filter(Files::isRegularFile)).isEmpty(); }
     }
 
     /** 规则：设计源文件 AI、PSD 收，不做缩略图，最大 100MB；别的类型还是 10MB，超了 400 说清楚 */
     @Test
     void upload_designSource_largerLimit() {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
         long eleven = 11L * 1024 * 1024;
 
         FileVO psd = service.upload(sized("款式图稿.PSD", eleven));
@@ -156,12 +155,24 @@ class FileServiceImplTest {
     /** 规则：不在白名单里的扩展名（比如 html）不收 */
     @Test
     void upload_htmlFile_rejected() {
-        FileServiceImpl service = new FileServiceImpl(tempDir.toString(), CLOCK, SIGNER);
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
         MockMultipartFile file = new MockMultipartFile("file", "x.html", "text/html", "<script>".getBytes());
 
         assertThatThrownBy(() -> service.upload(file))
                 .isInstanceOf(BizException.class)
                 .hasMessage("不支持的文件类型: x.html");
+    }
+
+    @Test
+    void upload_directorySymlink_cannotCreateDirectoriesOutsideRoot() throws Exception {
+        Path outside = Files.createTempDirectory("upload-outside-");
+        try {
+            Files.createSymbolicLink(tempDir.resolve("2026"), outside);
+            FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
+            assertThatThrownBy(() -> service.upload(new MockMultipartFile("file", "说明.pdf", "application/pdf", PDF)))
+                    .isInstanceOf(java.io.UncheckedIOException.class);
+            try (var entries = Files.list(outside)) { assertThat(entries).isEmpty(); }
+        } finally { Files.delete(outside); }
     }
 
     private Path saved(String url) {
@@ -182,9 +193,12 @@ class FileServiceImplTest {
         return out.toByteArray();
     }
 
-    /** 报的大小是 size，内容只有 3 个字节：测大小规则不用真的分配几十 MB */
+    /** 大小元数据单独测，格式头必须有效；保存时仍以实际读取字节为准。 */
     private static MockMultipartFile sized(String name, long size) {
-        return new MockMultipartFile("file", name, "application/octet-stream", new byte[]{1, 2, 3}) {
+        byte[] header = new byte[32];
+        if (name.toLowerCase().endsWith(".ai")) header = "%!PS-Adobe-3.0".getBytes(StandardCharsets.US_ASCII);
+        else { header[0]='8'; header[1]='B'; header[2]='P'; header[3]='S'; header[5]=1; header[17]=1; header[21]=1; }
+        return new MockMultipartFile("file", name, "application/octet-stream", header) {
             @Override
             public long getSize() {
                 return size;

@@ -12,7 +12,7 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
  * 点"查看并处理"弹出没处理的提醒，一条一条点"已处理"（可以写一句怎么处理的）。外发加工单、成品采购单、采购单、算料单用。
  *
  *   const loadNotices = () => purchaseApi.notices(id)
- *   const handleNotice = (noticeId: number, remark: string | null) => purchaseApi.handleNotice(id, noticeId, remark)
+ *   const handleNotice = (noticeId: string, remark: string | null) => purchaseApi.handleNotice(id, noticeId, remark)
  *   <DocNoticesBanner :pending-count="detail.pendingNotices" :load="loadNotices" :handle="handleNotice" @handled="refresh" />
  *
  * load、handle 在 script 里定义好再传（见 DocLogList）。处理完一条发 handled，详情页重新取（条数跟着变）。
@@ -21,7 +21,7 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 const props = defineProps<{
   pendingCount: number
   load: () => Promise<DocNotice[]>
-  handle: (noticeId: number, remark: string | null) => Promise<void>
+  handle: (noticeId: string, remark: string | null) => Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -32,8 +32,8 @@ const router = useRouter()
 const notices = ref<DocNotice[]>([])
 const dialogVisible = ref(false)
 const loading = ref(false)
-const workingId = ref<number | null>(null)
-const remarks = ref<Record<number, string>>({})
+const workingId = ref<string | null>(null)
+const remarks = ref<Record<string, string>>({})
 const guard = useUnsavedChanges(remarks, dialogVisible)
 
 async function fetchNotices() {

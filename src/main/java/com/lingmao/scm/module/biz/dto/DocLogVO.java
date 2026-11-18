@@ -16,6 +16,6 @@ public record DocLogVO(Long id,
                        String remark,
                        Long operatorId,
                        String operatorName,
-                       @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                       @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                        OffsetDateTime createTime) {
 }

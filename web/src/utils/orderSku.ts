@@ -1,19 +1,19 @@
 /** SKU 行是保存的单位；批量输入只在显式应用时修改它们。 */
 export interface SkuValues {
-  price: number | null
+  price?: number | null
   lineDueDate: string | null
   remark: string | null
 }
-export interface SkuFormRow extends SkuValues { styleSkuId: number; qty: number }
+export interface SkuFormRow extends SkuValues { styleSkuId: string; qty: number }
 export const MAX_UNIT_PRICE = 9999999999.9999
 export const MAX_ORDER_QTY = 2147483647
 const MAX_AMOUNT_CENTS = 99999999999999n
 
-export function hydrateSkuValues(rows: readonly (SkuValues & { styleSkuId: number })[]): Record<number, SkuValues> {
+export function hydrateSkuValues(rows: readonly (SkuValues & { styleSkuId: string })[]): Record<string, SkuValues> {
   return Object.fromEntries(rows.map(({ styleSkuId, price, lineDueDate, remark }) => [styleSkuId, { price, lineDueDate, remark }]))
 }
 
-export function buildSkuRows(ids: readonly number[], qtys: Record<number, number>, values: Record<number, SkuValues>): SkuFormRow[] {
+export function buildSkuRows(ids: readonly string[], qtys: Record<string, number>, values: Record<string, SkuValues>): SkuFormRow[] {
   return ids.flatMap((styleSkuId) => {
     const qty = qtys[styleSkuId] ?? 0
     if (qty <= 0) return []
@@ -21,7 +21,7 @@ export function buildSkuRows(ids: readonly number[], qtys: Record<number, number
   })
 }
 
-export function applySkuValues(values: Record<number, SkuValues>, ids: readonly number[], patch: Partial<SkuValues>): void {
+export function applySkuValues(values: Record<string, SkuValues>, ids: readonly string[], patch: Partial<SkuValues>): void {
   for (const id of ids) values[id] = { ...(values[id] ?? { price: null, lineDueDate: null, remark: null }), ...patch }
 }
 

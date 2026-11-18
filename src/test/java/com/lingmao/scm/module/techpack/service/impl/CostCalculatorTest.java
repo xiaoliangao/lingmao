@@ -101,7 +101,7 @@ class CostCalculatorTest {
         when(packContent.loadCostItems(9L)).thenReturn(List.of());
         when(priceService.currentProcess(30L, 100L, CostCalculator.BUY_PROCESS_MODE, LocalDate.of(2026, 11, 17)))
                 .thenReturn(Optional.of(new PriceRef(77L, new BigDecimal("85"), "PIECE", BigDecimal.TEN, true, true,
-                        LocalDate.of(2026, 1, 1), null)));
+                        LocalDate.of(2026, 1, 1), null, com.lingmao.scm.module.price.entity.PriceType.PROCESS)));
 
         TechPackCostVO byDefault = calculator.compute(pack(CostMode.BUY, null), ctx(), KHAKI, false);
         assertThat(byDefault.getBuyPriceDefault()).isEqualByComparingTo("85");

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.basic.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.exception.GlobalExceptionHandler;
@@ -47,6 +48,16 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
  */
 @IntegrationTest
 class MaterialServiceImplIT {
+
+    @org.junit.jupiter.api.BeforeEach
+    void loginFixture() {
+        var permissions = List.of("basic:material:import", "basic:material:add", "basic:material:edit", "techpack:cost:query");
+        TestIdentity.grant(jdbcTemplate, 900501L, permissions);
+        TestIdentity.login(900501L, permissions);
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearIdentity() { TestIdentity.clear(); }
 
     @Autowired
     private MaterialService materialService;

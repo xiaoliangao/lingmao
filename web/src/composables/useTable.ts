@@ -4,6 +4,8 @@ import type { PageParams } from '@/api/system'
 import type { PageResult } from '@/types/system'
 import { ApiError, download } from '@/utils/request'
 import { cleanQuery } from '@/utils/query'
+import { useLatestRequest } from './useLatestRequest'
+import axios from 'axios'
 
 /** 每页条数的选项（PRD §5.4） */
 export const PAGE_SIZES = [20, 50, 100]
@@ -54,20 +56,23 @@ export function useTable<Row, Q extends object, P extends object = Partial<Q>>(o
   let shownParams: P | null = null
   /** 查询的序号：连着查了两次，先发的那次后回来时，不能盖掉后发的结果 */
   let seq = 0
+  const latest = useLatestRequest()
 
   async function load() {
     const current = ++seq
+    const read = latest.begin()
     const clean = cleanQuery(toRaw(query))
     const params = cleanQuery(options.normalize ? options.normalize(clean) : clean) as P
     loading.value = true
     try {
-      const result = await options.fetch({ ...params, page: page.value, size: size.value })
-      if (current !== seq) return
+      const result = await read.run(() => options.fetch({ ...params, page: page.value, size: size.value }))
+      if (current !== seq || !read.current()) return
       list.value = result.list
       total.value = result.total
       shownParams = structuredClone(params)
       error.value = null
     } catch (e) {
+      if (axios.isCancel(e) || !read.current()) return
       if (current === seq) error.value = e instanceof Error ? e.message : '查询失败，请重试'
       if (!(e instanceof ApiError)) throw e
     } finally {
@@ -93,7 +98,7 @@ export function useTable<Row, Q extends object, P extends object = Partial<Q>>(o
   // el-pagination 会把页码退回上一页，也是走这里
   watch([page, size], () => load())
 
-  async function exportRows(ids?: readonly number[]) {
+  async function exportRows(ids?: readonly string[]) {
     if (!options.exportUrl) return
     if (!shownParams) {
       ElMessage.info('请先成功查询，再导出当前结果')
@@ -114,11 +119,11 @@ export function useTable<Row, Q extends object, P extends object = Partial<Q>>(o
     }
   }
   const exportFile = () => exportRows()
-  const exportSelected = (ids: readonly number[]) => exportRows(ids)
+  const exportSelected = (ids: readonly string[]) => exportRows(ids)
 
   if (options.immediate ?? true) {
     onMounted(load)
   }
 
-  return { query, page, size, pageSizes: PAGE_SIZES, list, total, loading, error, load, search, reset, exporting, exportFile, exportSelected }
+  return { cancel: () => { ++seq; latest.cancel(); loading.value = false }, query, page, size, pageSizes: PAGE_SIZES, list, total, loading, error, load, search, reset, exporting, exportFile, exportSelected }
 }

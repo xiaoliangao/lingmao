@@ -23,6 +23,11 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl   # 并发取号的测试一次几十条 SQL，打出来只是刷屏
 
 lingmao:
+  export:
+    dir: target/it-exports
+  jobs:
+    # 测试共享数据库时不让缓存的 Spring context 相互消费队列；专项 IT 显式启动真实 dispatcher。
+    enabled: false
   jwt:
     # 每次随机。random.value 是 32 位十六进制，两段拼成 64 位：十六进制字符也是合法的 Base64，解出来 48 字节，够 HS256 要的 32 字节
     secret: ${random.value}${random.value}

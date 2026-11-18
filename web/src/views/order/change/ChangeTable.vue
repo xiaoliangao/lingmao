@@ -27,6 +27,8 @@ import StatusTag from '@/components/StatusTag.vue'
 import type { ColumnsState } from '@/composables/useColumns'
 import { CHANGE_REJECTED, CHANGE_STATUS, CHANGE_TYPE, RESPONSIBLE_PARTY, type OrderChangeRow } from '@/types/order'
 import { formatDate } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
 
 /**
  * 变更单表格（docs/api/02 §1.4 的列）：变更单列表、订单详情的"变更"页签共用。点一行去变更单详情。
@@ -88,7 +90,7 @@ function openRow(row: OrderChangeRow) {
         <span v-else class="dim">—</span>
       </template>
     </el-table-column>
-    <el-table-column v-if="show('fee')" label="费用说明" min-width="160">
+    <el-table-column v-if="canSeeOrderPrice && show('fee')" label="费用说明" min-width="160">
       <template #default="{ row }">{{ row.feeNote || '—' }}</template>
     </el-table-column>
     <el-table-column v-if="show('rejectReason')" label="驳回原因" min-width="160">

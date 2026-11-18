@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
@@ -17,6 +18,8 @@ import { useDict } from '@/composables/useDict'
 import { formatPrice, formatQty } from '@/utils/format'
 import { STATUS_OPTIONS, statusParam, type StatusFilter } from '../common'
 import MaterialForm from './MaterialForm.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 资料 › 物料（RFC 003 §7、§12）：左边物料分类，右边列表；点一行进详情。
@@ -29,7 +32,7 @@ const units = useDict('unit')
 const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
   normalize: ({ status, ...rest }) => ({ ...rest, status: statusParam(status) }),
   fetch: materialApi.page,
-  query: { keyword: '', categoryId: undefined as number | undefined, materialType: '', status: 1 as StatusFilter },
+  query: { keyword: '', categoryId: undefined as string | undefined, materialType: '', status: 1 as StatusFilter },
   exportUrl: '/api/materials/export',
   exportName: '物料.xlsx',
 })
@@ -53,7 +56,7 @@ onActivated(() => {
   load()
 })
 
-function pickCategory(id: number | undefined) {
+function pickCategory(id: string | undefined) {
   query.categoryId = id
   tableRef.value?.clearSelection()
   search()
@@ -120,7 +123,7 @@ async function exportPicked() {
 const formDialog = ref<InstanceType<typeof MaterialForm>>()
 const importVisible = ref(false)
 
-function onSaved(id: number) {
+function onSaved(id: string) {
   load()
   open({ id } as MaterialRow)
 }
@@ -183,7 +186,7 @@ function onSaved(id: number) {
           <el-table-column label="名称" min-width="200">
             <template #default="{ row }">
               <span class="name">
-                <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+                <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                 <span v-else class="thumb blank" />
                 <span>{{ row.name }}</span>
               </span>
@@ -207,7 +210,7 @@ function onSaved(id: number) {
           <el-table-column label="供应商货号" min-width="110" class-name="code">
             <template #default="{ row }">{{ row.supplierItemNo ?? '—' }}</template>
           </el-table-column>
-          <el-table-column label="参考单价" min-width="110" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="参考单价" min-width="110" class-name="num" align="right">
             <template #default="{ row }">
               {{ row.refPrice != null ? `${formatPrice(row.refPrice)} / ${units.labelOf(row.purchaseUnit)}` : '—' }}
             </template>

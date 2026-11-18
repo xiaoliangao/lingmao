@@ -24,10 +24,10 @@ import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
+import com.lingmao.scm.security.FieldPermissions;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
@@ -97,6 +97,7 @@ public class MaterialImport {
     private final SerialNoGenerator serialNoGenerator;
     private final TradeFeature tradeFeature;
     private final DocLogService docLogService;
+    private final com.lingmao.scm.module.system.service.FileImportService imports;
 
     // ---------- 行对象 ----------
 
@@ -262,17 +263,23 @@ public class MaterialImport {
                     return row;
                 }).toList();
 
+        boolean cost = FieldPermissions.has(FieldPermissions.COST);
         return Excel.exportBook()
-                .sheet(materialSchema(), materialRows)
-                .sheet(skuSchema(), skuRows)
+                .sheet(cost ? materialSchema() : materialSchema().without("成本价", "其他价格", "倍率"), materialRows)
+                .sheet(cost ? skuSchema() : skuSchema().without("SKU成本价"), skuRows)
                 .toBytes();
     }
 
     // ---------- 导入 ----------
 
-    /** 整个文件一个事务：有一处不对一行都不导；颜色、物料、SKU、流水号一起提交 */
-    @Transactional
+    /** 先解析、校验；颜色、物料、SKU、流水号和成功回执一起提交。 */
     public ImportResult importFile(MultipartFile file) {
+        return imports.execute("material", "global", "basic:material:import", file, Map.of(), () -> parseFile(file), plan -> {
+            write(plan); return plan.result;
+        });
+    }
+
+    private Plan parseFile(MultipartFile file) {
         try (ExcelBook book = Excel.open(file)) {
             ExcelImport<MaterialRow> materials = book.sheet(materialSchema());
             ExcelImport<SkuRow> skus = book.optionalSheet(skuSchema());
@@ -289,13 +296,14 @@ public class MaterialImport {
             notSkipped(multiSupplierUnit, "一期一个物料一个采购单位，不分供应商换单位");
             book.throwIfInvalid();
 
-            write(plan);
-            return book.result(plan.materials.size());
+            plan.result = book.result(plan.materials.size());
+            return plan;
         }
     }
 
     /** 检查过、准备写进库的东西 */
     private static final class Plan {
+        ImportResult result;
         /** 物料编码 → 要建的物料（还没有 id），按文件里的顺序 */
         final Map<String, Material> materials = new LinkedHashMap<>();
         /** 物料编码 → 分类（取分类码推流水） */
@@ -387,7 +395,7 @@ public class MaterialImport {
             m.setComposition(r.getComposition());
             m.setTexture(r.getTexture());
             m.setSupplierItemNo(r.getSupplierItemNo());
-            m.setRefPrice(zeroToNull(r.getRefPrice()));
+            m.setRefPrice(zeroToNull(FieldPermissions.price(FieldPermissions.COST, null, r.getRefPrice())));
             m.setMoq(zeroToNull(r.getMoq()));
             m.setMinPackQty(Objects.requireNonNullElse(r.getMinPackQty(), BigDecimal.ONE));
             m.setLeadDays(r.getLeadDays());
@@ -396,6 +404,7 @@ public class MaterialImport {
             m.setReservePct(lossPct(r.getReservePct(), reserveFactors, sheet, row, "采购损耗"));
             m.setStatus("是".equals(r.getFrozen()) ? Statuses.DISABLED : Statuses.ENABLED);
             m.setRemark(r.getRemark());
+            for (String key : List.of("其他价格", "倍率")) FieldPermissions.preserve(FieldPermissions.COST, null, legacy.get(key));
             m.setLegacyAttrs(legacy.isEmpty() ? null : legacy);
             if (r.getCode() != null) {
                 plan.materials.putIfAbsent(r.getCode(), m);
@@ -510,7 +519,7 @@ public class MaterialImport {
             sku.setSpecCode(specCode);
             sku.setSupplierColorNo(r.getSupplierColorNo());
             sku.setSupplierItemNo(Objects.equals(r.getSupplierItemNo(), material.getSupplierItemNo()) ? null : r.getSupplierItemNo());
-            sku.setPrice(zeroToNull(r.getPrice()));
+            sku.setPrice(zeroToNull(FieldPermissions.price(FieldPermissions.COST, null, r.getPrice())));
             BigDecimal safety = zeroToNull(r.getSafetyStock());
             sku.setSafetyStock(safety != null ? safety : zeroToNull(materialLine.data().getSafetyStock()));
             sku.setStatus(disabledText(r.getStatus()) ? Statuses.DISABLED : Statuses.ENABLED);
@@ -633,7 +642,7 @@ public class MaterialImport {
             m.setPurchaseUnit(r.getUnit());
             m.setConversionFactor(r.getFactor());
             if (zeroToNull(r.getPrice()) != null) {
-                m.setRefPrice(r.getPrice());
+                m.setRefPrice(FieldPermissions.price(FieldPermissions.COST, null, r.getPrice()));
             }
         }
         if (!defaultRow.isEmpty()) {

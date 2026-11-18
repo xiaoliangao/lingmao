@@ -94,7 +94,7 @@ class CountServiceImplTest {
     void setUp() {
         service = new CountServiceImpl(countMapper, itemMapper, categoryMapper, stockMapper, stockLogMapper, ledger, excel,
                 materialService, materialCategoryService, warehouseService, companyService, userService, docHeaderService,
-                docLogService, attachmentService, serialNoGenerator, Clock.systemDefaultZone());
+                docLogService, attachmentService, serialNoGenerator, Clock.systemDefaultZone(), com.lingmao.scm.DirectFileImports.INSTANCE);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null, List.of()));
     }

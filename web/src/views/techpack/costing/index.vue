@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
@@ -48,7 +49,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   query: {
     keyword: '',
     stage: '' as PackStage | '',
-    categoryId: undefined as number | undefined,
+    categoryId: undefined as string | undefined,
     brand: '',
     year: undefined as number | undefined,
     season: '',
@@ -57,7 +58,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
 
 const categories = shallowRef<TreeNode[]>([])
 const categoryOptions = computed(() => {
-  const map = (nodes: TreeNode[] = []): { value: number; label: string; children: unknown[] }[] =>
+  const map = (nodes: TreeNode[] = []): { value: string; label: string; children: unknown[] }[] =>
     nodes.map((n) => ({ value: n.id, label: n.name, children: map(n.children) }))
   return map(categories.value)
 })
@@ -139,7 +140,7 @@ function openCostTab(row: StyleCostRow) {
       <el-table-column label="款号" width="220" fixed="left">
         <template #default="{ row }">
           <span class="name-cell">
-            <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+            <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
             <span v-else class="thumb blank" />
             <span class="code">{{ row.styleCode }}</span>
           </span>

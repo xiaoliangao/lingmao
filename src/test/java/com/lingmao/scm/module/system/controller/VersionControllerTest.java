@@ -43,7 +43,7 @@ class VersionControllerTest {
         mockMvc.perform(get("/api/version"))
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.version").value("2026.11.14"))
-                .andExpect(jsonPath("$.data.buildTime").value("2026-11-13 21:05:00"));
+                .andExpect(jsonPath("$.data.buildTime").value("2026-11-13T21:05:00+08:00"));
     }
 
     /** 模拟打包脚本打出来的 jar：build-info.properties 里有 release 和 time（Spring Boot 读的时候去掉了 build. 前缀） */

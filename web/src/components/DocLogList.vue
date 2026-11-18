@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onMounted, ref, watch } from 'vue'
 import type { DocLog } from '@/types/biz'
 import { formatDateTime } from '@/utils/format'
@@ -70,20 +71,24 @@ const failed = ref(false)
 /** 加载的序号：连着换了两次 load，先发的那次后回来时，不能盖掉后发的结果 */
 let seq = 0
 
+const reloadRequest = useLatestRequest()
 async function reload() {
+  const read = reloadRequest.begin()
   const current = ++seq
   loading.value = true
   failed.value = false
   try {
-    const result = await props.load()
+    const result = await read.run(() => props.load())
+    if (!read.current()) return
     if (current === seq) logs.value = result
   } catch {
+    if (!read.current()) return
     if (current === seq) {
       logs.value = []
       failed.value = true
     }
   } finally {
-    if (current === seq) loading.value = false
+    if (read.current() && (current === seq)) loading.value = false
   }
 }
 

@@ -73,7 +73,7 @@ class DocLogServiceImplIT {
 
     /** 规则：按类型 + id 只删这条记录的；别的记录、别的类型同一个 id 的不动 */
     @Test
-    void deleteByDoc_onlyThisDoc() {
+    void deleteByDoc_retainsAppendOnlyHistory() {
         long docId = randomId();
         long otherId = randomId();
         docLogService.add(BizType.STYLE, docId, "enable", "a");
@@ -83,7 +83,7 @@ class DocLogServiceImplIT {
 
         docLogService.deleteByDoc(BizType.STYLE, docId);
 
-        assertThat(docLogService.list(BizType.STYLE, docId)).isEmpty();
+        assertThat(docLogService.list(BizType.STYLE, docId)).hasSize(2);
         assertThat(docLogService.list(BizType.STYLE, otherId)).hasSize(1);
         assertThat(docLogService.list(BizType.MATERIAL, docId)).hasSize(1);
     }

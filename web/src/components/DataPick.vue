@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue'
+import { isComposing } from '@/utils/ime'
+import ThumbImage from '@/components/ThumbImage.vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { categoryApi, materialApi, materialCategoryApi } from '@/api/basic'
 import { styleApi } from '@/api/style'
 import type { MaterialPickRow, TreeNode } from '@/types/basic'
@@ -7,8 +9,11 @@ import type { PageResult } from '@/types/system'
 import { STYLE_STATUS, TECH_PACK_STATUS, type StylePickRow } from '@/types/style'
 import { PAGE_SIZES, useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { formatPrice } from '@/utils/format'
 import { hasSeparator, MAX_CODES, pasteCodes } from '@/utils/keywords'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 从物料库里挑数据，一次勾多条（用户 11-14 定，原型 3e-pick.js 的 DataPick）：搜索 + 一级分类 + 分页。
@@ -30,7 +35,7 @@ import { hasSeparator, MAX_CODES, pasteCodes } from '@/utils/keywords'
  */
 type PickRow = MaterialPickRow | StylePickRow
 const props = withDefaults(
-  defineProps<{ kind?: 'sku' | 'style'; have?: number[]; single?: boolean; params?: Record<string, string | number | boolean> }>(),
+  defineProps<{ kind?: 'sku' | 'style'; have?: string[]; single?: boolean; params?: Record<string, string | number | boolean> }>(),
   { kind: 'sku', have: () => [], single: false, params: () => ({}) },
 )
 const emit = defineEmits<{ pick: [rows: MaterialPickRow[] | StylePickRow[]] }>()
@@ -59,29 +64,36 @@ const source = computed(() => SOURCES[props.kind])
 const units = useDict('unit')
 const seasons = useDict('season')
 const groups = shallowRef<TreeNode[]>([])
-const { query, page, size, list, total, loading, search } = useTable({
+const { query, page, size, list, total, loading, search, cancel } = useTable({
   fetch: (params): Promise<PageResult<PickRow>> => source.value.fetch({ ...props.params, ...params }),
-  query: { keyword: '', categoryId: undefined as number | undefined },
+  query: { keyword: '', categoryId: undefined as string | undefined },
   immediate: false,
 })
 /** 勾了的：id → 行，Map 按勾的先后排 */
-const chosen = ref(new Map<number, PickRow>())
+const chosen = ref(new Map<string, PickRow>())
 const had = computed(() => new Set(props.have))
 
+const groupRequest = useLatestRequest()
 async function onOpen() {
+  const read = groupRequest.begin()
   query.keyword = ''
   query.categoryId = undefined
   chosen.value = new Map()
   find()
-  groups.value = await source.value.groups()
+  groups.value = []
+  const sourceForOpen = source.value
+  try {
+    const result = await read.run(() => sourceForOpen.groups())
+    if (read.current() && visible.value && source.value === sourceForOpen) groups.value = result
+  } catch (error) { if (read.current()) throw error }
 }
 
-function pickGroup(id: number | undefined) {
+function pickGroup(id: string | undefined) {
   query.categoryId = id
   find()
 }
 
-/** 几个编码一起查（关键字里有分隔符）时一页放 200 条，好一次全选；改了条数由 useTable 的 watch 去查 */
+/** 几个编码一起查（关键字里有分隔符）时一页放 100 条，好一次全选；改了条数由 useTable 的 watch 去查 */
 function onPaste(event: ClipboardEvent) {
   pasteCodes(event, (value) => (query.keyword = value))
 }
@@ -128,11 +140,13 @@ const emptyText = computed(() =>
   query.keyword.trim() ? `没有匹配「${query.keyword.trim()}」的${source.value.noun}` : `这一类还没有启用的${source.value.noun}`,
 )
 const rowClass = ({ row }: { row: PickRow }) => (isHad(row) ? 'is-had' : chosen.value.has(keyOf(row)) ? 'is-chosen' : '')
+watch(visible, (on) => { if (!on) { cancel(); groupRequest.cancel() } })
+watch(() => props.kind, () => { if (visible.value) void onOpen() })
 </script>
 
 <template>
   <el-dialog v-model="visible" :title="source.title" width="880px" append-to-body @open="onOpen">
-    <el-input v-model="query.keyword" :placeholder="source.placeholder" clearable class="dpk-search" @keyup.enter="find" @clear="find" @paste="onPaste">
+    <el-input v-model="query.keyword" :placeholder="source.placeholder" clearable class="dpk-search" @keyup.enter="!isComposing($event) && find()" @clear="find" @paste="onPaste">
       <template #prefix><el-icon><Search /></el-icon></template>
     </el-input>
     <div class="dpk-chips" role="group" aria-label="分类">
@@ -157,7 +171,7 @@ const rowClass = ({ row }: { row: PickRow }) => (isHad(row) ? 'is-had' : chosen.
         <el-table-column label="物料" min-width="260">
           <template #default="{ row }">
             <span class="dpk-item">
-              <img v-if="row.image" class="dpk-thumb" :src="row.image.thumbUrl || row.image.url" alt="" />
+              <ThumbImage v-if="row.image" class="dpk-thumb" :src="row.image.thumbUrl" alt="" />
               <span v-else class="dpk-thumb" />
               <span class="dpk-text">
                 <span>{{ row.materialName }}</span>
@@ -178,7 +192,7 @@ const rowClass = ({ row }: { row: PickRow }) => (isHad(row) ? 'is-had' : chosen.
         <el-table-column label="单位" width="70">
           <template #default="{ row }">{{ units.labelOf(row.stockUnit) }}</template>
         </el-table-column>
-        <el-table-column label="单价" class-name="num" width="100">
+        <el-table-column v-if="canSeeCost" label="单价" class-name="num" width="100">
           <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
         </el-table-column>
       </template>
@@ -186,7 +200,7 @@ const rowClass = ({ row }: { row: PickRow }) => (isHad(row) ? 'is-had' : chosen.
         <el-table-column label="款式" min-width="230">
           <template #default="{ row }">
             <span class="dpk-item">
-              <img v-if="row.image" class="dpk-thumb" :src="row.image.thumbUrl || row.image.url" alt="" />
+              <ThumbImage v-if="row.image" class="dpk-thumb" :src="row.image.thumbUrl" alt="" />
               <span v-else class="dpk-thumb" />
               <span class="dpk-text">
                 <span>{{ row.name }}<template v-if="row.aliasName"> · {{ row.aliasName }}</template></span>

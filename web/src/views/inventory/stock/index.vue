@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import VirtualDataTable, { type VirtualColumn } from '@/components/VirtualDataTable.vue'
+import StockLogExportDialog from '@/components/StockLogExportDialog.vue'
+import { useSeekTable } from '@/composables/useSeekTable'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { warehouseApi } from '@/api/basic'
@@ -23,6 +27,8 @@ import {
 import type { SkuSupply } from '@/types/purchase'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 库存（/stock，docs/api/04 §1.5、§3.6、§4）：明细 / 按物料 / 日志三个视图，认 ?view=log（只认 /stock 自己的地址）。
@@ -81,7 +87,7 @@ const viewFromQuery = (): View => (route.query.view === 'log' ? 'logs' : 'detail
 const viewMode = ref<View>(viewFromQuery())
 const warehouses = ref<WarehouseOption[]>([])
 /** 在途、低于最小库存：null = 还没回来或取不到，那两列写"—" */
-const supplyMap = ref<Record<number, SkuSupply> | null>(null)
+const supplyMap = ref<Record<string, SkuSupply> | null>(null)
 const reorderCount = ref(0)
 
 // ---------- 视图 1：库存明细 ----------
@@ -94,7 +100,7 @@ const detailTable = useTable({
   query: {
     keyword: '',
     whType: 'MATERIAL' as '' | 'MATERIAL' | 'FACTORY',
-    warehouseId: undefined as number | undefined,
+    warehouseId: undefined as string | undefined,
     includeZero: false,
   },
 })
@@ -140,19 +146,33 @@ const summaryTable = useTable({
 
 // ---------- 视图 3：库存日志 ----------
 const logDateRange = ref<[string, string] | null>(null)
-const logTable = useTable({
+const exportDialog = ref<InstanceType<typeof StockLogExportDialog>>()
+const logTable = useSeekTable({
   immediate: false,
-  fetch: (params) => stockLogApi.page(params),
-  exportUrl: '/api/stock-logs/export',
-  exportName: '库存日志.xlsx',
+  fetch: (params) => stockLogApi.seek(params),
+  exporter: (filters) => exportDialog.value?.open(filters),
   query: {
     keyword: '',
-    warehouseId: undefined as number | undefined,
+    warehouseId: undefined as string | undefined,
     changeType: [] as StockChangeType[],
     bizDateFrom: undefined as string | undefined,
     bizDateTo: undefined as string | undefined,
   },
 })
+
+const logVirtualColumns = computed<VirtualColumn[]>(() => [
+  { key: 'bizDate', label: '日期', width: 116, fixed: 'left' as const },
+  { key: 'docNo', label: '单号', width: 164, fixed: 'left' as const },
+  ...(logCols.show.type ? [{ key: 'changeType', label: '类型', width: 100 }] : []),
+  ...(logCols.show.warehouse ? [{ key: 'warehouseName', label: '仓库', width: 130 }] : []),
+  ...(logCols.show.material ? [{ key: 'material', label: '物料', width: 240 }] : []),
+  ...(logCols.show.changeQty ? [{ key: 'changeQty', label: '变动数量', width: 130 }] : []),
+  ...(logCols.show.balance ? [{ key: 'balanceQty', label: '结存', width: 100 }] : []),
+  ...(canSeeCost.value && logCols.show.valuation ? [{ key: 'valuation', label: '单价 / 金额', width: 200 }] : []),
+  ...(logCols.show.dyeLot ? [{ key: 'dyeLot', label: '缸号', width: 110 }] : []),
+  ...(logCols.show.operator ? [{ key: 'operatorName', label: '操作人', width: 100, fixed: 'right' as const }] : []),
+  ...(logCols.show.createTime ? [{ key: 'createTime', label: '记账时间', width: 170 }] : []),
+])
 
 function onLogDate(val: [string, string] | null | undefined) {
   logDateRange.value = val ?? null
@@ -178,7 +198,7 @@ watch(
   },
 )
 
-const warehouseName = (id: number | undefined) => (id ? (warehouses.value.find((w) => w.id === id)?.name ?? '已选') : '')
+const warehouseName = (id: string | undefined) => (id ? (warehouses.value.find((w) => w.id === id)?.name ?? '已选') : '')
 const changeTypeText = computed(() => logTable.query.changeType.map((t) => STOCK_CHANGE_TYPE_LABEL[t]).join('、'))
 
 async function loadMeta() {
@@ -216,20 +236,25 @@ const cellLogTitle = ref('')
 const cellLogRows = ref<StockLogRow[]>([])
 const cellLogLoading = ref(false)
 
+const cellRequest = useLatestRequest()
 async function openCellLogs(row: StockRow) {
+  const read = cellRequest.begin()
   cellLogTitle.value = `${row.warehouseName} · ${row.skuCode} 库存日志`
   cellLogVisible.value = true
   cellLogLoading.value = true
   try {
-    const res = await stockLogApi.page({
+    const res = await read.run(() => stockLogApi.page({
       page: 1,
       size: 100,
       warehouseId: row.warehouseId,
       materialSkuId: row.materialSkuId,
-    })
+    }))
+    if (!read.current()) return
     cellLogRows.value = res.list
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    cellLogLoading.value = false
+    if (read.current()) cellLogLoading.value = false
   }
 }
 
@@ -246,6 +271,7 @@ function doExport() {
   else if (viewMode.value === 'summary') void summaryTable.exportFile()
   else void logTable.exportFile()
 }
+watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
 </script>
 
 <template>
@@ -262,7 +288,8 @@ function doExport() {
         </el-button>
         <el-button v-perm="'inventory:count:add'" @click="router.push('/stock-takes?new=DAILY')">盘点</el-button>
         <el-button v-perm="'inventory:count:add'" @click="router.push('/stock-takes?new=OPENING')">导入期初库存</el-button>
-        <el-button v-perm="'inventory:stock:export'" icon="Download" @click="doExport">导出</el-button>
+        <el-button v-if="viewMode === 'logs'" v-perm="'inventory:stock:export'" @click="exportDialog?.open()">导出任务</el-button>
+        <el-button v-perm="'inventory:stock:export'" icon="Download" :loading="viewMode === 'logs' && logTable.exporting.value" @click="doExport">导出</el-button>
       </template>
     </PageHeader>
 
@@ -401,61 +428,25 @@ function doExport() {
         </FilterItem>
       </FilterBar>
 
-      <el-table v-loading="logTable.loading.value" :data="logTable.list.value" row-key="id" scrollbar-always-on empty-text="没有符合条件的库存变动">
-        <el-table-column label="日期" width="116" fixed="left" class-name="num">
-          <template #default="{ row }">{{ formatDate(row.bizDate) }}</template>
-        </el-table-column>
-        <el-table-column label="单号" width="150" fixed="left">
-          <template #default="{ row }">
-            <button type="button" class="link-btn code" @click="goLogDoc(row as StockLogRow)">{{ row.docNo }}</button>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.type" label="类型" width="100">
-          <template #default="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[(row as StockLogRow).changeType] }}</template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.warehouse" label="仓库" prop="warehouseName" width="130" />
-        <el-table-column v-if="logCols.show.material" label="物料" min-width="220">
-          <template #default="{ row }">
-            <span class="code">{{ row.skuCode }}</span> {{ row.materialName }}
-          </template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.changeQty" label="变动数量" width="120" class-name="num" align="right">
-          <template #default="{ row }">
-            <span :class="row.changeQty >= 0 ? 'gain' : 'loss'">
-              {{ row.changeQty >= 0 ? '+' : '' }}{{ formatQty(row.changeQty) }} {{ row.stockUnit == null ? '单位未知' : units.labelOf(row.stockUnit) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.balance" label="结存" width="100" class-name="num" align="right">
-          <template #default="{ row }">{{ formatQty(row.balanceQty) }}</template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.valuation" label="单价 / 金额" width="180" class-name="num" align="right">
-          <template #default="{ row }">
-            <span v-if="row.valuationStatus === 'UNKNOWN'" class="dim">估值未知</span>
-            <template v-else>{{ row.unitPrice == null ? '—' : formatPrice(row.unitPrice) }} / {{ row.amount == null ? '—' : formatMoney(row.amount) }} {{ row.currency || '' }}</template>
-            <small v-if="row.reversalOfLogId" class="dim"> · 冲销 #{{ row.reversalOfLogId }}</small>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.dyeLot" label="缸号" width="110">
-          <template #default="{ row }">{{ row.dyeLot || '—' }}</template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.operator" label="操作人" width="100">
-          <template #default="{ row }">{{ row.operatorName ?? '—' }}</template>
-        </el-table-column>
-        <el-table-column v-if="logCols.show.createTime" label="记账时间" width="160" class-name="num">
-          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
-        </el-table-column>
-      </el-table>
-
-      <el-pagination
-        v-model:current-page="logTable.page.value"
-        v-model:page-size="logTable.size.value"
-        class="pagination"
-        layout="total, sizes, prev, pager, next"
-        :page-sizes="logTable.pageSizes"
-        :total="logTable.total.value"
-      />
+      <p v-if="logTable.error.value" class="page" role="alert">{{ logTable.error.value }} <el-button @click="logTable.load">重试</el-button></p>
+      <VirtualDataTable v-loading="logTable.loading.value" :rows="logTable.list.value" :columns="logVirtualColumns" empty-text="没有符合条件的库存变动">
+        <template #bizDate="{ row }">{{ formatDate(row.bizDate) }}</template>
+        <template #docNo="{ row }"><button type="button" class="link-btn code" @click="goLogDoc(row)">{{ row.docNo }}</button></template>
+        <template #changeType="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[row.changeType] }}</template>
+        <template #material="{ row }"><span class="code">{{ row.skuCode }}</span> {{ row.materialName }}</template>
+        <template #changeQty="{ row }"><span :class="row.changeQty >= 0 ? 'gain' : 'loss'">{{ row.changeQty >= 0 ? '+' : '' }}{{ formatQty(row.changeQty) }} {{ row.stockUnit == null ? '单位未知' : units.labelOf(row.stockUnit) }}</span></template>
+        <template #balanceQty="{ row }">{{ formatQty(row.balanceQty) }}</template>
+        <template #valuation="{ row }"><span v-if="row.valuationStatus === 'UNKNOWN'" class="dim">估值未知</span><span v-else>{{ row.unitPrice == null ? '—' : formatPrice(row.unitPrice) }} / {{ row.amount == null ? '—' : formatMoney(row.amount) }} {{ row.currency || '' }}</span><small v-if="row.reversalOfLogId"> · 冲销 #{{ row.reversalOfLogId }}</small></template>
+        <template #createTime="{ row }">{{ formatDateTime(row.createTime) }}</template>
+      </VirtualDataTable>
+      <div class="pagination seek-pagination">
+        <el-button :disabled="!logTable.canPrevious.value || logTable.loading.value" @click="logTable.previous">上一页</el-button>
+        <span>第 {{ logTable.page.value }} 页</span>
+        <el-button :disabled="!logTable.hasMore.value || logTable.loading.value" @click="logTable.next">下一页</el-button>
+      </div>
     </template>
+
+    <StockLogExportDialog v-if="user.hasPerm('inventory:stock:export')" ref="exportDialog" />
 
     <!-- 单格库存流水浮窗 -->
     <el-dialog v-model="cellLogVisible" :title="cellLogTitle" width="860px">
@@ -493,6 +484,7 @@ function doExport() {
 </template>
 
 <style scoped>
+.seek-pagination { display: flex; align-items: center; gap: 12px; }
 .small {
   font-size: 11.5px;
 }

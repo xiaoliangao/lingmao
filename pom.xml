@@ -243,4 +243,32 @@
         </plugins>
     </build>
 
+    <profiles>
+        <profile>
+            <id>prod-readiness</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.6.1</version>
+                        <executions>
+                            <execution>
+                                <id>production-fault-tests</id>
+                                <phase>generate-test-sources</phase>
+                                <goals><goal>add-test-source</goal></goals>
+                                <configuration>
+                                    <sources>
+                                        <source>tests/prod-readiness/a1-db/src/test/java</source>
+                                        <source>tests/prod-readiness/a2-security/src/test/java</source>
+                                        <source>tests/prod-readiness/a4-lifecycle/src/test/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -319,6 +319,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         query.setCard(null);
         List<ProductionRowVO> rows = prdMapper.selectRows(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()),
                 support.today(), support.nearUntil());
+        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, ProductionRowVO::getId, ProductionRowVO::getCompanyId);
         support.fillRows(rows, false);
         return excel.export(kind, rows);
     }
@@ -379,6 +380,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
     @Transactional
     public int update(long id, ProductionSaveReq req) {
         ProductionOrder p = support.lock(id);
+        com.lingmao.scm.common.scope.CompanyContext.save(p.getCompanyId(), req.getCompanyId(), req.getExpectedCompanyId());
         FLOW.next("edit", p.getStatus());
         if (!p.getVersion().equals(req.getVersion())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, ProductionSupport.STALE);
@@ -406,11 +408,16 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         if (!settle.equals(p.getSettleMethod())) {
             checkDict("settle_method", settle, "结算方式");
         }
-        BigDecimal price = NumericLimits.price(req.getUnitPrice(), "生产单：");
+        boolean priceVisible = com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.PRODUCTION);
+        if (!priceVisible && (!mode.equals(p.getProcessMode()) || !Objects.equals(req.getFactoryId(), p.getFactoryId())))
+            com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.PRODUCTION);
+        BigDecimal price = NumericLimits.price(com.lingmao.scm.security.FieldPermissions.price(
+                com.lingmao.scm.security.FieldPermissions.PRODUCTION, p.getUnitPrice(), req.getUnitPrice()), "生产单：");
+        if (price == null) throw new BizException(400, "生产单必须填写成交单价");
         PriceRef archive = priceService.currentProcess(req.getFactoryId(), p.getStyleId(), mode, p.getOrderDate()).orElse(null);
         boolean changed = archive != null && price.compareTo(archive.price()) != 0;
-        String reason = changed ? ProdTexts.blankToNull(req.getPriceChangeReason()) : null;
-        if (changed && reason == null) {
+        String reason = priceVisible ? changed ? ProdTexts.blankToNull(req.getPriceChangeReason()) : null : p.getPriceChangeReason();
+        if (priceVisible && changed && reason == null) {
             throw new BizException(400, "单价和档案现价 " + ProdTexts.money(archive.price()) + " 不一样，要写改价原因");
         }
 
@@ -419,7 +426,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         p.setFactoryId(req.getFactoryId());
         p.setProcessMode(mode);
         p.setUnitPrice(price);
-        p.setPriceSourceId(archive != null && !changed ? archive.id() : null);
+        if (priceVisible) p.setPriceSourceId(archive != null && !changed ? archive.id() : null);
         p.setPriceChangeReason(reason);
         p.setDueDate(req.getDueDate());
         p.setMerchId(req.getMerchId());
@@ -589,6 +596,8 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
     private String priceProblem(ProductionOrder p) {
         PriceRef a = priceService.currentProcess(p.getFactoryId(), p.getStyleId(), p.getProcessMode(), p.getOrderDate()).orElse(null);
         if (a != null && p.getUnitPrice().compareTo(a.price()) != 0 && p.getPriceChangeReason() == null) {
+            if (!com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.PRODUCTION))
+                return "成交单价和价格档案不一致，请交由有生产成交价权限的人员处理";
             return p.getKind().getPriceLabel() + " " + ProdTexts.plain(p.getUnitPrice()) + " 和价格档案 " + ProdTexts.money(a.price())
                     + " 不一样，要写改价原因";
         }

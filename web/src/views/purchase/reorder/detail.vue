@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type TableInstance } from 'element-plus'
@@ -11,6 +12,9 @@ import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { PURCHASE_STATUS, type ReorderPickItem, type ReorderRow } from '@/types/purchase'
 import { formatPrice, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
+import { useUserStore } from '@/stores/user'
 
 /**
  * 补货提醒（/reorder，docs/api/03 §1.4、§3.3.8、§3.6）：低于最小库存的物料，勾选后按供应商拆成备货采购单草稿。
@@ -18,11 +22,12 @@ import { formatPrice, formatQty } from '@/utils/format'
  * 没有筛选，页头下面一行只有"显示列"
  */
 interface EditableReorderRow extends ReorderRow {
-  supplierIdInput: number | null
+  supplierIdInput: string | null
   qtyInput: number
 }
 
 const router = useRouter()
+const companyId = useUserStore().defaultCompanyId
 const units = useDict('unit')
 const materialTypes = useDict('material_type')
 
@@ -47,10 +52,13 @@ const loading = ref(false)
 const submitting = ref(false)
 const tableRef = ref<TableInstance>()
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    const data = await reorderApi.list()
+    const data = await read.run(() => reorderApi.list())
+    if (!read.current()) return
     rows.value = data.map((r) => ({
       ...r,
       supplierIdInput: r.defaultSupplierId,
@@ -63,8 +71,10 @@ async function load() {
         tableRef.value?.toggleRowSelection(row, true)
       }
     }
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 
@@ -82,6 +92,7 @@ async function onSupplierChange(row: EditableReorderRow) {
 }
 
 async function generateStockPos() {
+  if (!companyId) { ElMessage.warning('请先设置默认主体，再重新打开补货页面'); return }
   if (!selected.value.length) {
     ElMessage.warning('先勾要补货的物料')
     return
@@ -101,7 +112,7 @@ async function generateStockPos() {
 
   submitting.value = true
   try {
-    const created = await purchaseApi.fromReorder(items)
+    const created = await purchaseApi.fromReorder(items, { companyId })
     ElMessage.success(`按供应商拆成 ${created.length} 张备货采购单草稿：${created.map((c) => c.no).join('、')}`)
     if (created.length === 1 && created[0]) {
       await router.push(`/purchases/${created[0].id}`)
@@ -191,7 +202,7 @@ async function generateStockPos() {
           </div>
         </template>
       </el-table-column>
-      <el-table-column v-if="cols.show.price" label="参考单价" width="96" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && cols.show.price" label="参考单价" width="96" class-name="num" align="right">
         <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.drafts" label="已开的备货单" min-width="200">

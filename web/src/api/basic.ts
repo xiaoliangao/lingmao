@@ -13,9 +13,9 @@ import type { PageParams } from './system'
  */
 function statusApi(base: string) {
   return {
-    enable: (id: number, options?: RequestOptions) => http.post<void>(`${base}/${id}/enable`, undefined, options),
-    disable: (id: number, options?: RequestOptions) => http.post<void>(`${base}/${id}/disable`, undefined, options),
-    remove: (id: number, options?: RequestOptions) => http.delete<void>(`${base}/${id}`, options),
+    enable: (id: string, options?: RequestOptions) => http.post<void>(`${base}/${id}/enable`, undefined, options),
+    disable: (id: string, options?: RequestOptions) => http.post<void>(`${base}/${id}/disable`, undefined, options),
+    remove: (id: string, options?: RequestOptions) => http.delete<void>(`${base}/${id}`, options),
   }
 }
 
@@ -39,8 +39,8 @@ export const companyApi = {
   list: () => http.get<Company[]>('/api/companies'),
   /** 启用的主体，下拉用（登录即可） */
   options: () => http.get<CompanyOption[]>('/api/companies/options'),
-  create: (data: CompanyForm) => http.post<number>('/api/companies', data),
-  update: (id: number, data: CompanyForm) => http.put<void>(`/api/companies/${id}`, data),
+  create: (data: CompanyForm) => http.post<string>('/api/companies', data),
+  update: (id: string, data: CompanyForm) => http.put<void>(`/api/companies/${id}`, data),
   ...statusApi('/api/companies'),
 }
 
@@ -58,15 +58,15 @@ export const colorApi = {
     http.get<PageResult<Color>>('/api/colors', params),
   /** 启用的颜色，下拉、选颜色用（登录即可） */
   options: () => http.get<ColorOption[]>('/api/colors/options'),
-  create: (data: ColorForm) => http.post<number>('/api/colors', data),
-  update: (id: number, data: ColorForm) => http.put<void>(`/api/colors/${id}`, data),
+  create: (data: ColorForm) => http.post<string>('/api/colors', data),
+  update: (id: string, data: ColorForm) => http.put<void>(`/api/colors/${id}`, data),
   ...statusApi('/api/colors'),
 }
 
 // ---------- 品类、物料分类（树） ----------
 
 export interface CategoryForm {
-  parentId: number | null
+  parentId: string | null
   name: string
   sort: number
   /** 只有物料分类的二级有：2 位字母，物料编码的前缀 */
@@ -78,16 +78,16 @@ export const categoryApi = {
   tree: () => http.get<TreeNode[]>('/api/categories'),
   /** 只有启用的（下拉用，登录即可） */
   enabledTree: () => http.get<TreeNode[]>('/api/categories/tree'),
-  create: (data: CategoryForm) => http.post<number>('/api/categories', data),
-  update: (id: number, data: CategoryForm) => http.put<void>(`/api/categories/${id}`, data),
+  create: (data: CategoryForm) => http.post<string>('/api/categories', data),
+  update: (id: string, data: CategoryForm) => http.put<void>(`/api/categories/${id}`, data),
   ...statusApi('/api/categories'),
 }
 
 export const materialCategoryApi = {
   tree: () => http.get<TreeNode[]>('/api/material-categories'),
   enabledTree: () => http.get<TreeNode[]>('/api/material-categories/tree'),
-  create: (data: CategoryForm) => http.post<number>('/api/material-categories', data),
-  update: (id: number, data: CategoryForm) => http.put<void>(`/api/material-categories/${id}`, data),
+  create: (data: CategoryForm) => http.post<string>('/api/material-categories', data),
+  update: (id: string, data: CategoryForm) => http.put<void>(`/api/material-categories/${id}`, data),
   ...statusApi('/api/material-categories'),
 }
 
@@ -97,10 +97,10 @@ export const sizeGroupApi = {
   list: () => http.get<SizeGroup[]>('/api/size-groups'),
   options: () => http.get<SizeGroup[]>('/api/size-groups/options'),
   /** sizes：空格、逗号、顿号隔开；baseSize 不填取中间那个 */
-  create: (data: { name: string; sizes: string; baseSize?: string | null }) => http.post<number>('/api/size-groups', data),
-  rename: (id: number, name: string) => http.put<void>(`/api/size-groups/${id}`, { name }),
+  create: (data: { name: string; sizes: string; baseSize?: string | null }) => http.post<string>('/api/size-groups', data),
+  rename: (id: string, name: string) => http.put<void>(`/api/size-groups/${id}`, { name }),
   /** 只能往后追加，已有的尺码不能改、不能删（款式按位置存着它） */
-  appendSizes: (id: number, sizes: string) => http.post<void>(`/api/size-groups/${id}/sizes`, { sizes }),
+  appendSizes: (id: string, sizes: string) => http.post<void>(`/api/size-groups/${id}/sizes`, { sizes }),
   ...statusApi('/api/size-groups'),
 }
 
@@ -111,7 +111,7 @@ export interface WarehouseForm {
   name: string
   type: WarehouseType
   address?: string | null
-  keeperId?: number | null
+  keeperId?: string | null
   phone?: string | null
   remark?: string | null
 }
@@ -120,8 +120,8 @@ export const warehouseApi = {
   page: (params: PageParams & { keyword?: string; type?: WarehouseType; status?: number }) =>
     http.get<PageResult<Warehouse>>('/api/warehouses', params),
   options: (type?: WarehouseType) => http.get<WarehouseOption[]>('/api/warehouses/options', { type }),
-  create: (data: WarehouseForm) => http.post<number>('/api/warehouses', data),
-  update: (id: number, data: WarehouseForm) => http.put<void>(`/api/warehouses/${id}`, data),
+  create: (data: WarehouseForm) => http.post<string>('/api/warehouses', data),
+  update: (id: string, data: WarehouseForm) => http.put<void>(`/api/warehouses/${id}`, data),
   ...statusApi('/api/warehouses'),
 }
 
@@ -129,17 +129,17 @@ export const warehouseApi = {
 
 export interface MaterialQuery {
   keyword?: string
-  categoryId?: number
+  categoryId?: string
   materialType?: string
   status?: number
   /** 导出选中的 */
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 新建、修改物料共用（修改时分类、库存单位要和原来一样，后端不让改） */
 export interface MaterialForm {
   name: string
-  categoryId: number | null
+  categoryId: string | null
   materialType: string
   stockUnit: string
   purchaseUnit?: string | null
@@ -148,7 +148,7 @@ export interface MaterialForm {
   weightGsm?: number | null
   composition?: string | null
   texture?: string | null
-  defaultSupplierId?: number | null
+  defaultSupplierId?: string | null
   supplierItemNo?: string | null
   refPrice?: number | null
   moq?: number | null
@@ -178,26 +178,26 @@ export interface SkuForm {
 
 export const materialApi = {
   page: (params: PageParams & MaterialQuery, options?: RequestOptions) => http.get<PageResult<MaterialRow>>('/api/materials', params, options),
-  get: (id: number) => http.get<MaterialDetail>(`/api/materials/${id}`),
-  logs: (id: number) => http.get<DocLog[]>(`/api/materials/${id}/logs`),
+  get: (id: string) => http.get<MaterialDetail>(`/api/materials/${id}`),
+  logs: (id: string) => http.get<DocLog[]>(`/api/materials/${id}/logs`),
   /** 选 SKU 的弹窗：启用物料的启用 SKU。关键字查 SKU 码、物料编码、名称、货号、颜色名；分类含下级 */
-  pick: (params: PageParams & { keyword?: string; categoryId?: number }) =>
+  pick: (params: PageParams & { keyword?: string; categoryId?: string }) =>
     http.get<PageResult<MaterialPickRow>>('/api/materials/pick', params),
   /** 建档查重：同分类同名、同默认供应商同货号，只提示不拦 */
-  dupCheck: (params: { categoryId?: number | null; name?: string; defaultSupplierId?: number | null; supplierItemNo?: string | null; excludeId?: number }) =>
+  dupCheck: (params: { categoryId?: string | null; name?: string; defaultSupplierId?: string | null; supplierItemNo?: string | null; excludeId?: string }) =>
     http.get<MaterialDup[]>('/api/materials/dup-check', params),
   /** 颜色 × 规格两两组合建 SKU；都不选就是一个不带颜色、规格的 SKU */
-  create: (data: MaterialForm & { colorIds: number[]; specs: SkuSpec[] }) => http.post<number>('/api/materials', data),
-  update: (id: number, data: MaterialForm) => http.put<void>(`/api/materials/${id}`, data),
+  create: (data: MaterialForm & { colorIds: string[]; specs: SkuSpec[] }) => http.post<string>('/api/materials', data),
+  update: (id: string, data: MaterialForm) => http.put<void>(`/api/materials/${id}`, data),
   /** 新建、编辑物料时当场加一个物料类型（字典 material_type 的一项），返回新选项；名称重复 1000。备料比不填 = 3 */
   addType: (data: { label: string; reservePct: number | null }) => http.post<DictOption>('/api/materials/types', data),
-  replaceImages: (id: number, files: FileVO[]) => http.put<Attachment[]>(`/api/materials/${id}/images`, attachmentBody(files)),
-  addSkus: (id: number, data: { colorIds: number[]; specs: SkuSpec[] }) => http.post<MaterialSku[]>(`/api/materials/${id}/skus`, data),
-  updateSku: (id: number, skuId: number, data: SkuForm) => http.put<void>(`/api/materials/${id}/skus/${skuId}`, data),
-  removeSku: (id: number, skuId: number) => http.delete<void>(`/api/materials/${id}/skus/${skuId}`),
-  enableSku: (id: number, skuId: number) => http.post<void>(`/api/materials/${id}/skus/${skuId}/enable`),
-  disableSku: (id: number, skuId: number) => http.post<void>(`/api/materials/${id}/skus/${skuId}/disable`),
-  replaceSkuImages: (id: number, skuId: number, files: FileVO[]) =>
+  replaceImages: (id: string, files: FileVO[]) => http.put<Attachment[]>(`/api/materials/${id}/images`, attachmentBody(files)),
+  addSkus: (id: string, data: { colorIds: string[]; specs: SkuSpec[] }) => http.post<MaterialSku[]>(`/api/materials/${id}/skus`, data),
+  updateSku: (id: string, skuId: string, data: SkuForm) => http.put<void>(`/api/materials/${id}/skus/${skuId}`, data),
+  removeSku: (id: string, skuId: string) => http.delete<void>(`/api/materials/${id}/skus/${skuId}`),
+  enableSku: (id: string, skuId: string) => http.post<void>(`/api/materials/${id}/skus/${skuId}/enable`),
+  disableSku: (id: string, skuId: string) => http.post<void>(`/api/materials/${id}/skus/${skuId}/disable`),
+  replaceSkuImages: (id: string, skuId: string, files: FileVO[]) =>
     http.put<Attachment[]>(`/api/materials/${id}/skus/${skuId}/images`, attachmentBody(files)),
   ...statusApi('/api/materials'),
 }

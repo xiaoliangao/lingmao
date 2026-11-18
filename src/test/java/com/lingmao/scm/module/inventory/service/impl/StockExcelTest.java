@@ -25,6 +25,16 @@ import static org.mockito.Mockito.when;
 /** API 04 §3.6.4–3.6.5：解析实际导出文件，估值事实与日志列表一致。 */
 class StockExcelTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void financialExportRole() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        new com.lingmao.scm.security.LoginUser(1L, "unit-stock-export"), null,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("techpack:cost:query"))));
+    }
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+
     @Test
     void recordedValue_exportsPriceAmountCurrencyAndFrozenUnit() throws IOException {
         StockLogRowVO log = log("RECORDED", "METER");

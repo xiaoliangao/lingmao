@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { purchaseApi } from '@/api/purchase'
+import { purchaseApi as purchaseApiBase } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -33,6 +35,10 @@ import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost, canSeeSupplierContact } = useFieldAccess()
+const purchaseApi = bindCompanyApi(purchaseApiBase, () => detail.value?.companyId)
 
 /**
  * 采购单详情（/purchases/:id，docs/api/03 §3.3、§4）。
@@ -45,7 +51,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const units = useDict('unit')
 const settles = useDict('settle_method')
@@ -61,12 +67,16 @@ const invDocType = ref<'PURCHASE_IN' | 'PURCHASE_RETURN'>('PURCHASE_IN')
 
 const can = (a: PurchaseAction) => detail.value?.actions.includes(a) ?? false
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await purchaseApi.get(id)
+    const d = await read.run(() => purchaseApi.get(id))
+    if (!read.current()) return
     detail.value = d
     tabs.rename(path, `采购 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -88,7 +98,7 @@ onActivated(() => {
 })
 
 /** 单价和价格档案不一样（档案里有价）的行：审核时提醒，明细里标出来 */
-const priceDiffers = (it: PurchaseItem) => it.archivePrice !== null && Math.abs(it.price - it.archivePrice) > 0.00005
+const priceDiffers = (it: PurchaseItem) => canSeeCost.value && it.price != null && it.archivePrice != null && Math.abs(it.price - it.archivePrice) > 0.00005
 const diffCount = computed(() => detail.value?.items.filter(priceDiffers).length ?? 0)
 const lineClass = ({ row }: { row: PurchaseItem }) => (detail.value?.status === 'PENDING' && priceDiffers(row) ? 'price-diff' : '')
 /** 到货进度：草稿、待审核、作废没有 */
@@ -146,7 +156,7 @@ function goStockDoc(doc: PurchaseStockDoc) {
 
 // 传给子组件的取数函数在 script 里定义（模板里写引用 import 的箭头函数 vue-tsc 会报错）
 const loadNotices = () => purchaseApi.notices(id)
-const handleNotice = (noticeId: number, remark: string | null) => purchaseApi.handleNotice(id, noticeId, remark)
+const handleNotice = (noticeId: string, remark: string | null) => purchaseApi.handleNotice(id, noticeId, remark)
 const loadLogs = () => purchaseApi.logs(id)
 const loadFiles = () => purchaseApi.attachments(id)
 const saveFiles = (files: FileVO[]) => purchaseApi.replaceAttachments(id, files)
@@ -183,7 +193,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
         <p class="sub">
           <span>{{ detail.supplierShortName }}<span v-if="detail.supplierStatus !== 'ACTIVE'" class="danger">（供应商已停用）</span></span>
           <span>{{ PURCHASE_TYPE_LABEL[detail.purchaseType] }}</span>
-          <span class="num">{{ formatQty(detail.totalQty) }} · {{ formatMoney(detail.totalAmount) }}</span>
+          <span class="num">{{ formatQty(detail.totalQty) }}<template v-if="canSeeCost"> · {{ formatMoney(detail.totalAmount) }}</template></span>
           <span v-if="showProgress" class="progress">到货 <QtyProgress :done="detail.receivedQty" :total="detail.totalQty" tone="done" /></span>
         </p>
 
@@ -210,14 +220,14 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
               <el-table-column label="数量" width="104" class-name="num" align="right">
                 <template #default="{ row }">{{ formatQty(row.qty) }} <span class="dim">{{ units.labelOf(row.purchaseUnit) }}</span></template>
               </el-table-column>
-              <el-table-column label="单价" width="110" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" label="单价" width="110" class-name="num" align="right">
                 <template #default="{ row }">
                   {{ formatPrice(row.price) }}
                   <div v-if="priceDiffers(row as PurchaseItem)" class="amber small">档案 {{ formatPrice(row.archivePrice) }}</div>
                   <div v-if="row.priceChangeReason" class="dim small">{{ row.priceChangeReason }}</div>
                 </template>
               </el-table-column>
-              <el-table-column label="金额" width="100" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
                 <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
               </el-table-column>
               <el-table-column label="已入库" width="84" class-name="num" align="right">
@@ -335,7 +345,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
         <span>需方：{{ detail.companyName }}</span>
         <span>供方：{{ detail.supplierName }}</span>
         <span>采购员：{{ detail.buyerName }}</span>
-        <span>供方联系人：{{ detail.supplierContact ?? '—' }} {{ detail.supplierPhone ?? '' }}</span>
+        <span v-if="canSeeSupplierContact">供方联系人：{{ detail.supplierContact ?? '—' }} {{ detail.supplierPhone ?? '' }}</span>
         <span>下单日期：{{ formatDate(detail.orderDate) }}</span>
         <span>交货日期：{{ formatDate(detail.deliveryDate) }}</span>
         <span>交货地点：{{ detail.warehouseName }} {{ detail.warehouseAddress ?? '' }}</span>
@@ -353,8 +363,8 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
             <th>供方货号 / 色号</th>
             <th class="r">数量</th>
             <th>单位</th>
-            <th class="r">单价</th>
-            <th class="r">金额</th>
+            <th v-if="canSeeCost" class="r">单价</th>
+            <th v-if="canSeeCost" class="r">金额</th>
             <th>交期</th>
           </tr>
         </thead>
@@ -366,15 +376,15 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
             <td>{{ [it.supplierItemNo, it.supplierColorNo].filter(Boolean).join(' / ') || '—' }}</td>
             <td class="r">{{ formatQty(it.qty) }}</td>
             <td>{{ units.labelOf(it.purchaseUnit) }}</td>
-            <td class="r">{{ formatPrice(it.price) }}</td>
-            <td class="r">{{ formatMoney(it.amount) }}</td>
+            <td v-if="canSeeCost" class="r">{{ formatPrice(it.price) }}</td>
+            <td v-if="canSeeCost" class="r">{{ formatMoney(it.amount) }}</td>
             <td>{{ formatDate(it.dueDate) }}</td>
           </tr>
           <tr>
             <td colspan="4">合计</td>
             <td class="r">{{ formatQty(detail.totalQty) }}</td>
-            <td colspan="2" />
-            <td class="r">{{ formatMoney(detail.totalAmount) }}</td>
+            <td :colspan="canSeeCost ? 2 : 1" />
+            <td v-if="canSeeCost" class="r">{{ formatMoney(detail.totalAmount) }}</td>
             <td />
           </tr>
         </tbody>

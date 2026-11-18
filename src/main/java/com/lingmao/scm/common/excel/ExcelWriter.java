@@ -145,7 +145,7 @@ final class ExcelWriter {
                 cell.setCellStyle(styles.date);
             }
             default -> {
-                cell.setCellValue(value.toString());
+                cell.setCellValue(StreamingExcel.safeText(value.toString()));
                 if (column.isCode()) {
                     cell.setCellStyle(styles.text);
                 }

@@ -17,6 +17,8 @@ def create_identities(admin: ApiClient, company_id: int) -> dict:
     lists = {"order:order:list", "purchase:order:list", "production:order:list"}
     creators = lists | {f"{domain}:order:{action}" for domain in ("order", "purchase", "production")
                        for action in ("add", "edit", "submit")}
+    # Creating ordinary priced fixtures requires each independent financial domain.
+    creators |= {"order:price:query", "production:price:query", "techpack:cost:query"}
     definitions = {
         "owner": ("SELF", creators),
         "outsider": ("SELF", lists),

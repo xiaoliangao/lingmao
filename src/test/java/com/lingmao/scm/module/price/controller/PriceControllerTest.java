@@ -77,7 +77,7 @@ class PriceControllerTest {
         mockMvc.perform(post("/api/prices").with(loginAs("price:process:edit"))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data").value(77));
+                .andExpect(jsonPath("$.data").value("77"));
     }
 
     /** 规则：作废不带原因（空白也算）→ 400，Service 不被调 */

@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, h, reactive, ref, toRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { warehouseApi } from '@/api/basic'
-import { invDocApi, stockApi } from '@/api/inventory'
+import { invDocApi as invDocApiBase, stockApi } from '@/api/inventory'
 import type { WarehouseOption } from '@/types/basic'
 import {
   INV_DOC_TYPE,
@@ -22,6 +23,11 @@ import { newClientAction, unknownActionResult } from '@/utils/clientAction'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import { showSilentError, todayStr } from './docUtils'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { restoreDraftValue } from '@/utils/draft'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
+const invDocApi = bindCompanyApi(invDocApiBase, () => sourceCompanyId.value)
 
 /**
  * 由源单生成物料入库单、出库单的对话框（docs/api/04 §1、§3.3、§4，原型 PurchaseReceive、ProdIssueMat）。
@@ -41,14 +47,14 @@ const visible = defineModel<boolean>({ required: true })
 
 const props = defineProps<{
   sourceKind: 'PURCHASE' | 'PRODUCTION'
-  sourceId: number | null
+  sourceId: string | null
   docType: Extract<InvDocType, 'PURCHASE_IN' | 'PURCHASE_RETURN' | 'ISSUE_OUT' | 'RETURN_IN'>
   /** 采购单上只处理这几行（待到料、采购单详情勾的）；不传 = 能处理的全部行 */
-  itemIds?: number[]
+  itemIds?: string[]
 }>()
 
 const emit = defineEmits<{
-  created: [payload: { id: number; no: string; posted: boolean }]
+  created: [payload: { id: string; no: string; posted: boolean }]
 }>()
 
 const router = useRouter()
@@ -74,13 +80,14 @@ const loading = ref(false)
 const loadError = ref<string | null>(null)
 const submitting = ref(false)
 const draft = ref<InvDocDraft | null>(null)
+const sourceCompanyId = ref<string>()
 const warehouses = ref<WarehouseOption[]>([])
 const rows = ref<DraftRow[]>([])
 
 const head = reactive({
   docDate: todayStr(),
-  fromWarehouseId: null as number | null,
-  toWarehouseId: null as number | null,
+  fromWarehouseId: null as string | null,
+  toWarehouseId: null as string | null,
   supplierDeliveryNo: '',
   logisticsNo: '',
   reason: '',
@@ -88,8 +95,20 @@ const head = reactive({
 })
 
 const guard = useUnsavedChanges(
-  () => ({ head, rows: rows.value.map((r) => [r.thisQty, r.dyeLotInput, r.rollsInput, r.overReasonInput, r.remarkInput]) }),
+  () => ({ head, rows: rows.value.map((r) => ({ materialSkuId: r.materialSkuId, sourceItemId: r.sourceItemId, thisQty: r.thisQty, dyeLotInput: r.dyeLotInput, rollsInput: r.rollsInput, overReasonInput: r.overReasonInput, remarkInput: r.remarkInput })) }),
   visible,
+  { ready: () => !loading.value && !!draft.value, restore(value) {
+    if (!value || typeof value !== 'object' || !('rows' in value) || !Array.isArray(value.rows)) return
+    if ('head' in value) restoreDraftValue(head, value.head)
+    for (const saved of value.rows) {
+      if (!saved || typeof saved !== 'object') continue
+      const row = rows.value.find((item) => item.materialSkuId === saved.materialSkuId && item.sourceItemId === saved.sourceItemId)
+      if (!row) continue
+      if (typeof saved.thisQty === 'number') row.thisQty = saved.thisQty
+      if (saved.rollsInput === null || typeof saved.rollsInput === 'number') row.rollsInput = saved.rollsInput
+      for (const key of ['dyeLotInput', 'overReasonInput', 'remarkInput'] as const) if (typeof saved[key] === 'string') row[key] = saved[key]
+    }
+  } },
 )
 
 const meta = computed(() => INV_DOC_TYPE[props.docType])
@@ -122,21 +141,25 @@ function limitOf(row: DraftRow): number | null {
 }
 
 /** 出仓库存：选了出仓、换了仓都重新取；取不到显示"—"，不影响建单 */
+const stockRequest = useLatestRequest()
 async function refreshFromStock() {
+  const read = stockRequest.begin()
   const whId = head.fromWarehouseId
   if (!whId || !rows.value.length) return
   try {
     const skuIds = [...new Set(rows.value.map((r) => r.materialSkuId))]
-    const list = await stockApi.qty(whId, skuIds, { silent: true })
+    const list = await read.run(() => stockApi.qty(whId, skuIds, { silent: true }))
+    if (!read.current()) return
     if (whId !== head.fromWarehouseId) return
     const map = new Map(list.map((x) => [x.materialSkuId, x.qty]))
     rows.value.forEach((r) => (r.stockQty = map.get(r.materialSkuId) ?? 0))
   } catch {
+    if (!read.current()) return
     rows.value.forEach((r) => (r.stockQty = null))
   }
 }
 
-function prefill(sourceId: number, fromWarehouseId?: number): Promise<InvDocDraft> {
+function prefill(sourceId: string, fromWarehouseId?: string): Promise<InvDocDraft> {
   if (props.sourceKind === 'PURCHASE') {
     return invDocApi.prefillFromPurchase(sourceId, { docType: props.docType as 'PURCHASE_IN' | 'PURCHASE_RETURN', itemIds: props.itemIds })
   }
@@ -156,16 +179,22 @@ function toRows(d: InvDocDraft): DraftRow[] {
 }
 
 let initSeq = 0
+const prefillRequest = useLatestRequest()
 async function init() {
+  const read = prefillRequest.begin()
   const seq = ++initSeq
   const key = actionKey.value
-  if (!visible.value || !props.sourceId) return
+  const sourceId = props.sourceId
+  if (!visible.value || !sourceId) return
+  sourceCompanyId.value = undefined
   loading.value = true
   loadError.value = null
   try {
-    const [whs, d] = await Promise.all([warehouseApi.options(), prefill(props.sourceId)])
+    const [whs, d] = await read.run(() => Promise.all([warehouseApi.options(), prefill(sourceId)]))
+    if (!read.current()) return
     if (seq !== initSeq || key !== actionKey.value || !visible.value) return
     warehouses.value = whs
+    sourceCompanyId.value = d.companyId
     draft.value = d
     Object.assign(head, {
       docDate: todayStr(),
@@ -191,11 +220,13 @@ async function init() {
       }
     }
     await refreshFromStock()
+    if (!read.current()) return
     guard.markSaved()
   } catch (e) {
+    if (!read.current()) return
     if (seq === initSeq) loadError.value = e instanceof Error ? e.message : '来源明细加载失败'
   } finally {
-    if (seq === initSeq) loading.value = false
+    if (read.current() && seq === initSeq) loading.value = false
   }
 }
 
@@ -204,16 +235,21 @@ watch(visible, (on) => {
 })
 
 /** 换了出仓。领料的还差跟着出仓变（04 §3.3.2），重新带出，已填的本次、原因按 SKU 留着；别的只重取出仓库存 */
-async function onFromWarehouseChange(whId: number | null) {
+async function onFromWarehouseChange(whId: string | null) {
   if (!visible.value || !whId || !props.sourceId) return
   if (props.docType !== 'ISSUE_OUT') {
     await refreshFromStock()
     return
   }
+  const read = prefillRequest.begin()
+  const seq = ++initSeq
+  const sourceId = props.sourceId
   const kept = new Map(rows.value.map((r) => [r.materialSkuId, r]))
   loading.value = true
   try {
-    const d = await prefill(props.sourceId, whId)
+    const d = await read.run(() => prefill(sourceId, whId))
+    if (!read.current()) return
+    if (d.companyId !== sourceCompanyId.value) throw new ApiError(409, '来源单主体已变化，请关闭后重新打开')
     draft.value = d
     rows.value = toRows(d).map((r) => {
       const old = kept.get(r.materialSkuId)
@@ -221,7 +257,7 @@ async function onFromWarehouseChange(whId: number | null) {
     })
     await refreshFromStock()
   } finally {
-    loading.value = false
+    if (read.current() && seq === initSeq) loading.value = false
   }
 }
 
@@ -267,7 +303,7 @@ const blockedTip = computed(() => {
 })
 
 /** 草稿建好的提示带个链接，点了去单据详情 */
-function notifyDraft(id: number, no: string) {
+function notifyDraft(id: string, no: string) {
   const kindLabel = meta.value.kind === 'IN' ? '入库单' : '出库单'
   const base = meta.value.kind === 'IN' ? '/stock-in' : '/stock-out'
   const message = ElMessage.success({
@@ -370,6 +406,7 @@ async function restartAction() {
     await init()
   } catch { /* 保留原动作 */ }
 }
+watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel() } })
 </script>
 
 <template>
@@ -440,7 +477,7 @@ async function restartAction() {
           </template>
         </el-table-column>
 
-        <el-table-column v-if="isPurchase" label="单价" width="80" class-name="num" align="right">
+        <el-table-column v-if="canSeeCost && (isPurchase)" label="单价" width="80" class-name="num" align="right">
           <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
         </el-table-column>
 

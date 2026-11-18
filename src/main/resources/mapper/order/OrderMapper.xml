@@ -43,21 +43,26 @@
             AND o.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         </if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (o.no ILIKE '%' || #{q.keyword} || '%' OR o.contract_no ILIKE '%' || #{q.keyword} || '%'
-                 OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
-                            WHERE i.order_id = o.id AND s.code ILIKE '%' || #{q.keyword} || '%')
-                 <if test="codes != null">
-                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
-                                WHERE i.order_id = o.id
-                                  AND upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
-                 </if>)
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+            AND o.id IN (
+                SELECT ko.id FROM ord_order ko
+                WHERE upper(ko.no) LIKE #{keywordCode} OR upper(ko.contract_no) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT ki.order_id FROM sty_style ks JOIN ord_order_item ki ON ki.style_id = ks.id
+                WHERE upper(ks.code) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+            )
         </if>
     </sql>
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.order.dto.OrderRowVO">
         <bind name="withStatus" value="true"/>
-        SELECT o.id, o.no, o.status, o.order_type, o.brand, o.contract_no, o.order_date, o.required_date, o.commit_date,
+        SELECT o.id, o.company_id, o.no, o.status, o.order_type, o.brand, o.contract_no, o.order_date, o.required_date, o.commit_date,
                o.currency, o.total_qty, o.total_amount, o.sales_id, o.merch_id, c.short_name AS company_name, o.source,
                o.create_by, o.create_time, o.version,
                COALESCE(agg.scheduled_qty, 0) AS scheduled_qty, COALESCE(agg.returned_qty, 0) AS returned_qty

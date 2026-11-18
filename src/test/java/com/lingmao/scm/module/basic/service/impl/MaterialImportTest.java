@@ -86,7 +86,7 @@ class MaterialImportTest {
     @BeforeEach
     void setUp() {
         materialImport = new MaterialImport(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
-                dictDataService, serialNoGenerator, new TradeFeature(false), docLogService);
+                dictDataService, serialNoGenerator, new TradeFeature(false), docLogService, com.lingmao.scm.DirectFileImports.INSTANCE);
         lenient().when(dictDataService.listByType("material_type")).thenReturn(List.of(new DictOption("面料", "FABRIC", 1)));
         lenient().when(dictDataService.listByType("unit")).thenReturn(List.of(new DictOption("米", "M", 1)));
         lenient().when(dictDataService.listByType("season")).thenReturn(List.of(new DictOption("夏", "SUMMER", 1)));

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import PendingActions from '@/components/PendingActions.vue'
+import RecoveryBanner from '@/components/RecoveryBanner.vue'
+import ModuleBoundary from '@/components/ModuleBoundary.vue'
 import BizErrorDialog from '@/components/BizErrorDialog.vue'
 </script>
 
@@ -8,5 +11,7 @@ import BizErrorDialog from '@/components/BizErrorDialog.vue'
     <component :is="Component" :key="route.matched[0]?.path" />
   </router-view>
   <!-- 全局只有一个：request.ts 收到带清单的错误时打开它 -->
-  <BizErrorDialog />
+  <ModuleBoundary><BizErrorDialog /></ModuleBoundary>
+  <RecoveryBanner />
+  <ModuleBoundary><PendingActions /></ModuleBoundary>
 </template>

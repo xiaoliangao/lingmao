@@ -29,6 +29,9 @@ public interface PurchaseOrderService {
     /** 不在数据范围里 404（单据公共接口用） */
     void checkVisible(long id);
 
+    /** 原成功操作的来源对象仍须在当前可见范围内；不重验可生成状态。 */
+    void checkSourceMrpVisible(long id);
+
     PurchaseDefaultsVO defaults(PurchaseDefaultsQuery query);
 
     DocSaved create(PurchaseCreateReq req);

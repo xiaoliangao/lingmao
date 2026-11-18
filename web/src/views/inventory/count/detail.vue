@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { countApi } from '@/api/inventory'
+import { countApi as countApiBase } from '@/api/inventory'
 import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
 import DocLogList from '@/components/DocLogList.vue'
@@ -32,6 +34,9 @@ import type { FileVO } from '@/types/system'
 import { formatDate, formatDateTime, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { restoreDraftValue } from '@/utils/draft'
+const countApi = bindCompanyApi(countApiBase, () => detail.value?.companyId)
 
 /**
  * 物料盘点单详情（/stock-takes/:id，docs/api/04 §1.5、§3.5、§4）。草稿时详情页就是表单：
@@ -46,7 +51,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const units = useDict('unit')
 
@@ -61,7 +66,7 @@ const logRef = ref<InstanceType<typeof DocLogList>>()
 
 const draftHead = reactive({
   countDate: '',
-  counterId: null as number | null,
+  counterId: null as string | null,
   counterName: '' as string | null,
   remark: '',
 })
@@ -70,7 +75,17 @@ const draftItems = ref<CountItem[]>([])
 const can = (a: CountAction) => detail.value?.actions.includes(a) ?? false
 const editable = computed(() => detail.value?.status === 'DRAFT' && can('edit'))
 
-const guard = useUnsavedChanges(() => (editable.value ? { draftHead, items: draftItems.value.map((i) => [i.materialSkuId, i.countedQty, i.remark]) } : null))
+const guard = useUnsavedChanges(() => (editable.value ? { draftHead, items: draftItems.value.map((i) => [i.materialSkuId, i.countedQty, i.remark]) } : null), undefined, { restore(value) {
+  if (!value || typeof value !== 'object' || !('items' in value) || !Array.isArray(value.items)) return
+  if ('draftHead' in value) restoreDraftValue(draftHead, value.draftHead)
+  for (const saved of value.items) {
+    if (!Array.isArray(saved)) continue
+    const row = draftItems.value.find((item) => item.materialSkuId === saved[0])
+    if (!row) continue
+    if (saved[1] === null || typeof saved[1] === 'number') row.countedQty = saved[1]
+    if (saved[2] === null || typeof saved[2] === 'string') row.remark = saved[2]
+  }
+} })
 
 function syncFromDetail(d: CountDetail) {
   detail.value = d
@@ -82,13 +97,17 @@ function syncFromDetail(d: CountDetail) {
   guard.markSaved()
 }
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   loadError.value = null
   try {
-    const d = await countApi.get(id)
+    const d = await read.run(() => countApi.get(id))
+    if (!read.current()) return
     syncFromDetail(d)
     tabs.rename(path, `盘点 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else loadError.value = e instanceof Error ? e.message : '盘点单加载失败'
   }

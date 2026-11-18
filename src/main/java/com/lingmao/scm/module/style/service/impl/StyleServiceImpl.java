@@ -575,13 +575,13 @@ public class StyleServiceImpl implements StyleService {
         skus.values().forEach(list -> list.forEach(k -> colorIds.add(k.getColorId())));
         Map<Long, Color> colors = colorService.byIds(colorIds);
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, distinct, Attachment.IMAGE);
-        Map<Long, List<String>> sizeGroups = new HashMap<>();
+        var sizeGroups = sizeGroupService.getByIds(styles.values().stream().map(Style::getSizeGroupId).toList());
         for (Long id : distinct) {
             Style s = styles.get(id);
             if (s == null) {
                 continue;
             }
-            List<String> sizes = sizeGroups.computeIfAbsent(s.getSizeGroupId(), g -> sizeGroupService.getById(g).sizes());
+            List<String> sizes = sizeGroups.get(s.getSizeGroupId()).sizes();
             List<StyleColor> onStyle = styleColors.getOrDefault(id, List.of());
             Map<Long, Integer> colorOrder = new HashMap<>();
             onStyle.forEach(sc -> colorOrder.put(sc.getColorId(), sc.getSeq()));
@@ -715,7 +715,8 @@ public class StyleServiceImpl implements StyleService {
         s.setExecStandard(execStandard);
         s.setSafetyCategory(safetyCategory);
         s.setTagPrice(req.getTagPrice());
-        s.setRefCost(req.getRefCost());
+        s.setRefCost(com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST,
+                s.getRefCost(), req.getRefCost()));
         s.setDefaultFactoryId(req.getDefaultFactoryId());
         s.setLaunchDate(req.getLaunchDate());
         s.setRemark(trim(req.getRemark()));

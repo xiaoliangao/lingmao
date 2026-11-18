@@ -18,7 +18,7 @@ import java.time.OffsetDateTime;
 public class StockLogRowVO extends MaterialSkuBrief {
     private Long id;
     private LocalDate bizDate;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
     private StockChangeType changeType;
     /** INV_DOC / INV_COUNT：点单号用 */

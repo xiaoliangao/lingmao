@@ -48,7 +48,7 @@ export type MrpBlock = 'PURCHASE' | 'FACTORY'
 
 /** 列表的一行 */
 export interface MrpCalcRow {
-  id: number
+  id: string
   no: string
   status: MrpStatus
   orderNos: string[]
@@ -61,7 +61,7 @@ export interface MrpCalcRow {
   /** 要料日期 yyyy-MM-dd；没排单、没承诺交期算不出来是 null */
   needDate: string | null
   /** 重新算料出来的新单（草稿或已确认）的 id、单号，列表上"→ SL…"；没有是 null。新单确认时这张才关闭 */
-  nextCalcId: number | null
+  nextCalcId: string | null
   nextCalcNo: string | null
   createByName: string | null
   createTime: string
@@ -71,7 +71,7 @@ export interface MrpCalcQuery {
   /** 算料单号、订单号、款号；一次查几个（README §3.2）时这三个都精确查 */
   keyword?: string
   status?: MrpStatus[]
-  createBy?: number | null
+  createBy?: string | null
   createDateFrom?: string
   createDateTo?: string
   mine?: boolean
@@ -79,8 +79,8 @@ export interface MrpCalcQuery {
 
 /** 本次使用在途用了哪条采购行（mrp_calc_transit），"明细"里列 */
 export interface MrpTransitUse {
-  purchaseItemId: number
-  purchaseOrderId: number
+  purchaseItemId: string
+  purchaseOrderId: string
   purchaseNo: string
   purchaseType: PurchaseType
   /** 计算时那行的预计到货（没填用交期） */
@@ -93,8 +93,8 @@ export interface MrpTransitUse {
 
 /** 赶不上的在途：预计到货晚于要料日期，只列出来、不扣（计算时的快照） */
 export interface MrpLateTransit {
-  purchaseItemId: number
-  purchaseOrderId: number
+  purchaseItemId: string
+  purchaseOrderId: string
   purchaseNo: string
   purchaseType: PurchaseType
   eta: string | null
@@ -104,11 +104,11 @@ export interface MrpLateTransit {
 
 /** 算料结果的一行（mrp_calc_item）。数字是计算时存下的；草稿里改了本次使用、建议采购，后端重算净需求、预计金额 */
 export interface MrpItem extends MaterialSkuBrief {
-  id: number
+  id: string
   seq: number
   block: MrpBlock
   /** 供应商：BOM 行上的，没有用物料的默认供应商；都没有是 null（生成采购单前要在行上选） */
-  supplierId: number | null
+  supplierId: string | null
   supplierName: string | null
   /** 供应商现在不是合作中：生成采购单会被拦，行上标出来 */
   supplierStatus: SupplierStatus | null
@@ -136,9 +136,9 @@ export interface MrpItem extends MaterialSkuBrief {
   /** 建议采购量，采购单位：净需求 ÷ 换算系数，向上取整到最小包装，不小于起订量；草稿里能直接改（不小于已转采购） */
   suggestQty: number
   /** 参考单价（元 / 采购单位）：这家供应商的价格档案现价，没有用 SKU 单价、物料参考单价；都没有是 null */
-  refPrice: number | null
+  refPrice?: number | null
   /** 预计金额 = 建议采购量 × 参考单价 */
-  estAmount: number | null
+  estAmount?: number | null
   /** 已转采购量，采购单位：生成采购单时加，采购单草稿改数量、删除、作废时跟着改 */
   convertedQty: number
   /** 这一行（连同重新算料带过来的）生成的采购行净入库（已入库 − 已退货），库存单位 */
@@ -166,7 +166,7 @@ export interface MrpDiffRow extends MaterialSkuBrief {
 }
 
 export interface MrpOrderRef {
-  orderId: number
+  orderId: string
   orderNo: string
   styleCodes: string[]
 }
@@ -177,17 +177,17 @@ export interface MrpCalcDetail extends DocHeader<MrpStatus, MrpAction> {
   styleCodes: string[]
   /** 要料日期：几张订单里最早的"裁剪"计划开始，没排单的按承诺交期倒推；算不出来是 null */
   needDate: string | null
-  prevCalcId: number | null
+  prevCalcId: string | null
   prevCalcNo: string | null
-  nextCalcId: number | null
+  nextCalcId: string | null
   nextCalcNo: string | null
   closeReason: MrpCloseReason | null
   /** 手动关闭的人；自动关闭是 null */
   closeByName: string | null
   closeTime: string | null
   /** 我方采购的预计金额合计、已转采购的金额合计（按参考单价） */
-  estAmount: number
-  convertedAmount: number
+  estAmount?: number
+  convertedAmount?: number
   /** 我方采购、工厂自备都在这里，按 block 分开画 */
   items: MrpItem[]
   /** 重新算料出来的单：和上一张比需求变了的行（没变是空数组）；不是重新算料出来的是 null */
@@ -196,7 +196,7 @@ export interface MrpCalcDetail extends DocHeader<MrpStatus, MrpAction> {
 
 /** "选订单算料"对话框的一行：已审核、生产中的需求订单（只有它们能算料） */
 export interface MrpOrderOption {
-  orderId: number
+  orderId: string
   orderNo: string
   /** 字典 order_type */
   orderType: string
@@ -204,7 +204,7 @@ export interface MrpOrderOption {
   totalQty: number
   commitDate: string | null
   /** 这张订单算过的算料单（作废、重新算料换掉的也列，好知道算过几次） */
-  calcs: { id: number; no: string; status: MrpStatus }[]
+  calcs: { id: string; no: string; status: MrpStatus }[]
 }
 
 export type MrpCreated = DocSaved
@@ -219,7 +219,7 @@ export type MrpCreated = DocSaved
  */
 export interface MrpItemForm {
   version: number
-  supplierId: number | null
+  supplierId: string | null
   useStockQty: number
   useTransitQty: number
   suggestQty: number
@@ -274,9 +274,9 @@ export const PURCHASE_LOG_ACTION: Record<string, string> = {
 
 /** 列表的一行 */
 export interface PurchaseRow {
-  id: number
+  id: string
   no: string
-  supplierId: number
+  supplierId: string
   /** 简称 */
   supplierName: string
   /** 供应商现在的状态：不是合作中的，列表上标出来（"供应商已停用"：能继续入库，不能新建） */
@@ -287,14 +287,14 @@ export interface PurchaseRow {
   itemCount: number
   /** 各行采购单位数量直接相加，只显示 */
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   orderDate: string
   deliveryDate: string
-  warehouseId: number
+  warehouseId: string
   warehouseName: string
   /** 净入库合计 =（已入库 − 已退货），采购单位；"到货"进度 = receivedQty / totalQty，草稿、待审核、作废显示"—" */
   receivedQty: number
-  buyerId: number
+  buyerId: string
   buyerName: string
   companyName: string
   status: PurchaseStatus
@@ -312,17 +312,17 @@ export interface PurchaseQuery {
   keyword?: string
   status?: PurchaseStatus[]
   purchaseType?: PurchaseType
-  supplierId?: number | null
-  buyerId?: number | null
+  supplierId?: string | null
+  buyerId?: string | null
   orderDateFrom?: string
   orderDateTo?: string
   mine?: boolean
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 明细的一行（pur_order_item）。数量、单价、已入库、已退货都按采购单位 */
 export interface PurchaseItem extends MaterialSkuBrief {
-  id: number
+  id: string
   seq: number
   /** SKU 级的供应商货号，没有用物料的；都没有是 null */
   supplierItemNo: string | null
@@ -332,20 +332,20 @@ export interface PurchaseItem extends MaterialSkuBrief {
   conversionFactor: number
   qty: number
   /** 元 / 采购单位 */
-  price: number
-  amount: number
+  price?: number
+  amount?: number
   /** 默认单价取自哪条价格档案；手填、没有档案是 null */
-  priceSourceId: number | null
+  priceSourceId: string | null
   /** 价格档案里这家供应商在下单日的现价（"档案 18.50"）；没有档案是 null。和 price 不一样时要有改价原因 */
-  archivePrice: number | null
+  archivePrice?: number | null
   priceChangeReason: string | null
   /** 行交期，null = 用单头交货日期 */
   lineDueDate: string | null
   /** 实际用的交期 = 行交期 ?? 单头交货日期 */
   dueDate: string
   /** 来源算料行；手建的行是 null */
-  calcItemId: number | null
-  calcId: number | null
+  calcItemId: string | null
+  calcId: string | null
   calcNo: string | null
   /** 来源订单号、款号（从算料行带出）；手建的是空数组 */
   orderNos: string[]
@@ -361,7 +361,7 @@ export interface PurchaseItem extends MaterialSkuBrief {
 
 /** 详情的"入库 / 退货"块：这张单生成的物料入库单、出库单（草稿也列，标"草稿"） */
 export interface PurchaseStockDoc {
-  id: number
+  id: string
   no: string
   /** 点单号：docRoute({ type: 'INV_DOC', kind, id, parentId: null }) */
   kind: InvDocKind
@@ -378,31 +378,31 @@ export interface PurchaseStockDoc {
 }
 
 export interface PlanStyle {
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
 }
 
 export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction> {
-  supplierId: number
+  supplierId: string
   supplierCode: string
   /** 全称；supplierShortName 是简称 */
   supplierName: string
   supplierShortName: string
   supplierStatus: SupplierStatus
   /** 打印用：供应商的联系人、电话，没有是 null */
-  supplierContact: string | null
-  supplierPhone: string | null
+  supplierContact?: string | null
+  supplierPhone?: string | null
   purchaseType: PurchaseType
   /** 从哪张算料单生成的；手建的、补货生成的是 null */
-  calcId: number | null
+  calcId: string | null
   calcNo: string | null
-  buyerId: number
+  buyerId: string
   buyerName: string
   orderDate: string
   deliveryDate: string
   /** 交货地点：物料仓，或某个工厂仓（面料直发工厂） */
-  warehouseId: number
+  warehouseId: string
   warehouseName: string
   warehouseType: WarehouseType
   /** 打印用：仓库地址 */
@@ -414,7 +414,7 @@ export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction
   taxIncluded: boolean
   freightIncluded: boolean
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   /** 净入库合计（已入库 − 已退货），采购单位；到货进度 = receivedQty / totalQty */
   receivedQty: number
   returnedQty: number
@@ -426,13 +426,15 @@ export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction
 
 /** 新建、改草稿的一行。保存是整体覆盖：没填的发 null */
 export interface PurchaseItemForm {
+  /** 已有行的 id：没传价格时靠它保留服务端的价格。 */
+  id?: string
   /** 从算料单生成的行原样带回（物料不能换，数量能改，算料单的已转采购跟着改）；手加的行是 null */
-  calcItemId: number | null
-  materialSkuId: number
+  calcItemId: string | null
+  materialSkuId: string
   /** 采购单位 */
   qty: number | null
   /** null = 用默认单价（价格档案现价 → SKU 单价 → 物料参考单价）；和档案现价不一样时 priceChangeReason 必填 */
-  price: number | null
+  price?: number | null
   priceChangeReason: string | null
   lineDueDate: string | null
   expectDate: string | null
@@ -440,14 +442,14 @@ export interface PurchaseItemForm {
 
 /** 新建（POST /api/purchase-orders）。附件建好以后用 replaceAttachments 传 */
 export interface PurchaseForm {
-  companyId: number
-  supplierId: number
+  companyId: string
+  supplierId: string
   purchaseType: PurchaseType
-  buyerId: number
+  buyerId: string
   orderDate: string
   /** null = 下单日 + 各行物料采购周期最长的（没设的按 7 天） */
   deliveryDate: string | null
-  warehouseId: number
+  warehouseId: string
   /** 草稿能发 null，提交时必填 */
   settleMethod: string | null
   taxPct: number | null
@@ -455,34 +457,35 @@ export interface PurchaseForm {
   freightIncluded: boolean
   remark: string | null
   /** 计划用于款号：只有备货采购收，别的类型发 [] */
-  planStyleIds: number[]
+  planStyleIds: string[]
   items: PurchaseItemForm[]
 }
 
 /** 改草稿（PUT /api/purchase-orders/{id}） */
 export interface PurchaseUpdateForm extends PurchaseForm {
   version: number
+  expectedCompanyId?: string
 }
 
 export type PurchaseCreated = DocSaved
 
 /** 表单的默认值（GET /api/purchase-orders/defaults）：换供应商、加物料、改下单日期时取一次 */
 export interface PurchaseDefaultsQuery {
-  supplierId: number
+  supplierId: string
   /** 取哪天的现价，不传 = 今天 */
   orderDate?: string
   /** 表单上全部行的 SKU（不只是新加的）：交货日期的默认值按全部行算 */
-  skuIds?: number[]
+  skuIds?: string[]
 }
 
 /** 一个 SKU 在这家供应商的默认值 */
 export interface PurchaseLineDefault {
-  materialSkuId: number
+  materialSkuId: string
   /** 默认单价（元 / 采购单位）：价格档案现价 → SKU 单价 → 物料参考单价；都没有是 null（要手填） */
-  price: number | null
-  priceSourceId: number | null
+  price?: number | null
+  priceSourceId: string | null
   /** 档案现价；null = 这家还没有这种料的档案价（第一次报价），改价不用写原因 */
-  archivePrice: number | null
+  archivePrice?: number | null
   purchaseUnit: string
   conversionFactor: number
   /** 物料的采购周期（天），没设是 null */
@@ -495,7 +498,7 @@ export interface PurchaseDefaults {
   /** 供应商上的结算方式（字典 settle_method）、税率、采购员；没设是 null */
   settleMethod: string | null
   taxPct: number | null
-  buyerId: number | null
+  buyerId: string | null
   buyerName: string | null
   /** 交货日期的默认值 = 下单日 + skuIds 里最长的采购周期（没设的按 7 天）；skuIds 空是 null */
   deliveryDate: string | null
@@ -515,16 +518,16 @@ export const ARRIVAL_RISK: Record<ArrivalRisk, { label: string; tone: StatusTone
 
 /** 待到料的一行：已审核、部分到货的采购单里没入齐的行（未入库 > 0）。数量按采购单位 */
 export interface PendingArrivalRow extends MaterialSkuBrief {
-  purchaseItemId: number
-  purchaseOrderId: number
+  purchaseItemId: string
+  purchaseOrderId: string
   purchaseNo: string
   purchaseType: PurchaseType
-  supplierId: number
+  supplierId: string
   supplierName: string
-  buyerId: number
+  buyerId: string
   buyerName: string
   /** 交货地点 */
-  warehouseId: number
+  warehouseId: string
   warehouseName: string
   purchaseUnit: string
   qty: number
@@ -560,8 +563,8 @@ export interface PendingArrivalQuery {
   tab?: 'LATE' | 'NEAR' | 'CUT'
   /** 采购单号、物料编码 / 名称 / SKU 码、供应商、订单号、款号、算料单号；一次查几个（README §3.2）时单号、款号、物料编码精确查 */
   keyword?: string
-  supplierId?: number | null
-  buyerId?: number | null
+  supplierId?: string | null
+  buyerId?: string | null
   /** 按交期（行交期 ?? 单头交货日期）筛 */
   dueDateFrom?: string
   dueDateTo?: string
@@ -600,7 +603,7 @@ export const KITTING_STATUS: Record<KittingStatus, { label: string; tone: Status
  * 一张算料单有几张订单的，几张订单看到的是同一组行（一期不按订单拆行）；我方采购一行都没有也算齐料
  */
 export interface OrderKitting {
-  orderId: number
+  orderId: string
   status: KittingStatus
   /** 齐了的行数 / 我方采购的行数；未算料时都是 0 */
   readyCount: number
@@ -608,7 +611,7 @@ export interface OrderKitting {
   /** 标签上的字："部分到料 3/5"、"齐料"、"未算料" */
   label: string
   /** 参与计算的算料单 */
-  calcIds: number[]
+  calcIds: string[]
 }
 
 // ---------------------------------------------------------------- 补货提醒、物料的在途
@@ -619,7 +622,7 @@ export interface OrderKitting {
  */
 export interface ReorderRow extends MaterialSkuBrief {
   /** 物料的默认供应商；没设是 null，要先在行上选 */
-  defaultSupplierId: number | null
+  defaultSupplierId: string | null
   defaultSupplierName: string | null
   defaultSupplierStatus: SupplierStatus | null
   /** 物料仓库存合计 */
@@ -636,24 +639,24 @@ export interface ReorderRow extends MaterialSkuBrief {
   /** 建议补货量，采购单位：差多少换成采购单位，按最小包装和起订量取整 */
   suggestQty: number
   /** 默认供应商的默认单价（元 / 采购单位）；换了供应商用 purchaseApi.defaults 重取 */
-  price: number | null
+  price?: number | null
   /** 已经开了、还没审核的备货采购单里有这个 SKU 的（防重复生成；有的话这一行默认不勾） */
-  openDrafts: { id: number; no: string; status: PurchaseStatus }[]
+  openDrafts: { id: string; no: string; status: PurchaseStatus }[]
 }
 
 /** 勾选的一行：生成备货采购单 */
 export interface ReorderPickItem {
-  materialSkuId: number
-  supplierId: number
+  materialSkuId: string
+  supplierId: string
   /** 采购单位，> 0 */
   qty: number
 }
 
 /** 库存页的"在途"列、"低于最小库存"标黄：库存那边算不了，按 SKU 来问采购（GET /api/material-supply） */
 export interface SkuSupply {
-  materialSkuId: number
+  materialSkuId: string
   /** 按交货仓库分的在途（已审核、没入齐的采购行，库存单位）；没有在途是空数组 */
-  transits: { warehouseId: number; qty: number }[]
+  transits: { warehouseId: string; qty: number }[]
   /** 别的算料单占着的 */
   heldQty: number
   safetyStock: number | null

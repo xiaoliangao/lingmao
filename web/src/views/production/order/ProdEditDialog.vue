@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { scheduleApi } from '@/api/order'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import DictSelect from '@/components/DictSelect.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
@@ -14,6 +14,10 @@ import { PROCESS_MODE_FULL, type ScheduleQuote } from '@/types/order'
 import { PRODUCTION_KIND, type ProductionDetail } from '@/types/production'
 import { formatPrice } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeProductionPrice } = useFieldAccess()
+const productionApi = bindCompanyApi(productionApiBase, () => savedCompanyId.value ?? props.doc.companyId)
 
 /**
  * 改生产单草稿（docs/api/05 §1.4"编辑"、§3.2.4、§4）。只改单头，件数不能改（要改就删草稿回订单重新排单）。
@@ -39,18 +43,19 @@ const emit = defineEmits<{
 const modes = useDict('process_mode')
 const prodTerms = useDict('prod_terms')
 const saving = ref(false)
+const savedCompanyId = ref<string>()
 const quote = ref<ScheduleQuote | null>(null)
 const quoting = ref(false)
 
 const form = reactive({
-  companyId: null as number | null,
-  factoryId: null as number | null,
+  companyId: null as string | null,
+  factoryId: null as string | null,
   factoryName: null as string | null,
   processMode: '',
   unitPrice: null as number | null,
   priceChangeReason: '',
   dueDate: '',
-  merchId: null as number | null,
+  merchId: null as string | null,
   merchName: null as string | null,
   settleMethod: null as string | null,
   taxPct: null as number | null,
@@ -68,9 +73,9 @@ const modeOptions = computed(() =>
 )
 
 /** 当前加工厂 × 加工方式的档案现价：取到 quote 用 quote；还没取到、而且没换厂没换方式，先用详情里的 */
-const archive = computed<{ price: number | null; priceSourceId: number | null } | null>(() => {
+const archive = computed<{ price?: number | null; priceSourceId: string | null } | null>(() => {
   if (quote.value) {
-    const p = quote.value.prices.find((x) => x.processMode === form.processMode)
+    const p = quote.value.prices?.find((x) => x.processMode === form.processMode)
     return { price: p?.price ?? null, priceSourceId: p?.priceSourceId ?? null }
   }
   if (form.factoryId === props.doc.factoryId && form.processMode === props.doc.processMode) {
@@ -88,7 +93,7 @@ const priceTip = computed(() => {
   if (quoting.value) return '正在取档案现价…'
   const a = archive.value
   if (!a) return ''
-  return a.price !== null ? `档案现价 ${formatPrice(a.price)}` : '档案里没有这家的价，审核时记进去'
+  return a.price != null ? `档案现价 ${formatPrice(a.price)}` : '档案里没有这家的价，审核时记进去'
 })
 
 const factoryError = computed(() => (quote.value && !quote.value.usable ? (quote.value.reason ?? '不能下大货单') : ''))
@@ -125,13 +130,14 @@ function applyModePrice() {
   }
 }
 
-function onFactoryChange(id: number | null | undefined) {
+function onFactoryChange(id: string | null | undefined) {
   form.factoryId = id ?? null
   void requote(true)
 }
 
 function init() {
   const d = props.doc
+  savedCompanyId.value = d.companyId
   Object.assign(form, {
     companyId: d.companyId,
     factoryId: d.factoryId,
@@ -171,8 +177,9 @@ function validate(): boolean {
   if (!form.factoryId) return warn('选加工厂')
   if (factoryError.value) return warn(factoryError.value)
   if (!form.processMode) return warn('选加工方式')
-  if (form.unitPrice === null || form.unitPrice <= 0) return warn(`填${kindMeta.value.priceLabel}`)
-  if (priceChanged.value && !form.priceChangeReason.trim()) return warn('单价和档案现价不一样，写改价原因')
+  if (!canSeeProductionPrice.value && (form.factoryId !== props.doc.factoryId || form.processMode !== props.doc.processMode)) return warn('变更加工厂或加工方式需要确认加工价，请由有生产价格权限的人员办理')
+  if (canSeeProductionPrice.value && (form.unitPrice == null || form.unitPrice <= 0)) return warn(`填${kindMeta.value.priceLabel}`)
+  if (canSeeProductionPrice.value && priceChanged.value && !form.priceChangeReason.trim()) return warn('单价和档案现价不一样，写改价原因')
   if (!form.dueDate) return warn('填交期')
   if (!form.merchId) return warn('选生产跟单')
   if (!form.settleMethod) return warn('选结算方式')
@@ -186,6 +193,7 @@ async function save() {
     await productionApi.update(props.doc.id, {
       version: props.doc.version,
       companyId: form.companyId,
+      expectedCompanyId: savedCompanyId.value,
       factoryId: form.factoryId,
       processMode: form.processMode,
       unitPrice: form.unitPrice,
@@ -248,12 +256,12 @@ async function save() {
         </el-select>
       </el-form-item>
 
-      <el-form-item :label="`${kindMeta.priceLabel}（元/件）`" required>
+      <el-form-item v-if="canSeeProductionPrice" :label="`${kindMeta.priceLabel}（元/件）`" required>
         <el-input-number v-model="form.unitPrice" :min="0" :precision="4" :controls="false" :class="{ amber: priceChanged }" />
         <p v-if="priceTip" class="tip dim">{{ priceTip }}</p>
       </el-form-item>
 
-      <el-form-item v-if="priceChanged" label="改价原因" required class="span-all">
+      <el-form-item v-if="canSeeProductionPrice && priceChanged" label="改价原因" required class="span-all">
         <el-input v-model="form.priceChangeReason" maxlength="100" placeholder="单价和档案现价不一样：写为什么，审核时记进价格档案" />
       </el-form-item>
 

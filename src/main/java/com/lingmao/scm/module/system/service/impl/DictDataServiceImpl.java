@@ -67,17 +67,12 @@ public class DictDataServiceImpl implements DictDataService {
 
     @Override
     public List<DictOption> listByType(String typeCode) {
-        List<DictOption> cached = dictCache.get(typeCode);
-        if (cached != null) {
-            return tradeFeature.filterDict(typeCode, cached, DictOption::value);
-        }
         // 停用的也要：旧数据里存着停用的值，显示时要能翻成文字。下拉框只列启用的，由前端按 status 过滤
-        List<DictOption> options = dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
+        List<DictOption> options = dictCache.getOrLoad(typeCode, () -> dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
                         .eq(DictData::getTypeCode, typeCode)
                         .orderByAsc(DictData::getSort)
                         .orderByAsc(DictData::getId))
-                .stream().map(d -> new DictOption(d.getLabel(), d.getValue(), d.getStatus())).toList();
-        dictCache.put(typeCode, options);
+                .stream().map(d -> new DictOption(d.getLabel(), d.getValue(), d.getStatus())).toList());
         return tradeFeature.filterDict(typeCode, options, DictOption::value);
     }
 

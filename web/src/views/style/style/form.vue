@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { businessToday } from '@/utils/businessDate'
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -22,6 +23,8 @@ import { useUserStore } from '@/stores/user'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import DesignFiles from './DesignFiles.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 新建、编辑款式（/styles/new、/styles/:id/edit，RFC 005 §9）：字段多，整页表单，照原型 StyleForm 的分组。
@@ -35,7 +38,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 const path = route.path
-const id = route.params.id ? Number(route.params.id) : null
+const id = route.params.id ? routeId(route.params.id) : null
 const editing = id !== null
 
 const classes = useDict('style_class')
@@ -96,11 +99,11 @@ const categories = shallowRef<TreeNode[]>([])
 const sizeGroups = shallowRef<SizeGroup[]>([])
 
 const categoryOptions = computed(() => {
-  const map = (nodes: TreeNode[] = []): { value: number; label: string; children: unknown[] }[] =>
+  const map = (nodes: TreeNode[] = []): { value: string; label: string; children: unknown[] }[] =>
     nodes.map((n) => ({ value: n.id, label: n.name, children: map(n.children) }))
   const options = map(categories.value)
   // 编辑旧款：品类停用了不在启用的树里，单独列出来，不换也能原样保存
-  const has = (nodes: { value: number; children: unknown[] }[]): boolean =>
+  const has = (nodes: { value: string; children: unknown[] }[]): boolean =>
     nodes.some((n) => n.value === form.categoryId || has(n.children as typeof nodes))
   if (form.categoryId && names.categoryName && !has(options)) {
     options.unshift({ value: form.categoryId, label: `${names.categoryName}（已停用）`, children: [] })
@@ -396,7 +399,7 @@ const title = computed(() => (editing ? `编辑款式 ${names.code}` : '新建�
           <el-form-item label="吊牌价（元）">
             <el-input-number v-model="form.tagPrice" :min="0" :precision="2" :controls="false" :value-on-clear="null" />
           </el-form-item>
-          <el-form-item label="参考成本价（元）">
+          <el-form-item v-if="canSeeCost" label="参考成本价（元）">
             <el-input-number v-model="form.refCost" :min="0" :precision="4" :controls="false" :value-on-clear="null" placeholder="一期手填" />
           </el-form-item>
           <el-form-item label="主力面料">

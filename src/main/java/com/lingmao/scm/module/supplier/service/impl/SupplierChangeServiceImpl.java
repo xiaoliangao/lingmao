@@ -113,6 +113,8 @@ public class SupplierChangeServiceImpl implements SupplierChangeService {
     @Transactional
     public void approve(long supplierId, long changeId) {
         SupplierChange change = getChange(supplierId, changeId);
+        if (change.getChanges().stream().anyMatch(item -> java.util.Set.of("bankName", "bankAccount", "bankAccountName").contains(item.field())))
+            com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.BANK);
         ChangeStatus to = FLOW.next("approve", change.getStatus());
         ensureNotApplicant(change);
         // 先锁供应商、再动改动：和保存（锁供应商 → 插改动）同一个顺序，两边不会互相等成死锁

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type InputInstance, type TableColumnCtx, type TableInstance } from 'element-plus'
@@ -71,12 +72,16 @@ const receiving = ref(false)
 let countSeq = 0
 
 /** 页签上的数：和列表分开取，失败了写"—" */
+const loadCountsRequest = useLatestRequest()
 async function loadCounts(params: Parameters<typeof pendingArrivalApi.counts>[0]) {
+  const read = loadCountsRequest.begin()
   const seq = ++countSeq
   try {
-    const res = await pendingArrivalApi.counts(params)
+    const res = await read.run(() => pendingArrivalApi.counts(params))
+    if (!read.current()) return
     if (seq === countSeq) counts.value = res
   } catch {
+    if (!read.current()) return
     if (seq === countSeq) counts.value = null
   }
 }
@@ -89,8 +94,8 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   query: {
     keyword: '',
     riskTab: pickRisk(route.query.risk),
-    supplierId: undefined as number | null | undefined,
-    buyerId: undefined as number | null | undefined,
+    supplierId: undefined as string | null | undefined,
+    buyerId: undefined as string | null | undefined,
     dueDateFrom: undefined as string | undefined,
     dueDateTo: undefined as string | undefined,
   },
@@ -221,8 +226,8 @@ async function saveFollow() {
 
 // ---------- 单行入库 ----------
 const receiveVisible = ref(false)
-const receivePoId = ref<number | null>(null)
-const receiveItemIds = ref<number[]>([])
+const receivePoId = ref<string | null>(null)
+const receiveItemIds = ref<string[]>([])
 
 function receiveOne(row: PendingArrivalRow) {
   receivePoId.value = row.purchaseOrderId
@@ -236,11 +241,11 @@ function onCreated() {
 }
 
 // ---------- 批量入库 ----------
-const pendingBatch = new Map<number, InvDocFromSourceReq>()
+const pendingBatch = new Map<string, InvDocFromSourceReq>()
 async function receivePicked() {
   const rows = picked.value.filter(canReceive)
   if (!rows.length) return
-  const groups = new Map<number, PendingArrivalRow[]>()
+  const groups = new Map<string, PendingArrivalRow[]>()
   for (const r of rows) groups.set(r.purchaseOrderId, [...(groups.get(r.purchaseOrderId) ?? []), r])
   receiving.value = true
   const created: string[] = []

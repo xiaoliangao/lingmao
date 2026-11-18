@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import { kittingApi } from '@/api/purchase'
 import { techPackApi } from '@/api/techpack'
 import BlankState from '@/components/BlankState.vue'
@@ -52,6 +55,10 @@ import ProdEditDialog from './ProdEditDialog.vue'
 import ProdIssueDialogs from './ProdIssueDialogs.vue'
 import ProdNodeDialogs from './ProdNodeDialogs.vue'
 import ProdReceiveDialog from './ProdReceiveDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeProductionPrice, canSeeSupplierContact } = useFieldAccess()
+const productionApi = bindCompanyApi(productionApiBase, () => detail.value?.companyId)
 
 /**
  * 外发加工单 / 成品采购单详情（/production/:id、/fp-purchases/:id，docs/api/05 §1.2、§1.4、§4）。两种单共用。
@@ -72,7 +79,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const modes = useDict('process_mode')
 const settles = useDict('settle_method')
@@ -101,7 +108,7 @@ const printRef = ref<InstanceType<typeof PrintSheet>>()
 
 const editVisible = ref(false)
 const reportNodeVisible = ref(false)
-const targetNodeId = ref<number | null>(null)
+const targetNodeId = ref<string | null>(null)
 const planNodeVisible = ref(false)
 const reportIssueVisible = ref(false)
 const closeIssueVisible = ref(false)
@@ -124,7 +131,7 @@ const statusTag = computed(() => {
 const audited = computed(() => !!detail.value && !['DRAFT', 'PENDING', 'VOIDED'].includes(detail.value.status))
 const priceChanged = computed(() => {
   const d = detail.value
-  return !!d && d.archivePrice !== null && Math.abs(d.unitPrice - d.archivePrice) > 0.00005
+  return canSeeProductionPrice.value && !!d && d.unitPrice != null && d.archivePrice != null && Math.abs(d.unitPrice - d.archivePrice) > 0.00005
 })
 /** 不是我审、在等别人审：页头写一句 */
 const waitingText = computed(() => {
@@ -133,9 +140,16 @@ const waitingText = computed(() => {
 })
 
 // ---------- 取数 ----------
+const detailRequest = useLatestRequest()
+const subsRequest = useLatestRequest()
+const kittingRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
+  subsRequest.cancel()
+  kittingRequest.cancel()
   try {
-    const d = await productionApi.get(id)
+    const d = await read.run(() => productionApi.get(id))
+    if (!read.current()) return
     const right = `${PRODUCTION_KIND[d.kind].path}/${id}`
     if (right !== path) {
       // 种类对不上：换到对的地址（那边会重新取），?tab= 带过去，这个页签关掉
@@ -147,6 +161,7 @@ async function load() {
     tabs.rename(path, `${PRODUCTION_KIND[d.kind].short} ${d.no}`)
     void loadSubs(d)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -154,19 +169,22 @@ async function load() {
 
 /** 页签和侧栏的数：各取各的，一个出错（request.ts 已经提示）不影响别的 */
 async function loadSubs(d: ProductionDetail) {
-  await Promise.allSettled([
-    productionApi.materials(id).then((m) => (matData.value = m)),
-    productionApi.issues(id).then((list) => (issues.value = list)),
-    productionApi.receipts(id).then((list) => (receipts.value = list)),
+  const read = subsRequest.begin()
+  await read.run(() => Promise.allSettled([
+    productionApi.materials(id).then((m) => { if (read.current()) matData.value = m }),
+    productionApi.issues(id).then((list) => { if (read.current()) issues.value = list }),
+    productionApi.receipts(id).then((list) => { if (read.current()) receipts.value = list }),
     loadKitting(d),
-  ])
+  ]))
 }
 
 async function loadKitting(d: ProductionDetail) {
+  const read = kittingRequest.begin()
   kitting.value = null
   if (!['APPROVED', 'RUNNING', 'DONE'].includes(d.status)) return
   try {
-    kitting.value = (await kittingApi.byOrders([d.orderId]))[0] ?? null
+    const list = await read.run(() => kittingApi.byOrders([d.orderId]))
+    if (read.current()) kitting.value = list[0] ?? null
   } catch {
     // 取不到写"—"
   }
@@ -256,15 +274,19 @@ const historyNode = ref<ProductionNode | null>(null)
 const historyRows = ref<NodeReport[]>([])
 const historyLoading = ref(false)
 const historyVisible = ref(false)
+const historyRequest = useLatestRequest()
+watch(historyVisible, (visible) => { if (!visible) historyRequest.cancel() })
 async function openHistory(node: ProductionNode) {
+  const read = historyRequest.begin()
   historyNode.value = node
   historyRows.value = []
   historyVisible.value = true
   historyLoading.value = true
   try {
-    historyRows.value = await productionApi.nodeReports(id, node.id)
+    const rows = await read.run(() => productionApi.nodeReports(id, node.id))
+    if (read.current()) historyRows.value = rows
   } finally {
-    historyLoading.value = false
+    if (read.current()) historyLoading.value = false
   }
 }
 
@@ -316,7 +338,7 @@ function onMore(command: MoreCommand) {
 
 // ---------- 颜色 × 尺码 ----------
 const matrixColors = computed<MatrixColor[]>(() => {
-  const seen = new Map<number, MatrixColor>()
+  const seen = new Map<string, MatrixColor>()
   for (const it of detail.value?.items ?? []) {
     if (!seen.has(it.colorId)) seen.set(it.colorId, { id: it.colorId, name: it.colorName, code: it.colorCode, hex: it.colorHex })
   }
@@ -324,15 +346,15 @@ const matrixColors = computed<MatrixColor[]>(() => {
 })
 const matrixCells = computed<MatrixCell[]>(() => (detail.value?.items ?? []).map((it) => ({ id: it.id, colorId: it.colorId, sizeCode: it.sizeCode })))
 const matrixQtys = computed(() => Object.fromEntries((detail.value?.items ?? []).map((it) => [it.id, it.qty])))
-const lineSub = (itemId: number) => {
+const lineSub = (itemId: string) => {
   if (!audited.value) return null
   const it = detail.value?.items.find((x) => x.id === itemId)
   return it ? `回 ${it.returnedQty} · 次 ${it.defectQty} · 未 ${it.remainQty}` : null
 }
 
 /** 打印表：颜色 × 尺码 */
-const qtyAt = (colorId: number, size: string) => detail.value?.items.find((i) => i.colorId === colorId && i.sizeCode === size)?.qty ?? 0
-const colorTotal = (colorId: number) => detail.value?.items.filter((i) => i.colorId === colorId).reduce((s, i) => s + i.qty, 0) ?? 0
+const qtyAt = (colorId: string, size: string) => detail.value?.items.find((i) => i.colorId === colorId && i.sizeCode === size)?.qty ?? 0
+const colorTotal = (colorId: string) => detail.value?.items.filter((i) => i.colorId === colorId).reduce((s, i) => s + i.qty, 0) ?? 0
 const sizeTotal = (size: string) => detail.value?.items.filter((i) => i.sizeCode === size).reduce((s, i) => s + i.qty, 0) ?? 0
 
 // ---------- 其他显示 ----------
@@ -347,7 +369,7 @@ const partyText = (i: ProductionIssue) => (i.responsibleParty ? RESPONSIBLE_PART
 
 // 传给子组件的取数函数在 script 里定义（模板里写引用 import 的箭头函数 vue-tsc 会报错）
 const loadNotices = () => productionApi.notices(id)
-const handleNotice = (noticeId: number, remark: string | null) => productionApi.handleNotice(id, noticeId, remark)
+const handleNotice = (noticeId: string, remark: string | null) => productionApi.handleNotice(id, noticeId, remark)
 const loadLogs = () => productionApi.logs(id)
 const loadFiles = () => productionApi.attachments(id)
 const saveFiles = (files: FileVO[]) => productionApi.replaceAttachments(id, files)
@@ -429,7 +451,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                   <p v-if="n.remark" class="tl-rmk">{{ n.remark }}</p>
                   <div v-if="n.photos.length" class="pics">
                     <a v-for="p in n.photos.slice(0, 4)" :key="p.id" :href="p.url" target="_blank" rel="noopener" @click.stop>
-                      <img :src="p.thumbUrl ?? p.url" alt="" />
+                      <ThumbImage :src="p.thumbUrl" alt="" />
                     </a>
                   </div>
                 </div>
@@ -508,7 +530,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                   <div>{{ row.description }}</div>
                   <div v-if="(row as ProductionIssue).photos.length" class="pics">
                     <a v-for="p in (row as ProductionIssue).photos" :key="p.id" :href="p.url" target="_blank" rel="noopener">
-                      <img :src="p.thumbUrl ?? p.url" alt="" />
+                      <ThumbImage :src="p.thumbUrl" alt="" />
                     </a>
                   </div>
                   <div class="dim small">{{ row.createByName ?? '—' }} {{ formatDateTime(row.createTime) }}</div>
@@ -591,13 +613,13 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               </dd>
               <dt>加工方式</dt>
               <dd>{{ modes.labelOf(detail.processMode) }}</dd>
-              <dt>{{ kindMeta.priceLabel }}</dt>
+              <template v-if="canSeeProductionPrice"><dt>{{ kindMeta.priceLabel }}</dt>
               <dd class="num">
                 {{ formatPrice(detail.unitPrice) }}
                 <div v-if="priceChanged" class="warn small">改价：{{ detail.priceChangeReason ?? '—' }}（档案 {{ formatPrice(detail.archivePrice) }}）</div>
               </dd>
               <dt>金额</dt>
-              <dd class="num">{{ formatMoney(detail.totalAmount) }}</dd>
+              <dd class="num">{{ formatMoney(detail.totalAmount) }}</dd></template>
               <dt>税率</dt>
               <dd class="num">{{ detail.taxPct }}%（{{ detail.taxIncluded ? '含税' : '不含税' }}）</dd>
               <dt>下单日期</dt>
@@ -660,6 +682,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         v-model:report-visible="reportNodeVisible"
         v-model:plan-visible="planNodeVisible"
         :order-id="id"
+        :company-id="detail.companyId"
         :total-qty="detail.totalQty"
         :nodes="detail.nodes"
         :plan-revision="detail.planRevision"
@@ -670,6 +693,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         v-model:report-visible="reportIssueVisible"
         v-model:close-visible="closeIssueVisible"
         :order-id="id"
+        :company-id="detail.companyId"
         :base-due-date="detail.expectDate ?? detail.dueDate"
         :closing-issue="closingIssue"
         @updated="refresh"
@@ -696,7 +720,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
             </div>
             <div v-if="h.remark" class="small">{{ h.remark }}</div>
             <div v-if="h.photos.length" class="pics">
-              <a v-for="p in h.photos" :key="p.id" :href="p.url" target="_blank" rel="noopener"><img :src="p.thumbUrl ?? p.url" alt="" /></a>
+              <a v-for="p in h.photos" :key="p.id" :href="p.url" target="_blank" rel="noopener"><ThumbImage :src="p.thumbUrl" alt="" /></a>
             </div>
           </li>
         </ul>
@@ -714,7 +738,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
       <PrintSheet ref="printRef" :title="kindMeta.label" :no="detail.no">
         <template #meta>
           <span>加工厂：{{ detail.factoryName }}</span>
-          <span>联系人：{{ detail.factoryContact ?? '—' }} {{ detail.factoryPhone ?? '' }}</span>
+          <span v-if="canSeeSupplierContact">联系人：{{ detail.factoryContact ?? '—' }} {{ detail.factoryPhone ?? '' }}</span>
           <span>款式：{{ detail.styleCode }} {{ detail.styleName }}</span>
           <span>加工方式：{{ modes.labelOf(detail.processMode) }}</span>
           <span>需求订单：{{ detail.orderNo }}</span>
@@ -722,9 +746,9 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
           <span>下单日期：{{ formatDate(detail.orderDate) }}</span>
           <span>交期：{{ formatDate(detail.expectDate ?? detail.dueDate) }}</span>
           <span>生产跟单：{{ detail.merchName ?? '—' }}</span>
-          <span>{{ kindMeta.priceLabel }}：{{ formatPrice(detail.unitPrice) }} 元/件</span>
+          <span v-if="canSeeProductionPrice">{{ kindMeta.priceLabel }}：{{ formatPrice(detail.unitPrice) }} 元/件</span>
           <span>数量：{{ formatQty(detail.totalQty) }} 件</span>
-          <span>
+          <span v-if="canSeeProductionPrice">
             金额：{{ formatMoney(detail.totalAmount) }} 元（{{ settles.labelOf(detail.settleMethod) }} · 税率 {{ detail.taxPct }}%
             {{ detail.taxIncluded ? '含税' : '不含税' }}）
           </span>

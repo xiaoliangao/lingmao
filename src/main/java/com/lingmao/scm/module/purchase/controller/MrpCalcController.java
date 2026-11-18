@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.purchase.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.page.PageResult;
@@ -48,7 +52,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/mrp-calcs")
 @RequiredArgsConstructor
-public class MrpCalcController {
+public class MrpCalcController extends IdempotencyReplayGuard {
 
     private final MrpService mrpService;
     private final DocCommonService docCommonService;
@@ -79,6 +83,7 @@ public class MrpCalcController {
     @PostMapping
     @PreAuthorize("hasAuthority('purchase:mrp:add')")
     @OperLog(module = "算料单", action = "算料")
+    @IdempotentCreate("MRP_CREATE")
     public R<DocSaved> create(@Valid @RequestBody MrpCreateReq req) {
         return R.ok(mrpService.create(req));
     }
@@ -206,5 +211,16 @@ public class MrpCalcController {
                                 @Valid @RequestBody NoticeHandleReq req) {
         docCommonService.handleNotice(BizType.MRP_CALC, id, noticeId, req.getRemark(), mrpService::checkVisible);
         return R.ok();
+    }
+
+    /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        mrpService.checkSourceOrdersVisible(((MrpCreateReq) arguments[0]).getOrderIds());
+        if (result.isArray()) {
+            result.forEach(row -> mrpService.checkVisible(row.get("id").longValue()));
+        } else {
+            mrpService.checkVisible(result.get("id").longValue());
+        }
     }
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { approvalRuleApi } from '@/api/biz'
@@ -50,19 +51,30 @@ const sorted = computed(() => {
 type SortedRow = (typeof sorted.value)[number]
 const rowKey = (row: SortedRow) => String(row.rule.id)
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    rows.value = await approvalRuleApi.list()
+    const fetched1 = await read.run(() => approvalRuleApi.list())
+    if (!read.current()) return
+    rows.value = fetched1
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 
+const loadRolesRequest = useLatestRequest()
 async function loadRoles() {
+  const read = loadRolesRequest.begin()
   try {
-    roles.value = await roleApi.options()
+    const fetched1 = await read.run(() => roleApi.options())
+    if (!read.current()) return
+    roles.value = fetched1
   } catch {
+    if (!read.current()) return
     roles.value = []
   }
 }
@@ -75,7 +87,7 @@ onMounted(() => {
 // ---------- 新增、编辑 ----------
 const dialogVisible = ref(false)
 const saving = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const editingUserName = ref<string | null>(null)
 const form = reactive<ApprovalRuleForm & { mode: 'ROLE' | 'USER' }>({
   bizType: 'PURCHASE_ORDER',

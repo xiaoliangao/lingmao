@@ -2,11 +2,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi, orderChangeApi } from '@/api/order'
+import { orderApi, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import ImageUpload from '@/components/ImageUpload.vue'
 import SkuMatrix, { type MatrixColor } from '@/components/SkuMatrix.vue'
 import { reloadOnConflict, showSilentError } from '@/components/doc/docUtils'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import type { DocRef } from '@/types/biz'
 import {
   RESPONSIBLE_PARTY,
@@ -22,6 +23,10 @@ import { formatDate, formatPrice } from '@/utils/format'
 import { MAX_UNIT_PRICE, validateOrderCapacity } from '@/utils/orderSku'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
+const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => props.order.companyId)
 
 /**
  * 提变更 / 改变更单（docs/api/02 §3.14、§4.6，原型 OrderChange）。
@@ -41,7 +46,7 @@ const props = withDefaults(defineProps<{ order: OrderDetail; defaultCancel?: boo
   defaultCancel: false,
   editing: null,
 })
-const emit = defineEmits<{ saved: [changeId: number] }>()
+const emit = defineEmits<{ saved: [changeId: string] }>()
 
 const router = useRouter()
 const loading = ref(false)
@@ -57,24 +62,26 @@ const form = reactive({
   feeNote: '',
   files: [] as FileVO[],
   /** 款式 SKU id → 新件数 */
-  qtys: {} as Record<number, number>,
+  qtys: {} as Record<string, number>,
   /** 款 id → 新单价 */
-  prices: {} as Record<number, number | null>,
-  priceChanges: {} as Record<number, boolean>,
+  prices: {} as Record<string, number | null | undefined>,
+  priceChanges: {} as Record<string, boolean>,
   /** 款 id → 资料包 id */
-  packs: {} as Record<number, number | null>,
+  packs: {} as Record<string, string | null>,
   /** 款 id → 新加的颜色 id */
-  addedColors: {} as Record<number, number[]>,
+  addedColors: {} as Record<string, string[]>,
 })
-const guard = useUnsavedChanges(form, visible)
+const guard = useUnsavedChanges(form, visible, { ready: () => !loading.value })
+const formRequest = useLatestRequest()
+const downstreamRequest = useLatestRequest()
 
 /** TRADE 关：责任方不列"客户"（02 §4.7） */
 const PARTY_OPTIONS = (['SELF', 'FACTORY', 'SUPPLIER'] as ResponsibleParty[]).map((value) => ({ value, label: RESPONSIBLE_PARTY[value] }))
 
 const itemBySku = computed(() => new Map(props.order.items.map((i) => [i.styleSkuId, i])))
-const styleOf = (styleId: number) => props.order.styles.find((s) => s.styleId === styleId)
-const mixedPrice = (styleId: number) => new Set(props.order.items.filter((i) => i.styleId === styleId).map((i) => i.price)).size > 1
-const origPrice = (styleId: number) => mixedPrice(styleId) ? null : props.order.items.find((i) => i.styleId === styleId)?.price ?? null
+const styleOf = (styleId: string) => props.order.styles.find((s) => s.styleId === styleId)
+const mixedPrice = (styleId: string) => new Set(props.order.items.filter((i) => i.styleId === styleId).map((i) => i.price)).size > 1
+const origPrice = (styleId: string) => mixedPrice(styleId) ? null : props.order.items.find((i) => i.styleId === styleId)?.price ?? null
 
 /** 矩阵的行：订单里原有的颜色（能改）+ 新加的颜色 */
 function rowsOf(opt: OrderStyleOption): MatrixColor[] {
@@ -95,41 +102,45 @@ function addableColors(opt: OrderStyleOption) {
   return opt.colors.filter((c) => c.orderable && !shown.has(c.id))
 }
 
-function addColor(opt: OrderStyleOption, colorId: number) {
+function addColor(opt: OrderStyleOption, colorId: string) {
   form.addedColors[opt.styleId] = [...(form.addedColors[opt.styleId] ?? []), colorId]
 }
 
-function subOf(skuId: number) {
+function subOf(skuId: string) {
   const item = itemBySku.value.get(skuId)
   return item ? `原 ${item.qty} · 已排 ${item.scheduledQty}` : '新加'
 }
 
-function belowScheduled(skuId: number, qty: number) {
+function belowScheduled(skuId: string, qty: number) {
   const item = itemBySku.value.get(skuId)
   return item && qty < item.scheduledQty ? `已排 ${item.scheduledQty}` : null
 }
 
 /** 资料包两个选项：现在锁的、现在生效的（一样时只有一个） */
-function packOptions(styleId: number) {
+function packOptions(styleId: string) {
   const st = styleOf(styleId)
   if (!st) return []
-  const opts: { id: number; label: string }[] = []
+  const opts: { id: string; label: string }[] = []
   if (st.techPackId != null) opts.push({ id: st.techPackId, label: `V${st.techPackVersion}（现在锁的）` })
   if (st.currentPackId != null && st.currentPackId !== st.techPackId) opts.push({ id: st.currentPackId, label: `V${st.currentPackVersion}（现在生效的）` })
   return opts
 }
 
 watch(visible, async (on) => {
-  if (!on) return
+  if (!on) { formRequest.cancel(); downstreamRequest.cancel(); return }
+  const read = formRequest.begin()
   loading.value = true
   downstream.value = null
   try {
-    styleOpts.value = props.order.styles.length ? await orderApi.styleOptions(props.order.styles.map((s) => s.styleId)) : []
+    const options = props.order.styles.length ? await read.run(() => orderApi.styleOptions(props.order.styles.map((s) => s.styleId))) : []
+    if (!read.current()) return
+    styleOpts.value = options
     resetForm()
     if (form.cancel) await loadDownstream()
+    if (!read.current()) return
     guard.markSaved()
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 })
 
@@ -165,10 +176,12 @@ function resetForm() {
 }
 
 async function loadDownstream() {
+  const read = downstreamRequest.begin()
   try {
-    downstream.value = await orderApi.references(props.order.id)
+    const references = await read.run(() => orderApi.references(props.order.id))
+    if (read.current()) downstream.value = references
   } catch {
-    downstream.value = null
+    if (read.current()) downstream.value = null
   }
 }
 
@@ -187,18 +200,18 @@ function buildForm(): OrderChangeForm | null {
     return null
   }
   if (form.cancel) {
-    return { cancel: true, reason: form.reason.trim(), responsibleParty: form.responsibleParty, feeNote: orNull(form.feeNote), requiredDate: null, quantities: [], prices: [], techPacks: [] }
+    return { cancel: true, reason: form.reason.trim(), responsibleParty: form.responsibleParty, ...(canSeeOrderPrice.value ? { feeNote: orNull(form.feeNote), prices: [] } : {}), requiredDate: null, quantities: [], techPacks: [] }
   }
   const quantities = styleOpts.value.flatMap((opt) =>
     opt.skus
       .filter((s) => itemBySku.value.has(s.id) || (form.qtys[s.id] ?? 0) > 0)
       .map((s) => ({ styleSkuId: s.id, qty: form.qtys[s.id] ?? 0 })),
   )
-  const prices = props.order.styles.flatMap((s) => {
+  const prices = (canSeeOrderPrice.value ? props.order.styles : []).flatMap((s) => {
     const next = form.prices[s.styleId]
     return form.priceChanges[s.styleId] && next != null ? [{ styleId: s.styleId, price: next }] : []
   })
-  if (props.order.styles.some((style) => form.priceChanges[style.styleId] && form.prices[style.styleId] == null)) {
+  if (canSeeOrderPrice.value && props.order.styles.some((style) => form.priceChanges[style.styleId] && form.prices[style.styleId] == null)) {
     ElMessage.warning('已勾选改单价的款要填写新单价'); return null
   }
   const capacityError = validateOrderCapacity(quantities.filter((row) => row.qty > 0).map((row) => {
@@ -216,16 +229,15 @@ function buildForm(): OrderChangeForm | null {
     cancel: false,
     reason: form.reason.trim(),
     responsibleParty: form.responsibleParty,
-    feeNote: orNull(form.feeNote),
+    ...(canSeeOrderPrice.value ? { feeNote: orNull(form.feeNote), prices } : {}),
     requiredDate: form.requiredDate !== props.order.requiredDate ? form.requiredDate : null,
     quantities,
-    prices,
     techPacks,
   }
 }
 
 /** 提交：静默请求，1005（有下游单据）、检查没过弹出来。返回提交上了没有 */
-async function submitChange(changeId: number, version: number): Promise<boolean> {
+async function submitChange(changeId: string, version: number): Promise<boolean> {
   try {
     await orderChangeApi.act(changeId, 'submit', { version }, { silent: true })
     return true
@@ -243,7 +255,7 @@ async function save() {
   submitting.value = true
   try {
     const ch = props.editing
-    let changeId: number
+    let changeId: string
     let submitted: boolean
     if (ch) {
       const version = await orderChangeApi.update(ch.id, { ...body, version: ch.version })
@@ -290,7 +302,7 @@ const title = computed(() => (props.editing ? `改变更单 ${props.editing.no}`
             <span class="code">{{ opt.code }}</span>
             <strong>{{ opt.name }}</strong>
             <span class="gap" />
-            <label class="ctrl">
+            <label v-if="canSeeOrderPrice" class="ctrl">
               <span class="dim">单价</span>
               <el-checkbox v-model="form.priceChanges[opt.styleId]">整款改单价</el-checkbox>
               <el-input-number v-model="form.prices[opt.styleId]" :disabled="!form.priceChanges[opt.styleId]" :max="MAX_UNIT_PRICE" size="small" :min="0" :precision="4" :controls="false" :placeholder="mixedPrice(opt.styleId) ? '多个值（保留原值）' : origPrice(opt.styleId) == null ? '' : formatPrice(origPrice(opt.styleId))" />
@@ -321,7 +333,7 @@ const title = computed(() => (props.editing ? `改变更单 ${props.editing.no}`
         <el-form-item label="原因" required class="full">
           <el-input v-model="form.reason" type="textarea" :autosize="{ minRows: 2 }" maxlength="200" />
         </el-form-item>
-        <el-form-item label="费用说明" class="full">
+        <el-form-item v-if="canSeeOrderPrice" label="费用说明" class="full">
           <el-input v-model="form.feeNote" maxlength="160" placeholder="如：已裁片损失由我方承担" />
         </el-form-item>
         <el-form-item v-if="!editing" label="变更依据（审批截图、邮件、聊天记录）" class="full">

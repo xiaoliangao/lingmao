@@ -9,6 +9,7 @@ import struct
 import subprocess
 import shutil
 import zlib
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -62,6 +63,7 @@ class ApiClient:
     def __init__(self, origin: str):
         self.origin = validate_origin(origin, "API origin", 18080)
         self.token: str | None = None
+        self.company_id: str | None = None
         self.calls: list[dict] = []
 
     def raw(self, method: str, path: str, body: object = None,
@@ -69,6 +71,15 @@ class ApiClient:
         if not path.startswith("/api/") or path.startswith("//"):
             raise ValueError("Only relative /api/ paths are permitted")
         headers = {"Content-Type": content_type}
+        # 每次测试动作独立认领；旧记数动作按其 clientActionId 保持同键重试。
+        if method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            action_id = body.get("clientActionId") if isinstance(body, dict) else None
+            headers["Idempotency-Key"] = str(action_id or uuid.uuid4())
+        company = body.get("companyId") if isinstance(body, dict) else None
+        if company is None:
+            company = self.company_id
+        if company is not None:
+            headers["X-Company-Id"] = str(company)
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         payload = raw_body if raw_body is not None else (
@@ -108,7 +119,9 @@ class ApiClient:
         if not isinstance(token, str) or not token:
             raise AssertionError("Login did not return a token")
         self.token = token
-        return self.request("GET", "/api/auth/me")
+        me = self.request("GET", "/api/auth/me")
+        self.company_id = (me.get("defaultCompany") or {}).get("id")
+        return me
 
     def rows(self, path: str, params: dict | None = None) -> list[dict]:
         result = self.request("GET", query_path(path, {**(params or {}), "page": 1, "size": 500}))
@@ -155,11 +168,11 @@ def pack_update(detail: dict, cost: dict | None = None) -> dict:
     result["specPoints"] = [fields(row, "point method toleranceCm gradeCm remark values") for row in detail["specPoints"]]
     result["bomItems"] = []
     for row in detail["bomItems"]:
-        value = fields(row, "part materialId skuMode usageMode usageQty sizeUsages lossPct source supplierId refPrice priceSourceId priceTaxIncluded priceFreightIncluded remark")
+        value = fields(row, "id part materialId skuMode usageMode usageQty sizeUsages lossPct source supplierId refPrice priceSourceId priceTaxIncluded priceFreightIncluded remark")
         value["skus"] = [fields(sku, "colorId sizeCode materialSkuId refPrice") for sku in row["skus"]]
         result["bomItems"].append(value)
     result["craftSections"] = [{**fields(row, "section content"), "images": images(row["images"])} for row in detail["craftSections"]]
-    result["processes"] = [{**fields(row, "category name requirement stdSeconds price remark"), "images": images(row["images"])} for row in detail["processes"]]
+    result["processes"] = [{**fields(row, "id category name requirement stdSeconds price remark"), "images": images(row["images"])} for row in detail["processes"]]
     result["cost"] = cost
     return result
 

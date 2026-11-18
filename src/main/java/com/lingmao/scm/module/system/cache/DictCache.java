@@ -1,8 +1,7 @@
 package com.lingmao.scm.module.system.cache;
 
 import com.lingmao.scm.module.system.dto.DictOption;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import com.lingmao.scm.common.scope.DeploymentNamespace;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -13,34 +12,39 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
-/**
- * 字典下拉选项的缓存：Redis 里 dict:v2:{typeCode} → 选项列表的 JSON。
- * 读：先查缓存，没有再查库并放进缓存（Cache-Aside）。写：改了字典数据，事务提交以后删掉缓存，下次读时重建
- */
+/** 字典读取按命名空间合并并发请求；提交的改动让共享的版本号失效。 */
 @Component
-@RequiredArgsConstructor
 public class DictCache {
 
-    /**
-     * v2：11-15 起选项带 status、停用的也缓存。换了前缀，升级前缓存的旧格式（没有 status、只有启用的）不会被读到，
-     * 最多 24 小时后自己过期；不换的话，旧缓存读出来 status 是 null，下拉框会一项都不列
-     */
-    private static final String KEY_PREFIX = "dict:v2:";
     /** 兜底的过期时间：万一哪里漏删了，最多一天后也会自己更新 */
     private static final Duration TTL = Duration.ofHours(24);
 
-    private final StringRedisTemplate redis;
     private final JsonMapper jsonMapper;
+    private final SharedCache shared;
+    private final DeploymentNamespace namespace;
+    private final com.lingmao.scm.module.system.service.OutboxService outbox;
 
-    /** 缓存里有就返回（空列表也算有），没有返回 null */
-    public List<DictOption> get(String typeCode) {
-        String json = redis.opsForValue().get(KEY_PREFIX + typeCode);
-        return json == null ? null : jsonMapper.readValue(json, new TypeReference<List<DictOption>>() {});
+    public DictCache(JsonMapper jsonMapper, SharedCache shared, DeploymentNamespace namespace,
+                     com.lingmao.scm.module.system.service.OutboxService outbox) {
+        this.jsonMapper = jsonMapper;
+        this.shared = shared;
+        this.namespace = namespace;
+        this.outbox = outbox;
     }
 
-    public void put(String typeCode, List<DictOption> options) {
-        redis.opsForValue().set(KEY_PREFIX + typeCode, jsonMapper.writeValueAsString(options), TTL);
+    public List<DictOption> getOrLoad(String typeCode, Supplier<List<DictOption>> loader) {
+        String encoded = shared.getOrLoad(key(typeCode), TTL, Duration.ofSeconds(30),
+                () -> jsonMapper.writeValueAsString(loader.get()));
+        return jsonMapper.readValue(encoded, new TypeReference<List<DictOption>>() {});
+    }
+
+    private String key(String typeCode) {
+        if (typeCode == null || !typeCode.matches("[A-Za-z0-9_.:-]{1,64}")) {
+            throw new com.lingmao.scm.common.exception.BizException(400, "字典类型格式不正确");
+        }
+        return namespace.sharedKey("dict-v3", typeCode);
     }
 
     /**
@@ -49,16 +53,28 @@ public class DictCache {
      */
     public void evictAfterCommit(String... typeCodes) {
         List<String> keys = Arrays.stream(typeCodes).filter(Objects::nonNull).distinct()
-                .map(code -> KEY_PREFIX + code).toList();
+                .map(this::key).toList();
+        var pending = keys.stream().map(key -> new Pending(key, outbox.enqueue("CACHE_INVALIDATE",
+                java.util.UUID.randomUUID().toString(), jsonMapper.writeValueAsString(key),
+                com.lingmao.scm.security.LoginUser.currentUserId(), org.slf4j.MDC.get("traceId")))).toList();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    redis.delete(keys);
+                    pending.forEach(DictCache.this::invalidate);
                 }
             });
         } else {
-            redis.delete(keys);
+            pending.forEach(this::invalidate);
         }
     }
+
+    private void invalidate(Pending pending) {
+        try { shared.invalidate(pending.key()); }
+        catch (org.springframework.dao.DataAccessException unavailable) {
+            // 已提交的发件箱行还在待处理，进程挂了也不会丢。
+        }
+        // 后台任务会再做一遍这个幂等的清除，等这个事务释放连接后再确认。
+    }
+    private record Pending(String key, long id) {}
 }

@@ -133,6 +133,8 @@ class InvDocExcel {
                 rows.add(r);
             }
         }
-        return Excel.export(schema(kind), rows);
+        var columns = schema(kind);
+        return Excel.export(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST)
+                ? columns : columns.without("单价", "金额"), rows);
     }
 }

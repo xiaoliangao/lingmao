@@ -18,6 +18,7 @@ import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
 import com.lingmao.scm.module.price.dto.PriceSource;
 import com.lingmao.scm.module.price.dto.ProcessPriceLine;
+import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.entity.Price;
 import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.mapper.CurrentMaterialHit;
@@ -32,6 +33,7 @@ import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.FieldPermissions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -88,6 +90,11 @@ public class PriceServiceImpl implements PriceService {
 
     @Override
     public PageResult<PriceRowVO> page(PriceQuery query) {
+        if (query.getType() != null) PricePerms.checkRead(query.getType());
+        else if (!FieldPermissions.has(FieldPermissions.COST)) {
+            FieldPermissions.require(FieldPermissions.PRODUCTION);
+            query.setType(PriceType.PROCESS);
+        } else if (!FieldPermissions.has(FieldPermissions.PRODUCTION)) query.setType(PriceType.MATERIAL);
         IPage<PriceRowVO> page;
         if (Boolean.TRUE.equals(query.getCurrent())) {
             // 物料价只认物料现在的采购单位：先看命中的是哪些物料，问 basic 要单位，当参数传进 SQL（不跨域 JOIN）
@@ -149,6 +156,7 @@ public class PriceServiceImpl implements PriceService {
     @Override
     public CurrentPriceVO currentFor(PriceType type, long supplierId, Long materialId, Long materialSkuId, Long styleId,
                                      String processMode, LocalDate date) {
+        PricePerms.checkRead(type);
         BigDecimal taxPct = supplierService.getRef(supplierId).taxPct();
         LocalDate day = date != null ? date : LocalDate.now(clock);
         if (type == PriceType.MATERIAL) {
@@ -298,6 +306,18 @@ public class PriceServiceImpl implements PriceService {
     @Override
     public Optional<PriceRef> currentProcess(long supplierId, long styleId, String processMode, LocalDate date) {
         return Optional.ofNullable(priceMapper.selectCurrentProcess(supplierId, styleId, processMode, date)).map(PriceRef::of);
+    }
+
+    @Override
+    public Map<ProcessPriceKey, PriceRef> currentProcesses(Collection<ProcessPriceKey> keys, LocalDate date) {
+        List<ProcessPriceKey> wanted = keys.stream().filter(Objects::nonNull).distinct().toList();
+        Map<ProcessPriceKey, PriceRef> result = new HashMap<>();
+        for (int from = 0; from < wanted.size(); from += BATCH) {
+            for (Price price : priceMapper.selectCurrentProcesses(wanted.subList(from, Math.min(from + BATCH, wanted.size())), date)) {
+                result.put(new ProcessPriceKey(price.getSupplierId(), price.getStyleId(), price.getProcessMode()), PriceRef.of(price));
+            }
+        }
+        return result;
     }
 
     @Override

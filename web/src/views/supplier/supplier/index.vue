@@ -17,6 +17,8 @@ import BatchBar from '@/components/BatchBar.vue'
 import ImportDialog from '@/components/ImportDialog.vue'
 import type { BatchAction } from '@/components/batchBar'
 import SupplierFormDialog from './SupplierFormDialog.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeSupplierContact } = useFieldAccess()
 
 const router = useRouter()
 const store = useUserStore()
@@ -31,7 +33,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     category: '',
     status: [] as SupplierStatus[],
     level: undefined as string | undefined,
-    buyerId: undefined as number | null | undefined,
+    buyerId: undefined as string | null | undefined,
     toApprove: undefined as boolean | undefined,
     missingCredit: undefined as boolean | undefined,
     certExpiring: undefined as boolean | undefined,
@@ -228,7 +230,7 @@ async function exportSelected() {
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="contact" label="联系人" min-width="90" />
+      <el-table-column v-if="canSeeSupplierContact" prop="contact" label="联系人" min-width="90" />
       <el-table-column label="结算" min-width="110">
         <template #default="{ row }">{{ settleText(row as SupplierRow) }}</template>
       </el-table-column>

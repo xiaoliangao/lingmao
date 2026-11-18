@@ -45,6 +45,22 @@
         LIMIT 1
     </select>
 
+    <select id="selectCurrentProcesses" resultType="com.lingmao.scm.module.price.entity.Price">
+        WITH k (supplier_id, style_id, process_mode) AS (
+            VALUES <foreach collection="keys" item="x" separator=",">
+                (#{x.supplierId}::bigint, #{x.styleId}::bigint, #{x.processMode}::varchar)
+            </foreach>
+        )
+        SELECT p.* FROM k
+        JOIN LATERAL (
+            SELECT p.* FROM prc_price p
+            WHERE p.type = 'PROCESS' AND p.supplier_id = k.supplier_id
+              AND p.style_id = k.style_id AND p.process_mode = k.process_mode
+              AND NOT p.voided AND p.effective_date &lt;= #{date}
+            ORDER BY p.effective_date DESC, p.id DESC LIMIT 1
+        ) p ON true
+    </select>
+
     <!-- 列表的条件：三个详情页各传自己的 id；页签里再按类型、SKU、加工方式筛 -->
     <sql id="filters">
         <if test="q.type != null">AND p.type = #{q.type}</if>

@@ -90,7 +90,7 @@ class PriceServiceImplTest {
     /** 规则：同一层级已经有现价（物料层 18.50），改成 19.00 不写原因 → 1000，没插 */
     @Test
     void record_currentExistsWithoutReason_rejected() {
-        loginAs("price:material:edit");
+        loginAs("price:material:edit", "techpack:cost:query");
         stubSupplier();
         when(materialService.materialRefs(List.of(MATERIAL))).thenReturn(List.of(material(1)));
         when(priceMapper.selectCurrentMaterial(SUPPLIER, MATERIAL, null, "METER", TODAY))
@@ -107,7 +107,7 @@ class PriceServiceImplTest {
     /** 规则：和同一层级的现价一样 → 1000"不用再录"，写了原因也不行 */
     @Test
     void record_samePriceAsCurrent_rejected() {
-        loginAs("price:material:edit");
+        loginAs("price:material:edit", "techpack:cost:query");
         stubSupplier();
         when(materialService.materialRefs(List.of(MATERIAL))).thenReturn(List.of(material(1)));
         when(priceMapper.selectCurrentMaterial(SUPPLIER, MATERIAL, null, "METER", TODAY))
@@ -127,7 +127,7 @@ class PriceServiceImplTest {
      */
     @Test
     void record_firstSkuPrice_noReasonNeeded() {
-        loginAs("price:material:edit");
+        loginAs("price:material:edit", "techpack:cost:query");
         stubSupplier();
         when(materialService.skuRefs(List.of(SKU_KHAKI))).thenReturn(List.of(sku(SKU_KHAKI, material(1), 1)));
         when(priceMapper.selectCurrentMaterial(SUPPLIER, MATERIAL, SKU_KHAKI, "METER", TODAY))
@@ -160,7 +160,7 @@ class PriceServiceImplTest {
     /** 规则：黑名单（停用）的供应商不能录：supplier 的 checkUsable(SAMPLE) 拦住，原样报给前端，没插 */
     @Test
     void record_blacklistedSupplier_rejected() {
-        loginAs("price:material:edit");
+        loginAs("price:material:edit", "techpack:cost:query");
         doThrow(new BizException("测试面料 现在是「黑名单」，不能用来打样、录价格"))
                 .when(supplierService).checkUsable(SUPPLIER, Usage.SAMPLE);
 
@@ -174,7 +174,7 @@ class PriceServiceImplTest {
     /** 规则：只有加工价权限（生产跟单）的人录物料价 → 403，什么都不查 */
     @Test
     void record_materialPriceWithOnlyProcessPermission_returns403() {
-        loginAs("price:process:edit");
+        loginAs("price:process:edit", "production:price:query");
 
         assertThatThrownBy(() -> service.record(materialReq("19.00", null, null)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(403));
@@ -185,7 +185,7 @@ class PriceServiceImplTest {
     /** 规则：加工价第一次报价不用原因，单位是件；加工方式只认字典里启用的 */
     @Test
     void record_processPrice_unitIsPieceAndModeMustBeInDict() {
-        loginAs("price:process:edit");
+        loginAs("price:process:edit", "production:price:query");
         stubSupplier();
         when(dictDataService.listByType("process_mode")).thenReturn(List.of(
                 new DictOption("包工包料", "FULL", 1), new DictOption("清加工", "CMT", 1), new DictOption("半包", "HALF", 0)));
@@ -212,7 +212,7 @@ class PriceServiceImplTest {
     /** 规则：作废是条件更新（AND NOT voided），改到 0 行 = 已经作废了 → 1002 */
     @Test
     void voidPrice_alreadyVoided_returns1002() {
-        loginAs("price:material:edit");
+        loginAs("price:material:edit", "techpack:cost:query");
         Price p = price("18.5000", LocalDate.of(2026, 11, 1), null);
         p.setId(9L);
         when(priceMapper.selectById(9L)).thenReturn(p);
@@ -228,7 +228,7 @@ class PriceServiceImplTest {
     /** 规则：停用的款式不能录加工价（RFC 006 §3），StyleService 说为什么，不插 */
     @Test
     void record_processForDisabledStyle_rejected() {
-        loginAs("price:process:edit");
+        loginAs("price:process:edit", "production:price:query");
         stubSupplier();
         doThrow(new BizException("款式 FS2611080701 现在是「停用」，不能再用")).when(styleService).checkUsable(500L);
 
@@ -243,7 +243,7 @@ class PriceServiceImplTest {
     /** 规则：作废按那条的类型查权限：只有物料价权限的人作废加工价 → 403，不改库 */
     @Test
     void voidPrice_processPriceWithOnlyMaterialPermission_returns403() {
-        loginAs("price:material:edit");
+        loginAs("price:material:edit", "techpack:cost:query");
         Price p = price("38.0000", LocalDate.of(2026, 10, 25), null);
         p.setType(PriceType.PROCESS);
         when(priceMapper.selectById(9L)).thenReturn(p);

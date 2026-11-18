@@ -77,15 +77,20 @@ class StockLedger {
     }
 
     /** 一张单的过账：invDocId、countId 二选一 */
-    record Posting(Long invDocId, Long countId, String docNo, LocalDate bizDate, List<Move> moves, boolean reverse) {
+    record Posting(Long invDocId, Long countId, String docNo, LocalDate bizDate, List<Move> moves, boolean reverse,
+                   Integer purchaseRoundingVersion) {
+
+        Posting(Long invDocId, Long countId, String docNo, LocalDate bizDate, List<Move> moves, boolean reverse) {
+            this(invDocId, countId, docNo, bizDate, moves, reverse, null);
+        }
 
         Posting(Long invDocId, Long countId, String docNo, LocalDate bizDate, List<Move> moves) {
-            this(invDocId, countId, docNo, bizDate, moves, false);
+            this(invDocId, countId, docNo, bizDate, moves, false, null);
         }
 
         /** 反审核：每笔反过来，日志类型不变（数量是反方向的） */
         Posting reversed() {
-            return new Posting(invDocId, countId, docNo, bizDate, moves.stream().map(Move::reversed).toList(), !reverse);
+            return new Posting(invDocId, countId, docNo, bizDate, moves.stream().map(Move::reversed).toList(), !reverse, purchaseRoundingVersion);
         }
     }
 
@@ -155,6 +160,7 @@ class StockLedger {
                         throw new BizException(ErrorCodes.STATE_CHANGED, "找不到本次反审核对应的原库存流水，请刷新并核对原单");
                     }
                     event.setReversalOfLogId(original.getId());
+                    event.setPurchaseRoundingVersion(original.getPurchaseRoundingVersion());
                     event.setStockUnit(original.getStockUnit());
                     event.setCurrency(original.getCurrency());
                     event.setValuationStatus(original.getValuationStatus() == null ? "UNKNOWN" : original.getValuationStatus());
@@ -202,6 +208,7 @@ class StockLedger {
         log.setBalanceQty(balance);
         log.setDyeLot(m.dyeLot());
         log.setValuationStatus("UNKNOWN");
+        log.setPurchaseRoundingVersion(posting.purchaseRoundingVersion());
         return log;
     }
 

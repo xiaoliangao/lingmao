@@ -1,6 +1,8 @@
 package com.lingmao.scm.common.pdf;
 
 import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle;
+import com.openhtmltopdf.outputdevice.helper.ExternalResourceControlPriority;
+import com.openhtmltopdf.outputdevice.helper.ExternalResourceType;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.io.RandomAccessReadBuffer;
@@ -64,21 +66,35 @@ public class PdfRenderer {
     public byte[] render(String template, Map<String, Object> variables) {
         Context context = new Context();
         context.setVariables(variables);
-        String xhtml = engine.process(template, context);
+        return renderXhtml(engine.process(template, context));
+    }
+
+    /** 所有模板共用一个渲染器，资源由应用自己提供。 */
+    byte[] renderXhtml(String xhtml) {
         Map<String, byte[]> loaded = fonts();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
             PdfRendererBuilder builder = new PdfRendererBuilder();
             builder.useFastMode();
+            builder.useExternalResourceAccessControl(PdfRenderer::embeddedRasterOnly,
+                    ExternalResourceControlPriority.RUN_BEFORE_RESOLVING_URI);
+            builder.useExternalResourceAccessControl(PdfRenderer::embeddedRasterOnly,
+                    ExternalResourceControlPriority.RUN_AFTER_RESOLVING_URI);
             builder.useFont(() -> new ByteArrayInputStream(loaded.get(REGULAR)), FONT_FAMILY, 400, FontStyle.NORMAL, true);
             builder.useFont(() -> new ByteArrayInputStream(loaded.get(BOLD)), FONT_FAMILY, 700, FontStyle.NORMAL, true);
             builder.withHtmlContent(xhtml, null);
             builder.toStream(out);
             builder.run();
         } catch (IOException e) {
-            throw new UncheckedIOException("生成 PDF 失败：" + template, e);
+            throw new UncheckedIOException("生成 PDF 失败", e);
         }
         return out.toByteArray();
+    }
+
+    /** 渲染的文档里不打开任何 HTTP、文件、jar、CSS、SVG、PDF 资源。 */
+    private static boolean embeddedRasterOnly(String uri, ExternalResourceType type) {
+        return type == ExternalResourceType.IMAGE_RASTER && uri != null && uri.length() <= 16 * 1024 * 1024
+                && (uri.startsWith("data:image/png;base64,") || uri.startsWith("data:image/jpeg;base64,"));
     }
 
     /** 几份 PDF 按顺序拼成一份（工艺单 + 附页） */

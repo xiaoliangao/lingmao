@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { invDocApi } from '@/api/inventory'
+import { invDocApi as invDocApiBase } from '@/api/inventory'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -19,6 +21,10 @@ import { formatDate, formatDateTime, formatMoney, formatPrice, formatQty } from 
 import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
 import InvDocFormDialog from './InvDocFormDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
+const invDocApi = bindCompanyApi(invDocApiBase, () => detail.value?.companyId)
 
 /**
  * 物料入库单、出库单详情（/stock-in/:id、/stock-out/:id 共用，docs/api/04 §1.3、§1.5）。
@@ -30,7 +36,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const units = useDict('unit')
 const inReasons = useDict('stock_in_reason')
@@ -57,9 +63,12 @@ const reasonText = computed(() => {
   return d.reason
 })
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await invDocApi.get(id)
+    const d = await read.run(() => invDocApi.get(id))
+    if (!read.current()) return
     const right = docRoute({ type: 'INV_DOC', kind: d.kind, id, parentId: null })
     if (right && right !== path) {
       // 地址和 kind 对不上：换到对的地址（那边会重新取），这个页签关掉
@@ -70,6 +79,7 @@ async function load() {
     detail.value = d
     tabs.rename(path, `${d.kind === 'OUT' ? '出库' : '入库'} ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -152,7 +162,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
           <span v-if="detail.fromWarehouseName || detail.toWarehouseName">
             {{ detail.fromWarehouseName ?? '' }}<template v-if="detail.fromWarehouseName && detail.toWarehouseName"> → </template>{{ detail.toWarehouseName ?? '' }}
           </span>
-          <span class="num">{{ formatQty(detail.totalQty) }}<template v-if="detail.totalAmount"> · {{ formatMoney(detail.totalAmount) }}</template></span>
+          <span class="num">{{ formatQty(detail.totalQty) }}<template v-if="canSeeCost && detail.totalAmount != null"> · {{ formatMoney(detail.totalAmount) }}</template></span>
         </p>
 
         <el-table :data="detail.items" row-key="id">
@@ -178,10 +188,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
               <span v-else class="dim">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="单价" width="90" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="单价" width="90" class-name="num" align="right">
             <template #default="{ row }">{{ row.price === null ? '—' : formatPrice(row.price) }}</template>
           </el-table-column>
-          <el-table-column label="金额" width="100" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
             <template #default="{ row }">{{ row.amount === null ? '—' : formatMoney(row.amount) }}</template>
           </el-table-column>
           <el-table-column label="缸号" width="110">

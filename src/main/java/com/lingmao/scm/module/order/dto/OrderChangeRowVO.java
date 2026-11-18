@@ -29,12 +29,12 @@ public class OrderChangeRowVO {
     @JsonIgnore
     private Long createBy;
     private String createByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
     @JsonIgnore
     private Long auditBy;
     private String auditByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime auditTime;
     private List<String> actions = List.of();
 }

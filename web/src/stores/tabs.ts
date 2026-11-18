@@ -32,15 +32,21 @@ export const useTabsStore = defineStore('tabs', () => {
 
   // ---------- 页面里有没保存的修改：useUnsavedChanges 按页面地址登记进来，关页签、退出登录前问一声 ----------
   const dirtyChecks = new Map<string, Set<() => boolean>>()
+  const draftDiscards = new Map<string, Set<() => void>>()
 
   /** 登记一个"有没有修改"的检查，返回取消登记的函数（页面销毁时调） */
-  function trackDirty(path: string, check: () => boolean) {
+  function trackDirty(path: string, check: () => boolean, discardDraft?: () => void) {
     const checks = dirtyChecks.get(path) ?? new Set()
     checks.add(check)
     dirtyChecks.set(path, checks)
+    const discards = draftDiscards.get(path) ?? new Set()
+    if (discardDraft) discards.add(discardDraft)
+    draftDiscards.set(path, discards)
     return () => {
       checks.delete(check)
       if (!checks.size) dirtyChecks.delete(path)
+      if (discardDraft) discards.delete(discardDraft)
+      if (!discards.size) draftDiscards.delete(path)
     }
   }
 
@@ -73,6 +79,8 @@ export const useTabsStore = defineStore('tabs', () => {
     const index = tabs.value.findIndex((tab) => tab.path === path)
     if (index <= 0) return currentPath
     tabs.value.splice(index, 1)
+    draftDiscards.get(path)?.forEach((discard) => discard())
+    draftDiscards.delete(path)
     // 关之前已经问过了（TabsBar），页面马上销毁，离开它的时候不用再问一遍
     dirtyChecks.delete(path)
     return path === currentPath ? tabs.value[index - 1]!.path : currentPath
@@ -83,11 +91,18 @@ export const useTabsStore = defineStore('tabs', () => {
     const closing = new Set(paths.filter((path) => path !== HOME_TAB.path))
     tabs.value = tabs.value.filter((tab) => !closing.has(tab.path))
     // 同 close：关之前问过了
-    closing.forEach((path) => dirtyChecks.delete(path))
+    closing.forEach((path) => {
+      draftDiscards.get(path)?.forEach((discard) => discard())
+      draftDiscards.delete(path)
+      dirtyChecks.delete(path)
+    })
   }
 
   /** 退出登录：页签清空，下一个人登录进来只有首页 */
   function reset() {
+    draftDiscards.forEach((discards) => discards.forEach((discard) => discard()))
+    draftDiscards.clear()
+    dirtyChecks.clear()
     tabs.value = [HOME_TAB]
   }
 

@@ -14,6 +14,8 @@ import java.util.List;
 @Data
 public class PurchaseRowVO {
     private Long id;
+    @JsonIgnore
+    private Long companyId;
     private String no;
     private Long supplierId;
     private String supplierName;
@@ -35,7 +37,7 @@ public class PurchaseRowVO {
     private String status;
     private Integer version;
     private List<String> actions;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
 
     /** 第一行的 SKU、制单人：Service 填 firstItem、算按钮用，不返回 */

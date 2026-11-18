@@ -7,6 +7,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import BlankState from '@/components/BlankState.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 
 // ---------- 左边：字典类型 ----------
 const typeQuery = reactive({ page: 1, size: 20, code: '', name: '' })
@@ -14,10 +15,16 @@ const types = ref<DictType[]>([])
 const typeTotal = ref(0)
 const currentType = ref<DictType | null>(null)
 
+const typeRequest = useLatestRequest()
 async function loadTypes() {
-  const result = await dictApi.typePage({ ...typeQuery, code: typeQuery.code || undefined, name: typeQuery.name || undefined })
-  types.value = result.list
-  typeTotal.value = result.total
+  const read = typeRequest.begin()
+  try {
+    const params = { ...typeQuery, code: typeQuery.code || undefined, name: typeQuery.name || undefined }
+    const result = await read.run(() => dictApi.typePage(params))
+    if (!read.current()) return
+    types.value = result.list
+    typeTotal.value = result.total
+  } catch (error) { if (read.current()) throw error }
 }
 
 function selectType(row: DictType | null) {
@@ -27,7 +34,7 @@ function selectType(row: DictType | null) {
 }
 
 const typeDialog = ref(false)
-const typeEditingId = ref<number | null>(null)
+const typeEditingId = ref<string | null>(null)
 const typeForm = reactive({ code: '', name: '', remark: '', status: 1, numLabel: '' })
 const typeGuard = useUnsavedChanges(typeForm, typeDialog)
 
@@ -71,19 +78,26 @@ const dataQuery = reactive({ page: 1, size: 20 })
 const dataList = ref<DictData[]>([])
 const dataTotal = ref(0)
 
+const dataRequest = useLatestRequest()
 async function loadData() {
-  if (!currentType.value) {
+  const read = dataRequest.begin()
+  const typeCode = currentType.value?.code
+  if (!typeCode) {
     dataList.value = []
     dataTotal.value = 0
     return
   }
-  const result = await dictApi.dataPage({ ...dataQuery, typeCode: currentType.value.code })
-  dataList.value = result.list
-  dataTotal.value = result.total
+  try {
+    const params = { ...dataQuery, typeCode }
+    const result = await read.run(() => dictApi.dataPage(params))
+    if (!read.current()) return
+    dataList.value = result.list
+    dataTotal.value = result.total
+  } catch (error) { if (read.current()) throw error }
 }
 
 const dataDialog = ref(false)
-const dataEditingId = ref<number | null>(null)
+const dataEditingId = ref<string | null>(null)
 const dataForm = reactive({ label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined as number | undefined })
 /** 正在编辑的是内置项：不能停用 */
 const dataBuiltin = ref(false)

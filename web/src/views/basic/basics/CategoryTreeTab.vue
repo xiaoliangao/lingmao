@@ -38,7 +38,7 @@ onMounted(load)
 
 /** id → "女装 / 外套"，编辑时显示上级用 */
 const paths = computed(() => {
-  const map = new Map<number, string>()
+  const map = new Map<string, string>()
   const walk = (nodes: TreeNode[], prefix: string) => {
     for (const node of nodes) {
       const path = prefix ? `${prefix} / ${node.name}` : node.name
@@ -51,7 +51,7 @@ const paths = computed(() => {
 })
 
 /** 能当上级的节点（不到最末一级的），给 el-tree-select */
-interface ParentOption { value: number; label: string; children?: ParentOption[] }
+interface ParentOption { value: string; label: string; children?: ParentOption[] }
 const parentOptions = computed(() => {
   const toOptions = (nodes: TreeNode[]): ParentOption[] =>
     nodes
@@ -64,7 +64,7 @@ const parentOptions = computed(() => {
   return toOptions(tree.value)
 })
 
-const levelOf = (parentId: number | null) => {
+const levelOf = (parentId: string | null) => {
   if (parentId === null) return 1
   const find = (nodes: TreeNode[]): TreeNode | undefined => {
     for (const node of nodes) {
@@ -81,7 +81,7 @@ const levelOf = (parentId: number | null) => {
 const visible = ref(false)
 const editing = ref<TreeNode | null>(null)
 const formRef = ref<FormInstance>()
-const EMPTY = { parentId: null as number | null, name: '', code: '', sort: 0 }
+const EMPTY = { parentId: null as string | null, name: '', code: '', sort: 0 }
 const form = reactive({ ...EMPTY })
 const guard = useUnsavedChanges(form, visible)
 /** 正在建、改的是第几级：物料分类的二级要编码 */

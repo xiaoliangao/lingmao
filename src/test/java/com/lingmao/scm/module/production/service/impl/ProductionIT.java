@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.production.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -68,7 +69,7 @@ class ProductionIT {
             "order:order:audit", "production:order:list", "production:order:add", "production:order:edit", "production:order:remove",
             "production:order:submit", "production:order:audit", "production:order:close", "production:order:void",
             "production:node:edit", "production:issue:edit", "production:receipt:add", "production:receipt:void",
-            "production:board:list", "production:mobile:list", "inventory:doc:add", "inventory:doc:audit");
+            "production:board:list", "production:mobile:list", "inventory:doc:add", "inventory:doc:audit", "techpack:cost:query", "order:price:query", "production:price:query");
 
     @Autowired
     private ScheduleService scheduleService;
@@ -97,7 +98,7 @@ class ProductionIT {
 
     @AfterEach
     void logout() {
-        SecurityContextHolder.clearContext();
+        TestIdentity.clear();
     }
 
     /**
@@ -430,6 +431,8 @@ class ProductionIT {
         jdbcTemplate.update("INSERT INTO tp_bom_item_sku (bom_item_id, color_id, material_sku_id) VALUES (?, ?, ?)", item, color, sku);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 new LoginUser(user, "jti-it"), null, PERMS.stream().map(SimpleGrantedAuthority::new).toList()));
+        TestIdentity.grant(jdbcTemplate, user, PERMS);
+        TestIdentity.company(company);
         return new Fixture(company, user, warehouse, factory, style, skuM, skuL, sku);
     }
 

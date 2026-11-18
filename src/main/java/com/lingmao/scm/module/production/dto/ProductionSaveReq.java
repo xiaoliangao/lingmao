@@ -14,6 +14,7 @@ import java.time.LocalDate;
 /** 改草稿（PUT /api/production-orders/{id}，前端 ProductionForm）：单头整体覆盖，明细不能改 */
 @Data
 public class ProductionSaveReq {
+    private Long expectedCompanyId;
     @NotNull(message = "缺少 version")
     private Integer version;
     @NotNull(message = "请选主体")
@@ -22,7 +23,6 @@ public class ProductionSaveReq {
     private Long factoryId;
     @NotBlank(message = "请选加工方式")
     private String processMode;
-    @NotNull(message = "请填单价")
     @DecimalMin(value = "0", inclusive = false, message = "单价要大于 0")
     @Digits(integer = 10, fraction = 4, message = "单价最多 4 位小数")
     private BigDecimal unitPrice;

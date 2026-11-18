@@ -50,6 +50,6 @@ class WarehouseControllerTest {
 
         mockMvc.perform(get("/api/warehouses/options").param("type", "FACTORY"))
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data[0].factoryId").value(9));
+                .andExpect(jsonPath("$.data[0].factoryId").value("9"));
     }
 }

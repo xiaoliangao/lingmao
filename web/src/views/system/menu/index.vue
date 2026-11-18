@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { menuApi, type MenuForm } from '@/api/system'
@@ -12,12 +13,18 @@ const TYPE_LABEL: Record<number, string> = { 1: '目录', 2: '页面', 3: '按�
 const tree = ref<MenuNode[]>([])
 const loading = ref(false)
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    tree.value = await menuApi.tree()
+    const fetched1 = await read.run(() => menuApi.tree())
+    if (!read.current()) return
+    tree.value = fetched1
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 
@@ -27,14 +34,14 @@ onMounted(load)
 const parentOptions = computed(() => {
   const strip = (nodes: MenuNode[]): MenuNode[] =>
     nodes.filter((n) => n.type !== 3).map((n) => ({ ...n, children: strip(n.children) }))
-  return [{ id: 0, name: '顶层', children: strip(tree.value) }]
+  return [{ id: '0', name: '顶层', children: strip(tree.value) }]
 })
 
 // ---------- 新增 / 修改 ----------
 const dialogVisible = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const emptyForm = (): MenuForm => ({
-  parentId: 0, name: '', type: 2, path: '', component: '', perms: '', icon: '', sort: 0, visible: true, status: 1,
+  parentId: '0', name: '', type: 2, path: '', component: '', perms: '', icon: '', sort: 0, visible: true, status: 1,
   adminOnly: false,
 })
 const form = reactive<MenuForm>(emptyForm())
@@ -155,7 +162,7 @@ async function remove(row: MenuNode) {
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item v-if="form.parentId === 0" label="区域" class="full">
+        <el-form-item v-if="form.parentId === '0'" label="区域" class="full">
           <el-radio-group v-model="form.adminOnly">
             <el-radio :value="false">业务菜单</el-radio>
             <el-radio :value="true">管理后台（只有超级管理员）</el-radio>

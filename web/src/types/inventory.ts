@@ -8,10 +8,10 @@ import type { WarehouseType } from '@/types/basic'
  * 名称、颜色、图是查询时现取的，物料改了名旧单上跟着变；单价、换算系数这些"当时按什么算的"另存在单据行上
  */
 export interface MaterialSkuBrief {
-  materialSkuId: number
+  materialSkuId: string
   /** 物料编码-颜色码[-规格码] */
   skuCode: string
-  materialId: number
+  materialId: string
   materialCode: string
   materialName: string
   /** 字典 material_type */
@@ -96,19 +96,19 @@ export const INV_DOC_LOG_ACTION: Record<string, string> = {
 
 /** 列表的一行。物料只带第一行的，"等 n 种"用 itemCount */
 export interface InvDocRow {
-  id: number
+  id: string
   no: string
   kind: InvDocKind
   docType: InvDocType
   status: InvDocStatus
   /** 批量审核要带回去 */
   version: number
-  fromWarehouseId: number | null
+  fromWarehouseId: string | null
   fromWarehouseName: string | null
-  toWarehouseId: number | null
+  toWarehouseId: string | null
   toWarehouseName: string | null
   /** 往来单位（供应商或加工厂，简称）；其他入库、调拨这类没有是 null */
-  partnerId: number | null
+  partnerId: string | null
   partnerName: string | null
   /** 源单号（采购单、生产单）；没有是 null */
   sourceNo: string | null
@@ -117,7 +117,7 @@ export interface InvDocRow {
   itemCount: number
   /** 各行库存单位数量直接相加，只显示 */
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   /** 实际发生日期 yyyy-MM-dd */
   docDate: string
   /** 其他入库、其他出库是字典值（stock_in_reason / stock_out_reason），别的是手填的一行字或 null */
@@ -134,21 +134,21 @@ export interface InvDocQuery {
   docType?: InvDocType
   status?: InvDocStatus[]
   /** 出仓或入仓是它 */
-  warehouseId?: number | null
-  partnerId?: number | null
+  warehouseId?: string | null
+  partnerId?: string | null
   docDateFrom?: string
   docDateTo?: string
   /** 单号、源单号、送货单号、物流单号、物料编码 / 名称 / SKU 码、缸号；一次查几个（README §3.2）时单号、源单号精确查 */
   keyword?: string
   mine?: boolean
   /** 导出选中的 */
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 明细的一行 */
 export interface InvDocItem extends MaterialSkuBrief {
   /** 改草稿时原样带回（InvDocItemForm.id） */
-  id: number
+  id: string
   seq: number
   /** 这一行过过账（有库存日志）：改草稿时不能删、不能换物料 */
   posted: boolean
@@ -159,13 +159,13 @@ export interface InvDocItem extends MaterialSkuBrief {
   purchaseQty: number | null
   conversionFactor: number | null
   /** 元 / 库存单位；采购入库、退货 = 采购单价 ÷ 换算系数（后端算，前端不传）。手建的单选填，没填是 null */
-  price: number | null
-  amount: number | null
+  price?: number | null
+  amount?: number | null
   /** 缸号：只记录，库存不按它分（Q07） */
   dyeLot: string | null
   rolls: number | null
   /** 源单明细：采购入库、退货是采购明细 id；领料、退料、手建的是 null */
-  sourceItemId: number | null
+  sourceItemId: string | null
   /** 超领原因：领的比建议数多时必填 */
   overReason: string | null
   remark: string | null
@@ -178,20 +178,20 @@ export interface InvDocDetail extends DocHeader<InvDocStatus, InvDocAction> {
   docType: InvDocType
   /** 源单（采购单、外发加工单 / 成品采购单），点单号用 docRoute(source)；没有是 null */
   source: DocRef | null
-  fromWarehouseId: number | null
+  fromWarehouseId: string | null
   fromWarehouseName: string | null
   fromWarehouseType: WarehouseType | null
-  toWarehouseId: number | null
+  toWarehouseId: string | null
   toWarehouseName: string | null
   toWarehouseType: WarehouseType | null
-  partnerId: number | null
+  partnerId: string | null
   partnerName: string | null
   docDate: string
   reason: string | null
   supplierDeliveryNo: string | null
   logisticsNo: string | null
   totalQty: number
-  totalAmount: number
+  totalAmount?: number
   /** 过过账（有库存日志）：草稿时 actions 给 void 不给 remove */
   posted: boolean
   items: InvDocItem[]
@@ -200,16 +200,16 @@ export interface InvDocDetail extends DocHeader<InvDocStatus, InvDocAction> {
 /** 手建的单（退料入库不挂源单、其他入库、调拨、其他出库）新建、改草稿共用的明细。保存是整体覆盖：没填的发 null */
 export interface InvDocItemForm {
   /** 改草稿时，原来的行带回 InvDocItem.id，新加的行是 null；请求里没有的行删掉（过过账的行删不了，1000）。新建都是 null */
-  id: number | null
+  id: string | null
   /** 源单生成的草稿：原样带回（采购明细 id），后端按它重新取单价、换算系数；手建的是 null */
-  sourceItemId: number | null
-  materialSkuId: number
+  sourceItemId: string | null
+  materialSkuId: string
   /** 库存单位。采购入库、采购退货填 purchaseQty，这一格发 null，由后端换算 */
   qty: number | null
   /** 采购单位数量：只有采购入库、采购退货填 */
   purchaseQty: number | null
   /** 元 / 库存单位，手建的单选填；源单生成的发什么都按源单算 */
-  price: number | null
+  price?: number | null
   dyeLot: string | null
   rolls: number | null
   overReason: string | null
@@ -219,12 +219,12 @@ export interface InvDocItemForm {
 /** 改草稿（PUT /api/inventory-docs/{id}）。类型、kind、源单建好就不能改，不在这里 */
 export interface InvDocForm {
   version: number
-  companyId: number
+  companyId: string
   /** yyyy-MM-dd，不能晚于今天 */
   docDate: string
-  fromWarehouseId: number | null
-  toWarehouseId: number | null
-  partnerId: number | null
+  fromWarehouseId: string | null
+  toWarehouseId: string | null
+  partnerId: string | null
   reason: string | null
   supplierDeliveryNo: string | null
   logisticsNo: string | null
@@ -251,11 +251,11 @@ export interface InvDocCreated extends DocSaved {
  */
 export interface InvDocDraftItem extends MaterialSkuBrief {
   /** 采购明细 id；领料、退料是 null（按 materialSkuId 对行） */
-  sourceItemId: number | null
+  sourceItemId: string | null
   purchaseUnit: string | null
   conversionFactor: number | null
   /** 采购单价（元 / 采购单位），采购的两种才有 */
-  price: number | null
+  price?: number | null
   /** "本次"的默认值：采购入库 = 未入库；领料 = 还差（应领 − 已领）；采购退货、退料 = 0 */
   suggestQty: number
   /**
@@ -276,23 +276,25 @@ export interface InvDocDraftItem extends MaterialSkuBrief {
 
 /** 带出来的单头默认值 + 明细 */
 export interface InvDocDraft {
+  /** 来源投影直接给出主体；仓管无需读取普通采购/生产详情。 */
+  companyId: string
   docType: InvDocType
   /** 源单 */
   source: DocRef
-  partnerId: number | null
+  partnerId: string | null
   partnerName: string | null
   /** 采购入库：采购单的交货地点；采购退货：采购单的交货地点（料可能入到了别的仓，能改）；领料：第一个启用的物料仓；退料：加工厂的工厂仓 */
-  fromWarehouseId: number | null
+  fromWarehouseId: string | null
   fromWarehouseName: string | null
-  toWarehouseId: number | null
+  toWarehouseId: string | null
   toWarehouseName: string | null
   items: InvDocDraftItem[]
 }
 
 /** 对话框里填好的一行。单位同 InvDocDraftItem.suggestQty；qty 是 0 的行不建 */
 export interface InvDocFromSourceItem {
-  sourceItemId: number | null
-  materialSkuId: number
+  sourceItemId: string | null
+  materialSkuId: string
   qty: number
   dyeLot: string | null
   rolls: number | null
@@ -313,15 +315,15 @@ export interface InvDocFromSourceReq {
   clientActionId: string
   docType: InvDocType
   docDate: string | null
-  fromWarehouseId: number | null
-  toWarehouseId: number | null
+  fromWarehouseId: string | null
+  toWarehouseId: string | null
   supplierDeliveryNo: string | null
   logisticsNo: string | null
   /** 采购退货的退货原因、退料的原因：一行字，选填 */
   reason: string | null
   remark: string | null
   items: InvDocFromSourceItem[] | null
-  itemIds: number[] | null
+  itemIds: string[] | null
   post: boolean
 }
 
@@ -414,16 +416,16 @@ export const COUNT_LOG_ACTION: Record<string, string> = {
 }
 
 export interface CountRow {
-  id: number
+  id: string
   no: string
-  warehouseId: number
+  warehouseId: string
   warehouseName: string
   purpose: CountPurpose
   scope: CountScope
   /** 范围的说法："全部物料" / "分类：面料-梭织、辅料-拉链" / "手选 3 种" */
   scopeText: string
   countDate: string
-  counterId: number
+  counterId: string
   counterName: string
   itemCount: number
   /** 已填实盘的行数 */
@@ -441,17 +443,17 @@ export interface CountQuery {
   /** 单号、仓库、盘点人、物料编码 / 名称 / SKU 码 */
   keyword?: string
   status?: CountStatus[]
-  warehouseId?: number | null
+  warehouseId?: string | null
   purpose?: CountPurpose
   countDateFrom?: string
   countDateTo?: string
-  ids?: number[]
+  ids?: string[]
 }
 
 export interface CountItem extends MaterialSkuBrief {
   /** 取账面时这个库存行的变动次数；只读，升级前的旧行是 null（提交时当作有过进出） */
   bookRevision: number | null
-  id: number
+  id: string
   seq: number
   /** 账面数：建单时（或草稿里重新取账面数时）的库存快照；期初录入是 0 */
   bookQty: number
@@ -467,14 +469,14 @@ export interface CountItem extends MaterialSkuBrief {
 }
 
 export interface CountCategory {
-  id: number
+  id: string
   /** 二级分类名；parentName 是一级 */
   name: string
   parentName: string | null
 }
 
 export interface CountDetail extends DocHeader<CountStatus, CountAction> {
-  warehouseId: number
+  warehouseId: string
   warehouseName: string
   warehouseType: WarehouseType
   purpose: CountPurpose
@@ -483,7 +485,7 @@ export interface CountDetail extends DocHeader<CountStatus, CountAction> {
   /** scope = CATEGORY 时选的分类；别的是空数组 */
   categories: CountCategory[]
   countDate: string
-  counterId: number
+  counterId: string
   counterName: string
   /** 取账面数的时间 2026-11-15 10:30:00 */
   bookTime: string
@@ -503,16 +505,16 @@ export interface CountDetail extends DocHeader<CountStatus, CountAction> {
 
 /** 新建（POST /api/inventory-counts）：建单时按范围带出明细、拍下账面数 */
 export interface CountCreateForm {
-  companyId: number
-  warehouseId: number
+  companyId: string
+  warehouseId: string
   purpose: CountPurpose
   scope: CountScope
   /** scope = CATEGORY 时必选，物料分类（二级）id；别的发 [] */
-  categoryIds: number[]
+  categoryIds: string[]
   /** scope = PICKED 时手选的 SKU；期初录入可以是空的（建空单再导入），日常盘点至少一个 */
-  skuIds: number[]
+  skuIds: string[]
   countDate: string
-  counterId: number
+  counterId: string
   remark: string | null
 }
 
@@ -522,7 +524,7 @@ export interface CountCreated extends DocSaved {
 
 /** 改草稿（PUT /api/inventory-counts/{id}）的一行：按 SKU 对上已有的行，账面数不改；单上没有的 SKU 不在这里加，走 addItems */
 export interface CountItemForm {
-  materialSkuId: number
+  materialSkuId: string
   countedQty: number | null
   remark: string | null
 }
@@ -531,15 +533,15 @@ export interface CountItemForm {
 export interface CountForm {
   version: number
   countDate: string
-  counterId: number
+  counterId: string
   remark: string | null
   items: CountItemForm[]
 }
 
 /** 有没审核的盘点单的仓库（草稿、待审核）：新建对话框里这些仓灰掉，后面写"PD… 还没审" */
 export interface CountOpenWarehouse {
-  warehouseId: number
-  countId: number
+  warehouseId: string
+  countId: string
   countNo: string
   status: CountStatus
 }
@@ -549,8 +551,8 @@ export interface CountOpenWarehouse {
 /** 库存明细的一行：仓库 × 物料 SKU（物权、货位一期不显示：都是自有、不分货位） */
 export interface StockRow extends MaterialSkuBrief {
   /** inv_stock.id */
-  id: number
-  warehouseId: number
+  id: string
+  warehouseId: string
   warehouseCode: string
   warehouseName: string
   warehouseType: WarehouseType
@@ -564,12 +566,12 @@ export interface StockRow extends MaterialSkuBrief {
 export interface StockQuery {
   /** 页签：MATERIAL 物料仓 / FACTORY 工厂仓 / 不传 = 全部（成品仓不在这里） */
   warehouseType?: Extract<WarehouseType, 'MATERIAL' | 'FACTORY'>
-  warehouseId?: number | null
+  warehouseId?: string | null
   /** SKU 码、物料编码、名称、仓库名；一次查几个（README §3.2）时 SKU 码、物料编码精确查 */
   keyword?: string
   /** 默认不列数量是 0 的行；true 也列 */
   includeZero?: boolean
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 按物料汇总的一行：所有仓合计 */
@@ -583,7 +585,7 @@ export interface StockSummaryRow extends MaterialSkuBrief {
 
 /** GET /api/stocks/qty：表单"出仓库存"那一列用，一个仓库几个 SKU 的现库存；没有库存记录的 SKU 返回 0 */
 export interface StockQty {
-  materialSkuId: number
+  materialSkuId: string
   qty: number
 }
 
@@ -606,12 +608,12 @@ export const STOCK_CHANGE_TYPE_LABEL: Record<StockChangeType, string> = {
 /** 库存日志的一行：只增不改，反审核是反方向再记一条；调拨一张单两条（出仓一条、入仓一条） */
 export interface StockLogRow extends Omit<MaterialSkuBrief, 'stockUnit'> {
   stockUnit: string | null
-  unitPrice: number | null
-  amount: number | null
+  unitPrice?: number | null
+  amount?: number | null
   currency: string | null
   valuationStatus: 'UNKNOWN' | 'RECORDED'
-  reversalOfLogId: number | null
-  id: number
+  reversalOfLogId: string | null
+  id: string
   /** 单据的实际发生日期 yyyy-MM-dd（列表的"日期"） */
   bizDate: string
   /** 记账时间 2026-11-15 10:30:00 */
@@ -621,9 +623,9 @@ export interface StockLogRow extends Omit<MaterialSkuBrief, 'stockUnit'> {
   docType: 'INV_DOC' | 'INV_COUNT'
   /** 入库单 IN / 出库单 OUT；盘点单是 null */
   docKind: InvDocKind | null
-  docId: number
+  docId: string
   docNo: string
-  warehouseId: number
+  warehouseId: string
   warehouseName: string
   /** 入为正、出为负 */
   changeQty: number
@@ -635,9 +637,9 @@ export interface StockLogRow extends Omit<MaterialSkuBrief, 'stockUnit'> {
 }
 
 export interface StockLogQuery {
-  warehouseId?: number | null
+  warehouseId?: string | null
   /** 点库存一行看它的流水：带上仓库 + SKU */
-  materialSkuId?: number | null
+  materialSkuId?: string | null
   changeType?: StockChangeType[]
   bizDateFrom?: string
   bizDateTo?: string

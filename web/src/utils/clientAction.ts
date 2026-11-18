@@ -1,5 +1,5 @@
 /** randomUUID 仅安全上下文可用；交付包允许内网 HTTP，回退仍使用浏览器安全随机数。 */
-function clientActionUuid(): string {
+export function clientActionUuid(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   // UUID v4 的版本位与变体位，其余 122 位保持随机。

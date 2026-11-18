@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { companyApi, warehouseApi } from '@/api/basic'
-import { purchaseApi } from '@/api/purchase'
+import { purchaseApi as purchaseApiBase } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -13,6 +14,7 @@ import UserSelect from '@/components/UserSelect.vue'
 import { showSilentError, todayStr } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import type { CompanyOption, MaterialPickRow, WarehouseOption } from '@/types/basic'
@@ -21,6 +23,10 @@ import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatPrice } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
+const purchaseApi = bindCompanyApi(purchaseApiBase, () => savedCompanyId.value ?? head.companyId)
 
 /**
  * 采购单新建、改草稿（/purchases/new、/purchases/:id/edit，docs/api/03 §3.3.3-3.3.4、§4）。
@@ -37,20 +43,23 @@ const user = useUserStore()
 const units = useDict('unit')
 
 const path = route.path
-const id = route.params.id ? Number(route.params.id) : null
+const id = route.params.id ? routeId(route.params.id) : null
 const editing = id !== null
+let originalSupplierId: string | undefined
+const originalSkus = new Set<string>()
 
 interface LineDraft {
-  calcItemId: number | null
-  materialSkuId: number
+  id?: string
+  calcItemId: string | null
+  materialSkuId: string
   skuCode: string
   materialName: string
   colorSpec: string
   purchaseUnit: string
   qty: number | null
   /** null = 用默认单价（后端按档案现价 → SKU 单价 → 物料参考单价取） */
-  price: number | null
-  archivePrice: number | null
+  price?: number | null
+  archivePrice?: number | null
   priceChangeReason: string
   lineDueDate: string | null
   expectDate: string | null
@@ -64,8 +73,10 @@ const companies = ref<CompanyOption[]>([])
 const warehouses = ref<WarehouseOption[]>([])
 const loaded = ref(!editing)
 const notFound = ref(false)
+const loadError = ref<string | null>(null)
 const saving = ref(false)
 const version = ref(0)
+const savedCompanyId = ref<string>()
 const poNo = ref('')
 /** 点过提交：空着的必填项标红 */
 const submitTried = ref(false)
@@ -73,21 +84,21 @@ const submitTried = ref(false)
 const deliveryTouched = ref(false)
 
 const head = reactive({
-  companyId: null as number | null,
-  supplierId: null as number | null,
+  companyId: null as string | null,
+  supplierId: null as string | null,
   supplierName: null as string | null,
   purchaseType: 'ORDER' as PurchaseType,
   buyerId: user.info?.id ?? null,
   buyerName: user.info?.nickname ?? null,
   orderDate: todayStr(),
   deliveryDate: null as string | null,
-  warehouseId: null as number | null,
+  warehouseId: null as string | null,
   settleMethod: null as string | null,
   taxPct: null as number | null,
   taxIncluded: true,
   freightIncluded: true,
   remark: '',
-  planStyles: [] as { id: number; code: string; name: string }[],
+  planStyles: [] as { id: string; code: string; name: string }[],
 })
 
 const lines = ref<LineDraft[]>([])
@@ -103,44 +114,47 @@ const haveStyleIds = computed(() => head.planStyles.map((s) => s.id))
 const totalAmount = computed(() => lines.value.reduce((sum, l) => sum + (l.qty ?? 0) * (l.price ?? 0), 0))
 
 function priceChanged(l: LineDraft): boolean {
-  if (l.archivePrice === null || l.price === null) return false
+  if (!canSeeCost.value || l.archivePrice == null || l.price == null) return false
   return Math.abs(l.price - l.archivePrice) > 0.00005
 }
 
 // ---------- 默认值 ----------
-let defaultsSeq = 0
+const defaultsRequest = useLatestRequest()
 
 /** 取默认值，按 §3.3.3 填：fillHead = 换了供应商（结算方式、税率、采购员跟着换） */
 async function applyDefaults(fillHead: boolean) {
-  if (!head.supplierId) return
-  const seq = ++defaultsSeq
-  const def = await purchaseApi.defaults({
-    supplierId: head.supplierId,
-    orderDate: head.orderDate,
-    skuIds: lines.value.length ? lines.value.map((l) => l.materialSkuId) : undefined,
-  })
-  // 连着换了两次供应商：只认最后一次的
-  if (seq !== defaultsSeq) return
-  if (fillHead) {
-    head.settleMethod = def.settleMethod
-    head.taxPct = def.taxPct
-    if (def.buyerId) {
-      head.buyerId = def.buyerId
-      head.buyerName = def.buyerName
+  const read = defaultsRequest.begin()
+  const supplierId = head.supplierId
+  if (!supplierId) return
+  try {
+    const def = await read.run(() => purchaseApi.defaults({
+      supplierId,
+      orderDate: head.orderDate,
+      skuIds: lines.value.length ? lines.value.map((l) => l.materialSkuId) : undefined,
+    }))
+    // 连着换了两次供应商：只认最后一次的
+    if (!read.current()) return
+    if (fillHead) {
+      head.settleMethod = def.settleMethod
+      head.taxPct = def.taxPct
+      if (def.buyerId) {
+        head.buyerId = def.buyerId
+        head.buyerName = def.buyerName
+      }
     }
-  }
-  if (def.deliveryDate && !deliveryTouched.value) head.deliveryDate = def.deliveryDate
-  const bySku = new Map(def.lines.map((d) => [d.materialSkuId, d]))
-  for (const line of lines.value) {
-    const d = bySku.get(line.materialSkuId)
-    if (!d) continue
-    line.archivePrice = d.archivePrice
-    line.purchaseUnit = d.purchaseUnit
-    if (!line.priceTouched) line.price = d.price
-  }
+    if (def.deliveryDate && !deliveryTouched.value) head.deliveryDate = def.deliveryDate
+    const bySku = new Map(def.lines.map((d) => [d.materialSkuId, d]))
+    for (const line of lines.value) {
+      const d = bySku.get(line.materialSkuId)
+      if (!d) continue
+      line.archivePrice = d.archivePrice
+      line.purchaseUnit = d.purchaseUnit
+      if (!line.priceTouched) line.price = d.price
+    }
+  } catch (error) { if (read.current()) throw error }
 }
 
-async function onSupplierChange(supplierId: number | null | undefined) {
+async function onSupplierChange(supplierId: string | null | undefined) {
   const next = supplierId ?? null
   const prev = head.supplierId
   if (next === prev) return
@@ -202,18 +216,26 @@ function onPickedPlanStyles(rows: MaterialPickRow[] | StylePickRow[]) {
 
 // ---------- 加载 ----------
 async function init() {
-  const [comps, whs] = await Promise.all([companyApi.options(), warehouseApi.options()])
-  companies.value = comps
-  warehouses.value = whs
-  if (id === null) {
-    // 主体必填：默认我的默认主体，没有（不止一个启用的主体、又没设）就空着让人选
-    head.companyId = user.defaultCompanyId
-    head.warehouseId = warehouseOptions.value.find((w) => w.type === 'MATERIAL')?.id ?? null
-    guard.markSaved()
-    return
-  }
+  loaded.value = false
+  notFound.value = false
+  loadError.value = null
   try {
+    const [comps, whs] = await Promise.all([companyApi.options(), warehouseApi.options()])
+    companies.value = comps
+    warehouses.value = whs
+    if (id === null) {
+      // 主体必填：默认我的默认主体，没有就空着让人选。
+      head.companyId = user.defaultCompanyId
+      head.warehouseId = warehouseOptions.value.find((w) => w.type === 'MATERIAL')?.id ?? null
+      loaded.value = true
+      guard.markSaved()
+      return true
+    }
     const d = await purchaseApi.get(id)
+    savedCompanyId.value = d.companyId
+    originalSupplierId = d.supplierId
+    originalSkus.clear()
+    d.items.forEach((item) => originalSkus.add(item.materialSkuId))
     version.value = d.version
     poNo.value = d.no
     Object.assign(head, {
@@ -236,6 +258,7 @@ async function init() {
     // 存过的草稿：交货日期是定下来的，不再被默认值改
     deliveryTouched.value = true
     lines.value = d.items.map((it) => ({
+      id: it.id,
       calcItemId: it.calcItemId,
       materialSkuId: it.materialSkuId,
       skuCode: it.skuCode,
@@ -248,15 +271,17 @@ async function init() {
       priceChangeReason: it.priceChangeReason ?? '',
       lineDueDate: it.lineDueDate,
       expectDate: it.expectDate,
-      priceTouched: it.archivePrice !== null && Math.abs(it.price - it.archivePrice) > 0.00005,
+      priceTouched: it.price != null && it.archivePrice != null && Math.abs(it.price - it.archivePrice) > 0.00005,
       sourceText: [...it.orderNos, ...it.styleCodes].join(' · '),
     }))
     tabs.rename(path, `编辑 ${d.no}`)
     loaded.value = true
     guard.markSaved()
+    return true
   } catch (e) {
     if (e instanceof ApiError && e.code === 404) notFound.value = true
-    else throw e
+    else loadError.value = e instanceof Error ? e.message : '采购单加载失败，请重试'
+    return false
   }
 }
 
@@ -269,6 +294,9 @@ const needReason = (l: LineDraft) => priceChanged(l) && !l.priceChangeReason.tri
 
 function buildForm(andSubmit: boolean): PurchaseForm | null {
   submitTried.value = andSubmit
+  if (!canSeeCost.value && (!editing || head.supplierId !== originalSupplierId || lines.value.some((line) => !originalSkus.has(line.materialSkuId)))) {
+    return warn('新建采购、变更供应商或增加物料需要确认采购价，请由有成本价格权限的人员办理')
+  }
   if (!head.supplierId) return warn('先选供应商')
   if (!head.companyId) return warn('先选主体')
   if (!head.buyerId) return warn('先选采购员')
@@ -280,6 +308,7 @@ function buildForm(andSubmit: boolean): PurchaseForm | null {
   if (noReason >= 0) return warn(`第 ${noReason + 1} 行改了单价，要写原因`)
   if (andSubmit && (!head.settleMethod || head.taxPct === null)) return warn('提交前要填结算方式和税率')
   const items: PurchaseItemForm[] = lines.value.map((l) => ({
+    id: l.id,
     calcItemId: l.calcItemId,
     materialSkuId: l.materialSkuId,
     qty: l.qty,
@@ -312,7 +341,7 @@ function warn(msg: string): null {
 }
 
 /** 提交失败（缺单价、供应商停用……）：原因弹出来，返回 false，不往下走 */
-async function submit(poId: number, ver: number): Promise<boolean> {
+async function submit(poId: string, ver: number): Promise<boolean> {
   try {
     await purchaseApi.act(poId, 'submit', { version: ver }, { silent: true })
     return true
@@ -330,8 +359,11 @@ async function save(andSubmit: boolean) {
   saving.value = true
   try {
     if (id !== null) {
-      version.value = await purchaseApi.update(id, { ...form, version: version.value })
+      version.value = await purchaseApi.update(id, { ...form, version: version.value, expectedCompanyId: savedCompanyId.value })
+      savedCompanyId.value = form.companyId
       guard.markSaved()
+      // 保存会重建明细；提交失败后仍留在本页，必须先取得新的行 ID 和版本。
+      if (andSubmit && !(await init())) return
       if (andSubmit && !(await submit(id, version.value))) return
       ElMessage.success(andSubmit ? `${poNo.value} 提交审核了` : `${poNo.value} 已保存`)
       await leave(`/purchases/${id}`)
@@ -382,7 +414,8 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
       <el-button @click="leave('/purchases')">回采购单列表</el-button>
     </BlankState>
 
-    <div v-else v-loading="!loaded" class="page">
+    <el-alert v-else-if="loadError" :title="loadError" type="error" :closable="false"><el-button @click="init">重新加载</el-button></el-alert>
+    <div v-else v-loading="!loaded" class="page" :inert="saving">
       <el-form label-position="top" class="head-grid">
         <el-form-item label="供应商" required>
           <SupplierSelect :model-value="head.supplierId" :label="head.supplierName" usage="BULK" @update:model-value="onSupplierChange" />
@@ -447,7 +480,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
       <div class="sec-bar">
         <h3>明细</h3>
         <div class="right">
-          <span class="num">合计 <strong>{{ formatMoney(totalAmount) }}</strong></span>
+          <span v-if="canSeeCost" class="num">合计 <strong>{{ formatMoney(totalAmount) }}</strong></span>
           <el-button icon="Plus" @click="skuPicking = true">从物料库选</el-button>
         </div>
       </div>
@@ -469,7 +502,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
             <span class="dim small"> {{ units.labelOf(row.purchaseUnit) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="单价" width="130" class-name="num" align="right">
+        <el-table-column v-if="canSeeCost" label="单价" width="130" class-name="num" align="right">
           <template #default="{ row }">
             <el-input-number
               v-model="row.price"
@@ -498,7 +531,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
             <span v-else class="dim">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="金额" width="100" class-name="num" align="right">
+        <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
           <template #default="{ row }">{{ row.qty && row.price !== null ? formatMoney(row.qty * row.price) : '—' }}</template>
         </el-table-column>
         <el-table-column label="行交期" width="140">

@@ -63,12 +63,12 @@ public class PriceRowVO {
     private String voidReason;
     private Long voidBy;
     private String voidByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime voidTime;
 
     private Long createBy;
     private String createByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
 
     /** 只看现价：这一组的上一条（同一单位，作废的不算） */

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import ThumbImage from '@/components/ThumbImage.vue'
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type TableColumnCtx, type TableInstance } from 'element-plus'
@@ -25,6 +27,8 @@ import { useUserStore } from '@/stores/user'
 import { ORDER_SOURCE, ORDER_STATUS, type OrderImportHead, type OrderQuery, type OrderRow, type OrderStatus } from '@/types/order'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
 
 /**
  * 需求订单列表（/orders，docs/api/02 §1.1，原型 route('/orders')）。
@@ -68,12 +72,16 @@ const pickStatus = (value: unknown): OrderStatus | '' => (ALL_STATUSES as unknow
 const pickDate = (value: unknown) => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined)
 
 let countSeq = 0
+const loadCountsRequest = useLatestRequest()
 async function loadCounts(params: Omit<OrderQuery, 'status' | 'ids'>) {
+  const read = loadCountsRequest.begin()
   const current = ++countSeq
   try {
-    const result = await orderApi.counts(params)
+    const result = await read.run(() => orderApi.counts(params))
+    if (!read.current()) return
     if (current === countSeq) counts.value = result
   } catch {
+    if (!read.current()) return
     // 数取不到只是页签上不显示数，列表照常
     if (current === countSeq) counts.value = {}
   }
@@ -91,8 +99,8 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     statusTab: pickStatus(route.query.status),
     orderType: '',
     brand: '',
-    salesId: undefined as number | null | undefined,
-    merchId: undefined as number | null | undefined,
+    salesId: undefined as string | null | undefined,
+    merchId: undefined as string | null | undefined,
     orderDateFrom: pickDate(route.query.orderDateFrom),
     orderDateTo: pickDate(route.query.orderDateTo),
     unscheduled: route.query.unscheduled === '1' ? true : (undefined as boolean | undefined),
@@ -130,7 +138,7 @@ watch(() => route.query.auditForMe, (value) => {
 
 // ---------- 齐料（另取，02 §3.13） ----------
 const KITTING_STATUSES: OrderStatus[] = ['APPROVED', 'RUNNING', 'DONE']
-const kittingMap = ref<Record<number, OrderKitting>>({})
+const kittingMap = ref<Record<string, OrderKitting>>({})
 let kittingSeq = 0
 watch(list, async (rows) => {
   const current = ++kittingSeq
@@ -310,7 +318,7 @@ function onImported(count: number) {
         <template #default="{ row }">
           <span class="styles-cell">
             <template v-for="st in (row as OrderRow).styles.slice(0, 2)" :key="st.styleId">
-              <img v-if="st.image" :src="st.image.thumbUrl ?? st.image.url" alt="" class="thumb" loading="lazy" />
+              <ThumbImage v-if="st.image" :src="st.image.thumbUrl" alt="" class="thumb" loading="lazy" />
               <span class="code">{{ st.styleCode }}</span>
             </template>
             <span v-if="(row as OrderRow).styles.length > 2" class="dim">等 {{ (row as OrderRow).styles.length }} 款</span>
@@ -320,7 +328,7 @@ function onImported(count: number) {
       <el-table-column v-if="cols.show.qty" label="数量" width="90" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
       </el-table-column>
-      <el-table-column v-if="cols.show.amount" label="金额" width="130" class-name="num" align="right">
+      <el-table-column v-if="canSeeOrderPrice && (cols.show.amount)" label="金额" width="130" class-name="num" align="right">
         <template #default="{ row }">
           <span v-if="row.currency !== 'CNY'" class="dim">{{ row.currency }} </span>{{ formatMoney(row.totalAmount) }}
         </template>

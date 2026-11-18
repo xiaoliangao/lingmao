@@ -3,7 +3,7 @@ import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { companyApi, warehouseApi } from '@/api/basic'
-import { invDocApi, stockApi } from '@/api/inventory'
+import { invDocApi as invDocApiBase, stockApi } from '@/api/inventory'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
@@ -18,6 +18,10 @@ import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatQty } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
 import PickProductionDialog from './PickProductionDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
+const invDocApi = bindCompanyApi(invDocApiBase, () => head.companyId)
 
 /**
  * 手工新建、改草稿的入库单 / 出库单对话框（docs/api/04 §1.5、§3.2.3-3.2.4、§4）。
@@ -39,27 +43,27 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  saved: [id: number]
+  saved: [id: string]
   /** 退料入库选了源生产单：走生成接口 */
-  fromProduction: [productionOrderId: number]
+  fromProduction: [productionOrderId: string]
 }>()
 
 const units = useDict('unit')
 
 interface LineRow {
   /** 改草稿时原来的行：保存时带回，后端按它认行 */
-  id: number | null
+  id: string | null
   /** 过过账的行（反审核回来的草稿）不能删 */
   posted: boolean
-  sourceItemId: number | null
-  materialSkuId: number
+  sourceItemId: string | null
+  materialSkuId: string
   skuCode: string
   materialName: string
   stockUnit: string
   purchaseUnit: string | null
   qty: number | null
   purchaseQty: number | null
-  price: number | null
+  price?: number | null
   dyeLot: string
   rolls: number | null
   overReason: string
@@ -74,11 +78,11 @@ const skuPicking = ref(false)
 const prodPicking = ref(false)
 
 const head = reactive({
-  companyId: 1,
+  companyId: '1',
   docDate: todayStr(),
-  fromWarehouseId: null as number | null,
-  toWarehouseId: null as number | null,
-  partnerId: null as number | null,
+  fromWarehouseId: null as string | null,
+  toWarehouseId: null as string | null,
+  partnerId: null as string | null,
   partnerName: null as string | null,
   reason: '',
   supplierDeliveryNo: '',
@@ -96,7 +100,7 @@ const isPurchaseDoc = computed(() => activeType.value === 'PURCHASE_IN' || activ
 /** 退料入库新建时能挂源生产单（选了就走生成接口） */
 const canPickSource = computed(() => !props.editingDoc && meta.value.source === 'PRODUCTION_ORDER' && !meta.value.sourceRequired)
 const showOverReason = computed(() => activeType.value === 'ISSUE_OUT')
-const lineAmount = (l: LineRow) => (l.qty !== null && l.price !== null ? l.qty * l.price : null)
+const lineAmount = (l: LineRow) => (l.qty != null && l.price != null ? l.qty * l.price : null)
 const short = (l: LineRow) => l.fromStockQty !== null && (l.qty ?? 0) > l.fromStockQty
 
 const fromOptions = computed(() => {
@@ -395,12 +399,12 @@ async function save() {
         </template>
       </el-table-column>
 
-      <el-table-column v-if="!isSourceDoc" label="单价" width="104" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && (!isSourceDoc)" label="单价" width="104" class-name="num" align="right">
         <template #default="{ row }">
           <el-input-number v-model="row.price" size="small" :min="0" :precision="4" :controls="false" :value-on-clear="null" placeholder="选填" />
         </template>
       </el-table-column>
-      <el-table-column v-if="!isSourceDoc" label="金额" width="96" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && (!isSourceDoc)" label="金额" width="96" class-name="num" align="right">
         <template #default="{ row }">{{ lineAmount(row as LineRow) === null ? '—' : formatMoney(lineAmount(row as LineRow) ?? 0) }}</template>
       </el-table-column>
 

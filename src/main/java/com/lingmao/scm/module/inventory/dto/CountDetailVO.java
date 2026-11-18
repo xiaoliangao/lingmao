@@ -25,7 +25,7 @@ public class CountDetailVO extends DocHeaderVO {
     private LocalDate countDate;
     private Long counterId;
     private String counterName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime bookTime;
     private int itemCount;
     private int filledCount;

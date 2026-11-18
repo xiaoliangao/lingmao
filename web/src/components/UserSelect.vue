@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { reactive, ref } from 'vue'
 import { userApi } from '@/api/system'
 import type { UserOption } from '@/types/system'
@@ -15,25 +16,27 @@ import type { UserOption } from '@/types/system'
  */
 const props = defineProps<{ label?: string | null }>()
 const emit = defineEmits<{ 'update:label': [name: string | null] }>()
-const model = defineModel<number | null>()
+const model = defineModel<string | null>()
 
-function onChange(id: number | null | undefined) {
+function onChange(id: string | null | undefined) {
   emit('update:label', id == null ? null : (names.get(id) ?? null))
 }
 
 const options = ref<UserOption[]>([])
 const loading = ref(false)
 /** 搜到过的人 id → 名字：换个词搜，上一批就不在列表里了，已经选中的还要能显示名字 */
-const names = reactive(new Map<number, string>())
+const names = reactive(new Map<string, string>())
 /** 搜索的序号：打字快的时候，先发的搜索后回来不能盖掉后发的 */
 let seq = 0
+const latest = useLatestRequest()
 
 async function search(keyword: string) {
   const current = ++seq
+  const read = latest.begin()
   loading.value = true
   try {
-    const result = await userApi.search(keyword.trim())
-    if (current !== seq) return
+    const result = await read.run(() => userApi.search(keyword.trim()))
+    if (current !== seq || !read.current()) return
     options.value = result
     for (const user of options.value) names.set(user.id, user.nickname)
   } catch {
@@ -44,7 +47,7 @@ async function search(keyword: string) {
   }
 }
 
-function nameOf(id: number) {
+function nameOf(id: string) {
   return names.get(id) ?? (props.label || `用户 ${id}`)
 }
 </script>

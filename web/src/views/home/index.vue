@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import ThumbImage from '@/components/ThumbImage.vue'
 import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -87,7 +89,7 @@ const activeTodoGroup = ref<'ALL' | TodoGroupKey>('ALL')
 const FILTER_KEY = 'scm.home.todoFilter'
 interface TodoFilter {
   scope: 'ALL' | 'MINE'
-  ownerId: number | null
+  ownerId: string | null
   ownerName: string | null
 }
 function readFilter(): TodoFilter {
@@ -119,69 +121,86 @@ const SCOPE_OPTIONS = [
 ]
 
 let kpiSeq = 0
+const loadKpiRequest = useLatestRequest()
 async function loadKpi() {
+  const read = loadKpiRequest.begin()
   const seq = ++kpiSeq
   loadingKpi.value = true
   kpiFailed.value = false
   try {
-    const result = await homeApi.kpi()
+    const result = await read.run(() => homeApi.kpi())
+    if (!read.current()) return
     if (seq === kpiSeq) kpi.value = result
   } catch {
+    if (!read.current()) return
     if (seq === kpiSeq) {
       kpi.value = null
       kpiFailed.value = true
     }
   } finally {
-    if (seq === kpiSeq) loadingKpi.value = false
+    if (read.current() && (seq === kpiSeq)) loadingKpi.value = false
   }
 }
 
 let todoSeq = 0
+const loadTodosRequest = useLatestRequest()
 async function loadTodos() {
+  const read = loadTodosRequest.begin()
   const seq = ++todoSeq
   loadingTodos.value = true
   todosFailed.value = false
   try {
-    const res = await homeApi.todos(
+    const res = await read.run(() => homeApi.todos(
       todoFilter.scope === 'MINE' ? { mine: true } : todoFilter.ownerId ? { ownerId: todoFilter.ownerId } : {},
-    )
+    ))
+    if (!read.current()) return
     if (seq !== todoSeq) return
     todos.value = res
     if (activeTodoGroup.value !== 'ALL' && !res.groups.some((g) => g.key === activeTodoGroup.value)) activeTodoGroup.value = 'ALL'
   } catch {
+    if (!read.current()) return
     if (seq === todoSeq) {
       todos.value = null
       todosFailed.value = true
     }
   } finally {
-    if (seq === todoSeq) loadingTodos.value = false
+    if (read.current() && (seq === todoSeq)) loadingTodos.value = false
   }
 }
 
 let deliverySeq = 0
+const loadDeliveriesRequest = useLatestRequest()
 async function loadDeliveries() {
+  const read = loadDeliveriesRequest.begin()
   const seq = ++deliverySeq
   loadingDeliveries.value = true
   deliveriesFailed.value = false
   try {
-    const result = await homeApi.deliveries()
+    const result = await read.run(() => homeApi.deliveries())
+    if (!read.current()) return
     if (seq === deliverySeq) deliveries.value = result
   } catch {
+    if (!read.current()) return
     if (seq === deliverySeq) {
       deliveries.value = []
       deliveriesFailed.value = true
     }
   } finally {
-    if (seq === deliverySeq) loadingDeliveries.value = false
+    if (read.current() && (seq === deliverySeq)) loadingDeliveries.value = false
   }
 }
 
 const backup = ref<BackupStatus | null>(null)
+const loadBackupRequest = useLatestRequest()
 async function loadBackup() {
+  const read = loadBackupRequest.begin()
   if (!store.isAdmin) return
   try {
-    backup.value = await backupApi.status()
+    const fetched1 = await read.run(() => backupApi.status())
+    if (!read.current()) return
+    backup.value = fetched1
   } catch {
+    if (!read.current()) return
     backup.value = null
   }
 }
@@ -212,7 +231,7 @@ function onScopeChange() {
   void loadTodos()
 }
 
-function onOwnerChange(id: number | null | undefined) {
+function onOwnerChange(id: string | null | undefined) {
   todoFilter.ownerId = id ?? null
   if (!todoFilter.ownerId) todoFilter.ownerName = null
   else todoFilter.scope = 'ALL'
@@ -391,7 +410,7 @@ const backupLine = computed(() => {
 
             <ul v-if="!activeGroup" class="todo-list">
               <li v-for="{ key, item } in allPreview" :key="itemKey(key, item)" @click="goRef(item)">
-                <img v-if="item.image" :src="item.image.thumbUrl ?? item.image.url" alt="" class="thumb" loading="lazy" />
+                <ThumbImage v-if="item.image" :src="item.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                 <span v-else class="thumb blank" />
                 <div class="meta">
                   <div class="title-txt">{{ item.title }}</div>
@@ -405,7 +424,7 @@ const backupLine = computed(() => {
             <template v-else>
               <ul class="todo-list">
                 <li v-for="item in activeGroup.items" :key="itemKey(activeGroup.key, item)" @click="goRef(item)">
-                  <img v-if="item.image" :src="item.image.thumbUrl ?? item.image.url" alt="" class="thumb" loading="lazy" />
+                  <ThumbImage v-if="item.image" :src="item.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                   <span v-else class="thumb blank" />
                   <div class="meta">
                     <div class="title-txt">{{ item.title }}</div>
@@ -430,7 +449,7 @@ const backupLine = computed(() => {
           <div v-else-if="deliveries.length" class="panel-body">
             <ul class="deliv-list">
               <li v-for="d in deliveries" :key="`${d.ref.type}-${d.ref.id}`" @click="goRef(d)">
-                <img v-if="d.image" :src="d.image.thumbUrl ?? d.image.url" alt="" class="thumb" loading="lazy" />
+                <ThumbImage v-if="d.image" :src="d.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                 <span v-else class="thumb blank" />
                 <div class="meta">
                   <div class="t1">

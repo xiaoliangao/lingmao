@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi, orderChangeApi } from '@/api/order'
+import { orderApi, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -28,6 +30,10 @@ import { formatDateTime } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
 import OrderChangeDialog from '../order/OrderChangeDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
+const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.companyId)
 
 /**
  * 订单变更单详情（/order-changes/:id，docs/api/02 §1.4）：单头、改动清单（一处一行"原 → 新"）、附件、操作记录。
@@ -38,7 +44,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 
 const detail = ref<OrderChangeDetail | null>(null)
@@ -53,12 +59,16 @@ const status = computed(() => {
 })
 const typesText = computed(() => detail.value?.changeTypes.map((t) => CHANGE_TYPE[t]).join('、') ?? '')
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await orderChangeApi.get(id)
+    const d = await read.run(() => orderChangeApi.get(id))
+    if (!read.current()) return
     detail.value = d
     tabs.rename(path, `变更 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -163,7 +173,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(CHANGE_STATUS).map(([k, v
         <section class="panel">
           <div class="panel-head">改了什么<span class="dim head-sub">{{ typesText }}</span></div>
           <div v-if="detail.cancel" class="panel-body danger">取消整张订单</div>
-          <el-table v-else :data="detail.items" row-key="id" empty-text="没有改动">
+          <el-table v-else :data="detail.items.filter(item => canSeeOrderPrice || item.changeType !== 'PRICE')" row-key="id" empty-text="没有改动">
             <el-table-column label="类型" width="100">
               <template #default="{ row }">{{ CHANGE_TYPE[(row as ChangeItemView).changeType] }}</template>
             </el-table-column>
@@ -198,8 +208,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(CHANGE_STATUS).map(([k, v
               <dd>{{ detail.reason }}</dd>
               <dt>责任方</dt>
               <dd>{{ RESPONSIBLE_PARTY[detail.responsibleParty] }}</dd>
-              <dt>费用说明</dt>
-              <dd>{{ detail.feeNote || '—' }}</dd>
+              <template v-if="canSeeOrderPrice">
+                <dt>费用说明</dt>
+                <dd>{{ detail.feeNote || '—' }}</dd>
+              </template>
               <dt>制单</dt>
               <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
               <dt>审核</dt>

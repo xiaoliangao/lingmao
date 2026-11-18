@@ -14,6 +14,8 @@ import java.util.List;
 @Data
 public class OrderRowVO {
     private Long id;
+    @JsonIgnore
+    private Long companyId;
     private String no;
     private String status;
     private String orderType;
@@ -38,7 +40,7 @@ public class OrderRowVO {
     @JsonIgnore
     private Long createBy;
     private String createByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
     private Integer version;
     private List<String> actions = List.of();

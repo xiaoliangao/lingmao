@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.order.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.result.R;
@@ -38,7 +42,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/order-changes")
 @RequiredArgsConstructor
-public class OrderChangeController {
+public class OrderChangeController extends IdempotencyReplayGuard {
 
     private final OrderChangeService changeService;
     private final DocCommonService docCommonService;
@@ -68,6 +72,7 @@ public class OrderChangeController {
     @PostMapping
     @PreAuthorize("hasAuthority('order:change:add')")
     @OperLog(module = "订单变更单", action = "新建")
+    @IdempotentCreate("ORDER_CHANGE_CREATE")
     public R<DocSaved> create(@Valid @RequestBody OrderChangeCreateReq req) {
         return R.ok(changeService.create(req));
     }
@@ -155,5 +160,16 @@ public class OrderChangeController {
     @OperLog(module = "订单变更单", action = "换附件")
     public R<List<AttachmentVO>> replaceAttachments(@PathVariable("id") long id, @RequestBody List<@Valid AttachmentReq> files) {
         return R.ok(docCommonService.replaceAttachments(BizType.ORDER_CHANGE, id, files, changeService::checkVisible));
+    }
+
+    /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        changeService.checkSourceOrderVisible(((OrderChangeCreateReq) arguments[0]).getOrderId());
+        if (result.isArray()) {
+            result.forEach(row -> changeService.checkVisible(row.get("id").longValue()));
+        } else {
+            changeService.checkVisible(result.get("id").longValue());
+        }
     }
 }

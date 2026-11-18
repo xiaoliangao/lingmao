@@ -8,7 +8,7 @@ import { ORDER_STATUS, type OrderStatus, type StyleOrderRow } from '@/types/orde
 import { formatDate, formatQty } from '@/utils/format'
 
 const props = defineProps<{
-  styleId: number
+  styleId: string
 }>()
 
 const router = useRouter()

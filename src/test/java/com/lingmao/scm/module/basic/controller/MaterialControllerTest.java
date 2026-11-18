@@ -92,7 +92,7 @@ class MaterialControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(BODY.formatted("全棉府绸")))
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data").value(100));
+                .andExpect(jsonPath("$.data").value("100"));
     }
 
     /** 规则：选 SKU 的弹窗给下游各页用，登录即可，不要物料的权限；没登录 401 */

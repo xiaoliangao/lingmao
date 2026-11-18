@@ -28,15 +28,15 @@ database=scm_smoke_test
 redis_db=13
 if [[ $phase == before ]]; then database=scm_before_test; redis_db=12; fi
 docker exec "$SCM_CI_POSTGRES_CONTAINER" createdb -U scm "$database"
-export DB_URL="jdbc:postgresql://127.0.0.1:5433/$database" DB_USER=scm DB_PASSWORD=''
-export REDIS_HOST=127.0.0.1 REDIS_PORT=6380 REDIS_PASSWORD='' REDIS_DB="$redis_db"
+export DB_URL="jdbc:postgresql://127.0.0.1:5433/$database" DB_USER=scm DB_PASSWORD="${SCM_CI_DB_PASSWORD:?Runtime credentials missing}"
+export REDIS_HOST=127.0.0.1 REDIS_PORT=6380 REDIS_PASSWORD="${SCM_CI_REDIS_PASSWORD:?Runtime credentials missing}" REDIS_DB="$redis_db"
 export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 export INIT_ADMIN_PASSWORD="$(python -c 'import secrets; print("Test-" + secrets.token_urlsafe(18))')"
 export FILE_SIGN_KEY="$(python -c 'import secrets; print(secrets.token_hex(16))')"
 printf '::add-mask::%s\n' "$JWT_SECRET" "$INIT_ADMIN_PASSWORD" "$FILE_SIGN_KEY"
-export UPLOAD_DIR="$work/uploads" PDF_FONT_DIR="$repo/dev/fonts" SPRING_PROFILES_ACTIVE=prod
+export UPLOAD_DIR="$work/uploads" EXPORT_DIR="$work/exports" PDF_FONT_DIR="$repo/dev/fonts" SPRING_PROFILES_ACTIVE=prod
 export LOGGING_FILE_NAME="$work/app.log"
-java -jar "$jar" --server.port=18080 "--logging.logback.rollingpolicy.file-name-pattern=$work/app-%d{yyyy-MM-dd}.%i.log" > "$work/console.log" 2>&1 &
+java -Xmx512m -XX:ActiveProcessorCount=4 -jar "$jar" --server.port=18080 "--logging.logback.rollingpolicy.file-name-pattern=$work/app-%d{yyyy-MM-dd}.%i.log" > "$work/console.log" 2>&1 &
 app_pid=$!
 for attempt in {1..120}; do
   if curl --fail --silent --connect-timeout 2 --max-time 5 http://127.0.0.1:18080/api/version > "$artifacts/health.json"; then break; fi
@@ -67,4 +67,5 @@ else
   python "$repo/dev/ci/ui/prepare_fixtures.py"
   cp "$work/fixture-evidence.json" "$artifacts/fixture-evidence.json"
   (cd "$repo/dev/ci/ui" && python -m unittest -v test_audit_ui)
+  python "$repo/tests/prod-readiness/a3-browser/real-session.py"
 fi

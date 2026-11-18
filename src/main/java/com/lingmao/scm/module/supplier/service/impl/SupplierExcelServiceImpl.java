@@ -108,6 +108,7 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
     private final GoodAtCategories goodAtCategories;
     private final WarehouseService warehouseService;
     private final Clock clock;
+    private final com.lingmao.scm.module.system.service.FileImportService imports;
 
     // ------------------------------------------------------------------ 列定义
 
@@ -236,7 +237,6 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
     }
 
     @Override
-    @Transactional
     public ImportResult importExcel(MultipartFile file, SupplierStatus status) {
         SupplierStatus target = status == null ? ACTIVE : status;
         if (target != ACTIVE && target != PENDING_ADMIT) {
@@ -245,13 +245,19 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
         if (target == ACTIVE && !SupplierPerms.has(SupplierPerms.ADMIT)) {
             throw new BizException(403, "导成合作中要有准入审批的权限；没有的话请选\"待准入\"");
         }
+        return imports.execute("supplier", "global", "supplier:supplier:import", file, target,
+                () -> parseFile(file, target), plan -> { write(plan.rows()); return plan.result(); });
+    }
+
+    private record ImportPlan(List<Prepared> rows, ImportResult result) { }
+
+    private ImportPlan parseFile(MultipartFile file, SupplierStatus target) {
         try (ExcelBook book = Excel.open(file)) {
             ExcelImport<SupplierExcelRow> main = book.sheet(schema());
             ExcelImport<SupplierBankExcelRow> banks = book.optionalSheet(bankSchema());
             List<Prepared> prepared = prepare(main, banks, target);
             book.throwIfInvalid();
-            write(prepared);
-            return book.result(prepared.size());
+            return new ImportPlan(prepared, book.result(prepared.size()));
         }
     }
 
@@ -371,6 +377,12 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
             }
             putIfPresent(legacy, "外部供应商编码", r.getExternalCode());
             s.setLegacyAttrs(legacy.isEmpty() ? null : legacy);
+            com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.BANK, null, s.getBankName());
+            com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.BANK, null, s.getBankAccountName());
+            com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.BANK, null, s.getBankAccount());
+            for (String value : java.util.Arrays.asList(s.getContact(), s.getPhone(), s.getWechat(), s.getAddress(),
+                    legacy.get("地址电话"), legacy.get("传真")))
+                com.lingmao.scm.security.FieldPermissions.preserve(com.lingmao.scm.security.FieldPermissions.CONTACT, null, value);
             result.add(new Prepared(s, categories, goodAtIds));
         }
 
@@ -532,7 +544,10 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
                         goodAt.getOrDefault(s.getId(), List.of()), buyers.get(s.getBuyerId())));
             }
         }
-        return Excel.export(exportSchema(), rows);
+        var columns = exportSchema();
+        if (!com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.CONTACT))
+            columns = columns.without("联系人", "联系电话", "公司地址", "微信", "地址电话", "传真");
+        return Excel.export(columns, rows);
     }
 
     private SupplierExcelRow toExcelRow(Supplier s, List<String> categories, List<String> goodAt, String buyer) {

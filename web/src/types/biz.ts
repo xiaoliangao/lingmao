@@ -5,12 +5,12 @@
  * 状态没变的动作（改资料、换图）两个状态都是 null
  */
 export interface DocLog {
-  id: number
+  id: string
   action: string
   fromStatus: string | null
   toStatus: string | null
   remark: string | null
-  operatorId: number | null
+  operatorId: string | null
   /** 操作人的昵称，人删了也照样有；系统做的（没有操作人）是 null */
   operatorName: string | null
   /** 2026-11-15 10:30:00，东八区 */
@@ -22,7 +22,7 @@ export interface DocLog {
  * 整组替换时把 url、thumbUrl、name、size 原样传回去（PUT …/images）
  */
 export interface Attachment {
-  id: number
+  id: string
   url: string
   thumbUrl: string | null
   name: string
@@ -108,7 +108,7 @@ export const DOC_ACTION_CONFIRM: Partial<Record<DocAction, { text: string; dange
  * 保存草稿（PUT）返回新的 version（一个数字）
  */
 export interface DocSaved {
-  id: number
+  id: string
   no: string
   version: number
 }
@@ -131,17 +131,17 @@ export interface DocRef {
   /** 一张表两种单据的：PRODUCTION_ORDER 是 OUTSOURCE / BUY，INV_DOC 是 IN / OUT；别的 null */
   kind: string | null
   /** 没有自己详情页、挂在上一级页面里的：回货单、异常 → 所属生产单的 id，资料包 → 款式 id；别的 null */
-  parentId: number | null
+  parentId: string | null
   /** 外发加工单、物料入库单……（按 kind 取好的） */
   typeLabel: string
-  id: number
+  id: string
   no: string
   status: string
   /** 按这种单据的叫法翻好的中文 */
   statusLabel: string
   statusTone: StatusTone
   /** 负责人（跟单、采购员、制单人，看单据），没有是 null */
-  ownerId: number | null
+  ownerId: string | null
   ownerName: string | null
 }
 
@@ -174,7 +174,7 @@ export interface ApprovalView {
 
 /** 上游变了，给这张单据的提醒（biz_doc_notice）。详情顶上的黄条、首页"上游已变更"都读它 */
 export interface DocNotice {
-  id: number
+  id: string
   /** 哪张上游单据变的（订单变更单） */
   source: DocRef
   /** 说了什么，如"订单 DD2611150001 的 FS2611080701 黑色 M 码从 100 改成 80" */
@@ -189,42 +189,42 @@ export interface DocNotice {
 
 /** 设置 › 审批的一条规则（/api/approval-rules，只给超级管理员） */
 export interface ApprovalRule {
-  id: number
+  id: string
   bizType: 'ORDER' | 'PURCHASE_ORDER' | 'PRODUCTION_ORDER'
   /** 金额超过多少（元），加一级 */
   overAmount: number
   /** 审批人：角色、指定的人二选一 */
-  roleId: number | null
+  roleId: string | null
   roleName: string | null
-  userId: number | null
+  userId: string | null
   userName: string | null
 }
 
 export interface ApprovalRuleForm {
   bizType: ApprovalRule['bizType']
   overAmount: number | null
-  roleId: number | null
-  userId: number | null
+  roleId: string | null
+  userId: string | null
 }
 
 /**
  * 单据详情的公共部分。各单据的 XxxDetail 都 extends 它（单头的业务字段、明细另外加）
  */
 export interface DocHeader<S extends string = DocStatus, A extends string = DocAction> {
-  id: number
+  id: string
   no: string
   status: S
   /** 保存草稿、状态动作都要带回去 */
   version: number
-  companyId: number
+  companyId: string
   companyName: string
   remark: string | null
-  createBy: number | null
+  createBy: string | null
   createByName: string | null
   /** 2026-11-15 10:30:00 */
   createTime: string
   updateTime: string
-  auditBy: number | null
+  auditBy: string | null
   auditByName: string | null
   auditTime: string | null
   /** 能点的按钮，后端按"状态允许 ∩ 有权限 ∩ 业务条件"算好的（架构 §4.2），前端照着显示，不自己判断 */

@@ -49,7 +49,7 @@ class BackupControllerTest {
     @MockitoBean
     private LoginSessionStore loginSessionStore;
 
-    /** 规则：超级管理员能看；时间按东八区 yyyy-MM-dd HH:mm:ss 输出 */
+    /** 规则：超级管理员能看；事件时间按东八区 ISO-8601 并携带偏移输出 */
     @Test
     void backupStatus_superAdmin_returnsStatus() throws Exception {
         when(permissionService.loadRoleCodes(1L)).thenReturn(List.of("admin"));
@@ -60,7 +60,7 @@ class BackupControllerTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.configured").value(true))
                 .andExpect(jsonPath("$.data.latestFile").value("scm-20261121-023000.dump"))
-                .andExpect(jsonPath("$.data.latestTime").value("2026-11-21 02:30:00"))
+                .andExpect(jsonPath("$.data.latestTime").value("2026-11-21T02:30:00+08:00"))
                 .andExpect(jsonPath("$.data.sizeBytes").value(2048))
                 .andExpect(jsonPath("$.data.stale").value(false));
     }

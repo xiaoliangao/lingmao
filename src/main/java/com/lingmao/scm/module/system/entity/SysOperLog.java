@@ -31,6 +31,6 @@ public class SysOperLog {
     private String traceId;
 
     /** 不赋值，插入时用表的默认值 now() */
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
 }

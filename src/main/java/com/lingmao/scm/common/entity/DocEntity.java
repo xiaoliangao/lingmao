@@ -39,7 +39,7 @@ public abstract class DocEntity extends AuditEntity {
     private Long auditBy;
 
     @TableField(updateStrategy = FieldStrategy.NEVER)
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime auditTime;
 
     /** 乐观锁（架构 §4.3）：打开时拿到，保存、动作时带回来比较 */

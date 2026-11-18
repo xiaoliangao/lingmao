@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isComposing } from '@/utils/ime'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, watch } from 'vue'
 import type { ColumnsState } from '@/composables/useColumns'
 import { pasteCodes } from '@/utils/keywords'
@@ -158,7 +159,7 @@ onBeforeUnmount(() => {
       :aria-label="placeholder"
       prefix-icon="Search"
       clearable
-      @keyup.enter="emit('search')"
+      @keyup.enter="!isComposing($event) && emit('search')"
       @clear="emit('search')"
       @paste="onPaste"
     />

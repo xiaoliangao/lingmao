@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -66,7 +67,7 @@ class SupplierServiceImplIT {
 
     private static final long USER_A = 900_001L;
     private static final long USER_B = 900_002L;
-    private static final String[] ALL = {"list", "add", "edit", "remove", "import", "export", "admit", "bank"};
+    private static final String[] ALL = {"list", "add", "edit", "remove", "import", "export", "admit", "bank", "contact"};
 
     @Autowired
     private SupplierService supplierService;
@@ -87,6 +88,9 @@ class SupplierServiceImplIT {
 
     @BeforeEach
     void login() {
+        var permissions = java.util.Arrays.stream(ALL).map(p -> "supplier:supplier:" + p).toList();
+        TestIdentity.grant(jdbcTemplate, USER_A, permissions);
+        TestIdentity.grant(jdbcTemplate, USER_B, permissions);
         SupplierFixtures.loginAs(USER_A, ALL);
     }
 
@@ -118,6 +122,8 @@ class SupplierServiceImplIT {
                 INSERT INTO prc_price (type, supplier_id, material_id, price, unit, tax_pct, effective_date)
                 VALUES ('MATERIAL', ?, ?, 10, 'METER', 13, CURRENT_DATE)""", id, materialId);
 
+        int historyBefore = count("biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ?", id);
+        assertThat(historyBefore).isGreaterThan(0);
         DataIntegrityViolationException e = catchThrowableOfType(DataIntegrityViolationException.class,
                 () -> supplierService.delete(id));
         R<Void> r = handler.handleDataIntegrity(e, new MockHttpServletRequest("DELETE", "/api/suppliers/" + id));
@@ -128,15 +134,18 @@ class SupplierServiceImplIT {
         assertThat(count("sup_supplier_category WHERE supplier_id = ?", id)).isEqualTo(2);
         assertThat(count("sup_supplier_cert WHERE id = ?", certId)).isEqualTo(1);
         assertThat(count("bas_warehouse WHERE factory_id = ?", id)).isEqualTo(1);
-        assertThat(count("biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ?", id)).isGreaterThan(0);
+        assertThat(count("biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ?", id)).isEqualTo(historyBefore);
+        assertThat(count("sys_data_log WHERE table_name = 'sup_supplier' AND row_id = ? AND action = 'DELETE'", id)).isZero();
 
         jdbcTemplate.update("DELETE FROM prc_price WHERE supplier_id = ?", id);
         jdbcTemplate.update("DELETE FROM bas_material WHERE id = ?", materialId);
         jdbcTemplate.update("DELETE FROM bas_material_category WHERE id = ?", categoryId);
         supplierService.delete(id);
         assertThat(count("sup_supplier WHERE id = ?", id)).isZero();
+        assertThat(count("sup_supplier_category WHERE supplier_id = ?", id)).isZero();
         assertThat(count("sup_supplier_cert WHERE supplier_id = ?", id)).isZero();
-        assertThat(count("biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ?", id)).isZero();
+        assertThat(count("biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ?", id)).isEqualTo(historyBefore);
+        assertThat(count("sys_data_log WHERE table_name = 'sup_supplier' AND row_id = ? AND action = 'DELETE'", id)).isEqualTo(1);
         assertThat(count("bas_warehouse WHERE factory_id = ?", id)).isZero();
     }
 

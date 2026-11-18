@@ -34,6 +34,6 @@ public class SupplierRowVO {
     private int certCount;
     /** 最早哪天到期；全是长期有效的、没有证照的为空 */
     private LocalDate certEarliestUntil;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime updateTime;
 }

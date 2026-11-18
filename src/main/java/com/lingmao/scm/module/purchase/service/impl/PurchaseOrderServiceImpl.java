@@ -364,6 +364,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 && !(po.getStatus() == PENDING && isMyTurn(po.getId()))) {
             throw new BizException(404, NOT_FOUND);
         }
+        com.lingmao.scm.common.scope.CompanyContext.target(po.getCompanyId());
         return po;
     }
 
@@ -401,6 +402,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     @Override
     @Transactional
     public DocSaved create(PurchaseCreateReq req) {
+        com.lingmao.scm.common.scope.CompanyContext.create(req.getCompanyId());
         PurchaseOrder po = new PurchaseOrder();
         applyForm(po, req, null);
         po.setStatus(DRAFT);
@@ -439,6 +441,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         Set<Long> calcItems = calcItemIds(itemMapper.selectByOrder(id));
         mrpService.lockCalcsOfItems(calcItems);
         PurchaseOrder po = lock(id);
+        com.lingmao.scm.common.scope.CompanyContext.save(po.getCompanyId(), req.getCompanyId(), req.getExpectedCompanyId());
         FLOW.next("edit", po.getStatus());
         if (!po.getVersion().equals(req.getVersion())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, STALE);
@@ -449,6 +452,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         }
         PurchaseOrder before = new PurchaseOrder();
         BeanUtils.copyProperties(po, before);
+        if (!Objects.equals(po.getSupplierId(), req.getSupplierId()))
+            com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.COST);
         applyForm(po, req, before);
         Built b = buildItems(po, req.getItems(), old);
         if (po.getDeliveryDate() == null) {
@@ -578,11 +583,15 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         }
         Map<Long, PurchaseOrderItem> oldByCalcItem = old.stream().filter(i -> i.getCalcItemId() != null)
                 .collect(Collectors.toMap(PurchaseOrderItem::getCalcItemId, i -> i, (a, b) -> a));
+        Map<Long, PurchaseOrderItem> oldById = old.stream().collect(Collectors.toMap(PurchaseOrderItem::getId, i -> i));
+        Map<Long, List<PurchaseOrderItem>> oldBySku = old.stream().collect(Collectors.groupingBy(PurchaseOrderItem::getMaterialSkuId));
+        boolean priceVisible = com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST);
         Set<Long> oldSkus = old.stream().map(PurchaseOrderItem::getMaterialSkuId).collect(Collectors.toSet());
         Map<Long, MaterialPurchaseInfo> infos = materialService.purchaseInfos(reqs.stream().map(PurchaseItemReq::getMaterialSkuId)
                 .collect(Collectors.toSet()));
         Map<Long, PriceRef> archive = archive(po.getSupplierId(), po.getOrderDate(), infos.values());
         Set<Long> seenCalcItems = new HashSet<>();
+        Set<Long> seenIdentities = new HashSet<>();
         List<PurchaseOrderItem> items = new ArrayList<>();
         for (int n = 0; n < reqs.size(); n++) {
             PurchaseItemReq r = reqs.get(n);
@@ -608,17 +617,35 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             }
             PriceRef a = archive.get(info.skuId());
             BigDecimal archivePrice = a == null ? null : Num.price(a.price());
+            PurchaseOrderItem prior = r.getId() == null ? null : oldById.get(r.getId());
+            if (r.getId() != null && (prior == null || !Objects.equals(prior.getMaterialSkuId(), r.getMaterialSkuId())))
+                throw new BizException(400, "第 " + seq + " 行身份不属于当前采购明细，请刷新后重试");
+            if (prior == null && r.getCalcItemId() != null) prior = oldByCalcItem.get(r.getCalcItemId());
+            if (prior == null && oldBySku.getOrDefault(r.getMaterialSkuId(), List.of()).size() == 1)
+                prior = oldBySku.get(r.getMaterialSkuId()).getFirst();
+            if (prior != null && !seenIdentities.add(prior.getId())) throw new BizException(400, "采购明细身份重复，请刷新后重试");
+            if (!priceVisible && prior == null)
+                com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.COST);
             BigDecimal price = r.getPrice() != null ? NumericLimits.price(r.getPrice(), "第 " + (items.size() + 1) + " 行：")
                     : archivePrice != null ? archivePrice : Num.price(info.price());
+            if (!priceVisible) price = com.lingmao.scm.security.FieldPermissions.price(
+                    com.lingmao.scm.security.FieldPermissions.COST, prior.getPrice(), r.getPrice());
             if (price == null) {
                 throw new BizException(400, "第 " + seq + " 行没有单价");
             }
             boolean changed = archivePrice != null && price.compareTo(archivePrice) != 0;
-            String reason = changed ? PurTexts.blankToNull(r.getPriceChangeReason()) : null;
-            if (changed && reason == null) {
+            String reason = priceVisible ? changed ? PurTexts.blankToNull(r.getPriceChangeReason()) : null : prior.getPriceChangeReason();
+            if (priceVisible && changed && reason == null) {
                 throw new BizException(400, "第 " + seq + " 行改了单价，要写原因");
             }
-            PurchaseOrderItem item = line(seq, info, Num.qty(r.getQty()), price, a != null && !changed ? a.id() : null);
+            PurchaseOrderItem item = line(seq, info, Num.qty(r.getQty()), price,
+                    !priceVisible ? prior.getPriceSourceId() : a != null && !changed ? a.id() : null);
+            if (!priceVisible) {
+                // 保住的报价带着它的单位。不能按现在主数据的换算，
+                // 把原来每米的价悄悄变成每卷的价。
+                item.setPurchaseUnit(prior.getPurchaseUnit());
+                item.setConversionFactor(prior.getConversionFactor());
+            }
             item.setPriceChangeReason(reason);
             item.setLineDueDate(r.getLineDueDate());
             item.setExpectDate(r.getExpectDate());
@@ -745,8 +772,10 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             PriceRef a = archive.get(i.getMaterialSkuId());
             if (a != null && i.getPrice().compareTo(a.price()) != 0 && i.getPriceChangeReason() == null) {
                 MaterialPurchaseInfo info = infos.get(i.getMaterialSkuId());
-                out.add("第 " + i.getSeq() + " 行 " + (info == null ? "" : info.skuCode()) + "：单价 " + PurTexts.plain(i.getPrice())
-                        + " 和价格档案 " + PurTexts.plain(a.price()) + " 不一样，要写改价原因");
+                String detail = com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST)
+                        ? "单价 " + PurTexts.plain(i.getPrice()) + " 和价格档案 " + PurTexts.plain(a.price()) + " 不一样，要写改价原因"
+                        : "单价和价格档案不一致，请交由有成本权限的人员处理";
+                out.add("第 " + i.getSeq() + " 行 " + (info == null ? "" : info.skuCode()) + "：" + detail);
             }
         }
         return out;
@@ -818,6 +847,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     }
 
     @Override
+    public void checkSourceMrpVisible(long id) { mrpService.checkVisible(id); }
+
+    @Override
     @Transactional
     public List<DocSaved> fromMrp(FromMrpReq req) {
         List<MrpCalcItem> items = mrpService.lockForConvert(req.getCalcId(), req.getItemIds(), req.getVersion());
@@ -871,6 +903,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
      */
     private List<DocSaved> generate(Map<Long, List<GenLine>> bySupplier, Map<Long, MaterialPurchaseInfo> infos, PurchaseType type,
                                     Long calcId, List<String> problems, String logAction, String logText) {
+        com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.COST);
         Map<Long, SupplierRef> suppliers = supplierService.refs(bySupplier.keySet());
         bySupplier.keySet().forEach(sid -> {
             SupplierRef s = suppliers.get(sid);
@@ -929,6 +962,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     /** 我的默认主体（用户上设的启用就用它，不然启用的只有一个就用那个）；没有 1000 */
     private long defaultCompanyId() {
+        if (com.lingmao.scm.common.scope.CompanyContext.isHttpRequest()) {
+            long requested = com.lingmao.scm.common.scope.CompanyContext.header(true);
+            Company company = companyService.getById(requested);
+            if (!Integer.valueOf(1).equals(company.getStatus())) throw new BizException(400, "所选主体已停用");
+            return requested;
+        }
         Long me = LoginUser.currentUserId();
         CompanyBrief c = defaultCompanyProvider.resolve(userService.getById(me).defaultCompanyId());
         if (c == null) {
@@ -984,6 +1023,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (rows.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException(400, "一次最多导出 " + Excel.MAX_EXPORT_ROWS + " 张，加个筛选条件再导");
         }
+        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, PurchaseRowVO::getId, PurchaseRowVO::getCompanyId);
         fillRows(rows);
         return excel.export(rows);
     }

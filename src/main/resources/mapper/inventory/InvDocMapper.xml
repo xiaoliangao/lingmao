@@ -6,18 +6,7 @@
 -->
 <mapper namespace="com.lingmao.scm.module.inventory.mapper.InvDocMapper">
 
-    <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.InvDocRowVO">
-        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.version,
-               d.from_warehouse_id, fw.name AS from_warehouse_name, d.to_warehouse_id, tw.name AS to_warehouse_name,
-               d.partner_id, p.short_name AS partner_name, d.source_no, d.doc_date, d.reason, d.create_by, d.create_time,
-               agg.first_sku_id, agg.item_count, agg.total_qty, agg.total_amount
-        FROM inv_doc d
-        LEFT JOIN bas_warehouse fw ON fw.id = d.from_warehouse_id
-        LEFT JOIN bas_warehouse tw ON tw.id = d.to_warehouse_id
-        LEFT JOIN sup_supplier p ON p.id = d.partner_id
-        LEFT JOIN LATERAL (SELECT (array_agg(i.material_sku_id ORDER BY i.seq, i.id))[1] AS first_sku_id,
-                                  COUNT(*) AS item_count, SUM(i.qty) AS total_qty, SUM(i.amount) AS total_amount
-                           FROM inv_doc_item i WHERE i.doc_id = d.id) agg ON true
+    <sql id="where">
         WHERE d.kind = #{q.kind}
         <if test="scope.self">AND d.create_by = #{scope.userId}</if>
         <if test="q.docType != null">AND d.doc_type = #{q.docType}</if>
@@ -31,17 +20,59 @@
         <if test="q.ids != null and q.ids.size() > 0">
             AND d.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         </if>
-        <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (d.no ILIKE '%' || #{q.keyword} || '%' OR d.source_no ILIKE '%' || #{q.keyword} || '%'
-                 OR d.supplier_delivery_no ILIKE '%' || #{q.keyword} || '%' OR d.logistics_no ILIKE '%' || #{q.keyword} || '%'
-                 OR EXISTS (SELECT 1 FROM inv_doc_item i
-                            JOIN bas_material_sku k ON k.id = i.material_sku_id
-                            JOIN bas_material m ON m.id = k.material_id
-                            WHERE i.doc_id = d.id
-                              AND (k.code ILIKE '%' || #{q.keyword} || '%' OR m.code ILIKE '%' || #{q.keyword} || '%'
-                                   OR m.name ILIKE '%' || #{q.keyword} || '%' OR i.dye_lot ILIKE '%' || #{q.keyword} || '%'))
-                 <if test="codes != null">OR upper(d.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach> OR upper(d.source_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
-        </if>
+    </sql>
+
+    <!-- 每个索引分支直接给出匹配单头，统一去重；后续不用按候选 ID 重新扫描整个历史表。 -->
+    <sql id="docSource">
+        <choose>
+            <when test="q.keyword != null and q.keyword.trim() != ''">
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
+            (
+                SELECT kd.* FROM inv_doc kd
+                WHERE (upper(kd.no) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(kd.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
+                UNION
+                SELECT kd.* FROM inv_doc kd
+                WHERE kd.source_no IS NOT NULL AND (upper(kd.source_no) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(kd.source_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
+                UNION
+                SELECT kd.* FROM inv_doc kd
+                WHERE kd.supplier_delivery_no IS NOT NULL AND (upper(kd.supplier_delivery_no) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(kd.supplier_delivery_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
+                UNION
+                SELECT kd.* FROM inv_doc kd
+                WHERE kd.logistics_no IS NOT NULL AND (upper(kd.logistics_no) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(kd.logistics_no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
+                UNION
+                SELECT kd.* FROM inv_doc_item ki JOIN inv_doc kd ON kd.id = ki.doc_id WHERE ki.material_sku_id IN (
+                    SELECT k.id FROM bas_material_sku k WHERE upper(k.code) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(k.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                    UNION
+                    SELECT k.id FROM bas_material m JOIN bas_material_sku k ON k.material_id=m.id
+                    WHERE upper(m.code) LIKE #{keywordCode} OR m.name ILIKE #{keywordContains}
+                    <if test="codes != null">OR upper(m.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                )
+                UNION
+                SELECT kd.* FROM inv_doc_item ki JOIN inv_doc kd ON kd.id = ki.doc_id WHERE ki.dye_lot IS NOT NULL AND ki.dye_lot ILIKE #{keywordContains}
+            )
+            </when>
+            <otherwise>inv_doc</otherwise>
+        </choose>
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.inventory.dto.InvDocRowVO">
+        SELECT d.id, d.company_id, d.no, d.kind, d.doc_type, d.status, d.version,
+               d.from_warehouse_id, fw.name AS from_warehouse_name, d.to_warehouse_id, tw.name AS to_warehouse_name,
+               d.partner_id, (SELECT p.short_name FROM sup_supplier p WHERE p.id = d.partner_id) AS partner_name, d.source_no, d.doc_date, d.reason, d.create_by, d.create_time,
+               agg.first_sku_id, agg.item_count, agg.total_qty, agg.total_amount
+        FROM <include refid="docSource"/> d
+        LEFT JOIN bas_warehouse fw ON fw.id = d.from_warehouse_id
+        LEFT JOIN bas_warehouse tw ON tw.id = d.to_warehouse_id
+        LEFT JOIN LATERAL (SELECT (array_agg(i.material_sku_id ORDER BY i.seq, i.id))[1] AS first_sku_id,
+                                  COUNT(*) AS item_count, SUM(i.qty) AS total_qty, SUM(i.amount) AS total_amount
+                           FROM inv_doc_item i WHERE i.doc_id = d.id) agg ON true
+        <include refid="where"/>
         ORDER BY d.id DESC
     </select>
 </mapper>

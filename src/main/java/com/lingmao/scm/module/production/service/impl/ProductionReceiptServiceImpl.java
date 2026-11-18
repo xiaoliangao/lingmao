@@ -92,9 +92,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         });
         userIds.remove(null);
         Map<Long, String> names = new HashMap<>(userService.nicknames(userIds));   // 没作废的 voidBy 是 null
-        Map<Long, String> warehouses = new HashMap<>();
-        receipts.stream().map(ProductionReceipt::getWarehouseId).filter(w -> w != null && !warehouses.containsKey(w))
-                .distinct().forEach(w -> warehouses.put(w, warehouseService.getById(w).getName()));
+        Map<Long, String> warehouses = warehouseService.names(receipts.stream().map(ProductionReceipt::getWarehouseId).toList());
         StyleOrderInfo style = styleService.orderInfos(List.of(p.getStyleId())).get(p.getStyleId());
         boolean canVoid = LoginUser.hasAuthority("production:receipt:void") && p.getStatus() != CLOSED && p.getStatus() != VOIDED;
 
@@ -107,7 +105,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             v.setStatus(r.getStatus().name());
             v.setReceiptDate(r.getReceiptDate());
             v.setWarehouseId(r.getWarehouseId());
-            v.setWarehouseName(warehouses.get(r.getWarehouseId()));
+            v.setWarehouseName(r.getWarehouseId() == null ? null : warehouses.get(r.getWarehouseId()));
             v.setLogisticsNo(r.getLogisticsNo());
             v.setRemark(r.getRemark());
             v.setQty(rows.stream().mapToInt(ReceiptItemVO::getQty).sum());

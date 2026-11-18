@@ -24,7 +24,7 @@ const MAX_MB = MAX_UPLOAD_SIZE / 1024 / 1024
 const visible = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
-const supplierId = ref(0)
+const supplierId = ref('')
 const editing = ref<SupplierCert | null>(null)
 const formRef = ref<FormInstance>()
 const form = reactive<CertForm>({ certType: '', fileUrl: '', fileName: '', validUntil: null, remark: null })
@@ -36,7 +36,7 @@ const rules: FormRules = {
   fileUrl: [{ required: true, message: '请上传照片或扫描件', trigger: 'change' }],
 }
 
-function open(id: number, cert?: SupplierCert) {
+function open(id: string, cert?: SupplierCert) {
   supplierId.value = id
   editing.value = cert ?? null
   Object.assign(form, cert

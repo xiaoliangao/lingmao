@@ -65,6 +65,8 @@ class MrpEngine {
             "DRAFT", "草稿", "PENDING", "待审核", "APPROVED", "已审核", "RUNNING", "生产中",
             "DONE", "已完成", "CLOSED", "已结案", "VOIDED", "已取消");
 
+    void checkSourceVisible(Collection<Long> ids) { orderService.checkSourceVisible(ids); }
+
     /** 订单都要在、都是已审核或生产中，不然 404 / 1000（选订单算料） */
     List<MrpCalcMapper.OrderHead> checkedHeads(Collection<Long> orderIds) {
         orderService.checkForMrp(orderIds);

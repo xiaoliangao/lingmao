@@ -24,7 +24,7 @@ import { onMounted, ref } from 'vue'
  *   const head = reactive({ companyId: user.defaultCompanyId, … })
  *   <CompanySelect v-model="head.companyId" placeholder="选主体" />
  */
-const model = defineModel<number | null>()
+const model = defineModel<string | null>()
 
 const options = ref<CompanyOption[]>([])
 

@@ -116,7 +116,7 @@ export interface NodeDot {
 
 /** 一个进度节点（prd_node）。实际开始、实际完成、完成数量是最近一次报的 */
 export interface ProductionNode {
-  id: number
+  id: string
   seq: number
   /** 字典 prod_node 的 value（MATERIAL、CUT、SEW……） */
   nodeCode: string
@@ -143,7 +143,7 @@ export interface ProductionNode {
 
 /** 一次报工（prd_node_report），只插不改 */
 export interface NodeReport {
-  id: number
+  id: string
   action: NodeReportAction
   actualStart: string | null
   actualFinish: string | null
@@ -186,7 +186,7 @@ export interface NodePlanReq {
 }
 
 export interface NodePlanItem {
-  nodeId: number
+  nodeId: string
   planStart: string
   planFinish: string
 }
@@ -195,25 +195,25 @@ export interface NodePlanItem {
 
 /** 外发加工单、成品采购单列表和看板列表的一行 */
 export interface ProductionRow {
-  id: number
+  id: string
   no: string
   kind: ProductionKind
   status: ProductionStatus
   /** 批量条逐条调 act 要带 */
   version: number
-  factoryId: number
+  factoryId: string
   factoryShortName: string
   /** 字典 process_mode */
   processMode: string
-  orderId: number
+  orderId: string
   orderNo: string
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
   image: Attachment | null
   totalQty: number
-  unitPrice: number
-  totalAmount: number
+  unitPrice?: number
+  totalAmount?: number
   dueDate: string
   /** 异常填了新交期才有，列表上交期显示它、原交期划掉 */
   expectDate: string | null
@@ -230,7 +230,7 @@ export interface ProductionRow {
   /** 没关闭的异常几条、第一条的类型（字典 issue_type），看板"异常"列 */
   openIssueCount: number
   firstOpenIssueType: string | null
-  merchId: number
+  merchId: string
   merchName: string | null
   risk: ProductionRisk
   actions: ProductionAction[]
@@ -247,8 +247,8 @@ export interface ProductionQuery {
   /** 和 status=RUNNING 一起用：true 部分回货、false 生产中（没回过货）；不传都要 */
   returned?: boolean
   risk?: ProductionRiskKey
-  factoryId?: number | null
-  merchId?: number | null
+  factoryId?: string | null
+  merchId?: string | null
   /** 字典 brand（款式的品牌） */
   brand?: string
   /** 按"预计交期 ?? 交期"，两头都含 */
@@ -257,7 +257,7 @@ export interface ProductionQuery {
   /** 只看我是制单人、生产跟单的 */
   mine?: boolean
   /** 导出选中的 */
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 状态页签上的数：每个状态几张，没有的不在里面；PARTIAL 是 RUNNING 里回过货的几张（"生产中"页签 = RUNNING − PARTIAL） */
@@ -267,13 +267,13 @@ export type ProductionCounts = Partial<Record<ProductionStatus | 'PARTIAL', numb
 
 /** 一行明细 = 一个款式 SKU（prd_order_item） */
 export interface ProductionItem {
-  id: number
+  id: string
   seq: number
-  orderItemId: number
-  styleSkuId: number
+  orderItemId: string
+  styleSkuId: string
   /** 款号-颜色码-尺码 */
   skuCode: string
-  colorId: number
+  colorId: string
   colorCode: string
   colorName: string
   colorHex: string | null
@@ -290,7 +290,7 @@ export interface ProductionItem {
 
 /** 详情顶上的红条：没关闭的异常 */
 export interface OpenIssueBrief {
-  id: number
+  id: string
   /** 字典 issue_type */
   issueType: string
   description: string
@@ -302,7 +302,7 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   /** 节点计划的独立修订号，不使用单据 version */
   planRevision: number
   kind: ProductionKind
-  factoryId: number
+  factoryId: string
   factoryCode: string
   /** 全称；factoryShortName 是简称 */
   factoryName: string
@@ -310,13 +310,13 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   /** 草稿、待审核时不是合作中，提交、审核会被拦，页面标出来 */
   factoryStatus: SupplierStatus
   /** 打印用：工厂的联系人、电话，没有是 null */
-  factoryContact: string | null
-  factoryPhone: string | null
+  factoryContact?: string | null
+  factoryPhone?: string | null
   /** 字典 process_mode：外发加工单只会是清加工、半包，成品采购单只会是 FULL */
   processMode: string
-  orderId: number
+  orderId: string
   orderNo: string
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
   /** 花名，没有是 null */
@@ -325,25 +325,25 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   brand: string | null
   image: Attachment | null
   /** 订单锁定的生产 BOM：打印、导出工艺单 PDF 用它 */
-  techPackId: number
+  techPackId: string
   techPackVersion: number
   orderDate: string
   dueDate: string
   /** 异常填了新交期才有；原交期 dueDate 保留 */
   expectDate: string | null
   daysLeft: number | null
-  unitPrice: number
+  unitPrice?: number
   /** 默认单价取自哪条价格档案；手填的是 null */
-  priceSourceId: number | null
+  priceSourceId: string | null
   /** 价格档案里这家工厂 × 这个款 × 这种加工方式现在的价（按下单日期）；没有是 null。和 unitPrice 不一样时页面标"改价" */
-  archivePrice: number | null
+  archivePrice?: number | null
   priceChangeReason: string | null
   /** 税率 %，默认带工厂 */
   taxPct: number
   taxIncluded: boolean
   totalQty: number
-  totalAmount: number
-  merchId: number
+  totalAmount?: number
+  merchId: string
   merchName: string | null
   /** 字典 settle_method */
   settleMethod: string
@@ -373,17 +373,18 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
  */
 export interface ProductionForm {
   version: number
-  companyId: number
-  factoryId: number
+  companyId: string
+  expectedCompanyId?: string
+  factoryId: string
   /** 只能在同一种单里换：外发加工单清加工 ↔ 半包；成品采购单固定 FULL */
   processMode: string
-  unitPrice: number | null
+  unitPrice?: number | null
   /** 单价用的是档案现价时带上那条的 id（ScheduleModePrice.priceSourceId）；手填的发 null */
-  priceSourceId: number | null
+  priceSourceId: string | null
   /** 单价和档案现价不一样时必填 */
   priceChangeReason: string | null
   dueDate: string | null
-  merchId: number | null
+  merchId: string | null
   settleMethod: string | null
   taxPct: number | null
   taxIncluded: boolean
@@ -407,7 +408,7 @@ export interface MaterialPlanRow extends MaterialSkuBrief {
 
 /** 挂在这张生产单上的领料出库单、退料入库单 */
 export interface ProductionStockDoc {
-  id: number
+  id: string
   no: string
   /** 点单号：docRoute({ type: 'INV_DOC', kind, id, parentId: null }) */
   kind: InvDocKind
@@ -429,11 +430,11 @@ export interface ProductionMaterials {
 
 /** 给 04 用：出库单页"领料出库（选生产单）"、退料表单的"源生产单"（GET /api/production-orders/issue-options） */
 export interface IssueOption {
-  id: number
+  id: string
   no: string
   kind: ProductionKind
   status: ProductionStatus
-  factoryId: number
+  factoryId: string
   factoryShortName: string
   styleCode: string
   styleName: string
@@ -444,7 +445,7 @@ export interface IssueOption {
 export interface IssueOptionQuery {
   /** 单号、款号、加工厂 */
   keyword?: string
-  factoryId?: number | null
+  factoryId?: string | null
   /** true：退料用，列已领 > 0 的；不传或 false：领料用，列还有没领齐的 */
   returnable?: boolean
 }
@@ -464,7 +465,7 @@ export const ISSUE_STATUS: Record<IssueStatus, { label: string; tone: StatusTone
 export type IssueAction = 'start' | 'close'
 
 export interface ProductionIssue {
-  id: number
+  id: string
   /** YC + 日期 + 4 位 */
   no: string
   /** 字典 issue_type */
@@ -501,7 +502,7 @@ export interface IssueForm {
 }
 
 export interface IssueCreated {
-  id: number
+  id: string
   no: string
 }
 
@@ -523,9 +524,9 @@ export const RECEIPT_STATUS: Record<ReceiptStatus, { label: string; tone: Status
 }
 
 export interface ReceiptItem {
-  id: number
-  prdOrderItemId: number
-  styleSkuId: number
+  id: string
+  prdOrderItemId: string
+  styleSkuId: string
   skuCode: string
   colorCode: string
   colorName: string
@@ -539,13 +540,13 @@ export interface ReceiptItem {
 }
 
 export interface ProductionReceipt {
-  id: number
+  id: string
   /** HH + 日期 + 4 位 */
   no: string
   status: ReceiptStatus
   receiptDate: string
   /** 收货仓（成品仓），一期只记录；没选是 null */
-  warehouseId: number | null
+  warehouseId: string | null
   warehouseName: string | null
   logisticsNo: string | null
   remark: string | null
@@ -567,7 +568,7 @@ export interface ProductionReceipt {
 
 /** 一个 SKU 这次回多少；qty 是 0 的行不发 */
 export interface ReceiptItemForm {
-  prdOrderItemId: number
+  prdOrderItemId: string
   qty: number
   /** 其中次品，不能大于 qty */
   defectQty: number
@@ -580,7 +581,7 @@ export interface ReceiptForm {
   clientActionId: string
   /** 不能晚于今天 */
   receiptDate: string
-  warehouseId: number | null
+  warehouseId: string | null
   logisticsNo: string | null
   remark: string | null
   photos: FileVO[]
@@ -588,7 +589,7 @@ export interface ReceiptForm {
 }
 
 export interface ReceiptCreated {
-  id: number
+  id: string
   no: string
   /** 登记完以后生产单的状态：回够了是 DONE，toast 里说"外发加工单完成" */
   status: ProductionStatus
@@ -614,8 +615,8 @@ export type BoardCardKey = 'RUNNING' | 'WAITING' | 'NEAR' | 'LATE' | 'NODE_LATE'
 
 export interface BoardQuery {
   kind?: ProductionKind
-  factoryId?: number | null
-  merchId?: number | null
+  factoryId?: string | null
+  merchId?: string | null
   /** 字典 brand */
   brand?: string
   /** 按"预计交期 ?? 交期" */
@@ -644,7 +645,7 @@ export interface BoardCards {
 
 /** 按工厂看的一行：只算已下单、生产中的单（和 02 审核对话框的 OrderReviewLoad 同一个口径） */
 export interface BoardFactoryRow {
-  factoryId: number
+  factoryId: string
   factoryShortName: string
   /** 供应商分类的名字（成衣厂、加工厂） */
   categoryNames: string[]
@@ -658,7 +659,7 @@ export interface BoardFactoryRow {
 
 /** "我的跟单"的一张卡片：生产跟单是我、已下单或生产中的单，按风险排 */
 export interface MobileOrderRow {
-  id: number
+  id: string
   no: string
   kind: ProductionKind
   status: ProductionStatus

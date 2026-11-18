@@ -253,7 +253,8 @@ class OrderExcel {
             r.setStatus(OrderServiceImpl.ORDER_STATUS.label(DocStatus.valueOf(o.getStatus())).text());
             rows.add(r);
         }
-        return Excel.export(EXPORT, rows);
+        return Excel.export(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.ORDER)
+                ? EXPORT : EXPORT.without("金额"), rows);
     }
 
     /** 字典 value → 中文（停用的也翻） */

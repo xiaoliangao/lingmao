@@ -5,6 +5,7 @@ import com.lingmao.scm.common.file.SignedFileFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * /files/** 要带签名才能访问（架构 §8）：WebConfig 把它映射到上传目录，这里在前面挂上 SignedFileFilter。
@@ -15,8 +16,8 @@ import org.springframework.context.annotation.Configuration;
 public class FileAccessConfig {
 
     @Bean
-    public FilterRegistrationBean<SignedFileFilter> signedFileFilter(FileUrlSigner signer) {
-        FilterRegistrationBean<SignedFileFilter> registration = new FilterRegistrationBean<>(new SignedFileFilter(signer));
+    public FilterRegistrationBean<SignedFileFilter> signedFileFilter(FileUrlSigner signer, @Value("${lingmao.upload.dir}") String directory) {
+        FilterRegistrationBean<SignedFileFilter> registration = new FilterRegistrationBean<>(new SignedFileFilter(signer, directory));
         registration.addUrlPatterns("/files/*");
         return registration;
     }

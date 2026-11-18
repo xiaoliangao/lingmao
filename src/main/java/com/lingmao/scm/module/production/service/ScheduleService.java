@@ -15,6 +15,9 @@ public interface ScheduleService {
 
     SchedulePrefillVO prefill(long orderId);
 
+    /** 原成功操作的来源对象仍须在当前可见范围内；不重验可生成状态。 */
+    void checkSourceOrderVisible(long orderId);
+
     /** 一家工厂做这个款，每种加工方式的现价、能不能下单 */
     ScheduleQuoteVO quote(long orderId, long styleId, long factoryId);
 

@@ -19,7 +19,7 @@ const props = defineProps<{
   /** 已有的 SKU 码：预览里标"已有，跳过" */
   existing?: string[]
 }>()
-const colorIds = defineModel<number[]>('colorIds', { required: true })
+const colorIds = defineModel<string[]>('colorIds', { required: true })
 const specs = defineModel<string>('specs', { required: true })
 /** 手改过的规格码：规格 → 规格码 */
 const specCodes = defineModel<SpecCodeOverrides>('specCodes', { required: true })
@@ -36,7 +36,7 @@ const shown = computed(() => {
   return colors.value.filter((c) => c.code.includes(text) || c.name.toUpperCase().includes(text) || colorIds.value.includes(c.id))
 })
 
-function toggle(id: number) {
+function toggle(id: string) {
   colorIds.value = colorIds.value.includes(id) ? colorIds.value.filter((x) => x !== id) : [...colorIds.value, id]
 }
 

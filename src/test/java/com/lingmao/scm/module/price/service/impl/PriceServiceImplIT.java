@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.price.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.exception.GlobalExceptionHandler;
@@ -79,6 +80,7 @@ class PriceServiceImplIT {
 
     @BeforeEach
     void setUp() {
+        TestIdentity.ensureUser(jdbcTemplate, USER);
         loginAll();
         today = LocalDate.now(clock);
     }
@@ -316,7 +318,7 @@ class PriceServiceImplIT {
         assertThat(level.getNextDate()).isEqualTo(today.plusDays(16));
         assertThat(level.getSupplierName()).startsWith("IT价格供应商");
         assertThat(level.getMaterialName()).isEqualTo("IT 价格面料");
-        assertThat(level.getCreateByName()).isNull();   // USER 不是真账号，没有昵称
+        assertThat(level.getCreateByName()).isEqualTo("IT identity " + USER);
         PriceRowVO k = current.stream().filter(r -> Long.valueOf(khaki).equals(r.getMaterialSkuId())).findFirst().orElseThrow();
         assertThat(k.getPrice()).isEqualByComparingTo("19.50");
         assertThat(k.getPrevPrice()).isNull();
@@ -471,7 +473,7 @@ class PriceServiceImplIT {
 
     private static void loginAll() {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                new LoginUser(USER, "jti-it"), null, Stream.of("price:price:list", "price:material:edit", "price:process:edit")
+                new LoginUser(USER, "jti-it"), null, Stream.of("price:price:list", "price:material:edit", "price:process:edit", "techpack:cost:query", "production:price:query")
                 .map(SimpleGrantedAuthority::new).toList()));
     }
 

@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.aspect;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.log.TraceIdFilter;
+import com.lingmao.scm.common.web.TrustedProxyResolver;
 import com.lingmao.scm.module.system.entity.SysOperLog;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysOperLogMapper;
@@ -24,14 +25,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.node.ObjectNode;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -44,12 +40,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OperLogAspect {
 
-    private static final int MAX_PARAMS_LENGTH = 2000;
-    private static final int MAX_ERROR_LENGTH = 500;
 
     private final SysOperLogMapper sysOperLogMapper;
     private final SysUserMapper sysUserMapper;
     private final JsonMapper jsonMapper;
+    private final TrustedProxyResolver proxy;
 
     /** 环绕：先记下开始时间，执行真正的方法，不管成功还是抛异常，最后都写一条日志 */
     @Around("@annotation(operLog)")
@@ -76,7 +71,7 @@ public class OperLogAspect {
             record.setParams(toParamsJson(signature.getParameterNames(), joinPoint.getArgs()));
             record.setSuccess(error == null);
             record.setErrorMsg(error == null ? null : errorMessage(error));
-            record.setCostMs((int) costMs);
+            record.setCostMs((int) Math.min(costMs, Integer.MAX_VALUE));
             record.setTraceId(MDC.get(TraceIdFilter.MDC_KEY));
             fillUser(record);
             fillRequest(record);
@@ -103,52 +98,22 @@ public class OperLogAspect {
         HttpServletRequest request = attrs.getRequest();
         record.setRequestMethod(request.getMethod());
         record.setRequestUri(request.getRequestURI());
-        String forwarded = request.getHeader("X-Forwarded-For");
-        record.setIp(forwarded != null ? forwarded.split(",")[0].trim() : request.getRemoteAddr());
+        record.setIp(proxy.clientIp(request));
     }
 
-    /** 参数名 → 参数值，转成 JSON；请求/响应对象、上传的文件、当前用户不记；密码打码；太长截断 */
+    /** 操作日志只存参数类型。金额类的值记在按权限过滤的字段审计里。 */
     String toParamsJson(String[] names, Object[] args) {
         Map<String, Object> params = new LinkedHashMap<>();
-        for (int i = 0; i < args.length; i++) {
+        for (int i = 0; i < Math.min(args.length, 32); i++) {
             Object arg = args[i];
-            if (arg instanceof ServletRequest || arg instanceof ServletResponse
-                    || arg instanceof MultipartFile || arg instanceof LoginUser) {
-                continue;
-            }
-            params.put(names[i], arg);
+            if (arg instanceof ServletRequest || arg instanceof ServletResponse || arg instanceof MultipartFile || arg instanceof LoginUser) continue;
+            String name = names != null && names.length > i ? names[i] : "arg" + i;
+            params.put(name, arg == null ? "null" : arg.getClass().getSimpleName());
         }
-        JsonNode tree = jsonMapper.valueToTree(params);
-        maskPasswords(tree);
-        String json = jsonMapper.writeValueAsString(tree);
-        return json.length() > MAX_PARAMS_LENGTH ? json.substring(0, MAX_PARAMS_LENGTH) + "…" : json;
-    }
-
-    /**
-     * 递归找名字里含 password 的字段（不分大小写），值换成 ******。
-     * 不只看名字等于 password 的：改密码的 oldPassword、newPassword 也是密码，只认 password 的话它们会明文进日志。
-     * 名字里含 bankaccount 的（供应商的银行账号 bankAccount）一样遮：保存请求里的全号不进日志（RFC 004 §5）
-     */
-    private void maskPasswords(JsonNode node) {
-        if (node instanceof ObjectNode object) {
-            List<String> names = new ArrayList<>();
-            object.properties().forEach(entry -> names.add(entry.getKey()));
-            for (String name : names) {
-                String lower = name.toLowerCase(Locale.ROOT);
-                if (lower.contains("password") || lower.contains("bankaccount")) {
-                    object.put(name, "******");
-                } else {
-                    maskPasswords(object.get(name));
-                }
-            }
-        } else if (node != null && node.isArray()) {
-            node.forEach(this::maskPasswords);
-        }
+        return jsonMapper.writeValueAsString(params);
     }
 
     private String errorMessage(Throwable error) {
-        String msg = error instanceof BizException ? error.getMessage()
-                : error.getClass().getSimpleName() + ": " + error.getMessage();
-        return msg != null && msg.length() > MAX_ERROR_LENGTH ? msg.substring(0, MAX_ERROR_LENGTH) : msg;
+        return error instanceof BizException business ? "Business error " + business.getCode() : error.getClass().getSimpleName();
     }
 }

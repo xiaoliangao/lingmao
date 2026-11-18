@@ -28,3 +28,10 @@ export function pasteCodes(event: ClipboardEvent, set: (value: string) => void) 
   const pasted = text.trim().split(/\s+/).join(' ')
   set(`${input.value.slice(0, start)} ${pasted} ${input.value.slice(end)}`.replace(/\s+/g, ' ').trim())
 }
+
+export function validateKeywords(keyword: unknown): void {
+  if (typeof keyword !== 'string') return
+  if (keyword.length > 16_000) throw new Error('搜索内容过长，请分批查询')
+  const codes = new Set(keyword.trim().split(SEPARATORS).filter(Boolean).map((code) => code.toUpperCase()))
+  if (codes.size > MAX_CODES) throw new Error(`一次最多查 ${MAX_CODES} 个编码，请分批查询`)
+}

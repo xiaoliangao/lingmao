@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.purchase.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.page.PageResult;
@@ -55,7 +59,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/purchase-orders")
 @RequiredArgsConstructor
-public class PurchaseOrderController {
+public class PurchaseOrderController extends IdempotencyReplayGuard {
 
     private final PurchaseOrderService purchaseOrderService;
     private final DocCommonService docCommonService;
@@ -86,6 +90,7 @@ public class PurchaseOrderController {
     @PostMapping
     @PreAuthorize("hasAuthority('purchase:order:add')")
     @OperLog(module = "采购单", action = "新建")
+    @IdempotentCreate("PURCHASE_CREATE")
     public R<DocSaved> create(@Valid @RequestBody PurchaseCreateReq req) {
         return R.ok(purchaseOrderService.create(req));
     }
@@ -184,6 +189,7 @@ public class PurchaseOrderController {
     @PostMapping("/from-mrp")
     @PreAuthorize("hasAuthority('purchase:order:add')")
     @OperLog(module = "采购单", action = "由算料单生成")
+    @IdempotentCreate("PURCHASE_FROM_MRP")
     public R<List<DocSaved>> fromMrp(@Valid @RequestBody FromMrpReq req) {
         return R.ok(purchaseOrderService.fromMrp(req));
     }
@@ -192,6 +198,7 @@ public class PurchaseOrderController {
     @PostMapping("/from-reorder")
     @PreAuthorize("hasAuthority('purchase:order:add')")
     @OperLog(module = "采购单", action = "由补货提醒生成")
+    @IdempotentCreate("PURCHASE_FROM_REORDER")
     public R<List<DocSaved>> fromReorder(@Valid @RequestBody FromReorderReq req) {
         return R.ok(purchaseOrderService.fromReorder(req));
     }
@@ -273,5 +280,18 @@ public class PurchaseOrderController {
                                 @Valid @RequestBody NoticeHandleReq req) {
         docCommonService.handleNotice(BizType.PURCHASE_ORDER, id, noticeId, req.getRemark(), purchaseOrderService::checkVisible);
         return R.ok();
+    }
+
+    /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if ("PURCHASE_FROM_MRP".equals(operation)) {
+            purchaseOrderService.checkSourceMrpVisible(((FromMrpReq) arguments[0]).getCalcId());
+        }
+        if (result.isArray()) {
+            result.forEach(row -> purchaseOrderService.checkVisible(row.get("id").longValue()));
+        } else {
+            purchaseOrderService.checkVisible(result.get("id").longValue());
+        }
     }
 }

@@ -15,7 +15,9 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 65
+    env:
+      JAVA_TOOL_OPTIONS: -Xmx1200m -XX:ActiveProcessorCount=4 -Dspring.test.context.cache.maxSize=4
     services:
       postgres:
         image: postgres:16
@@ -62,9 +64,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends openssh-server poppler-utils
           bash dev/fetch-font.sh
-      - name: Schema, migration, unit and integration tests; production JAR
+      - name: CI credential redaction and process-group cleanup regressions
+        run: python3 tests/prod-readiness/a4-lifecycle/ci_helpers_test.py
+      - name: T01–T10 and T12 — real database concurrency, security, migration and audit; production JAR
         id: backend
-        run: ./mvnw -B -ntp verify
+        run: ./mvnw -B -ntp -Pprod-readiness verify
       - name: Strict TypeScript, lint, regression tests and production web build
         id: web
         if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
@@ -73,7 +77,44 @@ jobs:
           pnpm typecheck
           pnpm lint
           pnpm test
+          node --test ../tests/prod-readiness/a3-browser/core.test.mjs
           pnpm build
+      - name: T11 — real browser concurrency, table, matrix, IME, dates and fault recovery
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
+        run: python3 tests/prod-readiness/a3-browser/run.py
+      - name: Production artifact isolation
+        if: ${{ !cancelled() && steps.backend.outcome == 'success' && steps.web.outcome == 'success' }}
+        run: python3 tests/prod-readiness/a4-lifecycle/artifact_gate.py
+      - name: Real Nginx HTTP/TLS and proxy boundary faults
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: |
+          docker build -t scm-gateway-gate -f tests/prod-readiness/a4-lifecycle/gateway.Dockerfile .
+          docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD:/workspace" --workdir /workspace scm-gateway-gate python3 tests/prod-readiness/a2-security/gateway.py
+          docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD:/workspace" --workdir /workspace scm-gateway-gate python3 tests/prod-readiness/a4-lifecycle/deployment_logs.py --component nginx
+      - name: Production PostgreSQL log privacy with actual compose settings
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 tests/prod-readiness/a4-lifecycle/deployment_logs.py --component postgres --docker-postgres
+      - name: Authenticate ephemeral runtime PostgreSQL and Redis after integration tests
+        id: runtime
+        if: ${{ !cancelled() && steps.backend.outcome == 'success' }}
+        env:
+          SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: python3 tests/prod-readiness/a4-lifecycle/ci_runtime_auth.py
+      - name: T08 — two actual JVMs and one database cache load
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        env:
+          SCM_PROD_READINESS: '1'
+          SCM_TEST_REDIS_PASSWORD: ${{ env.SCM_CI_REDIS_PASSWORD }}
+          SCM_TEST_PG_PASSWORD: ${{ env.SCM_CI_DB_PASSWORD }}
+          SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: python3 tests/prod-readiness/a4-lifecycle/ci_two_instances.py
+      - name: T12 — production bootstrap faults and real SIGTERM drain
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        env:
+          SCM_PROD_READINESS: '1'
+          SCM_TEST_REDIS_PASSWORD: ${{ env.SCM_CI_REDIS_PASSWORD }}
+          SCM_TEST_PG_PASSWORD: ${{ env.SCM_CI_DB_PASSWORD }}
+        run: python3 tests/prod-readiness/a4-lifecycle/process_gate.py
       - name: Prototype build and existing browser self-check
         if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
         run: |
@@ -92,21 +133,22 @@ jobs:
           mkdir -p test-artifacts/operations
           sudo --preserve-env=GITHUB_ACTIONS bash dev/ci/check-restore.sh | tee test-artifacts/operations/restore.log
       - name: Capture the original PR base in the same browser
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.backend.outcome == 'success' && steps.web.outcome == 'success' }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.runtime.outcome == 'success' && steps.web.outcome == 'success' }}
         env:
           SCM_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: bash dev/ci/capture-before.sh "$SCM_PR_BASE_SHA"
       - name: Start services, health/API smoke and real Playwright regressions
-        if: ${{ !cancelled() && steps.backend.outcome == 'success' && steps.web.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' && steps.web.outcome == 'success' }}
         env:
           SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: bash dev/ci/run-smoke.sh after
       - name: Redact transient credentials in test reports
+        id: redaction
         if: always()
         run: python3 dev/ci/sanitize-artifacts.py
       - name: Upload test evidence and rendered screenshots
-        if: always()
+        if: ${{ always() && steps.redaction.outcome == 'success' }}
         uses: actions/upload-artifact@v5
         with:
           name: audit-verification-${{ github.run_id }}-${{ github.run_attempt }}
@@ -116,4 +158,7 @@ jobs:
             target/surefire-reports/
             target/failsafe-reports/
             target/audit-query-capacity.json
+            target/a1-production/
+            target/a2-production/
+            target/test-artifacts/
             test-artifacts/

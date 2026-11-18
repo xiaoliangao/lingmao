@@ -2,7 +2,7 @@
 import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import ImageUpload from '@/components/ImageUpload.vue'
 import { reloadOnConflict, todayStr } from '@/components/doc/docUtils'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
@@ -11,6 +11,8 @@ import type { FileVO } from '@/types/system'
 import { formatDate } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const productionApi = bindCompanyApi(productionApiBase, () => props.companyId)
 
 /**
  * 生产单详情的两个节点对话框（docs/api/05 §1.4、§3.3、§4）：
@@ -30,11 +32,12 @@ const reportVisible = defineModel<boolean>('reportVisible', { required: true })
 const planVisible = defineModel<boolean>('planVisible', { required: true })
 
 const props = defineProps<{
-  orderId: number
+  orderId: string
+  companyId: string
   totalQty: number
   planRevision: number
   nodes: ProductionNode[]
-  initialNodeId?: number | null
+  initialNodeId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -42,7 +45,7 @@ const emit = defineEmits<{
 }>()
 
 // ---------- 报进度 ----------
-const activeNodeId = ref<number | null>(null)
+const activeNodeId = ref<string | null>(null)
 const submitting = ref(false)
 
 const reportForm = reactive({
@@ -120,7 +123,7 @@ async function submitReport(action: NodeReportAction) {
 
 // ---------- 改节点计划 ----------
 interface PlanRow {
-  nodeId: number
+  nodeId: string
   nodeName: string
   planStart: string
   planFinish: string

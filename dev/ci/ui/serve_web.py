@@ -5,7 +5,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self,*args): pass
     def api(self):
         raw=self.rfile.read(int(self.headers.get('Content-Length','0')))
-        headers={k:v for k,v in self.headers.items() if k.lower() not in {'host','connection','content-length','accept-encoding'}}
+        headers={k:v for k,v in self.headers.items() if k.lower() not in {'connection','content-length','accept-encoding'}}
         req=urllib.request.Request('http://127.0.0.1:18080'+self.path,data=raw if raw else None,headers=headers,method=self.command)
         try: response=urllib.request.urlopen(req,timeout=30)
         except urllib.error.HTTPError as error: response=error

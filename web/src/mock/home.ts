@@ -10,11 +10,11 @@ import { mock } from './index'
  */
 const upstreamRows = (): UpstreamRow[] => [
   {
-    doc: { type: 'PRODUCTION_ORDER', kind: 'OUTSOURCE', parentId: null, typeLabel: '外发加工单', id: 501, no: 'JG202611130001', status: 'RUNNING', statusLabel: '生产中', statusTone: 'progress', ownerId: 1, ownerName: '管理员' },
+    doc: { type: 'PRODUCTION_ORDER', kind: 'OUTSOURCE', parentId: null, typeLabel: '外发加工单', id: '501', no: 'JG202611130001', status: 'RUNNING', statusLabel: '生产中', statusTone: 'progress', ownerId: '1', ownerName: '管理员' },
     notices: [
       {
-        id: 1,
-        source: { type: 'ORDER_CHANGE', kind: null, parentId: null, typeLabel: '订单变更单', id: 201, no: 'BG202611150001', status: 'APPROVED', statusLabel: '已审核', statusTone: 'active', ownerId: 1, ownerName: '管理员' },
+        id: '1',
+        source: { type: 'ORDER_CHANGE', kind: null, parentId: null, typeLabel: '订单变更单', id: '201', no: 'BG202611150001', status: 'APPROVED', statusLabel: '已审核', statusTone: 'active', ownerId: '1', ownerName: '管理员' },
         content: '订单 DD202611150001 的 FS2611150101 卡其 M 码从 100 改成 120',
         createTime: '2026-11-15 20:00:00',
         handledByName: null,
@@ -28,7 +28,7 @@ const upstreamRows = (): UpstreamRow[] => [
 const ref = (r: Omit<DocRef, 'kind' | 'parentId' | 'ownerId' | 'ownerName'> & Partial<DocRef>): DocRef => ({
   kind: null,
   parentId: null,
-  ownerId: 1,
+  ownerId: '1',
   ownerName: '管理员',
   ...r,
 })
@@ -52,13 +52,13 @@ mock('get', '/api/board/home/todos', ({ query }) => {
       total: 2,
       items: [
         {
-          ref: ref({ type: 'ORDER', typeLabel: '需求订单', id: 102, no: 'DD202611150002', status: 'PENDING', statusLabel: '待审核', statusTone: 'pending' }),
+          ref: ref({ type: 'ORDER', typeLabel: '需求订单', id: '102', no: 'DD202611150002', status: 'PENDING', statusLabel: '待审核', statusTone: 'pending' }),
           title: '需求订单 DD202611150002',
           sub: '— · 300 件 · 交期 12-18 · 第 1 级',
           image: null,
         },
         {
-          ref: ref({ type: 'ORDER_CHANGE', typeLabel: '订单变更单', id: 201, no: 'BG202611150001', status: 'PENDING', statusLabel: '待审核', statusTone: 'pending' }),
+          ref: ref({ type: 'ORDER_CHANGE', typeLabel: '订单变更单', id: '201', no: 'BG202611150001', status: 'PENDING', statusLabel: '待审核', statusTone: 'pending' }),
           title: '订单变更 BG202611150001',
           sub: '原单 DD202611150001 · 卡其 M 140 → 160',
           image: null,
@@ -70,7 +70,7 @@ mock('get', '/api/board/home/todos', ({ query }) => {
       total: 1,
       items: [
         {
-          ref: ref({ type: 'PRODUCTION_ORDER', kind: 'OUTSOURCE', typeLabel: '外发加工单', id: 501, no: 'JG202611130001', status: 'RUNNING', statusLabel: '生产中', statusTone: 'progress' }),
+          ref: ref({ type: 'PRODUCTION_ORDER', kind: 'OUTSOURCE', typeLabel: '外发加工单', id: '501', no: 'JG202611130001', status: 'RUNNING', statusLabel: '生产中', statusTone: 'progress' }),
           title: 'JG202611130001 双排扣廓形短风衣',
           sub: '示例制衣一厂 · 节点「车缝」延期',
           image: null,
@@ -82,7 +82,7 @@ mock('get', '/api/board/home/todos', ({ query }) => {
       total: 1,
       items: [
         {
-          ref: ref({ type: 'PRODUCTION_ISSUE', kind: 'OUTSOURCE', parentId: 501, typeLabel: '生产异常', id: 71, no: 'YC202611150001', status: 'OPEN', statusLabel: '待处理', statusTone: 'pending' }),
+          ref: ref({ type: 'PRODUCTION_ISSUE', kind: 'OUTSOURCE', parentId: '501', typeLabel: '生产异常', id: '71', no: 'YC202611150001', status: 'OPEN', statusLabel: '待处理', statusTone: 'pending' }),
           title: '做工：首批抽检 3 件右驳头止口略宽',
           sub: 'JG202611130001 · 管理员 上报于 11-15',
           image: null,
@@ -113,7 +113,7 @@ mock('get', '/api/board/home/todos', ({ query }) => {
 mock('get', '/api/board/home/deliveries', () => {
   const list: DeliveryRow[] = [
     {
-      ref: ref({ type: 'PRODUCTION_ORDER', kind: 'OUTSOURCE', typeLabel: '外发加工单', id: 501, no: 'JG202611130001', status: 'RUNNING', statusLabel: '生产中', statusTone: 'progress' }),
+      ref: ref({ type: 'PRODUCTION_ORDER', kind: 'OUTSOURCE', typeLabel: '外发加工单', id: '501', no: 'JG202611130001', status: 'RUNNING', statusLabel: '生产中', statusTone: 'progress' }),
       sub: '双排扣廓形短风衣 · 示例制衣一厂',
       image: null,
       dueDate: '2026-11-14',
@@ -122,7 +122,7 @@ mock('get', '/api/board/home/deliveries', () => {
       totalQty: 180,
     },
     {
-      ref: ref({ type: 'PRODUCTION_ORDER', kind: 'BUY', typeLabel: '成品采购单', id: 502, no: 'CP202611140001', status: 'APPROVED', statusLabel: '已下单', statusTone: 'active' }),
+      ref: ref({ type: 'PRODUCTION_ORDER', kind: 'BUY', typeLabel: '成品采购单', id: '502', no: 'CP202611140001', status: 'APPROVED', statusLabel: '已下单', statusTone: 'active' }),
       sub: '双排扣廓形短风衣 · 示例制衣二厂',
       image: null,
       dueDate: '2026-11-21',

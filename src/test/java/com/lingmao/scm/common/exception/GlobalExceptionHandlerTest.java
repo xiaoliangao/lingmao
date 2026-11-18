@@ -262,7 +262,7 @@ class GlobalExceptionHandlerTest {
     void everyResponse_hasTraceIdHeader() throws Exception {
         mockMvc.perform(get("/demo/items/1"))
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(header().string(TraceIdFilter.HEADER, matchesPattern("[0-9a-f]{8}")));
+                .andExpect(header().string(TraceIdFilter.HEADER, matchesPattern("[0-9a-f-]{36}")));
     }
 
     /** 程序错误：返回 500，提示里的错误编号就是响应头里的那个；日志里那一行也带着这个编号，grep 得到 */
@@ -273,10 +273,10 @@ class GlobalExceptionHandlerTest {
                 .andReturn();
 
         String traceId = result.getResponse().getHeader(TraceIdFilter.HEADER);
-        assertThat(traceId).matches("[0-9a-f]{8}");
+        assertThat(traceId).matches("[0-9a-f-]{36}");
         String msg = JsonPath.read(result.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.msg");
         assertThat(msg).isEqualTo("服务器出错了，错误编号 " + traceId);
-        assertThat(output.getOut()).containsPattern("\\[" + traceId + "\\] .*未处理异常: GET /demo/boom");
+        assertThat(output.getOut()).contains("\"requestId\":\"" + traceId + "\"", "未处理异常: GET /demo/boom");
     }
 
     /**
@@ -298,7 +298,7 @@ class GlobalExceptionHandlerTest {
         String traceId = result.getResponse().getHeader(TraceIdFilter.HEADER);
         String msg = JsonPath.read(result.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.msg");
         assertThat(msg).isEqualTo("服务器出错了，错误编号 " + traceId);
-        assertThat(output.getOut()).containsPattern("\\[" + traceId + "\\] .*未处理异常（过滤器）: GET /demo/items/1");
+        assertThat(output.getOut()).contains("\"requestId\":\"" + traceId + "\"", "未处理异常（过滤器）: GET /demo/items/1");
     }
 
     /** 测试专用：每个接口造一种出错的情况 */

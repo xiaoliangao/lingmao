@@ -6,6 +6,27 @@
 -->
 <mapper namespace="com.lingmao.scm.module.order.mapper.OrderChangeMapper">
 
+    <sql id="changeSource">
+        <choose>
+            <when test="q.keyword != null and q.keyword.trim() != ''">
+                <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+                (
+                    SELECT cc.* FROM ord_change cc WHERE upper(cc.no) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(cc.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                    UNION
+                    SELECT cc.* FROM ord_order ko JOIN ord_change cc ON cc.order_id = ko.id
+                    WHERE upper(ko.no) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                    UNION
+                    SELECT cc.* FROM sty_style_sku ks JOIN ord_change_item ci ON ci.style_sku_id = ks.id
+                    JOIN ord_change cc ON cc.id = ci.change_id WHERE upper(ks.code) LIKE #{keywordCode}
+                    <if test="codes != null">OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                )
+            </when>
+            <otherwise>ord_change</otherwise>
+        </choose>
+    </sql>
+
     <sql id="where">
         WHERE true
         <if test="scope.self">
@@ -26,15 +47,6 @@
         <if test="q.createDateTo != null">
             AND c.create_time &lt; ((CAST(#{q.createDateTo} AS date) + 1)::timestamp AT TIME ZONE 'Asia/Shanghai')
         </if>
-        <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (c.no ILIKE '%' || #{q.keyword} || '%' OR o.no ILIKE '%' || #{q.keyword} || '%'
-                 OR EXISTS (SELECT 1 FROM ord_change_item ci JOIN sty_style_sku k ON k.id = ci.style_sku_id
-                            WHERE ci.change_id = c.id AND k.code ILIKE '%' || #{q.keyword} || '%')
-                 <if test="codes != null">
-                     OR upper(c.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                 </if>)
-        </if>
     </sql>
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.order.dto.OrderChangeRowVO">
@@ -42,7 +54,7 @@
         SELECT c.id, c.no, c.status, CASE WHEN c.status = 'DRAFT' THEN c.reject_reason END AS reject_reason,
                c.order_id, o.no AS order_no, c.change_types AS change_types_text, c.reason, c.responsible_party, c.fee_note,
                c.create_by, c.create_time, c.audit_by, c.audit_time
-        FROM ord_change c
+        FROM <include refid="changeSource"/> c
         JOIN ord_order o ON o.id = c.order_id
         <include refid="where"/>
         ORDER BY c.create_time DESC, c.id DESC
@@ -51,13 +63,13 @@
     <select id="selectCounts" resultType="com.lingmao.scm.common.page.StatusCount">
         <bind name="withStatus" value="false"/>
         SELECT c.status, COUNT(*) AS count
-        FROM ord_change c
+        FROM <include refid="changeSource"/> c
         JOIN ord_order o ON o.id = c.order_id
         <include refid="where"/>
         GROUP BY c.status
         UNION ALL
         SELECT 'REJECTED', COUNT(*)
-        FROM ord_change c
+        FROM <include refid="changeSource"/> c
         JOIN ord_order o ON o.id = c.order_id
         <include refid="where"/>
           AND c.status = 'DRAFT' AND c.reject_reason IS NOT NULL

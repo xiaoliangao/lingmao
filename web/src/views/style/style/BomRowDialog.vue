@@ -22,6 +22,8 @@ import {
 } from '@/types/techpack'
 import { formatPrice } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 改物料清单的一行（docs/api/01 §4.4，原型 BomRowForm）：物料、配料方式和配料、用量方式和用量、损耗、来源、供应商、单价、含税含运、备注。
@@ -40,13 +42,13 @@ export interface BomDraftRow extends BomItemForm {
   unit: string
   supplierName: string | null
   /** 配料 SKU id → 显示用的码、颜色、规格、状态（页签上的表格要显示，不用再查） */
-  skuInfo: Record<number, { code: string; colorName: string | null; spec: string | null; status: number }>
+  skuInfo: Record<string, { code: string; colorName: string | null; spec: string | null; status: number }>
 }
 
 const visible = defineModel<boolean>({ required: true })
 
 const props = defineProps<{
-  packId: number
+  packId: string
   sizes: string[]
   baseSize: string
   colors: ColorOption[]
@@ -62,7 +64,7 @@ const units = useDict('unit')
 
 const form = reactive({
   part: '',
-  materialId: 0,
+  materialId: '',
   materialCode: '',
   materialName: '',
   materialType: '',
@@ -73,17 +75,17 @@ const form = reactive({
   sizeUsages: {} as Record<string, number>,
   lossPct: 0,
   source: 'PURCHASE' as MaterialSource,
-  supplierId: null as number | null,
+  supplierId: null as string | null,
   supplierName: null as string | null,
-  refPrice: null as number | null,
-  priceSourceId: null as number | null,
-  priceTaxIncluded: true,
-  priceFreightIncluded: true,
+  refPrice: null as number | null | undefined,
+  priceSourceId: null as string | null,
+  priceTaxIncluded: true as boolean | undefined,
+  priceFreightIncluded: true as boolean | undefined,
   remark: '',
 })
 
 /** 配料：格子（'FIXED' | 'C:款色' | 'S:尺码' | 'CS:款色:尺码'）→ 选的物料 SKU 和它单独的单价（null = 用行上的） */
-const skuMap = reactive<Record<string, { materialSkuId: number; refPrice: number | null }>>({})
+const skuMap = reactive<Record<string, { materialSkuId: string; refPrice?: number | null }>>({})
 const guard = useUnsavedChanges(() => ({ form, skuMap }), visible)
 
 /** 这个物料的 SKU（配料下拉） */
@@ -95,7 +97,7 @@ const picking = ref(false)
 /** 客供只在 TRADE 开时有，一期按关（01 §4.4） */
 const SOURCE_OPTIONS = (Object.keys(MATERIAL_SOURCE_LABEL) as MaterialSource[]).filter((s) => s !== 'CUSTOMER_SUPPLIED')
 
-function keyOf(colorId: number | null, sizeCode: string | null): string {
+function keyOf(colorId: string | null, sizeCode: string | null): string {
   if (colorId != null && sizeCode != null) return `CS:${colorId}:${sizeCode}`
   if (colorId != null) return `C:${colorId}`
   if (sizeCode != null) return `S:${sizeCode}`
@@ -106,13 +108,13 @@ function keyOf(colorId: number | null, sizeCode: string | null): string {
 const slots = computed(() => {
   if (form.skuMode === 'FIXED') return [{ key: 'FIXED', label: '全部颜色、尺码', colorId: null, sizeCode: null }]
   if (form.skuMode === 'BY_COLOR') {
-    return props.colors.map((c) => ({ key: keyOf(c.id, null), label: c.name, colorId: c.id as number | null, sizeCode: null as string | null }))
+    return props.colors.map((c) => ({ key: keyOf(c.id, null), label: c.name, colorId: c.id as string | null, sizeCode: null as string | null }))
   }
   if (form.skuMode === 'BY_SIZE') {
-    return props.sizes.map((sz) => ({ key: keyOf(null, sz), label: sz, colorId: null as number | null, sizeCode: sz as string | null }))
+    return props.sizes.map((sz) => ({ key: keyOf(null, sz), label: sz, colorId: null as string | null, sizeCode: sz as string | null }))
   }
   return props.colors.flatMap((c) =>
-    props.sizes.map((sz) => ({ key: keyOf(c.id, sz), label: `${c.name} · ${sz}`, colorId: c.id as number | null, sizeCode: sz as string | null })),
+    props.sizes.map((sz) => ({ key: keyOf(c.id, sz), label: `${c.name} · ${sz}`, colorId: c.id as string | null, sizeCode: sz as string | null })),
   )
 })
 
@@ -122,9 +124,9 @@ const skuOptions = computed(() => {
   const used = new Set(Object.values(skuMap).map((v) => v.materialSkuId))
   return materialSkus.value.filter((s) => s.status === 1 || used.has(s.id))
 })
-const skuOf = (id: number | undefined) => materialSkus.value.find((s) => s.id === id)
+const skuOf = (id: string | undefined) => materialSkus.value.find((s) => s.id === id)
 
-async function loadMaterialSkus(materialId: number) {
+async function loadMaterialSkus(materialId: string) {
   if (!materialId) {
     materialSkus.value = []
     return
@@ -167,7 +169,7 @@ function resetFromProps() {
   } else {
     Object.assign(form, {
       part: '',
-      materialId: 0,
+      materialId: '',
       materialCode: '',
       materialName: '',
       materialType: '',
@@ -215,7 +217,7 @@ async function applyDefaults(full: boolean) {
   form.priceTaxIncluded = def.priceTaxIncluded
   form.priceFreightIncluded = def.priceFreightIncluded
   // 和行上一样的不在 skuPrices 里：没列到的配料用行上的价（null）
-  const prices = new Map(def.skuPrices.map((p) => [p.materialSkuId, p.refPrice]))
+  const prices = new Map((def.skuPrices ?? []).map((p) => [p.materialSkuId, p.refPrice]))
   for (const entry of Object.values(skuMap)) entry.refPrice = prices.get(entry.materialSkuId) ?? null
 }
 
@@ -262,13 +264,13 @@ async function onPickMaterial(rows: MaterialPickRow[] | StylePickRow[]) {
   await applyDefaults(true)
 }
 
-async function onSkuChange(key: string, skuId: number | null) {
+async function onSkuChange(key: string, skuId: string | null) {
   if (skuId == null) delete skuMap[key]
   else skuMap[key] = { materialSkuId: skuId, refPrice: null }
   await applyDefaults(false)
 }
 
-async function onSupplierChange(id: number | null | undefined) {
+async function onSupplierChange(id: string | null | undefined) {
   form.supplierId = id ?? null
   if (!form.supplierId) form.supplierName = null
   await applyDefaults(false)
@@ -374,14 +376,14 @@ function submit() {
               placeholder="选 SKU"
               class="slot-sel"
               :class="{ stopped: skuOf(skuMap[slot.key]?.materialSkuId)?.status === 0 }"
-              @update:model-value="(v: number | null) => onSkuChange(slot.key, v ?? null)"
+              @update:model-value="(v: string | null) => onSkuChange(slot.key, v ?? null)"
             >
               <el-option v-for="s in skuOptions" :key="s.id" :label="skuLabel(s)" :value="s.id" :disabled="s.status !== 1">
                 <span :class="{ danger: s.status !== 1 }">{{ skuLabel(s) }}<template v-if="s.status !== 1">（已停用）</template></span>
               </el-option>
             </el-select>
             <span v-if="skuOf(skuMap[slot.key]?.materialSkuId)?.status === 0" class="danger small">已停用，生效时会被拦</span>
-            <span v-if="skuMap[slot.key]?.refPrice != null" class="dim num small">单价 {{ formatPrice(skuMap[slot.key]?.refPrice) }}</span>
+            <span v-if="canSeeCost && skuMap[slot.key]?.refPrice != null" class="dim num small">单价 {{ formatPrice(skuMap[slot.key]?.refPrice) }}</span>
           </div>
         </div>
       </el-form-item>
@@ -410,11 +412,11 @@ function submit() {
         <SupplierSelect :model-value="form.supplierId" :label="form.supplierName" clearable @update:model-value="onSupplierChange" />
       </el-form-item>
 
-      <el-form-item :label="`参考单价（元 / ${units.labelOf(form.unit) || '库存单位'}）`">
+      <el-form-item v-if="canSeeCost" :label="`参考单价（元 / ${units.labelOf(form.unit) || '库存单位'}）`">
         <el-input-number v-model="form.refPrice" :min="0" :precision="4" :controls="false" />
         <span v-if="purchaseHint" class="dim small">{{ purchaseHint }}</span>
       </el-form-item>
-      <el-form-item label="单价口径">
+      <el-form-item v-if="canSeeCost" label="单价口径">
         <div class="checks">
           <el-checkbox v-model="form.priceTaxIncluded">含税</el-checkbox>
           <el-checkbox v-model="form.priceFreightIncluded">含运费</el-checkbox>

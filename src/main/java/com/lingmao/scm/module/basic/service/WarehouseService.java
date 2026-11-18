@@ -7,6 +7,8 @@ import com.lingmao.scm.module.basic.dto.WarehouseSaveReq;
 import com.lingmao.scm.module.basic.dto.WarehouseVO;
 
 import java.util.List;
+import java.util.Collection;
+import java.util.Map;
 
 /**
  * 仓库（RFC 003 §6）：物料仓、成品仓在页面上手建；工厂仓由 supplier 在它自己的事务里调下面两个方法同步，
@@ -17,6 +19,9 @@ public interface WarehouseService {
     PageResult<WarehouseVO> page(WarehouseQuery query);
 
     WarehouseVO getById(long id);
+
+    /** 单据列表只需仓库名时一次批量取；引用缺失仍报 404，不展开负责人等详情。 */
+    Map<Long, String> names(Collection<Long> ids);
 
     /** 下拉：启用的，type 为空不筛 */
     List<WarehouseOption> options(String type);

@@ -24,7 +24,7 @@ public class ProductionNodeVO {
     private String state;
     private Integer lateDays;
     private String lastReportByName;
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime lastReportTime;
     private int reportCount;
     /** 这个节点每次报工的照片，新的在前 */

@@ -1,4 +1,4 @@
-import { download, http, type RequestOptions } from '@/utils/request'
+import { download, http, snapshotRequestBody, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
   BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
@@ -6,7 +6,7 @@ import type {
   ProductionIssue, ProductionMaterials, ProductionQuery, ProductionReceipt, ProductionRow, ReceiptCreated, ReceiptForm,
 } from '@/types/production'
 import { attachmentBody } from './basic'
-import { docApi } from './biz'
+import { docApi, documentOptions } from './biz'
 import type { PageParams } from './system'
 
 /**
@@ -26,50 +26,50 @@ export const productionApi = {
   /** 状态页签上的数：筛选条件和列表一样（status、returned 不看） */
   counts: (params: Omit<ProductionQuery, 'status' | 'returned' | 'ids'>) => http.get<ProductionCounts>(`${base}/counts`, params),
   /** 不在数据范围里 404。地址的种类和单子对不上（/production/ 打开了 CP 单）时页面按 kind 换地址 */
-  get: (id: number) => http.get<ProductionDetail>(`${base}/${id}`),
+  get: (id: string) => http.get<ProductionDetail>(`${base}/${id}`),
   /** 改草稿，返回新的 version。不是草稿、version 对不上 1002；加工方式换成了另一种单的 1000 */
-  update: (id: number, data: ProductionForm) => http.put<number>(`${base}/${id}`, data),
+  update: (id: string, data: ProductionForm) => http.put<number>(`${base}/${id}`, data),
   export: (params: ProductionQuery, fallbackName: string) => download(`${base}/export`, params, fallbackName),
 
   // ---------- 进度节点 ----------
 
   /** 改节点计划（已下单、生产中）：全部节点一起发；计划完成早于计划开始 400 */
-  updatePlan: (id: number, data: NodePlanReq) => http.put<{ planRevision: number }>(`${base}/${id}/nodes`, data),
+  updatePlan: async (id: string, data: NodePlanReq, options?: RequestOptions) => http.put<{ planRevision: number }>(`${base}/${id}/nodes`, snapshotRequestBody(data), await documentOptions(base, id, options)),
   /** 报进度（电脑、手机共用）。已经报过完成的节点再"只报开始" 1000 */
-  report: (id: number, nodeId: number, { photos, ...data }: NodeReportForm) =>
-    http.post<NodeReportResult>(`${base}/${id}/nodes/${nodeId}/reports`, { ...data, photos: attachmentBody(photos) }),
+  report: async (id: string, nodeId: string, { photos, ...data }: NodeReportForm, options?: RequestOptions) =>
+    http.post<NodeReportResult>(`${base}/${id}/nodes/${nodeId}/reports`, snapshotRequestBody({ ...data, photos: attachmentBody(photos) }), await documentOptions(base, id, options)),
   /** 一个节点的全部汇报记录，新的在前 */
-  nodeReports: (id: number, nodeId: number) => http.get<NodeReport[]>(`${base}/${id}/nodes/${nodeId}/reports`),
+  nodeReports: (id: string, nodeId: string) => http.get<NodeReport[]>(`${base}/${id}/nodes/${nodeId}/reports`),
 
   // ---------- 领料页签 ----------
 
   /** 应领、已领、还差（只算我方采购的行）和挂在这张单上的领料、退料单 */
-  materials: (id: number) => http.get<ProductionMaterials>(`${base}/${id}/materials`),
+  materials: (id: string) => http.get<ProductionMaterials>(`${base}/${id}/materials`),
   /** 给 04 选生产单用：领料列还有没领齐的，returnable = true 列已领 > 0 的（要 inventory:doc:add） */
   issueOptions: (params: PageParams & IssueOptionQuery) => http.get<PageResult<IssueOption>>(`${base}/issue-options`, params),
 
   // ---------- 异常 ----------
 
   /** 全部异常，没关闭的在前 */
-  issues: (id: number) => http.get<ProductionIssue[]>(`${base}/${id}/issues`),
+  issues: (id: string) => http.get<ProductionIssue[]>(`${base}/${id}/issues`),
   /** 上报（电脑、手机共用）。没传照片 400；生产单不是已下单、生产中 1000 */
-  reportIssue: (id: number, { photos, ...data }: IssueForm) =>
-    http.post<IssueCreated>(`${base}/${id}/issues`, { ...data, photos: attachmentBody(photos) }),
+  reportIssue: async (id: string, { photos, ...data }: IssueForm, options?: RequestOptions) =>
+    http.post<IssueCreated>(`${base}/${id}/issues`, snapshotRequestBody({ ...data, photos: attachmentBody(photos) }), await documentOptions(base, id, options)),
   /** 开始处理：待处理 → 处理中，处理人记我。已经不是待处理 1002 */
-  startIssue: (id: number, issueId: number) => http.post<void>(`${base}/${id}/issues/${issueId}/start`),
+  startIssue: async (id: string, issueId: string, options?: RequestOptions) => http.post<void>(`${base}/${id}/issues/${issueId}/start`, undefined, await documentOptions(base, id, options)),
   /** 关闭：处理措施必填（400）。已经关了 1002 */
-  closeIssue: (id: number, issueId: number, data: IssueCloseForm) => http.post<void>(`${base}/${id}/issues/${issueId}/close`, data),
+  closeIssue: async (id: string, issueId: string, data: IssueCloseForm, options?: RequestOptions) => http.post<void>(`${base}/${id}/issues/${issueId}/close`, snapshotRequestBody(data), await documentOptions(base, id, options)),
 
   // ---------- 回货 ----------
 
   /** 全部回货单（含作废的），新的在前 */
-  receipts: (id: number) => http.get<ProductionReceipt[]>(`${base}/${id}/receipts`),
+  receipts: (id: string) => http.get<ProductionReceipt[]>(`${base}/${id}/receipts`),
   /** 登记回货（建 + 审核一步）。超过 ⌊件数 × 1.03⌋ 1004（data 是 ReceiptOverRow[]） */
-  receive: (id: number, { photos, ...data }: ReceiptForm) =>
-    http.post<ReceiptCreated>(`${base}/${id}/receipts`, { ...data, photos: attachmentBody(photos) }),
+  receive: async (id: string, { photos, ...data }: ReceiptForm, options?: RequestOptions) =>
+    http.post<ReceiptCreated>(`${base}/${id}/receipts`, snapshotRequestBody({ ...data, photos: attachmentBody(photos) }), await documentOptions(base, id, options)),
   /** 作废一张回货单：已回、次品减回去，生产单、订单的状态重算。原因必填 */
-  voidReceipt: (id: number, receiptId: number, reason: string) =>
-    http.post<void>(`${base}/${id}/receipts/${receiptId}/void`, { reason }),
+  voidReceipt: async (id: string, receiptId: string, reason: string, options?: RequestOptions) =>
+    http.post<void>(`${base}/${id}/receipts/${receiptId}/void`, { reason }, await documentOptions(base, id, options)),
 
   // ---------- 手机报工 ----------
 

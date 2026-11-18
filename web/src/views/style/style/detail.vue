@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -23,6 +25,8 @@ import { confirmRemove } from '@/views/basic/common'
 import DesignFiles from './DesignFiles.vue'
 import StyleOrdersTab from './StyleOrdersTab.vue'
 import TechPackTab from './TechPackTab.vue'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeProductionPrice } = useFieldAccess()
 
 /**
  * 款式详情（/styles/:id，RFC 005 §9，原型 /styles/:code）。左边页签：基本信息、资料包、颜色尺码、需求订单、价格、操作记录；右边图片、设计附件。
@@ -36,7 +40,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 
 const classes = useDict('style_class')
@@ -109,13 +113,17 @@ async function openCost() {
   await techPack.value?.open(packId, 'cost')
 }
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const [d, list] = await Promise.all([styleApi.get(id), styleApi.skus(id), loadOverview()])
+    const [d, list] = await read.run(() => Promise.all([styleApi.get(id), styleApi.skus(id), loadOverview()]))
+    if (!read.current()) return
     detail.value = d
     skus.value = list.map((k) => ({ ...k, draftBarcode: k.barcode ?? '', draftPrice: k.tagPrice }))
     tabs.rename(path, `款式 ${d.code}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -151,7 +159,7 @@ const subLine = computed(() => {
 const infoRows = computed(() => {
   const d = s.value
   if (!d) return []
-  const money = (v: number | null) => (v == null ? '' : `${formatPrice(v)} 元`)
+  const money = (v: number | null | undefined) => (v == null ? '' : `${formatPrice(v)} 元`)
   return [
     ['款号', d.code],
     ['款式名称', d.name],
@@ -169,7 +177,7 @@ const infoRows = computed(() => {
     ['版师', d.patternMakerName],
     ['尺码组', `${d.sizeGroupName}（${d.sizes.join(' ')}）`],
     ['吊牌价', money(d.tagPrice)],
-    ['参考成本价', money(d.refCost)],
+    ...(canSeeCost.value ? [['参考成本价', money(d.refCost)]] : []),
     ['上市日期', d.launchDate ? formatDate(d.launchDate) : ''],
     ['品名', d.productName],
     ['成分', d.composition],
@@ -226,7 +234,7 @@ async function saveFiles(files: FileVO[]) {
 }
 
 // ---------- 颜色 ----------
-const adding = ref<number[]>([])
+const adding = ref<string[]>([])
 const colorPicker = ref<InstanceType<typeof ColorSelect>>()
 const addingPreview = computed(() => {
   const d = s.value
@@ -523,7 +531,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
             <StyleOrdersTab :style-id="id" />
           </el-tab-pane>
 
-          <el-tab-pane v-if="user.hasPerm('price:price:list')" label="价格" name="prices" lazy>
+          <el-tab-pane v-if="canSeeProductionPrice && user.hasPerm('price:price:list')" label="价格" name="prices" lazy>
             <PriceHistory :subject="{ kind: 'style', id, code: s.code, name: s.name }" />
           </el-tab-pane>
 

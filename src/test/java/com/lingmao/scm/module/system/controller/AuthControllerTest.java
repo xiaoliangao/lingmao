@@ -1,7 +1,9 @@
 package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.module.system.service.AuthService;
+import com.lingmao.scm.module.system.dto.AuthTokens;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.SessionCookies;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -32,6 +34,9 @@ class AuthControllerTest {
     @MockitoBean
     private AuthService authService;
 
+    @MockitoBean
+    private SessionCookies cookies;
+
     /** 规则：密码为空在边界就拦下，返回 400，Service 不会被调用 */
     @Test
     void login_blankPassword_returns400() throws Exception {
@@ -48,7 +53,8 @@ class AuthControllerTest {
     /** 规则：登录成功，token 放在 data 里 */
     @Test
     void login_ok_returnsTokenInData() throws Exception {
-        when(authService.login(any())).thenReturn("token-for-1");
+        AuthTokens tokens = new AuthTokens("token-for-1", "synthetic-refresh", "synthetic-browser", 604800);
+        when(authService.login(any())).thenReturn(tokens);
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -57,6 +63,8 @@ class AuthControllerTest {
                                 """))
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data").value("token-for-1"));
+
+        verify(cookies).write(any(), any(), org.mockito.ArgumentMatchers.eq(tokens));
     }
 
     /** 规则：改密码时新密码不到 8 位，在入口就返回 400，Service 不会被调用 */

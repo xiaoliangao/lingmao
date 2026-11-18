@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
+import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi } from '@/api/order'
+import { orderApi as orderApiBase } from '@/api/order'
 import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -23,6 +25,10 @@ import { formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { applySkuValues, buildSkuRows, hydrateSkuValues, lineAmountCents, MAX_UNIT_PRICE, validateOrderCapacity, type SkuValues } from '@/utils/orderSku'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
+const orderApi = bindCompanyApi(orderApiBase, () => savedCompanyId.value ?? head.companyId)
 
 /**
  * 需求订单整页表单（/orders/new、/orders/:id/edit，docs/api/02 §1.2、§3.5、§4.2）。
@@ -38,19 +44,19 @@ const tabs = useTabsStore()
 const user = useUserStore()
 
 const path = route.path
-const id = route.params.id ? Number(route.params.id) : null
+const id = route.params.id ? routeId(route.params.id) : null
 const editing = id !== null
 
 interface StyleBlock {
   opt: OrderStyleOption
   unitPrice: number | null
   bySizePrice: boolean
-  sizePrices: Record<string, number | null>
+  sizePrices: Record<string, number | null | undefined>
   lineDueDate: string | null
   remark: string
   /** 款式 SKU id → 件数 */
-  qtys: Record<number, number>
-  values: Record<number, SkuValues>
+  qtys: Record<string, number>
+  values: Record<string, SkuValues>
 }
 
 const loaded = ref(!editing)
@@ -58,11 +64,12 @@ const notFound = ref(false)
 const loadError = ref<string | null>(null)
 const saving = ref(false)
 const version = ref(0)
+const savedCompanyId = ref<string>()
 const orderNo = ref('')
 
 const head = reactive({
   companyId: user.defaultCompanyId,
-  customerId: null as number | null,
+  customerId: null as string | null,
   customerOrderNo: null as string | null,
   orderType: 'STOCK',
   brand: null as string | null,
@@ -87,7 +94,7 @@ const guard = useUnsavedChanges(() => ({ head, files: files.value, blocks: block
 
 const skuCells = (opt: OrderStyleOption) => opt.skus.map((s) => ({ id: s.id, colorId: s.colorId, sizeCode: s.sizeCode, status: s.status }))
 
-function valuesOf(b: StyleBlock, skuId: number): SkuValues {
+function valuesOf(b: StyleBlock, skuId: string): SkuValues {
   return b.values[skuId] ??= { price: null, lineDueDate: null, remark: null }
 }
 function mixedValues(b: StyleBlock): boolean {
@@ -124,7 +131,7 @@ function onBySizeChange(b: StyleBlock, on: boolean) {
   for (const sz of b.opt.sizes) if (b.sizePrices[sz] == null) b.sizePrices[sz] = b.unitPrice
 }
 
-async function appendStyles(styleIds: number[]) {
+async function appendStyles(styleIds: string[]) {
   const fresh = styleIds.filter((sid) => !blocks.value.some((b) => b.opt.styleId === sid))
   if (!fresh.length) return
   const opts = await orderApi.styleOptions(fresh)
@@ -137,7 +144,7 @@ function onPickedStyles(rows: MaterialPickRow[] | StylePickRow[]) {
   void appendStyles((rows as StylePickRow[]).map((r) => r.id))
 }
 
-const queryStyleId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : null)
+const queryStyleId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? value : null)
 
 async function init() {
   loadError.value = null
@@ -154,6 +161,7 @@ async function init() {
   }
   try {
     const d = await orderApi.get(id)
+    savedCompanyId.value = d.companyId
     version.value = d.version
     orderNo.value = d.no
     Object.assign(head, {
@@ -179,8 +187,8 @@ async function init() {
       const opt = optMap.get(st.styleId)
       if (!opt) throw new Error(`款式 ${st.styleCode} 的矩阵信息加载不全，请重试；原明细不会被删除`)
       const items = d.items.filter((i) => i.styleId === st.styleId)
-      const qtys: Record<number, number> = {}
-      const sizePrices: Record<string, number | null> = {}
+      const qtys: Record<string, number> = {}
+      const sizePrices: Record<string, number | null | undefined> = {}
       for (const it of items) {
         qtys[it.styleSkuId] = it.qty
         sizePrices[it.sizeCode] = it.price
@@ -251,7 +259,7 @@ function buildForm(): OrderForm | null {
 }
 
 /** 提交审核：静默请求，资料包检查没过（1000 + 清单）弹表格。返回提交上了没有 */
-async function submit(orderId: number, ver: number): Promise<boolean> {
+async function submit(orderId: string, ver: number): Promise<boolean> {
   try {
     await orderApi.act(orderId, 'submit', { version: ver }, { silent: true })
     return true
@@ -269,7 +277,8 @@ async function save(andSubmit: boolean) {
   saving.value = true
   try {
     if (id !== null) {
-      version.value = await orderApi.update(id, { ...form, version: version.value })
+      version.value = await orderApi.update(id, { ...form, version: version.value, expectedCompanyId: savedCompanyId.value })
+      savedCompanyId.value = form.companyId
       guard.markSaved()
       if (andSubmit && !(await submit(id, version.value))) return
       ElMessage.success(andSubmit ? `${orderNo.value} 提交审核了` : `${orderNo.value} 已保存`)
@@ -359,7 +368,7 @@ const backTo = editing ? `/orders/${id}` : '/orders'
 
       <div class="sec-bar">
         <h3 class="sec">款式</h3>
-        <span class="summary num">合计 <strong>{{ formatQty(totalQty) }}</strong> 件 · {{ head.currency }} <strong>{{ formatMoney(totalAmount) }}</strong></span>
+        <span class="summary num">合计 <strong>{{ formatQty(totalQty) }}</strong> 件<template v-if="canSeeOrderPrice"> · {{ head.currency }} <strong>{{ formatMoney(totalAmount) }}</strong></template></span>
         <el-button icon="Plus" @click="stylePicking = true">加款式</el-button>
       </div>
 
@@ -368,20 +377,20 @@ const backTo = editing ? `/orders/${id}` : '/orders'
       <section v-for="(b, bIdx) in blocks" :key="b.opt.styleId" class="panel style-block">
         <div class="panel-head block-head">
           <span class="st-info">
-            <img v-if="b.opt.image" :src="b.opt.image.thumbUrl ?? b.opt.image.url" alt="" class="thumb" />
+            <ThumbImage v-if="b.opt.image" :src="b.opt.image.thumbUrl" alt="" class="thumb" />
             <span class="code">{{ b.opt.code }}</span>
             <strong>{{ b.opt.name }}</strong>
             <span v-if="b.opt.problem" class="problem">{{ b.opt.problem }}</span>
             <span v-else-if="b.opt.currentPackVersion != null" class="dim">资料包 V{{ b.opt.currentPackVersion }}</span>
           </span>
           <span class="st-acts num">
-            {{ formatQty(blockQty(b)) }} 件 · {{ formatMoney(blockAmount(b)) }}
+            {{ formatQty(blockQty(b)) }} 件<template v-if="canSeeOrderPrice"> · {{ formatMoney(blockAmount(b)) }}</template>
             <el-button link type="danger" @click="blocks.splice(bIdx, 1)">去掉这个款</el-button>
           </span>
         </div>
         <div class="panel-body">
           <div class="line-controls">
-            <label class="ctrl">
+            <label v-if="canSeeOrderPrice" class="ctrl">
               <span class="dim">单价</span>
               <el-input-number
                 v-model="b.unitPrice"
@@ -395,8 +404,8 @@ const backTo = editing ? `/orders/${id}` : '/orders'
                 :placeholder="pricePlaceholder(b.opt)"
               />
             </label>
-            <el-button data-testid="order-apply-price" size="small" :disabled="b.bySizePrice" @click="applyPrice(b)">应用整款单价</el-button>
-            <el-checkbox v-model="b.bySizePrice" @change="onBySizeChange(b, Boolean($event))">按尺码填单价</el-checkbox>
+            <el-button v-if="canSeeOrderPrice" data-testid="order-apply-price" size="small" :disabled="b.bySizePrice" @click="applyPrice(b)">应用整款单价</el-button>
+            <el-checkbox v-if="canSeeOrderPrice" v-model="b.bySizePrice" @change="onBySizeChange(b, Boolean($event))">按尺码填单价</el-checkbox>
             <label class="ctrl">
               <span class="dim">行交期</span>
               <el-date-picker v-model="b.lineDueDate" size="small" type="date" value-format="YYYY-MM-DD" placeholder="同要求交期" />
@@ -407,9 +416,9 @@ const backTo = editing ? `/orders/${id}` : '/orders'
             </label>
             <el-button size="small" @click="applyDetails(b)">应用整款交期 / 备注</el-button>
           </div>
-          <p v-if="mixedValues(b)" class="dim">多个值：各 SKU 的单价、行交期和备注分别保留；批量输入后点「应用」才覆盖。</p>
+          <p v-if="mixedValues(b)" class="dim">多个值：各 SKU 的明细分别保留；批量输入后点「应用」才覆盖。</p>
           <SkuMatrix v-model="b.qtys" :sizes="b.opt.sizes" :colors="b.opt.colors" :skus="skuCells(b.opt)">
-            <template v-if="b.bySizePrice" #prepend="{ sizes }">
+            <template v-if="canSeeOrderPrice && b.bySizePrice" #prepend="{ sizes }">
               <tr class="price-row">
                 <td class="dim">单价</td>
                 <td v-for="sz in sizes" :key="sz">
@@ -421,10 +430,10 @@ const backTo = editing ? `/orders/${id}` : '/orders'
             </template>
           </SkuMatrix>
           <el-collapse class="sku-values">
-            <el-collapse-item title="逐 SKU 单价 / 行交期 / 备注" name="sku-values">
+            <el-collapse-item :title="canSeeOrderPrice ? '逐 SKU 单价 / 行交期 / 备注' : '逐 SKU 行交期 / 备注'" name="sku-values">
               <el-table :data="b.opt.skus.filter((sk) => (b.qtys[sk.id] ?? 0) > 0)" size="small">
                 <el-table-column label="SKU" min-width="170"><template #default="{ row }">{{ row.code }} · {{ row.sizeCode }}</template></el-table-column>
-                <el-table-column label="单价" width="150"><template #default="{ row }"><el-input-number v-model="valuesOf(b, row.id).price" :min="0" :max="MAX_UNIT_PRICE" :precision="4" :controls="false" size="small" /></template></el-table-column>
+                <el-table-column v-if="canSeeOrderPrice" label="单价" width="150"><template #default="{ row }"><el-input-number v-model="valuesOf(b, row.id).price" :min="0" :max="MAX_UNIT_PRICE" :precision="4" :controls="false" size="small" /></template></el-table-column>
                 <el-table-column label="行交期" width="175"><template #default="{ row }"><el-date-picker v-model="valuesOf(b, row.id).lineDueDate" type="date" value-format="YYYY-MM-DD" placeholder="同要求交期" size="small" /></template></el-table-column>
                 <el-table-column label="备注" min-width="180"><template #default="{ row }"><el-input v-model="valuesOf(b, row.id).remark" maxlength="120" size="small" /></template></el-table-column>
               </el-table>

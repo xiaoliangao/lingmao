@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.inventory.service;
 
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.page.SeekPage;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
 import com.lingmao.scm.module.inventory.dto.StockQtyVO;
@@ -21,6 +22,8 @@ public interface StockService {
     List<StockQtyVO> qty(long warehouseId, List<Long> skuIds);
 
     PageResult<StockLogRowVO> logs(StockLogQuery query);
+
+    SeekPage<StockLogRowVO> seekLogs(StockLogQuery query);
 
     byte[] export(StockQuery query);
 

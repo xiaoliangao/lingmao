@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.purchase.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -70,7 +71,7 @@ class PurchaseIT {
             "order:order:audit", "purchase:mrp:list", "purchase:mrp:add", "purchase:mrp:edit", "purchase:mrp:remove",
             "purchase:order:list", "purchase:order:add", "purchase:order:edit", "purchase:order:remove", "purchase:order:submit",
             "purchase:order:audit", "purchase:order:close", "purchase:order:void", "purchase:order:export", "inventory:doc:add",
-            "inventory:doc:audit");
+            "inventory:doc:audit", "techpack:cost:query", "order:price:query");
 
     @Autowired
     private MrpService mrpService;
@@ -93,7 +94,7 @@ class PurchaseIT {
 
     @AfterEach
     void logout() {
-        SecurityContextHolder.clearContext();
+        TestIdentity.clear();
     }
 
     private static void loginAs(long userId) {
@@ -370,13 +371,24 @@ class PurchaseIT {
         var pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
-            java.util.concurrent.Callable<com.lingmao.scm.module.inventory.dto.InvDocCreatedVO> action = () -> {
+            java.util.concurrent.Callable<java.util.Optional<com.lingmao.scm.module.inventory.dto.InvDocCreatedVO>> action = () -> {
                 loginAs(f.user); start.await();
-                try { return invDocService.fromSource(BizType.PURCHASE_ORDER, po, req); }
-                finally { SecurityContextHolder.clearContext(); }
+                try { return java.util.Optional.of(invDocService.fromSource(BizType.PURCHASE_ORDER, po, req)); }
+                catch (com.lingmao.scm.common.idempotency.IdempotencyInProgress processing) {
+                    return java.util.Optional.empty();
+                }
+                finally { TestIdentity.clear(); }
             };
             var one = pool.submit(action); var two = pool.submit(action); start.countDown();
-            assertThat(one.get(15, TimeUnit.SECONDS)).isEqualTo(two.get(15, TimeUnit.SECONDS));
+            var first = one.get(15, TimeUnit.SECONDS);
+            var second = two.get(15, TimeUnit.SECONDS);
+            assertThat(first.isPresent() || second.isPresent()).as("至少一个并发调用完成原始入账").isTrue();
+            // The processing response is deliberately immediate. After both
+            // transactions finish, the same UUID and body must replay one result.
+            var replay = invDocService.fromSource(BizType.PURCHASE_ORDER, po, req);
+            first.ifPresent(result -> assertThat(result).isEqualTo(replay));
+            second.ifPresent(result -> assertThat(result).isEqualTo(replay));
+            assertThat(invDocService.fromSource(BizType.PURCHASE_ORDER, po, req)).isEqualTo(replay);
         } finally { pool.shutdownNow(); }
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM inv_doc WHERE source_type='PURCHASE_ORDER' AND source_id=?", Long.class, po)).isEqualTo(1);
         assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("60");
@@ -458,7 +470,7 @@ class PurchaseIT {
                         workerPid.complete(jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class));
                         action.run();
                     });
-                } finally { SecurityContextHolder.clearContext(); }
+                } finally { TestIdentity.clear(); }
             });
             try {
                 int pid = workerPid.get(5, TimeUnit.SECONDS);
@@ -623,6 +635,8 @@ class PurchaseIT {
                 INSERT INTO tp_bom_item (tech_pack_id, seq, part, material_id, sku_mode, usage_qty, unit, supplier_id)
                 VALUES (?, 1, '大身', ?, 'BY_COLOR', 1.5, 'METER', ?) RETURNING id""", Long.class, pack, material, supplier);
         jdbcTemplate.update("INSERT INTO tp_bom_item_sku (bom_item_id, color_id, material_sku_id) VALUES (?, ?, ?)", item, color, sku);
+        TestIdentity.grant(jdbcTemplate, user, PERMS);
+        TestIdentity.company(company);
         loginAs(user);
         return new Fixture(company, user, warehouse, supplier, style, skuM, skuL, material, sku, skuCode);
     }

@@ -17,7 +17,7 @@ export type SupplierAction =
 
 /** 列表的一行。不出账号 */
 export interface SupplierRow {
-  id: number
+  id: string
   code: string
   name: string
   shortName: string
@@ -26,12 +26,12 @@ export interface SupplierRow {
   status: SupplierStatus
   /** 字典 supplier_category 的 value，按字典顺序 */
   categories: string[]
-  contact: string | null
-  phone: string | null
+  contact?: string | null
+  phone?: string | null
   settleMethod: string | null
   creditDays: number | null
   taxPct: number | null
-  buyerId: number | null
+  buyerId: string | null
   buyerName: string | null
   /** 有一份关键字段改动等审批 */
   changePending: boolean
@@ -60,10 +60,10 @@ export const CHANGE_STATUS: Record<ChangeStatus, { label: string; tone: 'pending
 
 /** 一份关键字段改动。actions：当前用户能做的 approve / reject / withdraw */
 export interface SupplierChange {
-  id: number
+  id: string
   status: ChangeStatus
   items: ChangeItem[]
-  applyBy: number | null
+  applyBy: string | null
   applyByName: string | null
   applyTime: string
   auditByName: string | null
@@ -74,7 +74,7 @@ export interface SupplierChange {
 
 /** 详情。账号是遮过的（前 4 后 4）；全号走 /bank */
 export interface SupplierDetail {
-  id: number
+  id: string
   code: string
   name: string
   shortName: string
@@ -82,21 +82,21 @@ export interface SupplierDetail {
   level: string | null
   status: SupplierStatus
   categories: string[]
-  goodAt: { id: number; name: string }[]
-  contact: string | null
-  phone: string | null
-  wechat: string | null
-  address: string | null
+  goodAt: { id: string; name: string }[]
+  contact?: string | null
+  phone?: string | null
+  wechat?: string | null
+  address?: string | null
   settleMethod: string | null
   creditDays: number | null
   invoiceType: string | null
   taxPct: number | null
-  bankName: string | null
-  bankAccount: string | null
-  bankAccountName: string | null
-  buyerId: number | null
+  bankName?: string | null
+  bankAccount?: string | null
+  bankAccountName?: string | null
+  buyerId: string | null
   buyerName: string | null
-  admitApplyBy: number | null
+  admitApplyBy: string | null
   admitApplyByName: string | null
   admitApplyTime: string | null
   admitByName: string | null
@@ -121,38 +121,38 @@ export interface SupplierForm {
   creditCode: string | null
   level: string | null
   categories: string[]
-  goodAtIds: number[]
-  contact: string | null
-  phone: string | null
-  wechat: string | null
-  address: string | null
+  goodAtIds: string[]
+  contact?: string | null
+  phone?: string | null
+  wechat?: string | null
+  address?: string | null
   settleMethod: string | null
   creditDays: number | null
   invoiceType: string | null
   taxPct: number | null
-  bankName: string | null
+  bankName?: string | null
   /** 没有 bank 权限的人改不了，后端也不收 */
-  bankAccount: string | null
-  bankAccountName: string | null
-  buyerId: number | null
+  bankAccount?: string | null
+  bankAccountName?: string | null
+  buyerId: string | null
   remark: string | null
 }
 
 /** 保存结果：applied 直接生效的关键字段，pending 挂起等审批的 */
 export interface SupplierSaveResult {
-  id: number
+  id: string
   applied: ChangeItem[]
   pending: ChangeItem[]
 }
 
 export interface SupplierBank {
-  bankName: string | null
-  bankAccount: string | null
-  bankAccountName: string | null
+  bankName?: string | null
+  bankAccount?: string | null
+  bankAccountName?: string | null
 }
 
 export interface SupplierCert {
-  id: number
+  id: string
   /** 字典 cert_type */
   certType: string
   /** 签过名的地址 */
@@ -175,7 +175,7 @@ export interface CertForm {
 
 /** 供应商下拉的一项（SupplierSelect） */
 export interface SupplierOption {
-  id: number
+  id: string
   code: string
   shortName: string
   status: SupplierStatus
@@ -190,16 +190,16 @@ export interface SupplierQuery {
   category?: string
   status?: SupplierStatus[]
   level?: string
-  buyerId?: number | null
+  buyerId?: string | null
   toApprove?: boolean
   missingCredit?: boolean
   certExpiring?: boolean
-  ids?: number[]
+  ids?: string[]
 }
 
 /** 擅长品类的树（GET /api/categories/tree，basic 域） */
 export interface CategoryNode {
-  id: number
+  id: string
   name: string
   children?: CategoryNode[]
 }

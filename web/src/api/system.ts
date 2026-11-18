@@ -11,7 +11,7 @@ export interface PageParams {
 
 /** 用户的工作资料（RFC 003 §4.3） */
 export interface UserProfileForm {
-  defaultCompanyId?: number | null
+  defaultCompanyId?: string | null
   dept?: string | null
   post?: string | null
   /** 两位数字 01-99；编过款号以后不能改、清空 */
@@ -20,14 +20,14 @@ export interface UserProfileForm {
 
 export const userApi = {
   page: (params: PageParams & { username?: string; status?: number }) => http.get<PageResult<User>>('/api/users', params),
-  create: (data: { username: string; password: string; nickname: string; phone?: string } & UserProfileForm) => http.post<number>('/api/users', data),
+  create: (data: { username: string; password: string; nickname: string; phone?: string } & UserProfileForm) => http.post<string>('/api/users', data),
   /** 整体覆盖：没传的资料（部门、设计师编号……）会被清空，表单要把原来的值带上 */
-  update: (id: number, data: { nickname: string; phone?: string | null; status: number } & UserProfileForm) =>
+  update: (id: string, data: { nickname: string; phone?: string | null; status: number } & UserProfileForm) =>
     http.put<void>(`/api/users/${id}`, data),
-  remove: (id: number) => http.delete<void>(`/api/users/${id}`),
-  resetPassword: (id: number, password: string) => http.post<void>(`/api/users/${id}/reset-password`, { password }),
-  roleIds: (id: number) => http.get<number[]>(`/api/users/${id}/roles`),
-  assignRoles: (id: number, ids: number[]) => http.put<void>(`/api/users/${id}/roles`, { ids }),
+  remove: (id: string) => http.delete<void>(`/api/users/${id}`),
+  resetPassword: (id: string, password: string) => http.post<void>(`/api/users/${id}/reset-password`, { password }),
+  roleIds: (id: string) => http.get<string[]>(`/api/users/${id}/roles`),
+  assignRoles: (id: string, ids: string[]) => http.put<void>(`/api/users/${id}/roles`, { ids }),
   /** 下拉框选人（UserSelect）：启用的账号，用户名或昵称包含关键字，最多 20 个。登录就能调，不要用户管理的权限 */
   search: (keyword: string) => http.get<UserOption[]>('/api/users/options', { keyword: keyword || undefined }),
 }
@@ -44,15 +44,15 @@ export interface RoleForm {
 export const roleApi = {
   page: (params: PageParams & { code?: string; name?: string }) => http.get<PageResult<Role>>('/api/roles', params),
   options: () => http.get<Role[]>('/api/roles/options'),
-  create: (data: RoleForm) => http.post<number>('/api/roles', data),
-  update: (id: number, data: RoleForm) => http.put<void>(`/api/roles/${id}`, data),
-  remove: (id: number) => http.delete<void>(`/api/roles/${id}`),
-  menuIds: (id: number) => http.get<number[]>(`/api/roles/${id}/menus`),
-  assignMenus: (id: number, ids: number[]) => http.put<void>(`/api/roles/${id}/menus`, { ids }),
+  create: (data: RoleForm) => http.post<string>('/api/roles', data),
+  update: (id: string, data: RoleForm) => http.put<void>(`/api/roles/${id}`, data),
+  remove: (id: string) => http.delete<void>(`/api/roles/${id}`),
+  menuIds: (id: string) => http.get<string[]>(`/api/roles/${id}/menus`),
+  assignMenus: (id: string, ids: string[]) => http.put<void>(`/api/roles/${id}/menus`, { ids }),
 }
 
 export interface MenuForm {
-  parentId: number
+  parentId: string
   name: string
   type: 1 | 2 | 3
   path?: string | null
@@ -68,9 +68,9 @@ export interface MenuForm {
 
 export const menuApi = {
   tree: () => http.get<MenuNode[]>('/api/menus/tree'),
-  create: (data: MenuForm) => http.post<number>('/api/menus', data),
-  update: (id: number, data: MenuForm) => http.put<void>(`/api/menus/${id}`, data),
-  remove: (id: number) => http.delete<void>(`/api/menus/${id}`),
+  create: (data: MenuForm) => http.post<string>('/api/menus', data),
+  update: (id: string, data: MenuForm) => http.put<void>(`/api/menus/${id}`, data),
+  remove: (id: string) => http.delete<void>(`/api/menus/${id}`),
 }
 
 export interface DictTypeForm {
@@ -93,13 +93,13 @@ export interface DictDataForm {
 
 export const dictApi = {
   typePage: (params: PageParams & { code?: string; name?: string }) => http.get<PageResult<DictType>>('/api/dict-types', params),
-  createType: (data: DictTypeForm) => http.post<number>('/api/dict-types', data),
-  updateType: (id: number, data: DictTypeForm) => http.put<void>(`/api/dict-types/${id}`, data),
-  removeType: (id: number) => http.delete<void>(`/api/dict-types/${id}`),
+  createType: (data: DictTypeForm) => http.post<string>('/api/dict-types', data),
+  updateType: (id: string, data: DictTypeForm) => http.put<void>(`/api/dict-types/${id}`, data),
+  removeType: (id: string) => http.delete<void>(`/api/dict-types/${id}`),
   dataPage: (params: PageParams & { typeCode?: string; label?: string }) => http.get<PageResult<DictData>>('/api/dict-data', params),
-  createData: (data: DictDataForm) => http.post<number>('/api/dict-data', data),
-  updateData: (id: number, data: DictDataForm) => http.put<void>(`/api/dict-data/${id}`, data),
-  removeData: (id: number) => http.delete<void>(`/api/dict-data/${id}`),
+  createData: (data: DictDataForm) => http.post<string>('/api/dict-data', data),
+  updateData: (id: string, data: DictDataForm) => http.put<void>(`/api/dict-data/${id}`, data),
+  removeData: (id: string) => http.delete<void>(`/api/dict-data/${id}`),
   options: (typeCode: string) => http.get<DictOption[]>(`/api/dict-data/by-type/${typeCode}`),
 }
 

@@ -45,7 +45,10 @@ export function useDict(type: MaybeRefOrGetter<string>) {
 
   watch(
     () => [toValue(type), versions[toValue(type)] ?? 0] as const,
-    async ([code], old) => {
+    async ([code], old, onCleanup) => {
+      // 缓存的请求属于所有订阅者，只把这一个订阅者标成过期。
+      let current = true
+      onCleanup(() => { current = false })
       // 只是重新取（版本号变了）时先留着旧的选项，下拉不闪成空
       if (code !== old?.[0]) options.value = []
       loading.value = !!code
@@ -53,11 +56,11 @@ export function useDict(type: MaybeRefOrGetter<string>) {
       try {
         const result = await loadDict(code)
         // 等结果的时候类型又换了，这个结果作废
-        if (toValue(type) === code) options.value = result
+        if (current && toValue(type) === code) options.value = result
       } catch {
         // 消息拦截器已经弹过了，下拉框就是空的
       } finally {
-        if (toValue(type) === code) loading.value = false
+        if (current && toValue(type) === code) loading.value = false
       }
     },
     { immediate: true },

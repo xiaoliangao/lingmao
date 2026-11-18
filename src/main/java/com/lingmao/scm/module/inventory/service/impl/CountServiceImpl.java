@@ -124,6 +124,7 @@ public class CountServiceImpl implements CountService {
     private final AttachmentService attachmentService;
     private final SerialNoGenerator serialNoGenerator;
     private final Clock clock;
+    private final com.lingmao.scm.module.system.service.FileImportService imports;
 
     // ---------- 查询 ----------
 
@@ -265,6 +266,7 @@ public class CountServiceImpl implements CountService {
             throw new BizException(404, "单据不存在");
         }
         DataScope.current(false).check(count.getCreateBy(), count.getCounterId());
+        com.lingmao.scm.common.scope.CompanyContext.target(count.getCompanyId());
         return count;
     }
 
@@ -274,6 +276,7 @@ public class CountServiceImpl implements CountService {
             throw new BizException(404, "单据不存在");
         }
         DataScope.current(false).check(count.getCreateBy(), count.getCounterId());
+        com.lingmao.scm.common.scope.CompanyContext.target(count.getCompanyId());
         if (count.getVersion() != version) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这张单已经被别人改过，请刷新后再改");
         }
@@ -285,6 +288,7 @@ public class CountServiceImpl implements CountService {
     @Override
     @Transactional
     public CountCreatedVO create(CountCreateReq req) {
+        com.lingmao.scm.common.scope.CompanyContext.create(req.getCompanyId());
         CountPurpose purpose = req.getPurpose();
         CountScope scope = req.getScope();
         if (purpose == CountPurpose.OPENING && scope != CountScope.PICKED) {
@@ -311,7 +315,7 @@ public class CountServiceImpl implements CountService {
         }
         checkCounter(req.getCounterId());
         checkNoOpenCount(warehouse.getId(), null);
-        categoryIds.forEach(materialCategoryService::getById);
+        materialCategoryService.requireExists(categoryIds);
 
         InvCount count = new InvCount();
         count.setNo(serialNoGenerator.daily(BizType.INV_COUNT.prefix(null)));
@@ -697,11 +701,15 @@ public class CountServiceImpl implements CountService {
      * 表里有、单上没有的加一行（账面数取现在的库存，期初录入是 0、有库存的不行）。有一处不对整批不导（1003）
      */
     @Override
-    @Transactional
     public ImportResult importSheet(long id, MultipartFile file) {
         InvCount count = getVisible(id);
         FLOW.next("edit", count.getStatus());
-        ExcelImport<CountExcel.SheetRow> rows = excel.read(file);
+        return imports.execute("count", "count:" + id, "inventory:count:import", file, Map.of("companyId", count.getCompanyId()),
+                () -> excel.read(file), rows -> writeImport(count, rows));
+    }
+
+    private ImportResult writeImport(InvCount count, ExcelImport<CountExcel.SheetRow> rows) {
+        long id = count.getId();
         rows.checkUnique(CountServiceImpl::codeOf, "SKU 码");
         Map<String, Long> skuIds = materialService.skuIdsByCodes(rows.lines().stream().map(l -> codeOf(l.data()))
                 .filter(Objects::nonNull).toList());
@@ -784,6 +792,7 @@ public class CountServiceImpl implements CountService {
     public byte[] export(CountQuery query) {
         Page<CountRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())).getRecords();
+        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, CountRowVO::getId, CountRowVO::getCompanyId);
         fillRows(rows);
         return excel.export(rows);
     }

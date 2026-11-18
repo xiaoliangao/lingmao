@@ -115,7 +115,7 @@ class OrderServiceImplTest {
     void setUp() {
         service = new OrderServiceImpl(orderMapper, itemMapper, changeMapper, changeItemMapper, excel, changeTexts, styleService,
                 techPackService, companyService, dictDataService, userService, new TradeFeature(false), docHeaderService,
-                docLogService, attachmentService, approvalService, referenceService, serialNoGenerator, Clock.systemDefaultZone());
+                docLogService, attachmentService, approvalService, referenceService, serialNoGenerator, Clock.systemDefaultZone(), com.lingmao.scm.DirectFileImports.INSTANCE);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null, List.of()));
     }

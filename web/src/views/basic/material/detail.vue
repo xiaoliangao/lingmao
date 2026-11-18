@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -21,6 +24,8 @@ import { confirmRemove, orNull, toggleStatus } from '../common'
 import MaterialForm from './MaterialForm.vue'
 import SkuPicker from './SkuPicker.vue'
 import { invalidSpecs, specsOf, type SpecCodeOverrides } from './sku'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 物料详情（/materials/:id，RFC 003 §7、§12）：左边 SKU、价格记录、操作记录三个页签，右边图片和资料。
@@ -31,7 +36,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 
 const types = useDict('material_type')
@@ -45,11 +50,16 @@ const logList = ref<InstanceType<typeof DocLogList>>()
 const loadLogs = () => materialApi.logs(id)
 const canEdit = computed(() => user.hasPerm('basic:material:edit'))
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    detail.value = await materialApi.get(id)
+    const fetched = await read.run(() => materialApi.get(id))
+    if (!read.current()) return
+    detail.value = fetched
     tabs.rename(path, `物料 ${detail.value.material.code}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -84,7 +94,7 @@ const infoRows = computed(() => {
     ['组织 / 纹理', x.texture],
     ['默认供应商', d.defaultSupplierName],
     ['供应商货号', x.supplierItemNo],
-    ['参考单价', x.refPrice == null ? '' : `${formatPrice(x.refPrice)} 元 / ${purchaseUnit.value}`],
+    ...(canSeeCost.value ? [['参考单价', x.refPrice == null ? '' : `${formatPrice(x.refPrice)} 元 / ${purchaseUnit.value}`]] : []),
     ['起订量', x.moq == null ? '' : `${formatQty(x.moq)} ${purchaseUnit.value}`],
     ['最小包装量', `${formatQty(x.minPackQty)} ${purchaseUnit.value}`],
     ['采购周期', x.leadDays == null ? '' : `${x.leadDays} 天`],
@@ -129,7 +139,7 @@ async function saveImages(files: FileVO[]) {
 
 // ---------- 批量加 SKU ----------
 const addVisible = ref(false)
-const addForm = reactive({ colorIds: [] as number[], specs: '', specCodes: {} as SpecCodeOverrides })
+const addForm = reactive({ colorIds: [] as string[], specs: '', specCodes: {} as SpecCodeOverrides })
 const addGuard = useUnsavedChanges(addForm, addVisible)
 const existingCodes = computed(() => detail.value?.skus.map((s) => s.code) ?? [])
 
@@ -188,7 +198,7 @@ async function saveSku() {
 }
 
 async function toggleSku(sku: MaterialSku) {
-  const api = { enable: (skuId: number) => materialApi.enableSku(id, skuId), disable: (skuId: number) => materialApi.disableSku(id, skuId) }
+  const api = { enable: (skuId: string) => materialApi.enableSku(id, skuId), disable: (skuId: string) => materialApi.disableSku(id, skuId) }
   if (await toggleStatus(sku, `SKU ${sku.code}`, api, sku.id, '停用后这个 SKU 不能再选进新单据，已有库存照常出库。')) refresh()
 }
 
@@ -237,7 +247,7 @@ const LOG_ACTIONS = {
               <el-table-column label="SKU 码" min-width="170">
                 <template #default="{ row }">
                   <span class="sku-code">
-                    <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+                    <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                     <span class="code">{{ row.code }}</span>
                   </span>
                 </template>
@@ -257,7 +267,7 @@ const LOG_ACTIONS = {
               <el-table-column label="供应商色号" min-width="84" class-name="code">
                 <template #default="{ row }">{{ row.supplierColorNo ?? '—' }}</template>
               </el-table-column>
-              <el-table-column :label="`单价 / ${purchaseUnit}`" min-width="96" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" :label="`单价 / ${purchaseUnit}`" min-width="96" class-name="num" align="right">
                 <template #default="{ row }">
                   <span v-if="row.price != null">{{ formatPrice(row.price) }}</span>
                   <span v-else class="dim">同参考价</span>
@@ -280,7 +290,7 @@ const LOG_ACTIONS = {
               </el-table-column>
             </el-table>
           </el-tab-pane>
-          <el-tab-pane v-if="user.hasPerm('price:price:list')" label="价格记录" name="prices" lazy>
+          <el-tab-pane v-if="canSeeCost && user.hasPerm('price:price:list')" label="价格记录" name="prices" lazy>
             <PriceHistory :subject="{ kind: 'material', id, code: m.code, name: m.name }" />
           </el-tab-pane>
           <el-tab-pane label="操作记录" name="logs" lazy>
@@ -335,7 +345,7 @@ const LOG_ACTIONS = {
         <el-form-item label="供应商货号">
           <el-input v-model="skuForm.supplierItemNo" maxlength="64" placeholder="不填 = 用物料的" />
         </el-form-item>
-        <el-form-item :label="`单价（元 / ${purchaseUnit}）`">
+        <el-form-item v-if="canSeeCost" :label="`单价（元 / ${purchaseUnit}）`">
           <el-input-number v-model="skuForm.price" :min="0" :controls="false" :value-on-clear="null" placeholder="不填 = 参考单价" />
         </el-form-item>
         <el-form-item :label="`最小库存（${stockUnit}）`">

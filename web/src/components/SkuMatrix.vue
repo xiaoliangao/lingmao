@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, reactive, ref, toRaw, watch } from 'vue'
+import SkuMatrixRow from './SkuMatrixRow.vue'
 import { formatQty } from '@/utils/format'
 
 /**
@@ -21,7 +22,7 @@ import { formatQty } from '@/utils/format'
  * - 插槽 #prepend（参数 sizes）：表头下面多加一行，如"按尺码填单价"：<tr><td>单价</td><td v-for="s in sizes">…</td><td /></tr>
  */
 export interface MatrixColor {
-  id: number
+  id: string
   name: string
   code?: string | null
   hex?: string | null
@@ -32,8 +33,8 @@ export interface MatrixColor {
 
 export interface MatrixCell {
   /** 格子 id，v-model 的键 */
-  id: number
-  colorId: number
+  id: string
+  colorId: string
   sizeCode: string
   /** 0 = 停用，格子灰掉；不给 = 启用 */
   status?: number
@@ -41,84 +42,53 @@ export interface MatrixCell {
 
 const props = withDefaults(
   defineProps<{
-    modelValue: Record<number, number>
+    modelValue: Record<string, number>
     sizes: string[]
     colors: MatrixColor[]
     skus: MatrixCell[]
     readonly?: boolean
     /** 每格的上限：{ 格子 id: 最多几件 } 或函数；没有上限的不给 */
-    max?: Record<number, number> | ((id: number) => number | null | undefined)
+    max?: Record<string, number> | ((id: string) => number | null | undefined)
     /** 调用方的检查：有问题返回一句话（格子标红、悬停显示） */
-    error?: (id: number, qty: number) => string | null
+    error?: (id: string, qty: number) => string | null
     /** 每格下面的小字 */
-    sub?: (id: number) => string | null
+    sub?: (id: string) => string | null
     /** 合计列、合计行的标题 */
     totalLabel?: string
   }>(),
   { readonly: false, max: undefined, error: undefined, sub: undefined, totalLabel: '合计' },
 )
 
-const emit = defineEmits<{ 'update:modelValue': [value: Record<number, number>] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: Record<string, number>] }>()
 
-/** 颜色 id|尺码 → 格子 */
-const cellMap = computed(() => new Map(props.skus.map((s) => [`${s.colorId}|${s.sizeCode}`, s])))
-const cellOf = (colorId: number, size: string) => cellMap.value.get(`${colorId}|${size}`)
-
-const qtyOf = (id: number) => {
-  const value = props.modelValue[id]
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
-}
-
-function maxOf(id: number): number | null {
-  const max = props.max
-  if (!max) return null
-  const value = typeof max === 'function' ? max(id) : max[id]
-  return value ?? null
-}
-
-/** 这一格的问题：超上限、调用方的检查；没问题是 null */
-function problemOf(id: number): string | null {
-  const qty = qtyOf(id)
-  const max = maxOf(id)
-  if (max != null && qty > max) return `最多 ${formatQty(max)} 件`
-  return props.error?.(id, qty) ?? null
-}
-
-const subOf = (id: number) => props.sub?.(id) ?? null
-
-const editable = (color: MatrixColor, cell: MatrixCell) => !props.readonly && color.orderable !== false && cell.status !== 0
-
-const rowTotal = (color: MatrixColor) =>
-  props.sizes.reduce((sum, size) => {
-    const cell = cellOf(color.id, size)
-    return sum + (cell ? qtyOf(cell.id) : 0)
-  }, 0)
-
-const colTotal = (size: string) =>
-  props.colors.reduce((sum, color) => {
-    const cell = cellOf(color.id, size)
-    return sum + (cell ? qtyOf(cell.id) : 0)
-  }, 0)
-
-const grandTotal = computed(() => props.colors.reduce((sum, color) => sum + rowTotal(color), 0))
-
-const POSITIVE_INT = /^\d{0,7}$/
-
-/** 只收数字：不是就把输入框改回原来的数（不收这次输入），是就发出新的件数 */
-function onInput(id: number, event: Event) {
-  const input = event.target as HTMLInputElement
-  const text = input.value.trim()
-  if (!POSITIVE_INT.test(text)) {
-    input.value = qtyOf(id) ? String(qtyOf(id)) : ''
-    return
+/** 每行只跟踪自己的响应式格子，敲一个键只改一列小计。 */
+const quantities = reactive<Record<string, number>>({})
+const columnTotals = reactive<Record<string, number>>({})
+const grandTotal = ref(0)
+const cellMap = computed(() => new Map(props.skus.map((cell) => [`${cell.colorId}|${cell.sizeCode}`, cell])))
+const cellsById = computed(() => new Map(props.skus.map((cell) => [cell.id, cell])))
+let emitted: Record<string, number> | undefined
+watch([() => props.modelValue, () => props.skus], ([value]) => {
+  if (toRaw(value) === emitted && Object.keys(value).length === Object.keys(quantities).length && Object.entries(value).every(([key, qty]) => quantities[key] === qty)) { emitted = undefined; return }
+  for (const key of Object.keys(quantities)) if (!(key in value)) delete quantities[key]
+  for (const [key, qty] of Object.entries(value)) quantities[key] = Number.isSafeInteger(qty) && qty > 0 ? qty : 0
+  for (const key of Object.keys(columnTotals)) delete columnTotals[key]
+  grandTotal.value = 0
+  for (const cell of props.skus) {
+    const qty = quantities[cell.id] ?? 0
+    columnTotals[cell.sizeCode] = (columnTotals[cell.sizeCode] ?? 0) + qty
+    grandTotal.value += qty
   }
-  emit('update:modelValue', { ...props.modelValue, [id]: text === '' ? 0 : Number(text) })
-}
-
-function cellTitle(color: MatrixColor, cell: MatrixCell): string | undefined {
-  if (color.orderable === false) return color.reason ?? '这个颜色不能下'
-  if (cell.status === 0) return '这个 SKU 已停用'
-  return problemOf(cell.id) ?? undefined
+}, { immediate: true, deep: true })
+function updateCell(id: string, value: number) {
+  const cell = cellsById.value.get(id)
+  if (!cell) return
+  const delta = value - (quantities[id] ?? 0)
+  quantities[id] = value
+  columnTotals[cell.sizeCode] = (columnTotals[cell.sizeCode] ?? 0) + delta
+  grandTotal.value += delta
+  emitted = { ...quantities }
+  emit('update:modelValue', emitted)
 }
 </script>
 
@@ -134,42 +104,12 @@ function cellTitle(color: MatrixColor, cell: MatrixCell): string | undefined {
         <slot name="prepend" :sizes="sizes" />
       </thead>
       <tbody>
-        <tr v-for="color in colors" :key="color.id" :class="{ off: color.orderable === false }" :title="color.orderable === false ? (color.reason ?? undefined) : undefined">
-          <td class="color-col">
-            <span class="swatch" :style="{ background: color.hex ?? undefined }" />
-            <span>{{ color.name }}</span>
-            <span v-if="color.code" class="code dim">{{ color.code }}</span>
-            <span v-if="color.orderable === false && color.reason" class="reason">{{ color.reason }}</span>
-          </td>
-          <td
-            v-for="size in sizes"
-            :key="size"
-            class="num cell"
-            :class="{ bad: cellOf(color.id, size) && problemOf(cellOf(color.id, size)!.id), stopped: cellOf(color.id, size)?.status === 0 }"
-            :title="cellOf(color.id, size) ? cellTitle(color, cellOf(color.id, size)!) : undefined"
-          >
-            <template v-if="cellOf(color.id, size)">
-              <input
-                v-if="editable(color, cellOf(color.id, size)!)"
-                class="qty-input num"
-                inputmode="numeric"
-                :aria-label="`${color.name} ${size} 件数`"
-                :value="qtyOf(cellOf(color.id, size)!.id) || ''"
-                placeholder="0"
-                @input="onInput(cellOf(color.id, size)!.id, $event)"
-              />
-              <span v-else class="qty-text">{{ qtyOf(cellOf(color.id, size)!.id) ? formatQty(qtyOf(cellOf(color.id, size)!.id)) : '' }}</span>
-              <span v-if="subOf(cellOf(color.id, size)!.id)" class="sub">{{ subOf(cellOf(color.id, size)!.id) }}</span>
-            </template>
-            <span v-else class="dim">—</span>
-          </td>
-          <td class="num total-col">{{ formatQty(rowTotal(color)) }}</td>
-        </tr>
+        <SkuMatrixRow v-for="color in colors" :key="color.id" :color="color" :sizes="sizes" :cells="cellMap" :quantities="quantities" :readonly="readonly" :max="max" :error="error" :sub="sub" @change="updateCell" />
       </tbody>
       <tfoot>
         <tr>
           <td class="color-col">{{ totalLabel }}</td>
-          <td v-for="size in sizes" :key="size" class="num total-col">{{ formatQty(colTotal(size)) }}</td>
+          <td v-for="size in sizes" :key="size" class="num total-col">{{ formatQty(columnTotals[size] ?? 0) }}</td>
           <td class="num total-col grand">{{ formatQty(grandTotal) }}</td>
         </tr>
       </tfoot>
@@ -182,33 +122,33 @@ function cellTitle(color: MatrixColor, cell: MatrixCell): string | undefined {
   overflow-x: auto;
 }
 
-table {
+:deep(table) {
   min-width: 100%;
   font-size: 12.5px;
   border-collapse: collapse;
 }
 
-th,
-td {
+:deep(th),
+:deep(td) {
   padding: 5px 8px;
   text-align: right;
   border: 1px solid var(--lm-line-soft);
 }
 
-th {
+:deep(th) {
   font-weight: 500;
   color: var(--lm-muted);
   white-space: nowrap;
   background: var(--lm-subtle);
 }
 
-.color-col {
+:deep(.color-col) {
   min-width: 132px;
   text-align: left;
   white-space: nowrap;
 }
 
-.swatch {
+:deep(.swatch) {
   display: inline-block;
   width: 11px;
   height: 11px;
@@ -219,11 +159,11 @@ th {
   border-radius: 3px;
 }
 
-.color-col .code {
+:deep(.color-col .code) {
   margin-left: 4px;
 }
 
-.reason {
+:deep(.reason) {
   display: block;
   margin-top: 2px;
   font-size: 11px;
@@ -231,23 +171,23 @@ th {
   white-space: normal;
 }
 
-tr.off td {
+:deep(tr.off td) {
   color: var(--lm-faint);
   background: var(--lm-subtle);
 }
 
-.cell {
+:deep(.cell) {
   min-width: 64px;
   vertical-align: top;
 }
 
-.cell.stopped {
+:deep(.cell.stopped) {
   background: var(--lm-subtle);
 }
 
-.qty-input {
+:deep(.qty-input) {
   width: 100%;
-  min-width: 48px;
+  min-width: calc(7ch + 18px);
   height: 26px;
   padding: 0 6px;
   font-size: 12.5px;
@@ -259,30 +199,30 @@ tr.off td {
   outline: none;
 }
 
-.qty-input:focus {
+:deep(.qty-input:focus) {
   border-color: var(--lm-accent);
 }
 
-.cell.bad .qty-input,
-.cell.bad .qty-text {
+:deep(.cell.bad .qty-input),
+:deep(.cell.bad .qty-text) {
   color: var(--lm-danger-text);
 }
 
-.cell.bad .qty-input {
+:deep(.cell.bad .qty-input) {
   background: var(--lm-danger-bg);
   border-color: var(--lm-danger-line);
 }
 
-.cell.bad {
+:deep(.cell.bad) {
   background: var(--lm-danger-bg);
 }
 
-.qty-text {
+:deep(.qty-text) {
   display: block;
   line-height: 20px;
 }
 
-.sub {
+:deep(.sub) {
   display: block;
   margin-top: 2px;
   font-size: 11px;
@@ -291,21 +231,21 @@ tr.off td {
   white-space: nowrap;
 }
 
-.cell.bad .sub {
+:deep(.cell.bad .sub) {
   color: var(--lm-danger-text);
 }
 
-.total-col {
+:deep(.total-col) {
   font-weight: 600;
   background: var(--lm-subtle);
 }
 
-tfoot td {
+:deep(tfoot td) {
   font-weight: 600;
   background: var(--lm-subtle);
 }
 
-.grand {
+:deep(.grand) {
   color: var(--lm-ink);
 }
 </style>

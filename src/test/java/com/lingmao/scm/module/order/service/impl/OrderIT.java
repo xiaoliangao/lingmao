@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.order.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
@@ -72,7 +73,7 @@ class OrderIT {
     private static final List<String> PERMS = List.of("order:order:list", "order:order:add", "order:order:edit",
             "order:order:remove", "order:order:submit", "order:order:void", "order:order:audit", "order:order:import",
             "order:order:export", "order:change:list", "order:change:add", "order:change:edit", "order:change:remove",
-            "order:change:submit", "order:change:void", "order:change:audit");
+            "order:change:submit", "order:change:void", "order:change:audit", "order:price:query");
 
     @Autowired
     private OrderService orderService;
@@ -87,7 +88,7 @@ class OrderIT {
 
     @AfterEach
     void logout() {
-        SecurityContextHolder.clearContext();
+        TestIdentity.clear();
     }
 
     private static void loginAs(long userId, List<String> perms) {
@@ -450,6 +451,8 @@ class OrderIT {
                 INSERT INTO bas_material (code, name, category_id, material_type, stock_unit, purchase_unit)
                 VALUES (?, 'IT 订单面料', ?, 'FABRIC', 'METER', 'METER') RETURNING id""", Long.class, "ITOD" + s, materialCategory);
         long packV1 = pack(style, 1, material, colors, List.of("A", "B"));
+        TestIdentity.grant(jdbcTemplate, user, PERMS);
+        TestIdentity.company(company);
         loginAs(user, PERMS);
         return new Fixture(company, companyName, user, userName, approver, style, styleCode, skus, colors, colorCodes, colorNames,
                 material, packV1);

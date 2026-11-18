@@ -17,16 +17,22 @@
 
     <sql id="listFrom">
         FROM sty_style s
+        <include refid="listJoins"/>
+    </sql>
+
+    <sql id="listJoins">
         JOIN bas_category c ON c.id = s.category_id
         JOIN bas_size_group g ON g.id = s.size_group_id
     </sql>
 
-    <!-- 关键字：款号、名称、花名、品名包含整个关键字；有分隔符时再加上按几个款号精确查（Keywords）。品类含下级（Service 算好 id） -->
+    <!-- 关键字：款号按包含查；名称、花名、品名包含完整短语；有分隔符时再加上按几个款号精确查（Keywords）。品类含下级（Service 算好 id） -->
     <sql id="listWhere">
         <where>
             <if test="q.keyword != null and q.keyword.trim() != ''">
-                AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
-                     OR s.alias_name ILIKE '%' || #{q.keyword} || '%' OR s.product_name ILIKE '%' || #{q.keyword} || '%'
+                <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+                <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
+                AND (upper(s.code) LIKE #{keywordCode} OR s.name ILIKE #{keywordContains}
+                     OR s.alias_name ILIKE #{keywordContains} OR s.product_name ILIKE #{keywordContains}
                      <if test="codes != null">OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
             </if>
             <if test="categoryIds != null">
@@ -46,19 +52,35 @@
         </where>
     </sql>
 
+    <!-- 先执行款式自身的查询条件，再补分类/尺码组，避免小表统计变化导致沿外键扫描所有款式。 -->
+    <sql id="matchingStyles">
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            WITH matching_styles AS MATERIALIZED (SELECT s.* FROM sty_style s <include refid="listWhere"/>)
+        </if>
+    </sql>
+
+    <sql id="searchFrom">
+        FROM <choose>
+            <when test="q.keyword != null and q.keyword.trim() != ''">matching_styles</when>
+            <otherwise>sty_style</otherwise>
+        </choose> s
+        <include refid="listJoins"/>
+        <if test="q.keyword == null or q.keyword.trim() == ''"><include refid="listWhere"/></if>
+    </sql>
+
     <!-- 新建的在前（原型的列表）：自动编号的款号里有日期，导入的老款号没有规律，所以按建档时间排 -->
     <select id="selectListPage" resultType="com.lingmao.scm.module.style.dto.StyleListVO">
+        <include refid="matchingStyles"/>
         SELECT <include refid="listColumns"/>
-        <include refid="listFrom"/>
-        <include refid="listWhere"/>
+        <include refid="searchFrom"/>
         ORDER BY s.create_time DESC, s.id DESC
     </select>
 
     <!-- 导出按款号排，方便在 Excel 里找 -->
     <select id="selectIds" resultType="java.lang.Long">
+        <include refid="matchingStyles"/>
         SELECT s.id
-        <include refid="listFrom"/>
-        <include refid="listWhere"/>
+        <include refid="searchFrom"/>
         ORDER BY s.code
         LIMIT #{limit}
     </select>
@@ -70,8 +92,10 @@
         JOIN bas_category c ON c.id = s.category_id
         WHERE s.status IN ('ENABLED'<if test="q.includeDraft != null and q.includeDraft">, 'DRAFT'</if>)
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
-            OR s.alias_name ILIKE '%' || #{q.keyword} || '%'
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
+            AND (upper(s.code) LIKE #{keywordCode} OR s.name ILIKE #{keywordContains}
+            OR s.alias_name ILIKE #{keywordContains}
             <if test="!brands.isEmpty()">OR s.brand IN <foreach collection="brands" item="b" open="(" separator="," close=")">#{b}</foreach></if>
             <if test="codes != null">OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>)
         </if>

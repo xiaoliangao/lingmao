@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.supplier.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.log.OperLog;
@@ -51,7 +55,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/suppliers")
 @RequiredArgsConstructor
-public class SupplierController {
+public class SupplierController extends IdempotencyReplayGuard {
 
     private final SupplierService supplierService;
     private final SupplierChangeService changeService;
@@ -85,6 +89,7 @@ public class SupplierController {
     @PostMapping
     @PreAuthorize("hasAuthority('supplier:supplier:add')")
     @OperLog(module = "供应商", action = "新建")
+    @IdempotentCreate("SUPPLIER_CREATE")
     public R<SupplierSaveResult> create(@Valid @RequestBody SupplierSaveReq req) {
         return R.ok(supplierService.create(req));
     }
@@ -237,6 +242,7 @@ public class SupplierController {
     @PostMapping("/{id:\\d+}/certs")
     @PreAuthorize("hasAuthority('supplier:supplier:edit')")
     @OperLog(module = "供应商", action = "加资质")
+    @IdempotentCreate("SUPPLIER_CERT_CREATE")
     public R<Long> addCert(@PathVariable("id") long id, @Valid @RequestBody CertSaveReq req) {
         return R.ok(certService.add(id, req));
     }
@@ -292,5 +298,10 @@ public class SupplierController {
     @PreAuthorize("hasAuthority('supplier:supplier:export')")
     public ResponseEntity<byte[]> export(@Valid SupplierQuery query) {
         return Excel.download(Excel.exportFileName("供应商", LocalDate.now(clock)), excelService.export(query));
+    }
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if ("SUPPLIER_CREATE".equals(operation)) supplierService.detail(result.get("id").longValue());
+        else supplierService.detail(((Number) arguments[0]).longValue());
     }
 }

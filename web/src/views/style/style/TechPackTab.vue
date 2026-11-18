@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import ThumbImage from '@/components/ThumbImage.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -57,13 +59,13 @@ import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
  * - 版本：地址上的 techPackId 只在第一次进来、或者地址变了时用；之后按用户自己选的，概况刷新（保存、生效后）不跳回地址那一版。
  *   新建、修订、转生产以后切到新的那一版；删了草稿回到 defaultPackId。overview 由款式详情取，这里改了东西发 changed 让它重取
  * - 四个子页签共用一份表单、一个"保存"；只有 actions 里有 edit 的草稿能改。没保存的修改：换版本先问，离开由 useUnsavedChanges 管
- * - 参考单价、单件成本、工价没有看成本权限也显示（01 §4.4、§4.5：BOM 的单价不受看成本权限管）；核价子页签、PDF 含价格才要 techpack:cost:query
+ * - 参考单价、单件成本、工序工价、核价和含价 PDF 都按 techpack:cost:query 控制；无权保存省略财务字段
  * - 核价按上次保存的算（01 §6），改了没保存时提示一句
  * - 工艺标准（公司通用的默认文字、测量方法、附页文件）不单开一页，从这里拉出抽屉 CraftStandardDrawer：版本条上的"工艺标准"、
  *   还没有资料包时的空状态、导出 PDF 对话框"附工艺标准"旁边的"看附页文件"。要 techpack:standard:list
  */
 const props = defineProps<{
-  styleId: number
+  styleId: string
   styleCode: string
   styleName: string
   styleImage?: FileVO | null
@@ -87,20 +89,20 @@ const SUB_TABS: readonly SubTab[] = ['spec', 'bom', 'craft', 'cost', 'logs']
 const canSeeCost = computed(() => user.hasPerm('techpack:cost:query'))
 const canSeeStd = computed(() => user.hasPerm('techpack:standard:list'))
 const craftStd = ref<InstanceType<typeof CraftStandardDrawer>>()
-const activePackId = ref<number | null>(null)
+const activePackId = ref<string | null>(null)
 const subTab = ref<SubTab>('bom')
 const bomView = ref<'bom' | 'color'>('bom')
-const viewColorId = ref<number | undefined>(undefined)
-const costColorId = ref<number | undefined>(undefined)
+const viewColorId = ref<string | undefined>(undefined)
+const costColorId = ref<string | undefined>(undefined)
 
 const loading = ref(false)
 const saving = ref(false)
 const detail = ref<TechPackDetail | null>(null)
 const costData = ref<TechPackCost | null>(null)
 const costState = ref<'idle' | 'loading' | 'ready' | 'error' | 'forbidden'>('idle')
-const costDraftPackId = ref<number | null>(null)
+const costDraftPackId = ref<string | null>(null)
 const loadError = ref<string | null>(null)
-const inspectedBomId = ref<number | null>(null)
+const inspectedBomId = ref<string | null>(null)
 const inspectedBom = computed(() => draft.bomItems.find((row) => row.id === inspectedBomId.value) ?? null)
 const inspectedSkus = computed(() => (inspectedBom.value?.skus ?? []).filter((sku) => bomView.value !== 'color' || sku.colorId == null || sku.colorId === viewColorId.value))
 
@@ -114,12 +116,12 @@ const draft = reactive({
   craftSections: [] as CraftSectionForm[],
   processes: [] as ProcessForm[],
   costMode: 'OUTSOURCE' as CostMode,
-  buyPrice: null as number | null,
+  buyPrice: null as number | null | undefined,
   costItems: [] as CostItemForm[],
 })
 
 const editable = computed(() => detail.value?.actions.includes('edit') ?? false)
-const guard = useUnsavedChanges(() => (editable.value ? draft : null))
+const guard = useUnsavedChanges(() => (editable.value ? draft : null), undefined, { ready: () => !loading.value && (!canSeeCost.value || costState.value !== 'loading') })
 const can = (act: TechPackAction) => detail.value?.actions.includes(act) ?? false
 
 const ALL_SECTIONS: CraftSection[] = ['CUTTING', 'SEWING', 'PART', 'QUALITY', 'BUTTON', 'IRONING', 'LABEL', 'PACKING', 'NOTE']
@@ -143,22 +145,25 @@ function hydrateDraft(d: TechPackDetail) {
       images: hit?.images.map(({ url, thumbUrl, name, size }) => ({ url, thumbUrl, name, size })) ?? [],
     }
   })
-  draft.processes = d.processes.map(({ id: _id, seq: _seq, ...rest }) => ({ ...rest, images: [...rest.images] }))
+  draft.processes = d.processes.map(({ seq: _seq, ...rest }) => ({ ...rest, images: [...rest.images] }))
   draft.costMode = 'OUTSOURCE'
   draft.buyPrice = null
   draft.costItems = []
   guard.markSaved()
 }
 
-/** 主表和核价独立加载；核价失败/未授权时，保存其他页签只能发送 cost:null。 */
+/** 主表和核价独立加载；核价失败不构造核价内容，未授权时请求层省略 cost。 */
 let costSeq = 0
 let loadSeq = 0
-async function loadCost(packId: number, colorId?: number) {
+const costRequest = useLatestRequest()
+async function loadCost(packId: string, colorId?: string) {
+  const read = costRequest.begin()
   const current = ++costSeq
   if (!canSeeCost.value) { costState.value = 'forbidden'; costData.value = null; return }
   costState.value = 'loading'
   try {
-    const result = await techPackApi.cost(packId, colorId)
+    const result = await read.run(() => techPackApi.cost(packId, colorId))
+    if (!read.current()) return
     if (current !== costSeq || activePackId.value !== packId || detail.value?.id !== packId) return
     costData.value = result
     costColorId.value = result.colorId ?? colorId
@@ -172,13 +177,18 @@ async function loadCost(packId: number, colorId?: number) {
     }
     costState.value = 'ready'
   } catch {
+    if (!read.current()) return
     if (current !== costSeq || activePackId.value !== packId) return
     costState.value = 'error'
     costData.value = null
   }
 }
 
-async function loadPack(packId: number) {
+const packRequest = useLatestRequest()
+let loadedPackRead: ReturnType<typeof packRequest.begin> | undefined
+async function loadPack(packId: string) {
+  const read = packRequest.begin()
+  costRequest.cancel()
   const current = ++loadSeq
   ++costSeq
   costDraftPackId.value = null
@@ -189,32 +199,35 @@ async function loadPack(packId: number) {
   loading.value = true
   detail.value = null
   try {
-    const d = await techPackApi.get(packId)
+    const d = await read.run(() => techPackApi.get(packId))
+    if (!read.current()) return
     if (current !== loadSeq || activePackId.value !== packId) return
     detail.value = d
+    loadedPackRead = read
     viewColorId.value = d.colors[0]?.id
     hydrateDraft(d)
     void loadCost(packId, costColorId.value && d.colors.some((c) => c.id === costColorId.value) ? costColorId.value : d.colors[0]?.id)
   } catch (e) {
+    if (!read.current()) return
     if (current === loadSeq) loadError.value = e instanceof Error ? e.message : '资料包加载失败'
   } finally {
-    if (current === loadSeq) loading.value = false
+    if (read.current() && current === loadSeq) loading.value = false
   }
 }
 
 // ---------- 选哪一版：地址参数只在第一次、地址变了时用（01 §1.1） ----------
 const stylePath = `/styles/${props.styleId}`
-const queryId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : null)
+const queryId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? value : null)
 /** 地址上要的版本，等概况到了再切，切过就清掉 */
-let wantedPackId: number | null = queryId(route.query.techPackId)
+let wantedPackId: string | null = queryId(route.query.techPackId)
 const initialSub = route.query.sub
 if (typeof initialSub === 'string' && (SUB_TABS as readonly string[]).includes(initialSub)) subTab.value = initialSub as SubTab
 
 function pickPack() {
   const ov = props.overview
   if (!ov) return
-  const has = (id: number | null): id is number => id != null && ov.packs.some((p) => p.id === id)
-  let target: number | null
+  const has = (id: string | null): id is string => id != null && ov.packs.some((p) => p.id === id)
+  let target: string | null
   if (has(wantedPackId)) target = wantedPackId
   else target = has(activePackId.value) ? activePackId.value : ov.defaultPackId
   wantedPackId = null
@@ -244,7 +257,7 @@ watch(
 )
 
 /** 切到某一版的某个子页签（款式详情里点"资料包核价"） */
-async function open(packId: number, sub?: SubTab) {
+async function open(packId: string, sub?: SubTab) {
   if (sub) subTab.value = sub
   if (packId !== activePackId.value) await switchPack(packId)
 }
@@ -253,7 +266,7 @@ defineExpose({ open })
 const activeBrief = computed<TechPackBrief | undefined>(() => props.overview?.packs.find((p) => p.id === activePackId.value))
 
 /** 换版本：有没保存的修改先问 */
-async function switchPack(id: number) {
+async function switchPack(id: string) {
   if (saving.value) return
   if (id === activePackId.value && detail.value) return
   if (guard.dirty.value && detail.value) {
@@ -282,7 +295,7 @@ const newStageButtons = computed(() => {
 })
 
 /** 新建、修订、转生产出来的新草稿：切过去，再让款式详情重取概况（概况到了 pickPack 看到它已经是当前的，不再切） */
-async function gotoNew(newId: number, message: string) {
+async function gotoNew(newId: string, message: string) {
   ElMessage.success(message)
   guard.markSaved()
   activePackId.value = newId
@@ -316,6 +329,7 @@ function buildSaveForm(): TechPackSaveForm {
     packingMode: draft.packingMode,
     specPoints: draft.specPoints.map((sp) => ({ ...sp, point: sp.point.trim(), method: orNull(sp.method), remark: orNull(sp.remark) })),
     bomItems: draft.bomItems.map((b) => ({
+      id: /^[1-9]\d*$/.test(b.id) ? b.id : undefined,
       part: b.part,
       materialId: b.materialId,
       skuMode: b.skuMode,
@@ -334,12 +348,12 @@ function buildSaveForm(): TechPackSaveForm {
     })),
     craftSections: draft.craftSections.map((cs) => ({ section: cs.section, content: orNull(cs.content), images: cs.images })),
     processes: draft.processes.map((p) => ({ ...p, name: p.name.trim(), requirement: orNull(p.requirement), remark: orNull(p.remark) })),
-    // 没有看成本权限的一律发 null：后端不动核价，免得把别人填的清掉（01 §3.5）
+    // 未载入核价时不构造它；无权限时请求层完全省略 cost，服务器保留既有值。
     cost: canSeeCost.value && costDraftPackId.value === d.id
       ? {
           costMode: draft.costMode,
           buyPrice: draft.buyPrice,
-          items: draft.costItems.filter((i) => i.name.trim()).map((i) => ({ name: i.name.trim(), amount: i.amount ?? 0, remark: orNull(i.remark) })),
+          items: draft.costItems.filter((i) => i.name.trim()).map((i) => ({ name: i.name.trim(), amount: i.amount, remark: orNull(i.remark) })),
         }
       : null,
   }
@@ -474,7 +488,7 @@ function openEditBom(idx: number) {
   bomDialogVisible.value = true
 }
 
-function colorOf(colorId: number | null) {
+function colorOf(colorId: string | null) {
   return detail.value?.colors.find((c) => c.id === colorId)
 }
 
@@ -482,7 +496,7 @@ function colorOf(colorId: number | null) {
 function onSaveBomRow(saved: BomDraftRow) {
   const old = editingBomIdx.value != null ? draft.bomItems[editingBomIdx.value] : undefined
   const row: BomItem = {
-    id: old?.id ?? --tempId,
+    id: old?.materialId === saved.materialId ? old.id : String(--tempId),
     seq: 0,
     part: saved.part,
     materialId: saved.materialId,
@@ -535,14 +549,15 @@ function onSaveBomRow(saved: BomDraftRow) {
  */
 async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
   const d = detail.value
-  if (!d) return
-  const groups = new Map<number, MaterialPickRow[]>()
+  const read = loadedPackRead
+  if (!d || !read?.current()) return
+  const groups = new Map<string, MaterialPickRow[]>()
   for (const r of rows as MaterialPickRow[]) groups.set(r.materialId, [...(groups.get(r.materialId) ?? []), r])
   const added: BomItem[] = []
   for (const picked of groups.values()) {
     const first = picked[0]!
     const fixed = picked.length === 1
-    const toSku = (p: MaterialPickRow, colorId: number | null): BomSku => {
+    const toSku = (p: MaterialPickRow, colorId: string | null): BomSku => {
       const color = colorOf(colorId)
       return {
         colorId,
@@ -566,7 +581,7 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
           return hit ? [toSku(hit, c.id)] : []
         })
     added.push({
-      id: --tempId,
+      id: String(--tempId),
       seq: 0,
       part: '',
       materialId: first.materialId,
@@ -595,15 +610,16 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
   }
   draft.bomItems.push(...added)
   try {
-    const defaults = await techPackApi.bomDefaults(
+    const defaults = await read.run(() => techPackApi.bomDefaults(
       d.id,
       added.map((b) => ({ materialId: b.materialId, supplierId: null, skuIds: b.skus.map((s) => s.materialSkuId) })),
-    )
+    ))
+    if (!read.current()) return
     // 加行：整套带默认值（01 §3.9）
     defaults.forEach((def, i) => {
       const row = draft.bomItems.find((b) => b.id === added[i]?.id)
       if (!row) return
-      const prices = new Map(def.skuPrices.map((p) => [p.materialSkuId, p.refPrice]))
+      const prices = new Map((def.skuPrices ?? []).map((p) => [p.materialSkuId, p.refPrice]))
       Object.assign(row, {
         unit: def.unit,
         supplierId: def.supplierId,
@@ -618,6 +634,7 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
       row.skus.forEach((s) => (s.refPrice = prices.get(s.materialSkuId) ?? null))
     })
   } catch {
+    if (!read.current()) return
     // 取不到默认值也留着这几行，单价、供应商可以自己填
   }
   ElMessage.success(`加了 ${added.length} 行，选好部位、填上用量`)
@@ -659,7 +676,7 @@ function bomProblems(b: BomItem): string[] {
 
 /** 单件成本：草稿上按输入即时算（保存后以后端为准）。基码用量 ×（1 + 损耗）× 单价；随款色取第一个款色的 SKU 价，随尺码取基码的 */
 function unitCostOf(b: BomItem): number | null {
-  if (!editable.value) return b.unitCost
+  if (!editable.value) return b.unitCost ?? null
   const d = detail.value
   if (!d || b.source !== 'PURCHASE') return null
   const usage = b.usageMode === 'UNIFORM' ? b.usageQty : b.sizeUsages[d.baseSize]
@@ -685,7 +702,7 @@ const colorViewRows = computed<ColorViewRow[]>(() => {
   if (!d || colorId == null) return []
   const rows: ColorViewRow[] = []
   draft.bomItems.forEach((item, idx) => {
-    const bySku = new Map<number, ColorViewRow>()
+    const bySku = new Map<string, ColorViewRow>()
     for (const size of d.sizes) {
       const sku = item.skus.find((s) => (s.colorId == null || s.colorId === colorId) && (s.sizeCode == null || s.sizeCode === size))
       if (!sku) continue
@@ -721,7 +738,7 @@ const totalProcessLabor = computed(() => draft.processes.reduce((sum, p) => sum 
 const totalProcessSeconds = computed(() => draft.processes.reduce((sum, p) => sum + (Number(p.stdSeconds) || 0), 0))
 
 // ---------- 核价（按上次保存的算，01 §6） ----------
-async function onCostColorChange(colorId: number | undefined) {
+async function onCostColorChange(colorId: string | undefined) {
   if (detail.value) await loadCost(detail.value.id, colorId)
 }
 
@@ -749,7 +766,7 @@ const devDiff = computed(() => {
 
 // ---------- 导出 PDF ----------
 const pdfVisible = ref(false)
-const pdfForm = reactive({ colorId: undefined as number | undefined, price: false, appendix: true })
+const pdfForm = reactive({ colorId: undefined as string | undefined, price: false, appendix: true })
 const exportingPdf = ref(false)
 
 function openPdf() {
@@ -841,8 +858,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
             来源：研发 V{{ detail.sourceVersion }}
           </button>
           <span v-if="detail.publishTime" class="dim">{{ detail.publishByName }} {{ formatDateTime(detail.publishTime) }} 生效</span>
-          <span class="num">参考加工价 ¥{{ formatMoney(detail.laborTotal) }}</span>
-          <span v-if="detail.unitCost != null" class="num">单件成本 <strong>¥{{ formatMoney(detail.unitCost) }}</strong></span>
+          <span v-if="canSeeCost" class="num">参考加工价 ¥{{ formatMoney(detail.laborTotal) }}</span>
+          <span v-if="canSeeCost && detail.unitCost != null" class="num">单件成本 <strong>¥{{ formatMoney(detail.unitCost) }}</strong></span>
           <label class="inline-field">
             <span class="dim">排版利用率 %</span>
             <el-input-number v-if="editable" v-model="draft.utilPct" size="small" :min="0" :max="100" :precision="1" :controls="false" />
@@ -975,7 +992,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <div class="expand">
                     <table class="mini">
                       <thead>
-                        <tr><th>配到</th><th>物料 SKU</th><th class="num">单独单价</th></tr>
+                        <tr><th>配到</th><th>物料 SKU</th><th v-if="canSeeCost" class="num">单独单价</th></tr>
                       </thead>
                       <tbody>
                         <tr v-for="sk in (row as BomItem).skus" :key="`${sk.colorId}-${sk.sizeCode}`">
@@ -984,7 +1001,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                             <span class="code">{{ sk.skuCode }}</span> {{ [sk.skuColorName, sk.skuSpec].filter(Boolean).join(' ') }}
                             <template v-if="sk.skuStatus === 0">（已停用，生效时会被拦）</template>
                           </td>
-                          <td class="num">{{ sk.refPrice == null ? '用行上的' : formatPrice(sk.refPrice) }}</td>
+                          <td v-if="canSeeCost" class="num">{{ sk.refPrice == null ? '用行上的' : formatPrice(sk.refPrice) }}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -1004,7 +1021,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               </el-table-column>
               <el-table-column label="" width="48">
                 <template #default="{ row }">
-                  <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" />
+                  <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" />
                 </template>
               </el-table-column>
               <el-table-column label="部位" width="110">
@@ -1042,10 +1059,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <el-table-column label="供应商" min-width="100">
                 <template #default="{ row }">{{ row.supplierName ?? '—' }}</template>
               </el-table-column>
-              <el-table-column label="参考单价" width="86" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" label="参考单价" width="86" class-name="num" align="right">
                 <template #default="{ row }">{{ row.refPrice == null ? '—' : formatPrice(row.refPrice) }}</template>
               </el-table-column>
-              <el-table-column label="单件成本" width="86" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" label="单件成本" width="86" class-name="num" align="right">
                 <template #default="{ row }">{{ unitCostOf(row as BomItem) == null ? '—' : formatMoney(unitCostOf(row as BomItem)) }}</template>
               </el-table-column>
               <el-table-column label="备注" min-width="100">
@@ -1151,7 +1168,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                     <span v-else>{{ row.stdSeconds ?? '—' }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="工价（元）" width="96" class-name="num" align="right">
+                <el-table-column v-if="canSeeCost" label="工价（元）" width="96" class-name="num" align="right">
                   <template #default="{ row }">
                     <el-input-number v-if="editable" v-model="row.price" size="small" :min="0" :precision="4" :controls="false" />
                     <span v-else>{{ row.price == null ? '—' : formatPrice(row.price) }}</span>
@@ -1171,7 +1188,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   </template>
                 </el-table-column>
               </el-table>
-              <p class="proc-total num">总工时 {{ totalProcessSeconds }} 秒 · 参考加工价 ¥{{ formatMoney(totalProcessLabor) }}</p>
+              <p class="proc-total num">总工时 {{ totalProcessSeconds }} 秒<template v-if="canSeeCost"> · 参考加工价 ¥{{ formatMoney(totalProcessLabor) }}</template></p>
             </div>
           </el-tab-pane>
 
@@ -1224,10 +1241,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <el-table-column label="损耗 %" width="66" class-name="num" align="right">
                     <template #default="{ row }">{{ formatQty(row.lossPct) }}</template>
                   </el-table-column>
-                  <el-table-column label="单价" width="86" class-name="num" align="right">
+                  <el-table-column v-if="canSeeCost" label="单价" width="86" class-name="num" align="right">
                     <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
                   </el-table-column>
-                  <el-table-column label="单件成本" width="110" class-name="num" align="right">
+                  <el-table-column v-if="canSeeCost" label="单件成本" width="110" class-name="num" align="right">
                     <template #default="{ row }">
                       <template v-if="row.counted">{{ formatMoney(row.cost) }}</template>
                       <span v-else class="dim">{{ notCountedText(row as CostRow) }}</span>
@@ -1269,7 +1286,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                       <span v-else>{{ row.name }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="金额（元/件）" width="120" class-name="num" align="right">
+                  <el-table-column v-if="canSeeCost" label="金额（元/件）" width="120" class-name="num" align="right">
                     <template #default="{ row }">
                       <el-input-number v-if="editable" v-model="row.amount" size="small" :min="0" :precision="2" :controls="false" />
                       <span v-else>{{ formatMoney(row.amount) }}</span>

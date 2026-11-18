@@ -101,14 +101,30 @@
             AND p.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         </if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (p.no ILIKE '%' || #{q.keyword} || '%' OR o.no ILIKE '%' || #{q.keyword} || '%'
-                 OR s.code ILIKE '%' || #{q.keyword} || '%' OR s.name ILIKE '%' || #{q.keyword} || '%'
-                 OR f.name ILIKE '%' || #{q.keyword} || '%' OR f.short_name ILIKE '%' || #{q.keyword} || '%'
-                 <if test="codes != null">
-                     OR upper(p.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                 </if>)
+            <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
+            AND p.id IN (
+                SELECT kp.id FROM prd_order kp WHERE upper(kp.no) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(kp.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT kp.id FROM ord_order ko JOIN prd_order kp ON kp.order_id = ko.id
+                WHERE upper(ko.no) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT kp.id FROM sty_style ks JOIN prd_order kp ON kp.style_id = ks.id
+                WHERE upper(ks.code) LIKE #{keywordCode} OR ks.name ILIKE #{keywordContains}
+                <if test="codes != null">
+                    OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT kp.id FROM sup_supplier kf JOIN prd_order kp ON kp.factory_id = kf.id
+                WHERE kf.name ILIKE #{keywordContains} OR kf.short_name ILIKE #{keywordContains}
+            )
         </if>
     </sql>
 
@@ -215,12 +231,24 @@
         <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
         <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (p.no ILIKE '%' || #{q.keyword} || '%' OR s.code ILIKE '%' || #{q.keyword} || '%'
-                 OR f.name ILIKE '%' || #{q.keyword} || '%' OR f.short_name ILIKE '%' || #{q.keyword} || '%'
-                 <if test="codes != null">
-                     OR upper(p.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                 </if>)
+            <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+            <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 100)"/>
+            AND p.id IN (
+                SELECT kp.id FROM prd_order kp WHERE upper(kp.no) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(kp.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT kp.id FROM sty_style ks JOIN prd_order kp ON kp.style_id = ks.id
+                WHERE upper(ks.code) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT kp.id FROM sup_supplier kf JOIN prd_order kp ON kp.factory_id = kf.id
+                WHERE kf.name ILIKE #{keywordContains} OR kf.short_name ILIKE #{keywordContains}
+            )
         </if>
         ORDER BY p.id DESC
     </select>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { onMounted, reactive, ref } from 'vue'
 import { logApi } from '@/api/system'
 import type { OperLog } from '@/types/system'
@@ -18,19 +19,24 @@ const list = ref<OperLog[]>([])
 const total = ref(0)
 const loading = ref(false)
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    const result = await logApi.page({
+    const result = await read.run(() => logApi.page({
       ...query,
       username: query.username.trim() || undefined,
       module: query.module.trim() || undefined,
       success: query.success === '' ? undefined : query.success,
-    })
+    }))
+    if (!read.current()) return
     list.value = result.list
     total.value = result.total
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

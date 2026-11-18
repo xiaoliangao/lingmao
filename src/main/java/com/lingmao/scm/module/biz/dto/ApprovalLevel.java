@@ -17,6 +17,6 @@ public record ApprovalLevel(int levelNo,
                             BigDecimal overAmount,
                             ApprovalStepStatus status,
                             String passByName,
-                            @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+                            @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                             OffsetDateTime passTime) {
 }

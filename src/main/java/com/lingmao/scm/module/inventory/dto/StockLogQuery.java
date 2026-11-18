@@ -24,4 +24,10 @@ public class StockLogQuery extends PageQuery {
     /** 单号、SKU 码、物料名、缸号 */
     private String keyword;
     private List<Long> ids;
+    /** 流水游标接口；不透明、有签名，不能跨筛选或用户复用。 */
+    private String cursor;
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+    private LocalDate createdDateFrom;
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+    private LocalDate createdDateTo;
 }

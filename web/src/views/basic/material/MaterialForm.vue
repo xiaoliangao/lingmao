@@ -10,6 +10,8 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { orNull } from '../common'
 import SkuPicker from './SkuPicker.vue'
 import { invalidSpecs, specsOf, type SpecCodeOverrides } from './sku'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 新建、修改物料的对话框（RFC 003 §7）。新建时顺带选颜色、填规格建第一批 SKU；修改时分类、库存单位灰掉（建好不改）。
@@ -19,7 +21,7 @@ import { invalidSpecs, specsOf, type SpecCodeOverrides } from './sku'
  *   <MaterialForm ref="formDialog" @saved="onSaved" />
  *   formDialog.value?.openCreate(categoryId)      formDialog.value?.openEdit(detail)
  */
-const emit = defineEmits<{ saved: [id: number, created: boolean] }>()
+const emit = defineEmits<{ saved: [id: string, created: boolean] }>()
 
 type Num = number | null | undefined
 
@@ -35,7 +37,7 @@ const formRef = ref<FormInstance>()
 const categories = ref<TreeNode[]>([])
 
 const EMPTY = {
-  categoryId: null as number | null,
+  categoryId: null as string | null,
   materialType: '' as string | null,
   name: '',
   stockUnit: '' as string | null,
@@ -45,7 +47,7 @@ const EMPTY = {
   weightGsm: undefined as Num,
   composition: '',
   texture: '',
-  defaultSupplierId: null as number | null,
+  defaultSupplierId: null as string | null,
   supplierItemNo: '',
   refPrice: undefined as Num,
   moq: undefined as Num,
@@ -58,7 +60,7 @@ const EMPTY = {
   reservePct: undefined as Num,
   remark: '',
   // 新建时的第一批 SKU
-  colorIds: [] as number[],
+  colorIds: [] as string[],
   specs: '',
   specCodes: {} as SpecCodeOverrides,
 }
@@ -79,7 +81,7 @@ watch(sameUnit, (same) => {
 })
 
 /** 分类下拉：启用的物料分类，只能选二级（一级只是分组） */
-interface CategoryOption { value: number; label: string; disabled?: boolean; children?: CategoryOption[] }
+interface CategoryOption { value: string; label: string; disabled?: boolean; children?: CategoryOption[] }
 const categoryOptions = computed<CategoryOption[]>(() =>
   categories.value.map((group) => ({
     value: group.id,
@@ -97,7 +99,7 @@ const categoryCode = computed(() => {
 })
 const codePreview = computed(() => (categoryCode.value ? `${categoryCode.value}····` : '选了分类才有'))
 
-async function openCreate(categoryId?: number | null) {
+async function openCreate(categoryId?: string | null) {
   categories.value = await materialCategoryApi.enabledTree()
   detail.value = null
   // 左边选的是二级分类就带上；选的是一级或"全部"就空着
@@ -303,7 +305,7 @@ defineExpose({ openCreate, openEdit })
       <el-form-item label="供应商货号">
         <el-input v-model="form.supplierItemNo" maxlength="64" />
       </el-form-item>
-      <el-form-item label="参考单价（元 / 采购单位）">
+      <el-form-item v-if="canSeeCost" label="参考单价（元 / 采购单位）">
         <el-input-number v-model="form.refPrice" :min="0" :controls="false" :value-on-clear="null" />
       </el-form-item>
       <el-form-item label="起订量（采购单位）">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, reactive, ref, watch } from 'vue'
 import { supplierApi } from '@/api/supplier'
 import { SUPPLIER_STATUS, type SupplierOption, type SupplierUsage } from '@/types/supplier'
@@ -22,28 +23,30 @@ const props = withDefaults(defineProps<{ category?: string | string[]; usage?: S
   label: null,
 })
 const emit = defineEmits<{ 'update:label': [name: string | null] }>()
-const model = defineModel<number | null>()
+const model = defineModel<string | null>()
 /** 接口收逗号隔开的；也拿来判断分类变没变（模板里写的数组每次渲染都是新的） */
 const categoryParam = computed(() => [props.category ?? []].flat().join(',') || undefined)
 
 const options = ref<SupplierOption[]>([])
 const loading = ref(false)
 /** 见过的供应商 id → 简称：换个词搜，上一批就不在列表里了，已经选中的还要能显示名字 */
-const names = reactive(new Map<number, string>())
+const names = reactive(new Map<string, string>())
 /** 搜索的序号：打字快的时候，先发的搜索后回来不能盖掉后发的 */
 let seq = 0
+const latest = useLatestRequest()
 
 async function search(keyword = '') {
   const current = ++seq
+  const read = latest.begin()
   loading.value = true
   try {
-    const result = await supplierApi.options({
+    const result = await read.run(() => supplierApi.options({
       category: categoryParam.value,
       usage: props.usage,
       keyword: keyword.trim() || undefined,
       includeId: model.value ?? undefined,
-    })
-    if (current !== seq) return
+    }))
+    if (current !== seq || !read.current()) return
     options.value = result
     for (const option of result) names.set(option.id, option.shortName)
   } catch {
@@ -64,11 +67,11 @@ function onVisible(visible: boolean) {
   if (visible && options.value.length === 0) void search()
 }
 
-function nameOf(id: number) {
+function nameOf(id: string) {
   return names.get(id) ?? (props.label || `供应商 ${id}`)
 }
 
-function onChange(id: number | null | undefined) {
+function onChange(id: string | null | undefined) {
   emit('update:label', id == null ? null : (names.get(id) ?? null))
 }
 </script>

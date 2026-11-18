@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { onBeforeRouteLeave, useRoute, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useSidebar } from '@/composables/useSidebar'
 import { cacheNameOf, useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
+import ModuleBoundary from '@/components/ModuleBoundary.vue'
 import AppSidebar from './AppSidebar.vue'
 import TabsBar from './TabsBar.vue'
 
@@ -36,10 +37,10 @@ const scrollTops = new Map<string, number>()
 const shells = new Map<string, Component>()
 
 function shellOf(target: RouteLocationNormalizedLoaded): Component {
-  const name = cacheNameOf(target)!
+  const name = cacheNameOf(target) ?? `Page:${target.path}`
   let shell = shells.get(name)
   if (!shell) {
-    shell = defineComponent({ name, setup: (_, { slots }) => () => slots.default?.() })
+    shell = defineComponent({ name, setup: (_, { slots }) => () => h(ModuleBoundary, null, slots) })
     shells.set(name, shell)
   }
   return shell
@@ -125,12 +126,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             keep-alive 认不出组件、一个都不缓存（也不报警告），切页签时菜单页每次重建；打包后注释被去掉，所以只有 pnpm dev 时出问题
           -->
           <keep-alive v-if="withTabs" :include="tabs.cacheNames">
-            <component :is="shellOf(current)" v-if="current.meta.detail" :key="current.path">
+            <component :is="shellOf(current)" :key="current.path">
               <component :is="Component" />
             </component>
-            <component :is="Component" v-else :key="cacheNameOf(current) ?? current.path" />
           </keep-alive>
-          <component :is="Component" v-else />
+          <ModuleBoundary v-else :key="current.path"><component :is="Component" /></ModuleBoundary>
         </router-view>
       </main>
     </div>

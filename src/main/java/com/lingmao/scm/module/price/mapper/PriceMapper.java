@@ -3,6 +3,7 @@ package com.lingmao.scm.module.price.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.module.price.dto.PriceQuery;
+import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.entity.Price;
 import org.apache.ibatis.annotations.Mapper;
@@ -35,6 +36,9 @@ public interface PriceMapper extends BaseMapper<Price> {
     /** 加工价现价：工厂 × 款式 × 加工方式，生效日期不晚于 date 的最新一条。没有返回 null */
     Price selectCurrentProcess(@Param("supplierId") long supplierId, @Param("styleId") long styleId,
                                @Param("processMode") String processMode, @Param("date") LocalDate date);
+
+    /** 完整加工键批量取最新有效价；排序、日期和作废口径同单条方法。 */
+    List<Price> selectCurrentProcesses(@Param("keys") Collection<ProcessPriceKey> keys, @Param("date") LocalDate date);
 
     /** 全部历史：生效日期新的在前，同一天后录的在前 */
     IPage<PriceRowVO> selectHistoryPage(IPage<PriceRowVO> page, @Param("q") PriceQuery query);

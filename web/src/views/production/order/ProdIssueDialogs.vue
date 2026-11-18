@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import DictSelect from '@/components/DictSelect.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import { addDaysStr } from '@/components/doc/docUtils'
@@ -9,6 +9,8 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { RESPONSIBLE_PARTY, type ResponsibleParty } from '@/types/order'
 import type { ProductionIssue } from '@/types/production'
 import type { FileVO } from '@/types/system'
+import { bindCompanyApi } from '@/utils/companyScope'
+const productionApi = bindCompanyApi(productionApiBase, () => props.companyId)
 
 /**
  * 生产单的异常对话框（docs/api/05 §1.4、§3.5、§4）：上报、关闭。电脑详情页用；手机页的表单另写在 mobile/detail.vue。
@@ -24,7 +26,8 @@ const reportVisible = defineModel<boolean>('reportVisible', { required: true })
 const closeVisible = defineModel<boolean>('closeVisible', { required: true })
 
 const props = defineProps<{
-  orderId: number
+  orderId: string
+  companyId: string
   /** 预计交期 ?? 交期：预计新交期的默认值从它往后推 */
   baseDueDate: string
   closingIssue: ProductionIssue | null

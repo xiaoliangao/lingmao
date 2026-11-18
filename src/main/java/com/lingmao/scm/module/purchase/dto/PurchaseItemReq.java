@@ -14,6 +14,8 @@ import java.time.LocalDate;
  */
 @Data
 public class PurchaseItemReq {
+    /** 已有行的 id：调用方只改数量时，靠它保住受保护的价格。 */
+    private Long id;
     /** 从算料单生成的行原样带回；手加的行是 null */
     private Long calcItemId;
     @NotNull(message = "明细要选物料")

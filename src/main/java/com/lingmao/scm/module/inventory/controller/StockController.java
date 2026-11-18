@@ -2,6 +2,7 @@ package com.lingmao.scm.module.inventory.controller;
 
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.page.PageResult;
+import com.lingmao.scm.common.page.SeekPage;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
@@ -33,6 +34,7 @@ public class StockController {
 
     private final StockService stockService;
     private final Clock clock;
+    private final com.lingmao.scm.module.inventory.service.StockLogExportService logExporter;
 
     @Operation(summary = "库存明细：仓库 × 物料 SKU（物料仓、工厂仓）")
     @GetMapping("/api/stocks")
@@ -77,10 +79,22 @@ public class StockController {
         return R.ok(stockService.logs(query));
     }
 
+    @Operation(summary = "库存流水游标页：按记录时间、ID倒序，不附带全表计数")
+    @GetMapping("/api/stock-logs/seek")
+    @PreAuthorize("hasAuthority('inventory:stock:list')")
+    public R<SeekPage<StockLogRowVO>> seekLogs(@Valid StockLogQuery query) {
+        return R.ok(stockService.seekLogs(query));
+    }
+
     @Operation(summary = "导出库存日志")
     @GetMapping("/api/stock-logs/export")
     @PreAuthorize("hasAuthority('inventory:stock:export')")
-    public ResponseEntity<byte[]> exportLogs(@Valid StockLogQuery query) {
-        return Excel.download(Excel.exportFileName("库存日志", LocalDate.now(clock)), stockService.exportLogs(query));
+    public void exportLogs(@Valid StockLogQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        var plan = logExporter.prepareSync(query);
+        response.setContentType(Excel.CONTENT_TYPE);
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Content-Disposition", org.springframework.http.ContentDisposition.attachment()
+                .filename(Excel.exportFileName("库存日志", LocalDate.now(clock)), java.nio.charset.StandardCharsets.UTF_8).build().toString());
+        logExporter.write(plan, response.getOutputStream(), rows -> {});
     }
 }

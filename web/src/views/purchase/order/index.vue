@@ -24,6 +24,8 @@ import {
   type PurchaseType,
 } from '@/types/purchase'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
 
 /**
  * 采购单列表（/purchases，docs/api/03 §1.4）。认 ?status=（首页"采购单待审核"点进来），只认 /purchases 自己的地址。
@@ -64,8 +66,8 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     keyword: '',
     statusTab: pickStatus(route.query.status),
     purchaseType: undefined as PurchaseType | undefined,
-    supplierId: undefined as number | null | undefined,
-    buyerId: undefined as number | null | undefined,
+    supplierId: undefined as string | null | undefined,
+    buyerId: undefined as string | null | undefined,
     orderDateFrom: undefined as string | undefined,
     orderDateTo: undefined as string | undefined,
     mine: false,
@@ -221,7 +223,7 @@ async function exportPicked() {
       <el-table-column v-if="cols.show.qty" label="数量" width="100" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
       </el-table-column>
-      <el-table-column v-if="cols.show.amount" label="总金额" width="120" class-name="num" align="right">
+      <el-table-column v-if="canSeeCost && (cols.show.amount)" label="总金额" width="120" class-name="num" align="right">
         <template #default="{ row }">{{ formatMoney(row.totalAmount) }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.orderDate" label="下单日" width="104" class-name="num">

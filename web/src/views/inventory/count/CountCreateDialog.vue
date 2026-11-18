@@ -31,7 +31,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  created: [id: number]
+  created: [id: string]
 }>()
 
 const user = useUserStore()
@@ -39,16 +39,16 @@ const companies = ref<CompanyOption[]>([])
 const warehouses = ref<WarehouseOption[]>([])
 const openWhs = ref<CountOpenWarehouse[]>([])
 const categories = ref<TreeNode[]>([])
-const pickedSkus = ref<{ id: number; code: string; name: string }[]>([])
+const pickedSkus = ref<{ id: string; code: string; name: string }[]>([])
 const skuPicking = ref(false)
 const saving = ref(false)
 
 const form = reactive({
-  companyId: null as number | null,
-  warehouseId: null as number | null,
+  companyId: null as string | null,
+  warehouseId: null as string | null,
   purpose: 'DAILY' as CountPurpose,
   scope: 'ALL' as CountScope,
-  categoryIds: [] as number[],
+  categoryIds: [] as string[],
   countDate: todayStr(),
   counterId: user.info?.id ?? null,
   counterName: user.info?.nickname ?? null,

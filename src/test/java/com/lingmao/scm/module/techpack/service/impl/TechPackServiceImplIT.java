@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.techpack.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -84,6 +85,7 @@ class TechPackServiceImplIT {
 
     @BeforeEach
     void setUp() {
+        TestIdentity.ensureUser(jdbcTemplate, USER);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 new LoginUser(USER, "jti-it"), null, Stream.of("techpack:pack:list", "techpack:pack:add", "techpack:pack:edit",
                         "techpack:pack:remove", "techpack:pack:publish", "techpack:cost:query")
@@ -216,7 +218,12 @@ class TechPackServiceImplIT {
         TechPackSaveReq denied = saveReq(version, f, "仅改说明");
         var empty = new com.lingmao.scm.module.techpack.dto.TechPackCostForm();
         empty.setCostMode(com.lingmao.scm.module.techpack.entity.CostMode.OUTSOURCE); empty.setItems(List.of()); denied.setCost(empty);
-        int afterDenied = techPackService.save(id, denied);
+        assertThatThrownBy(() -> techPackService.save(id, denied))
+                .isInstanceOf(com.lingmao.scm.security.FieldPermissionDenied.class);
+        assertThat(techPackService.detail(id).getVersionLock()).isEqualTo(version);
+        TechPackSaveReq hidden = saveReq(version, f, "仅改说明");
+        hidden.getBomItems().getFirst().setRefPrice(null);
+        int afterDenied = techPackService.save(id, hidden);
         assertThat(jdbcTemplate.queryForObject("SELECT buy_price FROM tp_tech_pack WHERE id=?", BigDecimal.class, id)).isEqualByComparingTo("30");
         assertThat(count("SELECT COUNT(*) FROM tp_cost_item WHERE tech_pack_id=?", id)).isEqualTo(1);
         setUp();
@@ -252,11 +259,14 @@ class TechPackServiceImplIT {
         techPackService.save(other, saveReq(0, f, null));
         techPackService.publish(other, 1);
 
+        int historyBefore = count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev);
+        assertThat(historyBefore).isGreaterThan(0);
         techPackService.delete(dev);
         assertThat(count("SELECT count(*) FROM tp_tech_pack WHERE id = ?", dev)).isZero();
         assertThat(count("SELECT count(*) FROM tp_bom_item WHERE tech_pack_id = ?", dev)).isZero();
         assertThat(count("SELECT count(*) FROM tp_craft_section WHERE tech_pack_id = ?", dev)).isZero();
-        assertThat(count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev)).isZero();
+        assertThat(count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev)).isEqualTo(historyBefore);
+        assertThat(count("SELECT count(*) FROM sys_data_log WHERE table_name = 'tp_tech_pack' AND row_id = ? AND action = 'DELETE'", dev)).isEqualTo(1);
         assertThat(lock).isEqualTo(1);
 
         assertThatThrownBy(() -> techPackService.delete(other))

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { scheduleApi } from '@/api/order'
+import { scheduleApi as scheduleApiBase } from '@/api/order'
 import DictSelect from '@/components/DictSelect.vue'
 import SkuMatrix from '@/components/SkuMatrix.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
@@ -11,6 +11,13 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { PROCESS_MODE_FULL, type ScheduleBlock, type SchedulePrefill, type ScheduleQuote, type ScheduleStyle } from '@/types/order'
 import { formatMoney, formatPrice } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { createLatestRequest } from '@/utils/requestScope'
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { restoreDraftValue } from '@/utils/draft'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeProductionPrice, canSeeCost } = useFieldAccess()
+const scheduleApi = bindCompanyApi(scheduleApiBase, () => props.companyId)
 
 /**
  * 排单（docs/api/02 §3.12、§4.5，原型 OrderSchedule）：一个款一块 = 一张生产单草稿；"再加一个工厂"同款再加一块（件数默认 0）。
@@ -22,7 +29,7 @@ import { orNull } from '@/views/basic/common'
  *   <OrderScheduleDialog v-model="scheduleVisible" :order-id="id" @scheduled="onScheduled" />
  */
 const visible = defineModel<boolean>({ required: true })
-const props = defineProps<{ orderId: number }>()
+const props = defineProps<{ orderId: string; companyId: string }>()
 const emit = defineEmits<{ scheduled: [] }>()
 
 const modes = useDict('process_mode')
@@ -31,13 +38,13 @@ const termsDict = useDict('prod_terms')
 interface BlockDraft {
   uid: number
   style: ScheduleStyle
-  factoryId: number | null
+  factoryId: string | null
   factoryName: string | null
   processMode: string
   unitPrice: number | null
   priceChangeReason: string
   dueDate: string
-  merchId: number | null
+  merchId: string | null
   merchName: string | null
   settleMethod: string | null
   terms: string
@@ -45,7 +52,7 @@ interface BlockDraft {
   quote: ScheduleQuote | null
   quoting: boolean
   /** 订单行 id → 件数 */
-  qtys: Record<number, number>
+  qtys: Record<string, number>
 }
 
 let uid = 0
@@ -57,6 +64,25 @@ const blocks = ref<BlockDraft[]>([])
 const guard = useUnsavedChanges(
   () => blocks.value.map(({ quote: _q, quoting: _x, style, ...rest }) => ({ styleId: style.styleId, ...rest })),
   visible,
+  { ready: () => !loading.value && !!prefill.value, restore(value) {
+    const pf = prefill.value
+    if (!Array.isArray(value) || !pf) return
+    const quotes = new Map(blocks.value.map((block) => [`${block.style.styleId}:${block.factoryId}`, block.quote]))
+    const restored: BlockDraft[] = []
+    for (const saved of value) {
+      if (!saved || typeof saved !== 'object' || typeof saved.styleId !== 'string') continue
+      const style = pf.styles.find((item) => item.styleId === saved.styleId)
+      if (!style) continue
+      const block = makeBlock(style, pf, false)
+      restoreDraftValue(block, saved)
+      block.uid = ++uid
+      block.quote = quotes.get(`${style.styleId}:${block.factoryId}`) ?? null
+      restored.push(block)
+    }
+    cancelQuotes()
+    blocks.value = restored
+    for (const block of restored) if (block.factoryId && !block.quote) void requote(block, true, true)
+  } },
 )
 
 function makeBlock(st: ScheduleStyle, pf: SchedulePrefill, fill: boolean): BlockDraft {
@@ -81,7 +107,7 @@ function makeBlock(st: ScheduleStyle, pf: SchedulePrefill, fill: boolean): Block
 }
 
 /** 这块现在这种加工方式在档案里的现价；没有是 null */
-const archiveOf = (b: BlockDraft) => b.quote?.prices.find((p) => p.processMode === b.processMode) ?? null
+const archiveOf = (b: BlockDraft) => b.quote?.prices?.find((p) => p.processMode === b.processMode) ?? null
 const priceChanged = (b: BlockDraft) => {
   const archive = archiveOf(b)?.price
   return archive != null && b.unitPrice != null && Math.abs(b.unitPrice - archive) > 0.00005
@@ -94,52 +120,66 @@ function applyModePrice(b: BlockDraft) {
 }
 
 /** 每块的取价序号：连着换两次工厂，先发的后回来不能盖掉后换的 */
-const quoteSeq = new Map<number, number>()
-async function requote(b: BlockDraft, keepMode: boolean) {
-  const seq = (quoteSeq.get(b.uid) ?? 0) + 1
-  quoteSeq.set(b.uid, seq)
-  if (!b.factoryId) {
+const quoteReads = new Map<number, ReturnType<typeof createLatestRequest>>()
+function cancelQuotes() { quoteReads.forEach((request) => request.cancel()); quoteReads.clear() }
+onBeforeUnmount(cancelQuotes)
+async function requote(b: BlockDraft, keepMode: boolean, preserveDraft = false) {
+  const request = quoteReads.get(b.uid) ?? createLatestRequest()
+  quoteReads.set(b.uid, request)
+  const read = request.begin()
+  const factoryId = b.factoryId
+  if (!factoryId) {
     b.quote = null
+    b.quoting = false
     applyModePrice(b)
     return
   }
   b.quoting = true
   try {
-    const q = await scheduleApi.quote(props.orderId, b.style.styleId, b.factoryId)
-    if (quoteSeq.get(b.uid) !== seq) return
+    const q = await read.run(() => scheduleApi.quote(props.orderId, b.style.styleId, factoryId))
+    if (!read.current() || !visible.value || !blocks.value.includes(b)) return
     b.quote = q
     b.factoryName = q.factoryName
-    b.settleMethod = q.settleMethod
-    if (!keepMode || !b.processMode) b.processMode = q.defaultMode
-    applyModePrice(b)
-  } catch {
-    if (quoteSeq.get(b.uid) === seq) {
-      b.quote = null
+    if (!preserveDraft) {
+      b.settleMethod = q.settleMethod
+      if (!keepMode || !b.processMode) b.processMode = q.defaultMode
       applyModePrice(b)
     }
+  } catch {
+    if (read.current()) {
+      b.quote = null
+      if (!preserveDraft) applyModePrice(b)
+    }
   } finally {
-    if (quoteSeq.get(b.uid) === seq) b.quoting = false
+    if (read.current()) b.quoting = false
   }
 }
 
-function onFactoryChange(b: BlockDraft, factoryId: number | null | undefined) {
+function onFactoryChange(b: BlockDraft, factoryId: string | null | undefined) {
   b.factoryId = factoryId ?? null
   void requote(b, true)
 }
 
+const prefillRequest = useLatestRequest()
 watch(visible, async (on) => {
+  const read = prefillRequest.begin()
+  cancelQuotes()
   if (!on) return
   blocks.value = []
   prefill.value = null
   loading.value = true
   try {
-    const pf = await scheduleApi.prefill(props.orderId)
+    const pf = await read.run(() => scheduleApi.prefill(props.orderId))
+    if (!read.current()) return
     prefill.value = pf
     blocks.value = pf.styles.map((st) => makeBlock(st, pf, true))
     await Promise.all(blocks.value.map((b) => requote(b, false)))
+    if (!read.current()) return
     guard.markSaved()
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 })
 
@@ -157,18 +197,18 @@ function addFactory(b: BlockDraft) {
 // ---------- 矩阵：格子 id 是订单行 id ----------
 const cellsOf = (st: ScheduleStyle) => st.skus.map((s) => ({ id: s.orderItemId, colorId: s.colorId, sizeCode: s.sizeCode }))
 const maxMap = computed(() => new Map(blocks.value.flatMap((b) => b.style.skus.map((s) => [s.orderItemId, s.maxQty] as const))))
-const maxOf = (itemId: number) => maxMap.value.get(itemId)
+const maxOf = (itemId: string) => maxMap.value.get(itemId)
 
 /** 同一个订单行在几块里加起来 */
-const sumOf = (itemId: number) => blocks.value.reduce((sum, b) => sum + (b.qtys[itemId] ?? 0), 0)
-function crossBlockError(itemId: number): string | null {
+const sumOf = (itemId: string) => blocks.value.reduce((sum, b) => sum + (b.qtys[itemId] ?? 0), 0)
+function crossBlockError(itemId: string): string | null {
   const max = maxOf(itemId)
   const sum = sumOf(itemId)
   return max != null && sum > max && blocks.value.filter((b) => (b.qtys[itemId] ?? 0) > 0).length > 1
     ? `几块加起来 ${sum} 件，最多还能排 ${max}`
     : null
 }
-const remainSub = (itemId: number) => {
+const remainSub = (itemId: string) => {
   const sku = blocks.value.flatMap((b) => b.style.skus).find((s) => s.orderItemId === itemId)
   return sku ? `余 ${sku.remainQty}` : null
 }
@@ -188,6 +228,7 @@ function addTerm(b: BlockDraft, value: string) {
 }
 
 function buildBlocks(): ScheduleBlock[] | null {
+  if (!canSeeProductionPrice.value) return warn('排单需要确认加工价，请由有生产价格权限的人员办理')
   const out: ScheduleBlock[] = []
   for (const b of activeBlocks.value) {
     const name = b.style.styleCode
@@ -210,7 +251,7 @@ function buildBlocks(): ScheduleBlock[] | null {
       terms: orNull(b.terms),
       remark: orNull(b.remark),
       items: Object.entries(b.qtys)
-        .map(([itemId, qty]) => ({ orderItemId: Number(itemId), qty }))
+        .map(([itemId, qty]) => ({ orderItemId: itemId, qty }))
         .filter((x) => x.qty > 0),
     })
   }
@@ -244,6 +285,7 @@ async function submit() {
 
 <template>
   <el-dialog v-model="visible" :title="`排单 ${prefill?.orderNo ?? ''}`" width="840px" :before-close="guard.beforeClose">
+    <el-alert v-if="!canSeeProductionPrice" title="排单需要确认加工价，请由有生产价格权限的人员办理" type="info" :closable="false" />
     <div v-loading="loading" class="blocks">
       <p v-if="!loading && prefill && !blocks.length" class="dim">每个款都排完了</p>
       <section v-for="(b, idx) in blocks" :key="b.uid" class="block">
@@ -274,15 +316,15 @@ async function submit() {
               <el-option v-for="m in modes.enabled.value" :key="m.value" :label="m.label" :value="m.value" />
             </el-select>
           </el-form-item>
-          <el-form-item :label="b.processMode === PROCESS_MODE_FULL ? '成品单价（元/件）' : '加工费（元/件）'" required>
+          <el-form-item v-if="canSeeProductionPrice" :label="b.processMode === PROCESS_MODE_FULL ? '成品单价（元/件）' : '加工费（元/件）'" required>
             <el-input-number v-model="b.unitPrice" :min="0" :precision="4" :controls="false" :disabled="b.quoting" />
             <span class="field-tip dim">
               <template v-if="archiveOf(b)?.price != null">档案现价 {{ formatPrice(archiveOf(b)!.price) }}</template>
               <template v-else-if="b.factoryId && !b.quoting">档案里没有这家这种方式的价</template>
-              <template v-if="b.processMode !== PROCESS_MODE_FULL"> · 工价合计 {{ formatMoney(b.style.laborTotal) }}</template>
+              <template v-if="canSeeCost && b.processMode !== PROCESS_MODE_FULL"> · 工价合计 {{ formatMoney(b.style.laborTotal) }}</template>
             </span>
           </el-form-item>
-          <el-form-item v-if="priceChanged(b)" label="改价原因" required>
+          <el-form-item v-if="canSeeProductionPrice && priceChanged(b)" label="改价原因" required>
             <el-input v-model="b.priceChangeReason" maxlength="100" placeholder="单价和档案现价不一样：写为什么" />
           </el-form-item>
           <el-form-item label="交期" required>

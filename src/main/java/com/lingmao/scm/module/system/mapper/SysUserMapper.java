@@ -23,6 +23,13 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
                 .eq(SysUser::getId, userId));
     }
 
+    /** 自己改密码：只替换刚才用旧密码核对过的那个哈希。 */
+    default int changePasswordIfCurrent(Long userId, String expectedHash, String encodedPassword) {
+        return update(new SysUser(), new LambdaUpdateWrapper<SysUser>()
+                .set(SysUser::getPassword, encodedPassword)
+                .eq(SysUser::getId, userId).eq(SysUser::getPassword, expectedHash).eq(SysUser::getStatus, 1));
+    }
+
     /**
      * 按 id 取用户名和昵称，逻辑删除了的也取（UserService.nicknames）。手写 SQL 是为了绕开逻辑删除：
      * MyBatis-Plus 自带的 selectByIds 会自动加 deleted = false，删了的人在操作记录里就成了空名字

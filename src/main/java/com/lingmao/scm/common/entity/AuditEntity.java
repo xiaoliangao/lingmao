@@ -32,13 +32,13 @@ public abstract class AuditEntity {
     private Long createBy;
 
     @TableField(fill = FieldFill.INSERT, updateStrategy = FieldStrategy.NEVER)
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime createTime;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private Long updateBy;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime updateTime;
 }

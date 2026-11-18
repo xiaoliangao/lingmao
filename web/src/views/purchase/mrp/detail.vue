@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, h, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
-import { mrpApi, purchaseApi } from '@/api/purchase'
+import { mrpApi as mrpApiBase, purchaseApi as purchaseApiBase } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -21,6 +23,11 @@ import { ErrorCode } from '@/utils/errorCodes'
 import { formatDate, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeCost } = useFieldAccess()
+const mrpApi = bindCompanyApi(mrpApiBase, () => detail.value?.companyId)
+const purchaseApi = bindCompanyApi(purchaseApiBase, () => detail.value?.companyId)
 
 /**
  * 算料单详情（/mrp/:id，docs/api/03 §1.4、§3.2、§4）。
@@ -35,7 +42,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = useTabsStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 const units = useDict('unit')
 
@@ -51,7 +58,7 @@ const refsRef = ref<InstanceType<typeof DocRefs>>()
 /** 确认时后端说可用量变了：出黄条让人重新算料 */
 const staleAvail = ref(false)
 /** 生成采购单前拦下来的行（没选供应商、供应商不是合作中），标红 */
-const badRowIds = ref<Set<number>>(new Set())
+const badRowIds = ref<Set<string>>(new Set())
 
 const can = (a: MrpAction) => detail.value?.actions.includes(a) ?? false
 const isDraft = computed(() => detail.value?.status === 'DRAFT' && can('edit'))
@@ -60,13 +67,17 @@ const supplierEditable = (row: MrpItem) => can('edit') && detail.value?.status !
 const purchaseRows = computed(() => detail.value?.items.filter((i) => i.block === 'PURCHASE') ?? [])
 const factoryRows = computed(() => detail.value?.items.filter((i) => i.block === 'FACTORY') ?? [])
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await mrpApi.get(id)
+    const d = await read.run(() => mrpApi.get(id))
+    if (!read.current()) return
     detail.value = d
     remark.value = d.remark ?? ''
     tabs.rename(path, `算料 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -131,7 +142,7 @@ async function saveCell(row: MrpItem) {
   }
 }
 
-function onSupplierChange(row: MrpItem, supplierId: number | null | undefined) {
+function onSupplierChange(row: MrpItem, supplierId: string | null | undefined) {
   row.supplierId = supplierId ?? null
   void saveCell(row)
 }
@@ -293,7 +304,7 @@ const diffClass = (qty: number) => (qty > 0 ? 'up' : qty < 0 ? 'down' : '')
 
 // ---------- 侧栏、页签（script 里定义，模板里不写引用 import 的箭头函数） ----------
 const loadNotices = () => mrpApi.notices(id)
-const handleNotice = (noticeId: number, text: string | null) => mrpApi.handleNotice(id, noticeId, text)
+const handleNotice = (noticeId: string, text: string | null) => mrpApi.handleNotice(id, noticeId, text)
 const loadRefs = () => mrpApi.references(id)
 const loadLogs = () => mrpApi.logs(id)
 const loadFiles = () => mrpApi.attachments(id)
@@ -341,7 +352,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
           <router-link v-for="o in detail.orders" :key="o.orderId" :to="`/orders/${o.orderId}`" class="code">{{ o.orderNo }}</router-link>
           <span class="code dim">{{ detail.styleCodes.join('、') }}</span>
           <span>要料 {{ detail.needDate ? formatDate(detail.needDate) : '—' }}</span>
-          <span class="num">预计 {{ formatMoney(detail.estAmount) }} · 已转采购 {{ formatMoney(detail.convertedAmount) }}</span>
+          <span v-if="canSeeCost" class="num">预计 {{ formatMoney(detail.estAmount) }} · 已转采购 {{ formatMoney(detail.convertedAmount) }}</span>
           <span v-if="detail.prevCalcId">由 <router-link :to="`/mrp/${detail.prevCalcId}`" class="code">{{ detail.prevCalcNo }}</router-link> 重新算料</span>
         </p>
 
@@ -498,10 +509,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
                 <span class="dim"> {{ units.labelOf(row.purchaseUnit) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="参考单价" width="84" class-name="num" align="right">
+            <el-table-column v-if="canSeeCost" label="参考单价" width="84" class-name="num" align="right">
               <template #default="{ row }">{{ row.refPrice == null ? '—' : formatPrice(row.refPrice) }}</template>
             </el-table-column>
-            <el-table-column label="预计金额" width="96" class-name="num" align="right">
+            <el-table-column v-if="canSeeCost" label="预计金额" width="96" class-name="num" align="right">
               <template #default="{ row }">{{ row.estAmount == null ? '—' : formatMoney(row.estAmount) }}</template>
             </el-table-column>
             <el-table-column label="已转采购" width="84" class-name="num" align="right">

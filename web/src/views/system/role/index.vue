@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type ElTree, type FormInstance, type FormRules } from 'element-plus'
 import { menuApi, roleApi } from '@/api/system'
@@ -18,14 +19,19 @@ const list = ref<Role[]>([])
 const total = ref(0)
 const loading = ref(false)
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    const result = await roleApi.page({ ...query, code: query.code.trim() || undefined, name: query.name.trim() || undefined })
+    const result = await read.run(() => roleApi.page({ ...query, code: query.code.trim() || undefined, name: query.name.trim() || undefined }))
+    if (!read.current()) return
     list.value = result.list
     total.value = result.total
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 
@@ -38,7 +44,7 @@ onMounted(load)
 
 // ---------- 新增 / 修改 ----------
 const dialogVisible = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
 const form = reactive({ code: '', name: '', sort: 0, status: 1, dataScope: 'SELF' as DataScope, remark: '' })
 const guard = useUnsavedChanges(form, dialogVisible)
@@ -105,15 +111,15 @@ function withViewLeaf(nodes: MenuNode[]): MenuNode[] {
   return nodes.map((node) => {
     const children = withViewLeaf(node.children)
     if (node.type !== 2 || !node.perms || children.length === 0) return { ...node, children }
-    const view: MenuNode = { ...node, id: -node.id, parentId: node.id, name: '查看', type: 3, sort: -1, children: [] }
+    const view: MenuNode = { ...node, id: `view:${node.id}`, parentId: node.id, name: '查看', type: 3, sort: -1, children: [] }
     return { ...node, children: [view, ...children] }
   })
 }
 
 /** 只把"叶子"（没有下级的节点）设为勾选，上级的勾选状态由树自己算；直接勾上级会把它所有下级都勾上 */
-function leafIds(nodes: MenuNode[], wanted: Set<number>): number[] {
+function leafIds(nodes: MenuNode[], wanted: Set<string>): string[] {
   return nodes.flatMap((node) =>
-    node.children.length > 0 ? leafIds(node.children, wanted) : wanted.has(Math.abs(node.id)) ? [node.id] : [],
+    node.children.length > 0 ? leafIds(node.children, wanted) : wanted.has(node.id.replace(/^view:/, '')) ? [node.id] : [],
   )
 }
 
@@ -130,8 +136,8 @@ async function openMenus(row: Role) {
 async function saveMenus() {
   const tree = treeRef.value!
   // 全选的 + 半选的（部分下级被勾了的上级），上级也要存，侧边栏才显示得出目录。"查看"叶子换回页面自己的 id
-  const keys = [...tree.getCheckedKeys(), ...tree.getHalfCheckedKeys()] as number[]
-  const ids = [...new Set(keys.map((id) => Math.abs(id)))]
+  const keys = [...tree.getCheckedKeys(), ...tree.getHalfCheckedKeys()] as string[]
+  const ids = [...new Set(keys.map((id) => String(id).replace(/^view:/, '')))]
   await roleApi.assignMenus(menuRole.value!.id, ids)
   ElMessage.success('权限已保存，用户刷新页面后生效')
   menuDialogVisible.value = false

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DocRef } from '@/types/biz'
@@ -24,12 +25,18 @@ const router = useRouter()
 const rows = ref<DocRef[]>([])
 const loading = ref(false)
 
+const reloadRequest = useLatestRequest()
 async function reload() {
+  const read = reloadRequest.begin()
   loading.value = true
   try {
-    rows.value = await props.load()
+    const fetched1 = await read.run(() => props.load())
+    if (!read.current()) return
+    rows.value = fetched1
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

@@ -35,7 +35,7 @@ const visible = ref(false)
 const editing = ref<Warehouse | null>(null)
 const formRef = ref<FormInstance>()
 const EMPTY = {
-  code: '', name: '', type: 'MATERIAL' as WarehouseType, address: '', keeperId: null as number | null, phone: '', remark: '',
+  code: '', name: '', type: 'MATERIAL' as WarehouseType, address: '', keeperId: null as string | null, phone: '', remark: '',
 }
 const form = reactive({ ...EMPTY })
 const guard = useUnsavedChanges(form, visible)

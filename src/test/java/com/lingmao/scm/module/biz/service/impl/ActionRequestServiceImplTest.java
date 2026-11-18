@@ -2,6 +2,7 @@ package com.lingmao.scm.module.biz.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.biz.mapper.ActionRequestMapper;
+import com.lingmao.scm.module.biz.mapper.HttpActionRequestMapper;
 import com.lingmao.scm.security.LoginUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
@@ -23,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -31,12 +34,14 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ActionRequestServiceImplTest {
     @Mock private ActionRequestMapper mapper;
+    @Mock private HttpActionRequestMapper httpMapper;
     private ActionRequestServiceImpl service;
     private final UUID id = UUID.fromString("b663ca73-bf5e-4fcf-b2e7-131f2611c4db");
     record Saved(long id, String no) { }
 
     @BeforeEach void before() {
-        service = new ActionRequestServiceImpl(mapper, JsonMapper.builder().build());
+        service = new ActionRequestServiceImpl(mapper, httpMapper, JsonMapper.builder().build());
+        ReflectionTestUtils.setField(service, "tenant", "single");
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(8L, "test"), null, List.of()));
     }
     @AfterEach void after() { SecurityContextHolder.clearContext(); }
@@ -53,6 +58,7 @@ class ActionRequestServiceImplTest {
     }
 
     @Test void replay_returnsOriginalResultWithoutRepeatingBusiness() {
+        when(mapper.tryLock(anyLong())).thenReturn(true);
         Map<String, Integer> body = Map.of("qty", 5);
         when(mapper.lock(8L, "OP", id)).thenReturn(new ActionRequestMapper.Claim(1, service.hash("OP", 2, body), "{\"id\":31,\"no\":\"RC31\"}"));
         AtomicInteger calls = new AtomicInteger();
@@ -63,12 +69,14 @@ class ActionRequestServiceImplTest {
     }
 
     @Test void sameActionDifferentBody_isConflictAndDoesNotRunBusiness() {
+        when(mapper.tryLock(anyLong())).thenReturn(true);
         when(mapper.lock(8L, "OP", id)).thenReturn(new ActionRequestMapper.Claim(1, service.hash("OP", 2, Map.of("qty", 5)), "{}"));
         assertThatThrownBy(() -> service.execute("OP", 2, id, Map.of("qty", 6), Saved.class, () -> { throw new AssertionError(); }))
                 .isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
     }
 
     @Test void claim_runsOnceAndCompletesWithOriginalResponse() {
+        when(mapper.tryLock(anyLong())).thenReturn(true);
         Map<String, Integer> body = Map.of("qty", 5);
         String hash = service.hash("OP", 2, body);
         when(mapper.claim(8L, "OP", id, hash)).thenReturn(1);
@@ -76,6 +84,20 @@ class ActionRequestServiceImplTest {
         when(mapper.complete(eq(1L), anyString())).thenReturn(1);
         assertThat(service.execute("OP", 2, id, body, Saved.class, () -> new Saved(31, "RC31"))).isEqualTo(new Saved(31, "RC31"));
         verify(mapper).complete(1L, "{\"id\":31,\"no\":\"RC31\"}");
+    }
+
+    /** 规则：核对提交结果只查自己的；建单表、动作表任一处已成功就算成功 */
+    @Test void completed_checksOwnHttpCreateThenAction() {
+        when(httpMapper.completed("single", 8L, id)).thenReturn(false);
+        when(mapper.completed(8L, id)).thenReturn(true);
+        assertThat(service.completed(id)).isTrue();
+        when(mapper.completed(8L, id)).thenReturn(false);
+        assertThat(service.completed(id)).isFalse();
+    }
+
+    @Test void completed_withoutLogin_is401() {
+        SecurityContextHolder.clearContext();
+        assertThatThrownBy(() -> service.completed(id)).isInstanceOf(BizException.class).extracting("code").isEqualTo(401);
     }
 
     @Test void missingActionId_rejectedBeforeClaim() {

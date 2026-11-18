@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi, orderChangeApi } from '@/api/order'
+import { orderApi as orderApiBase, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import { kittingApi, mrpApi } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
@@ -30,6 +33,11 @@ import ChangeTable from '../change/ChangeTable.vue'
 import OrderAuditDialog from './OrderAuditDialog.vue'
 import OrderChangeDialog from './OrderChangeDialog.vue'
 import OrderScheduleDialog from './OrderScheduleDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { useFieldAccess } from '@/composables/useFieldAccess'
+const { canSeeOrderPrice } = useFieldAccess()
+const orderApi = bindCompanyApi(orderApiBase, () => detail.value?.companyId)
+const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.companyId)
 
 /**
  * 需求订单详情（/orders/:id?tab=lines|down|changes|logs，docs/api/02 §1.3、§4.3）。
@@ -44,7 +52,7 @@ const router = useRouter()
 const tabs = useTabsStore()
 const user = useUserStore()
 
-const id = Number(route.params.id)
+const id = routeId(route.params.id)
 const path = route.path
 
 const orderTypes = useDict('order_type')
@@ -80,12 +88,16 @@ const creatingMrp = ref(false)
 
 const can = (a: OrderAction) => detail.value?.actions.includes(a) ?? false
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await orderApi.get(id)
+    const d = await read.run(() => orderApi.get(id))
+    if (!read.current()) return
     detail.value = d
     tabs.rename(path, `订单 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
     return
@@ -149,21 +161,21 @@ const daysLeft = computed(() => {
 })
 
 // ---------- 明细：一个款一块，只读矩阵 ----------
-function itemsOf(styleId: number) {
+function itemsOf(styleId: string) {
   return detail.value?.items.filter((i) => i.styleId === styleId) ?? []
 }
 
-function colorsOf(styleId: number) {
-  const seen = new Map<number, { id: number; code: string; name: string; hex: string | null }>()
+function colorsOf(styleId: string) {
+  const seen = new Map<string, { id: string; code: string; name: string; hex: string | null }>()
   for (const it of itemsOf(styleId)) if (!seen.has(it.colorId)) seen.set(it.colorId, { id: it.colorId, code: it.colorCode, name: it.colorName, hex: it.colorHex })
   return [...seen.values()]
 }
 
-const cellsOf = (styleId: number) => itemsOf(styleId).map((i) => ({ id: i.styleSkuId, colorId: i.colorId, sizeCode: i.sizeCode }))
-const qtysOf = (styleId: number) => Object.fromEntries(itemsOf(styleId).map((i) => [i.styleSkuId, i.qty]))
+const cellsOf = (styleId: string) => itemsOf(styleId).map((i) => ({ id: i.styleSkuId, colorId: i.colorId, sizeCode: i.sizeCode }))
+const qtysOf = (styleId: string) => Object.fromEntries(itemsOf(styleId).map((i) => [i.styleSkuId, i.qty]))
 const itemBySku = computed(() => new Map((detail.value?.items ?? []).map((i) => [i.styleSkuId, i])))
 /** 已审核以后每格小字"排 80 · 回 40" */
-const subOf = (skuId: number) => {
+const subOf = (skuId: string) => {
   const it = itemBySku.value.get(skuId)
   return approved.value && it ? `排 ${it.scheduledQty} · 回 ${it.returnedQty}` : null
 }
@@ -300,7 +312,7 @@ function openKitting() {
         </div>
 
         <p class="sub num">
-          {{ formatQty(detail.totalQty) }} 件 · {{ detail.currency }} {{ formatMoney(detail.totalAmount) }} ·
+          {{ formatQty(detail.totalQty) }} 件<template v-if="canSeeOrderPrice"> · {{ detail.currency }} {{ formatMoney(detail.totalAmount) }}</template> ·
           {{ approved && detail.commitDate ? '承诺交期' : '要求交期' }} {{ formatDate(dueDate) }}
           <DaysLeftTag :days-left="daysLeft" />
           <button v-if="kitting" type="button" class="tag-btn" :disabled="!kitting.calcIds.length" @click="openKitting">
@@ -313,14 +325,14 @@ function openKitting() {
             <section v-for="st in detail.styles" :key="st.styleId" class="panel style-card">
               <div class="panel-head st-head">
                 <span class="st-info">
-                  <img v-if="st.image" :src="st.image.thumbUrl ?? st.image.url" alt="" class="thumb" />
+                  <ThumbImage v-if="st.image" :src="st.image.thumbUrl" alt="" class="thumb" />
                   <router-link :to="`/styles/${st.styleId}`" class="code">{{ st.styleCode }}</router-link>
                   <strong>{{ st.styleName }}</strong>
                   <StatusTag v-if="st.techPackVersion != null" tone="progress">V{{ st.techPackVersion }} 已锁定</StatusTag>
                   <span v-else-if="st.currentPackVersion != null" class="dim">资料包 V{{ st.currentPackVersion }}</span>
                   <span v-else class="danger">资料包未生效</span>
                 </span>
-                <span class="st-sum num">{{ priceText(st) }} · {{ formatQty(st.qty) }} 件<template v-if="st.amount != null"> · {{ formatMoney(st.amount) }}</template></span>
+                <span class="st-sum num"><template v-if="canSeeOrderPrice">{{ priceText(st) }} · </template>{{ formatQty(st.qty) }} 件<template v-if="canSeeOrderPrice && st.amount != null"> · {{ formatMoney(st.amount) }}</template></span>
               </div>
               <div class="panel-body">
                 <p v-if="st.techPackVersion != null && st.currentPackVersion != null && st.techPackVersion !== st.currentPackVersion" class="warn small">
@@ -331,7 +343,7 @@ function openKitting() {
                 <el-collapse><el-collapse-item title="逐 SKU 单价 / 行交期 / 备注">
                   <el-table :data="itemsOf(st.styleId)" size="small">
                     <el-table-column prop="skuCode" label="SKU" min-width="160" />
-                    <el-table-column label="单价" width="130"><template #default="{ row }">{{ row.price == null ? '未填' : formatPrice(row.price) }}</template></el-table-column>
+                    <el-table-column v-if="canSeeOrderPrice" label="单价" width="130"><template #default="{ row }">{{ row.price == null ? '未填' : formatPrice(row.price) }}</template></el-table-column>
                     <el-table-column label="行交期" width="140"><template #default="{ row }">{{ row.lineDueDate || '同要求交期' }}</template></el-table-column>
                     <el-table-column prop="remark" label="备注" min-width="160" />
                   </el-table>
@@ -408,7 +420,7 @@ function openKitting() {
     </div>
 
     <OrderAuditDialog v-if="detail" v-model="auditVisible" :order="detail" @changed="refresh" />
-    <OrderScheduleDialog v-if="detail" v-model="scheduleVisible" :order-id="id" @scheduled="onScheduled" />
+    <OrderScheduleDialog v-if="detail" v-model="scheduleVisible" :order-id="id" :company-id="detail.companyId" @scheduled="onScheduled" />
     <OrderChangeDialog v-if="detail" v-model="changeVisible" :order="detail" :default-cancel="changeCancel" @saved="refresh" />
   </div>
 </template>

@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.style.controller;
 
+import com.lingmao.scm.common.idempotency.IdempotentCreate;
+import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
+import tools.jackson.databind.JsonNode;
+
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.log.OperLog;
@@ -46,7 +50,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/styles")
 @RequiredArgsConstructor
-public class StyleController {
+public class StyleController extends IdempotencyReplayGuard {
 
     private final StyleService styleService;
     private final Clock clock;
@@ -116,6 +120,7 @@ public class StyleController {
     @PostMapping
     @PreAuthorize("hasAuthority('style:style:add')")
     @OperLog(module = "款式", action = "新增")
+    @IdempotentCreate("STYLE_CREATE")
     public R<StyleCreateResult> create(@Valid @RequestBody StyleCreateReq req) {
         return R.ok(styleService.create(req));
     }
@@ -227,6 +232,7 @@ public class StyleController {
     @PostMapping("/{id:\\d+}/skus/generate")
     @PreAuthorize("hasAuthority('style:style:edit')")
     @OperLog(module = "款式", action = "生成 SKU")
+    @IdempotentCreate("STYLE_GENERATE_SKUS")
     public R<Integer> generateSkus(@PathVariable("id") Long id) {
         return R.ok(styleService.generateSkus(id));
     }
@@ -263,5 +269,10 @@ public class StyleController {
     public R<Void> disableSku(@PathVariable("id") Long id, @PathVariable("skuId") Long skuId) {
         styleService.disableSku(id, skuId);
         return R.ok();
+    }
+    @Override
+    public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
+        if ("STYLE_CREATE".equals(operation)) styleService.detail(result.get("id").longValue());
+        else styleService.detail(((Number) arguments[0]).longValue());
     }
 }

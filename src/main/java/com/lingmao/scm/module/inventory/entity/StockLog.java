@@ -62,6 +62,7 @@ public class StockLog {
     /** RECORDED 为凭证价值已记录，UNKNOWN 为未估值或历史未留存。 */
     private String valuationStatus;
     private Long reversalOfLogId;
+    private Integer purchaseRoundingVersion;
 
     @TableField(fill = FieldFill.INSERT)
     private Long createBy;

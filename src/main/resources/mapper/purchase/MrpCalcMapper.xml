@@ -23,25 +23,29 @@
             AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
         </if>
         <if test="q.createBy != null">AND c.create_by = #{q.createBy}</if>
-        <if test="q.createDateFrom != null">AND (c.create_time AT TIME ZONE 'Asia/Shanghai')::date &gt;= #{q.createDateFrom}</if>
-        <if test="q.createDateTo != null">AND (c.create_time AT TIME ZONE 'Asia/Shanghai')::date &lt;= #{q.createDateTo}</if>
+        <if test="q.createDateFrom != null">AND c.create_time &gt;= (CAST(#{q.createDateFrom} AS date)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
+        <if test="q.createDateTo != null">AND c.create_time &lt; ((CAST(#{q.createDateTo} AS date) + 1)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
-            AND (c.no ILIKE '%' || #{q.keyword} || '%'
-                 OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order o ON o.id = co.order_id
-                            WHERE co.calc_id = c.id AND o.no ILIKE '%' || #{q.keyword} || '%')
-                 OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order_item oi ON oi.order_id = co.order_id
-                            JOIN sty_style s ON s.id = oi.style_id
-                            WHERE co.calc_id = c.id AND s.code ILIKE '%' || #{q.keyword} || '%')
-                 <if test="codes != null">
-                     OR upper(c.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order o ON o.id = co.order_id
-                                WHERE co.calc_id = c.id
-                                  AND upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
-                     OR EXISTS (SELECT 1 FROM mrp_calc_order co JOIN ord_order_item oi ON oi.order_id = co.order_id
-                                JOIN sty_style s ON s.id = oi.style_id
-                                WHERE co.calc_id = c.id
-                                  AND upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
-                 </if>)
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+            AND c.id IN (
+                SELECT kc.id FROM mrp_calc kc WHERE upper(kc.no) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(kc.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT co.calc_id FROM ord_order ko JOIN mrp_calc_order co ON co.order_id = ko.id
+                WHERE upper(ko.no) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT co.calc_id FROM sty_style ks JOIN ord_order_item ki ON ki.style_id = ks.id
+                JOIN mrp_calc_order co ON co.order_id = ki.order_id
+                WHERE upper(ks.code) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+            )
         </if>
         ORDER BY c.id DESC
     </select>
@@ -78,15 +82,19 @@
         FROM ord_order o
         WHERE o.status IN ('APPROVED', 'RUNNING')
         <if test="keyword != null and keyword.trim() != ''">
-            AND (o.no ILIKE '%' || #{keyword} || '%'
-                 OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
-                            WHERE i.order_id = o.id AND s.code ILIKE '%' || #{keyword} || '%')
-                 <if test="codes != null">
-                     OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
-                     OR EXISTS (SELECT 1 FROM ord_order_item i JOIN sty_style s ON s.id = i.style_id
-                                WHERE i.order_id = o.id
-                                  AND upper(s.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>)
-                 </if>)
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(keyword)"/>
+            AND o.id IN (
+                SELECT ko.id FROM ord_order ko WHERE upper(ko.no) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ko.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+                UNION
+                SELECT ki.order_id FROM sty_style ks JOIN ord_order_item ki ON ki.style_id = ks.id
+                WHERE upper(ks.code) LIKE #{keywordCode}
+                <if test="codes != null">
+                    OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+                </if>
+            )
         </if>
         ORDER BY o.order_date DESC, o.no DESC
     </select>

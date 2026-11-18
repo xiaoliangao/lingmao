@@ -16,5 +16,5 @@ public record NodeReportVO(Long id,
                            String remark,
                            List<AttachmentVO> photos,
                            String createByName,
-                           @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai") OffsetDateTime createTime) {
+                           @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai") OffsetDateTime createTime) {
 }

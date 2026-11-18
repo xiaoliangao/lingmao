@@ -1,38 +1,72 @@
 package com.lingmao.scm.security;
 
+import com.lingmao.scm.common.scope.DeploymentNamespace;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
+/** 登记 access token、轮换刷新会话、凭据版本在同一个事务里。 */
 @Component
-public class LoginSessionStore {
-
-    private static final String KEY_PREFIX = "login:token:";
-
-    private final StringRedisTemplate redis;
+public class LoginSessionStore implements SessionRegistry {
+    private final JdbcTemplate jdbc;
+    private final DeploymentNamespace namespace;
     private final Duration ttl;
+    private final Clock clock;
 
-    public LoginSessionStore(StringRedisTemplate redis,
-                             @Value("${lingmao.jwt.ttl}") Duration ttl) {
-        this.redis = redis;
+    public LoginSessionStore(JdbcTemplate jdbc, DeploymentNamespace namespace,
+                             @Value("${lingmao.jwt.ttl}") Duration ttl, Clock clock) {
+        this.jdbc = jdbc;
+        this.namespace = namespace;
         this.ttl = ttl;
+        this.clock = clock;
     }
 
-    /** 登录成功：记一笔“这张 token 有效”，和 token 同时过期 */
-    public void save(String jti, Long userId) {
-        redis.opsForValue().set(KEY_PREFIX + jti, String.valueOf(userId), ttl);
+    /** 同时有人重置密码时，不能用已经不是当前的哈希登录。 */
+    public void save(String jti, Long userId, String verifiedPasswordHash) {
+        int inserted = jdbc.update("""
+                INSERT INTO sys_login_session(tenant_id,jti,user_id,session_version,expires_at)
+                SELECT ?,?,id,session_version,? FROM sys_user
+                WHERE id=? AND password=? AND status=1 AND NOT deleted
+                """, namespace.tenant(), jti, at(clock.instant().plus(ttl)), userId, verifiedPasswordHash);
+        if (inserted != 1) throw new AuthRejected();
     }
 
-    /** 这张 token 还有效吗？有效返回用户 id，已退出或已过期返回 null */
+    @Override
+    public void saveVersion(String jti, long userId, long version, Instant issuedAt) {
+        jdbc.update("""
+                INSERT INTO sys_login_session(tenant_id,jti,user_id,session_version,expires_at)
+                VALUES(?,?,?,?,?)
+                """, namespace.tenant(), jti, userId, version, at(issuedAt.plus(ttl)));
+    }
+
+    @Override
     public Long getUserId(String jti) {
-        String value = redis.opsForValue().get(KEY_PREFIX + jti);
-        return value == null ? null : Long.valueOf(value);
+        if (jti == null || jti.length() > 64) return null;
+        var ids = jdbc.queryForList("""
+                SELECT s.user_id FROM sys_login_session s JOIN sys_user u ON u.id=s.user_id
+                WHERE s.tenant_id=? AND s.jti=? AND s.expires_at>?
+                  AND u.status=1 AND NOT u.deleted AND s.session_version=u.session_version
+                """, Long.class, namespace.tenant(), jti, at(clock.instant()));
+        return ids.isEmpty() ? null : ids.getFirst();
     }
 
-    /** 退出登录：删掉这一笔，token 立即失效 */
+    @Override
     public void remove(String jti) {
-        redis.delete(KEY_PREFIX + jti);
+        if (jti == null) return;
+        jdbc.update("UPDATE sys_refresh_session SET revoked=true WHERE tenant_id=? AND access_jti::text=?",
+                namespace.tenant(), jti);
+        removeAccess(jti);
     }
+
+    void removeAccess(String jti) {
+        jdbc.update("DELETE FROM sys_login_session WHERE tenant_id=? AND jti=?", namespace.tenant(), jti);
+    }
+
+    static OffsetDateTime at(Instant instant) { return instant.atOffset(ZoneOffset.UTC); }
 }
