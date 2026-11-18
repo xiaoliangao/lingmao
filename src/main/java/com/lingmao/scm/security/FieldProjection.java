@@ -38,6 +38,9 @@ public class FieldProjection {
 
     private void visit(Object source, JsonNode node, String inherited, boolean supplier, String path) {
         if (node == null || node.isNull()) return;
+        // Audit rows have already been projected using the trusted persisted domain. A generic
+        // system-controller COST pass would incorrectly strip ORDER-only or PRODUCTION-only history.
+        if (source instanceof com.lingmao.scm.module.system.dto.DataLogView) return;
         if (node instanceof ArrayNode array) {
             List<?> values = source instanceof Collection<?> c ? new ArrayList<>(c) : List.of();
             for (int i = 0; i < array.size(); i++) visit(i < values.size() ? values.get(i) : array.get(i), array.get(i), inherited, supplier, path);

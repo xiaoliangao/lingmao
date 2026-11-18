@@ -92,7 +92,7 @@ def run(args):
         check(ports[0] != ports[1], "Could not allocate distinct test ports")
         processes, logs = [], []
         summary = {"status": "FAILED", "profile": "prod", "instanceCount": 0,
-                   "requestCount": 0, "actualPgLoads": None, "sessionChecks": {}}
+                   "requestCount": 0, "actualPgLoads": None, "pgLogBarrier": False, "sessionChecks": {}}
         try:
             for index, port in enumerate(ports):
                 log = (work / f"instance-{index}.log").open("w")
@@ -163,9 +163,20 @@ def run(args):
                 replies = [future.result(timeout=25) for future in pending]
             check(all(r[0] == 200 and r[1]["code"] == 0 and len(r[1]["data"]) == 1 and r[1]["data"][0]["value"] == "a2-value" for r in replies),
                   "Concurrent dictionary response was missing its real option")
-            with args.pg_log.open() as query_log:
-                query_log.seek(offset)
-                statements = query_log.read()
+            # A CI docker-log follower is asynchronous. Wait for a marker emitted
+            # after every HTTP result, so a delayed log cannot undercount loaders.
+            log_barrier = "a2_log_barrier_" + secrets.token_hex(16)
+            db.execute("SELECT 1 /* " + log_barrier + " */")
+            log_deadline = time.monotonic() + 10
+            while True:
+                with args.pg_log.open("rb") as query_log:
+                    query_log.seek(offset)
+                    statements = query_log.read().decode("utf-8", errors="replace")
+                if log_barrier in statements:
+                    break
+                check(time.monotonic() < log_deadline, "PostgreSQL log follower did not reach the post-request barrier")
+                time.sleep(0.05)
+            summary["pgLogBarrier"] = True
             loads = len(re.findall(r"LOG:\s+execute[^\n]*SELECT[^\n]*FROM sys_dict_data", statements, re.I))
             summary["actualPgLoads"] = loads
             check(loads == 1, f"100 ready requests caused {loads} actual PostgreSQL dictionary SELECTs instead of one")

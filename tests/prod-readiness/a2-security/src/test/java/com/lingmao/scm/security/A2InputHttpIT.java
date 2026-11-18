@@ -40,7 +40,8 @@ class A2InputHttpIT {
         try (HttpClient client = HttpClient.newHttpClient()) {
             var login = send(client, "/api/auth/login", loginBody(username), null, Map.of("X-Forwarded-Proto", "https", "X-Forwarded-For", "203.0.113.19"), false);
             assertThat(json.readTree(login.body()).get("code").intValue()).isZero();
-            assertThat(login.headers().allValues("Set-Cookie")).allSatisfy(c -> assertThat(c).doesNotContain("; Secure"));
+            assertThat(login.headers().allValues("Set-Cookie").stream().noneMatch(c -> c.contains("; Secure")))
+                    .as("untrusted forwarded HTTPS cannot create Secure cookies").isTrue();
             var foreign = send(client, "/api/auth/login", loginBody(username), null, Map.of("X-Tenant-Id", "another-installation"), false);
             assertThat(foreign.statusCode()).isEqualTo(403);
             assertThat(foreign.headers().firstValue("X-Request-Id")).isPresent();

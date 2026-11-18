@@ -142,7 +142,8 @@ public final class FileImportServiceImpl implements FileImportService, Housekeep
     }
 
     @Override public String name() { return "import-receipt-expiry"; }
-    @Override public void run() {
+    @Override public void runUntil(java.util.function.BooleanSupplier stopping) {
+        if (stopping.getAsBoolean()) return;
         jdbc.update("""
                 DELETE FROM sys_import_receipt WHERE id IN (SELECT id FROM sys_import_receipt
                 WHERE tenant_key=? AND expires_at<clock_timestamp() ORDER BY expires_at LIMIT 1000)

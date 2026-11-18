@@ -259,11 +259,14 @@ class TechPackServiceImplIT {
         techPackService.save(other, saveReq(0, f, null));
         techPackService.publish(other, 1);
 
+        int historyBefore = count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev);
+        assertThat(historyBefore).isGreaterThan(0);
         techPackService.delete(dev);
         assertThat(count("SELECT count(*) FROM tp_tech_pack WHERE id = ?", dev)).isZero();
         assertThat(count("SELECT count(*) FROM tp_bom_item WHERE tech_pack_id = ?", dev)).isZero();
         assertThat(count("SELECT count(*) FROM tp_craft_section WHERE tech_pack_id = ?", dev)).isZero();
-        assertThat(count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev)).isZero();
+        assertThat(count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev)).isEqualTo(historyBefore);
+        assertThat(count("SELECT count(*) FROM sys_data_log WHERE table_name = 'tp_tech_pack' AND row_id = ? AND action = 'DELETE'", dev)).isEqualTo(1);
         assertThat(lock).isEqualTo(1);
 
         assertThatThrownBy(() -> techPackService.delete(other))

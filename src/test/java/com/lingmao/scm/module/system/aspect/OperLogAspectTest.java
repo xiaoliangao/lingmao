@@ -38,7 +38,7 @@ class OperLogAspectTest {
 
     @BeforeEach
     void setUp() {
-        OperLogAspect aspect = new OperLogAspect(sysOperLogMapper, sysUserMapper, JsonMapper.builder().build());
+        OperLogAspect aspect = new OperLogAspect(sysOperLogMapper, sysUserMapper, JsonMapper.builder().build(), new com.lingmao.scm.common.web.TrustedProxyResolver(""));
         AspectJProxyFactory factory = new AspectJProxyFactory(new DemoController());
         factory.setProxyTargetClass(true);
         factory.addAspect(aspect);
@@ -64,7 +64,7 @@ class OperLogAspectTest {
         assertThat(log.getAction()).isEqualTo("新增");
         assertThat(log.getMethod()).isEqualTo("DemoController.create");
         assertThat(log.getSuccess()).isTrue();
-        assertThat(log.getParams()).contains("\"username\":\"zhangsan\"").contains("\"password\":\"******\"")
+        assertThat(log.getParams()).contains("UserCreateReq").doesNotContain("zhangsan", "password")
                 .doesNotContain("123456");
         assertThat(log.getTraceId()).isEqualTo("3f9a1c2e");
     }
@@ -81,7 +81,7 @@ class OperLogAspectTest {
         ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
         verify(sysOperLogMapper).insert(saved.capture());
         assertThat(saved.getValue().getParams())
-                .contains("\"oldPassword\":\"******\"").contains("\"newPassword\":\"******\"")
+                .contains("PasswordChangeReq").doesNotContain("oldPassword", "newPassword")
                 .doesNotContain("old-pass-111").doesNotContain("new-pass-222");
     }
 
@@ -93,7 +93,7 @@ class OperLogAspectTest {
         ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
         verify(sysOperLogMapper).insert(saved.capture());
         assertThat(saved.getValue().getParams())
-                .contains("\"bankAccount\":\"******\"").contains("\"bankName\":\"测试银行\"")
+                .doesNotContain("bankAccount", "bankName", "测试银行")
                 .doesNotContain("6222000011112222333");
     }
 
@@ -107,7 +107,7 @@ class OperLogAspectTest {
         ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
         verify(sysOperLogMapper).insert(saved.capture());
         assertThat(saved.getValue().getSuccess()).isFalse();
-        assertThat(saved.getValue().getErrorMsg()).isEqualTo("用户名已存在: zhangsan");
+        assertThat(saved.getValue().getErrorMsg()).isEqualTo("Business error 1000");
     }
 
     /** 规则：写日志失败（比如库连不上）不能连累业务 */

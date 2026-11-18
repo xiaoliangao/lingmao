@@ -82,13 +82,14 @@ public final class LocalExportFileStore implements ExportFileStore, Housekeeping
         catch (IOException failure) { org.slf4j.LoggerFactory.getLogger(LocalExportFileStore.class).warn("Private export deletion deferred: {}", failure.getClass().getSimpleName()); }
     }
     @Override public String name() { return "export-file-orphans"; }
-    @Override public synchronized void run() {
+    @Override public synchronized void runUntil(java.util.function.BooleanSupplier stopping) {
+        if (stopping.getAsBoolean()) { closeScan(); return; }
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(40);
         Instant parts = Instant.now().minusSeconds(3600), complete = Instant.now().minusSeconds(2 * 86400);
         try {
             if (scan == null) { scan = Files.newDirectoryStream(root, prefix + "*"); iterator = scan.iterator(); }
             int inspected = 0;
-            while (iterator.hasNext() && inspected++ < 512 && System.nanoTime() <= deadline) {
+            while (!stopping.getAsBoolean() && iterator.hasNext() && inspected++ < 512 && System.nanoTime() <= deadline) {
                 Path file = iterator.next();
                 String name = file.getFileName().toString();
                 if (!name.matches(java.util.regex.Pattern.quote(prefix) + "[1-9][0-9]*-[0-9a-f-]{36}\\.xlsx(?:\\.part)?")
@@ -96,7 +97,7 @@ public final class LocalExportFileStore implements ExportFileStore, Housekeeping
                 Instant modified = Files.getLastModifiedTime(file, LinkOption.NOFOLLOW_LINKS).toInstant();
                 if (modified.isBefore(name.endsWith(".part") ? parts : complete)) erase(file);
             }
-            if (!iterator.hasNext()) closeScan();
+            if (stopping.getAsBoolean() || !iterator.hasNext()) closeScan();
         } catch (IOException failure) { closeScan(); throw new java.io.UncheckedIOException(failure); }
     }
     @jakarta.annotation.PreDestroy public synchronized void closeScan() {

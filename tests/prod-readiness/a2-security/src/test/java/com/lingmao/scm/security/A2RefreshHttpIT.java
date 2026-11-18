@@ -44,8 +44,9 @@ class A2RefreshHttpIT {
         try (HttpClient client = HttpClient.newHttpClient(); HttpClient second = HttpClient.newHttpClient()) {
             Reply login = login(client, account, PASSWORD, false);
             String oldCookie = login.cookies;
-            assertThat(login.body).doesNotContain("refreshToken", "browserToken");
-            assertThat(login.headers).allSatisfy(h -> assertThat(h).contains("HttpOnly", "SameSite=Strict", "Path=/api/auth"));
+            assertThat(!login.body.contains("refreshToken") && !login.body.contains("browserToken"))
+                    .as("login body excludes refresh credentials").isTrue();
+            assertCookieFlags(login, "HttpOnly", "SameSite=Strict", "Path=/api/auth");
             CountDownLatch start = new CountDownLatch(1);
             Reply one, two;
             try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -56,8 +57,10 @@ class A2RefreshHttpIT {
             }
             assertThat(one.status).isEqualTo(200);
             assertThat(two.status).isEqualTo(200);
-            assertThat(one.access).isEqualTo(two.access).isNotEqualTo(login.access);
-            assertThat(one.cookies).isEqualTo(two.cookies).isNotEqualTo(oldCookie);
+            assertThat(one.access != null && one.access.equals(two.access) && !one.access.equals(login.access))
+                    .as("concurrent refresh replays the same new access token").isTrue();
+            assertThat(one.cookies.equals(two.cookies) && !one.cookies.equals(oldCookie))
+                    .as("concurrent refresh replays the same new cookie pair").isTrue();
             assertThat(jdbc.queryForObject("SELECT grace_replays FROM sys_refresh_session WHERE user_id=?", Integer.class, account.id)).isEqualTo(1);
             assertThat(refresh(client, oldCookie, true).status).isEqualTo(200);
             assertThat(refresh(client, oldCookie, true).status).isEqualTo(401);
@@ -67,14 +70,16 @@ class A2RefreshHttpIT {
             assertThat(refresh(client, oldCookie, true).status).isEqualTo(401);
             assertThat(refresh(second, one.cookies, true).status).isEqualTo(200);
             String persisted = jdbc.queryForObject("SELECT token_hash || browser_hash || rotation_nonce FROM sys_refresh_session WHERE user_id=?", String.class, account.id);
-            assertThat(persisted).doesNotContain(cookieValue(oldCookie, SessionCookies.REFRESH), cookieValue(oldCookie, SessionCookies.BROWSER));
+            assertThat(persisted != null && !persisted.contains(cookieValue(oldCookie, SessionCookies.REFRESH))
+                    && !persisted.contains(cookieValue(oldCookie, SessionCookies.BROWSER)))
+                    .as("database stores no raw refresh or browser credential").isTrue();
         }
     }
 
     @Test void requiresAjaxHeaderAndBrowserBindingAndHonorsTrustedHttps() throws Exception {
         try (HttpClient client = HttpClient.newHttpClient()) {
             Reply login = login(client, account(false), PASSWORD, true);
-            assertThat(login.headers).allSatisfy(h -> assertThat(h).contains("Secure"));
+            assertCookieFlags(login, "Secure");
             assertThat(refresh(client, login.cookies, false).status).isEqualTo(401);
             String wrong = login.cookies.replace(cookieValue(login.cookies, SessionCookies.BROWSER), "a".repeat(43));
             assertThat(refresh(client, wrong, true).status).isEqualTo(401);
@@ -92,7 +97,7 @@ class A2RefreshHttpIT {
                     json.writeValueAsString(Map.of("oldPassword", PASSWORD, "newPassword", "A2-New-Pass-123")),
                     first.access, first.cookies, Map.of());
             assertThat(json.readTree(changed.body).get("code").intValue()).isZero();
-            assertThat(changed.headers).allSatisfy(h -> assertThat(h).contains("Max-Age=0"));
+            assertCookieFlags(changed, "Max-Age=0");
             assertThat(jdbc.queryForObject("SELECT session_version FROM sys_user WHERE id=?", Long.class, account.id)).isEqualTo(1L);
             for (Reply old : java.util.List.of(first, second)) {
                 assertThat(refresh(client, old.cookies, true).status).isEqualTo(401);
@@ -108,13 +113,13 @@ class A2RefreshHttpIT {
             Reply operator = login(client, admin, PASSWORD, false), login = login(client, target, PASSWORD, false);
             Reply reset = request(client, "POST", "/api/users/" + target.id + "/reset-password",
                     "{\"password\":\"A2-Reset-Pass-123\"}", operator.access, null, Map.of());
-            assertThat(json.readTree(reset.body).get("code").intValue()).as(reset.body).isZero();
+            assertThat(json.readTree(reset.body).get("code").intValue()).as("admin password reset succeeded").isZero();
             assertThat(refresh(client, login.cookies, true).status).isEqualTo(401);
             assertThat(request(client, "GET", "/api/auth/me", null, login.access, null, Map.of()).status).isEqualTo(401);
             Reply afterReset = login(client, target, "A2-Reset-Pass-123", false);
             Reply disabled = request(client, "PUT", "/api/users/" + target.id,
                     "{\"nickname\":\"Disabled A2\",\"status\":0}", operator.access, null, Map.of());
-            assertThat(json.readTree(disabled.body).get("code").intValue()).as(disabled.body).isZero();
+            assertThat(json.readTree(disabled.body).get("code").intValue()).as("admin account disable succeeded").isZero();
             assertThat(refresh(client, afterReset.cookies, true).status).isEqualTo(401);
             assertThat(request(client, "GET", "/api/auth/me", null, afterReset.access, null, Map.of()).status).isEqualTo(401);
         }
@@ -130,7 +135,7 @@ class A2RefreshHttpIT {
                     Map.of("X-Requested-With", "XMLHttpRequest"));
             assertThat(logout.status).isEqualTo(200);
             assertThat(json.readTree(logout.body).get("code").intValue()).isZero();
-            assertThat(logout.headers).allSatisfy(h -> assertThat(h).contains("Max-Age=0"));
+            assertCookieFlags(logout, "Max-Age=0");
             assertThat(refresh(client, login.cookies, true).status).isEqualTo(401);
             assertThat(request(client, "GET", "/api/auth/me", null, login.access, null, Map.of()).status).isEqualTo(401);
         }
@@ -181,9 +186,18 @@ class A2RefreshHttpIT {
     private Reply login(HttpClient client, Account account, String password, boolean https) throws Exception {
         Reply response = request(client, "POST", "/api/auth/login", json.writeValueAsString(Map.of("username", account.name, "password", password)),
                 null, null, https ? Map.of("X-Forwarded-Proto", "https") : Map.of());
-        assertThat(json.readTree(response.body).get("code").intValue()).as(response.body).isZero();
-        assertThat(response.cookies).contains("scm_refresh=", "scm_browser=");
+        assertThat(json.readTree(response.body).get("code").intValue()).as("real login succeeded").isZero();
+        assertThat(response.cookies.contains("scm_refresh=") && response.cookies.contains("scm_browser="))
+                .as("login issues both refresh and browser cookies").isTrue();
         return response;
+    }
+
+    private static void assertCookieFlags(Reply reply, String... flags) {
+        assertThat(reply.headers.size()).as("two controlled session cookies").isEqualTo(2);
+        for (String flag : flags) {
+            assertThat(reply.headers.stream().allMatch(header -> header.contains(flag)))
+                    .as("session cookie flag %s", flag).isTrue();
+        }
     }
 
     private Reply refresh(HttpClient client, String cookies, boolean header) throws Exception {

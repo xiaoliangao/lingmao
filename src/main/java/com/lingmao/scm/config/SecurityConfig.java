@@ -42,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                         // 版本号：升级脚本、登录页在登录之前就要用
                         .requestMatchers(HttpMethod.GET, "/api/version").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/health/live", "/health/ready").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // 上传的文件：<img> 标签不会带 token，所以不要求登录，靠地址上的签名（FileUrlSigner）：
                         // 没签名、签名不对、过期的，生产由 Nginx 拦，开发由 SignedFileFilter 拦

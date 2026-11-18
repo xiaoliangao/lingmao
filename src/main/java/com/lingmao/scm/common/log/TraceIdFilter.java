@@ -12,15 +12,11 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.HexFormat;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.UUID;
 
 /**
- * 错误编号：每个请求生成一个 8 位十六进制编号（traceId），放进 MDC，这个请求打的每一行日志都带上它
- * （日志格式在 application.yaml 的 logging.pattern.correlation）；同时写进响应头 X-Trace-Id，500 的提示里也有。
- * 用户截图发过来，在服务器上 grep 编号就能找到那次请求的全部日志。
- * 在 WebConfig 里注册成最高优先级，排在 Spring Security 前面，所以 401 也有编号。
- * 顺便记慢请求；后面的过滤器抛出来的异常也在这里变成 500（Controller 里的由 GlobalExceptionHandler 管）。
+ * Canonical X-Request-Id is validated or replaced with a UUID, echoed with the legacy X-Trace-Id,
+ * and scoped to the servlet thread. Unknown filter failures return only a safe message and this ID.
  */
 @Slf4j
 public class TraceIdFilter extends OncePerRequestFilter {
@@ -28,6 +24,17 @@ public class TraceIdFilter extends OncePerRequestFilter {
     /** MDC 里的键名，日志格式按这个名字取 */
     public static final String MDC_KEY = "traceId";
     public static final String HEADER = "X-Trace-Id";
+    public static final String REQUEST_HEADER = "X-Request-Id";
+
+    /** One bounded opaque identifier, never an arbitrary string supplied by a client. */
+    public static String normalized(String value) {
+        return isValid(value) ? value : UUID.randomUUID().toString();
+    }
+
+    public static boolean isValid(String value) {
+        return value != null && value.length() >= 8 && value.length() <= 64
+                && value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{7,63}");
+    }
 
     private final JsonMapper jsonMapper;
     private final Duration slowThreshold;
@@ -52,11 +59,13 @@ public class TraceIdFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        // 8 位十六进制约 43 亿种，一天几千个请求，日志保留期内撞上的概率可以忽略；又短到能在电话里念出来
-        String traceId = HexFormat.of().toHexDigits(ThreadLocalRandom.current().nextInt());
+        String supplied = request.getHeader(REQUEST_HEADER);
+        String traceId = normalized(supplied == null ? request.getHeader(HEADER) : supplied);
+        String previous = MDC.get(MDC_KEY);
         MDC.put(MDC_KEY, traceId);
         // 进来就写响应头：后面的过滤器可能直接把响应写完（比如 Spring Security 返回 401），等请求结束再写就晚了
         response.setHeader(HEADER, traceId);
+        response.setHeader(REQUEST_HEADER, traceId);
         long start = System.nanoTime();
         try {
             chain.doFilter(request, response);
@@ -64,7 +73,7 @@ public class TraceIdFilter extends OncePerRequestFilter {
             // 过滤器里抛的异常到不了 GlobalExceptionHandler，比如 JwtAuthFilter 每个请求查权限时数据库、Redis 出错。
             // 不在这里接住的话，Tomcat 转去 /error，那里又要登录：前端收到 401"登录已过期"、被踢回登录页；
             // 堆栈由 Tomcat 打，那时编号已经清掉了，搜不到（2c 测出来的）。所以在这里记日志、按兜底的样子回 500
-            log.error("未处理异常（过滤器）: {} {}", request.getMethod(), request.getRequestURI(), e);
+            log.error("未处理异常（过滤器）: {} {} {}", request.getMethod(), request.getRequestURI(), SafeLog.failure(e));
             if (response.isCommitted()) {
                 throw e;   // 响应已经发出去一部分，改不了了
             }
@@ -78,7 +87,7 @@ public class TraceIdFilter extends OncePerRequestFilter {
                 log.warn("慢请求: {} {} 耗时 {}ms", request.getMethod(), request.getRequestURI(), costMs);
             }
             // 线程会被下一个请求复用：不清掉，别的请求（还有不在请求里的日志）会带着这个编号
-            MDC.remove(MDC_KEY);
+            if (previous == null) MDC.remove(MDC_KEY); else MDC.put(MDC_KEY, previous);
         }
     }
 }

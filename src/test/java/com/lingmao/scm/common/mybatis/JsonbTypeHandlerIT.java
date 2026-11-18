@@ -34,7 +34,7 @@ class JsonbTypeHandlerIT {
 
     @AfterEach
     void cleanUp() {
-        jdbcTemplate.update("DELETE FROM biz_doc_log WHERE doc_id = ?", docId);
+        // Append-only audit rows remain in this disposable test database.
     }
 
     /**
@@ -62,7 +62,7 @@ class JsonbTypeHandlerIT {
 
     /** 规则：没有附加信息的动作，extra 是 SQL 的 NULL（不是 JSON 的 null），读回来也是 null；改成有值能写进去 */
     @Test
-    void nullStaysNull_thenUpdate() {
+    void nullStaysNull_andFollowupAppends() {
         DocLog log = newLog("create");
         docLogMapper.insert(log);
 
@@ -71,8 +71,11 @@ class JsonbTypeHandlerIT {
         assertThat(docLogMapper.selectById(log.getId()).getExtra()).isNull();
 
         log.setExtra(Map.of("level", 1));
-        docLogMapper.updateById(log);
-        assertThat(docLogMapper.selectById(log.getId()).getExtra()).isEqualTo(Map.of("level", 1));
+        DocLog followup = newLog("audit");
+        followup.setExtra(Map.of("level", 1));
+        docLogMapper.insert(followup);
+        assertThat(docLogMapper.selectById(log.getId()).getExtra()).isNull();
+        assertThat(docLogMapper.selectById(followup.getId()).getExtra()).isEqualTo(Map.of("level", 1));
     }
 
     private DocLog newLog(String action) {

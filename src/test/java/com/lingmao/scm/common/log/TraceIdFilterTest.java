@@ -32,7 +32,7 @@ class TraceIdFilterTest {
         new TraceIdFilter(jsonMapper).doFilter(new MockHttpServletRequest("GET", "/api/users"), response,
                 (req, res) -> duringRequest.set(MDC.get(TraceIdFilter.MDC_KEY)));
 
-        assertThat(duringRequest.get()).matches("[0-9a-f]{8}");
+        assertThat(duringRequest.get()).matches("[0-9a-f-]{36}");
         assertThat(response.getHeader(TraceIdFilter.HEADER)).isEqualTo(duringRequest.get());
         assertThat(MDC.get(TraceIdFilter.MDC_KEY)).isNull();
     }
@@ -55,7 +55,7 @@ class TraceIdFilterTest {
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat((Integer) JsonPath.read(body, "$.code")).isEqualTo(500);
         assertThat((String) JsonPath.read(body, "$.msg")).isEqualTo("服务器出错了，错误编号 " + traceId);
-        assertThat(output.getOut()).contains("未处理异常（过滤器）: GET /api/users").contains("模拟的数据库错误");
+        assertThat(output.getOut()).contains("未处理异常（过滤器）: GET /api/users").contains("IllegalStateException").doesNotContain("模拟的数据库错误");
         assertThat(MDC.get(TraceIdFilter.MDC_KEY)).isNull();
     }
 

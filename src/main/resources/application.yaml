@@ -23,6 +23,8 @@ spring:
     multipart:
       max-file-size: 100MB         # 单个上传文件最大 100MB（AI、PSD 设计源文件），超过返回 400；别的类型 FileServiceImpl 再卡 10MB
       max-request-size: 101MB      # 比文件大一点：multipart 的分隔行、表单头也算在请求里
+  lifecycle:
+    timeout-per-shutdown-phase: 35s
   data:
     redis:
       host: ${REDIS_HOST}
@@ -40,18 +42,17 @@ spring:
 
 server:
   port: 8080
-
-logging:
-  pattern:
-    # 每行日志带上这个请求的错误编号（TraceIdFilter 放进 MDC 的 traceId），如 [3f9a1c2e]；不在请求里的日志
-    # （启动、定时任务）这里是等宽的空白。Spring Boot 默认的控制台和文件日志格式里都留了这个位置，开发、生产都生效
-    correlation: "%correlationId{traceId(8)}"
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
 
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true      # 列 create_time -> 字段 createTime
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl   # 开发阶段把 SQL 打到控制台，上线要删
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl   # 所有环境只记录安全 SQL 耗时，禁止参数落日志
   global-config:
     banner: false
     db-config:

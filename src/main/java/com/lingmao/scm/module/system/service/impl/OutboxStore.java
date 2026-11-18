@@ -19,7 +19,7 @@ import java.util.UUID;
 
 @Service
 public class OutboxStore implements OutboxService {
-    record Lease(long id, String kind, String payload, UUID token, String requestId, int attempt) {}
+    record Lease(long id, String kind, String payload, UUID token, String requestId, int attempt, Long actor) {}
     private final JdbcTemplate jdbc;
     private final DeploymentNamespace namespace;
     private final TransactionTemplate tx;
@@ -33,7 +33,7 @@ public class OutboxStore implements OutboxService {
     public long enqueue(String kind, String dedupeKey, String payload, Long actor, String requestId) {
         if (!List.of("CACHE_INVALIDATE", "STOCK_LOG_EXPORT").contains(kind) || dedupeKey.length() > 200)
             throw new IllegalArgumentException("Unsupported job kind/key");
-        String trace = requestId != null && requestId.matches("[A-Za-z0-9._:-]{1,128}") ? requestId : UUID.randomUUID().toString();
+        String trace = com.lingmao.scm.common.log.TraceIdFilter.normalized(requestId);
         List<Long> inserted = jdbc.queryForList("""
                 INSERT INTO sys_outbox(tenant_key,kind,dedupe_key,payload,actor_user_id,request_id)
                 VALUES(?,?,?,?::jsonb,?,?) ON CONFLICT(tenant_key,kind,dedupe_key) DO NOTHING RETURNING id
@@ -67,7 +67,7 @@ public class OutboxStore implements OutboxService {
                     lease_until=clock_timestamp()+interval '60 seconds',updated_at=clock_timestamp(),error_code=NULL
                 FROM candidate c WHERE j.id=c.id RETURNING j.*
                 """, (rs, n) -> new Lease(rs.getLong("id"), rs.getString("kind"), rs.getString("payload"),
-                rs.getObject("lease_token", UUID.class), rs.getString("request_id"), rs.getInt("attempts")),
+                rs.getObject("lease_token", UUID.class), rs.getString("request_id"), rs.getInt("attempts"), (Long) rs.getObject("actor_user_id")),
                 namespace.tenant(), kind, token);
         return rows.isEmpty() ? null : rows.getFirst();
     }

@@ -179,11 +179,12 @@ public class ExportJobServiceImpl implements ExportJobService, OutboxHandler, Ho
     }
 
     @Override public String name() { return "export-job-expiry"; }
-    @Override public void run() {
+    @Override public void runUntil(java.util.function.BooleanSupplier stopping) {
+        if (stopping.getAsBoolean()) return;
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(40);
         var expired = jdbc.query("SELECT * FROM sys_export_job WHERE tenant_key=? AND expires_at<clock_timestamp() AND file_token IS NOT NULL ORDER BY expires_at LIMIT 128", this::row, namespace.tenant());
         for (Job job : expired) {
-            if (System.nanoTime() > deadline) break;
+            if (stopping.getAsBoolean() || System.nanoTime() > deadline) break;
             if (expire(job, false)) files.delete(job.id(), job.token());
         }
     }

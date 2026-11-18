@@ -36,7 +36,8 @@ public final class JdbcUploadCatalog implements UploadCatalog, HousekeepingTask 
                 namespace.tenant(), slot.url());
     }
     @Override public String name() { return "upload-orphans"; }
-    @Override public void run() {
+    @Override public void runUntil(java.util.function.BooleanSupplier stopping) {
+        if (stopping.getAsBoolean()) return;
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(40);
         var slots = jdbc.query("""
                 WITH candidates AS (
@@ -50,7 +51,7 @@ public final class JdbcUploadCatalog implements UploadCatalog, HousekeepingTask 
                   FROM candidates c WHERE u.file_url=c.file_url RETURNING u.file_url,u.thumb_url
                 """, (row, n) -> new UploadStore.Slot(row.getString(1), row.getString(2)), namespace.tenant());
         for (var slot : slots) {
-            if (System.nanoTime() > deadline) break;
+            if (stopping.getAsBoolean() || System.nanoTime() > deadline) break;
             try {
                 storage.delete(slot);
                 jdbc.update("UPDATE sys_upload_file SET status='DELETED',touched_at=clock_timestamp() WHERE tenant_key=? AND file_url=? AND status='DELETING'", namespace.tenant(), slot.url());

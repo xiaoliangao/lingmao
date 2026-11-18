@@ -81,14 +81,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    stop_grace_period: 30s              # 等正在处理的请求做完再停
+    stop_grace_period: 90s              # 25s 排空 + Web 35s + worker 15s + probe 3s，另留 12s 余量；连接池最后关闭
     networks:
       - default
       - edge
     mem_limit: 1200m                    # 堆最多用 75%，见 deploy/app.Dockerfile
     logging: *logging
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/api/version"]
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/health/ready"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -123,7 +123,22 @@ services:
       - -c
       - log_timezone=Asia/Shanghai
       - -c
-      - log_min_duration_statement=1000 # 超过 1 秒的语句写进日志，慢了好查
+      # 原始 SQL、绑定参数和 ERROR 主消息都可能含银行/税号等业务值。
+      # 慢 SQL 由应用仅记录 operation/hash/耗时；DB 错误用安全应用日志、健康状态与退出码定位。
+      # 深诊断仅在隔离数据或受控临时维护中开启，不将原始语句日志常驻生产。
+      - log_statement=none
+      - -c
+      - log_min_duration_statement=-1
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
+      - -c
+      - log_error_verbosity=terse
+      - -c
+      - log_min_error_statement=panic
+      - -c
+      - log_min_messages=panic
     shm_size: 256mb                     # Docker 默认只给 64MB，并行查询会不够用
     volumes:
       - ./data/postgres:/var/lib/postgresql/data

@@ -75,7 +75,7 @@ public class GlobalExceptionHandler {
     /** 业务异常：预期内的失败，记 warn，msg 直接给前端看；导入错误清单这类附加数据放在 data 里 */
     @ExceptionHandler(BizException.class)
     public R<Object> handleBiz(BizException e) {
-        log.warn("业务异常: {}", e.getMessage());
+        log.warn("业务异常 code={} type={}", e.getCode(), e.getClass().getSimpleName());
         return R.fail(e.getCode(), e.getMessage(), e.getData());
     }
 
@@ -135,7 +135,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MultipartException.class)
     public R<Void> handleMultipart(MultipartException e) {
-        log.warn("上传请求解析失败: {}", e.getMessage());
+        log.warn("上传请求解析失败: {}", e.getClass().getSimpleName());
         return R.fail(400, "上传失败：请求不完整或格式不对，请重新上传");
     }
 
@@ -190,12 +190,12 @@ public class GlobalExceptionHandler {
         String msg = Objects.requireNonNullElse(sql.getMessage(), "");
         // 报错原文（SQL、表名、键值）只进日志，不给前端
         if (FK_NOT_PRESENT.matcher(msg).find() || FK_MISSING.matcher(msg).find()) {
-            log.warn("外键冲突，引用的数据不存在: {}", msg);
+            log.warn("外键冲突，引用的数据不存在");
             return R.fail(ErrorCodes.BIZ_ERROR, "关联的数据不存在，可能刚被别人删除了，请刷新后再试");
         }
         // 认不出是哪种（比如数据库换成了中文报错），按删除处理：新表的外键冲突绝大多数是删除被拦住
         String table = firstGroup(msg, FK_STILL_REFERENCED, FK_REFERENCED);
-        log.warn("删除被外键拦住，引用方 {}: {}", table, msg);
+        log.warn("删除被外键拦住，引用方 {}", table);
         TableComments comments = table == null ? null : tableComments.getIfAvailable();
         String name = comments == null ? null : comments.of(table);
         return R.fail(ErrorCodes.HAS_DOWNSTREAM,
@@ -216,7 +216,7 @@ public class GlobalExceptionHandler {
             log.warn("库存凭证期间已冻结: {} {}", request.getMethod(), request.getRequestURI());
             return R.fail(ErrorCodes.STATE_CHANGED, "该库存凭证日期所属期间已冻结，请在开放期间办理调整，不能回写历史凭证");
         }
-        log.error("未处理异常: {} {}", request.getMethod(), request.getRequestURI(), e);
+        log.error("未处理异常: {} {} {}", request.getMethod(), request.getRequestURI(), com.lingmao.scm.common.log.SafeLog.failure(e));
         return R.fail(500, TraceIdFilter.serverErrorMsg());
     }
 

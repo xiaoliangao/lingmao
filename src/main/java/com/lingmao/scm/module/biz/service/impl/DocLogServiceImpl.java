@@ -59,10 +59,7 @@ public class DocLogServiceImpl implements DocLogService {
 
     @Override
     public void deleteByDoc(BizType type, long docId) {
-        // 没有逻辑删除列，是真的 DELETE
-        docLogMapper.delete(new LambdaQueryWrapper<DocLog>()
-                .eq(DocLog::getDocType, type)
-                .eq(DocLog::getDocId, docId));
+        // Deleting a draft retains its append-only history; DataLog records the deletion in the same transaction.
     }
 
     /** 新的在前：详情页侧栏先看到最近做了什么（原型的 Log 也是倒着排）。按 id 排，走 (doc_type, doc_id, id) 这个索引 */
