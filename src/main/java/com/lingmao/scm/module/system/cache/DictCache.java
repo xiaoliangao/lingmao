@@ -10,6 +10,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -20,6 +21,7 @@ public class DictCache {
 
     /** 兜底的过期时间：万一哪里漏删了，最多一天后也会自己更新 */
     private static final Duration TTL = Duration.ofHours(24);
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(DictCache.class);
 
     private final JsonMapper jsonMapper;
     private final SharedCache shared;
@@ -66,6 +68,20 @@ public class DictCache {
             });
         } else {
             pending.forEach(this::invalidate);
+        }
+    }
+
+    /**
+     * 马上删，不经过发件箱：启动时用（见 DictDataServiceImpl.evictCacheOnStartup）。
+     * Redis 连不上只记日志，不挡启动：缓存最多一天后自己过期
+     */
+    public void evictNow(Collection<String> typeCodes) {
+        for (String typeCode : typeCodes) {
+            try { shared.invalidate(key(typeCode)); }
+            catch (org.springframework.dao.DataAccessException unavailable) {
+                LOG.warn("启动时清字典缓存失败，旧字典最多再用一天: {}", typeCode);
+                return;
+            }
         }
     }
 

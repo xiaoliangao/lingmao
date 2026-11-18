@@ -18,6 +18,8 @@ import com.lingmao.scm.module.system.mapper.DictTypeMapper;
 import com.lingmao.scm.module.system.service.DictDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -37,6 +39,16 @@ public class DictDataServiceImpl implements DictDataService {
     private final DictTypeMapper dictTypeMapper;
     private final DictCache dictCache;
     private final TradeFeature tradeFeature;
+
+    /**
+     * 启动时把各类字典的缓存清掉。数据库迁移会直接改字典（V24 改备料比、V37 加大类 TS），不经过 evictAfterCommit；
+     * 升级时 Redis 不重启，不清的话旧字典最多还要用一天（缓存的过期时间）。迁移在启动过程中跑完，这里一定在它之后
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void evictCacheOnStartup() {
+        dictCache.evictNow(dictTypeMapper.selectList(new LambdaQueryWrapper<DictType>().select(DictType::getCode))
+                .stream().map(DictType::getCode).toList());
+    }
 
     @Override
     public PageResult<DictDataVO> page(DictDataQuery query) {
