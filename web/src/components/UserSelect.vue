@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { reactive, ref } from 'vue'
 import { userApi } from '@/api/system'
 import type { UserOption } from '@/types/system'
@@ -27,13 +28,15 @@ const loading = ref(false)
 const names = reactive(new Map<string, string>())
 /** 搜索的序号：打字快的时候，先发的搜索后回来不能盖掉后发的 */
 let seq = 0
+const latest = useLatestRequest()
 
 async function search(keyword: string) {
   const current = ++seq
+  const read = latest.begin()
   loading.value = true
   try {
-    const result = await userApi.search(keyword.trim())
-    if (current !== seq) return
+    const result = await read.run(() => userApi.search(keyword.trim()))
+    if (current !== seq || !read.current()) return
     options.value = result
     for (const user of options.value) names.set(user.id, user.nickname)
   } catch {

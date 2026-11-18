@@ -1,8 +1,13 @@
-import { computed, onBeforeUnmount, onMounted, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
+import { getCurrentInstance, computed, onBeforeUnmount, onMounted, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTabsStore } from '@/stores/tabs'
 import { provideUploadScope } from './usePendingUploads'
+import { useUserStore } from '@/stores/user'
+import { readDraft, saveDraft, restoreDraftValue } from '@/utils/draft'
+import { writeStorage } from '@/utils/safeStorage'
+import { sessionChanged } from '@/utils/token'
+import { trackUnsavedForm } from '@/utils/uiHealth'
 
 /**
  * 表单有没保存的修改时，丢掉之前问一声（"有没保存的修改，……以后就没了"，点"继续编辑"就留着）：
@@ -24,17 +29,63 @@ import { provideUploadScope } from './usePendingUploads'
  *
  * source 可以是 reactive 对象、ref（如勾选的 id 数组）或 getter；按 JSON 比较，表单里放普通的值就行
  */
-export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Ref<boolean>) {
+export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Ref<boolean>, options: { restore?: (value: unknown) => void | Promise<void>; ready?: () => boolean } = {}) {
   const uploads = provideUploadScope()
   const serialize = () => JSON.stringify(toValue(source) ?? null)
   const snapshot = ref(serialize())
+  const route = useRoute()
+  const instance = getCurrentInstance()
+  const component = (instance?.type as { __name?: string }).__name ?? 'form'
+  // Separate multiple guards in one component while keeping a stable key across reloads.
+  const owner = instance as (typeof instance & { draftCount?: number })
+  const index = owner ? (owner.draftCount = (owner.draftCount ?? 0) + 1) : 1
+  const draftKey = `lingmao-draft:${location.host}:${useUserStore().info?.id ?? 'anonymous'}:${route.path}:${component}:${index}`
+  const previousDraft = readDraft(draftKey)
+  let offered = false
+  let writtenHere = false
+  let draftTimer: ReturnType<typeof setTimeout> | undefined
+  async function offerDraft(loaded = false) {
+    if (offered || !previousDraft || (active && !active.value) || (options.ready && !options.ready())) return
+    const current = serialize()
+    if (current !== previousDraft.baseline) {
+      if (loaded) { offered = true; ElMessage.warning('服务器内容已变化，旧草稿已保留，请核对后再编辑') }
+      return
+    }
+    offered = true
+    try {
+      await ElMessageBox.confirm('找到这份表单未保存的草稿，是否恢复？', '恢复草稿', { confirmButtonText: '恢复草稿', cancelButtonText: '放弃草稿', distinguishCancelAndClose: true })
+      if ((active && !active.value) || sessionChanged() || serialize() !== previousDraft.baseline) return
+      if (options.restore) await options.restore(previousDraft.data)
+      else restoreDraftValue(toValue(source), previousDraft.data)
+    } catch (reason) { if (reason === 'cancel') writeStorage(draftKey, null) }
+  }
+  function persistDraft() {
+    if (!dirty.value || sessionChanged()) return
+    writtenHere = saveDraft(draftKey, snapshot.value, toValue(source)) || writtenHere
+  }
+  watch(serialize, () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 750) })
+  onMounted(() => { void offerDraft() })
+  if (options.ready) watch(options.ready, (ready) => { if (ready) void offerDraft(true) })
+  onBeforeUnmount(() => { clearTimeout(draftTimer); persistDraft() })
 
   /** 有没保存的修改 */
   const dirty = computed(() => (active ? active.value : true) && (serialize() !== snapshot.value || uploads.pending.value > 0))
+  onBeforeUnmount(trackUnsavedForm(() => dirty.value))
+
+  function discardDraft() {
+    clearTimeout(draftTimer)
+    snapshot.value = serialize()
+    writeStorage(draftKey, null)
+    writtenHere = false
+    offered = true
+  }
 
   /** 记下现在的样子：之后再改才算有修改 */
-  function markSaved() {
+  function markSaved(loaded = true) {
     snapshot.value = serialize()
+    clearTimeout(draftTimer)
+    if (writtenHere) { writeStorage(draftKey, null); writtenHere = false }
+    else void offerDraft(loaded)
   }
 
   const confirmDiscard = (message: string, title: string, confirmText: string) =>
@@ -49,8 +100,8 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
     watch(
       active,
       (on) => {
-        if (on) markSaved()
-        else uploads.discard()
+        if (on) markSaved(false)
+        else { discardDraft(); uploads.discard() }
       },
       { flush: 'sync' },
     )
@@ -62,7 +113,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
       done()
       return
     }
-    confirmDiscard('有没保存的修改，关掉以后就没了（包括正在上传的文件）。', '关掉对话框', '不保存，关掉').then(() => { uploads.discard(); done() }, () => {})
+    confirmDiscard('有没保存的修改，关掉以后就没了（包括正在上传的文件）。', '关掉对话框', '不保存，关掉').then(() => { discardDraft(); uploads.discard(); done() }, () => {})
   }
 
   // 整页的表单：按这一页的地址登记到页签里，关页签、离开首页这一侧时由那边来问
@@ -70,7 +121,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
   const tabs = useTabsStore()
   const path = useRoute().path
   if (!active) {
-    const untrack = tabs.trackDirty(path, () => dirty.value)
+    const untrack = tabs.trackDirty(path, () => dirty.value, discardDraft)
     onBeforeUnmount(untrack)
   }
 
@@ -84,6 +135,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
     }
     try {
       await confirmDiscard('有没保存的修改，离开以后就没了。', '离开这一页', '不保存，离开')
+      discardDraft()
       uploads.discard()
       return true
     } catch {
@@ -95,6 +147,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
   // 页签里切走的页面（keep-alive）还挂着这个监听，里面没保存的照样会拦
   function onBeforeUnload(event: BeforeUnloadEvent) {
     if (!dirty.value) return
+    persistDraft()
     event.preventDefault()
     event.returnValue = ''
   }
@@ -107,5 +160,5 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
     if (!ok) ElMessage.warning('有文件未完成上传，本次未保存。请重试上传后再保存')
     return ok
   }
-  return { dirty, markSaved, beforeClose, pendingUploads: uploads.pending, waitForUploads, discardUploads: uploads.discard }
+  return { dirty, markSaved, beforeClose, discardDraft, pendingUploads: uploads.pending, waitForUploads, discardUploads: uploads.discard }
 }

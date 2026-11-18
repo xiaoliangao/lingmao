@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, h, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
-import { mrpApi, purchaseApi } from '@/api/purchase'
+import { mrpApi as mrpApiBase, purchaseApi as purchaseApiBase } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -22,6 +23,9 @@ import { ErrorCode } from '@/utils/errorCodes'
 import { formatDate, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const mrpApi = bindCompanyApi(mrpApiBase, () => detail.value?.companyId)
+const purchaseApi = bindCompanyApi(purchaseApiBase, () => detail.value?.companyId)
 
 /**
  * 算料单详情（/mrp/:id，docs/api/03 §1.4、§3.2、§4）。
@@ -61,13 +65,17 @@ const supplierEditable = (row: MrpItem) => can('edit') && detail.value?.status !
 const purchaseRows = computed(() => detail.value?.items.filter((i) => i.block === 'PURCHASE') ?? [])
 const factoryRows = computed(() => detail.value?.items.filter((i) => i.block === 'FACTORY') ?? [])
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await mrpApi.get(id)
+    const d = await read.run(() => mrpApi.get(id))
+    if (!read.current()) return
     detail.value = d
     remark.value = d.remark ?? ''
     tabs.rename(path, `算料 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }

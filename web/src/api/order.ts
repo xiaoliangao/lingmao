@@ -1,4 +1,4 @@
-import { http, type RequestOptions } from '@/utils/request'
+import { http, snapshotRequestBody, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
   ChangeStatus, OrderAuditReq, OrderChangeCreateForm, OrderChangeDetail, OrderChangeQuery, OrderChangeRow, OrderChangeUpdateForm,
@@ -7,7 +7,7 @@ import type {
 } from '@/types/order'
 import { attachmentBody } from './basic'
 import type { DocSaved } from '@/types/biz'
-import { docApi } from './biz'
+import { docApi, documentOptions } from './biz'
 import type { PageParams } from './system'
 
 /**
@@ -31,7 +31,7 @@ export const orderApi = {
    * 审核（每一级都填承诺交期）。中间一级审过单据还是待审核；最后一级审过锁定每个款的生产 BOM。
    * 不是当前这一级的审批人 403，状态变了 1002，有款没有生效的生产 BOM 1000
    */
-  audit: (id: string, body: OrderAuditReq, options?: RequestOptions) => http.post<void>(`${base}/${id}/audit`, body, options),
+  audit: async (id: string, body: OrderAuditReq, options?: RequestOptions) => http.post<void>(`${base}/${id}/audit`, snapshotRequestBody(body), await documentOptions(base, id, options)),
   /** 录单、提变更画矩阵用：几个款的尺码、颜色、SKU、能不能下（登录即可，订单页面用） */
   styleOptions: (styleIds: string[]) => http.get<OrderStyleOption[]>(`${base}/style-options`, { styleIds }),
   /** 款式详情的"需求订单"页签：含这个款的订单，按下单日期倒序（要 order:order:list，照数据范围） */
@@ -68,8 +68,8 @@ export const scheduleApi = {
    * 生成生产单草稿：一块一张。超排 1004（data 是 ScheduleOverRow[]）；工厂不能用、单价没填、改了价没写原因 1000；
    * 订单不是已审核、生产中了 1002
    */
-  schedule: (orderId: string, blocks: ScheduleBlock[]) =>
-    http.post<ScheduleResult>('/api/production-orders/schedule', { orderId, blocks }),
+  schedule: async (orderId: string, blocks: ScheduleBlock[], options?: RequestOptions) =>
+    http.post<ScheduleResult>('/api/production-orders/schedule', snapshotRequestBody({ orderId, blocks }), await documentOptions(base, orderId, options)),
 }
 
 /**

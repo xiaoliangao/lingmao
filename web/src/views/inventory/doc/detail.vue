@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { invDocApi } from '@/api/inventory'
+import { invDocApi as invDocApiBase } from '@/api/inventory'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -20,6 +21,8 @@ import { formatDate, formatDateTime, formatMoney, formatPrice, formatQty } from 
 import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
 import InvDocFormDialog from './InvDocFormDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+const invDocApi = bindCompanyApi(invDocApiBase, () => detail.value?.companyId)
 
 /**
  * 物料入库单、出库单详情（/stock-in/:id、/stock-out/:id 共用，docs/api/04 §1.3、§1.5）。
@@ -58,9 +61,12 @@ const reasonText = computed(() => {
   return d.reason
 })
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await invDocApi.get(id)
+    const d = await read.run(() => invDocApi.get(id))
+    if (!read.current()) return
     const right = docRoute({ type: 'INV_DOC', kind: d.kind, id, parentId: null })
     if (right && right !== path) {
       // 地址和 kind 对不上：换到对的地址（那边会重新取），这个页签关掉
@@ -71,6 +77,7 @@ async function load() {
     detail.value = d
     tabs.rename(path, `${d.kind === 'OUT' ? '出库' : '入库'} ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }

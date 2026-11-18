@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi, orderChangeApi } from '@/api/order'
+import { orderApi as orderApiBase, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import { kittingApi, mrpApi } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
@@ -31,6 +33,9 @@ import ChangeTable from '../change/ChangeTable.vue'
 import OrderAuditDialog from './OrderAuditDialog.vue'
 import OrderChangeDialog from './OrderChangeDialog.vue'
 import OrderScheduleDialog from './OrderScheduleDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+const orderApi = bindCompanyApi(orderApiBase, () => detail.value?.companyId)
+const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.companyId)
 
 /**
  * 需求订单详情（/orders/:id?tab=lines|down|changes|logs，docs/api/02 §1.3、§4.3）。
@@ -81,12 +86,16 @@ const creatingMrp = ref(false)
 
 const can = (a: OrderAction) => detail.value?.actions.includes(a) ?? false
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await orderApi.get(id)
+    const d = await read.run(() => orderApi.get(id))
+    if (!read.current()) return
     detail.value = d
     tabs.rename(path, `订单 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
     return
@@ -314,7 +323,7 @@ function openKitting() {
             <section v-for="st in detail.styles" :key="st.styleId" class="panel style-card">
               <div class="panel-head st-head">
                 <span class="st-info">
-                  <img v-if="st.image" :src="st.image.thumbUrl ?? st.image.url" alt="" class="thumb" />
+                  <ThumbImage v-if="st.image" :src="st.image.thumbUrl" alt="" class="thumb" />
                   <router-link :to="`/styles/${st.styleId}`" class="code">{{ st.styleCode }}</router-link>
                   <strong>{{ st.styleName }}</strong>
                   <StatusTag v-if="st.techPackVersion != null" tone="progress">V{{ st.techPackVersion }} 已锁定</StatusTag>
@@ -409,7 +418,7 @@ function openKitting() {
     </div>
 
     <OrderAuditDialog v-if="detail" v-model="auditVisible" :order="detail" @changed="refresh" />
-    <OrderScheduleDialog v-if="detail" v-model="scheduleVisible" :order-id="id" @scheduled="onScheduled" />
+    <OrderScheduleDialog v-if="detail" v-model="scheduleVisible" :order-id="id" :company-id="detail.companyId" @scheduled="onScheduled" />
     <OrderChangeDialog v-if="detail" v-model="changeVisible" :order="detail" :default-cancel="changeCancel" @saved="refresh" />
   </div>
 </template>

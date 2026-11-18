@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
@@ -139,7 +140,7 @@ function openCostTab(row: StyleCostRow) {
       <el-table-column label="款号" width="220" fixed="left">
         <template #default="{ row }">
           <span class="name-cell">
-            <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+            <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
             <span v-else class="thumb blank" />
             <span class="code">{{ row.styleCode }}</span>
           </span>

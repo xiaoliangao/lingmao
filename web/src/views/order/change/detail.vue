@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi, orderChangeApi } from '@/api/order'
+import { orderApi, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -29,6 +30,8 @@ import { formatDateTime } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
 import OrderChangeDialog from '../order/OrderChangeDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.companyId)
 
 /**
  * 订单变更单详情（/order-changes/:id，docs/api/02 §1.4）：单头、改动清单（一处一行"原 → 新"）、附件、操作记录。
@@ -54,12 +57,16 @@ const status = computed(() => {
 })
 const typesText = computed(() => detail.value?.changeTypes.map((t) => CHANGE_TYPE[t]).join('、') ?? '')
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await orderChangeApi.get(id)
+    const d = await read.run(() => orderChangeApi.get(id))
+    if (!read.current()) return
     detail.value = d
     tabs.rename(path, `变更 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }

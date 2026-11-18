@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -69,21 +70,25 @@ const selected = ref<UpstreamRow[]>([])
 const canSeeAll = ref(false)
 
 let seq = 0
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   const my = ++seq
   loading.value = true
   loadError.value = null
   try {
-    const list = await upstreamApi.list({
+    const list = await read.run(() => upstreamApi.list({
       type: query.type || undefined,
       mine: query.mine || undefined,
       ownerId: !query.mine && query.ownerId ? query.ownerId : undefined,
-    })
+    }))
+    if (!read.current()) return
     if (my === seq) {
       rows.value = list.rows
       canSeeAll.value = list.canSeeAll
     }
   } catch (error) {
+    if (!read.current()) return
     if (my === seq) {
       loadError.value = error instanceof ApiError && error.code === 404
         ? '上游提醒接口暂未提供，暂不能取得待处理事项。'
@@ -91,7 +96,7 @@ async function load() {
       selected.value = []
     }
   } finally {
-    if (my === seq) loading.value = false
+    if (read.current() && (my === seq)) loading.value = false
   }
 }
 

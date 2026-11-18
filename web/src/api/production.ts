@@ -1,4 +1,4 @@
-import { download, http, type RequestOptions } from '@/utils/request'
+import { download, http, snapshotRequestBody, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
   BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
@@ -6,7 +6,7 @@ import type {
   ProductionIssue, ProductionMaterials, ProductionQuery, ProductionReceipt, ProductionRow, ReceiptCreated, ReceiptForm,
 } from '@/types/production'
 import { attachmentBody } from './basic'
-import { docApi } from './biz'
+import { docApi, documentOptions } from './biz'
 import type { PageParams } from './system'
 
 /**
@@ -34,10 +34,10 @@ export const productionApi = {
   // ---------- 进度节点 ----------
 
   /** 改节点计划（已下单、生产中）：全部节点一起发；计划完成早于计划开始 400 */
-  updatePlan: (id: string, data: NodePlanReq) => http.put<{ planRevision: number }>(`${base}/${id}/nodes`, data),
+  updatePlan: async (id: string, data: NodePlanReq, options?: RequestOptions) => http.put<{ planRevision: number }>(`${base}/${id}/nodes`, snapshotRequestBody(data), await documentOptions(base, id, options)),
   /** 报进度（电脑、手机共用）。已经报过完成的节点再"只报开始" 1000 */
-  report: (id: string, nodeId: string, { photos, ...data }: NodeReportForm) =>
-    http.post<NodeReportResult>(`${base}/${id}/nodes/${nodeId}/reports`, { ...data, photos: attachmentBody(photos) }),
+  report: async (id: string, nodeId: string, { photos, ...data }: NodeReportForm, options?: RequestOptions) =>
+    http.post<NodeReportResult>(`${base}/${id}/nodes/${nodeId}/reports`, snapshotRequestBody({ ...data, photos: attachmentBody(photos) }), await documentOptions(base, id, options)),
   /** 一个节点的全部汇报记录，新的在前 */
   nodeReports: (id: string, nodeId: string) => http.get<NodeReport[]>(`${base}/${id}/nodes/${nodeId}/reports`),
 
@@ -53,23 +53,23 @@ export const productionApi = {
   /** 全部异常，没关闭的在前 */
   issues: (id: string) => http.get<ProductionIssue[]>(`${base}/${id}/issues`),
   /** 上报（电脑、手机共用）。没传照片 400；生产单不是已下单、生产中 1000 */
-  reportIssue: (id: string, { photos, ...data }: IssueForm) =>
-    http.post<IssueCreated>(`${base}/${id}/issues`, { ...data, photos: attachmentBody(photos) }),
+  reportIssue: async (id: string, { photos, ...data }: IssueForm, options?: RequestOptions) =>
+    http.post<IssueCreated>(`${base}/${id}/issues`, snapshotRequestBody({ ...data, photos: attachmentBody(photos) }), await documentOptions(base, id, options)),
   /** 开始处理：待处理 → 处理中，处理人记我。已经不是待处理 1002 */
-  startIssue: (id: string, issueId: string) => http.post<void>(`${base}/${id}/issues/${issueId}/start`),
+  startIssue: async (id: string, issueId: string, options?: RequestOptions) => http.post<void>(`${base}/${id}/issues/${issueId}/start`, undefined, await documentOptions(base, id, options)),
   /** 关闭：处理措施必填（400）。已经关了 1002 */
-  closeIssue: (id: string, issueId: string, data: IssueCloseForm) => http.post<void>(`${base}/${id}/issues/${issueId}/close`, data),
+  closeIssue: async (id: string, issueId: string, data: IssueCloseForm, options?: RequestOptions) => http.post<void>(`${base}/${id}/issues/${issueId}/close`, snapshotRequestBody(data), await documentOptions(base, id, options)),
 
   // ---------- 回货 ----------
 
   /** 全部回货单（含作废的），新的在前 */
   receipts: (id: string) => http.get<ProductionReceipt[]>(`${base}/${id}/receipts`),
   /** 登记回货（建 + 审核一步）。超过 ⌊件数 × 1.03⌋ 1004（data 是 ReceiptOverRow[]） */
-  receive: (id: string, { photos, ...data }: ReceiptForm) =>
-    http.post<ReceiptCreated>(`${base}/${id}/receipts`, { ...data, photos: attachmentBody(photos) }),
+  receive: async (id: string, { photos, ...data }: ReceiptForm, options?: RequestOptions) =>
+    http.post<ReceiptCreated>(`${base}/${id}/receipts`, snapshotRequestBody({ ...data, photos: attachmentBody(photos) }), await documentOptions(base, id, options)),
   /** 作废一张回货单：已回、次品减回去，生产单、订单的状态重算。原因必填 */
-  voidReceipt: (id: string, receiptId: string, reason: string) =>
-    http.post<void>(`${base}/${id}/receipts/${receiptId}/void`, { reason }),
+  voidReceipt: async (id: string, receiptId: string, reason: string, options?: RequestOptions) =>
+    http.post<void>(`${base}/${id}/receipts/${receiptId}/void`, { reason }, await documentOptions(base, id, options)),
 
   // ---------- 手机报工 ----------
 

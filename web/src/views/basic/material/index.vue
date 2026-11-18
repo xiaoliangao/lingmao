@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
@@ -183,7 +184,7 @@ function onSaved(id: string) {
           <el-table-column label="名称" min-width="200">
             <template #default="{ row }">
               <span class="name">
-                <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+                <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                 <span v-else class="thumb blank" />
                 <span>{{ row.name }}</span>
               </span>

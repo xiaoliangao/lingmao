@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { scheduleApi } from '@/api/order'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import DictSelect from '@/components/DictSelect.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
@@ -14,6 +14,8 @@ import { PROCESS_MODE_FULL, type ScheduleQuote } from '@/types/order'
 import { PRODUCTION_KIND, type ProductionDetail } from '@/types/production'
 import { formatPrice } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const productionApi = bindCompanyApi(productionApiBase, () => props.doc.companyId)
 
 /**
  * 改生产单草稿（docs/api/05 §1.4"编辑"、§3.2.4、§4）。只改单头，件数不能改（要改就删草稿回订单重新排单）。

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type ElTree, type FormInstance, type FormRules } from 'element-plus'
 import { menuApi, roleApi } from '@/api/system'
@@ -18,14 +19,19 @@ const list = ref<Role[]>([])
 const total = ref(0)
 const loading = ref(false)
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    const result = await roleApi.page({ ...query, code: query.code.trim() || undefined, name: query.name.trim() || undefined })
+    const result = await read.run(() => roleApi.page({ ...query, code: query.code.trim() || undefined, name: query.name.trim() || undefined }))
+    if (!read.current()) return
     list.value = result.list
     total.value = result.total
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

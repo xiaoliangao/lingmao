@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, type UploadRequestOptions } from 'element-plus'
 import { provideUploadScope, useUploadScope } from '@/composables/usePendingUploads'
@@ -50,13 +51,20 @@ const list = computed<FileVO[]>(() => (isControlled.value ? (props.modelValue ??
 const full = computed(() => list.value.length + uploading.value >= props.max)
 const viewable = (name: string) => /\.(jpe?g|png|gif|webp|pdf)$/i.test(name)
 
+const reloadRequest = useLatestRequest()
 async function reload() {
-  if (!props.load) return
+  const read = reloadRequest.begin()
+  const load = props.load
+  if (!load) return
   loading.value = true
   try {
-    remoteFiles.value = await props.load()
+    const fetched1 = await read.run(load)
+    if (!read.current()) return
+    remoteFiles.value = fetched1
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

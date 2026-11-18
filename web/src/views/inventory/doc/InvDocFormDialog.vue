@@ -3,7 +3,7 @@ import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { companyApi, warehouseApi } from '@/api/basic'
-import { invDocApi, stockApi } from '@/api/inventory'
+import { invDocApi as invDocApiBase, stockApi } from '@/api/inventory'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
@@ -18,6 +18,8 @@ import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatQty } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
 import PickProductionDialog from './PickProductionDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+const invDocApi = bindCompanyApi(invDocApiBase, () => head.companyId)
 
 /**
  * 手工新建、改草稿的入库单 / 出库单对话框（docs/api/04 §1.5、§3.2.3-3.2.4、§4）。

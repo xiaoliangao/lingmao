@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import ThumbImage from '@/components/ThumbImage.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -119,7 +121,7 @@ const draft = reactive({
 })
 
 const editable = computed(() => detail.value?.actions.includes('edit') ?? false)
-const guard = useUnsavedChanges(() => (editable.value ? draft : null))
+const guard = useUnsavedChanges(() => (editable.value ? draft : null), undefined, { ready: () => !loading.value && (!canSeeCost.value || costState.value !== 'loading') })
 const can = (act: TechPackAction) => detail.value?.actions.includes(act) ?? false
 
 const ALL_SECTIONS: CraftSection[] = ['CUTTING', 'SEWING', 'PART', 'QUALITY', 'BUTTON', 'IRONING', 'LABEL', 'PACKING', 'NOTE']
@@ -153,12 +155,15 @@ function hydrateDraft(d: TechPackDetail) {
 /** 主表和核价独立加载；核价失败/未授权时，保存其他页签只能发送 cost:null。 */
 let costSeq = 0
 let loadSeq = 0
+const costRequest = useLatestRequest()
 async function loadCost(packId: string, colorId?: string) {
+  const read = costRequest.begin()
   const current = ++costSeq
   if (!canSeeCost.value) { costState.value = 'forbidden'; costData.value = null; return }
   costState.value = 'loading'
   try {
-    const result = await techPackApi.cost(packId, colorId)
+    const result = await read.run(() => techPackApi.cost(packId, colorId))
+    if (!read.current()) return
     if (current !== costSeq || activePackId.value !== packId || detail.value?.id !== packId) return
     costData.value = result
     costColorId.value = result.colorId ?? colorId
@@ -172,13 +177,18 @@ async function loadCost(packId: string, colorId?: string) {
     }
     costState.value = 'ready'
   } catch {
+    if (!read.current()) return
     if (current !== costSeq || activePackId.value !== packId) return
     costState.value = 'error'
     costData.value = null
   }
 }
 
+const packRequest = useLatestRequest()
+let loadedPackRead: ReturnType<typeof packRequest.begin> | undefined
 async function loadPack(packId: string) {
+  const read = packRequest.begin()
+  costRequest.cancel()
   const current = ++loadSeq
   ++costSeq
   costDraftPackId.value = null
@@ -189,16 +199,19 @@ async function loadPack(packId: string) {
   loading.value = true
   detail.value = null
   try {
-    const d = await techPackApi.get(packId)
+    const d = await read.run(() => techPackApi.get(packId))
+    if (!read.current()) return
     if (current !== loadSeq || activePackId.value !== packId) return
     detail.value = d
+    loadedPackRead = read
     viewColorId.value = d.colors[0]?.id
     hydrateDraft(d)
     void loadCost(packId, costColorId.value && d.colors.some((c) => c.id === costColorId.value) ? costColorId.value : d.colors[0]?.id)
   } catch (e) {
+    if (!read.current()) return
     if (current === loadSeq) loadError.value = e instanceof Error ? e.message : '资料包加载失败'
   } finally {
-    if (current === loadSeq) loading.value = false
+    if (read.current() && current === loadSeq) loading.value = false
   }
 }
 
@@ -535,7 +548,8 @@ function onSaveBomRow(saved: BomDraftRow) {
  */
 async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
   const d = detail.value
-  if (!d) return
+  const read = loadedPackRead
+  if (!d || !read?.current()) return
   const groups = new Map<string, MaterialPickRow[]>()
   for (const r of rows as MaterialPickRow[]) groups.set(r.materialId, [...(groups.get(r.materialId) ?? []), r])
   const added: BomItem[] = []
@@ -595,10 +609,11 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
   }
   draft.bomItems.push(...added)
   try {
-    const defaults = await techPackApi.bomDefaults(
+    const defaults = await read.run(() => techPackApi.bomDefaults(
       d.id,
       added.map((b) => ({ materialId: b.materialId, supplierId: null, skuIds: b.skus.map((s) => s.materialSkuId) })),
-    )
+    ))
+    if (!read.current()) return
     // 加行：整套带默认值（01 §3.9）
     defaults.forEach((def, i) => {
       const row = draft.bomItems.find((b) => b.id === added[i]?.id)
@@ -618,6 +633,7 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
       row.skus.forEach((s) => (s.refPrice = prices.get(s.materialSkuId) ?? null))
     })
   } catch {
+    if (!read.current()) return
     // 取不到默认值也留着这几行，单价、供应商可以自己填
   }
   ElMessage.success(`加了 ${added.length} 行，选好部位、填上用量`)
@@ -1004,7 +1020,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               </el-table-column>
               <el-table-column label="" width="48">
                 <template #default="{ row }">
-                  <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" />
+                  <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" />
                 </template>
               </el-table-column>
               <el-table-column label="部位" width="110">

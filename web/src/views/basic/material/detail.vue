@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -46,11 +48,16 @@ const logList = ref<InstanceType<typeof DocLogList>>()
 const loadLogs = () => materialApi.logs(id)
 const canEdit = computed(() => user.hasPerm('basic:material:edit'))
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    detail.value = await materialApi.get(id)
+    const fetched = await read.run(() => materialApi.get(id))
+    if (!read.current()) return
+    detail.value = fetched
     tabs.rename(path, `物料 ${detail.value.material.code}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -238,7 +245,7 @@ const LOG_ACTIONS = {
               <el-table-column label="SKU 码" min-width="170">
                 <template #default="{ row }">
                   <span class="sku-code">
-                    <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+                    <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                     <span class="code">{{ row.code }}</span>
                   </span>
                 </template>

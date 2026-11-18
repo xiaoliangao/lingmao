@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { companyApi, warehouseApi } from '@/api/basic'
-import { purchaseApi } from '@/api/purchase'
+import { purchaseApi as purchaseApiBase } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -14,6 +14,7 @@ import UserSelect from '@/components/UserSelect.vue'
 import { showSilentError, todayStr } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import type { CompanyOption, MaterialPickRow, WarehouseOption } from '@/types/basic'
@@ -22,6 +23,8 @@ import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatPrice } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const purchaseApi = bindCompanyApi(purchaseApiBase, () => head.companyId)
 
 /**
  * 采购单新建、改草稿（/purchases/new、/purchases/:id/edit，docs/api/03 §3.3.3-3.3.4、§4）。
@@ -109,36 +112,39 @@ function priceChanged(l: LineDraft): boolean {
 }
 
 // ---------- 默认值 ----------
-let defaultsSeq = 0
+const defaultsRequest = useLatestRequest()
 
 /** 取默认值，按 §3.3.3 填：fillHead = 换了供应商（结算方式、税率、采购员跟着换） */
 async function applyDefaults(fillHead: boolean) {
-  if (!head.supplierId) return
-  const seq = ++defaultsSeq
-  const def = await purchaseApi.defaults({
-    supplierId: head.supplierId,
-    orderDate: head.orderDate,
-    skuIds: lines.value.length ? lines.value.map((l) => l.materialSkuId) : undefined,
-  })
-  // 连着换了两次供应商：只认最后一次的
-  if (seq !== defaultsSeq) return
-  if (fillHead) {
-    head.settleMethod = def.settleMethod
-    head.taxPct = def.taxPct
-    if (def.buyerId) {
-      head.buyerId = def.buyerId
-      head.buyerName = def.buyerName
+  const read = defaultsRequest.begin()
+  const supplierId = head.supplierId
+  if (!supplierId) return
+  try {
+    const def = await read.run(() => purchaseApi.defaults({
+      supplierId,
+      orderDate: head.orderDate,
+      skuIds: lines.value.length ? lines.value.map((l) => l.materialSkuId) : undefined,
+    }))
+    // 连着换了两次供应商：只认最后一次的
+    if (!read.current()) return
+    if (fillHead) {
+      head.settleMethod = def.settleMethod
+      head.taxPct = def.taxPct
+      if (def.buyerId) {
+        head.buyerId = def.buyerId
+        head.buyerName = def.buyerName
+      }
     }
-  }
-  if (def.deliveryDate && !deliveryTouched.value) head.deliveryDate = def.deliveryDate
-  const bySku = new Map(def.lines.map((d) => [d.materialSkuId, d]))
-  for (const line of lines.value) {
-    const d = bySku.get(line.materialSkuId)
-    if (!d) continue
-    line.archivePrice = d.archivePrice
-    line.purchaseUnit = d.purchaseUnit
-    if (!line.priceTouched) line.price = d.price
-  }
+    if (def.deliveryDate && !deliveryTouched.value) head.deliveryDate = def.deliveryDate
+    const bySku = new Map(def.lines.map((d) => [d.materialSkuId, d]))
+    for (const line of lines.value) {
+      const d = bySku.get(line.materialSkuId)
+      if (!d) continue
+      line.archivePrice = d.archivePrice
+      line.purchaseUnit = d.purchaseUnit
+      if (!line.priceTouched) line.price = d.price
+    }
+  } catch (error) { if (read.current()) throw error }
 }
 
 async function onSupplierChange(supplierId: string | null | undefined) {

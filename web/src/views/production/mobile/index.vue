@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { productionApi } from '@/api/production'
@@ -7,6 +8,7 @@ import NodeDots from '@/components/doc/NodeDots.vue'
 import { useUserStore } from '@/stores/user'
 import type { MobileOrderRow } from '@/types/production'
 import { formatDate, formatQty } from '@/utils/format'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 
 /**
  * 手机报工"我的跟单"（/mobile，docs/api/05 §1.4、§3.8）：按 360px 宽做，卡片 44px 以上好点。
@@ -18,12 +20,17 @@ const user = useUserStore()
 const rows = ref<MobileOrderRow[]>([])
 const loading = ref(false)
 
+const listRequest = useLatestRequest()
 async function load() {
+  const read = listRequest.begin()
   loading.value = true
   try {
-    rows.value = await productionApi.myFollow()
+    const result = await read.run(() => productionApi.myFollow())
+    if (read.current()) rows.value = result
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 
@@ -51,7 +58,7 @@ onMounted(load)
         class="m-card"
         @click="router.push(`/mobile/${r.id}`)"
       >
-        <img v-if="r.image" :src="r.image.thumbUrl ?? r.image.url" alt="" class="pic" loading="lazy" />
+        <ThumbImage v-if="r.image" :src="r.image.thumbUrl" alt="" class="pic" loading="lazy" />
         <span v-else class="pic blank" />
 
         <div class="info">

@@ -2,11 +2,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi, orderChangeApi } from '@/api/order'
+import { orderApi, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import ImageUpload from '@/components/ImageUpload.vue'
 import SkuMatrix, { type MatrixColor } from '@/components/SkuMatrix.vue'
 import { reloadOnConflict, showSilentError } from '@/components/doc/docUtils'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import type { DocRef } from '@/types/biz'
 import {
   RESPONSIBLE_PARTY,
@@ -22,6 +23,8 @@ import { formatDate, formatPrice } from '@/utils/format'
 import { MAX_UNIT_PRICE, validateOrderCapacity } from '@/utils/orderSku'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => props.order.companyId)
 
 /**
  * 提变更 / 改变更单（docs/api/02 §3.14、§4.6，原型 OrderChange）。
@@ -66,7 +69,9 @@ const form = reactive({
   /** 款 id → 新加的颜色 id */
   addedColors: {} as Record<string, string[]>,
 })
-const guard = useUnsavedChanges(form, visible)
+const guard = useUnsavedChanges(form, visible, { ready: () => !loading.value })
+const formRequest = useLatestRequest()
+const downstreamRequest = useLatestRequest()
 
 /** TRADE 关：责任方不列"客户"（02 §4.7） */
 const PARTY_OPTIONS = (['SELF', 'FACTORY', 'SUPPLIER'] as ResponsibleParty[]).map((value) => ({ value, label: RESPONSIBLE_PARTY[value] }))
@@ -120,16 +125,20 @@ function packOptions(styleId: string) {
 }
 
 watch(visible, async (on) => {
-  if (!on) return
+  if (!on) { formRequest.cancel(); downstreamRequest.cancel(); return }
+  const read = formRequest.begin()
   loading.value = true
   downstream.value = null
   try {
-    styleOpts.value = props.order.styles.length ? await orderApi.styleOptions(props.order.styles.map((s) => s.styleId)) : []
+    const options = props.order.styles.length ? await read.run(() => orderApi.styleOptions(props.order.styles.map((s) => s.styleId))) : []
+    if (!read.current()) return
+    styleOpts.value = options
     resetForm()
     if (form.cancel) await loadDownstream()
+    if (!read.current()) return
     guard.markSaved()
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 })
 
@@ -165,10 +174,12 @@ function resetForm() {
 }
 
 async function loadDownstream() {
+  const read = downstreamRequest.begin()
   try {
-    downstream.value = await orderApi.references(props.order.id)
+    const references = await read.run(() => orderApi.references(props.order.id))
+    if (read.current()) downstream.value = references
   } catch {
-    downstream.value = null
+    if (read.current()) downstream.value = null
   }
 }
 

@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import { kittingApi } from '@/api/purchase'
 import { techPackApi } from '@/api/techpack'
 import BlankState from '@/components/BlankState.vue'
@@ -53,6 +55,8 @@ import ProdEditDialog from './ProdEditDialog.vue'
 import ProdIssueDialogs from './ProdIssueDialogs.vue'
 import ProdNodeDialogs from './ProdNodeDialogs.vue'
 import ProdReceiveDialog from './ProdReceiveDialog.vue'
+import { bindCompanyApi } from '@/utils/companyScope'
+const productionApi = bindCompanyApi(productionApiBase, () => detail.value?.companyId)
 
 /**
  * 外发加工单 / 成品采购单详情（/production/:id、/fp-purchases/:id，docs/api/05 §1.2、§1.4、§4）。两种单共用。
@@ -134,9 +138,16 @@ const waitingText = computed(() => {
 })
 
 // ---------- 取数 ----------
+const detailRequest = useLatestRequest()
+const subsRequest = useLatestRequest()
+const kittingRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
+  subsRequest.cancel()
+  kittingRequest.cancel()
   try {
-    const d = await productionApi.get(id)
+    const d = await read.run(() => productionApi.get(id))
+    if (!read.current()) return
     const right = `${PRODUCTION_KIND[d.kind].path}/${id}`
     if (right !== path) {
       // 种类对不上：换到对的地址（那边会重新取），?tab= 带过去，这个页签关掉
@@ -148,6 +159,7 @@ async function load() {
     tabs.rename(path, `${PRODUCTION_KIND[d.kind].short} ${d.no}`)
     void loadSubs(d)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
@@ -155,19 +167,22 @@ async function load() {
 
 /** 页签和侧栏的数：各取各的，一个出错（request.ts 已经提示）不影响别的 */
 async function loadSubs(d: ProductionDetail) {
-  await Promise.allSettled([
-    productionApi.materials(id).then((m) => (matData.value = m)),
-    productionApi.issues(id).then((list) => (issues.value = list)),
-    productionApi.receipts(id).then((list) => (receipts.value = list)),
+  const read = subsRequest.begin()
+  await read.run(() => Promise.allSettled([
+    productionApi.materials(id).then((m) => { if (read.current()) matData.value = m }),
+    productionApi.issues(id).then((list) => { if (read.current()) issues.value = list }),
+    productionApi.receipts(id).then((list) => { if (read.current()) receipts.value = list }),
     loadKitting(d),
-  ])
+  ]))
 }
 
 async function loadKitting(d: ProductionDetail) {
+  const read = kittingRequest.begin()
   kitting.value = null
   if (!['APPROVED', 'RUNNING', 'DONE'].includes(d.status)) return
   try {
-    kitting.value = (await kittingApi.byOrders([d.orderId]))[0] ?? null
+    const list = await read.run(() => kittingApi.byOrders([d.orderId]))
+    if (read.current()) kitting.value = list[0] ?? null
   } catch {
     // 取不到写"—"
   }
@@ -257,15 +272,19 @@ const historyNode = ref<ProductionNode | null>(null)
 const historyRows = ref<NodeReport[]>([])
 const historyLoading = ref(false)
 const historyVisible = ref(false)
+const historyRequest = useLatestRequest()
+watch(historyVisible, (visible) => { if (!visible) historyRequest.cancel() })
 async function openHistory(node: ProductionNode) {
+  const read = historyRequest.begin()
   historyNode.value = node
   historyRows.value = []
   historyVisible.value = true
   historyLoading.value = true
   try {
-    historyRows.value = await productionApi.nodeReports(id, node.id)
+    const rows = await read.run(() => productionApi.nodeReports(id, node.id))
+    if (read.current()) historyRows.value = rows
   } finally {
-    historyLoading.value = false
+    if (read.current()) historyLoading.value = false
   }
 }
 
@@ -430,7 +449,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                   <p v-if="n.remark" class="tl-rmk">{{ n.remark }}</p>
                   <div v-if="n.photos.length" class="pics">
                     <a v-for="p in n.photos.slice(0, 4)" :key="p.id" :href="p.url" target="_blank" rel="noopener" @click.stop>
-                      <img :src="p.thumbUrl ?? p.url" alt="" />
+                      <ThumbImage :src="p.thumbUrl" alt="" />
                     </a>
                   </div>
                 </div>
@@ -509,7 +528,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                   <div>{{ row.description }}</div>
                   <div v-if="(row as ProductionIssue).photos.length" class="pics">
                     <a v-for="p in (row as ProductionIssue).photos" :key="p.id" :href="p.url" target="_blank" rel="noopener">
-                      <img :src="p.thumbUrl ?? p.url" alt="" />
+                      <ThumbImage :src="p.thumbUrl" alt="" />
                     </a>
                   </div>
                   <div class="dim small">{{ row.createByName ?? '—' }} {{ formatDateTime(row.createTime) }}</div>
@@ -661,6 +680,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         v-model:report-visible="reportNodeVisible"
         v-model:plan-visible="planNodeVisible"
         :order-id="id"
+        :company-id="detail.companyId"
         :total-qty="detail.totalQty"
         :nodes="detail.nodes"
         :plan-revision="detail.planRevision"
@@ -671,6 +691,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         v-model:report-visible="reportIssueVisible"
         v-model:close-visible="closeIssueVisible"
         :order-id="id"
+        :company-id="detail.companyId"
         :base-due-date="detail.expectDate ?? detail.dueDate"
         :closing-issue="closingIssue"
         @updated="refresh"
@@ -697,7 +718,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
             </div>
             <div v-if="h.remark" class="small">{{ h.remark }}</div>
             <div v-if="h.photos.length" class="pics">
-              <a v-for="p in h.photos" :key="p.id" :href="p.url" target="_blank" rel="noopener"><img :src="p.thumbUrl ?? p.url" alt="" /></a>
+              <a v-for="p in h.photos" :key="p.id" :href="p.url" target="_blank" rel="noopener"><ThumbImage :src="p.thumbUrl" alt="" /></a>
             </div>
           </li>
         </ul>

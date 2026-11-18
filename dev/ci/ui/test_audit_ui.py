@@ -726,6 +726,9 @@ class AuditUi(unittest.TestCase):
         current_cost = self.api.request("GET", f"/api/tech-packs/{current_id}/cost")
         self.assertNotEqual(old_cost["buyPrice"], current_cost["buyPrice"])
         held = []
+        aborted_costs = []
+        self.page.on("requestfailed", lambda request: aborted_costs.append(request.failure)
+                     if request.method == "GET" and urlsplit(request.url).path == f"/api/tech-packs/{old_id}/cost" else None)
         delayed_once = {"done": False}
         def delay_cost(route):
             if route.request.method == "GET" and not delayed_once["done"]:
@@ -746,8 +749,9 @@ class AuditUi(unittest.TestCase):
         note.fill("新版本本地说明不受旧响应覆盖")
         self.shot("current-pack-before-old-cost-arrives")
         route, real_response = held.pop()
-        with self.page.expect_response(lambda r: self.response_for(r, "GET", f"/api/tech-packs/{old_id}/cost")):
-            route.fulfill(response=real_response)
+        route.fulfill(response=real_response)
+        self.poll(lambda: any("ERR_ABORTED" in (reason or "") for reason in aborted_costs))
+        self.note("superseded real cost request cancelled", failure="net::ERR_ABORTED")
         self.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
         expect(price).to_have_value(str(current_cost["buyPrice"]))
         expect(note).to_have_value("新版本本地说明不受旧响应覆盖")
@@ -1115,8 +1119,16 @@ class AuditUi(unittest.TestCase):
             return {path: read_result(wait.value, path) for path, wait in waits}
 
         def ready_table(scope, column, data):
-            expect(scope.get_by_role("columnheader", name=column, exact=True).first).to_be_visible()
             rows = data.get("list", []) if isinstance(data, dict) else data
+            virtual = scope.locator(".virtual-data-table:visible")
+            if virtual.count():
+                expect(virtual.locator(".el-table-v2__header-cell").filter(has_text=column).first).to_be_visible()
+                if rows:
+                    expect(virtual.locator(".el-table-v2__row:visible").first).to_be_visible()
+                else:
+                    expect(virtual.locator(".virtual-empty:visible").first).to_have_text(re.compile(r"\S"))
+                return
+            expect(scope.get_by_role("columnheader", name=column, exact=True).first).to_be_visible()
             if rows:
                 expect(scope.locator(".el-table__body-wrapper tr.el-table__row:visible").first).to_be_visible()
             else:
@@ -1247,10 +1259,17 @@ class AuditUi(unittest.TestCase):
         ready_table(page, "工厂净托管", stock_summary["/api/stocks/summary"])
         expect(page.get_by_text("不代表工厂当前实盘余料", exact=False)).to_be_visible()
         self.shot("stock-material-summary-custody")
-        stock_logs = reads_during(["/api/stock-logs"],
+        stock_logs = reads_during(["/api/stock-logs/seek"],
             lambda: page.locator(".page-header").get_by_text("日志", exact=True).click())
-        ready_table(page, "单价 / 金额", stock_logs["/api/stock-logs"])
-        if any(row["valuationStatus"] == "UNKNOWN" for row in stock_logs["/api/stock-logs"]["list"]):
+        log_page = stock_logs["/api/stock-logs/seek"]
+        self.assertEqual(set(log_page), {"list", "nextCursor", "hasMore"})
+        self.assertIsInstance(log_page["hasMore"], bool)
+        if log_page["hasMore"]:
+            self.assertIsInstance(log_page["nextCursor"], str)
+        else:
+            self.assertIsNone(log_page["nextCursor"])
+        ready_table(page, "单价 / 金额", log_page)
+        if any(row["valuationStatus"] == "UNKNOWN" for row in log_page["list"]):
             expect(page.get_by_text("估值未知", exact=True).first).to_be_visible()
         self.shot("stock-ledger-valued-or-unknown")
         with page.expect_download() as ledger_download, page.expect_response(

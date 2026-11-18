@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { purchaseApi } from '@/api/purchase'
+import { purchaseApi as purchaseApiBase } from '@/api/purchase'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -34,6 +35,8 @@ import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const purchaseApi = bindCompanyApi(purchaseApiBase, () => detail.value?.companyId)
 
 /**
  * 采购单详情（/purchases/:id，docs/api/03 §3.3、§4）。
@@ -62,12 +65,16 @@ const invDocType = ref<'PURCHASE_IN' | 'PURCHASE_RETURN'>('PURCHASE_IN')
 
 const can = (a: PurchaseAction) => detail.value?.actions.includes(a) ?? false
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const d = await purchaseApi.get(id)
+    const d = await read.run(() => purchaseApi.get(id))
+    if (!read.current()) return
     detail.value = d
     tabs.rename(path, `采购 ${d.no}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }

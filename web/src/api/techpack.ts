@@ -41,7 +41,7 @@ export const techPackApi = {
   /** 转生产 BOM：生效的研发版复制成生产版草稿，单价按价格档案重新取，返回新 id */
   toProd: (id: string) => http.post<string>(`${base}/${id}/to-prod`),
   /** 几行 BOM 的默认值（供应商、损耗、来源、参考单价……），按请求的顺序返回 */
-  bomDefaults: (id: string, items: BomDefaultReq[]) => http.post<BomDefault[]>(`${base}/${id}/bom-defaults`, { items }),
+  bomDefaults: (id: string, items: BomDefaultReq[], options?: RequestOptions) => http.post<BomDefault[]>(`${base}/${id}/bom-defaults`, { items }, { ...options, readOnly: true }),
   /** 核价页签，colorId 不给 = 款式的第一个颜色。没有 techpack:cost:query 回 403 */
   cost: (id: string, colorId?: string) => http.get<TechPackCost>(`${base}/${id}/cost`, { colorId }),
   /** 这个版本的操作记录，新的在前 */

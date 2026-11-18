@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import DictSelect from '@/components/DictSelect.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
@@ -24,6 +25,8 @@ import type { FileVO } from '@/types/system'
 import { formatDate, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const productionApi = bindCompanyApi(productionApiBase, () => detail.value?.companyId)
 
 /**
  * 手机报工的一张单（/mobile/:id，docs/api/05 §1.4、§3.8、§4）。按 360px 宽做，按钮 44px 高，日期用原生 <input type="date">。
@@ -73,16 +76,21 @@ const issueGuard = useUnsavedChanges(issueForm, computed(() => view.value === 'i
 
 const can = (a: ProductionAction) => detail.value?.actions.includes(a) ?? false
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   loading.value = true
   try {
-    detail.value = await productionApi.get(id)
+    const fetched = await read.run(() => productionApi.get(id))
+    if (!read.current()) return
+    detail.value = fetched
     notFound.value = false
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

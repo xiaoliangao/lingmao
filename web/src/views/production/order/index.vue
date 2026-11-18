@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { productionApi } from '@/api/production'
@@ -64,12 +65,16 @@ type ListQuery = Omit<ProductionQuery, 'kind' | 'status' | 'returned' | 'ids'>
 
 /** 页签上的数：和表格分开取，失败不提示（页签只是少了数） */
 let countSeq = 0
+const loadCountsRequest = useLatestRequest()
 async function loadCounts(params: ListQuery) {
+  const read = loadCountsRequest.begin()
   const seq = ++countSeq
   try {
-    const c = await productionApi.counts({ ...params, kind })
+    const c = await read.run(() => productionApi.counts({ ...params, kind }))
+    if (!read.current()) return
     if (seq === countSeq) counts.value = c
   } catch {
+    if (!read.current()) return
     if (seq === countSeq) counts.value = null
   }
 }

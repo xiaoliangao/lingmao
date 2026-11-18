@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { boardApi } from '@/api/production'
@@ -80,28 +81,37 @@ function currentFilter(): BoardQuery {
 
 /** 卡片：失败不提示，不显示那一排 */
 let cardSeq = 0
+const loadCardsRequest = useLatestRequest()
 async function loadCards(filter: BoardQuery) {
+  const read = loadCardsRequest.begin()
   const seq = ++cardSeq
   try {
-    const c = await boardApi.cards(filter)
+    const c = await read.run(() => boardApi.cards(filter))
+    if (!read.current()) return
     if (seq === cardSeq) cards.value = c
   } catch {
+    if (!read.current()) return
     if (seq === cardSeq) cards.value = null
   }
 }
 
 let factorySeq = 0
+const loadFactoriesRequest = useLatestRequest()
 async function loadFactories(filter: BoardQuery = currentFilter()) {
+  const read = loadFactoriesRequest.begin()
   const seq = ++factorySeq
   loadingFactories.value = true
   try {
     // 按工厂不看加工厂筛选（点一行才筛进去）
     const rest = { ...filter }
     delete rest.factoryId
-    const rows = await boardApi.factories(rest)
+    const rows = await read.run(() => boardApi.factories(rest))
+    if (!read.current()) return
     if (seq === factorySeq) factories.value = rows
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    if (seq === factorySeq) loadingFactories.value = false
+    if (read.current() && (seq === factorySeq)) loadingFactories.value = false
   }
 }
 

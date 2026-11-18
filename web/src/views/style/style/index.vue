@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { businessToday } from '@/utils/businessDate'
 import { computed, onActivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -229,7 +230,7 @@ const importVisible = ref(false)
     <div v-if="view === 'grid'" v-loading="loading" class="cards">
       <button v-for="s in list" :key="s.id" type="button" class="card" @click="open(s)">
         <span class="pic">
-          <img v-if="s.image" :src="s.image.thumbUrl ?? s.image.url" alt="" loading="lazy" />
+          <ThumbImage v-if="s.image" :src="s.image.thumbUrl" alt="" loading="lazy" />
           <span v-else class="no-pic">还没有图</span>
           <StatusTag class="st" :tone="STYLE_STATUS[s.status].tone">{{ STYLE_STATUS[s.status].label }}</StatusTag>
         </span>
@@ -264,7 +265,7 @@ const importVisible = ref(false)
       <el-table-column label="款号" min-width="150">
         <template #default="{ row }">
           <span class="name">
-            <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+            <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
             <span v-else class="thumb blank" />
             <span class="code">{{ row.code }}</span>
           </span>

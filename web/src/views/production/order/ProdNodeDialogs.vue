@@ -2,7 +2,7 @@
 import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import ImageUpload from '@/components/ImageUpload.vue'
 import { reloadOnConflict, todayStr } from '@/components/doc/docUtils'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
@@ -11,6 +11,8 @@ import type { FileVO } from '@/types/system'
 import { formatDate } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const productionApi = bindCompanyApi(productionApiBase, () => props.companyId)
 
 /**
  * 生产单详情的两个节点对话框（docs/api/05 §1.4、§3.3、§4）：
@@ -31,6 +33,7 @@ const planVisible = defineModel<boolean>('planVisible', { required: true })
 
 const props = defineProps<{
   orderId: string
+  companyId: string
   totalQty: number
   planRevision: number
   nodes: ProductionNode[]

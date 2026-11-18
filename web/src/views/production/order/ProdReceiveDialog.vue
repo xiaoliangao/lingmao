@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, shallowRef, toRaw, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { warehouseApi } from '@/api/basic'
-import { productionApi } from '@/api/production'
+import { productionApi as productionApiBase } from '@/api/production'
 import ImageUpload from '@/components/ImageUpload.vue'
 import SkuMatrix, { type MatrixCell, type MatrixColor } from '@/components/SkuMatrix.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -24,6 +25,8 @@ import { formatDate, formatDateTime, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { newClientAction, unknownActionResult } from '@/utils/clientAction'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const productionApi = bindCompanyApi(productionApiBase, () => props.doc.companyId)
 
 /**
  * 登记回货、看回货单（docs/api/05 §1.4、§3.6、§4）：
@@ -303,7 +306,7 @@ async function voidCurrentReceipt() {
       <p v-if="viewingReceipt.remark" class="rcp-remark">备注：{{ viewingReceipt.remark }}</p>
       <div v-if="viewingReceipt.photos.length" class="pics">
         <a v-for="p in viewingReceipt.photos" :key="p.id" :href="p.url" target="_blank" rel="noopener">
-          <img :src="p.thumbUrl ?? p.url" alt="" />
+          <ThumbImage :src="p.thumbUrl" alt="" />
         </a>
       </div>
     </div>

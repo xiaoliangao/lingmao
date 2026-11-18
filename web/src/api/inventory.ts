@@ -1,4 +1,4 @@
-import { download, http, type RequestOptions } from '@/utils/request'
+import { download, http, snapshotRequestBody, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type { DocActionReq } from '@/types/biz'
 import type {
@@ -6,7 +6,8 @@ import type {
   InvDocDetail, InvDocDraft, InvDocForm, InvDocFromSourceReq, InvDocQuery, InvDocRow, StockLogQuery, StockLogRow, StockQty, StockQuery,
   StockRow, StockSummaryRow,
 } from '@/types/inventory'
-import { docApi } from './biz'
+import { docApi, documentOptions } from './biz'
+import type { SeekResult } from '@/composables/useSeekTable'
 import type { PageParams } from './system'
 
 /**
@@ -39,13 +40,13 @@ export const invDocApi = {
   prefillFromPurchase: (purchaseOrderId: string, params: { docType: 'PURCHASE_IN' | 'PURCHASE_RETURN'; itemIds?: string[] }) =>
     http.get<InvDocDraft>(`${docBase}/from-purchase/${purchaseOrderId}`, params),
   /** 由采购单生成（存草稿，或 post = true 时马上过账）。"待到料"勾几行点"入库"时按采购单分，每张调一次 */
-  fromPurchase: (purchaseOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) =>
-    http.post<InvDocCreated>(`${docBase}/from-purchase/${purchaseOrderId}`, data, options),
+  fromPurchase: async (purchaseOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) =>
+    http.post<InvDocCreated>(`${docBase}/from-purchase/${purchaseOrderId}`, snapshotRequestBody(data), await documentOptions('/api/purchase-orders', purchaseOrderId, options)),
   /** 领料出库、退料入库：带出明细（生产单那边算的应领、已领）。领料的 fromWarehouseId 不传 = 第一个启用的物料仓 */
   prefillFromProduction: (productionOrderId: string, params: { docType: 'ISSUE_OUT' | 'RETURN_IN'; fromWarehouseId?: string }) =>
     http.get<InvDocDraft>(`${docBase}/from-production/${productionOrderId}`, params),
-  fromProduction: (productionOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) =>
-    http.post<InvDocCreated>(`${docBase}/from-production/${productionOrderId}`, data, options),
+  fromProduction: async (productionOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) =>
+    http.post<InvDocCreated>(`${docBase}/from-production/${productionOrderId}`, snapshotRequestBody(data), await documentOptions('/api/production-orders', productionOrderId, options)),
 }
 
 // ---------- 物料盘点单 ----------
@@ -90,6 +91,7 @@ export const stockApi = {
 }
 
 export const stockLogApi = {
+  seek: (params: StockLogQuery & { cursor?: string; size: number }) => http.get<SeekResult<StockLogRow>>('/api/stock-logs/seek', params),
   /** 新的在前（按 id 倒序） */
   page: (params: PageParams & StockLogQuery) => http.get<PageResult<StockLogRow>>('/api/stock-logs', params),
   export: (params: StockLogQuery) => download('/api/stock-logs/export', params, '库存日志.xlsx'),

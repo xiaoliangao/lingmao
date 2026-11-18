@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type InputInstance, type TableColumnCtx, type TableInstance } from 'element-plus'
@@ -71,12 +72,16 @@ const receiving = ref(false)
 let countSeq = 0
 
 /** 页签上的数：和列表分开取，失败了写"—" */
+const loadCountsRequest = useLatestRequest()
 async function loadCounts(params: Parameters<typeof pendingArrivalApi.counts>[0]) {
+  const read = loadCountsRequest.begin()
   const seq = ++countSeq
   try {
-    const res = await pendingArrivalApi.counts(params)
+    const res = await read.run(() => pendingArrivalApi.counts(params))
+    if (!read.current()) return
     if (seq === countSeq) counts.value = res
   } catch {
+    if (!read.current()) return
     if (seq === countSeq) counts.value = null
   }
 }

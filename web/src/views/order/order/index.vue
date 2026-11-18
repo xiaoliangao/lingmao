@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import ThumbImage from '@/components/ThumbImage.vue'
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type TableColumnCtx, type TableInstance } from 'element-plus'
@@ -68,12 +70,16 @@ const pickStatus = (value: unknown): OrderStatus | '' => (ALL_STATUSES as unknow
 const pickDate = (value: unknown) => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined)
 
 let countSeq = 0
+const loadCountsRequest = useLatestRequest()
 async function loadCounts(params: Omit<OrderQuery, 'status' | 'ids'>) {
+  const read = loadCountsRequest.begin()
   const current = ++countSeq
   try {
-    const result = await orderApi.counts(params)
+    const result = await read.run(() => orderApi.counts(params))
+    if (!read.current()) return
     if (current === countSeq) counts.value = result
   } catch {
+    if (!read.current()) return
     // 数取不到只是页签上不显示数，列表照常
     if (current === countSeq) counts.value = {}
   }
@@ -310,7 +316,7 @@ function onImported(count: number) {
         <template #default="{ row }">
           <span class="styles-cell">
             <template v-for="st in (row as OrderRow).styles.slice(0, 2)" :key="st.styleId">
-              <img v-if="st.image" :src="st.image.thumbUrl ?? st.image.url" alt="" class="thumb" loading="lazy" />
+              <ThumbImage v-if="st.image" :src="st.image.thumbUrl" alt="" class="thumb" loading="lazy" />
               <span class="code">{{ st.styleCode }}</span>
             </template>
             <span v-if="(row as OrderRow).styles.length > 2" class="dim">等 {{ (row as OrderRow).styles.length }} 款</span>

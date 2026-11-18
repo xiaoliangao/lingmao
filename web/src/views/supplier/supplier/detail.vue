@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -47,16 +48,20 @@ const notFound = ref(false)
 const activeTab = ref('certs')
 let seq = 0
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   const current = ++seq
   loading.value = true
   try {
-    const detail = await supplierApi.get(id, { silent: true })
+    const detail = await read.run(() => supplierApi.get(id, { silent: true }))
+    if (!read.current()) return
     if (current !== seq) return
     supplier.value = detail
     notFound.value = false
     tabs.rename(path, `供应商 ${detail.shortName}`)
   } catch (error) {
+    if (!read.current()) return
     if (current !== seq) return
     if (error instanceof ApiError && error.code === 404) {
       supplier.value = null
@@ -252,17 +257,19 @@ const withdrawChange = (change: SupplierChange) =>
 const certs = ref<SupplierCert[]>([])
 const certsLoading = ref(false)
 const certRef = ref<InstanceType<typeof CertDialog>>()
+const certRequest = useLatestRequest()
 
 async function loadCerts() {
+  const read = certRequest.begin()
   const current = id
   certsLoading.value = true
   try {
-    const result = await supplierApi.certs(current)
-    if (current === id) certs.value = result
+    const result = await read.run(() => supplierApi.certs(current))
+    if (read.current() && current === id) certs.value = result
   } catch {
     // 404 由详情那边显示；其他错误拦截器已经弹过了
   } finally {
-    certsLoading.value = false
+    if (read.current()) certsLoading.value = false
   }
 }
 
@@ -295,17 +302,19 @@ function onCertSaved() {
 // ---------- 改动记录、操作记录 ----------
 const changes = ref<SupplierChange[]>([])
 const changesLoading = ref(false)
+const changesRequest = useLatestRequest()
 
 async function loadChanges() {
+  const read = changesRequest.begin()
   const current = id
   changesLoading.value = true
   try {
-    const result = await supplierApi.changes(current)
-    if (current === id) changes.value = result
+    const result = await read.run(() => supplierApi.changes(current))
+    if (read.current() && current === id) changes.value = result
   } catch {
     // 拦截器已经弹过了
   } finally {
-    changesLoading.value = false
+    if (read.current()) changesLoading.value = false
   }
 }
 

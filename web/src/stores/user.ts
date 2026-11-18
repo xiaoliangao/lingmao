@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { authApi } from '@/api/auth'
 import type { UserInfo } from '@/types/system'
-import { clearToken, getToken, setToken } from '@/utils/token'
+import { clearToken, getToken, setToken, setSessionSubject } from '@/utils/token'
 
 /** 当前登录的人：token、基本信息、权限、菜单 */
 export const useUserStore = defineStore('user', () => {
@@ -25,6 +25,7 @@ export const useUserStore = defineStore('user', () => {
 
   async function fetchMe() {
     info.value = await authApi.me()
+    setSessionSubject(info.value.id)
   }
 
   async function logout() {

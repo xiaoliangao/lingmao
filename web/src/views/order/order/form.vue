@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orderApi } from '@/api/order'
+import { orderApi as orderApiBase } from '@/api/order'
 import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -24,6 +25,8 @@ import { formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { applySkuValues, buildSkuRows, hydrateSkuValues, lineAmountCents, MAX_UNIT_PRICE, validateOrderCapacity, type SkuValues } from '@/utils/orderSku'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+const orderApi = bindCompanyApi(orderApiBase, () => head.companyId)
 
 /**
  * 需求订单整页表单（/orders/new、/orders/:id/edit，docs/api/02 §1.2、§3.5、§4.2）。
@@ -369,7 +372,7 @@ const backTo = editing ? `/orders/${id}` : '/orders'
       <section v-for="(b, bIdx) in blocks" :key="b.opt.styleId" class="panel style-block">
         <div class="panel-head block-head">
           <span class="st-info">
-            <img v-if="b.opt.image" :src="b.opt.image.thumbUrl ?? b.opt.image.url" alt="" class="thumb" />
+            <ThumbImage v-if="b.opt.image" :src="b.opt.image.thumbUrl" alt="" class="thumb" />
             <span class="code">{{ b.opt.code }}</span>
             <strong>{{ b.opt.name }}</strong>
             <span v-if="b.opt.problem" class="problem">{{ b.opt.problem }}</span>

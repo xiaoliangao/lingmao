@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { scheduleApi } from '@/api/order'
+import { scheduleApi as scheduleApiBase } from '@/api/order'
 import DictSelect from '@/components/DictSelect.vue'
 import SkuMatrix from '@/components/SkuMatrix.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
@@ -11,6 +11,11 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { PROCESS_MODE_FULL, type ScheduleBlock, type SchedulePrefill, type ScheduleQuote, type ScheduleStyle } from '@/types/order'
 import { formatMoney, formatPrice } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
+import { bindCompanyApi } from '@/utils/companyScope'
+import { createLatestRequest } from '@/utils/requestScope'
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { restoreDraftValue } from '@/utils/draft'
+const scheduleApi = bindCompanyApi(scheduleApiBase, () => props.companyId)
 
 /**
  * 排单（docs/api/02 §3.12、§4.5，原型 OrderSchedule）：一个款一块 = 一张生产单草稿；"再加一个工厂"同款再加一块（件数默认 0）。
@@ -22,7 +27,7 @@ import { orNull } from '@/views/basic/common'
  *   <OrderScheduleDialog v-model="scheduleVisible" :order-id="id" @scheduled="onScheduled" />
  */
 const visible = defineModel<boolean>({ required: true })
-const props = defineProps<{ orderId: string }>()
+const props = defineProps<{ orderId: string; companyId: string }>()
 const emit = defineEmits<{ scheduled: [] }>()
 
 const modes = useDict('process_mode')
@@ -57,6 +62,25 @@ const blocks = ref<BlockDraft[]>([])
 const guard = useUnsavedChanges(
   () => blocks.value.map(({ quote: _q, quoting: _x, style, ...rest }) => ({ styleId: style.styleId, ...rest })),
   visible,
+  { ready: () => !loading.value && !!prefill.value, restore(value) {
+    const pf = prefill.value
+    if (!Array.isArray(value) || !pf) return
+    const quotes = new Map(blocks.value.map((block) => [`${block.style.styleId}:${block.factoryId}`, block.quote]))
+    const restored: BlockDraft[] = []
+    for (const saved of value) {
+      if (!saved || typeof saved !== 'object' || typeof saved.styleId !== 'string') continue
+      const style = pf.styles.find((item) => item.styleId === saved.styleId)
+      if (!style) continue
+      const block = makeBlock(style, pf, false)
+      restoreDraftValue(block, saved)
+      block.uid = ++uid
+      block.quote = quotes.get(`${style.styleId}:${block.factoryId}`) ?? null
+      restored.push(block)
+    }
+    cancelQuotes()
+    blocks.value = restored
+    for (const block of restored) if (block.factoryId && !block.quote) void requote(block, true, true)
+  } },
 )
 
 function makeBlock(st: ScheduleStyle, pf: SchedulePrefill, fill: boolean): BlockDraft {
@@ -94,31 +118,38 @@ function applyModePrice(b: BlockDraft) {
 }
 
 /** 每块的取价序号：连着换两次工厂，先发的后回来不能盖掉后换的 */
-const quoteSeq = new Map<number, number>()
-async function requote(b: BlockDraft, keepMode: boolean) {
-  const seq = (quoteSeq.get(b.uid) ?? 0) + 1
-  quoteSeq.set(b.uid, seq)
-  if (!b.factoryId) {
+const quoteReads = new Map<number, ReturnType<typeof createLatestRequest>>()
+function cancelQuotes() { quoteReads.forEach((request) => request.cancel()); quoteReads.clear() }
+onBeforeUnmount(cancelQuotes)
+async function requote(b: BlockDraft, keepMode: boolean, preserveDraft = false) {
+  const request = quoteReads.get(b.uid) ?? createLatestRequest()
+  quoteReads.set(b.uid, request)
+  const read = request.begin()
+  const factoryId = b.factoryId
+  if (!factoryId) {
     b.quote = null
+    b.quoting = false
     applyModePrice(b)
     return
   }
   b.quoting = true
   try {
-    const q = await scheduleApi.quote(props.orderId, b.style.styleId, b.factoryId)
-    if (quoteSeq.get(b.uid) !== seq) return
+    const q = await read.run(() => scheduleApi.quote(props.orderId, b.style.styleId, factoryId))
+    if (!read.current() || !visible.value || !blocks.value.includes(b)) return
     b.quote = q
     b.factoryName = q.factoryName
-    b.settleMethod = q.settleMethod
-    if (!keepMode || !b.processMode) b.processMode = q.defaultMode
-    applyModePrice(b)
-  } catch {
-    if (quoteSeq.get(b.uid) === seq) {
-      b.quote = null
+    if (!preserveDraft) {
+      b.settleMethod = q.settleMethod
+      if (!keepMode || !b.processMode) b.processMode = q.defaultMode
       applyModePrice(b)
     }
+  } catch {
+    if (read.current()) {
+      b.quote = null
+      if (!preserveDraft) applyModePrice(b)
+    }
   } finally {
-    if (quoteSeq.get(b.uid) === seq) b.quoting = false
+    if (read.current()) b.quoting = false
   }
 }
 
@@ -127,19 +158,26 @@ function onFactoryChange(b: BlockDraft, factoryId: string | null | undefined) {
   void requote(b, true)
 }
 
+const prefillRequest = useLatestRequest()
 watch(visible, async (on) => {
+  const read = prefillRequest.begin()
+  cancelQuotes()
   if (!on) return
   blocks.value = []
   prefill.value = null
   loading.value = true
   try {
-    const pf = await scheduleApi.prefill(props.orderId)
+    const pf = await read.run(() => scheduleApi.prefill(props.orderId))
+    if (!read.current()) return
     prefill.value = pf
     blocks.value = pf.styles.map((st) => makeBlock(st, pf, true))
     await Promise.all(blocks.value.map((b) => requote(b, false)))
+    if (!read.current()) return
     guard.markSaved()
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 })
 

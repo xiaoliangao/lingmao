@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, type InputInstance, type UploadRequestOptions } from 'element-plus'
 import { fileApi } from '@/api/system'
 import { craftStandardApi } from '@/api/techpack'
 import DictSelect from '@/components/DictSelect.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import type { FileVO } from '@/types/system'
 import { CRAFT_GROUPS, CRAFT_SECTION_LABEL, type CraftSection, type CraftStandard, type SizePointStd } from '@/types/techpack'
 import { formatFileSize } from '@/utils/format'
@@ -40,11 +41,18 @@ const uploading = ref(0)
 // ---------- 默认文字 ----------
 const EMPTY_TEXTS: Record<CraftSection, string> = { CUTTING: '', SEWING: '', PART: '', QUALITY: '', BUTTON: '', IRONING: '', LABEL: '', PACKING: '', NOTE: '' }
 const textForm = reactive({ packingMode: null as string | null, texts: { ...EMPTY_TEXTS } })
-const textGuard = useUnsavedChanges(() => (editable.value ? textForm : null), visible)
+const textGuard = useUnsavedChanges(() => (editable.value ? textForm : null), visible, { ready: () => !loading.value })
 
 // ---------- 部位 ----------
 const points = ref<SizePointStd[]>([])
-const pointGuard = useUnsavedChanges(() => (editable.value ? points.value.map((p) => [p.value, p.method ?? '']) : null), visible)
+const pointGuard = useUnsavedChanges(() => (editable.value ? points.value.map((p) => [p.value, p.method ?? '']) : null), visible, { ready: () => !loading.value, restore(value) {
+  if (!Array.isArray(value)) return
+  for (const saved of value) {
+    if (!Array.isArray(saved) || typeof saved[1] !== 'string') continue
+    const point = points.value.find((row) => row.value === saved[0])
+    if (point) point.method = saved[1]
+  }
+} })
 const newPoint = reactive({ label: '', method: '' })
 const addingPoint = ref(false)
 
@@ -62,10 +70,14 @@ function applyFiles(std: CraftStandard) {
   files.value = std.files.map(({ url, thumbUrl, name, size }) => ({ url, thumbUrl, name, size }))
 }
 
+const loadRequest = useLatestRequest()
+watch(visible, (open) => { if (!open) loadRequest.cancel() })
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    const std = await craftStandardApi.get()
+    const std = await read.run(() => craftStandardApi.get())
+    if (!read.current()) return
     editable.value = std.editable
     applyFiles(std)
     textForm.packingMode = std.packingMode
@@ -74,7 +86,7 @@ async function load() {
     textGuard.markSaved()
     pointGuard.markSaved()
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

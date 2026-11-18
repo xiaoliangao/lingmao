@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { ref, watch } from 'vue'
 import { productionApi } from '@/api/production'
 import StatusTag from '@/components/StatusTag.vue'
@@ -30,18 +31,23 @@ const keyword = ref('')
 const rows = ref<IssueOption[]>([])
 const loading = ref(false)
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    const res = await productionApi.issueOptions({
+    const res = await read.run(() => productionApi.issueOptions({
       page: 1,
       size: 60,
       keyword: keyword.value.trim() || undefined,
       returnable: props.returnable,
-    })
+    }))
+    if (!read.current()) return
     rows.value = res.list
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { menuApi, type MenuForm } from '@/api/system'
@@ -12,12 +13,18 @@ const TYPE_LABEL: Record<number, string> = { 1: '目录', 2: '页面', 3: '按�
 const tree = ref<MenuNode[]>([])
 const loading = ref(false)
 
+const loadRequest = useLatestRequest()
 async function load() {
+  const read = loadRequest.begin()
   loading.value = true
   try {
-    tree.value = await menuApi.tree()
+    const fetched1 = await read.run(() => menuApi.tree())
+    if (!read.current()) return
+    tree.value = fetched1
+  } catch (error) {
+    if (read.current()) throw error
   } finally {
-    loading.value = false
+    if (read.current()) loading.value = false
   }
 }
 

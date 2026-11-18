@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormItemRule } from 'element-plus'
 import { priceApi } from '@/api/price'
@@ -116,12 +117,15 @@ const picking = ref(false)
 const skus = ref<MaterialPickRow[]>([])
 let skuSeq = 0
 
+const skuRequest = useLatestRequest()
 async function loadSkus() {
+  const read = skuRequest.begin()
   const mine = ++skuSeq
   const id = form.materialId
   skus.value = []
   if (!id || !names.materialCode) return
-  const result = await materialApi.pick({ keyword: names.materialCode, page: 1, size: 500 })
+  const result = await read.run(() => materialApi.pick({ keyword: names.materialCode, page: 1, size: 500 }))
+    if (!read.current()) return
   if (mine === skuSeq) skus.value = result.list.filter((row) => row.materialId === id)
 }
 
@@ -159,23 +163,27 @@ let currentSeq = 0
 /** 税率是按哪家供应商带的：换了供应商才重新带，不盖掉手改的 */
 let taxFor: string | null = null
 
+const priceRequest = useLatestRequest()
 async function loadCurrent() {
+  const read = priceRequest.begin()
   const mine = ++currentSeq
-  if (!visible.value || !form.supplierId) {
+  const supplierId = form.supplierId
+  if (!visible.value || !supplierId) {
     current.value = null
     return
   }
   const material = isMaterial.value
   try {
-    const result = await priceApi.current({
+    const result = await read.run(() => priceApi.current({
       type: form.type,
-      supplierId: form.supplierId,
+      supplierId,
       materialId: material ? form.materialId ?? undefined : undefined,
       materialSkuId: material ? form.materialSkuId ?? undefined : undefined,
       styleId: material ? undefined : form.styleId ?? undefined,
       processMode: material ? undefined : form.processMode ?? undefined,
       date: form.effectiveDate,
-    }, { silent: true })
+    }, { silent: true }))
+    if (!read.current()) return
     if (mine !== currentSeq) return
     current.value = result
     if (taxFor !== form.supplierId) {
@@ -186,6 +194,7 @@ async function loadCurrent() {
       if (untouched) guard.markSaved()
     }
   } catch {
+    if (!read.current()) return
     if (mine === currentSeq) current.value = null
   }
 }
@@ -276,6 +285,7 @@ async function save() {
 
 /** 换类型、换组合时，上一次的校验提示不对了 */
 watch(() => form.type, () => formRef.value?.clearValidate())
+watch(visible, (on) => { if (!on) { skuRequest.cancel(); priceRequest.cancel() } })
 </script>
 
 <template>

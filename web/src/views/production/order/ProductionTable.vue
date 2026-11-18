@@ -44,6 +44,7 @@ export function productionColumns(mode: 'list' | 'board'): ColumnDef<ProductionC
 </script>
 
 <script setup lang="ts">
+import ThumbImage from '@/components/ThumbImage.vue'
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
@@ -155,7 +156,7 @@ defineExpose({
     <el-table-column v-if="columns.show.style" label="款式" min-width="180">
       <template #default="{ row }">
         <span class="st-cell">
-          <img v-if="row.image" :src="row.image.thumbUrl ?? row.image.url" alt="" class="thumb" loading="lazy" />
+          <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
           <span v-else class="thumb blank" />
           <span>
             <span class="code">{{ row.styleCode }}</span>

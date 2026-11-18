@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -110,13 +111,17 @@ async function openCost() {
   await techPack.value?.open(packId, 'cost')
 }
 
+const detailRequest = useLatestRequest()
 async function load() {
+  const read = detailRequest.begin()
   try {
-    const [d, list] = await Promise.all([styleApi.get(id), styleApi.skus(id), loadOverview()])
+    const [d, list] = await read.run(() => Promise.all([styleApi.get(id), styleApi.skus(id), loadOverview()]))
+    if (!read.current()) return
     detail.value = d
     skus.value = list.map((k) => ({ ...k, draftBarcode: k.barcode ?? '', draftPrice: k.tagPrice }))
     tabs.rename(path, `款式 ${d.code}`)
   } catch (e) {
+    if (!read.current()) return
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }

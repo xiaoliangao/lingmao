@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { orderChangeApi } from '@/api/order'
@@ -30,12 +31,16 @@ const dateRange = ref<[string, string] | null>(null)
 const pickTab = (value: unknown): TabKey => (TAB_KEYS.includes(value as TabKey) ? (value as TabKey) : '')
 
 let countSeq = 0
+const loadCountsRequest = useLatestRequest()
 async function loadCounts(params: Omit<OrderChangeQuery, 'status' | 'rejected'>) {
+  const read = loadCountsRequest.begin()
   const current = ++countSeq
   try {
-    const result = await orderChangeApi.counts(params)
+    const result = await read.run(() => orderChangeApi.counts(params))
+    if (!read.current()) return
     if (current === countSeq) counts.value = result
   } catch {
+    if (!read.current()) return
     if (current === countSeq) counts.value = {}
   }
 }
