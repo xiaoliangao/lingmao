@@ -19,6 +19,11 @@ public class IntegrationTestConfig {
     /** 一次 mvn verify 只清一次：万一哪个测试的配置不一样、Spring 又起了一个应用，不能把前面测试正在用的数据清掉 */
     private static final AtomicBoolean CLEANED = new AtomicBoolean();
 
+    @Bean
+    SqlStatementCapture sqlStatementCapture() {
+        return new SqlStatementCapture();
+    }
+
     /**
      * Spring Boot 启动时执行迁移，有这个 bean 就用它代替默认的 migrate()。
      * 清空之前查库名：配置被环境变量（SPRING_DATASOURCE_URL）之类的盖掉、连到了开发库 scm 或者别的库，直接启动失败，

@@ -3,6 +3,7 @@ package com.lingmao.scm.module.supplier.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.SqlStatementCapture;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.doc.DocStatus;
@@ -49,12 +50,7 @@ import com.lingmao.scm.module.supplier.dto.SupplierQuery;
 import com.lingmao.scm.module.supplier.mapper.SupplierMapper;
 import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LoginUser;
-import org.apache.ibatis.executor.statement.StatementHandler;
 import org.apache.ibatis.mapping.BoundSql;
-import org.apache.ibatis.plugin.Interceptor;
-import org.apache.ibatis.plugin.Intercepts;
-import org.apache.ibatis.plugin.Invocation;
-import org.apache.ibatis.plugin.Signature;
 import org.apache.ibatis.scripting.defaults.DefaultParameterHandler;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.assertj.core.api.SoftAssertions;
@@ -75,7 +71,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -128,7 +123,6 @@ class A1KeywordQueryIT {
     @Autowired CountService counts;
     @Autowired StyleService styleService;
     @Autowired SizeGroupService sizeGroupService;
-    private final BoundSqlProbe probe = new BoundSqlProbe();
     private final SoftAssertions planAssertions = new SoftAssertions();
     private final Map<String, Object> planSummary = new LinkedHashMap<>();
     private long user;
@@ -142,7 +136,6 @@ class A1KeywordQueryIT {
     @BeforeAll
     void seedRealRelations() throws Exception {
         Files.createDirectories(ARTIFACTS);
-        sessions.getConfiguration().addInterceptor(probe);
         String suffix = UUID.randomUUID().toString();
         user = id("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 query') RETURNING id", "kw-" + suffix);
         company = id("INSERT INTO bas_company(code,name,short_name) VALUES (?,'A1 query','A1 query') RETURNING id", "KW" + user);
@@ -535,9 +528,8 @@ class A1KeywordQueryIT {
     }
 
     private List<String> captureSelects(Runnable query) {
-        List<BoundSql> captured = new ArrayList<>(); probe.active.set(captured);
-        try { query.run(); } finally { probe.active.remove(); }
-        return captured.stream().map(sql -> sql.getSql().strip().replaceAll("\\s+", " "))
+        var captured = SqlStatementCapture.capture(() -> { query.run(); return null; });
+        return captured.statements().stream().map(sql -> sql.getSql().strip().replaceAll("\\s+", " "))
                 .filter(sql -> sql.regionMatches(true, 0, "SELECT", 0, 6) || sql.regionMatches(true, 0, "WITH", 0, 4)).toList();
     }
 
@@ -546,10 +538,9 @@ class A1KeywordQueryIT {
     }
 
     private void explain(String name, Supplier<Result> query, int count, String expectedIndex, int statements) throws Exception {
-        List<BoundSql> captured = new ArrayList<>();
-        probe.active.set(captured);
-        Result result;
-        try { result = query.get(); } finally { probe.active.remove(); }
+        var capture = SqlStatementCapture.capture(query);
+        List<BoundSql> captured = capture.statements();
+        Result result = capture.result();
         assertThat(result.total()).as(name).isEqualTo(count);
         assertThat(result.ids()).as(name).hasSize(count).doesNotHaveDuplicates();
         int firstMatch = count == 100 ? 1 : 53210;
@@ -711,14 +702,5 @@ class A1KeywordQueryIT {
         List<JsonNode> result = new ArrayList<>(); result.add(root);
         if (root.has("Plans")) root.get("Plans").forEach(child -> result.addAll(nodes(child)));
         return result;
-    }
-
-    @Intercepts(@Signature(type = StatementHandler.class, method = "prepare", args = {Connection.class, Integer.class}))
-    static final class BoundSqlProbe implements Interceptor {
-        private final ThreadLocal<List<BoundSql>> active = new ThreadLocal<>();
-        @Override public Object intercept(Invocation invocation) throws Throwable {
-            if (active.get() != null) active.get().add(((StatementHandler) invocation.getTarget()).getBoundSql());
-            return invocation.proceed();
-        }
     }
 }

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.techpack.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.SqlStatementCapture;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.price.dto.ProcessPriceKey;
@@ -10,13 +11,8 @@ import com.lingmao.scm.module.techpack.dto.StyleCostRowVO;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
 import com.lingmao.scm.security.LoginUser;
-import org.apache.ibatis.executor.statement.StatementHandler;
 import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.scripting.defaults.DefaultParameterHandler;
-import org.apache.ibatis.plugin.Interceptor;
-import org.apache.ibatis.plugin.Intercepts;
-import org.apache.ibatis.plugin.Invocation;
-import org.apache.ibatis.plugin.Signature;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -34,7 +30,6 @@ import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -60,7 +55,6 @@ class A1CostBatchIT {
     @Autowired PriceService prices;
     @Autowired TechPackPdfServiceImpl pdf;
     @Autowired com.lingmao.scm.module.system.service.DictDataService dictionaries;
-    private final Probe probe = new Probe();
     private final List<Long> packIds = new ArrayList<>();
     private final List<Long> styleIds = new ArrayList<>();
     private final List<Long> materialIds = new ArrayList<>();
@@ -71,7 +65,6 @@ class A1CostBatchIT {
 
     @BeforeAll
     void seedDifferentCostInputs() {
-        sessions.getConfiguration().addInterceptor(probe);
         prefix = "CB" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         long user = id("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 cost') RETURNING id", prefix);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(user, "A1 cost"), null,
@@ -183,13 +176,12 @@ class A1CostBatchIT {
                 factories.getFirst(), styleIds.getFirst());
         List<ProcessPriceKey> keys = new ArrayList<>();
         for (int n = 0; n < 50; n++) keys.add(new ProcessPriceKey(factories.get(n), styleIds.get(n), "FULL"));
-        List<BoundSql> captured = new ArrayList<>(); probe.bounds.set(captured);
-        try {
-            var batch = prices.currentProcesses(keys, LocalDate.now(clock));
-            assertThat(batch).hasSize(49);
-            assertThat(batch.get(keys.getFirst()).id()).isEqualTo(latest);
-            assertThat(batch.get(keys.getFirst()).price()).isEqualByComparingTo("123.4567");
-        } finally { probe.bounds.remove(); }
+        var capture = SqlStatementCapture.capture(() -> prices.currentProcesses(keys, LocalDate.now(clock)));
+        var batch = capture.result();
+        assertThat(batch).hasSize(49);
+        assertThat(batch.get(keys.getFirst()).id()).isEqualTo(latest);
+        assertThat(batch.get(keys.getFirst()).price()).isEqualByComparingTo("123.4567");
+        List<BoundSql> captured = capture.statements();
         assertThat(captured).hasSize(1);
         BoundSql sql = captured.getFirst();
         String plan = jdbc.execute((ConnectionCallback<String>) connection -> {
@@ -229,14 +221,10 @@ class A1CostBatchIT {
         assertThat(context.colors()).hasSize(50);
         // Match the reference-dictionary cache state; BOM, material and price SQL remains uncached.
         for (String dictionary : List.of("unit", "season", "process_category")) dictionaries.listByType(dictionary);
-        List<String> small = new ArrayList<>(), large = new ArrayList<>();
-        PdfSheet first, fifty;
-        probe.active.set(small);
-        try { first = pdf.sheet(pack, context, context.colors().subList(0, 1), true); }
-        finally { probe.active.remove(); }
-        probe.active.set(large);
-        try { fifty = pdf.sheet(pack, context, context.colors(), true); }
-        finally { probe.active.remove(); }
+        var smallCapture = SqlStatementCapture.capture(() -> pdf.sheet(pack, context, context.colors().subList(0, 1), true));
+        var largeCapture = SqlStatementCapture.capture(() -> pdf.sheet(pack, context, context.colors(), true));
+        List<String> small = sqlText(smallCapture.statements()), large = sqlText(largeCapture.statements());
+        PdfSheet first = smallCapture.result(), fifty = largeCapture.result();
         assertThat(large).hasSize(small.size());
         assertThat(fifty.getBoms()).hasSize(50);
         assertThat(fifty.getBoms().getFirst()).usingRecursiveComparison().isEqualTo(first.getBoms().getFirst());
@@ -277,19 +265,11 @@ class A1CostBatchIT {
     private static String ids(List<Long> ids) { return ids.stream().map(String::valueOf).collect(Collectors.joining(",")); }
     private void delete(String table, String column, List<Long> ids) { if (!ids.isEmpty()) jdbc.update("DELETE FROM " + table + " WHERE " + column + " IN (" + ids(ids) + ")"); }
     private Captured capture(Supplier<PageResult<StyleCostRowVO>> query) {
-        List<String> sql = new ArrayList<>(); probe.active.set(sql);
-        try { return new Captured(query.get(), List.copyOf(sql)); } finally { probe.active.remove(); }
+        var captured = SqlStatementCapture.capture(query);
+        return new Captured(captured.result(), sqlText(captured.statements()));
+    }
+    private static List<String> sqlText(List<BoundSql> statements) {
+        return statements.stream().map(sql -> sql.getSql().toLowerCase().replaceAll("\\s+", " ")).toList();
     }
     private record Captured(PageResult<StyleCostRowVO> rows, List<String> sql) { }
-
-    @Intercepts(@Signature(type = StatementHandler.class, method = "prepare", args = {Connection.class, Integer.class}))
-    static final class Probe implements Interceptor {
-        private final ThreadLocal<List<String>> active = new ThreadLocal<>();
-        private final ThreadLocal<List<BoundSql>> bounds = new ThreadLocal<>();
-        @Override public Object intercept(Invocation invocation) throws Throwable {
-            if (active.get() != null) active.get().add(((StatementHandler) invocation.getTarget()).getBoundSql().getSql().toLowerCase().replaceAll("\\s+", " "));
-            if (bounds.get() != null) bounds.get().add(((StatementHandler) invocation.getTarget()).getBoundSql());
-            return invocation.proceed();
-        }
-    }
 }
