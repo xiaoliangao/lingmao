@@ -375,8 +375,7 @@ class AuditUi(unittest.TestCase):
         assert_decimal_equal(self.domain.stock_qty(), balance + 1)
         assert_decimal_equal(returned["items"][0]["countedQty"], balance)
         self.assertIsInstance(returned["items"][0]["bookRevision"], int)
-        resubmitted = self.domain.submit("/api/inventory-counts", count_id)
-        self.assertEqual(resubmitted["status"], "PENDING")
+        # 不在这里再提交：test_04 要这张单还是草稿；反审核后直接再提交由 InventoryIT 覆盖
         self.note("post-submit movement retained; unaudit keeps counts and re-baselines", approved=True,
                   bookRevisionAfterUnaudit=returned["items"][0]["bookRevision"])
 
