@@ -868,30 +868,35 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public void checkSourceVisible(Collection<Long> sourceIds) {
+        sources(sourceIds, true, "来源订单不存在");
+    }
+
+    @Override
+    public void checkMrpSourceVisible(Collection<Long> sourceIds) {
+        sources(sourceIds, false, "来源订单不存在");
+    }
+
+    /** 来源订单：都要在、品类线是我的、主体对得上；ownScope 时还要在本人范围里（制单人、业务员、跟单员） */
+    private List<Order> sources(Collection<Long> sourceIds, boolean ownScope, String missing) {
         Set<Long> ids = new HashSet<>(sourceIds);
-        if (ids.isEmpty()) return;
+        if (ids.isEmpty()) return List.of();
         List<Order> sources = orderMapper.selectByIds(ids);
-        if (sources.size() != ids.size()) throw new BizException(404, "来源订单不存在");
+        if (sources.size() != ids.size()) throw new BizException(404, missing);
         DataScope scope = DataScope.current(false);
         for (Order source : sources) {
             scope.getLines().check(source.getProductLine());
-            scope.check(source.getCreateBy(), source.getSalesId(), source.getMerchId());
+            if (ownScope) {
+                scope.check(source.getCreateBy(), source.getSalesId(), source.getMerchId());
+            }
             com.lingmao.scm.common.scope.CompanyContext.target(source.getCompanyId());
         }
+        return sources;
     }
 
     @Override
     public String checkForMrp(Collection<Long> orderIds) {
-        Set<Long> ids = new HashSet<>(orderIds);
-        if (ids.isEmpty()) return null;
-        List<Order> orders = orderMapper.selectByIds(ids);
-        if (orders.size() != ids.size()) throw new BizException(404, "有需求订单不存在，请重新选择");
-        DataScope scope = DataScope.current(false);
-        for (Order order : orders) {
-            scope.getLines().check(order.getProductLine());
-            scope.check(order.getCreateBy(), order.getSalesId(), order.getMerchId());
-            com.lingmao.scm.common.scope.CompanyContext.target(order.getCompanyId());
-        }
+        List<Order> orders = sources(orderIds, false, "有需求订单不存在，请重新选择");
+        if (orders.isEmpty()) return null;
         if (orders.stream().map(Order::getCompanyId).distinct().count() > 1)
             throw new BizException(400, "不同主体的订单请分别算料");
         // 品类线（RFC 013 §2）：一张算料单只算一条线，生成的采购单跟着它

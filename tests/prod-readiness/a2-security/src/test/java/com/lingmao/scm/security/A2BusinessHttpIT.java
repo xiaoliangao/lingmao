@@ -54,15 +54,18 @@ class A2BusinessHttpIT extends A2BusinessFixture {
         assertThat(jdbc.queryForObject("SELECT version FROM ord_order WHERE id=?", Integer.class, order)).isEqualTo(1);
     }
 
-    @Test void firstMrpAndScheduleCallsApplySourceDataScopeAndMixedCompanyBatchesWriteNothing() throws Exception {
+    /** 11-19 起算料不看订单的本人范围（采购不在订单上，PRD §3.1、§3.2）：本人范围的采购能算别人的订单；排单照旧要订单在本人范围里 */
+    @Test void mrpTakesLineOrdersButScheduleAppliesSourceDataScopeAndMixedCompanyBatchesWriteNothing() throws Exception {
         Fixture f = fixture();
         Account owner = custom(f.company(), "SELF", "purchase:mrp:add", "purchase:mrp:list", "production:order:add", "production:price:query");
         Account foreign = role("sales", f.company());
         long mine = sourceOrder(f, owner, "APPROVED", f.company());
         long theirs = sourceOrder(f, foreign, "APPROVED", f.company());
-        assertThat(call(owner, "POST", "/api/mrp-calcs", Map.of("orderIds", List.of(mine, theirs)), f.company()).path("code").intValue()).isEqualTo(404);
+        long calc = id(ok(owner, "POST", "/api/mrp-calcs", Map.of("orderIds", List.of(mine, theirs)), f.company()).path("id"));
+        assertThat(ok(owner, "GET", "/api/mrp-calcs/" + calc, null, f.company()).path("orders").size()).isEqualTo(2);
+        assertThat(call(foreign, "GET", "/api/mrp-calcs/" + calc, null, f.company()).path("code").intValue()).isIn(403, 404);
         assertThat(call(owner, "GET", "/api/production-orders/schedule-prefill?orderId=" + theirs, null, f.company()).path("code").intValue()).isEqualTo(404);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM mrp_calc WHERE create_by=?", Long.class, owner.id())).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM mrp_calc WHERE create_by=?", Long.class, owner.id())).isEqualTo(1);
         Account all = custom(f.company(), "ALL", "purchase:mrp:add", "purchase:mrp:list");
         long other = sourceOrder(f, all, "APPROVED", f.otherCompany());
         assertThat(call(all, "POST", "/api/mrp-calcs", Map.of("orderIds", List.of(mine, other)), f.company()).path("code").intValue()).isEqualTo(403);

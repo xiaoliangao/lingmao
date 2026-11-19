@@ -79,6 +79,12 @@ public interface OrderService {
     void checkSourceVisible(Collection<Long> ids);
 
     /**
+     * 算料的来源（选订单、幂等重放、打开算料单）：只查存在、品类线和主体，不查订单的本人范围。
+     * 算料是采购的活（PRD §3.1），采购默认"本人"范围，可订单上没有采购员这一栏，按订单的本人范围采购一张都算不了
+     */
+    void checkMrpSourceVisible(Collection<Long> ids);
+
+    /**
      * 变更单审核时写回订单（同一个事务，docs/api/02 §3.14）：锁住订单，核对每一处的"原"还是订单现在的值（对不上 1002），
      * 改件数、加 SKU、单价、资料包版本、要求交期，重算合计，版本号 +1；取消订单的有下游单据 1005，没有就变成已取消
      */
@@ -96,7 +102,7 @@ public interface OrderService {
     OrderForProduction getForProduction(long orderId);
 
     /**
-     * 算料的授权作业视图：批量校验来源业务可用性，不把订单普通列表权限授给算料用户。
+     * 算料的授权作业视图：批量校验来源业务可用性（来源范围同 {@link #checkMrpSourceVisible}），不把订单普通列表权限授给算料用户。
      * 返回这几张订单的品类线（只能一条，RFC 013 §2）；没传订单返回 null
      */
     String checkForMrp(Collection<Long> orderIds);
