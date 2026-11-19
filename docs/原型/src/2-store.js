@@ -308,9 +308,19 @@ const unitPrice = (r) => { const m = mat(r.mat); return (r.price ?? rowRefPrice(
 const rowCost = (r, sizes, base) => rnd(rowMidUse(r, sizes, base) * (1 + r.loss / 100) * unitPrice(r), 2)
 // 只算自购的料：客供的料客户出，厂购的算在加工费里
 const tpMaterialCost = (tp) => { const g = style(tp.style).sizeGroup; return rnd(sum(tp.bom.filter((r) => r.src === '自购'), (r) => rowCost(r, sizesOf(g), baseSizeOf(g))), 2) }
-const tpLabor = (tp) => rnd(sum(tp.ops, (o) => o.price), 2)
+// 加工费（RFC 011 §3.1，甲方 11-18）：资料包核价上填的一个数（元/件）；没填用价格档案里款式默认工厂的清加工价，没有再取半包价，都没有算 0
+const tpLabor = (tp) => rnd(tp.labor ?? tpLaborDefault(tp)?.price ?? 0, 2)
+function tpLaborDefault(tp) {
+  const s = style(tp.style)
+  if (!s?.factory || typeof curProcPrice !== 'function') return null
+  for (const mode of ['清加工', '半包']) {
+    const price = curProcPrice(s.factory, s.code, mode)
+    if (price != null) return { price, mode, factory: s.factory }
+  }
+  return null
+}
 // 核价（资料包的「核价」页签、侧边栏「核价」列表、询价比价页都用它）：按基码用量算单件成本，分面料、辅料、加工费、其他费用四块。
-// 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有自购的计入，厂购的列出来标"含在加工价里"。加工费 = 工序工价合计（参考加工价）
+// 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有自购的计入，厂购的列出来标"含在加工价里"。加工费见 tpLabor
 const FABRIC_TYPES = ['面料', '里料']
 function tpCost(tp) {
   const g = style(tp.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g)
@@ -321,54 +331,159 @@ function tpCost(tp) {
   return { rows, base, fabric, trim, mat: rnd(fabric + trim, 2), labor, other, total: rnd(fabric + trim + labor + other, 2) }
 }
 
-/* ---------- 尺寸指示：rows = [{ pt 部位, how 测量方法, tol 公差 ±, step 档差, vals: { 尺码: cm }, note 备注 }]，单位 cm ----------
- * 基码 = 尺码组的基码；「按档差生成」= 基码 ± 第几档 × 档差，算完每格还能改。不是生效的必填项 */
-function gradeRow(r, sizes, base, v) {
-  const bi = sizes.indexOf(base)
-  sizes.forEach((z, i) => { r.vals[z] = rnd(v + (i - bi) * (+r.step || 0), 1) })
-}
-const numSet = (v) => v != null && v !== '' && !Number.isNaN(+v)
-// 填了基码尺寸和档差的行，把其他码算出来；返回 [算了几行, 没填档差跳过几行]
-function gradeSpec(tp) {
-  const sizes = sizesOf(style(tp.style).sizeGroup), base = tp.spec.base
-  const ok = tp.spec.rows.filter((r) => numSet(r.vals[base]) && numSet(r.step))
-  if (!ok.length) fail(`先填基码（${base}）的尺寸和档差`)
-  ok.forEach((r) => gradeRow(r, sizes, base, +r.vals[base]))
-  return [ok.length, tp.spec.rows.filter((r) => numSet(r.vals[base]) && !numSet(r.step)).length]
-}
-// 新建资料包：按品类带常用部位、设置里的默认测量方法、公差、档差；vals = true 时按模板填上数（只给演示款用）
-function specTemplate(styleCode, vals) {
-  const s = style(styleCode), sizes = sizesOf(s.sizeGroup), base = baseSizeOf(s.sizeGroup)
-  return { base, unit: 'cm', rows: (SPEC_POINTS[catOf(s.cat).shape] || SPEC_POINTS.tee).map(([pt, v, step, tol]) => {
-    const r = { pt, how: db.craftStd.how[pt] || '', tol, step, vals: {}, note: '' }
-    if (vals) gradeRow(r, sizes, base, v)
-    return r
-  }) }
-}
-const specFilled = (tp) => tp.spec.rows.some((r) => Object.values(r.vals).some(numSet))
-
-/* ---------- 工艺指示：照甲方线下工艺单分段，每段文字 + 插图；包装要求多一个包装方式（单选） ----------
- * craft = { 段: { text, pics } }，pack 段另有 way。新建资料包时每段带设置 › 工艺标准里的默认文字 */
-const CRAFT_SECS = [
-  { g: '车间缝制', items: [['cut', '裁剪要求'], ['sew', '缝制要求'], ['detail', '部位工艺细则'], ['quality', '做工品质']] },
-  { g: '后道', items: [['button', '锁钉要求'], ['iron', '整烫说明'], ['label', '洗唛 / 烫标'], ['pack', '包装要求']] },
-  { g: '注意事项', items: [['note', '注意事项']] },
+/* ---------- 工艺单（RFC 011，甲方 11-18）：就是甲方现在用的工艺单 Excel，上传挂在资料包上，页面里能预览、能下载，系统不拆里面的内容 ----------
+ * files = [{ id, cat 组, name, size, src（下载用，data URL）, grid（预览用：.xlsx 第一张表的文字） }]，组里的顺序 = 数组里的顺序。
+ * 文件跟着版本走：生效后只读，要换就修订；没有工艺单也能生效（页面上问一句） */
+const TP_FILE_GROUPS = [
+  { cat: '工艺单', types: ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp'] },
+  { cat: '纸样和其他', types: ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp', 'prj'] },
+  { cat: '导入的 BOM 表', types: ['xls', 'xlsx'] }, // 从 BOM 表导入时自动挂上，不能手动传
 ]
-const PACK_WAYS = ['平铺', '挂装', '折叠']
-const craftDefaults = () => Object.fromEntries(CRAFT_SECS.flatMap((g) => g.items).map(([k]) => [k, { text: db.craftStd.texts[k] || '', pics: [], ...(k === 'pack' ? { way: db.craftStd.packWay } : {}) }]))
-const craftHas = (tp) => Object.values(tp.craft || {}).some((x) => x.text || x.pics?.length)
+const TP_FILE_MAX = 20
+let tpFileSeq = 0
+const fileExt = (name) => (/\.([a-z0-9]{1,5})$/i.exec(name || '')?.[1] || '').toLowerCase()
+function addTpFile(tp, cat, file) {
+  if (tp.status !== '草稿') fail(`${tpName(tp)} 是「${tp.status}」，要换文件先修订出新版本`)
+  const g = TP_FILE_GROUPS.find((x) => x.cat === cat), ext = fileExt(file.name)
+  if (!g.types.includes(ext)) fail(`${cat}不收 .${ext || '没有扩展名的'} 文件：${file.name}。能传 ${g.types.join('、')}`)
+  const limit = ext === 'prj' ? 100 : 10
+  if (file.size > limit * 1048576) fail(`${file.name} 太大，${ext === 'prj' ? '纸样文件' : '图片、PDF、Excel'} 最大 ${limit}MB`)
+  if (tp.files.filter((f) => f.cat === cat).length >= TP_FILE_MAX) fail(`${cat}最多 ${TP_FILE_MAX} 个，${file.name} 没有添加`)
+  const f = { id: 'TF' + ++tpFileSeq, cat, name: file.name, size: file.size || 0, src: file.src || null, grid: file.grid || null }
+  const last = tp.files.map((x) => x.cat).lastIndexOf(cat)
+  tp.files.splice(last < 0 ? tp.files.length : last + 1, 0, f)
+  return f
+}
 
-function createTechpack(styleCode, bom, ops, note, spec) {
+// 演示用的工艺单：照甲方线下工艺单的样子排几段文字（真的工艺单是甲方自己的 Excel，系统不拆它，只存、预览、下载）
+const CRAFT_DEMO_SECS = [['cut', '裁剪要求'], ['sew', '缝制要求'], ['detail', '部位工艺细则'], ['button', '锁钉要求'], ['iron', '整烫说明'], ['label', '洗唛 / 烫标'], ['pack', '包装要求'], ['note', '注意事项']]
+const CRAFT_DEMO_TEXT = {
+  sew: '针距：明线 3cm 12 针，暗线 3cm 13 针，包缝 3cm 10–12 针。缝份 1cm（特殊部位见细则）。线迹顺直，不跳针、不浮线。',
+  note: '大货生产前必须先封产前样，我方确认后才能开裁。生产中有问题及时找跟单，不得自行改工艺。',
+}
+function demoCraftFile(tp, texts) {
+  const s = style(tp.style)
+  const grid = [[`${s.code} ${s.name} 工艺单`], ['款号', s.code, '款名', s.name, '版本', 'V' + tp.ver], [],
+    ...CRAFT_DEMO_SECS.map(([k, t]) => [t, texts[k] || CRAFT_DEMO_TEXT[k] || '']).filter((r) => r[1])]
+  return { name: `${s.code} ${s.name} 工艺单 V${tp.ver}.xlsx`, size: 38000 + tp.ver * 1311 + s.code.length * 97, grid }
+}
+// 演示用的 BOM 表：照甲方 11-18 给的 BOM 明细表的格式，物料和数是编的。资料包「从 BOM 表导入」的「用示例表试一下」「下载示例表」用
+function demoBomGrid(styleCode) {
+  const s = style(styleCode)
+  return [
+    [`${s.code} ${s.name} BOM`],
+    ['项目', '', '物料名称', '规格', '颜色', '单价', '单位', '单件用量', '损耗', '预估价', '工厂', '备注'],
+    ['A料', '面料', '280g 棉涤帆布', '', '顺色', '26', '米', '2.1', '3', '56.24', '', ''],
+    ['B料', '面料', '170T 涤纶里布', '', '顺色', '8.5', '米', '1.5', '2', '13.01', '', ''],
+    ['辅料', '辅料', '18L 树脂纽扣', '18L', '黑色', '0.35', '个', '6', '2', '2.14', '', '备 1 粒'],
+    ['辅料', '辅料', '1×1 罗纹', '', '黑色', '0.3', '厘米', '25', '3', '7.73', '', '袖口'],
+    ['辅料', '辅料', '主唛（织标）', '', '', '0.2', '个', '1', '0', '0.2', '', ''],
+    ['辅料', '辅料', '装饰织带', '2cm', '黑色', '1.2', '米', '0.8', '2', '0.98', '', ''],
+    ['加工费', '', '', '', '', '', '', '', '', '42', '', ''],
+    ['运费', '', '', '', '', '', '', '', '', '1.5', '', ''],
+    ['合计', '', '', '', '', '', '', '', '', '123.8', '', ''],
+  ]
+}
+
+/* ---------- 从甲方的 BOM 表导入物料清单（RFC 011 §4）：只认表、不写，人看过、改过再加进物料清单，和手填一样点「保存」 ----------
+ * grid：表格的文字（二维数组，xlsxRead 读出来的样子）。第 1 行写「款号 款名 BOM」；表头那一行要有「物料名称」和「用量」，列的位置可以挪。
+ * 每行按物料名称（同名的再按规格）对物料库：
+ *   对上了 → 能导；对上了但单位换算过、配色要人挑、部位认不出、供应商对不上 → 要看一眼；对不上 → 没认出来（挑物料、新建物料或者不导）。
+ * 颜色写「顺色」或不写 → 随款色，按款色配同色的 SKU；写了一个颜色 → 固定配料。表里按厘米写、物料按米管的，用量 ÷ 100、单价 × 100。
+ * 下面汇总块的「加工费」带进核价的加工费，「运费」这类带进其他费用；「合计」行跳过。picks = { 行号: 物料编码 }：人挑过的按挑的 */
+const IMPORT_OK = '能导', IMPORT_CHECK = '看一眼', IMPORT_MISS = '没认出来'
+const cellNum = (v) => { const n = parseFloat(String(v ?? '').replace(/[¥￥元,\s%]/g, '')); return Number.isFinite(n) ? n : null }
+const bareName = (v) => String(v || '').replace(/\s+/g, '').toLowerCase()
+const bareColor = (v) => String(v || '').replace(/\s+/g, '').replace(/色$/, '')
+function parseBomSheet(tp, grid, picks = {}) {
+  const s = style(tp.style)
+  const h = grid.findIndex((r) => r.some((c) => String(c).includes('物料名称')) && r.some((c) => String(c).includes('用量')))
+  if (h < 0) fail('认不出这张表：找不到有「物料名称」和「用量」的表头。照甲方 BOM 明细表的格式，或者手工加行')
+  const head = grid[h].map((c) => String(c || '').replace(/\s+/g, ''))
+  const col = (...keys) => head.findIndex((c) => keys.some((k) => c.includes(k)))
+  const C = { name: col('物料名称'), spec: col('规格'), color: col('颜色'), price: col('单价'), unit: col('单位'), use: col('用量'), loss: col('损耗'), supplier: col('工厂', '供应商'), note: col('备注') }
+  const at = (r, k) => (C[k] < 0 ? '' : String(r[C[k]] ?? '').trim())
+  const out = { title: String(grid[0]?.[0] || '').trim(), rows: [], labor: null, fees: [] }
+  grid.slice(h + 1).forEach((r, i) => {
+    const line = h + 2 + i, name = at(r, 'name'), lead = r.slice(0, Math.max(C.name, 1)).map((c) => String(c || '').trim()).join('')
+    if (!name) {
+      const nums = r.map(cellNum).filter((n) => n != null)
+      if (/合计|总计/.test(lead) || !nums.length) return
+      if (lead.includes('加工费')) out.labor = nums[nums.length - 1]
+      else if (lead) out.fees.push({ name: lead, amt: nums[nums.length - 1] })
+      return
+    }
+    const src = { section: String(r[0] || '').trim(), name, spec: at(r, 'spec'), color: at(r, 'color'), price: at(r, 'price'), unit: at(r, 'unit'), use: at(r, 'use'), loss: at(r, 'loss'), supplier: at(r, 'supplier'), note: at(r, 'note') }
+    out.rows.push({ line, src, ...matchBomLine(s, src, picks[line]) })
+  })
+  return out
+}
+function matchBomLine(s, src, picked) {
+  const notes = []
+  let m = picked ? mat(picked) : null
+  if (!m) {
+    let hits = db.materials.filter((x) => x.status === '启用' && bareName(x.name) === bareName(src.name))
+    if (hits.length > 1 && src.spec) hits = hits.filter((x) => x.skus.some((k) => bareName(k.spec) === bareName(src.spec)))
+    if (hits.length !== 1) return { row: null, status: IMPORT_MISS, notes: [hits.length ? `物料库里有 ${hits.length} 个叫「${src.name}」的，挑一个` : `物料库里没有「${src.name}」：挑一个、新建，或者这行不导`] }
+    m = hits[0]
+  }
+  const skus = m.skus.filter((k) => k.status !== '停用')
+  let use = cellNum(src.use), price = cellNum(src.price)
+  const cm = /^(厘米|cm)$/i.test(src.unit) && m.unit === '米'
+  if (cm) { use = use == null ? null : rnd(use / 100, 4); price = price == null ? null : rnd(price * 100, 4); notes.push('表里按厘米写，换算成米了') }
+  else if (src.unit && src.unit !== m.unit && src.unit !== m.purUnit) notes.push(`表里的单位是「${src.unit}」，物料按「${m.unit}」管，用量看一下`)
+  const row = { part: bomPartOf(src), mat: m.code, mode: '随款色', map: {}, um: '统一', use: use ?? 0, uses: {}, loss: cellNum(src.loss) ?? 0, src: '自购', supplier: '', price, note: src.note }
+  const one = src.color && !/^(顺色|\/|-)$/.test(src.color) ? skus.filter((k) => bareColor(colorName(k.color)) === bareColor(src.color)) : null
+  if (one) {
+    row.mode = '固定'
+    row.sku = (src.spec && one.find((k) => bareName(k.spec) === bareName(src.spec)) || one[0] || skus.length === 1 && skus[0])?.code || ''
+    if (!one.length) notes.push(`物料没有「${src.color}」的 SKU，配料要挑`)
+  } else if (skus.length === 1 && !skus[0].color) {
+    row.mode = '固定'
+    row.sku = skus[0].code
+  } else {
+    s.colors.forEach((c) => { const k = skus.find((x) => x.color === c); if (k) row.map[c] = k.code })
+    const miss = s.colors.filter((c) => !row.map[c])
+    if (miss.length) notes.push(`${miss.map(colorName).join('、')}没有同色的料，配料要挑`)
+  }
+  if (!row.part) notes.push('部位认不出来，要选')
+  const sp = db.suppliers.find((x) => src.supplier && (x.short === src.supplier || x.name === src.supplier))
+  if (sp) row.supplier = sp.code
+  else if (src.supplier) notes.push(`供应商「${src.supplier}」对不上，先按物料的默认供应商`)
+  if (picked) notes.unshift('人挑的物料')
+  if (!(row.use > 0)) notes.push('没有用量')
+  if (row.mode === '固定' && !row.sku) row.sku = ''
+  return { row, status: notes.length ? IMPORT_CHECK : IMPORT_OK, notes }
+}
+// 部位：A料 = 大身，B料 = 里布；别的按名称里的部位字（「5# 金属拉链」→ 拉链），长的先对
+function bomPartOf(src) {
+  if (/^A料/.test(src.section)) return '大身'
+  if (/^B料/.test(src.section)) return '里布'
+  return [...db.dicts.BOM部位].sort((a, b) => b.length - a.length).find((x) => src.name.includes(x)) || ''
+}
+// 导入的行加进物料清单：mode = 替换 / 加在后面；加工费、运费填进核价；导入的表挂到「导入的 BOM 表」
+function applyBomImport(tp, result, lines, mode, file) {
+  if (tp.status !== '草稿') fail(`${tpName(tp)} 是「${tp.status}」，要改先修订出新版本`)
+  const rows = lines.map((x) => JSON.parse(JSON.stringify(x.row)))
+  if (mode === '替换') tp.bom.splice(0, tp.bom.length, ...rows)
+  else tp.bom.push(...rows)
+  if (result.labor != null) tp.labor = result.labor
+  result.fees.forEach((f) => { const hit = tp.costs.find((c) => c.name === f.name); if (hit) hit.amt = f.amt; else tp.costs.push({ name: f.name, amt: f.amt, note: '从 BOM 表导入' }) })
+  if (file) addTpFile(tp, '导入的 BOM 表', file)
+  act(tp, `从 BOM 表导入 ${rows.length} 行物料（${mode}）`)
+  return rows.length
+}
+
+function createTechpack(styleCode, bom, labor, note) {
   const ver = (tpsOf(styleCode)[0]?.ver || 0) + 1
-  // spec = 尺寸指示；craft = 工艺指示的各段；ops = 工序工价（工艺指示页签最下面），每行 { cat, name, req 工艺要求, pics, sec, price, note }，合计 = 参考加工价；
-  // costs = 核价的其他费用 [{ name, amt 元/件, note }]
+  // files = 工艺单页签的文件；labor = 核价的加工费（元/件，没填是 null）；costs = 核价的其他费用 [{ name, amt 元/件, note }]
   const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null,
-    bom, ops, spec: spec || specTemplate(styleCode), craft: craftDefaults(), costs: [], log: [] })
+    bom, files: [], labor: labor ?? null, costs: [], log: [] })
   act(tp, ver === 1 ? '新建' : '由 V' + (ver - 1) + ' 修订')
   return tp
 }
-// 修订时整版复制：物料清单、工序、尺寸指示、工艺指示、其他费用
-const tpCopy = (tp) => JSON.parse(JSON.stringify({ bom: tp.bom, ops: tp.ops, spec: tp.spec, craft: tp.craft || craftDefaults(), costs: tp.costs || [] }))
+// 修订时整版复制：物料清单、工艺单文件、加工费、其他费用
+const tpCopy = (tp) => JSON.parse(JSON.stringify({ bom: tp.bom, files: tp.files || [], labor: tp.labor ?? null, costs: tp.costs || [] }))
 function tpCheck(tp) {
   const s = style(tp.style), errs = []
   if (!tp.bom.length) errs.push('至少要有一行 BOM')
@@ -382,7 +497,7 @@ function tpCheck(tp) {
     if (r.mode === '固定' && !r.sku) errs.push(`第 ${i + 1} 行（${r.part}）：没选物料 SKU`)
     if (!db.dicts.物料来源.includes(r.src)) errs.push(`第 ${i + 1} 行（${r.part}）：来源「${r.src}」现在不能用，改成 ${db.dicts.物料来源.join(' / ')}`) // TRADE 关着时没有客供
   })
-  // 尺寸指示、工艺指示不是生效的必填项：没填的，导出工艺单时那一页不出
+  // 工艺单不是生效的必填项（RFC 011 §2.1）：没传的，页面上问一句
   return errs
 }
 function publishTp(tp) {
@@ -396,8 +511,8 @@ function publishTp(tp) {
 function reviseTp(tp) {
   if (tpsOf(tp.style).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
   const c = tpCopy(tp)
-  const t = createTechpack(tp.style, c.bom, c.ops, '', c.spec)
-  Object.assign(t, { craft: c.craft, costs: c.costs, util: tp.util })
+  const t = createTechpack(tp.style, c.bom, c.labor, '')
+  Object.assign(t, { files: c.files.map((f) => ({ ...f, id: 'TF' + ++tpFileSeq })), costs: c.costs, util: tp.util })
   return t
 }
 // 删掉草稿版本（修订出来不想要了）；生效过、作废了的版本只能看
@@ -1222,23 +1337,20 @@ function seed() {
     { part: '纽扣', mat: 'FK0021', mode: '随款色', map: { KQ: 'FK0021-KQ', ZQ: 'FK0021-HE', HE: 'FK0021-HE' }, um: '统一', use: 8, loss: 2, src: '自购', supplier: 'GYS0002' },
     ...labels.map((x) => ({ ...x })), { ...thread },
   ]
-  const cfOps = [['裁剪', '裁剪', 180, 2.5, '格子对齐后再开裁，左右前片对条对格'], ['车缝', '做领、上领', 420, 6, '领尖左右对称，止口 0.1cm 明线'], ['车缝', '做袖、上袖', 480, 6.5, '袖山吃势均匀，不起皱'], ['车缝', '前后片拼合、做门襟', 600, 9, '门襟顺直，不起涟'], ['车缝', '装里布', 420, 6, '里布下摆留 1cm 坐势'], ['整烫', '整烫', 240, 3, '面料不能烫出极光，垫布熨烫'], ['后道', '钉扣、剪线、查衫', 240, 3], ['包装', '挂吊牌、折叠入袋', 120, 2]]
-  const ops = (a) => a.map(([cat, name, sec, price, req]) => ({ cat, name, req: req || '', sec, price, note: '' }))
-  // 演示款：尺寸指示按模板填上数；工艺指示在公司默认文字上补这个款的部位细则等；有的款加其他费用
+  // 演示款：每版挂一份工艺单 Excel（甲方线下那种：表头 + 各段要求，这里只放文字）；有的款加其他费用
   const demoTp = (tp, o = {}) => {
-    tp.spec = specTemplate(tp.style, true)
-    Object.entries(o.craft || {}).forEach(([k, v]) => Object.assign(tp.craft[k], typeof v === 'string' ? { text: v } : v))
+    addTpFile(tp, '工艺单', demoCraftFile(tp, o.craft || {}))
     if (o.costs) tp.costs = o.costs
     return tp
   }
   as('u4', '2026-09-10', () => {
-    const cf = demoTp(createTechpack('27CF001', cf001(2.3), ops(cfOps)), {
+    const cf = demoTp(createTechpack('27CF001', cf001(2.3), 38), {
       craft: {
         cut: '面料开裁前松布 24 小时。大身对条对格：左右前片、袖子、后背的格子对齐后再开裁；领面、袋盖横丝。裁片打号，分色分码捆扎。',
         detail: '缝份：大身 1cm，领、门襟 0.8cm。\n领：领尖左右对称，止口压 0.1cm 明线。\n门襟：顺直不起涟，扣位按纸样点位。\n腰带：宽 4cm，两头尖角方正；腰带襻在侧缝上 2cm。\n里布：下摆比面布短 2cm，坐势 1cm。',
         button: '双排扣 8 粒、袖襻 2 粒，备用扣 1 粒钉在洗唛上。扣眼锁凤眼，扣眼大小 = 纽扣直径 + 0.3cm。',
         label: '主唛钉在后领中下 2cm 居中；洗唛缝在里布左侧摆缝，离下摆 15cm；尺码唛夹在主唛下方。',
-        pack: { way: '挂装', text: '挂装出货，一件一个防尘袋，腰带系好；按色按码挂箱，每箱 10 件。' },
+        pack: '挂装出货，一件一个防尘袋，腰带系好；按色按码挂箱，每箱 10 件。',
       },
       costs: [{ name: '防尘袋', amt: 1.2, note: '挂装出货用' }, { name: '运费', amt: 2, note: '工厂来回，按件分摊' }],
     })
@@ -1249,7 +1361,7 @@ function seed() {
       { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-60', um: '统一', use: 1, loss: 1, src: '自购', supplier: 'GYS0002' },
       { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 4, loss: 2, src: '自购', supplier: 'GYS0002' },
       ...labels.map((x) => ({ ...x })), { ...thread },
-    ], ops([['裁剪', '裁剪', 160, 2.5], ['车缝', '前后片拼合', 540, 10], ['车缝', '上拉链', 360, 6], ['车缝', '做袖、上袖', 420, 7], ['车缝', '做领', 360, 6], ['整烫', '整烫', 200, 3], ['后道', '钉扣、查衫', 300, 4.5], ['包装', '包装', 150, 3]])), {
+    ], 42), {
       craft: {
         detail: '明线：前后片拼缝压 0.6cm 双明线，线迹均匀。\n拉链：门襟拉链平服，上下止口对齐，不起拱。\n口袋：胸袋袋盖盖住袋口 0.2cm，左右袋位高低一致。\n袖口：袖襻宽 3cm，扣钉在袖襻正中。',
       },
@@ -1258,7 +1370,7 @@ function seed() {
     publishTp(demoTp(createTechpack('26QW008', [
       { part: '大身', mat: 'MZ0003', mode: '随款色', map: { MB: 'MZ0003-MB', HH: 'MZ0003-HH' }, um: '统一', use: 1.4, loss: 5, src: '厂购' },
       ...labels.map((x) => ({ ...x })),
-    ], ops([['车缝', '套口', 300, 8], ['车缝', '缝合', 360, 10], ['后道', '后整', 200, 6], ['包装', '包装', 120, 3]])), {
+    ], 27), {
       craft: {
         detail: '领口罗纹套口，接缝放在左肩；袖口、下摆罗纹平整，不起浪。\n肩缝加牵条，防止拉长变形。',
         iron: '低温蒸汽定型，不能压烫；罗纹不要烫平。',
@@ -1268,7 +1380,7 @@ function seed() {
       { part: '大身', mat: 'MZ0003', mode: '随款色', map: { HE: 'MZ0003-HE', HH: 'MZ0003-HH', WL: 'MZ0003-WL' }, um: '分码', uses: SZ(1.5, 1.6, 1.7, 1.8, 1.9), loss: 4, src: '自购', supplier: 'GYS0009' },
       { part: '领', mat: 'MZ0007', mode: '随款色', map: { HE: 'MZ0007-HE', HH: 'MZ0007-HH', WL: 'MZ0007-WL' }, um: '统一', use: 0.25, loss: 3, src: '厂购' },
       ...labels.map((x) => ({ ...x })),
-    ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '拼缝、上帽', 600, 12], ['后道', '后整', 200, 5], ['包装', '包装', 120, 3]])), {
+    ], 22), {
       craft: {
         detail: '帽子：帽中缝对齐后领中，帽绳两头长短一致，出绳孔打金属鸡眼。\n袖口、下摆罗纹：四线拷边，罗纹拉开不断线。\n袋：袋口压 0.6cm 双针，袋角打枣。',
       },
@@ -1279,18 +1391,19 @@ function seed() {
       { part: '拉链', mat: 'FL0031', mode: '固定', sku: 'FL0031-HE-15', um: '统一', use: 1, loss: 1, src: '自购' },
       { part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 1, loss: 2, src: '自购' },
       ...labels.map((x) => ({ ...x })),
-    ], ops([['裁剪', '裁剪', 120, 2], ['车缝', '做腰、上腰', 420, 7], ['车缝', '上拉链、合裆', 480, 8], ['后道', '锁眼钉扣', 160, 2], ['包装', '包装', 100, 2]])), {
+    ], 21), {
       craft: {
         detail: '前片烫迹线挺直，上下对齐；腰头内加衬，腰头宽 4cm。\n门襟拉链平服不起拱，裤钩钉牢。\n后袋双嵌线，嵌线宽 0.5cm，袋角方正、不毛露。',
-        pack: { way: '平铺' },
+        pack: '平铺，一件一袋。',
       },
     })
   })
   as('u4', '2026-10-20', () => {
     const v2 = reviseTp(activeTp('27CF001'))
     v2.bom[0].uses.M = 2.35
-    gradeRow(v2.spec.rows.find((r) => r.pt === '后中长'), sizesOf('W5'), 'M', 110)
-    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；后中长各码加长 2cm'
+    v2.files = v2.files.filter((f) => f.cat !== '工艺单')
+    addTpFile(v2, '工艺单', demoCraftFile(v2, { detail: '后中长各码加长 2cm（放码后实测）。\n缝份：大身 1cm，领、门襟 0.8cm。\n领：领尖左右对称，止口压 0.1cm 明线。' }))
+    v2.note = 'M 码大身用量 2.30 → 2.35（放码后实测）；工艺单换成放码后的版本（后中长各码加长 2cm）'
     publishTp(v2)
   })
   // 期初库存、客供料（TRADE 关着时没有客供，这批黑色里布算自有，并进期初）
@@ -1463,7 +1576,7 @@ function selftest() {
   ok(TRADE ? '入库单有客供入库' : '入库单没有客供入库', ('客供入库' in STOCK_TYPES) === TRADE)
   // 订单只认生效的生产 BOM（§6.4.1）：资料包还是草稿的款，提交被拦
   const s9 = style('26DY009')
-  const d9 = createTechpack(s9.code, [{ part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 5, loss: 2, src: '自购', supplier: 'GYS0002' }], [{ cat: '车缝', name: '整件加工', req: '', sec: 1000, price: 20, note: '' }], '', null)
+  const d9 = createTechpack(s9.code, [{ part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 5, loss: 2, src: '自购', supplier: 'GYS0002' }], 20, '')
   const o9 = createOrder({ type: '自营备货', due: '2027-03-31', lines: [{ style: s9.code, color: s9.colors[0], size: sizesOf(s9.sizeGroup)[0], qty: 10 }] })
   ok('资料包没生效：订单提交被拦', err(() => submitOrder(o9)).includes('没有生效的生产 BOM'))
   removeDraft(db.orders, o9)
@@ -1630,23 +1743,36 @@ function selftest() {
   doAction('stock', th2, '反审核'); doAction('stock', th2, '作废')
   ok('对账：草稿对账单作废后，退货单能反审核、作废', th2.status === '已作废' && po2.lines[0].returned === 0, [th2.status, po2.lines[0].returned])
 
-  // 资料包（甲方 11-14）：新建带设置里的默认文字和测量方法；按档差生成；修订整版复制；核价 = 面料 + 辅料 + 加工 + 其他，厂购不计
-  const note0 = db.craftStd.texts.note
-  db.craftStd.texts.note = '自检：注意事项默认文字'
-  const t3 = createTechpack('27CT003', [], [], '', null)
-  db.craftStd.texts.note = note0
-  ok('资料包：新建时工艺指示带设置里的默认文字，部位带默认测量方法，尺寸数值留空', t3.craft.note.text === '自检：注意事项默认文字' && t3.craft.pack.way === db.craftStd.packWay
-    && t3.spec.rows[0].how === db.craftStd.how[t3.spec.rows[0].pt] && !specFilled(t3), [t3.craft.note.text, t3.spec.rows[0]])
-  Object.assign(t3.spec.rows[0], { step: 1 }); t3.spec.rows[0].vals.M = 64
-  Object.assign(t3.spec.rows[1], { step: '' }); t3.spec.rows[1].vals.M = 44
-  const gr = gradeSpec(t3)
-  ok('尺寸指示：按档差生成 S 63、L 65、XXL 67，没填档差的行跳过', gr[0] === 1 && gr[1] === 1 && t3.spec.rows[0].vals.S === 63 && t3.spec.rows[0].vals.L === 65 && t3.spec.rows[0].vals.XXL === 67 && t3.spec.rows[1].vals.S == null, [gr, t3.spec.rows[0].vals])
+  // 资料包（甲方 11-18，RFC 011）：工艺单是上传的文件；从 BOM 表导入；加工费填一个数，没填取价格档案；修订整版复制；核价 = 面料 + 辅料 + 加工 + 其他，厂购不计
+  const t3 = createTechpack('27CT003', [], null, '')
+  addTpFile(t3, '工艺单', { name: '27CT003 工艺单.xlsx', size: 2048 })
+  ok('工艺单：草稿能传 Excel；工艺单一组不收 .prj，纸样和其他收；超过 10MB 的不收', t3.files.length === 1
+    && err(() => addTpFile(t3, '工艺单', { name: '纸样.prj', size: 1 })).includes('能传') && addTpFile(t3, '纸样和其他', { name: '纸样.prj', size: 50 * 1048576 })
+    && err(() => addTpFile(t3, '工艺单', { name: '大图.png', size: 11 * 1048576 })).includes('最大 10MB'), t3.files.map((f) => f.cat + ' ' + f.name))
+  const grid = demoBomGrid('27CT003'), r3 = parseBomSheet(t3, grid)
+  const byName = (n) => r3.rows.find((x) => x.src.name === n)
+  ok('BOM 导入：按名称对物料库；款色没有同色料、按厘米写的标「看一眼」，没有的料「没认出来」；加工费、运费读出来，合计跳过',
+    JSON.stringify(r3.rows.map((x) => x.status)) === JSON.stringify([IMPORT_CHECK, IMPORT_CHECK, IMPORT_OK, IMPORT_CHECK, IMPORT_OK, IMPORT_MISS]) && r3.labor === 42
+    && r3.fees.length === 1 && r3.fees[0].name === '运费' && r3.fees[0].amt === 1.5, [r3.rows.map((x) => x.status + ' ' + x.src.name), r3.labor, r3.fees])
+  const luo = byName('1×1 罗纹').row, btn = byName('18L 树脂纽扣').row, body = byName('280g 棉涤帆布').row
+  ok('BOM 导入：罗纹 25 厘米 → 0.25 米、单价 × 100；黑色纽扣固定配 FK0021-HE，部位按名称认成「纽扣」；A料是大身、顺色按款色配', luo.use === 0.25 && luo.price === 30
+    && btn.mode === '固定' && btn.sku === 'FK0021-HE' && btn.part === '纽扣' && body.part === '大身' && body.mode === '随款色' && body.map.HE === 'ML0018-HE' && !body.map.BB, [luo, btn, body])
+  const miss = byName('装饰织带'), r4 = parseBomSheet(t3, grid, { [miss.line]: 'FL0031' })
+  ok('BOM 导入：没认出来的行人挑了物料，按挑的认', r4.rows.find((x) => x.line === miss.line).row?.mat === 'FL0031', r4.rows.find((x) => x.line === miss.line))
+  const n4 = applyBomImport(t3, r4, r4.rows.filter((x) => x.row), '替换', { name: '27CT003 BOM.xlsx', size: 4096, grid })
+  ok('BOM 导入：加进物料清单（替换），加工费、运费带进核价，导入的表挂到工艺单页签', n4 === 6 && t3.bom.length === 6 && t3.labor === 42 && tpLabor(t3) === 42
+    && t3.costs.some((c) => c.name === '运费' && c.amt === 1.5) && t3.files.some((f) => f.cat === '导入的 BOM 表'), [n4, t3.labor, t3.costs, t3.files.map((f) => f.cat)])
+  ok('认不出的表：没有「物料名称」「用量」表头，说清楚', err(() => parseBomSheet(t3, [['款号'], ['名称', '数量']])).includes('认不出这张表'))
   removeTpDraft(t3)
   const cfa = activeTp('27CF001'), k = tpCost(cfa)
   ok('核价：单件成本 = 面料 + 辅料 + 加工 + 其他费用 3.2；缝纫线厂购不计', k.total === rnd(k.fabric + k.trim + k.labor + k.other, 2) && k.other === 3.2 && k.mat === tpMaterialCost(cfa)
     && k.rows.find((x) => x.r.part === '缝纫线').cost === 0 && k.rows.find((x) => x.r.part === '里布').kind === '面料', [k.fabric, k.trim, k.labor, k.other, k.total])
+  const dft = tpLaborDefault(cfa)
+  ok('加工费：资料包上填了用填的；没填取价格档案默认工厂的清加工价', tpLabor(cfa) === 38 && dft?.mode === '清加工' && dft.price === 38, [tpLabor(cfa), dft])
   const v3 = reviseTp(cfa)
-  ok('修订：新版本带着尺寸指示、工艺指示、其他费用（复制，不是同一份）', JSON.stringify([v3.spec, v3.craft, v3.costs]) === JSON.stringify([cfa.spec, cfa.craft, cfa.costs]) && v3.spec !== cfa.spec && v3.craft.detail !== cfa.craft.detail && v3.costs.length === 2)
+  ok('修订：新版本带着物料清单、工艺单、加工费、其他费用（复制，不是同一份）', JSON.stringify([v3.bom, v3.files.map((f) => f.name), v3.labor, v3.costs]) === JSON.stringify([cfa.bom, cfa.files.map((f) => f.name), cfa.labor, cfa.costs])
+    && v3.files !== cfa.files && v3.files[0].id !== cfa.files[0].id && v3.costs.length === 2)
+  ok('工艺单：生效了的不能换，要修订', err(() => addTpFile(cfa, '工艺单', { name: 'x.xlsx', size: 1 })).includes('先修订'))
   removeTpDraft(v3)
   // 外发加工单、成品采购单（甲方 11-14）：一张表按加工方式分种类；成品采购单只领自购的料
   const cp = db.productions.find((x) => x.style === '26QW008' && x.mode === '包工包料'), jg = db.productions.find((x) => x.style === '26DS021')

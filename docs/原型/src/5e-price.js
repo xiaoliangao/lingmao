@@ -348,7 +348,7 @@ comp('TpActual', {
           <td class="num">{{ x.act ? fm(x.act.cost) : '—' }}</td>
           <td class="num"><b v-if="x.d" :class="dc(x.d)" style="font-weight:500">{{ ds(x.d) }}</b><span v-else class="dim">—</span></td>
         </tr>
-        <tr><td>加工</td><td class="mut">工序工价合计</td><td></td><td></td><td class="num">{{ fm(c.plan.labor) }}</td>
+        <tr><td>加工</td><td class="mut">资料包加工费</td><td></td><td></td><td class="num">{{ fm(c.plan.labor) }}</td>
           <td class="num"><template v-if="c.lastProd">{{ fm(c.lastProd.price) }} <a class="code dim" style="font-size:11px" :href="'#' + prodLink(c.lastProd)">{{ c.lastProd.no }}</a></template><span v-else class="dim">还没下过外发加工单</span></td>
           <td class="num">{{ c.lastProd ? fm(c.act.labor) : '—' }}</td><td class="num"><b v-if="c.dLabor" :class="dc(c.dLabor)" style="font-weight:500">{{ ds(c.dLabor) }}</b><span v-else class="dim">—</span></td></tr>
       </tbody>

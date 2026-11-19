@@ -352,7 +352,7 @@ comp('OrderSchedule', {
         <label class="f">加工厂<Pick class="sel" v-model="b.factory" @change="reprice(b)"><option v-for="s in factories" :key="s.code" :value="s.code" :disabled="s.status !== '合作中'">{{ s.short }}{{ s.status !== '合作中' ? '（' + s.status + '）' : '' }}</option></Pick></label>
         <label class="f">加工方式<Pick class="sel" v-model="b.mode" @change="reprice(b)" :disabled="prodKindOf(b).modes.length < 2"><option v-for="x in prodKindOf(b).modes" :key="x">{{ x }}</option></Pick></label>
         <label class="f">{{ prodKindOf(b).price }}（元/件）<input class="inp num" type="number" v-model.number="b.price" :placeholder="refOf(b) == null ? '档案里没有，手填' : ''">
-          <small class="dim" style="font-size:11.5px">{{ refOf(b) != null ? '档案现价 ' + fm(refOf(b)) : '档案里没有这家 × ' + b.mode + ' 的价' }}<template v-if="activeTp(b.style) && prodKind(b) === '外发加工单'"> · 工价合计 {{ fm(tpLabor(activeTp(b.style))) }}</template></small></label>
+          <small class="dim" style="font-size:11.5px">{{ refOf(b) != null ? '档案现价 ' + fm(refOf(b)) : '档案里没有这家 × ' + b.mode + ' 的价' }}<template v-if="activeTp(b.style) && prodKind(b) === '外发加工单'"> · 资料包加工费 {{ fm(tpLabor(activeTp(b.style))) }}</template></small></label>
         <label class="f">交期<DatePick v-model="b.due"/></label>
         <label class="f">生产跟单<Pick class="sel" v-model="b.merch"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }}</option></Pick></label>
         <label class="f">结算方式<Pick class="sel" v-model="b.settle"><option value="">按加工厂（{{ sup(b.factory) ? sup(b.factory).settle : '—' }}）</option><option v-for="x in db.dicts.结算方式" :key="x">{{ x }}</option></Pick></label>

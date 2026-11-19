@@ -134,7 +134,7 @@ const PROD_DETAIL = {
   props: ['no'],
   setup(p) {
     const x = computed(() => production(p.no))
-    const tab = ref('nodes'), dlg = ref(''), node = ref(null), closing = ref(null), viewing = ref(null), printing = ref(false), printApx = ref(true)
+    const tab = ref('nodes'), dlg = ref(''), node = ref(null), closing = ref(null), viewing = ref(null), printing = ref(false), crafting = ref(false)
     const docs = computed(() => db.stockDocs.filter((d) => d.src === p.no))
     const rets = computed(() => db.returns.filter((r) => r.prod === p.no))
     const openIssues = computed(() => x.value.issues.filter((i) => i.status !== '已关闭'))
@@ -160,7 +160,8 @@ const PROD_DETAIL = {
       prodLive(x.value) && x.value.nodes.length && { t: '改节点计划', fn: () => { dlg.value = 'plan' } },
       after.value && docs.value.some((d) => d.type === '领料出库' && d.status === '已审核') && { t: '退料（剩料退回物料仓）', fn: () => { dlg.value = 'back' } },
       ...['撤回', '反审核', '结案', '取消结案'].filter((k) => can('production', x.value, k)).map((k) => ({ t: k, fn: () => a(k) })),
-      { t: '打印（附工艺单）', fn: () => { printing.value = true } },
+      { t: '打印', fn: () => { printing.value = true } },
+      { t: '工艺单', fn: () => { crafting.value = true } },
       x.value.status === '草稿' && { t: '删除', danger: true, fn: del },
       can('production', x.value, '作废') && { t: '作废', danger: true, fn: () => a('作废') },
     ].filter(Boolean))
@@ -173,7 +174,7 @@ const PROD_DETAIL = {
       if (run(() => voidReturn(r, why))) toast(`${r.no} 作废了，${prodKind(x.value)}现在是「${x.value.status}」`)
     }
     const nodeCls = (n) => nodeState(n)
-    return { x, tab, dlg, node, closing, viewing, printing, printApx, canIssue, docs, rets, openIssues, colors, sizes, qtyMap, after, sub, a, report, repText, backInit, more, start, doClose, voidRet, nodeCls, PARTIES }
+    return { x, tab, dlg, node, closing, viewing, printing, crafting, canIssue, docs, rets, openIssues, colors, sizes, qtyMap, after, sub, a, report, repText, backInit, more, start, doClose, voidRet, nodeCls, PARTIES }
   },
   template: `<div v-if="x">
     <Head :t="x.no" :back="[prodKind(x), prodKindOf(x).to]">
@@ -277,7 +278,6 @@ const PROD_DETAIL = {
       <template #foot><button v-if="viewing.status !== '已作废'" class="btn danger" @click="voidRet">作废这张回货单</button><span class="sp"></span><button class="btn" @click="viewing = null">关闭</button></template>
     </Modal>
     <PrintSheet v-if="printing" :t="prodKind(x)" :no="x.no" :company="x.company" @close="printing = false">
-      <template #bar><label class="chk" :title="db.craftStd.files.length ? '设置 › 工艺标准里的文件，接在工艺单后面' : '设置 › 工艺标准里还没传文件'"><input type="checkbox" v-model="printApx">附工艺标准</label></template>
       <dl class="sheet-meta">
         <div><dt>加工厂</dt><dd>{{ sup(x.factory).name }}</dd></div><div><dt>联系人</dt><dd>{{ sup(x.factory).contact || '—' }} {{ sup(x.factory).phone || '' }}</dd></div><div><dt>加工方式</dt><dd>{{ x.mode }}</dd></div>
         <div><dt>款号</dt><dd>{{ x.style }} {{ styleName(x.style) }}</dd></div><div><dt>需求订单</dt><dd>{{ x.order }}</dd></div><div><dt>资料包</dt><dd>V{{ x.ver }}</dd></div>
@@ -289,9 +289,9 @@ const PROD_DETAIL = {
         <tfoot><tr><td>合计</td><td v-for="z in sizes" :key="z" class="num">{{ sum(x.lines.filter(l => l.size === z), l => l.qty) }}</td><td class="num">{{ prodQty(x) }}</td></tr></tfoot></table>
       <p class="sheet-note">条款：{{ x.terms || '—' }}<br>备注：{{ x.note || '—' }}</p>
       <div class="sheet-sign"><span>制单：{{ creatorOf(x) || '' }}</span><span>审核：</span><span>加工厂确认（签字盖章）：</span></div>
-      <!-- 工艺单：这张单锁定的资料包版本，不带价格（甲方 11-14） -->
-      <div v-if="tpOf(x.style, x.ver)" class="sheet-apx" data-c="打印：附工艺单"><TpPrintBody :tp="tpOf(x.style, x.ver)" :colors="colors" :appendix="printApx" bare/></div>
     </PrintSheet>
+    <!-- 工艺单：这张单锁定的资料包版本上传的文件（RFC 011 §2.4），下载发工厂 -->
+    <TpCraftFiles v-if="crafting" :tp="tpOf(x.style, x.ver)" @close="crafting = false"/>
   </div><NotFound v-else/>`,
 }
 route('/production/:no', PROD_DETAIL, { mod: 'production', t: (p) => '外发加工单 ' + p.no })

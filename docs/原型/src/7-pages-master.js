@@ -1058,15 +1058,16 @@ route('/materials', {
 }, { mod: 'materials', t: '物料' })
 
 /* 新建、编辑物料共用：传 m 就是编辑（编码不变；SKU 只改供应商色号、单价、最小库存、停用，加 SKU 用「批量加 SKU」）
- * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、最小库存 */
+ * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、最小库存。
+ * init：新建时预先填的字段（资料包从 BOM 表导入时照表里那一行填名称、单位、单价）；stay：建好不跳到物料详情，发 created(物料) */
 comp('MaterialForm', {
-  props: { cat: String, m: Object },
-  emits: ['close'],
+  props: { cat: String, m: Object, init: Object, stay: Boolean },
+  emits: ['close', 'created'],
   setup(p, { emit }) {
     const pick = (o, ks) => Object.fromEntries(ks.map((k) => [k, o[k] ?? null]))
     const f = reactive(p.m
       ? { ...pick(p.m, MAT_FIELDS.map(([k]) => k)), skus: p.m.skus.map((k) => ({ code: k.code, color: k.color, spec: k.spec, supColor: k.supColor || '', price: k.price ?? null, safety: k.safety ?? null, status: k.status || '启用' })) }
-      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [] })
+      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [], ...(p.init || {}) })
     const rows = reactive({}) // 新建：颜色 → { spec, supColor, price, safety }
     const skuRows = () => f.colors.map((c) => ({ color: c, ...rows[c] }))
     const code = computed(() => (p.m ? p.m.code : nextMatCode(f.cat)))
@@ -1083,7 +1084,10 @@ comp('MaterialForm', {
       const d = dupMaterial(body)
       if (d && !(await ask('可能重复', '可能和 ' + d.code + ' ' + d.name + (d.supNo ? '（' + supName(d.supplier) + ' ' + d.supNo + '）' : '') + ' 重复，确定新建？', '仍然新建'))) return
       const m = run(() => createMaterial(body))
-      if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
+      if (!m) return
+      if (p.stay) emit('created', m); else go('/materials/' + m.code)
+      emit('close')
+      toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU')
     }
     // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比由生产评估后填、先按 0（Q18），加完直接选上
     async function addType() {
@@ -1483,18 +1487,12 @@ route('/settings', {
     const useless = (r) => { const l1 = db.users.filter((u) => auditRoles(APPROVE[approveKind(r.doc)].m).includes(u.role)); return l1.length > 0 && l1.every((u) => (r.user ? r.user === u.id : r.role === u.role)) }
     const JST = ['回货登记后推送聚水潭生成成品入库单，成品库存以聚水潭为准', '双向同步：入库推送聚水潭，出库和库存回写本系统', '暂不对接，两边各自录单']
     const FIN = ['金蝶', '用友', '系统内闭环，不对接']
-    // 工艺标准：文件按顺序附在导出的工艺单后面；默认文字新建资料包时带进工艺指示；部位的默认测量方法在尺寸指示里选部位时带出
-    const stdFiles = computed(() => db.craftStd.files)
-    const addStd = (v) => { db.craftStd.files.push(...v); toast(`加了 ${v.length} 个文件，导出工艺单时附在最后`) }
-    async function dropStd(f) { if (await ask(`删除「${f.name}」`, '以后导出的工艺单不再附这个文件；已经发出去的不受影响。', '删除', true)) db.craftStd.files.splice(db.craftStd.files.indexOf(f), 1) }
-    const newPt = ref('')
-    function addPt() { const v = newPt.value.trim(); if (run(() => { if (!v) fail('先填部位名称'); addDictValue('尺寸部位', v) })) { db.craftStd.how[v] ||= ''; newPt.value = ''; toast(`加了部位「${v}」，字典里也有了`) } }
-    return { tab, who, logs, permTone, addRule, amtDocs, setWho, useless, JST, FIN, stdFiles, addStd, dropStd, newPt, addPt, CRAFT_SECS, PACK_WAYS }
+    return { tab, who, logs, permTone, addRule, amtDocs, setWho, useless, JST, FIN }
   },
   template: `<div>
     <Head t="设置"/>
     <div class="page">
-      <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['craft', '工艺标准'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
+      <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
 
       <section v-if="tab === 'users'" data-c="用户">
         <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
@@ -1535,39 +1533,6 @@ route('/settings', {
         </div>
       </section>
 
-      <section v-if="tab === 'craft'" data-c="工艺标准">
-        <div class="sec" style="margin-top:0;padding-top:0;border-top:none" data-c="工艺标准文件">
-          <h3>工艺标准文件<span class="dim" style="font-weight:400;font-size:12px">导出工艺单时按这个顺序附在最后</span></h3>
-          <table class="tbl inset flat std-files"><tbody>
-            <tr v-for="(f, i) in stdFiles" :key="f.id">
-              <td class="dim" style="width:28px">{{ i + 1 }}</td>
-              <td style="width:72px"><Pics :model-value="[f]" readonly :s="44"/></td>
-              <td><input class="inp" style="width:280px;height:28px" v-model="f.name"><div class="dim" style="font-size:12px;margin-top:2px">{{ fd(f.at) }}</div></td>
-              <td class="num"><span class="row" style="justify-content:flex-end;gap:0">
-                <button class="btn ghost icon sm" title="上移" :disabled="!i" @click="moveItem(stdFiles, i, i - 1)"><Ico n="up" :s="13"/></button>
-                <button class="btn ghost icon sm" title="下移" :disabled="i === stdFiles.length - 1" @click="moveItem(stdFiles, i, i + 1)"><Ico n="down" :s="13"/></button>
-                <button class="btn ghost icon sm" title="删除这个文件" @click="dropStd(f)"><Ico n="trash" :s="13"/></button></span></td>
-            </tr>
-            <tr v-if="!stdFiles.length"><td colspan="4" class="empty">还没传文件，导出工艺单时就不带附页</td></tr>
-          </tbody></table>
-          <div style="margin-top:10px"><Pics :model-value="[]" files :s="56" :max="20" @update:model-value="addStd"/></div>
-        </div>
-        <div class="sec" data-c="工艺指示默认文字">
-          <h3>工艺指示默认文字<span class="dim" style="font-weight:400;font-size:12px">新建资料包时带进工艺指示，每个款再改；改了不影响已经建的</span></h3>
-          <div v-for="g in CRAFT_SECS" :key="g.g" class="craft-grid" style="margin-bottom:12px">
-            <div v-for="it in g.items" :key="it[0]" class="craft-c" :class="{ wide: g.items.length === 1 }"><b>{{ g.items.length > 1 ? g.g + ' · ' : '' }}{{ it[1] }}</b>
-              <span v-if="it[0] === 'pack'" class="row" style="gap:14px"><span class="dim">默认包装方式</span><label v-for="w in PACK_WAYS" :key="w" class="chk"><input type="radio" name="std-pack" :value="w" v-model="db.craftStd.packWay">{{ w }}</label></span>
-              <textarea class="inp" rows="3" v-model="db.craftStd.texts[it[0]]" :aria-label="it[1] + '默认文字'" placeholder="不写就留空"></textarea></div>
-          </div>
-        </div>
-        <div class="sec" data-c="部位默认测量方法">
-          <h3>尺寸部位的默认测量方法<span class="dim" style="font-weight:400;font-size:12px">尺寸指示里选了部位就带出来，能改</span></h3>
-          <table class="tbl inset flat"><thead><tr><th style="width:140px">部位</th><th>默认测量方法</th></tr></thead><tbody>
-            <tr v-for="pt in db.dicts.尺寸部位" :key="pt"><td>{{ pt }}</td><td><input class="inp" style="width:100%;height:28px" v-model="db.craftStd.how[pt]" placeholder="没有默认写法"></td></tr>
-          </tbody></table>
-          <div class="row" style="margin-top:10px"><input class="inp" style="width:160px" v-model="newPt" placeholder="部位名称，如：门襟长" @keyup.enter="addPt"><button class="btn" @click="addPt"><Ico n="plus" :s="14"/>加部位</button></div>
-        </div>
-      </section>
 
       <section v-if="tab === 'notify'" data-c="通知">
         <div class="list">

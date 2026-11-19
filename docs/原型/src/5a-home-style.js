@@ -338,7 +338,6 @@ function moveItem(list, from, to) {
   const [x] = list.splice(from, 1)
   list.splice(to, 0, x)
 }
-const OP_CATS = ['裁剪', '车缝', '整烫', '后道', '包装']
 
 /* ---------- 款式列表 ---------- */
 SEARCH.push(() => db.styles.map((s) => ({ t: s.code + ' ' + s.name + (s.alias ? ' ' + s.alias : ''), sub: '款式', to: '/styles/' + s.code, i: 'shirt' })))
@@ -739,11 +738,11 @@ comp('StyleSkus', {
   </section>`,
 })
 
-/* ---------- 资料包（PRD §6.4，甲方 11-14 改）：版本 + 四个页签 —— 尺寸指示、物料清单（BOM、按颜色展开）、工艺指示（含工序工价）、核价；导出 PDF 工艺单
+/* ---------- 资料包（PRD §6.4，甲方 11-18 改，RFC 011）：版本 + 三个页签 —— 物料清单（BOM、按颜色展开，能从甲方的 BOM 表导入）、工艺单（上传的 Excel）、核价
  * 只有生产 BOM 一种（甲方 11-18 答 Q24：研发不填物料清单，转大货后建标准资料包）
- * 定位到某一版的某个页签：/styles/款号?tab=tp&sub=spec|bom|craft|cost&tpv=资料包 id（侧边栏「核价」列表点一行就这样跳过来）
+ * 定位到某一版的某个页签：/styles/款号?tab=tp&sub=bom|files|cost&tpv=资料包 id（侧边栏「核价」列表点一行就这样跳过来）
  * 草稿能改，已生效的只读，要改点「修订」出新版本；核价页签要有看成本的权限（设置 › 角色权限「成本（核价）」） ---------- */
-const TP_TABS = [['spec', '尺寸指示'], ['bom', '物料清单'], ['craft', '工艺指示'], ['cost', '核价']]
+const TP_TABS = [['bom', '物料清单'], ['files', '工艺单'], ['cost', '核价']]
 comp('TechPack', {
   props: { code: String },
   setup(p) {
@@ -754,18 +753,22 @@ comp('TechPack', {
     const key = ref(tps.value.some((t) => t.id === nav.query.tpv) ? nav.query.tpv : pickKey())
     const tp = computed(() => tps.value.find((t) => t.id === key.value))
     watch(tps, (l) => { if (!tp.value && l.length) key.value = pickKey() })
-    // 老数据补齐：工艺指示缺的段按设置里的默认文字补上，其他费用补空表
-    watch(tp, (t) => { if (t) { t.craft ||= {}; Object.entries(craftDefaults()).forEach(([k, v]) => { t.craft[k] ||= v }); t.costs ||= [] } }, { immediate: true })
+    // 老数据补齐：工艺单、其他费用补空表
+    watch(tp, (t) => { if (t) { t.files ||= []; t.costs ||= [] } }, { immediate: true })
     const edit = computed(() => tp.value?.status === '草稿')
     const view = ref(TP_TABS.some(([k]) => k === nav.query.sub) ? nav.query.sub : 'bom')
-    const tabs = computed(() => TP_TABS.filter(([k]) => k !== 'cost' || canSeeCost()).map(([k, t]) => [k, t, k === 'spec' ? tp.value.spec.rows.length : k === 'bom' ? tp.value.bom.length : null]))
-    const bomView = ref('list'), byColor = ref(s.value.colors[0]), open = ref(null), adding = ref(false), editing = ref(null), exporting = ref(false)
+    const tabs = computed(() => TP_TABS.filter(([k]) => k !== 'cost' || canSeeCost()).map(([k, t]) => [k, t, k === 'bom' ? tp.value.bom.length : k === 'files' ? tp.value.files.filter((f) => f.cat !== '导入的 BOM 表').length : null]))
+    const bomView = ref('list'), byColor = ref(s.value.colors[0]), open = ref(null), adding = ref(false), editing = ref(null), importing = ref(false)
     const sizes = computed(() => sizesOf(s.value.sizeGroup))
     const verText = (t) => tpName(t) + ({ 已生效: ' 生效中', 草稿: ' 草稿', 已作废: ' 已作废' }[t.status] || '')
     const useText = (r) => (r.um === '统一' ? fq(r.use) : `${fq(r.uses[sizes.value[0]])}–${fq(r.uses[sizes.value[sizes.value.length - 1]])}`)
-    function revise() { const t = run(() => reviseTp(tp.value)); if (t?.ver) { key.value = t.id; toast(`修订出 ${tpName(t)}，尺寸、物料、工艺、其他费用都带过来了，改完点「生效」`) } }
-    function publish() { if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效，可以下需求订单了`) }
-    function create() { const t = createTechpack(p.code, [], [], '', null); key.value = t.id; view.value = 'bom'; adding.value = true }
+    function revise() { const t = run(() => reviseTp(tp.value)); if (t?.ver) { key.value = t.id; toast(`修订出 ${tpName(t)}，物料清单、工艺单、核价都带过来了，改完点「生效」`) } }
+    // 没有工艺单也能生效，问一句（RFC 011 §2.1）
+    async function publish() {
+      if (!tp.value.files.some((f) => f.cat === '工艺单') && !(await ask(`生效 ${tpName(tp.value)}`, '还没有工艺单，发工厂时没有文件可发。', '还是生效'))) { view.value = 'files'; return }
+      if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效，可以下需求订单了`)
+    }
+    function create() { const t = createTechpack(p.code, [], null, ''); key.value = t.id; view.value = 'bom'; adding.value = true }
     async function dropDraft() {
       const t = tp.value
       if (!(await ask(`删除草稿 ${tpName(t)}`, '这一版改的内容都不要了，删除后找不回来；已生效的版本不受影响。', '删除', true))) return
@@ -778,24 +781,11 @@ comp('TechPack', {
     const hl = ref(0)
     const hover = (i) => { if (i != null) hl.value = i }
     const cur = computed(() => { const r = tp.value?.bom[hl.value] || tp.value?.bom[0]; return r && { i: tp.value.bom.indexOf(r), r, sku: rowSku(r, byColor.value) } })
-    // 拖动排序：BOM 行、尺寸行、工序行（只有草稿能拖）
+    // 拖动排序：BOM 行（只有草稿能拖）
     const drag = reactive({ list: null, from: null, over: null })
     const dragStart = (list, i) => Object.assign(drag, { list, from: i, over: null })
     const dragOver = (list, i) => { if (drag.list === list) drag.over = i }
     function dropAt(list, i) { if (drag.list === list) moveItem(list, drag.from, i); Object.assign(drag, { list: null, from: null, over: null }); open.value = null }
-    const addOp = () => tp.value.ops.push({ cat: '车缝', name: '', req: '', pics: [], sec: null, price: null, note: '' })
-
-    // 尺寸指示：格子里改哪格就是哪格；「按档差生成」才从基码往两边算
-    const sp = ref(0)
-    const base = computed(() => tp.value.spec.base)
-    const fcm = (v) => (numSet(v) ? String(rnd(+v, 1)) : '—')
-    const setVal = (r, z, v) => { r.vals[z] = v.trim() === '' ? null : +v }
-    const setNum = (r, k, v) => { r[k] = v.trim() === '' ? null : +v }
-    // 换部位：测量方法空着、或者还是原部位的默认写法，就换成新部位在设置里的默认测量方法
-    function setPt(r, v) { const old = db.craftStd.how[r.pt] || ''; r.pt = v.trim(); if (!r.how || r.how === old) r.how = db.craftStd.how[r.pt] || '' }
-    function addSpec() { tp.value.spec.rows.push({ pt: '', how: '', tol: 0.5, step: null, vals: {}, note: '' }); sp.value = tp.value.spec.rows.length - 1 }
-    function moveSpec(i, d) { moveItem(tp.value.spec.rows, i, i + d); sp.value = i + d }
-    function grade() { const r = run(() => gradeSpec(tp.value)); if (r) toast(`按档差算了 ${r[0]} 行` + (r[1] ? `；${r[1]} 行没填档差，没动` : '') + '，算完每格还能改') }
 
     // 核价：和侧边栏「核价」列表同一个算法（tpCost）
     const k = computed(() => tp.value && tpCost(tp.value))
@@ -805,10 +795,12 @@ comp('TechPack', {
     const ratio = computed(() => (s.value.tagPrice && k.value.total ? rnd(s.value.tagPrice / k.value.total, 2) : null))
     const addCost = () => tp.value.costs.push({ name: '', amt: null, note: '' })
     const setAmt = (c, v) => { c.amt = v === '' ? null : +v }
+    // 加工费：填了用填的，空着用价格档案的默认（清加工、再半包）
+    const laborDft = computed(() => tp.value && tpLaborDefault(tp.value))
+    const setLabor = (v) => { tp.value.labor = v === '' ? null : +v }
     const rowThumb = (r) => r.sku || Object.values(r.map || {})[0] || r.mat
-    return { s, tps, key, tp, edit, view, tabs, bomView, byColor, open, adding, editing, exporting, sizes, verText, useText, revise, publish, create, dropDraft, matSkus, supsFor, setPrice,
-      hl, hover, cur, drag, dragStart, dragOver, dropAt, addOp, sp, base, fcm, setVal, setNum, setPt, addSpec, moveSpec, grade, specLetter, OP_CATS,
-      k, cpRef, costGroups, ratio, addCost, setAmt, rowThumb, CRAFT_SECS, PACK_WAYS }
+    return { s, tps, key, tp, edit, view, tabs, bomView, byColor, open, adding, editing, importing, sizes, verText, useText, revise, publish, create, dropDraft, matSkus, supsFor, setPrice,
+      hl, hover, cur, drag, dragStart, dragOver, dropAt, k, cpRef, costGroups, ratio, addCost, setAmt, laborDft, setLabor, rowThumb }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">还没有资料包：生产 BOM 生效后才能下订单
@@ -818,8 +810,7 @@ comp('TechPack', {
         <Seg v-model="key" :items="tps.map(t => [t.id, verText(t)])"/>
         <span style="flex:1"></span>
         <button v-if="edit" class="btn pri" @click="publish">生效</button>
-        <button v-if="tp.status === '已生效'" class="btn" title="复制出新版本草稿：尺寸、物料、工艺、其他费用一起带过去" @click="revise">修订</button>
-        <button class="btn" title="生成工艺单 PDF，发给工厂" @click="exporting = true"><Ico n="download" :s="14"/>导出 PDF</button>
+        <button v-if="tp.status === '已生效'" class="btn" title="复制出新版本草稿：物料清单、工艺单、核价一起带过去" @click="revise">修订</button>
         <button v-if="edit" class="btn ghost danger" @click="dropDraft">删除草稿</button>
       </div>
       <div class="tpmeta" data-c="资料包版本信息">
@@ -827,7 +818,7 @@ comp('TechPack', {
         <span v-if="tp.publishedAt">生效：{{ userName(tp.publishedBy) }} · {{ fd(tp.publishedAt) }}</span>
         <span v-else-if="edit" class="dim">还没生效</span>
         <span class="row g4">排版利用率 <input v-if="edit" class="inp num" style="width:64px;height:26px" type="number" v-model.number="tp.util" placeholder="—"><template v-else>{{ tp.util != null && tp.util !== '' ? tp.util : '—' }}</template>%</span>
-        <template v-if="canSeeCost()"><span>参考加工价 {{ fm(k.labor) }}</span><a @click="view = 'cost'">单件成本 {{ fm(k.total) }}</a></template>
+        <a v-if="canSeeCost()" @click="view = 'cost'">单件成本 {{ fm(k.total) }}</a>
       </div>
       <div v-if="edit" style="margin-bottom:12px"><input class="inp" style="width:100%" v-model="tp.note" :placeholder="tp.ver > 1 ? '本版说明（V2 起必填）：这版改了什么' : '本版说明：这版改了什么'"></div>
       <p v-else-if="tp.note" class="mut" style="margin-bottom:12px">{{ tp.note }}</p>
@@ -838,10 +829,7 @@ comp('TechPack', {
         <template v-if="view === 'bom'">
           <Seg v-model="bomView" :items="[['list', 'BOM'], ['color', '按颜色']]"/>
           <button v-if="edit" class="btn" @click="adding = true"><Ico n="plus" :s="14"/>加一行</button>
-        </template>
-        <template v-if="view === 'spec' && edit">
-          <button class="btn" title="填了基码尺寸和档差的行，把其他码算出来" @click="grade">按档差生成</button>
-          <button class="btn" @click="addSpec"><Ico n="plus" :s="14"/>加部位</button>
+          <button v-if="edit" class="btn" title="选甲方的 BOM 明细表，认出来的物料加进物料清单" @click="importing = true"><Ico n="upload" :s="14"/>从 BOM 表导入</button>
         </template>
       </div>
 
@@ -896,7 +884,7 @@ comp('TechPack', {
                   </div>
                 </td></tr>
               </template>
-              <tr v-if="!tp.bom.length"><td :colspan="edit ? 12 : 10" class="empty">还没有物料，点「加一行」</td></tr>
+              <tr v-if="!tp.bom.length"><td :colspan="edit ? 12 : 10" class="empty">{{ edit ? '还没有物料：点「加一行」，或者从甲方的 BOM 表导入' : '这一版没有物料' }}</td></tr>
             </tbody>
           </table>
           <div v-if="canSeeCost()" class="row" style="justify-content:flex-end;gap:20px;margin-top:12px" data-c="单件成本">
@@ -917,82 +905,7 @@ comp('TechPack', {
         </div>
       </template>
 
-      <div v-if="view === 'spec'" data-c="资料包：尺寸指示">
-        <div class="spectop wide">
-          <div class="figbox" data-c="量法图"><SpecFigure :code="s.code" :color="byColor" :rows="tp.spec.rows" :hl="sp" :s="210" @hover="i => sp = i"/>
-            <span class="dim" style="font-size:12px">单位 cm · 基码 {{ base }}</span></div>
-          <div class="spec" data-c="尺寸指示表">
-            <table class="tbl inset flat">
-              <thead><tr><th v-if="edit" style="width:18px"></th><th style="width:30px"></th><th>部位 / 测量方法</th><th v-for="z in sizes" :key="z" class="num" :class="{ base: z === base }">{{ z }}</th><th class="num">档差</th><th class="num">公差 ±</th><th>备注</th><th v-if="edit"></th></tr></thead>
-              <tbody>
-                <tr v-for="(r, i) in tp.spec.rows" :key="i" :class="{ sel: sp === i, dragover: drag.list === tp.spec.rows && drag.over === i }" :draggable="edit" @dragstart="dragStart(tp.spec.rows, i)" @dragover.prevent="dragOver(tp.spec.rows, i)" @drop.prevent="dropAt(tp.spec.rows, i)" @dragend="drag.list = null" @mouseenter="sp = i">
-                  <td v-if="edit" class="grip" title="按住拖动，调整顺序">⋮⋮</td>
-                  <td><span class="mk-l" :class="{ on: sp === i }" style="padding:0 3px"><i>{{ specLetter(i) }}</i></span></td>
-                  <td v-if="edit" style="padding-top:5px;padding-bottom:5px"><input class="inp cell txt" list="tp-spec-pts" :value="r.pt" placeholder="选或手填部位" @change="setPt(r, $event.target.value)"><input class="inp cell txt" v-model="r.how" placeholder="测量方法"></td>
-                  <td v-else>{{ r.pt || '—' }}<div class="how">{{ r.how }}</div></td>
-                  <td v-for="z in sizes" :key="z" class="num" :class="{ base: z === base }"><input v-if="edit" class="inp cell num" :value="r.vals[z] ?? ''" @change="setVal(r, z, $event.target.value)"><template v-else>{{ fcm(r.vals[z]) }}</template></td>
-                  <td class="num"><input v-if="edit" class="inp cell num" :value="r.step ?? ''" placeholder="—" @change="setNum(r, 'step', $event.target.value)"><template v-else>{{ fcm(r.step) }}</template></td>
-                  <td class="num"><input v-if="edit" class="inp cell num" :value="r.tol ?? ''" @change="setNum(r, 'tol', $event.target.value)"><template v-else>{{ fcm(r.tol) }}</template></td>
-                  <td><input v-if="edit" class="inp cell note" v-model="r.note"><span v-else class="mut">{{ r.note || '' }}</span></td>
-                  <td v-if="edit" class="num"><span class="row" style="justify-content:flex-end;gap:0">
-                    <button class="btn ghost icon sm" title="上移" :disabled="!i" @click="moveSpec(i, -1)"><Ico n="up" :s="13"/></button>
-                    <button class="btn ghost icon sm" title="下移" :disabled="i === tp.spec.rows.length - 1" @click="moveSpec(i, 1)"><Ico n="down" :s="13"/></button>
-                    <button class="btn ghost icon sm" title="删除这一行" @click="tp.spec.rows.splice(i, 1)"><Ico n="trash" :s="13"/></button></span></td>
-                </tr>
-                <tr v-if="!tp.spec.rows.length"><td :colspan="sizes.length + (edit ? 7 : 5)" class="empty">{{ edit ? '还没有部位，点「加部位」' : '这一版没填尺寸指示，导出工艺单时不出这一页' }}</td></tr>
-              </tbody>
-            </table>
-            <datalist id="tp-spec-pts"><option v-for="x in db.dicts.尺寸部位" :key="x" :value="x"></option></datalist>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="view === 'craft'" data-c="资料包：工艺指示">
-        <section v-for="g in CRAFT_SECS" :key="g.g" class="craft-g" :data-c="'工艺指示：' + g.g">
-          <h3 v-if="g.items.length > 1">{{ g.g }}</h3>
-          <div class="craft-grid">
-            <div v-for="it in g.items" :key="it[0]" class="craft-c" :class="{ wide: g.items.length === 1 }" :data-c="'工艺指示：' + it[1]">
-              <b>{{ it[1] }}</b>
-              <div v-if="it[0] === 'pack'" class="row" style="gap:14px">
-                <span class="dim">包装方式</span>
-                <template v-if="edit"><label v-for="w in PACK_WAYS" :key="w" class="chk"><input type="radio" :name="'pack-' + tp.id" :value="w" v-model="tp.craft.pack.way">{{ w }}</label></template>
-                <b v-else style="font-weight:500">{{ tp.craft.pack.way || '—' }}</b>
-              </div>
-              <template v-if="edit"><textarea class="inp" rows="4" v-model="tp.craft[it[0]].text" :placeholder="'写' + it[1] + '，可以插图'"></textarea><Pics v-model="tp.craft[it[0]].pics" :s="48" :max="6"/></template>
-              <template v-else><div class="txt" :class="{ dim: !tp.craft[it[0]].text }">{{ tp.craft[it[0]].text || '没写' }}</div><Pics v-if="tp.craft[it[0]].pics.length" :model-value="tp.craft[it[0]].pics" readonly :s="48"/></template>
-            </div>
-          </div>
-        </section>
-        <div class="sec" data-c="资料包：工序工价">
-          <h3>工序工价（内部）<span class="dim" style="font-weight:400;font-size:12px">合计 = 参考加工价；导出工艺单默认不带</span><span class="acts"><button v-if="edit" class="btn sm" @click="addOp"><Ico n="plus" :s="13"/>加工序</button></span></h3>
-          <div class="xscroll"><table class="tbl inset flat">
-            <thead><tr><th v-if="edit" style="width:20px"></th><th style="width:40px">序号</th><th>类别</th><th>工序</th><th>工艺要求</th><th>图示</th><th class="num">工时（秒）</th><th class="num">工价</th><th>备注</th><th v-if="edit"></th></tr></thead>
-            <tbody>
-              <tr v-for="(o, i) in tp.ops" :key="i" :class="{ dragover: drag.list === tp.ops && drag.over === i }" :draggable="edit" @dragstart="dragStart(tp.ops, i)" @dragover.prevent="dragOver(tp.ops, i)" @drop.prevent="dropAt(tp.ops, i)" @dragend="drag.list = null">
-                <td v-if="edit" class="grip" title="按住拖动，调整顺序">⋮⋮</td>
-                <td class="dim">{{ i + 1 }}</td>
-                <template v-if="edit">
-                  <td><Pick class="sel" style="height:26px" v-model="o.cat"><option v-for="x in OP_CATS" :key="x">{{ x }}</option></Pick></td>
-                  <td><input class="inp cell" style="min-width:100px" v-model="o.name" placeholder="工序名称"></td>
-                  <td><input class="inp cell" style="min-width:150px" v-model="o.req" placeholder="怎么做、注意什么"></td>
-                  <td><Pics v-model="o.pics" :s="36" :max="3" bare/></td>
-                  <td class="num"><input class="inp cell num" style="width:70px" type="number" v-model.number="o.sec"></td>
-                  <td class="num"><input class="inp cell num" style="width:70px" type="number" v-model.number="o.price"></td>
-                  <td><input class="inp cell" style="min-width:70px" v-model="o.note"></td>
-                  <td class="num"><button class="btn ghost icon sm" title="删除这道工序" @click="tp.ops.splice(i, 1)"><Ico n="trash" :s="13"/></button></td>
-                </template>
-                <template v-else>
-                  <td>{{ o.cat }}</td><td>{{ o.name }}</td><td class="wrap">{{ o.req || '—' }}</td>
-                  <td><Pics v-if="o.pics && o.pics.length" :model-value="o.pics" readonly :s="36"/><span v-else class="dim">—</span></td>
-                  <td class="num">{{ o.sec ?? '—' }}</td><td class="num">{{ fm(o.price) }}</td><td class="mut">{{ o.note || '' }}</td>
-                </template>
-              </tr>
-              <tr v-if="!tp.ops.length"><td :colspan="edit ? 10 : 8" class="empty">{{ edit ? '还没有工序，点「加工序」' : '还没有工序' }}</td></tr>
-            </tbody>
-            <tfoot><tr><td :colspan="edit ? 6 : 5">合计 {{ tp.ops.length }} 道工序 = 参考加工价</td><td class="num">{{ sum(tp.ops, o => o.sec) }}</td><td class="num">{{ fm(tpLabor(tp)) }}</td><td :colspan="edit ? 2 : 1"></td></tr></tfoot>
-          </table></div>
-        </div>
-      </div>
+      <TpFiles v-if="view === 'files'" :tp="tp"/>
 
       <div v-if="view === 'cost'" data-c="资料包：核价">
         <div v-if="!canSeeCost()" class="empty">核价要有看成本的权限：找管理员在 设置 › 角色权限 里开「成本（核价）」</div>
@@ -1020,7 +933,9 @@ comp('TechPack', {
                 <tr v-if="!g.rows.length"><td colspan="7" class="dim">物料清单里没有{{ g.g }}</td></tr>
               </template>
               <tr class="cg"><td colspan="6">加工费</td><td class="num">{{ fm(k.labor) }}</td></tr>
-              <tr><td>工序工价合计</td><td colspan="5"><a @click="view = 'craft'">工艺指示 › 工序工价，{{ tp.ops.length }} 道工序</a></td><td class="num">{{ fm(k.labor) }}</td></tr>
+              <tr data-c="核价：加工费"><td>加工费（元/件）</td>
+                <td colspan="5" class="mut">{{ tp.labor != null ? '资料包上填的' : laborDft ? '没填，用价格档案 · ' + supName(laborDft.factory) + ' ' + laborDft.mode + '现价' : '没填，价格档案里也没有这个款的清加工、半包价' }}</td>
+                <td class="num"><input v-if="edit" class="inp cell num" style="width:80px" type="number" :value="tp.labor ?? ''" :placeholder="laborDft ? '默认 ' + fm(laborDft.price) : '元/件'" @change="setLabor($event.target.value)"><template v-else>{{ fm(k.labor) }}</template></td></tr>
               <tr v-if="cpRef != null" data-c="核价：成品采购参考价"><td>成品采购参考价</td><td colspan="5" class="mut">价格档案 · {{ supName(s.factory) }} 包工包料现价，含料；只作参考，不计入单件成本</td><td class="num mut">{{ fm(cpRef) }}</td></tr>
               <tr class="cg"><td colspan="6"><span class="row" style="gap:10px">其他费用<button v-if="edit" class="btn sm" @click="addCost"><Ico n="plus" :s="12"/>加一项</button></span></td><td class="num">{{ fm(k.other) }}</td></tr>
               <tr v-for="(c, i) in tp.costs" :key="'c' + i">
@@ -1042,7 +957,7 @@ comp('TechPack', {
     </template>
     <BomRowForm v-if="adding && tp" :tp="tp" @close="adding = false"/>
     <BomRowForm v-if="editing && tp" :tp="tp" :row="editing" @close="editing = null"/>
-    <TpExport v-if="exporting && tp" :tp="tp" @close="exporting = false"/>
+    <TpImport v-if="importing && tp" :tp="tp" @close="importing = false"/>
   </div>`,
 })
 
@@ -1106,134 +1021,202 @@ comp('BomRowForm', {
   </Modal>`,
 })
 
-/* ---------- 工艺单（PRD §6.4.4，甲方 11-14 改成照他们线下工艺单的版式）：表头 → 尺寸标准指示（含面料用量）→ 物料清单（按颜色）→ 车间缝制 → 后道 → 附页
- * 资料包「导出 PDF」：<TpExport :tp/>（选颜色、含价格、附工艺标准，预览后调浏览器打印存成 PDF）
- * 外发加工单、成品采购单打印也用它：<TpPrintBody :tp="tpOf(款号, 版本)" :colors="这张单的颜色" bare/>（bare：不出签字栏）；price 才出单价、单件成本、核价、工序工价 ---------- */
-comp('TpPrintBody', {
-  props: { tp: Object, colors: Array, price: Boolean, appendix: Boolean, bare: Boolean },
+/* ---------- 资料包的「工艺单」页签（RFC 011 §2，甲方 11-18）：三组文件 —— 工艺单、纸样和其他、导入的 BOM 表（导入时自动挂上，有才出这一组）
+ * 工艺单就是甲方现在用的 Excel：传上来挂在这一版上，能预览、能下载，系统不拆里面的内容；发工厂就下载这份发微信。
+ * 草稿能传、排序、删；生效后只读，要换就修订。原型预览只显示 .xlsx 第一张表的文字（真系统按 Excel 的样子画，见 XlsPreview） ---------- */
+comp('TpFiles', {
+  props: { tp: Object },
   setup(p) {
-    const s = computed(() => style(p.tp.style))
-    const sizes = computed(() => sizesOf(s.value.sizeGroup))
-    const cs = computed(() => (p.colors?.length ? p.colors : s.value.colors))
-    const k = computed(() => tpCost(p.tp))
-    const title = computed(() => s.value.year + (db.seasons.find((z) => z.code === s.value.season)?.name || '') + '季工艺单')
-    // 面料用量不单独填：从物料清单里面料、里料的行带出基码用量
-    const fabrics = computed(() => k.value.rows.filter((x) => x.kind === '面料').map((x) => `${x.r.part} ${mat(x.r.mat).name} ${fq(x.use)} ${mat(x.r.mat).unit}/件`))
-    const craft = computed(() => p.tp.craft || {})
-    const has = (key) => { const c = craft.value[key]; return !!c && !!(c.text || c.pics?.length || (key === 'pack' && c.way)) }
-    // 没写的段不出；一段都没写的那块（车间缝制 / 后道 / 注意事项）整块不出
-    const secs = computed(() => CRAFT_SECS.map((g) => ({ g: g.g, items: g.items.filter(([key]) => has(key)), ops: g.g === '车间缝制' && p.price && p.tp.ops.length > 0 })).filter((g) => g.items.length || g.ops))
-    const files = computed(() => (p.appendix ? db.craftStd.files : []))
-    const fileTitle = (f) => f.name.replace(/\.[^.]+$/, '')
-    const cellNum = (v) => (numSet(v) ? rnd(+v, 1) : '')
-    const notCounted = (x) => (x.r.src === '厂购' ? '含在加工价里' : '客户出')
-    return { s, sizes, cs, k, title, fabrics, craft, secs, files, fileTitle, cellNum, notCounted, isImg, PACK_WAYS }
+    const edit = computed(() => p.tp.status === '草稿')
+    const groups = computed(() => TP_FILE_GROUPS.map((g) => ({ ...g, files: p.tp.files.filter((f) => f.cat === g.cat) })).filter((g) => g.cat !== '导入的 BOM 表' || g.files.length))
+    const viewing = ref(null)
+    // 先过类型、大小、个数（addTpFile 查），过了再在后台读内容：.xlsx 读第一张表给预览用，10MB 以内的存下来给下载用
+    function take(cat, list) {
+      for (const file of [...list]) {
+        const f = run(() => addTpFile(p.tp, cat, { name: file.name, size: file.size }))
+        if (!f) continue
+        const live = p.tp.files.find((x) => x.id === f.id)
+        if (/\.xlsx$/i.test(file.name)) xlsxRead(file).then((grid) => { live.grid = grid }).catch(() => {})
+        if (file.size <= 10485760) readFile(file).then((x) => { live.src = x.src }).catch(() => {})
+      }
+    }
+    const canPreview = (f) => !!f.grid || /\.(jpe?g|png|webp)$/i.test(f.name) && !!f.src
+    function preview(f) { if (f.grid) viewing.value = f; else viewPics([f]) }
+    function download(f) {
+      if (f.src) { const a = document.createElement('a'); a.href = f.src; a.download = f.name; a.click() }
+      else if (f.grid) saveBlob(xlsxWrite([{ name: 'Sheet1', rows: f.grid }]), f.name)
+      else toast('原型里没存这个文件的内容（太大），真系统能下载', null, true)
+    }
+    function move(f, d) {
+      const same = p.tp.files.filter((x) => x.cat === f.cat), other = same[same.indexOf(f) + d]
+      if (!other) return
+      const a = p.tp.files.indexOf(f), b = p.tp.files.indexOf(other)
+      p.tp.files.splice(a, 1, other); p.tp.files.splice(b, 1, f)
+    }
+    async function remove(f) {
+      if (await ask(`删除 ${f.name}`, '从这一版资料包上拿掉这个文件；已经发出去的不受影响。', '删除', true)) p.tp.files.splice(p.tp.files.indexOf(f), 1)
+    }
+    return { edit, groups, viewing, take, canPreview, preview, download, move, remove, fsize, extOf }
   },
-  template: `<div class="tps" data-c="工艺单内容">
-    <header class="tps-head" data-c="工艺单：表头">
-      <div class="tps-t">{{ title }}</div>
-      <div class="tps-top">
-        <table class="sheet-tbl tps-meta"><tbody>
-          <tr><th>样衣编号</th><td class="code">{{ s.sample || '—' }}</td><th>款式编码</th><td class="code">{{ s.code }}</td></tr>
-          <tr><th>款式名称</th><td>{{ s.name }}</td><th>花名</th><td>{{ s.alias || '—' }}</td></tr>
-          <tr><th>日期</th><td>{{ tp.publishedAt || clock.today }}</td><th>资料包</th><td>V{{ tp.ver }}{{ tp.status === '已生效' ? '' : '（' + tp.status + '）' }}</td></tr>
-          <tr><th>颜色</th><td>{{ cs.map(c => colorName(c)).join('、') }}</td><th>尺码</th><td>{{ sizes.join(' / ') }}</td></tr>
-          <tr><th>品名</th><td>{{ s.product || catOf(s.cat).name }}</td><th>排版利用率</th><td>{{ tp.util ? tp.util + '%' : '—' }}</td></tr>
-          <tr><th>成分</th><td colspan="3">{{ s.comp || '—' }}</td></tr>
-          <tr v-if="tp.note"><th>本版说明</th><td colspan="3">{{ tp.note }}</td></tr>
-        </tbody></table>
-        <div class="tps-pics"><Thumb :code="s.code" :color="cs[0]" :s="118" flat/><Thumb :code="s.code" :color="cs[0]" :s="118" back/></div>
-      </div>
-    </header>
-
-    <section v-if="specFilled(tp)" class="tps-sec" data-c="工艺单：尺寸标准指示">
-      <h3>尺寸标准指示<small>单位 cm · 基码 {{ tp.spec.base }}</small></h3>
-      <table class="sheet-tbl tps-spec"><thead><tr><th>部位</th><th>测量方法</th><th v-for="z in sizes" :key="z" class="num" :class="{ base: z === tp.spec.base }">{{ z }}</th><th class="num">公差 ±</th><th>备注</th></tr></thead>
-        <tbody><tr v-for="(r, i) in tp.spec.rows" :key="i"><td class="nw">{{ r.pt }}</td><td>{{ r.how }}</td><td v-for="z in sizes" :key="z" class="num" :class="{ base: z === tp.spec.base }">{{ cellNum(r.vals[z]) }}</td><td class="num">{{ cellNum(r.tol) }}</td><td>{{ r.note || '' }}</td></tr></tbody></table>
+  template: `<div data-c="资料包：工艺单">
+    <section v-for="g in groups" :key="g.cat" class="sec tpf" :data-c="'工艺单：' + g.cat">
+      <h3>{{ g.cat }}<span class="dim" style="font-weight:400;font-size:12px">{{ g.files.length }} 个</span>
+        <span class="acts"><label v-if="edit && g.cat !== '导入的 BOM 表'" class="btn sm"><Ico n="upload" :s="13"/>上传<input type="file" multiple hidden :accept="g.types.map(t => '.' + t).join(',')" @change="take(g.cat, $event.target.files); $event.target.value = ''"></label></span></h3>
+      <div v-if="!g.files.length" class="empty" style="padding:18px">{{ edit ? (g.cat === '工艺单' ? '还没有工艺单：点「上传」，选甲方现在用的工艺单 Excel' : '还没有' + g.cat) : '这一版没有' + g.cat }}</div>
+      <table v-else class="tbl inset flat">
+        <tbody><tr v-for="(f, i) in g.files" :key="f.id">
+          <td class="dim" style="width:28px">{{ i + 1 }}</td>
+          <td><span class="row g4"><span class="ext">{{ extOf(f.name) }}</span>{{ f.name }}</span></td>
+          <td class="num dim" style="width:80px">{{ f.size ? fsize(f.size) : '' }}</td>
+          <td class="num" style="width:230px"><span class="row g4" style="justify-content:flex-end">
+            <button v-if="canPreview(f)" class="btn ghost sm" @click="preview(f)">预览</button>
+            <button class="btn ghost sm" @click="download(f)">下载</button>
+            <template v-if="edit">
+              <button class="btn ghost icon sm" title="上移" :disabled="!i" @click="move(f, -1)"><Ico n="up" :s="13"/></button>
+              <button class="btn ghost icon sm" title="下移" :disabled="i === g.files.length - 1" @click="move(f, 1)"><Ico n="down" :s="13"/></button>
+              <button class="btn ghost icon sm" title="删除这个文件" @click="remove(f)"><Ico n="trash" :s="13"/></button>
+            </template></span></td>
+        </tr></tbody>
+      </table>
+      <p v-if="edit && g.cat !== '导入的 BOM 表'" class="dim" style="font-size:12px;margin:6px 0 0">能传 {{ g.types.join('、') }}；单个最大 10MB{{ g.types.includes('prj') ? '（prj 100MB）' : '' }}，最多 20 个</p>
     </section>
-    <p v-if="fabrics.length" class="tps-fab" data-c="工艺单：面料用量"><b>面料用量</b>{{ fabrics.join('；') }}（{{ k.base }} 码）</p>
-
-    <section v-for="(c, ci) in cs" :key="c" class="tps-sec" :class="{ pb: ci === 0 }" data-c="工艺单：物料清单">
-      <h3>物料清单 · {{ colorName(c) }}（{{ c }}）</h3>
-      <table class="sheet-tbl"><thead><tr><th>#</th><th>部位</th><th>物料 SKU</th><th>物料</th><th>单位</th><th v-for="z in sizes" :key="z" class="num">{{ z }}</th><th class="num">损耗</th><th>来源</th><th>备注</th><template v-if="price"><th class="num">单价</th><th class="num">单件成本</th></template></tr></thead>
-        <tbody><tr v-for="x in k.rows" :key="x.i"><td>{{ x.i + 1 }}</td><td class="nw">{{ x.r.part }}</td><td class="code">{{ rowSku(x.r, c) || '未配料' }}</td><td>{{ rowSku(x.r, c) ? skuName(rowSku(x.r, c)) : mat(x.r.mat).name }}</td><td>{{ mat(x.r.mat).unit }}</td>
-          <td v-for="z in sizes" :key="z" class="num">{{ fq(rowUse(x.r, z)) }}</td><td class="num">{{ x.r.loss }}%</td><td class="nw">{{ x.r.src }}</td><td>{{ x.r.note || '' }}</td>
-          <template v-if="price"><td class="num nw">{{ fm(x.price) }}/{{ mat(x.r.mat).purUnit }}</td><td class="num">{{ x.counted ? fm(x.cost) : notCounted(x) }}</td></template></tr>
-          <tr v-if="!k.rows.length"><td :colspan="sizes.length + 8 + (price ? 2 : 0)">还没有物料</td></tr></tbody></table>
-    </section>
-    <section v-if="price" class="tps-sec" data-c="工艺单：核价">
-      <h3>核价<small>按 {{ k.base }} 码用量</small></h3>
-      <table class="sheet-tbl tps-cost"><tbody>
-        <tr><th>面料</th><td class="num">{{ fm(k.fabric) }}</td><th>辅料</th><td class="num">{{ fm(k.trim) }}</td><th>加工费</th><td class="num">{{ fm(k.labor) }}</td><th>其他费用</th><td class="num">{{ fm(k.other) }}</td><th>单件成本</th><td class="num"><b>{{ fm(k.total) }}</b></td></tr>
-        <tr v-if="tp.costs && tp.costs.length"><th>其他费用</th><td colspan="9">{{ tp.costs.map(c => (c.name || '—') + ' ' + fm(c.amt) + (c.note ? '（' + c.note + '）' : '')).join('；') }}</td></tr>
-      </tbody></table>
-    </section>
-
-    <section v-for="(g, gi) in secs" :key="g.g" class="tps-sec" :class="{ pb: gi === 0 }" :data-c="'工艺单：' + g.g">
-      <h3>{{ g.g }}</h3>
-      <table v-if="g.items.length" class="sheet-tbl tps-craft"><tbody>
-        <tr v-for="it in g.items" :key="it[0]"><th>{{ it[1] }}</th><td>
-          <div v-if="it[0] === 'pack'" class="tps-ways">包装方式<span v-for="w in PACK_WAYS" :key="w">{{ craft.pack.way === w ? '☑' : '☐' }} {{ w }}</span></div>
-          <div class="tps-txt">{{ craft[it[0]].text }}</div>
-          <span v-if="craft[it[0]].pics && craft[it[0]].pics.length" class="tpp-imgs"><img v-for="x in craft[it[0]].pics" :key="x.id" :src="x.src" alt=""></span></td></tr>
-      </tbody></table>
-      <template v-if="g.ops">
-        <h4>工序工价</h4>
-        <table class="sheet-tbl"><thead><tr><th>序号</th><th>类别</th><th>工序</th><th>工艺要求</th><th class="num">工时（秒）</th><th class="num">工价</th><th>备注</th></tr></thead>
-          <tbody><tr v-for="(o, i) in tp.ops" :key="i"><td>{{ i + 1 }}</td><td>{{ o.cat }}</td><td>{{ o.name }}</td><td>{{ o.req || '' }}</td><td class="num">{{ o.sec ?? '' }}</td><td class="num">{{ fm(o.price) }}</td><td>{{ o.note || '' }}</td></tr></tbody>
-          <tfoot><tr><td colspan="4">合计 = 参考加工价</td><td class="num">{{ sum(tp.ops, o => o.sec) }}</td><td class="num">{{ fm(k.labor) }}</td><td></td></tr></tfoot></table>
-      </template>
-    </section>
-    <div v-if="!bare" class="sheet-sign"><span>制单</span><span>审核</span><span>工厂确认</span></div>
-
-    <section v-for="(f, i) in files" :key="f.id" class="tps-sec pb tps-app" data-c="工艺单：附页">
-      <h3>附页 {{ i + 1 }} · {{ fileTitle(f) }}</h3>
-      <img v-if="isImg(f)" :src="f.src" alt="">
-      <div v-else class="tps-file"><b>{{ f.name }}</b><small>导出时原样接在工艺单后面，预览里不展开</small></div>
-    </section>
+    <XlsPreview v-if="viewing" :f="viewing" @close="viewing = null"/>
   </div>`,
 })
 
-/* 资料包「导出 PDF」：选项 + 预览；「导出 PDF」调浏览器打印（目标选"存储为 PDF"），只打预览那张纸
- * 真系统由后端出 PDF：GET /api/techpacks/{id}/pdf?color=&price=false&appendix=true，price=true 要看成本的权限 */
-comp('TpExport', {
+/* 在页面里看一份 Excel（RFC 011 §2.3）：原型只有第一张表的文字；真系统后端读成表格数据，每张 sheet 一个页签，合并单元格、粗体、底色、表里的图片都画出来 */
+comp('XlsPreview', {
+  props: { f: Object },
+  emits: ['close'],
+  setup(p) {
+    const cols = computed(() => Math.max(1, ...p.f.grid.map((r) => r.length)))
+    return { cols, colL }
+  },
+  template: `<Modal :t="f.name" :w="960" @close="$emit('close')">
+    <div class="xls" data-c="Excel 预览"><table><thead><tr><th></th><th v-for="c in cols" :key="c">{{ colL(c - 1) }}</th></tr></thead>
+      <tbody><tr v-for="(r, i) in f.grid" :key="i"><th>{{ i + 1 }}</th><td v-for="c in cols" :key="c">{{ r[c - 1] ?? '' }}</td></tr></tbody></table></div>
+    <p class="dim" style="font-size:12px;margin:8px 0 0">原型只显示第一张表的文字；真系统照 Excel 的样子画：每张 sheet 一个页签，合并单元格、粗体、底色、表里的图片都在。</p>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">关闭</button></template>
+  </Modal>`,
+})
+
+/* ---------- 从甲方的 BOM 表导入物料清单（RFC 011 §4.3）：选表 → 认（parseBomSheet）→ 预览里改部位、用量、损耗、单价，
+ * 没认出来的挑物料、当场新建物料，或者这行不导 → 加进物料清单（替换或加在后面），加工费、运费带进核价，导入的表挂到工艺单页签。
+ * 加进去只是改了这一版草稿，和手填一样。原型只认 .xlsx 的第一张表（真系统 .xls 也认、几张 sheet 按款号自动挑）；没有现成的表点「用示例表试一下」 ---------- */
+comp('TpImport', {
   props: { tp: Object },
   emits: ['close'],
   setup(p, { emit }) {
-    useEsc(() => emit('close'))
-    const s = computed(() => style(p.tp.style))
-    const o = reactive({ color: '', price: false, appendix: true })
-    const fileName = computed(() => `${s.value.code}-${s.value.name}-工艺单-V${p.tp.ver}`)
-    const co = computed(() => db.companies.find((c) => c.code === myCompany()) || db.companies[0])
-    const title0 = document.title
-    onMounted(() => document.body.classList.add('printing'))
-    onUnmounted(() => { document.body.classList.remove('printing'); document.title = title0 })
-    function exportPdf() {
-      act(p.tp, `导出工艺单 PDF：${o.color ? colorName(o.color) : '全部颜色'}${o.price ? '，含价格' : ''}${o.appendix && db.craftStd.files.length ? '，附工艺标准' : ''}`)
-      document.title = fileName.value // 浏览器存 PDF 时拿页面标题当默认文件名
-      window.print()
-      document.title = title0
+    const st = reactive({ file: null, grid: null, res: null, err: '', picks: {}, skip: {}, creating: null, mode: '替换' })
+    // 挑了、建了物料后重新认：物料没变的行留着人改过的部位、用量
+    function parse(keep) {
+      st.err = ''
+      const old = keep && st.res ? new Map(st.res.rows.map((x) => [x.line, x])) : new Map()
+      try {
+        const r = parseBomSheet(p.tp, st.grid, st.picks)
+        r.rows = r.rows.map((x) => { const o = old.get(x.line); return o?.row && x.row && o.row.mat === x.row.mat ? o : x })
+        st.res = r
+      } catch (e) { st.res = null; st.err = e.message }
     }
-    return { s, o, fileName, co, exportPdf, canSeeCost }
+    const reset = () => Object.assign(st, { picks: {}, skip: {}, mode: p.tp.bom.length ? '替换' : '加在后面' })
+    async function pick(e) {
+      const file = e.target.files[0]
+      e.target.value = ''
+      if (!file) return
+      if (!/\.xlsx$/i.test(file.name)) { st.err = /\.xls$/i.test(file.name) ? '原型只认 .xlsx：在 Excel 里另存为 .xlsx 再选（真系统 .xls 也认）' : '只收 Excel 文件（.xlsx）'; return }
+      try { st.grid = await xlsxRead(file); st.file = { name: file.name, size: file.size }; reset(); parse() } catch (x) { st.err = x.message }
+    }
+    function demo() { st.grid = demoBomGrid(p.tp.style); st.file = { name: `${p.tp.style} BOM（示例）.xlsx`, size: 9216 }; reset(); parse() }
+    const downloadDemo = () => saveBlob(xlsxWrite([{ name: p.tp.style, rows: demoBomGrid(p.tp.style) }]), `${p.tp.style} BOM 示例.xlsx`)
+    const mats = computed(() => db.materials.filter((m) => m.status === '启用'))
+    function choose(x, code) { if (code) { st.picks[x.line] = code; parse(true) } }
+    // 新建物料：名称、单位、单价照表里这一行预先填好；建好了按它重新认这一行
+    const createInit = computed(() => {
+      const x = st.res?.rows.find((r) => r.line === st.creating)
+      if (!x) return null
+      const unit = x.src.unit === '厘米' ? '米' : x.src.unit
+      return { name: x.src.name, ...(db.dicts.单位.includes(unit) ? { unit, purUnit: unit } : {}), price: cellNum(x.src.price) }
+    })
+    function created(m) { if (st.creating != null) { st.picks[st.creating] = m.code; st.creating = null; parse(true) } }
+    const live = computed(() => (st.res?.rows || []).filter((x) => !st.skip[x.line]))
+    const blocked = computed(() => live.value.filter((x) => !x.row).length)
+    function apply() {
+      const res = canSeeCost() ? st.res : { ...st.res, labor: null, fees: [] }
+      const n = run(() => applyBomImport(p.tp, res, live.value, p.tp.bom.length ? st.mode : '加在后面', { ...st.file, grid: st.grid }))
+      if (!n) return
+      emit('close')
+      toast(`加了 ${n} 行物料` + (res.labor != null ? `，加工费 ${fm(res.labor)} 填进了核价` : '') + (res.fees.length ? `，${res.fees.map((f) => f.name).join('、')}加进了其他费用` : '') + '；表挂在工艺单页签上')
+    }
+    return { st, pick, demo, downloadDemo, mats, choose, createInit, created, live, blocked, apply }
   },
-  template: `<Teleport to="body"><div class="print-root" data-c="导出工艺单 PDF">
-    <div class="print-bar tpx-bar">
-      <b>导出工艺单</b><span class="dim code">{{ fileName }}.pdf</span><span class="sp"></span>
-      <label class="row g4">颜色<Pick class="sel" style="height:28px" v-model="o.color"><option value="">全部颜色</option><option v-for="c in s.colors" :key="c" :value="c">{{ colorName(c) }}</option></Pick></label>
-      <label class="chk" :title="canSeeCost() ? '出单价、单件成本、核价和工序工价' : '要有看成本的权限'"><input type="checkbox" v-model="o.price" :disabled="!canSeeCost()">含价格</label>
-      <label class="chk" :title="db.craftStd.files.length ? '设置 › 工艺标准里的文件，接在最后' : '设置 › 工艺标准里还没传文件'"><input type="checkbox" v-model="o.appendix">附工艺标准</label>
-      <button class="btn" @click="$emit('close')">关闭</button>
-      <button class="btn pri" @click="exportPdf"><Ico n="download" :s="14"/>导出 PDF</button>
+  template: `<Modal t="从 BOM 表导入物料清单" :w="1120" @close="$emit('close')">
+    <div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <label class="btn" :class="{ pri: !st.file }"><Ico n="upload" :s="14"/>{{ st.file ? '换一个文件' : '选 BOM 表（.xlsx）' }}<input type="file" accept=".xlsx,.xls" hidden @change="pick"></label>
+      <button class="btn" @click="demo">用示例表试一下</button>
+      <a style="font-size:12.5px" @click="downloadDemo">下载示例表</a>
+      <span v-if="st.file" class="mut">{{ st.file.name }}</span>
     </div>
-    <p class="tpx-tip">打印目标选「存储为 PDF」；手机上导出后点分享，发到微信</p>
-    <article class="psheet tpx">
-      <div class="tps-co">{{ co.name }}</div>
-      <TpPrintBody :tp="tp" :colors="o.color ? [o.color] : null" :price="o.price && canSeeCost()" :appendix="o.appendix"/>
-    </article>
-  </div></Teleport>`,
+    <div v-if="st.err" class="banner red" style="margin:0 0 10px"><Ico n="alert"/>{{ st.err }}</div>
+    <p v-if="!st.res && !st.err" class="mut">选甲方的 BOM 明细表。按表头认列（物料名称、规格、颜色、单价、单位、单件用量、损耗），按名称和规格对物料库；认不出的当场挑物料、新建物料，或者这行不导。表下面的加工费、运费一起带进核价。</p>
+    <template v-if="st.res">
+      <p v-if="st.res.title" class="mut" style="margin:0 0 8px">表头：{{ st.res.title }}</p>
+      <div class="xscroll"><table class="tbl inset flat">
+        <thead><tr><th style="width:36px">行</th><th>表里写的</th><th>认成</th><th>部位</th><th class="num">用量</th><th class="num">损耗 %</th><th v-if="canSeeCost()" class="num">单价</th><th>状态</th><th>提示</th><th></th></tr></thead>
+        <tbody><tr v-for="x in st.res.rows" :key="x.line" :class="{ off: st.skip[x.line] }">
+          <td class="dim">{{ x.line }}</td>
+          <td>{{ [x.src.name, x.src.spec, x.src.color].filter(Boolean).join(' · ') }}<div class="dim" style="font-size:11.5px">{{ x.src.use }} {{ x.src.unit }}<template v-if="canSeeCost() && x.src.price"> · ¥{{ x.src.price }}</template></div></td>
+          <td><template v-if="x.row"><span class="code">{{ x.row.mat }}</span> {{ mat(x.row.mat).name }}<div class="dim" style="font-size:11.5px">{{ x.row.mode === '固定' ? (x.row.sku || '没配料') : '随款色 · 配上 ' + Object.keys(x.row.map).length + ' 个颜色' }}</div></template>
+            <span v-else-if="!st.skip[x.line]" class="row g4"><Pick class="sel" style="height:26px;width:130px" :model-value="''" @update:model-value="v => choose(x, v)"><option value="">挑物料</option><option v-for="m in mats" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></Pick><button class="btn ghost sm" @click="st.creating = x.line">新建</button></span>
+            <span v-else class="dim">—</span></td>
+          <td><Pick v-if="x.row" class="sel" style="height:26px;width:88px" v-model="x.row.part"><option value="">选部位</option><option v-for="v in db.dicts.BOM部位" :key="v">{{ v }}</option></Pick></td>
+          <td class="num"><input v-if="x.row" class="inp cell num" style="width:70px" type="number" v-model.number="x.row.use"></td>
+          <td class="num"><input v-if="x.row" class="inp cell num" style="width:56px" type="number" v-model.number="x.row.loss"></td>
+          <td v-if="canSeeCost()" class="num"><input v-if="x.row" class="inp cell num" style="width:72px" type="number" v-model.number="x.row.price"></td>
+          <td><St :s="st.skip[x.line] ? '不导' : x.status"/></td>
+          <td class="wrap" style="font-size:12px;min-width:150px;max-width:200px"><div v-for="n in x.notes" :key="n" class="amber">{{ n }}</div></td>
+          <td class="num"><button class="btn ghost sm" @click="st.skip[x.line] = !st.skip[x.line]">{{ st.skip[x.line] ? '要导' : '不导' }}</button></td>
+        </tr></tbody>
+      </table></div>
+      <p v-if="canSeeCost() && (st.res.labor != null || st.res.fees.length)" class="mut" style="margin:8px 0 0">一起带进核价：<span v-if="st.res.labor != null">加工费 {{ fm(st.res.labor) }}</span><span v-for="f in st.res.fees" :key="f.name" style="margin-left:12px">{{ f.name }} {{ fm(f.amt) }}</span></p>
+    </template>
+    <template #foot>
+      <span v-if="blocked" class="amber" style="font-size:12.5px">还有 {{ blocked }} 行没认出来：挑物料、新建物料，或者点「不导」</span>
+      <span class="sp"></span>
+      <Seg v-if="st.res && tp.bom.length" v-model="st.mode" :items="[['替换', '替换现有 ' + tp.bom.length + ' 行'], ['加在后面', '加在后面']]"/>
+      <button class="btn" @click="$emit('close')">取消</button>
+      <button class="btn pri" :disabled="!live.length || blocked > 0" @click="apply">加进物料清单（{{ live.length }} 行）</button>
+    </template>
+    <MaterialForm v-if="createInit" :init="createInit" stay @close="st.creating = null" @created="created"/>
+  </Modal>`,
+})
+
+/* 外发加工单、成品采购单上的「工艺单」：这张单锁定的资料包版本传的文件（导入的 BOM 表不列），下载发给工厂 */
+comp('TpCraftFiles', {
+  props: { tp: Object },
+  emits: ['close'],
+  setup(p) {
+    const files = computed(() => (p.tp?.files || []).filter((f) => f.cat !== '导入的 BOM 表'))
+    const viewing = ref(null)
+    function download(f) {
+      if (f.src) { const a = document.createElement('a'); a.href = f.src; a.download = f.name; a.click() }
+      else if (f.grid) saveBlob(xlsxWrite([{ name: 'Sheet1', rows: f.grid }]), f.name)
+      else toast('原型里没存这个文件的内容（太大），真系统能下载', null, true)
+    }
+    return { files, viewing, download }
+  },
+  template: `<Modal :t="'工艺单 · ' + (tp ? tpName(tp) : '')" :w="560" @close="$emit('close')">
+    <p class="mut" style="margin:0 0 10px">这张单锁定的资料包版本上传的文件，下载以后发给工厂。</p>
+    <div v-if="!files.length" class="empty">这一版资料包没有传工艺单：到款式的资料包里传</div>
+    <table v-else class="tbl inset flat"><tbody><tr v-for="f in files" :key="f.id">
+      <td class="dim" style="width:90px">{{ f.cat }}</td><td>{{ f.name }}</td>
+      <td class="num"><span class="row g4" style="justify-content:flex-end"><button v-if="f.grid" class="btn ghost sm" @click="viewing = f">预览</button><button class="btn ghost sm" @click="download(f)">下载</button></span></td>
+    </tr></tbody></table>
+    <template #foot><span class="sp"></span><button class="btn" @click="$emit('close')">关闭</button></template>
+    <XlsPreview v-if="viewing" :f="viewing" @close="viewing = null"/>
+  </Modal>`,
 })
 
 expose({
   homeBoss, homeSees, homeCanAudit, homeUpstream, upKind, seasonText, sgName, styleUpdated, styleOrders, tpHas, updateStyle, setStyleSku, removeStyleSku,
-  skuBlocked, addStyleColors, removeStyle, moveItem, nextStyleCode, rowRefPrice, removeTpDraft, tpCost, specFilled, gradeSpec, craftDefaults,
+  skuBlocked, addStyleColors, removeStyle, moveItem, nextStyleCode, rowRefPrice, removeTpDraft, tpCost, tpLaborDefault, TP_FILE_GROUPS,
 })
