@@ -38,7 +38,7 @@ class UserControllerTest {
         mockMvc.perform(post("/api/users")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username": "zhangsan", "password": "123", "nickname": "张三"}
+                                {"username": "zhangsan", "password": "123", "nickname": "张三", "productLines": ["APPAREL"]}
                                 """))
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.msg").value("密码长度 8-32 位"));
@@ -56,7 +56,7 @@ class UserControllerTest {
         mockMvc.perform(post("/api/users")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username": "zhangsan", "password": "%s", "nickname": "张三"}
+                                {"username": "zhangsan", "password": "%s", "nickname": "张三", "productLines": ["APPAREL"]}
                                 """.formatted(password)))
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.msg").value("密码太长：最多 72 个字节，一个汉字算 3 个"));
@@ -71,7 +71,7 @@ class UserControllerTest {
             mockMvc.perform(post("/api/users")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"username": "zhangsan", "password": "Abc12345", "nickname": "张三", "designerNo": "%s"}
+                                    {"username": "zhangsan", "password": "Abc12345", "nickname": "张三", "designerNo": "%s", "productLines": ["APPAREL"]}
                                     """.formatted(no)))
                     .andExpect(jsonPath("$.code").value(400));
         }
@@ -94,7 +94,7 @@ class UserControllerTest {
     /** 规则：列表返回的每个用户里都没有 password 字段 */
     @Test
     void page_noPasswordInResponse() throws Exception {
-        UserVO zhangsan = new UserVO(2L, "zhangsan", "张三", null, 1, null, null, null, null, null, false);
+        UserVO zhangsan = new UserVO(2L, "zhangsan", "张三", null, 1, null, null, null, null, null, false, List.of("APPAREL"));
         when(userService.page(any())).thenReturn(new PageResult<>(List.of(zhangsan), 1));
 
         mockMvc.perform(get("/api/users"))

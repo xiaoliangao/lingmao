@@ -33,15 +33,15 @@ const db = reactive({
     { code: 'ZJT', name: '织间（香港）贸易有限公司', short: '织间贸易', credit: '', addr: '香港某区某道 18 号', phone: '852-2100****', status: '启用' },
   ],
   users: [
-    { id: 'u1', name: '陈晓', role: '生产跟单', dept: '生产部', post: '跟单员', company: 'ZJ' },
-    { id: 'u2', name: '林舟', role: '采购', dept: '采购部', post: '采购员', company: 'ZJ' },
-    { id: 'u3', name: '周宁', role: '业务', dept: '业务部', post: '业务员', company: 'ZJ' },
-    { id: 'u4', name: '许然', role: '开发', dept: '开发部', post: '设计师', company: 'ZJ', dno: '07' }, // dno = 设计师编号，进款号
-    { id: 'u5', name: '王敏', role: '仓管', dept: '仓储部', post: '仓管员', company: 'ZJ' },
-    { id: 'u6', name: '赵启', role: '管理层', dept: '总经办', post: '总经理', company: 'ZJ' },
-    { id: 'u7', name: '孙丽', role: '财务', dept: '财务部', post: '会计', company: 'ZJ' },
-    { id: 'u8', name: '沈冬', role: '开发', dept: '开发部', post: '版师', company: 'ZJ' },
-    { id: 'u9', name: '何川', role: '管理层', dept: '运营部', post: '运营经理', company: 'ZJ' }, // 主管：日常的单他审第 1 级，金额大的再等总经理
+    { id: 'u1', name: '陈晓', role: '生产跟单', dept: '生产部', post: '跟单员', company: 'ZJ', productLines: ['服装'] },
+    { id: 'u2', name: '林舟', role: '采购', dept: '采购部', post: '采购员', company: 'ZJ', productLines: ['服装', '鞋类'] },
+    { id: 'u3', name: '周宁', role: '业务', dept: '业务部', post: '业务员', company: 'ZJ', productLines: ['服装'] },
+    { id: 'u4', name: '许然', role: '开发', dept: '开发部', post: '设计师', company: 'ZJ', productLines: ['服装'], dno: '07' }, // dno = 设计师编号，进款号
+    { id: 'u5', name: '王敏', role: '仓管', dept: '仓储部', post: '仓管员', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] },
+    { id: 'u6', name: '赵启', role: '管理层', dept: '总经办', post: '总经理', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] },
+    { id: 'u7', name: '孙丽', role: '财务', dept: '财务部', post: '会计', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] },
+    { id: 'u8', name: '沈冬', role: '开发', dept: '开发部', post: '版师', company: 'ZJ', productLines: ['鞋类'] },
+    { id: 'u9', name: '何川', role: '管理层', dept: '运营部', post: '运营经理', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] }, // 主管：日常的单他审第 1 级，金额大的再等总经理
   ],
   // 数据范围挂在角色上（PRD §3.2）：本人 = 只看自己是制单人 / 跟单员 / 采购员的单据
   roles: [
@@ -89,6 +89,8 @@ const db = reactive({
     结算方式: ['月结', '货到付款', '预付', '银行转账', '承兑'],
     税率: ['0%', '1%', '3%', '6%', '9%', '13%'],
     供应商分类: ['面料商', '辅料商', '成衣厂', '加工厂', '外协', '包材商', '其他'],
+    // 品类线（甲方 11-18 答 Q13、Q30）：人、供应商归几条，款式按大类定，单据跟款；不同线的人互相看不见
+    品类线: ['服装', '鞋类', '百货'],
     订单类型: TRADE ? ['客户订单', '自营备货', '补单', '翻单'] : ['自营备货', '补单', '翻单'],
     加工方式: ['包工包料', '清加工', '半包'],
     生产节点: [['到料', 3], ['裁剪', 4], ['车缝', 10], ['后整', 3], ['包装', 2], ['入仓', 1]],
@@ -122,15 +124,15 @@ const db = reactive({
     { code: 'KH0003', name: '北方某电商有限公司', short: '北方某电商', contact: '马先生', phone: '136****5532', addr: '北京市某区某街 9 号', settle: '月结', term: 30, status: '启用', note: '', terms: { price: '平台结算价', deduct: '平台扣点 5%', rebate: '—' } },
   ],
   suppliers: [
-    { code: 'GYS0001', short: '恒丰面料', name: '绍兴恒丰纺织有限公司', credit: '91330600MA0000101X', cats: ['面料商'], level: 'A', status: '合作中', contact: '吴总', phone: '135****1020', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: 'hengfeng_wu', addr: '绍兴市某区某路 1 号', invoice: '增值税专用发票', bank: '某银行绍兴分行', account: '6222 **** **** 1001', note: '', certs: [{ type: '营业执照', until: '2030-12-31' }] },
-    { code: 'GYS0002', short: '鸿达辅料', name: '义乌鸿达服装辅料厂', credit: '91330782MA0000202X', cats: ['辅料商'], level: 'A', status: '合作中', contact: '陈姐', phone: '137****6612', settle: '月结', term: 30, tax: '3%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: '', addr: '义乌市某街道某路 22 号', invoice: '增值税普通发票', bank: '某银行义乌支行', account: '6222 **** **** 2002', note: '纽扣颜色以实物色卡为准', certs: [{ type: '营业执照', until: '2029-06-30' }] },
-    { code: 'GYS0003', short: '新雅包装', name: '杭州新雅包装材料有限公司', credit: '91330100MA0000303X', cats: ['包材商'], level: 'B', status: '合作中', contact: '李工', phone: '139****3345', settle: '货到付款', term: 0, tax: '13%', buyer: 'u2', admitted: '2026-04-11', goodAt: [], wechat: '', addr: '杭州市某区某路 9 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2028-01-31' }] },
-    { code: 'GYS0004', short: '锦程制衣', name: '湖州锦程制衣有限公司', credit: '91330500MA0000404X', cats: ['成衣厂'], level: 'A', status: '合作中', contact: '孙厂长', phone: '138****7781', settle: '月结', term: 45, tax: '6%', buyer: 'u1', admitted: '2026-02-20', goodAt: ['F', 'J', 'Y', 'C', 'W', 'S', 'T'], wechat: 'jincheng_sun', addr: '湖州市某区某工业园 6 号', invoice: '增值税专用发票', bank: '某银行湖州分行', account: '6222 **** **** 4004', note: '旺季（9-11 月）提前两周排产', certs: [{ type: '营业执照', until: '2031-05-31' }, { type: '验厂报告', until: '2027-02-28' }] },
-    { code: 'GYS0005', short: '华美服装厂', name: '嘉兴华美服装厂', credit: '91330400MA0000505X', cats: ['加工厂'], level: 'B', status: '合作中', contact: '钱老板', phone: '133****9902', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-05-08', goodAt: ['K', 'R', 'J'], wechat: '', addr: '嘉兴市某镇某路 18 号', invoice: '增值税普通发票', bank: '某银行嘉兴支行', account: '6222 **** **** 5005', note: '', certs: [{ type: '营业执照', until: '2029-09-30' }, { type: '验厂报告', until: '2026-11-30' }] },
-    { code: 'GYS0006', short: '永兴制衣', name: '桐乡永兴制衣有限公司', credit: '91330483MA0000606X', cats: ['成衣厂'], level: 'C', status: '待准入', contact: '周经理', phone: '131****2276', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: null, goodAt: ['L', 'C'], wechat: '', addr: '桐乡市某镇某路 3 号', invoice: '增值税普通发票', bank: '', account: '', note: '', certs: [] },
-    { code: 'GYS0007', short: '盛达印绣', name: '杭州盛达印绣有限公司', credit: '91330100MA0000707X', cats: ['外协'], level: 'B', status: '合作中', contact: '冯师傅', phone: '186****4410', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-06-01', goodAt: [], wechat: '', addr: '杭州市某区某路 31 号', invoice: '增值税普通发票', bank: '', account: '', note: '只做印花、绣花', certs: [{ type: '营业执照', until: '2028-08-31' }] },
-    { code: 'GYS0008', short: '利源纺织', name: '常熟利源纺织有限公司', credit: '91320581MA0000808X', cats: ['面料商'], level: 'D', status: '黑名单', contact: '郑总', phone: '150****8834', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-15', blackReason: '连续两批大货色差，拒不承担损失', goodAt: [], wechat: '', addr: '常熟市某镇某路 5 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2027-04-30' }] },
-    { code: 'GYS0009', short: '宏利针织', name: '海宁宏利针织有限公司', credit: '91330481MA0000909X', cats: ['面料商'], level: 'B', status: '合作中', contact: '褚总', phone: '159****6620', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-04-02', goodAt: [], wechat: '', addr: '海宁市某街道某路 12 号', invoice: '增值税专用发票', bank: '某银行海宁支行', account: '6222 **** **** 9009', note: '', certs: [{ type: '营业执照', until: '2030-03-31' }] },
+    { code: 'GYS0001', short: '恒丰面料', name: '绍兴恒丰纺织有限公司', credit: '91330600MA0000101X', cats: ['面料商'], productLines: ['服装'], level: 'A', status: '合作中', contact: '吴总', phone: '135****1020', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: 'hengfeng_wu', addr: '绍兴市某区某路 1 号', invoice: '增值税专用发票', bank: '某银行绍兴分行', account: '6222 **** **** 1001', note: '', certs: [{ type: '营业执照', until: '2030-12-31' }] },
+    { code: 'GYS0002', short: '鸿达辅料', name: '义乌鸿达服装辅料厂', credit: '91330782MA0000202X', cats: ['辅料商'], productLines: ['服装', '鞋类'], level: 'A', status: '合作中', contact: '陈姐', phone: '137****6612', settle: '月结', term: 30, tax: '3%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: '', addr: '义乌市某街道某路 22 号', invoice: '增值税普通发票', bank: '某银行义乌支行', account: '6222 **** **** 2002', note: '纽扣颜色以实物色卡为准', certs: [{ type: '营业执照', until: '2029-06-30' }] },
+    { code: 'GYS0003', short: '新雅包装', name: '杭州新雅包装材料有限公司', credit: '91330100MA0000303X', cats: ['包材商'], productLines: ['服装', '鞋类', '百货'], level: 'B', status: '合作中', contact: '李工', phone: '139****3345', settle: '货到付款', term: 0, tax: '13%', buyer: 'u2', admitted: '2026-04-11', goodAt: [], wechat: '', addr: '杭州市某区某路 9 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2028-01-31' }] },
+    { code: 'GYS0004', short: '锦程制衣', name: '湖州锦程制衣有限公司', credit: '91330500MA0000404X', cats: ['成衣厂'], productLines: ['服装'], level: 'A', status: '合作中', contact: '孙厂长', phone: '138****7781', settle: '月结', term: 45, tax: '6%', buyer: 'u1', admitted: '2026-02-20', goodAt: ['F', 'J', 'Y', 'C', 'W', 'S', 'T'], wechat: 'jincheng_sun', addr: '湖州市某区某工业园 6 号', invoice: '增值税专用发票', bank: '某银行湖州分行', account: '6222 **** **** 4004', note: '旺季（9-11 月）提前两周排产', certs: [{ type: '营业执照', until: '2031-05-31' }, { type: '验厂报告', until: '2027-02-28' }] },
+    { code: 'GYS0005', short: '华美服装厂', name: '嘉兴华美服装厂', credit: '91330400MA0000505X', cats: ['加工厂'], productLines: ['服装'], level: 'B', status: '合作中', contact: '钱老板', phone: '133****9902', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-05-08', goodAt: ['K', 'R', 'J'], wechat: '', addr: '嘉兴市某镇某路 18 号', invoice: '增值税普通发票', bank: '某银行嘉兴支行', account: '6222 **** **** 5005', note: '', certs: [{ type: '营业执照', until: '2029-09-30' }, { type: '验厂报告', until: '2026-11-30' }] },
+    { code: 'GYS0006', short: '永兴制衣', name: '桐乡永兴制衣有限公司', credit: '91330483MA0000606X', cats: ['成衣厂'], productLines: ['服装'], level: 'C', status: '待准入', contact: '周经理', phone: '131****2276', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: null, goodAt: ['L', 'C'], wechat: '', addr: '桐乡市某镇某路 3 号', invoice: '增值税普通发票', bank: '', account: '', note: '', certs: [] },
+    { code: 'GYS0007', short: '盛达印绣', name: '杭州盛达印绣有限公司', credit: '91330100MA0000707X', cats: ['外协'], productLines: ['服装'], level: 'B', status: '合作中', contact: '冯师傅', phone: '186****4410', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-06-01', goodAt: [], wechat: '', addr: '杭州市某区某路 31 号', invoice: '增值税普通发票', bank: '', account: '', note: '只做印花、绣花', certs: [{ type: '营业执照', until: '2028-08-31' }] },
+    { code: 'GYS0008', short: '利源纺织', name: '常熟利源纺织有限公司', credit: '91320581MA0000808X', cats: ['面料商'], productLines: ['服装'], level: 'D', status: '黑名单', contact: '郑总', phone: '150****8834', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-15', blackReason: '连续两批大货色差，拒不承担损失', goodAt: [], wechat: '', addr: '常熟市某镇某路 5 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2027-04-30' }] },
+    { code: 'GYS0009', short: '宏利针织', name: '海宁宏利针织有限公司', credit: '91330481MA0000909X', cats: ['面料商'], productLines: ['服装'], level: 'B', status: '合作中', contact: '褚总', phone: '159****6620', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-04-02', goodAt: [], wechat: '', addr: '海宁市某街道某路 12 号', invoice: '增值税专用发票', bank: '某银行海宁支行', account: '6222 **** **** 9009', note: '', certs: [{ type: '营业执照', until: '2030-03-31' }] },
   ],
   warehouses: [
     { code: 'WL01', name: '主料仓', type: '物料仓', keeper: 'u5', addr: '杭州市某区某路 88 号 1 楼', phone: '0571-8800****', status: '启用' },

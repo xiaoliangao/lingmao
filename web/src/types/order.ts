@@ -58,6 +58,8 @@ export interface OrderRow {
   status: OrderStatus
   /** 字典 order_type */
   orderType: string
+  /** 品类线（字典 product_line），一张单只有一条（RFC 013 §2） */
+  productLine: string
   /** 字典 brand */
   brand: string | null
   contractNo: string | null
@@ -96,6 +98,8 @@ export interface OrderQuery {
   status?: OrderStatus[]
   /** 字典 order_type */
   orderType?: string
+  /** 品类线：几条线的人才有这个筛选 */
+  productLine?: string
   /** 字典 brand */
   brand?: string
   salesId?: string | null
@@ -182,6 +186,8 @@ export interface OrderStyle {
 /** GET /api/orders/{id} */
 export interface OrderDetail extends DocHeader<OrderStatus, OrderAction> {
   orderType: string
+  /** 品类线：明细里的款都是这条线，跟着款走 */
+  productLine: string
   /** 客户、客户订单号：贸易代工留的口子（TRADE 关时都是 null，页面不显示） */
   customerId: string | null
   customerName: string | null

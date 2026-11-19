@@ -76,7 +76,7 @@ class A4AuditHttpIT {
         try(var http=HttpClient.newHttpClient()) {
             String category=jdbc.queryForObject("SELECT value FROM sys_dict_data WHERE type_code='supplier_category' AND NOT deleted ORDER BY id LIMIT 1",String.class);
             var initial=new java.util.LinkedHashMap<String,Object>();
-            initial.put("name","A4审计供应商"+UUID.randomUUID());initial.put("shortName","A4审计");initial.put("categories",List.of(category));
+            initial.put("name","A4审计供应商"+UUID.randomUUID());initial.put("shortName","A4审计");initial.put("categories",List.of(category));initial.put("productLines",List.of("APPAREL"));
             initial.put("bankAccount","6222020000000011111"); initial.put("phone","13800138000");
             long id=Long.parseLong(data(send(http,"POST","/api/suppliers",initial,owner.token,"a4-bank-create-"+UUID.randomUUID())).get("id").asText());
             initial.put("bankAccount","6222020000000022222"); initial.put("phone","13900139000");

@@ -95,7 +95,7 @@ class InventoryIT {
 
     private static void loginAs() {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                new LoginUser(USER, "jti-it"), null, PERMS.stream().map(SimpleGrantedAuthority::new).toList()));
+                new LoginUser(USER, "jti-it"), null, TestIdentity.withLines(PERMS).stream().map(SimpleGrantedAuthority::new).toList()));
     }
 
     /**

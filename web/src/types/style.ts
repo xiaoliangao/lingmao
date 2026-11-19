@@ -30,6 +30,8 @@ export interface StyleRow {
   aliasName: string | null
   /** 字典 style_class，款号开头两位 */
   styleClass: string
+  /** 品类线（字典 product_line）：建款时按大类定，不变（RFC 013 §2） */
+  productLine: string
   /** 字典 brand 的 value */
   brand: string
   categoryId: string
@@ -87,6 +89,8 @@ export interface StyleDetail {
   name: string
   aliasName: string | null
   styleClass: string
+  /** 品类线（字典 product_line）：建款时按大类定，不变（RFC 013 §2） */
+  productLine: string
   brand: string
   categoryId: string
   categoryName: string
@@ -149,6 +153,8 @@ export interface StylePickRow {
   /** 只列启用的；带 includeDraft 时也有草稿 */
   status: StyleStatus
   aliasName: string | null
+  /** 品类线：一张订单只能放一条线的款 */
+  productLine: string
   brand: string
   categoryId: string
   categoryName: string

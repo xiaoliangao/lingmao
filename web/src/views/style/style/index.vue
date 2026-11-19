@@ -20,6 +20,8 @@ import type { BatchAction } from '@/components/batchBar'
 import { useTable } from '@/composables/useTable'
 import { useDict } from '@/composables/useDict'
 import { formatDate, formatPrice } from '@/utils/format'
+import { useProductLines } from '@/composables/useProductLines'
+import LineSelect from '@/components/LineSelect.vue'
 
 /**
  * 开发 › 款式（RFC 005 §9，原型 5a-home-style.js 的 /styles）：图卡、表格两种视图，记住上次选的；
@@ -30,6 +32,9 @@ const seasons = useDict('season')
 const waves = useDict('wave')
 const brands = useDict('brand')
 const classes = useDict('style_class')
+/** 品类线：几条线的人才有筛选和这一列（RFC 013 §2） */
+const lines = useProductLines()
+const multiLine = lines.multi
 
 const STATUS_OPTIONS = [
   { label: '全部', value: '' },
@@ -45,6 +50,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     status: '' as StyleStatus | '',
     categoryId: undefined as string | undefined,
     styleClass: '',
+    productLine: '',
     brand: '',
     year: undefined as number | undefined,
     season: '',
@@ -124,7 +130,7 @@ onActivated(() => {
 
 const filtered = computed(
   () =>
-    !!(query.keyword.trim() || query.categoryId !== undefined || query.styleClass || query.brand || query.year || query.season ||
+    !!(query.keyword.trim() || query.categoryId !== undefined || query.styleClass || query.productLine || query.brand || query.year || query.season ||
       query.wave || query.designerId || query.techPackStatus),
 )
 const emptyText = computed(() => {
@@ -196,6 +202,9 @@ const importVisible = ref(false)
           placeholder="全部品类（含下级）"
           :value-on-clear="undefined"
         />
+      </FilterItem>
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
       </FilterItem>
       <FilterItem label="大类" :text="classes.labelOf(query.styleClass)" @clear="query.styleClass = ''">
         <DictSelect v-model="query.styleClass" type="style_class" clearable placeholder="全部大类" />
@@ -273,6 +282,9 @@ const importVisible = ref(false)
       </el-table-column>
       <el-table-column label="名称" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ row.aliasName ? `${row.name}（${row.aliasName}）` : row.name }}</template>
+      </el-table-column>
+      <el-table-column v-if="multiLine" label="品类线" width="80">
+        <template #default="{ row }">{{ lines.labelOf(row.productLine) }}</template>
       </el-table-column>
       <el-table-column label="品类" prop="categoryName" min-width="90" />
       <el-table-column label="年份季节" min-width="120">

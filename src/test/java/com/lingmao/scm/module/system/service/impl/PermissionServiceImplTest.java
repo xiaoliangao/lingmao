@@ -57,16 +57,35 @@ class PermissionServiceImplTest {
         assertThat(permissionService.loadPermissions(2L)).containsExactly("system:user:list", "system:user:add");
     }
 
-    /** 规则：数据范围是"全部"的多一个 data:all（哪些角色算"全部"由 SQL 判断，在 PermissionIT 里测） */
+    /**
+     * 规则：数据范围是"全部"的多一个 data:all（哪些角色算"全部"由 SQL 判断，在 PermissionIT 里测）；
+     * 品类线每条一个 line:XXX（RFC 013 §2）
+     */
     @Test
-    void loadPermissions_allDataScope_addsDataAll() {
+    void loadPermissions_allDataScope_addsDataAllAndLines() {
         SysUser user = new SysUser();
         user.setId(2L);
         user.setStatus(1);
+        user.setProductLines(List.of("FOOTWEAR", "GENERAL"));
         when(sysUserMapper.selectById(2L)).thenReturn(user);
         when(sysMenuMapper.selectPermsByUserId(2L)).thenReturn(List.of("system:user:list"));
-        when(sysRoleMapper.hasAllDataScope(2L)).thenReturn(true);
+        when(sysRoleMapper.selectScopeFlags(2L)).thenReturn(new SysRoleMapper.ScopeFlags(true, false));
 
-        assertThat(permissionService.loadPermissions(2L)).containsExactly("system:user:list", "data:all");
+        assertThat(permissionService.loadPermissions(2L))
+                .containsExactly("system:user:list", "data:all", "line:FOOTWEAR", "line:GENERAL");
+    }
+
+    /** 规则：超级管理员看全部品类线（line:all），不看自己那一列 */
+    @Test
+    void loadPermissions_admin_allLines() {
+        SysUser user = new SysUser();
+        user.setId(1L);
+        user.setStatus(1);
+        user.setProductLines(List.of("APPAREL"));
+        when(sysUserMapper.selectById(1L)).thenReturn(user);
+        when(sysMenuMapper.selectPermsByUserId(1L)).thenReturn(List.of());
+        when(sysRoleMapper.selectScopeFlags(1L)).thenReturn(new SysRoleMapper.ScopeFlags(true, true));
+
+        assertThat(permissionService.loadPermissions(1L)).containsExactly("data:all", "line:all");
     }
 }

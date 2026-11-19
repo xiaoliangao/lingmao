@@ -246,6 +246,7 @@ async function save() {
           :label="form.factoryName"
           :category="['GARMENT', 'PROCESSOR']"
           usage="BULK"
+          :product-line="props.doc.productLine"
           @update:model-value="onFactoryChange"
         />
       </el-form-item>

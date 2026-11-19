@@ -18,6 +18,7 @@ import ImportDialog from '@/components/ImportDialog.vue'
 import type { BatchAction } from '@/components/batchBar'
 import SupplierFormDialog from './SupplierFormDialog.vue'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+import { useProductLines } from '@/composables/useProductLines'
 const { canSeeSupplierContact } = useFieldAccess()
 
 const router = useRouter()
@@ -77,6 +78,13 @@ const buyerText = computed(() => (query.buyerId ? (buyerName.value ?? '已选') 
 const filtered = computed(
   () => !!(query.keyword.trim() || query.category || query.status.length || query.level || query.buyerId || flagText.value),
 )
+
+/** 品类线一列：只有一条线的人不显示（RFC 013 §2） */
+const lines = useProductLines()
+const multiLine = lines.multi
+function lineNames(row: SupplierRow) {
+  return row.productLines.map((value) => lines.labelOf(value)).join('、')
+}
 
 function categoryNames(row: SupplierRow) {
   return row.categories.map((value) => categoryDict.labelOf(value)).join('、')
@@ -220,6 +228,9 @@ async function exportSelected() {
       </el-table-column>
       <el-table-column label="分类" min-width="130">
         <template #default="{ row }">{{ categoryNames(row as SupplierRow) }}</template>
+      </el-table-column>
+      <el-table-column v-if="multiLine" label="品类线" min-width="110">
+        <template #default="{ row }">{{ lineNames(row as SupplierRow) }}</template>
       </el-table-column>
       <el-table-column prop="level" label="等级" width="64" />
       <el-table-column label="状态" width="196">

@@ -16,6 +16,7 @@ import { useTable } from '@/composables/useTable'
 import type { BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, ProductionKind } from '@/types/production'
 import { formatDateRange, formatQty } from '@/utils/format'
 import ProductionTable, { productionColumns } from '../order/ProductionTable.vue'
+import { useProductLines } from '@/composables/useProductLines'
 
 /**
  * 生产看板（/board，docs/api/05 §1.4、§3.7）。
@@ -43,7 +44,7 @@ type View = 'orders' | 'factories'
 
 const route = useRoute()
 const brands = useDict('brand')
-const cols = useColumns('board', productionColumns('board'))
+const cols = useColumns('board', productionColumns('board', useProductLines().multi.value))
 
 const pickCard = (v: unknown): BoardCardKey | undefined => (CARD_KEYS.includes(v as BoardCardKey) ? (v as BoardCardKey) : undefined)
 

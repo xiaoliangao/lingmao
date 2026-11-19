@@ -118,7 +118,7 @@ class A2RefreshHttpIT {
             assertThat(request(client, "GET", "/api/auth/me", null, login.access, null, Map.of()).status).isEqualTo(401);
             Reply afterReset = login(client, target, "A2-Reset-Pass-123", false);
             Reply disabled = request(client, "PUT", "/api/users/" + target.id,
-                    "{\"nickname\":\"Disabled A2\",\"status\":0}", operator.access, null, Map.of());
+                    "{\"nickname\":\"Disabled A2\",\"status\":0,\"productLines\":[\"APPAREL\"]}", operator.access, null, Map.of());
             assertThat(json.readTree(disabled.body).get("code").intValue()).as("admin account disable succeeded").isZero();
             assertThat(refresh(client, afterReset.cookies, true).status).isEqualTo(401);
             assertThat(request(client, "GET", "/api/auth/me", null, afterReset.access, null, Map.of()).status).isEqualTo(401);

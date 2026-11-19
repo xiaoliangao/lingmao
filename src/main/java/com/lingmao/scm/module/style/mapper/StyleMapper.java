@@ -8,6 +8,7 @@ import com.lingmao.scm.module.style.dto.StylePickQuery;
 import com.lingmao.scm.module.style.dto.StylePickVO;
 import com.lingmao.scm.module.style.dto.StyleQuery;
 import com.lingmao.scm.module.style.entity.Style;
+import com.lingmao.scm.security.LineScope;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -23,15 +24,18 @@ import java.util.List;
 public interface StyleMapper extends BaseMapper<Style> {
 
     IPage<StyleListVO> selectListPage(IPage<StyleListVO> page, @Param("q") StyleQuery query,
-                                      @Param("codes") List<String> codes, @Param("categoryIds") Collection<Long> categoryIds);
+                                      @Param("codes") List<String> codes, @Param("categoryIds") Collection<Long> categoryIds,
+                                      @Param("lines") LineScope lines);
 
     /** 同样的条件，不分页，只要 id，按款号排；导出用。limit 是最多几行 */
     List<Long> selectIds(@Param("q") StyleQuery query, @Param("codes") List<String> codes,
-                         @Param("categoryIds") Collection<Long> categoryIds, @Param("limit") int limit);
+                         @Param("categoryIds") Collection<Long> categoryIds, @Param("limit") int limit,
+                         @Param("lines") LineScope lines);
 
     /** 选款式：启用的款式（includeDraft 时加草稿）。brands：名称对得上关键字的品牌 value，关键字也算命中它们 */
     IPage<StylePickVO> selectPickPage(IPage<StylePickVO> page, @Param("q") StylePickQuery query, @Param("codes") List<String> codes,
-                                      @Param("categoryIds") Collection<Long> categoryIds, @Param("brands") Collection<String> brands);
+                                      @Param("categoryIds") Collection<Long> categoryIds, @Param("brands") Collection<String> brands,
+                                      @Param("lines") LineScope lines);
 
     /** 导入：按编码找物料（主力面料），不看状态；状态由 MaterialService 判断 */
     List<LookupRow> selectMaterialsByCodes(@Param("codes") Collection<String> codes);

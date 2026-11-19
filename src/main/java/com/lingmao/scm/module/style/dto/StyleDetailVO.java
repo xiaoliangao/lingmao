@@ -23,6 +23,8 @@ public class StyleDetailVO {
     private String name;
     private String aliasName;
     private String styleClass;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private String brand;
     private Long categoryId;
     /** 品类名，和全路径"女装/上衣/衬衫" */

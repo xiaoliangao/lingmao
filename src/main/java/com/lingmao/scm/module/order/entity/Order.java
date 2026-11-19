@@ -32,6 +32,9 @@ public class Order extends DocEntity {
     /** 字典 brand */
     private String brand;
 
+    /** 品类线（RFC 013 §2）：明细里款式的品类线，一张单只能一条；没有明细的草稿取制单人的第一条线 */
+    private String productLine;
+
     private LocalDate orderDate;
 
     private LocalDate requiredDate;

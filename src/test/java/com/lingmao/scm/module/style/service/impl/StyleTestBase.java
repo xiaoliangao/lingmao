@@ -30,6 +30,7 @@ import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.dto.UserVO;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
@@ -50,6 +51,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -126,7 +128,7 @@ abstract class StyleTestBase {
     void setUpBase() {
         build(false);
         lenient().when(dictDataService.listByType(anyString())).thenReturn(List.of());
-        lenient().when(dictDataService.listByType("style_class")).thenReturn(List.of(new DictOption("非通勤裤", "FS", 1)));
+        lenient().when(dictDataService.listByType("style_class")).thenReturn(List.of(new DictOption("非通勤裤", "FS", 1, "APPAREL")));
         lenient().when(dictDataService.listByType("brand")).thenReturn(List.of(new DictOption("测试品牌", "TB", 1)));
         lenient().when(dictDataService.listByType("season")).thenReturn(List.of(
                 new DictOption("春", "SPRING", 1), new DictOption("夏", "SUMMER", 1)));
@@ -184,8 +186,8 @@ abstract class StyleTestBase {
 
     /** 当前登录的是 userId，带这几个权限码（不带前缀 style:style:，这里补） */
     static void loginAs(long userId, String... perms) {
-        List<SimpleGrantedAuthority> authorities = Arrays.stream(perms)
-                .map(p -> new SimpleGrantedAuthority("style:style:" + p)).toList();
+        List<SimpleGrantedAuthority> authorities = Stream.concat(Arrays.stream(perms).map(p -> "style:style:" + p),
+                Stream.of(LineScope.ALL_AUTHORITY)).map(SimpleGrantedAuthority::new).toList();
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(new LoginUser(userId, "jti-" + userId), null, authorities));
     }
@@ -258,7 +260,7 @@ abstract class StyleTestBase {
     }
 
     static UserVO designer(long id, String nickname, String designerNo, boolean locked) {
-        return new UserVO(id, "user" + id, nickname, null, 1, null, null, null, null, designerNo, locked);
+        return new UserVO(id, "user" + id, nickname, null, 1, null, null, null, null, designerNo, locked, List.of("APPAREL"));
     }
 
     private static TreeNode node(long id, Long parentId, String name) {

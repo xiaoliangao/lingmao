@@ -65,7 +65,9 @@ export const purchaseApi = {
   /** 算料单勾的行 → 按供应商拆成几张采购单草稿（草稿算料单先确认）。返回建好的采购单 */
   fromMrp: async (data: { calcId: string; itemIds: string[]; version: number }, options?: RequestOptions) => http.post<PurchaseCreated[]>(`${poBase}/from-mrp`, snapshotRequestBody(data), await documentOptions(mrpBase, data.calcId, options)),
   /** 补货清单勾的行 → 按供应商拆成几张备货采购单草稿 */
-  fromReorder: (items: ReorderPickItem[], options?: RequestOptions) => http.post<PurchaseCreated[]>(`${poBase}/from-reorder`, { items }, options),
+  /** productLine：生成的采购单都是这条品类线；只有一条线的人不用传（RFC 013 §2） */
+  fromReorder: (items: ReorderPickItem[], productLine: string | null, options?: RequestOptions) =>
+    http.post<PurchaseCreated[]>(`${poBase}/from-reorder`, { items, productLine }, options),
   /** 改一行的预计到货、跟进备注（已审核、部分到货的单；要 purchase:order:edit）。不用 version */
   follow: async (id: string, itemId: string, data: FollowForm, options?: RequestOptions) =>
     http.put<void>(`${poBase}/${id}/items/${itemId}/follow`, snapshotRequestBody(data), await documentOptions(poBase, id, options)),

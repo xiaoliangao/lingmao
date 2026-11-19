@@ -39,6 +39,7 @@ public class ProductionBoardServiceImpl implements ProductionBoardService {
     private static ProductionQuery toQuery(BoardQuery b) {
         ProductionQuery q = new ProductionQuery();
         q.setKind(b.getKind());
+        q.setProductLine(b.getProductLine());
         q.setFactoryId(b.getFactoryId());
         q.setMerchId(b.getMerchId());
         q.setBrand(b.getBrand());

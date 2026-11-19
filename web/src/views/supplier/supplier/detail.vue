@@ -25,6 +25,7 @@ import PriceHistory from '@/components/price/PriceHistory.vue'
 import SupplierFormDialog from './SupplierFormDialog.vue'
 import CertDialog from './CertDialog.vue'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+import { useProductLines } from '@/composables/useProductLines'
 const { canSeeCost, canSeeProductionPrice, canSeeSupplierContact } = useFieldAccess()
 
 /**
@@ -89,6 +90,9 @@ const can = (action: SupplierAction) => supplier.value?.actions.includes(action)
 const canSeeBank = computed(() => store.hasPerm('supplier:supplier:bank'))
 
 const categoryText = computed(() => supplier.value?.categories.map((value) => categoryDict.labelOf(value)).join('、') ?? '')
+/** 品类线：只有一条线的人不显示（RFC 013 §2） */
+const lines = useProductLines()
+const lineText = computed(() => (lines.multi.value ? supplier.value?.productLines.map((l) => lines.labelOf(l)).join('、') ?? '' : ''))
 const goodAtText = computed(() => supplier.value?.goodAt.map((item) => item.name).join('、') ?? '')
 const settleText = computed(() => {
   const s = supplier.value
@@ -387,6 +391,7 @@ reloadAll()
           <span>{{ supplier.name }}</span>
           <span class="code">{{ supplier.creditCode || '没填信用代码' }}</span>
           <span v-if="categoryText">{{ categoryText }}</span>
+          <span v-if="lineText">{{ lineText }}</span>
           <span v-if="supplier.level">{{ supplier.level }} 级</span>
         </div>
 

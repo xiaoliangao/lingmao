@@ -4,12 +4,15 @@ import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.lingmao.scm.common.entity.BaseEntity;
+import com.lingmao.scm.common.mybatis.StringArrayTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.List;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("sys_user")
+@TableName(value = "sys_user", autoResultMap = true)
 public class SysUser extends BaseEntity {
     private String username;
 
@@ -37,6 +40,13 @@ public class SysUser extends BaseEntity {
      */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private String designerNo;
+
+    /**
+     * 能看的品类线（字典 product_line 的 value，RFC 013 §2），至少一条；超级管理员不看它，看全部。
+     * 加载权限时变成 line:XXX（PermissionServiceImpl），改了下一个请求就生效
+     */
+    @TableField(typeHandler = StringArrayTypeHandler.class)
+    private List<String> productLines;
 
     /** 第一次用编号自动编款号时由 style 置 true（RFC 005 §3.3）；用户页不改它 */
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)

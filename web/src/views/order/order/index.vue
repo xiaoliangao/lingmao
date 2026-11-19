@@ -20,6 +20,8 @@ import CompanySelect from '@/components/doc/CompanySelect.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
 import { addDaysStr, todayStr } from '@/components/doc/docUtils'
 import { useColumns } from '@/composables/useColumns'
+import { useProductLines } from '@/composables/useProductLines'
+import LineSelect from '@/components/LineSelect.vue'
 import { useDict } from '@/composables/useDict'
 import { useTable } from '@/composables/useTable'
 import { statusQuery } from '@/utils/query'
@@ -42,11 +44,15 @@ const router = useRouter()
 const user = useUserStore()
 const orderTypes = useDict('order_type')
 const brands = useDict('brand')
+/** 品类线：几条线的人才有筛选和这一列（RFC 013 §2） */
+const lines = useProductLines()
+const multiLine = lines.multi
 
 // 订单号、状态总在；后面几列默认不显示，在"显示列"里勾
 const cols = useColumns('orders', [
   { key: 'orderDate', label: '下单日期' },
   { key: 'type', label: '类型' },
+  ...(multiLine.value ? [{ key: 'productLine' as const, label: '品类线' }] : []),
   { key: 'styles', label: '款式' },
   { key: 'qty', label: '数量' },
   { key: 'amount', label: '金额' },
@@ -98,6 +104,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     keyword: '',
     statusTab: pickStatus(route.query.status),
     orderType: '',
+    productLine: '',
     brand: '',
     salesId: undefined as string | null | undefined,
     merchId: undefined as string | null | undefined,
@@ -175,7 +182,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 
 const filtered = computed(
   () =>
-    !!(query.keyword.trim() || query.statusTab || query.orderType || query.brand || query.salesId || query.merchId || query.orderDateFrom || query.unscheduled),
+    !!(query.keyword.trim() || query.statusTab || query.orderType || query.productLine || query.brand || query.salesId || query.merchId || query.orderDateFrom || query.unscheduled),
 )
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的需求订单：换个状态页签，或者清空筛选'
@@ -267,6 +274,9 @@ function onImported(count: number) {
         <el-segmented v-model="query.statusTab" :options="statusOptions" @change="search" />
       </template>
 
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
+      </FilterItem>
       <FilterItem label="订单类型" :text="orderTypes.labelOf(query.orderType)" @clear="query.orderType = ''">
         <DictSelect v-model="query.orderType" type="order_type" clearable placeholder="全部类型" />
       </FilterItem>
@@ -313,6 +323,9 @@ function onImported(count: number) {
           {{ orderTypes.labelOf(row.orderType) }}
           <span v-if="row.brand" class="dim small"> {{ brands.labelOf(row.brand) }}</span>
         </template>
+      </el-table-column>
+      <el-table-column v-if="multiLine && cols.show.productLine" label="品类线" width="80">
+        <template #default="{ row }">{{ lines.labelOf(row.productLine) }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.styles" label="款式" min-width="180">
         <template #default="{ row }">

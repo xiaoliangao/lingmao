@@ -4,32 +4,36 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.module.biz.service.AttachmentService;
+import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.style.service.StyleService;
+import com.lingmao.scm.module.techpack.dto.TechPackCostForm;
+import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
-import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
-import com.lingmao.scm.module.techpack.dto.TechPackCostForm;
-import com.lingmao.scm.module.biz.service.AttachmentService;
-import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.security.LoginUser;
-import org.junit.jupiter.api.AfterEach;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,6 +48,7 @@ class TechPackServiceImplTest {
     @Mock
     private PackContent packContent;
     @Mock private TechPackFiles techPackFiles;
+    @Mock private StyleService styleService;
     @Mock private PackForms packForms;
     @Mock private PackBomAccess packBomAccess;
     @Mock private AttachmentService attachmentService;
@@ -59,6 +64,9 @@ class TechPackServiceImplTest {
 
     @AfterEach void logout() { SecurityContextHolder.clearContext(); }
 
+    /** 款式都在我的品类线里（RFC 013 §2 的 404 另有集成测试） */
+    @BeforeEach void styleVisible() { lenient().when(styleService.visible(anyLong())).thenReturn(true); }
+
     @Test void save_unauthorizedCostIsIgnoredBeforeContentConversion() {
         saveCost(false, new TechPackCostForm(), false);
     }
@@ -72,7 +80,7 @@ class TechPackServiceImplTest {
     private void saveCost(boolean authorized, TechPackCostForm cost, boolean withCost) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(1L, "test"), null,
                 authorized ? List.of(new SimpleGrantedAuthority("techpack:cost:query")) : List.of()));
-        TechPack p = new TechPack(); p.setId(3L); p.setStatus(PackStatus.DRAFT);
+        TechPack p = new TechPack(); p.setId(3L); p.setStyleId(100L); p.setStatus(PackStatus.DRAFT);
         when(techPackMapper.selectById(3L)).thenReturn(p);
         when(packOwners.of(p)).thenReturn(PackFixtures.owner(null));
         when(packOwners.context(PackFixtures.owner(null))).thenReturn(PackFixtures.ctx());
@@ -138,6 +146,7 @@ class TechPackServiceImplTest {
     void voided_cannotRemoveOrRevise() {
         TechPack voided = new TechPack();
         voided.setId(9L);
+        voided.setStyleId(100L);
         voided.setStatus(PackStatus.VOIDED);
         voided.setStage(PackStage.PROD);
         when(techPackMapper.lockById(9L)).thenReturn(voided);

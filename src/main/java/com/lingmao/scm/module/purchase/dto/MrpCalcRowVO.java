@@ -14,6 +14,8 @@ public class MrpCalcRowVO {
     private Long id;
     private String no;
     private String status;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private List<String> orderNos;
     private List<String> styleCodes;
     /** 自购里建议采购 > 0 的行数 */

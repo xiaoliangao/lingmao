@@ -11,6 +11,8 @@ public class MrpOrderOptionVO {
     private Long orderId;
     private String orderNo;
     private String orderType;
+    /** 品类线：一张算料单只能选一条线的订单 */
+    private String productLine;
     private List<String> styleCodes;
     private Integer totalQty;
     private LocalDate commitDate;

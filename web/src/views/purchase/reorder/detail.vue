@@ -15,6 +15,8 @@ import { formatPrice, formatQty } from '@/utils/format'
 import { useFieldAccess } from '@/composables/useFieldAccess'
 const { canSeeCost } = useFieldAccess()
 import { useUserStore } from '@/stores/user'
+import { useProductLines } from '@/composables/useProductLines'
+import LineSelect from '@/components/LineSelect.vue'
 
 /**
  * 补货提醒（/reorder，docs/api/03 §1.4、§3.3.8、§3.6）：低于最小库存的物料，勾选后按供应商拆成备货采购单草稿。
@@ -28,6 +30,9 @@ interface EditableReorderRow extends ReorderRow {
 
 const router = useRouter()
 const companyId = useUserStore().defaultCompanyId
+/** 品类线（RFC 013 §2）：生成的采购单都是这条线、供应商要做这条线；只有一条线的人不用选 */
+const lines = useProductLines()
+const line = ref<string | null>(lines.only.value)
 const units = useDict('unit')
 const materialTypes = useDict('material_type')
 
@@ -97,6 +102,10 @@ async function generateStockPos() {
     ElMessage.warning('先勾要补货的物料')
     return
   }
+  if (lines.multi.value && !line.value) {
+    ElMessage.warning('先选品类线：生成的采购单都是这条线')
+    return
+  }
   const items: ReorderPickItem[] = []
   for (const r of selected.value) {
     if (!r.supplierIdInput) {
@@ -112,7 +121,7 @@ async function generateStockPos() {
 
   submitting.value = true
   try {
-    const created = await purchaseApi.fromReorder(items, { companyId })
+    const created = await purchaseApi.fromReorder(items, line.value, { companyId })
     ElMessage.success(`按供应商拆成 ${created.length} 张备货采购单草稿：${created.map((c) => c.no).join('、')}`)
     if (created.length === 1 && created[0]) {
       await router.push(`/purchases/${created[0].id}`)
@@ -129,6 +138,7 @@ async function generateStockPos() {
   <div>
     <PageHeader title="补货提醒" :back="{ label: '库存', to: '/stock' }">
       <template #actions>
+        <LineSelect v-if="lines.multi.value" v-model="line" class="line-select" placeholder="生成到哪条品类线" />
         <el-button :loading="loading" @click="load">重新取</el-button>
         <el-button
           v-perm="'purchase:order:add'"
@@ -173,6 +183,7 @@ async function generateStockPos() {
           <SupplierSelect
             v-model="row.supplierIdInput"
             usage="BULK"
+            :product-line="line"
             :label="row.defaultSupplierName"
             :placeholder="row.defaultSupplierId ? '选供应商' : '物料没设默认供应商'"
             @update:model-value="onSupplierChange(row as EditableReorderRow)"
@@ -226,6 +237,10 @@ async function generateStockPos() {
 </template>
 
 <style scoped>
+.line-select {
+  width: 160px;
+}
+
 .sku-cell {
   display: flex;
   flex-direction: column;

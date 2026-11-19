@@ -25,6 +25,8 @@ import {
 } from '@/types/purchase'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+import { useProductLines } from '@/composables/useProductLines'
+import LineSelect from '@/components/LineSelect.vue'
 const { canSeeCost } = useFieldAccess()
 
 /**
@@ -35,7 +37,11 @@ const route = useRoute()
 const router = useRouter()
 
 // 采购单号、状态总在；后面几列默认不显示，在"显示列"里勾
+/** 品类线：几条线的人才有筛选和这一列（RFC 013 §2） */
+const lines = useProductLines()
+const multiLine = lines.multi
 const cols = useColumns('purchases', [
+  ...(multiLine.value ? [{ key: 'productLine' as const, label: '品类线' }] : []),
   { key: 'supplier', label: '供应商' },
   { key: 'type', label: '类型' },
   { key: 'material', label: '物料摘要' },
@@ -66,6 +72,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     keyword: '',
     statusTab: pickStatus(route.query.status),
     purchaseType: undefined as PurchaseType | undefined,
+    productLine: '',
     supplierId: undefined as string | null | undefined,
     buyerId: undefined as string | null | undefined,
     orderDateFrom: undefined as string | undefined,
@@ -102,7 +109,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 }
 
 const filtered = computed(
-  () => !!(query.keyword.trim() || query.statusTab || query.purchaseType || query.supplierId || query.buyerId || query.orderDateFrom),
+  () => !!(query.keyword.trim() || query.statusTab || query.purchaseType || query.productLine || query.supplierId || query.buyerId || query.orderDateFrom),
 )
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的采购单：换个状态，或者清空筛选'
@@ -174,6 +181,9 @@ async function exportPicked() {
           <el-option v-for="o in TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
         </el-select>
       </FilterItem>
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
+      </FilterItem>
       <FilterItem label="供应商" :text="query.supplierId ? (supplierName ?? '已选') : ''" @clear="query.supplierId = undefined">
         <SupplierSelect v-model="query.supplierId" v-model:label="supplierName" clearable placeholder="全部供应商" />
       </FilterItem>
@@ -202,6 +212,9 @@ async function exportPicked() {
     >
       <el-table-column type="selection" width="40" fixed="left" reserve-selection />
       <el-table-column label="采购单号" prop="no" width="140" fixed="left" class-name="code" />
+      <el-table-column v-if="cols.show.productLine" label="品类线" width="80">
+        <template #default="{ row }">{{ lines.labelOf(row.productLine) }}</template>
+      </el-table-column>
       <el-table-column v-if="cols.show.supplier" label="供应商" min-width="130">
         <template #default="{ row }">
           <span>{{ row.supplierName }}</span>

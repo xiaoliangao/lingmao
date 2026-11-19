@@ -133,7 +133,7 @@ class A2FinancialHttpIT extends A2BusinessFixture {
         return A2BusinessHttpIT.headers(response.body(), sheet);
     }
     private Map<String, Object> purchase(Fixture f, Account buyer, List<?> items) {
-        return map("companyId", f.company(), "supplierId", f.supplier(), "purchaseType", "STOCK", "buyerId", buyer.id(),
+        return map("companyId", f.company(), "supplierId", f.supplier(), "purchaseType", "STOCK", "productLine", "APPAREL", "buyerId", buyer.id(),
                 "orderDate", today(), "deliveryDate", today().plusDays(30), "warehouseId", f.warehouse(), "settleMethod", "MONTHLY", "taxPct", 13,
                 "taxIncluded", true, "freightIncluded", true, "items", items);
     }

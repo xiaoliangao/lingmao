@@ -59,6 +59,7 @@ import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -201,6 +202,7 @@ public class MrpServiceImpl implements MrpService {
         MrpCalcDetailVO vo = docHeaderService.fill(new MrpCalcDetailVO(), BizType.MRP_CALC, c, c.getStatus());
         vo.setOrders(orders.stream().map(o -> new MrpOrderRef(o.orderId(), o.orderNo(), styles.getOrDefault(o.orderId(), List.of()))).toList());
         vo.setStyleCodes(styleCodes(orders, styles));
+        vo.setProductLine(c.getProductLine());
         vo.setNeedDate(c.getNeedDate());
         vo.setPrevCalcId(c.getPrevCalcId());
         if (c.getPrevCalcId() != null) {
@@ -415,9 +417,9 @@ public class MrpServiceImpl implements MrpService {
         return visible(calcMapper.selectById(id));
     }
 
-    /** 数据范围（PRD §3.2）：本人范围的看制单人是自己的 */
+    /** 数据范围（PRD §3.2）：本人范围的看制单人是自己的；品类线不是我的 404（RFC 013 §2） */
     private MrpCalc visible(MrpCalc c) {
-        if (c == null || !DataScope.current(false).canSee(c.getCreateBy())) {
+        if (c == null || !LineScope.current().canSee(c.getProductLine()) || !DataScope.current(false).canSee(c.getCreateBy())) {
             throw new BizException(404, NOT_FOUND);
         }
         engine.checkSourceVisible(calcOrders(List.of(c.getId())).getOrDefault(c.getId(), List.of()).stream()
@@ -462,7 +464,7 @@ public class MrpServiceImpl implements MrpService {
 
     @Override
     public PageResult<MrpOrderOptionVO> orderOptions(String keyword, PageQuery page) {
-        IPage<MrpOrderOptionVO> result = calcMapper.selectOrderOptions(page.toPage(), keyword, Keywords.codes(keyword));
+        IPage<MrpOrderOptionVO> result = calcMapper.selectOrderOptions(page.toPage(), keyword, Keywords.codes(keyword), LineScope.current());
         List<MrpOrderOptionVO> rows = result.getRecords();
         if (!rows.isEmpty()) {
             List<Long> ids = rows.stream().map(MrpOrderOptionVO::getOrderId).toList();
@@ -487,6 +489,7 @@ public class MrpServiceImpl implements MrpService {
         MrpEngine.Result r = engine.compute(heads, Set.of(), null);
         MrpCalc c = new MrpCalc();
         c.setNo(serialNoGenerator.daily(BizType.MRP_CALC.getPrefix()));
+        c.setProductLine(heads.getFirst().productLine());   // checkedHeads 查过只有一条线
         c.setStatus(DRAFT);
         c.setNeedDate(r.needDate());
         c.setInputSnapshot(r.snapshot());
@@ -569,6 +572,7 @@ public class MrpServiceImpl implements MrpService {
         MrpCalc n = new MrpCalc();
         n.setNo(serialNoGenerator.daily(BizType.MRP_CALC.getPrefix()));
         n.setPrevCalcId(id);
+        n.setProductLine(c.getProductLine());
         n.setStatus(DRAFT);
         n.setNeedDate(r.needDate());
         n.setInputSnapshot(r.snapshot());

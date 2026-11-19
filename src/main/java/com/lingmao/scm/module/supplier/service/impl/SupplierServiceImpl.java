@@ -40,6 +40,7 @@ import com.lingmao.scm.module.supplier.service.SupplierChangeService;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
@@ -199,6 +200,7 @@ public class SupplierServiceImpl implements SupplierService {
         List<String> categories = distinct(req.getCategories());
         List<Long> goodAt = distinct(req.getGoodAtIds());
         validate(s, null, categories, List.of(), goodAt, List.of());
+        s.setProductLines(dicts.productLines(req.getProductLines(), null));
 
         s.setStatus(PENDING_ADMIT);
         s.setCode(nextCode());
@@ -240,6 +242,7 @@ public class SupplierServiceImpl implements SupplierService {
         List<String> categories = distinct(req.getCategories());
         List<Long> goodAt = distinct(req.getGoodAtIds());
         validate(target, current, categories, currentCategories, goodAt, currentGoodAt);
+        target.setProductLines(dicts.productLines(req.getProductLines(), current.getProductLines()));
 
         // 1. 普通字段整体覆盖（关键字段、状态标了 NEVER，这里写不到）。条件带 status <> 'ADMITTING'（RFC 004 §2.2）
         if (supplierMapper.update(target, Updates.replaceById(target).ne("status", ADMITTING.name())) == 0) {
@@ -539,7 +542,7 @@ public class SupplierServiceImpl implements SupplierService {
     // ------------------------------------------------------------------ 给别的页面、别的域
 
     @Override
-    public List<SupplierOption> options(List<String> categories, Usage usage, String keyword, Long includeId) {
+    public List<SupplierOption> options(List<String> categories, Usage usage, String keyword, Long includeId, String productLine) {
         Set<SupplierStatus> statuses = SupplierRules.USABLE.get(usage == null ? Usage.SAMPLE : usage);
         QueryWrapper<Supplier> wrapper = new QueryWrapper<Supplier>()
                 .select("id", "code", "short_name", "status")
@@ -557,20 +560,29 @@ public class SupplierServiceImpl implements SupplierService {
                 if (codes != null) w.or().in("upper(code)", codes);
             });
         }
+        LineScope.current().applyAny(wrapper, "product_lines");
+        if (StringUtils.hasText(productLine)) {
+            wrapper.apply("{0} = ANY(product_lines)", productLine);
+        }
         wrapper.orderByAsc("code");
         List<Supplier> found = new ArrayList<>(supplierMapper.selectPage(new Page<>(1, OPTIONS_LIMIT, false), wrapper).getRecords());
         if (includeId != null && found.stream().noneMatch(s -> s.getId().equals(includeId))) {
             Supplier included = supplierMapper.selectById(includeId);
-            if (included != null) {
+            if (included != null && LineScope.current().canSeeAny(included.getProductLines())) {
                 found.addFirst(included);
             }
         }
         return found.stream().map(s -> new SupplierOption(s.getId(), s.getCode(), s.getShortName(), s.getStatus())).toList();
     }
 
+    /** 别的域显示单据上的供应商用：不看品类线（单据能看，上面的供应商就显示；供应商后来去掉了这条线也一样） */
     @Override
     public SupplierRef getRef(long id) {
-        return toRef(getEntity(id));
+        Supplier s = supplierMapper.selectById(id);
+        if (s == null) {
+            throw new BizException(404, NOT_FOUND);
+        }
+        return toRef(s);
     }
 
     @Override
@@ -618,6 +630,19 @@ public class SupplierServiceImpl implements SupplierService {
     }
 
     @Override
+    public String lineProblem(long id, String productLine) {
+        Supplier s = supplierMapper.selectById(id);
+        if (s == null) {
+            throw new BizException(404, NOT_FOUND);
+        }
+        if (s.getProductLines() != null && s.getProductLines().contains(productLine)) {
+            return null;
+        }
+        String label = dicts.lineLabel(productLine);
+        return s.getShortName() + " 不做" + label + "：换一家，或者先在供应商档案里给它加上「" + label + "」";
+    }
+
+    @Override
     public Map<Long, List<String>> categories(Collection<Long> ids) {
         if (ids.isEmpty()) {
             return Map.of();
@@ -631,9 +656,10 @@ public class SupplierServiceImpl implements SupplierService {
 
     // ------------------------------------------------------------------ 小工具
 
+    /** 不存在、品类线和我的没有交集都是 404（RFC 013 §2）：详情、各个动作、checkUsable 都从这里取 */
     Supplier getEntity(long id) {
         Supplier s = supplierMapper.selectById(id);
-        if (s == null) {
+        if (s == null || !LineScope.current().canSeeAny(s.getProductLines())) {
             throw new BizException(404, NOT_FOUND);
         }
         return s;
@@ -641,7 +667,7 @@ public class SupplierServiceImpl implements SupplierService {
 
     private Supplier lock(long id) {
         Supplier s = supplierMapper.selectByIdForUpdate(id);
-        if (s == null) {
+        if (s == null || !LineScope.current().canSeeAny(s.getProductLines())) {
             throw new BizException(404, NOT_FOUND);
         }
         return s;

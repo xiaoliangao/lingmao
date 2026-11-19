@@ -7,6 +7,7 @@ import com.lingmao.scm.module.supplier.entity.Supplier;
 import com.lingmao.scm.module.supplier.entity.SupplierCert;
 import com.lingmao.scm.module.supplier.entity.SupplierChange;
 import com.lingmao.scm.module.supplier.entity.SupplierStatus;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 
 /** 供应商几个单元测试共用的：登录的人、假数据、MyBatis-Plus 的表信息。数据都是编的 */
 final class SupplierFixtures {
@@ -43,8 +45,8 @@ final class SupplierFixtures {
 
     /** 当前登录的是 userId，带这几个权限码（不带前缀 supplier:supplier:，这里补） */
     static void loginAs(long userId, String... perms) {
-        List<SimpleGrantedAuthority> authorities = Arrays.stream(perms)
-                .map(p -> new SimpleGrantedAuthority("supplier:supplier:" + p)).toList();
+        List<SimpleGrantedAuthority> authorities = Stream.concat(Arrays.stream(perms).map(p -> "supplier:supplier:" + p),
+                Stream.of(LineScope.ALL_AUTHORITY)).map(SimpleGrantedAuthority::new).toList();
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(new LoginUser(userId, "jti-" + userId), null, authorities));
     }
@@ -82,6 +84,7 @@ final class SupplierFixtures {
         req.setCreditCode(s.getCreditCode());
         req.setLevel(s.getLevel());
         req.setCategories(List.of("FABRIC"));
+        req.setProductLines(s.getProductLines() == null ? List.of("APPAREL") : s.getProductLines());
         req.setContact(s.getContact());
         req.setPhone(s.getPhone());
         req.setSettleMethod(s.getSettleMethod());

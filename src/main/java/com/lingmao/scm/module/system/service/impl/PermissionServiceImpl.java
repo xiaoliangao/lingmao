@@ -7,6 +7,7 @@ import com.lingmao.scm.module.system.mapper.SysMenuMapper;
 import com.lingmao.scm.module.system.mapper.SysRoleMapper;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.service.PermissionService;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -29,9 +30,16 @@ public class PermissionServiceImpl implements PermissionService {
             return null;
         }
         Set<String> perms = new LinkedHashSet<>(sysMenuMapper.selectPermsByUserId(userId));
-        // 数据范围是"全部"的多给一个 data:all（RFC 001 §8）：过滤器每个请求都调这里，以后查单据时看权限就知道，不用另外查库
-        if (sysRoleMapper.hasAllDataScope(userId)) {
+        // 数据范围是"全部"的多给一个 data:all（RFC 001 §8）：过滤器每个请求都调这里，以后查单据时看权限就知道，不用另外查库。
+        // 品类线同理（RFC 013 §2）：超级管理员 line:all，别人每条线一个 line:XXX
+        SysRoleMapper.ScopeFlags flags = sysRoleMapper.selectScopeFlags(userId);
+        if (flags != null && flags.allData()) {
             perms.add(RoleDataScope.ALL_AUTHORITY);
+        }
+        if (flags != null && flags.admin()) {
+            perms.add(LineScope.ALL_AUTHORITY);
+        } else if (user.getProductLines() != null) {
+            perms.addAll(LineScope.authorities(user.getProductLines()));
         }
         return perms;
     }

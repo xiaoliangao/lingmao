@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,6 +98,7 @@ class UserDesignerNoIT {
         req.setPassword("Abc12345");
         req.setNickname("设计师" + designerNo);
         req.setDesignerNo(designerNo);
+        req.setProductLines(List.of("APPAREL"));
         return req;
     }
 
@@ -105,6 +107,7 @@ class UserDesignerNoIT {
         req.setNickname("设计师");
         req.setStatus(1);
         req.setDesignerNo(designerNo);
+        req.setProductLines(List.of("APPAREL"));
         return req;
     }
 }

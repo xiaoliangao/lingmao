@@ -15,6 +15,8 @@ import java.util.List;
 public class ProductionDetailVO extends DocHeaderVO {
     private Integer planRevision;
     private String kind;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private Long factoryId;
     private String factoryCode;
     private String factoryName;

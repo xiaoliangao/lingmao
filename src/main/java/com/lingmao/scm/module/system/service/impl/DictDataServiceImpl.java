@@ -26,9 +26,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service //告诉 Spring "这是一个要交给你管理的对象"。启动时 Spring 会创建它的唯一一个实例，谁需要 DictDataService，就把这个实例给谁。
 @RequiredArgsConstructor
@@ -87,6 +90,23 @@ public class DictDataServiceImpl implements DictDataService {
                         .orderByAsc(DictData::getId))
                 .stream().map(d -> new DictOption(d.getLabel(), d.getValue(), d.getStatus(), d.getTextValue())).toList());
         return tradeFeature.filterDict(typeCode, options, DictOption::value);
+    }
+
+    @Override
+    public List<String> requireValues(String typeCode, Collection<String> values, Collection<String> previous, String what) {
+        Set<String> picked = values == null ? Set.of() : values.stream().filter(StringUtils::hasText).map(String::strip)
+                .collect(Collectors.toSet());
+        if (picked.isEmpty()) {
+            throw new BizException(400, what + "至少选一个");
+        }
+        List<DictOption> options = listByType(typeCode);
+        for (String v : picked) {
+            boolean kept = previous != null && previous.contains(v);
+            if (options.stream().noneMatch(o -> o.value().equals(v) && (kept || o.enabled()))) {
+                throw new BizException(400, what + "「" + v + "」不在字典里，或者已经停用了");
+            }
+        }
+        return options.stream().map(DictOption::value).filter(picked::contains).toList();
     }
 
     @Override

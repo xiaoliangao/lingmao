@@ -51,6 +51,8 @@ export interface MrpCalcRow {
   id: string
   no: string
   status: MrpStatus
+  /** 品类线（字典 product_line，RFC 013 §2） */
+  productLine: string
   orderNos: string[]
   /** 订单里的款号，去重 */
   styleCodes: string[]
@@ -173,6 +175,8 @@ export interface MrpOrderRef {
 
 /** 详情。auditBy、auditTime 在这里是确认人、确认时间；approval 一直是 null */
 export interface MrpCalcDetail extends DocHeader<MrpStatus, MrpAction> {
+  /** 品类线：选的订单的线，一次只算一条线 */
+  productLine: string
   orders: MrpOrderRef[]
   styleCodes: string[]
   /** 要料日期：几张订单里最早的"裁剪"计划开始，没排单的按承诺交期倒推；算不出来是 null */
@@ -200,6 +204,8 @@ export interface MrpOrderOption {
   orderNo: string
   /** 字典 order_type */
   orderType: string
+  /** 品类线：不同线的订单要分开算料 */
+  productLine: string
   styleCodes: string[]
   totalQty: number
   commitDate: string | null
@@ -282,6 +288,8 @@ export interface PurchaseRow {
   /** 供应商现在的状态：不是合作中的，列表上标出来（"供应商已停用"：能继续入库，不能新建） */
   supplierStatus: SupplierStatus
   purchaseType: PurchaseType
+  /** 品类线（字典 product_line，RFC 013 §2） */
+  productLine: string
   /** 第一行物料，"等 n 种"用 itemCount */
   firstItem: MaterialSkuBrief | null
   itemCount: number
@@ -312,6 +320,8 @@ export interface PurchaseQuery {
   keyword?: string
   status?: PurchaseStatus[]
   purchaseType?: PurchaseType
+  /** 品类线：几条线的人才有这个筛选 */
+  productLine?: string
   supplierId?: string | null
   buyerId?: string | null
   orderDateFrom?: string
@@ -394,6 +404,8 @@ export interface PurchaseDetail extends DocHeader<PurchaseStatus, PurchaseAction
   supplierContact?: string | null
   supplierPhone?: string | null
   purchaseType: PurchaseType
+  /** 品类线：从算料单生成的跟算料单（改不了），手工建的选；供应商要做这条线 */
+  productLine: string
   /** 从哪张算料单生成的；手建的、补货生成的是 null */
   calcId: string | null
   calcNo: string | null
@@ -445,6 +457,8 @@ export interface PurchaseForm {
   companyId: string
   supplierId: string
   purchaseType: PurchaseType
+  /** 品类线：只有一条线的人不用传（后端带上）；从算料单生成的改不了，传了也不看 */
+  productLine?: string | null
   buyerId: string
   orderDate: string
   /** null = 下单日 + 各行物料采购周期最长的（没设的按 7 天） */

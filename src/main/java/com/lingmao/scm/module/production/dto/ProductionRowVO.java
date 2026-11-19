@@ -14,6 +14,8 @@ public class ProductionRowVO {
     private Long id;
     private String no;
     private String kind;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private String status;
     private Integer version;
     private Long factoryId;

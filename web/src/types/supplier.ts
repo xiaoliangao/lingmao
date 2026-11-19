@@ -26,6 +26,8 @@ export interface SupplierRow {
   status: SupplierStatus
   /** 字典 supplier_category 的 value，按字典顺序 */
   categories: string[]
+  /** 做哪几条品类线（字典 product_line），按字典顺序（RFC 013 §2） */
+  productLines: string[]
   contact?: string | null
   phone?: string | null
   settleMethod: string | null
@@ -82,6 +84,8 @@ export interface SupplierDetail {
   level: string | null
   status: SupplierStatus
   categories: string[]
+  /** 做哪几条品类线，包括我看不到的（只显示，改不了） */
+  productLines: string[]
   goodAt: { id: string; name: string }[]
   contact?: string | null
   phone?: string | null
@@ -121,6 +125,8 @@ export interface SupplierForm {
   creditCode: string | null
   level: string | null
   categories: string[]
+  /** 至少一条。我看不到的线不用传，后端原样留着；也加不上 */
+  productLines: string[]
   goodAtIds: string[]
   contact?: string | null
   phone?: string | null

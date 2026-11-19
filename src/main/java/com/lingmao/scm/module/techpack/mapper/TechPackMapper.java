@@ -8,6 +8,7 @@ import com.lingmao.scm.module.techpack.dto.PackSizeRef;
 import com.lingmao.scm.module.techpack.dto.StyleCostRowVO;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.TechPack;
+import com.lingmao.scm.security.LineScope;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -44,5 +45,6 @@ public interface TechPackMapper extends BaseMapper<TechPack> {
 
     /** 按款看成本（resources/mapper/techpack/TechPackMapper.xml）：每个款取已生效的生产 BOM */
     IPage<StyleCostRowVO> selectStyleCostPage(IPage<StyleCostRowVO> page, @Param("q") StyleCostQuery query,
-                                              @Param("codes") List<String> codes, @Param("categoryIds") List<Long> categoryIds);
+                                              @Param("codes") List<String> codes, @Param("categoryIds") List<Long> categoryIds,
+                                              @Param("lines") LineScope lines);
 }

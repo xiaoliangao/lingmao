@@ -3,6 +3,7 @@ import type { ColumnDef } from '@/composables/useColumns'
 
 export type ProductionColumn =
   | 'kind'
+  | 'productLine'
   | 'style'
   | 'factory'
   | 'qty'
@@ -19,12 +20,14 @@ export type ProductionColumn =
   | 'defect'
 
 /**
- * 能挑的列（单号、勾选、状态总在）。list 是外发加工单 / 成品采购单列表，board 是看板"按单"：
- *   const cols = useColumns('production', productionColumns('list'))
+ * 能挑的列（单号、勾选、状态总在）。list 是外发加工单 / 成品采购单列表，board 是看板"按单"。
+ * multiLine：能看几条品类线的人多一列品类线（useProductLines().multi，RFC 013 §2）：
+ *   const cols = useColumns('production', productionColumns('list', lines.multi.value))
  */
-export function productionColumns(mode: 'list' | 'board'): ColumnDef<ProductionColumn>[] {
+export function productionColumns(mode: 'list' | 'board', multiLine = false): ColumnDef<ProductionColumn>[] {
   return [
     ...(mode === 'board' ? [{ key: 'kind' as const, label: '种类' }] : []),
+    ...(multiLine ? [{ key: 'productLine' as const, label: '品类线' }] : []),
     { key: 'style', label: '款式' },
     { key: 'factory', label: '加工厂 · 方式' },
     { key: 'qty', label: '数量' },
@@ -99,6 +102,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const modes = useDict('process_mode')
+const lines = useDict('product_line')
 const issueTypes = useDict('issue_type')
 
 // ---------- 齐料（另取） ----------
@@ -155,6 +159,9 @@ defineExpose({
       <template #default="{ row }">{{ PRODUCTION_KIND[(row as ProductionRow).kind].short }}</template>
     </el-table-column>
     <el-table-column v-if="columns.show.order" label="订单号" width="140" class-name="code" prop="orderNo" />
+    <el-table-column v-if="columns.show.productLine" label="品类线" width="80">
+      <template #default="{ row }">{{ lines.labelOf(row.productLine) }}</template>
+    </el-table-column>
     <el-table-column v-if="columns.show.style" label="款式" min-width="180">
       <template #default="{ row }">
         <span class="st-cell">

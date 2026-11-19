@@ -19,6 +19,8 @@ public class PurchaseQuery extends PageQuery {
     private String keyword;
     private List<DocStatus> status;
     private PurchaseType purchaseType;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     private Long supplierId;
     private Long buyerId;
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)

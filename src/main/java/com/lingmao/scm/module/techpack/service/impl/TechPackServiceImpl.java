@@ -711,9 +711,10 @@ public class TechPackServiceImpl implements TechPackService {
         return key == null ? null : map.get(key);
     }
 
+    /** 不存在、款式不在我的品类线里都是 404（RFC 013 §2） */
     private TechPack getEntity(long id) {
         TechPack pack = techPackMapper.selectById(id);
-        if (pack == null) {
+        if (pack == null || !styleService.visible(pack.getStyleId())) {
             throw new BizException(404, NOT_FOUND);
         }
         return pack;
@@ -722,7 +723,7 @@ public class TechPackServiceImpl implements TechPackService {
     /** 锁住这一版再动（删、生效、复制）：和保存、别的动作排队 */
     private TechPack lock(long id) {
         TechPack pack = techPackMapper.lockById(id);
-        if (pack == null) {
+        if (pack == null || !styleService.visible(pack.getStyleId())) {
             throw new BizException(404, NOT_FOUND);
         }
         return pack;

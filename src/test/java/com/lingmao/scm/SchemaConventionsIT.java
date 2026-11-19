@@ -194,7 +194,7 @@ class SchemaConventionsIT {
 
     /**
      * 规则：数据库设计 §3.2 的字典类型都在；内置项正好是 PRD §6.1.7 规则 2 的那 11 个；
-     * 品牌预置为空（甲方的名字不进公开仓库）；V39 去掉的三个字典不在了；物料类型带上了 Q40 的配件、工艺、鞋底，备料比 0（由生产评估后填，V37 撤回 V24 的 3）；款式大类 TS、FS、XZ（V37，Q28）；生产节点带默认天数
+     * 品牌预置为空（甲方的名字不进公开仓库）；V39 去掉的三个字典不在了；物料类型带上了 Q40 的配件、工艺、鞋底，备料比 0（由生产评估后填，V37 撤回 V24 的 3）；款式大类 TS、FS、XZ（V37，Q28），XZ 是鞋类、别的是服装（V44）；品类线三项内置（V44）；生产节点带默认天数
      */
     @Test
     void dictPresets() {
@@ -212,7 +212,8 @@ class SchemaConventionsIT {
                         "material_type:LINING", "supplier_category:GARMENT", "supplier_category:PROCESSOR",
                         "order_type:CUSTOMER", "process_mode:FULL", "prod_node:CUT", "cert_type:LICENSE",
                         "stock_in_reason:OPENING", "currency:CNY", "unit:PIECE", "style_source:OWN",
-                        "bom_owner:DEV", "bom_owner:PROD");   // V42 物料清单谁填（RFC 012 §3）
+                        "bom_owner:DEV", "bom_owner:PROD",    // V42 物料清单谁填（RFC 012 §3）
+                        "product_line:APPAREL", "product_line:FOOTWEAR", "product_line:GENERAL");   // V44 品类线（RFC 013 §2）
         assertThat(jdbc.queryForList("SELECT value FROM sys_dict_data WHERE type_code = 'material_type' AND text_value = 'PROD' "
                 + "AND deleted = false", String.class)).as("物料清单归生产填的物料类型").containsExactly("PACKING");
 
@@ -228,6 +229,11 @@ class SchemaConventionsIT {
                 WHERE type_code = 'style_class' AND deleted = false ORDER BY sort
                 """, String.class))
                 .containsExactly("FS=非通勤裤", "TS=通勤裤", "XZ=鞋子");   // V37（Q28）
+        assertThat(jdbc.queryForList("""
+                SELECT value || '=' || text_value FROM sys_dict_data
+                WHERE type_code = 'style_class' AND deleted = false ORDER BY sort
+                """, String.class))
+                .containsExactly("FS=APPAREL", "TS=APPAREL", "XZ=FOOTWEAR");   // V44 大类定品类线（RFC 013 §2）
         assertThat(jdbc.queryForMap("""
                 SELECT t.num_label, d.num_value::int AS days FROM sys_dict_type t
                 JOIN sys_dict_data d ON d.type_code = t.code AND d.deleted = false

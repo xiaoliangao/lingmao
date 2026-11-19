@@ -429,6 +429,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
                   :model-value="row.supplierId"
                   :label="row.supplierName"
                   usage="BULK"
+                  :product-line="detail?.productLine"
                   size="small"
                   placeholder="选供应商"
                   @update:model-value="onSupplierChange(row as MrpItem, $event)"

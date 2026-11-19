@@ -138,7 +138,8 @@ class A2BusinessHttpIT extends A2BusinessFixture {
         for (String field : List.of("contact", "phone", "wechat", "address", "bankName", "bankAccountName", "bankAccount")) assertThat(detail.has(field)).as(field).isFalse();
         assertThat(detail.path("legacyAttrs").toString()).doesNotContain("private-", "传真", "地址电话");
         String name = jdbc.queryForObject("SELECT name FROM sup_supplier WHERE id=?", String.class, f.supplier());
-        var edit = map("name", name, "shortName", "Updated public name", "categories", List.of("GARMENT", "FABRIC"), "settleMethod", "MONTHLY", "taxPct", 13);
+        var edit = map("name", name, "shortName", "Updated public name", "categories", List.of("GARMENT", "FABRIC"),
+                "productLines", List.of("APPAREL", "FOOTWEAR", "GENERAL"), "settleMethod", "MONTHLY", "taxPct", 13);
         ok(reader, "PUT", "/api/suppliers/" + f.supplier(), edit, null);
         assertThat(jdbc.queryForObject("SELECT contact FROM sup_supplier WHERE id=?", String.class, f.supplier())).isEqualTo("private-contact");
         assertThat(jdbc.queryForObject("SELECT bank_account FROM sup_supplier WHERE id=?", String.class, f.supplier())).isEqualTo("6228480000000012345");

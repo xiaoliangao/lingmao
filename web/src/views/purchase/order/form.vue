@@ -25,6 +25,8 @@ import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import { bindCompanyApi } from '@/utils/companyScope'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+import { useProductLines } from '@/composables/useProductLines'
+import LineSelect from '@/components/LineSelect.vue'
 const { canSeeCost } = useFieldAccess()
 const purchaseApi = bindCompanyApi(purchaseApiBase, () => savedCompanyId.value ?? head.companyId)
 
@@ -83,8 +85,13 @@ const submitTried = ref(false)
 /** 交货日期手改过：不再用默认值覆盖 */
 const deliveryTouched = ref(false)
 
+/** 品类线（RFC 013 §2）：手工建的选一条，只有一条线的人自动带上、不显示；从算料单生成的跟算料单，改不了 */
+const productLines = useProductLines()
+const fromCalc = ref(false)
+
 const head = reactive({
   companyId: null as string | null,
+  productLine: productLines.only.value as string | null,
   supplierId: null as string | null,
   supplierName: null as string | null,
   purchaseType: 'ORDER' as PurchaseType,
@@ -238,8 +245,10 @@ async function init() {
     d.items.forEach((item) => originalSkus.add(item.materialSkuId))
     version.value = d.version
     poNo.value = d.no
+    fromCalc.value = d.calcId !== null
     Object.assign(head, {
       companyId: d.companyId,
+      productLine: d.productLine,
       supplierId: d.supplierId,
       supplierName: d.supplierShortName,
       purchaseType: d.purchaseType,
@@ -297,6 +306,7 @@ function buildForm(andSubmit: boolean): PurchaseForm | null {
   if (!canSeeCost.value && (!editing || head.supplierId !== originalSupplierId || lines.value.some((line) => !originalSkus.has(line.materialSkuId)))) {
     return warn('新建采购、变更供应商或增加物料需要确认采购价，请由有成本价格权限的人员办理')
   }
+  if (!head.productLine) return warn('先选品类线')
   if (!head.supplierId) return warn('先选供应商')
   if (!head.companyId) return warn('先选主体')
   if (!head.buyerId) return warn('先选采购员')
@@ -321,6 +331,7 @@ function buildForm(andSubmit: boolean): PurchaseForm | null {
     companyId: head.companyId,
     supplierId: head.supplierId,
     purchaseType: head.purchaseType,
+    productLine: head.productLine,
     buyerId: head.buyerId,
     orderDate: head.orderDate,
     deliveryDate: head.deliveryDate,
@@ -417,8 +428,17 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
     <el-alert v-else-if="loadError" :title="loadError" type="error" :closable="false"><el-button @click="init">重新加载</el-button></el-alert>
     <div v-else v-loading="!loaded" class="page" :inert="saving">
       <el-form label-position="top" class="head-grid">
+        <el-form-item v-if="productLines.multi.value" label="品类线" required>
+          <LineSelect v-model="head.productLine" :disabled="fromCalc" placeholder="选品类线" />
+        </el-form-item>
         <el-form-item label="供应商" required>
-          <SupplierSelect :model-value="head.supplierId" :label="head.supplierName" usage="BULK" @update:model-value="onSupplierChange" />
+          <SupplierSelect
+            :model-value="head.supplierId"
+            :label="head.supplierName"
+            usage="BULK"
+            :product-line="head.productLine"
+            @update:model-value="onSupplierChange"
+          />
         </el-form-item>
         <el-form-item label="采购类型" required>
           <el-select v-model="head.purchaseType" filterable @change="onTypeChange">
@@ -553,7 +573,13 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
     </div>
 
     <DataPick v-model="skuPicking" kind="sku" :have="haveSkuIds" @pick="onPickedSkus" />
-    <DataPick v-model="stylePicking" kind="style" :have="haveStyleIds" @pick="onPickedPlanStyles" />
+    <DataPick
+      v-model="stylePicking"
+      kind="style"
+      :have="haveStyleIds"
+      :params="head.productLine ? { productLine: head.productLine } : undefined"
+      @pick="onPickedPlanStyles"
+    />
   </div>
 </template>
 

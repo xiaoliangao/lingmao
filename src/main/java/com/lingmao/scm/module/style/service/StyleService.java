@@ -118,10 +118,16 @@ public interface StyleService {
      */
     void checkUsable(long id);
 
+    /** 这个款式在不在、当前用户能不能看（品类线，RFC 013 §2）：资料包、按款看成本跟着款式隔开 */
+    boolean visible(long id);
+
+    /** 款式的品类线：几个款一起查，订单、生产单按它定自己的线；查不到的不在 map 里 */
+    Map<Long, String> productLines(Collection<Long> ids);
+
     /** 一批款式的 id、款号、名称，给列表显示用。id → StyleRef；查不到的（被删了）不在 map 里；get(null) 返回 null，不抛 */
     Map<Long, StyleRef> refs(Collection<Long> ids);
 
-    /** 资料包用的款式：款号款名、尺码组、启用的颜色、吊牌价、默认加工厂、状态。不存在 404 */
+    /** 资料包用的款式：款号款名、尺码组、启用的颜色、吊牌价、默认加工厂、状态。不存在、不在我的品类线里 404 */
     StylePackInfo packInfo(long id);
 
     /** 批量版（按款看成本一页几十个款）；查不到的不在 map 里 */

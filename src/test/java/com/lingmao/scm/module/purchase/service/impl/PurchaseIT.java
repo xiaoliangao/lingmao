@@ -99,7 +99,7 @@ class PurchaseIT {
 
     private static void loginAs(long userId) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                new LoginUser(userId, "jti-it"), null, PERMS.stream().map(SimpleGrantedAuthority::new).toList()));
+                new LoginUser(userId, "jti-it"), null, TestIdentity.withLines(PERMS).stream().map(SimpleGrantedAuthority::new).toList()));
     }
 
     /**
@@ -538,6 +538,7 @@ class PurchaseIT {
         pick.setQty(r.getSuggestQty());
         FromReorderReq req = new FromReorderReq();
         req.setItems(List.of(pick));
+        req.setProductLine("APPAREL");
         long po = purchaseOrderService.fromReorder(req).getFirst().id();
         assertThat(purchaseOrderService.detail(po).getPurchaseType()).isEqualTo("STOCK");
         assertThat(reorderRow(f).getOpenDrafts()).extracting(ReorderRowVO.OpenDraft::id).containsExactly(po);
@@ -579,6 +580,31 @@ class PurchaseIT {
         jdbcTemplate.update("UPDATE sup_supplier SET status = 'DISABLED' WHERE id = ?", f.supplier);
         assertThatThrownBy(() -> purchaseOrderService.create(poReq(f, "10", null)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("合作中"));
+    }
+
+    /**
+     * 规则（RFC 013 §2）：手工采购单选的品类线，供应商要做这条线；只看鞋类的人看不到服装的采购单（列表、详情 404）
+     */
+    @Test
+    void productLine_supplierMustServe_andHiddenFromOtherLines() {
+        Fixture f = fixture(null);
+        jdbcTemplate.update("UPDATE sup_supplier SET product_lines = '{FOOTWEAR}' WHERE id = ?", f.supplier);
+        assertThatThrownBy(() -> purchaseOrderService.create(poReq(f, "10", null)))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("不做服装"));
+
+        jdbcTemplate.update("UPDATE sup_supplier SET product_lines = '{APPAREL,FOOTWEAR}' WHERE id = ?", f.supplier);
+        long id = purchaseOrderService.create(poReq(f, "10", null)).id();
+        assertThat(purchaseOrderService.detail(id).getProductLine()).isEqualTo("APPAREL");
+
+        List<String> perms = new java.util.ArrayList<>(PERMS);
+        perms.add("line:FOOTWEAR");
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new LoginUser(f.user, "jti-it"), null, perms.stream().map(SimpleGrantedAuthority::new).toList()));
+        PurchaseQuery q = new PurchaseQuery();
+        q.setIds(List.of(id));
+        assertThat(purchaseOrderService.page(q).getList()).isEmpty();
+        assertThatThrownBy(() -> purchaseOrderService.detail(id))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
     }
 
     // ---------- 造数 ----------
@@ -671,6 +697,7 @@ class PurchaseIT {
         req.setCompanyId(f.company);
         req.setSupplierId(f.supplier);
         req.setPurchaseType(PurchaseType.STOCK);
+        req.setProductLine("APPAREL");
         req.setBuyerId(f.user);
         req.setOrderDate(LocalDate.now());
         req.setWarehouseId(f.warehouse);
@@ -699,6 +726,7 @@ class PurchaseIT {
         req.setCompanyId(d.getCompanyId());
         req.setSupplierId(d.getSupplierId());
         req.setPurchaseType(PurchaseType.valueOf(d.getPurchaseType()));
+        req.setProductLine(d.getProductLine());
         req.setBuyerId(d.getBuyerId());
         req.setOrderDate(d.getOrderDate());
         req.setDeliveryDate(d.getDeliveryDate());

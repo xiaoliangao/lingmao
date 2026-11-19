@@ -24,6 +24,9 @@ public class PurchaseOrder extends DocEntity {
 
     private PurchaseType purchaseType;
 
+    /** 品类线（RFC 013 §2）：从算料单生成的跟算料单（改不了），手工建的选；供应商要做这条线 */
+    private String productLine;
+
     /** 从哪张算料单生成：建好不改 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Long calcId;

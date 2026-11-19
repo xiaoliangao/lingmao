@@ -334,13 +334,13 @@ class SupplierServiceImplIT {
         query.setToApprove(true);
         assertThat(supplierService.page(query).getList()).isEmpty();
 
-        assertThat(supplierService.options(List.of("GARMENT"), Usage.SAMPLE, req.getShortName(), null))
+        assertThat(supplierService.options(List.of("GARMENT"), Usage.SAMPLE, req.getShortName(), null, null))
                 .extracting(SupplierOption::id).containsExactly(id);
-        assertThat(supplierService.options(List.of("PROCESSOR", "GARMENT"), Usage.SAMPLE, req.getShortName(), null))
+        assertThat(supplierService.options(List.of("PROCESSOR", "GARMENT"), Usage.SAMPLE, req.getShortName(), null, null))
                 .extracting(SupplierOption::id).containsExactly(id);   // 几个分类任一个就算
-        assertThat(supplierService.options(List.of("PROCESSOR"), Usage.SAMPLE, req.getShortName(), null)).isEmpty();
-        assertThat(supplierService.options(null, Usage.BULK, req.getShortName(), null)).isEmpty();
-        assertThat(supplierService.options(null, Usage.BULK, req.getShortName(), id))
+        assertThat(supplierService.options(List.of("PROCESSOR"), Usage.SAMPLE, req.getShortName(), null, null)).isEmpty();
+        assertThat(supplierService.options(null, Usage.BULK, req.getShortName(), null, null)).isEmpty();
+        assertThat(supplierService.options(null, Usage.BULK, req.getShortName(), id, null))
                 .extracting(SupplierOption::id).containsExactly(id);
         assertThat(excelService.export(query)).isNotEmpty();
         assertThat(supplierService.logs(id)).extracting(log -> log.action()).contains("create", "cert-add");
@@ -379,6 +379,40 @@ class SupplierServiceImplIT {
 
     // ---------------------------------------------------------------- 造数据
 
+    /**
+     * 规则（RFC 013 §2）：供应商做的品类线和我的有交集才看得到（列表、下拉、详情 404）；
+     * 改的时候我看不到的线原样留着，也加不上
+     */
+    @Test
+    void productLines_visibilityAndHiddenLinesKept() {
+        SupplierSaveReq both = newReq(false);
+        both.setProductLines(List.of("FOOTWEAR", "APPAREL"));
+        long id = create(both);
+        SupplierSaveReq apparel = newReq(false);
+        apparel.setProductLines(List.of("APPAREL"));
+        long other = create(apparel);
+        assertThat(supplierService.detail(id).getProductLines()).containsExactly("APPAREL", "FOOTWEAR");   // 按字典顺序
+
+        List<String> perms = new java.util.ArrayList<>(java.util.Arrays.stream(ALL).map(p -> "supplier:supplier:" + p).toList());
+        perms.add("line:FOOTWEAR");
+        TestIdentity.login(USER_A, perms);
+        SupplierQuery query = new SupplierQuery();
+        query.setIds(List.of(id, other));
+        assertThat(supplierService.page(query).getList()).extracting(SupplierRowVO::getId).containsExactly(id);
+        assertThat(supplierService.options(null, Usage.SAMPLE, null, other, null)).extracting(SupplierOption::id)
+                .doesNotContain(other);
+        assertThat(catchThrowableOfType(BizException.class, () -> supplierService.detail(other)).getCode()).isEqualTo(404);
+
+        SupplierSaveReq edit = reqFrom(supplierService.detail(id));
+        assertThat(edit.getProductLines()).containsExactly("APPAREL", "FOOTWEAR");   // 详情里看得到它做服装，只是看不到服装的单据
+        edit.setProductLines(List.of("FOOTWEAR"));
+        supplierService.update(id, edit);
+        assertThat(supplierService.detail(id).getProductLines()).containsExactly("APPAREL", "FOOTWEAR");
+        edit.setProductLines(List.of("FOOTWEAR", "GENERAL"));
+        assertThatThrownBy(() -> supplierService.update(id, edit))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("看不到的品类线"));
+    }
+
     private long create(SupplierSaveReq req) {
         return supplierService.create(req).id();
     }
@@ -391,6 +425,7 @@ class SupplierServiceImplIT {
         req.setShortName("测试" + suffix);
         req.setCreditCode(complete ? randomCredit() : null);
         req.setCategories(List.of("FABRIC"));
+        req.setProductLines(List.of("APPAREL", "FOOTWEAR"));
         req.setContact("联系人甲");
         req.setPhone("13800000000");
         req.setSettleMethod("MONTHLY");
@@ -410,6 +445,7 @@ class SupplierServiceImplIT {
         req.setCreditCode(vo.getCreditCode());
         req.setLevel(vo.getLevel());
         req.setCategories(vo.getCategories());
+        req.setProductLines(vo.getProductLines());
         req.setGoodAtIds(vo.getGoodAt().stream().map(SupplierVO.GoodAtVO::id).toList());
         req.setContact(vo.getContact());
         req.setPhone(vo.getPhone());

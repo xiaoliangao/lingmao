@@ -6,6 +6,7 @@ import com.lingmao.scm.module.price.dto.PriceQuery;
 import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.dto.PriceRowVO;
 import com.lingmao.scm.module.price.entity.Price;
+import com.lingmao.scm.security.LineScope;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
@@ -41,10 +42,10 @@ public interface PriceMapper extends BaseMapper<Price> {
     List<Price> selectCurrentProcesses(@Param("keys") Collection<ProcessPriceKey> keys, @Param("date") LocalDate date);
 
     /** 全部历史：生效日期新的在前，同一天后录的在前 */
-    IPage<PriceRowVO> selectHistoryPage(IPage<PriceRowVO> page, @Param("q") PriceQuery query);
+    IPage<PriceRowVO> selectHistoryPage(IPage<PriceRowVO> page, @Param("q") PriceQuery query, @Param("lines") LineScope lines);
 
     /** 条件命中的物料价都是哪些物料：只看现价时要先拿它们现在的采购单位 */
-    List<Long> selectMaterialIds(@Param("q") PriceQuery query);
+    List<Long> selectMaterialIds(@Param("q") PriceQuery query, @Param("lines") LineScope lines);
 
     /**
      * 只看现价：每组一行（PriceQuery 的注释），带上一条的单价、以后才生效的下一条。
@@ -52,7 +53,8 @@ public interface PriceMapper extends BaseMapper<Price> {
      * 语句是 WITH + DISTINCT ON + LATERAL，交给 MyBatis-Plus 拆了反而容易出错，直接 SELECT count(*) FROM (…) 最稳
      */
     IPage<PriceRowVO> selectCurrentPage(IPage<PriceRowVO> page, @Param("q") PriceQuery query,
-                                        @Param("units") Collection<MaterialUnit> units, @Param("today") LocalDate today);
+                                        @Param("units") Collection<MaterialUnit> units, @Param("today") LocalDate today,
+                                        @Param("lines") LineScope lines);
 
     /**
      * 作废（RFC 006 §3）：这张表唯一的一条 UPDATE，只改作废的四列。条件带 NOT voided，返回 0 = 已经作废了（或者不存在），

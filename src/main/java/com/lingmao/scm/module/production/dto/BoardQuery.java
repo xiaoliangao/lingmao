@@ -12,6 +12,8 @@ import java.time.LocalDate;
 @EqualsAndHashCode(callSuper = true)
 public class BoardQuery extends PageQuery {
     private String kind;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     private Long factoryId;
     private Long merchId;
     private String brand;

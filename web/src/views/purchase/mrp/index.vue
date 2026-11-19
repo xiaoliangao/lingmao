@@ -16,6 +16,7 @@ import { statusQuery } from '@/utils/query'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { MRP_STATUS, type MrpCalcRow, type MrpOrderOption, type MrpStatus, type ReservePct } from '@/types/purchase'
 import { formatDate, formatDateRange, formatQty } from '@/utils/format'
+import { useProductLines } from '@/composables/useProductLines'
 
 /**
  * 算料单列表（/mrp，docs/api/03 §1.4）。认 ?status=（首页"算料单草稿"点进来），只认 /mrp 自己的地址。
@@ -29,7 +30,10 @@ const STATUS_OPTIONS = [{ label: '全部', value: '' }, ...STATUSES.map((st) => 
 const pickStatus = (value: unknown): MrpStatus | '' => (STATUSES.includes(value as MrpStatus) ? (value as MrpStatus) : '')
 
 // 单号、状态总在（状态固定在右边，重新算料成的新单小字放在状态下面）
+/** 品类线：几条线的人才有这一列（RFC 013 §2；算料单一次只算一条线） */
+const lines = useProductLines()
 const cols = useColumns('mrp', [
+  ...(lines.multi.value ? [{ key: 'productLine' as const, label: '品类线' }] : []),
   { key: 'orders', label: '订单' },
   { key: 'styles', label: '款式' },
   { key: 'buy', label: '要买' },
@@ -194,6 +198,9 @@ async function createCalc() {
 
     <el-table v-loading="loading" :data="list" row-key="id" row-class-name="clickable" scrollbar-always-on :empty-text="emptyText" @row-click="openRow">
       <el-table-column label="单号" prop="no" width="140" fixed="left" class-name="code" />
+      <el-table-column v-if="cols.show.productLine" label="品类线" width="80">
+        <template #default="{ row }">{{ lines.labelOf(row.productLine) }}</template>
+      </el-table-column>
       <el-table-column v-if="cols.show.orders" label="订单" min-width="160">
         <template #default="{ row }"><span class="code">{{ (row as MrpCalcRow).orderNos.join('、') }}</span></template>
       </el-table-column>
@@ -256,6 +263,9 @@ async function createCalc() {
       <el-table v-loading="loadingOrders" :data="orderOptions" row-key="orderId" max-height="380" empty-text="没有能算料的订单：订单审核后才能算" @selection-change="picked = $event">
         <el-table-column type="selection" width="40" reserve-selection />
         <el-table-column label="订单号" prop="orderNo" width="150" class-name="code" />
+        <el-table-column v-if="lines.multi.value" label="品类线" width="80">
+          <template #default="{ row }">{{ lines.labelOf((row as MrpOrderOption).productLine) }}</template>
+        </el-table-column>
         <el-table-column label="款式" min-width="140">
           <template #default="{ row }"><span class="code">{{ (row as MrpOrderOption).styleCodes.join('、') }}</span></template>
         </el-table-column>

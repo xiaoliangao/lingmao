@@ -24,6 +24,10 @@ public class MrpCalc extends DocEntity {
     /** 要料日期：几张订单里最早的"裁剪"计划开始（没排单按承诺交期倒推），算料时的快照；算不出来是 null */
     private LocalDate needDate;
 
+    /** 品类线（RFC 013 §2）：选的订单的品类线，一次只算一条；建好不改，生成的采购单跟着它 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private String productLine;
+
     /** 重新算料的上一张：建好不改 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Long prevCalcId;

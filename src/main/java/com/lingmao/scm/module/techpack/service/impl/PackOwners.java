@@ -66,6 +66,11 @@ class PackOwners {
         return toOwner(styleService.packInfo(styleId));
     }
 
+    /** 款式在不在、我能不能看（品类线，RFC 013 §2） */
+    boolean visible(long styleId) {
+        return styleService.visible(styleId);
+    }
+
     /** 批量（按款看成本）；查不到的不在 map 里 */
     Map<Long, PackOwner> styles(Collection<Long> styleIds) {
         Map<Long, PackOwner> owners = new HashMap<>();

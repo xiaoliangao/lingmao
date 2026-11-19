@@ -39,6 +39,7 @@ import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
@@ -58,6 +59,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -143,7 +145,7 @@ class PurchaseOrderServiceImplTest {
 
     private static void login(String... perms) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null,
-                List.of(perms).stream().map(SimpleGrantedAuthority::new).toList()));
+                Stream.concat(Stream.of(perms), Stream.of(LineScope.ALL_AUTHORITY)).map(SimpleGrantedAuthority::new).toList()));
     }
 
     /**

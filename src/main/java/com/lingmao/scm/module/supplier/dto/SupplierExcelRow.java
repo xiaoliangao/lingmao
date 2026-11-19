@@ -15,6 +15,8 @@ public class SupplierExcelRow {
     private String shortName;
     /** 分类：领猫的分类名或我们的分类名，几个用逗号、顿号隔开 */
     private String categories;
+    /** 品类线（RFC 013 §2）：名称或值，几个用逗号、顿号隔开；空 = 导入人能看的全部线 */
+    private String productLines;
     private String goodAtTop;
     private String goodAt;
     private String level;

@@ -20,6 +20,8 @@ public class StylePickVO {
     private String name;
     private String aliasName;
     private String brand;
+    /** 品类线，字典 product_line：订单只能放一条线的款 */
+    private String productLine;
     private Long categoryId;
     private String categoryName;
     private Integer year;

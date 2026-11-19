@@ -16,6 +16,8 @@ import java.util.List;
 public class ProductionQuery extends PageQuery {
     /** OUTSOURCE / BUY：两个菜单的列表必传 */
     private String kind;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     /** 单号、订单号、款号、款名、加工厂；一次查几个时单号、订单号、款号精确查 */
     private String keyword;
     private List<DocStatus> status;

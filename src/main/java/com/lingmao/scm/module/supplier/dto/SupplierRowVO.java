@@ -18,6 +18,8 @@ public class SupplierRowVO {
     private String shortName;
     private String creditCode;
     private String level;
+    /** 做哪几条品类线，字典 product_line 的 value，按字典顺序 */
+    private List<String> productLines;
     private SupplierStatus status;
     /** 字典 supplier_category 的 value，按字典顺序 */
     private List<String> categories;

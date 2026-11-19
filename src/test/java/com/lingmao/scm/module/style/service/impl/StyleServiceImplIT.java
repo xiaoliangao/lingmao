@@ -29,6 +29,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -111,9 +113,16 @@ class StyleServiceImplIT {
     void create_concurrentSameDesigner_codesDistinct() throws Exception {
         Fixture f = fixture();
         CountDownLatch start = new CountDownLatch(1);
+        // 线程池里的线程没有登录信息：带上主线程的（品类线要从权限里读，RFC 013 §2）
+        SecurityContext login = SecurityContextHolder.getContext();
         Callable<StyleCreateResult> task = () -> {
-            start.await();
-            return styleService.create(req(f, "并发测试款"));
+            SecurityContextHolder.setContext(login);
+            try {
+                start.await();
+                return styleService.create(req(f, "并发测试款"));
+            } finally {
+                SecurityContextHolder.clearContext();
+            }
         };
         List<StyleCreateResult> results = new ArrayList<>();
         try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
@@ -307,6 +316,26 @@ class StyleServiceImplIT {
     }
 
     // ---------- 造数据 ----------
+
+    /** 规则（RFC 013 §2）：大类定品类线；只看鞋类的人列表里没有服装的款、详情 404，也建不了服装大类的款 */
+    @Test
+    void productLine_footwearUserCannotSeeApparel() {
+        Fixture f = fixture();
+        StyleCreateResult apparel = styleService.create(req(f, "品类线服装款"));   // FS 非通勤裤 → 服装
+        StyleCreateReq shoe = req(f, "品类线鞋款");
+        shoe.setStyleClass("XZ");
+        StyleCreateResult footwear = styleService.create(shoe);
+        assertThat(styleService.detail(apparel.id()).getProductLine()).isEqualTo("APPAREL");
+        assertThat(styleService.detail(footwear.id()).getProductLine()).isEqualTo("FOOTWEAR");
+
+        TestIdentity.login(900502L, List.of("style:style:add", "line:FOOTWEAR"));
+        StyleQuery query = new StyleQuery();
+        query.setCategoryId(f.parentCategoryId());
+        assertThat(styleService.page(query).getList()).extracting(StyleListVO::getId).containsExactly(footwear.id());
+        assertThat(catchThrowableOfType(BizException.class, () -> styleService.detail(apparel.id())).getCode()).isEqualTo(404);
+        BizException e = catchThrowableOfType(BizException.class, () -> styleService.create(req(f, "鞋类的人建服装款")));
+        assertThat(e.getMessage()).contains("看不到的品类线");
+    }
 
     private record Fixture(long parentCategoryId, long leafId, String leafName, String leafPath, long sizeGroupId,
                            String sizeGroupName, long designerId, String designerName, String designerNo, String brand,

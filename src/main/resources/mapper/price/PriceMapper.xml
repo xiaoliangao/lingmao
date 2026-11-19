@@ -61,8 +61,17 @@
         ) p ON true
     </select>
 
-    <!-- 列表的条件：三个详情页各传自己的 id；页签里再按类型、SKU、加工方式筛 -->
+    <!--
+      列表的条件：三个详情页各传自己的 id；页签里再按类型、SKU、加工方式筛。
+      品类线（RFC 013 §2）：供应商和我的线有交集，加工价的款还要在我的线里（物料详情页的价格页签会列出各家的价）
+    -->
     <sql id="filters">
+        <if test="lines.limited">
+            AND EXISTS (SELECT 1 FROM sup_supplier ls WHERE ls.id = p.supplier_id
+                        AND ls.product_lines &amp;&amp; #{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})
+            AND (p.style_id IS NULL OR EXISTS (SELECT 1 FROM sty_style lst WHERE lst.id = p.style_id
+                        AND lst.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})))
+        </if>
         <if test="q.type != null">AND p.type = #{q.type}</if>
         <if test="q.supplierId != null">AND p.supplier_id = #{q.supplierId}</if>
         <if test="q.materialId != null">AND p.material_id = #{q.materialId}</if>

@@ -268,13 +268,14 @@ public class SupplierController extends IdempotencyReplayGuard {
 
     // ------------------------------------------------------------------ 下拉、导入导出
 
-    @Operation(summary = "下拉：按分类（逗号隔开多个，任一个就算）、按能不能用筛（usage 不传 = SAMPLE）")
+    @Operation(summary = "下拉：按分类（逗号隔开多个，任一个就算）、按能不能用筛（usage 不传 = SAMPLE）、按品类线筛（productLine）")
     @GetMapping("/options")
     public R<List<SupplierOption>> options(@RequestParam(value = "category", required = false) List<String> category,
                                            @RequestParam(value = "usage", required = false) SupplierService.Usage usage,
                                            @RequestParam(value = "keyword", required = false) String keyword,
-                                           @RequestParam(value = "includeId", required = false) Long includeId) {
-        return R.ok(supplierService.options(category, usage, keyword, includeId));
+                                           @RequestParam(value = "includeId", required = false) Long includeId,
+                                           @RequestParam(value = "productLine", required = false) String productLine) {
+        return R.ok(supplierService.options(category, usage, keyword, includeId, productLine));
     }
 
     @Operation(summary = "导入模板（领猫导出的样子）")

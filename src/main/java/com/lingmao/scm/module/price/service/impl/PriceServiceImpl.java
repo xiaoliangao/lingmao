@@ -34,6 +34,7 @@ import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
 import com.lingmao.scm.security.FieldPermissions;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,15 +97,16 @@ public class PriceServiceImpl implements PriceService {
             query.setType(PriceType.PROCESS);
         } else if (!FieldPermissions.has(FieldPermissions.PRODUCTION)) query.setType(PriceType.MATERIAL);
         IPage<PriceRowVO> page;
+        LineScope lines = LineScope.current();
         if (Boolean.TRUE.equals(query.getCurrent())) {
             // 物料价只认物料现在的采购单位：先看命中的是哪些物料，问 basic 要单位，当参数传进 SQL（不跨域 JOIN）
-            List<MaterialUnit> units = materialService.materialRefs(priceMapper.selectMaterialIds(query)).stream()
+            List<MaterialUnit> units = materialService.materialRefs(priceMapper.selectMaterialIds(query, lines)).stream()
                     .map(m -> new MaterialUnit(m.id(), m.purchaseUnit())).toList();
             Page<PriceRowVO> request = query.toPage();
             request.setOptimizeCountSql(false);
-            page = priceMapper.selectCurrentPage(request, query, units, LocalDate.now(clock));
+            page = priceMapper.selectCurrentPage(request, query, units, LocalDate.now(clock), lines);
         } else {
-            page = priceMapper.selectHistoryPage(query.toPage(), query);
+            page = priceMapper.selectHistoryPage(query.toPage(), query, lines);
         }
         fill(page.getRecords());
         return new PageResult<>(page.getRecords(), page.getTotal());

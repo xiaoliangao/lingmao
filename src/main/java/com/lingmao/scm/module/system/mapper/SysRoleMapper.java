@@ -37,13 +37,18 @@ public interface SysRoleMapper extends BaseMapper<SysRole> {
     List<SysRole> selectNamesByIds(@Param("ids") Collection<Long> ids);
 
     /**
-     * 用户的数据范围是不是"全部"：多个角色取最宽的，只要有一个启用的角色是 ALL 就是（RFC 001 §8）。
-     * 超级管理员按编码也算：他本来就拥有一切，和菜单权限里认 admin 的写法一样（SysMenuMapper）
+     * 用户的数据范围是不是"全部"：多个角色取最宽的，只要有一个启用的角色是 ALL 就是（RFC 001 §8）；是不是超级管理员（品类线看全部，
+     * RFC 013 §2）。超级管理员按编码认，数据范围也算全部：他本来就拥有一切，和菜单权限里认 admin 的写法一样（SysMenuMapper）。
+     * 过滤器每个请求都调，两样一次查出来
      */
     @Select("""
-            SELECT EXISTS (SELECT 1 FROM sys_role r JOIN sys_user_role ur ON ur.role_id = r.id
-                           WHERE ur.user_id = #{userId} AND r.status = 1 AND r.deleted = false
-                             AND (r.data_scope = 'ALL' OR r.code = 'admin'))
+            SELECT COALESCE(bool_or(r.data_scope = 'ALL' OR r.code = 'admin'), false) AS all_data,
+                   COALESCE(bool_or(r.code = 'admin'), false) AS admin
+            FROM sys_role r JOIN sys_user_role ur ON ur.role_id = r.id
+            WHERE ur.user_id = #{userId} AND r.status = 1 AND r.deleted = false
             """)
-    boolean hasAllDataScope(@Param("userId") Long userId);
+    ScopeFlags selectScopeFlags(@Param("userId") Long userId);
+
+    record ScopeFlags(boolean allData, boolean admin) {
+    }
 }

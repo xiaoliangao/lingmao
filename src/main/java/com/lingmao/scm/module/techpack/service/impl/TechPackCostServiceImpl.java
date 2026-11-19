@@ -20,6 +20,7 @@ import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
 import com.lingmao.scm.module.techpack.service.impl.PackOwners.Ctx;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -42,7 +43,7 @@ public class TechPackCostServiceImpl implements TechPackCostService {
     @Override
     public TechPackCostVO cost(long id, Long colorId) {
         TechPack pack = techPackMapper.selectById(id);
-        if (pack == null) {
+        if (pack == null || !packOwners.visible(pack.getStyleId())) {
             throw new BizException(404, "这一版资料包不存在，可能已经被删除了");
         }
         Ctx ctx = packOwners.context(pack);
@@ -55,7 +56,7 @@ public class TechPackCostServiceImpl implements TechPackCostService {
     @Override
     public PageResult<StyleCostRowVO> styleCosts(StyleCostQuery query) {
         IPage<StyleCostRowVO> page = techPackMapper.selectStyleCostPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                withDescendants(query.getCategoryId()));
+                withDescendants(query.getCategoryId()), LineScope.current());
         List<StyleCostRowVO> rows = page.getRecords();
         if (!rows.isEmpty()) {
             Map<Long, PackOwner> owners = packOwners.styles(rows.stream().map(StyleCostRowVO::getStyleId).toList());

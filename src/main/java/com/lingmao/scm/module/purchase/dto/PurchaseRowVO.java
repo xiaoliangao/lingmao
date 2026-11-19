@@ -21,6 +21,8 @@ public class PurchaseRowVO {
     private String supplierName;
     private String supplierStatus;
     private String purchaseType;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private MaterialSkuBrief firstItem;
     private int itemCount;
     private BigDecimal totalQty;

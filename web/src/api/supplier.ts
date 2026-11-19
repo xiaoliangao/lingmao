@@ -46,8 +46,8 @@ export const supplierApi = {
    * 下拉（SupplierSelect）：登录就能调，最多 50 条。usage 不传 = SAMPLE。
    * includeId：编辑旧记录时把已经选中的那家带上，它停用了、不在前 50 条里也照样显示名字
    */
-  /** category：逗号隔开多个，任一个就算 */
-  options: (params: { category?: string; usage?: SupplierUsage; keyword?: string; includeId?: string }) =>
+  /** category：逗号隔开多个，任一个就算；productLine：只列做这条品类线的（采购单、生产单选供应商） */
+  options: (params: { category?: string; usage?: SupplierUsage; keyword?: string; includeId?: string; productLine?: string }) =>
     http.get<SupplierOption[]>(`${base}/options`, params),
 }
 

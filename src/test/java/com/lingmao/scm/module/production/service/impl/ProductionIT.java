@@ -390,6 +390,42 @@ class ProductionIT {
                 .extracting("code").isEqualTo(1000);
     }
 
+    /** 品类线（RFC 013 §2）：加工厂要做款的线；别的线的人列表里没有、详情 404 */
+    @Test
+    void productLine_factoryMustServe_andHiddenFromOtherLines() {
+        Fixture f = fixture();
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long orderId = approvedOrder(f, commit);
+        jdbcTemplate.update("UPDATE sup_supplier SET product_lines = '{FOOTWEAR}' WHERE id = ?", f.factory);
+
+        ScheduleQuoteVO quote = scheduleService.quote(orderId, f.style, f.factory);
+        assertThat(quote.usable()).isFalse();
+        assertThat(quote.reason()).contains("不做服装");
+        Map<Long, Integer> qty = Map.of(orderLine(orderId, f.skuM), 60);
+        assertThatThrownBy(() -> scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), qty)))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
+                    assertThat(e.getData().toString()).contains("不做服装");
+                });
+
+        jdbcTemplate.update("UPDATE sup_supplier SET product_lines = '{APPAREL,FOOTWEAR}' WHERE id = ?", f.factory);
+        long id = scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), qty)).getFirst().id();
+        ProductionDetailVO d = productionOrderService.detail(id);
+        assertThat(d.getProductLine()).isEqualTo("APPAREL");
+        ProductionQuery q = new ProductionQuery();
+        q.setKind("OUTSOURCE");
+        q.setKeyword(d.getNo());
+        assertThat(productionOrderService.page(q).getList()).extracting(ProductionRowVO::getId).containsExactly(id);
+
+        List<String> footwear = new java.util.ArrayList<>(PERMS);
+        footwear.add("line:FOOTWEAR");
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new LoginUser(f.user, "jti-it"), null, footwear.stream().map(SimpleGrantedAuthority::new).toList()));
+        assertThat(productionOrderService.page(q).getList()).isEmpty();
+        assertThatThrownBy(() -> productionOrderService.detail(id))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+    }
+
     private static com.lingmao.scm.module.production.dto.CutQtyReq cutReq(long item, Integer cut) {
         var i = new com.lingmao.scm.module.production.dto.CutQtyReq.Item();
         i.setPrdOrderItemId(item);
@@ -469,7 +505,7 @@ class ProductionIT {
                 VALUES (?, 1, '大身', ?, 'BY_COLOR', 1.5, 'METER', ?) RETURNING id""", Long.class, pack, material, fabricSupplier);
         jdbcTemplate.update("INSERT INTO tp_bom_item_sku (bom_item_id, color_id, material_sku_id) VALUES (?, ?, ?)", item, color, sku);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                new LoginUser(user, "jti-it"), null, PERMS.stream().map(SimpleGrantedAuthority::new).toList()));
+                new LoginUser(user, "jti-it"), null, TestIdentity.withLines(PERMS).stream().map(SimpleGrantedAuthority::new).toList()));
         TestIdentity.grant(jdbcTemplate, user, PERMS);
         TestIdentity.company(company);
         return new Fixture(company, user, warehouse, factory, style, skuM, skuL, sku);

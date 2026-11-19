@@ -14,6 +14,8 @@ export interface StyleQuery {
   /** 含下级 */
   categoryId?: string
   styleClass?: string
+  /** 品类线：几条线的人才有这个筛选（RFC 013 §2） */
+  productLine?: string
   brand?: string
   year?: number
   season?: string
@@ -72,7 +74,8 @@ export const styleApi = {
   codePreview: (styleClass: string, designerId: string | null) =>
     http.get<string>(`${base}/code-preview`, { styleClass, designerId: designerId ?? undefined }, { silent: true }),
   /** 选款式的弹窗：启用的款式（includeDraft 时草稿也列，录加工价用），关键字查款号、名称、花名、品牌；品类含下级（登录即可） */
-  pick: (params: PageParams & { keyword?: string; categoryId?: string; includeDraft?: boolean }) =>
+  /** productLine：只列这条品类线的（订单已经有款了、计划用于的款） */
+  pick: (params: PageParams & { keyword?: string; categoryId?: string; includeDraft?: boolean; productLine?: string }) =>
     http.get<PageResult<StylePickRow>>(`${base}/pick`, params),
   create: ({ images, files, ...data }: StyleCreateForm) =>
     http.post<StyleCreateResult>(base, { ...data, images: attachmentBody(images), files: attachmentBody(files) }),

@@ -180,6 +180,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         vo.setPlanRevision(p.getPlanRevision());
         vo.setCompanyName(companyService.getById(p.getCompanyId()).getShortName());
         vo.setKind(p.getKind().name());
+        vo.setProductLine(p.getProductLine());
         SupplierRef f = supplierService.getRef(p.getFactoryId());
         vo.setFactoryId(f.id());
         vo.setFactoryCode(f.code());
@@ -397,7 +398,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         if (!mode.equals(p.getProcessMode())) {
             checkDict("process_mode", mode, "加工方式");
         }
-        support.checkFactory(req.getFactoryId(), p.getKind());
+        support.checkFactory(req.getFactoryId(), p.getKind(), p.getProductLine());
         if (!Objects.equals(p.getCompanyId(), req.getCompanyId())) {
             Company company = companyService.getById(req.getCompanyId());
             if (!Integer.valueOf(1).equals(company.getStatus())) {
@@ -586,7 +587,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         if (!p.getVersion().equals(req.version())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, ProductionSupport.STALE);
         }
-        support.checkFactory(p.getFactoryId(), p.getKind());
+        support.checkFactory(p.getFactoryId(), p.getKind(), p.getProductLine());
         String problem = priceProblem(p);
         if (problem != null) {
             throw new BizException("提交不了：" + problem);
@@ -616,7 +617,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         if (!p.getVersion().equals(req.version())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这张单刚被别人审过或改过，请刷新后再审");
         }
-        support.checkFactory(p.getFactoryId(), p.getKind());
+        support.checkFactory(p.getFactoryId(), p.getKind(), p.getProductLine());
         String problem = priceProblem(p);
         if (problem != null) {
             throw new BizException("审核不了：价格档案在提交以后变了，驳回让制单人补上改价原因（" + problem + "）");

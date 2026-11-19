@@ -34,6 +34,7 @@ import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.FieldPermissions;
+import com.lingmao.scm.security.LineScope;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -291,6 +292,15 @@ public class StyleExcel {
             s.setName(r.getName());
             s.setAliasName(r.getAliasName());
             s.setStyleClass(r.getStyleClass());
+            if (r.getStyleClass() != null) {
+                String productLine = dicts.lineOf(r.getStyleClass());
+                if (productLine == null) {
+                    sheet.error(row, "大类", "大类「" + r.getStyleClass() + "」还没设品类线：先到 管理后台 › 字典 › 款式大类 里设");
+                } else if (!LineScope.current().canSee(productLine)) {
+                    sheet.error(row, "大类", "大类「" + r.getStyleClass() + "」属于你看不到的品类线，不能导这个大类的款");
+                }
+                s.setProductLine(productLine);
+            }
             s.setBrand(matchBrand(r.getBrand(), lookups.brands, newBrands, sheet, row));
             s.setCategoryId(matchCategory(r.getCategoryPath(), lookups, sheet, row));
             s.setYear(r.getYear());

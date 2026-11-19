@@ -20,6 +20,8 @@ public class OrderRowVO {
     private String status;
     private String orderType;
     private String brand;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private String contractNo;
     private LocalDate orderDate;
     private LocalDate requiredDate;

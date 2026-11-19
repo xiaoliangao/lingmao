@@ -46,6 +46,8 @@
 
     <!-- 种类、加工厂、跟单、品牌、数据范围：看板的本月回货也用 -->
     <sql id="baseWhere">
+        <if test="scope.lines.limited">AND p.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
+        <if test="q.productLine != null and q.productLine != ''">AND p.product_line = #{q.productLine}</if>
         <choose>
             <when test="q.auditForMe">
                 AND p.status = 'PENDING'
@@ -129,7 +131,7 @@
     </sql>
 
     <sql id="rowColumns">
-        SELECT p.id, p.no, p.kind, p.status, p.version, p.company_id, p.factory_id, f.short_name AS factory_short_name, p.process_mode,
+        SELECT p.id, p.no, p.kind, p.product_line, p.status, p.version, p.company_id, p.factory_id, f.short_name AS factory_short_name, p.process_mode,
                p.order_id, o.no AS order_no, p.style_id, s.code AS style_code, s.name AS style_name, p.total_qty, p.unit_price,
                p.total_amount, p.due_date, p.expect_date, p.issue_status, rq.returned_qty, rq.defect_qty,
                iss.open_count AS open_issue_count, iss.first_type AS first_open_issue_type, p.merch_id, p.create_by,
@@ -212,6 +214,7 @@
                    GROUP BY p.factory_id) w ON w.factory_id = sf.id
         WHERE w.factory_id IS NOT NULL
            OR (sf.status = 'ACTIVE'
+               <if test="scope.lines.limited">AND sf.product_lines &amp;&amp; #{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler}</if>
                AND EXISTS (SELECT 1 FROM sup_supplier_category c WHERE c.supplier_id = sf.id
                            AND c.category IN <foreach collection="categories" item="c" open="(" separator="," close=")">#{c}</foreach>))
         ORDER BY wip_qty DESC, sf.short_name, sf.id
@@ -229,6 +232,7 @@
             <otherwise>AND p.status IN ('APPROVED', 'RUNNING') AND p.issue_status IN ('NONE', 'PARTIAL')</otherwise>
         </choose>
         <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="scope.lines.limited">AND p.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
         <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>

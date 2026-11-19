@@ -49,6 +49,7 @@ import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierQuery;
 import com.lingmao.scm.module.supplier.mapper.SupplierMapper;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.scripting.defaults.DefaultParameterHandler;
@@ -83,6 +84,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -583,7 +585,7 @@ class A1KeywordQueryIT {
     }
     private Result style(String keyword) {
         StyleQuery q = new StyleQuery(); q.setKeyword(keyword);
-        return result(styles.selectListPage(new Page<>(1, 100), q, Keywords.codes(keyword), null));
+        return result(styles.selectListPage(new Page<>(1, 100), q, Keywords.codes(keyword), null, LineScope.current()));
     }
     private Result order(String keyword) {
         OrderQuery q = new OrderQuery(); q.setKeyword(keyword);
@@ -595,7 +597,7 @@ class A1KeywordQueryIT {
     }
     private Result styleCost(String keyword) {
         StyleCostQuery q = new StyleCostQuery(); q.setKeyword(keyword);
-        var page = packs.selectStyleCostPage(new Page<>(1, 100), q, Keywords.codes(keyword), null);
+        var page = packs.selectStyleCostPage(new Page<>(1, 100), q, Keywords.codes(keyword), null, LineScope.current());
         return new Result(page.getTotal(), page.getRecords().stream().map(row -> row.getStyleId()).toList());
     }
     private Result purchase(String keyword) {
@@ -695,9 +697,11 @@ class A1KeywordQueryIT {
         // 在加载子表前失效早期小表缓存的 FK 顺扫计划；保留全部数据、外键与最终统一 ANALYZE。
         jdbc.execute("ANALYZE " + table);
     }
+    /** all：数据范围全部、三条品类线都给（普通账号的样子，查询要带品类线条件，RFC 013 §2）；否则什么都看不到 */
     private static void login(long id, boolean all) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(id, "A1 query"), null,
-                all ? List.of(new SimpleGrantedAuthority("data:all"), new SimpleGrantedAuthority("production:receipt:add")) : List.of()));
+                all ? Stream.of("data:all", "production:receipt:add", "line:APPAREL", "line:FOOTWEAR", "line:GENERAL")
+                        .map(SimpleGrantedAuthority::new).toList() : List.of()));
     }
     private static List<JsonNode> nodes(JsonNode root) {
         List<JsonNode> result = new ArrayList<>(); result.add(root);

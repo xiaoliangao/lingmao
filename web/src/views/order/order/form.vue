@@ -89,6 +89,9 @@ const files = ref<FileVO[]>([])
 const blocks = ref<StyleBlock[]>([])
 const stylePicking = ref(false)
 const pickedStyleIds = computed(() => blocks.value.map((b) => b.opt.styleId))
+/** 品类线（RFC 013 §2）：一张订单只能放一条线的款；挑过款以后，选款式只列这条线的 */
+const orderLine = ref<string | null>(null)
+const pickParams = computed(() => (blocks.value.length && orderLine.value ? { productLine: orderLine.value } : undefined))
 
 const guard = useUnsavedChanges(() => ({ head, files: files.value, blocks: blocks.value }))
 
@@ -141,7 +144,13 @@ async function appendStyles(styleIds: string[]) {
 }
 
 function onPickedStyles(rows: MaterialPickRow[] | StylePickRow[]) {
-  void appendStyles((rows as StylePickRow[]).map((r) => r.id))
+  const picked = rows as StylePickRow[]
+  if (new Set(picked.map((r) => r.productLine)).size > 1) {
+    ElMessage.warning('一张订单只能放一条品类线的款，这次挑的里有几条线的：分开下单')
+    return
+  }
+  if (!blocks.value.length || !orderLine.value) orderLine.value = picked[0]?.productLine ?? null
+  void appendStyles(picked.map((r) => r.id))
 }
 
 const queryStyleId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? value : null)
@@ -164,6 +173,7 @@ async function init() {
     savedCompanyId.value = d.companyId
     version.value = d.version
     orderNo.value = d.no
+    orderLine.value = d.productLine
     Object.assign(head, {
       companyId: d.companyId,
       customerId: d.customerId,
@@ -448,7 +458,7 @@ const backTo = editing ? `/orders/${id}` : '/orders'
       </template>
     </div>
 
-    <DataPick v-model="stylePicking" kind="style" :have="pickedStyleIds" @pick="onPickedStyles" />
+    <DataPick v-model="stylePicking" kind="style" :have="pickedStyleIds" :params="pickParams" @pick="onPickedStyles" />
   </div>
 </template>
 

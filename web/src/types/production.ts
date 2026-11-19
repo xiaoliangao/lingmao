@@ -200,6 +200,8 @@ export interface ProductionRow {
   id: string
   no: string
   kind: ProductionKind
+  /** 品类线（字典 product_line）：跟款式（RFC 013 §2） */
+  productLine: string
   status: ProductionStatus
   /** 批量条逐条调 act 要带 */
   version: number
@@ -243,6 +245,8 @@ export interface ProductionQuery {
   auditForMe?: boolean
   /** 两个菜单的列表必传；看板不传 = 两种都看 */
   kind?: ProductionKind
+  /** 品类线：几条线的人才有这个筛选 */
+  productLine?: string
   /** 单号、订单号、款号、款名、加工厂；一次查几个（README §3.2）时单号、订单号、款号精确查 */
   keyword?: string
   status?: ProductionStatus[]
@@ -309,6 +313,8 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   /** 节点计划的独立修订号，不使用单据 version */
   planRevision: number
   kind: ProductionKind
+  /** 品类线：跟款式，加工厂要做这条线 */
+  productLine: string
   factoryId: string
   factoryCode: string
   /** 全称；factoryShortName 是简称 */

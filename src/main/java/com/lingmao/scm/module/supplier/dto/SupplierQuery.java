@@ -26,6 +26,8 @@ public class SupplierQuery extends PageQuery {
 
     /** 等级 A–D */
     private String level;
+    /** 做这条品类线的（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
 
     /** 负责采购员 */
     private Long buyerId;

@@ -22,6 +22,8 @@ public class StyleListVO {
     private String name;
     private String aliasName;
     private String styleClass;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private String brand;
     private Long categoryId;
     private String categoryName;

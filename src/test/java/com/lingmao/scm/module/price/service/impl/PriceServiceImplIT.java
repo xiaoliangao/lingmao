@@ -21,6 +21,7 @@ import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.service.PriceService;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.LineScope;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -473,7 +474,8 @@ class PriceServiceImplIT {
 
     private static void loginAll() {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                new LoginUser(USER, "jti-it"), null, Stream.of("price:price:list", "price:material:edit", "price:process:edit", "techpack:cost:query", "production:price:query")
+                new LoginUser(USER, "jti-it"), null, Stream.of("price:price:list", "price:material:edit", "price:process:edit", "techpack:cost:query", "production:price:query",
+                        LineScope.ALL_AUTHORITY)
                 .map(SimpleGrantedAuthority::new).toList()));
     }
 

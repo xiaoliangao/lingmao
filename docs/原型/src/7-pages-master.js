@@ -22,7 +22,7 @@ function saveCert(s, c, f) {
   act(s, '改证照 ' + c.type + '：' + ch.join('；'))
 }
 function removeCert(s, c) { s.certs.splice(s.certs.indexOf(c), 1); act(s, '删证照 ' + c.type + '（有效期至 ' + c.until + '）') }
-const SUP_FIELDS = [['name', '全称'], ['credit', '统一社会信用代码'], ['short', '简称'], ['cats', '分类'], ['goodAt', '擅长品类', (v) => v.map((c) => catOf(c).name).join('、')], ['level', '等级'], ['contact', '联系人'], ['phone', '电话'], ['wechat', '微信'], ['addr', '地址'],
+const SUP_FIELDS = [['name', '全称'], ['credit', '统一社会信用代码'], ['short', '简称'], ['cats', '分类'], ['productLines', '品类线'], ['goodAt', '擅长品类', (v) => v.map((c) => catOf(c).name).join('、')], ['level', '等级'], ['contact', '联系人'], ['phone', '电话'], ['wechat', '微信'], ['addr', '地址'],
   ['settle', '结算方式'], ['term', '账期'], ['tax', '税率'], ['invoice', '发票类型'], ['bank', '开户行'], ['account', '账号'], ['buyer', '负责采购员', userName], ['note', '备注']]
 /* 关键信息（甲方 11-11 反馈 1d）：准入过的供应商（合作中、停用、黑名单）改这几项先挂起成"待批改动"，另一个有审批权限的人批准才生效；
  * 停用的也要批，免得"停用 → 改 → 再启用"绕过去。待准入的直接改（申请准入时一起审）；一家同时只能有一份待批改动。其他字段直接改 */
@@ -33,6 +33,7 @@ function updateSupplier(s, f) {
   if (s.status === '准入审批中') fail('准入审批中，资料不能改', ['要改先让审批人驳回，改好再申请'])
   if (!f.short?.trim() || !f.name?.trim()) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
+  if ('productLines' in f && !f.productLines?.length) fail('品类线至少选一条')
   if ('credit' in f) { f.credit = normCredit(f.credit); checkCredit(f.credit, s) }
   // 信用代码从空补上的直接生效，改已有的才审批：导入的多数没填，上线后逐家补、逐家批太麻烦（用户 11-15 定）
   const gated = supGated(s) ? SUP_FIELDS.filter(([k]) => SUP_KEY.includes(k) && k in f && !sameVal(f[k], s[k]) && !(k === 'credit' && !s.credit)) : []
@@ -608,7 +609,7 @@ route('/suppliers', {
     </div>
     <div data-c="供应商列表">
       <Tbl :rows="rows" link v-model:picked="s.picked" @row="x => go('/suppliers/' + x.code)" empty="没有符合条件的供应商" :cols="[
-        { k: 'code', t: '编码', c: 'code' }, { k: 'short', t: '简称' }, { k: 'cats', t: '分类', f: x => x.cats.join('、') }, { k: 'level', t: '等级' },
+        { k: 'code', t: '编码', c: 'code' }, { k: 'short', t: '简称' }, { k: 'cats', t: '分类', f: x => x.cats.join('、') }, { k: 'productLines', t: '品类线', f: x => x.productLines.join('、') }, { k: 'level', t: '等级' },
         { k: 'status', t: '状态' }, { k: 'contact', t: '联系人' }, { k: 'settle', t: '结算', f: x => x.settle + (x.term ? ' ' + x.term + ' 天' : '') },
         { k: 'buyer', t: '负责人', f: x => userName(x.buyer) }, { k: 'cert', t: '证照' }, { k: 'risk', t: '风险' }]">
         <template #short="{ r }"><span>{{ r.short }}</span> <span class="dim">{{ r.name }}</span></template>
@@ -630,14 +631,14 @@ comp('SupplierForm', {
   emits: ['close'],
   setup(p, { emit }) {
     const keys = SUP_FIELDS.map(([k]) => k)
-    const f = reactive(p.s ? Object.fromEntries(keys.map((k) => [k, Array.isArray(p.s[k]) ? [...p.s[k]] : p.s[k] ?? ''])) : { name: '', credit: '', short: '', cats: [], goodAt: [], level: 'B', contact: '', phone: '', wechat: '', addr: '', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', bank: '', account: '', buyer: 'u2', note: '' })
+    const f = reactive(p.s ? Object.fromEntries(keys.map((k) => [k, Array.isArray(p.s[k]) ? [...p.s[k]] : p.s[k] ?? ''])) : { name: '', credit: '', short: '', cats: [], productLines: ['服装'], goodAt: [], level: 'B', contact: '', phone: '', wechat: '', addr: '', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', bank: '', account: '', buyer: 'u2', note: '' })
     const toggle = (list, c) => { const i = list.indexOf(c); i >= 0 ? list.splice(i, 1) : list.push(c) }
     const cats = computed(() => db.categories.filter((c) => c.status !== '停用' || f.goodAt.includes(c.code)))
     const gate = computed(() => !!p.s && supGated(p.s))
     const credit = computed(() => creditProblem(normCredit(f.credit), p.s))
     function save() {
       if (p.s) { const r = run(() => updateSupplier(p.s, f)); if (r !== undefined) { emit('close'); toast(p.s.short + ' 已保存' + (r ? '；' + r : '')) } return }
-      const s = run(() => createSupplier({ ...f, cats: [...f.cats], goodAt: [...f.goodAt] }))
+      const s = run(() => createSupplier({ ...f, cats: [...f.cats], productLines: [...f.productLines], goodAt: [...f.goodAt] }))
       if (!s) return
       emit('close')
       go('/suppliers/' + s.code)
@@ -655,6 +656,7 @@ comp('SupplierForm', {
       <label class="f">等级<Pick class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></Pick></label>
       <span></span>
       <div class="f full">分类<div class="chips"><button v-for="c in db.dicts.供应商分类" :key="c" class="chip" :class="{ on: f.cats.includes(c) }" @click="toggle(f.cats, c)">{{ c }}</button></div></div>
+      <div class="f full" data-c="品类线">品类线<div class="chips"><button v-for="c in db.dicts.品类线" :key="c" class="chip" :class="{ on: f.productLines.includes(c) }" @click="toggle(f.productLines, c)">{{ c }}</button></div><small class="dim">只有做这几条线的人看得到它；采购单、生产单只能选做这条线的</small></div>
       <div class="f full" data-c="擅长品类">擅长品类<div class="chips"><button v-for="c in cats" :key="c.code" class="chip" :class="{ on: f.goodAt.includes(c.code) }" @click="toggle(f.goodAt, c.code)">{{ c.name }}</button></div></div>
       <label class="f">联系人<input class="inp" v-model="f.contact"></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
@@ -753,7 +755,7 @@ route('/suppliers/:code', {
     <div class="detail">
       <div class="body">
         <div class="title">{{ s.short }}<St :s="s.status"/><span v-if="risk && risk.result !== '无风险'" class="flag" :class="riskTone(risk)" style="margin-left:6px">企查查{{ risk.result }}</span></div>
-        <div class="sub"><span>{{ s.name }}</span><span class="code">{{ s.credit || '没填信用代码' }}</span><span>{{ s.cats.join('、') }}</span><span>{{ s.level }} 级</span></div>
+        <div class="sub"><span>{{ s.name }}</span><span class="code">{{ s.credit || '没填信用代码' }}</span><span>{{ s.cats.join('、') }}</span><span>{{ s.productLines.join('、') }}</span><span>{{ s.level }} 级</span></div>
         <div v-if="s.riskNew" class="banner red" data-c="新增风险"><Ico n="alert"/><span>企查查 {{ fd(s.riskNew.at) }} 复查新增 {{ riskNewItems(s).length }} 条风险：{{ riskNewItems(s).map(x => x.type + '（' + x.date + '）').join('、') }}</span>
           <span class="sp"></span><button class="btn sm" @click="tab = 'risk'">看风险</button><button class="btn sm pri" @click="ack">已知悉</button></div>
         <div v-if="s.status === '黑名单'" class="banner red" data-c="黑名单原因"><Ico n="alert"/>{{ s.blackReason }}<span v-if="s.blackAt" class="dim" style="margin-left:auto;font-size:12px">{{ userName(s.blackBy) }} · {{ fd(s.blackAt) }}</span></div>
@@ -1488,7 +1490,8 @@ route('/settings', {
       <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
 
       <section v-if="tab === 'users'" data-c="用户">
-        <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
+        <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'productLines', t: '品类线' }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
+          <template #productLines="{ r }"><span class="chips" title="能看哪几条品类线：别的线的款式、订单、单据、供应商看不到；至少留一条"><button v-for="c in db.dicts.品类线" :key="c" class="chip" :class="{ on: r.productLines.includes(c) }" @click="r.productLines.includes(c) ? (r.productLines.length > 1 ? r.productLines.splice(r.productLines.indexOf(c), 1) : toast('至少留一条品类线')) : r.productLines.push(c)">{{ c }}</button></span></template>
           <template #dno="{ r }"><span v-if="dnoLocked(r)" class="row g4"><span class="code">{{ r.dno }}</span><span class="dim" style="font-size:12px" title="进过款号，不能改、不能给别人">已锁定</span></span>
             <input v-else class="inp code" style="height:26px;width:56px" maxlength="2" :value="r.dno || ''" placeholder="—" @change="e => { if (!run(() => setDesignerNo(r, e.target.value))) e.target.value = r.dno || ''; else if (e.target.value) toast(r.name + ' 的设计师编号是 ' + r.dno) }"></template>
           <template #dept="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.dept"></template>

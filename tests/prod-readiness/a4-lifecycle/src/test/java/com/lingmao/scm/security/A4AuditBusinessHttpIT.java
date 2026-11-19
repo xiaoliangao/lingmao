@@ -101,7 +101,7 @@ class A4AuditBusinessHttpIT extends A2BusinessFixture {
         Account bank = auditor(f, FieldPermissions.BANK), ordinary = auditor(f, FieldPermissions.ORDER);
         String name = jdbc.queryForObject("SELECT name FROM sup_supplier WHERE id=?", String.class, f.supplier());
         ok(admin, "PUT", "/api/suppliers/" + f.supplier(), map("name", name, "shortName", "A4 bank change", "categories", List.of("GARMENT", "FABRIC"),
-                "settleMethod", "MONTHLY", "taxPct", 13, "bankAccount", "6228480000000076543"), null);
+                "productLines", List.of("APPAREL", "FOOTWEAR", "GENERAL"), "settleMethod", "MONTHLY", "taxPct", 13, "bankAccount", "6228480000000076543"), null);
         long change = jdbc.queryForObject("SELECT id FROM sup_supplier_change WHERE supplier_id=? ORDER BY id DESC LIMIT 1", Long.class, f.supplier());
         JsonNode permitted = history(bank, "sup_supplier_change", change);
         assertThat(permitted.toString()).contains("6228480000000076543", "6228480000000012345");

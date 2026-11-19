@@ -30,6 +30,7 @@ import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.LineScope;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -84,7 +85,8 @@ class TechPackServiceImplIT {
         TestIdentity.ensureUser(jdbcTemplate, USER);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 new LoginUser(USER, "jti-it"), null, Stream.of("techpack:pack:list", "techpack:pack:add", "techpack:pack:edit",
-                        "techpack:pack:remove", "techpack:pack:publish", "techpack:cost:query", "techpack:bom:dev", "techpack:bom:prod")
+                        "techpack:pack:remove", "techpack:pack:publish", "techpack:cost:query", "techpack:bom:dev", "techpack:bom:prod",
+                        LineScope.ALL_AUTHORITY)
                 .map(SimpleGrantedAuthority::new).toList()));
     }
 
@@ -257,7 +259,7 @@ class TechPackServiceImplIT {
                 + "WHERE id = ? RETURNING id", Long.class, packing);
         long fabricRow = jdbcTemplate.queryForObject("SELECT id FROM tp_bom_item WHERE tech_pack_id = ?", Long.class, id);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(USER, "test"), null,
-                Stream.of("techpack:pack:edit", "techpack:bom:prod", "techpack:cost:query").map(SimpleGrantedAuthority::new).toList()));
+                Stream.of("techpack:pack:edit", "techpack:bom:prod", "techpack:cost:query", LineScope.ALL_AUTHORITY).map(SimpleGrantedAuthority::new).toList()));
 
         TechPackSaveReq touched = saveReq(version, f, null);
         touched.getBomItems().getFirst().setId(fabricRow);
@@ -290,7 +292,7 @@ class TechPackServiceImplIT {
         cost.setItems(List.of(fee)); initial.setCost(cost);
         int version = techPackService.save(id, initial);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(USER, "test"), null,
-                Stream.of("techpack:pack:edit", "techpack:bom:dev", "techpack:bom:prod").map(SimpleGrantedAuthority::new).toList()));
+                Stream.of("techpack:pack:edit", "techpack:bom:dev", "techpack:bom:prod", LineScope.ALL_AUTHORITY).map(SimpleGrantedAuthority::new).toList()));
         TechPackSaveReq denied = saveReq(version, f, "仅改说明");
         var empty = new com.lingmao.scm.module.techpack.dto.TechPackCostForm();
         empty.setCostMode(com.lingmao.scm.module.techpack.entity.CostMode.OUTSOURCE); empty.setItems(List.of()); denied.setCost(empty);

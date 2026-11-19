@@ -37,6 +37,7 @@ import com.lingmao.scm.module.techpack.dto.PackBrief;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.service.TechPackService;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
@@ -47,6 +48,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
@@ -117,7 +119,8 @@ class OrderChangeServiceImplTest {
                 styleService, techPackService, companyService, userService, new TradeFeature(false), docHeaderService, docLogService,
                 docNoticeService, attachmentService, referenceService, serialNoGenerator, clock);
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null, List.of()));
+                new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null,
+                        List.of(new SimpleGrantedAuthority(LineScope.ALL_AUTHORITY))));
     }
 
     @AfterEach

@@ -9,6 +9,7 @@ import com.lingmao.scm.module.purchase.entity.MrpCalc;
 import com.lingmao.scm.security.DataScope;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
+import com.lingmao.scm.security.LineScope;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.ResultMap;
@@ -44,7 +45,7 @@ public interface MrpCalcMapper extends BaseMapper<MrpCalc> {
     IPage<MrpCalcRowVO> selectRowPage(IPage<MrpCalcRowVO> page, @Param("q") MrpCalcQuery query, @Param("codes") List<String> codes,
                                       @Param("scope") DataScope scope);
 
-    record OrderHead(Long id, String no, String status, LocalDate commitDate) {
+    record OrderHead(Long id, String no, String status, LocalDate commitDate, String productLine) {
     }
 
     /** 订单的单号、状态、承诺交期 */
@@ -71,7 +72,7 @@ public interface MrpCalcMapper extends BaseMapper<MrpCalc> {
 
     /** "选订单算料"：已审核、生产中的需求订单，下单日期倒序 */
     IPage<MrpOrderOptionVO> selectOrderOptions(IPage<MrpOrderOptionVO> page, @Param("keyword") String keyword,
-                                               @Param("codes") List<String> codes);
+                                               @Param("codes") List<String> codes, @Param("lines") LineScope lines);
 
     /** 订单里的款号（按行号排，去重） */
     record OrderStyle(Long orderId, String styleCode) {

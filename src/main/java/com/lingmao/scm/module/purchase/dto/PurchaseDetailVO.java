@@ -21,6 +21,8 @@ public class PurchaseDetailVO extends DocHeaderVO {
     private String supplierContact;
     private String supplierPhone;
     private String purchaseType;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private Long calcId;
     private String calcNo;
     private Long buyerId;

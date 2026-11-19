@@ -10,6 +10,7 @@ import com.lingmao.scm.module.supplier.dto.SupplierRowVO;
 import com.lingmao.scm.module.supplier.dto.SupplierSaveReq;
 import com.lingmao.scm.module.supplier.dto.SupplierSaveResult;
 import com.lingmao.scm.module.supplier.dto.SupplierVO;
+import com.lingmao.scm.common.exception.BizException;
 
 import java.util.Collection;
 import java.util.List;
@@ -76,9 +77,10 @@ public interface SupplierService {
      * 下拉（SupplierSelect）：按分类、按能不能用筛，关键字查编码、全称、简称，按编码排，最多 50 条。
      * categories 空 = 不按分类筛；给几个就列分类里有其中任一个的（款式的默认加工厂：成衣厂或加工厂）。
      * usage 不传按 SAMPLE（待准入、审批中、合作中都能选）；BULK 只要合作中。
-     * includeId：表单里已经选着的那一家，不满足条件也带上（停用了照样显示它的名字）
+     * includeId：表单里已经选着的那一家，不满足条件也带上（停用了照样显示它的名字）。
+     * 品类线（RFC 013 §2）：只列和我的线有交集的；productLine 给了只列做这条线的（采购单、生产单选供应商）
      */
-    List<SupplierOption> options(List<String> categories, Usage usage, String keyword, Long includeId);
+    List<SupplierOption> options(List<String> categories, Usage usage, String keyword, Long includeId, String productLine);
 
     /** 单据、价格档案显示和带默认值用：编码、全称、简称、状态、税率、结算方式、账期、发票类型。不存在抛 404 */
     SupplierRef getRef(long id);
@@ -94,9 +96,20 @@ public interface SupplierService {
 
     /**
      * 能不能选进单据（PRD §6.8.2 的表）。SAMPLE：打样、录价格；BULK：采购单、生产单。
-     * 不能用抛 1000"××现在是「停用」，不能……"。不存在抛 404
+     * 不能用抛 1000"××现在是「停用」，不能……"。不存在、品类线和我的没有交集抛 404
      */
     void checkUsable(long id, Usage usage);
+
+    /** 供应商做不做这条品类线（RFC 013 §2）：采购单、生产单的线要在供应商的线里。做是 null，不做是原因；不存在抛 404 */
+    String lineProblem(long id, String productLine);
+
+    /** 不做这条品类线抛 1000，见 lineProblem */
+    default void checkServes(long id, String productLine) {
+        String problem = lineProblem(id, productLine);
+        if (problem != null) {
+            throw new BizException(problem);
+        }
+    }
 
     /** 几家供应商的分类（字典 supplier_category 的 value）：id → 分类；没有分类的是空列表，查不到的不在 map 里 */
     Map<Long, List<String>> categories(Collection<Long> ids);

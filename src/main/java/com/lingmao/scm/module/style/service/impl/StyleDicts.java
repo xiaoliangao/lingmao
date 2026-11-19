@@ -57,6 +57,15 @@ class StyleDicts {
         }
     }
 
+    /**
+     * 大类的品类线（RFC 013 §2）：字典 style_class 这一项的 text_value（V44 起是字典 product_line 的 value）。
+     * 大类不在字典里、还没设品类线返回 null
+     */
+    String lineOf(String styleClass) {
+        return options(STYLE_CLASS).stream().filter(o -> o.value().equals(styleClass)).map(DictOption::textValue)
+                .filter(t -> t != null && !t.isBlank()).findFirst().orElse(null);
+    }
+
     /** 名称里含 keyword 的选项的 value，不分大小写，停用的也算：选款式时按品牌名称搜 */
     List<String> valuesLabelled(String typeCode, String keyword) {
         String k = keyword.toLowerCase(Locale.ROOT);

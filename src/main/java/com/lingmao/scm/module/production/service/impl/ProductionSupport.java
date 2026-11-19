@@ -32,6 +32,7 @@ import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -105,9 +106,12 @@ class ProductionSupport {
     record Locked(OrderForProduction order, ProductionOrder prd) {
     }
 
-    /** 数据范围（PRD §3.2）：制单人、生产跟单；待审核时轮到审的人也能看（规则加的审批人不一定在范围里） */
+    /**
+     * 数据范围（PRD §3.2）：制单人、生产跟单；待审核时轮到审的人也能看（规则加的审批人不一定在范围里）。
+     * 品类线（RFC 013 §2）不在我的线里一律 404，审批人也一样
+     */
     ProductionOrder visible(ProductionOrder p) {
-        if (p == null) {
+        if (p == null || !LineScope.current().canSee(p.getProductLine())) {
             throw new BizException(404, NOT_FOUND);
         }
         if (!DataScope.current(false).canSee(p.getCreateBy(), p.getMerchId())
@@ -179,9 +183,12 @@ class ProductionSupport {
         return factoryProblem(f, supplierService.categories(List.of(factoryId)).getOrDefault(factoryId, List.of()), what);
     }
 
-    /** 不能下单抛 1000 */
-    void checkFactory(long factoryId, ProductionKind kind) {
+    /** 不能下单抛 1000；加工厂还要做这张单的品类线（RFC 013 §2） */
+    void checkFactory(long factoryId, ProductionKind kind, String productLine) {
         String problem = factoryProblem(factoryId, kind.getLabel());
+        if (problem == null) {
+            problem = supplierService.lineProblem(factoryId, productLine);
+        }
         if (problem != null) {
             throw new BizException(problem);
         }

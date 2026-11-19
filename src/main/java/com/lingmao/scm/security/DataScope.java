@@ -30,6 +30,9 @@ import java.util.Objects;
  * "全部"看权限里有没有 data:all：加载权限时有一个启用的角色是"全部"（或者是超级管理员）就多给它（RFC 001 §18），不另外查库。
  * 没登录（userId 为空）算"本人"，条件里 列 = NULL 永远不成立，什么都看不到。
  * <p>
+ * 品类线（RFC 013 §2）是另一道，也装在这里（{@link #getLines()}）：单据的 Mapper XML 已经收了 scope，
+ * 按线筛写 &lt;if test="scope.lines.limited"&gt;，不用每个查询再加一个参数；详情另调 LineScope.check。
+ * <p>
  * 为什么放 security 不放 common：它要读当前登录的人和 data:all，common 不能依赖 security、module（ArchitectureTest 规则 5）。
  * 为什么是静态的 current() 不是注入的 bean：和 LoginUser.currentUserId() 一样只读当前请求的登录信息，没有别的依赖；
  * 单测里照样能控制——往 SecurityContextHolder 里放一个登录用户就行（DataScopeTest）
@@ -42,9 +45,13 @@ public final class DataScope {
     /** true = 看全部，不加条件 */
     private final boolean all;
 
-    private DataScope(Long userId, boolean all) {
+    /** 品类线：和全部 / 本人叠在一起 */
+    private final LineScope lines;
+
+    private DataScope(Long userId, boolean all, LineScope lines) {
         this.userId = userId;
         this.all = all;
+        this.lines = lines;
     }
 
     /**
@@ -52,7 +59,7 @@ public final class DataScope {
      * 没有"全部"范围的人传什么都是本人
      */
     public static DataScope current(boolean mine) {
-        return new DataScope(LoginUser.currentUserId(), !mine && LoginUser.hasAuthority(RoleDataScope.ALL_AUTHORITY));
+        return new DataScope(LoginUser.currentUserId(), !mine && LoginUser.hasAuthority(RoleDataScope.ALL_AUTHORITY), LineScope.current());
     }
 
     /** 看全部：不加任何条件 */
@@ -68,6 +75,11 @@ public final class DataScope {
     /** 当前用户 id，XML 里 #{scope.userId}；没登录是 null */
     public Long getUserId() {
         return userId;
+    }
+
+    /** 当前用户能看的品类线，XML 里 scope.lines.limited、scope.lines.values */
+    public LineScope getLines() {
+        return lines;
     }
 
     /**

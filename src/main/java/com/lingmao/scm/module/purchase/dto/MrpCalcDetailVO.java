@@ -14,6 +14,8 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class MrpCalcDetailVO extends DocHeaderVO {
+    /** 品类线，字典 product_line */
+    private String productLine;
     private List<MrpOrderRef> orders;
     private List<String> styleCodes;
     private LocalDate needDate;

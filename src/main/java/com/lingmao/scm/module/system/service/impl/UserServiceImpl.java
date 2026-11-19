@@ -17,7 +17,9 @@ import com.lingmao.scm.module.system.entity.SysUserRole;
 import com.lingmao.scm.module.system.mapper.SysRoleMapper;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.mapper.SysUserRoleMapper;
+import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginFailCounter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -43,6 +45,7 @@ public class UserServiceImpl implements UserService {
     private final SysUserRoleMapper sysUserRoleMapper;
     private final SysRoleMapper sysRoleMapper;
     private final LoginFailCounter loginFailCounter;
+    private final DictDataService dictDataService;
 
     @Override
     public PageResult<UserVO> page(UserQuery query) {
@@ -101,6 +104,7 @@ public class UserServiceImpl implements UserService {
         user.setDefaultCompanyId(req.getDefaultCompanyId());
         user.setDept(trimToNull(req.getDept()));
         user.setPost(trimToNull(req.getPost()));
+        user.setProductLines(dictDataService.requireValues(LineScope.DICT_TYPE, req.getProductLines(), null, "品类线"));
         String designerNo = trimToNull(req.getDesignerNo());
         ensureDesignerNoFree(designerNo, null);
         user.setDesignerNo(designerNo);
@@ -122,6 +126,7 @@ public class UserServiceImpl implements UserService {
         user.setDefaultCompanyId(req.getDefaultCompanyId());
         user.setDept(trimToNull(req.getDept()));
         user.setPost(trimToNull(req.getPost()));
+        user.setProductLines(dictDataService.requireValues(LineScope.DICT_TYPE, req.getProductLines(), user.getProductLines(), "品类线"));
         // 整体覆盖：手机号传 null 就是清空（bug 005）。密码、设计师编号标了 NEVER，这里不会碰它们
         sysUserMapper.update(user, Updates.replaceById(user));
         changeDesignerNo(user, trimToNull(req.getDesignerNo()));

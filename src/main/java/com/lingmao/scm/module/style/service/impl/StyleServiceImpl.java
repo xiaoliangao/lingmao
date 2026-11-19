@@ -51,6 +51,7 @@ import com.lingmao.scm.module.style.mapper.StyleColorMapper;
 import com.lingmao.scm.module.style.mapper.StyleMapper;
 import com.lingmao.scm.module.style.mapper.StyleSkuMapper;
 import com.lingmao.scm.module.style.service.StyleService;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.UserService;
@@ -127,7 +128,7 @@ public class StyleServiceImpl implements StyleService {
     public PageResult<StyleListVO> page(StyleQuery query) {
         query.setKeyword(trim(query.getKeyword()));
         IPage<StyleListVO> page = styleMapper.selectListPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                categories.withDescendants(query.getCategoryId()));
+                categories.withDescendants(query.getCategoryId()), LineScope.current());
         List<StyleListVO> rows = page.getRecords();
         List<Long> ids = rows.stream().map(StyleListVO::getId).toList();
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, ids, Attachment.IMAGE);
@@ -208,6 +209,7 @@ public class StyleServiceImpl implements StyleService {
     public StyleCreateResult create(StyleCreateReq req) {
         Style s = new Style();
         fill(s, req, null);
+        s.setProductLine(lineFor(s.getStyleClass()));
         List<Color> colors = resolveColors(req.getColorIds());
         List<String> sizes = sizeGroupService.getById(s.getSizeGroupId()).sizes();
         // 字段都查过了再取号：前面报错时不碰流水那一行的锁
@@ -466,7 +468,7 @@ public class StyleServiceImpl implements StyleService {
         // 品牌按名称搜：字典里名称对得上的品牌 value 交给 SQL（款式上存的是 value）
         List<String> brands = query.getKeyword() == null ? List.of() : dicts.valuesLabelled(StyleDicts.BRAND, query.getKeyword());
         IPage<StylePickVO> page = styleMapper.selectPickPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                categories.withDescendants(query.getCategoryId()), brands);
+                categories.withDescendants(query.getCategoryId()), brands, LineScope.current());
         List<StylePickVO> rows = page.getRecords();
         List<Long> ids = rows.stream().map(StylePickVO::getId).toList();
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, ids, Attachment.IMAGE);
@@ -492,7 +494,7 @@ public class StyleServiceImpl implements StyleService {
     public byte[] export(StyleQuery query) {
         query.setKeyword(trim(query.getKeyword()));
         List<Long> ids = styleMapper.selectIds(query, Keywords.codes(query.getKeyword()),
-                categories.withDescendants(query.getCategoryId()), Excel.MAX_EXPORT_ROWS + 1);
+                categories.withDescendants(query.getCategoryId()), Excel.MAX_EXPORT_ROWS + 1, LineScope.current());
         if (ids.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException("要导出的超过 " + Excel.MAX_EXPORT_ROWS / 10_000 + " 万行了，请缩小筛选范围再导出");
         }
@@ -507,6 +509,23 @@ public class StyleServiceImpl implements StyleService {
         if (s.getStatus() == DISABLED) {
             throw new BizException("款式 " + s.getCode() + " 现在是「" + s.getStatus().getLabel() + "」，不能再用");
         }
+    }
+
+    @Override
+    public boolean visible(long id) {
+        Style s = styleMapper.selectOne(new LambdaQueryWrapper<Style>().select(Style::getProductLine).eq(Style::getId, id));
+        return s != null && LineScope.current().canSee(s.getProductLine());
+    }
+
+    @Override
+    public Map<Long, String> productLines(Collection<Long> ids) {
+        List<Long> distinct = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        Map<Long, String> lines = new HashMap<>();
+        if (!distinct.isEmpty()) {
+            styleMapper.selectList(new LambdaQueryWrapper<Style>().select(Style::getId, Style::getProductLine).in(Style::getId, distinct))
+                    .forEach(s -> lines.put(s.getId(), s.getProductLine()));
+        }
+        return lines;
     }
 
     @Override
@@ -527,7 +546,7 @@ public class StyleServiceImpl implements StyleService {
     @Override
     public StylePackInfo packInfo(long id) {
         StylePackInfo info = packInfos(List.of(id)).get(id);
-        if (info == null) {
+        if (info == null || !visible(id)) {
             throw new BizException(404, NOT_FOUND);
         }
         return info;
@@ -822,12 +841,28 @@ public class StyleServiceImpl implements StyleService {
         }
     }
 
+    /** 不存在、不在我的品类线里都是 404（RFC 013 §2）：详情、各个动作、给别的域的 checkUsable 都从这里取 */
     Style getEntity(long id) {
         Style s = styleMapper.selectById(id);
-        if (s == null) {
+        if (s == null || !LineScope.current().canSee(s.getProductLine())) {
             throw new BizException(404, NOT_FOUND);
         }
         return s;
+    }
+
+    /**
+     * 新建款式的品类线 = 大类的品类线（RFC 013 §2）。大类还没设品类线的不让建：放错了线别的线的人就看得到；
+     * 不是我的线的大类也不让建（建了自己就看不到了）。导入逐行报，用 StyleExcel 里的同一条规则
+     */
+    String lineFor(String styleClass) {
+        String line = dicts.lineOf(styleClass);
+        if (line == null) {
+            throw new BizException("大类「" + styleClass + "」还没设品类线：先到 管理后台 › 字典 › 款式大类 里设");
+        }
+        if (!LineScope.current().canSee(line)) {
+            throw new BizException("大类「" + styleClass + "」属于你看不到的品类线，不能建这个大类的款");
+        }
+        return line;
     }
 
     /** 颜色要在这个款式上，不然当不存在 */

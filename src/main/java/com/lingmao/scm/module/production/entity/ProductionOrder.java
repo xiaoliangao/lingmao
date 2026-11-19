@@ -34,6 +34,10 @@ public class ProductionOrder extends DocEntity {
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Long styleId;
 
+    /** 品类线（RFC 013 §2）：排单时取款式的，不变；加工厂要做这条线 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private String productLine;
+
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Long techPackId;
 

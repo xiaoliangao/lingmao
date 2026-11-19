@@ -139,6 +139,10 @@ public class ScheduleServiceImpl implements ScheduleService {
         SupplierRef f = supplierService.getRef(factoryId);
         String problem = ProductionSupport.factoryProblem(f, supplierService.categories(List.of(factoryId))
                 .getOrDefault(factoryId, List.of()), "生产单");
+        String line = styleService.productLines(List.of(styleId)).get(styleId);
+        if (problem == null && line != null) {
+            problem = supplierService.lineProblem(factoryId, line);   // 品类线（RFC 013 §2）
+        }
         LocalDate today = support.today();
         List<ScheduleQuoteVO.ModePrice> prices = new ArrayList<>();
         for (DictOption mode : modes()) {
@@ -200,6 +204,7 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         Map<Long, SupplierRef> factories = supplierService.refs(blocks.stream().map(b -> b.req().getFactoryId()).collect(Collectors.toSet()));
         Map<Long, List<String>> categories = supplierService.categories(factories.keySet());
+        Map<Long, String> styleLines = styleService.productLines(infos.keySet());
         Set<String> modes = modes().stream().map(DictOption::value).collect(Collectors.toSet());
         LocalDate today = support.today();
         List<String> problems = new ArrayList<>();
@@ -218,6 +223,10 @@ public class ScheduleServiceImpl implements ScheduleService {
                 problems.add(where + "加工方式「" + mode + "」不在字典里或已停用");
             }
             String fp = ProductionSupport.factoryProblem(f, categories.getOrDefault(f.id(), List.of()), kind.getLabel());
+            String line = styleLines.get(b.getStyleId());
+            if (fp == null && line != null) {
+                fp = supplierService.lineProblem(f.id(), line);   // 品类线（RFC 013 §2）
+            }
             if (fp != null) {
                 problems.add(where + fp);
             }
@@ -249,6 +258,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             p.setProcessMode(mode);
             p.setOrderId(o.id());
             p.setStyleId(b.getStyleId());
+            p.setProductLine(line);
             p.setTechPackId(packId);
             p.setOrderDate(today);
             p.setDueDate(b.getDueDate());

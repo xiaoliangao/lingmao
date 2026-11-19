@@ -8,6 +8,7 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import DictSelect from '@/components/DictSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+import { useProductLines } from '@/composables/useProductLines'
 const { canSeeSupplierContact } = useFieldAccess()
 
 /**
@@ -33,7 +34,7 @@ const formRef = ref<FormInstance>()
 
 function blank(): SupplierForm {
   return {
-    name: '', shortName: '', creditCode: null, level: null, categories: [], goodAtIds: [],
+    name: '', shortName: '', creditCode: null, level: null, categories: [], productLines: [], goodAtIds: [],
     contact: null, phone: null, wechat: null, address: null,
     settleMethod: null, creditDays: null, invoiceType: null, taxPct: null,
     bankName: null, bankAccount: null, bankAccountName: null, buyerId: null, remark: null,
@@ -47,7 +48,20 @@ const rules: FormRules = {
   name: [{ required: true, message: '请填全称', trigger: 'blur' }],
   shortName: [{ required: true, message: '请填简称', trigger: 'blur' }],
   categories: [{ type: 'array', required: true, min: 1, message: '至少选一个分类', trigger: 'change' }],
+  productLines: [{ type: 'array', required: true, min: 1, message: '至少选一条品类线', trigger: 'change' }],
 }
+
+// ---------- 品类线（RFC 013 §2）：只有一条线的人不显示，新建自动带上；我看不到的线只列出来，保存时后端原样留着 ----------
+const lines = useProductLines()
+const multiLine = lines.multi
+const lineOptions = computed(() => {
+  const shown = lines.options.value.map((o) => ({ value: o.value, label: o.label }))
+  for (const value of form.productLines) {
+    if (!shown.some((o) => o.value === value)) shown.push({ value, label: `${lines.labelOf(value)}（已停用）` })
+  }
+  return shown
+})
+const hiddenLines = computed(() => (editing.value?.productLines ?? []).filter((l) => !lines.canSee(l)).map((l) => lines.labelOf(l)).join('、'))
 
 const LEVELS = ['A', 'B', 'C', 'D']
 
@@ -97,6 +111,7 @@ async function open(detail?: SupplierDetail) {
     Object.assign(values, {
       name: detail.name, shortName: detail.shortName, creditCode: detail.creditCode, level: detail.level,
       categories: [...detail.categories], goodAtIds: detail.goodAt.map((item) => item.id),
+      productLines: detail.productLines.filter((l) => lines.canSee(l)),
       contact: detail.contact, phone: detail.phone, wechat: detail.wechat, address: detail.address,
       settleMethod: detail.settleMethod, creditDays: detail.creditDays, invoiceType: detail.invoiceType, taxPct: detail.taxPct,
       bankName: detail.bankName, bankAccount: detail.bankAccount, bankAccountName: detail.bankAccountName,
@@ -107,6 +122,7 @@ async function open(detail?: SupplierDetail) {
       values.bankAccount = (await supplierApi.bank(detail.id)).bankAccount
     }
   }
+  if (!detail && lines.only.value) values.productLines = [lines.only.value]
   Object.assign(form, values)
   void loadTree()
   visible.value = true
@@ -114,7 +130,7 @@ async function open(detail?: SupplierDetail) {
 
 /** 空串 → null，字符串去掉首尾空格：后端"空 = 还没有" */
 function payload(): SupplierForm {
-  const data = { ...form, categories: [...form.categories], goodAtIds: [...form.goodAtIds] }
+  const data = { ...form, categories: [...form.categories], productLines: [...form.productLines], goodAtIds: [...form.goodAtIds] }
   for (const key of Object.keys(data) as (keyof SupplierForm)[]) {
     const value = data[key]
     if (typeof value === 'string') {
@@ -180,6 +196,12 @@ defineExpose({ open })
       </el-form-item>
       <el-form-item label="分类" prop="categories">
         <DictSelect v-model="form.categories" type="supplier_category" multiple placeholder="可以选几个" />
+      </el-form-item>
+      <el-form-item v-if="multiLine" label="品类线" prop="productLines">
+        <el-select v-model="form.productLines" multiple filterable placeholder="做哪几条线">
+          <el-option v-for="o in lineOptions" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
+        <span v-if="hiddenLines" class="dim hint">还做{{ hiddenLines }}：你看不到这条线，保存时原样留着</span>
       </el-form-item>
       <el-form-item label="等级">
         <el-select v-model="form.level" clearable filterable placeholder="A–D">
@@ -264,6 +286,11 @@ defineExpose({ open })
 <style scoped>
 .pending {
   margin-bottom: 14px;
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .kmark {

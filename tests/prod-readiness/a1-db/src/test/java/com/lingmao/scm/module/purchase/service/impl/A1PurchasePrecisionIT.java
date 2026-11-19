@@ -207,6 +207,7 @@ class A1PurchasePrecisionIT {
         req.setCompanyId(company);
         req.setSupplierId(supplier);
         req.setPurchaseType(PurchaseType.STOCK);
+        req.setProductLine("APPAREL");
         req.setBuyerId(user);
         req.setOrderDate(LocalDate.now(clock));
         req.setWarehouseId(warehouse);
@@ -249,6 +250,6 @@ class A1PurchasePrecisionIT {
     private long post(Fixture f, InvDocType type, String qty) { return inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, type, true, List.of(qty))).id(); }
     private BigDecimal stock(Fixture f) { return jdbc.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?", BigDecimal.class, f.warehouse(), f.sku()); }
     private BigDecimal netAmount(Fixture f) { return jdbc.queryForObject("SELECT sum(amount) FROM inv_stock_log WHERE material_sku_id=?", BigDecimal.class, f.sku()); }
-    private static void login(long user) { SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(user, "a1-precision"), null, PERMISSIONS.stream().map(SimpleGrantedAuthority::new).toList())); }
+    private static void login(long user) { SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(user, "a1-precision"), null, TestIdentity.withLines(PERMISSIONS).stream().map(SimpleGrantedAuthority::new).toList())); }
     private record Fixture(long company, long user, long warehouse, long sku, long purchase, long sourceItem) { }
 }

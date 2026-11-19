@@ -54,6 +54,7 @@ import com.lingmao.scm.module.techpack.dto.PackBrief;
 import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -274,6 +275,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         }
         Order o = orderMapper.selectById(c.getOrderId());
         com.lingmao.scm.common.scope.CompanyContext.target(c.getCompanyId());
+        LineScope.current().check(o.getProductLine());
         DataScope.current(false).check(o.getCreateBy(), o.getSalesId(), o.getMerchId(), c.getCreateBy());
         return o;
     }
@@ -293,6 +295,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         if (o == null) {
             throw new BizException(404, "订单不存在");
         }
+        LineScope.current().check(o.getProductLine());
         DataScope.current(false).check(o.getCreateBy(), o.getSalesId(), o.getMerchId());
         com.lingmao.scm.common.scope.CompanyContext.target(o.getCompanyId());
         List<OrderChangeItem> items = diff(o, req);

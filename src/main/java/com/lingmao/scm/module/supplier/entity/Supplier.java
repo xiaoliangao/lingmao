@@ -5,11 +5,13 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.lingmao.scm.common.entity.AuditEntity;
 import com.lingmao.scm.common.mybatis.JsonbTypeHandler;
+import com.lingmao.scm.common.mybatis.StringArrayTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -43,6 +45,10 @@ public class Supplier extends AuditEntity {
 
     /** 等级 A / B / C / D */
     private String level;
+
+    /** 做哪几条品类线（字典 product_line 的 value，RFC 013 §2），至少一条：和我的线有交集才看得到；单据的线要在里面 */
+    @TableField(typeHandler = StringArrayTypeHandler.class)
+    private List<String> productLines;
 
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private SupplierStatus status;

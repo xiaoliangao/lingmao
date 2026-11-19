@@ -1,5 +1,6 @@
 package com.lingmao.scm;
 
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -9,7 +10,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 /** Explicit identities for service integration tests; HTTP boundary tests use real authenticated requests. */
@@ -41,10 +44,20 @@ public final class TestIdentity {
         }
     }
 
+    /** 没给品类线（line:XXX）的看全部线，同超级管理员（RFC 013 §2）；测隔离的自己给 line:FOOTWEAR 这种 */
     public static void login(long user, Collection<String> permissions) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 new LoginUser(user, "it-service"), null,
-                permissions.stream().map(SimpleGrantedAuthority::new).toList()));
+                withLines(permissions).stream().map(SimpleGrantedAuthority::new).toList()));
+    }
+
+    /** 权限里没有品类线的补一个 line:all */
+    public static List<String> withLines(Collection<String> permissions) {
+        List<String> out = new ArrayList<>(permissions);
+        if (out.stream().noneMatch(p -> p.startsWith(LineScope.AUTHORITY_PREFIX))) {
+            out.add(LineScope.ALL_AUTHORITY);
+        }
+        return out;
     }
 
     public static void company(long company) {

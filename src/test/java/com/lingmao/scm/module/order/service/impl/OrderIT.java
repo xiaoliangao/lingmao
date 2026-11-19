@@ -20,6 +20,7 @@ import com.lingmao.scm.module.order.dto.OrderDetailVO;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
 import com.lingmao.scm.module.order.dto.OrderQuery;
+import com.lingmao.scm.module.order.dto.OrderRowVO;
 import com.lingmao.scm.module.order.entity.ChangeType;
 import com.lingmao.scm.module.order.entity.ResponsibleParty;
 import com.lingmao.scm.module.order.service.OrderChangeService;
@@ -61,6 +62,7 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
@@ -93,7 +95,7 @@ class OrderIT {
 
     private static void loginAs(long userId, List<String> perms) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                new LoginUser(userId, "jti-it"), null, perms.stream().map(SimpleGrantedAuthority::new).toList()));
+                new LoginUser(userId, "jti-it"), null, TestIdentity.withLines(perms).stream().map(SimpleGrantedAuthority::new).toList()));
     }
 
     /**
@@ -392,6 +394,39 @@ class OrderIT {
     // ---------- 造数据 ----------
 
     /** 款有甲（A）、乙（B）、丙（C）三个颜色、M/L 两个尺码、6 个 SKU；生效的生产 BOM V1 只给甲、乙配了料 */
+    /**
+     * 规则（RFC 013 §2）：一张订单只能放一条品类线的款，订单的线跟着款走；只看鞋类的人列表里没有服装的订单、详情 404
+     */
+    @Test
+    void productLine_singleLinePerOrder_andHiddenFromOtherLines() {
+        Fixture f = fixture();
+        long shoe = jdbcTemplate.queryForObject("""
+                INSERT INTO sty_style (code, name, style_class, product_line, brand, category_id, year, season, source,
+                                       size_group_id, tag_price, status)
+                SELECT 'ITXZ' || substr(code, 5), 'IT 鞋款', 'XZ', 'FOOTWEAR', brand, category_id, year, season, source,
+                       size_group_id, tag_price, status FROM sty_style WHERE id = ? RETURNING id""", Long.class, f.style);
+        jdbcTemplate.update("INSERT INTO sty_style_color (style_id, color_id, seq) VALUES (?, ?, 1)", shoe, f.colors.get("A"));
+        long shoeSku = jdbcTemplate.queryForObject("""
+                INSERT INTO sty_style_sku (style_id, code, color_id, size_code) VALUES (?, ?, ?, 'M') RETURNING id""",
+                Long.class, shoe, "ITXZ" + shoe + "-A-M", f.colors.get("A"));
+
+        assertThatThrownBy(() -> createOrder(f, Map.of(f.sku("A", "M"), 10, shoeSku, 5)))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("一条品类线"));
+        long apparel = createOrder(f, Map.of(f.sku("A", "M"), 10)).id();
+        long footwear = createOrder(f, Map.of(shoeSku, 5)).id();
+        assertThat(orderService.detail(apparel).getProductLine()).isEqualTo("APPAREL");
+        assertThat(orderService.detail(footwear).getProductLine()).isEqualTo("FOOTWEAR");
+
+        List<String> perms = new ArrayList<>(PERMS);
+        perms.add("line:FOOTWEAR");
+        loginAs(f.user, perms);
+        OrderQuery query = new OrderQuery();
+        query.setKeyword(String.join(" ", jdbcTemplate.queryForList(
+                "SELECT no FROM ord_order WHERE id IN (?, ?)", String.class, apparel, footwear)));
+        assertThat(orderService.page(query).getList()).extracting(OrderRowVO::getId).containsExactly(footwear);
+        assertThat(catchThrowableOfType(BizException.class, () -> orderService.detail(apparel)).getCode()).isEqualTo(404);
+    }
+
     private record Fixture(long company, String companyName, long user, String userName, long approver, long style, String styleCode,
                            Map<String, Long> skus, Map<String, Long> colors, Map<String, String> colorCodes,
                            Map<String, String> colorNames, long material, long packV1) {

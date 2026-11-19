@@ -19,6 +19,8 @@ public class OrderQuery extends PageQuery {
     private List<DocStatus> status;
     private String orderType;
     private String brand;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     private Long salesId;
     private Long merchId;
     /** 含这个款的 */

@@ -185,13 +185,14 @@ function ensureFactoryWh(s) {
 function createSupplier({ imported, ...f }) {
   if (!f.short || !f.name) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
+  if (f.productLines && !f.productLines.length) fail('品类线至少选一条')
   const code = (f.code || '').trim().toUpperCase() || nextCode('GYS', db.suppliers)
   if (sup(code)) fail(`供应商编码 ${code} 已经有了`)
   f.credit = normCredit(f.credit)
   checkCredit(f.credit)
   const st = imported ? f.status || '待准入' : '待准入'
   if (st === '合作中' && !canAdmit()) fail(`直接导入成「合作中」要有供应商审批权限（${auditRoles('供应商').join('、')}），${me().name} 没有`)
-  const s = add(db.suppliers, { level: 'B', settle: '月结', term: 30, tax: '13%', invoice: '', goodAt: [], wechat: '', addr: '', bank: '', account: '', note: '', certs: [], admitted: null, ...f, code, status: st, pending: null, riskChecks: [], riskNew: null, log: [] })
+  const s = add(db.suppliers, { productLines: [...db.dicts.品类线], level: 'B', settle: '月结', term: 30, tax: '13%', invoice: '', goodAt: [], wechat: '', addr: '', bank: '', account: '', note: '', certs: [], admitted: null, ...f, code, status: st, pending: null, riskChecks: [], riskNew: null, log: [] })
   if (st === '合作中' && !s.admitted) Object.assign(s, { admitted: clock.today, admittedBy: db.me })
   act(s, imported ? '导入，状态「' + st + '」' : '新建')
   ensureFactoryWh(s)

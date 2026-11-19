@@ -81,6 +81,7 @@ import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -257,6 +258,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         vo.setSupplierContact(s.contact());
         vo.setSupplierPhone(s.phone());
         vo.setPurchaseType(po.getPurchaseType().name());
+        vo.setProductLine(po.getProductLine());
         vo.setCalcId(po.getCalcId());
         vo.setCalcNo(po.getCalcId() == null ? null : calcMapper.selectById(po.getCalcId()).getNo());
         vo.setBuyerId(po.getBuyerId());
@@ -357,7 +359,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     /** 数据范围（PRD §3.2）：制单人、采购员；待审核时轮到审的人也能看（规则加的审批人不一定在范围里） */
     private PurchaseOrder visible(PurchaseOrder po) {
-        if (po == null) {
+        if (po == null || !LineScope.current().canSee(po.getProductLine())) {
             throw new BizException(404, NOT_FOUND);
         }
         if (!DataScope.current(false).canSee(po.getCreateBy(), po.getBuyerId())
@@ -519,6 +521,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 throw new BizException("主体" + company.getShortName() + "已停用，请换一个");
             }
         }
+        po.setProductLine(old != null && old.getCalcId() != null ? old.getProductLine()
+                : lineFor(f.getProductLine(), old == null ? null : old.getProductLine()));
+        supplierService.checkServes(f.getSupplierId(), po.getProductLine());
         supplierService.checkUsable(f.getSupplierId(), SupplierService.Usage.BULK);
         checkWarehouse(f.getWarehouseId());
         if ((old == null || !Objects.equals(old.getBuyerId(), f.getBuyerId())) && !userService.isEnabled(f.getBuyerId())) {
@@ -546,6 +551,30 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         po.setRemark(PurTexts.blankToNull(f.getRemark()));
     }
 
+    /**
+     * 手工建的采购单的品类线（RFC 013 §2）：选的；没选的沿用原来的，新建的只有一条线的人用他那条，几条的要选。
+     * 要是字典里启用的（原来就是它的不管），要在我的线里
+     */
+    private String lineFor(String picked, String old) {
+        LineScope mine = LineScope.current();
+        String line = PurTexts.blankToNull(picked);
+        if (line == null) {
+            line = old != null ? old : mine.only();
+        }
+        if (line == null) {
+            throw new BizException(400, "请选品类线");
+        }
+        String chosen = line;
+        if (!chosen.equals(old) && dictDataService.listByType(LineScope.DICT_TYPE).stream()
+                .noneMatch(d -> d.value().equals(chosen) && d.enabled())) {
+            throw new BizException(400, "品类线「" + chosen + "」不在字典里或已停用");
+        }
+        if (!mine.canSee(chosen)) {
+            throw new BizException(400, "不能建你看不到的品类线的采购单");
+        }
+        return chosen;
+    }
+
     /** 交货地点：启用的物料仓或工厂仓（Q11） */
     private void checkWarehouse(long warehouseId) {
         WarehouseVO w = warehouseService.getById(warehouseId);
@@ -565,6 +594,13 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         Map<Long, StyleRef> styles = styleService.refs(ids);
         if (styles.size() != ids.size()) {
             throw new BizException(400, "计划用于的款号有的不存在了，请刷新后再选");
+        }
+        // 品类线（RFC 013 §2）：计划用于的款要和采购单同一条线（别的线的款我也看不到）
+        Map<Long, String> lines = styleService.productLines(ids);
+        List<String> others = ids.stream().filter(id -> !Objects.equals(lines.get(id), po.getProductLine()))
+                .map(id -> styles.get(id).code()).toList();
+        if (!others.isEmpty()) {
+            throw new BizException(400, "计划用于的款 " + String.join("、", others) + " 和这张采购单不是同一条品类线");
         }
         poMapper.insertPlanStyles(po.getId(), ids);
     }
@@ -742,6 +778,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (!po.getVersion().equals(req.version())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, STALE);
         }
+        supplierService.checkServes(po.getSupplierId(), po.getProductLine());
         supplierService.checkUsable(po.getSupplierId(), SupplierService.Usage.BULK);
         checkWarehouse(po.getWarehouseId());
         List<String> problems = new ArrayList<>();
@@ -787,6 +824,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (!po.getVersion().equals(req.version())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这张采购单刚被别人审过或改过，请刷新后再审");
         }
+        supplierService.checkServes(po.getSupplierId(), po.getProductLine());
         supplierService.checkUsable(po.getSupplierId(), SupplierService.Usage.BULK);
         List<PurchaseOrderItem> items = itemMapper.selectByOrder(id);
         List<String> problems = priceProblems(po, items);
@@ -868,7 +906,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             bySupplier.computeIfAbsent(i.getSupplierId(), k -> new ArrayList<>())
                     .add(new GenLine(i.getId(), i.getMaterialSkuId(), i.getSuggestQty().subtract(i.getConvertedQty()), label));
         }
-        List<DocSaved> saved = generate(bySupplier, infos, PurchaseType.ORDER, calc.getId(), problems,
+        List<DocSaved> saved = generate(bySupplier, infos, PurchaseType.ORDER, calc.getId(), calc.getProductLine(), problems,
                 "from-mrp", "由算料单 " + calc.getNo() + " 生成");
         mrpService.afterConvert(calc, items, "生成采购单 " + saved.stream().map(DocSaved::no).collect(Collectors.joining("、")));
         return saved;
@@ -893,7 +931,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             bySupplier.computeIfAbsent(i.getSupplierId(), k -> new ArrayList<>())
                     .add(new GenLine(null, i.getMaterialSkuId(), Num.qty(i.getQty()), info.skuCode()));
         }
-        return generate(bySupplier, infos, PurchaseType.STOCK, null, new ArrayList<>(), "from-reorder", "由补货提醒生成");
+        return generate(bySupplier, infos, PurchaseType.STOCK, null, lineFor(req.getProductLine(), null), new ArrayList<>(),
+                "from-reorder", "由补货提醒生成");
     }
 
     /**
@@ -902,13 +941,18 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
      * 供应商不是合作中、没有默认单价的整批报出来（1000），一张都不建
      */
     private List<DocSaved> generate(Map<Long, List<GenLine>> bySupplier, Map<Long, MaterialPurchaseInfo> infos, PurchaseType type,
-                                    Long calcId, List<String> problems, String logAction, String logText) {
+                                    Long calcId, String productLine, List<String> problems, String logAction, String logText) {
         com.lingmao.scm.security.FieldPermissions.require(com.lingmao.scm.security.FieldPermissions.COST);
         Map<Long, SupplierRef> suppliers = supplierService.refs(bySupplier.keySet());
         bySupplier.keySet().forEach(sid -> {
             SupplierRef s = suppliers.get(sid);
             if (s == null || s.status() != SupplierStatus.ACTIVE) {
                 problems.add("供应商 " + (s == null ? sid : s.shortName() + "（" + s.status().getLabel() + "）") + " 不是合作中，不能下采购单");
+                return;
+            }
+            String lineProblem = supplierService.lineProblem(sid, productLine);   // 品类线（RFC 013 §2）
+            if (lineProblem != null) {
+                problems.add(lineProblem);
             }
         });
         LocalDate today = LocalDate.now(clock);
@@ -943,6 +987,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             po.setCompanyId(companyId);
             po.setSupplierId(s.id());
             po.setPurchaseType(type);
+            po.setProductLine(productLine);
             po.setCalcId(calcId);
             po.setBuyerId(me);
             po.setOrderDate(today);

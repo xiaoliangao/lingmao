@@ -15,9 +15,12 @@ import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysRoleMapper;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.mapper.SysUserRoleMapper;
+import com.lingmao.scm.module.system.service.DictDataService;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginFailCounter;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -33,7 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,8 +61,18 @@ class UserServiceImplTest {
     @Mock
     private LoginFailCounter loginFailCounter;
 
+    @Mock
+    private DictDataService dictDataService;
+
     @InjectMocks
     private UserServiceImpl userService;
+
+    /** 品类线的字典校验原样放行（字典的规则在 DictDataServiceImplTest） */
+    @BeforeEach
+    void lines() {
+        lenient().when(dictDataService.requireValues(eq(LineScope.DICT_TYPE), any(), any(), any()))
+                .thenAnswer(inv -> inv.getArgument(1) == null ? List.of() : List.copyOf(inv.<java.util.Collection<String>>getArgument(1)));
+    }
 
     /**
      * assignRoles 查角色是否存在用了 Lambda 条件的 in，要先给 SysRole 建表信息（见 RoleServiceImplTest）；

@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.order.service.impl;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -31,9 +33,8 @@ import com.lingmao.scm.module.techpack.dto.PackBrief;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.service.TechPackService;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
@@ -117,7 +119,8 @@ class OrderServiceImplTest {
                 techPackService, companyService, dictDataService, userService, new TradeFeature(false), docHeaderService,
                 docLogService, attachmentService, approvalService, referenceService, serialNoGenerator, Clock.systemDefaultZone(), com.lingmao.scm.DirectFileImports.INSTANCE);
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null, List.of()));
+                new UsernamePasswordAuthenticationToken(new LoginUser(1L, "jti"), null,
+                        List.of(new SimpleGrantedAuthority(LineScope.ALL_AUTHORITY))));
     }
 
     @AfterEach

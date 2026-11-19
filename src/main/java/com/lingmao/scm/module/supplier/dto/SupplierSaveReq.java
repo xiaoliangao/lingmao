@@ -42,6 +42,11 @@ public class SupplierSaveReq {
     @NotEmpty(message = "至少选一个分类")
     private List<@NotBlank(message = "分类不能为空") String> categories;
 
+    /** 做哪几条品类线（字典 product_line），至少一条（RFC 013 §2）。我看不到的线改不了：原来有的留着，没有的不能加 */
+    @NotEmpty(message = "品类线至少选一条")
+    @Size(max = 20, message = "品类线最多 20 条")
+    private List<@NotBlank(message = "品类线不能为空") String> productLines;
+
     /** 擅长品类的 id */
     private List<Long> goodAtIds;
 

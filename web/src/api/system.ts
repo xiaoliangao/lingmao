@@ -16,6 +16,8 @@ export interface UserProfileForm {
   post?: string | null
   /** 两位数字 01-99；编过款号以后不能改、清空 */
   designerNo?: string | null
+  /** 能看的品类线，至少一条（RFC 013 §2） */
+  productLines: string[]
 }
 
 export const userApi = {

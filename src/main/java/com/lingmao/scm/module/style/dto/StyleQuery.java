@@ -19,6 +19,8 @@ public class StyleQuery extends PageQuery {
     private String keyword;
     private Long categoryId;
     private String styleClass;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     private String brand;
     private Integer year;
     private String season;

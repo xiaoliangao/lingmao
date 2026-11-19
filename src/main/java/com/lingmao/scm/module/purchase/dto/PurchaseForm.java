@@ -22,6 +22,8 @@ public class PurchaseForm {
     private Long supplierId;
     @NotNull(message = "请选采购类型")
     private PurchaseType purchaseType;
+    /** 品类线（RFC 013 §2）：只有一条线的人不用填；从算料单生成的改不了，填了也不看 */
+    private String productLine;
     @NotNull(message = "请选采购员")
     private Long buyerId;
     @NotNull(message = "请填下单日期")

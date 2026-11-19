@@ -7,7 +7,7 @@
 <mapper namespace="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper">
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.purchase.dto.MrpCalcRowVO">
-        SELECT c.id, c.no, c.status, c.need_date, c.create_by, c.create_time,
+        SELECT c.id, c.no, c.status, c.product_line, c.need_date, c.create_by, c.create_time,
                COALESCE(agg.buy_count, 0) AS buy_count, COALESCE(agg.converted_count, 0) AS converted_count,
                nx.id AS next_calc_id, nx.no AS next_calc_no
         FROM mrp_calc c
@@ -18,6 +18,7 @@
                            WHERE n.prev_calc_id = c.id AND n.status IN ('DRAFT', 'CONFIRMED')
                            ORDER BY n.id DESC LIMIT 1) nx ON true
         WHERE true
+        <if test="scope.lines.limited">AND c.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
         <if test="scope.self">AND c.create_by = #{scope.userId}</if>
         <if test="q.status != null and q.status.size() > 0">
             AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
@@ -51,7 +52,7 @@
     </select>
 
     <select id="selectOrderHeads" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$OrderHead">
-        SELECT o.id, o.no, o.status, o.commit_date
+        SELECT o.id, o.no, o.status, o.commit_date, o.product_line
         FROM ord_order o
         WHERE o.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY o.no
@@ -78,9 +79,10 @@
     </select>
 
     <select id="selectOrderOptions" resultType="com.lingmao.scm.module.purchase.dto.MrpOrderOptionVO">
-        SELECT o.id AS order_id, o.no AS order_no, o.order_type, o.total_qty, o.commit_date
+        SELECT o.id AS order_id, o.no AS order_no, o.order_type, o.product_line, o.total_qty, o.commit_date
         FROM ord_order o
         WHERE o.status IN ('APPROVED', 'RUNNING')
+        <if test="lines.limited">AND o.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
         <if test="keyword != null and keyword.trim() != ''">
             <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(keyword)"/>
             AND o.id IN (

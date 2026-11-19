@@ -8,8 +8,10 @@ import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public interface DictDataService {
 
@@ -24,6 +26,17 @@ public interface DictDataService {
      * TRADE 关时滤掉代工的保留值（客户来样、客户订单，RFC 003 §3.3）：缓存里是全的，取出来以后再滤
      */
     List<DictOption> listByType(String typeCode);
+
+    /** value → label，停用的也翻（提示里显示品类线的名字） */
+    default Map<String, String> labels(String typeCode) {
+        return listByType(typeCode).stream().collect(Collectors.toMap(DictOption::value, DictOption::label, (a, b) -> a));
+    }
+
+    /**
+     * 多选的字典值（人、供应商的品类线，RFC 013 §2）：去掉空的、去重、按字典顺序排好返回。新选的要是启用的项，
+     * previous（修改前的值，新建传空）里原来就有的停用了也照样留着。一个都没有、有不在字典里的报 400，提示里用 what
+     */
+    List<String> requireValues(String typeCode, Collection<String> values, Collection<String> previous, String what);
 
     Long create(DictDataSaveReq req);
 

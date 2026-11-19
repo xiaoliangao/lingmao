@@ -28,6 +28,8 @@ import {
 } from '@/types/production'
 import { formatDateRange } from '@/utils/format'
 import ProductionTable, { productionColumns } from './ProductionTable.vue'
+import { useProductLines } from '@/composables/useProductLines'
+import LineSelect from '@/components/LineSelect.vue'
 
 /**
  * 外发加工单 / 成品采购单列表（/production、/fp-purchases，docs/api/05 §1.4）。两个菜单共用这个文件、各有一个缓存实例，
@@ -46,11 +48,14 @@ const MINE_OPTIONS = [
 
 const route = useRoute()
 const brands = useDict('brand')
+/** 品类线：几条线的人才有筛选和这一列（RFC 013 §2） */
+const lines = useProductLines()
+const multiLine = lines.multi
 
 const kind: ProductionKind = route.path.startsWith(PRODUCTION_KIND.BUY.path) ? 'BUY' : 'OUTSOURCE'
 const kindMeta = PRODUCTION_KIND[kind]
 // 两个菜单各记各的列（订单号、单价、次品默认不显示）
-const cols = useColumns(kind === 'BUY' ? 'fp-purchases' : 'production', productionColumns('list'))
+const cols = useColumns(kind === 'BUY' ? 'fp-purchases' : 'production', productionColumns('list', multiLine.value))
 
 const pickTab = (v: unknown): TabKey => (TAB_KEYS.includes(v as Exclude<TabKey, ''>) ? (v as TabKey) : '')
 const pickRisk = (v: unknown): ProductionRiskKey | undefined =>
@@ -98,6 +103,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     risk: pickRisk(route.query.risk),
     factoryId: undefined as string | null | undefined,
     merchId: undefined as string | null | undefined,
+    productLine: '',
     brand: '',
     dueDateFrom: undefined as string | undefined,
     dueDateTo: undefined as string | undefined,
@@ -154,7 +160,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 
 const filtered = computed(
   () =>
-    !!(query.keyword.trim() || query.tabKey || query.risk || query.factoryId || query.merchId || query.brand || query.dueDateFrom),
+    !!(query.keyword.trim() || query.tabKey || query.risk || query.factoryId || query.merchId || query.productLine || query.brand || query.dueDateFrom),
 )
 const emptyText = computed(() => {
   if (filtered.value) return `没有符合条件的${kindMeta.label}：换个状态，或者清空筛选`
@@ -220,6 +226,9 @@ const exportPicked = () => exportSelected(selected.value.map((r) => r.id))
       </FilterItem>
       <FilterItem label="生产跟单" :text="query.merchId ? (merchName ?? '已选') : ''" @clear="query.merchId = undefined">
         <UserSelect v-model="query.merchId" v-model:label="merchName" clearable placeholder="全部跟单" />
+      </FilterItem>
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
       </FilterItem>
       <FilterItem label="品牌" :text="brands.labelOf(query.brand)" @clear="query.brand = ''">
         <DictSelect v-model="query.brand" type="brand" clearable />

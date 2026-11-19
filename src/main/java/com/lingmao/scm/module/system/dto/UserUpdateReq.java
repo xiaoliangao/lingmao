@@ -3,10 +3,13 @@ package com.lingmao.scm.module.system.dto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+
+import java.util.List;
 
 /** 修改用户的入参：登录名不能改，密码走单独的重置接口 */
 @Data
@@ -36,4 +39,9 @@ public class UserUpdateReq {
     /** 设计师编号：两位数字 01-99，进款号；不是设计师的不填 */
     @Pattern(regexp = "^$|^(0[1-9]|[1-9][0-9])$", message = "设计师编号是 01-99 的两位数字")
     private String designerNo;
+
+    /** 能看的品类线（字典 product_line 的 value），至少一条（RFC 013 §2）；超级管理员不看它 */
+    @NotEmpty(message = "品类线至少选一条")
+    @Size(max = 20, message = "品类线最多 20 条")
+    private List<String> productLines;
 }

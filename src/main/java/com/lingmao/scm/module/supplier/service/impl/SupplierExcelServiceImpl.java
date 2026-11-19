@@ -26,6 +26,7 @@ import com.lingmao.scm.module.supplier.service.SupplierExcelService;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -134,6 +135,9 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
                 .required().maxLength(200).example("面料商、辅料商")
                 .note("几个用逗号或顿号隔开。可选：" + labels(SupplierDicts.SUPPLIER_CATEGORY)
                         + "；领猫的面料、辅料、成品加工、物料采购、质检机构也认"));
+        columns.add(ExcelColumn.text("品类线", SupplierExcelRow::getProductLines, SupplierExcelRow::setProductLines)
+                .maxLength(100).example("服装、鞋类")
+                .note("几个用逗号或顿号隔开。可选：" + labels(LineScope.DICT_TYPE) + "；空着 = 你能看的全部品类线"));
         columns.add(ExcelColumn.text("擅长类目大类", SupplierExcelRow::getGoodAtTop, SupplierExcelRow::setGoodAtTop)
                 .maxLength(500).note("按名称对品类的第一级，对不上的存进领猫附加属性"));
         columns.add(ExcelColumn.text("擅长类目", SupplierExcelRow::getGoodAt, SupplierExcelRow::setGoodAt)
@@ -197,6 +201,29 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
 
     private List<ExcelOption> options(String type) {
         return dicts.options(type).stream().map(o -> new ExcelOption(o.label(), o.value(), o.enabled())).toList();
+    }
+
+    /**
+     * 导入的品类线（RFC 013 §2）：按名称或值对字典 product_line 启用的项，只能是导入人能看的线；空着给导入人能看的全部线
+     */
+    private List<String> productLines(String text, ExcelImport<SupplierExcelRow> sheet, int row) {
+        LineScope mine = LineScope.current();
+        List<DictOption> enabled = dicts.options(LineScope.DICT_TYPE).stream().filter(DictOption::enabled).toList();
+        List<String> parts = split(text);
+        if (parts.isEmpty()) {
+            return enabled.stream().map(DictOption::value).filter(mine::canSee).toList();
+        }
+        List<String> lines = new ArrayList<>();
+        for (String part : parts) {
+            DictOption o = enabled.stream().filter(d -> d.label().equals(part) || d.value().equalsIgnoreCase(part)).findFirst().orElse(null);
+            if (o == null || !mine.canSee(o.value())) {
+                sheet.error(row, "品类线", "「" + part + "」对不上你能看的品类线。可选："
+                        + enabled.stream().filter(d -> mine.canSee(d.value())).map(DictOption::label).collect(Collectors.joining("、")));
+            } else if (!lines.contains(o.value())) {
+                lines.add(o.value());
+            }
+        }
+        return enabled.stream().map(DictOption::value).filter(lines::contains).toList();
     }
 
     private String labels(String type) {
@@ -306,6 +333,8 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
                 main.error(row, "分类", "「" + String.join("、", unmatched) + "」对不上分类。可选："
                         + labels(SupplierDicts.SUPPLIER_CATEGORY) + "；领猫的面料、辅料、成品加工、物料采购、质检机构也认");
             }
+
+            s.setProductLines(productLines(r.getProductLines(), main, row));
 
             List<Long> goodAtIds = new ArrayList<>();
             goodAt.match(split(r.getGoodAtTop()), true, goodAtIds, legacy, "擅长类目大类");
@@ -558,6 +587,8 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
         row.setCategories(categories.stream().map(c -> dicts.labelOf(SupplierDicts.SUPPLIER_CATEGORY, c))
                 .collect(Collectors.joining("、")));
         row.setGoodAt(goodAt.isEmpty() ? null : String.join("、", goodAt));
+        row.setProductLines(s.getProductLines() == null ? null : s.getProductLines().stream()
+                .map(l -> dicts.labelOf(LineScope.DICT_TYPE, l)).collect(Collectors.joining("、")));
         row.setLevel(s.getLevel());
         row.setSettleMethod(s.getSettleMethod());
         row.setBuyer(buyer);

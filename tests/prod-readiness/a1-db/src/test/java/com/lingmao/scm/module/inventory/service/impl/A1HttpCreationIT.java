@@ -84,6 +84,7 @@ class A1HttpCreationIT {
         req.setName("A1 HTTP 供应商 " + suffix);
         req.setShortName("A1 " + suffix);
         req.setCategories(List.of("FABRIC"));
+        req.setProductLines(List.of("APPAREL"));
         JsonNode response = replayTwice("/api/suppliers", req);
         assertThat(response.get("data").get("id").isString()).isTrue();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sup_supplier WHERE name=?", Integer.class, req.getName())).isEqualTo(1);
@@ -255,6 +256,6 @@ class A1HttpCreationIT {
 
     private UsernamePasswordAuthenticationToken auth() {
         return new UsernamePasswordAuthenticationToken(new LoginUser(user, "a1-http"), null,
-                PERMISSIONS.stream().map(SimpleGrantedAuthority::new).toList());
+                TestIdentity.withLines(PERMISSIONS).stream().map(SimpleGrantedAuthority::new).toList());
     }
 }

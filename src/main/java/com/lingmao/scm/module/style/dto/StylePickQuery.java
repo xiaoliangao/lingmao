@@ -12,4 +12,6 @@ public class StylePickQuery extends PageQuery {
     private Long categoryId;
     /** 录加工价时带上：草稿也列出来（打样阶段就报价）。不带只列启用的（以后选进单据） */
     private Boolean includeDraft;
+    /** 只列这条品类线的款：订单上已经有款了，再挑只能挑同一条线的（RFC 013 §2） */
+    private String productLine;
 }

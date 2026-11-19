@@ -33,6 +33,10 @@ public class Style extends AuditEntity {
     /** 大类，字典 style_class：value 是款号开头的 2 位字母 */
     private String styleClass;
 
+    /** 品类线（RFC 013 §2）：建款时取大类的品类线（字典 style_class 的 text_value），大类不能改所以它也不变 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private String productLine;
+
     /** 字典 brand */
     private String brand;
 

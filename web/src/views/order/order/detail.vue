@@ -420,7 +420,7 @@ function openKitting() {
     </div>
 
     <OrderAuditDialog v-if="detail" v-model="auditVisible" :order="detail" @changed="refresh" />
-    <OrderScheduleDialog v-if="detail" v-model="scheduleVisible" :order-id="id" :company-id="detail.companyId" @scheduled="onScheduled" />
+    <OrderScheduleDialog v-if="detail" v-model="scheduleVisible" :order-id="id" :company-id="detail.companyId" :product-line="detail.productLine" @scheduled="onScheduled" />
     <OrderChangeDialog v-if="detail" v-model="changeVisible" :order="detail" :default-cancel="changeCancel" @saved="refresh" />
   </div>
 </template>

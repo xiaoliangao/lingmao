@@ -161,6 +161,7 @@ class SupplierServiceImplTest {
     /** 规则：待准入的能打样、录价格，不能下大货单（PRD §6.8.2 的表） */
     @Test
     void checkUsable_pendingAdmit_sampleOkBulkRejected() {
+        SupplierFixtures.loginAs(7);
         when(supplierMapper.selectById(1L)).thenReturn(SupplierFixtures.supplier(1, PENDING_ADMIT));
 
         assertThatCode(() -> service.checkUsable(1L, Usage.SAMPLE)).doesNotThrowAnyException();
@@ -172,6 +173,7 @@ class SupplierServiceImplTest {
     /** 规则：黑名单里的不能删（信用代码要一直占着），什么都不删 */
     @Test
     void delete_blacklisted_rejected() {
+        SupplierFixtures.loginAs(7);
         when(supplierMapper.selectByIdForUpdate(1L)).thenReturn(SupplierFixtures.supplier(1, BLACKLISTED));
 
         assertThatThrownBy(() -> service.delete(1L))

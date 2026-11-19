@@ -1415,15 +1415,15 @@ const db = reactive({
     { code: 'ZJT', name: '织间（香港）贸易有限公司', short: '织间贸易', credit: '', addr: '香港某区某道 18 号', phone: '852-2100****', status: '启用' },
   ],
   users: [
-    { id: 'u1', name: '陈晓', role: '生产跟单', dept: '生产部', post: '跟单员', company: 'ZJ' },
-    { id: 'u2', name: '林舟', role: '采购', dept: '采购部', post: '采购员', company: 'ZJ' },
-    { id: 'u3', name: '周宁', role: '业务', dept: '业务部', post: '业务员', company: 'ZJ' },
-    { id: 'u4', name: '许然', role: '开发', dept: '开发部', post: '设计师', company: 'ZJ', dno: '07' }, // dno = 设计师编号，进款号
-    { id: 'u5', name: '王敏', role: '仓管', dept: '仓储部', post: '仓管员', company: 'ZJ' },
-    { id: 'u6', name: '赵启', role: '管理层', dept: '总经办', post: '总经理', company: 'ZJ' },
-    { id: 'u7', name: '孙丽', role: '财务', dept: '财务部', post: '会计', company: 'ZJ' },
-    { id: 'u8', name: '沈冬', role: '开发', dept: '开发部', post: '版师', company: 'ZJ' },
-    { id: 'u9', name: '何川', role: '管理层', dept: '运营部', post: '运营经理', company: 'ZJ' }, // 主管：日常的单他审第 1 级，金额大的再等总经理
+    { id: 'u1', name: '陈晓', role: '生产跟单', dept: '生产部', post: '跟单员', company: 'ZJ', productLines: ['服装'] },
+    { id: 'u2', name: '林舟', role: '采购', dept: '采购部', post: '采购员', company: 'ZJ', productLines: ['服装', '鞋类'] },
+    { id: 'u3', name: '周宁', role: '业务', dept: '业务部', post: '业务员', company: 'ZJ', productLines: ['服装'] },
+    { id: 'u4', name: '许然', role: '开发', dept: '开发部', post: '设计师', company: 'ZJ', productLines: ['服装'], dno: '07' }, // dno = 设计师编号，进款号
+    { id: 'u5', name: '王敏', role: '仓管', dept: '仓储部', post: '仓管员', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] },
+    { id: 'u6', name: '赵启', role: '管理层', dept: '总经办', post: '总经理', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] },
+    { id: 'u7', name: '孙丽', role: '财务', dept: '财务部', post: '会计', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] },
+    { id: 'u8', name: '沈冬', role: '开发', dept: '开发部', post: '版师', company: 'ZJ', productLines: ['鞋类'] },
+    { id: 'u9', name: '何川', role: '管理层', dept: '运营部', post: '运营经理', company: 'ZJ', productLines: ['服装', '鞋类', '百货'] }, // 主管：日常的单他审第 1 级，金额大的再等总经理
   ],
   // 数据范围挂在角色上（PRD §3.2）：本人 = 只看自己是制单人 / 跟单员 / 采购员的单据
   roles: [
@@ -1471,6 +1471,8 @@ const db = reactive({
     结算方式: ['月结', '货到付款', '预付', '银行转账', '承兑'],
     税率: ['0%', '1%', '3%', '6%', '9%', '13%'],
     供应商分类: ['面料商', '辅料商', '成衣厂', '加工厂', '外协', '包材商', '其他'],
+    // 品类线（甲方 11-18 答 Q13、Q30）：人、供应商归几条，款式按大类定，单据跟款；不同线的人互相看不见
+    品类线: ['服装', '鞋类', '百货'],
     订单类型: TRADE ? ['客户订单', '自营备货', '补单', '翻单'] : ['自营备货', '补单', '翻单'],
     加工方式: ['包工包料', '清加工', '半包'],
     生产节点: [['到料', 3], ['裁剪', 4], ['车缝', 10], ['后整', 3], ['包装', 2], ['入仓', 1]],
@@ -1504,15 +1506,15 @@ const db = reactive({
     { code: 'KH0003', name: '北方某电商有限公司', short: '北方某电商', contact: '马先生', phone: '136****5532', addr: '北京市某区某街 9 号', settle: '月结', term: 30, status: '启用', note: '', terms: { price: '平台结算价', deduct: '平台扣点 5%', rebate: '—' } },
   ],
   suppliers: [
-    { code: 'GYS0001', short: '恒丰面料', name: '绍兴恒丰纺织有限公司', credit: '91330600MA0000101X', cats: ['面料商'], level: 'A', status: '合作中', contact: '吴总', phone: '135****1020', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: 'hengfeng_wu', addr: '绍兴市某区某路 1 号', invoice: '增值税专用发票', bank: '某银行绍兴分行', account: '6222 **** **** 1001', note: '', certs: [{ type: '营业执照', until: '2030-12-31' }] },
-    { code: 'GYS0002', short: '鸿达辅料', name: '义乌鸿达服装辅料厂', credit: '91330782MA0000202X', cats: ['辅料商'], level: 'A', status: '合作中', contact: '陈姐', phone: '137****6612', settle: '月结', term: 30, tax: '3%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: '', addr: '义乌市某街道某路 22 号', invoice: '增值税普通发票', bank: '某银行义乌支行', account: '6222 **** **** 2002', note: '纽扣颜色以实物色卡为准', certs: [{ type: '营业执照', until: '2029-06-30' }] },
-    { code: 'GYS0003', short: '新雅包装', name: '杭州新雅包装材料有限公司', credit: '91330100MA0000303X', cats: ['包材商'], level: 'B', status: '合作中', contact: '李工', phone: '139****3345', settle: '货到付款', term: 0, tax: '13%', buyer: 'u2', admitted: '2026-04-11', goodAt: [], wechat: '', addr: '杭州市某区某路 9 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2028-01-31' }] },
-    { code: 'GYS0004', short: '锦程制衣', name: '湖州锦程制衣有限公司', credit: '91330500MA0000404X', cats: ['成衣厂'], level: 'A', status: '合作中', contact: '孙厂长', phone: '138****7781', settle: '月结', term: 45, tax: '6%', buyer: 'u1', admitted: '2026-02-20', goodAt: ['F', 'J', 'Y', 'C', 'W', 'S', 'T'], wechat: 'jincheng_sun', addr: '湖州市某区某工业园 6 号', invoice: '增值税专用发票', bank: '某银行湖州分行', account: '6222 **** **** 4004', note: '旺季（9-11 月）提前两周排产', certs: [{ type: '营业执照', until: '2031-05-31' }, { type: '验厂报告', until: '2027-02-28' }] },
-    { code: 'GYS0005', short: '华美服装厂', name: '嘉兴华美服装厂', credit: '91330400MA0000505X', cats: ['加工厂'], level: 'B', status: '合作中', contact: '钱老板', phone: '133****9902', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-05-08', goodAt: ['K', 'R', 'J'], wechat: '', addr: '嘉兴市某镇某路 18 号', invoice: '增值税普通发票', bank: '某银行嘉兴支行', account: '6222 **** **** 5005', note: '', certs: [{ type: '营业执照', until: '2029-09-30' }, { type: '验厂报告', until: '2026-11-30' }] },
-    { code: 'GYS0006', short: '永兴制衣', name: '桐乡永兴制衣有限公司', credit: '91330483MA0000606X', cats: ['成衣厂'], level: 'C', status: '待准入', contact: '周经理', phone: '131****2276', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: null, goodAt: ['L', 'C'], wechat: '', addr: '桐乡市某镇某路 3 号', invoice: '增值税普通发票', bank: '', account: '', note: '', certs: [] },
-    { code: 'GYS0007', short: '盛达印绣', name: '杭州盛达印绣有限公司', credit: '91330100MA0000707X', cats: ['外协'], level: 'B', status: '合作中', contact: '冯师傅', phone: '186****4410', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-06-01', goodAt: [], wechat: '', addr: '杭州市某区某路 31 号', invoice: '增值税普通发票', bank: '', account: '', note: '只做印花、绣花', certs: [{ type: '营业执照', until: '2028-08-31' }] },
-    { code: 'GYS0008', short: '利源纺织', name: '常熟利源纺织有限公司', credit: '91320581MA0000808X', cats: ['面料商'], level: 'D', status: '黑名单', contact: '郑总', phone: '150****8834', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-15', blackReason: '连续两批大货色差，拒不承担损失', goodAt: [], wechat: '', addr: '常熟市某镇某路 5 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2027-04-30' }] },
-    { code: 'GYS0009', short: '宏利针织', name: '海宁宏利针织有限公司', credit: '91330481MA0000909X', cats: ['面料商'], level: 'B', status: '合作中', contact: '褚总', phone: '159****6620', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-04-02', goodAt: [], wechat: '', addr: '海宁市某街道某路 12 号', invoice: '增值税专用发票', bank: '某银行海宁支行', account: '6222 **** **** 9009', note: '', certs: [{ type: '营业执照', until: '2030-03-31' }] },
+    { code: 'GYS0001', short: '恒丰面料', name: '绍兴恒丰纺织有限公司', credit: '91330600MA0000101X', cats: ['面料商'], productLines: ['服装'], level: 'A', status: '合作中', contact: '吴总', phone: '135****1020', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: 'hengfeng_wu', addr: '绍兴市某区某路 1 号', invoice: '增值税专用发票', bank: '某银行绍兴分行', account: '6222 **** **** 1001', note: '', certs: [{ type: '营业执照', until: '2030-12-31' }] },
+    { code: 'GYS0002', short: '鸿达辅料', name: '义乌鸿达服装辅料厂', credit: '91330782MA0000202X', cats: ['辅料商'], productLines: ['服装', '鞋类'], level: 'A', status: '合作中', contact: '陈姐', phone: '137****6612', settle: '月结', term: 30, tax: '3%', buyer: 'u2', admitted: '2026-03-02', goodAt: [], wechat: '', addr: '义乌市某街道某路 22 号', invoice: '增值税普通发票', bank: '某银行义乌支行', account: '6222 **** **** 2002', note: '纽扣颜色以实物色卡为准', certs: [{ type: '营业执照', until: '2029-06-30' }] },
+    { code: 'GYS0003', short: '新雅包装', name: '杭州新雅包装材料有限公司', credit: '91330100MA0000303X', cats: ['包材商'], productLines: ['服装', '鞋类', '百货'], level: 'B', status: '合作中', contact: '李工', phone: '139****3345', settle: '货到付款', term: 0, tax: '13%', buyer: 'u2', admitted: '2026-04-11', goodAt: [], wechat: '', addr: '杭州市某区某路 9 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2028-01-31' }] },
+    { code: 'GYS0004', short: '锦程制衣', name: '湖州锦程制衣有限公司', credit: '91330500MA0000404X', cats: ['成衣厂'], productLines: ['服装'], level: 'A', status: '合作中', contact: '孙厂长', phone: '138****7781', settle: '月结', term: 45, tax: '6%', buyer: 'u1', admitted: '2026-02-20', goodAt: ['F', 'J', 'Y', 'C', 'W', 'S', 'T'], wechat: 'jincheng_sun', addr: '湖州市某区某工业园 6 号', invoice: '增值税专用发票', bank: '某银行湖州分行', account: '6222 **** **** 4004', note: '旺季（9-11 月）提前两周排产', certs: [{ type: '营业执照', until: '2031-05-31' }, { type: '验厂报告', until: '2027-02-28' }] },
+    { code: 'GYS0005', short: '华美服装厂', name: '嘉兴华美服装厂', credit: '91330400MA0000505X', cats: ['加工厂'], productLines: ['服装'], level: 'B', status: '合作中', contact: '钱老板', phone: '133****9902', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-05-08', goodAt: ['K', 'R', 'J'], wechat: '', addr: '嘉兴市某镇某路 18 号', invoice: '增值税普通发票', bank: '某银行嘉兴支行', account: '6222 **** **** 5005', note: '', certs: [{ type: '营业执照', until: '2029-09-30' }, { type: '验厂报告', until: '2026-11-30' }] },
+    { code: 'GYS0006', short: '永兴制衣', name: '桐乡永兴制衣有限公司', credit: '91330483MA0000606X', cats: ['成衣厂'], productLines: ['服装'], level: 'C', status: '待准入', contact: '周经理', phone: '131****2276', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: null, goodAt: ['L', 'C'], wechat: '', addr: '桐乡市某镇某路 3 号', invoice: '增值税普通发票', bank: '', account: '', note: '', certs: [] },
+    { code: 'GYS0007', short: '盛达印绣', name: '杭州盛达印绣有限公司', credit: '91330100MA0000707X', cats: ['外协'], productLines: ['服装'], level: 'B', status: '合作中', contact: '冯师傅', phone: '186****4410', settle: '月结', term: 30, tax: '3%', buyer: 'u1', admitted: '2026-06-01', goodAt: [], wechat: '', addr: '杭州市某区某路 31 号', invoice: '增值税普通发票', bank: '', account: '', note: '只做印花、绣花', certs: [{ type: '营业执照', until: '2028-08-31' }] },
+    { code: 'GYS0008', short: '利源纺织', name: '常熟利源纺织有限公司', credit: '91320581MA0000808X', cats: ['面料商'], productLines: ['服装'], level: 'D', status: '黑名单', contact: '郑总', phone: '150****8834', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-03-15', blackReason: '连续两批大货色差，拒不承担损失', goodAt: [], wechat: '', addr: '常熟市某镇某路 5 号', invoice: '增值税专用发票', bank: '', account: '', note: '', certs: [{ type: '营业执照', until: '2027-04-30' }] },
+    { code: 'GYS0009', short: '宏利针织', name: '海宁宏利针织有限公司', credit: '91330481MA0000909X', cats: ['面料商'], productLines: ['服装'], level: 'B', status: '合作中', contact: '褚总', phone: '159****6620', settle: '月结', term: 30, tax: '13%', buyer: 'u2', admitted: '2026-04-02', goodAt: [], wechat: '', addr: '海宁市某街道某路 12 号', invoice: '增值税专用发票', bank: '某银行海宁支行', account: '6222 **** **** 9009', note: '', certs: [{ type: '营业执照', until: '2030-03-31' }] },
   ],
   warehouses: [
     { code: 'WL01', name: '主料仓', type: '物料仓', keeper: 'u5', addr: '杭州市某区某路 88 号 1 楼', phone: '0571-8800****', status: '启用' },
@@ -1776,13 +1778,14 @@ function ensureFactoryWh(s) {
 function createSupplier({ imported, ...f }) {
   if (!f.short || !f.name) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
+  if (f.productLines && !f.productLines.length) fail('品类线至少选一条')
   const code = (f.code || '').trim().toUpperCase() || nextCode('GYS', db.suppliers)
   if (sup(code)) fail(`供应商编码 ${code} 已经有了`)
   f.credit = normCredit(f.credit)
   checkCredit(f.credit)
   const st = imported ? f.status || '待准入' : '待准入'
   if (st === '合作中' && !canAdmit()) fail(`直接导入成「合作中」要有供应商审批权限（${auditRoles('供应商').join('、')}），${me().name} 没有`)
-  const s = add(db.suppliers, { level: 'B', settle: '月结', term: 30, tax: '13%', invoice: '', goodAt: [], wechat: '', addr: '', bank: '', account: '', note: '', certs: [], admitted: null, ...f, code, status: st, pending: null, riskChecks: [], riskNew: null, log: [] })
+  const s = add(db.suppliers, { productLines: [...db.dicts.品类线], level: 'B', settle: '月结', term: 30, tax: '13%', invoice: '', goodAt: [], wechat: '', addr: '', bank: '', account: '', note: '', certs: [], admitted: null, ...f, code, status: st, pending: null, riskChecks: [], riskNew: null, log: [] })
   if (st === '合作中' && !s.admitted) Object.assign(s, { admitted: clock.today, admittedBy: db.me })
   act(s, imported ? '导入，状态「' + st + '」' : '新建')
   ensureFactoryWh(s)
@@ -10878,7 +10881,7 @@ function saveCert(s, c, f) {
   act(s, '改证照 ' + c.type + '：' + ch.join('；'))
 }
 function removeCert(s, c) { s.certs.splice(s.certs.indexOf(c), 1); act(s, '删证照 ' + c.type + '（有效期至 ' + c.until + '）') }
-const SUP_FIELDS = [['name', '全称'], ['credit', '统一社会信用代码'], ['short', '简称'], ['cats', '分类'], ['goodAt', '擅长品类', (v) => v.map((c) => catOf(c).name).join('、')], ['level', '等级'], ['contact', '联系人'], ['phone', '电话'], ['wechat', '微信'], ['addr', '地址'],
+const SUP_FIELDS = [['name', '全称'], ['credit', '统一社会信用代码'], ['short', '简称'], ['cats', '分类'], ['productLines', '品类线'], ['goodAt', '擅长品类', (v) => v.map((c) => catOf(c).name).join('、')], ['level', '等级'], ['contact', '联系人'], ['phone', '电话'], ['wechat', '微信'], ['addr', '地址'],
   ['settle', '结算方式'], ['term', '账期'], ['tax', '税率'], ['invoice', '发票类型'], ['bank', '开户行'], ['account', '账号'], ['buyer', '负责采购员', userName], ['note', '备注']]
 /* 关键信息（甲方 11-11 反馈 1d）：准入过的供应商（合作中、停用、黑名单）改这几项先挂起成"待批改动"，另一个有审批权限的人批准才生效；
  * 停用的也要批，免得"停用 → 改 → 再启用"绕过去。待准入的直接改（申请准入时一起审）；一家同时只能有一份待批改动。其他字段直接改 */
@@ -10889,6 +10892,7 @@ function updateSupplier(s, f) {
   if (s.status === '准入审批中') fail('准入审批中，资料不能改', ['要改先让审批人驳回，改好再申请'])
   if (!f.short?.trim() || !f.name?.trim()) fail('全称、简称都要填')
   if (!f.cats?.length) fail('至少选一个分类')
+  if ('productLines' in f && !f.productLines?.length) fail('品类线至少选一条')
   if ('credit' in f) { f.credit = normCredit(f.credit); checkCredit(f.credit, s) }
   // 信用代码从空补上的直接生效，改已有的才审批：导入的多数没填，上线后逐家补、逐家批太麻烦（用户 11-15 定）
   const gated = supGated(s) ? SUP_FIELDS.filter(([k]) => SUP_KEY.includes(k) && k in f && !sameVal(f[k], s[k]) && !(k === 'credit' && !s.credit)) : []
@@ -11464,7 +11468,7 @@ route('/suppliers', {
     </div>
     <div data-c="供应商列表">
       <Tbl :rows="rows" link v-model:picked="s.picked" @row="x => go('/suppliers/' + x.code)" empty="没有符合条件的供应商" :cols="[
-        { k: 'code', t: '编码', c: 'code' }, { k: 'short', t: '简称' }, { k: 'cats', t: '分类', f: x => x.cats.join('、') }, { k: 'level', t: '等级' },
+        { k: 'code', t: '编码', c: 'code' }, { k: 'short', t: '简称' }, { k: 'cats', t: '分类', f: x => x.cats.join('、') }, { k: 'productLines', t: '品类线', f: x => x.productLines.join('、') }, { k: 'level', t: '等级' },
         { k: 'status', t: '状态' }, { k: 'contact', t: '联系人' }, { k: 'settle', t: '结算', f: x => x.settle + (x.term ? ' ' + x.term + ' 天' : '') },
         { k: 'buyer', t: '负责人', f: x => userName(x.buyer) }, { k: 'cert', t: '证照' }, { k: 'risk', t: '风险' }]">
         <template #short="{ r }"><span>{{ r.short }}</span> <span class="dim">{{ r.name }}</span></template>
@@ -11486,14 +11490,14 @@ comp('SupplierForm', {
   emits: ['close'],
   setup(p, { emit }) {
     const keys = SUP_FIELDS.map(([k]) => k)
-    const f = reactive(p.s ? Object.fromEntries(keys.map((k) => [k, Array.isArray(p.s[k]) ? [...p.s[k]] : p.s[k] ?? ''])) : { name: '', credit: '', short: '', cats: [], goodAt: [], level: 'B', contact: '', phone: '', wechat: '', addr: '', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', bank: '', account: '', buyer: 'u2', note: '' })
+    const f = reactive(p.s ? Object.fromEntries(keys.map((k) => [k, Array.isArray(p.s[k]) ? [...p.s[k]] : p.s[k] ?? ''])) : { name: '', credit: '', short: '', cats: [], productLines: ['服装'], goodAt: [], level: 'B', contact: '', phone: '', wechat: '', addr: '', settle: '月结', term: 30, tax: '13%', invoice: '增值税专用发票', bank: '', account: '', buyer: 'u2', note: '' })
     const toggle = (list, c) => { const i = list.indexOf(c); i >= 0 ? list.splice(i, 1) : list.push(c) }
     const cats = computed(() => db.categories.filter((c) => c.status !== '停用' || f.goodAt.includes(c.code)))
     const gate = computed(() => !!p.s && supGated(p.s))
     const credit = computed(() => creditProblem(normCredit(f.credit), p.s))
     function save() {
       if (p.s) { const r = run(() => updateSupplier(p.s, f)); if (r !== undefined) { emit('close'); toast(p.s.short + ' 已保存' + (r ? '；' + r : '')) } return }
-      const s = run(() => createSupplier({ ...f, cats: [...f.cats], goodAt: [...f.goodAt] }))
+      const s = run(() => createSupplier({ ...f, cats: [...f.cats], productLines: [...f.productLines], goodAt: [...f.goodAt] }))
       if (!s) return
       emit('close')
       go('/suppliers/' + s.code)
@@ -11511,6 +11515,7 @@ comp('SupplierForm', {
       <label class="f">等级<Pick class="sel" v-model="f.level"><option v-for="x in ['A', 'B', 'C', 'D']" :key="x">{{ x }}</option></Pick></label>
       <span></span>
       <div class="f full">分类<div class="chips"><button v-for="c in db.dicts.供应商分类" :key="c" class="chip" :class="{ on: f.cats.includes(c) }" @click="toggle(f.cats, c)">{{ c }}</button></div></div>
+      <div class="f full" data-c="品类线">品类线<div class="chips"><button v-for="c in db.dicts.品类线" :key="c" class="chip" :class="{ on: f.productLines.includes(c) }" @click="toggle(f.productLines, c)">{{ c }}</button></div><small class="dim">只有做这几条线的人看得到它；采购单、生产单只能选做这条线的</small></div>
       <div class="f full" data-c="擅长品类">擅长品类<div class="chips"><button v-for="c in cats" :key="c.code" class="chip" :class="{ on: f.goodAt.includes(c.code) }" @click="toggle(f.goodAt, c.code)">{{ c.name }}</button></div></div>
       <label class="f">联系人<input class="inp" v-model="f.contact"></label>
       <label class="f">电话<input class="inp" v-model="f.phone"></label>
@@ -11609,7 +11614,7 @@ route('/suppliers/:code', {
     <div class="detail">
       <div class="body">
         <div class="title">{{ s.short }}<St :s="s.status"/><span v-if="risk && risk.result !== '无风险'" class="flag" :class="riskTone(risk)" style="margin-left:6px">企查查{{ risk.result }}</span></div>
-        <div class="sub"><span>{{ s.name }}</span><span class="code">{{ s.credit || '没填信用代码' }}</span><span>{{ s.cats.join('、') }}</span><span>{{ s.level }} 级</span></div>
+        <div class="sub"><span>{{ s.name }}</span><span class="code">{{ s.credit || '没填信用代码' }}</span><span>{{ s.cats.join('、') }}</span><span>{{ s.productLines.join('、') }}</span><span>{{ s.level }} 级</span></div>
         <div v-if="s.riskNew" class="banner red" data-c="新增风险"><Ico n="alert"/><span>企查查 {{ fd(s.riskNew.at) }} 复查新增 {{ riskNewItems(s).length }} 条风险：{{ riskNewItems(s).map(x => x.type + '（' + x.date + '）').join('、') }}</span>
           <span class="sp"></span><button class="btn sm" @click="tab = 'risk'">看风险</button><button class="btn sm pri" @click="ack">已知悉</button></div>
         <div v-if="s.status === '黑名单'" class="banner red" data-c="黑名单原因"><Ico n="alert"/>{{ s.blackReason }}<span v-if="s.blackAt" class="dim" style="margin-left:auto;font-size:12px">{{ userName(s.blackBy) }} · {{ fd(s.blackAt) }}</span></div>
@@ -12344,7 +12349,8 @@ route('/settings', {
       <Tabs v-model="tab" :items="[['users', '用户', db.users.length], ['perms', '角色权限'], ['audit', '审批'], ['notify', '通知'], ['integ', '集成'], ['log', '操作日志']]"/>
 
       <section v-if="tab === 'users'" data-c="用户">
-        <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
+        <Tbl inset flat :rows="db.users" :cols="[{ k: 'name', t: '姓名' }, { k: 'dept', t: '部门' }, { k: 'post', t: '岗位' }, { k: 'role', t: '角色' }, { k: 'scope', t: '数据范围', f: u => roleOf(u.role).scope }, { k: 'productLines', t: '品类线' }, { k: 'company', t: '默认主体' }, { k: 'dno', t: '设计师编号' }]">
+          <template #productLines="{ r }"><span class="chips" title="能看哪几条品类线：别的线的款式、订单、单据、供应商看不到；至少留一条"><button v-for="c in db.dicts.品类线" :key="c" class="chip" :class="{ on: r.productLines.includes(c) }" @click="r.productLines.includes(c) ? (r.productLines.length > 1 ? r.productLines.splice(r.productLines.indexOf(c), 1) : toast('至少留一条品类线')) : r.productLines.push(c)">{{ c }}</button></span></template>
           <template #dno="{ r }"><span v-if="dnoLocked(r)" class="row g4"><span class="code">{{ r.dno }}</span><span class="dim" style="font-size:12px" title="进过款号，不能改、不能给别人">已锁定</span></span>
             <input v-else class="inp code" style="height:26px;width:56px" maxlength="2" :value="r.dno || ''" placeholder="—" @change="e => { if (!run(() => setDesignerNo(r, e.target.value))) e.target.value = r.dno || ''; else if (e.target.value) toast(r.name + ' 的设计师编号是 ' + r.dno) }"></template>
           <template #dept="{ r }"><input class="inp" style="height:26px;width:96px" v-model="r.dept"></template>
@@ -13849,9 +13855,9 @@ const MOD_INFO = {
   },
   suppliers: {
     perm: ['供应商', '价格档案'],
-    what: '管面辅料商和加工厂的档案、证照、账户和价格。新建的是「待准入」，资料补齐、另一个有审批权限的人批了才变「合作中」，只有合作中的能下采购单、生产单。',
+    what: '管面辅料商和加工厂的档案、证照、账户和价格。新建的是「待准入」，资料补齐、另一个有审批权限的人批了才变「合作中」，只有合作中的能下采购单、生产单。每家做哪几条品类线（服装、鞋类、百货），只有做这条线的人看得到它，采购单、生产单也只能选做这条线的。',
     has: [
-      ['列表', '编码、简称、分类、等级、状态、结算、负责人、证照到期、企查查风险'],
+      ['列表', '编码、简称、分类、品类线、等级、状态、结算、负责人、证照到期、企查查风险'],
       ['详情 · 右侧', '信用代码、联系人、结算和账期、发票和税率、开户行、账号、工厂仓'],
       ['详情 · 资质', '营业执照等证照、有效期、文件；30 天内到期标黄，过期标红'],
       ['详情 · 往来单据', '和这家的采购单、外发加工单、成品采购单、出入库单、回货，一单一行'],
@@ -13964,9 +13970,9 @@ const MOD_INFO = {
   },
   settings: {
     sec: '11', at: '设置不是流程里的一步：每一段谁能做、谁来审在这里定，对应第 11 段「每张单据都一样的规矩」。',
-    what: '系统设置：给每个人定部门、岗位、角色、默认主体和设计师编号；配各角色在各模块能看、改、审；还有审批、通知、集成和操作日志。登录名、密码在管理后台。',
+    what: '系统设置：给每个人定部门、岗位、角色、品类线、默认主体和设计师编号；配各角色在各模块能看、改、审；还有审批、通知、集成和操作日志。登录名、密码在管理后台。',
     has: [
-      ['页签 · 用户', '姓名、部门、岗位、角色、数据范围、默认主体、设计师编号'],
+      ['页签 · 用户', '姓名、部门、岗位、角色、数据范围、品类线（能看哪几条，别的线的款式、订单、单据、供应商看不到）、默认主体、设计师编号'],
       ['页签 · 角色权限', '角色 × 模块的看、改、审；每个角色的数据范围（全部、本人）'],
       ['页签 · 审批', '每种单据谁能审、几级、待审数；多级审批：金额超过多少再加一级，由谁审'],
       ['页签 · 通知', '站内待办；钉钉、企业微信、飞书、邮件（二期）；推送哪些事'],

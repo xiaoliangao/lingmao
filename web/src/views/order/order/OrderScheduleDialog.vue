@@ -26,10 +26,11 @@ const scheduleApi = bindCompanyApi(scheduleApiBase, () => props.companyId)
  * - 每格上限 maxQty；同款几块加起来超了，几块里那一格都标红（SkuMatrix 的 error），不截断，后端还会拦 1004
  * - 成功：提示生成了哪几张，发 scheduled，详情切到"下游单据"页签
  *
- *   <OrderScheduleDialog v-model="scheduleVisible" :order-id="id" @scheduled="onScheduled" />
+ *   <OrderScheduleDialog v-model="scheduleVisible" :order-id="id" :company-id="…" :product-line="detail.productLine" @scheduled="onScheduled" />
+ * 加工厂只列做这张订单品类线的（RFC 013 §2）
  */
 const visible = defineModel<boolean>({ required: true })
-const props = defineProps<{ orderId: string; companyId: string }>()
+const props = defineProps<{ orderId: string; companyId: string; productLine: string }>()
 const emit = defineEmits<{ scheduled: [] }>()
 
 const modes = useDict('process_mode')
@@ -308,6 +309,7 @@ async function submit() {
               :label="b.factoryName"
               :category="['GARMENT', 'PROCESSOR']"
               usage="BULK"
+              :product-line="props.productLine"
               @update:model-value="onFactoryChange(b, $event)"
             />
           </el-form-item>

@@ -52,6 +52,8 @@ export interface User {
   designerNo: string | null
   /** 编号已经用来编过款号，不能再改、清空 */
   designerNoLocked: boolean
+  /** 能看的品类线（字典 product_line 的 value，按字典顺序）；超级管理员不看这个，看全部（RFC 013 §2） */
+  productLines: string[]
 }
 
 /** 角色的数据范围：ALL 全部 / SELF 本人（PRD §3.2）。有"全部"角色的人，权限里多一个 data:all */

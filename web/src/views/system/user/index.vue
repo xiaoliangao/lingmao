@@ -9,6 +9,9 @@ import type { CompanyOption } from '@/types/basic'
 import PageHeader from '@/components/PageHeader.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import DictSelect from '@/components/DictSelect.vue'
+import { PRODUCT_LINE_DICT } from '@/composables/useProductLines'
+import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 
 // ---------- 列表 ----------
@@ -56,7 +59,7 @@ const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
 const EMPTY_FORM = {
   username: '', password: '', nickname: '', phone: '', status: 1,
-  defaultCompanyId: null as string | null, dept: '', post: '', designerNo: '',
+  defaultCompanyId: null as string | null, dept: '', post: '', designerNo: '', productLines: [] as string[],
 }
 const form = reactive({ ...EMPTY_FORM })
 /** 设计师编号编过款号了：不能改、清空 */
@@ -74,7 +77,9 @@ const rules: FormRules = {
   ],
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
   designerNo: [{ pattern: /^(0[1-9]|[1-9][0-9])$/, message: '两位数字 01-99', trigger: 'blur' }],
+  productLines: [{ type: 'array', required: true, min: 1, message: '至少选一条品类线', trigger: 'change' }],
 }
+const lineDict = useDict(PRODUCT_LINE_DICT)
 
 /** 主体公司下拉：每次打开对话框取一次（停用的不列；原来选的停用了，显示"已停用"） */
 async function loadCompanies() {
@@ -85,7 +90,7 @@ async function openCreate() {
   await loadCompanies()
   editingId.value = null
   designerNoLocked.value = false
-  Object.assign(form, EMPTY_FORM)
+  Object.assign(form, { ...EMPTY_FORM, productLines: [] })
   dialogVisible.value = true
 }
 
@@ -96,6 +101,7 @@ async function openEdit(row: User) {
   Object.assign(form, {
     username: row.username, password: '', nickname: row.nickname, phone: row.phone ?? '', status: row.status,
     defaultCompanyId: row.defaultCompanyId, dept: row.dept ?? '', post: row.post ?? '', designerNo: row.designerNo ?? '',
+    productLines: [...row.productLines],
   })
   dialogVisible.value = true
 }
@@ -113,6 +119,7 @@ async function save() {
     dept: form.dept.trim() || null,
     post: form.post.trim() || null,
     designerNo: form.designerNo.trim() || null,
+    productLines: form.productLines,
   }
   if (editingId.value === null) {
     await userApi.create({ username: form.username, password: form.password, nickname: form.nickname, phone: form.phone || undefined, ...profile })
@@ -194,6 +201,9 @@ async function saveRoles() {
       <el-table-column label="设计师编号" width="100" class-name="code">
         <template #default="{ row }">{{ row.designerNo ?? '—' }}</template>
       </el-table-column>
+      <el-table-column label="品类线" min-width="130">
+        <template #default="{ row }">{{ (row as User).productLines.map((l) => lineDict.labelOf(l)).join('、') }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <StatusTag :tone="row.status === 1 ? 'active' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
@@ -264,6 +274,9 @@ async function saveRoles() {
             :placeholder="designerNoLocked ? '' : '两位数字，进款号；不是设计师不填'"
           />
           <span v-if="designerNoLocked" class="dim hint">已经用来编过款号，不能改</span>
+        </el-form-item>
+        <el-form-item label="品类线" prop="productLines" class="full">
+          <DictSelect v-model="form.productLines" :type="PRODUCT_LINE_DICT" multiple placeholder="能看哪几条线的款式、单据、供应商" />
         </el-form-item>
         <el-form-item v-if="editingId !== null" label="状态" class="full">
           <el-radio-group v-model="form.status">

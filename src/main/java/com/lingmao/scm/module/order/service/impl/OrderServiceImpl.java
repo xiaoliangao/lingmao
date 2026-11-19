@@ -79,6 +79,7 @@ import com.lingmao.scm.module.techpack.dto.PackBrief;
 import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -98,6 +99,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -273,6 +275,7 @@ public class OrderServiceImpl implements OrderService {
         OrderDetailVO vo = docHeaderService.fill(new OrderDetailVO(), BizType.ORDER, o, o.getStatus());
         vo.setCompanyName(companyService.getById(o.getCompanyId()).getShortName());
         vo.setOrderType(o.getOrderType());
+        vo.setProductLine(o.getProductLine());
         vo.setCustomerId(o.getCustomerId());
         vo.setCustomerOrderNo(o.getCustomerOrderNo());
         vo.setContractNo(o.getContractNo());
@@ -503,7 +506,7 @@ public class OrderServiceImpl implements OrderService {
      * 不然打不开要他审的单
      */
     private Order visible(Order o) {
-        if (o == null) {
+        if (o == null || !LineScope.current().canSee(o.getProductLine())) {
             throw new BizException(404, NOT_FOUND);
         }
         if (!DataScope.current(false).canSee(o.getCreateBy(), o.getSalesId(), o.getMerchId())
@@ -538,6 +541,7 @@ public class OrderServiceImpl implements OrderService {
 
     /** 取单号、算合计、插单头和明细（新建、导入共用） */
     private void insert(Order o, List<OrderItem> items) {
+        o.setProductLine(lineOf(items, null));
         totals(o, items);
         o.setNo(serialNoGenerator.daily(BizType.ORDER.getPrefix()));
         orderMapper.insert(o);
@@ -563,6 +567,7 @@ public class OrderServiceImpl implements OrderService {
         List<OrderItem> all = itemMapper.selectByOrder(id);
         Map<Long, OrderItem> existing = all.stream().collect(Collectors.toMap(OrderItem::getStyleSkuId, Function.identity()));
         List<OrderItem> items = buildItems(req.getItems(), existing);
+        o.setProductLine(lineOf(items, old.getProductLine()));
         // 这次去掉的行：变更明细指着的（审核过、变更过、又反审核回来的）留着、件数记 0，别的删掉
         List<OrderItem> dropped = new ArrayList<>(existing.values());
         Set<Long> referenced = dropped.isEmpty() ? Set.of()
@@ -708,6 +713,26 @@ public class OrderServiceImpl implements OrderService {
         return items;
     }
 
+    /**
+     * 订单的品类线（RFC 013 §2）：明细里款式的品类线，只能一条。没有明细的草稿沿用原来的，新建的取我的第一条线。
+     * 款式不在我的线里当 SKU 不存在（选款弹窗里本来就列不出来）
+     */
+    private String lineOf(List<OrderItem> items, String old) {
+        Map<Long, String> byStyle = styleService.productLines(items.stream().map(OrderItem::getStyleId).toList());
+        Set<String> lines = new LinkedHashSet<>(byStyle.values());
+        if (lines.size() > 1) {
+            Map<String, String> labels = dictDataService.labels(LineScope.DICT_TYPE);
+            throw new BizException("一张订单只能放一条品类线的款，这张里有"
+                    + lines.stream().map(l -> labels.getOrDefault(l, l)).collect(Collectors.joining("、")) + "的：分开下单");
+        }
+        LineScope scope = LineScope.current();
+        String line = lines.isEmpty() ? (old != null ? old : scope.first()) : lines.iterator().next();
+        if (!scope.canSee(line)) {
+            throw new BizException(400, "有 SKU 不存在了（可能刚被删掉），请刷新后再填");
+        }
+        return line;
+    }
+
     /** 合计件数、金额（没单价的行不算金额） */
     static void totals(Order o, List<OrderItem> items) {
         for (int n = 0; n < items.size(); n++) {
@@ -810,27 +835,33 @@ public class OrderServiceImpl implements OrderService {
         if (sources.size() != ids.size()) throw new BizException(404, "来源订单不存在");
         DataScope scope = DataScope.current(false);
         for (Order source : sources) {
+            scope.getLines().check(source.getProductLine());
             scope.check(source.getCreateBy(), source.getSalesId(), source.getMerchId());
             com.lingmao.scm.common.scope.CompanyContext.target(source.getCompanyId());
         }
     }
 
     @Override
-    public void checkForMrp(Collection<Long> orderIds) {
+    public String checkForMrp(Collection<Long> orderIds) {
         Set<Long> ids = new HashSet<>(orderIds);
-        if (ids.isEmpty()) return;
+        if (ids.isEmpty()) return null;
         List<Order> orders = orderMapper.selectByIds(ids);
         if (orders.size() != ids.size()) throw new BizException(404, "有需求订单不存在，请重新选择");
         DataScope scope = DataScope.current(false);
         for (Order order : orders) {
+            scope.getLines().check(order.getProductLine());
             scope.check(order.getCreateBy(), order.getSalesId(), order.getMerchId());
             com.lingmao.scm.common.scope.CompanyContext.target(order.getCompanyId());
         }
         if (orders.stream().map(Order::getCompanyId).distinct().count() > 1)
             throw new BizException(400, "不同主体的订单请分别算料");
+        // 品类线（RFC 013 §2）：一张算料单只算一条线，生成的采购单跟着它
+        if (orders.stream().map(Order::getProductLine).distinct().count() > 1)
+            throw new BizException(400, "不同品类线的订单请分别算料");
         List<String> problems = orders.stream().filter(o -> o.getStatus() != APPROVED && o.getStatus() != RUNNING)
                 .map(o -> "订单 " + o.getNo() + " 只能在已审核或生产中状态算料").toList();
         if (!problems.isEmpty()) throw new BizException(ErrorCodes.BIZ_ERROR, problems.getFirst(), problems);
+        return orders.getFirst().getProductLine();
     }
 
     @Override

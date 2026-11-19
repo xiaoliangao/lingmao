@@ -9,6 +9,7 @@ import { SUPPLIER_STATUS, type SupplierOption, type SupplierUsage } from '@/type
  * - category：只列分类里有它的（字典 supplier_category 的 value，如 FABRIC 面料商、GARMENT 成衣厂）；
  *   给数组就列有其中任一个的，如默认加工厂 :category="['GARMENT', 'PROCESSOR']"
  * - usage：SAMPLE（默认）打样、录价格用，待准入、审批中、合作中的都能选；BULK 大货单用，只有合作中的
+ * - productLine：只列做这条品类线的（采购单、生产单，RFC 013 §2）；不给就列和我的线有交集的
  * - 已经选中的那家（编辑旧记录）停用了、拉黑了也照样显示名字，后面标状态；想换就换，不换也能原样保存。
  *   编辑旧记录时把名字传给 label：还没搜过，下拉框不知道这个 id 叫什么
  * 能不能选最后由后端的 checkUsable 把关，这里只是不让人选到
@@ -17,10 +18,13 @@ import { SUPPLIER_STATUS, type SupplierOption, type SupplierUsage } from '@/type
  *
  * 要拿选中那家的简称（筛选小标签、单据上跟着换供应商名）：用 v-model:label，选了以后写回简称（清空写回 null）
  */
-const props = withDefaults(defineProps<{ category?: string | string[]; usage?: SupplierUsage; label?: string | null }>(), {
+const props = withDefaults(defineProps<{
+  category?: string | string[]; usage?: SupplierUsage; label?: string | null; productLine?: string | null
+}>(), {
   category: undefined,
   usage: 'SAMPLE',
   label: null,
+  productLine: null,
 })
 const emit = defineEmits<{ 'update:label': [name: string | null] }>()
 const model = defineModel<string | null>()
@@ -45,6 +49,7 @@ async function search(keyword = '') {
       usage: props.usage,
       keyword: keyword.trim() || undefined,
       includeId: model.value ?? undefined,
+      productLine: props.productLine ?? undefined,
     }))
     if (current !== seq || !read.current()) return
     options.value = result
@@ -57,8 +62,8 @@ async function search(keyword = '') {
   }
 }
 
-/** 分类、用途变了，已经列出来的不对了，下次展开重新取 */
-watch(() => `${categoryParam.value}|${props.usage}`, () => {
+/** 分类、用途、品类线变了，已经列出来的不对了，下次展开重新取 */
+watch(() => `${categoryParam.value}|${props.usage}|${props.productLine}`, () => {
   options.value = []
 })
 

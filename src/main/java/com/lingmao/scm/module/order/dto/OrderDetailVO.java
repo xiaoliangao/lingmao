@@ -19,6 +19,8 @@ public class OrderDetailVO extends DocHeaderVO {
     private String customerOrderNo;
     private String contractNo;
     private String brand;
+    /** 品类线，字典 product_line */
+    private String productLine;
     private LocalDate orderDate;
     private LocalDate requiredDate;
     private LocalDate commitDate;

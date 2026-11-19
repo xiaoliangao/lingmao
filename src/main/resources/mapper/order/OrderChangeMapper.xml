@@ -29,6 +29,7 @@
 
     <sql id="where">
         WHERE true
+        <if test="scope.lines.limited">AND o.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
         <if test="scope.self">
             AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId}
                  OR c.create_by = #{scope.userId})

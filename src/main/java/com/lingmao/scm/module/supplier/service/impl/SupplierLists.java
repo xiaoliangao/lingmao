@@ -15,6 +15,7 @@ import com.lingmao.scm.module.supplier.mapper.SupplierChangeMapper;
 import com.lingmao.scm.module.supplier.mapper.SupplierMapper;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Component;
@@ -68,6 +69,11 @@ class SupplierLists {
         }
         if (StringUtils.hasText(query.getCategory())) {
             inCategory(wrapper, List.of(query.getCategory()));
+        }
+        // 品类线（RFC 013 §2）：和我的线有交集的；几条线的人还能再按一条筛
+        LineScope.current().applyAny(wrapper, "product_lines");
+        if (StringUtils.hasText(query.getProductLine())) {
+            wrapper.apply("{0} = ANY(product_lines)", query.getProductLine());
         }
         if (query.getStatus() != null && !query.getStatus().isEmpty()) {
             wrapper.in("status", query.getStatus().stream().map(Enum::name).toList());
