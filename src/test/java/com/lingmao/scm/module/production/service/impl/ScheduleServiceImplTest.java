@@ -95,10 +95,10 @@ class ScheduleServiceImplTest {
     @org.junit.jupiter.api.AfterEach
     void clearAuthentication() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
 
-    /** 规则（PRD §6.5.5，Q09）：同一个 SKU 已排产 + 这次 ≤ ⌊订单数 × 1.03⌋，超了 1004，data 说清最多还能排多少，一张都不建 */
+    /** 规则（PRD §6.5.5，Q09 甲方 11-18 答 5%）：同一个 SKU 已排产 + 这次 ≤ ⌊订单数 × 1.05⌋，超了 1004，data 说清最多还能排多少，一张都不建 */
     @Test
     void schedule_overLimit_returnsRowsAndCreatesNothing() {
-        assertThatThrownBy(() -> service.schedule(req(54, new BigDecimal("38"), null)))
+        assertThatThrownBy(() -> service.schedule(req(56, new BigDecimal("38"), null)))
                 .isInstanceOf(BizException.class)
                 .satisfies(e -> {
                     assertThat(((BizException) e).getCode()).isEqualTo(1004);
@@ -106,8 +106,8 @@ class ScheduleServiceImplTest {
                     List<ScheduleOverRow> rows = (List<ScheduleOverRow>) ((BizException) e).getData();
                     assertThat(rows).singleElement().satisfies(r -> {
                         assertThat(r.sku()).isEqualTo("A01-RED-M");
-                        assertThat(r.maxQty()).isEqualTo(103);
-                        assertThat(r.message()).isEqualTo("最多还能排 53 件");
+                        assertThat(r.maxQty()).isEqualTo(105);
+                        assertThat(r.message()).isEqualTo("最多还能排 55 件");
                     });
                 });
         verify(prdMapper, never()).insert(any(com.lingmao.scm.module.production.entity.ProductionOrder.class));

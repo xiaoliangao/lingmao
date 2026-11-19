@@ -272,6 +272,7 @@ function openDesktopPage() {
           计划 {{ formatDate(selectedNode.planStart).slice(5) }} ~ {{ formatDate(selectedNode.planFinish).slice(5) }}{{ lastReportText }}
         </p>
         <p v-if="finished" class="sub-hint warn-text">这个节点已经报过完成</p>
+        <p v-else-if="selectedNode.nodeCode === 'CUT'" class="sub-hint dim">裁完了在电脑上的生产单"更多 › 登记裁床数"按尺码登记，回货按裁床数算</p>
 
         <label class="m-field">
           <span>实际开始</span>

@@ -39,9 +39,9 @@ export const PRODUCTION_PARTIAL: { label: string; tone: StatusTone } = { label: 
 
 /**
  * 详情、列表行上的按钮：通用的状态动作 + edit 改草稿、remove 删草稿、report 报进度、editPlan 改节点计划、
- * reportIssue 上报异常、receive 登记回货、issue 领料、returnMaterial 退料（后两个要 inventory:doc:add，走 04 的接口）
+ * reportIssue 上报异常、receive 登记回货、cut 登记裁床数（要 production:node:edit）、issue 领料、returnMaterial 退料（后两个要 inventory:doc:add，走 04 的接口）
  */
-export type ProductionAction = DocAction | 'edit' | 'remove' | 'report' | 'editPlan' | 'reportIssue' | 'receive' | 'issue' | 'returnMaterial'
+export type ProductionAction = DocAction | 'edit' | 'remove' | 'report' | 'editPlan' | 'reportIssue' | 'receive' | 'cut' | 'issue' | 'returnMaterial'
 
 /** 操作记录里的动作叫法（DocLogList 的 actions）。statuses 传 PRODUCTION_STATUS 的 label */
 export const PRODUCTION_LOG_ACTION: Record<string, string> = {
@@ -54,6 +54,7 @@ export const PRODUCTION_LOG_ACTION: Record<string, string> = {
   'close-issue': '关闭异常',
   receive: '登记回货',
   'void-receipt': '回货作废',
+  cut: '登记裁床数',
   'issue-material': '领料',
   'return-material': '退料',
   // 11-18 以前导出工艺单 PDF 留下的操作记录
@@ -283,10 +284,15 @@ export interface ProductionItem {
   /** 已回货（含次品）、其中次品 */
   returnedQty: number
   defectQty: number
-  /** 未回 = 件数 − 已回货，不小于 0；登记回货时默认填它 */
+  /** 裁床数（RFC 013 §4）：null = 没登记 */
+  cutQty: number | null
+  /** 未回 = 件数（登记了裁床数按裁床数）− 已回货，不小于 0；登记回货时默认填它 */
   remainQty: number
-  /** 最多还能回 = ⌊件数 × 1.03⌋ − 已回货，不小于 0（Q09） */
+  /** 最多还能回 = ⌊件数或裁床数 × 1.05⌋ − 已回货，不小于 0（Q09） */
   maxReceiveQty: number
+  /** 登记裁床数的范围：最多 ⌊件数 × 1.05⌋，最少让已回的不超出新上限 */
+  maxCutQty: number
+  minCutQty: number
 }
 
 /** 详情顶上的红条：没关闭的异常 */
@@ -576,6 +582,11 @@ export interface ReceiptItemForm {
   remark: string | null
 }
 
+/** 登记裁床数（PUT /api/production-orders/{id}/cut-qty）：只发改了的；cutQty null = 清掉 */
+export interface CutQtyForm {
+  items: { prdOrderItemId: string; cutQty: number | null }[]
+}
+
 /** 登记回货（POST /api/production-orders/{id}/receipts） */
 export interface ReceiptForm {
   /** 未知结果时保留原 UUID 和完整请求体 */
@@ -600,7 +611,7 @@ export interface ReceiptCreated {
 export interface ReceiptOverRow {
   /** SKU 码 */
   sku: string
-  /** 加工件数、已回、这次、上限 = ⌊件数 × 1.03⌋ */
+  /** 加工件数、已回、这次、上限 = ⌊件数或裁床数 × 1.05⌋ */
   qty: number
   returnedQty: number
   thisQty: number

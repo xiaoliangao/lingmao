@@ -17,6 +17,7 @@ import com.lingmao.scm.module.biz.dto.DocRef;
 import com.lingmao.scm.module.biz.dto.NoticeHandleReq;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.DocCommonService;
+import com.lingmao.scm.module.production.dto.CutQtyReq;
 import com.lingmao.scm.module.production.dto.IssueCloseReq;
 import com.lingmao.scm.module.production.dto.IssueCreated;
 import com.lingmao.scm.module.production.dto.IssueOptionQuery;
@@ -319,7 +320,16 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
         return R.ok(receiptService.list(id));
     }
 
-    @Operation(summary = "登记回货（建 + 审核一步）：超过件数的 103% 1004（data 是超了的 SKU）")
+    @Operation(summary = "登记裁床数（已下单、生产中）：按 SKU 填，null = 清掉；登记了的回货上限、完成判定按裁床数")
+    @PutMapping("/{id:\\d+}/cut-qty")
+    @PreAuthorize("hasAuthority('production:node:edit')")
+    @OperLog(module = "生产单", action = "登记裁床数")
+    public R<Void> registerCut(@PathVariable("id") long id, @Valid @RequestBody CutQtyReq req) {
+        receiptService.registerCut(id, req);
+        return R.ok();
+    }
+
+    @Operation(summary = "登记回货（建 + 审核一步）：超过件数（登记了裁床数按裁床数）的 105% 1004（data 是超了的 SKU）")
     @PostMapping("/{id:\\d+}/receipts")
     @PreAuthorize("hasAuthority('production:receipt:add')")
     @OperLog(module = "生产单", action = "登记回货")

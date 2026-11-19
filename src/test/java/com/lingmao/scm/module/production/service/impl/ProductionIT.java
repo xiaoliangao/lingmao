@@ -120,10 +120,10 @@ class ProductionIT {
         assertThat(quote.usable()).isTrue();
         assertThat(quote.prices()).extracting(ScheduleQuoteVO.ModePrice::processMode).contains("CMT", "HALF", "FULL");
 
-        // 超排：M 订单 60，最多 ⌊61.8⌋ = 61
+        // 超排：M 订单 60，最多 ⌊60 × 1.05⌋ = 63
         long lineM = orderLine(orderId, f.skuM);
         long lineL = orderLine(orderId, f.skuL);
-        assertThatThrownBy(() -> scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), Map.of(lineM, 62, lineL, 40))))
+        assertThatThrownBy(() -> scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), Map.of(lineM, 64, lineL, 40))))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));
         List<DocRef> made = scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), Map.of(lineM, 60, lineL, 40)));
         assertThat(made).singleElement().satisfies(r -> assertThat(r.no()).startsWith("JG"));
@@ -187,7 +187,7 @@ class ProductionIT {
             assertThat(i.getActions()).isEmpty();
         });
 
-        // 回货：M 60、L 39（次品 2）= 99 ≥ 97 → 已完成，订单已完成；再回 M 2 超过 61 → 1004
+        // 回货：M 60、L 39（次品 2）= 99 ≥ 97 → 已完成，订单已完成；再回 M 4 超过 ⌊60 × 1.05⌋ = 63 → 1004
         long itemM = prdItem(prdId, lineM);
         long itemL = prdItem(prdId, lineL);
         var receipt = receiptService.receive(prdId, receiptReq(Map.of(itemM, 60, itemL, 39), itemL, 2));
@@ -195,7 +195,7 @@ class ProductionIT {
         assertThat(orderStatus(orderId)).isEqualTo("DONE");
         assertThat(jdbcTemplate.queryForObject("SELECT sum(returned_qty) FROM ord_order_item WHERE order_id = ?", Integer.class, orderId))
                 .isEqualTo(99);
-        assertThatThrownBy(() -> receiptService.receive(prdId, receiptReq(Map.of(itemM, 2), itemM, 0)))
+        assertThatThrownBy(() -> receiptService.receive(prdId, receiptReq(Map.of(itemM, 4), itemM, 0)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));
 
         // 下游：领料、退料单，回货单，异常
@@ -358,6 +358,45 @@ class ProductionIT {
         req.getItems().getFirst().setQty(10); req.setClientActionId(java.util.UUID.randomUUID());
         assertThat(receiptService.receive(id, req).id()).isNotEqualTo(first.id());
         assertThat(productionOrderService.detail(id).getReturnedQty()).isEqualTo(20);
+    }
+
+    /**
+     * RFC 013 §4（Q09）：登记裁床数。M 件数 60 裁 50：最多回 ⌊50 × 1.05⌋ = 52；完成按裁床数算（M 50 + L 40 = 90 ≥ 90 × 97%）；
+     * 裁床数超过 ⌊件数 × 1.05⌋ 400；完成以后不能再登记
+     */
+    @Test
+    void cutQty_limitsReceiptsAndCompletion() {
+        Fixture f = fixture();
+        long id = approvedProduction(f);
+        var items = productionOrderService.detail(id).getItems();
+        long itemM = items.stream().filter(i -> i.getStyleSkuId() == f.skuM).findFirst().orElseThrow().getId();
+        long itemL = items.stream().filter(i -> i.getStyleSkuId() == f.skuL).findFirst().orElseThrow().getId();
+
+        assertThatThrownBy(() -> receiptService.registerCut(id, cutReq(itemM, 64))).isInstanceOf(BizException.class)
+                .extracting("code").isEqualTo(400);
+        receiptService.registerCut(id, cutReq(itemM, 50));
+        assertThat(productionOrderService.detail(id).getItems()).filteredOn(i -> i.getId() == itemM).singleElement().satisfies(i -> {
+            assertThat(i.getCutQty()).isEqualTo(50);
+            assertThat(i.getRemainQty()).isEqualTo(50);
+            assertThat(i.getMaxReceiveQty()).isEqualTo(52);
+        });
+        assertThat(jdbcTemplate.queryForObject("SELECT remark FROM biz_doc_log WHERE doc_type = 'PRODUCTION_ORDER' AND doc_id = ? "
+                + "AND action = 'cut'", String.class, id)).contains("未登记 → 50");
+
+        assertThatThrownBy(() -> receiptService.receive(id, receiptReq(Map.of(itemM, 53), itemM, 0)))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));
+        assertThat(receiptService.receive(id, receiptReq(Map.of(itemM, 50, itemL, 40), itemL, 0)).status()).isEqualTo("DONE");
+        assertThatThrownBy(() -> receiptService.registerCut(id, cutReq(itemM, 55))).isInstanceOf(BizException.class)
+                .extracting("code").isEqualTo(1000);
+    }
+
+    private static com.lingmao.scm.module.production.dto.CutQtyReq cutReq(long item, Integer cut) {
+        var i = new com.lingmao.scm.module.production.dto.CutQtyReq.Item();
+        i.setPrdOrderItemId(item);
+        i.setCutQty(cut);
+        var r = new com.lingmao.scm.module.production.dto.CutQtyReq();
+        r.setItems(List.of(i));
+        return r;
     }
 
     private long approvedProduction(Fixture f) {

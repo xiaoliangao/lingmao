@@ -50,7 +50,7 @@ class ProductionRulesTest {
         assertThat(ProductionRules.nodeState(node(TODAY.plusDays(5), null, null), TODAY)).isEqualTo("TODO");
     }
 
-    /** 规则（§2.1，Q09）：回够总件数的 97% 算完成；回过货或报过开始是生产中；都没有是已下单。每个 SKU 最多 ⌊件数 × 1.03⌋ */
+    /** 规则（§2.1，Q09）：回够总件数的 97% 算完成；回过货或报过开始是生产中；都没有是已下单。每个 SKU 最多 ⌊件数 × 1.05⌋ */
     @Test
     void byProgress_finishesAtNinetySevenPercent() {
         ProductionNode started = node(TODAY.plusDays(5), TODAY, null);
@@ -60,8 +60,24 @@ class ProductionRulesTest {
         assertThat(ProductionRules.byProgress(List.of(item(100, 0)), List.of(started))).isEqualTo(DocStatus.RUNNING);
         assertThat(ProductionRules.byProgress(List.of(item(60, 30), item(40, 36)), List.of(idle))).isEqualTo(DocStatus.RUNNING);
         assertThat(ProductionRules.byProgress(List.of(item(60, 60), item(40, 37)), List.of(idle))).isEqualTo(DocStatus.DONE);
-        assertThat(ProductionRules.maxPieces(100)).isEqualTo(103);
-        assertThat(ProductionRules.maxPieces(33)).isEqualTo(33);
+        assertThat(ProductionRules.maxPieces(100)).isEqualTo(105);
+        assertThat(ProductionRules.maxPieces(33)).isEqualTo(34);
+    }
+
+    /** 规则（RFC 013 §4）：登记了裁床数的 SKU，回货上限、完成都按裁床数；最少裁床数让已回的不超出上限 */
+    @Test
+    void cutQty_isTheBasis() {
+        ProductionOrderItem cut = item(100, 88);
+        cut.setCutQty(90);
+        ProductionNode idle = node(TODAY.plusDays(5), null, null);
+
+        assertThat(ProductionRules.maxReturn(cut)).isEqualTo(94);
+        assertThat(ProductionRules.maxReturn(item(100, 0))).isEqualTo(105);
+        assertThat(ProductionRules.byProgress(List.of(cut), List.of(idle))).isEqualTo(DocStatus.DONE);       // 88 ≥ 90 × 97%
+        assertThat(ProductionRules.byProgress(List.of(item(100, 88)), List.of(idle))).isEqualTo(DocStatus.RUNNING);
+        assertThat(ProductionRules.minCut(0)).isZero();
+        assertThat(ProductionRules.minCut(100)).isEqualTo(96);      // ⌊96 × 1.05⌋ = 100，⌊95 × 1.05⌋ = 99
+        assertThat(ProductionRules.maxPieces(ProductionRules.minCut(105))).isGreaterThanOrEqualTo(105);
     }
 
     /** 规则（§3.4.1）：没有自购的料是 null；每种都领够 DONE；一点没领 NONE；其他 PARTIAL */

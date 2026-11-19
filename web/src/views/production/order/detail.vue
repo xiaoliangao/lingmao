@@ -56,6 +56,7 @@ import { confirmRemove } from '@/views/basic/common'
 import ProdEditDialog from './ProdEditDialog.vue'
 import ProdIssueDialogs from './ProdIssueDialogs.vue'
 import ProdNodeDialogs from './ProdNodeDialogs.vue'
+import ProdCutDialog from './ProdCutDialog.vue'
 import ProdReceiveDialog from './ProdReceiveDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
 import { useFieldAccess } from '@/composables/useFieldAccess'
@@ -112,6 +113,7 @@ const editVisible = ref(false)
 const reportNodeVisible = ref(false)
 const targetNodeId = ref<string | null>(null)
 const planNodeVisible = ref(false)
+const cutVisible = ref(false)
 const reportIssueVisible = ref(false)
 const closeIssueVisible = ref(false)
 const closingIssue = ref<ProductionIssue | null>(null)
@@ -320,11 +322,12 @@ function previewCraft(f: PackFile) {
 const loadCraftPreview = () => techPackApi.preview(detail.value!.techPackId, previewFile.value!.id)
 
 // ---------- 更多 ----------
-type MoreCommand = 'reportIssue' | 'editPlan' | 'returnMaterial' | 'withdraw' | 'unaudit' | 'close' | 'reopen' | 'print' | 'craft' | 'remove' | 'void'
+type MoreCommand = 'reportIssue' | 'editPlan' | 'cut' | 'returnMaterial' | 'withdraw' | 'unaudit' | 'close' | 'reopen' | 'print' | 'craft' | 'remove' | 'void'
 const moreItems = computed(() => {
   const items: (MoreItem<MoreCommand> | false)[] = [
     can('reportIssue') && { command: 'reportIssue', label: '上报异常' },
     can('editPlan') && { command: 'editPlan', label: '改节点计划' },
+    can('cut') && { command: 'cut', label: '登记裁床数' },
     can('returnMaterial') && { command: 'returnMaterial', label: '退料' },
     can('withdraw') && { command: 'withdraw', label: '撤回' },
     can('unaudit') && { command: 'unaudit', label: '反审核' },
@@ -341,6 +344,7 @@ const moreItems = computed(() => {
 function onMore(command: MoreCommand) {
   if (command === 'reportIssue') reportIssueVisible.value = true
   else if (command === 'editPlan') planNodeVisible.value = true
+  else if (command === 'cut') cutVisible.value = true
   else if (command === 'returnMaterial') openMatDoc('RETURN_IN')
   else if (command === 'print') void printRef.value?.print()
   else if (command === 'craft') void openCraft()
@@ -361,7 +365,7 @@ const matrixQtys = computed(() => Object.fromEntries((detail.value?.items ?? [])
 const lineSub = (itemId: string) => {
   if (!audited.value) return null
   const it = detail.value?.items.find((x) => x.id === itemId)
-  return it ? `回 ${it.returnedQty} · 次 ${it.defectQty} · 未 ${it.remainQty}` : null
+  return it ? `${it.cutQty != null ? `裁 ${it.cutQty} · ` : ''}回 ${it.returnedQty} · 次 ${it.defectQty} · 未 ${it.remainQty}` : null
 }
 
 /** 打印表：颜色 × 尺码 */
@@ -710,6 +714,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         :closing-issue="closingIssue"
         @updated="refresh"
       />
+      <ProdCutDialog v-model="cutVisible" :doc="detail" @updated="refresh" />
       <ProdReceiveDialog
         v-model:create-visible="receiveCreateVisible"
         v-model:detail-visible="receiveDetailVisible"

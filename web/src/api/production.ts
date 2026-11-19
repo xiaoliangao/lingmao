@@ -1,7 +1,7 @@
 import { download, http, snapshotRequestBody, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
-  BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
+  BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, CutQtyForm, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
   MobileOrderRow, NodePlanReq, NodeReport, NodeReportForm, NodeReportResult, ProductionCounts, ProductionDetail, ProductionForm,
   ProductionIssue, ProductionMaterials, ProductionQuery, ProductionReceipt, ProductionRow, ReceiptCreated, ReceiptForm,
 } from '@/types/production'
@@ -64,7 +64,10 @@ export const productionApi = {
 
   /** 全部回货单（含作废的），新的在前 */
   receipts: (id: string) => http.get<ProductionReceipt[]>(`${base}/${id}/receipts`),
-  /** 登记回货（建 + 审核一步）。超过 ⌊件数 × 1.03⌋ 1004（data 是 ReceiptOverRow[]） */
+  /** 登记裁床数（已下单、生产中，要 production:node:edit）。超过 ⌊件数 × 1.05⌋、比已回的还少 400 */
+  registerCut: async (id: string, data: CutQtyForm, options?: RequestOptions) =>
+    http.put<void>(`${base}/${id}/cut-qty`, snapshotRequestBody(data), await documentOptions(base, id, options)),
+  /** 登记回货（建 + 审核一步）。超过 ⌊件数或裁床数 × 1.05⌋ 1004（data 是 ReceiptOverRow[]） */
   receive: async (id: string, { photos, ...data }: ReceiptForm, options?: RequestOptions) =>
     http.post<ReceiptCreated>(`${base}/${id}/receipts`, snapshotRequestBody({ ...data, photos: attachmentBody(photos) }), await documentOptions(base, id, options)),
   /** 作废一张回货单：已回、次品减回去，生产单、订单的状态重算。原因必填 */

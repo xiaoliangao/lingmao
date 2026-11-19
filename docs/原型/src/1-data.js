@@ -46,7 +46,7 @@ const db = reactive({
   // 数据范围挂在角色上（PRD §3.2）：本人 = 只看自己是制单人 / 跟单员 / 采购员的单据
   roles: [
     { name: '管理层', scope: '全部' }, { name: '业务', scope: '本人' }, { name: '开发', scope: '全部' }, { name: '采购', scope: '本人' },
-    { name: '生产跟单', scope: '本人' }, { name: '仓管', scope: '全部' }, { name: '财务', scope: '全部' },
+    { name: '生产跟单', scope: '本人' }, { name: '仓管', scope: '全部' }, { name: '财务', scope: '全部' }, { name: '生产经理', scope: '全部' },
   ],
   colors: [
     { code: 'HE', name: '黑色', hex: '#232427', family: '黑白灰', status: '启用' },

@@ -22,13 +22,17 @@ public interface ProductionOrderItemMapper extends BaseMapper<ProductionOrderIte
     List<ProductionOrderItem> selectByOrders(@Param("ids") Collection<Long> prdOrderIds);
 
     /**
-     * 回写已回货、次品（登记回货是正数，作废回货单是负数）。条件更新：加完不超过 maxQty（⌊件数 × 1.03⌋）、不小于 0、次品不超过回货，
+     * 回写已回货、次品（登记回货是正数，作废回货单是负数）。条件更新：加完不超过 maxQty（⌊件数或裁床数 × 1.05⌋）、不小于 0、次品不超过回货，
      * 不满足返回 0（调用方按 1004 / 程序错处理）。调之前已经锁住生产单
      */
     @Update("UPDATE prd_order_item SET returned_qty = returned_qty + #{qty}, defect_qty = defect_qty + #{defect} "
             + "WHERE id = #{id} AND returned_qty + #{qty} BETWEEN 0 AND #{maxQty} "
             + "AND defect_qty + #{defect} BETWEEN 0 AND returned_qty + #{qty}")
     int addReturned(@Param("id") long id, @Param("qty") int qty, @Param("defect") int defect, @Param("maxQty") int maxQty);
+
+    /** 登记裁床数（null = 清掉）。调之前已经锁住生产单 */
+    @Update("UPDATE prd_order_item SET cut_qty = #{cutQty} WHERE id = #{id}")
+    void updateCut(@Param("id") long id, @Param("cutQty") Integer cutQty);
 
     @Delete("DELETE FROM prd_order_item WHERE prd_order_id = #{prdOrderId}")
     void deleteByOrder(@Param("prdOrderId") long prdOrderId);

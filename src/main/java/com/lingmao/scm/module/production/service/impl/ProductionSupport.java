@@ -291,6 +291,7 @@ class ProductionSupport {
                 .perm("editPlan", "production:node:edit")
                 .perm("reportIssue", "production:issue:edit")
                 .perm("receive", "production:receipt:add")
+                .perm("cut", "production:node:edit")
                 .perm("issue", "inventory:doc:add")
                 .perm("returnMaterial", "inventory:doc:add")
                 .when("withdraw", c.creator())

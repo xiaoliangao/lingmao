@@ -391,7 +391,7 @@ export interface ScheduleSku {
   scheduledQty: number
   /** 还没排的 = 订单数 − 已排产，不小于 0；对话框里默认填它 */
   remainQty: number
-  /** 这个 SKU 最多还能排多少 = ⌊订单数 ×（1 + 溢装比例）⌋ − 已排产（溢装比例默认 3%，Q09） */
+  /** 这个 SKU 最多还能排多少 = ⌊订单数 ×（1 + 溢装比例）⌋ − 已排产（溢装 5%，甲方 11-18 答 Q09） */
   maxQty: number
 }
 
@@ -498,7 +498,7 @@ export interface ScheduleOverRow {
   scheduledQty: number
   /** 这次要排的（几块加起来） */
   thisQty: number
-  /** 上限 = ⌊订单数 × 1.03⌋ */
+  /** 上限 = ⌊订单数 × 1.05⌋ */
   maxQty: number
   /** 如"最多还能排 3 件" */
   message: string

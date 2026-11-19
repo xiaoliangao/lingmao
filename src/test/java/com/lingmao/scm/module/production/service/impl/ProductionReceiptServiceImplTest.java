@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -74,7 +75,7 @@ class ProductionReceiptServiceImplTest {
                 org.mockito.Mockito.mock(com.lingmao.scm.module.biz.service.ActionRequestService.class), Clock.systemDefaultZone());
     }
 
-    /** 规则（Q09）：一个 SKU 累计回货 ≤ ⌊件数 × 1.03⌋，超了 1004，data 说清已回多少、还能回多少；不建单、不回写 */
+    /** 规则（Q09 甲方 11-18 答 5%）：一个 SKU 累计回货 ≤ ⌊件数 × 1.05⌋，超了 1004，data 说清已回多少、还能回多少；不建单、不回写 */
     @Test
     void receive_overLimit_returnsRowsAndWritesNothing() {
         lockedAs(DocStatus.RUNNING);
@@ -82,15 +83,15 @@ class ProductionReceiptServiceImplTest {
         when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line(100, 100)));
         when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
 
-        assertThatThrownBy(() -> service().receiveNew(3L, req(5, 0)))
+        assertThatThrownBy(() -> service().receiveNew(3L, req(6, 0)))
                 .isInstanceOf(BizException.class)
                 .satisfies(e -> {
                     assertThat(((BizException) e).getCode()).isEqualTo(1004);
                     @SuppressWarnings("unchecked")
                     List<ReceiptOverRow> rows = (List<ReceiptOverRow>) ((BizException) e).getData();
                     assertThat(rows).singleElement().satisfies(r -> {
-                        assertThat(r.maxQty()).isEqualTo(103);
-                        assertThat(r.message()).isEqualTo("加工 100 件，已回 100，最多还能回 3 件");
+                        assertThat(r.maxQty()).isEqualTo(105);
+                        assertThat(r.message()).isEqualTo("加工 100 件，已回 100，最多还能回 5 件");
                     });
                 });
         verify(receiptMapper, never()).insert(any(ProductionReceipt.class));
@@ -143,6 +144,52 @@ class ProductionReceiptServiceImplTest {
         verify(orderService, never()).addReturned(any());
     }
 
+    /** 规则（RFC 013 §4）：登记了裁床数，回货上限按 ⌊裁床数 × 1.05⌋：件数 100、裁床 90，最多回 94 */
+    @Test
+    void receive_withCutQty_limitByCut() {
+        lockedAs(DocStatus.RUNNING);
+        when(support.today()).thenReturn(TODAY);
+        ProductionOrderItem line = line(100, 90);
+        line.setCutQty(90);
+        when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line));
+        when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
+
+        assertThatThrownBy(() -> service().receiveNew(3L, req(5, 0)))
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> {
+                    @SuppressWarnings("unchecked")
+                    List<ReceiptOverRow> rows = (List<ReceiptOverRow>) ((BizException) e).getData();
+                    assertThat(rows).singleElement().satisfies(r -> {
+                        assertThat(r.maxQty()).isEqualTo(94);
+                        assertThat(r.message()).isEqualTo("裁床 90 件，已回 90，最多还能回 4 件");
+                    });
+                });
+        verify(itemMapper, never()).addReturned(anyLong(), anyInt(), anyInt(), anyInt());
+    }
+
+    /**
+     * 规则（RFC 013 §4）：裁床数不能超过 ⌊件数 × 1.05⌋，也不能让已回的超出新上限（已回 100 → 最少 96）；
+     * 合规的写进去、记一条操作记录、按新的基数重算状态
+     */
+    @Test
+    void registerCut_limits_thenUpdatesAndRefreshes() {
+        lockedAs(DocStatus.RUNNING);
+        when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line(200, 100)));
+        when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
+
+        assertThatThrownBy(() -> service().registerCut(3L, cut(211))).isInstanceOf(BizException.class)
+                .hasMessageContaining("裁床数最多 210").extracting("code").isEqualTo(400);
+        assertThatThrownBy(() -> service().registerCut(3L, cut(95))).isInstanceOf(BizException.class)
+                .hasMessageContaining("裁床数不能少于 96").extracting("code").isEqualTo(400);
+        verify(itemMapper, never()).updateCut(anyLong(), any());
+
+        when(support.refreshStatus(any(), eq("cut"), any())).thenReturn(DocStatus.DONE);
+        service().registerCut(3L, cut(102));
+        verify(itemMapper).updateCut(31L, 102);
+        verify(support).refreshStatus(any(), eq("cut"), eq("登记裁床数：A01-RED-M 未登记 → 102"));
+        verify(support).syncOrder(eq(5L), any());
+    }
+
     /** 规则（§2.1）：已结案的单不能登记回货（1000）；要登记先取消结案 */
     @Test
     void receive_closed_1000() {
@@ -185,6 +232,15 @@ class ProductionReceiptServiceImplTest {
         return new StyleOrderInfo(1L, "A01", "衬衫", null, null, null, null, List.of("M"),
                 List.of(new StyleOrderInfo.Color(21L, "RED", "红", "#c00", true)),
                 List.of(new StyleOrderInfo.Sku(101L, 21L, "M", "A01-RED-M", true)), null, null);
+    }
+
+    private static com.lingmao.scm.module.production.dto.CutQtyReq cut(Integer qty) {
+        var i = new com.lingmao.scm.module.production.dto.CutQtyReq.Item();
+        i.setPrdOrderItemId(31L);
+        i.setCutQty(qty);
+        var r = new com.lingmao.scm.module.production.dto.CutQtyReq();
+        r.setItems(List.of(i));
+        return r;
     }
 
     private static ReceiptReq req(int qty, int defect) {

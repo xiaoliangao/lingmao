@@ -16,6 +16,7 @@ import com.lingmao.scm.module.biz.service.ActionRequestService;
 import com.lingmao.scm.module.biz.service.ReferenceService;
 import com.lingmao.scm.module.order.service.OrderService;
 import com.lingmao.scm.module.order.dto.OrderForProduction;
+import com.lingmao.scm.module.production.dto.CutQtyReq;
 import com.lingmao.scm.module.production.dto.ProductionReceiptVO;
 import com.lingmao.scm.module.production.dto.ReceiptCreated;
 import com.lingmao.scm.module.production.dto.ReceiptItemVO;
@@ -44,6 +45,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -190,15 +192,16 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             }
             int next = NumericLimits.pieces((long) line.getReturnedQty() + r.getQty(),
                     "第 " + (n + 1) + " 行累计回货：");
-            int max = ProductionRules.maxPieces(line.getQty());
+            int max = ProductionRules.maxReturn(line);
             if (next > max) {
                 int left = Math.max(max - line.getReturnedQty(), 0);
+                String basis = line.getCutQty() != null ? "裁床 " + line.getCutQty() + " 件" : "加工 " + line.getQty() + " 件";
                 over.add(new ReceiptOverRow(skuCode(style, line.getStyleSkuId()), line.getQty(), line.getReturnedQty(), r.getQty(), max,
-                        "加工 " + line.getQty() + " 件，已回 " + line.getReturnedQty() + "，" + (left == 0 ? "不能再回了" : "最多还能回 " + left + " 件")));
+                        basis + "，已回 " + line.getReturnedQty() + "，" + (left == 0 ? "不能再回了" : "最多还能回 " + left + " 件")));
             }
         }
         if (!over.isEmpty()) {
-            throw new BizException(ErrorCodes.OVER_LIMIT, "有 " + over.size() + " 个 SKU 回多了：每个 SKU 最多回到件数的 103%", over);
+            throw new BizException(ErrorCodes.OVER_LIMIT, "有 " + over.size() + " 个 SKU 回多了：每个 SKU 最多回到件数（登记了裁床数按裁床数）的 105%", over);
         }
         int qty = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getQty).sum(), "本次回货：");
         int defect = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getDefectQty).sum(), "本次次品：");
@@ -232,7 +235,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             item.setDefectQty(r.getDefectQty());
             item.setRemark(ProdTexts.blankToNull(r.getRemark()));
             items.add(item);
-            if (itemMapper.addReturned(line.getId(), r.getQty(), r.getDefectQty(), ProductionRules.maxPieces(line.getQty())) == 0) {
+            if (itemMapper.addReturned(line.getId(), r.getQty(), r.getDefectQty(), ProductionRules.maxReturn(line)) == 0) {
                 throw new BizException(ErrorCodes.STATE_CHANGED, "刚有人登记了回货，请刷新后再登记");
             }
             toOrder.merge(line.getOrderItemId(), r.getQty(), Integer::sum);
@@ -249,6 +252,55 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
     private static String skuCode(StyleOrderInfo style, long styleSkuId) {
         return style.skus().stream().filter(s -> s.id() == styleSkuId).map(StyleOrderInfo.Sku::code).findFirst()
                 .orElse(String.valueOf(styleSkuId));
+    }
+
+    @Override
+    @Transactional
+    public void registerCut(long prdOrderId, CutQtyReq req) {
+        support.getVisible(prdOrderId);
+        ProductionSupport.Locked l = support.lockWithOrder(prdOrderId);
+        ProductionOrder p = l.prd();
+        if (!ProductionRules.FLOW.allows("cut", p.getStatus())) {
+            throw new BizException(ProductionSupport.label(p) + " 现在是「" + ProductionRules.STATUS.label(p.getStatus()).text()
+                    + "」，已下单、生产中才能登记裁床数");
+        }
+        Map<Long, ProductionOrderItem> lines = itemMapper.selectByOrder(prdOrderId).stream()
+                .collect(Collectors.toMap(ProductionOrderItem::getId, Function.identity()));
+        StyleOrderInfo style = styleService.orderInfos(List.of(p.getStyleId())).get(p.getStyleId());
+        Set<Long> seen = new HashSet<>();
+        List<String> changed = new ArrayList<>();
+        for (CutQtyReq.Item r : req.getItems()) {
+            ProductionOrderItem line = lines.get(r.getPrdOrderItemId());
+            if (line == null || !seen.add(r.getPrdOrderItemId())) {
+                throw new BizException(400, "明细和这张单对不上，请刷新后再登记");
+            }
+            Integer cut = r.getCutQty();
+            if (Objects.equals(cut, line.getCutQty())) {
+                continue;
+            }
+            String sku = skuCode(style, line.getStyleSkuId());
+            if (cut != null && cut > ProductionRules.maxPieces(line.getQty())) {
+                throw new BizException(400, sku + "：裁床数最多 " + ProductionRules.maxPieces(line.getQty()) + "（件数 " + line.getQty() + " 的 105%）");
+            }
+            int least = ProductionRules.minCut(line.getReturnedQty());
+            if (cut != null && cut < least) {
+                throw new BizException(400, sku + "：已经回了 " + line.getReturnedQty() + " 件，裁床数不能少于 " + least);
+            }
+            itemMapper.updateCut(line.getId(), cut);
+            changed.add(sku + " " + cutText(line.getCutQty()) + " → " + cutText(cut));
+        }
+        if (changed.isEmpty()) {
+            return;
+        }
+        DocStatus before = p.getStatus();
+        DocStatus to = support.refreshStatus(p, "cut", "登记裁床数：" + String.join("，", changed));
+        if (to != before) {
+            support.syncOrder(p.getOrderId(), ProductionSupport.label(p) + " 登记裁床数");
+        }
+    }
+
+    private static String cutText(Integer cut) {
+        return cut == null ? "未登记" : String.valueOf(cut);
     }
 
     @Override

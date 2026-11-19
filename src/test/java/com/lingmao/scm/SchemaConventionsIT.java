@@ -315,6 +315,9 @@ class SchemaConventionsIT {
                 Set.of("order:change:audit"), ORDER_PRICE, PURCHASE_VIEW, Set.of("purchase:order:audit"), PURCHASE_CLOSE, STOCK_VIEW,
                 COUNT_VIEW, Set.of("inventory:count:audit"), PRODUCTION_VIEW,
                 Set.of("production:order:audit", "production:order:close"), PRODUCTION_PRICE));
+        // V43（RFC 013 §3，甲方 Q10）：生产经理 = 生产跟单 + 需求订单、变更、采购单、盘点单、生产单的审核，盘点单能看
+        ROLE_PERMS.put("prod_manager", union(ROLE_PERMS.get("merchandiser"), COUNT_VIEW, Set.of("order:order:audit", "order:change:audit",
+                "purchase:order:audit", "inventory:count:audit", "production:order:audit")));
     }
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现（"工艺标准" V39 去掉了） */
@@ -333,16 +336,18 @@ class SchemaConventionsIT {
             "warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
             "finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
             "manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE,
-                    "资料", MASTER));
+                    "资料", MASTER),
+            "prod_manager", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", SUPPLY_ALL,
+                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */
     private static final Map<String, RoleDataScope> ROLE_SCOPES = Map.of(
             "dev", RoleDataScope.ALL, "dev_lead", RoleDataScope.ALL, "sales", RoleDataScope.SELF,
             "merchandiser", RoleDataScope.SELF, "buyer", RoleDataScope.SELF, "warehouse", RoleDataScope.ALL,
-            "finance", RoleDataScope.ALL, "manager", RoleDataScope.ALL);
+            "finance", RoleDataScope.ALL, "manager", RoleDataScope.ALL, "prod_manager", RoleDataScope.ALL);
 
     /**
-     * 规则：八个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
+     * 规则：九个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
      * （第 2 批 RFC 003 §13.2，第 3、4 批 V17），data:all 跟着数据范围走；侧边栏正好是 ROLE_SIDEBARS 那样（目录也授了才挂得上），
      * 没有"价格档案""资料包"（visible = false，只为在角色页里勾），也没有管理后台的"审批规则"。走的是登录时真正用的 PermissionService
      */

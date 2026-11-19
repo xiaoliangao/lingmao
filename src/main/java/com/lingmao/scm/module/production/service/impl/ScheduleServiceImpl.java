@@ -309,7 +309,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     private record Block(int seq, ScheduleReq.Block req, List<ScheduleReq.Item> items) {
     }
 
-    /** 超排（PRD §6.5.5）：同一个 SKU 已排产 + 这次 ≤ ⌊订单数 × 1.03⌋，超了 1004 */
+    /** 超排（PRD §6.5.5）：同一个 SKU 已排产 + 这次 ≤ ⌊订单数 × 1.05⌋，超了 1004 */
     private static void checkOver(Map<Long, Integer> thisQty, Map<Long, OrderForProduction.Line> lines, Map<Long, StyleOrderInfo> infos) {
         List<ScheduleOverRow> over = new ArrayList<>();
         thisQty.forEach((lineId, qty) -> {
@@ -325,7 +325,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             }
         });
         if (!over.isEmpty()) {
-            throw new BizException(ErrorCodes.OVER_LIMIT, "有 " + over.size() + " 个 SKU 排超了：每个 SKU 最多排到订单数的 103%", over);
+            throw new BizException(ErrorCodes.OVER_LIMIT, "有 " + over.size() + " 个 SKU 排超了：每个 SKU 最多排到订单数的 105%", over);
         }
     }
 }

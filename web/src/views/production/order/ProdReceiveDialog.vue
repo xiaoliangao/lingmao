@@ -85,7 +85,7 @@ const matrixCells = computed<MatrixCell[]>(() => props.doc.items.map((it) => ({ 
 const maxOf = (id: string) => itemMap.value.get(id)?.maxReceiveQty
 const qtySub = (id: string) => {
   const it = itemMap.value.get(id)
-  return it ? `加工 ${it.qty} · 已回 ${it.returnedQty}` : null
+  return it ? `加工 ${it.qty}${it.cutQty != null ? ` · 裁 ${it.cutQty}` : ''} · 已回 ${it.returnedQty}` : null
 }
 const defectError = (id: string, defect: number) => (defect > (form.qtys[id] ?? 0) ? '次品比这一格的回货还多' : null)
 

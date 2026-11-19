@@ -31,4 +31,8 @@ public class ProductionOrderItem {
 
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Integer defectQty;
+
+    /** 裁床数（RFC 013 §4）：null = 没登记，回货上限、完成按件数；只由"登记裁床数"写（NEVER） */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer cutQty;
 }

@@ -139,7 +139,7 @@ const docRules = (kind, back) => ({ 驳回: rejectDoc(kind), 撤回: withdrawDoc
 const RULES = {
   order: { ...docRules('order', (o) => (o.closedFrom === '已完成' ? '已完成' : prodsOf(o).length ? '生产中' : '已审核')), 提交: submitOrder, 审核: auditOrder, 反审核: unauditOrder },
   purchase: { ...docRules('purchase', (p) => { p.status = '已审核'; refreshPoStatus(p); return p.status }), 反审核: unauditPurchase },
-  production: { ...docRules('production', (p) => (prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
+  production: { ...docRules('production', (p) => (prodRet(p) >= prodBase(p) * (1 - SHORT) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单')), 审核: auditProduction, 反审核: unauditProduction },
   stock: { 审核: postStockDoc, 反审核: unpostStockDoc, 作废: voidStockDoc },
   stocktake: { 提交: submitTake, 撤回: withdrawDoc('stocktake'), 驳回: rejectDoc('stocktake'), 审核: postTake, 反审核: unpostTake },
   techpack: { 生效: publishTp },
@@ -620,7 +620,8 @@ const unitPriceOfSku = (s) => skuPrice(s) / matOfSku(s).factor
 const factoryLoad = (f) => sum(db.productions.filter((p) => p.factory === f && ['已下单', '生产中', '部分回货'].includes(p.status)), (p) => prodQty(p) - prodRet(p))
 
 // 排单：blocks = [{ style, factory, mode, price, due, qty: { 'KQ|S': 80 } }]，一块生成一张生产单；加工方式定了是外发加工单还是成品采购单
-const OVER = 0.03 // 溢装 / 短装比例（PRD Q09 默认 3%）
+const OVER = 0.05 // 溢装：排单、回货都不超过 5%（甲方 11-18 答 Q09；登记了裁床数的回货按裁床数）
+const SHORT = 0.03 // 短装：回够 97% 算回齐（甲方没说，照默认）
 function scheduleOrder(o, blocks) {
   if (!orderLive(o)) fail('需求订单审核后才能排单')
   const errs = [], extra = {}
@@ -1129,6 +1130,8 @@ const prodKindOf = (x) => PROD_KINDS[prodKind(x)]
 const prodLink = (p) => prodKindOf(p).to + '/' + p.no
 const prodQty = (p) => sum(p.lines, (l) => l.qty)
 const prodRet = (p) => sum(p.lines, (l) => l.ret)
+// 算回齐按多少件：登记了裁床数的码按裁床数（RFC 013 §4），没登记的按件数
+const prodBase = (p) => sum(p.lines, (l) => l.cut ?? l.qty)
 const prodDef = (p) => sum(p.lines, (l) => l.def)
 const prodAmt = (p) => rnd(prodQty(p) * p.price, 2)
 const prodLive = (p) => ['已下单', '生产中', '部分回货'].includes(p.status)
@@ -1275,6 +1278,25 @@ function issueMaterials(p, lines, from = 'WL01') {
   return d
 }
 // 回货：lines = { 'KQ|S': { qty, def, note } }；wh 收货仓（成品仓，只记录）
+// 登记裁床数（RFC 013 §4，甲方 11-18 答 Q09"有裁床数按裁床数"）：已下单、生产中能登记、能改，空着 = 不登记；
+// 每个码不超过 ⌊件数 × 1.05⌋，也不能少到让已回的超出 ⌊裁床数 × 1.05⌋。登记了的码回货上限、算回齐都按它
+function registerCut(p, cuts) {
+  if (!prodLive(p)) fail(`${prodKind(p)} ${p.no} 是「${p.status}」，已下单、生产中才能登记裁床数`)
+  const errs = [], changed = []
+  p.lines.forEach((l) => {
+    const v = cuts[l.color + '|' + l.size], cut = v === '' || v == null || +v === 0 ? null : +v
+    if (cut === (l.cut ?? null)) return
+    if (cut != null && cut > Math.floor(l.qty * (1 + OVER))) errs.push(`${l.color}-${l.size}：裁床数最多 ${Math.floor(l.qty * (1 + OVER))}（件数 ${l.qty} 的 105%）`)
+    else if (cut != null && Math.floor(cut * (1 + OVER)) < l.ret) errs.push(`${l.color}-${l.size}：已经回了 ${l.ret} 件，裁床数太少了`)
+    else changed.push([l, cut])
+  })
+  if (errs.length) fail('裁床数没登记上', errs)
+  if (!changed.length) return 0
+  changed.forEach(([l, cut]) => { l.cut = cut ?? undefined })
+  act(p, '登记裁床数：' + changed.map(([l, cut]) => `${l.color}-${l.size} ${cut ?? '未登记'}`).join('，'))
+  if (prodRet(p) > 0 && prodRet(p) >= prodBase(p) * (1 - SHORT)) { p.status = '已完成'; checkOrderDone(order(p.order)) }
+  return changed.length
+}
 function registerReturn(p, f) {
   if (!prodLive(p)) fail(prodKind(p) + '审核后才能登记回货')
   if (f.date && f.date > clock.today) fail('回货日期不能晚于今天')
@@ -1284,8 +1306,8 @@ function registerReturn(p, f) {
     const q = +x?.qty || 0, d = +x?.def || 0
     if (!q) return
     if (d > q) errs.push(`${l.color}-${l.size}：次品数不能大于回货数`)
-    const cap = Math.floor(l.qty * (1 + OVER))
-    if (l.ret + q > cap) errs.push(`${p.style}-${l.color}-${l.size}：加工 ${l.qty} 件，已回 ${l.ret}，最多还能回 ${Math.max(0, cap - l.ret)} 件`)
+    const cap = Math.floor((l.cut ?? l.qty) * (1 + OVER))
+    if (l.ret + q > cap) errs.push(`${p.style}-${l.color}-${l.size}：${l.cut != null ? '裁床 ' + l.cut : '加工 ' + l.qty} 件，已回 ${l.ret}，最多还能回 ${Math.max(0, cap - l.ret)} 件`)
     got.push({ l, q, d, note: x?.note || '' })
   })
   if (!got.length) errs.push('至少登记一个数量')
@@ -1293,7 +1315,7 @@ function registerReturn(p, f) {
   got.forEach(({ l, q, d }) => { l.ret += q; l.def += d })
   const r = add(db.returns, { no: nextNo('HH'), prod: p.no, order: p.order, style: p.style, factory: p.factory, date: f.date || clock.today, wh: f.wh || 'CP01', logistics: f.logistics || '', lines: got.map(({ l, q, d, note }) => ({ color: l.color, size: l.size, qty: q, def: d, note })), photos: f.photos || [], by: db.me, status: '已登记', log: [] })
   act(r, '登记')
-  p.status = prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : '部分回货'
+  p.status = prodRet(p) >= prodBase(p) * (1 - SHORT) ? '已完成' : '部分回货'
   act(p, `回货 ${r.no}：${sum(r.lines, (x) => x.qty)} 件，次品 ${sum(r.lines, (x) => x.def)}${p.status === '已完成' ? '，' + prodKind(p) + '完成' : ''}`)
   checkOrderDone(order(p.order))
   return r
@@ -1570,7 +1592,7 @@ function selftest() {
   receivePurchase(po, { lines: [{ i: 0, qty: 371 }] })
   ok('入库 371 → 已到齐', po.status === '已到齐', po.status)
   const [p] = scheduleOrder(o, [{ style: '27CF001', factory: 'GYS0004', mode: '清加工', price: 38, due: '2027-03-10', qty: { 'KQ|S': 80, 'KQ|M': 120, 'KQ|L': 120, 'KQ|XL': 60, 'KQ|XXL': 20 } }])
-  ok('排单：再排 10 件被拒（最多 3 件）', err(() => scheduleOrder(o, [{ style: '27CF001', factory: 'GYS0004', price: 38, due: '2027-03-10', qty: { 'KQ|M': 10 } }])).includes('最多还能排 3 件'))
+  ok('排单：再排 10 件被拒（最多 120 × 1.05 = 126，还能排 6 件，Q09）', err(() => scheduleOrder(o, [{ style: '27CF001', factory: 'GYS0004', price: 38, due: '2027-03-10', qty: { 'KQ|M': 10 } }])).includes('最多还能排 6 件'))
   doAction('production', p, '提交'); doAction('production', p, '审核')
   ok('外发加工单：JG 开头，6 个节点，入仓 = 03-10', p.no.startsWith('JG') && p.nodes.length === 6 && p.nodes[5].pf === '2027-03-10', p.nodes.map((n) => n.pf).join(' '))
   ok('订单变"生产中"', o.status === '生产中', o.status)
@@ -1582,6 +1604,12 @@ function selftest() {
   reportNode(p, 1, { af: clock.today, qty: 402 })
   ok('报工后外发加工单"生产中"', p.status === '生产中', p.status)
   ok('变更：改到小于已排产被拒', err(() => createChange(o, { items: [{ k: '27CF001|KQ|M', to: 100 }], reason: '减量' })).includes('先调整生产单'))
+  // 裁床数（RFC 013 §4）：M 码 120 件最多登记 126；S 码 80 件裁 76，回货最多 79、回齐按 76 算；清掉以后照旧按件数
+  ok('裁床数：超过件数的 105% 被拒', err(() => registerCut(p, { 'KQ|M': 127 })).includes('最多 126'))
+  registerCut(p, { 'KQ|S': 76 })
+  ok('裁床数：S 码裁 76，回货最多 79，回齐按 396 件算', prodBase(p) === 396 && err(() => registerReturn(p, { lines: { 'KQ|S': { qty: 80 } } })).includes('裁床 76 件，已回 0，最多还能回 79 件'), prodBase(p))
+  registerCut(p, { 'KQ|S': '' })
+  ok('裁床数：清掉以后照旧按件数', prodBase(p) === 400 && p.lines.every((l) => l.cut == null), prodBase(p))
   registerReturn(p, { lines: Object.fromEntries(p.lines.map((l, i) => [l.color + '|' + l.size, { qty: l.qty, def: i === 0 ? 4 : 0 }])) })
   ok('回货 400 件 → 外发加工单完成', p.status === '已完成', p.status)
   ok('回货超量被拒', err(() => registerReturn(p, { lines: { 'KQ|M': { qty: 10 } } })) !== '')
@@ -1694,8 +1722,13 @@ function selftest() {
   ok('合同：作废后能重出，明细展开成表、金额大写', ((c) => c.html.includes('<table') && c.html.includes(rmbUpper(poAmt(po2))) && c.tpl.ver === tpl.ver)(createContract('purchase', po2, tpl.id)))
   ok('金额大写', rmbUpper(12345.6) === '壹万贰仟叁佰肆拾伍元陆角整' && rmbUpper(100010000) === '壹亿零壹万元整' && rmbUpper(1000.05) === '壹仟元零伍分', [rmbUpper(12345.6), rmbUpper(100010000), rmbUpper(1000.05)])
   ok('合同模板：有系统不认识的占位符不让保存，列出是哪几个', ((e) => e.includes('{{乙方传真}}') && e.includes('{{开票抬头}}'))(err(() => importTpl({ kind: '采购合同', name: '自检模板', file: '自检.docx', body: '{{甲方}} {{乙方传真}} {{开票抬头}}' }))))
-  // 多级审批（PRD §5.1）：采购单超过 5 万再加一级，指定总经理赵启（u6）；何川（u9）也是管理层，能审第 1 级
-  const big = db.purchases.find((p) => p.note === '冬季款提前备黑色斜纹棉')
+  // 多级审批（PRD §5.1）：甲方 11-18 答 Q10 一级就够，默认没有规则；在设置 › 审批加"采购单超过 5 万给总经理赵启（u6）"以后才多一级。何川（u9）是管理层，能审第 1 级
+  ok('审批：默认没有多级规则，5.55 万的采购单审一次就是已审核（Q10）', ((p) => { as('u9', clock.today, () => doAction('purchase', p, '审核')); const done = p.status === '已审核'; as('u9', clock.today, () => { doAction('purchase', p, '反审核'); removeDraft(db.purchases, p) }); return done })(
+    as('u2', clock.today, () => { const p = createPurchase({ supplier: 'GYS0001', type: '备货采购', lines: [{ sku: 'ML0012-HE', qty: 3000 }] }); doAction('purchase', p, '提交'); return p })))
+  const rule0 = { doc: '采购单', over: 50000, user: 'u6' }
+  db.approvalRules.push(rule0)
+  const big = as('u2', clock.today, () => { const p = createPurchase({ supplier: 'GYS0001', type: '备货采购', lines: [{ sku: 'ML0012-HE', qty: 3000 }] }); doAction('purchase', p, '提交'); return p })
+  as('u9', clock.today, () => doAction('purchase', big, '审核'))
   ok('多级审批：何川审了第 1 级，5.55 万的采购单还是待审核，轮到赵启', big.status === '待审核' && big.approved.length === 1 && canApprove('purchase', big, 'u6') && !canApprove('purchase', big, 'u9'), [big.status, big.approved])
   const e9 = as('u9', clock.today, () => err(() => doAction('purchase', big, '审核'))), e5 = as('u5', clock.today, () => err(() => doAction('purchase', big, '驳回', '数量不对')))
   ok('多级审批：不是这一级的审批人不能审、不能驳回', e9.includes('要赵启审核') && e5.includes('不能驳回'), [e9, e5])
@@ -1713,7 +1746,8 @@ function selftest() {
   rule.over = 100000
   ok('多级审批：提交时定下审批流，之后改门槛不影响已经在审的单', flowOf('purchase', p4).length === 2 && approvalChain('purchase', p4).length === 1)
   rule.over = over0
-  as('u6', clock.today, () => { doAction('purchase', p3, '反审核'); removeDraft(db.purchases, p3); doAction('purchase', p4, '撤回'); removeDraft(db.purchases, p4) })
+  as('u6', clock.today, () => { doAction('purchase', p3, '反审核'); removeDraft(db.purchases, p3); doAction('purchase', p4, '撤回'); removeDraft(db.purchases, p4); doAction('purchase', big, '反审核'); removeDraft(db.purchases, big) })
+  db.approvalRules.splice(db.approvalRules.indexOf(rule0), 1)
   // 占位符和 PRD §6.11.1 同一份：单号、金额、数量合计用 PRD 的名字；账期从结算方式里拆出来单独一个
   const ctH = renderContract({ body: '标题\n{{单号}}|{{结算方式}}|{{账期}}' }, ctCtx('purchase', po2, 'x')).html
   ok('合同占位符：{{单号}}{{金额}}{{数量合计}}{{账期}} 认得，旧名 {{单据编号}}{{总金额}}{{总数量}} 不认得；结算方式只放「月结」，账期单独填「30 天」',

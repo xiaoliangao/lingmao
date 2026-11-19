@@ -32,7 +32,7 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 final class ProductionRules {
 
     /**
-     * 状态转换表（§2.1）。report、editPlan、reportIssue、receive、issue、returnMaterial 不改状态（报进度、登记回货另算），
+     * 状态转换表（§2.1）。report、editPlan、reportIssue、receive、cut、issue、returnMaterial 不改状态（报进度、登记回货、登记裁床数另算），
      * 写在这里是为了出按钮、查能不能做；audit 中间一级审过还是待审核；reopen 按进度回到已下单、生产中或已完成
      */
     static final StatusFlow<DocStatus> FLOW = StatusFlow.of(DocStatus.class)
@@ -47,6 +47,7 @@ final class ProductionRules {
             .on("editPlan", APPROVED, RUNNING).to(APPROVED, RUNNING)
             .on("reportIssue", APPROVED, RUNNING).to(APPROVED, RUNNING)
             .on("receive", APPROVED, RUNNING, DONE).to(RUNNING, DONE)
+            .on("cut", APPROVED, RUNNING).to(APPROVED, RUNNING, DONE)
             .on("issue", APPROVED, RUNNING).to(APPROVED, RUNNING)
             .on("returnMaterial", APPROVED, RUNNING, DONE).to(APPROVED, RUNNING, DONE)
             .on("close", APPROVED, RUNNING, DONE).to(CLOSED)
@@ -65,10 +66,10 @@ final class ProductionRules {
     /** 货期预警、报进度、上报异常只看这两个状态 */
     static final Set<DocStatus> LIVE = Set.of(APPROVED, RUNNING);
 
-    /** 溢装 %（Q09）：每个 SKU 排产、回货不超过 ⌊件数 × 1.03⌋ */
-    static final BigDecimal OVER_PCT = BigDecimal.valueOf(3);
+    /** 溢装 %（甲方 11-18 答 Q09）：每个 SKU 排产不超过 ⌊订单件数 × 1.05⌋，回货不超过 ⌊件数 × 1.05⌋，登记了裁床数按裁床数 */
+    static final BigDecimal OVER_PCT = BigDecimal.valueOf(5);
 
-    /** 短装 %（Q09）：累计回货 ≥ 总件数 × 97% 算完成 */
+    /** 短装 %（Q09，甲方没说，照默认）：累计回货 ≥ 总件数（登记了裁床数按裁床数）× 97% 算完成 */
     static final int SHORT_PCT = 3;
 
     /** 交期还剩几天算临期 */
@@ -91,17 +92,36 @@ final class ProductionRules {
         return Num.maxPieces(qty, OVER_PCT);
     }
 
+    /** 回货按多少件算（RFC 013 §4）：登记了裁床数按裁床数，没登记按件数 */
+    static int basis(ProductionOrderItem item) {
+        return item.getCutQty() != null ? item.getCutQty() : item.getQty();
+    }
+
+    /** 一个 SKU 最多回到多少件：⌊件数或裁床数 × 1.05⌋ */
+    static int maxReturn(ProductionOrderItem item) {
+        return maxPieces(basis(item));
+    }
+
+    /** 已经回了 returned 件时裁床数最少多少：⌊裁床数 × 1.05⌋ 不能小于已回 */
+    static int minCut(int returned) {
+        int cut = (int) ((long) returned * 100 / (100 + OVER_PCT.intValue()));
+        while (maxPieces(cut) < returned) {
+            cut++;
+        }
+        return cut;
+    }
+
     /** 累计回货够不够算完成：≥ 总件数 × 97% */
     static boolean finished(int totalQty, int returnedQty) {
         return totalQty > 0 && (long) returnedQty * 100 >= (long) totalQty * (100 - SHORT_PCT);
     }
 
     /**
-     * 按进度算状态（§2.1）：回够 97% 已完成；回过货、或者有节点报过开始是生产中；都没有是已下单。
+     * 按进度算状态（§2.1）：回够 97%（件数，登记了裁床数的 SKU 按裁床数）已完成；回过货、或者有节点报过开始是生产中；都没有是已下单。
      * 登记回货、作废回货单、报进度、取消结案都按它
      */
     static DocStatus byProgress(List<ProductionOrderItem> items, List<ProductionNode> nodes) {
-        int total = items.stream().mapToInt(ProductionOrderItem::getQty).sum();
+        int total = items.stream().mapToInt(ProductionRules::basis).sum();
         int returned = items.stream().mapToInt(ProductionOrderItem::getReturnedQty).sum();
         if (finished(total, returned)) {
             return DONE;

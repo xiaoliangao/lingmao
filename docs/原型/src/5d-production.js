@@ -61,7 +61,7 @@ function voidReturn(r, reason) {
   r.status = '已作废'
   act(r, '作废：' + reason.trim())
   const was = p.status
-  p.status = prodRet(p) >= prodQty(p) * (1 - OVER) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单'
+  p.status = prodRet(p) >= prodBase(p) * (1 - SHORT) ? '已完成' : prodRet(p) ? '部分回货' : p.nodes.some((n) => n.as) ? '生产中' : '已下单'
   act(p, `回货 ${r.no} 作废（${reason.trim()}）${was !== p.status ? '，' + was + ' → ' + p.status : ''}`)
   const o = order(p.order)
   if (o?.status === '已完成' && p.status !== '已完成') { o.status = '生产中'; act(o, `回货 ${r.no} 作废，订单回到生产中`) }
@@ -142,7 +142,7 @@ const PROD_DETAIL = {
     const sizes = computed(() => sizesOf(style(x.value.style).sizeGroup).filter((z) => x.value.lines.some((l) => l.size === z)))
     const qtyMap = computed(() => Object.fromEntries(x.value.lines.map((l) => [l.color + '|' + l.size, l.qty])))
     const after = computed(() => !['草稿', '待审核', '已作废'].includes(x.value.status))
-    const sub = (c, z) => { const l = x.value.lines.find((y) => y.color === c && y.size === z); return l && after.value ? `回 ${l.ret} · 次 ${l.def} · 未 ${Math.max(0, l.qty - l.ret)}` : '' }
+    const sub = (c, z) => { const l = x.value.lines.find((y) => y.color === c && y.size === z); return l && after.value ? `${l.cut != null ? '裁 ' + l.cut + ' · ' : ''}回 ${l.ret} · 次 ${l.def} · 未 ${Math.max(0, (l.cut ?? l.qty) - l.ret)}` : '' }
     const a = (n) => docAct('production', x.value, n, n === '审核' ? () => `${x.value.no} 已下单，按交期倒排了 ${x.value.nodes.length} 个节点` : '')
     const report = (i) => { if (prodLive(x.value)) { node.value = i; dlg.value = 'report' } }
     const repText = (r) => `${r.af ? '完成' : '开始'}${r.qty ? ' ' + r.qty + ' 件' : ''}${r.photos ? '，照片 ' + r.photos + ' 张' : ''}${r.note ? '，' + r.note : ''}`
@@ -158,6 +158,7 @@ const PROD_DETAIL = {
     const more = computed(() => [
       prodLive(x.value) && { t: '上报异常', fn: () => { dlg.value = 'issue' } },
       prodLive(x.value) && x.value.nodes.length && { t: '改节点计划', fn: () => { dlg.value = 'plan' } },
+      prodLive(x.value) && { t: '登记裁床数', fn: () => { dlg.value = 'cut' } },
       after.value && docs.value.some((d) => d.type === '领料出库' && d.status === '已审核') && { t: '退料（剩料退回物料仓）', fn: () => { dlg.value = 'back' } },
       ...['撤回', '反审核', '结案', '取消结案'].filter((k) => can('production', x.value, k)).map((k) => ({ t: k, fn: () => a(k) })),
       { t: '打印', fn: () => { printing.value = true } },
@@ -258,6 +259,7 @@ const PROD_DETAIL = {
     <ProdIssueMat v-if="dlg === 'issueMat'" :p="x" @close="dlg = ''" @done="tab = 'mat'"/>
     <ProdException v-if="dlg === 'issue'" :p="x" @close="dlg = ''" @done="tab = 'issues'"/>
     <ProdReturn v-if="dlg === 'return'" :p="x" @close="dlg = ''" @done="tab = 'rets'"/>
+    <ProdCut v-if="dlg === 'cut'" :p="x" @close="dlg = ''"/>
     <ProdEdit v-if="dlg === 'edit'" :p="x" @close="dlg = ''"/>
     <ProdPlan v-if="dlg === 'plan'" :p="x" @close="dlg = ''"/>
     <ContractGen v-if="dlg === 'contract'" kind="production" :d="x" @close="dlg = ''"/>
@@ -437,12 +439,12 @@ comp('ProdReturn', {
   props: { p: Object },
   emits: ['close', 'done'],
   setup(props, { emit }) {
-    const qty = ref(Object.fromEntries(props.p.lines.map((l) => [l.color + '|' + l.size, Math.max(0, l.qty - l.ret)])))
+    const qty = ref(Object.fromEntries(props.p.lines.map((l) => [l.color + '|' + l.size, Math.max(0, (l.cut ?? l.qty) - l.ret)])))
     const def = ref({}), note = reactive({})
     const fgs = db.warehouses.filter((w) => w.type === '成品仓' && w.status !== '停用')
     const f = reactive({ date: clock.today, wh: (fgs.find((w) => w.code === 'CP01') || fgs[0])?.code, logistics: '', photos: [] })
     const colors = [...new Set(props.p.lines.map((l) => l.color))]
-    const sub = (c, z) => { const l = props.p.lines.find((y) => y.color === c && y.size === z); return l ? `加工 ${l.qty} · 已回 ${l.ret}` : '' }
+    const sub = (c, z) => { const l = props.p.lines.find((y) => y.color === c && y.size === z); return l ? `加工 ${l.qty}${l.cut != null ? ' · 裁 ' + l.cut : ''} · 已回 ${l.ret}` : '' }
     const got = computed(() => props.p.lines.filter((l) => +qty.value[l.color + '|' + l.size] > 0))
     function ok() {
       const lines = Object.fromEntries(Object.keys({ ...qty.value, ...def.value }).map((k) => [k, { qty: qty.value[k] || 0, def: def.value[k] || 0, note: (note[k] || '').trim() }]))
@@ -462,6 +464,28 @@ comp('ProdReturn', {
       <table class="tbl inset flat"><tbody><tr v-for="l in got" :key="l.color + l.size"><td style="width:150px">{{ colorName(l.color) }} · {{ l.size }}</td><td class="num" style="width:70px">{{ qty[l.color + '|' + l.size] }} 件</td><td><input class="inp cell" v-model="note[l.color + '|' + l.size]"></td></tr></tbody></table></details>
     <div class="sec" data-c="回货照片"><h3>照片</h3><Pics v-model="f.photos" :s="64"/></div>
     <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">登记</button></template>
+  </Modal>`,
+})
+
+// 登记裁床数（RFC 013 §4）：颜色 × 尺码填实际裁了多少，空着 = 不登记；登记了的码按裁床数算回货上限（多 5%）和回齐
+comp('ProdCut', {
+  props: { p: Object },
+  emits: ['close'],
+  setup(props, { emit }) {
+    const cut = ref(Object.fromEntries(props.p.lines.filter((l) => l.cut != null).map((l) => [l.color + '|' + l.size, l.cut])))
+    const colors = [...new Set(props.p.lines.map((l) => l.color))]
+    const sub = (c, z) => { const l = props.p.lines.find((y) => y.color === c && y.size === z); return l ? `件数 ${l.qty} · 已回 ${l.ret}` : '' }
+    function ok() {
+      const n = run(() => registerCut(props.p, cut.value))
+      if (n === 0) toast('裁床数没有改')
+      else if (n) { emit('close'); toast(`登记了 ${n} 个码的裁床数${props.p.status === '已完成' ? '，' + prodKind(props.p) + '按裁床数算已经回齐' : ''}`) }
+    }
+    return { cut, colors, sub, ok }
+  },
+  template: `<Modal :t="'登记裁床数 ' + p.no" :w="720" @close="$emit('close')">
+    <p class="dim" style="margin:0 0 10px;font-size:12.5px">填每个码实际裁了多少件，空着 = 不登记。登记了的码，回货最多到裁床数的 105%，回够 97% 算回齐。</p>
+    <div class="sec" style="margin-top:0" data-c="裁床数"><Matrix :st="p.style" v-model="cut" :colors="colors" :sub="sub"/></div>
+    <template #foot><button class="btn" @click="$emit('close')">取消</button><button class="btn pri" @click="ok">保存</button></template>
   </Modal>`,
 })
 
