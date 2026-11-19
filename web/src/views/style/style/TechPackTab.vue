@@ -74,7 +74,6 @@ const user = useUserStore()
 
 const bomParts = useDict('bom_part')
 const units = useDict('unit')
-const processModes = useDict('process_mode')
 
 type SubTab = 'bom' | 'files' | 'cost' | 'logs'
 const SUB_TABS: readonly SubTab[] = ['bom', 'files', 'cost', 'logs']
@@ -106,6 +105,7 @@ const draft = reactive({
   costMode: 'OUTSOURCE' as CostMode,
   buyPrice: null as number | null | undefined,
   laborPrice: null as number | null | undefined,
+  laborNote: '',
   costItems: [] as CostItemForm[],
 })
 
@@ -121,6 +121,7 @@ function hydrateDraft(d: TechPackDetail) {
   draft.costMode = 'OUTSOURCE'
   draft.buyPrice = null
   draft.laborPrice = null
+  draft.laborNote = ''
   draft.costItems = []
   guard.markSaved()
 }
@@ -145,6 +146,7 @@ async function loadCost(packId: string, colorId?: string) {
       draft.costMode = result.costMode
       draft.buyPrice = result.buyPrice
       draft.laborPrice = result.laborPrice
+      draft.laborNote = result.laborNote ?? ''
       draft.costItems = result.otherItems.map((it) => ({ name: it.name, amount: it.amount, remark: it.remark }))
       costDraftPackId.value = packId
       if (!wasDirty) guard.markSaved()
@@ -315,6 +317,7 @@ function buildSaveForm(): TechPackSaveForm {
           costMode: draft.costMode,
           buyPrice: draft.buyPrice,
           laborPrice: draft.laborPrice,
+          laborNote: orNull(draft.laborNote),
           items: draft.costItems.filter((i) => i.name.trim()).map((i) => ({ name: i.name.trim(), amount: i.amount, remark: orNull(i.remark) })),
         }
       : null,
@@ -704,14 +707,6 @@ const costBlocks = computed(() =>
 /** 不计入的行写为什么（厂购含在加工价里、客供客户出） */
 const notCountedText = (row: CostRow) => (row.source === 'FACTORY' ? '含在加工价里' : '客户出')
 
-/** 加工费的默认值从哪来："默认 25.50，取自价格档案的清加工" */
-const laborDefaultText = computed(() => {
-  const c = costData.value
-  if (!c || c.laborPriceDefault == null) return '价格档案里没有这个款的清加工、半包价，要手填'
-  const mode = c.laborPriceDefaultMode ? processModes.labelOf(c.laborPriceDefaultMode) : ''
-  return `默认 ${formatMoney(c.laborPriceDefault)}，取自价格档案${c.defaultFactoryName ? `（${c.defaultFactoryName}）` : ''}的${mode}`
-})
-
 /** 工艺单页签上的个数（导入的 BOM 表不算） */
 const craftFileCount = computed(() => draft.files.filter((f) => f.category !== 'BOM_SOURCE').length)
 
@@ -982,10 +977,18 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                     :precision="4"
                     :controls="false"
                     :disabled="!editable"
-                    :placeholder="costData.laborPriceDefault == null ? '元/件' : `默认 ${formatMoney(costData.laborPriceDefault)}`"
+                    placeholder="元/件"
                     class="buy-input"
                   />
-                  <span v-if="draft.laborPrice == null" class="dim">{{ laborDefaultText }}</span>
+                  <el-input
+                    v-model="draft.laborNote"
+                    data-testid="cost-labor-note"
+                    size="small"
+                    maxlength="255"
+                    :disabled="!editable"
+                    placeholder="备注，如：清加工 38，半包 45"
+                    class="labor-note"
+                  />
                 </template>
               </div>
 
@@ -1027,7 +1030,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <span class="num">¥{{ formatMoney(costData.summary.labor) }}</span>
                 </div>
                 <p class="blk-line">
-                  <template v-if="costData.costMode === 'OUTSOURCE'">按外发：加工费{{ costData.laborPrice == null ? (costData.laborPriceDefault == null ? '（没填，价格档案里也没有）' : '（没填，用价格档案的默认价）') : '' }}</template>
+                  <template v-if="costData.costMode === 'OUTSOURCE'">按外发：加工费{{ costData.laborPrice == null ? '（没填，按 0 算）' : '' }}{{ costData.laborNote ? `，${costData.laborNote}` : '' }}</template>
                   <template v-else>按成品采购：成品单价{{ costData.buyPrice == null ? '（没填，用价格档案的默认价）' : '' }}</template>
                 </p>
                 <p v-if="costData.costMode === 'OUTSOURCE' && costData.buyPriceDefault != null" class="blk-line dim">
@@ -1220,6 +1223,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 
 .buy-input {
   width: 200px;
+}
+
+.labor-note {
+  width: 260px;
 }
 
 .thumb {

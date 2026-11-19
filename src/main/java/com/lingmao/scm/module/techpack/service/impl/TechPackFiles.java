@@ -39,6 +39,7 @@ class TechPackFiles {
         GROUPS.put(CRAFT_SHEET, new Group("工艺单", SHEET_TYPES));
         Set<String> pattern = new java.util.HashSet<>(SHEET_TYPES);
         pattern.add("prj");
+        pattern.add("plt"); // 甲方 11-18 答 Q48：打版文件是 .prj 和 .plt
         GROUPS.put(PATTERN, new Group("纸样和其他", Set.copyOf(pattern)));
         GROUPS.put(BOM_SOURCE, new Group("导入的 BOM 表", Set.of("xls", "xlsx")));
     }

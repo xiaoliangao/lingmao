@@ -23,9 +23,9 @@ import java.util.concurrent.Semaphore;
 @Service
 @RequiredArgsConstructor
 public class FileServiceImpl implements FileService {
-    private static final Set<String> ALLOWED = Set.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "xls", "xlsx", "doc", "docx", "ai", "psd", "prj");
-    /** 设计源文件、打版文件（资料包的纸样 .prj，RFC 011 §2.2）：大，100MB 以内 */
-    private static final Set<String> DESIGN_SOURCE = Set.of("ai", "psd", "prj");
+    private static final Set<String> ALLOWED = Set.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "xls", "xlsx", "doc", "docx", "ai", "psd", "prj", "plt");
+    /** 设计源文件、打版文件（资料包的纸样 .prj、.plt，RFC 011 §2.2、Q48）：大，100MB 以内 */
+    private static final Set<String> DESIGN_SOURCE = Set.of("ai", "psd", "prj", "plt");
     static final long MAX_BYTES = 10L * 1024 * 1024;
     static final long MAX_DESIGN_SOURCE_BYTES = 100L * 1024 * 1024;
     private final UploadStore storage;

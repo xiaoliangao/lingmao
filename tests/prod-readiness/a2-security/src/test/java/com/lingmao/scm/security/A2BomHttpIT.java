@@ -94,15 +94,20 @@ class A2BomHttpIT extends A2BusinessFixture {
 
     @Test void laborPriceIsCopiedOnReviseButOnlyCostRightsMayChangeIt() throws Exception {
         Fixture f = fixture();
-        jdbc.update("UPDATE tp_tech_pack SET labor_price=6.66 WHERE id=?", f.pack());
+        jdbc.update("UPDATE tp_tech_pack SET labor_price=6.66,labor_note='清加工 6.66' WHERE id=?", f.pack());
         Account editor = editor(f); long pack = revise(f, editor); JsonNode before = detail(editor, pack);
         assertHidden(before);
         assertThat(jdbc.queryForObject("SELECT labor_price FROM tp_tech_pack WHERE id=?", BigDecimal.class, pack)).isEqualByComparingTo("6.66");
         var changed = body(before, bomForms(before));
         changed.put("cost", map("costMode", "OUTSOURCE", "laborPrice", "0", "items", List.of()));
         assertThat(call(editor, "PUT", path(pack), changed, null).path("code").intValue()).isEqualTo(403);
+        // 加工费备注（V40，Q50）和加工费一样：修订带过去，没有看成本权限的人改不了
+        var noteChanged = body(before, bomForms(before));
+        noteChanged.put("cost", map("costMode", "OUTSOURCE", "laborPrice", "6.66", "laborNote", "半包 9", "items", List.of()));
+        assertThat(call(editor, "PUT", path(pack), noteChanged, null).path("code").intValue()).isEqualTo(403);
         ok(editor, "PUT", path(pack), body(before, bomForms(before)), null);
         assertThat(jdbc.queryForObject("SELECT labor_price FROM tp_tech_pack WHERE id=?", BigDecimal.class, pack)).isEqualByComparingTo("6.66");
+        assertThat(jdbc.queryForObject("SELECT labor_note FROM tp_tech_pack WHERE id=?", String.class, pack)).isEqualTo("清加工 6.66");
         assertThat(call(editor, "GET", path(pack) + "/cost", null, null).path("code").intValue()).isEqualTo(403);
     }
 
@@ -144,7 +149,7 @@ class A2BomHttpIT extends A2BusinessFixture {
     private static Long nullableId(JsonNode value) { return value.isString() || value.isNumber() ? id(value) : null; }
     private static String text(JsonNode value) { return value.isString() ? value.stringValue() : null; }
     private static void assertHidden(JsonNode detail) {
-        assertThat(detail.has("unitCost")).isFalse(); assertThat(detail.has("laborPrice")).isFalse();
+        assertThat(detail.has("unitCost")).isFalse(); assertThat(detail.has("laborPrice")).isFalse(); assertThat(detail.has("laborNote")).isFalse();
         for (JsonNode row : detail.path("bomItems")) {
             assertThat(row.has("refPrice")).isFalse(); assertThat(row.has("unitCost")).isFalse();
             for (JsonNode sku : row.path("skus")) assertThat(sku.has("refPrice")).isFalse();

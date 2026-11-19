@@ -34,7 +34,7 @@ public final class UploadContent {
             case "xls", "doc" -> starts(head, 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1);
             case "xlsx", "docx" -> starts(head, 0x50, 0x4b, 3, 4);
             // 打版软件的纸样：没有公开的固定文件头，只按扩展名收；/files/ 下不是图片的一律按下载发（Nginx、SignedFileFilter），浏览器不会打开它
-            case "prj" -> true;
+            case "prj", "plt" -> true;
             default -> false;
         };
         if (!valid) throw invalid();

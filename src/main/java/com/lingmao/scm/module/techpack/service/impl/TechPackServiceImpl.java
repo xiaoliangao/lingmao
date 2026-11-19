@@ -253,7 +253,8 @@ public class TechPackServiceImpl implements TechPackService {
             update.set(TechPack::getCostMode, req.getCost().getCostMode() == null
                             ? CostMode.OUTSOURCE : req.getCost().getCostMode())
                     .set(TechPack::getBuyPrice, req.getCost().getBuyPrice())
-                    .set(TechPack::getLaborPrice, req.getCost().getLaborPrice());
+                    .set(TechPack::getLaborPrice, req.getCost().getLaborPrice())
+                    .set(TechPack::getLaborNote, PackForms.blankToNull(req.getCost().getLaborNote()));
         }
         if (techPackMapper.update(new TechPack(), update) == 0) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这一版已经被别人改过或者生效了，请刷新后再改");
@@ -431,10 +432,10 @@ public class TechPackServiceImpl implements TechPackService {
         if (ids.isEmpty()) {
             return Map.of();
         }
-        List<TechPack> packs = techPackMapper.selectByIds(ids);
-        Map<Long, Ctx> contexts = new HashMap<>();
-        packs.forEach(p -> contexts.put(p.getId(), packOwners.context(p)));
-        return costCalculator.laborPrices(packs, contexts);
+        Map<Long, BigDecimal> out = new HashMap<>();
+        techPackMapper.selectByIds(ids).stream().filter(p -> p.getLaborPrice() != null)
+                .forEach(p -> out.put(p.getId(), p.getLaborPrice()));
+        return out;
     }
 
     /** 每一版按款色配料的行都配了的款色 = 各行配了的款色取交集；没有这种行是 null（哪个颜色都行） */
@@ -478,6 +479,7 @@ public class TechPackServiceImpl implements TechPackService {
         pack.setCostMode(source.getCostMode());
         pack.setBuyPrice(source.getBuyPrice());
         pack.setLaborPrice(source.getLaborPrice());
+        pack.setLaborNote(source.getLaborNote());
         insert(pack);
         Content content = packContent.load(source.getId());
         packContent.write(pack.getId(), content, true);

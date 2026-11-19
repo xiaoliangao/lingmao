@@ -145,6 +145,7 @@ class FileServiceImplTest {
         assertThat(psd.thumbUrl()).isNull();
         assertThat(service.upload(sized("印花.ai", eleven)).url()).contains(".ai?");
         assertThat(service.upload(sized("裤子纸样.prj", eleven)).url()).contains(".prj?");
+        assertThat(service.upload(sized("裤子纸样.plt", eleven)).url()).contains(".plt?");
 
         assertThatThrownBy(() -> service.upload(sized("大图.jpg", eleven)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400))

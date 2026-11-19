@@ -91,7 +91,7 @@ public interface TechPackService {
     void checkLockedRequirements(Collection<PackRequirement> requirements);
 
     /**
-     * 几个版本的加工费（元 / 件，核价按外发算的口径：填了的，没填取价格档案的清加工、半包）：排单时外发加工的单价旁边提示用。
+     * 几个版本资料包上填的加工费（元 / 件，核价按外发算的口径）：排单时外发加工的单价旁边提示用。
      * 查不到、没有的不在 map 里
      */
     Map<Long, BigDecimal> laborPrices(Collection<Long> packIds);

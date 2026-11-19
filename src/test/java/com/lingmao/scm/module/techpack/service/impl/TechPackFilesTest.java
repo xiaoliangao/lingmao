@@ -51,9 +51,9 @@ class TechPackFilesTest {
                 .isInstanceOf(BizException.class).hasMessageContaining("最多 20 个");
         verify(attachmentService, never()).replace(any(), anyLong(), anyString(), any());
 
-        files.replace(9L, List.of(form("CRAFT_SHEET", "/files/a/c.XLSX?expires=1&sig=x"), form("PATTERN", "/files/a/p.prj")));
+        files.replace(9L, List.of(form("CRAFT_SHEET", "/files/a/c.XLSX?expires=1&sig=x"), form("PATTERN", "/files/a/p.prj"), form("PATTERN", "/files/a/p.PLT")));
         verify(attachmentService).replace(eq(BizType.TECH_PACK), eq(9L), eq("CRAFT_SHEET"), argThat(l -> l.size() == 1));
-        verify(attachmentService).replace(eq(BizType.TECH_PACK), eq(9L), eq("PATTERN"), argThat(l -> l.size() == 1));
+        verify(attachmentService).replace(eq(BizType.TECH_PACK), eq(9L), eq("PATTERN"), argThat(l -> l.size() == 2));
         verify(attachmentService).replace(eq(BizType.TECH_PACK), eq(9L), eq("BOM_SOURCE"), argThat(List::isEmpty));
     }
 

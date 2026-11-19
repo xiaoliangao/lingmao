@@ -1058,16 +1058,15 @@ route('/materials', {
 }, { mod: 'materials', t: '物料' })
 
 /* 新建、编辑物料共用：传 m 就是编辑（编码不变；SKU 只改供应商色号、单价、最小库存、停用，加 SKU 用「批量加 SKU」）
- * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、最小库存。
- * init：新建时预先填的字段（资料包从 BOM 表导入时照表里那一行填名称、单位、单价）；stay：建好不跳到物料详情，发 created(物料) */
+ * 新建时选了颜色，每个颜色一行，可以顺手填规格、供应商色号、单价、最小库存 */
 comp('MaterialForm', {
-  props: { cat: String, m: Object, init: Object, stay: Boolean },
-  emits: ['close', 'created'],
+  props: { cat: String, m: Object },
+  emits: ['close'],
   setup(p, { emit }) {
     const pick = (o, ks) => Object.fromEntries(ks.map((k) => [k, o[k] ?? null]))
     const f = reactive(p.m
       ? { ...pick(p.m, MAT_FIELDS.map(([k]) => k)), skus: p.m.skus.map((k) => ({ code: k.code, color: k.color, spec: k.spec, supColor: k.supColor || '', price: k.price ?? null, safety: k.safety ?? null, status: k.status || '启用' })) }
-      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [], ...(p.init || {}) })
+      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [] })
     const rows = reactive({}) // 新建：颜色 → { spec, supColor, price, safety }
     const skuRows = () => f.colors.map((c) => ({ color: c, ...rows[c] }))
     const code = computed(() => (p.m ? p.m.code : nextMatCode(f.cat)))
@@ -1084,10 +1083,7 @@ comp('MaterialForm', {
       const d = dupMaterial(body)
       if (d && !(await ask('可能重复', '可能和 ' + d.code + ' ' + d.name + (d.supNo ? '（' + supName(d.supplier) + ' ' + d.supNo + '）' : '') + ' 重复，确定新建？', '仍然新建'))) return
       const m = run(() => createMaterial(body))
-      if (!m) return
-      if (p.stay) emit('created', m); else go('/materials/' + m.code)
-      emit('close')
-      toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU')
+      if (m) { emit('close'); go('/materials/' + m.code); toast(m.code + ' 已建，生成 ' + m.skus.length + ' 个 SKU') }
     }
     // 物料类型下拉里找不到就当场加（PRD §6.1.5 规则 6，Q40）：加进字典，备料比由生产评估后填、先按 0（Q18），加完直接选上
     async function addType() {

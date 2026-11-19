@@ -68,7 +68,7 @@ const SHEET_TYPES = ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp']
 
 export const PACK_FILE_GROUPS: { category: PackFileCategory; label: string; types: string[] }[] = [
   { category: 'CRAFT_SHEET', label: '工艺单', types: SHEET_TYPES },
-  { category: 'PATTERN', label: '纸样和其他', types: [...SHEET_TYPES, 'prj'] },
+  { category: 'PATTERN', label: '纸样和其他', types: [...SHEET_TYPES, 'prj', 'plt'] },
   { category: 'BOM_SOURCE', label: '导入的 BOM 表', types: ['xls', 'xlsx'] },
 ]
 
@@ -391,14 +391,10 @@ export interface TechPackCost {
   defaultFactoryName: string | null
   fabricRows: CostRow[]
   trimRows: CostRow[]
-  /** 存着的加工费，元 / 件（按外发算时用）；没填是 null */
+  /** 存着的加工费，元 / 件（按外发算时用）；没填是 null，核价按 0 算（Q50：不从价格档案带清加工、半包价） */
   laborPrice?: number | null
-  /**
-   * 价格档案里款式默认加工厂做这个款的清加工现价，没有取半包；都没有是 null。
-   * 按外发算且没填加工费时用它；laborPriceDefaultMode 说是哪种（字典 process_mode：CMT、HALF）
-   */
-  laborPriceDefault?: number | null
-  laborPriceDefaultMode?: string | null
+  /** 加工费备注，如"清加工 38，半包 45"；没填是 null */
+  laborNote?: string | null
   otherItems: CostItem[]
   summary: CostSummary
   /** 款式的吊牌价；倍率 = 吊牌价 ÷ 单件成本，两位小数；没吊牌价或单件成本是 0 时 ratio 是 null */
@@ -415,6 +411,8 @@ export interface TechPackCostForm {
   buyPrice?: number | null
   /** 加工费，元 / 件；按成品采购算时也照存 */
   laborPrice?: number | null
+  /** 加工费备注，255 字以内 */
+  laborNote?: string | null
   items: CostItemForm[]
 }
 

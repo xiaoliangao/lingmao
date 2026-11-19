@@ -195,7 +195,7 @@ class BomImporter {
         Map<Long, List<MaterialSkuRef>> byMaterial = candidates.stream()
                 .collect(Collectors.groupingBy(s -> s.material().id(), LinkedHashMap::new, Collectors.toList()));
         if (byMaterial.isEmpty()) {
-            d.notes.add("物料库里没有「" + line.name() + "」：从物料库挑一个，或者按这一行新建");
+            d.notes.add("物料库里没有「" + line.name() + "」：从物料库挑一个，或者这行不导（新物料先到物料库建）");
             return null;
         }
         if (byMaterial.size() == 1) {

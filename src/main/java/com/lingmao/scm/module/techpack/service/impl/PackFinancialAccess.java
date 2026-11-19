@@ -21,6 +21,7 @@ final class PackFinancialAccess {
             var cost = req.getCost();
             FieldPermissions.price(FieldPermissions.COST, head.getBuyPrice(), cost.getBuyPrice());
             FieldPermissions.price(FieldPermissions.COST, head.getLaborPrice(), cost.getLaborPrice());
+            FieldPermissions.preserve(FieldPermissions.COST, head.getLaborNote(), cost.getLaborNote() == null || cost.getLaborNote().isBlank() ? null : cost.getLaborNote().strip());
             FieldPermissions.preserve(FieldPermissions.COST, head.getCostMode(), cost.getCostMode());
             if (cost.getItems() != null && !cost.getItems().isEmpty()) FieldPermissions.require(FieldPermissions.COST);
             req.setCost(null); // Existing cost header and other-cost rows remain outside the replacement.

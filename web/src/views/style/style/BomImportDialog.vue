@@ -6,14 +6,12 @@ import { techPackApi } from '@/api/techpack'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import StatusTag from '@/components/StatusTag.vue'
-import { useDict } from '@/composables/useDict'
 import { useUploadScope } from '@/composables/usePendingUploads'
 import type { MaterialPickRow } from '@/types/basic'
 import type { StylePickRow } from '@/types/style'
 import type { FileVO } from '@/types/system'
 import { BOM_IMPORT_STATUS, BOM_SKU_MODE, type BomImport, type BomImportRow } from '@/types/techpack'
 import { MAX_UPLOAD_SIZE } from '@/utils/request'
-import MaterialForm from '@/views/basic/material/MaterialForm.vue'
 
 /** 加进物料清单的东西：行（和 bomItems 一个样子，没有 id）、替换还是接在后面、加工费、运费、导入的文件（挂到工艺单页签） */
 export interface BomImportApply {
@@ -26,18 +24,18 @@ export interface BomImportApply {
 
 /**
  * 从甲方的 BOM 表导入物料清单（docs/api/01 §3.12、§4.5，RFC 011 §4.3，原型 TpImport）。
- * 选文件 → 后端认（只解析不写库）→ 预览表上改部位、用量、损耗、单价，没认出来的挑物料、新建物料或者不导 → 加进物料清单。
+ * 选文件 → 后端认（只解析不写库）→ 预览表上改部位、用量、损耗、单价，没认出来的挑物料或者不导 → 加进物料清单。
+ * 不在这里新建物料（甲方 11-18 答 Q49：BOM 导入只认不建，新物料先到物料库建）。
  * 加进去以后只是改了资料包页面上的表单，和手填一样，点"保存"才存。
  *
  *   <BomImportDialog ref="importer" :pack-id="detail.id" :existing="draft.bomItems.length" :can-see-cost="canSeeCost" @apply="onImport" />
  *   importer.value?.open()
  *
- * 挑了物料、建了物料、换了 sheet 都带着原文件重新调一次；已经改过的行物料没变就留着改过的
+ * 挑了物料、换了 sheet 都带着原文件重新调一次；已经改过的行物料没变就留着改过的
  */
 const props = defineProps<{ packId: string; existing: number; canSeeCost: boolean }>()
 const emit = defineEmits<{ apply: [payload: BomImportApply] }>()
 
-const units = useDict('unit')
 const uploads = useUploadScope()
 
 const visible = ref(false)
@@ -120,7 +118,7 @@ const sheetOptions = computed(() => (result.value?.sheets ?? []).map((s) => ({
   disabled: !s.bom,
 })))
 
-// ---------- 没认出来的行：挑物料、新建物料、不导 ----------
+// ---------- 没认出来的行：挑物料、不导 ----------
 const pickingLine = ref<number | null>(null)
 const picking = ref(false)
 function startPick(line: number) {
@@ -131,26 +129,6 @@ async function onPicked(picked: MaterialPickRow[] | StylePickRow[]) {
   const row = (picked as MaterialPickRow[])[0]
   if (!row || pickingLine.value == null) return
   picks.value = { ...picks.value, [pickingLine.value]: row.materialId }
-  await parse(true)
-}
-
-const materialForm = ref<InstanceType<typeof MaterialForm>>()
-const creatingLine = ref<number | null>(null)
-function startCreate(row: BomImportRow) {
-  creatingLine.value = row.line
-  const unit = units.options.value.find((o) => o.label === row.source.unit.trim())?.value
-  const price = row.source.price == null ? NaN : Number(row.source.price.replace(/[¥￥元,\s]/g, ''))
-  materialForm.value?.openCreate(null, {
-    name: row.source.name,
-    specs: row.source.spec,
-    ...(unit ? { stockUnit: unit } : {}),
-    ...(Number.isFinite(price) ? { refPrice: price } : {}),
-  })
-}
-async function onMaterialSaved(id: string) {
-  if (creatingLine.value == null) return
-  picks.value = { ...picks.value, [creatingLine.value]: id }
-  creatingLine.value = null
   await parse(true)
 }
 
@@ -280,12 +258,9 @@ function skuText(item: NonNullable<BomImportRow['item']>) {
             <div v-for="n in row.notes" :key="n" class="note">{{ n }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="" width="176" align="right" fixed="right">
+        <el-table-column label="" width="116" align="right" fixed="right">
           <template #default="{ row }">
-            <template v-if="!row.item && !skipped.has(row.line)">
-              <el-button link type="primary" size="small" @click="startPick(row.line)">挑物料</el-button>
-              <el-button link type="primary" size="small" @click="startCreate(row as BomImportRow)">新建物料</el-button>
-            </template>
+            <el-button v-if="!row.item && !skipped.has(row.line)" link type="primary" size="small" @click="startPick(row.line)">挑物料</el-button>
             <el-button link size="small" @click="toggleSkip(row.line)">{{ skipped.has(row.line) ? '要导' : '不导' }}</el-button>
           </template>
         </el-table-column>
@@ -298,13 +273,12 @@ function skuText(item: NonNullable<BomImportRow['item']>) {
     </div>
 
     <template #footer>
-      <span v-if="blocked" class="warn-txt">还有 {{ blocked }} 行没认出来：挑物料、新建物料或者点「不导」</span>
+      <span v-if="blocked" class="warn-txt">还有 {{ blocked }} 行没认出来：挑物料或者点「不导」；物料库里没有的先到物料库建</span>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :disabled="!importable.length || blocked > 0" :loading="applying" @click="apply">加进物料清单（{{ importable.length }} 行）</el-button>
     </template>
 
     <DataPick v-model="picking" kind="sku" single @pick="onPicked" />
-    <MaterialForm ref="materialForm" @saved="onMaterialSaved" />
   </el-dialog>
 </template>
 

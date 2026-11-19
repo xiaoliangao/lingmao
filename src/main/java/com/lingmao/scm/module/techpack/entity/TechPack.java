@@ -48,8 +48,10 @@ public class TechPack extends AuditEntity {
 
     /** 成品单价，元/件（含料）；按成品采购算时用，没填时核价用价格档案里默认加工厂"包工包料"的现价 */
     private BigDecimal buyPrice;
-    /** 加工费，元/件，按外发算时用；没填时核价用价格档案里默认加工厂清加工、再半包的现价（PRD §6.4.5） */
+    /** 加工费，元/件，按外发算时用；手填或从 BOM 表导入，没填按 0 算（PRD §6.4.5，Q50） */
     private BigDecimal laborPrice;
+    /** 加工费备注，如"清加工 38，半包 45"（Q50） */
+    private String laborNote;
 
     @TableField(typeHandler = JsonbTypeHandler.class, updateStrategy = FieldStrategy.NEVER)
     private PackOwnerSnapshot ownerSnapshot;

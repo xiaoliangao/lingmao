@@ -16,8 +16,8 @@ import { confirmRemove } from '@/views/basic/common'
  *
  *   <TechPackFiles v-model="draft.files" :pack-id="detail.id" :disabled="!editable" />
  *
- * - 每组收的类型照 PACK_FILE_GROUPS（后端再查一遍）；prj 100MB，别的 10MB；一组最多 20 个
- * - Excel 点"预览"在页面里看（要已经存上、有 id 的）；图片在新页签里看；PDF、prj 下载
+ * - 每组收的类型照 PACK_FILE_GROUPS（后端再查一遍）；纸样 prj、plt 100MB，别的 10MB；一组最多 20 个
+ * - Excel 点"预览"在页面里看（要已经存上、有 id 的）；图片在新页签里看；PDF、纸样下载
  * - "导入的 BOM 表"一组不能传，从 BOM 表导入时自动加；没有就不出这一块
  * - 上传登记在资料包页签的未保存跟踪里（useUploadScope）：传到一半保存会等它传完
  */
@@ -32,6 +32,8 @@ const uploading = ref<Record<string, number>>({})
 const ext = (name: string) => name.slice(name.lastIndexOf('.') + 1).toLowerCase()
 const isExcel = (name: string) => ['xls', 'xlsx'].includes(ext(name))
 const isImage = (name: string) => ['jpg', 'jpeg', 'png', 'webp'].includes(ext(name))
+/** 打版软件的纸样文件（甲方 11-18 答 Q48），和设计源文件一样最大 100MB */
+const PATTERN_TYPES = ['prj', 'plt']
 
 const groups = computed(() =>
   PACK_FILE_GROUPS.map((g) => ({ ...g, files: model.value.filter((f) => f.category === g.category) }))
@@ -44,9 +46,10 @@ function beforeUpload(category: PackFileCategory, file: File) {
     ElMessage.error(`${group.label}不收 .${ext(file.name)} 文件：${file.name}。能传 ${group.types.join('、')}`)
     return false
   }
-  const limit = ext(file.name) === 'prj' ? MAX_DESIGN_SOURCE_SIZE : MAX_UPLOAD_SIZE
+  const pattern = PATTERN_TYPES.includes(ext(file.name))
+  const limit = pattern ? MAX_DESIGN_SOURCE_SIZE : MAX_UPLOAD_SIZE
   if (file.size > limit) {
-    ElMessage.error(`${file.name} 太大，${ext(file.name) === 'prj' ? '纸样文件' : '图片、PDF、Excel'} 最大 ${limit / 1024 / 1024}MB`)
+    ElMessage.error(`${file.name} 太大，${pattern ? '纸样文件' : '图片、PDF、Excel'} 最大 ${limit / 1024 / 1024}MB`)
     return false
   }
   const count = model.value.filter((f) => f.category === category).length + (uploading.value[category] ?? 0)
@@ -154,7 +157,7 @@ const loadPreview = () => techPackApi.preview(props.packId, previewFile.value!.i
           </span>
         </li>
       </ul>
-      <p v-if="!disabled && g.category !== 'BOM_SOURCE'" class="dim tip">能传 {{ g.types.join('、') }}{{ g.types.includes('prj') ? '（prj 最大 100MB）' : '' }}，单个最大 10MB，最多 {{ PACK_FILE_MAX }} 个</p>
+      <p v-if="!disabled && g.category !== 'BOM_SOURCE'" class="dim tip">能传 {{ g.types.join('、') }}{{ g.types.includes('prj') ? '（纸样 prj、plt 最大 100MB）' : '' }}，单个最大 10MB，最多 {{ PACK_FILE_MAX }} 个</p>
     </section>
 
     <ExcelPreviewDialog v-if="previewFile" v-model="previewing" :title="previewFile.name" :load="loadPreview" :download-url="previewFile.url" />

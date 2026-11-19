@@ -14,7 +14,7 @@ export function priceReadPermission(type: 'MATERIAL' | 'PROCESS'): string {
   return type === 'PROCESS' ? FIELD_PERMISSIONS.productionPrice : FIELD_PERMISSIONS.cost
 }
 
-const COST_FIELDS = new Set(['refPrice', 'refCost', 'skuPrice', 'buyPrice', 'cost', 'estCost', 'costMultiplier', 'unitCost', 'laborPrice', 'laborPriceDefault', 'priceTaxIncluded', 'priceFreightIncluded'])
+const COST_FIELDS = new Set(['refPrice', 'refCost', 'skuPrice', 'buyPrice', 'cost', 'estCost', 'costMultiplier', 'unitCost', 'laborPrice', 'laborNote', 'priceTaxIncluded', 'priceFreightIncluded'])
 const PRICE_FIELDS = new Set(['price', 'prices', 'unitPrice', 'archivePrice', 'fromPrice', 'toPrice', 'amount', 'totalAmount', 'estAmount', 'convertedAmount', 'priceSourceId', 'priceChangeReason'])
 const CONTACT_FIELDS = new Set(['contact', 'phone', 'wechat', 'address'])
 const BANK_FIELDS = new Set(['bankName', 'bankAccountName', 'bankAccount'])

@@ -152,7 +152,7 @@ def line_values(detail: dict) -> dict:
 
 
 def cost_values(cost: dict) -> tuple:
-    return (cost["costMode"], cost.get("buyPrice"), cost.get("laborPrice"),
+    return (cost["costMode"], cost.get("buyPrice"), cost.get("laborPrice"), cost.get("laborNote"),
             [(item["name"], item["amount"], item.get("remark")) for item in cost["otherItems"]])
 
 

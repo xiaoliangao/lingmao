@@ -89,7 +89,7 @@ class A1CostBatchIT {
             long trim = material(code + "T", materialCategory, "TRIM");
             long fabricSku = id("INSERT INTO bas_material_sku(material_id,code,color_id) VALUES (?,?,?) RETURNING id", fabric, code + "FS", color);
             long trimSku = id("INSERT INTO bas_material_sku(material_id,code) VALUES (?,?) RETURNING id", trim, code + "TS");
-            // 外发的：每三个留一个没填加工费，取价格档案的清加工价（RFC 011 §3.1）
+            // 外发的：每三个留一个没填加工费，按 0 算，不取价格档案的清加工价（Q50，11-18）
             long pack = id("INSERT INTO tp_tech_pack(style_id,stage,version,status,cost_mode,buy_price,labor_price) VALUES (?,'PROD',1,'EFFECTIVE',?,?,?) RETURNING id",
                     style, n % 2 == 0 ? "BUY" : "OUTSOURCE", n % 4 == 0 ? new BigDecimal("7.777") : null,
                     n % 2 == 1 && n % 3 != 0 ? new BigDecimal("3.5801") : null);
@@ -111,7 +111,7 @@ class A1CostBatchIT {
             }
             price(factory, style, "FULL", "1000", today.plusDays(1), false);
             price(factory, style, "FULL", "2000", today, true);
-            price(factory, style, "CMT", "7777", today, false);
+            price(factory, style, "CMT", "7777", today, false); // 外发没填加工费时也不取它
             if (n % 2 == 0) {
                 var snapshot = PackOwners.snapshot(owners.context(packs.selectById(pack)));
                 jdbc.update("UPDATE tp_tech_pack SET owner_snapshot=?::jsonb WHERE id=?", json.writeValueAsString(snapshot), pack);
@@ -142,7 +142,7 @@ class A1CostBatchIT {
             assertThat(row.getFabric()).isEqualByComparingTo("4.13").isEqualByComparingTo(single.getSummary().fabric());
             assertThat(row.getTrim()).isEqualByComparingTo("0.38").isEqualByComparingTo(single.getSummary().trim());
             assertThat(row.getOther()).isEqualByComparingTo("0.01").isEqualByComparingTo(single.getSummary().other());
-            String labor = n % 2 == 1 ? (n % 3 == 0 ? "7777" : "3.58") : n % 4 == 0 ? "7.78" : n == 50 ? "0.00" : Integer.toString(20 + n);
+            String labor = n % 2 == 1 ? (n % 3 == 0 ? "0.00" : "3.58") : n % 4 == 0 ? "7.78" : n == 50 ? "0.00" : Integer.toString(20 + n);
             assertThat(row.getLabor()).isEqualByComparingTo(labor).isEqualByComparingTo(single.getSummary().labor());
             assertThat(row.getTotal()).isEqualByComparingTo(single.getSummary().total());
             assertThat(row.getRatio()).isEqualByComparingTo(single.getRatio());

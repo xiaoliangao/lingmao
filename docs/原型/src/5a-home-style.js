@@ -795,12 +795,11 @@ comp('TechPack', {
     const ratio = computed(() => (s.value.tagPrice && k.value.total ? rnd(s.value.tagPrice / k.value.total, 2) : null))
     const addCost = () => tp.value.costs.push({ name: '', amt: null, note: '' })
     const setAmt = (c, v) => { c.amt = v === '' ? null : +v }
-    // 加工费：填了用填的，空着用价格档案的默认（清加工、再半包）
-    const laborDft = computed(() => tp.value && tpLaborDefault(tp.value))
+    // 加工费：填一个数，旁边备注写清是什么价（Q50），空着算 0
     const setLabor = (v) => { tp.value.labor = v === '' ? null : +v }
     const rowThumb = (r) => r.sku || Object.values(r.map || {})[0] || r.mat
     return { s, tps, key, tp, edit, view, tabs, bomView, byColor, open, adding, editing, importing, sizes, verText, useText, revise, publish, create, dropDraft, matSkus, supsFor, setPrice,
-      hl, hover, cur, drag, dragStart, dragOver, dropAt, k, cpRef, costGroups, ratio, addCost, setAmt, laborDft, setLabor, rowThumb }
+      hl, hover, cur, drag, dragStart, dragOver, dropAt, k, cpRef, costGroups, ratio, addCost, setAmt, setLabor, rowThumb }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">还没有资料包：生产 BOM 生效后才能下订单
@@ -934,8 +933,8 @@ comp('TechPack', {
               </template>
               <tr class="cg"><td colspan="6">加工费</td><td class="num">{{ fm(k.labor) }}</td></tr>
               <tr data-c="核价：加工费"><td>加工费（元/件）</td>
-                <td colspan="5" class="mut">{{ tp.labor != null ? '资料包上填的' : laborDft ? '没填，用价格档案 · ' + supName(laborDft.factory) + ' ' + laborDft.mode + '现价' : '没填，价格档案里也没有这个款的清加工、半包价' }}</td>
-                <td class="num"><input v-if="edit" class="inp cell num" style="width:80px" type="number" :value="tp.labor ?? ''" :placeholder="laborDft ? '默认 ' + fm(laborDft.price) : '元/件'" @change="setLabor($event.target.value)"><template v-else>{{ fm(k.labor) }}</template></td></tr>
+                <td colspan="5"><input v-if="edit" class="inp cell" style="width:100%;max-width:320px" v-model="tp.laborNote" maxlength="255" placeholder="备注，如：清加工 38，半包 45"><span v-else class="mut">{{ tp.laborNote || (tp.labor == null ? '没填，按 0 算' : '') }}</span></td>
+                <td class="num"><input v-if="edit" class="inp cell num" style="width:80px" type="number" :value="tp.labor ?? ''" placeholder="元/件" @change="setLabor($event.target.value)"><template v-else>{{ fm(k.labor) }}</template></td></tr>
               <tr v-if="cpRef != null" data-c="核价：成品采购参考价"><td>成品采购参考价</td><td colspan="5" class="mut">价格档案 · {{ supName(s.factory) }} 包工包料现价，含料；只作参考，不计入单件成本</td><td class="num mut">{{ fm(cpRef) }}</td></tr>
               <tr class="cg"><td colspan="6"><span class="row" style="gap:10px">其他费用<button v-if="edit" class="btn sm" @click="addCost"><Ico n="plus" :s="12"/>加一项</button></span></td><td class="num">{{ fm(k.other) }}</td></tr>
               <tr v-for="(c, i) in tp.costs" :key="'c' + i">
@@ -1078,7 +1077,7 @@ comp('TpFiles', {
             </template></span></td>
         </tr></tbody>
       </table>
-      <p v-if="edit && g.cat !== '导入的 BOM 表'" class="dim" style="font-size:12px;margin:6px 0 0">能传 {{ g.types.join('、') }}；单个最大 10MB{{ g.types.includes('prj') ? '（prj 100MB）' : '' }}，最多 20 个</p>
+      <p v-if="edit && g.cat !== '导入的 BOM 表'" class="dim" style="font-size:12px;margin:6px 0 0">能传 {{ g.types.join('、') }}；单个最大 10MB{{ g.types.includes('prj') ? '（纸样 prj、plt 100MB）' : '' }}，最多 20 个</p>
     </section>
     <XlsPreview v-if="viewing" :f="viewing" @close="viewing = null"/>
   </div>`,
@@ -1101,14 +1100,14 @@ comp('XlsPreview', {
 })
 
 /* ---------- 从甲方的 BOM 表导入物料清单（RFC 011 §4.3）：选表 → 认（parseBomSheet）→ 预览里改部位、用量、损耗、单价，
- * 没认出来的挑物料、当场新建物料，或者这行不导 → 加进物料清单（替换或加在后面），加工费、运费带进核价，导入的表挂到工艺单页签。
+ * 没认出来的挑物料或者这行不导（甲方 11-18 答 Q49：导入只认不建，新物料先到物料库建）→ 加进物料清单（替换或加在后面），加工费、运费带进核价，导入的表挂到工艺单页签。
  * 加进去只是改了这一版草稿，和手填一样。原型只认 .xlsx 的第一张表（真系统 .xls 也认、几张 sheet 按款号自动挑）；没有现成的表点「用示例表试一下」 ---------- */
 comp('TpImport', {
   props: { tp: Object },
   emits: ['close'],
   setup(p, { emit }) {
-    const st = reactive({ file: null, grid: null, res: null, err: '', picks: {}, skip: {}, creating: null, mode: '替换' })
-    // 挑了、建了物料后重新认：物料没变的行留着人改过的部位、用量
+    const st = reactive({ file: null, grid: null, res: null, err: '', picks: {}, skip: {}, mode: '替换' })
+    // 挑了物料后重新认：物料没变的行留着人改过的部位、用量
     function parse(keep) {
       st.err = ''
       const old = keep && st.res ? new Map(st.res.rows.map((x) => [x.line, x])) : new Map()
@@ -1130,14 +1129,6 @@ comp('TpImport', {
     const downloadDemo = () => saveBlob(xlsxWrite([{ name: p.tp.style, rows: demoBomGrid(p.tp.style) }]), `${p.tp.style} BOM 示例.xlsx`)
     const mats = computed(() => db.materials.filter((m) => m.status === '启用'))
     function choose(x, code) { if (code) { st.picks[x.line] = code; parse(true) } }
-    // 新建物料：名称、单位、单价照表里这一行预先填好；建好了按它重新认这一行
-    const createInit = computed(() => {
-      const x = st.res?.rows.find((r) => r.line === st.creating)
-      if (!x) return null
-      const unit = x.src.unit === '厘米' ? '米' : x.src.unit
-      return { name: x.src.name, ...(db.dicts.单位.includes(unit) ? { unit, purUnit: unit } : {}), price: cellNum(x.src.price) }
-    })
-    function created(m) { if (st.creating != null) { st.picks[st.creating] = m.code; st.creating = null; parse(true) } }
     const live = computed(() => (st.res?.rows || []).filter((x) => !st.skip[x.line]))
     const blocked = computed(() => live.value.filter((x) => !x.row).length)
     function apply() {
@@ -1147,7 +1138,7 @@ comp('TpImport', {
       emit('close')
       toast(`加了 ${n} 行物料` + (res.labor != null ? `，加工费 ${fm(res.labor)} 填进了核价` : '') + (res.fees.length ? `，${res.fees.map((f) => f.name).join('、')}加进了其他费用` : '') + '；表挂在工艺单页签上')
     }
-    return { st, pick, demo, downloadDemo, mats, choose, createInit, created, live, blocked, apply }
+    return { st, pick, demo, downloadDemo, mats, choose, live, blocked, apply }
   },
   template: `<Modal t="从 BOM 表导入物料清单" :w="1120" @close="$emit('close')">
     <div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:10px">
@@ -1157,7 +1148,7 @@ comp('TpImport', {
       <span v-if="st.file" class="mut">{{ st.file.name }}</span>
     </div>
     <div v-if="st.err" class="banner red" style="margin:0 0 10px"><Ico n="alert"/>{{ st.err }}</div>
-    <p v-if="!st.res && !st.err" class="mut">选甲方的 BOM 明细表。按表头认列（物料名称、规格、颜色、单价、单位、单件用量、损耗），按名称和规格对物料库；认不出的当场挑物料、新建物料，或者这行不导。表下面的加工费、运费一起带进核价。</p>
+    <p v-if="!st.res && !st.err" class="mut">选甲方的 BOM 明细表。按表头认列（物料名称、规格、颜色、单价、单位、单件用量、损耗），按名称和规格对物料库；认不出的挑物料或者这行不导（物料库里没有的先到物料库建）。表下面的加工费、运费一起带进核价。</p>
     <template v-if="st.res">
       <p v-if="st.res.title" class="mut" style="margin:0 0 8px">表头：{{ st.res.title }}</p>
       <div class="xscroll"><table class="tbl inset flat">
@@ -1166,7 +1157,7 @@ comp('TpImport', {
           <td class="dim">{{ x.line }}</td>
           <td>{{ [x.src.name, x.src.spec, x.src.color].filter(Boolean).join(' · ') }}<div class="dim" style="font-size:11.5px">{{ x.src.use }} {{ x.src.unit }}<template v-if="canSeeCost() && x.src.price"> · ¥{{ x.src.price }}</template></div></td>
           <td><template v-if="x.row"><span class="code">{{ x.row.mat }}</span> {{ mat(x.row.mat).name }}<div class="dim" style="font-size:11.5px">{{ x.row.mode === '固定' ? (x.row.sku || '没配料') : '随款色 · 配上 ' + Object.keys(x.row.map).length + ' 个颜色' }}</div></template>
-            <span v-else-if="!st.skip[x.line]" class="row g4"><Pick class="sel" style="height:26px;width:130px" :model-value="''" @update:model-value="v => choose(x, v)"><option value="">挑物料</option><option v-for="m in mats" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></Pick><button class="btn ghost sm" @click="st.creating = x.line">新建</button></span>
+            <Pick v-else-if="!st.skip[x.line]" class="sel" style="height:26px;width:150px" :model-value="''" @update:model-value="v => choose(x, v)"><option value="">挑物料</option><option v-for="m in mats" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></Pick>
             <span v-else class="dim">—</span></td>
           <td><Pick v-if="x.row" class="sel" style="height:26px;width:88px" v-model="x.row.part"><option value="">选部位</option><option v-for="v in db.dicts.BOM部位" :key="v">{{ v }}</option></Pick></td>
           <td class="num"><input v-if="x.row" class="inp cell num" style="width:70px" type="number" v-model.number="x.row.use"></td>
@@ -1180,13 +1171,12 @@ comp('TpImport', {
       <p v-if="canSeeCost() && (st.res.labor != null || st.res.fees.length)" class="mut" style="margin:8px 0 0">一起带进核价：<span v-if="st.res.labor != null">加工费 {{ fm(st.res.labor) }}</span><span v-for="f in st.res.fees" :key="f.name" style="margin-left:12px">{{ f.name }} {{ fm(f.amt) }}</span></p>
     </template>
     <template #foot>
-      <span v-if="blocked" class="amber" style="font-size:12.5px">还有 {{ blocked }} 行没认出来：挑物料、新建物料，或者点「不导」</span>
+      <span v-if="blocked" class="amber" style="font-size:12.5px">还有 {{ blocked }} 行没认出来：挑物料或者点「不导」；物料库里没有的先到物料库建</span>
       <span class="sp"></span>
       <Seg v-if="st.res && tp.bom.length" v-model="st.mode" :items="[['替换', '替换现有 ' + tp.bom.length + ' 行'], ['加在后面', '加在后面']]"/>
       <button class="btn" @click="$emit('close')">取消</button>
       <button class="btn pri" :disabled="!live.length || blocked > 0" @click="apply">加进物料清单（{{ live.length }} 行）</button>
     </template>
-    <MaterialForm v-if="createInit" :init="createInit" stay @close="st.creating = null" @created="created"/>
   </Modal>`,
 })
 
@@ -1218,5 +1208,5 @@ comp('TpCraftFiles', {
 
 expose({
   homeBoss, homeSees, homeCanAudit, homeUpstream, upKind, seasonText, sgName, styleUpdated, styleOrders, tpHas, updateStyle, setStyleSku, removeStyleSku,
-  skuBlocked, addStyleColors, removeStyle, moveItem, nextStyleCode, rowRefPrice, removeTpDraft, tpCost, tpLaborDefault, TP_FILE_GROUPS,
+  skuBlocked, addStyleColors, removeStyle, moveItem, nextStyleCode, rowRefPrice, removeTpDraft, tpCost, TP_FILE_GROUPS,
 })

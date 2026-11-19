@@ -101,39 +101,28 @@ class CostCalculatorTest {
         TechPackCostVO byDefault = calculator.compute(pack(CostMode.BUY, null), ctx(), KHAKI);
         assertThat(byDefault.getBuyPriceDefault()).isEqualByComparingTo("85");
         assertThat(byDefault.getSummary().labor()).isEqualByComparingTo("85");
-        assertThat(byDefault.getLaborPriceDefault()).isEqualByComparingTo("30");
 
         TechPackCostVO typed = calculator.compute(pack(CostMode.BUY, new BigDecimal("90")), ctx(), KHAKI);
         assertThat(typed.getSummary().total()).isEqualByComparingTo("90");
     }
 
-    /** 规则（RFC 011 §3.1）：按外发算，加工费 = 资料包上填的；没填取默认加工厂清加工的现价，没有清加工取半包，都没有是 0 */
+    /** 规则（甲方 11-18 答 Q50）：按外发算，加工费 = 资料包上填的，不从价格档案带清加工、半包价；没填是 0。备注原样带出 */
     @Test
-    void outsource_laborPriceElseCmtElseHalf() {
+    void outsource_typedLaborOnly_noArchiveDefault() {
         when(packContent.loadBom(9L)).thenReturn(List.of());
         when(packContent.loadCostItems(9L)).thenReturn(List.of());
-
         archive(Map.of("CMT", "28", "HALF", "40", "FULL", "85"));
-        TechPackCostVO cmt = calculator.compute(pack(CostMode.OUTSOURCE, null), ctx(), KHAKI);
-        assertThat(cmt.getLaborPriceDefault()).isEqualByComparingTo("28");
-        assertThat(cmt.getLaborPriceDefaultMode()).isEqualTo("CMT");
-        assertThat(cmt.getSummary().labor()).isEqualByComparingTo("28");
 
-        archive(Map.of("HALF", "40"));
-        TechPackCostVO half = calculator.compute(pack(CostMode.OUTSOURCE, null), ctx(), KHAKI);
-        assertThat(half.getLaborPriceDefaultMode()).isEqualTo("HALF");
-        assertThat(half.getSummary().labor()).isEqualByComparingTo("40");
+        TechPackCostVO blank = calculator.compute(pack(CostMode.OUTSOURCE, null), ctx(), KHAKI);
+        assertThat(blank.getLaborPrice()).isNull();
+        assertThat(blank.getSummary().labor()).isEqualByComparingTo("0");
 
         TechPack typed = pack(CostMode.OUTSOURCE, null);
         typed.setLaborPrice(new BigDecimal("22.5"));
-        assertThat(calculator.compute(typed, ctx(), KHAKI).getSummary().labor()).isEqualByComparingTo("22.50");
-
-        archive(Map.of());
-        assertThat(calculator.compute(pack(CostMode.OUTSOURCE, null), ctx(), KHAKI).getSummary().labor()).isEqualByComparingTo("0");
-        TechPack none = pack(CostMode.OUTSOURCE, null);
-        none.setId(10L);
-        assertThat(calculator.laborPrices(List.of(typed, none), Map.of(9L, ctx(), 10L, ctx())))
-                .containsOnlyKeys(9L).containsValue(new BigDecimal("22.5"));
+        typed.setLaborNote("清加工 22.5，半包 30");
+        TechPackCostVO vo = calculator.compute(typed, ctx(), KHAKI);
+        assertThat(vo.getSummary().labor()).isEqualByComparingTo("22.50");
+        assertThat(vo.getLaborNote()).isEqualTo("清加工 22.5，半包 30");
     }
 
     /** 价格档案里默认加工厂（30）做款式 100 的几种加工方式的现价 */

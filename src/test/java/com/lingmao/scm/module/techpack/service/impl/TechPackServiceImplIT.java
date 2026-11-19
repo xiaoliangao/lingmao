@@ -395,7 +395,7 @@ class TechPackServiceImplIT {
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.STATE_CHANGED));
     }
 
-    /** 规则（RFC 011 §3.1）：加工费存在资料包上，按外发算的核价用它；排单取锁定版本的加工费 */
+    /** 规则（RFC 011 §3.1、Q50）：加工费和备注存在资料包上，按外发算的核价用它；排单取锁定版本的加工费 */
     @Test
     void laborPrice_savedAndUsed() {
         Fixture f = fixture();
@@ -404,12 +404,14 @@ class TechPackServiceImplIT {
         TechPackCostForm cost = new TechPackCostForm();
         cost.setCostMode(CostMode.OUTSOURCE);
         cost.setLaborPrice(new BigDecimal("25.5"));
+        cost.setLaborNote("  清加工 25.5  ");
         cost.setItems(List.of());
         req.setCost(cost);
         techPackService.save(id, req);
         TechPackCostVO vo = costService.cost(id, null);
         assertThat(vo.getLaborPrice()).isEqualByComparingTo("25.5");
         assertThat(vo.getSummary().labor()).isEqualByComparingTo("25.5");
+        assertThat(vo.getLaborNote()).isEqualTo("清加工 25.5");
         assertThat(techPackService.laborPrices(List.of(id))).containsEntry(id, new BigDecimal("25.5000"));
     }
 

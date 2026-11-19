@@ -20,7 +20,6 @@ const { canSeeCost } = useFieldAccess()
  *
  *   <MaterialForm ref="formDialog" @saved="onSaved" />
  *   formDialog.value?.openCreate(categoryId)      formDialog.value?.openEdit(detail)
- *   formDialog.value?.openCreate(null, { name, specs, stockUnit, refPrice })   照资料包导入的 BOM 表那一行预先填
  */
 const emit = defineEmits<{ saved: [id: string, created: boolean] }>()
 
@@ -97,13 +96,13 @@ const categoryCode = computed(() => {
 })
 const codePreview = computed(() => (categoryCode.value ? `${categoryCode.value}····` : '选了分类才有'))
 
-async function openCreate(categoryId?: string | null, prefill?: Partial<Pick<typeof EMPTY, 'name' | 'specs' | 'stockUnit' | 'refPrice'>>) {
+async function openCreate(categoryId?: string | null) {
   categories.value = await materialCategoryApi.enabledTree()
   detail.value = null
   // 左边选的是二级分类就带上；选的是一级或"全部"就空着
   const leaf = categories.value.some((g) => g.children?.some((c) => c.id === categoryId))
   // 损耗率、备料比由生产评估后填，新建时不预填（PRD Q18，甲方 11-18）
-  Object.assign(form, structuredClone(EMPTY), { categoryId: leaf ? categoryId : null }, prefill ?? {})
+  Object.assign(form, structuredClone(EMPTY), { categoryId: leaf ? categoryId : null })
   visible.value = true
 }
 

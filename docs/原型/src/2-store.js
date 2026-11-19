@@ -308,17 +308,9 @@ const unitPrice = (r) => { const m = mat(r.mat); return (r.price ?? rowRefPrice(
 const rowCost = (r, sizes, base) => rnd(rowMidUse(r, sizes, base) * (1 + r.loss / 100) * unitPrice(r), 2)
 // 只算自购的料：客供的料客户出，厂购的算在加工费里
 const tpMaterialCost = (tp) => { const g = style(tp.style).sizeGroup; return rnd(sum(tp.bom.filter((r) => r.src === '自购'), (r) => rowCost(r, sizesOf(g), baseSizeOf(g))), 2) }
-// 加工费（RFC 011 §3.1，甲方 11-18）：资料包核价上填的一个数（元/件）；没填用价格档案里款式默认工厂的清加工价，没有再取半包价，都没有算 0
-const tpLabor = (tp) => rnd(tp.labor ?? tpLaborDefault(tp)?.price ?? 0, 2)
-function tpLaborDefault(tp) {
-  const s = style(tp.style)
-  if (!s?.factory || typeof curProcPrice !== 'function') return null
-  for (const mode of ['清加工', '半包']) {
-    const price = curProcPrice(s.factory, s.code, mode)
-    if (price != null) return { price, mode, factory: s.factory }
-  }
-  return null
-}
+// 加工费（RFC 011 §3.1，甲方 11-18 答 Q50）：资料包核价上填的一个数（元/件），旁边备注写清是什么价（laborNote）；
+// 清加工、半包不区分，不从价格档案带，没填算 0
+const tpLabor = (tp) => rnd(tp.labor ?? 0, 2)
 // 核价（资料包的「核价」页签、侧边栏「核价」列表、询价比价页都用它）：按基码用量算单件成本，分面料、辅料、加工费、其他费用四块。
 // 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有自购的计入，厂购的列出来标"含在加工价里"。加工费见 tpLabor
 const FABRIC_TYPES = ['面料', '里料']
@@ -336,7 +328,7 @@ function tpCost(tp) {
  * 文件跟着版本走：生效后只读，要换就修订；没有工艺单也能生效（页面上问一句） */
 const TP_FILE_GROUPS = [
   { cat: '工艺单', types: ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp'] },
-  { cat: '纸样和其他', types: ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp', 'prj'] },
+  { cat: '纸样和其他', types: ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp', 'prj', 'plt'] },
   { cat: '导入的 BOM 表', types: ['xls', 'xlsx'] }, // 从 BOM 表导入时自动挂上，不能手动传
 ]
 const TP_FILE_MAX = 20
@@ -346,8 +338,9 @@ function addTpFile(tp, cat, file) {
   if (tp.status !== '草稿') fail(`${tpName(tp)} 是「${tp.status}」，要换文件先修订出新版本`)
   const g = TP_FILE_GROUPS.find((x) => x.cat === cat), ext = fileExt(file.name)
   if (!g.types.includes(ext)) fail(`${cat}不收 .${ext || '没有扩展名的'} 文件：${file.name}。能传 ${g.types.join('、')}`)
-  const limit = ext === 'prj' ? 100 : 10
-  if (file.size > limit * 1048576) fail(`${file.name} 太大，${ext === 'prj' ? '纸样文件' : '图片、PDF、Excel'} 最大 ${limit}MB`)
+  const pattern = ['prj', 'plt'].includes(ext) // 打版软件的纸样（Q48）
+  const limit = pattern ? 100 : 10
+  if (file.size > limit * 1048576) fail(`${file.name} 太大，${pattern ? '纸样文件' : '图片、PDF、Excel'} 最大 ${limit}MB`)
   if (tp.files.filter((f) => f.cat === cat).length >= TP_FILE_MAX) fail(`${cat}最多 ${TP_FILE_MAX} 个，${file.name} 没有添加`)
   const f = { id: 'TF' + ++tpFileSeq, cat, name: file.name, size: file.size || 0, src: file.src || null, grid: file.grid || null }
   const last = tp.files.map((x) => x.cat).lastIndexOf(cat)
@@ -388,7 +381,7 @@ function demoBomGrid(styleCode) {
 /* ---------- 从甲方的 BOM 表导入物料清单（RFC 011 §4）：只认表、不写，人看过、改过再加进物料清单，和手填一样点「保存」 ----------
  * grid：表格的文字（二维数组，xlsxRead 读出来的样子）。第 1 行写「款号 款名 BOM」；表头那一行要有「物料名称」和「用量」，列的位置可以挪。
  * 每行按物料名称（同名的再按规格）对物料库：
- *   对上了 → 能导；对上了但单位换算过、配色要人挑、部位认不出、供应商对不上 → 要看一眼；对不上 → 没认出来（挑物料、新建物料或者不导）。
+ *   对上了 → 能导；对上了但单位换算过、配色要人挑、部位认不出、供应商对不上 → 要看一眼；对不上 → 没认出来（挑物料或者不导；甲方 11-18 答 Q49：导入不新建物料）。
  * 颜色写「顺色」或不写 → 随款色，按款色配同色的 SKU；写了一个颜色 → 固定配料。表里按厘米写、物料按米管的，用量 ÷ 100、单价 × 100。
  * 下面汇总块的「加工费」带进核价的加工费，「运费」这类带进其他费用；「合计」行跳过。picks = { 行号: 物料编码 }：人挑过的按挑的 */
 const IMPORT_OK = '能导', IMPORT_CHECK = '看一眼', IMPORT_MISS = '没认出来'
@@ -476,14 +469,14 @@ function applyBomImport(tp, result, lines, mode, file) {
 
 function createTechpack(styleCode, bom, labor, note) {
   const ver = (tpsOf(styleCode)[0]?.ver || 0) + 1
-  // files = 工艺单页签的文件；labor = 核价的加工费（元/件，没填是 null）；costs = 核价的其他费用 [{ name, amt 元/件, note }]
+  // files = 工艺单页签的文件；labor = 核价的加工费（元/件，没填是 null）、laborNote 它的备注；costs = 核价的其他费用 [{ name, amt 元/件, note }]
   const tp = add(db.techpacks, { id: styleCode + '-V' + ver, style: styleCode, ver, status: '草稿', note: note || '', util: null,
-    bom, files: [], labor: labor ?? null, costs: [], log: [] })
+    bom, files: [], labor: labor ?? null, laborNote: '', costs: [], log: [] })
   act(tp, ver === 1 ? '新建' : '由 V' + (ver - 1) + ' 修订')
   return tp
 }
 // 修订时整版复制：物料清单、工艺单文件、加工费、其他费用
-const tpCopy = (tp) => JSON.parse(JSON.stringify({ bom: tp.bom, files: tp.files || [], labor: tp.labor ?? null, costs: tp.costs || [] }))
+const tpCopy = (tp) => JSON.parse(JSON.stringify({ bom: tp.bom, files: tp.files || [], labor: tp.labor ?? null, laborNote: tp.laborNote || '', costs: tp.costs || [] }))
 function tpCheck(tp) {
   const s = style(tp.style), errs = []
   if (!tp.bom.length) errs.push('至少要有一行 BOM')
@@ -512,7 +505,7 @@ function reviseTp(tp) {
   if (tpsOf(tp.style).some((t) => t.status === '草稿')) fail('已经有一个草稿版本，先把它改完')
   const c = tpCopy(tp)
   const t = createTechpack(tp.style, c.bom, c.labor, '')
-  Object.assign(t, { files: c.files.map((f) => ({ ...f, id: 'TF' + ++tpFileSeq })), costs: c.costs, util: tp.util })
+  Object.assign(t, { files: c.files.map((f) => ({ ...f, id: 'TF' + ++tpFileSeq })), laborNote: c.laborNote, costs: c.costs, util: tp.util })
   return t
 }
 // 删掉草稿版本（修订出来不想要了）；生效过、作废了的版本只能看
@@ -1341,6 +1334,7 @@ function seed() {
   const demoTp = (tp, o = {}) => {
     addTpFile(tp, '工艺单', demoCraftFile(tp, o.craft || {}))
     if (o.costs) tp.costs = o.costs
+    if (o.laborNote) tp.laborNote = o.laborNote
     return tp
   }
   as('u4', '2026-09-10', () => {
@@ -1353,6 +1347,7 @@ function seed() {
         pack: '挂装出货，一件一个防尘袋，腰带系好；按色按码挂箱，每箱 10 件。',
       },
       costs: [{ name: '防尘袋', amt: 1.2, note: '挂装出货用' }, { name: '运费', amt: 2, note: '工厂来回，按件分摊' }],
+      laborNote: '清加工 38，半包 45',
     })
     cf.util = 84
     publishTp(cf)
@@ -1746,8 +1741,9 @@ function selftest() {
   // 资料包（甲方 11-18，RFC 011）：工艺单是上传的文件；从 BOM 表导入；加工费填一个数，没填取价格档案；修订整版复制；核价 = 面料 + 辅料 + 加工 + 其他，厂购不计
   const t3 = createTechpack('27CT003', [], null, '')
   addTpFile(t3, '工艺单', { name: '27CT003 工艺单.xlsx', size: 2048 })
-  ok('工艺单：草稿能传 Excel；工艺单一组不收 .prj，纸样和其他收；超过 10MB 的不收', t3.files.length === 1
+  ok('工艺单：草稿能传 Excel；工艺单一组不收 .prj，纸样和其他收 .prj、.plt；超过 10MB 的不收', t3.files.length === 1
     && err(() => addTpFile(t3, '工艺单', { name: '纸样.prj', size: 1 })).includes('能传') && addTpFile(t3, '纸样和其他', { name: '纸样.prj', size: 50 * 1048576 })
+    && addTpFile(t3, '纸样和其他', { name: '纸样.plt', size: 1048576 })
     && err(() => addTpFile(t3, '工艺单', { name: '大图.png', size: 11 * 1048576 })).includes('最大 10MB'), t3.files.map((f) => f.cat + ' ' + f.name))
   const grid = demoBomGrid('27CT003'), r3 = parseBomSheet(t3, grid)
   const byName = (n) => r3.rows.find((x) => x.src.name === n)
@@ -1767,10 +1763,10 @@ function selftest() {
   const cfa = activeTp('27CF001'), k = tpCost(cfa)
   ok('核价：单件成本 = 面料 + 辅料 + 加工 + 其他费用 3.2；缝纫线厂购不计', k.total === rnd(k.fabric + k.trim + k.labor + k.other, 2) && k.other === 3.2 && k.mat === tpMaterialCost(cfa)
     && k.rows.find((x) => x.r.part === '缝纫线').cost === 0 && k.rows.find((x) => x.r.part === '里布').kind === '面料', [k.fabric, k.trim, k.labor, k.other, k.total])
-  const dft = tpLaborDefault(cfa)
-  ok('加工费：资料包上填了用填的；没填取价格档案默认工厂的清加工价', tpLabor(cfa) === 38 && dft?.mode === '清加工' && dft.price === 38, [tpLabor(cfa), dft])
+  const cfs = style(cfa.style), archived = curProcPrice(cfs.factory, cfs.code, '清加工')
+  ok('加工费：资料包上填了用填的；没填算 0，不从价格档案带清加工、半包价（Q50）', tpLabor(cfa) === 38 && archived != null && tpLabor({ ...cfa, labor: null }) === 0, [tpLabor(cfa), archived])
   const v3 = reviseTp(cfa)
-  ok('修订：新版本带着物料清单、工艺单、加工费、其他费用（复制，不是同一份）', JSON.stringify([v3.bom, v3.files.map((f) => f.name), v3.labor, v3.costs]) === JSON.stringify([cfa.bom, cfa.files.map((f) => f.name), cfa.labor, cfa.costs])
+  ok('修订：新版本带着物料清单、工艺单、加工费、其他费用（复制，不是同一份）', JSON.stringify([v3.bom, v3.files.map((f) => f.name), v3.labor, v3.laborNote, v3.costs]) === JSON.stringify([cfa.bom, cfa.files.map((f) => f.name), cfa.labor, cfa.laborNote, cfa.costs])
     && v3.files !== cfa.files && v3.files[0].id !== cfa.files[0].id && v3.costs.length === 2)
   ok('工艺单：生效了的不能换，要修订', err(() => addTpFile(cfa, '工艺单', { name: 'x.xlsx', size: 1 })).includes('先修订'))
   removeTpDraft(v3)
