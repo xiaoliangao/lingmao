@@ -5,7 +5,10 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/** 新建、修改颜色。编码建好不改：修改时传的编码要和原来一样（大小写不算） */
+/**
+ * 新建、修改颜色。编码建好不改：修改时传的编码要和原来一样（大小写不算）。
+ * 这里放宽到 2-3 位，是因为从领猫导进来的老颜色可能是 3 位、带数字，修改时照样要传；新建只收 2 位字母，在 Service 里查（甲方 11-18，RFC 012 §5.3）
+ */
 @Data
 public class ColorSaveReq {
 

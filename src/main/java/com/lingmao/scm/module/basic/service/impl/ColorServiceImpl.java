@@ -63,6 +63,10 @@ public class ColorServiceImpl implements ColorService {
     @Transactional
     public Long create(ColorSaveReq req) {
         String code = Texts.upper(req.getCode());
+        if (!code.matches("[A-Z]{2}")) {
+            // 甲方 11-18：颜色编码进物料、款式的 SKU 码，只能 2 位字母（RFC 012 §5.3）；领猫导进来的老编码照收，不走这里
+            throw new BizException("颜色编码只能是 2 位字母，如 KQ");
+        }
         if (colorMapper.exists(new LambdaQueryWrapper<Color>().eq(Color::getCode, code))) {
             throw new BizException("颜色编码 " + code + " 已经有了");
         }

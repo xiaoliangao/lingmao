@@ -99,7 +99,7 @@ public interface MaterialService {
     /** 一批 SKU 买的时候要的东西（算料、采购单、补货提醒），skuId → info；不存在的 id 不在 map 里 */
     Map<Long, MaterialPurchaseInfo> purchaseInfos(Collection<Long> skuIds);
 
-    /** 按 SKU 码找 id（导入盘点表用），不分大小写；key 是大写的码，找不到的不在 map 里 */
+    /** 按 SKU 码找 id（导入盘点表用），领猫编码也认（RFC 012 §4.2），不分大小写；key 是大写的码，找不到的不在 map 里 */
     Map<String, Long> skuIdsByCodes(Collection<String> codes);
 
     /**

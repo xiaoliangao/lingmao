@@ -31,7 +31,8 @@ const guard = useUnsavedChanges(form, visible)
 const rules: FormRules = {
   code: [
     { required: true, message: '请输入编码', trigger: 'blur' },
-    { pattern: /^\s*[A-Za-z0-9]{2,3}\s*$/, message: '2-3 位字母或数字', trigger: 'blur' },
+    // 新建只收 2 位字母（甲方 11-18，RFC 012 §5.3）；编辑时编码不能改，领猫导进来的老编码可能是 3 位
+    { validator: (_r, v: string, cb) => (editing.value || /^\s*[A-Za-z]{2}\s*$/.test(v) ? cb() : cb(new Error('2 位字母，如 KQ'))), trigger: 'blur' },
   ],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
 }
@@ -126,7 +127,7 @@ async function remove(row: Color) {
   <el-dialog v-model="visible" :title="editing ? `编辑颜色 ${editing.code}` : '新增颜色'" width="min(480px, 94vw)" :before-close="guard.beforeClose">
     <el-form ref="formRef" class="form-grid" :model="form" :rules="rules" label-position="top">
       <el-form-item label="编码" prop="code">
-        <el-input v-model="form.code" class="code" maxlength="3" :disabled="!!editing" placeholder="2-3 位，进 SKU 码，建好不改" />
+        <el-input v-model="form.code" class="code" maxlength="3" :disabled="!!editing" placeholder="2 位字母，进 SKU 码，建好不改" />
       </el-form-item>
       <el-form-item label="名称" prop="name">
         <el-input v-model="form.name" maxlength="32" placeholder="如 卡其" />

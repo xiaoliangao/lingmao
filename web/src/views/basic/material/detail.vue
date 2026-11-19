@@ -84,6 +84,7 @@ const infoRows = computed(() => {
   const x = d.material
   const pct = (v: number | null) => (v == null ? '' : `${formatQty(v)}%`)
   return [
+    ...(x.legacyCode ? [['领猫编码', x.legacyCode]] : []),
     ['分类', [d.parentCategoryName, d.categoryName].filter(Boolean).join(' / ')],
     ['类型', types.labelOf(x.materialType)],
     ['库存单位', stockUnit.value],
@@ -92,6 +93,8 @@ const infoRows = computed(() => {
     ['克重', x.weightGsm == null ? '' : `${formatQty(x.weightGsm)} g/㎡`],
     ['成分', x.composition],
     ['组织 / 纹理', x.texture],
+    ...(x.materialType === 'FABRIC' || x.materialType === 'LINING' ? [['面料功能', x.fabricFunction]] : []),
+    ['是否带吊牌', x.withTag == null ? '' : x.withTag ? '是' : '否'],
     ['默认供应商', d.defaultSupplierName],
     ['供应商货号', x.supplierItemNo],
     ...(canSeeCost.value ? [['参考单价', x.refPrice == null ? '' : `${formatPrice(x.refPrice)} 元 / ${purchaseUnit.value}`]] : []),
@@ -249,6 +252,7 @@ const LOG_ACTIONS = {
                   <span class="sku-code">
                     <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" loading="lazy" />
                     <span class="code">{{ row.code }}</span>
+                    <span v-if="row.legacyCode && row.legacyCode !== row.code" class="code dim" title="领猫编码">{{ row.legacyCode }}</span>
                   </span>
                 </template>
               </el-table-column>

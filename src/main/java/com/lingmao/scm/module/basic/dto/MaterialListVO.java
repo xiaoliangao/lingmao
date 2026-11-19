@@ -15,6 +15,8 @@ import java.time.OffsetDateTime;
 public class MaterialListVO {
     private Long id;
     private String code;
+    /** 领猫编码，导入的才有（RFC 012 §4.2） */
+    private String legacyCode;
     private String name;
     private Long categoryId;
     /** 二级分类的编码、名称，一级分类的名称 */
@@ -28,6 +30,8 @@ public class MaterialListVO {
     private BigDecimal widthCm;
     private BigDecimal weightGsm;
     private String composition;
+    private String fabricFunction;
+    private Boolean withTag;
     private Long defaultSupplierId;
     /** 默认供应商的简称 */
     private String defaultSupplierName;

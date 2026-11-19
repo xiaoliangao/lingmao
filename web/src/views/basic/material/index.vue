@@ -182,7 +182,11 @@ function onSaved(id: string) {
           @row-click="onRowClick"
         >
           <el-table-column type="selection" width="40" reserve-selection />
-          <el-table-column prop="code" label="编码" width="110" class-name="code" />
+          <el-table-column label="编码" width="110" class-name="code">
+            <template #default="{ row }">
+              {{ row.code }}<div v-if="row.legacyCode && row.legacyCode !== row.code" class="dim legacy" title="领猫编码">{{ row.legacyCode }}</div>
+            </template>
+          </el-table-column>
           <el-table-column label="名称" min-width="200">
             <template #default="{ row }">
               <span class="name">
@@ -250,6 +254,11 @@ function onSaved(id: string) {
 </template>
 
 <style scoped>
+.legacy {
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
 .with-nav {
   display: flex;
   align-items: stretch;

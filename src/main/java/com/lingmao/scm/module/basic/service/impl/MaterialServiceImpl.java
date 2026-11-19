@@ -77,6 +77,9 @@ public class MaterialServiceImpl implements MaterialService {
     static final String TYPE_DICT = "material_type";
     static final String UNIT_DICT = "unit";
     static final String SEASON_DICT = "season";
+
+    /** 面料、里料：只有它们填面料功能（RFC 012 §5.1） */
+    static final Set<String> FABRIC_TYPES = Set.of("FABRIC", "LINING");
     /** 物料编码 = 分类码 + 4 位流水 */
     static final int CODE_WIDTH = 4;
     /** 取到的号已经被导入的老编码占了，最多再取几次（RFC 003 §7.1） */
@@ -410,11 +413,18 @@ public class MaterialServiceImpl implements MaterialService {
         if (upper.isEmpty()) {
             return Map.of();
         }
-        return materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>()
-                        .select(MaterialSku::getId, MaterialSku::getCode)
-                        .apply("upper(code) IN (" + IntStream.range(0, upper.size()).mapToObj(i -> "{" + i + "}")
-                                .collect(Collectors.joining(",")) + ")", upper.toArray()))
-                .stream().collect(Collectors.toMap(k -> k.getCode().toUpperCase(Locale.ROOT), MaterialSku::getId, (a, b) -> a));
+        String placeholders = IntStream.range(0, upper.size()).mapToObj(i -> "{" + i + "}").collect(Collectors.joining(","));
+        List<MaterialSku> found = materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>()
+                .select(MaterialSku::getId, MaterialSku::getCode, MaterialSku::getLegacyCode)
+                .apply("(upper(code) IN (" + placeholders + ") OR upper(legacy_code) IN (" + placeholders + "))", upper.toArray()));
+        // 系统码优先：领猫编码碰巧等于另一个 SKU 的系统码时按系统码对（RFC 012 §4.2）
+        Map<String, Long> out = new HashMap<>();
+        found.forEach(k -> {
+            if (k.getLegacyCode() != null) out.putIfAbsent(k.getLegacyCode().toUpperCase(Locale.ROOT), k.getId());
+        });
+        found.forEach(k -> out.put(k.getCode().toUpperCase(Locale.ROOT), k.getId()));
+        out.keySet().retainAll(upper);
+        return out;
     }
 
     @Override
@@ -514,6 +524,9 @@ public class MaterialServiceImpl implements MaterialService {
         material.setWeightGsm(req.getWeightGsm());
         material.setComposition(Texts.trim(req.getComposition()));
         material.setTexture(Texts.trim(req.getTexture()));
+        // 面料功能只有面料、里料有（RFC 012 §5.1）；改成别的类型时清掉，页面上也不显示
+        material.setFabricFunction(FABRIC_TYPES.contains(type) ? Texts.trim(req.getFabricFunction()) : null);
+        material.setWithTag(req.getWithTag());
         material.setDefaultSupplierId(req.getDefaultSupplierId());   // 只当默认值，外键保证存在，不查状态（架构 A23）
         material.setSupplierItemNo(Texts.trim(req.getSupplierItemNo()));
         material.setRefPrice(com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST,
@@ -546,10 +559,15 @@ public class MaterialServiceImpl implements MaterialService {
     }
 
     /**
-     * 分类码 + 4 位流水。取到的号已经有了（导入的老编码）就再取下一个，最多试 100 次。
+     * 分类码 + 4 位流水。取到的号已经有了（11-18 以前导入的照用领猫编码）就再取下一个，最多试 100 次。
      * 先查后插在同一个事务里：sys_serial 这一行的锁持有到提交，同一分类的新建本来就排队；和导入撞上由唯一索引兜底（1000）
      */
     private String nextCode(String categoryCode) {
+        return nextCode(serialNoGenerator, materialMapper, categoryCode);
+    }
+
+    /** 同上；导入也按它发编码（RFC 012 §4.2）。甲方的新编码规则到了改这里 */
+    static String nextCode(SerialNoGenerator serialNoGenerator, MaterialMapper materialMapper, String categoryCode) {
         for (int i = 0; i < MAX_TRIES; i++) {
             String code = serialNoGenerator.next(categoryCode, CODE_WIDTH);
             if (!materialMapper.exists(new LambdaQueryWrapper<Material>().eq(Material::getCode, code))) {

@@ -111,6 +111,8 @@ export const MATERIAL_SOURCE_LABEL: Record<MaterialSource, string> = {
 export interface MaterialRow {
   id: string
   code: string
+  /** 领猫编码，从领猫导入的才有（RFC 012 §4.2） */
+  legacyCode: string | null
   name: string
   categoryId: string
   categoryCode: string
@@ -123,6 +125,8 @@ export interface MaterialRow {
   widthCm: number | null
   weightGsm: number | null
   composition: string | null
+  fabricFunction: string | null
+  withTag: boolean | null
   defaultSupplierId: string | null
   defaultSupplierName: string | null
   supplierItemNo: string | null
@@ -137,6 +141,8 @@ export interface MaterialRow {
 export interface Material {
   id: string
   code: string
+  /** 领猫编码，从领猫导入的才有；按它也能搜到（RFC 012 §4.2） */
+  legacyCode: string | null
   name: string
   categoryId: string
   materialType: string
@@ -147,6 +153,10 @@ export interface Material {
   weightGsm: number | null
   composition: string | null
   texture: string | null
+  /** 面料功能，文字；面料、里料才有（RFC 012 §5.1） */
+  fabricFunction: string | null
+  /** 是否带吊牌，null = 没填 */
+  withTag: boolean | null
   defaultSupplierId: string | null
   supplierItemNo: string | null
   refPrice?: number | null
@@ -169,6 +179,8 @@ export interface Material {
 export interface MaterialSku {
   id: string
   code: string
+  /** 领猫编码，从领猫导入的才有 */
+  legacyCode: string | null
   colorId: string | null
   colorCode: string | null
   colorName: string | null

@@ -23,6 +23,10 @@ public class Material extends AuditEntity {
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private String code;
 
+    /** 领猫编码：从领猫导入的物料原来的编码，只做对应（RFC 012 §4.2）；只有导入时写 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private String legacyCode;
+
     private String name;
 
     /** 必须是启用的二级分类；建好不改 */
@@ -46,6 +50,12 @@ public class Material extends AuditEntity {
     private BigDecimal weightGsm;
     private String composition;
     private String texture;
+
+    /** 面料功能，文字，如"防水、抗皱"；面料、里料才有（RFC 012 §5.1） */
+    private String fabricFunction;
+
+    /** 是否带吊牌，空 = 没填；只记录（RFC 012 §5.1） */
+    private Boolean withTag;
 
     /** 默认供应商：只当默认值，保存时不查状态（架构 A23）；basic 不调 supplier */
     private Long defaultSupplierId;

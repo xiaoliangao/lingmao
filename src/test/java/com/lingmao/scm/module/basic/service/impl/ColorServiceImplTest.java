@@ -65,6 +65,16 @@ class ColorServiceImplTest {
                 .hasMessageContaining("色系「NOPE」不在字典里");
     }
 
+    /** 规则：新建的颜色编码只能 2 位字母（甲方 11-18，RFC 012 §5.3）；3 位、带数字的是领猫的老编码，只能导入 */
+    @Test
+    void create_codeMustBeTwoLetters() {
+        for (String bad : List.of("KQA", "K1", "12")) {
+            assertThatThrownBy(() -> colorService.create(req(bad, "卡其", null)))
+                    .isInstanceOf(BizException.class).hasMessageContaining("2 位字母");
+        }
+        verify(colorMapper, never()).insert(any(Color.class));
+    }
+
     /** 规则：颜色编码建好不能改（进了 SKU 码） */
     @Test
     void update_codeChanged_rejected() {

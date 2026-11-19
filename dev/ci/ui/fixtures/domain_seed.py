@@ -87,8 +87,8 @@ class DomainFixture:
         return self.api.request("GET", f"/api/production-orders/{result[0]['id']}")
 
     def history_pack(self) -> dict:
-        color_forms = [{"code": "H1", "name": "合成历史甲色", "family": None, "hex": "#b5a494"},
-                       {"code": "H2", "name": "合成历史乙色", "family": None, "hex": "#213447"}]
+        color_forms = [{"code": "HJ", "name": "合成历史甲色", "family": None, "hex": "#b5a494"},
+                       {"code": "HY", "name": "合成历史乙色", "family": None, "hex": "#213447"}]
         colors = [self.api.request("POST", "/api/colors", form) for form in color_forms]
         style = {"name": "合成历史款初名", "aliasName": None, "styleClass": "FS", "brand": self.f["brand"],
                  "categoryId": 3, "year": self.today.year, "season": "AUTUMN", "wave": "W1", "gender": "WOMEN",

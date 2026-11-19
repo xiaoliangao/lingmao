@@ -3,6 +3,7 @@ package com.lingmao.scm.module.basic.service.impl;
 import com.lingmao.scm.IntegrationTest;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.exception.GlobalExceptionHandler;
 import com.lingmao.scm.common.file.FileUrlSigner;
@@ -106,19 +107,34 @@ class MaterialServiceImplIT {
     }
 
     /**
-     * 规则（RFC 003 §7.1）：导入领猫的老编码 XX0042，流水推到 42；之后页面上新建的从 XX0043 开始，不撞。
+     * 规则（Q05，RFC 012 §4.2）：导入领猫的物料按分类码 + 流水另发编码，领猫编码存 legacy_code；之后新建的接着流水，不撞。
+     * 按领猫编码能搜到、期初库存导入能对上；同一个领猫编码不能再导一次。
      * 颜色 × 规格：两个规格各一个 SKU，码 = 物料编码-颜色-规格码
      */
     @Test
-    void import_raisesSerial_thenCreateDoesNotCollide() throws IOException {
+    void import_issuesNewCodes_keepsLegacyCode_thenCreateDoesNotCollide() throws IOException {
         Leaf leaf = leafCategory();
         String path = leaf.parentName() + ">" + leaf.name();
+        String old42 = "LM" + leaf.code() + "0042", old07 = "LM" + leaf.code() + "0007";
         byte[] bytes = workbook(new Object[][]{{"物料类型", "物料分类", "物料编码", "物料名称", "单位"},
-                {"面料", path, leaf.code() + "0042", "导入的老面料", "米"},
-                {"面料", path, leaf.code() + "0007", "导入的更老的面料", "米"}});
+                {"面料", path, old42, "导入的老面料", "米"},
+                {"面料", path, old07, "导入的更老的面料", "米"}});
 
         assertThat(materialService.importExcel(new MockMultipartFile("file", "物料.xlsx", Excel.CONTENT_TYPE, bytes)).total())
                 .isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("SELECT code FROM bas_material WHERE legacy_code = ?", String.class, old42))
+                .isEqualTo(leaf.code() + "0001");
+        assertThat(count("SELECT count(*) FROM bas_material_sku k JOIN bas_material m ON m.id = k.material_id "
+                + "WHERE m.legacy_code = ? AND k.code = m.code AND k.legacy_code = m.legacy_code", old42)).isEqualTo(1);   // 没有 SKU 行的建了默认 SKU
+        MaterialQuery byLegacy = new MaterialQuery();
+        byLegacy.setKeyword(old42.toLowerCase());
+        assertThat(materialService.page(byLegacy).getList()).extracting(MaterialListVO::getCode).containsExactly(leaf.code() + "0001");
+        assertThat(materialService.skuIdsByCodes(List.of(old07, leaf.code() + "0001"))).containsOnlyKeys(old07, leaf.code() + "0001");
+        byte[] again42 = workbook(new Object[][]{{"物料类型", "物料分类", "物料编码", "物料名称", "单位"}, {"面料", path, old42, "又导一次", "米"}});
+        BizException again = catchThrowableOfType(BizException.class,
+                () -> materialService.importExcel(new MockMultipartFile("file", "物料.xlsx", Excel.CONTENT_TYPE, again42)));
+        assertThat(again.getCode()).isEqualTo(ErrorCodes.IMPORT_INVALID);
+
         long colorId = color();
         String colorCode = jdbcTemplate.queryForObject("SELECT code FROM bas_color WHERE id = ?", String.class, colorId);
         MaterialCreateReq req = createReq(leaf.id(), "新建的面料");
@@ -127,11 +143,10 @@ class MaterialServiceImplIT {
         long id = materialService.create(req);
 
         MaterialDetailVO detail = materialService.detail(id);
-        assertThat(detail.material().getCode()).isEqualTo(leaf.code() + "0043");
+        assertThat(detail.material().getCode()).isEqualTo(leaf.code() + "0003");
+        assertThat(detail.material().getLegacyCode()).isNull();
         assertThat(detail.skus()).extracting(s -> s.code()).containsExactlyInAnyOrder(
-                leaf.code() + "0043-" + colorCode + "-150", leaf.code() + "0043-" + colorCode + "-180");
-        assertThat(count("SELECT count(*) FROM bas_material_sku k JOIN bas_material m ON m.id = k.material_id "
-                + "WHERE m.code = ? AND k.code = m.code", leaf.code() + "0042")).isEqualTo(1);   // 没有 SKU 行的建了默认 SKU
+                leaf.code() + "0003-" + colorCode + "-150", leaf.code() + "0003-" + colorCode + "-180");
     }
 
     /** 规则（PRD §6.1.5 验收 2）：同分类同名（不分大小写）、同默认供应商同货号的列出来；排除自己；都不填不查 */
@@ -222,9 +237,9 @@ class MaterialServiceImplIT {
 
     private long color() {
         String code;
-        do {
-            code = Long.toString(ThreadLocalRandom.current().nextLong(36L * 36 * 36), 36).toUpperCase();
-        } while (code.length() < 2 || count("SELECT count(*) FROM bas_color WHERE code = ?", code) > 0);
+        do { // 新建只收 2 位字母（RFC 012 §5.3）
+            code = "" + (char) ('A' + ThreadLocalRandom.current().nextInt(26)) + (char) ('A' + ThreadLocalRandom.current().nextInt(26));
+        } while (count("SELECT count(*) FROM bas_color WHERE code = ?", code) > 0);
         ColorSaveReq req = new ColorSaveReq();
         req.setCode(code);
         req.setName("IT色" + code + ThreadLocalRandom.current().nextInt(1_000_000));

@@ -26,7 +26,7 @@ class ColorControllerTest {
     @MockitoBean
     private ColorService colorService;
 
-    /** 规则：颜色编码 2-3 位字母数字（进 SKU 码），色块是 #RRGGBB；不对在入口返回 400 */
+    /** 规则：颜色编码 2-3 位字母数字（进 SKU 码；新建只收 2 位字母在 Service 里查），色块是 #RRGGBB；不对在入口返回 400 */
     @Test
     void create_badCodeOrHex_returns400() throws Exception {
         mockMvc.perform(post("/api/colors")

@@ -44,6 +44,8 @@ const EMPTY = {
   weightGsm: undefined as Num,
   composition: '',
   texture: '',
+  fabricFunction: '',
+  withTag: null as boolean | null,
   defaultSupplierId: null as string | null,
   supplierItemNo: '',
   refPrice: undefined as Num,
@@ -73,6 +75,8 @@ const rules: FormRules = {
 
 /** 采购单位不填或和库存单位一样：系数只能是 1 */
 const sameUnit = computed(() => !form.purchaseUnit || form.purchaseUnit === form.stockUnit)
+/** 面料、里料才填面料功能（RFC 012 §5.1） */
+const isFabric = computed(() => form.materialType === 'FABRIC' || form.materialType === 'LINING')
 watch(sameUnit, (same) => {
   if (same) form.conversionFactor = 1
 })
@@ -113,6 +117,7 @@ function openEdit(target: MaterialDetail) {
     categoryId: m.categoryId, materialType: m.materialType, name: m.name, stockUnit: m.stockUnit,
     purchaseUnit: m.purchaseUnit === m.stockUnit ? null : m.purchaseUnit, conversionFactor: m.conversionFactor,
     widthCm: m.widthCm ?? undefined, weightGsm: m.weightGsm ?? undefined, composition: m.composition ?? '', texture: m.texture ?? '',
+    fabricFunction: m.fabricFunction ?? '', withTag: m.withTag,
     defaultSupplierId: m.defaultSupplierId, supplierItemNo: m.supplierItemNo ?? '', refPrice: m.refPrice ?? undefined, moq: m.moq ?? undefined, minPackQty: m.minPackQty,
     leadDays: m.leadDays ?? undefined, year: m.year ?? undefined, season: m.season, defaultSource: m.defaultSource,
     defaultLossPct: m.defaultLossPct ?? undefined, reservePct: m.reservePct ?? undefined, remark: m.remark ?? '',
@@ -132,6 +137,8 @@ function body(): MaterialForm {
     weightGsm: form.weightGsm ?? null,
     composition: orNull(form.composition),
     texture: orNull(form.texture),
+    fabricFunction: isFabric.value ? orNull(form.fabricFunction) : null,
+    withTag: form.withTag,
     defaultSupplierId: form.defaultSupplierId,
     supplierItemNo: orNull(form.supplierItemNo),
     refPrice: form.refPrice ?? null,
@@ -298,6 +305,16 @@ defineExpose({ openCreate, openEdit })
       </el-form-item>
       <el-form-item label="组织 / 纹理">
         <el-input v-model="form.texture" maxlength="64" placeholder="如 斜纹" />
+      </el-form-item>
+
+      <el-form-item v-if="isFabric" label="面料功能" class="span2">
+        <el-input v-model="form.fabricFunction" maxlength="255" placeholder="如 防水、抗皱" />
+      </el-form-item>
+      <el-form-item label="是否带吊牌">
+        <el-select v-model="form.withTag" clearable placeholder="没填">
+          <el-option label="是" :value="true" />
+          <el-option label="否" :value="false" />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="供应商货号">

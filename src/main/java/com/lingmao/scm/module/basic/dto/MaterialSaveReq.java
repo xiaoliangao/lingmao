@@ -61,6 +61,13 @@ public class MaterialSaveReq {
     @Size(max = 64, message = "组织 / 纹理最长 64 个字")
     private String texture;
 
+    /** 面料功能，如"防水、抗皱"；物料类型不是面料、里料时不存 */
+    @Size(max = 255, message = "面料功能最长 255 个字")
+    private String fabricFunction;
+
+    /** 是否带吊牌；null = 没填 */
+    private Boolean withTag;
+
     /** 默认供应商：只当默认值，后端不查状态（架构 A23）。一期页面上先不给选（第 3 步接供应商下拉） */
     private Long defaultSupplierId;
 

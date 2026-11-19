@@ -11018,7 +11018,7 @@ function matLockReason(m) {
   return ''
 }
 const MAT_FIELDS = [['name', '名称'], ['cat', '分类', (v) => matCat(v).name], ['type', '类型'], ['unit', '库存单位'], ['purUnit', '采购单位'], ['factor', '换算系数'],
-  ['width', '门幅'], ['weight', '克重'], ['comp', '成分'], ['texture', '组织'], ['supplier', '默认供应商', (v) => supName(v)], ['supNo', '供应商货号'], ['price', '参考单价'],
+  ['width', '门幅'], ['weight', '克重'], ['comp', '成分'], ['texture', '组织'], ['fabricFn', '面料功能'], ['withTag', '是否带吊牌', (v) => (v == null ? '' : v ? '是' : '否')], ['supplier', '默认供应商', (v) => supName(v)], ['supNo', '供应商货号'], ['price', '参考单价'],
   ['moq', '起订量'], ['pack', '最小包装'], ['lead', '采购周期'], ['year', '年份'], ['season', '季节', (v) => seasonName(v)], ['note', '备注']]
 function updateMaterial(m, f) {
   if (!f.name?.trim()) fail('物料名称要填')
@@ -11104,7 +11104,7 @@ const matUsedBy = (code) => db.techpacks.filter((t) => t.status === '已生效')
 /* ---------- 基础 ---------- */
 function addColor(f) {
   const code = (f.code || '').trim().toUpperCase()
-  if (!/^[A-Z0-9]{2,3}$/.test(code)) fail('颜色编码是 2-3 位字母或数字')
+  if (!/^[A-Z]{2}$/.test(code)) fail('颜色编码只能是 2 位字母，如 KQ（甲方 11-18：进 SKU 码，要固定）')
   if (!f.name) fail('颜色名称要填')
   if (db.colors.some((c) => c.code === code)) fail('编码 ' + code + ' 已经有了')
   if (db.colors.some((c) => c.name === f.name)) fail('颜色 ' + f.name + ' 已经有了')
@@ -11798,7 +11798,7 @@ comp('MaterialForm', {
     const pick = (o, ks) => Object.fromEntries(ks.map((k) => [k, o[k] ?? null]))
     const f = reactive(p.m
       ? { ...pick(p.m, MAT_FIELDS.map(([k]) => k)), skus: p.m.skus.map((k) => ({ code: k.code, color: k.color, spec: k.spec, supColor: k.supColor || '', price: k.price ?? null, safety: k.safety ?? null, status: k.status || '启用' })) }
-      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [] })
+      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', fabricFn: '', withTag: null, supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [] })
     const rows = reactive({}) // 新建：颜色 → { spec, supColor, price, safety }
     const skuRows = () => f.colors.map((c) => ({ color: c, ...rows[c] }))
     const code = computed(() => (p.m ? p.m.code : nextMatCode(f.cat)))
@@ -11843,6 +11843,8 @@ comp('MaterialForm', {
       <label class="f">克重 g/㎡<input class="inp num" type="number" v-model.number="f.weight"></label>
       <label class="f">成分<input class="inp" v-model="f.comp" placeholder="如 100% 棉"></label>
       <label class="f">组织 / 纹理<input class="inp" v-model="f.texture" placeholder="如 斜纹、平纹"></label>
+      <label v-if="f.type === '面料' || f.type === '里料'" class="f">面料功能<input class="inp" v-model="f.fabricFn" maxlength="255" placeholder="如 防水、抗皱"></label>
+      <label class="f">是否带吊牌<Pick class="sel" :model-value="f.withTag == null ? '' : f.withTag ? '是' : '否'" @update:model-value="v => f.withTag = v === '' ? null : v === '是'"><option value="">没填</option><option>是</option><option>否</option></Pick></label>
       <label class="f">年份<input class="inp num" type="number" v-model.number="f.year"></label>
       <label class="f">季节<Pick class="sel" v-model="f.season"><option value="">—</option><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></Pick></label>
       <label class="f">默认供应商<Pick class="sel" v-model="f.supplier"><option value="">不填</option><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></Pick></label>
@@ -12039,7 +12041,7 @@ route('/basics', {
         </Tbl>
         <div class="row" style="margin-top:14px" data-c="加颜色">
           <input type="color" v-model="nc.hex" style="width:30px;height:30px;padding:0;border:1px solid var(--line-strong);border-radius:6px;background:none">
-          <input class="inp code" style="width:80px" v-model="nc.code" placeholder="编码">
+          <input class="inp code" style="width:80px" v-model="nc.code" maxlength="2" placeholder="2 位字母">
           <input class="inp" style="width:120px" v-model="nc.name" placeholder="名称">
           <Pick class="sel" v-model="nc.family"><option v-for="x in families" :key="x">{{ x }}</option></Pick>
           <button class="btn" @click="saveColor"><Ico n="plus" :s="14"/>加颜色</button>

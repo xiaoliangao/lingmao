@@ -72,7 +72,7 @@ class A2ImportIT extends A2BusinessFixture {
         assertThat(counts.importSheet(count, sheet).total()).isEqualTo(1); sheet.assertOutside();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_import_receipt WHERE user_id=?", Long.class, admin.id())).isEqualTo(5);
         assertThat(materials.importExcel(material).total()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE code=?", Long.class, f.materialCategoryCode() + "0002")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE legacy_code=?", Long.class, f.materialCategoryCode() + "0002")).isEqualTo(1);
     }
 
     @Test void actualMultipartHashReplayAcrossTwoHttpClientsCreatesOnlyOneBatchAndReportsExactBadCell() throws Exception {
@@ -86,7 +86,7 @@ class A2ImportIT extends A2BusinessFixture {
             for (var pending : List.of(first, other)) assertThat(pending.get(15, TimeUnit.SECONDS).path("code").intValue()).isIn(0, 409);
             JsonNode replay = multipart(second, admin, bytes);
             assertThat(replay.path("code").intValue()).isZero(); assertThat(replay.path("data").path("total").intValue()).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE code=?", Long.class, f.materialCategoryCode() + "0003")).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE legacy_code=?", Long.class, f.materialCategoryCode() + "0003")).isEqualTo(1);
             assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_import_receipt WHERE user_id=?", Long.class, admin.id())).isEqualTo(1);
         }
         byte[] invalid = workbook("物料信息", new Object[][] {
@@ -97,7 +97,7 @@ class A2ImportIT extends A2BusinessFixture {
         assertThat(rejected.path("code").intValue()).isEqualTo(1003);
         assertThat(rejected.path("data").get(0).path("row").intValue()).isEqualTo(3);
         assertThat(rejected.path("data").get(0).path("column").stringValue()).isEqualTo("单位");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE code IN (?,?)", Long.class,
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE legacy_code IN (?,?)", Long.class,
                 f.materialCategoryCode() + "0004", f.materialCategoryCode() + "0005")).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_import_receipt WHERE user_id=?", Long.class, admin.id())).isEqualTo(1);
         byte[] formula = workbook("物料信息", new Object[][] {
@@ -107,7 +107,7 @@ class A2ImportIT extends A2BusinessFixture {
         assertThat(unsafe.path("code").intValue()).isEqualTo(1003);
         assertThat(unsafe.path("data").get(0).path("row").intValue()).isEqualTo(2);
         assertThat(unsafe.path("data").get(0).path("column").stringValue()).isEqualTo("物料名称");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE code=?", Long.class, f.materialCategoryCode() + "0008")).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE legacy_code=?", Long.class, f.materialCategoryCode() + "0008")).isZero();
     }
 
     @Test void staleRequestRightsCannotAuthorizeFinancialColumnsAndMissingLoginNeverStartsParsing() throws Exception {
@@ -119,7 +119,7 @@ class A2ImportIT extends A2BusinessFixture {
                 {"面料", f.materialPath(), f.materialCategoryCode() + "0009", "自购", "priced import", "米", 42.42}});
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> materials.importExcel(priced)).isInstanceOf(FieldPermissionDenied.class);
         assertThat(FieldPermissions.has(FieldPermissions.COST)).isTrue(); // Temporary current-rights context restored on failure.
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE code=?", Long.class, f.materialCategoryCode() + "0009")).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE legacy_code=?", Long.class, f.materialCategoryCode() + "0009")).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_import_receipt WHERE user_id=?", Long.class, importer.id())).isZero();
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
         TrackingFile anonymous = materialFile(f, f.materialCategoryCode() + "0010", "anonymous import");
@@ -167,7 +167,7 @@ class A2ImportIT extends A2BusinessFixture {
                     {"面料", f.materialPath(), f.materialCategoryCode() + "0007", "自购", marker, "米"}});
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> materials.importExcel(file)).isInstanceOf(org.springframework.dao.DataAccessException.class);
             file.assertOutside();
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE code IN (?,?)", Long.class,
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material WHERE legacy_code IN (?,?)", Long.class,
                     f.materialCategoryCode() + "0006", f.materialCategoryCode() + "0007")).isZero();
             assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_import_receipt WHERE user_id=?", Long.class, admin.id())).isZero();
         } finally { jdbc.execute("DROP TRIGGER " + marker + " ON bas_material"); jdbc.execute("DROP FUNCTION " + function + "()"); }

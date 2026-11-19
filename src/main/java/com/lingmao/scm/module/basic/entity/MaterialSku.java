@@ -25,6 +25,10 @@ public class MaterialSku extends AuditEntity {
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private String code;
 
+    /** 领猫编码：从领猫导入的 SKU 原来的编码，只做对应（RFC 012 §4.2）；只有导入时写 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private String legacyCode;
+
     /** 无色物料为空 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Long colorId;

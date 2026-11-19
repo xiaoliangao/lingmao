@@ -41,9 +41,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.Function;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -79,7 +77,7 @@ public class MaterialImport {
             "创建人", "创建时间", "最后操作人", "最后操作时间"};
     /** 领猫"物料信息"里进 legacy_attrs 的列，有值才存 */
     private static final String[] MATERIAL_LEGACY = {"产地", "经缩", "纬缩", "安全库存", "战略备料", "卷重", "纸筒", "空差",
-            "空差比", "标签", "面料功能", "是否带吊牌", "其他价格", "倍率", "洗色"};
+            "空差比", "标签", "其他价格", "倍率", "洗色"};
     private static final String[] SKU_IGNORED = {"图片", "年份", "季节", "单位", "类型", "分类", "经缩", "纬缩", "成本价",
             "物料销售价", "供应商编号", "供应商", "供应商电话", "物料成分", "SKU销售价", "物料备注",
             "创建人", "创建时间", "最后操作人", "最后操作时间"};
@@ -129,6 +127,9 @@ public class MaterialImport {
         private String composition;
         private String remark;
         private String texture;
+        /** 面料功能、是否带吊牌：11-18 以前进 legacy_attrs，RFC 012 §5.1 起是正式字段 */
+        private String fabricFunction;
+        private String withTag;
         private String purchaseUnit;
         private BigDecimal conversionFactor;
         private BigDecimal minPackQty;
@@ -224,6 +225,8 @@ public class MaterialImport {
             row.setComposition(m.getComposition());
             row.setRemark(m.getRemark());
             row.setTexture(m.getTexture());
+            row.setFabricFunction(m.getFabricFunction());
+            row.setWithTag(m.getWithTag() == null ? null : m.getWithTag() ? "是" : "否");
             row.setPurchaseUnit(m.getPurchaseUnit());
             row.setConversionFactor(m.getConversionFactor());
             row.setMinPackQty(m.getMinPackQty());
@@ -324,7 +327,7 @@ public class MaterialImport {
     private void checkMaterials(ExcelImport<MaterialRow> sheet, Plan plan) {
         sheet.checkUnique(MaterialRow::getCode, "物料编码");
         List<ExcelImport.Line<MaterialRow>> lines = sheet.lines();
-        Set<String> taken = existingMaterialCodes(lines.stream().map(l -> l.data().getCode()).filter(Objects::nonNull).toList());
+        Set<String> taken = existingLegacyCodes(lines.stream().map(l -> l.data().getCode()).filter(Objects::nonNull).toList());
         CategoryIndex categories = new CategoryIndex(materialCategoryMapper.selectList(null));
         List<DictOption> seasons = dictDataService.listByType(MaterialServiceImpl.SEASON_DICT);
         Map<String, SupplierBrief> suppliers = suppliersByCode(lines.stream().map(l -> l.data().getSupplierCode())
@@ -338,9 +341,10 @@ public class MaterialImport {
             int row = line.row();
             Material m = new Material();
             if (r.getCode() != null && taken.contains(r.getCode())) {
-                sheet.error(row, "物料编码", "物料编码 " + r.getCode() + " 已经有了：导入只新增。没用过的先在列表里删掉再导");
+                sheet.error(row, "物料编码", "领猫编码 " + r.getCode() + " 已经导过了：导入只新增。没用过的先在列表里删掉再导");
             }
-            m.setCode(r.getCode());
+            // 文件里的物料编码是领猫的，存成领猫编码；系统编码写库时按分类另发（甲方 11-18 答 Q05，RFC 012 §4.2）
+            m.setLegacyCode(r.getCode());
             m.setName(r.getName());
             m.setMaterialType(r.getMaterialType());
             m.setStockUnit(r.getStockUnit());
@@ -395,6 +399,20 @@ public class MaterialImport {
             m.setWeightGsm(zeroToNull(r.getWeightGsm()));
             m.setComposition(r.getComposition());
             m.setTexture(r.getTexture());
+            m.setFabricFunction(MaterialServiceImpl.FABRIC_TYPES.contains(r.getMaterialType()) ? r.getFabricFunction() : null);
+            if (r.getFabricFunction() != null && m.getFabricFunction() == null) {
+                legacy.put("面料功能", r.getFabricFunction());   // 不是面料、里料的照原样留着看，不丢
+            }
+            if (r.getWithTag() != null) {
+                m.setWithTag(switch (r.getWithTag()) {
+                    case "是" -> true;
+                    case "否" -> false;
+                    default -> {
+                        sheet.error(row, "是否带吊牌", "只认 是、否");
+                        yield null;
+                    }
+                });
+            }
             m.setSupplierItemNo(r.getSupplierItemNo());
             m.setRefPrice(zeroToNull(FieldPermissions.price(FieldPermissions.COST, null, r.getRefPrice())));
             m.setMoq(zeroToNull(r.getMoq()));
@@ -449,6 +467,8 @@ public class MaterialImport {
                 .filter(Objects::nonNull).distinct().toList());
         Map<String, Integer> comboRow = new HashMap<>();
         Map<String, Integer> codeRow = new HashMap<>();
+        /** 领猫 SKU 编码 → 行；0 = 物料的默认 SKU（领猫编码 = 物料的领猫编码） */
+        Map<String, Integer> legacyRow = new HashMap<>();
         Set<String> notedColorNames = new HashSet<>();
 
         for (ExcelImport.Line<SkuRow> line : lines) {
@@ -475,9 +495,12 @@ public class MaterialImport {
                 planColor(colorCode, r.getColorName(), existingColors, plan, sheet, row, notedColorNames);
             }
             String specCode = r.getSpecCode() != null ? r.getSpecCode() : SkuCodes.specCodeOf(r.getSpec());
-            String code = r.getCode() != null ? r.getCode() : SkuCodes.compose(r.getMaterialCode(), colorCode, specCode);
+            // 系统的 SKU 码 = 新发的物料编码-颜色-规格，写库时才拼；这里按分类码 + 4 位估长度
+            MaterialCategory category = plan.categoryOf.get(r.getMaterialCode());
+            String code = SkuCodes.compose(category == null ? r.getMaterialCode() : category.getCode() + "0".repeat(MaterialServiceImpl.CODE_WIDTH),
+                    colorCode, specCode);
             if (code.length() > 64) {
-                sheet.error(row, "物料SKU编码", "拼出来的 SKU 码 " + code + " 超过 64 位，请在「物料SKU编码」里填一个");
+                sheet.error(row, "规格编号", "拼出来的 SKU 码 " + code + " 超过 64 位：规格编号短一点");
             }
             if (specCode != null && specCode.length() > 16) {
                 sheet.error(row, "规格编号", "规格编号最多 16 位");
@@ -486,13 +509,12 @@ public class MaterialImport {
             if (firstCombo != null) {
                 sheet.error(row, null, "和第 " + firstCombo + " 行是同一个物料的同一个颜色、规格");
             }
-            if (r.getCode() == null) {
-                Integer first = codeRow.putIfAbsent(code, row);
-                if (first != null) {
-                    sheet.error(row, "物料SKU编码", "拼出来的 SKU 码 " + code + " 和第 " + first + " 行重复");
-                }
-            } else {
-                codeRow.putIfAbsent(code, row);
+            Integer firstCode = codeRow.putIfAbsent(r.getMaterialCode() + "|" + SkuCodes.compose("", colorCode, specCode), row);
+            if (firstCode != null && firstCombo == null) {
+                sheet.error(row, "规格编号", "和第 " + firstCode + " 行拼出来的 SKU 码一样：改一个规格编号");
+            }
+            if (r.getCode() != null) {
+                legacyRow.putIfAbsent(r.getCode(), row);
             }
             if (r.getWidthCm() != null && !sameNumber(zeroToNull(r.getWidthCm()), material.getWidthCm())) {
                 sheet.note(row, "门幅", "和「" + MATERIAL_SHEET + "」里的门幅不一样，以物料信息的为准");
@@ -502,7 +524,7 @@ public class MaterialImport {
             }
 
             MaterialSku sku = new MaterialSku();
-            sku.setCode(code);
+            sku.setLegacyCode(r.getCode());
             sku.setSpec(r.getSpec());
             sku.setSpecCode(specCode);
             sku.setSupplierColorNo(r.getSupplierColorNo());
@@ -515,36 +537,35 @@ public class MaterialImport {
             plan.skus.computeIfAbsent(r.getMaterialCode(), k -> new ArrayList<>()).add(new PlannedSku(sku, colorCode));
         }
 
-        // 没有 SKU 行的物料：建一个不带颜色、规格的，码 = 物料编码
+        // 没有 SKU 行的物料：建一个不带颜色、规格的，系统码 = 物料编码，领猫编码 = 物料的领猫编码
         for (Map.Entry<String, Material> e : plan.materials.entrySet()) {
             if (!plan.skus.containsKey(e.getKey())) {
                 MaterialSku sku = new MaterialSku();
-                sku.setCode(e.getKey());
+                sku.setLegacyCode(e.getKey());
                 sku.setSafetyStock(zeroToNull(plan.rowOf.get(e.getKey()).data().getSafetyStock()));
                 sku.setStatus(Statuses.ENABLED);
                 plan.skus.put(e.getKey(), new ArrayList<>(List.of(new PlannedSku(sku, null))));
-                Integer first = codeRow.putIfAbsent(e.getKey(), -1);
+                Integer first = legacyRow.putIfAbsent(e.getKey(), 0);
                 if (first != null && first > 0) {
-                    sheet.error(first, "物料SKU编码", "SKU 码 " + e.getKey() + " 和物料 " + e.getKey() + " 的默认 SKU 重复："
-                            + "这个物料在「" + SKU_SHEET + "」里没有行，系统给它建一个码等于物料编码的 SKU");
+                    sheet.error(first, "物料SKU编码", "SKU 编码 " + e.getKey() + " 和物料 " + e.getKey() + " 的默认 SKU 重复："
+                            + "这个物料在「" + SKU_SHEET + "」里没有行，系统给它建一个领猫编码等于物料编码的 SKU");
                 }
             }
         }
 
-        Set<String> takenSkuCodes = existingSkuCodes(codeRow.keySet());
-        if (!takenSkuCodes.isEmpty()) {
-            codeRow.forEach((code, row) -> {
-                if (takenSkuCodes.contains(code)) {
-                    if (row > 0) {
-                        sheet.error(row, "物料SKU编码", "SKU 码 " + code + " 已经有了：导入只新增");
-                    } else {
-                        ExcelImport.Line<MaterialRow> materialLine = plan.rowOf.get(code);
-                        sheet.error(materialLine == null ? 0 : materialLine.row(), null, "这个物料在「" + SKU_SHEET
-                                + "」里没有行，默认 SKU 码 " + code + " 已经被别的 SKU 用了：请在 SKU 表里给它填一行");
-                    }
-                }
-            });
-        }
+        Set<String> takenLegacy = existingSkuLegacyCodes(legacyRow.keySet());
+        legacyRow.forEach((code, row) -> {
+            if (!takenLegacy.contains(code)) {
+                return;
+            }
+            if (row > 0) {
+                sheet.error(row, "物料SKU编码", "领猫 SKU 编码 " + code + " 已经导过了：导入只新增");
+            } else {
+                ExcelImport.Line<MaterialRow> materialLine = plan.rowOf.get(code);
+                sheet.error(materialLine == null ? 0 : materialLine.row(), null, "这个物料在「" + SKU_SHEET
+                        + "」里没有行，默认 SKU 的领猫编码 " + code + " 已经被别的 SKU 用了：请在 SKU 表里给它填一行");
+            }
+        });
     }
 
     /**
@@ -647,29 +668,25 @@ public class MaterialImport {
         }
     }
 
-    /** 写库：先建颜色，再一个个建物料（要 id）和它的 SKU，最后推流水号 */
+    /**
+     * 写库：先建颜色，再一个个建物料（要 id）和它的 SKU。系统编码按分类码 + 流水另发，和新建的一样（RFC 012 §4.2），
+     * SKU 码照新编码拼；领猫的编码存在 legacy_code 里
+     */
     private void write(Plan plan) {
         plan.newColors.forEach(colorMapper::insert);
-        Map<String, Integer> maxSeq = new TreeMap<>();
         for (Map.Entry<String, Material> e : plan.materials.entrySet()) {
             Material m = e.getValue();
+            m.setCode(MaterialServiceImpl.nextCode(serialNoGenerator, materialMapper, plan.categoryOf.get(e.getKey()).getCode()));
             materialMapper.insert(m);
             for (PlannedSku planned : plan.skus.getOrDefault(e.getKey(), List.of())) {
                 MaterialSku sku = planned.sku();
                 sku.setMaterialId(m.getId());
                 sku.setColorId(planned.colorCode() == null ? null : plan.colors.get(planned.colorCode()).getId());
+                sku.setCode(SkuCodes.compose(m.getCode(), planned.colorCode(), sku.getSpecCode()));
                 materialSkuMapper.insert(sku);
             }
             docLogService.add(BizType.MATERIAL, m.getId(), "import", null);
-            MaterialCategory category = plan.categoryOf.get(e.getKey());
-            Matcher matcher = Pattern.compile("^" + Pattern.quote(category.getCode()) + "(\\d{" + MaterialServiceImpl.CODE_WIDTH + "})$")
-                    .matcher(m.getCode());
-            if (matcher.matches()) {
-                maxSeq.merge(category.getCode(), Integer.parseInt(matcher.group(1)), Math::max);
-            }
         }
-        // 领猫的老编码照用；按分类码推到已用的最大号，之后新建的从下一个号开始，不撞（RFC 003 §7.1）
-        maxSeq.forEach(serialNoGenerator::raiseTo);
     }
 
     // ---------- 列定义 ----------
@@ -686,7 +703,7 @@ public class MaterialImport {
                 ExcelColumn.text("季节", MaterialRow::getSeason, MaterialRow::setSeason).maxLength(64)
                         .note("填字典「季节」里的名称，「夏季」也认"),
                 ExcelColumn.text("物料编码", MaterialRow::getCode, MaterialRow::setCode).required().code().maxLength(32)
-                        .example("ML0001").note("照用领猫的编码；已经有的不导"),
+                        .example("ML0001").note("领猫的编码：存成「领猫编码」，系统按分类另发编码；导过的不再导"),
                 ExcelColumn.text("供应商货号", MaterialRow::getSupplierItemNo, MaterialRow::setSupplierItemNo).maxLength(64),
                 ExcelColumn.text("物料来源", MaterialRow::getSource, MaterialRow::setSource).maxLength(32)
                         .note("自购 / 厂购 / 客供，不填 = 自购"),
@@ -714,6 +731,9 @@ public class MaterialImport {
                 ExcelColumn.text("物料成分", MaterialRow::getComposition, MaterialRow::setComposition).maxLength(255),
                 ExcelColumn.text("备注", MaterialRow::getRemark, MaterialRow::setRemark).maxLength(500),
                 ExcelColumn.text("纹理", MaterialRow::getTexture, MaterialRow::setTexture).maxLength(64),
+                ExcelColumn.text("面料功能", MaterialRow::getFabricFunction, MaterialRow::setFabricFunction).maxLength(255)
+                        .note("面料、里料才存；别的类型的留在附加属性里"),
+                ExcelColumn.text("是否带吊牌", MaterialRow::getWithTag, MaterialRow::setWithTag).maxLength(8).note("是 / 否，不填 = 没填"),
                 ExcelColumn.choice("采购单位", units, MaterialRow::getPurchaseUnit, MaterialRow::setPurchaseUnit)
                         .note("领猫没有这一列；不填 = 单位"),
                 ExcelColumn.decimal("换算系数", 6, MaterialRow::getConversionFactor, MaterialRow::setConversionFactor)
@@ -735,7 +755,7 @@ public class MaterialImport {
                         .note("对「物料信息」里的物料编码"),
                 ExcelColumn.text("物料名称", SkuRow::getMaterialName, SkuRow::setMaterialName).maxLength(200).note("只用来核对"),
                 ExcelColumn.text("物料SKU编码", SkuRow::getCode, SkuRow::setCode).code().maxLength(64)
-                        .example("ML0001-KQ").note("照用领猫的；不填按 物料编码-颜色编码-规格编号 拼"),
+                        .example("ML0001-KQ").note("领猫的 SKU 编码，存成「领猫编码」；系统的 SKU 码按新物料编码-颜色编码-规格编号拼"),
                 ExcelColumn.text("颜色编码", SkuRow::getColorCode, SkuRow::setColorCode).code().maxLength(32)
                         .note("按编码对系统里的颜色；没有的按编码 + 颜色名称新建"),
                 ExcelColumn.text("颜色名称", SkuRow::getColorName, SkuRow::setColorName).maxLength(32),
@@ -854,21 +874,22 @@ public class MaterialImport {
         return parent == null ? category.getName() : parent.getName() + ">" + category.getName();
     }
 
-    private Set<String> existingMaterialCodes(Collection<String> codes) {
+    /** 已经导过的领猫编码 */
+    private Set<String> existingLegacyCodes(Collection<String> codes) {
         if (codes.isEmpty()) {
             return Set.of();
         }
-        return materialMapper.selectList(new LambdaQueryWrapper<Material>().select(Material::getCode).in(Material::getCode, codes))
-                .stream().map(Material::getCode).collect(Collectors.toSet());
+        return materialMapper.selectList(new LambdaQueryWrapper<Material>().select(Material::getLegacyCode).in(Material::getLegacyCode, codes))
+                .stream().map(Material::getLegacyCode).collect(Collectors.toSet());
     }
 
-    private Set<String> existingSkuCodes(Collection<String> codes) {
+    private Set<String> existingSkuLegacyCodes(Collection<String> codes) {
         if (codes.isEmpty()) {
             return Set.of();
         }
-        return materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>().select(MaterialSku::getCode)
-                        .in(MaterialSku::getCode, codes))
-                .stream().map(MaterialSku::getCode).collect(Collectors.toSet());
+        return materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>().select(MaterialSku::getLegacyCode)
+                        .in(MaterialSku::getLegacyCode, codes))
+                .stream().map(MaterialSku::getLegacyCode).collect(Collectors.toSet());
     }
 
     private Map<String, Color> colorsByCode(Collection<String> codes) {

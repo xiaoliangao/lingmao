@@ -44,19 +44,21 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /** 领猫两张表能导；表头不认识报错；分类对不上整批不导；颜色没有就建、进提示；客供改成自购、进提示（RFC 003 §9、§16） */
 @ExtendWith(MockitoExtension.class)
 class MaterialImportTest {
 
     private static final String[] MATERIAL_HEADERS = {"物料类型", "物料分类", "季节", "物料编码", "物料来源", "物料名称", "单位",
-            "门幅", "创建人", "产地"};
+            "门幅", "创建人", "产地", "面料功能", "是否带吊牌"};
     private static final String[] SKU_HEADERS = {"物料编码", "物料SKU编码", "颜色编码", "颜色名称", "规格名称"};
 
     @Mock
@@ -106,16 +108,18 @@ class MaterialImportTest {
     }
 
     /**
-     * 规则：领猫的"物料信息" + "物料信息SKU"能导。编码照用；三级路径对前两级、完整路径进附加属性；
-     * SKU 码不填按 物料编码-颜色编码 拼；没有 SKU 行的物料建一个码等于物料编码的 SKU；
-     * 颜色 ZQ 系统里没有，新建并进提示；客供按自购导、进提示；导完把分类 ML 的流水推到 12
+     * 规则：领猫的"物料信息" + "物料信息SKU"能导。领猫的编码存成领猫编码，系统编码按分类码 + 流水另发（RFC 012 §4.2），
+     * SKU 码照新编码拼，领猫的 SKU 编码存成 SKU 的领猫编码；三级路径对前两级、完整路径进附加属性；
+     * 没有 SKU 行的物料建一个码等于物料编码的 SKU；颜色 ZQ 系统里没有，新建并进提示；客供按自购导、进提示；
+     * 面料功能、是否带吊牌进正式字段
      */
     @Test
     void importFile_lingmaoTwoSheets() throws IOException {
         Map<String, Object[][]> sheets = new LinkedHashMap<>();
         sheets.put("物料信息", new Object[][]{MATERIAL_HEADERS,
-                {"面料", "面料>梭织", "夏季", "ML0007", "自购", "全棉府绸", "米", 145, "张三", "广东"},
-                {"面料", "面料 > 梭织 > 府绸", null, "ML0012", "客供", "涤纶里布", "米", 0, null, null}});
+                {"面料", "面料>梭织", "夏季", "ML0007", "自购", "全棉府绸", "米", 145, "张三", "广东", "防水", "是"},
+                {"面料", "面料 > 梭织 > 府绸", null, "ML0012", "客供", "涤纶里布", "米", 0, null, null, null, null}});
+        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101", "ML0102");
         sheets.put("物料信息SKU", new Object[][]{SKU_HEADERS,
                 {"ML0007", "ML0007-KQ", "KQ", "卡其", null},
                 {"ML0007", null, "zq", "藏青", null}});
@@ -130,13 +134,18 @@ class MaterialImportTest {
         verify(materialMapper, times(2)).insert(materials.capture());
         Material first = materials.getAllValues().get(0);
         Material second = materials.getAllValues().get(1);
-        assertThat(first.getCode()).isEqualTo("ML0007");
+        assertThat(first.getCode()).isEqualTo("ML0101");
+        assertThat(first.getLegacyCode()).isEqualTo("ML0007");
+        assertThat(first.getFabricFunction()).isEqualTo("防水");
+        assertThat(first.getWithTag()).isTrue();
+        assertThat(second.getCode()).isEqualTo("ML0102");
+        assertThat(second.getWithTag()).isNull();
         assertThat(first.getCategoryId()).isEqualTo(5L);
         assertThat(first.getSeason()).isEqualTo("SUMMER");
         assertThat(first.getMaterialType()).isEqualTo("FABRIC");
         assertThat(first.getStockUnit()).isEqualTo("M");
         assertThat(first.getWidthCm()).isEqualByComparingTo("145");
-        assertThat(first.getLegacyAttrs()).containsEntry("产地", "广东");
+        assertThat(first.getLegacyAttrs()).containsEntry("产地", "广东").doesNotContainKeys("面料功能", "是否带吊牌");
         assertThat(second.getDefaultSource()).isEqualTo("PURCHASE");
         assertThat(second.getWidthCm()).isNull();                                  // 领猫没填导出 0，当没填
         assertThat(second.getLegacyAttrs()).containsEntry("物料分类", "面料 > 梭织 > 府绸");
@@ -146,11 +155,12 @@ class MaterialImportTest {
         assertThat(color.getValue().getCode()).isEqualTo("ZQ");
         ArgumentCaptor<MaterialSku> skus = ArgumentCaptor.captor();
         verify(materialSkuMapper, times(3)).insert(skus.capture());
-        assertThat(skus.getAllValues()).extracting(MaterialSku::getCode).containsExactly("ML0007-KQ", "ML0007-ZQ", "ML0012");
+        assertThat(skus.getAllValues()).extracting(MaterialSku::getCode).containsExactly("ML0101-KQ", "ML0101-ZQ", "ML0102");
+        assertThat(skus.getAllValues()).extracting(MaterialSku::getLegacyCode).containsExactly("ML0007-KQ", null, "ML0012");
         assertThat(skus.getAllValues().get(0).getColorId()).isEqualTo(11L);
         assertThat(skus.getAllValues().get(1).getColorId()).isEqualTo(color.getValue().getId());
         assertThat(skus.getAllValues().get(2).getColorId()).isNull();
-        verify(serialNoGenerator).raiseTo("ML", 12);
+        verify(serialNoGenerator, never()).raiseTo(any(), anyInt());
     }
 
     /**

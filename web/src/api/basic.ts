@@ -148,6 +148,9 @@ export interface MaterialForm {
   weightGsm?: number | null
   composition?: string | null
   texture?: string | null
+  /** 面料功能；物料类型不是面料、里料时后端不存 */
+  fabricFunction?: string | null
+  withTag?: boolean | null
   defaultSupplierId?: string | null
   supplierItemNo?: string | null
   refPrice?: number | null
