@@ -34,7 +34,10 @@ class DictData extends BaseEntity {
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
     private Boolean builtin;
 
-    /** 长一点的文字（尺寸部位的默认测量方法），第 3 批 设置 › 工艺标准 里填；字典页的保存不碰它 */
+    /**
+     * 一段文字，含义看类型的 text_label（物料类型的"物料清单谁填"：DEV / PROD，RFC 012 §3）。
+     * 类型没有 text_label 的字典页不编辑它；有的由 DictDataServiceImpl 单独写（整体覆盖不碰它）
+     */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private String textValue;
 }

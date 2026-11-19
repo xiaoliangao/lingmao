@@ -8,6 +8,8 @@ import BlankState from '@/components/BlankState.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useLatestRequest } from '@/composables/useLatestRequest'
+import { useDict } from '@/composables/useDict'
+import DictSelect from '@/components/DictSelect.vue'
 
 // ---------- 左边：字典类型 ----------
 const typeQuery = reactive({ page: 1, size: 20, code: '', name: '' })
@@ -98,7 +100,9 @@ async function loadData() {
 
 const dataDialog = ref(false)
 const dataEditingId = ref<string | null>(null)
-const dataForm = reactive({ label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined as number | undefined })
+const dataForm = reactive({ label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined as number | undefined, textValue: '' })
+/** 文字列从哪个字典选（物料类型的"物料清单谁填"从 bom_owner 选）；类型没有就是空字典，不发请求 */
+const textDict = useDict(() => currentType.value?.textDict ?? '')
 /** 正在编辑的是内置项：不能停用 */
 const dataBuiltin = ref(false)
 const dataGuard = useUnsavedChanges(dataForm, dataDialog)
@@ -107,13 +111,13 @@ function openDataForm(row?: DictData) {
   dataEditingId.value = row?.id ?? null
   dataBuiltin.value = row?.builtin ?? false
   Object.assign(dataForm, row
-    ? { label: row.label, value: row.value, sort: row.sort, status: row.status, remark: row.remark ?? '', numValue: row.numValue ?? undefined }
-    : { label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined })
+    ? { label: row.label, value: row.value, sort: row.sort, status: row.status, remark: row.remark ?? '', numValue: row.numValue ?? undefined, textValue: row.textValue ?? '' }
+    : { label: '', value: '', sort: 0, status: 1, remark: '', numValue: undefined, textValue: '' })
   dataDialog.value = true
 }
 
 async function saveData() {
-  const data = { ...dataForm, typeCode: currentType.value!.code, remark: dataForm.remark || null, numValue: dataForm.numValue ?? null }
+  const data = { ...dataForm, typeCode: currentType.value!.code, remark: dataForm.remark || null, numValue: dataForm.numValue ?? null, textValue: dataForm.textValue.trim() || null }
   if (dataEditingId.value === null) {
     await dictApi.createData(data)
   } else {
@@ -197,6 +201,9 @@ onMounted(loadTypes)
             <el-table-column prop="value" label="存储值" min-width="100" class-name="code" />
             <el-table-column v-if="currentType.numLabel" :label="currentType.numLabel" width="110" align="right" class-name="num">
               <template #default="{ row }">{{ row.numValue ?? '—' }}</template>
+            </el-table-column>
+            <el-table-column v-if="currentType.textLabel" :label="currentType.textLabel" width="120">
+              <template #default="{ row }">{{ row.textValue ? (currentType.textDict ? textDict.labelOf(row.textValue) : row.textValue) : '—' }}</template>
             </el-table-column>
             <el-table-column prop="sort" label="排序" width="70" align="right" class-name="num" />
             <el-table-column label="状态" width="84">
@@ -282,6 +289,10 @@ onMounted(loadTypes)
         </el-form-item>
         <el-form-item v-if="currentType?.numLabel" :label="currentType.numLabel">
           <el-input-number v-model="dataForm.numValue" :controls="false" placeholder="不填" />
+        </el-form-item>
+        <el-form-item v-if="currentType?.textLabel" :label="currentType.textLabel">
+          <DictSelect v-if="currentType.textDict" v-model="dataForm.textValue" :type="currentType.textDict" clearable placeholder="不填" />
+          <el-input v-else v-model="dataForm.textValue" maxlength="500" placeholder="不填" />
         </el-form-item>
         <el-form-item label="备注" class="full">
           <el-input v-model="dataForm.remark" type="textarea" />

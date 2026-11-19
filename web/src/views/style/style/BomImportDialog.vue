@@ -12,6 +12,7 @@ import type { StylePickRow } from '@/types/style'
 import type { FileVO } from '@/types/system'
 import { BOM_IMPORT_STATUS, BOM_SKU_MODE, type BomImport, type BomImportRow } from '@/types/techpack'
 import { MAX_UPLOAD_SIZE } from '@/utils/request'
+import { BOM_OWNER_SHORT, useBomOwner } from './bomOwner'
 
 /** 加进物料清单的东西：行（和 bomItems 一个样子，没有 id）、替换还是接在后面、加工费、运费、导入的文件（挂到工艺单页签） */
 export interface BomImportApply {
@@ -31,12 +32,20 @@ export interface BomImportApply {
  *   <BomImportDialog ref="importer" :pack-id="detail.id" :existing="draft.bomItems.length" :can-see-cost="canSeeCost" @apply="onImport" />
  *   importer.value?.open()
  *
- * 挑了物料、换了 sheet 都带着原文件重新调一次；已经改过的行物料没变就留着改过的
+ * 挑了物料、换了 sheet 都带着原文件重新调一次；已经改过的行物料没变就留着改过的。
+ * 只能填一块的人（RFC 012 §3.2）：另一块的行标"归生产填，不导"，挑物料也只列自己那块的类型；existing 只算自己那块的行
  */
 const props = defineProps<{ packId: string; existing: number; canSeeCost: boolean }>()
 const emit = defineEmits<{ apply: [payload: BomImportApply] }>()
 
 const uploads = useUploadScope()
+const { ownerOf, canFill, pickParams } = useBomOwner()
+/** 认出来了、但归另一块填的行：不导 */
+function othersRow(r: BomImportRow): string | null {
+  if (!r.item) return null
+  const owner = ownerOf(r.item.materialType)
+  return canFill(owner) ? null : `归${BOM_OWNER_SHORT[owner]}填，不导`
+}
 
 const visible = ref(false)
 const loading = ref(false)
@@ -140,7 +149,8 @@ function toggleSkip(line: number) {
 }
 
 // ---------- 加进物料清单 ----------
-const importable = computed(() => rows.value.filter((r) => !skipped.value.has(r.line) && r.item))
+const importable = computed(() => rows.value.filter((r) => !skipped.value.has(r.line) && r.item && !othersRow(r)))
+const others = computed(() => rows.value.filter((r) => !skipped.value.has(r.line) && othersRow(r)).length)
 const blocked = computed(() => rows.value.filter((r) => !skipped.value.has(r.line) && !r.item).length)
 
 async function apply() {
@@ -250,6 +260,7 @@ function skuText(item: NonNullable<BomImportRow['item']>) {
         <el-table-column label="状态" width="96">
           <template #default="{ row }">
             <StatusTag v-if="skipped.has(row.line)" tone="off">不导</StatusTag>
+            <StatusTag v-else-if="othersRow(row as BomImportRow)" tone="off" :title="othersRow(row as BomImportRow)!">{{ othersRow(row as BomImportRow) }}</StatusTag>
             <StatusTag v-else :tone="BOM_IMPORT_STATUS[(row as BomImportRow).status].tone">{{ BOM_IMPORT_STATUS[(row as BomImportRow).status].label }}</StatusTag>
           </template>
         </el-table-column>
@@ -274,11 +285,12 @@ function skuText(item: NonNullable<BomImportRow['item']>) {
 
     <template #footer>
       <span v-if="blocked" class="warn-txt">还有 {{ blocked }} 行没认出来：挑物料或者点「不导」；物料库里没有的先到物料库建</span>
+      <span v-else-if="others" class="dim">另有 {{ others }} 行归别人填，不导</span>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :disabled="!importable.length || blocked > 0" :loading="applying" @click="apply">加进物料清单（{{ importable.length }} 行）</el-button>
     </template>
 
-    <DataPick v-model="picking" kind="sku" single @pick="onPicked" />
+    <DataPick v-model="picking" kind="sku" single :params="pickParams" @pick="onPicked" />
   </el-dialog>
 </template>
 

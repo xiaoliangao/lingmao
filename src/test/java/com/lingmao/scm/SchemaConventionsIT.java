@@ -211,7 +211,10 @@ class SchemaConventionsIT {
                 .containsExactlyInAnyOrder("style_source:CUSTOMER_SAMPLE", "material_type:FABRIC",
                         "material_type:LINING", "supplier_category:GARMENT", "supplier_category:PROCESSOR",
                         "order_type:CUSTOMER", "process_mode:FULL", "prod_node:CUT", "cert_type:LICENSE",
-                        "stock_in_reason:OPENING", "currency:CNY", "unit:PIECE", "style_source:OWN");
+                        "stock_in_reason:OPENING", "currency:CNY", "unit:PIECE", "style_source:OWN",
+                        "bom_owner:DEV", "bom_owner:PROD");   // V42 物料清单谁填（RFC 012 §3）
+        assertThat(jdbc.queryForList("SELECT value FROM sys_dict_data WHERE type_code = 'material_type' AND text_value = 'PROD' "
+                + "AND deleted = false", String.class)).as("物料清单归生产填的物料类型").containsExactly("PACKING");
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_dict_data WHERE type_code = 'brand'", Integer.class))
                 .isZero();
@@ -256,6 +259,9 @@ class SchemaConventionsIT {
     private static final Set<String> PACK_EDIT = union(PACK_VIEW, Set.of("techpack:pack:add", "techpack:pack:edit",
             "techpack:pack:remove", "techpack:pack:publish"));
     private static final Set<String> COST = Set.of("techpack:cost:query");
+    /** RFC 012 §3（V42）：物料清单研发填面辅料、生产填耗材；生产跟单为此多了"编辑" */
+    private static final Set<String> BOM_DEV = Set.of("techpack:bom:dev");
+    private static final Set<String> BOM_PROD = Set.of("techpack:pack:edit", "techpack:bom:prod");
     private static final Set<String> ORDER_VIEW = Set.of("order:order:list", "order:order:export");
     private static final Set<String> ORDER_EDIT = union(ORDER_VIEW, Set.of("order:order:add", "order:order:edit",
             "order:order:remove", "order:order:submit", "order:order:void", "order:order:import"));
@@ -287,14 +293,14 @@ class SchemaConventionsIT {
     static {
         // 每行前半是第 2 批（V16），后半是第 3、4 批（V17）
         ROLE_PERMS.put("dev", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
-                PACK_EDIT, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
+                PACK_EDIT, BOM_DEV, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("dev_lead", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
-                PACK_EDIT, COST, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
+                PACK_EDIT, BOM_DEV, COST, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("sales", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
                 PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, ORDER_PRICE, PURCHASE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("merchandiser", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:process:edit"),
-                PACK_VIEW, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE));
+                PACK_VIEW, BOM_PROD, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE));
         ROLE_PERMS.put("buyer", union(BASICS_VIEW, MATERIAL_EDIT, SUPPLIER_EDIT, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:material:edit"),
                 PACK_VIEW, COST, ORDER_VIEW, CHANGE_VIEW, PURCHASE_EDIT, PURCHASE_CLOSE, STOCK_VIEW, COUNT_VIEW,

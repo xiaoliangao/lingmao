@@ -46,7 +46,7 @@ public class DictCache {
         if (typeCode == null || !typeCode.matches("[A-Za-z0-9_.:-]{1,64}")) {
             throw new com.lingmao.scm.common.exception.BizException(400, "字典类型格式不正确");
         }
-        return namespace.sharedKey("dict-v3", typeCode);
+        return namespace.sharedKey("dict-v4", typeCode);   // v4：选项多了 textValue（V42），旧格式的缓存不读
     }
 
     /**

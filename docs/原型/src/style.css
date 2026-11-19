@@ -1352,3 +1352,7 @@ body.printing .pk-card, body.printing .toasts { z-index: 301; } /* 打印预览�
 .xls td { min-width: 60px; max-width: 460px; white-space: pre-wrap; color: var(--fg); }
 .xls thead th { position: sticky; top: 0; background: var(--bg-sunken); color: var(--fg-2); font-weight: 400; }
 .xls tbody th { background: var(--bg-sunken); color: var(--fg-2); font-weight: 400; text-align: right; }
+
+/* 物料清单分两块：面辅料（研发填）、耗材（生产填），RFC 012 §3 */
+.tbl tr.bomgrp td { background: var(--bg-subtle); padding-top: 8px; padding-bottom: 8px; }
+.tbl tr.bomgrp .dim { margin-left: 6px; font-size: 12px; }

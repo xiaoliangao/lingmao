@@ -77,6 +77,10 @@ export interface DictType {
   createTime: string
   /** 数值列叫什么（"备料比 %""默认天数"）；空 = 这个字典不用数值 */
   numLabel: string | null
+  /** 文字列叫什么（物料类型的"物料清单谁填"）；空 = 字典页不编辑文字。和 textDict 一样由迁移设，页面上改不了 */
+  textLabel: string | null
+  /** 文字从哪个字典里选（如 bom_owner）；空 = 随便填 */
+  textDict: string | null
 }
 
 export interface DictData {
@@ -89,6 +93,8 @@ export interface DictData {
   remark: string | null
   createTime: string
   numValue: number | null
+  /** 文字，含义看类型的 textLabel */
+  textValue: string | null
   /** 内置项：程序按 value 认它，不能删、不能停用 */
   builtin: boolean
   /** 贸易代工用的值：代工没打开时下拉里没有它 */
@@ -101,6 +107,8 @@ export interface DictOption {
   value: string
   /** 1 启用 0 停用 */
   status: number
+  /** 文字，含义看字典类型的 textLabel（物料类型的"物料清单谁填"：DEV / PROD）；大多数字典没有 */
+  textValue?: string | null
 }
 
 /** 选人下拉的一项（GET /api/users/options） */

@@ -11,12 +11,12 @@ import java.time.OffsetDateTime;
  * builtin 的不能删、不能停用；value 建好都不能改（RFC 003 §4.2）
  */
 public record DictDataVO(Long id, String typeCode, String label, String value, Integer sort, Integer status, String remark,
-                         BigDecimal numValue, Boolean builtin, boolean trade,
+                         BigDecimal numValue, String textValue, Boolean builtin, boolean trade,
                          @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
                          OffsetDateTime createTime) {
 
     public static DictDataVO of(DictData d, boolean trade) {
         return new DictDataVO(d.getId(), d.getTypeCode(), d.getLabel(), d.getValue(), d.getSort(), d.getStatus(), d.getRemark(),
-                d.getNumValue(), Boolean.TRUE.equals(d.getBuiltin()), trade, d.getCreateTime());
+                d.getNumValue(), d.getTextValue(), Boolean.TRUE.equals(d.getBuiltin()), trade, d.getCreateTime());
     }
 }

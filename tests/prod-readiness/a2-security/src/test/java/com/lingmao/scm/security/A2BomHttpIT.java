@@ -112,7 +112,7 @@ class A2BomHttpIT extends A2BusinessFixture {
     }
 
     private Account editor(Fixture f) throws Exception {
-        return custom(f.company(), "ALL", "techpack:pack:list", "techpack:pack:add", "techpack:pack:edit");
+        return custom(f.company(), "ALL", "techpack:pack:list", "techpack:pack:add", "techpack:pack:edit", "techpack:bom:dev", "techpack:bom:prod");
     }
     private long revise(Fixture f, Account editor) throws Exception {
         return id(ok(editor, "POST", path(f.pack()) + "/revise", Map.of(), null));

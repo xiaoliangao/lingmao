@@ -8,12 +8,14 @@ import com.lingmao.scm.module.system.cache.DictCache;
 import com.lingmao.scm.module.system.dto.DictDataSaveReq;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
+import com.lingmao.scm.module.system.entity.DictType;
 import com.lingmao.scm.module.system.mapper.DictDataMapper;
 import com.lingmao.scm.module.system.mapper.DictTypeMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -59,7 +61,7 @@ class DictDataServiceImplTest {
     /** 规则：字典类型不存在，不能往它下面加数据 */
     @Test
     void create_typeNotExists_throwsAndNotInsert() {
-        when(dictTypeMapper.exists(any())).thenReturn(false);
+        when(dictTypeMapper.selectOne(any())).thenReturn(null);
 
         assertThatThrownBy(() -> dictDataService.create(req("season", "1")))
                 .isInstanceOf(BizException.class)
@@ -70,7 +72,7 @@ class DictDataServiceImplTest {
     /** 规则：同一类型下 value 不能重复 */
     @Test
     void create_valueExists_throwsAndNotInsert() {
-        when(dictTypeMapper.exists(any())).thenReturn(true);
+        when(dictTypeMapper.selectOne(any())).thenReturn(type("season", null, null));
         when(dictDataMapper.exists(any())).thenReturn(true);
 
         assertThatThrownBy(() -> dictDataService.create(req("season", "1")))
@@ -82,7 +84,7 @@ class DictDataServiceImplTest {
     /** 规则：两项检查都通过才插入，返回数据库生成的 id */
     @Test
     void create_ok_returnsGeneratedId() {
-        when(dictTypeMapper.exists(any())).thenReturn(true);
+        when(dictTypeMapper.selectOne(any())).thenReturn(type("season", null, null));
         when(dictDataMapper.exists(any())).thenReturn(false);
         doAnswer(inv -> {
             DictData entity = inv.getArgument(0);
@@ -176,6 +178,7 @@ class DictDataServiceImplTest {
     @Test
     void update_builtinLabel_savedAndEvicts() {
         when(dictDataMapper.selectById(5L)).thenReturn(item(5L, "unit", "PIECE", true));
+        when(dictTypeMapper.selectOne(any())).thenReturn(type("unit", null, null));
         DictDataSaveReq req = req("unit", "PIECE");
         req.setLabel("件（成衣）");
 
@@ -216,6 +219,42 @@ class DictDataServiceImplTest {
                 new DictOption("自主开发", "OWN", 1), new DictOption("客户来样", "CUSTOMER_SAMPLE", 1)));
 
         assertThat(dictDataService.listByType("style_source")).extracting(DictOption::value).containsExactly("OWN");
+    }
+
+    /**
+     * 规则（RFC 012 §3）：类型有 text_dict 的，文字只能是那个字典里启用的值（物料类型的"物料清单谁填"只收研发、生产）；
+     * 类型没有 text_label 的，传了文字也不存
+     */
+    @Test
+    void textValue_mustComeFromTextDict() {
+        when(dictTypeMapper.selectOne(any())).thenReturn(type("material_type", "物料清单谁填", "bom_owner"));
+        when(dictCache.getOrLoad(eq("bom_owner"), any())).thenReturn(List.of(new DictOption("研发", "DEV", 1), new DictOption("生产", "PROD", 1)));
+        DictDataSaveReq wrong = req("material_type", "THREAD");
+        wrong.setTextValue("耗材");
+        assertThatThrownBy(() -> dictDataService.create(wrong)).isInstanceOf(BizException.class).hasMessageContaining("「物料清单谁填」只能从字典里选");
+        verify(dictDataMapper, never()).insert(any(DictData.class));
+
+        DictDataSaveReq ok = req("material_type", "THREAD");
+        ok.setTextValue(" PROD ");
+        dictDataService.create(ok);
+        ArgumentCaptor<DictData> saved = ArgumentCaptor.captor();
+        verify(dictDataMapper).insert(saved.capture());
+        assertThat(saved.getValue().getTextValue()).isEqualTo("PROD");
+
+        when(dictTypeMapper.selectOne(any())).thenReturn(type("season", null, null));
+        DictDataSaveReq plain = req("season", "WINTER");
+        plain.setTextValue("随便写");
+        dictDataService.create(plain);
+        verify(dictDataMapper, org.mockito.Mockito.times(2)).insert(saved.capture());
+        assertThat(saved.getValue().getTextValue()).isNull();
+    }
+
+    private static DictType type(String code, String textLabel, String textDict) {
+        DictType t = new DictType();
+        t.setCode(code);
+        t.setTextLabel(textLabel);
+        t.setTextDict(textDict);
+        return t;
     }
 
     private static DictData item(Long id, String typeCode, String value, boolean builtin) {

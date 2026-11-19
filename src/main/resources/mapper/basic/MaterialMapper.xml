@@ -136,6 +136,12 @@
         LEFT JOIN bas_color cl ON cl.id = k.color_id
         WHERE k.status = 1 AND m.status = 1
         <if test="q.categoryId != null">AND (m.category_id = #{q.categoryId} OR c.parent_id = #{q.categoryId})</if>
+        <if test="q.materialTypes != null and !q.materialTypes.isEmpty()">
+            AND m.material_type IN <foreach collection="q.materialTypes" item="t" open="(" separator="," close=")">#{t}</foreach>
+        </if>
+        <if test="q.excludeMaterialTypes != null and !q.excludeMaterialTypes.isEmpty()">
+            AND m.material_type NOT IN <foreach collection="q.excludeMaterialTypes" item="t" open="(" separator="," close=")">#{t}</foreach>
+        </if>
         ORDER BY m.code, k.code
     </select>
 

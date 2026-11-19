@@ -1359,6 +1359,10 @@ body.printing .pk-card, body.printing .toasts { z-index: 301; } /* 打印预览�
 .xls td { min-width: 60px; max-width: 460px; white-space: pre-wrap; color: var(--fg); }
 .xls thead th { position: sticky; top: 0; background: var(--bg-sunken); color: var(--fg-2); font-weight: 400; }
 .xls tbody th { background: var(--bg-sunken); color: var(--fg-2); font-weight: 400; text-align: right; }
+
+/* 物料清单分两块：面辅料（研发填）、耗材（生产填），RFC 012 §3 */
+.tbl tr.bomgrp td { background: var(--bg-subtle); padding-top: 8px; padding-bottom: 8px; }
+.tbl tr.bomgrp .dim { margin-left: 6px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -1901,6 +1905,11 @@ const tpLabor = (tp) => rnd(tp.labor ?? 0, 2)
 // 核价（资料包的「核价」页签、侧边栏「核价」列表、询价比价页都用它）：按基码用量算单件成本，分面料、辅料、加工费、其他费用四块。
 // 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有自购的计入，厂购的列出来标"含在加工价里"。加工费见 tpLabor
 const FABRIC_TYPES = ['面料', '里料']
+// 物料清单研发、生产分工（甲方 11-18 Q49 选 B，RFC 012 §3）：物料类型定这行归谁填，包材归生产（耗材），其余归研发（面辅料）。
+// 哪些类型算耗材甲方还没定，真系统在设置 › 字典 › 物料类型里改
+const BOM_PROD_TYPES = ['包材']
+const BOM_OWNER_GROUPS = [{ owner: '研发', title: '面辅料（研发填）' }, { owner: '生产', title: '耗材（生产填）' }]
+const bomOwnerOf = (r) => (BOM_PROD_TYPES.includes(mat(r.mat)?.type) ? '生产' : '研发')
 function tpCost(tp) {
   const g = style(tp.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g)
   const rows = tp.bom.map((r, i) => ({ r, i, kind: FABRIC_TYPES.includes(mat(r.mat)?.type) ? '面料' : '辅料', use: rowMidUse(r, sizes, base), price: r.price ?? rowRefPrice(r),
@@ -3855,7 +3864,7 @@ expose({
   db, nav, go, ui, fd, fq, fm, fpct, sum, rnd, daysLeft, addDays, clock, TRADE, DUE_T,
   colorOf, colorName, sizesOf, baseSizeOf, catOf, sup, supName, cust, custName, ownerName, wh, whName, mat, matOfSku, skuOf, skuName, skuPrice, unitOf, me,
   style, styleName, userName, order, purchase, production, stockDoc, mrp, stockQty,
-  can, actionsOf, tpsOf, activeTp, tpOf, tpState, rowSku, rowUse, rowCost, tpMaterialCost, tpLabor, unmatchedColors,
+  can, actionsOf, tpsOf, activeTp, tpOf, tpState, rowSku, rowUse, rowCost, tpMaterialCost, tpLabor, unmatchedColors, bomOwnerOf, BOM_OWNER_GROUPS,
   orderQty, orderAmt, orderStyles, orderSched, orderRet, scheduledQty, returnedQty, kitState, prodsOf, mrpsOf, describeChange,
   poQty, poAmt, poRecv, prodQty, prodRet, prodDef, prodAmt, prodRisk, expectDue, curNode, nodeState, issueState, stockDir,
   run, toast, ask, doAction, addStyleColor, orderLive, prodLive, isFactory, canUseSupplier, arrivals, issuePlan, toD,
@@ -6257,6 +6266,7 @@ comp('TechPack', {
     // 没有工艺单也能生效，问一句（RFC 011 §2.1）
     async function publish() {
       if (!tp.value.files.some((f) => f.cat === '工艺单') && !(await ask(`生效 ${tpName(tp.value)}`, '还没有工艺单，发工厂时没有文件可发。', '还是生效'))) { view.value = 'files'; return }
+      if (!tp.value.bom.some((r) => bomOwnerOf(r) === '生产') && !(await ask(`生效 ${tpName(tp.value)}`, '耗材（生产填）还没填。有的款确实没有耗材；生效以后要补得修订。', '还是生效'))) return
       if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效，可以下需求订单了`)
     }
     function create() { const t = createTechpack(p.code, [], null, ''); key.value = t.id; view.value = 'bom'; adding.value = true }
@@ -6339,7 +6349,9 @@ comp('TechPack', {
           <table class="tbl inset flat">
             <thead><tr><th v-if="edit" style="width:20px"></th><th style="width:28px">#</th><th>部位</th><th>物料</th><th>配色</th><th class="num">用量</th><th class="num">损耗</th><th>来源</th><th>供应商</th><th class="num">参考单价</th><th class="num">单件成本</th><th v-if="edit"></th></tr></thead>
             <tbody>
-              <template v-for="(r, i) in tp.bom" :key="i">
+              <template v-for="g in BOM_OWNER_GROUPS" :key="g.owner">
+              <tr class="bomgrp"><td :colspan="edit ? 12 : 10"><b>{{ g.title }}</b> <span class="dim">{{ tp.bom.filter((r) => bomOwnerOf(r) === g.owner).length }} 行</span></td></tr>
+              <template v-for="(r, i) in tp.bom" :key="g.owner + i"><template v-if="bomOwnerOf(r) === g.owner">
                 <tr class="link" :class="{ sel: cur && cur.i === i, dragover: drag.list === tp.bom && drag.over === i }" :draggable="edit" @dragstart="dragStart(tp.bom, i)" @dragover.prevent="dragOver(tp.bom, i)" @drop.prevent="dropAt(tp.bom, i)" @dragend="drag.list = null" @mouseenter="hover(i)" @click="open = open === i ? null : i">
                   <td v-if="edit" class="grip" title="按住拖动，调整顺序">⋮⋮</td>
                   <td class="dim">{{ i + 1 }}</td><td>{{ r.part }}</td>
@@ -6373,8 +6385,9 @@ comp('TechPack', {
                     <div v-else-if="r.note" class="mut">备注：{{ r.note }}</div>
                   </div>
                 </td></tr>
+              </template></template>
+              <tr v-if="!tp.bom.some((r) => bomOwnerOf(r) === g.owner)"><td :colspan="edit ? 12 : 10" class="empty">{{ g.owner === '研发' ? (edit ? '还没有面辅料：点「加一行」，或者从甲方的 BOM 表导入' : '这一版没有面辅料') : (edit ? '还没有耗材：生产跟单来填' : '还没有耗材') }}</td></tr>
               </template>
-              <tr v-if="!tp.bom.length"><td :colspan="edit ? 12 : 10" class="empty">{{ edit ? '还没有物料：点「加一行」，或者从甲方的 BOM 表导入' : '这一版没有物料' }}</td></tr>
             </tbody>
           </table>
           <div v-if="canSeeCost()" class="row" style="justify-content:flex-end;gap:20px;margin-top:12px" data-c="单件成本">
@@ -13051,6 +13064,7 @@ const FLOW_SECS = [
       '建款：款号默认 = 大类 + 建款日期 + 设计师编号 + 2 位流水，如 FS2611080701（非通勤裤、26-11-08 建、07 号设计师、当天第 1 款）；也能手填，系统查重。设计师编号在"设置 › 用户"里填，用过就锁定。选颜色和尺码组，一键生成 SKU。',
       '资料包（也叫生产 BOM）转大货后建：发给工厂、算料都按它。研发阶段不填物料清单（甲方 11-18 答复）。',
       '每一版资料包三个页签：物料清单（每行一种物料 SKU：各尺码用量、损耗、来源、按颜色配料）、工艺单、核价。点"生效"后只读，要改就"修订"出新版本，三块一起带过去。',
+      '物料清单分两块（甲方 11-18 选 B）：面辅料研发填，耗材生产跟单填，按物料类型分（现在包材算耗材，你们定了哪些算耗材再改）。同一份草稿两边填完再生效；生效时耗材空着会提醒一句，生效以后要补耗材也得修订。',
       '物料清单能从你们的 BOM 明细表导入（甲方 11-18）：选 Excel，系统按表头认列、按名称和规格对物料库，预览里改部位、用量；认不出的挑物料或者这行不导；导入不新建物料，物料库里没有的先到物料库建（甲方 11-18 答）。表下面的加工费、运费一起带进核价。导不了的照常手工加行。',
       '工艺单就是你们现在用的工艺单 Excel（甲方 11-18）：上传挂在这一版资料包上，页面里能预览、能下载，系统不拆里面的内容；纸样文件（.prj、.plt）也能挂在这里。发工厂就下载这份发微信。',
       '核价：面料、辅料按基码用量 × 单价，加上加工费（填一个数，旁边备注写清是什么价，如"清加工 38，半包 45"；没填按 0 算，甲方 11-18 答）和其他费用（印绣花、运费、包装）= 单件成本，旁边是吊牌价和倍率；厂购的料含在加工价里，不另算。款式有默认工厂、价格档案里有这家的包工包料价时，下面多一行「成品采购参考价」，只作参考，不计入单件成本。侧边栏「核价」按款列出来。要有看成本的权限。',

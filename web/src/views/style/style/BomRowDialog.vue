@@ -23,6 +23,7 @@ import {
 import { formatPrice } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+import { useBomOwner } from './bomOwner'
 const { canSeeCost } = useFieldAccess()
 
 /**
@@ -93,6 +94,8 @@ const materialSkus = ref<MaterialSku[]>([])
 /** 上次取到的默认值：单价旁边提示"合 xx 元/采购单位"用 */
 const lastDefault = ref<BomDefault | null>(null)
 const picking = ref(false)
+/** 只能填一块的人只列这一块的物料类型（RFC 012 §3.2） */
+const { pickParams } = useBomOwner()
 
 /** 客供只在 TRADE 开时有，一期按关（01 §4.4） */
 const SOURCE_OPTIONS = (Object.keys(MATERIAL_SOURCE_LABEL) as MaterialSource[]).filter((s) => s !== 'CUSTOMER_SUPPLIED')
@@ -434,7 +437,7 @@ function submit() {
     </template>
   </el-dialog>
 
-  <DataPick v-model="picking" kind="sku" single @pick="onPickMaterial" />
+  <DataPick v-model="picking" kind="sku" single :params="pickParams" @pick="onPickMaterial" />
 </template>
 
 <style scoped>

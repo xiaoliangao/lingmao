@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import ThumbImage from '@/components/ThumbImage.vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, h, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { techPackApi } from '@/api/techpack'
@@ -41,6 +41,7 @@ import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
 import BomImportDialog, { type BomImportApply } from './BomImportDialog.vue'
 import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
+import { BOM_OWNERS, BOM_OWNER_TITLE, useBomOwner, type BomOwner } from './bomOwner'
 import TechPackFiles from './TechPackFiles.vue'
 
 /**
@@ -110,6 +111,14 @@ const draft = reactive({
 })
 
 const editable = computed(() => detail.value?.actions.includes('edit') ?? false)
+const { ownerOf: bomOwnerOf, canFill: canFillBom, canFillAny: canFillBomAny, pickParams: bomPickParams } = useBomOwner()
+/** 物料清单分两块（RFC 012 §3）：研发填的面辅料、生产填的耗材，按物料类型分；没有这一块权限的只读 */
+const bomBlocks = computed(() => BOM_OWNERS.map((owner) => ({
+  owner,
+  title: BOM_OWNER_TITLE[owner],
+  rows: draft.bomItems.filter((b) => bomOwnerOf(b.materialType) === owner),
+  editable: editable.value && canFillBom(owner),
+})))
 const guard = useUnsavedChanges(() => (editable.value ? draft : null), undefined, { ready: () => !loading.value && (!canSeeCost.value || costState.value !== 'loading') })
 const can = (act: TechPackAction) => detail.value?.actions.includes(act) ?? false
 
@@ -348,15 +357,40 @@ async function saveDraft(toast = true): Promise<number | null> {
   }
 }
 
-/** 生效：有没保存的修改先存。检查没过的一次列全（1000 + PublishProblem[]，弹清单）。没有工艺单不拦，问一句（RFC 011 §2.1） */
+/** 纸样的文件（地址去掉签名）：修订带过来的是同一份文件，地址一样 */
+const patternKeys = (files: { category: string; url: string }[]) =>
+  files.filter((f) => f.category === 'PATTERN').map((f) => f.url.split('?')[0]!).sort()
+
+/** 纸样和现在生效的那一版是同一份文件（修订以后没换过）：返回那一版的名字，生效前提醒一句（RFC 012 §2.6） */
+async function samePatternAs(d: TechPackDetail): Promise<string | null> {
+  const effective = props.overview?.packs.find((p) => p.status === 'EFFECTIVE' && p.stage === d.stage && p.id !== d.id)
+  const mine = patternKeys(draft.files)
+  if (!effective || !mine.length) return null
+  const theirs = patternKeys(await techPackApi.files(effective.id))
+  return mine.join('\n') === theirs.join('\n') ? packName(effective) : null
+}
+
+/**
+ * 生效：有没保存的修改先存。检查没过的一次列全（1000 + PublishProblem[]，弹清单）。
+ * 不拦、问一句的：没有工艺单（RFC 011 §2.1）、耗材还没填、纸样和上一版一样（RFC 012 §3.3、§2.6）
+ */
 async function publishPack() {
   const d = detail.value
   if (!d) return
-  if (!draft.files.some((f) => f.category === 'CRAFT_SHEET')) {
+  const noCraft = !draft.files.some((f) => f.category === 'CRAFT_SHEET')
+  const notes: string[] = []
+  if (noCraft) notes.push('还没有工艺单，发工厂时没有文件可发。')
+  if (!draft.bomItems.some((b) => bomOwnerOf(b.materialType) === 'PROD')) notes.push('耗材（生产填）还没填。有的款确实没有耗材；生效以后要补得修订。')
+  const samePattern = await samePatternAs(d)
+  if (samePattern) notes.push(`纸样和 ${samePattern} 是同一份文件，版型没改过吗？`)
+  if (notes.length) {
     try {
-      await ElMessageBox.confirm('还没有工艺单，发工厂时没有文件可发。', `生效 ${packName(d)}`, { confirmButtonText: '还是生效', cancelButtonText: '先去传工艺单' })
+      await ElMessageBox.confirm(h('div', notes.map((n) => h('p', n))), `生效 ${packName(d)}`, {
+        confirmButtonText: '还是生效',
+        cancelButtonText: noCraft ? '先去传工艺单' : '先不生效',
+      })
     } catch {
-      subTab.value = 'files'
+      if (noCraft) subTab.value = 'files'
       return
     }
   }
@@ -393,12 +427,19 @@ async function removeDraft() {
   emit('changed')
 }
 
-/** 上移、下移一格（代替拖动排序） */
-function moveItem<T>(arr: T[], idx: number, step: -1 | 1) {
-  const target = idx + step
-  if (target < 0 || target >= arr.length) return
-  ;[arr[idx], arr[target]] = [arr[target]!, arr[idx]!]
+/** 物料清单的一行在它那一块里上移、下移一格：和这一块里挨着的那行换位置 */
+function moveBomRow(rows: BomItem[], row: BomItem, step: -1 | 1) {
+  const neighbor = rows[rows.indexOf(row) + step]
+  if (!neighbor) return
+  const i = draft.bomItems.indexOf(row)
+  const j = draft.bomItems.indexOf(neighbor)
+  ;[draft.bomItems[i], draft.bomItems[j]] = [neighbor, row]
 }
+
+function removeBomRow(row: BomItem) {
+  draft.bomItems.splice(draft.bomItems.indexOf(row), 1)
+}
+
 
 // ---------- 物料清单 ----------
 const bomDialogVisible = ref(false)
@@ -409,6 +450,11 @@ const importer = ref<InstanceType<typeof BomImportDialog>>()
 const bomSkuIds = computed(() => draft.bomItems.flatMap((b) => b.skus.map((s) => s.materialSkuId)))
 /** 新加的行还没有 id：给一个负数当 row-key，保存时不发 id */
 let tempId = 0
+
+function bomEmptyText(owner: BomOwner, canEdit: boolean): string {
+  if (owner === 'DEV') return canEdit ? '还没有面辅料：点「从物料库选」加，或者从甲方的 BOM 表导入' : '这一版没有面辅料'
+  return canEdit ? '还没有耗材：点「从物料库选」加' : '还没有耗材，由生产填'
+}
 
 function openAddBom() {
   editingBomIdx.value = null
@@ -578,7 +624,8 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
  */
 async function onImport(payload: BomImportApply) {
   const rows: BomItem[] = payload.items.map((item) => ({ ...structuredClone(item), id: String(--tempId), seq: 0, unitCost: null, image: null }))
-  if (payload.mode === 'replace') draft.bomItems = rows
+  // 替换只换自己能填的那块，另一块的行留着（RFC 012 §3.2）
+  if (payload.mode === 'replace') draft.bomItems = [...draft.bomItems.filter((b) => !canFillBom(bomOwnerOf(b.materialType))), ...rows]
   else draft.bomItems.push(...rows)
   const notes: string[] = [`加了 ${rows.length} 行`]
   const d = detail.value
@@ -784,7 +831,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           <!-- 物料清单 -->
           <el-tab-pane :label="`物料清单（${draft.bomItems.length}）`" name="bom">
             <div class="sub-toolbar">
-              <template v-if="editable">
+              <template v-if="editable && canFillBomAny">
                 <el-button type="primary" size="small" icon="Plus" @click="skuPicking = true">从物料库选</el-button>
                 <el-button size="small" @click="openAddBom">加一行</el-button>
                 <el-button size="small" icon="Upload" @click="importer?.open()">从 BOM 表导入</el-button>
@@ -815,7 +862,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <span v-else class="dim">悬停、聚焦或点击物料编码查看料卡</span>
             </aside>
 
-            <el-table v-if="bomView === 'bom'" :data="draft.bomItems" row-key="id" :empty-text="editable ? '还没有物料：点「从物料库选」加，或者从甲方的 BOM 表导入' : '这一版没有物料'">
+            <template v-if="bomView === 'bom'">
+            <section v-for="blk in bomBlocks" :key="blk.owner" class="bom-block" :data-testid="`bom-block-${blk.owner}`">
+            <h4 class="bom-block-title">{{ blk.title }} <span class="dim">{{ blk.rows.length }} 行<template v-if="editable && !blk.editable"> · 你没有这一块的权限，只能看</template></span></h4>
+            <el-table :data="blk.rows" row-key="id" :empty-text="bomEmptyText(blk.owner, blk.editable)">
               <el-table-column type="expand" width="32">
                 <template #default="{ row }">
                   <div class="expand">
@@ -855,7 +905,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               </el-table-column>
               <el-table-column label="部位" width="110">
                 <template #default="{ row }">
-                  <DictSelect v-if="editable" v-model="row.part" type="bom_part" size="small" placeholder="选部位" :class="{ missing: !row.part }" />
+                  <DictSelect v-if="blk.editable" v-model="row.part" type="bom_part" size="small" placeholder="选部位" :class="{ missing: !row.part }" />
                   <span v-else>{{ bomParts.labelOf(row.part) }}</span>
                 </template>
               </el-table-column>
@@ -897,15 +947,17 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <el-table-column label="备注" min-width="100">
                 <template #default="{ row }">{{ row.remark ?? '' }}</template>
               </el-table-column>
-              <el-table-column v-if="editable" label="" width="150" align="right">
-                <template #default="{ $index }">
-                  <el-button link size="small" :disabled="$index === 0" aria-label="上移" @click="moveItem(draft.bomItems, $index, -1)"><el-icon><Top /></el-icon></el-button>
-                  <el-button link size="small" :disabled="$index === draft.bomItems.length - 1" aria-label="下移" @click="moveItem(draft.bomItems, $index, 1)"><el-icon><Bottom /></el-icon></el-button>
-                  <el-button link size="small" @click="openEditBom($index)">改</el-button>
-                  <el-button link type="danger" size="small" @click="draft.bomItems.splice($index, 1)">删</el-button>
+              <el-table-column v-if="blk.editable" label="" width="150" align="right">
+                <template #default="{ row, $index }">
+                  <el-button link size="small" :disabled="$index === 0" aria-label="上移" @click="moveBomRow(blk.rows, row as BomItem, -1)"><el-icon><Top /></el-icon></el-button>
+                  <el-button link size="small" :disabled="$index === blk.rows.length - 1" aria-label="下移" @click="moveBomRow(blk.rows, row as BomItem, 1)"><el-icon><Bottom /></el-icon></el-button>
+                  <el-button link size="small" @click="openEditBom(draft.bomItems.indexOf(row as BomItem))">改</el-button>
+                  <el-button link type="danger" size="small" @click="removeBomRow(row as BomItem)">删</el-button>
                 </template>
               </el-table-column>
             </el-table>
+            </section>
+            </template>
 
             <el-table v-else :data="colorViewRows" row-key="key" empty-text="还没有物料">
               <el-table-column label="部位" width="100">
@@ -1098,13 +1150,16 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
       :editing-row="editingBomRow"
       @save="onSaveBomRow"
     />
-    <DataPick v-model="skuPicking" kind="sku" :have="bomSkuIds" @pick="onPickSkus" />
+    <DataPick v-model="skuPicking" kind="sku" :have="bomSkuIds" :params="bomPickParams" @pick="onPickSkus" />
 
-    <BomImportDialog v-if="detail" ref="importer" :pack-id="detail.id" :existing="draft.bomItems.length" :can-see-cost="canSeeCost" @apply="onImport" />
+    <BomImportDialog v-if="detail" ref="importer" :pack-id="detail.id" :existing="draft.bomItems.filter((b) => canFillBom(bomOwnerOf(b.materialType))).length" :can-see-cost="canSeeCost" @apply="onImport" />
   </div>
 </template>
 
 <style scoped>
+.bom-block + .bom-block { margin-top: 20px; }
+.bom-block-title { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.bom-block-title .dim { margin-left: 6px; font-weight: 400; font-size: 12.5px; }
 .bom-inspector { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--lm-line-soft); border-radius: var(--lm-radius); }
 .bom-style-image { display: flex; flex-direction: column; gap: 6px; min-width: 140px; max-width: 220px; }
 .bom-style-image .el-image { width: 120px; height: 120px; }

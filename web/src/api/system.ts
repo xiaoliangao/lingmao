@@ -89,6 +89,8 @@ export interface DictDataForm {
   status: number
   remark?: string | null
   numValue?: number | null
+  /** 类型有 textLabel 时才存；有 textDict 的要是那个字典里的值 */
+  textValue?: string | null
 }
 
 export const dictApi = {

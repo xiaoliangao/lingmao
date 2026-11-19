@@ -314,6 +314,11 @@ const tpLabor = (tp) => rnd(tp.labor ?? 0, 2)
 // 核价（资料包的「核价」页签、侧边栏「核价」列表、询价比价页都用它）：按基码用量算单件成本，分面料、辅料、加工费、其他费用四块。
 // 面料 = 物料类型是面料、里料的行，辅料 = 其他行；只有自购的计入，厂购的列出来标"含在加工价里"。加工费见 tpLabor
 const FABRIC_TYPES = ['面料', '里料']
+// 物料清单研发、生产分工（甲方 11-18 Q49 选 B，RFC 012 §3）：物料类型定这行归谁填，包材归生产（耗材），其余归研发（面辅料）。
+// 哪些类型算耗材甲方还没定，真系统在设置 › 字典 › 物料类型里改
+const BOM_PROD_TYPES = ['包材']
+const BOM_OWNER_GROUPS = [{ owner: '研发', title: '面辅料（研发填）' }, { owner: '生产', title: '耗材（生产填）' }]
+const bomOwnerOf = (r) => (BOM_PROD_TYPES.includes(mat(r.mat)?.type) ? '生产' : '研发')
 function tpCost(tp) {
   const g = style(tp.style).sizeGroup, sizes = sizesOf(g), base = baseSizeOf(g)
   const rows = tp.bom.map((r, i) => ({ r, i, kind: FABRIC_TYPES.includes(mat(r.mat)?.type) ? '面料' : '辅料', use: rowMidUse(r, sizes, base), price: r.price ?? rowRefPrice(r),

@@ -5,7 +5,12 @@ package com.lingmao.scm.module.system.dto;
  * 停用的也给：旧单据里存着停用的值，列表里要能显示它的文字；下拉框只列启用的（前端 DictSelect 过滤）。
  * 后端拿它校验"填的值合不合法"时，新数据只认启用的
  */
-public record DictOption(String label, String value, Integer status) {
+public record DictOption(String label, String value, Integer status, String textValue) {
+
+    /** 没有文字的选项（大多数字典）。textValue 的含义看类型的 text_label，如物料类型的"物料清单谁填" */
+    public DictOption(String label, String value, Integer status) {
+        this(label, value, status, null);
+    }
 
     public boolean enabled() {
         return Integer.valueOf(1).equals(status);

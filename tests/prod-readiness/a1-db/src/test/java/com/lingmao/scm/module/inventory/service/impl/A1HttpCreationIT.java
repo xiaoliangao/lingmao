@@ -42,7 +42,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class A1HttpCreationIT {
     private static final List<String> PERMISSIONS = List.of("basic:material:add", "basic:material:edit", "basic:material:list",
             "style:style:add", "style:style:edit", "style:style:list", "supplier:supplier:add", "supplier:supplier:list", "supplier:supplier:edit",
-            "techpack:pack:add", "techpack:pack:edit", "techpack:pack:list", "purchase:order:add", "purchase:order:list",
+            "techpack:pack:add", "techpack:pack:edit", "techpack:bom:dev", "techpack:bom:prod", "techpack:pack:list", "purchase:order:add", "purchase:order:list",
             "production:node:edit", "production:issue:edit", "production:order:list", "techpack:cost:query");
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;

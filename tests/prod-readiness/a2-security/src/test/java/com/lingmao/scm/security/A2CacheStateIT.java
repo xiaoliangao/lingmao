@@ -113,7 +113,7 @@ class A2CacheStateIT {
         var shared = new RedisSharedCache(redis, namespace);
         var dict = new DictCache(json, shared, namespace,
                 new com.lingmao.scm.module.system.service.impl.OutboxStore(jdbc, namespace, transactions));
-        String key = namespace.sharedKey("dict-v3", "test");
+        String key = namespace.sharedKey("dict-v4", "test");
         TransactionTemplate tx = new TransactionTemplate(transactions);
         tx.executeWithoutResult(status -> {
             dict.getOrLoad("test", List::of);
@@ -146,7 +146,7 @@ class A2CacheStateIT {
 
     @Test void actualDictionaryUpdatesPreserveCommittedOptionsOnRollbackAndInvalidateOnCommit() {
         String type = "a2_" + UUID.randomUUID().toString().replace("-", "");
-        String key = deployment.sharedKey("dict-v3", type);
+        String key = deployment.sharedKey("dict-v4", type);
         jdbc.update("INSERT INTO sys_dict_type(code,name) VALUES(?,?)", type, "A2 transaction dictionary");
         DictDataSaveReq req = new DictDataSaveReq();
         req.setTypeCode(type); req.setValue("one"); req.setLabel("original");

@@ -26,7 +26,7 @@ def create_identities(admin: ApiClient, company_id: int) -> dict:
         "designated": ("SELF", lists),
         "all_reader": ("ALL", lists),
         "no_list": ("SELF", set()),
-        "pack_editor": ("SELF", {"style:style:list", "techpack:pack:list", "techpack:pack:edit"}),
+        "pack_editor": ("SELF", {"style:style:list", "techpack:pack:list", "techpack:pack:edit", "techpack:bom:dev", "techpack:bom:prod"}),
         "mobile_only": ("SELF", {"production:mobile:list"}),
         "warehouse_only": ("SELF", {"inventory:doc:list", "inventory:doc:add"}),
     }

@@ -277,7 +277,7 @@ def main():
                 IF NEW.dedupe_key='a4-drain-live' AND NEW.status='SUCCEEDED' THEN PERFORM pg_sleep(2.5); END IF;
                 RETURN NEW; END $$""")
             db.execute('CREATE TRIGGER a4_slow_ack BEFORE UPDATE ON sys_outbox FOR EACH ROW EXECUTE FUNCTION a4_slow_ack()')
-            cache_key = 'scm:' + env['LINGMAO_TENANT_ID'] + ':company:shared:dict-v3:YTRnYXRl'
+            cache_key = 'scm:' + env['LINGMAO_TENANT_ID'] + ':company:shared:dict-v4:YTRnYXRl'
             job = db.execute("INSERT INTO sys_outbox(tenant_key,kind,dedupe_key,payload,request_id) VALUES(%s,'CACHE_INVALIDATE','a4-drain-live',%s::jsonb,%s) RETURNING id",
                              (env['LINGMAO_TENANT_ID'], json.dumps(cache_key), trace)).fetchone()[0]
             lock = psycopg.connect(**pg, dbname=database)

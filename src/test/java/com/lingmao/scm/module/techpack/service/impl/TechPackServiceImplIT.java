@@ -82,7 +82,7 @@ class TechPackServiceImplIT {
         TestIdentity.ensureUser(jdbcTemplate, USER);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 new LoginUser(USER, "jti-it"), null, Stream.of("techpack:pack:list", "techpack:pack:add", "techpack:pack:edit",
-                        "techpack:pack:remove", "techpack:pack:publish", "techpack:cost:query")
+                        "techpack:pack:remove", "techpack:pack:publish", "techpack:cost:query", "techpack:bom:dev", "techpack:bom:prod")
                 .map(SimpleGrantedAuthority::new).toList()));
     }
 
@@ -183,6 +183,47 @@ class TechPackServiceImplIT {
         assertThat(legacy.getColors()).extracting(c -> c.id()).contains(f.colorB);
     }
 
+    /**
+     * 规则（RFC 012 §3，V42）：包材归生产填。只能填生产的人能加包材的行，面料的行原样带回能存（行 id 带回来），
+     * 改面料用量 403、什么都不写
+     */
+    @Test
+    void bomSplit_productionOnlyAddsPacking_cannotTouchFabric() {
+        assertThat(jdbcTemplate.queryForObject("SELECT text_value FROM sys_dict_data WHERE type_code = 'material_type' AND value = 'PACKING' "
+                + "AND deleted = false", String.class)).isEqualTo("PROD");
+        Fixture f = fixture();
+        long id = techPackService.create(f.style);
+        int version = techPackService.save(id, saveReq(0, f, null));
+        long packing = jdbcTemplate.queryForObject("""
+                INSERT INTO bas_material (code, name, category_id, material_type, stock_unit, purchase_unit)
+                SELECT code || 'P', 'IT 资料包胶袋', category_id, 'PACKING', 'METER', 'METER' FROM bas_material WHERE id = ? RETURNING id""",
+                Long.class, f.material);
+        long packingSku = jdbcTemplate.queryForObject("INSERT INTO bas_material_sku (material_id, code) SELECT id, code FROM bas_material "
+                + "WHERE id = ? RETURNING id", Long.class, packing);
+        long fabricRow = jdbcTemplate.queryForObject("SELECT id FROM tp_bom_item WHERE tech_pack_id = ?", Long.class, id);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(USER, "test"), null,
+                Stream.of("techpack:pack:edit", "techpack:bom:prod", "techpack:cost:query").map(SimpleGrantedAuthority::new).toList()));
+
+        TechPackSaveReq touched = saveReq(version, f, null);
+        touched.getBomItems().getFirst().setId(fabricRow);
+        touched.getBomItems().getFirst().setUsageQty(new BigDecimal("2"));
+        assertThatThrownBy(() -> techPackService.save(id, touched)).isInstanceOf(com.lingmao.scm.security.FieldPermissionDenied.class);
+        assertThat(techPackService.detail(id).getVersionLock()).isEqualTo(version);
+
+        TechPackSaveReq added = saveReq(version, f, null);
+        added.getBomItems().getFirst().setId(fabricRow);
+        BomItemForm bag = new BomItemForm();
+        bag.setPart("包装");
+        bag.setMaterialId(packing);
+        bag.setSkuMode(BomSkuMode.FIXED);
+        bag.setUsageMode(BomUsageMode.UNIFORM);
+        bag.setUsageQty(BigDecimal.ONE);
+        bag.setSkus(List.of(skuForm(f.colorA, packingSku)));
+        added.setBomItems(List.of(added.getBomItems().getFirst(), bag));
+        techPackService.save(id, added);
+        assertThat(techPackService.detail(id).getBomItems()).extracting(b -> b.getMaterialId()).containsExactly(f.material, packing);
+    }
+
     @Test
     void costAuthorizationPreservesHeadAndChildren() {
         Fixture f = fixture();
@@ -194,7 +235,7 @@ class TechPackServiceImplIT {
         cost.setItems(List.of(fee)); initial.setCost(cost);
         int version = techPackService.save(id, initial);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(USER, "test"), null,
-                List.of(new SimpleGrantedAuthority("techpack:pack:edit"))));
+                Stream.of("techpack:pack:edit", "techpack:bom:dev", "techpack:bom:prod").map(SimpleGrantedAuthority::new).toList()));
         TechPackSaveReq denied = saveReq(version, f, "仅改说明");
         var empty = new com.lingmao.scm.module.techpack.dto.TechPackCostForm();
         empty.setCostMode(com.lingmao.scm.module.techpack.entity.CostMode.OUTSOURCE); empty.setItems(List.of()); denied.setCost(empty);

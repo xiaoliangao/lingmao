@@ -123,6 +123,7 @@ public class TechPackServiceImpl implements TechPackService {
     private final PackContent packContent;
     private final PackOwners packOwners;
     private final PackForms packForms;
+    private final PackBomAccess packBomAccess;
     private final BomPricing bomPricing;
     private final CostCalculator costCalculator;
     private final TechPackFiles techPackFiles;
@@ -239,6 +240,8 @@ public class TechPackServiceImpl implements TechPackService {
             PackFinancialAccess.preserve(req, pack, packContent.load(id));
         }
         Content content = packForms.toContent(req, ctx.sizes());
+        // 研发、生产分工（RFC 012 §3）：只能填一块的人改不了另一块的行
+        packBomAccess.check(req.getBomItems() == null ? List.of() : req.getBomItems(), content.bom(), () -> packContent.loadBom(id));
         boolean withCost = req.getCost() != null;
 
         // 单头先改（比较并交换 + 乐观锁），拿到这一行的锁，明细再删了重写：两个人同时保存，后到的在这里等，然后 0 行、1002

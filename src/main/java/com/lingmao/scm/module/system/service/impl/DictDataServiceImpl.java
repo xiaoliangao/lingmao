@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
@@ -84,17 +85,18 @@ public class DictDataServiceImpl implements DictDataService {
                         .eq(DictData::getTypeCode, typeCode)
                         .orderByAsc(DictData::getSort)
                         .orderByAsc(DictData::getId))
-                .stream().map(d -> new DictOption(d.getLabel(), d.getValue(), d.getStatus())).toList());
+                .stream().map(d -> new DictOption(d.getLabel(), d.getValue(), d.getStatus(), d.getTextValue())).toList());
         return tradeFeature.filterDict(typeCode, options, DictOption::value);
     }
 
     @Override
     @Transactional
     public Long create(DictDataSaveReq req) {
-        ensureTypeExists(req.getTypeCode());
+        DictType type = typeOf(req.getTypeCode());
         ensureValueUnique(req.getTypeCode(), req.getValue(), null);
         DictData entity = new DictData();
         BeanUtils.copyProperties(req, entity);
+        entity.setTextValue(StringUtils.hasText(type.getTextLabel()) ? textValue(type, req.getTextValue()) : null);
         dictDataMapper.insert(entity);
         dictCache.evictAfterCommit(req.getTypeCode());
         return entity.getId();
@@ -116,7 +118,17 @@ public class DictDataServiceImpl implements DictDataService {
             throw new BizException("「" + entity.getLabel() + "」是内置项，不能停用：系统按它的值认它。名称、排序、数值能改");
         }
         BeanUtils.copyProperties(req, entity);
-        dictDataMapper.update(entity, Updates.replaceById(entity));   // 整体覆盖，备注能清空（bug 005）
+        UpdateWrapper<DictData> update = Updates.replaceById(entity);   // 整体覆盖，备注能清空（bug 005）
+        DictType type = typeOf(entity.getTypeCode());
+        if (StringUtils.hasText(type.getTextLabel())) {
+            String text = textValue(type, req.getTextValue());
+            if (text == null) {
+                update.setSql("text_value = NULL");
+            } else {
+                update.set("text_value", text);
+            }
+        }
+        dictDataMapper.update(entity, update);
         dictCache.evictAfterCommit(entity.getTypeCode());
     }
 
@@ -131,12 +143,26 @@ public class DictDataServiceImpl implements DictDataService {
         dictCache.evictAfterCommit(entity.getTypeCode());
     }
 
-    private void ensureTypeExists(String typeCode) {
-        boolean exists = dictTypeMapper.exists(new LambdaQueryWrapper<DictType>()
+    private DictType typeOf(String typeCode) {
+        DictType type = dictTypeMapper.selectOne(new LambdaQueryWrapper<DictType>()
                 .eq(DictType::getCode, typeCode));
-        if (!exists) {
+        if (type == null) {
             throw new BizException("字典类型不存在: " + typeCode);
         }
+        return type;
+    }
+
+    /** 类型有 text_dict 的，文字要是那个字典里启用的值（物料类型的"物料清单谁填"只能选研发、生产）；空 = 没填 */
+    private String textValue(DictType type, String text) {
+        if (!StringUtils.hasText(text)) {
+            return null;
+        }
+        String value = text.strip();
+        if (StringUtils.hasText(type.getTextDict())
+                && listByType(type.getTextDict()).stream().noneMatch(o -> o.enabled() && o.value().equals(value))) {
+            throw new BizException("「" + type.getTextLabel() + "」只能从字典里选，没有「" + value + "」");
+        }
+        return value;
     }
 
     private void ensureValueUnique(String typeCode, String value, Long excludeId) {

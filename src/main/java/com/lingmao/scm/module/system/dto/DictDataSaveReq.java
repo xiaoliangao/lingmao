@@ -37,4 +37,8 @@ public class DictDataSaveReq {
     /** 数值，类型有 num_label 时才用（备料比 %、默认天数） */
     @Digits(integer = 10, fraction = 4, message = "数值最多 10 位整数、4 位小数")
     private BigDecimal numValue;
+
+    /** 文字，类型有 text_label 时才收（物料类型的"物料清单谁填"）；类型有 text_dict 的要是那个字典里启用的值 */
+    @Size(max = 500, message = "文字最长 500")
+    private String textValue;
 }

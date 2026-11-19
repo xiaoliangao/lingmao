@@ -766,6 +766,7 @@ comp('TechPack', {
     // 没有工艺单也能生效，问一句（RFC 011 §2.1）
     async function publish() {
       if (!tp.value.files.some((f) => f.cat === '工艺单') && !(await ask(`生效 ${tpName(tp.value)}`, '还没有工艺单，发工厂时没有文件可发。', '还是生效'))) { view.value = 'files'; return }
+      if (!tp.value.bom.some((r) => bomOwnerOf(r) === '生产') && !(await ask(`生效 ${tpName(tp.value)}`, '耗材（生产填）还没填。有的款确实没有耗材；生效以后要补得修订。', '还是生效'))) return
       if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效，可以下需求订单了`)
     }
     function create() { const t = createTechpack(p.code, [], null, ''); key.value = t.id; view.value = 'bom'; adding.value = true }
@@ -848,7 +849,9 @@ comp('TechPack', {
           <table class="tbl inset flat">
             <thead><tr><th v-if="edit" style="width:20px"></th><th style="width:28px">#</th><th>部位</th><th>物料</th><th>配色</th><th class="num">用量</th><th class="num">损耗</th><th>来源</th><th>供应商</th><th class="num">参考单价</th><th class="num">单件成本</th><th v-if="edit"></th></tr></thead>
             <tbody>
-              <template v-for="(r, i) in tp.bom" :key="i">
+              <template v-for="g in BOM_OWNER_GROUPS" :key="g.owner">
+              <tr class="bomgrp"><td :colspan="edit ? 12 : 10"><b>{{ g.title }}</b> <span class="dim">{{ tp.bom.filter((r) => bomOwnerOf(r) === g.owner).length }} 行</span></td></tr>
+              <template v-for="(r, i) in tp.bom" :key="g.owner + i"><template v-if="bomOwnerOf(r) === g.owner">
                 <tr class="link" :class="{ sel: cur && cur.i === i, dragover: drag.list === tp.bom && drag.over === i }" :draggable="edit" @dragstart="dragStart(tp.bom, i)" @dragover.prevent="dragOver(tp.bom, i)" @drop.prevent="dropAt(tp.bom, i)" @dragend="drag.list = null" @mouseenter="hover(i)" @click="open = open === i ? null : i">
                   <td v-if="edit" class="grip" title="按住拖动，调整顺序">⋮⋮</td>
                   <td class="dim">{{ i + 1 }}</td><td>{{ r.part }}</td>
@@ -882,8 +885,9 @@ comp('TechPack', {
                     <div v-else-if="r.note" class="mut">备注：{{ r.note }}</div>
                   </div>
                 </td></tr>
+              </template></template>
+              <tr v-if="!tp.bom.some((r) => bomOwnerOf(r) === g.owner)"><td :colspan="edit ? 12 : 10" class="empty">{{ g.owner === '研发' ? (edit ? '还没有面辅料：点「加一行」，或者从甲方的 BOM 表导入' : '这一版没有面辅料') : (edit ? '还没有耗材：生产跟单来填' : '还没有耗材') }}</td></tr>
               </template>
-              <tr v-if="!tp.bom.length"><td :colspan="edit ? 12 : 10" class="empty">{{ edit ? '还没有物料：点「加一行」，或者从甲方的 BOM 表导入' : '这一版没有物料' }}</td></tr>
             </tbody>
           </table>
           <div v-if="canSeeCost()" class="row" style="justify-content:flex-end;gap:20px;margin-top:12px" data-c="单件成本">

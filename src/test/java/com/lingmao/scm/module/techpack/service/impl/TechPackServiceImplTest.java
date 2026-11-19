@@ -45,6 +45,7 @@ class TechPackServiceImplTest {
     private PackContent packContent;
     @Mock private TechPackFiles techPackFiles;
     @Mock private PackForms packForms;
+    @Mock private PackBomAccess packBomAccess;
     @Mock private AttachmentService attachmentService;
     @Mock private DocLogService docLogService;
 
