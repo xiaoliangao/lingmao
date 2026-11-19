@@ -151,7 +151,7 @@ class FileServiceImplTest {
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400))
                 .hasMessage("大图.jpg 太大：图片、PDF、Word、Excel 最大 10MB");
         assertThatThrownBy(() -> service.upload(sized("超大.psd", FileServiceImpl.MAX_DESIGN_SOURCE_BYTES + 1)))
-                .hasMessage("超大.psd 太大：AI、PSD、PRJ 最大 100MB");
+                .hasMessage("超大.psd 太大：AI、PSD、PRJ、PLT 最大 100MB");
     }
 
     /** 规则：不在白名单里的扩展名（比如 html）不收 */

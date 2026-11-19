@@ -91,6 +91,12 @@ class ProductionSupport {
         return visible(prdMapper.selectById(id));
     }
 
+    /** 不查本人范围，只查品类线（成品入库：仓管不在生产单的范围里）；不存在、不在我的线里返回 null */
+    ProductionOrder getUnscoped(long id) {
+        ProductionOrder p = prdMapper.selectById(id);
+        return p == null || !LineScope.current().canSee(p.getProductLine()) ? null : p;
+    }
+
     /** 只锁生产单：报进度、改节点计划、上报异常、改草稿、提交这种不回写订单的 */
     ProductionOrder lock(long id) {
         return visible(prdMapper.lockById(id));

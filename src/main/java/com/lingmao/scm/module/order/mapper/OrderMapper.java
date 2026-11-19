@@ -34,4 +34,8 @@ public interface OrderMapper extends BaseMapper<Order> {
     /** 改、删、动作之前锁住单头：和审核、变更写回排队 */
     @Select("SELECT * FROM ord_order WHERE id = #{id} FOR UPDATE")
     Order lockById(@Param("id") long id);
+
+    /** 成品发货：共享锁，几张发货单可以同时拿，取消订单（FOR UPDATE）要等它们提交 */
+    @Select("SELECT * FROM ord_order WHERE id = #{id} FOR SHARE")
+    Order lockShareById(@Param("id") long id);
 }

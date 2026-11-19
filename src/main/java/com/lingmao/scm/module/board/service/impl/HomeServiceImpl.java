@@ -27,6 +27,7 @@ import com.lingmao.scm.module.inventory.dto.CountRowVO;
 import com.lingmao.scm.module.inventory.dto.InvDocQuery;
 import com.lingmao.scm.module.inventory.dto.InvDocRowVO;
 import com.lingmao.scm.module.inventory.entity.InvDocKind;
+import com.lingmao.scm.module.fg.service.FgDocService;
 import com.lingmao.scm.module.inventory.service.CountService;
 import com.lingmao.scm.module.inventory.service.InvDocService;
 import com.lingmao.scm.module.order.dto.OrderChangeQuery;
@@ -123,10 +124,11 @@ public class HomeServiceImpl implements HomeService {
     static final String STOCK_LIST = "inventory:stock:list";
     static final String SUPPLIER_LIST = "supplier:supplier:list";
     static final String SUPPLIER_ADMIT = "supplier:supplier:admit";
+    static final String FG_ADD = "fg:doc:add";
 
     /** "其他提醒"按这个顺序给（前端 TodoCountKey） */
     static final List<String> COUNT_KEYS = List.of("ORDER_PENDING", "CHANGE_PENDING", "PURCHASE_PENDING", "OUTSOURCE_PENDING",
-            "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
+            "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "FG_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
             "PRODUCTION_NEAR", "PRODUCTION_NODE_LATE", "PRODUCTION_ISSUE", "ARRIVAL_LATE", "ARRIVAL_CUT", "UPSTREAM", "CERT_EXPIRING",
             "REORDER");
 
@@ -150,6 +152,7 @@ public class HomeServiceImpl implements HomeService {
     private final SupplyService supplyService;
     private final InvDocService invDocService;
     private final CountService countService;
+    private final FgDocService fgDocService;
     private final SupplierService supplierService;
     private final ReferenceService referenceService;
     private final AttachmentService attachmentService;
@@ -285,6 +288,9 @@ public class HomeServiceImpl implements HomeService {
         add(groups, certs(owner, counts));
         if (can(STOCK_LIST) && can(PURCHASE_LIST)) {
             counts.put("REORDER", (long) supplyService.reorderItems().size());
+        }
+        if (can(FG_ADD)) {
+            counts.put("FG_PENDING", fgDocService.pendingReceiptCount());
         }
         List<TodoCount> out = COUNT_KEYS.stream().filter(k -> counts.getOrDefault(k, 0L) > 0)
                 .map(k -> new TodoCount(k, counts.get(k))).toList();

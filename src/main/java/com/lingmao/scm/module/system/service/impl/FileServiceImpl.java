@@ -41,7 +41,7 @@ public class FileServiceImpl implements FileService {
         ext = ext.toLowerCase(Locale.ROOT);
         boolean source = DESIGN_SOURCE.contains(ext);
         long limit = source ? MAX_DESIGN_SOURCE_BYTES : MAX_BYTES;
-        if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD、PRJ 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
+        if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD、PRJ、PLT 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
         if (!capacity.tryAcquire()) throw new BizException(429, "正在处理其他文件，请稍后重试");
         UploadStore.Slot slot = null; boolean saved = false;
         try {

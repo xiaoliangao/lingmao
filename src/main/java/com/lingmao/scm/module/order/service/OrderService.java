@@ -9,6 +9,7 @@ import com.lingmao.scm.module.order.dto.OrderAuditReq;
 import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderDetailVO;
 import com.lingmao.scm.module.order.dto.OrderForProduction;
+import com.lingmao.scm.module.order.dto.OrderShipView;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderQuery;
 import com.lingmao.scm.module.order.dto.OrderReviewInfo;
@@ -118,4 +119,12 @@ public interface OrderService {
      * 每个 SKU 都排满了、没作废的生产单都完成或结案了是已完成，有审核过的生产单是生产中，不然是已审核。调之前已经 lockForProduction
      */
     void syncProduction(long orderId, ProductionProgress progress, String cause);
+
+    // ---------- 给成品（RFC 008 §6.2） ----------
+
+    /**
+     * 发货出库用：锁住订单（FOR SHARE）再取，和取消订单互斥（取消先锁订单再查引用，查得到发货单就 1005）。
+     * 只查存在和品类线，不查本人范围：发货的是仓管，订单上没有仓管这一栏。不存在、不在我的线里 404
+     */
+    OrderShipView shipView(long orderId);
 }

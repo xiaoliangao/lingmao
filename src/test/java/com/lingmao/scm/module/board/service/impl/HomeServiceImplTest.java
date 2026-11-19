@@ -14,6 +14,7 @@ import com.lingmao.scm.module.board.dto.HomeTodos;
 import com.lingmao.scm.module.board.dto.TodoCount;
 import com.lingmao.scm.module.board.dto.TodoGroup;
 import com.lingmao.scm.module.board.dto.TodoItem;
+import com.lingmao.scm.module.fg.service.FgDocService;
 import com.lingmao.scm.module.inventory.service.CountService;
 import com.lingmao.scm.module.inventory.service.InvDocService;
 import com.lingmao.scm.module.order.dto.OrderQuery;
@@ -91,6 +92,7 @@ class HomeServiceImplTest {
     @Mock private SupplyService supplyService;
     @Mock private InvDocService invDocService;
     @Mock private CountService countService;
+    @Mock private FgDocService fgDocService;
     @Mock private SupplierService supplierService;
     @Mock private ReferenceService referenceService;
     @Mock private AttachmentService attachmentService;
@@ -103,7 +105,7 @@ class HomeServiceImplTest {
     void setUp() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(ZoneId.of("Asia/Shanghai")).toInstant(), ZoneId.of("Asia/Shanghai"));
         service = new HomeServiceImpl(styleService, techPackService, orderService, changeService, productionService, productionBoardService,
-                issueService, purchaseService, mrpService, supplyService, invDocService, countService, supplierService, referenceService,
+                issueService, purchaseService, mrpService, supplyService, invDocService, countService, fgDocService, supplierService, referenceService,
                 attachmentService, dictDataService, upstreamRows, clock);
     }
 

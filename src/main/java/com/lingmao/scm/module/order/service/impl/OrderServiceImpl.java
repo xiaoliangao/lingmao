@@ -45,6 +45,7 @@ import com.lingmao.scm.module.order.dto.OrderAuditReq;
 import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderDetailVO;
 import com.lingmao.scm.module.order.dto.OrderForProduction;
+import com.lingmao.scm.module.order.dto.OrderShipView;
 import com.lingmao.scm.module.order.dto.OrderForm;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
@@ -1227,6 +1228,18 @@ public class OrderServiceImpl implements OrderService {
                 .toList();
         return new OrderForProduction(o.getId(), o.getNo(), o.getStatus(), o.getCompanyId(), o.getCommitDate(), o.getRequiredDate(),
                 o.getMerchId(), lines);
+    }
+
+    @Override
+    public OrderShipView shipView(long orderId) {
+        Order o = orderMapper.lockShareById(orderId);
+        if (o == null || !LineScope.current().canSee(o.getProductLine())) {
+            throw new BizException(404, NOT_FOUND);
+        }
+        List<OrderShipView.Line> lines = itemMapper.selectByOrder(orderId).stream()
+                .map(i -> new OrderShipView.Line(i.getId(), i.getStyleId(), i.getStyleSkuId(), i.getQty(), i.getPrice()))
+                .toList();
+        return new OrderShipView(o.getId(), o.getNo(), o.getStatus(), o.getCompanyId(), o.getDeliveryReq(), lines);
     }
 
     @Override

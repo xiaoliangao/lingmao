@@ -29,13 +29,16 @@
 | 成品采购单 | `/fp-purchases`、`/fp-purchases/:id` | `5d-production.js` | 05 |
 | 生产看板 | `/board` | `5d-production.js` | 05 |
 | 手机报工 | `/mobile`、`/mobile/:id` | `5d-production.js` | 05 |
+| 成品入库单（含"待入库"页签，二期） | `/fg-in`、`/fg-in/:id` | `6-pages-later.js` 的 `fgPage` | [07-成品](07-成品.md) |
+| 成品出库单（二期） | `/fg-out`、`/fg-out/:id` | `6-pages-later.js` 的 `FgShip`、`FgOtherOut` | 07 |
+| 成品库存（二期） | `/fg-stock` | `6-pages-later.js` 的 `fgPage` | 07 |
 | 首页的概况、待办 | `/home` | `5a-home-style.js` 的 `/` | [06-首页](06-首页.md) |
 | 上游已变更、待处理 | `/upstream` | `5a-home-style.js` | 06 |
 | 设置 › 审批（管理后台） | `/system/approval-rule` | `7-pages-master.js` 的 `/settings` | 本文 §4.6 |
 
 单据详情页的地址写在 `web/src/utils/docRoute.ts`：报错清单、"下游单据"页签、首页待办里点单号都用它。
 
-原型里还有打样、企划、质检、成品、财务、报表、合同、客户，它们是二期或待定的模块，这一期不做（PRD §2.5）。核价这一期只做按款看成本 `/costing`，询价比价、订单毛利待定。
+原型里还有打样、企划、质检、财务、报表、合同、客户，它们是二期或待定的模块，这一期不做（PRD §2.5）；成品是二期第一个做的（07）。核价这一期只做按款看成本 `/costing`，询价比价、订单毛利待定。
 
 ## 3. 通用约定
 
@@ -142,7 +145,7 @@
 
 ## 4. 单据公共
 
-需求订单、变更单、算料单、采购单、物料入库单、出库单、盘点单、外发加工单、成品采购单都套这一套（架构 §4）。类型在 `types/biz.ts`，接口在 `api/biz.ts` 的 `docApi(base)`。
+需求订单、变更单、算料单、采购单、物料入库单、出库单、盘点单、外发加工单、成品采购单、成品入库单、出库单都套这一套（架构 §4）。类型在 `types/biz.ts`，接口在 `api/biz.ts` 的 `docApi(base)`。
 
 ### 4.1 状态
 

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 成品库存明细、按款（docs/api/07 §3.6）：仓库、款式只读 JOIN；SKU 的显示字段（颜色、图）由 Service 补 -->
+<mapper namespace="com.lingmao.scm.module.fg.mapper.FgStockMapper">
+
+    <sql id="where">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+        <bind name="nameKw" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
+        WHERE s.location_id = 0
+        <if test="!q.includeZero">AND s.qty &lt;&gt; 0</if>
+        <if test="q.warehouseId != null">AND s.warehouse_id = #{q.warehouseId}</if>
+        <if test="q.styleId != null">AND k.style_id = #{q.styleId}</if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            <choose>
+                <when test="codes != null">
+                    AND (upper(k.code) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                         OR upper(st.code) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>)
+                </when>
+                <otherwise>AND (upper(k.code) LIKE #{kw} OR upper(st.code) LIKE #{kw} OR st.name ILIKE #{nameKw})</otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.fg.dto.FgStockRowVO">
+        SELECT s.id, s.warehouse_id, w.name AS warehouse_name, s.style_sku_id, s.qty, s.update_time
+        FROM fg_stock s
+        JOIN bas_warehouse w ON w.id = s.warehouse_id
+        JOIN sty_style_sku k ON k.id = s.style_sku_id
+        JOIN sty_style st ON st.id = k.style_id
+        <include refid="where"/>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND s.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        ORDER BY w.name, k.code, s.id
+    </select>
+
+    <select id="selectStylePage" resultType="java.lang.Long">
+        SELECT st.id
+        FROM fg_stock s
+        JOIN sty_style_sku k ON k.id = s.style_sku_id
+        JOIN sty_style st ON st.id = k.style_id
+        <include refid="where"/>
+        GROUP BY st.id, st.code
+        ORDER BY st.code, st.id
+    </select>
+</mapper>

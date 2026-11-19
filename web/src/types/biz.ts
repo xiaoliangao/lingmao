@@ -36,7 +36,7 @@ export type StatusTone = 'active' | 'progress' | 'pending' | 'done' | 'off' | 'c
 
 /**
  * 全系统单据和主数据的类型（后端 biz.entity.BizType，库里存这个名字）。DocRef、操作记录、附件、审批都按它认。
- * 一张表两种单据的（PRODUCTION_ORDER 分外发加工单 / 成品采购单，INV_DOC 分物料入库单 / 出库单）再看 kind
+ * 一张表两种单据的（PRODUCTION_ORDER 分外发加工单 / 成品采购单，INV_DOC、FG_DOC 分入库单 / 出库单）再看 kind
  */
 export type BizType =
   | 'SUPPLIER'
@@ -54,6 +54,7 @@ export type BizType =
   | 'PRODUCTION_RECEIPT'
   | 'PRODUCTION_ISSUE'
   | 'PRODUCTION_NODE_REPORT'
+  | 'FG_DOC'
 
 /**
  * 单据的通用状态（后端 common.doc.DocStatus，架构 §4.2）。各单据只用其中一部分；中文按单据类型叫
@@ -127,7 +128,7 @@ export interface DocActionReq {
  */
 export interface DocRef {
   type: BizType
-  /** 一张表两种单据的：PRODUCTION_ORDER 是 OUTSOURCE / BUY，INV_DOC 是 IN / OUT；别的 null */
+  /** 一张表两种单据的：PRODUCTION_ORDER 是 OUTSOURCE / BUY，INV_DOC、FG_DOC 是 IN / OUT；别的 null */
   kind: string | null
   /** 没有自己详情页、挂在上一级页面里的：回货单、异常 → 所属生产单的 id，资料包 → 款式 id；别的 null */
   parentId: string | null

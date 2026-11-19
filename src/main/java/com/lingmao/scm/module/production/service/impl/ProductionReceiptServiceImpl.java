@@ -19,6 +19,7 @@ import com.lingmao.scm.module.order.dto.OrderForProduction;
 import com.lingmao.scm.module.production.dto.CutQtyReq;
 import com.lingmao.scm.module.production.dto.ProductionReceiptVO;
 import com.lingmao.scm.module.production.dto.ReceiptCreated;
+import com.lingmao.scm.module.production.dto.ReceiptForStock;
 import com.lingmao.scm.module.production.dto.ReceiptItemVO;
 import com.lingmao.scm.module.production.dto.ReceiptOverRow;
 import com.lingmao.scm.module.production.dto.ReceiptReq;
@@ -119,7 +120,9 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             v.setVoidByName(names.get(r.getVoidBy()));
             v.setVoidTime(r.getVoidTime());
             v.setItems(rows);
-            v.setActions(canVoid && r.getStatus() == APPROVED ? List.of("void") : List.of());
+            // 入过成品仓的（有没作废的成品入库单）不给作废，要先处理成品入库单（RFC 008 §6.2）
+            v.setActions(canVoid && r.getStatus() == APPROVED && referenceService.referrers(BizType.PRODUCTION_RECEIPT, r.getId()).isEmpty()
+                    ? List.of("void") : List.of());
             out.add(v);
         }
         return out;
@@ -304,6 +307,24 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
     }
 
     @Override
+    public ReceiptForStock forStock(long receiptId) {
+        ProductionReceipt r = receiptMapper.lockById(receiptId);
+        ProductionOrder p = r == null ? null : support.getUnscoped(r.getPrdOrderId());
+        if (p == null) {
+            throw new BizException(404, "回货单不存在");
+        }
+        if (r.getStatus() != APPROVED) {
+            throw new BizException("回货单 " + r.getNo() + " 已作废，不能入成品仓");
+        }
+        com.lingmao.scm.common.scope.CompanyContext.target(r.getCompanyId());
+        List<ReceiptForStock.Item> items = receiptItemMapper.selectByReceipts(List.of(receiptId)).stream()
+                .map(i -> new ReceiptForStock.Item(i.getId(), i.getStyleSkuId(), i.getQty(), i.getDefectQty()))
+                .toList();
+        return new ReceiptForStock(r.getId(), r.getNo(), r.getCompanyId(), p.getId(), p.getNo(), p.getKind().name(), p.getStyleId(),
+                p.getFactoryId(), r.getReceiptDate(), r.getWarehouseId(), items);
+    }
+
+    @Override
     @Transactional
     public void voidReceipt(long prdOrderId, long receiptId, String reason) {
         String why = ProdTexts.blankToNull(reason);
@@ -322,6 +343,14 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         if (p.getStatus() == CLOSED || p.getStatus() == VOIDED) {
             throw new BizException(ProductionSupport.label(p) + " 已结案，回货不能作废");
         }
+        // 先改状态（锁住回货单）再查引用（RFC 008 §6.2）：正在建的成品入库单拿着回货单的锁，这里等它提交以后查得到它（1005）；
+        // 反过来成品那边等这里提交以后看到的是已作废
+        StatusCas.update(receiptMapper, new ProductionReceipt(), StatusCas.of(ProductionReceipt::getId, receiptId,
+                        ProductionReceipt::getStatus, APPROVED, VOIDED)
+                .set(ProductionReceipt::getVoidReason, why)
+                .set(ProductionReceipt::getVoidBy, LoginUser.currentUserId())
+                .set(ProductionReceipt::getVoidTime, OffsetDateTime.now(clock))
+                .setSql("version = version + 1"));
         referenceService.assertNoReferrer(BizType.PRODUCTION_RECEIPT, receiptId, "作废");
         Map<Long, ProductionOrderItem> lines = itemMapper.selectByOrder(prdOrderId).stream()
                 .collect(Collectors.toMap(ProductionOrderItem::getId, Function.identity()));
@@ -333,12 +362,6 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             }
             toOrder.merge(line.getOrderItemId(), -i.getQty(), Integer::sum);
         }
-        StatusCas.update(receiptMapper, new ProductionReceipt(), StatusCas.of(ProductionReceipt::getId, receiptId,
-                        ProductionReceipt::getStatus, APPROVED, VOIDED)
-                .set(ProductionReceipt::getVoidReason, why)
-                .set(ProductionReceipt::getVoidBy, LoginUser.currentUserId())
-                .set(ProductionReceipt::getVoidTime, OffsetDateTime.now(clock))
-                .setSql("version = version + 1"));
         orderService.addReturned(toOrder);
         String text = "回货 " + r.getNo() + " 作废（" + why + "）";
         support.refreshStatus(p, "void-receipt", text);
