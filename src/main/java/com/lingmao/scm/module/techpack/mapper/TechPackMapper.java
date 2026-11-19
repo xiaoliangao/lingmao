@@ -29,8 +29,7 @@ public interface TechPackMapper extends BaseMapper<TechPack> {
     int maxVersion(@Param("styleId") long styleId, @Param("stage") PackStage stage);
 
     /** 旧版无快照时保留包中已知尺码，不冒充完整的原始集合。 */
-    @Select("SELECT size_code FROM tp_spec_value v JOIN tp_spec_point p ON p.id=v.spec_point_id WHERE p.tech_pack_id=#{id} "
-            + "UNION SELECT size_code FROM tp_bom_item_size s JOIN tp_bom_item b ON b.id=s.bom_item_id WHERE b.tech_pack_id=#{id} "
+    @Select("SELECT size_code FROM tp_bom_item_size s JOIN tp_bom_item b ON b.id=s.bom_item_id WHERE b.tech_pack_id=#{id} "
             + "UNION SELECT size_code FROM tp_bom_item_sku s JOIN tp_bom_item b ON b.id=s.bom_item_id WHERE b.tech_pack_id=#{id} "
             + "AND size_code IS NOT NULL ORDER BY size_code")
     List<String> referencedSizes(@Param("id") long id);

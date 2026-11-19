@@ -34,7 +34,7 @@ export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 export INIT_ADMIN_PASSWORD="$(python -c 'import secrets; print("Test-" + secrets.token_urlsafe(18))')"
 export FILE_SIGN_KEY="$(python -c 'import secrets; print(secrets.token_hex(16))')"
 printf '::add-mask::%s\n' "$JWT_SECRET" "$INIT_ADMIN_PASSWORD" "$FILE_SIGN_KEY"
-export UPLOAD_DIR="$work/uploads" EXPORT_DIR="$work/exports" PDF_FONT_DIR="$repo/dev/fonts" SPRING_PROFILES_ACTIVE=prod
+export UPLOAD_DIR="$work/uploads" EXPORT_DIR="$work/exports" SPRING_PROFILES_ACTIVE=prod
 export LOGGING_FILE_NAME="$work/app.log"
 java -Xmx512m -XX:ActiveProcessorCount=4 -jar "$jar" --server.port=18080 "--logging.logback.rollingpolicy.file-name-pattern=$work/app-%d{yyyy-MM-dd}.%i.log" > "$work/console.log" 2>&1 &
 app_pid=$!

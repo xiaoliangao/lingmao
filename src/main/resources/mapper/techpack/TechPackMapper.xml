@@ -15,9 +15,6 @@
     </select>
 
     <select id="referencedSizesBatch" resultType="com.lingmao.scm.module.techpack.dto.PackSizeRef">
-        SELECT p.tech_pack_id AS pack_id, v.size_code FROM tp_spec_value v JOIN tp_spec_point p ON p.id = v.spec_point_id
-        WHERE p.tech_pack_id IN <foreach collection="packIds" item="id" open="(" separator="," close=")">#{id}</foreach>
-        UNION
         SELECT b.tech_pack_id AS pack_id, s.size_code FROM tp_bom_item_size s JOIN tp_bom_item b ON b.id = s.bom_item_id
         WHERE b.tech_pack_id IN <foreach collection="packIds" item="id" open="(" separator="," close=")">#{id}</foreach>
         UNION

@@ -2,6 +2,7 @@ package com.lingmao.scm.common.num;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 
 /**
  * 数量、单价、金额的取整（架构 §6、PRD §5.3、数据库设计 §1.1）。规则只写在这里，各域不自己 setScale，单测用 PRD 的例子（NumTest）。
@@ -104,6 +105,24 @@ public final class Num {
     /** 物料数量上限 = 数量 × (1 + 超收%)，向下取到 3 位：采购入库的超收上限（默认 5%） */
     public static BigDecimal maxQty(BigDecimal qty, BigDecimal overPct) {
         return qty == null ? null : addPct(qty, overPct).setScale(QTY_SCALE, RoundingMode.FLOOR);
+    }
+
+    /**
+     * 一列损耗是不是写成了系数（甲方 11-17：成衣损耗 1.03、1.05，PRD Q31；物料导入、资料包 BOM 导入都按这个认）。
+     * 按整列判断，不按格：单看 1.5 分不清是 1.5% 还是 1.5 倍。不是 0 的数都在 [1, 2) 里、至少一个大于 1，就整列按系数读；否则按百分数（3 = 3%）
+     */
+    public static boolean lossFactorColumn(List<BigDecimal> values) {
+        boolean aboveOne = false;
+        for (BigDecimal v : values) {
+            if (v == null || v.signum() == 0) {
+                continue;
+            }
+            if (v.compareTo(BigDecimal.ONE) < 0 || v.compareTo(BigDecimal.TWO) >= 0) {
+                return false;
+            }
+            aboveOne |= v.compareTo(BigDecimal.ONE) > 0;
+        }
+        return aboveOne;
     }
 
     /** 倍率 = a ÷ b，两位小数四舍五入（核价的吊牌价 ÷ 单件成本，架构 §4.9）；有一个是 null 或 b 是 0 时返回 null，页面不显示 */

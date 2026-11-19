@@ -3,13 +3,13 @@ package com.lingmao.scm.module.techpack.service.impl;
 import com.lingmao.scm.module.basic.entity.MaterialSource;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.price.dto.PriceRef;
+import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.service.PriceService;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.techpack.dto.TechPackCostVO;
 import com.lingmao.scm.module.techpack.entity.BomSkuMode;
 import com.lingmao.scm.module.techpack.entity.CostItem;
 import com.lingmao.scm.module.techpack.entity.CostMode;
-import com.lingmao.scm.module.techpack.entity.PackProcess;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,9 +23,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static com.lingmao.scm.module.techpack.service.impl.PackFixtures.BLACK;
 import static com.lingmao.scm.module.techpack.service.impl.PackFixtures.KHAKI;
@@ -36,6 +36,7 @@ import static com.lingmao.scm.module.techpack.service.impl.PackFixtures.row;
 import static com.lingmao.scm.module.techpack.service.impl.PackFixtures.sku;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -66,13 +67,13 @@ class CostCalculatorTest {
     @Test
     void outsource_splitsBlocksAndCountsPurchaseOnly() {
         TechPack pack = pack(CostMode.OUTSOURCE, null);
+        pack.setLaborPrice(new BigDecimal("32.5"));
         // 面料随款色：卡其单独 20 元，黑色用行上的 18；用量 1.5、损耗 4%
         var fabric = row(item(1, BomSkuMode.BY_COLOR, "1.5", "4", "18", MaterialSource.PURCHASE),
                 List.of(sku(KHAKI, null, 11, "20"), sku(BLACK, null, 12, null)), List.of());
         var button = row(item(2, BomSkuMode.FIXED, "6", "0", "0.35", MaterialSource.PURCHASE), List.of(), List.of());
         var thread = row(item(3, BomSkuMode.FIXED, "1", "0", "6", MaterialSource.FACTORY), List.of(), List.of());
         when(packContent.loadBom(9L)).thenReturn(List.of(fabric, button, thread));
-        when(packContent.loadProcesses(9L)).thenReturn(List.of(process("12.5"), process("20")));
         when(packContent.loadCostItems(9L)).thenReturn(List.of(costItem("4")));
         when(materialService.materialRefs(anyCollection())).thenReturn(List.of(material(1, "FABRIC", "18", "1", null),
                 material(2, "TRIM", "0.35", "1", null), material(3, "TRIM", "6", "1", null)));
@@ -94,19 +95,53 @@ class CostCalculatorTest {
     @Test
     void buy_usesBuyPriceElseArchiveDefault() {
         when(packContent.loadBom(9L)).thenReturn(List.of());
-        when(packContent.loadProcesses(9L)).thenReturn(List.of(process("30")));
         when(packContent.loadCostItems(9L)).thenReturn(List.of());
-        when(priceService.currentProcess(30L, 100L, CostCalculator.BUY_PROCESS_MODE, LocalDate.of(2026, 11, 17)))
-                .thenReturn(Optional.of(new PriceRef(77L, new BigDecimal("85"), "PIECE", BigDecimal.TEN, true, true,
-                        LocalDate.of(2026, 1, 1), null, com.lingmao.scm.module.price.entity.PriceType.PROCESS)));
+        archive(Map.of("FULL", "85", "CMT", "30"));
 
         TechPackCostVO byDefault = calculator.compute(pack(CostMode.BUY, null), ctx(), KHAKI);
         assertThat(byDefault.getBuyPriceDefault()).isEqualByComparingTo("85");
         assertThat(byDefault.getSummary().labor()).isEqualByComparingTo("85");
-        assertThat(byDefault.getLaborTotal()).isEqualByComparingTo("30");
+        assertThat(byDefault.getLaborPriceDefault()).isEqualByComparingTo("30");
 
         TechPackCostVO typed = calculator.compute(pack(CostMode.BUY, new BigDecimal("90")), ctx(), KHAKI);
         assertThat(typed.getSummary().total()).isEqualByComparingTo("90");
+    }
+
+    /** 规则（RFC 011 §3.1）：按外发算，加工费 = 资料包上填的；没填取默认加工厂清加工的现价，没有清加工取半包，都没有是 0 */
+    @Test
+    void outsource_laborPriceElseCmtElseHalf() {
+        when(packContent.loadBom(9L)).thenReturn(List.of());
+        when(packContent.loadCostItems(9L)).thenReturn(List.of());
+
+        archive(Map.of("CMT", "28", "HALF", "40", "FULL", "85"));
+        TechPackCostVO cmt = calculator.compute(pack(CostMode.OUTSOURCE, null), ctx(), KHAKI);
+        assertThat(cmt.getLaborPriceDefault()).isEqualByComparingTo("28");
+        assertThat(cmt.getLaborPriceDefaultMode()).isEqualTo("CMT");
+        assertThat(cmt.getSummary().labor()).isEqualByComparingTo("28");
+
+        archive(Map.of("HALF", "40"));
+        TechPackCostVO half = calculator.compute(pack(CostMode.OUTSOURCE, null), ctx(), KHAKI);
+        assertThat(half.getLaborPriceDefaultMode()).isEqualTo("HALF");
+        assertThat(half.getSummary().labor()).isEqualByComparingTo("40");
+
+        TechPack typed = pack(CostMode.OUTSOURCE, null);
+        typed.setLaborPrice(new BigDecimal("22.5"));
+        assertThat(calculator.compute(typed, ctx(), KHAKI).getSummary().labor()).isEqualByComparingTo("22.50");
+
+        archive(Map.of());
+        assertThat(calculator.compute(pack(CostMode.OUTSOURCE, null), ctx(), KHAKI).getSummary().labor()).isEqualByComparingTo("0");
+        TechPack none = pack(CostMode.OUTSOURCE, null);
+        none.setId(10L);
+        assertThat(calculator.laborPrices(List.of(typed, none), Map.of(9L, ctx(), 10L, ctx())))
+                .containsOnlyKeys(9L).containsValue(new BigDecimal("22.5"));
+    }
+
+    /** 价格档案里默认加工厂（30）做款式 100 的几种加工方式的现价 */
+    private void archive(Map<String, String> byMode) {
+        Map<ProcessPriceKey, PriceRef> prices = new HashMap<>();
+        byMode.forEach((mode, price) -> prices.put(new ProcessPriceKey(30L, 100L, mode), new PriceRef(77L, new BigDecimal(price), "PIECE",
+                BigDecimal.TEN, true, true, LocalDate.of(2026, 1, 1), null, com.lingmao.scm.module.price.entity.PriceType.PROCESS)));
+        when(priceService.currentProcesses(anyCollection(), eq(LocalDate.of(2026, 11, 17)))).thenReturn(prices);
     }
 
     private static TechPack pack(CostMode mode, BigDecimal buyPrice) {
@@ -117,13 +152,6 @@ class CostCalculatorTest {
         pack.setCostMode(mode);
         pack.setBuyPrice(buyPrice);
         return pack;
-    }
-
-    private static PackContent.ProcessRow process(String price) {
-        PackProcess p = new PackProcess();
-        p.setName("工序");
-        p.setPrice(new BigDecimal(price));
-        return new PackContent.ProcessRow(p, List.of());
     }
 
     private static CostItem costItem(String amount) {

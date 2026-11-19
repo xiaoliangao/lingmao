@@ -44,7 +44,6 @@ export type BizType =
   | 'MATERIAL_SKU'
   | 'STYLE'
   | 'TECH_PACK'
-  | 'CRAFT_STANDARD'
   | 'ORDER'
   | 'ORDER_CHANGE'
   | 'MRP_CALC'

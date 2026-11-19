@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 /**
- * 资料包的一个版本（tp_tech_pack，数据库设计 §9.1）：一个款式一个阶段的一个版本，下面挂尺寸指示、物料清单、工艺指示、核价的其他费用。
+ * 资料包的一个版本（tp_tech_pack，数据库设计 §9.1）：一个款式一个阶段的一个版本，下面挂物料清单、核价的其他费用，工艺单文件挂在 biz_attachment。
  * 款式、阶段、版本号、来源只在插入时写；状态、生效人、生效时间、乐观锁由动作改（条件更新）。都标 NEVER，普通保存碰不到。
  * version 是版本号，所以乐观锁叫 versionLock
  */
@@ -43,13 +43,13 @@ public class TechPack extends AuditEntity {
     /** 排版利用率 %，只记录 */
     private BigDecimal utilPct;
 
-    /** 包装方式，字典 packing_mode */
-    private String packingMode;
 
     private CostMode costMode;
 
     /** 成品单价，元/件（含料）；按成品采购算时用，没填时核价用价格档案里默认加工厂"包工包料"的现价 */
     private BigDecimal buyPrice;
+    /** 加工费，元/件，按外发算时用；没填时核价用价格档案里默认加工厂清加工、再半包的现价（PRD §6.4.5） */
+    private BigDecimal laborPrice;
 
     @TableField(typeHandler = JsonbTypeHandler.class, updateStrategy = FieldStrategy.NEVER)
     private PackOwnerSnapshot ownerSnapshot;

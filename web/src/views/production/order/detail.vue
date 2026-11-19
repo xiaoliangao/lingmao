@@ -8,6 +8,8 @@ import { ElMessage } from 'element-plus'
 import { productionApi as productionApiBase } from '@/api/production'
 import { kittingApi } from '@/api/purchase'
 import { techPackApi } from '@/api/techpack'
+import ExcelPreviewDialog from '@/components/ExcelPreviewDialog.vue'
+import { PACK_FILE_GROUPS, type PackFile } from '@/types/techpack'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -65,10 +67,10 @@ const productionApi = bindCompanyApi(productionApiBase, () => detail.value?.comp
  * - 地址和单子的种类对不上（回货单、异常的 docRoute 一律先去 /production/:id）：换到对的地址，带上 ?tab=，这个页签关掉
  * - 页签 ?tab=progress|lines|materials|issues|receipts，keep-alive 下再从别处点进来也认（只认本页地址）
  * - 页头：编辑、提交、审核 / 驳回（不是我审时写"现在等××审"）、领料、登记回货、报进度；
- *   上报异常、改节点计划、退料、撤回、反审核、结案、取消结案、打印、导出工艺单、删除、作废在"更多"里
+ *   上报异常、改节点计划、退料、撤回、反审核、结案、取消结案、打印、工艺单、删除、作废在"更多"里
  * - 状态动作走 runDocAction：1002 重新取详情
  * - 领料、退料、异常、回货、齐料各自取，一个取不到不影响别的
- * - 打印：页面里的 A4 打印版（PrintSheet），带颜色 × 尺码数量表和签字栏；工艺单是后端出的 PDF，另外导出
+ * - 打印：页面里的 A4 打印版（PrintSheet），带颜色 × 尺码数量表和签字栏；工艺单是资料包上传的文件（RFC 011 §2.4），"工艺单"里列出来下载、预览
  */
 type TabName = 'progress' | 'lines' | 'materials' | 'issues' | 'receipts'
 const TABS: TabName[] = ['progress', 'lines', 'materials', 'issues', 'receipts']
@@ -290,22 +292,32 @@ async function openHistory(node: ProductionNode) {
   }
 }
 
-// ---------- 导出工艺单 ----------
-const canExportCraft = computed(() => user.hasPerm('techpack:pack:list'))
+// ---------- 工艺单：锁定版本上传的文件（导入的 BOM 表不列），发工厂就发它 ----------
+const canSeeCraft = computed(() => user.hasPerm('techpack:pack:list'))
 const craftVisible = ref(false)
-const craftAppendix = ref(true)
-const exportingCraft = ref(false)
-async function exportCraft() {
+const craftLoading = ref(false)
+const craftFiles = ref<PackFile[]>([])
+async function openCraft() {
   const d = detail.value
   if (!d) return
-  exportingCraft.value = true
+  craftVisible.value = true
+  craftLoading.value = true
+  craftFiles.value = []
   try {
-    await techPackApi.pdf(d.techPackId, { price: false, appendix: craftAppendix.value }, `${d.styleCode}-${d.styleName}-工艺单-V${d.techPackVersion}.pdf`)
-    craftVisible.value = false
+    craftFiles.value = (await techPackApi.files(d.techPackId)).filter((f) => f.category !== 'BOM_SOURCE')
   } finally {
-    exportingCraft.value = false
+    craftLoading.value = false
   }
 }
+const craftGroupLabel = (f: PackFile) => PACK_FILE_GROUPS.find((g) => g.category === f.category)?.label ?? ''
+const isExcel = (name: string) => /\.(xls|xlsx)$/i.test(name)
+const previewing = ref(false)
+const previewFile = ref<PackFile | null>(null)
+function previewCraft(f: PackFile) {
+  previewFile.value = f
+  previewing.value = true
+}
+const loadCraftPreview = () => techPackApi.preview(detail.value!.techPackId, previewFile.value!.id)
 
 // ---------- 更多 ----------
 type MoreCommand = 'reportIssue' | 'editPlan' | 'returnMaterial' | 'withdraw' | 'unaudit' | 'close' | 'reopen' | 'print' | 'craft' | 'remove' | 'void'
@@ -319,7 +331,7 @@ const moreItems = computed(() => {
     can('close') && { command: 'close', label: '结案' },
     can('reopen') && { command: 'reopen', label: '取消结案' },
     { command: 'print', label: '打印' },
-    canExportCraft.value && { command: 'craft', label: '导出工艺单' },
+    canSeeCraft.value && { command: 'craft', label: '工艺单' },
     can('remove') && { command: 'remove', label: '删除', danger: true },
     can('void') && { command: 'void', label: '作废', danger: true },
   ]
@@ -331,7 +343,7 @@ function onMore(command: MoreCommand) {
   else if (command === 'editPlan') planNodeVisible.value = true
   else if (command === 'returnMaterial') openMatDoc('RETURN_IN')
   else if (command === 'print') void printRef.value?.print()
-  else if (command === 'craft') craftVisible.value = true
+  else if (command === 'craft') void openCraft()
   else if (command === 'remove') void remove()
   else void act(command)
 }
@@ -726,14 +738,24 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         </ul>
       </el-dialog>
 
-      <el-dialog v-model="craftVisible" title="导出工艺单" width="400px">
-        <p class="small dim">生产 V{{ detail.techPackVersion }}，全部颜色，不含价格（发给工厂的）。</p>
-        <el-checkbox v-model="craftAppendix">附工艺标准</el-checkbox>
+      <el-dialog v-model="craftVisible" title="工艺单" width="520px">
+        <div v-loading="craftLoading">
+          <p class="small dim">资料包生产 V{{ detail.techPackVersion }}上传的文件，下载以后发给工厂。</p>
+          <p v-if="!craftLoading && !craftFiles.length" class="dim">这一版资料包没有传工艺单：到款式的资料包里传</p>
+          <ul v-else class="craft-files">
+            <li v-for="f in craftFiles" :key="f.id">
+              <span class="dim small">{{ craftGroupLabel(f) }}</span>
+              <span class="craft-name" :title="f.name">{{ f.name }}</span>
+              <el-button v-if="isExcel(f.name)" link type="primary" size="small" @click="previewCraft(f)">预览</el-button>
+              <a :href="f.url" :download="f.name" class="craft-dl">下载</a>
+            </li>
+          </ul>
+        </div>
         <template #footer>
-          <el-button @click="craftVisible = false">取消</el-button>
-          <el-button type="primary" :loading="exportingCraft" @click="exportCraft">导出</el-button>
+          <el-button @click="craftVisible = false">关闭</el-button>
         </template>
       </el-dialog>
+      <ExcelPreviewDialog v-if="previewFile" v-model="previewing" :title="previewFile.name" :load="loadCraftPreview" :download-url="previewFile.url" />
 
       <PrintSheet ref="printRef" :title="kindMeta.label" :no="detail.no">
         <template #meta>
@@ -996,5 +1018,35 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
 
 :deep(.el-table__row.clickable) {
   cursor: pointer;
+}
+.craft-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 8px 0 0;
+  list-style: none;
+}
+
+.craft-files li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.craft-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.craft-dl {
+  font-size: 12.5px;
+  color: var(--lm-accent);
+  text-decoration: none;
 }
 </style>

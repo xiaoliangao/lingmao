@@ -110,11 +110,6 @@ step "导出 HEAD"
 mkdir "$BUILD/src"
 git archive HEAD | tar -x -C "$BUILD/src"
 
-step "导出 PDF 用的字体（不进 git，dev/fetch-font.sh 下到 dev/fonts/，下过一次就不再下）"
-"$ROOT/dev/fetch-font.sh"
-# 集成测试里有导出 PDF 的，导出的 HEAD 里没有字体，拷一份过去
-cp -R "$ROOT/dev/fonts" "$BUILD/src/dev/fonts"
-
 step "后端：mvn verify"
 # 单元测试加集成测试（*IT，连本机开发库容器里的 scm_test，每次先清空再从 V1 迁移，RFC 001 §11.2）
 (cd "$BUILD/src" && mvn -B -q verify -Drelease.version="$VERSION")
@@ -168,7 +163,6 @@ echo "  导出了 $(wc -c < "$BUILD/openapi.json" | tr -d ' ') 字节"
 step "打镜像（linux/${ARCH}；和本机 CPU 不一样时 Docker 要模拟，慢一点）"
 mkdir -p "$BUILD/ctx/app" "$BUILD/ctx/web"
 cp "$JAR" "$BUILD/ctx/app/app.jar"
-cp -R "$ROOT/dev/fonts" "$BUILD/ctx/app/fonts"
 cp -R "$BUILD/src/web/dist" "$BUILD/ctx/web/dist"
 # 不带 provenance、sbom：带了以后镜像多出几层清单，旧版本的 docker load 不认
 docker buildx build --platform "linux/$ARCH" --provenance=false --sbom=false --load \

@@ -26,8 +26,6 @@ public enum BizType {
     MATERIAL_SKU("物料 SKU", null),
     STYLE("款式", null),
     TECH_PACK("资料包", null),
-    /** 设置 › 工艺标准的文件（biz_attachment，doc_id 固定 0，架构 §4.9） */
-    CRAFT_STANDARD("工艺标准", null),
     ORDER("需求订单", "DD"),
     ORDER_CHANGE("订单变更单", "BG"),
     MRP_CALC("算料单", "SL"),

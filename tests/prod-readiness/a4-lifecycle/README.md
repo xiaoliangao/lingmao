@@ -20,7 +20,6 @@ python3 tests/prod-readiness/a4-lifecycle/process_gate.py
 | `SCM_TEST_REDIS_HOST`、`SCM_TEST_REDIS_PORT` | 默认 `127.0.0.1:6380` |
 | `SCM_TEST_REDIS_PASSWORD` | 已配置到该测试 Redis 的临时密码 |
 | `JAVA_HOME` | Java 21；也可从 PATH 查找 Java |
-| `PDF_FONT_DIR` | 已下载 NotoSansSC 两款 TTF 的字体目录，默认 `dev/fonts` |
 | `SCM_TEST_JAR` | 默认 `target/scm-0.0.1-SNAPSHOT.jar` |
 
 脚本新建随机 `_test` 数据库，生成临时密钥，使用私有文件目录和 Redis 11 号测试库。所有 JVM 顺序启动，每个进程限制 512MiB 堆、4 个可见处理器。数据库、私有文件和进程在退出时清理；不连接既有业务库。

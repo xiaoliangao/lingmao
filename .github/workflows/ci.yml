@@ -62,8 +62,7 @@ jobs:
           python -m pip install --requirement dev/ci/requirements.txt
           python -m playwright install --with-deps chromium
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends openssh-server poppler-utils
-          bash dev/fetch-font.sh
+          sudo apt-get install -y --no-install-recommends openssh-server
       - name: CI credential redaction and process-group cleanup regressions
         run: python3 tests/prod-readiness/a4-lifecycle/ci_helpers_test.py
       - name: T01–T10 and T12 — real database concurrency, security, migration and audit; production JAR

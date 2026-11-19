@@ -5,11 +5,14 @@ import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
 import tools.jackson.databind.JsonNode;
 
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.excel.ExcelPreview;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
 import com.lingmao.scm.module.techpack.dto.BomDefaultsReq;
+import com.lingmao.scm.module.techpack.dto.BomImportVO;
+import com.lingmao.scm.module.techpack.dto.PackFileVO;
 import com.lingmao.scm.module.techpack.dto.TechPackCostVO;
 import com.lingmao.scm.module.techpack.dto.TechPackCreateReq;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
@@ -17,18 +20,12 @@ import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.dto.VersionLockReq;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
-import com.lingmao.scm.module.techpack.service.TechPackPdfService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
-import com.lingmao.scm.security.LoginUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,9 +36,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** 资料包（docs/api/01 §3） */
 @Tag(name = "资料包")
@@ -52,7 +54,6 @@ public class TechPackController extends IdempotencyReplayGuard {
 
     private final TechPackService techPackService;
     private final TechPackCostService costService;
-    private final TechPackPdfService pdfService;
 
     @Operation(summary = "一个款的版本列表和概况（默认选哪一版、能建哪个阶段、单件成本）")
     @GetMapping
@@ -61,7 +62,7 @@ public class TechPackController extends IdempotencyReplayGuard {
         return R.ok(techPackService.overview(styleId));
     }
 
-    @Operation(summary = "一个版本：单头、尺寸指示、物料清单、工艺指示")
+    @Operation(summary = "一个版本：单头、物料清单、工艺单文件")
     @GetMapping("/{id:\\d+}")
     @PreAuthorize("hasAuthority('techpack:pack:list')")
     public R<TechPackDetailVO> detail(@PathVariable("id") long id) {
@@ -127,22 +128,34 @@ public class TechPackController extends IdempotencyReplayGuard {
         return R.ok(costService.cost(id, colorId));
     }
 
-    @Operation(summary = "导出 PDF 工艺单（含价格要看成本的权限，没有 403；草稿也能导）")
-    @GetMapping("/{id:\\d+}/pdf")
-    @PreAuthorize("hasAuthority('techpack:pack:list')")
-    public ResponseEntity<byte[]> pdf(@PathVariable("id") long id,
-                                      @Parameter(description = "只出这个颜色的物料清单，不给 = 全部颜色") @RequestParam(value = "colorId", required = false) Long colorId,
-                                      @Parameter(description = "含单价、单件成本、核价和工序工价") @RequestParam(value = "price", defaultValue = "false") boolean price,
-                                      @Parameter(description = "附工艺标准文件") @RequestParam(value = "appendix", defaultValue = "true") boolean appendix) {
-        if (price && !LoginUser.hasAuthority("techpack:cost:query")) {
-            throw new BizException(403, "导出含价格的工艺单要有看成本的权限：不勾「含价格」再导，或者找管理员开权限");
+    @Operation(summary = "从甲方的 BOM 表认出物料清单（只解析、不写库；只有草稿能调）")
+    @PostMapping("/{id:\\d+}/bom-import")
+    @PreAuthorize("hasAuthority('techpack:pack:edit')")
+    public R<BomImportVO> bomImport(@PathVariable("id") long id, @RequestParam("file") MultipartFile file,
+                                    @Parameter(description = "用第几张 sheet（从 0 起），不给 = 按款号、款名自动对") @RequestParam(value = "sheet", required = false) Integer sheet,
+                                    @Parameter(description = "人工挑的物料：Excel 行号:物料 id，几个用逗号分开，如 7:12,9:15") @RequestParam(value = "picks", required = false) String picks) {
+        if (file == null || file.isEmpty()) {
+            throw new BizException("文件不能为空");
         }
-        TechPackPdfService.PdfFile file = pdfService.export(id, colorId, price, appendix);
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        ContentDisposition.attachment().filename(file.fileName(), StandardCharsets.UTF_8).build().toString())
-                .body(file.content());
+        try (InputStream in = file.getInputStream()) {
+            return R.ok(techPackService.bomImport(id, in, sheet, picks(picks)));
+        } catch (IOException e) {
+            throw new UncheckedIOException("读取上传的文件失败", e);
+        }
+    }
+
+    @Operation(summary = "一个版本的工艺单文件（生产单详情上发工厂用）")
+    @GetMapping("/{id:\\d+}/files")
+    @PreAuthorize("hasAuthority('techpack:pack:list')")
+    public R<List<PackFileVO>> files(@PathVariable("id") long id) {
+        return R.ok(techPackService.files(id));
+    }
+
+    @Operation(summary = "工艺单页签上一个 Excel 的表格数据（预览用；不是 Excel 1000）")
+    @GetMapping("/{id:\\d+}/files/{fileId:\\d+}/preview")
+    @PreAuthorize("hasAuthority('techpack:pack:list')")
+    public R<ExcelPreview.Book> preview(@PathVariable("id") long id, @PathVariable("fileId") long fileId) {
+        return R.ok(techPackService.preview(id, fileId));
     }
 
     @Operation(summary = "操作记录，新的在前")
@@ -151,6 +164,23 @@ public class TechPackController extends IdempotencyReplayGuard {
     public R<List<DocLogVO>> logs(@PathVariable("id") long id) {
         return R.ok(techPackService.logs(id));
     }
+    /** "7:12,9:15" → {7=12, 9=15}；格式不对 400 */
+    static Map<Integer, Long> picks(String text) {
+        Map<Integer, Long> out = new HashMap<>();
+        if (text == null || text.isBlank()) {
+            return out;
+        }
+        for (String pair : text.split(",")) {
+            String[] kv = pair.strip().split(":");
+            try {
+                out.put(Integer.parseInt(kv[0].strip()), Long.parseLong(kv[1].strip()));
+            } catch (RuntimeException e) {
+                throw new BizException(400, "picks 的格式是 行号:物料id，几个用逗号分开");
+            }
+        }
+        return out;
+    }
+
     @Override
     public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {
         if (!"TECHPACK_CREATE".equals(operation)) techPackService.detail(((Number) arguments[0]).longValue());

@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-/** 一个版本：单头 + 尺寸指示、物料清单、工艺指示（前端 TechPackDetail，docs/api/01 §3.3）。核价另取 */
+/** 一个版本：单头 + 物料清单 + 工艺单文件（前端 TechPackDetail，docs/api/01 §3.3）。核价另取 */
 @Data
 public class TechPackDetailVO {
     private Long id;
@@ -23,7 +23,6 @@ public class TechPackDetailVO {
     private PackStatus status;
     private String versionNote;
     private BigDecimal utilPct;
-    private String packingMode;
     private Long publishBy;
     private String publishByName;
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
@@ -42,14 +41,9 @@ public class TechPackDetailVO {
     private String baseSize;
     /** 展示上下文的有序颜色；生效后有快照的版本不跟随当前主数据。 */
     private List<ColorOption> colors;
-    private List<PointOption> pointOptions;
-    private List<SpecPointVO> specPoints;
     private List<BomItemVO> bomItems;
-    private List<CraftSectionVO> craftSections;
-    private List<ProcessVO> processes;
-    /** 工序工价合计：总工时（秒）、参考加工价（元 / 件） */
-    private Integer stdSecondsTotal;
-    private BigDecimal laborTotal;
+    /** 工艺单页签的文件：按组（工艺单、纸样和其他、导入的 BOM 表），组内按顺序 */
+    private List<PackFileVO> files;
     /** 单件成本（核价合计，按第一个颜色）；没有看成本权限是 null */
     private BigDecimal unitCost;
     /** edit、remove、publish、revise（docs/api/01 §2） */

@@ -2,6 +2,7 @@ package com.lingmao.scm.common.excel;
 
 import com.lingmao.scm.common.exception.BizException;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -145,6 +146,14 @@ public final class Excel {
         } catch (IOException e) {
             throw new UncheckedIOException("读取上传的文件失败: " + name, e);
         }
+    }
+
+    /**
+     * 打开一份 .xls 或 .xlsx 只读（资料包的工艺单预览、BOM 表导入，RFC 011）：按文件头认类型，10MB 以内，
+     * 坏文件、带宏、带密码的说清原因（1000）。用 try-with-resources 关掉
+     */
+    public static Workbook openAny(InputStream in) {
+        return ExcelReader.openAny(in);
     }
 
     /** 导出文件（RFC 001 §9.4）：一张表，表名是列定义的 name。超过 5 万行抛 1000，提示缩小筛选范围 */

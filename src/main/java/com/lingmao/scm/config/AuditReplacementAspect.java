@@ -29,7 +29,6 @@ public class AuditReplacementAspect {
     public Object techPack(ProceedingJoinPoint call, long id, TechPackSaveReq request) throws Throwable {
         Map<String, Object> tables = new LinkedHashMap<>();
         tables.put("tp_bom_item", identities(request.getBomItems(), row -> row.getId()));
-        tables.put("tp_process", identities(request.getProcesses(), row -> row.getId()));
         return proceed(call, "tp_tech_pack", id, tables);
     }
 

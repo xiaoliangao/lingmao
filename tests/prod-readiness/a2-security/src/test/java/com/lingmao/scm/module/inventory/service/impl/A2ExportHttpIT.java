@@ -247,15 +247,15 @@ class A2ExportHttpIT {
             try {
                 assertThat(probe.twoRequests.await(10, TimeUnit.SECONDS)).isTrue();
                 // Invalid bodies would fail later. Saturated admission responds before either parser or controller.
-                for (String route : List.of("/api/materials/import", "/api/files", "/api/tech-packs/1/pdf", "/api/stocks/export")) {
-                    var response = send(http, route.endsWith("/import") || route.equals("/api/files") ? "POST" : "GET", route, "", owner.token(), null);
+                for (String route : List.of("/api/materials/import", "/api/files", "/api/tech-packs/1/bom-import", "/api/tech-packs/1/files/2/preview", "/api/stocks/export")) {
+                    var response = send(http, route.endsWith("import") || route.equals("/api/files") ? "POST" : "GET", route, "", owner.token(), null);
                     assertThat(response.statusCode()).isEqualTo(429);
                     assertThat(json.readTree(response.body()).path("code").intValue()).isEqualTo(429);
                     assertThat(response.headers().firstValue("Retry-After")).contains("3");
                     assertThat(response.headers().firstValue("X-Request-Id")).isPresent();
                 }
                 // Spring maps HEAD to the same GET controller, including its expensive generation.
-                for (String route : List.of("/api/tech-packs/1/pdf", "/api/stocks/export", "/api/inventory-counts/1/sheet")) {
+                for (String route : List.of("/api/tech-packs/1/files/2/preview", "/api/stocks/export", "/api/inventory-counts/1/sheet")) {
                     var response = send(http, "HEAD", route, "", owner.token(), null);
                     assertThat(response.statusCode()).isEqualTo(429);
                     assertThat(response.headers().firstValue("Retry-After")).contains("3");

@@ -21,7 +21,6 @@ import com.lingmao.scm.module.techpack.entity.BomSkuMode;
 import com.lingmao.scm.module.techpack.entity.BomUsageMode;
 import com.lingmao.scm.module.techpack.entity.CostItem;
 import com.lingmao.scm.module.techpack.entity.CostMode;
-import com.lingmao.scm.module.techpack.entity.PackProcess;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.BomRow;
 import com.lingmao.scm.module.techpack.service.impl.PackOwners.Ctx;
@@ -48,7 +47,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>一行物料：基码用量（统一用量的行就是统一用量）×（1 + 损耗率%）× 单价，四舍五入到分；单价 = 这个颜色、基码配到的 SKU 上单独的价 &gt; 行上的价</li>
  *   <li>只有自购的行计入；面料块 = 物料类型是面料、里料的行，辅料块 = 其余的行</li>
- *   <li>加工费：按外发 = 工序工价合计；按成品采购 = 成品单价，没填用价格档案里默认加工厂"包工包料"的现价，都没有是 0</li>
+ *   <li>加工费：按外发 = 资料包上的加工费，没填用价格档案里默认加工厂"清加工"、再"半包"的现价；按成品采购 = 成品单价，没填用"包工包料"的现价；都没有是 0</li>
  *   <li>合计 = 四块相加；倍率 = 吊牌价 ÷ 合计</li>
  * </ul>
  * 行的单件成本先取到分再加总：页面上看到的行加起来正好等于块的合计（和单据行金额的取法一样）
@@ -61,6 +60,8 @@ class CostCalculator {
     static final Set<String> FABRIC_TYPES = Set.of("FABRIC", "LINING");
     /** 核价按成品采购算时，取价格档案里的哪种加工方式：包工包料（字典 process_mode） */
     static final String BUY_PROCESS_MODE = "FULL";
+    /** 按外发算、资料包没填加工费时，按这个顺序取价格档案里的加工方式：清加工，没有再取半包（RFC 011 §3.1） */
+    static final List<String> LABOR_PROCESS_MODES = List.of("CMT", "HALF");
 
     private final PackContent packContent;
     private final MaterialService materialService;
@@ -68,16 +69,20 @@ class CostCalculator {
     private final SupplierService supplierService;
     private final Clock clock;
 
-    record Inputs(List<BomRow> bom, List<PackProcess> processes, List<CostItem> items,
+    record Inputs(List<BomRow> bom, List<CostItem> items,
                   Map<Long, MaterialRef> materials, Map<Long, MaterialSkuRef> skus,
-                  String factoryName, BigDecimal buyPriceDefault) { }
+                  String factoryName, BigDecimal buyPriceDefault, LaborDefault laborDefault) { }
+
+    /** 价格档案里的默认加工费：价和取自哪种加工方式（CMT、HALF）；都没有时 price、mode 都是 null */
+    record LaborDefault(BigDecimal price, String mode) {
+        static final LaborDefault NONE = new LaborDefault(null, null);
+    }
 
     /** 按一页版本一次读取内容、主档和现价；循环内只做相同的精确计算。 */
     Map<Long, Inputs> preload(Collection<TechPack> packs, Map<Long, Ctx> contexts) {
         List<TechPack> available = packs.stream().filter(p -> contexts.containsKey(p.getId())).toList();
         List<Long> ids = available.stream().map(TechPack::getId).toList();
         Map<Long, List<BomRow>> boms = packContent.loadBoms(ids);
-        Map<Long, List<PackProcess>> processes = packContent.loadProcessCosts(ids);
         Map<Long, List<CostItem>> items = packContent.loadCostItems(ids);
         List<BomRow> allBom = boms.values().stream().flatMap(Collection::stream).toList();
         Map<Long, MaterialRef> materials = materials(allBom);
@@ -85,44 +90,83 @@ class CostCalculator {
         Set<Long> factoryIds = contexts.values().stream().map(c -> c.owner().defaultFactoryId())
                 .filter(Objects::nonNull).collect(Collectors.toSet());
         Map<Long, SupplierRef> factories = factoryIds.isEmpty() ? Map.of() : supplierService.refs(factoryIds);
-        List<ProcessPriceKey> keys = available.stream().filter(p -> p.getStyleId() != null
-                        && contexts.get(p.getId()).owner().defaultFactoryId() != null)
-                .map(p -> new ProcessPriceKey(contexts.get(p.getId()).owner().defaultFactoryId(), p.getStyleId(), BUY_PROCESS_MODE)).toList();
-        Map<ProcessPriceKey, PriceRef> prices = priceService.currentProcesses(keys, LocalDate.now(clock));
+        Map<ProcessPriceKey, PriceRef> prices = archivePrices(available, contexts);
         Map<Long, Inputs> result = new HashMap<>();
         for (TechPack pack : available) {
             Long factoryId = contexts.get(pack.getId()).owner().defaultFactoryId();
             SupplierRef factory = factoryId == null ? null : factories.get(factoryId);
-            PriceRef price = factoryId == null || pack.getStyleId() == null ? null
-                    : prices.get(new ProcessPriceKey(factoryId, pack.getStyleId(), BUY_PROCESS_MODE));
-            result.put(pack.getId(), new Inputs(boms.getOrDefault(pack.getId(), List.of()), processes.getOrDefault(pack.getId(), List.of()),
+            PriceRef price = archivePrice(prices, pack, factoryId, BUY_PROCESS_MODE);
+            result.put(pack.getId(), new Inputs(boms.getOrDefault(pack.getId(), List.of()),
                     items.getOrDefault(pack.getId(), List.of()), materials, skus, factory == null ? null : factory.shortName(),
-                    price == null ? null : price.price()));
+                    price == null ? null : price.price(), laborDefault(prices, pack, factoryId)));
         }
         return result;
     }
 
-    TechPackCostVO computePrepared(TechPack pack, Ctx ctx, Inputs inputs) {
-        return computePrepared(pack, ctx, ctx.firstColorId(), inputs);
+    /**
+     * 几个版本按外发算时的加工费：填了的用填的，没填用价格档案里的默认（清加工、再半包），都没有是 null。
+     * 排单对话框显示锁定版本的加工费用它（RFC 011 §3.1）
+     */
+    Map<Long, BigDecimal> laborPrices(Collection<TechPack> packs, Map<Long, Ctx> contexts) {
+        List<TechPack> missing = packs.stream().filter(p -> p.getLaborPrice() == null && contexts.containsKey(p.getId())).toList();
+        Map<ProcessPriceKey, PriceRef> prices = archivePrices(missing, contexts);
+        Map<Long, BigDecimal> out = new HashMap<>();
+        for (TechPack pack : packs) {
+            BigDecimal price = pack.getLaborPrice() != null ? pack.getLaborPrice() : !contexts.containsKey(pack.getId()) ? null
+                    : laborDefault(prices, pack, contexts.get(pack.getId()).owner().defaultFactoryId()).price();
+            if (price != null) {
+                out.put(pack.getId(), price);
+            }
+        }
+        return out;
     }
 
-    /** PDF 等按颜色重复核价时复用同一份批量输入，颜色仍逐次参与精确配料选择。 */
-    TechPackCostVO computePrepared(TechPack pack, Ctx ctx, Long colorId, Inputs inputs) {
-        return compute(pack, ctx, colorId, inputs);
+    /** 这几个版本的款式在默认加工厂的包工包料、清加工、半包现价，一次查完 */
+    private Map<ProcessPriceKey, PriceRef> archivePrices(Collection<TechPack> packs, Map<Long, Ctx> contexts) {
+        List<ProcessPriceKey> keys = new ArrayList<>();
+        for (TechPack p : packs) {
+            Long factoryId = contexts.get(p.getId()).owner().defaultFactoryId();
+            if (p.getStyleId() == null || factoryId == null) {
+                continue;
+            }
+            keys.add(new ProcessPriceKey(factoryId, p.getStyleId(), BUY_PROCESS_MODE));
+            LABOR_PROCESS_MODES.forEach(mode -> keys.add(new ProcessPriceKey(factoryId, p.getStyleId(), mode)));
+        }
+        return keys.isEmpty() ? Map.of() : priceService.currentProcesses(keys, LocalDate.now(clock));
+    }
+
+    private static PriceRef archivePrice(Map<ProcessPriceKey, PriceRef> prices, TechPack pack, Long factoryId, String mode) {
+        return factoryId == null || pack.getStyleId() == null ? null
+                : prices.get(new ProcessPriceKey(factoryId, pack.getStyleId(), mode));
+    }
+
+    private static LaborDefault laborDefault(Map<ProcessPriceKey, PriceRef> prices, TechPack pack, Long factoryId) {
+        for (String mode : LABOR_PROCESS_MODES) {
+            PriceRef price = archivePrice(prices, pack, factoryId, mode);
+            if (price != null) {
+                return new LaborDefault(price.price(), mode);
+            }
+        }
+        return LaborDefault.NONE;
+    }
+
+    TechPackCostVO computePrepared(TechPack pack, Ctx ctx, Inputs inputs) {
+        return compute(pack, ctx, ctx.firstColorId(), inputs);
     }
 
     /** 一个版本的核价 */
     TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId) {
         List<BomRow> bom = packContent.loadBom(pack.getId());
-        List<PackContent.ProcessRow> processes = packContent.loadProcesses(pack.getId());
         List<CostItem> items = packContent.loadCostItems(pack.getId());
-        return compute(pack, ctx, colorId, new Inputs(bom, processes.stream().map(PackContent.ProcessRow::process).toList(),
-                items, materials(bom), skus(bom), factoryName(ctx.owner().defaultFactoryId()), buyPriceDefault(pack, ctx)));
+        Map<ProcessPriceKey, PriceRef> prices = archivePrices(List.of(pack), Map.of(pack.getId(), ctx));
+        Long factoryId = ctx.owner().defaultFactoryId();
+        PriceRef buy = archivePrice(prices, pack, factoryId, BUY_PROCESS_MODE);
+        return compute(pack, ctx, colorId, new Inputs(bom, items, materials(bom), skus(bom), factoryName(factoryId),
+                buy == null ? null : buy.price(), laborDefault(prices, pack, factoryId)));
     }
 
     private TechPackCostVO compute(TechPack pack, Ctx ctx, Long colorId, Inputs inputs) {
         List<BomRow> bom = inputs.bom();
-        List<PackProcess> processes = inputs.processes();
         List<CostItem> items = inputs.items();
         Map<Long, MaterialRef> materials = inputs.materials();
         Map<Long, MaterialSkuRef> skus = inputs.skus();
@@ -135,6 +179,9 @@ class CostCalculator {
         vo.setDefaultFactoryId(ctx.owner().defaultFactoryId());
         vo.setDefaultFactoryName(inputs.factoryName());
         vo.setBuyPriceDefault(inputs.buyPriceDefault());
+        vo.setLaborPrice(pack.getLaborPrice());
+        vo.setLaborPriceDefault(inputs.laborDefault().price());
+        vo.setLaborPriceDefaultMode(inputs.laborDefault().mode());
         vo.setTagPrice(ctx.owner().tagPrice());
 
         List<CostRowVO> fabric = new ArrayList<>();
@@ -152,14 +199,11 @@ class CostCalculator {
         vo.setTrimRows(trim);
         vo.setMixedBasis(bases.size() > 1);
 
-        BigDecimal laborTotal = laborTotal(processes);
-        vo.setLaborTotal(laborTotal);
-        vo.setProcessCount(processes.size());
         vo.setOtherItems(items.stream().map(CostCalculator::itemVO).toList());
 
         BigDecimal labor = pack.getCostMode() == CostMode.BUY
                 ? Num.money(firstNonNull(pack.getBuyPrice(), vo.getBuyPriceDefault(), BigDecimal.ZERO))
-                : laborTotal;
+                : Num.money(firstNonNull(pack.getLaborPrice(), vo.getLaborPriceDefault(), BigDecimal.ZERO));
         CostSummary summary = summary(sum(fabric), sum(trim), labor,
                 Num.money(items.stream().map(CostItem::getAmount).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add)));
         vo.setSummary(summary);
@@ -209,11 +253,6 @@ class CostCalculator {
         return sku != null && sku.getRefPrice() != null ? sku.getRefPrice() : row.item().getRefPrice();
     }
 
-    static BigDecimal laborTotal(List<PackProcess> processes) {
-        return Num.money(processes.stream().map(PackProcess::getPrice).filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
-    }
-
     private CostRowVO row(BomRow row, MaterialRef material, Map<Long, MaterialSkuRef> skus, Long colorId, String baseSize) {
         BomItem item = row.item();
         BomItemSku picked = pick(row, colorId, baseSize);
@@ -245,16 +284,6 @@ class CostCalculator {
                 ? Num.money(Num.addPct(usage, item.getLossPct()).multiply(price))
                 : Num.money(BigDecimal.ZERO));
         return r;
-    }
-
-    /** 默认加工厂做这个款"包工包料"的现价；款式没设默认加工厂、档案里没有是 null */
-    private BigDecimal buyPriceDefault(TechPack pack, Ctx ctx) {
-        Long factoryId = ctx.owner().defaultFactoryId();
-        if (factoryId == null || pack.getStyleId() == null) {
-            return null;
-        }
-        return priceService.currentProcess(factoryId, pack.getStyleId(), BUY_PROCESS_MODE, LocalDate.now(clock))
-                .map(PriceRef::price).orElse(null);
     }
 
     private String factoryName(Long factoryId) {

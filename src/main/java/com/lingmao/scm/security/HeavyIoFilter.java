@@ -11,7 +11,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.util.concurrent.Semaphore;
 
-/** 在解析 multipart、建 POI 或 PDF 对象、进 controller 事务之前做准入。 */
+/** 在解析 multipart、建 POI 对象、进 controller 事务之前做准入。 */
 public final class HeavyIoFilter extends OncePerRequestFilter {
     private final Semaphore permits = new Semaphore(2);
     private final JsonMapper json;
@@ -19,10 +19,11 @@ public final class HeavyIoFilter extends OncePerRequestFilter {
 
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return !((request.getMethod().equals("GET") || request.getMethod().equals("HEAD")) && (path.endsWith("/export") || path.endsWith("/pdf")
-                || path.endsWith("/import-template") || path.matches("/api/inventory-counts/[1-9][0-9]*/sheet")))
+        return !((request.getMethod().equals("GET") || request.getMethod().equals("HEAD")) && (path.endsWith("/export")
+                || path.endsWith("/import-template") || path.matches("/api/inventory-counts/[1-9][0-9]*/sheet")
+                || path.matches("/api/tech-packs/[1-9][0-9]*/files/[1-9][0-9]*/preview")))
                 && !(request.getMethod().equals("POST") && (path.equals("/api/files") || path.matches("/api/(materials|styles|suppliers|orders)/import")
-                || path.matches("/api/inventory-counts/[1-9][0-9]*/import")));
+                || path.matches("/api/inventory-counts/[1-9][0-9]*/import") || path.matches("/api/tech-packs/[1-9][0-9]*/bom-import")));
     }
 
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)

@@ -55,6 +55,35 @@ final class ExcelReader {
         }
     }
 
+    /**
+     * .xls、.xlsx 都收（资料包的工艺单预览、BOM 表导入，RFC 011）：按文件头认，不看扩展名。
+     * .xlsx 照导入的规矩先查压缩包；.xls 查 OLE 目录（有没有工作簿、有没有宏、条目数），10MB 以内
+     */
+    static Workbook openAny(InputStream in) {
+        try {
+            byte[] bytes = in.readNBytes((int) Excel.MAX_IMPORT_BYTES + 1);
+            if (bytes.length > Excel.MAX_IMPORT_BYTES) {
+                throw new BizException("文件超过 " + Excel.MAX_IMPORT_BYTES / 1024 / 1024 + "MB");
+            }
+            if (ExcelArchiveGuard.isOle(bytes)) {
+                ExcelArchiveGuard.inspectOle(bytes);
+                return WorkbookFactory.create(new ByteArrayInputStream(bytes));
+            }
+            if (bytes.length < 4 || bytes[0] != 'P' || bytes[1] != 'K') {
+                throw new BizException("文件打不开：只收 .xls、.xlsx 的 Excel 文件");
+            }
+            return WorkbookFactory.create(new ByteArrayInputStream(ExcelArchiveGuard.inspect(new ByteArrayInputStream(bytes))));
+        } catch (BizException e) {
+            throw e;
+        } catch (EmptyFileException e) {
+            throw new BizException("文件是空的");
+        } catch (EncryptedDocumentException e) {
+            throw new BizException("文件设了密码，请在 Excel 里去掉密码再试");
+        } catch (IOException | RuntimeException e) {
+            throw new BizException("文件打不开，可能不是 Excel 文件或者已经损坏。请用 Excel 打开、另存一份再试");
+        }
+    }
+
     /** 只读一张表的导入读哪一张："数据"，没有就第一张（工作表改了名、或者数据贴进了新建的文件） */
     static Sheet dataSheet(Workbook workbook) {
         Sheet sheet = workbook.getSheet(Excel.DATA_SHEET);

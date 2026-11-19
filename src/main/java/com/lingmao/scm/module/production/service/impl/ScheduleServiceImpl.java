@@ -102,7 +102,7 @@ public class ScheduleServiceImpl implements ScheduleService {
         Set<Long> packIds = byStyle.values().stream().map(ls -> ls.getFirst().techPackId()).filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         Map<Long, PackBrief> packs = techPackService.briefs(packIds);
-        Map<Long, BigDecimal> labor = techPackService.laborTotals(packIds);
+        Map<Long, BigDecimal> labor = techPackService.laborPrices(packIds);
         Map<Long, SupplierRef> factories = supplierService.refs(infos.values().stream().map(StyleOrderInfo::defaultFactoryId)
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
 

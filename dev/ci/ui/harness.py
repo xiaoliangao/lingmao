@@ -6,8 +6,6 @@ import json
 import os
 import re
 import struct
-import subprocess
-import shutil
 import zlib
 import uuid
 from datetime import datetime
@@ -154,7 +152,7 @@ def line_values(detail: dict) -> dict:
 
 
 def cost_values(cost: dict) -> tuple:
-    return (cost["costMode"], cost.get("buyPrice"),
+    return (cost["costMode"], cost.get("buyPrice"), cost.get("laborPrice"),
             [(item["name"], item["amount"], item.get("remark")) for item in cost["otherItems"]])
 
 
@@ -162,17 +160,13 @@ def pack_update(detail: dict, cost: dict | None = None) -> dict:
     """Roundtrip editable pack fields without leaking response-only display fields."""
     def fields(row, names):
         return {name: row.get(name) for name in names.split()}
-    def images(rows):
-        return [fields(row, "url thumbUrl name size") for row in rows]
-    result = fields(detail, "versionLock versionNote utilPct packingMode")
-    result["specPoints"] = [fields(row, "point method toleranceCm gradeCm remark values") for row in detail["specPoints"]]
+    result = fields(detail, "versionLock versionNote utilPct")
     result["bomItems"] = []
     for row in detail["bomItems"]:
         value = fields(row, "id part materialId skuMode usageMode usageQty sizeUsages lossPct source supplierId refPrice priceSourceId priceTaxIncluded priceFreightIncluded remark")
         value["skus"] = [fields(sku, "colorId sizeCode materialSkuId refPrice") for sku in row["skus"]]
         result["bomItems"].append(value)
-    result["craftSections"] = [{**fields(row, "section content"), "images": images(row["images"])} for row in detail["craftSections"]]
-    result["processes"] = [{**fields(row, "id category name requirement stdSeconds price remark"), "images": images(row["images"])} for row in detail["processes"]]
+    result["files"] = [fields(row, "category url thumbUrl name size") for row in detail["files"]]
     result["cost"] = cost
     return result
 
@@ -229,19 +223,6 @@ def spreadsheet_rows(content: bytes) -> list[list[str]]:
                     cells.append(text)
                 result.append(cells)
         return result
-
-
-def pdf_text(content: bytes) -> str:
-    if not content.startswith(b"%PDF-"):
-        raise AssertionError("The real endpoint did not return a PDF")
-    executable = shutil.which("pdftotext")
-    if not executable:
-        raise RuntimeError("Install poppler-utils in the UI test runner")
-    process = subprocess.run([executable, "-layout", "-", "-"], input=content,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-    if process.returncode:
-        raise AssertionError("Anonymous PDF text extraction failed")
-    return re.sub(r"\s+", "", process.stdout.decode("utf-8"))
 
 
 def sanitized_error(message: str, token: str | None = None) -> str:

@@ -9,7 +9,7 @@ import lombok.EqualsAndHashCode;
  * 附件和图片（biz_attachment，数据库设计 §4.2、§1.7）：挂在一条记录上的文件，款式图、物料图、报工照片、签回件都在这里，
  * 不再给每种图建表。文件本身已经由 /api/files 传好了，这里只记挂在哪、第几张、地址。
  * <p>
- * 同一条记录里一种页面控件一种 category：图片 IMAGE、文件 FILE；款式的设计附件 DESIGN、资料包工艺指示插图用段代码，各模块自己定。
+ * 同一条记录里一种页面控件一种 category：图片 IMAGE、文件 FILE；款式的设计附件 DESIGN、资料包的工艺单 CRAFT_SHEET 等（TechPackFiles），各模块自己定。
  * IMAGE 里 sort 最小的是主图（PRD §5.8）。file_url、thumb_url 存不带签名的 /files/...，返回时由 AttachmentService 签名。
  */
 @Data

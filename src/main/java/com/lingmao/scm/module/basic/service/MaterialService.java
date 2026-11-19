@@ -102,6 +102,15 @@ public interface MaterialService {
     /** 按 SKU 码找 id（导入盘点表用），不分大小写；key 是大写的码，找不到的不在 map 里 */
     Map<String, Long> skuIdsByCodes(Collection<String> codes);
 
+    /**
+     * 按物料名称找启用的物料和它启用的 SKU（资料包从 BOM 表导入，RFC 011 §4.2）：名称去掉首尾空格后完全相同才算，不分大小写。
+     * key 是去掉首尾空格、转小写的名称 → 这个名字的物料（可能几个同名的）各自的 SKU，按物料编码、SKU 编码排；没有启用 SKU 的物料不在里面
+     */
+    Map<String, List<MaterialSkuRef>> enabledSkusByNames(Collection<String> names);
+
+    /** 几种物料启用的 SKU（BOM 导入时人工挑了物料的行）：物料 id → SKU，按 SKU 编码排；停用的物料、没有启用 SKU 的不在 map 里 */
+    Map<Long, List<MaterialSkuRef>> enabledSkusOf(Collection<Long> materialIds);
+
     byte[] importTemplate();
 
     ImportResult importExcel(MultipartFile file);

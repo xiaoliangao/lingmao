@@ -1,8 +1,7 @@
-// techpack 域（资料包、核价、工艺标准）的返回，和后端 module/techpack/dto 对应（docs/api/01-资料包.md）。
+// techpack 域（资料包、核价、BOM 表导入、工艺单预览）的返回，和后端 module/techpack/dto 对应（docs/api/01-资料包.md）。
 // 字段名照数据库设计 §9 的列名转 camelCase；可能为 null 的地方都写了。用量、单价、金额是后端的 BigDecimal，到前端是 JSON 数字
 import type { Attachment, StatusTone } from '@/types/biz'
 import type { ColorOption, EnableStatus, MaterialSource } from '@/types/basic'
-import type { FileVO } from '@/types/system'
 
 // ---------------------------------------------------------------- 枚举和叫法
 
@@ -17,7 +16,7 @@ export function packName(p: { version: number }): string {
   return 'V' + p.version
 }
 
-/** 版本状态：草稿能改；生效后只读，要改点"修订"；新版本生效时，旧的自动变已作废（还能看、能导出） */
+/** 版本状态：草稿能改；生效后只读，要改点"修订"；新版本生效时，旧的自动变已作废（还能看） */
 export type PackStatus = 'DRAFT' | 'EFFECTIVE' | 'VOIDED'
 
 export const PACK_STATUS: Record<PackStatus, { label: string; tone: StatusTone }> = {
@@ -28,8 +27,8 @@ export const PACK_STATUS: Record<PackStatus, { label: string; tone: StatusTone }
 
 /**
  * 资料包详情的按钮（后端按"状态 ∩ 权限 ∩ 业务条件"算好）：
- * edit 改草稿、remove 删草稿、publish 生效（草稿）；revise 修订（已生效，且还没有草稿）。
- * 导出 PDF 不在这里：能看资料包就能导，"含价格"看 techpack:cost:query
+ * edit 改草稿（含传工艺单、从 BOM 表导入）、remove 删草稿、publish 生效（草稿）；revise 修订（已生效，且还没有草稿）。
+ * 工艺单的下载、预览不在这里：能看资料包就能看
  */
 export type TechPackAction = 'edit' | 'remove' | 'publish' | 'revise'
 
@@ -51,7 +50,7 @@ export const BOM_USAGE_MODE: Record<BomUsageMode, string> = {
   BY_SIZE: '分码',
 }
 
-/** 核价按什么算（tp_tech_pack.cost_mode）：按外发 = 加工费取工序工价合计；按成品采购 = 加工费取成品单价（含料） */
+/** 核价按什么算（tp_tech_pack.cost_mode）：按外发 = 加工费取资料包上的加工费；按成品采购 = 加工费取成品单价（含料） */
 export type CostMode = 'OUTSOURCE' | 'BUY'
 
 export const COST_MODE: Record<CostMode, string> = {
@@ -59,27 +58,22 @@ export const COST_MODE: Record<CostMode, string> = {
   BUY: '按成品采购算',
 }
 
-/** 工艺指示的段（tp_craft_section.section）。段代码固定九个，PDF 的版式按它排，所以是枚举不是字典 */
-export type CraftSection = 'CUTTING' | 'SEWING' | 'PART' | 'QUALITY' | 'BUTTON' | 'IRONING' | 'LABEL' | 'PACKING' | 'NOTE'
+/**
+ * 工艺单页签的文件分组（biz_attachment.category，RFC 011 §2）：工艺单、纸样和其他、导入的 BOM 表。
+ * 顺序就是页面上的顺序；types 是这一组收的扩展名（后端同样查一遍）
+ */
+export type PackFileCategory = 'CRAFT_SHEET' | 'PATTERN' | 'BOM_SOURCE'
 
-export const CRAFT_SECTION_LABEL: Record<CraftSection, string> = {
-  CUTTING: '裁剪要求',
-  SEWING: '缝制要求',
-  PART: '部位工艺细则',
-  QUALITY: '做工品质',
-  BUTTON: '锁钉要求',
-  IRONING: '整烫说明',
-  LABEL: '洗唛 / 烫标',
-  PACKING: '包装要求',
-  NOTE: '注意事项',
-}
+const SHEET_TYPES = ['xls', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp']
 
-/** 页面上分三块（照甲方线下工艺单，原型 CRAFT_SECS）；包装要求那一段上面多一个"包装方式"单选（字典 packing_mode） */
-export const CRAFT_GROUPS: { title: string; sections: CraftSection[] }[] = [
-  { title: '车间缝制', sections: ['CUTTING', 'SEWING', 'PART', 'QUALITY'] },
-  { title: '后道', sections: ['BUTTON', 'IRONING', 'LABEL', 'PACKING'] },
-  { title: '注意事项', sections: ['NOTE'] },
+export const PACK_FILE_GROUPS: { category: PackFileCategory; label: string; types: string[] }[] = [
+  { category: 'CRAFT_SHEET', label: '工艺单', types: SHEET_TYPES },
+  { category: 'PATTERN', label: '纸样和其他', types: [...SHEET_TYPES, 'prj'] },
+  { category: 'BOM_SOURCE', label: '导入的 BOM 表', types: ['xls', 'xlsx'] },
 ]
+
+/** 一组最多挂几个 */
+export const PACK_FILE_MAX = 20
 
 /** 资料包操作记录里的动作叫法（DocLogList 的 actions）；状态叫法用 PACK_STATUS 的 label */
 export const TECH_PACK_LOG_ACTIONS: Record<string, string> = {
@@ -88,6 +82,7 @@ export const TECH_PACK_LOG_ACTIONS: Record<string, string> = {
   revise: '修订',
   publish: '生效',
   void: '被新版本替代',
+  /** 11-18 去掉了导出 PDF，老记录里还有 */
   'export-pdf': '导出 PDF',
 }
 
@@ -128,27 +123,7 @@ export interface TechPackOverview {
   unitCostPackId: string | null
 }
 
-// ---------------------------------------------------------------- 详情的四个页签
-
-/** 尺寸指示的一行（tp_spec_point + tp_spec_value） */
-export interface SpecPoint {
-  id: string
-  seq: number
-  /** 部位：从字典 size_point 选或手填，存的是文字不是字典 value */
-  point: string
-  /** 测量方法：选部位时默认带工艺标准里这个部位的测量方法，可改 */
-  method: string | null
-  /** 公差 ±cm */
-  toleranceCm: number | null
-  /** 档差 cm */
-  gradeCm: number | null
-  remark: string | null
-  /** 尺码 → 尺寸 cm；没填的格子没有这个键 */
-  values: Record<string, number>
-}
-
-/** 保存时一行尺寸指示。顺序 = 数组顺序（拖动排序就是改数组） */
-export type SpecPointForm = Omit<SpecPoint, 'id' | 'seq'>
+// ---------------------------------------------------------------- 详情（物料清单、工艺单两个页签；核价另取）
 
 /**
  * BOM 行实际用的一个物料 SKU（tp_bom_item_sku）。四种配料方式都在这里：
@@ -285,43 +260,28 @@ export interface BomDefault {
   skuPrices?: { materialSkuId: string; refPrice: number }[]
 }
 
-/** 工艺指示的一段。九段都会返回，没写的 content 是 '' */
-export interface CraftSectionView {
-  section: CraftSection
-  content: string
-  /** 插图（biz_attachment，category = 段代码），按顺序 */
-  images: Attachment[]
-}
-
-export interface CraftSectionForm {
-  section: CraftSection
-  content: string | null
-  /** 整组替换这一段的插图 */
-  images: FileVO[]
-}
-
-/**
- * 工序工价的一行（tp_process），在工艺指示页签最下面，标"内部"。
- * 图示存在 tp_process_image，只有地址：返回时 name 是文件名（从地址里取的）、size 是 0，方便直接给 ImageUpload 用
- */
-export interface ProcessRow {
+/** 工艺单页签的一个文件（biz_attachment）。url 带签名，直接下载；id 是预览用的 */
+export interface PackFile {
   id: string
-  seq: number
-  /** 工序类别，字典 process_category */
-  category: string | null
+  category: PackFileCategory
+  url: string
+  thumbUrl: string | null
   name: string
-  requirement: string | null
-  /** 标准工时，秒 */
-  stdSeconds: number | null
-  /** 工价，元 / 件 */
-  price?: number | null
-  remark: string | null
-  images: FileVO[]
+  size: number
 }
 
-export type ProcessForm = Omit<ProcessRow, 'id' | 'seq'> & { id?: string }
+/** 保存时一个文件：先 upload 到 /api/files 拿 FileVO，再带上组。组里的顺序 = 数组里的顺序 */
+export interface PackFileForm {
+  /** 已经存在资料包上的有 id（预览要它），刚传的还没有；保存时不发 */
+  id?: string
+  category: PackFileCategory
+  url: string
+  thumbUrl: string | null
+  name: string
+  size: number
+}
 
-/** GET /api/tech-packs/{id}：一个版本的单头和尺寸指示、物料清单、工艺指示三个页签。核价另取（要看成本的权限） */
+/** GET /api/tech-packs/{id}：一个版本的单头、物料清单、工艺单文件。核价另取（要看成本的权限） */
 export interface TechPackDetail {
   /** 颜色尺码取自哪里：LIVE 草稿取款式现在的，SNAPSHOT 生效时记下的，LEGACY 升级前生效的老版本 */
   contextSource: 'LIVE' | 'SNAPSHOT' | 'LEGACY'
@@ -337,8 +297,6 @@ export interface TechPackDetail {
   versionNote: string | null
   /** 排版利用率 %，只记录 */
   utilPct: number | null
-  /** 包装方式，字典 packing_mode */
-  packingMode: string | null
   publishBy: string | null
   publishByName: string | null
   publishTime: string | null
@@ -347,21 +305,15 @@ export interface TechPackDetail {
   updateTime: string
   /** 乐观锁：保存草稿、生效都带回去，对不上 1002（tp_tech_pack 的 version 是版本号，所以锁叫这个名字） */
   versionLock: number
-  /** 款式尺码组的尺码，按顺序；尺寸指示、分码用量、随尺码配料按它出列 */
+  /** 款式尺码组的尺码，按顺序；分码用量、随尺码配料按它出列 */
   sizes: string[]
-  /** 尺码组的基码：尺寸指示里标出来，单件成本按它的用量算 */
+  /** 尺码组的基码：单件成本按它的用量算 */
   baseSize: string
-  /** 本版次的颜色集合，按顺序；随款色配料按它出行，"按颜色"视图、导出 PDF 按它选 */
+  /** 本版次的颜色集合，按顺序；随款色配料按它出行，"按颜色"视图按它选 */
   colors: ColorOption[]
-  /** 尺寸指示选部位的下拉：字典 size_point 启用的项和它的默认测量方法（工艺标准里填的）。只读的版本也给，数量不多 */
-  pointOptions: { label: string; method: string | null }[]
-  specPoints: SpecPoint[]
   bomItems: BomItem[]
-  craftSections: CraftSectionView[]
-  processes: ProcessRow[]
-  /** 工序工价合计：总工时（秒）、参考加工价（元 / 件） */
-  stdSecondsTotal: number
-  laborTotal?: number
+  /** 工艺单页签的文件，按组（PACK_FILE_GROUPS 的顺序）、组里按排的顺序 */
+  files: PackFile[]
   /** 单件成本（和核价页签的合计一样）。没有看成本权限时字段省略，页面不显示 */
   unitCost?: number | null
   actions: TechPackAction[]
@@ -439,9 +391,14 @@ export interface TechPackCost {
   defaultFactoryName: string | null
   fabricRows: CostRow[]
   trimRows: CostRow[]
-  /** 工序工价合计（不管按什么算都给，加工费那块的说明里显示"n 道工序"） */
-  laborTotal?: number
-  processCount: number
+  /** 存着的加工费，元 / 件（按外发算时用）；没填是 null */
+  laborPrice?: number | null
+  /**
+   * 价格档案里款式默认加工厂做这个款的清加工现价，没有取半包；都没有是 null。
+   * 按外发算且没填加工费时用它；laborPriceDefaultMode 说是哪种（字典 process_mode：CMT、HALF）
+   */
+  laborPriceDefault?: number | null
+  laborPriceDefaultMode?: string | null
   otherItems: CostItem[]
   summary: CostSummary
   /** 款式的吊牌价；倍率 = 吊牌价 ÷ 单件成本，两位小数；没吊牌价或单件成本是 0 时 ratio 是 null */
@@ -456,22 +413,21 @@ export interface TechPackCostForm {
   costMode: CostMode
   /** 成品单价，元 / 件；按外发算时也照存 */
   buyPrice?: number | null
+  /** 加工费，元 / 件；按成品采购算时也照存 */
+  laborPrice?: number | null
   items: CostItemForm[]
 }
 
-// ---------------------------------------------------------------- 保存、生效、导出
+// ---------------------------------------------------------------- 保存、生效
 
-/** 保存草稿（PUT /api/tech-packs/{id}）：整版覆盖，单头可改的几项 + 四个页签的全部行 */
+/** 保存草稿（PUT /api/tech-packs/{id}）：整版覆盖，单头可改的几项 + 物料清单的全部行 + 工艺单文件 */
 export interface TechPackSaveForm {
   versionLock: number
   versionNote: string | null
   utilPct: number | null
-  packingMode: string | null
-  specPoints: SpecPointForm[]
   bomItems: BomItemForm[]
-  /** 九段都发，没写的 content 发 null、images 发 [] */
-  craftSections: CraftSectionForm[]
-  processes: ProcessForm[]
+  /** 工艺单页签的全部文件，按组整组替换；放错组、一组超过 20 个回 1000 */
+  files: PackFileForm[]
   /** 核价的手填部分。null = 这次不动核价（没有看成本权限的人省略该字段）；有权限的人发整份 */
   cost: TechPackCostForm | null
 }
@@ -482,14 +438,97 @@ export interface PublishProblem {
   message: string
 }
 
-/** 导出 PDF 的选项（GET /api/tech-packs/{id}/pdf） */
-export interface PdfOptions {
-  /** 只出这个颜色的物料清单；不给 = 全部颜色 */
-  colorId?: string
-  /** 含价格：出参考单价、单件成本、核价和工序工价。要 techpack:cost:query，没有发 true 回 403 */
-  price?: boolean
-  /** 附工艺标准文件，默认 true */
-  appendix?: boolean
+// ---------------------------------------------------------------- 从 BOM 表导入（POST /api/tech-packs/{id}/bom-import）
+
+/** 导入预览一行的状态：OK 认出来了，CHECK 能导但要看一下（notes），UNMATCHED 没认出物料，要先挑或者新建 */
+export type BomImportStatus = 'OK' | 'CHECK' | 'UNMATCHED'
+
+export const BOM_IMPORT_STATUS: Record<BomImportStatus, { label: string; tone: StatusTone }> = {
+  OK: { label: '认出来了', tone: 'done' },
+  CHECK: { label: '要看一下', tone: 'pending' },
+  UNMATCHED: { label: '没认出来', tone: 'danger' },
+}
+
+/** 导入结果：只解析、不写库。页面上改过、点"加进物料清单"以后和手填的一样走保存 */
+export interface BomImport {
+  /** 文件里的每一张 sheet；bom = false 的不能选（找不到表头） */
+  sheets: { index: number; name: string; title: string | null; bom: boolean }[]
+  /** 用的是哪一张（自动对上的或者指定的） */
+  sheet: number
+  rows: BomImportRow[]
+  /** 汇总块的加工费；没写、没有看成本权限是 null */
+  laborPrice?: number | null
+  /** 汇总块里的运费，带成核价的其他费用；没有看成本权限是 [] */
+  fees: { name: string; amount: number }[]
+}
+
+export interface BomImportRow {
+  /** Excel 里的行号，从 1 起；人工挑物料时 picks 用它 */
+  line: number
+  /** 表里原样写的字。price 没有看成本权限时是 null */
+  source: {
+    section: string
+    name: string
+    spec: string
+    color: string
+    price: string | null
+    unit: string
+    usage: string
+    loss: string
+    supplier: string
+    remark: string
+  }
+  /** 认出来的物料行，和详情里的 bomItems 一个样子，只是没有 id；没认出物料是 null */
+  item: Omit<BomItem, 'id' | 'seq' | 'unitCost' | 'image'> | null
+  status: BomImportStatus
+  notes: string[]
+}
+
+// ---------------------------------------------------------------- 工艺单 Excel 预览（GET /api/tech-packs/{id}/files/{fileId}/preview）
+
+/** 一份 Excel 的表格数据：后端用 POI 读、前端画（RFC 011 §2.3）。格子的字一律当文本画 */
+export interface ExcelBook {
+  sheets: ExcelSheet[]
+  /** 超出 20 个没读的 sheet 数 */
+  moreSheets: number
+}
+
+export interface ExcelSheet {
+  name: string
+  /** 在 Excel 里是隐藏的 */
+  hidden: boolean
+  /** 每列宽、每行高，像素；隐藏的是 0 */
+  colWidths: number[]
+  rowHeights: number[]
+  /** 有字、或者有底色边框的格子；r、c 从 0 起，v 是 Excel 里显示的字，s 是 styles 的下标 */
+  cells: { r: number; c: number; v: string; s: number | null }[]
+  styles: ExcelStyle[]
+  /** 合并单元格：左上角 r、c，占 rs 行 cs 列 */
+  merges: { r: number; c: number; rs: number; cs: number }[]
+  /** 图片：左上角 x、y 和宽高（像素），data 是 data:image/...;base64,... */
+  images: { x: number; y: number; w: number; h: number; data: string }[]
+  /** 超出 500 行、60 列没画的行数、列数；没画的图片张数 */
+  moreRows: number
+  moreCols: number
+  skippedImages: number
+}
+
+/** 格子样式：fs 字号（磅）总有，其余只出和默认不一样的项 */
+export interface ExcelStyle {
+  b: boolean | null
+  i: boolean | null
+  fs: number | null
+  /** 字色、底色 #rrggbb */
+  fc: string | null
+  bg: string | null
+  ha: 'left' | 'center' | 'right' | null
+  va: 'top' | 'middle' | 'bottom' | null
+  wrap: boolean | null
+  /** 四边有没有线 */
+  bt: boolean | null
+  br: boolean | null
+  bb: boolean | null
+  bl: boolean | null
 }
 
 // ---------------------------------------------------------------- 按款看成本（/costing）
@@ -524,40 +563,4 @@ export interface StyleCostQuery {
   year?: number | null
   /** 字典 season */
   season?: string
-}
-
-// ---------------------------------------------------------------- 工艺标准（/api/craft-standards，资料包页签上的抽屉 CraftStandardDrawer）
-
-/** 字典 size_point 的一项和它的默认测量方法（sys_dict_data.text_value） */
-export interface SizePointStd {
-  /** 字典 value；页面新加的部位 value 就是名称 */
-  value: string
-  label: string
-  method: string | null
-  /** 字典项停用了的也列出来（灰掉），尺寸指示里选不到 */
-  status: EnableStatus
-}
-
-/** GET /api/craft-standards：工艺标准的全部内容 */
-export interface CraftStandard {
-  /** 工艺标准文件（PDF 或图片），按顺序；导出 PDF 勾"附工艺标准"时按这个顺序接在最后，name 就是附页的标题 */
-  files: Attachment[]
-  /** 工艺指示各段的默认文字，九段都有，没写是 '' */
-  texts: Record<CraftSection, string>
-  /** 新建资料包时默认的包装方式，字典 packing_mode；没设是 null */
-  packingMode: string | null
-  points: SizePointStd[]
-  /** 能不能改（有 techpack:standard:edit） */
-  editable: boolean
-}
-
-export interface CraftTextsForm {
-  /** 九段都发，没写的发 null */
-  texts: Record<CraftSection, string | null>
-  packingMode: string | null
-}
-
-export interface SizePointMethodForm {
-  value: string
-  method: string | null
 }

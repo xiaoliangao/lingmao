@@ -321,7 +321,7 @@ async function submit() {
             <span class="field-tip dim">
               <template v-if="archiveOf(b)?.price != null">档案现价 {{ formatPrice(archiveOf(b)!.price) }}</template>
               <template v-else-if="b.factoryId && !b.quoting">档案里没有这家这种方式的价</template>
-              <template v-if="canSeeCost && b.processMode !== PROCESS_MODE_FULL"> · 工价合计 {{ formatMoney(b.style.laborTotal) }}</template>
+              <template v-if="canSeeCost && b.processMode !== PROCESS_MODE_FULL && b.style.laborPrice != null"> · 资料包加工费 {{ formatMoney(b.style.laborPrice) }}</template>
             </span>
           </el-form-item>
           <el-form-item v-if="canSeeProductionPrice && priceChanged(b)" label="改价原因" required>

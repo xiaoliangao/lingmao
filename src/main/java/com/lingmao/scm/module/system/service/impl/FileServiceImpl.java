@@ -23,8 +23,9 @@ import java.util.concurrent.Semaphore;
 @Service
 @RequiredArgsConstructor
 public class FileServiceImpl implements FileService {
-    private static final Set<String> ALLOWED = Set.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "xls", "xlsx", "doc", "docx", "ai", "psd");
-    private static final Set<String> DESIGN_SOURCE = Set.of("ai", "psd");
+    private static final Set<String> ALLOWED = Set.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "xls", "xlsx", "doc", "docx", "ai", "psd", "prj");
+    /** 设计源文件、打版文件（资料包的纸样 .prj，RFC 011 §2.2）：大，100MB 以内 */
+    private static final Set<String> DESIGN_SOURCE = Set.of("ai", "psd", "prj");
     static final long MAX_BYTES = 10L * 1024 * 1024;
     static final long MAX_DESIGN_SOURCE_BYTES = 100L * 1024 * 1024;
     private final UploadStore storage;
@@ -40,7 +41,7 @@ public class FileServiceImpl implements FileService {
         ext = ext.toLowerCase(Locale.ROOT);
         boolean source = DESIGN_SOURCE.contains(ext);
         long limit = source ? MAX_DESIGN_SOURCE_BYTES : MAX_BYTES;
-        if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
+        if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD、PRJ 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
         if (!capacity.tryAcquire()) throw new BizException(429, "正在处理其他文件，请稍后重试");
         UploadStore.Slot slot = null; boolean saved = false;
         try {

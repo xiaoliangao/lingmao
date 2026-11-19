@@ -44,8 +44,7 @@ public final class JdbcUploadCatalog implements UploadCatalog, HousekeepingTask 
                     SELECT u.file_url FROM sys_upload_file u WHERE u.tenant_key=? AND
                         (u.status='DELETING' OR u.status IN ('WRITING','READY') AND u.touched_at<clock_timestamp()-interval '24 hours'
                          AND NOT EXISTS(SELECT 1 FROM biz_attachment a WHERE a.file_url IN (u.file_url,u.thumb_url) OR a.thumb_url IN (u.file_url,u.thumb_url))
-                         AND NOT EXISTS(SELECT 1 FROM sup_supplier_cert c WHERE c.file_url IN (u.file_url,u.thumb_url))
-                         AND NOT EXISTS(SELECT 1 FROM tp_process_image p WHERE p.file_url IN (u.file_url,u.thumb_url) OR p.thumb_url IN (u.file_url,u.thumb_url)))
+                         AND NOT EXISTS(SELECT 1 FROM sup_supplier_cert c WHERE c.file_url IN (u.file_url,u.thumb_url)))
                     ORDER BY u.touched_at,u.file_url LIMIT 64 FOR UPDATE OF u SKIP LOCKED
                 ) UPDATE sys_upload_file u SET status='DELETING',touched_at=clock_timestamp()
                   FROM candidates c WHERE u.file_url=c.file_url RETURNING u.file_url,u.thumb_url

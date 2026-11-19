@@ -56,6 +56,7 @@ export const PRODUCTION_LOG_ACTION: Record<string, string> = {
   'void-receipt': '回货作废',
   'issue-material': '领料',
   'return-material': '退料',
+  // 11-18 以前导出工艺单 PDF 留下的操作记录
   'export-pdf': '导出工艺单',
 }
 
@@ -324,7 +325,7 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   /** 字典 brand，没有是 null */
   brand: string | null
   image: Attachment | null
-  /** 订单锁定的生产 BOM：打印、导出工艺单 PDF 用它 */
+  /** 订单锁定的生产 BOM：打印、看工艺单用它 */
   techPackId: string
   techPackVersion: number
   orderDate: string

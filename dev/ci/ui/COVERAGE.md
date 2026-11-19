@@ -9,7 +9,7 @@
 - `test_audit_ui.py`：Python Playwright + unittest 的 20 个核心用例，其中用例 20 仅核对真实 API 权限与源状态。统一桌面 `1440×900`、手机 `390×844`；真实 Vue、真实 API，仅下表明确指定的响应延迟/失败、上传暂停与浏览器固定时间。
 - `serve_web.py` 提供正式构建产物与真实 API 的本地代理；`prepare_before.py`、`capture_baseline.py` 用于 PR base 基准截图；`fixture-input.json` 只含匿名主数据 ID。
 
-`SCM_UI_API_BASE`、`SCM_UI_BASE_URL`、`SCM_UI_FIXTURE_INPUT`、`SCM_UI_FIXTURE`、`SCM_UI_SCREENSHOTS` 由启动脚本传入。`SCM_UI_USERNAME` 与 `SCM_UI_PASSWORD` 只能由运行进程环境提供，不能写入 manifest、命令文本或产物。`SCM_UI_CHROMIUM` 可指定 Chromium 路径；默认由 Playwright 使用安装的配套浏览器。浏览器依赖和 poppler-utils（pdftotext）由 CI 安装，不加入生产 npm 依赖。
+`SCM_UI_API_BASE`、`SCM_UI_BASE_URL`、`SCM_UI_FIXTURE_INPUT`、`SCM_UI_FIXTURE`、`SCM_UI_SCREENSHOTS` 由启动脚本传入。`SCM_UI_USERNAME` 与 `SCM_UI_PASSWORD` 只能由运行进程环境提供，不能写入 manifest、命令文本或产物。`SCM_UI_CHROMIUM` 可指定 Chromium 路径；默认由 Playwright 使用安装的配套浏览器。浏览器依赖由 CI 安装，不加入生产 npm 依赖。
 
 准备与执行（均在隔离服务就绪、后端与前端修复完成之后）：
 
@@ -46,13 +46,13 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 | 07 / U6 | 两会话改节点计划：独立 `planRevision` 增加且单头 version 不变，旧计划 `1002`、输入保留；管理员账号在手机 390 px 页面无横向溢出，异常入口存在。仅手机权限由用例 19 单独覆盖 | `node-plan-conflict-keeps-local`、`node-plan-date-controls-contained`、`mobile-390-no-horizontal-overflow` |
 | 08 / U7 | 真实物料 1/200 编码成功、201 编码 `400`；Excel 换行粘贴归一为空格；真实空列表和超限错误有反馈，带空格物料名恢复成功 | `multi-code-paste-results`、`real-query-empty-state`、`201-codes-error-feedback` |
 | 09 / U8 | 浏览器固定 UTC `2026-12-31T16:30:00`，上海/UTC/洛杉矶的新单业务日均为 `2027-01-01`；今天/近7天/近30天/本月实际请求字符串一致。只改浏览器时间、不写单据 | 每时区 `default-date-…`、`range-month-…` |
-| 10 / U9 | **暂停一个真实文件 POST，释放后仍交给后端处理**；pending 时保存必须禁用或等待，不能先 PUT 丢附件。释放后真实文件入库、整包保存回读图片数 +1 | `pending-upload-save-protected`、`upload-completed-and-persisted` |
+| 10 / U9 | **暂停一个真实文件 POST，释放后仍交给后端处理**；pending 时保存必须禁用或等待，不能先 PUT 丢附件。释放后真实文件入库、整包保存回读工艺单文件数 +1（资料包「工艺单」页签，RFC 011） | `pending-upload-save-protected`、`upload-completed-and-persisted` |
 | 11 / U2 | 真实成本 A 响应先扣留，切到成本不同的 B；B 加载与本地说明可编辑，A 迟到后 B 的单价、说明不变，保存与真实回读均不串包 | `current-pack-before-old-cost-arrives`、`late-cost-discarded-current-pack-saved`、`other-cost-row-complete-and-contained` |
 | 12 / U1 | 三个 SKU（两个 M、一个 S）：批改控件输入但不点应用，保存完全不变；明确应用 M 单价只动两个 M；整款应用只改价格，所有行交期/备注不动，四位精度保留 | `sku-batch-input-not-applied`、`explicit-M-price-applied`、`explicit-whole-style-price-saved` |
-| 13 / U9 | 真实文件已落服务器但响应延迟；仅 pending 上传也触发换版本放弃确认。明确放弃 A 后切 B，再送达成功响应；保存 B 后 A/B 图片集合均不增加，B 未保存说明不被覆盖 | `upload-pending-is-dirty-before-discard`、`late-upload-ignored-after-version-discard` |
+| 13 / U9 | 真实文件已落服务器但响应延迟；仅 pending 上传也触发换版本放弃确认。明确放弃 A 后切 B，再送达成功响应；保存 B 后 A/B 的工艺单文件集合均不增加，B 未保存说明不被覆盖 | `upload-pending-is-dirty-before-discard`、`late-upload-ignored-after-version-discard` |
 | 14 / U9 | 订单/采购/生产三域 × 六身份：SELF 审核权限不等于 ALL，制单人见自单，ALL只读无审核，无 list 配置规则/提交均阻止；指定人轮到本级时进入真实待我审核列表→详情→审核，完成后对象例外消失。有订单查看权但无变更查看权时，变更API直接403、页面不发该请求并显示明确权限说明，审批不受影响。订单未实现评审聚合显示不可用，权威审核 API 正常校验 | 每域 `…-designated-in-real-list`、`…-designated-can-audit`、`…-approval-left-pending-list`；`order-approver-change-permission-explained`、`order-review-unavailable-authoritative-audit-remains` |
 | 15 / U2 | 仅包编辑无成本权限：成本 GET 403，详情 unitCost 不泄漏；真实伪造非 null cost 的 PUT 不改变成本；UI 无核价 tab，合法说明保存发 cost=null | `pack-editor-without-cost-authority` |
-| 16 / U2 | 独立款已生效后停用一个颜色、改款名/色名，再发布新版本使旧版 VOIDED；旧详情仍 SNAPSHOT 且色码/名称一致。API及UI实际下载 PDF，pdftotext 断言含旧名、不含新名；UI仍能选择已停用历史颜色 | `voided-pack-with-frozen-context`、`snapshot-disabled-color-export-option`；两个真实 PDF 与 SHA-256 |
+| 16 / U2 | 独立款已生效后停用一个颜色、改款名/色名，再发布新版本使旧版 VOIDED；旧详情仍 SNAPSHOT 且色码/名称一致；UI 打开作废的旧版本（导出 PDF 11-18 去掉了，RFC 011） | `voided-pack-with-frozen-context` |
 | 17 / 逐页补验 | 打开其余已修改列表：款式/供应商/核价/MRP/BUY、库存明细/汇总/日志、待到料及各类型出入库；打开并取消款式/供应商/采购/出入库/物料选择器、SKU/证照/变更/排单/报工/异常表单。每页核对真实 GET；核价长款号在缩略图旁须完整单行显示，文本边界不越过单元格/裁剪祖先；款号预览等待真实成功/业务拒绝结果、附件区及供应商页脚单独拍图；MRP选订单的单号和状态必须一行完整且不溢出。库存日志实际浏览器导出并解析XLSX，含五个估值/冲销列及RECORDED/UNKNOWN；整例断言零写请求。上游提醒接口真实404展示不可用并可重试，不伪装为空待办 | `styles-list`、`supplier-new-open-cancel`、`costing-list`、`stock-material-summary-custody`、`stock-ledger-valued-or-unknown`、`inventory-list-…`、`inventory-new-…`、`order-schedule-four-place-price`、`upstream-real-unimplemented-error` 等 |
 | 18 / U9 | 首页三个聚合真实返回404时分别显示不可用和重试；不显示零概况或“暂无待办/交期/提醒”。逐一重试仍观察真实404及明确失败态，不伪造成功空列表 | `home-real-unavailable-without-fabricated-zeros`、`home-independent-retries-remain-explicit` |
 | 19 / S-P1-08、T09 | 独立 SELF 仅手机身份在 390 px 从 `/` 跳我的跟单，列表只含本人已下单/生产中单；本人详情可读、他人详情及报工 `404`，桌面 list/counts `403`。只读时节点禁用，桌面入口隐藏；已有桌面权限仍能原入口跳详情。精确增加 node/issue 权限后经 UI 实际报 START、上传匿名 PNG 并上报异常，真实读回节点/照片/异常且 `planRevision` 不变；待审核单审核和回货仍 `403` 且数据不变 | `mobile-desktop-authority-keeps-entry`、`mobile-only-owned-active-list`、`mobile-only-read-only-detail`、`mobile-only-foreign-detail-denied`、`mobile-only-real-start-form`、`mobile-only-start-persisted`、`mobile-only-anonymous-image-issue-form`、`mobile-only-issue-persisted` |
@@ -65,7 +65,7 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 ## 仍需补验，不能标为已覆盖
 
 - U1：null 单价、选项缺失/迟到响应、多款新增/移除、数量总容量边界、变更单六状态详情。显式整款/M 码批改已有用例12；null行交期/备注已有用例1/12，不代表null单价。
-- U2：同一包按颜色切换竞态、真实主图/坏图片、LEGACY 无快照的老版本（11-17 起不再显示提示）。无成本授权、跨包竞态、停用历史色/VOIDED快照与PDF已有用例11/15/16；BOM料卡仍只验无图和一个固定料行。
+- U2：同一包按颜色切换竞态、真实主图/坏图片、LEGACY 无快照的老版本（11-17 起不再显示提示）。无成本授权、跨包竞态、停用历史色/VOIDED快照已有用例11/15/16；BOM料卡仍只验无图和一个固定料行。
 - U3：盘点加行/导入后的基准、历史 PENDING 无 revision 的拒审、两个用户同时提交，以及刷新/关闭浏览器提示。
 - U4：组合负责人/日期/品牌、查询失败和过期响应的快照、清空/重置、采购/盘点勾选导出。现有用例覆盖状态＋多单号＋未提交关键字以及订单勾选。
 - U5：真实会话过期 `401` 后的重登路径；已有 7 类回跳不代替这个场景。

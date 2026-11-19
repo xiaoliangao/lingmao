@@ -22,9 +22,12 @@ public class TechPackCostVO {
     private String defaultFactoryName;
     private List<CostRowVO> fabricRows;
     private List<CostRowVO> trimRows;
-    /** 工序工价合计（不管按什么算都给） */
-    private BigDecimal laborTotal;
-    private Integer processCount;
+    /** 存着的加工费，元 / 件（按外发算时用）；没填是 null */
+    private BigDecimal laborPrice;
+    /** 价格档案里默认加工厂做这个款的清加工现价，没有取半包；都没有是 null */
+    private BigDecimal laborPriceDefault;
+    /** laborPriceDefault 取自哪种加工方式（字典 process_mode：CMT、HALF）；没有默认是 null */
+    private String laborPriceDefaultMode;
     private List<CostItemVO> otherItems;
     private CostSummary summary;
     private BigDecimal tagPrice;

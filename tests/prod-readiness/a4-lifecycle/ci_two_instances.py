@@ -145,8 +145,7 @@ def run_gate():
                 db.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database)))
                 env = {**os.environ, 'PG_DSN': make_conninfo(host='127.0.0.1',port=5433,user='scm',password=password,dbname=database),
                        'DB_URL': f'jdbc:postgresql://127.0.0.1:5433/{database}', 'DB_USER':'scm', 'DB_PASSWORD':password,
-                       'REDIS_HOST':'127.0.0.1','REDIS_PORT':'6380','REDIS_PASSWORD':redis_password,'REDIS_DB':'10',
-                       'PDF_FONT_DIR':str(root / 'dev/fonts')}
+                       'REDIS_HOST':'127.0.0.1','REDIS_PORT':'6380','REDIS_PASSWORD':redis_password,'REDIS_DB':'10'}
                 with pg_log.open('w') as output:
                     follower = subprocess.Popen(['docker','logs','--follow','--since','1s',container], stdout=output,
                                                 stderr=subprocess.STDOUT, start_new_session=True)

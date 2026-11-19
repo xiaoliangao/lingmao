@@ -36,7 +36,7 @@ class A4AuditBusinessHttpIT extends A2BusinessFixture {
         }
     }
 
-    @Test void duplicateBomAndProcessRowsReorderedByIdentityKeepExactOldAndNewAuditValues() throws Exception {
+    @Test void duplicateBomRowsReorderedByIdentityKeepExactOldAndNewAuditValues() throws Exception {
         Fixture f = fixture(); Account admin = role("admin", f.company()); Account cost = auditor(f, FieldPermissions.COST);
         jdbc.update("UPDATE tp_bom_item SET ref_price=10 WHERE id=?", f.bom());
         jdbc.update("UPDATE tp_bom_item_sku SET ref_price=100 WHERE bom_item_id=?", f.bom());
@@ -45,23 +45,18 @@ class A4AuditBusinessHttpIT extends A2BusinessFixture {
                 VALUES(?,2,'body',?,'BY_COLOR',2.5,'METER',?,20) RETURNING id
                 """, Long.class, f.pack(), f.material(), f.supplier());
         jdbc.update("INSERT INTO tp_bom_item_sku(bom_item_id,color_id,material_sku_id,ref_price) VALUES(?,?,?,200)", second, f.color(), f.materialSku());
-        jdbc.update("INSERT INTO tp_process(tech_pack_id,seq,category,name,std_seconds,price) VALUES(?,1,'SEWING','same seam',10,5),(?,2,'SEWING','same seam',20,6)", f.pack(), f.pack());
         long pack = id(ok(admin, "POST", "/api/tech-packs/" + f.pack() + "/revise", Map.of(), null));
         JsonNode before = ok(admin, "GET", "/api/tech-packs/" + pack, null, null);
         var bom = new ArrayList<Map<String,Object>>();
-        var processes = new ArrayList<Map<String,Object>>();
         for (int i = 1; i >= 0; i--) {
-            JsonNode row = before.path("bomItems").get(i), sku = row.path("skus").get(0), process = before.path("processes").get(i);
+            JsonNode row = before.path("bomItems").get(i), sku = row.path("skus").get(0);
             bom.add(map("id", id(row.path("id")), "part", "body", "materialId", f.material(), "supplierId", f.supplier(),
                     "skuMode", "BY_COLOR", "usageMode", "UNIFORM", "usageQty", row.path("usageQty").decimalValue().add(BigDecimal.ONE),
                     "source", "PURCHASE", "refPrice", row.path("refPrice").decimalValue().add(new BigDecimal("2")),
                     "skus", List.of(map("materialSkuId", f.materialSku(), "colorId", f.color(), "refPrice", sku.path("refPrice").decimalValue().add(new BigDecimal("2"))))));
-            processes.add(map("id", id(process.path("id")), "category", "SEWING", "name", "same seam", "stdSeconds", process.path("stdSeconds").intValue(),
-                    "price", process.path("price").decimalValue().add(BigDecimal.ONE), "images", List.of()));
         }
         String path = "/api/tech-packs/" + pack;
-        var body = map("versionLock", 0, "versionNote", "A4 reorder and reprice", "specPoints", List.of(), "bomItems", bom,
-                "craftSections", List.of(), "processes", processes);
+        var body = map("versionLock", 0, "versionNote", "A4 reorder and reprice", "bomItems", bom);
         ok(admin, "PUT", path, body, null);
         JsonNode current = ok(admin, "GET", path, null, null);
         long currentLine = id(current.path("bomItems").get(0).path("id"));
@@ -69,9 +64,9 @@ class A4AuditBusinessHttpIT extends A2BusinessFixture {
         assertThat(replacement.path("previousRowId").asText()).isEqualTo(before.path("bomItems").get(1).path("id").asText());
         assertDiff(replacement, "ref_price", "20", "22"); assertDiff(replacement, "usage_qty", "2.5", "3.5");
         JsonNode root = ok(cost, "GET", "/api/data-logs?rootTable=tp_tech_pack&rootId=" + pack + "&transactionId=" + replacement.path("transactionId").asText(), null, null);
-        assertThat(root.valueStream().filter(row -> row.path("action").asText().equals("REPLACE")).count()).isEqualTo(6);
-        assertThat(root.valueStream().filter(row -> row.path("action").asText().equals("DELETE")).count()).isEqualTo(6);
-        assertThat(root.valueStream().filter(row -> row.path("action").asText().equals("INSERT")).count()).isEqualTo(6);
+        assertThat(root.valueStream().filter(row -> row.path("action").asText().equals("REPLACE")).count()).isEqualTo(4);
+        assertThat(root.valueStream().filter(row -> row.path("action").asText().equals("DELETE")).count()).isEqualTo(4);
+        assertThat(root.valueStream().filter(row -> row.path("action").asText().equals("INSERT")).count()).isEqualTo(4);
         JsonNode skuReplacement = root.valueStream().filter(row -> row.path("table").asText().equals("tp_bom_item_sku")
                 && row.path("action").asText().equals("REPLACE") && row.path("diff").path("ref_price").path("new").decimalValue().compareTo(new BigDecimal("202")) == 0).findFirst().orElseThrow();
         assertDiff(skuReplacement, "ref_price", "200", "202");

@@ -87,6 +87,12 @@ public interface SupplierService {
     Map<Long, SupplierRef> refs(Collection<Long> ids);
 
     /**
+     * 按名字找供应商（资料包从 BOM 表导入，RFC 011 §4.2）：简称或全称去掉首尾空格后完全相同，不分大小写。
+     * key 是去掉首尾空格、转小写的名字 → 对得上的几家，按编码排；对不上的名字不在 map 里
+     */
+    Map<String, List<SupplierRef>> refsByNames(Collection<String> names);
+
+    /**
      * 能不能选进单据（PRD §6.8.2 的表）。SAMPLE：打样、录价格；BULK：采购单、生产单。
      * 不能用抛 1000"××现在是「停用」，不能……"。不存在抛 404
      */

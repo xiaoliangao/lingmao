@@ -12,7 +12,7 @@ public interface FileService {
     FileVO upload(MultipartFile file);
 
     /**
-     * 本系统上传的文件在服务器上的位置（导出 PDF 时直接读，不走 HTTP）。地址带不带签名都行；
+     * 本系统上传的文件在服务器上的位置（在页面里预览 Excel 时直接读，不走 HTTP）。地址带不带签名都行；
      * 不是 /files/ 开头的、文件已经不在了、拼出来跑出上传目录的（../），返回空
      */
     Optional<Path> localPath(String url);

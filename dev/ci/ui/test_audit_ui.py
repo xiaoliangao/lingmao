@@ -24,7 +24,7 @@ from playwright.sync_api import expect, sync_playwright
 from fixtures.domain_seed import DomainFixture
 from harness import (
     LOCAL_HOSTS, ApiClient, anonymous_png, assert_decimal_equal, business_day, cost_values,
-    count_update, line_values, local_url, node_plan, order_update, pack_update, pdf_text, query_path, read_fixture,
+    count_update, line_values, local_url, node_plan, order_update, pack_update, query_path, read_fixture,
     sanitized_error, spreadsheet_rows, write_evidence,
 )
 
@@ -676,7 +676,8 @@ class AuditUi(unittest.TestCase):
         pack_id = self.fixture["packId"]
         path = f"/api/tech-packs/{pack_id}"
         before = self.api.request("GET", path)
-        original_images = sum(len(x["images"]) for x in before["craftSections"])
+        craft_files = lambda detail: [f for f in detail["files"] if f["category"] == "CRAFT_SHEET"]
+        original_files = len(craft_files(before))
         pending = []
         writes = []
         def hold_upload(route):
@@ -687,14 +688,14 @@ class AuditUi(unittest.TestCase):
         self.page.route(re.compile(r"/api/files$"), hold_upload)
         self.page.on("request", lambda request: writes.append(request) if request.method == "PUT" and urlsplit(request.url).path == path else None)
         self.facts["faultInjections"].append({"kind": "pause real file upload before forwarding", "path": "/api/files"})
-        self.page.goto(f"{self.ui_base}/styles/{self.fixture['styleId']}?tab=techpack&techPackId={pack_id}&sub=craft")
+        self.page.goto(f"{self.ui_base}/styles/{self.fixture['styleId']}?tab=techpack&techPackId={pack_id}&sub=files")
         note = self.page.locator(".pack-meta .note-input input")
         expect(note).to_be_visible()
         note.fill("等待真实上传完成后保存 " + uuid4().hex[:8])
-        self.page.locator('.tp-wrap .image-upload input[type="file"]').first.set_input_files(
-            {"name": "audit-synthetic-swatch.png", "mimeType": "image/png", "buffer": anonymous_png()})
+        self.page.locator('.pack-files input[type="file"]').first.set_input_files(
+            {"name": "audit-synthetic-craft.png", "mimeType": "image/png", "buffer": anonymous_png()})
         self.poll(lambda: len(pending) == 1)
-        expect(self.page.locator(".image-upload .pending")).to_be_visible()
+        expect(self.page.locator(".pack-files .el-button.is-loading")).to_be_visible()
         save = self.page.get_by_role("button", name="保存", exact=True)
         waiting_save = save.is_enabled()
         if waiting_save:
@@ -705,7 +706,7 @@ class AuditUi(unittest.TestCase):
         with self.page.expect_response(lambda r: self.response_for(r, "POST", "/api/files")) as uploaded:
             pending.pop().continue_()
         self.assertEqual(uploaded.value.json()["code"], 0)
-        expect(self.page.locator(".image-upload .pending")).to_have_count(0)
+        expect(self.page.locator(".pack-files .el-button.is-loading")).to_have_count(0)
         if not waiting_save:
             expect(save).to_be_enabled()
             with self.page.expect_response(lambda r: self.response_for(r, "PUT", path)) as saved:
@@ -713,11 +714,11 @@ class AuditUi(unittest.TestCase):
             self.assertEqual(saved.value.json()["code"], 0)
         else:
             self.poll(lambda: len(writes) == 1)
-            self.poll(lambda: sum(len(x["images"]) for x in self.api.request("GET", path)["craftSections"]) == original_images + 1)
+            self.poll(lambda: len(craft_files(self.api.request("GET", path))) == original_files + 1)
         after = self.api.request("GET", path)
-        self.assertEqual(sum(len(x["images"]) for x in after["craftSections"]), original_images + 1)
+        self.assertEqual(len(craft_files(after)), original_files + 1)
         self.shot("upload-completed-and-persisted")
-        self.note("pending real upload waited before whole-pack save", savedImageCount=original_images + 1, pendingWriteCount=0)
+        self.note("pending real upload waited before whole-pack save", savedFileCount=original_files + 1, pendingWriteCount=0)
 
 
     def test_11_late_cost_response_cannot_overwrite_another_pack(self):
@@ -865,7 +866,7 @@ class AuditUi(unittest.TestCase):
         old_id, current_id = self.fixture["packId"], self.fixture["alternatePackId"]
         old_path, current_path = f"/api/tech-packs/{old_id}", f"/api/tech-packs/{current_id}"
         old_before, current_before = self.api.request("GET", old_path), self.api.request("GET", current_path)
-        images = lambda detail: [image["url"] for section in detail["craftSections"] for image in section["images"]]
+        files = lambda detail: [f["url"] for f in detail["files"]]
         held = []
         def late_upload(route):
             if route.request.method == "POST":
@@ -875,11 +876,11 @@ class AuditUi(unittest.TestCase):
         self.page.route(re.compile(r"/api/files$"), late_upload)
         self.facts["faultInjections"].append({"kind": "delay real upload success until version is explicitly discarded",
                                               "path": "/api/files"})
-        self.page.goto(f"{self.ui_base}/styles/{self.fixture['styleId']}?tab=techpack&techPackId={old_id}&sub=craft")
-        self.page.locator('.tp-wrap .image-upload input[type="file"]').first.set_input_files(
-            {"name": "audit-discarded-swatch.png", "mimeType": "image/png", "buffer": anonymous_png()})
+        self.page.goto(f"{self.ui_base}/styles/{self.fixture['styleId']}?tab=techpack&techPackId={old_id}&sub=files")
+        self.page.locator('.pack-files input[type="file"]').first.set_input_files(
+            {"name": "audit-discarded-craft.png", "mimeType": "image/png", "buffer": anonymous_png()})
         self.poll(lambda: len(held) == 1)
-        expect(self.page.locator(".image-upload .pending")).to_be_visible()
+        expect(self.page.locator(".pack-files .el-button.is-loading")).to_be_visible()
         self.page.get_by_test_id(f"techpack-version-{current_id}").click()
         confirm = self.page.locator(".el-message-box")
         expect(confirm).to_contain_text(re.compile("上传|没保存|未保存"))
@@ -893,13 +894,13 @@ class AuditUi(unittest.TestCase):
             route.fulfill(response=response)
         self.assertEqual(arrived.value.json()["code"], 0)
         self.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-        expect(self.page.locator(".image-upload .pending")).to_have_count(0)
+        expect(self.page.locator(".pack-files .el-button.is-loading")).to_have_count(0)
         expect(note).to_have_value("换版后独立说明必须保留")
         with self.page.expect_response(lambda r: self.response_for(r, "PUT", current_path)) as saved:
             self.page.get_by_role("button", name="保存", exact=True).click()
         self.assertEqual(saved.value.json()["code"], 0)
-        self.assertEqual(images(self.api.request("GET", current_path)), images(current_before))
-        self.assertEqual(images(self.api.request("GET", old_path)), images(old_before))
+        self.assertEqual(files(self.api.request("GET", current_path)), files(current_before))
+        self.assertEqual(files(self.api.request("GET", old_path)), files(old_before))
         self.shot("late-upload-ignored-after-version-discard")
         self.note("discarded file completion cannot attach to either pack", oldPackId=old_id, currentPackId=current_id,
                   serverFileRetained=True, crossPackAttachmentCount=0)
@@ -1047,7 +1048,7 @@ class AuditUi(unittest.TestCase):
         self.note("Service rejects forged cost without a version change; ordinary UI edit omits financial fields", costReadCode=403,
                   original=cost_values(before), final=cost_values(self.api.request("GET", path + "/cost")))
 
-    def test_16_historical_snapshot_survives_disabled_color_and_real_pdf(self):
+    def test_16_historical_snapshot_survives_disabled_color(self):
         history = self.fixture["history"]
         style_id, pack_id = history["styleId"], history["packId"]
         path = f"/api/tech-packs/{pack_id}"
@@ -1067,37 +1068,11 @@ class AuditUi(unittest.TestCase):
         self.assertEqual(voided["status"], "VOIDED")
         self.assertEqual(voided["contextSource"], "SNAPSHOT")
         self.assertEqual(voided["colors"], original["colors"])
-        status, headers, raw = self.api.raw("GET", query_path(path + "/pdf", {"colorId": old_color["id"], "price": False, "appendix": False}))
-        self.assertEqual(status, 200)
-        self.assertIn("application/pdf", headers.get("Content-Type", ""))
-        extracted = pdf_text(raw)
-        self.assertIn(old_style_name, extracted)
-        self.assertIn(old_color["name"], extracted)
-        self.assertNotIn("合成历史款新名", extracted)
-        self.assertNotIn("合成历史乙色新名", extracted)
-        (self.case_dir / "snapshot-voided-api.pdf").write_bytes(raw)
         self.page.goto(f"{self.ui_base}/styles/{style_id}?tab=techpack&techPackId={pack_id}&sub=bom")
         expect(self.page.get_by_test_id(f"techpack-version-{pack_id}")).to_have_attribute("aria-selected", "true")
         self.shot("voided-pack-with-frozen-context")
-        self.page.get_by_role("button", name="导出 PDF", exact=True).click()
-        dialog = self.page.get_by_role("dialog", name="导出工艺单", exact=True)
-        dialog.get_by_role("combobox").click()
-        self.page.get_by_role("option", name=f"{old_color['code']} {old_color['name']}", exact=True).click()
-        self.checkbox(dialog, "附工艺标准", False)
-        self.shot("snapshot-disabled-color-export-option")
-        with self.page.expect_download() as downloaded:
-            dialog.get_by_role("button", name="导出", exact=True).click()
-        target = self.case_dir / "snapshot-voided-ui.pdf"
-        downloaded.value.save_as(str(target))
-        actual = pdf_text(target.read_bytes())
-        self.assertIn(old_style_name, actual)
-        self.assertIn(old_color["name"], actual)
-        self.assertNotIn("合成历史款新名", actual)
-        self.assertNotIn("合成历史乙色新名", actual)
-        self.note("real API and browser PDF preserve published owner/color context", historicalPackId=pack_id,
-                  replacementPackId=replacement, colorId=old_color["id"], contextSource="SNAPSHOT", status="VOIDED",
-                  apiPdfSha256=hashlib.sha256(raw).hexdigest(), uiPdfSha256=hashlib.sha256(target.read_bytes()).hexdigest(),
-                  containsOriginalNames=True, containsLiveRenamedValues=False)
+        self.note("published owner/color context survives disabled color and renames", historicalPackId=pack_id,
+                  replacementPackId=replacement, colorId=old_color["id"], contextSource="SNAPSHOT", status="VOIDED")
 
 
     def test_17_remaining_changed_pages_and_open_cancel(self):

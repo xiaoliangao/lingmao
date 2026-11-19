@@ -3,10 +3,11 @@ package com.lingmao.scm.module.techpack.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lingmao.scm.common.doc.StatusCas;
+import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.ExcelPreview;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
-import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.module.basic.dto.ColorOption;
 import com.lingmao.scm.module.basic.dto.MaterialRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
@@ -24,19 +25,17 @@ import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
-import com.lingmao.scm.module.system.dto.FileVO;
+import com.lingmao.scm.module.system.service.FileService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
+import com.lingmao.scm.module.techpack.dto.BomImportVO;
 import com.lingmao.scm.module.techpack.dto.BomItemVO;
 import com.lingmao.scm.module.techpack.dto.BomSkuVO;
-import com.lingmao.scm.module.techpack.dto.CraftSectionForm;
-import com.lingmao.scm.module.techpack.dto.CraftSectionVO;
+import com.lingmao.scm.module.techpack.dto.PackFileVO;
 import com.lingmao.scm.module.techpack.dto.PackOwner;
 import com.lingmao.scm.module.techpack.dto.PackRequirement;
-import com.lingmao.scm.module.techpack.dto.ProcessVO;
 import com.lingmao.scm.module.techpack.dto.PublishProblem;
-import com.lingmao.scm.module.techpack.dto.SpecPointVO;
 import com.lingmao.scm.module.techpack.dto.PackBrief;
 import com.lingmao.scm.module.techpack.dto.TechPackBriefVO;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
@@ -44,33 +43,33 @@ import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.entity.BomItemSku;
 import com.lingmao.scm.module.techpack.entity.CostMode;
-import com.lingmao.scm.module.techpack.entity.CraftSection;
-import com.lingmao.scm.module.techpack.entity.CraftText;
-import com.lingmao.scm.module.techpack.entity.PackProcess;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import com.lingmao.scm.module.techpack.mapper.BomItemSkuMapper;
-import com.lingmao.scm.module.techpack.mapper.PackProcessMapper;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
-import com.lingmao.scm.module.techpack.service.CraftStandardService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.BomRow;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.Content;
 import com.lingmao.scm.module.techpack.service.impl.PackOwners.Ctx;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -108,7 +107,7 @@ public class TechPackServiceImpl implements TechPackService {
             "revise", "techpack:pack:add",
             "remove", "techpack:pack:remove");
 
-    /** 操作记录的动作（docs/api/01 §3.11）；导出 PDF 的 export-pdf 在 TechPackPdfService */
+    /** 操作记录的动作（docs/api/01 §3.11） */
     static final String LOG_CREATE = "create";
     static final String LOG_UPDATE = "update";
     static final String LOG_REVISE = "revise";
@@ -121,13 +120,13 @@ public class TechPackServiceImpl implements TechPackService {
 
     private final TechPackMapper techPackMapper;
     private final BomItemSkuMapper bomItemSkuMapper;
-    private final PackProcessMapper packProcessMapper;
     private final PackContent packContent;
     private final PackOwners packOwners;
     private final PackForms packForms;
     private final BomPricing bomPricing;
     private final CostCalculator costCalculator;
-    private final CraftStandardService craftStandardService;
+    private final TechPackFiles techPackFiles;
+    private final BomImporter bomImporter;
     private final StyleService styleService;
     private final MaterialService materialService;
     private final ColorService colorService;
@@ -135,7 +134,7 @@ public class TechPackServiceImpl implements TechPackService {
     private final AttachmentService attachmentService;
     private final DocLogService docLogService;
     private final UserService userService;
-    private final FileUrlSigner signer;
+    private final FileService fileService;
     private final Clock clock;
 
     // ---------------------------------------------------------------- 查
@@ -181,7 +180,6 @@ public class TechPackServiceImpl implements TechPackService {
         vo.setStatus(pack.getStatus());
         vo.setVersionNote(pack.getVersionNote());
         vo.setUtilPct(pack.getUtilPct());
-        vo.setPackingMode(pack.getPackingMode());
         vo.setPublishBy(pack.getPublishBy());
         Map<Long, String> names = userService.nicknames(Stream.of(pack.getPublishBy(), pack.getCreateBy())
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
@@ -195,15 +193,8 @@ public class TechPackServiceImpl implements TechPackService {
         vo.setSizes(ctx.sizes());
         vo.setBaseSize(ctx.baseSize());
         vo.setColors(ctx.colors());
-        vo.setPointOptions(craftStandardService.pointOptions());
-
-        vo.setSpecPoints(content.specs().stream().map(TechPackServiceImpl::specVO).toList());
         vo.setBomItems(bomVOs(content.bom(), ctx));
-        vo.setCraftSections(craftSections(id, content.texts()));
-        vo.setProcesses(content.processes().stream().map(this::processVO).toList());
-        vo.setStdSecondsTotal(content.processes().stream().map(p -> p.process().getStdSeconds()).filter(Objects::nonNull)
-                .mapToInt(Integer::intValue).sum());
-        vo.setLaborTotal(CostCalculator.laborTotal(content.processes().stream().map(PackContent.ProcessRow::process).toList()));
+        vo.setFiles(techPackFiles.list(id));
         if (LoginUser.hasAuthority(COST_PERM)) {
             vo.setUnitCost(costCalculator.unitCost(pack, ctx));
         }
@@ -231,16 +222,7 @@ public class TechPackServiceImpl implements TechPackService {
         rejectLocked(owner);
         rejectDraftExists(styleId, PackStage.PROD);
         TechPack pack = newDraft(styleId, PackStage.PROD);
-        pack.setPackingMode(craftStandardService.defaultPackingMode());
         insert(pack);
-        List<CraftText> texts = new ArrayList<>();
-        craftStandardService.defaultTexts().forEach((section, text) -> {
-            CraftText t = new CraftText();
-            t.setSection(section);
-            t.setContent(text);
-            texts.add(t);
-        });
-        packContent.write(pack.getId(), new Content(List.of(), List.of(), texts, List.of(), List.of()), true);
         docLogService.add(BizType.TECH_PACK, pack.getId(), LOG_CREATE, null, DRAFT, null);
         return pack.getId();
     }
@@ -263,7 +245,6 @@ public class TechPackServiceImpl implements TechPackService {
         LambdaUpdateWrapper<TechPack> update = new LambdaUpdateWrapper<TechPack>()
                 .set(TechPack::getVersionNote, PackForms.blankToNull(req.getVersionNote()))
                 .set(TechPack::getUtilPct, req.getUtilPct())
-                .set(TechPack::getPackingMode, PackForms.blankToNull(req.getPackingMode()))
                 .setSql("version_lock = version_lock + 1")
                 .eq(TechPack::getId, id)
                 .eq(TechPack::getStatus, DRAFT)
@@ -271,20 +252,15 @@ public class TechPackServiceImpl implements TechPackService {
         if (withCost) {
             update.set(TechPack::getCostMode, req.getCost().getCostMode() == null
                             ? CostMode.OUTSOURCE : req.getCost().getCostMode())
-                    .set(TechPack::getBuyPrice, req.getCost().getBuyPrice());
+                    .set(TechPack::getBuyPrice, req.getCost().getBuyPrice())
+                    .set(TechPack::getLaborPrice, req.getCost().getLaborPrice());
         }
         if (techPackMapper.update(new TechPack(), update) == 0) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这一版已经被别人改过或者生效了，请刷新后再改");
         }
         packContent.clear(id, withCost);
         packContent.write(id, content, withCost);
-        Map<CraftSection, CraftSectionForm> sections = new EnumMap<>(CraftSection.class);
-        req.getCraftSections().forEach(s -> sections.put(s.getSection(), s));
-        for (CraftSection section : CraftSection.values()) {
-            CraftSectionForm form = sections.get(section);
-            attachmentService.replace(BizType.TECH_PACK, id, section.name(),
-                    form == null || form.getImages() == null ? List.of() : form.getImages());
-        }
+        techPackFiles.replace(id, req.getFiles());
         docLogService.add(BizType.TECH_PACK, id, LOG_UPDATE, null);
         return req.getVersionLock() + 1;
     }
@@ -353,6 +329,42 @@ public class TechPackServiceImpl implements TechPackService {
         return bomPricing.defaults(items);
     }
 
+    @Override
+    public BomImportVO bomImport(long id, InputStream file, Integer sheet, Map<Integer, Long> picks) {
+        TechPack pack = getEntity(id);
+        FLOW.next("edit", pack.getStatus());
+        Ctx ctx = packOwners.context(packOwners.of(pack));
+        rejectLocked(ctx.owner());
+        try (Workbook workbook = Excel.openAny(file)) {
+            return bomImporter.parse(workbook, ctx, sheet, picks == null ? Map.of() : picks);
+        } catch (IOException e) {
+            throw new UncheckedIOException("读 BOM 表失败", e);
+        }
+    }
+
+    @Override
+    public ExcelPreview.Book preview(long id, long fileId) {
+        getEntity(id);
+        PackFileVO file = techPackFiles.get(id, fileId);
+        String ext = TechPackFiles.extension(file.url());
+        if (!ext.equals("xls") && !ext.equals("xlsx")) {
+            throw new BizException("只有 Excel 能在页面里看，" + file.name() + " 请下载看");
+        }
+        Path path = fileService.localPath(file.url())
+                .orElseThrow(() -> new BizException(404, "服务器上找不到 " + file.name() + " 了，请重新上传"));
+        try (InputStream in = Files.newInputStream(path); Workbook workbook = Excel.openAny(in)) {
+            return ExcelPreview.of(workbook);
+        } catch (IOException e) {
+            throw new UncheckedIOException("读工艺单失败：" + file.name(), e);
+        }
+    }
+
+    @Override
+    public List<PackFileVO> files(long id) {
+        getEntity(id);
+        return techPackFiles.list(id);
+    }
+
     // ---------------------------------------------------------------- 给需求订单
 
     @Override
@@ -414,18 +426,15 @@ public class TechPackServiceImpl implements TechPackService {
     }
 
     @Override
-    public Map<Long, BigDecimal> laborTotals(Collection<Long> packIds) {
+    public Map<Long, BigDecimal> laborPrices(Collection<Long> packIds) {
         List<Long> ids = packIds.stream().filter(Objects::nonNull).distinct().toList();
         if (ids.isEmpty()) {
             return Map.of();
         }
-        Map<Long, List<PackProcess>> byPack = packProcessMapper.selectList(new LambdaQueryWrapper<PackProcess>()
-                        .in(PackProcess::getTechPackId, ids))
-                .stream().collect(Collectors.groupingBy(PackProcess::getTechPackId));
-        Map<Long, BigDecimal> out = new HashMap<>();
-        techPackMapper.selectByIds(ids).forEach(p -> out.put(p.getId(),
-                CostCalculator.laborTotal(byPack.getOrDefault(p.getId(), List.of()))));
-        return out;
+        List<TechPack> packs = techPackMapper.selectByIds(ids);
+        Map<Long, Ctx> contexts = new HashMap<>();
+        packs.forEach(p -> contexts.put(p.getId(), packOwners.context(p)));
+        return costCalculator.laborPrices(packs, contexts);
     }
 
     /** 每一版按款色配料的行都配了的款色 = 各行配了的款色取交集；没有这种行是 null（哪个颜色都行） */
@@ -459,16 +468,16 @@ public class TechPackServiceImpl implements TechPackService {
 
     // ---------------------------------------------------------------- 内部
 
-    /** 修订：复制成同阶段的下一版草稿。四个页签、核价的手填部分、工艺指示的插图都带过去，本版说明清空 */
+    /** 修订：复制成同阶段的下一版草稿。物料清单、核价的手填部分、工艺单文件都带过去，本版说明清空 */
     private long copy(TechPack source, String logAction, String remark) {
         PackOwner owner = packOwners.of(source);
         rejectLocked(owner);
         rejectDraftExists(source.getStyleId(), source.getStage());
         TechPack pack = newDraft(source.getStyleId(), source.getStage());
         pack.setUtilPct(source.getUtilPct());
-        pack.setPackingMode(source.getPackingMode());
         pack.setCostMode(source.getCostMode());
         pack.setBuyPrice(source.getBuyPrice());
+        pack.setLaborPrice(source.getLaborPrice());
         insert(pack);
         Content content = packContent.load(source.getId());
         packContent.write(pack.getId(), content, true);
@@ -567,21 +576,6 @@ public class TechPackServiceImpl implements TechPackService {
         return packs.stream().filter(p -> p.getStage() == stage && p.getStatus() == status).findFirst().orElse(null);
     }
 
-    private static SpecPointVO specVO(PackContent.SpecRow row) {
-        SpecPointVO vo = new SpecPointVO();
-        vo.setId(row.point().getId());
-        vo.setSeq(row.point().getSeq());
-        vo.setPoint(row.point().getPoint());
-        vo.setMethod(row.point().getMethod());
-        vo.setToleranceCm(row.point().getToleranceCm());
-        vo.setGradeCm(row.point().getGradeCm());
-        vo.setRemark(row.point().getRemark());
-        Map<String, BigDecimal> values = new LinkedHashMap<>();
-        row.values().forEach(v -> values.put(v.getSizeCode(), v.getValueCm()));
-        vo.setValues(values);
-        return vo;
-    }
-
     private List<BomItemVO> bomVOs(List<BomRow> bom, Ctx ctx) {
         if (bom.isEmpty()) {
             return List.of();
@@ -656,33 +650,6 @@ public class TechPackServiceImpl implements TechPackService {
         }
         vo.setRefPrice(s.getRefPrice());
         vo.setImage(image);
-        return vo;
-    }
-
-    /** 九段都出，没写的 content 是 ''；插图挂在 biz_attachment（TECH_PACK，category = 段代码） */
-    private List<CraftSectionVO> craftSections(long packId, List<CraftText> texts) {
-        Map<CraftSection, String> byCode = texts.stream().collect(Collectors.toMap(CraftText::getSection, CraftText::getContent));
-        List<CraftSectionVO> sections = new ArrayList<>();
-        for (CraftSection section : CraftSection.values()) {
-            sections.add(new CraftSectionVO(section, byCode.getOrDefault(section, ""),
-                    attachmentService.list(BizType.TECH_PACK, packId, section.name())));
-        }
-        return sections;
-    }
-
-    private ProcessVO processVO(PackContent.ProcessRow row) {
-        var p = row.process();
-        ProcessVO vo = new ProcessVO();
-        vo.setId(p.getId());
-        vo.setSeq(p.getSeq());
-        vo.setCategory(p.getCategory());
-        vo.setName(p.getName());
-        vo.setRequirement(p.getRequirement());
-        vo.setStdSeconds(p.getStdSeconds());
-        vo.setPrice(p.getPrice());
-        vo.setRemark(p.getRemark());
-        vo.setImages(row.images().stream().map(i -> new FileVO(signer.sign(i.getFileUrl()), signer.sign(i.getThumbUrl()),
-                i.getFileUrl().substring(i.getFileUrl().lastIndexOf('/') + 1), 0)).toList());
         return vo;
     }
 

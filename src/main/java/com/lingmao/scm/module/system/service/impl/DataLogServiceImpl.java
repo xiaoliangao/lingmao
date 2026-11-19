@@ -25,7 +25,7 @@ import java.util.Set;
 public class DataLogServiceImpl implements DataLogService {
     private static final Set<String> TABLES = Set.of("bas_company","bas_customer","bas_material","bas_material_sku","bas_warehouse",
             "sty_style","sup_supplier","sup_supplier_change","prc_price","tp_tech_pack","tp_bom_item","tp_bom_item_sku",
-            "tp_bom_item_size","tp_process","tp_cost_item","ord_order","ord_order_item","ord_change","ord_change_item",
+            "tp_bom_item_size","tp_cost_item","ord_order","ord_order_item","ord_change","ord_change_item",
             "pur_order","pur_order_item","prd_order","prd_order_item","inv_doc","inv_doc_item","inv_stock","inv_count","inv_count_item");
     private static final Set<String> SUPPLIER_FIELDS = Set.of("name","creditCode","settleMethod","creditDays","taxPct","invoiceType",
             "bankName","bankAccount","bankAccountName");

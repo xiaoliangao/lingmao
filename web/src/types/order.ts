@@ -404,8 +404,8 @@ export interface ScheduleStyle {
   /** 订单锁定的生产 BOM，生产单会带上它 */
   techPackId: string
   techPackVersion: number
-  /** 锁定版本的工序工价合计（参考加工价），外发加工的单价旁边提示"工价合计 38.00" */
-  laborTotal?: number
+  /** 锁定版本的加工费（填了的，没填取价格档案的清加工、再半包），外发加工的单价旁边提示"资料包加工费 38.00"；都没有是 null */
+  laborPrice?: number | null
   /** 款式的默认加工厂；没设是 null */
   defaultFactoryId: string | null
   defaultFactoryName: string | null

@@ -174,7 +174,6 @@ def main():
                    REDIS_PORT=os.environ.get('SCM_TEST_REDIS_PORT', '6380'), REDIS_PASSWORD=redis_password, REDIS_DB='11',
                    JWT_SECRET=key, FILE_SIGN_KEY=file_key, INIT_ADMIN_PASSWORD=password,
                    UPLOAD_DIR=str(work / 'uploads'), EXPORT_DIR=str(work / 'exports'),
-                   PDF_FONT_DIR=os.environ.get('PDF_FONT_DIR', str(ROOT / 'dev/fonts')),
                    LINGMAO_TENANT_ID='a4-' + secrets.token_hex(8), LINGMAO_DB_LOCK_TIMEOUT_MS='10000')
 
         def start(name, overrides=None, ready=False, arguments=()):

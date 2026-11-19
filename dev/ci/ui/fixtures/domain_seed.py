@@ -56,7 +56,7 @@ class DomainFixture:
                 if with_cost else None)
         self.api.request("PUT", f"/api/tech-packs/{identity}", {
             "versionLock": detail["versionLock"], "versionNote": "匿名回归资料包",
-            "utilPct": None, "packingMode": None, "specPoints": [],
+            "utilPct": None,
             "bomItems": [{"part": "合成主料", "materialId": self.f.get("materialId", 1),
                           "skuMode": "FIXED", "usageMode": "UNIFORM", "usageQty": 1,
                           "sizeUsages": {}, "lossPct": 0, "source": "PURCHASE",
@@ -65,7 +65,7 @@ class DomainFixture:
                           "priceFreightIncluded": True, "remark": "合成BOM",
                           "skus": [{"colorId": None, "sizeCode": None,
                                     "materialSkuId": self.f["materialSkuId"], "refPrice": None}]}],
-            "craftSections": [], "processes": [], "cost": cost,
+            "files": [], "cost": cost,
         })
         if stage == "PROD" and publish:
             current = self.api.request("GET", f"/api/tech-packs/{identity}")

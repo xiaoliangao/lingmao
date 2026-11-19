@@ -53,8 +53,6 @@ class A1CostBatchIT {
     @Autowired TechPackMapper packs;
     @Autowired PackOwners owners;
     @Autowired PriceService prices;
-    @Autowired TechPackPdfServiceImpl pdf;
-    @Autowired com.lingmao.scm.module.system.service.DictDataService dictionaries;
     private final List<Long> packIds = new ArrayList<>();
     private final List<Long> styleIds = new ArrayList<>();
     private final List<Long> materialIds = new ArrayList<>();
@@ -91,8 +89,10 @@ class A1CostBatchIT {
             long trim = material(code + "T", materialCategory, "TRIM");
             long fabricSku = id("INSERT INTO bas_material_sku(material_id,code,color_id) VALUES (?,?,?) RETURNING id", fabric, code + "FS", color);
             long trimSku = id("INSERT INTO bas_material_sku(material_id,code) VALUES (?,?) RETURNING id", trim, code + "TS");
-            long pack = id("INSERT INTO tp_tech_pack(style_id,stage,version,status,cost_mode,buy_price) VALUES (?,'PROD',1,'EFFECTIVE',?,?) RETURNING id",
-                    style, n % 2 == 0 ? "BUY" : "OUTSOURCE", n % 4 == 0 ? new BigDecimal("7.777") : null);
+            // 外发的：每三个留一个没填加工费，取价格档案的清加工价（RFC 011 §3.1）
+            long pack = id("INSERT INTO tp_tech_pack(style_id,stage,version,status,cost_mode,buy_price,labor_price) VALUES (?,'PROD',1,'EFFECTIVE',?,?,?) RETURNING id",
+                    style, n % 2 == 0 ? "BUY" : "OUTSOURCE", n % 4 == 0 ? new BigDecimal("7.777") : null,
+                    n % 2 == 1 && n % 3 != 0 ? new BigDecimal("3.5801") : null);
             packIds.add(pack);
             long bom = id("""
                     INSERT INTO tp_bom_item(tech_pack_id,seq,part,material_id,sku_mode,usage_mode,unit,loss_pct,ref_price)
@@ -103,7 +103,6 @@ class A1CostBatchIT {
             long trimBom = id("INSERT INTO tp_bom_item(tech_pack_id,seq,part,material_id,usage_qty,unit,ref_price) VALUES (?,2,'TRIM',?,3,'METER',0.125) RETURNING id", pack, trim);
             jdbc.update("INSERT INTO tp_bom_item_sku(bom_item_id,material_sku_id) VALUES (?,?)", trimBom, trimSku);
             jdbc.update("INSERT INTO tp_bom_item(tech_pack_id,seq,part,material_id,usage_qty,unit,ref_price,source) VALUES (?,3,'FACTORY',?,1,'METER',999,'FACTORY')", pack, fabric);
-            jdbc.update("INSERT INTO tp_process(tech_pack_id,seq,name,price) VALUES (?,1,'CUT',1.2345),(?,2,'SEW',2.3456)", pack, pack);
             jdbc.update("INSERT INTO tp_cost_item(tech_pack_id,seq,name,amount) VALUES (?,1,'A',0.005),(?,2,'B',0.005)", pack, pack);
             if (n != 50) {
                 price(factory, style, "FULL", "1", today.minusDays(2), false);
@@ -143,7 +142,7 @@ class A1CostBatchIT {
             assertThat(row.getFabric()).isEqualByComparingTo("4.13").isEqualByComparingTo(single.getSummary().fabric());
             assertThat(row.getTrim()).isEqualByComparingTo("0.38").isEqualByComparingTo(single.getSummary().trim());
             assertThat(row.getOther()).isEqualByComparingTo("0.01").isEqualByComparingTo(single.getSummary().other());
-            String labor = n % 2 == 1 ? "3.58" : n % 4 == 0 ? "7.78" : n == 50 ? "0.00" : Integer.toString(20 + n);
+            String labor = n % 2 == 1 ? (n % 3 == 0 ? "7777" : "3.58") : n % 4 == 0 ? "7.78" : n == 50 ? "0.00" : Integer.toString(20 + n);
             assertThat(row.getLabor()).isEqualByComparingTo(labor).isEqualByComparingTo(single.getSummary().labor());
             assertThat(row.getTotal()).isEqualByComparingTo(single.getSummary().total());
             assertThat(row.getRatio()).isEqualByComparingTo(single.getRatio());
@@ -211,38 +210,13 @@ class A1CostBatchIT {
         return result;
     }
 
-    /** A2 PDF integration: increasing actual style colors must not increase database round trips. */
-    @Test
-    void pdfOneAndFiftyColorsReuseOneCostInputSnapshot() throws Exception {
-        long style = styleIds.getFirst();
-        for (int index = 1; index < colors.size(); index++)
-            jdbc.update("INSERT INTO sty_style_color(style_id,color_id,seq,status) VALUES (?,?,?,1)", style, colors.get(index), index + 1);
-        var pack = packs.selectById(packIds.getFirst()); var context = owners.context(pack);
-        assertThat(context.colors()).hasSize(50);
-        // Match the reference-dictionary cache state; BOM, material and price SQL remains uncached.
-        for (String dictionary : List.of("unit", "season", "process_category")) dictionaries.listByType(dictionary);
-        var smallCapture = SqlStatementCapture.capture(() -> pdf.sheet(pack, context, context.colors().subList(0, 1), true));
-        var largeCapture = SqlStatementCapture.capture(() -> pdf.sheet(pack, context, context.colors(), true));
-        List<String> small = sqlText(smallCapture.statements()), large = sqlText(largeCapture.statements());
-        PdfSheet first = smallCapture.result(), fifty = largeCapture.result();
-        assertThat(large).hasSize(small.size());
-        assertThat(fifty.getBoms()).hasSize(50);
-        assertThat(fifty.getBoms().getFirst()).usingRecursiveComparison().isEqualTo(first.getBoms().getFirst());
-        assertThat(fifty.getCost()).usingRecursiveComparison().isEqualTo(first.getCost());
-        assertThat(fifty.getCost().getTotal()).isEqualTo("8.10");
-        Path artifacts = Path.of("target", "a2-production"); Files.createDirectories(artifacts);
-        Files.writeString(artifacts.resolve("pdf-color-query-count.json"), json.writeValueAsString(Map.of(
-                "oneColorSelects", small.size(), "fiftyColorSelects", large.size(), "firstColorCost", fifty.getCost().getTotal(),
-                "one", small, "fifty", large)));
-    }
-
     @AfterAll
     void cleanup() {
         if (!packIds.isEmpty()) {
             String ids = ids(packIds);
             jdbc.update("DELETE FROM tp_bom_item_sku WHERE bom_item_id IN (SELECT id FROM tp_bom_item WHERE tech_pack_id IN (" + ids + "))");
             jdbc.update("DELETE FROM tp_bom_item_size WHERE bom_item_id IN (SELECT id FROM tp_bom_item WHERE tech_pack_id IN (" + ids + "))");
-            for (String table : List.of("tp_bom_item", "tp_process", "tp_cost_item")) jdbc.update("DELETE FROM " + table + " WHERE tech_pack_id IN (" + ids + ")");
+            for (String table : List.of("tp_bom_item", "tp_cost_item")) jdbc.update("DELETE FROM " + table + " WHERE tech_pack_id IN (" + ids + ")");
             delete("tp_tech_pack", "id", packIds);
         }
         delete("prc_price", "style_id", styleIds);

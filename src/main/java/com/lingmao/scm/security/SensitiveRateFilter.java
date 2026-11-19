@@ -29,14 +29,16 @@ public final class SensitiveRateFilter extends OncePerRequestFilter {
         else if (method.equals("POST") && path.equals("/api/auth/refresh")) { operation = "refresh"; limit = 120; }
         else if ((method.equals("PUT") && path.equals("/api/auth/password"))
                 || (method.equals("POST") && path.matches("/api/users/[1-9][0-9]*/reset-password"))) { operation = "password"; limit = 6; }
-        else if (((method.equals("GET") || method.equals("HEAD")) && (path.endsWith("/export") || path.endsWith("/pdf")
+        else if (((method.equals("GET") || method.equals("HEAD")) && (path.endsWith("/export")
                 || path.matches("/api/inventory-counts/[1-9][0-9]*/sheet")
+                || path.matches("/api/tech-packs/[1-9][0-9]*/files/[1-9][0-9]*/preview")
                 || path.matches("/api/export-jobs/[1-9][0-9]*/file")))
                 || (method.equals("POST") && (path.equals("/api/export-jobs/stock-logs")
                 || path.matches("/api/export-jobs/[1-9][0-9]*/retry")))) { operation = "export"; limit = 12; }
         else if (method.equals("POST") && (path.equals("/api/files")
                 || path.matches("/api/(materials|styles|suppliers|orders)/import")
-                || path.matches("/api/inventory-counts/[1-9][0-9]*/import"))) { operation = "upload"; limit = 60; }
+                || path.matches("/api/inventory-counts/[1-9][0-9]*/import")
+                || path.matches("/api/tech-packs/[1-9][0-9]*/bom-import"))) { operation = "upload"; limit = 60; }
         if (operation != null) {
             Long user = LoginUser.currentUserId();
             String bucket = operation + ":" + (user == null ? "anonymous" : user) + ":" + proxy.clientIp(request);

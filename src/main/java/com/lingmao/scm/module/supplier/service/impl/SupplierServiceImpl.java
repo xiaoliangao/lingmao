@@ -52,13 +52,16 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static com.lingmao.scm.module.supplier.entity.SupplierStatus.ACTIVE;
@@ -577,6 +580,27 @@ public class SupplierServiceImpl implements SupplierService {
             return new HashMap<>();                 // 调用方可能拿 null 的 id 来 get，不给 Map.of()
         }
         return supplierMapper.selectByIds(wanted).stream().collect(Collectors.toMap(Supplier::getId, SupplierServiceImpl::toRef));
+    }
+
+    @Override
+    public Map<String, List<SupplierRef>> refsByNames(Collection<String> names) {
+        List<String> lower = names.stream().filter(n -> n != null && !n.isBlank()).map(n -> n.strip().toLowerCase(Locale.ROOT))
+                .distinct().toList();
+        if (lower.isEmpty()) {
+            return Map.of();
+        }
+        String in = IntStream.range(0, lower.size()).mapToObj(i -> "{" + i + "}").collect(Collectors.joining(","));
+        List<Supplier> found = supplierMapper.selectList(new LambdaQueryWrapper<Supplier>()
+                .apply("(lower(btrim(short_name)) IN (" + in + ") OR lower(btrim(name)) IN (" + in + "))", lower.toArray())
+                .orderByAsc(Supplier::getCode));
+        Map<String, List<SupplierRef>> out = new LinkedHashMap<>();
+        for (Supplier s : found) {
+            SupplierRef ref = toRef(s);
+            Stream.of(s.getShortName(), s.getName()).filter(Objects::nonNull).map(n -> n.strip().toLowerCase(Locale.ROOT))
+                    .filter(lower::contains).distinct()
+                    .forEach(key -> out.computeIfAbsent(key, k -> new ArrayList<>()).add(ref));
+        }
+        return out;
     }
 
     private static SupplierRef toRef(Supplier s) {

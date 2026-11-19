@@ -19,7 +19,7 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
     dicts = {'order_type': [('STOCK', '自主备货')], 'currency': [('CNY', '人民币')], 'process_mode': [('CUT', '清加工')], 'settle_method': [('MONTHLY', '月结')], 'unit': [('M', '米')], 'supplier_category': [('FABRIC', '面料商')], 'material_type': [('FABRIC', '面料')]}
     source_item = {'sourceItemId': '801', 'materialSkuId': '901', 'skuCode': 'ML-SYNTHETIC', 'materialName': '合成面料', 'materialCode': 'ML01', 'materialId': '91', 'colorName': '本白', 'spec': '150cm', 'stockUnit': 'M', 'purchaseUnit': 'M', 'conversionFactor': 1, 'suggestQty': 1, 'maxQty': 10, 'orderedQty': 10, 'receivedQty': 9, 'returnedQty': 0, 'needQty': 10, 'issuedQty': 9, 'dyeLot': None}
     bom_item = {'part': 'BODY', 'materialId': '91', 'materialCode': 'ML-SYNTHETIC', 'materialName': '合成面料', 'materialType': 'FABRIC', 'materialStatus': 1, 'skuMode': 'FIXED', 'usageMode': 'UNIFORM', 'usageQty': 1, 'sizeUsages': {}, 'unit': 'M', 'lossPct': 3, 'source': 'PURCHASE', 'supplierId': '13', 'supplierName': '合成供应商', 'remark': None, 'image': None, 'skus': [{'id': '821', 'colorId': None, 'colorName': None, 'sizeCode': None, 'materialSkuId': '901', 'skuCode': 'ML-SYNTHETIC', 'skuColorName': '本白', 'skuSpec': '150cm', 'skuStatus': 1}]}
-    pack_detail = {'contextSource': 'LIVE', 'id': '706', 'styleId': '11', 'styleCode': style['code'], 'styleName': style['name'], 'aliasName': None, 'stage': 'PROD', 'version': 1, 'status': 'DRAFT', 'versionNote': None, 'utilPct': 80, 'packingMode': None, 'publishBy': None, 'publishByName': None, 'publishTime': None, 'createByName': '回归工艺员', 'createTime': '2026-11-18 10:00:00', 'updateTime': '2026-11-18 10:00:00', 'versionLock': 3, 'sizes': ['M'], 'baseSize': 'M', 'colors': style['colors'], 'pointOptions': [], 'specPoints': [], 'bomItems': [{**bom_item, 'id': '9007199254740981', 'seq': 1}, {**bom_item, 'id': '9007199254740983', 'seq': 2}], 'craftSections': [], 'processes': [{'id': row_id, 'seq': seq, 'category': 'SEW', 'name': '重复工序', 'requirement': None, 'stdSeconds': 60, 'remark': None, 'images': []} for seq, row_id in enumerate(['9007199254740985', '9007199254740987'], 1)], 'stdSecondsTotal': 120, 'actions': ['edit']}
+    pack_detail = {'contextSource': 'LIVE', 'id': '706', 'styleId': '11', 'styleCode': style['code'], 'styleName': style['name'], 'aliasName': None, 'stage': 'PROD', 'version': 1, 'status': 'DRAFT', 'versionNote': None, 'utilPct': 80, 'publishBy': None, 'publishByName': None, 'publishTime': None, 'createByName': '回归工艺员', 'createTime': '2026-11-18 10:00:00', 'updateTime': '2026-11-18 10:00:00', 'versionLock': 3, 'sizes': ['M'], 'baseSize': 'M', 'colors': style['colors'], 'bomItems': [{**bom_item, 'id': '9007199254740981', 'seq': 1}, {**bom_item, 'id': '9007199254740983', 'seq': 2}], 'files': [{'id': row_id, 'category': 'CRAFT_SHEET', 'url': f'/files/2026/11/18/{name}?s=synthetic', 'thumbUrl': None, 'name': name, 'size': 2048} for row_id, name in [('9007199254740985', '工艺单A.xlsx'), ('9007199254740987', '工艺单B.xlsx')]], 'actions': ['edit']}
 
     async def route_api(route):
         req = route.request
@@ -276,20 +276,18 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
     await page.get_by_placeholder('本版说明（选填）').fill('保留重复行身份')
     # Move duplicate business-key rows: identity must follow each row, never its previous array index.
     await page.get_by_role('button', name='上移', exact=True).nth(1).click()
-    await page.get_by_role('tab', name=re.compile('工艺指示')).click()
-    await page.locator('.proc-block').get_by_role('button', name='上移', exact=True).nth(1).click()
-    await page.locator('.proc-block').get_by_role('button', name='加工序', exact=True).click()
-    new_process = page.locator('.proc-block .el-table__row').last
-    await new_process.locator('input').nth(1).fill('新工序')
+    # 工艺单文件调序：保存的是文件本身（url），不带行 id
+    await page.get_by_role('tab', name=re.compile('工艺单')).click()
+    await page.locator('.pack-files').get_by_role('button', name='上移', exact=True).nth(1).click()
     async with page.expect_response(lambda r: r.url.endswith('/api/tech-packs/706') and r.request.method == 'PUT'):
         await page.get_by_role('button', name='保存', exact=True).click()
     saved = writes[-1]['body']
     assert [row['id'] for row in saved['bomItems']] == ['9007199254740983', '9007199254740981'], saved
-    assert [row.get('id') for row in saved['processes']] == ['9007199254740987', '9007199254740985', None], saved
-    for row in saved['bomItems'] + saved['processes']:
+    assert [row['name'] for row in saved['files']] == ['工艺单B.xlsx', '工艺单A.xlsx'] and not any('id' in row for row in saved['files']), saved
+    for row in saved['bomItems']:
         assert not {'price', 'refPrice', 'priceTaxIncluded', 'priceFreightIncluded', 'priceSourceId'}.intersection(row), row
     assert 'cost' not in saved
-    metrics['checks']['security_duplicate_bom_and_process_identity'] = True
+    metrics['checks']['security_duplicate_bom_identity_and_file_order'] = True
     await page.close()
     assert not unknown, unknown
     metrics['security_requests'] = requests

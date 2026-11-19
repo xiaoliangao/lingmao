@@ -16,7 +16,7 @@ import java.util.List;
  */
 public interface DocLogService {
 
-    /** 状态没变的动作：导出 PDF、多级审批的中间级通过、改了关键字段。操作人取当前登录用户 */
+    /** 状态没变的动作：多级审批的中间级通过、改了关键字段（以前还有导出 PDF）。操作人取当前登录用户 */
     void add(BizType type, long docId, String action, String remark);
 
     /**

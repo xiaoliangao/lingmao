@@ -1,10 +1,8 @@
 package com.lingmao.scm.module.techpack.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
-import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.common.num.Num;
 import com.lingmao.scm.config.TradeFeature;
-import com.lingmao.scm.module.biz.dto.AttachmentReq;
 import com.lingmao.scm.module.basic.dto.MaterialRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
 import com.lingmao.scm.module.basic.entity.MaterialSource;
@@ -12,9 +10,6 @@ import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.techpack.dto.BomItemForm;
 import com.lingmao.scm.module.techpack.dto.BomSkuForm;
 import com.lingmao.scm.module.techpack.dto.CostItemForm;
-import com.lingmao.scm.module.techpack.dto.CraftSectionForm;
-import com.lingmao.scm.module.techpack.dto.ProcessForm;
-import com.lingmao.scm.module.techpack.dto.SpecPointForm;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.entity.BomItem;
 import com.lingmao.scm.module.techpack.entity.BomItemSize;
@@ -22,15 +17,8 @@ import com.lingmao.scm.module.techpack.entity.BomItemSku;
 import com.lingmao.scm.module.techpack.entity.BomSkuMode;
 import com.lingmao.scm.module.techpack.entity.BomUsageMode;
 import com.lingmao.scm.module.techpack.entity.CostItem;
-import com.lingmao.scm.module.techpack.entity.CraftText;
-import com.lingmao.scm.module.techpack.entity.PackProcess;
-import com.lingmao.scm.module.techpack.entity.ProcessImage;
-import com.lingmao.scm.module.techpack.entity.SpecPoint;
-import com.lingmao.scm.module.techpack.entity.SpecValue;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.BomRow;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.Content;
-import com.lingmao.scm.module.techpack.service.impl.PackContent.ProcessRow;
-import com.lingmao.scm.module.techpack.service.impl.PackContent.SpecRow;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -54,46 +42,13 @@ import java.util.stream.Collectors;
 class PackForms {
 
     private final MaterialService materialService;
-    private final FileUrlSigner signer;
     private final TradeFeature tradeFeature;
 
-    /** 工艺指示的插图另外按段整组替换（AttachmentService），不在 Content 里 */
+    /** 工艺单文件另外整组替换（TechPackFiles），不在 Content 里 */
     Content toContent(TechPackSaveReq req, List<String> sizes) {
         Set<String> sizeSet = Set.copyOf(sizes);
-        return new Content(specs(req.getSpecPoints(), sizeSet), bom(req.getBomItems(), sizeSet), texts(req.getCraftSections()),
-                processes(req.getProcesses()), req.getCost() == null ? List.of() : costItems(req.getCost().getItems()));
-    }
-
-    private List<SpecRow> specs(List<SpecPointForm> forms, Set<String> sizes) {
-        List<SpecRow> rows = new ArrayList<>();
-        for (int i = 0; i < forms.size(); i++) {
-            SpecPointForm f = forms.get(i);
-            String at = "尺寸指示第 " + (i + 1) + " 行";
-            if (!StringUtils.hasText(f.getPoint())) {
-                throw new BizException(at + "没选部位");
-            }
-            SpecPoint p = new SpecPoint();
-            p.setPoint(f.getPoint().strip());
-            p.setMethod(blankToNull(f.getMethod()));
-            p.setToleranceCm(nonNegative(f.getToleranceCm(), at + "的公差"));
-            p.setGradeCm(f.getGradeCm());
-            p.setRemark(blankToNull(f.getRemark()));
-            List<SpecValue> values = new ArrayList<>();
-            if (f.getValues() != null) {
-                f.getValues().forEach((size, value) -> {
-                    if (value == null) {
-                        return;
-                    }
-                    checkSize(size, sizes, at);
-                    SpecValue v = new SpecValue();
-                    v.setSizeCode(size);
-                    v.setValueCm(nonNegative(value, at + " " + size + " 码的尺寸"));
-                    values.add(v);
-                });
-            }
-            rows.add(new SpecRow(p, values));
-        }
-        return rows;
+        return new Content(bom(req.getBomItems() == null ? List.of() : req.getBomItems(), sizeSet),
+                req.getCost() == null || req.getCost().getItems() == null ? List.of() : costItems(req.getCost().getItems()));
     }
 
     private List<BomRow> bom(List<BomItemForm> forms, Set<String> sizes) {
@@ -196,62 +151,6 @@ class PackForms {
             row.setUsageQty(nonNegative(qty, at + " " + size + " 码的用量"));
             rows.add(row);
         });
-        return rows;
-    }
-
-    /** 九段文字；同一段发了两次 → 1000。没字的段不存 */
-    private static List<CraftText> texts(List<CraftSectionForm> forms) {
-        List<CraftText> rows = new ArrayList<>();
-        Set<Object> seen = new HashSet<>();
-        for (CraftSectionForm f : forms) {
-            if (f.getSection() == null) {
-                throw new BizException("工艺指示有一段没说是哪一段");
-            }
-            if (!seen.add(f.getSection())) {
-                throw new BizException("工艺指示的「" + f.getSection().getLabel() + "」发了两次");
-            }
-            if (StringUtils.hasText(f.getContent())) {
-                CraftText t = new CraftText();
-                t.setSection(f.getSection());
-                t.setContent(f.getContent().strip());
-                rows.add(t);
-            }
-        }
-        return rows;
-    }
-
-    private List<ProcessRow> processes(List<ProcessForm> forms) {
-        List<ProcessRow> rows = new ArrayList<>();
-        for (int i = 0; i < forms.size(); i++) {
-            ProcessForm f = forms.get(i);
-            String at = "工序工价第 " + (i + 1) + " 行";
-            if (!StringUtils.hasText(f.getName())) {
-                throw new BizException(at + "没填工序名称");
-            }
-            if (f.getStdSeconds() != null && f.getStdSeconds() < 0) {
-                throw new BizException(at + "的标准工时不能是负数");
-            }
-            PackProcess p = new PackProcess();
-            p.setCategory(blankToNull(f.getCategory()));
-            p.setName(f.getName().strip());
-            p.setRequirement(blankToNull(f.getRequirement()));
-            p.setStdSeconds(f.getStdSeconds());
-            p.setPrice(nonNegative(f.getPrice(), at + "的工价"));
-            p.setRemark(blankToNull(f.getRemark()));
-            List<ProcessImage> images = new ArrayList<>();
-            (f.getImages() == null ? List.<AttachmentReq>of() : f.getImages()).forEach(img -> {
-                String url = signer.strip(img.getUrl());
-                if (url == null || !url.startsWith(FileUrlSigner.PREFIX)) {
-                    throw new BizException(400, at + "的图示不是本系统上传的文件");
-                }
-                ProcessImage image = new ProcessImage();
-                image.setFileUrl(url);
-                String thumb = signer.strip(img.getThumbUrl());
-                image.setThumbUrl(thumb != null && thumb.startsWith(FileUrlSigner.PREFIX) ? thumb : null);
-                images.add(image);
-            });
-            rows.add(new ProcessRow(p, images));
-        }
         return rows;
     }
 

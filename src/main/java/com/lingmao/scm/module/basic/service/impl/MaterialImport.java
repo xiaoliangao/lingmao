@@ -2,6 +2,7 @@ package com.lingmao.scm.module.basic.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.num.Num;
 import com.lingmao.scm.common.excel.ExcelBook;
 import com.lingmao.scm.common.excel.ExcelColumn;
 import com.lingmao.scm.common.excel.ExcelImport;
@@ -423,22 +424,9 @@ public class MaterialImport {
         }
     }
 
-    /**
-     * 领猫的损耗可能写成系数（甲方 11-17：成衣损耗 1.03、1.05，PRD Q31）。按整列判断，不按格：单看 1.5 分不清是 1.5% 还是 1.5 倍。
-     * 不是 0 的数都在 [1, 2) 里、至少一个大于 1，就整列按系数读；否则按百分数（3 = 3%）
-     */
+    /** 领猫的损耗可能写成系数（PRD Q31），规则见 Num.lossFactorColumn */
     static boolean factorColumn(List<BigDecimal> values) {
-        boolean aboveOne = false;
-        for (BigDecimal v : values) {
-            if (v == null || v.signum() == 0) {
-                continue;
-            }
-            if (v.compareTo(BigDecimal.ONE) < 0 || v.compareTo(BigDecimal.TWO) >= 0) {
-                return false;
-            }
-            aboveOne |= v.compareTo(BigDecimal.ONE) > 0;
-        }
-        return aboveOne;
+        return Num.lossFactorColumn(values);
     }
 
     /** 系数换成百分数（1.035 → 3.5，1 → 0）；百分数原样。库里存 2 位小数，多了报错 */

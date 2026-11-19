@@ -9,7 +9,6 @@ import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import DocLogList from '@/components/DocLogList.vue'
-import ImageUpload from '@/components/ImageUpload.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { reloadOnConflict, showSilentError } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
@@ -21,8 +20,6 @@ import type { StylePickRow } from '@/types/style'
 import {
   BOM_SKU_MODE,
   COST_MODE,
-  CRAFT_GROUPS,
-  CRAFT_SECTION_LABEL,
   PACK_STATUS,
   TECH_PACK_LOG_ACTIONS,
   packName,
@@ -31,10 +28,7 @@ import {
   type CostItemForm,
   type CostMode,
   type CostRow,
-  type CraftSection,
-  type CraftSectionForm,
-  type ProcessForm,
-  type SpecPointForm,
+  type PackFileForm,
   type TechPackAction,
   type TechPackBrief,
   type TechPackCost,
@@ -45,22 +39,23 @@ import {
 import { formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
-import CraftStandardDrawer from '@/views/techpack/standard/CraftStandardDrawer.vue'
+import BomImportDialog, { type BomImportApply } from './BomImportDialog.vue'
 import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
+import TechPackFiles from './TechPackFiles.vue'
 
 /**
- * 款式详情的"资料包"页签（docs/api/01 §1.1、§4，原型 TechPack）：版本条、版本信息、四个子页签（尺寸指示、物料清单、工艺指示、核价）+ 操作记录。
+ * 款式详情的"资料包"页签（docs/api/01 §1.1、§4，原型 TechPack）：版本条、版本信息、三个子页签（物料清单、工艺单、核价）+ 操作记录。
  *
  *   <TechPackTab ref="techPack" :style-id="id" :style-code="s.code" :style-name="s.name" :overview="tpOverview" @changed="loadOverview" />
  *   techPack.value?.open(packId, 'cost')      别处要切到某一版的某个子页签（基本信息里点"资料包核价"）
  *
  * - 版本：地址上的 techPackId 只在第一次进来、或者地址变了时用；之后按用户自己选的，概况刷新（保存、生效后）不跳回地址那一版。
- *   新建、修订、转生产以后切到新的那一版；删了草稿回到 defaultPackId。overview 由款式详情取，这里改了东西发 changed 让它重取
- * - 四个子页签共用一份表单、一个"保存"；只有 actions 里有 edit 的草稿能改。没保存的修改：换版本先问，离开由 useUnsavedChanges 管
- * - 参考单价、单件成本、工序工价、核价和含价 PDF 都按 techpack:cost:query 控制；无权保存省略财务字段
+ *   新建、修订以后切到新的那一版；删了草稿回到 defaultPackId。overview 由款式详情取，这里改了东西发 changed 让它重取
+ * - 子页签共用一份表单、一个"保存"（物料清单、工艺单文件、核价的手填部分）；只有 actions 里有 edit 的草稿能改。
+ *   没保存的修改：换版本先问，离开由 useUnsavedChanges 管（工艺单传到一半也算）
+ * - 参考单价、单件成本、加工费、核价都按 techpack:cost:query 控制；无权保存省略财务字段
  * - 核价按上次保存的算（01 §6），改了没保存时提示一句
- * - 工艺标准（公司通用的默认文字、测量方法、附页文件）不单开一页，从这里拉出抽屉 CraftStandardDrawer：版本条上的"工艺标准"、
- *   还没有资料包时的空状态、导出 PDF 对话框"附工艺标准"旁边的"看附页文件"。要 techpack:standard:list
+ * - 工艺单是上传的文件（RFC 011）：TechPackFiles；物料清单能从甲方的 BOM 表导入：BomImportDialog
  */
 const props = defineProps<{
   styleId: string
@@ -79,14 +74,12 @@ const user = useUserStore()
 
 const bomParts = useDict('bom_part')
 const units = useDict('unit')
-const procCats = useDict('process_category')
+const processModes = useDict('process_mode')
 
-type SubTab = 'spec' | 'bom' | 'craft' | 'cost' | 'logs'
-const SUB_TABS: readonly SubTab[] = ['spec', 'bom', 'craft', 'cost', 'logs']
+type SubTab = 'bom' | 'files' | 'cost' | 'logs'
+const SUB_TABS: readonly SubTab[] = ['bom', 'files', 'cost', 'logs']
 
 const canSeeCost = computed(() => user.hasPerm('techpack:cost:query'))
-const canSeeStd = computed(() => user.hasPerm('techpack:standard:list'))
-const craftStd = ref<InstanceType<typeof CraftStandardDrawer>>()
 const activePackId = ref<string | null>(null)
 const subTab = ref<SubTab>('bom')
 const bomView = ref<'bom' | 'color'>('bom')
@@ -104,17 +97,15 @@ const inspectedBomId = ref<string | null>(null)
 const inspectedBom = computed(() => draft.bomItems.find((row) => row.id === inspectedBomId.value) ?? null)
 const inspectedSkus = computed(() => (inspectedBom.value?.skus ?? []).filter((sku) => bomView.value !== 'color' || sku.colorId == null || sku.colorId === viewColorId.value))
 
-/** 四个子页签共用的表单（草稿能改的部分） */
+/** 子页签共用的表单（草稿能改的部分） */
 const draft = reactive({
   versionNote: '',
   utilPct: null as number | null,
-  packingMode: null as string | null,
-  specPoints: [] as SpecPointForm[],
   bomItems: [] as BomItem[],
-  craftSections: [] as CraftSectionForm[],
-  processes: [] as ProcessForm[],
+  files: [] as PackFileForm[],
   costMode: 'OUTSOURCE' as CostMode,
   buyPrice: null as number | null | undefined,
+  laborPrice: null as number | null | undefined,
   costItems: [] as CostItemForm[],
 })
 
@@ -122,30 +113,14 @@ const editable = computed(() => detail.value?.actions.includes('edit') ?? false)
 const guard = useUnsavedChanges(() => (editable.value ? draft : null), undefined, { ready: () => !loading.value && (!canSeeCost.value || costState.value !== 'loading') })
 const can = (act: TechPackAction) => detail.value?.actions.includes(act) ?? false
 
-const ALL_SECTIONS: CraftSection[] = ['CUTTING', 'SEWING', 'PART', 'QUALITY', 'BUTTON', 'IRONING', 'LABEL', 'PACKING', 'NOTE']
-
-/** 尺寸指示每行换部位前的部位（换部位时判断测量方法是不是原部位的默认写法） */
-const prevPoint = new WeakMap<SpecPointForm, string>()
-
 function hydrateDraft(d: TechPackDetail) {
   draft.versionNote = d.versionNote ?? ''
   draft.utilPct = d.utilPct
-  draft.packingMode = d.packingMode
-  draft.specPoints = d.specPoints.map(({ id: _id, seq: _seq, ...rest }) => ({ ...rest, values: { ...rest.values } }))
-  draft.specPoints.forEach((p) => prevPoint.set(p, p.point))
   draft.bomItems = structuredClone(d.bomItems)
-  const secMap = new Map(d.craftSections.map((s) => [s.section, s]))
-  draft.craftSections = ALL_SECTIONS.map((sec) => {
-    const hit = secMap.get(sec)
-    return {
-      section: sec,
-      content: hit?.content ?? '',
-      images: hit?.images.map(({ url, thumbUrl, name, size }) => ({ url, thumbUrl, name, size })) ?? [],
-    }
-  })
-  draft.processes = d.processes.map(({ seq: _seq, ...rest }) => ({ ...rest, images: [...rest.images] }))
+  draft.files = d.files.map((f) => ({ ...f }))
   draft.costMode = 'OUTSOURCE'
   draft.buyPrice = null
+  draft.laborPrice = null
   draft.costItems = []
   guard.markSaved()
 }
@@ -169,6 +144,7 @@ async function loadCost(packId: string, colorId?: string) {
       const wasDirty = guard.dirty.value
       draft.costMode = result.costMode
       draft.buyPrice = result.buyPrice
+      draft.laborPrice = result.laborPrice
       draft.costItems = result.otherItems.map((it) => ({ name: it.name, amount: it.amount, remark: it.remark }))
       costDraftPackId.value = packId
       if (!wasDirty) guard.markSaved()
@@ -305,7 +281,7 @@ async function createPack() {
 async function revisePack() {
   if (!detail.value) return
   const newId = await techPackApi.revise(detail.value.id)
-  await gotoNew(newId, `修订出 ${packName({ version: detail.value.version + 1 })}，尺寸、物料、工艺、其他费用都带过来了，改完点「生效」`)
+  await gotoNew(newId, `修订出 ${packName({ version: detail.value.version + 1 })}，物料清单、工艺单、核价都带过来了，改完点「生效」`)
 }
 
 function buildSaveForm(): TechPackSaveForm {
@@ -314,8 +290,6 @@ function buildSaveForm(): TechPackSaveForm {
     versionLock: d.versionLock,
     versionNote: orNull(draft.versionNote),
     utilPct: draft.utilPct,
-    packingMode: draft.packingMode,
-    specPoints: draft.specPoints.map((sp) => ({ ...sp, point: sp.point.trim(), method: orNull(sp.method), remark: orNull(sp.remark) })),
     bomItems: draft.bomItems.map((b) => ({
       id: /^[1-9]\d*$/.test(b.id) ? b.id : undefined,
       part: b.part,
@@ -334,13 +308,13 @@ function buildSaveForm(): TechPackSaveForm {
       remark: orNull(b.remark),
       skus: b.skus.map((sk) => ({ colorId: sk.colorId, sizeCode: sk.sizeCode, materialSkuId: sk.materialSkuId, refPrice: sk.refPrice })),
     })),
-    craftSections: draft.craftSections.map((cs) => ({ section: cs.section, content: orNull(cs.content), images: cs.images })),
-    processes: draft.processes.map((p) => ({ ...p, name: p.name.trim(), requirement: orNull(p.requirement), remark: orNull(p.remark) })),
+    files: draft.files,
     // 未载入核价时不构造它；无权限时请求层完全省略 cost，服务器保留既有值。
     cost: canSeeCost.value && costDraftPackId.value === d.id
       ? {
           costMode: draft.costMode,
           buyPrice: draft.buyPrice,
+          laborPrice: draft.laborPrice,
           items: draft.costItems.filter((i) => i.name.trim()).map((i) => ({ name: i.name.trim(), amount: i.amount, remark: orNull(i.remark) })),
         }
       : null,
@@ -371,10 +345,18 @@ async function saveDraft(toast = true): Promise<number | null> {
   }
 }
 
-/** 生效：有没保存的修改先存。检查没过的一次列全（1000 + PublishProblem[]，弹清单） */
+/** 生效：有没保存的修改先存。检查没过的一次列全（1000 + PublishProblem[]，弹清单）。没有工艺单不拦，问一句（RFC 011 §2.1） */
 async function publishPack() {
   const d = detail.value
   if (!d) return
+  if (!draft.files.some((f) => f.category === 'CRAFT_SHEET')) {
+    try {
+      await ElMessageBox.confirm('还没有工艺单，发工厂时没有文件可发。', `生效 ${packName(d)}`, { confirmButtonText: '还是生效', cancelButtonText: '先去传工艺单' })
+    } catch {
+      subTab.value = 'files'
+      return
+    }
+  }
   let lock: number | null = d.versionLock
   if (guard.dirty.value) {
     lock = await saveDraft(false)
@@ -415,53 +397,12 @@ function moveItem<T>(arr: T[], idx: number, step: -1 | 1) {
   ;[arr[idx], arr[target]] = [arr[target]!, arr[idx]!]
 }
 
-// ---------- 尺寸指示 ----------
-function addSpecPoint() {
-  // 公差默认 0.5（01 §4.3）
-  const row: SpecPointForm = { point: '', method: '', toleranceCm: 0.5, gradeCm: null, remark: '', values: {} }
-  draft.specPoints.push(row)
-  prevPoint.set(row, '')
-}
-
-/** 换部位：测量方法空着、或者还是原部位的默认写法，就换成新部位的默认测量方法（原型 setPt） */
-function onPointPicked(row: SpecPointForm) {
-  const options = detail.value?.pointOptions ?? []
-  const oldDefault = options.find((o) => o.label === prevPoint.get(row))?.method ?? null
-  const newDefault = options.find((o) => o.label === row.point)?.method ?? null
-  if (newDefault && (!row.method || row.method === oldDefault)) row.method = newDefault
-  prevPoint.set(row, row.point)
-}
-
-/** 按档差生成：填了基码和档差的行，其他码 = 基码 ± 离基码第几档 × 档差（01 §4.3） */
-async function generateByGrade() {
-  const d = detail.value
-  if (!d) return
-  const baseIdx = d.sizes.indexOf(d.baseSize)
-  if (baseIdx < 0) return
-  const ready = draft.specPoints.filter((r) => r.values[d.baseSize] != null && r.gradeCm != null)
-  const skipped = draft.specPoints.filter((r) => r.gradeCm == null).length
-  if (!ready.length) {
-    ElMessage.warning('先填基码尺寸和档差')
-    return
-  }
-  const overwrite = ready.some((r) => d.sizes.some((sz, i) => i !== baseIdx && r.values[sz] != null))
-  if (overwrite) {
-    await ElMessageBox.confirm('已经填了数的格子会被覆盖。', '按档差生成', { confirmButtonText: '生成', cancelButtonText: '取消' })
-  }
-  for (const row of ready) {
-    const base = row.values[d.baseSize]!
-    d.sizes.forEach((sz, idx) => {
-      if (idx !== baseIdx) row.values[sz] = Math.round((base + (idx - baseIdx) * row.gradeCm!) * 10) / 10
-    })
-  }
-  ElMessage.success(`按档差算了 ${ready.length} 行${skipped ? `；${skipped} 行没填档差，没动` : ''}，算完每格还能改`)
-}
-
 // ---------- 物料清单 ----------
 const bomDialogVisible = ref(false)
 const editingBomIdx = ref<number | null>(null)
 const editingBomRow = computed(() => (editingBomIdx.value != null ? (draft.bomItems[editingBomIdx.value] ?? null) : null))
 const skuPicking = ref(false)
+const importer = ref<InstanceType<typeof BomImportDialog>>()
 const bomSkuIds = computed(() => draft.bomItems.flatMap((b) => b.skus.map((s) => s.materialSkuId)))
 /** 新加的行还没有 id：给一个负数当 row-key，保存时不发 id */
 let tempId = 0
@@ -628,6 +569,44 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
   ElMessage.success(`加了 ${added.length} 行，选好部位、填上用量`)
 }
 
+/**
+ * 从 BOM 表导入的行加进表单（01 §4.5）：替换或者接在后面；加工费、运费填进核价（核价加载了才填）；导入的表挂到工艺单页签。
+ * 只改了页面上的表单，点"保存"才存
+ */
+async function onImport(payload: BomImportApply) {
+  const rows: BomItem[] = payload.items.map((item) => ({ ...structuredClone(item), id: String(--tempId), seq: 0, unitCost: null, image: null }))
+  if (payload.mode === 'replace') draft.bomItems = rows
+  else draft.bomItems.push(...rows)
+  const notes: string[] = [`加了 ${rows.length} 行`]
+  const d = detail.value
+  if (canSeeCost.value && (payload.laborPrice != null || payload.fees.length)) {
+    if (d && costDraftPackId.value === d.id) {
+      if (payload.laborPrice != null && draft.laborPrice !== payload.laborPrice) {
+        let take = draft.laborPrice == null
+        if (!take) {
+          take = await ElMessageBox.confirm(`核价的加工费现在是 ${formatMoney(draft.laborPrice)}，表里是 ${formatMoney(payload.laborPrice)}。`, '加工费', {
+            confirmButtonText: '换成表里的', cancelButtonText: '不换',
+          }).then(() => true, () => false)
+        }
+        if (take) {
+          draft.laborPrice = payload.laborPrice
+          notes.push('加工费填进了核价')
+        }
+      }
+      for (const fee of payload.fees) {
+        const hit = draft.costItems.find((i) => i.name.trim() === fee.name)
+        if (hit) hit.amount = fee.amount
+        else draft.costItems.push({ name: fee.name, amount: fee.amount, remark: '从 BOM 表导入' })
+      }
+      if (payload.fees.length) notes.push(`${payload.fees.map((f) => f.name).join('、')}加进了其他费用`)
+    } else {
+      notes.push('核价没加载，表里的加工费、运费没带上')
+    }
+  }
+  if (payload.file) draft.files.push({ category: 'BOM_SOURCE', ...payload.file })
+  ElMessage.success(`${notes.join('；')}。点「保存」才存`)
+}
+
 /** 用量一格：统一的一个数，分码的"2.1–2.5" */
 function usageText(b: BomItem): string {
   if (b.usageMode === 'UNIFORM') return b.usageQty == null ? '—' : formatQty(b.usageQty)
@@ -704,27 +683,6 @@ const colorViewRows = computed<ColorViewRow[]>(() => {
   return rows
 })
 
-// ---------- 工艺指示、工序工价 ----------
-function sectionFormOf(sec: CraftSection): CraftSectionForm {
-  let hit = draft.craftSections.find((s) => s.section === sec)
-  if (!hit) {
-    hit = { section: sec, content: '', images: [] }
-    draft.craftSections.push(hit)
-  }
-  return hit
-}
-
-/** 只读时空的段不出（01 §4.5） */
-const shownSections = (sections: CraftSection[]) =>
-  editable.value ? sections : sections.filter((s) => sectionFormOf(s).content?.trim() || sectionFormOf(s).images.length)
-
-function addProcess() {
-  draft.processes.push({ category: null, name: '', requirement: '', stdSeconds: null, price: null, remark: '', images: [] })
-}
-
-const totalProcessLabor = computed(() => draft.processes.reduce((sum, p) => sum + (Number(p.price) || 0), 0))
-const totalProcessSeconds = computed(() => draft.processes.reduce((sum, p) => sum + (Number(p.stdSeconds) || 0), 0))
-
 // ---------- 核价（按上次保存的算，01 §6） ----------
 async function onCostColorChange(colorId: string | undefined) {
   if (detail.value) await loadCost(detail.value.id, colorId)
@@ -746,36 +704,16 @@ const costBlocks = computed(() =>
 /** 不计入的行写为什么（厂购含在加工价里、客供客户出） */
 const notCountedText = (row: CostRow) => (row.source === 'FACTORY' ? '含在加工价里' : '客户出')
 
-// ---------- 导出 PDF ----------
-const pdfVisible = ref(false)
-const pdfForm = reactive({ colorId: undefined as string | undefined, price: false, appendix: true })
-const exportingPdf = ref(false)
+/** 加工费的默认值从哪来："默认 25.50，取自价格档案的清加工" */
+const laborDefaultText = computed(() => {
+  const c = costData.value
+  if (!c || c.laborPriceDefault == null) return '价格档案里没有这个款的清加工、半包价，要手填'
+  const mode = c.laborPriceDefaultMode ? processModes.labelOf(c.laborPriceDefaultMode) : ''
+  return `默认 ${formatMoney(c.laborPriceDefault)}，取自价格档案${c.defaultFactoryName ? `（${c.defaultFactoryName}）` : ''}的${mode}`
+})
 
-function openPdf() {
-  // 微信里下载不了文件（01 §4.7）
-  if (/MicroMessenger/i.test(navigator.userAgent)) {
-    ElMessage.warning('微信里下载不了文件：点右上角，在浏览器里打开再导出')
-    return
-  }
-  Object.assign(pdfForm, { colorId: undefined, price: false, appendix: true })
-  pdfVisible.value = true
-}
-
-async function doExportPdf() {
-  const d = detail.value
-  if (!d) return
-  exportingPdf.value = true
-  try {
-    await techPackApi.pdf(
-      d.id,
-      { colorId: pdfForm.colorId, price: canSeeCost.value && pdfForm.price, appendix: pdfForm.appendix },
-      `${props.styleCode}-${props.styleName}-工艺单-${packName(d)}.pdf`,
-    )
-    pdfVisible.value = false
-  } finally {
-    exportingPdf.value = false
-  }
-}
+/** 工艺单页签上的个数（导入的 BOM 表不算） */
+const craftFileCount = computed(() => draft.files.filter((f) => f.category !== 'BOM_SOURCE').length)
 
 // ---------- 操作记录 ----------
 const loadLogs = () => techPackApi.logs(activePackId.value!)
@@ -789,7 +727,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
   <div v-loading="loading" class="tp-wrap">
     <BlankState v-if="overview && !overview.packs.length" title="还没有资料包：生产 BOM 生效后才能下订单">
       <el-button v-if="canCreate" type="primary" @click="createPack">建生产 BOM</el-button>
-      <el-button v-if="canSeeStd" icon="Notebook" @click="craftStd?.open()">工艺标准</el-button>
     </BlankState>
 
     <template v-else-if="overview">
@@ -814,8 +751,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
         <div class="ver-acts">
           <template v-if="detail">
             <el-button v-if="can('remove')" size="small" @click="removeDraft">删除草稿</el-button>
-            <el-button size="small" icon="Printer" @click="openPdf">导出 PDF</el-button>
-            <el-button v-if="canSeeStd" size="small" icon="Notebook" @click="craftStd?.open()">工艺标准</el-button>
             <el-button v-if="can('revise')" size="small" @click="revisePack">修订</el-button>
             <el-button v-if="editable" size="small" :loading="saving" :disabled="!guard.dirty.value" @click="saveDraft()">保存</el-button>
             <el-button v-if="can('publish')" size="small" type="primary" :loading="saving" @click="publishPack">生效</el-button>
@@ -832,7 +767,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
         <div class="pack-meta">
           <StatusTag :tone="PACK_STATUS[detail.status].tone">{{ PACK_STATUS[detail.status].label }}</StatusTag>
           <span v-if="detail.publishTime" class="dim">{{ detail.publishByName }} {{ formatDateTime(detail.publishTime) }} 生效</span>
-          <span v-if="canSeeCost" class="num">参考加工价 ¥{{ formatMoney(detail.laborTotal) }}</span>
           <span v-if="canSeeCost && detail.unitCost != null" class="num">单件成本 <strong>¥{{ formatMoney(detail.unitCost) }}</strong></span>
           <label class="inline-field">
             <span class="dim">排版利用率 %</span>
@@ -852,87 +786,13 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
         </div>
 
         <el-tabs v-model="subTab" :inert="saving || loading">
-          <!-- 尺寸指示 -->
-          <el-tab-pane :label="`尺寸指示（${draft.specPoints.length}）`" name="spec">
-            <div v-if="editable" class="sub-toolbar">
-              <el-button size="small" icon="Plus" @click="addSpecPoint">加一行</el-button>
-              <el-button size="small" @click="generateByGrade">按档差生成</el-button>
-              <span class="dim">单位 cm</span>
-            </div>
-            <el-table :data="draft.specPoints" empty-text="还没有尺寸指示（不是必填）">
-              <el-table-column label="#" width="44" class-name="num">
-                <template #default="{ $index }">{{ $index + 1 }}</template>
-              </el-table-column>
-              <el-table-column label="部位" min-width="130">
-                <template #default="{ row }">
-                  <el-select
-                    v-if="editable"
-                    v-model="row.point"
-                    size="small"
-                    filterable
-                    allow-create
-                    default-first-option
-                    placeholder="选或填部位"
-                    @change="onPointPicked(row as SpecPointForm)"
-                  >
-                    <el-option v-for="o in detail.pointOptions" :key="o.label" :label="o.label" :value="o.label" />
-                  </el-select>
-                  <span v-else>{{ row.point }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="测量方法" min-width="160">
-                <template #default="{ row }">
-                  <el-input v-if="editable" v-model="row.method" size="small" />
-                  <span v-else>{{ row.method || '—' }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="公差 ±" width="78" class-name="num" align="right">
-                <template #default="{ row }">
-                  <el-input-number v-if="editable" v-model="row.toleranceCm" size="small" :min="0" :precision="1" :controls="false" />
-                  <span v-else>{{ row.toleranceCm == null ? '—' : formatQty(row.toleranceCm) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="档差" width="78" class-name="num" align="right">
-                <template #default="{ row }">
-                  <el-input-number v-if="editable" v-model="row.gradeCm" size="small" :precision="1" :controls="false" />
-                  <span v-else>{{ row.gradeCm == null ? '—' : formatQty(row.gradeCm) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column
-                v-for="sz in detail.sizes"
-                :key="sz"
-                :label="sz === detail.baseSize ? `${sz}（基码）` : sz"
-                :class-name="sz === detail.baseSize ? 'num base-col' : 'num'"
-                width="84"
-                align="right"
-              >
-                <template #default="{ row }">
-                  <el-input-number v-if="editable" v-model="row.values[sz]" size="small" :precision="1" :controls="false" />
-                  <span v-else>{{ row.values[sz] == null ? '—' : formatQty(row.values[sz]) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="备注" min-width="120">
-                <template #default="{ row }">
-                  <el-input v-if="editable" v-model="row.remark" size="small" />
-                  <span v-else>{{ row.remark || '' }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column v-if="editable" label="" width="96" align="right">
-                <template #default="{ $index }">
-                  <el-button link size="small" :disabled="$index === 0" aria-label="上移" @click="moveItem(draft.specPoints, $index, -1)"><el-icon><Top /></el-icon></el-button>
-                  <el-button link size="small" :disabled="$index === draft.specPoints.length - 1" aria-label="下移" @click="moveItem(draft.specPoints, $index, 1)"><el-icon><Bottom /></el-icon></el-button>
-                  <el-button link type="danger" size="small" @click="draft.specPoints.splice($index, 1)">删</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-tab-pane>
-
           <!-- 物料清单 -->
           <el-tab-pane :label="`物料清单（${draft.bomItems.length}）`" name="bom">
             <div class="sub-toolbar">
               <template v-if="editable">
                 <el-button type="primary" size="small" icon="Plus" @click="skuPicking = true">从物料库选</el-button>
                 <el-button size="small" @click="openAddBom">加一行</el-button>
+                <el-button size="small" icon="Upload" @click="importer?.open()">从 BOM 表导入</el-button>
               </template>
               <el-segmented v-model="bomView" size="small" :options="[{ label: '物料清单', value: 'bom' }, { label: '按颜色', value: 'color' }]" />
               <el-select v-if="bomView === 'color'" v-model="viewColorId" size="small" filterable class="color-sel">
@@ -960,7 +820,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <span v-else class="dim">悬停、聚焦或点击物料编码查看料卡</span>
             </aside>
 
-            <el-table v-if="bomView === 'bom'" :data="draft.bomItems" row-key="id" empty-text="还没有物料：点「从物料库选」加">
+            <el-table v-if="bomView === 'bom'" :data="draft.bomItems" row-key="id" :empty-text="editable ? '还没有物料：点「从物料库选」加，或者从甲方的 BOM 表导入' : '这一版没有物料'">
               <el-table-column type="expand" width="32">
                 <template #default="{ row }">
                   <div class="expand">
@@ -1080,90 +940,9 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
             </el-table>
           </el-tab-pane>
 
-          <!-- 工艺指示 -->
-          <el-tab-pane label="工艺指示" name="craft">
-            <template v-for="grp in CRAFT_GROUPS" :key="grp.title">
-              <div v-if="shownSections(grp.sections).length" class="craft-group">
-                <h4 class="grp-h">{{ grp.title }}</h4>
-                <div class="sec-grid">
-                  <div v-for="sec in shownSections(grp.sections)" :key="sec" class="craft-box">
-                    <div class="craft-head">
-                      <strong>{{ CRAFT_SECTION_LABEL[sec] }}</strong>
-                      <div v-if="sec === 'PACKING'" class="pack-mode">
-                        <span class="dim">包装方式</span>
-                        <DictSelect v-model="draft.packingMode" type="packing_mode" size="small" :disabled="!editable" clearable />
-                      </div>
-                    </div>
-                    <el-input v-if="editable" v-model="sectionFormOf(sec).content" type="textarea" :autosize="{ minRows: 3 }" />
-                    <p v-else class="craft-text">{{ sectionFormOf(sec).content }}</p>
-                    <ImageUpload :key="`${detail.id}-${sec}`" v-if="editable || sectionFormOf(sec).images.length" v-model="sectionFormOf(sec).images" :max="6" :disabled="!editable" />
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <div class="proc-block">
-              <div class="sub-toolbar">
-                <strong>工序工价</strong>
-                <el-tag size="small" type="info" disable-transitions>内部</el-tag>
-                <span class="gap" />
-                <el-button v-if="editable" size="small" icon="Plus" @click="addProcess">加工序</el-button>
-              </div>
-              <el-table :data="draft.processes" empty-text="还没有工序">
-                <el-table-column label="#" width="44" class-name="num">
-                  <template #default="{ $index }">{{ $index + 1 }}</template>
-                </el-table-column>
-                <el-table-column label="工序类别" width="120">
-                  <template #default="{ row }">
-                    <DictSelect v-if="editable" v-model="row.category" type="process_category" size="small" clearable />
-                    <span v-else>{{ procCats.labelOf(row.category) }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="工序名称" min-width="130">
-                  <template #default="{ row }">
-                    <el-input v-if="editable" v-model="row.name" size="small" />
-                    <span v-else>{{ row.name }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="工艺要求" min-width="160">
-                  <template #default="{ row }">
-                    <el-input v-if="editable" v-model="row.requirement" size="small" />
-                    <span v-else>{{ row.requirement || '' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="图示" width="150">
-                  <template #default="{ row }">
-                    <ImageUpload v-if="editable || row.images.length" v-model="row.images" :max="3" :disabled="!editable" />
-                  </template>
-                </el-table-column>
-                <el-table-column label="标准工时（秒）" width="104" class-name="num" align="right">
-                  <template #default="{ row }">
-                    <el-input-number v-if="editable" v-model="row.stdSeconds" size="small" :min="0" :precision="0" :controls="false" />
-                    <span v-else>{{ row.stdSeconds ?? '—' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column v-if="canSeeCost" label="工价（元）" width="96" class-name="num" align="right">
-                  <template #default="{ row }">
-                    <el-input-number v-if="editable" v-model="row.price" size="small" :min="0" :precision="4" :controls="false" />
-                    <span v-else>{{ row.price == null ? '—' : formatPrice(row.price) }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="备注" min-width="100">
-                  <template #default="{ row }">
-                    <el-input v-if="editable" v-model="row.remark" size="small" />
-                    <span v-else>{{ row.remark || '' }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column v-if="editable" label="" width="110" align="right">
-                  <template #default="{ $index }">
-                    <el-button link size="small" :disabled="$index === 0" aria-label="上移" @click="moveItem(draft.processes, $index, -1)"><el-icon><Top /></el-icon></el-button>
-                    <el-button link size="small" :disabled="$index === draft.processes.length - 1" aria-label="下移" @click="moveItem(draft.processes, $index, 1)"><el-icon><Bottom /></el-icon></el-button>
-                    <el-button link type="danger" size="small" @click="draft.processes.splice($index, 1)">删</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-              <p class="proc-total num">总工时 {{ totalProcessSeconds }} 秒<template v-if="canSeeCost"> · 参考加工价 ¥{{ formatMoney(totalProcessLabor) }}</template></p>
-            </div>
+          <!-- 工艺单（上传的文件，RFC 011） -->
+          <el-tab-pane :label="`工艺单（${craftFileCount}）`" name="files">
+            <TechPackFiles v-model="draft.files" :pack-id="detail.id" :disabled="!editable" />
           </el-tab-pane>
 
           <!-- 核价（按上次保存的算） -->
@@ -1191,6 +970,22 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                     :placeholder="costData.buyPriceDefault == null ? '' : `默认 ${formatMoney(costData.buyPriceDefault)}，取自价格档案`"
                     class="buy-input"
                   />
+                </template>
+                <template v-else>
+                  <span class="dim">加工费</span>
+                  <el-input-number
+                    v-model="draft.laborPrice"
+                    data-testid="cost-labor-price"
+                    size="small"
+                    :min="0"
+                    :max="9999999999.9999"
+                    :precision="4"
+                    :controls="false"
+                    :disabled="!editable"
+                    :placeholder="costData.laborPriceDefault == null ? '元/件' : `默认 ${formatMoney(costData.laborPriceDefault)}`"
+                    class="buy-input"
+                  />
+                  <span v-if="draft.laborPrice == null" class="dim">{{ laborDefaultText }}</span>
                 </template>
               </div>
 
@@ -1232,7 +1027,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <span class="num">¥{{ formatMoney(costData.summary.labor) }}</span>
                 </div>
                 <p class="blk-line">
-                  <template v-if="costData.costMode === 'OUTSOURCE'">按外发：{{ costData.processCount }} 道工序的工价合计</template>
+                  <template v-if="costData.costMode === 'OUTSOURCE'">按外发：加工费{{ costData.laborPrice == null ? (costData.laborPriceDefault == null ? '（没填，价格档案里也没有）' : '（没填，用价格档案的默认价）') : '' }}</template>
                   <template v-else>按成品采购：成品单价{{ costData.buyPrice == null ? '（没填，用价格档案的默认价）' : '' }}</template>
                 </p>
                 <p v-if="costData.costMode === 'OUTSOURCE' && costData.buyPriceDefault != null" class="blk-line dim">
@@ -1302,30 +1097,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
     />
     <DataPick v-model="skuPicking" kind="sku" :have="bomSkuIds" @pick="onPickSkus" />
 
-    <el-dialog v-model="pdfVisible" title="导出工艺单" width="440px">
-      <el-form v-if="detail" label-position="top">
-        <el-form-item label="颜色">
-          <el-select v-model="pdfForm.colorId" filterable clearable placeholder="全部颜色">
-            <el-option v-for="c in detail.colors" :key="c.id" :label="`${c.code} ${c.name}`" :value="c.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <div class="pdf-checks">
-            <el-checkbox v-if="canSeeCost" v-model="pdfForm.price">含价格（单价、成本、工价）</el-checkbox>
-            <div class="appendix-row">
-              <el-checkbox v-model="pdfForm.appendix">附工艺标准</el-checkbox>
-              <el-button v-if="canSeeStd" link type="primary" size="small" @click="craftStd?.open('files')">看附页文件</el-button>
-            </div>
-          </div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="pdfVisible = false">取消</el-button>
-        <el-button type="primary" :loading="exportingPdf" @click="doExportPdf">导出</el-button>
-      </template>
-    </el-dialog>
-
-    <CraftStandardDrawer v-if="canSeeStd" ref="craftStd" />
+    <BomImportDialog v-if="detail" ref="importer" :pack-id="detail.id" :existing="draft.bomItems.length" :can-see-cost="canSeeCost" @apply="onImport" />
   </div>
 </template>
 
@@ -1506,68 +1278,6 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
   text-align: right;
 }
 
-.craft-group {
-  margin-bottom: 18px;
-}
-
-.grp-h {
-  margin: 0 0 10px;
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.sec-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.craft-box {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: var(--lm-subtle);
-  border: 1px solid var(--lm-line-soft);
-  border-radius: var(--lm-radius);
-}
-
-.craft-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.craft-text {
-  margin: 0;
-  font-size: 13px;
-  white-space: pre-wrap;
-}
-
-.pack-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pack-mode :deep(.el-select) {
-  width: 110px;
-}
-
-.proc-block {
-  padding-top: 14px;
-  margin-top: 18px;
-  border-top: 1px solid var(--lm-line-soft);
-}
-
-.proc-total {
-  margin: 8px 0 0;
-  font-size: 12.5px;
-  text-align: right;
-}
-
 .mb-12 {
   margin-bottom: 12px;
 }
@@ -1609,23 +1319,5 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 
 .cost-total strong {
   font-size: 16px;
-}
-
-.pdf-checks {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.appendix-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-@media (max-width: 900px) {
-  .sec-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

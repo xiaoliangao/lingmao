@@ -50,6 +50,7 @@ import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.service.DictDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -414,6 +415,50 @@ public class MaterialServiceImpl implements MaterialService {
                         .apply("upper(code) IN (" + IntStream.range(0, upper.size()).mapToObj(i -> "{" + i + "}")
                                 .collect(Collectors.joining(",")) + ")", upper.toArray()))
                 .stream().collect(Collectors.toMap(k -> k.getCode().toUpperCase(Locale.ROOT), MaterialSku::getId, (a, b) -> a));
+    }
+
+    @Override
+    public Map<String, List<MaterialSkuRef>> enabledSkusByNames(Collection<String> names) {
+        List<String> lower = names.stream().filter(StringUtils::hasText).map(n -> n.strip().toLowerCase(Locale.ROOT)).distinct().toList();
+        if (lower.isEmpty()) {
+            return Map.of();
+        }
+        List<Material> materials = materialMapper.selectList(new LambdaQueryWrapper<Material>()
+                .eq(Material::getStatus, 1)
+                .apply("lower(btrim(name)) IN (" + IntStream.range(0, lower.size()).mapToObj(i -> "{" + i + "}")
+                        .collect(Collectors.joining(",")) + ")", lower.toArray())
+                .orderByAsc(Material::getCode));
+        Map<String, List<MaterialSkuRef>> out = new LinkedHashMap<>();
+        enabledSkus(materials).forEach((id, skus) -> out.computeIfAbsent(skus.getFirst().material().name().strip().toLowerCase(Locale.ROOT),
+                x -> new ArrayList<>()).addAll(skus));
+        return out;
+    }
+
+    @Override
+    public Map<Long, List<MaterialSkuRef>> enabledSkusOf(Collection<Long> materialIds) {
+        List<Long> ids = materialIds.stream().filter(Objects::nonNull).distinct().toList();
+        return ids.isEmpty() ? Map.of() : enabledSkus(materialMapper.selectList(new LambdaQueryWrapper<Material>()
+                .in(Material::getId, ids).eq(Material::getStatus, 1).orderByAsc(Material::getCode)));
+    }
+
+    /** 这些物料启用的 SKU：物料 id → SKU（按物料的顺序、SKU 编码排）；没有启用 SKU 的不在里面 */
+    private Map<Long, List<MaterialSkuRef>> enabledSkus(List<Material> materials) {
+        if (materials.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, MaterialRef> refs = materials.stream().map(MaterialRef::from)
+                .collect(Collectors.toMap(MaterialRef::id, Function.identity()));
+        List<MaterialSku> skus = materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>()
+                .in(MaterialSku::getMaterialId, refs.keySet()).eq(MaterialSku::getStatus, 1).orderByAsc(MaterialSku::getCode));
+        Map<Long, Color> colors = colorsOf(skus);
+        Map<Long, List<MaterialSku>> byMaterial = skus.stream().collect(Collectors.groupingBy(MaterialSku::getMaterialId));
+        Map<Long, List<MaterialSkuRef>> out = new LinkedHashMap<>();
+        for (Material m : materials) {
+            for (MaterialSku k : byMaterial.getOrDefault(m.getId(), List.of())) {
+                out.computeIfAbsent(m.getId(), x -> new ArrayList<>()).add(MaterialSkuRef.of(k, refs.get(m.getId()), colors.get(k.getColorId())));
+            }
+        }
+        return out;
     }
 
     // ---------- 导入导出 ----------

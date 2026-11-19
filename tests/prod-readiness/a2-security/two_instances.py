@@ -71,7 +71,7 @@ def expired_access(token, secret):
 
 
 def run(args):
-    for key in ("PG_DSN", "DB_URL", "DB_USER", "DB_PASSWORD", "REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "PDF_FONT_DIR"):
+    for key in ("PG_DSN", "DB_URL", "DB_USER", "DB_PASSWORD", "REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD"):
         check(key in os.environ, "Missing required test environment: " + key)
     work = Path(args.work_dir).resolve()
     work.mkdir(parents=True, exist_ok=True)

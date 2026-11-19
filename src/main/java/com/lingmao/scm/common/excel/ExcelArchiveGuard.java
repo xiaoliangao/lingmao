@@ -3,6 +3,9 @@ package com.lingmao.scm.common.excel;
 import com.lingmao.scm.common.exception.BizException;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
+import org.apache.poi.poifs.filesystem.DirectoryEntry;
+import org.apache.poi.poifs.filesystem.Entry;
+import org.apache.poi.poifs.filesystem.POIFSFileSystem;
 
 import javax.xml.XMLConstants;
 import javax.xml.stream.XMLInputFactory;
@@ -74,6 +77,36 @@ final class ExcelArchiveGuard {
         if (!paths.contains("[Content_Types].xml") || !paths.contains("xl/workbook.xml"))
             throw new BizException("文件打不开：缺少 Excel 工作簿结构，请另存为 .xlsx 后重试");
         return bytes;
+    }
+
+    /** 文件头是 OLE2（.xls、.doc 这一类） */
+    static boolean isOle(byte[] bytes) {
+        int[] magic = {0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1};
+        if (bytes.length < magic.length) return false;
+        for (int i = 0; i < magic.length; i++) if ((bytes[i] & 255) != magic[i]) return false;
+        return true;
+    }
+
+    /** .xls：OLE 目录里要有工作簿；有宏、条目太多、目录太深都不收（和上传时 UploadContent 的检查一样） */
+    static void inspectOle(byte[] bytes) throws IOException {
+        try (POIFSFileSystem system = new POIFSFileSystem(new ByteArrayInputStream(bytes))) {
+            DirectoryEntry root = system.getRoot();
+            if (!root.hasEntry("Workbook") && !root.hasEntry("Book")) {
+                throw new BizException("文件打不开：这不是 Excel 工作簿");
+            }
+            checkOle(root, 0, new int[1]);
+        }
+    }
+
+    private static void checkOle(DirectoryEntry directory, int depth, int[] entries) {
+        if (depth > 16) throw tooLarge();
+        for (Entry entry : directory) {
+            if (++entries[0] > 512) throw tooLarge();
+            String name = entry.getName().toUpperCase(java.util.Locale.ROOT);
+            if (name.equals("VBA") || name.contains("VBA_PROJECT") || name.equals("MACROS"))
+                throw new BizException("文件不能包含宏，请另存为不带宏的 Excel 再试");
+            if (entry instanceof DirectoryEntry child) checkOle(child, depth + 1, entries);
+        }
     }
 
     private static void inspectXml(XMLInputFactory factory, InputStream input, String part, Budget budget)

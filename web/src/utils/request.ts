@@ -589,8 +589,8 @@ export async function download(url: string, params?: object, fallbackName = '下
 }
 
 /**
- * 只取回文件、不保存：手机上拿去调系统分享（资料包 PDF 发微信，架构 §11.1），分享不了再 saveFile 存下来。
- *   const file = await fetchFile(`/api/tech-packs/${id}/pdf`, params, '工艺单.pdf')
+ * 只取回文件、不保存：手机上拿去调系统分享（工艺单发微信），分享不了再 saveFile 存下来。
+ *   const file = await fetchFile(`/api/inventory-docs/${id}/export`, params, '单据.xlsx')
  *   if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] })
  *   else saveFile(file)
  */

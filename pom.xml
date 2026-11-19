@@ -30,7 +30,6 @@
         <java.version>21</java.version>
         <jjwt.version>0.13.0</jjwt.version>
         <poi.version>6.0.0</poi.version>
-        <openhtmltopdf.version>1.1.105</openhtmltopdf.version>
         <!-- 发版的版本号：deploy/build-package.sh 打包时用 -Drelease.version=2026.11.14 传进来，平时是 dev。GET /api/version 返回它 -->
         <release.version>dev</release.version>
     </properties>
@@ -118,18 +117,6 @@
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>${poi.version}</version>
-        </dependency>
-        <!-- 资料包导出 PDF（架构 §11.1）：Thymeleaf 把模板渲染成 XHTML，openhtmltopdf 转成 PDF（基于 PDFBox 3，纯 Java，不用装浏览器），
-             PDFBox 把工艺标准文件拼在后面。openhtmltopdf 原项目停更了，用社区分支 io.github.openhtmltopdf；版本挑发布满两周的。
-             Thymeleaf 只要模板引擎、不要 Spring MVC 的视图，所以不用 starter，版本由 Spring Boot 管 -->
-        <dependency>
-            <groupId>io.github.openhtmltopdf</groupId>
-            <artifactId>openhtmltopdf-pdfbox</artifactId>
-            <version>${openhtmltopdf.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.thymeleaf</groupId>
-            <artifactId>thymeleaf</artifactId>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

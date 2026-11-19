@@ -194,7 +194,7 @@ class SchemaConventionsIT {
 
     /**
      * 规则：数据库设计 §3.2 的字典类型都在；内置项正好是 PRD §6.1.7 规则 2 的那 11 个；
-     * 品牌预置为空（甲方的名字不进公开仓库）；物料类型带上了 Q40 的配件、工艺、鞋底，备料比 0（由生产评估后填，V37 撤回 V24 的 3）；款式大类 TS、FS、XZ（V37，Q28）；生产节点带默认天数
+     * 品牌预置为空（甲方的名字不进公开仓库）；V39 去掉的三个字典不在了；物料类型带上了 Q40 的配件、工艺、鞋底，备料比 0（由生产评估后填，V37 撤回 V24 的 3）；款式大类 TS、FS、XZ（V37，Q28）；生产节点带默认天数
      */
     @Test
     void dictPresets() {
@@ -202,8 +202,9 @@ class SchemaConventionsIT {
                 .contains("style_class", "season", "wave", "style_tag", "brand", "series", "gender", "style_source",
                         "exec_standard", "safety_category", "color_family", "unit", "currency", "tax_rate",
                         "settle_method", "invoice_type", "material_type", "supplier_category", "order_type",
-                        "process_mode", "prod_node", "issue_type", "bom_part", "process_category", "size_point",
-                        "packing_mode", "cert_type", "stock_in_reason", "stock_out_reason");
+                        "process_mode", "prod_node", "issue_type", "bom_part", "cert_type", "stock_in_reason", "stock_out_reason")
+                // 工序分类、尺寸部位、包装方式跟着工序、尺寸指示、工艺标准去掉了（V39，RFC 011）
+                .doesNotContain("process_category", "size_point", "packing_mode");
 
         assertThat(jdbc.queryForList(
                 "SELECT type_code || ':' || value FROM sys_dict_data WHERE builtin AND deleted = false", String.class))
@@ -255,8 +256,6 @@ class SchemaConventionsIT {
     private static final Set<String> PACK_EDIT = union(PACK_VIEW, Set.of("techpack:pack:add", "techpack:pack:edit",
             "techpack:pack:remove", "techpack:pack:publish"));
     private static final Set<String> COST = Set.of("techpack:cost:query");
-    private static final Set<String> STANDARD_VIEW = Set.of("techpack:standard:list");
-    private static final Set<String> STANDARD_EDIT = union(STANDARD_VIEW, Set.of("techpack:standard:edit"));
     private static final Set<String> ORDER_VIEW = Set.of("order:order:list", "order:order:export");
     private static final Set<String> ORDER_EDIT = union(ORDER_VIEW, Set.of("order:order:add", "order:order:edit",
             "order:order:remove", "order:order:submit", "order:order:void", "order:order:import"));
@@ -288,14 +287,14 @@ class SchemaConventionsIT {
     static {
         // 每行前半是第 2 批（V16），后半是第 3、4 批（V17）
         ROLE_PERMS.put("dev", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
-                PACK_EDIT, STANDARD_VIEW, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
+                PACK_EDIT, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("dev_lead", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
-                PACK_EDIT, COST, STANDARD_EDIT, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
+                PACK_EDIT, COST, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("sales", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
                 PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, ORDER_PRICE, PURCHASE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("merchandiser", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:process:edit"),
-                PACK_VIEW, STANDARD_VIEW, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE));
+                PACK_VIEW, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE));
         ROLE_PERMS.put("buyer", union(BASICS_VIEW, MATERIAL_EDIT, SUPPLIER_EDIT, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:material:edit"),
                 PACK_VIEW, COST, ORDER_VIEW, CHANGE_VIEW, PURCHASE_EDIT, PURCHASE_CLOSE, STOCK_VIEW, COUNT_VIEW,
@@ -306,13 +305,13 @@ class SchemaConventionsIT {
                 PACK_VIEW, COST, ORDER_VIEW, ORDER_PRICE, CHANGE_VIEW, PURCHASE_VIEW, STOCK_VIEW, COUNT_VIEW, PRODUCTION_VIEW, PRODUCTION_PRICE));
         ROLE_PERMS.put("manager", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, Set.of("supplier:supplier:admit"),
                 BANK, CONTACT, STYLE_VIEW, PRICE_VIEW, Set.of("price:material:edit", "price:process:edit"),
-                PACK_VIEW, COST, STANDARD_VIEW, ORDER_VIEW, Set.of("order:order:audit"), CHANGE_VIEW,
+                PACK_VIEW, COST, ORDER_VIEW, Set.of("order:order:audit"), CHANGE_VIEW,
                 Set.of("order:change:audit"), ORDER_PRICE, PURCHASE_VIEW, Set.of("purchase:order:audit"), PURCHASE_CLOSE, STOCK_VIEW,
                 COUNT_VIEW, Set.of("inventory:count:audit"), PRODUCTION_VIEW,
                 Set.of("production:order:audit", "production:order:close"), PRODUCTION_PRICE));
     }
 
-    /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包""工艺标准"（V18 起是资料包里的抽屉）是 visible = false 的，不出现 */
+    /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现（"工艺标准" V39 去掉了） */
     private static final List<String> MASTER = List.of("供应商", "物料", "基础");
     private static final List<String> ORDERS = List.of("需求订单", "变更");
     private static final List<String> SUPPLY_ALL = List.of("算料", "采购", "物料入库单", "物料出库单", "物料盘点单", "库存");
@@ -339,7 +338,7 @@ class SchemaConventionsIT {
     /**
      * 规则：八个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
      * （第 2 批 RFC 003 §13.2，第 3、4 批 V17），data:all 跟着数据范围走；侧边栏正好是 ROLE_SIDEBARS 那样（目录也授了才挂得上），
-     * 没有"价格档案""资料包""工艺标准"（visible = false，只为在角色页里勾），也没有管理后台的"审批规则"。走的是登录时真正用的 PermissionService
+     * 没有"价格档案""资料包"（visible = false，只为在角色页里勾），也没有管理后台的"审批规则"。走的是登录时真正用的 PermissionService
      */
     @Test
     void roleTemplates() {

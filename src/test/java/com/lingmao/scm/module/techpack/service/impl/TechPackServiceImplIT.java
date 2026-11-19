@@ -5,36 +5,34 @@ import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.common.excel.ExcelPreview;
 import com.lingmao.scm.module.basic.entity.MaterialSource;
 import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
+import com.lingmao.scm.module.techpack.dto.BomImportVO;
 import com.lingmao.scm.module.techpack.dto.BomItemForm;
 import com.lingmao.scm.module.techpack.dto.BomSkuForm;
-import com.lingmao.scm.module.techpack.dto.CraftSectionForm;
-import com.lingmao.scm.module.techpack.dto.CraftTextsReq;
-import com.lingmao.scm.module.techpack.dto.PointOption;
-import com.lingmao.scm.module.techpack.dto.ProcessForm;
+import com.lingmao.scm.module.techpack.dto.PackFileForm;
+import com.lingmao.scm.module.techpack.dto.PackFileVO;
 import com.lingmao.scm.module.techpack.dto.PublishProblem;
-import com.lingmao.scm.module.techpack.dto.SpecPointForm;
 import com.lingmao.scm.module.techpack.dto.StyleCostQuery;
 import com.lingmao.scm.module.techpack.dto.StyleCostRowVO;
+import com.lingmao.scm.module.techpack.dto.TechPackCostForm;
 import com.lingmao.scm.module.techpack.dto.TechPackCostVO;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
 import com.lingmao.scm.module.techpack.dto.TechPackOverviewVO;
 import com.lingmao.scm.module.techpack.dto.TechPackSaveReq;
 import com.lingmao.scm.module.techpack.entity.BomSkuMode;
 import com.lingmao.scm.module.techpack.entity.BomUsageMode;
-import com.lingmao.scm.module.techpack.entity.CraftSection;
+import com.lingmao.scm.module.techpack.entity.CostMode;
 import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
-import com.lingmao.scm.module.techpack.service.CraftStandardService;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
-import com.lingmao.scm.module.techpack.service.TechPackPdfService;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.LoginUser;
-import org.apache.pdfbox.Loader;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,13 +44,13 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
@@ -62,8 +60,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 资料包在真库上：整版保存、乐观锁、生效时旧版作废、回写款式的资料包状态、转生产 BOM 重新取价、一个阶段只能有一个草稿（部分唯一索引）、
- * 删草稿连明细一起删（外键是 RESTRICT，删的顺序错了会报错）
+ * 资料包在真库上：整版保存、乐观锁、生效时旧版作废、回写款式的资料包状态、一个阶段只能有一个草稿（部分唯一索引）、
+ * 删草稿连明细一起删（外键是 RESTRICT，删的顺序错了会报错）、工艺单文件跟着修订走、Excel 预览、从 BOM 表导入
  */
 @IntegrationTest
 class TechPackServiceImplIT {
@@ -74,10 +72,6 @@ class TechPackServiceImplIT {
     private TechPackService techPackService;
     @Autowired
     private TechPackCostService costService;
-    @Autowired
-    private CraftStandardService craftStandardService;
-    @Autowired
-    private TechPackPdfService pdfService;
     @Value("${lingmao.upload.dir}")
     private String uploadDir;
     @Autowired
@@ -108,7 +102,8 @@ class TechPackServiceImplIT {
         TechPackDetailVO draft = techPackService.detail(prod);
         assertThat(draft.getStatus()).isEqualTo(PackStatus.DRAFT);
         assertThat(draft.getVersion()).isEqualTo(1);
-        assertThat(draft.getCraftSections()).hasSize(CraftSection.values().length);
+        assertThat(draft.getFiles()).isEmpty();
+        assertThat(draft.getBomItems()).isEmpty();
         assertThat(draft.getActions()).containsExactly("edit", "publish", "remove");
 
         int lock = techPackService.save(prod, saveReq(draft.getVersionLock(), f, null));
@@ -181,14 +176,11 @@ class TechPackServiceImplIT {
         assertThat(frozen.getColors()).isEqualTo(original.getColors());
         assertThat(frozen.getSizes()).containsExactly("S", "M", "L");
         assertThat(frozen.getStyleName()).isEqualTo(original.getStyleName());
-        String pdf = flat(pdfService.export(id, f.colorB, false, false).content());
-        assertThat(pdf).contains("IT资料包款", "IT乙色").doesNotContain("改名后的款式", "改名后的颜色");
-        // 模拟 V25 旧版本：不能伪装成冻结快照，停用颜色仍可打印。
+        // 模拟 V25 旧版本：不能伪装成冻结快照，停用的颜色照样列出来
         jdbcTemplate.update("UPDATE tp_tech_pack SET owner_snapshot=NULL WHERE id=?", id);
         TechPackDetailVO legacy = techPackService.detail(id);
         assertThat(legacy.getContextSource()).isEqualTo("LEGACY");
         assertThat(legacy.getColors()).extracting(c -> c.id()).contains(f.colorB);
-        assertThat(flat(pdfService.export(id, f.colorB, false, false).content())).contains("IT乙色");
     }
 
     @Test
@@ -236,7 +228,7 @@ class TechPackServiceImplIT {
                 .isInstanceOf(DuplicateKeyException.class);
     }
 
-    /** 规则：删草稿连同配料、分码用量、BOM 行、工艺文字一起删；已生效的不能删（1002） */
+    /** 规则：删草稿连同配料、分码用量、BOM 行、文件的引用一起删；已生效的不能删（1002） */
     @Test
     void deleteDraftWithChildren() {
         Fixture f = fixture();
@@ -244,14 +236,16 @@ class TechPackServiceImplIT {
         techPackService.save(other, saveReq(0, f, null));
         techPackService.publish(other, 1);
         long dev = techPackService.create(f.style);
-        int lock = techPackService.save(dev, saveReq(0, f, null));
+        TechPackSaveReq withFile = saveReq(0, f, null);
+        withFile.setFiles(List.of(file("CRAFT_SHEET", "/files/it-techpack/gone-" + suffix() + ".pdf", "工艺单.pdf")));
+        int lock = techPackService.save(dev, withFile);
 
         int historyBefore = count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev);
         assertThat(historyBefore).isGreaterThan(0);
         techPackService.delete(dev);
         assertThat(count("SELECT count(*) FROM tp_tech_pack WHERE id = ?", dev)).isZero();
         assertThat(count("SELECT count(*) FROM tp_bom_item WHERE tech_pack_id = ?", dev)).isZero();
-        assertThat(count("SELECT count(*) FROM tp_craft_section WHERE tech_pack_id = ?", dev)).isZero();
+        assertThat(count("SELECT count(*) FROM biz_attachment WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev)).isZero();
         assertThat(count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", dev)).isEqualTo(historyBefore);
         assertThat(count("SELECT count(*) FROM sys_data_log WHERE table_name = 'tp_tech_pack' AND row_id = ? AND action = 'DELETE'", dev)).isEqualTo(1);
         assertThat(lock).isEqualTo(1);
@@ -284,86 +278,139 @@ class TechPackServiceImplIT {
     }
 
     /**
-     * 规则（PRD §6.9.2）：工艺标准的默认文字、默认包装方式存 sys_config，测量方法存字典 size_point 的 text_value；
-     * 新建资料包时抄过去，尺寸指示的部位下拉带上新加的部位和测量方法；包装方式不是启用的字典值 → 1000
+     * 规则（RFC 011 §2）：工艺单页签的文件按组整组保存，详情里按组排；每组收的类型不一样，放错组 1000、原来的不动；
+     * Excel 能在页面里看（读出 sheet 和格子），别的类型 1000；修订带到新版本（只抄引用，文件还是那一个）
      */
     @Test
-    void craftStandard_defaultsFlowIntoNewDraft() {
+    void files_groupsPreviewAndRevise() throws Exception {
         Fixture f = fixture();
-        CraftTextsReq texts = new CraftTextsReq();
-        texts.setTexts(Map.of(CraftSection.CUTTING, "  松布 24 小时  ", CraftSection.NOTE, ""));
-        texts.setPackingMode("FLAT");
-        craftStandardService.saveTexts(texts);
-        String point = "IT 部位" + suffix();
-        craftStandardService.addPoint(point, "平量");
-        assertThatThrownBy(() -> craftStandardService.addPoint(point, null))
-                .isInstanceOf(BizException.class).hasMessageContaining("已经有了");
-
         long id = techPackService.create(f.style);
-        TechPackDetailVO draft = techPackService.detail(id);
-        assertThat(draft.getPackingMode()).isEqualTo("FLAT");
-        assertThat(draft.getCraftSections()).filteredOn(c -> c.section() == CraftSection.CUTTING)
-                .singleElement().satisfies(c -> assertThat(c.content()).isEqualTo("松布 24 小时"));
-        assertThat(draft.getCraftSections()).filteredOn(c -> c.section() == CraftSection.NOTE)
-                .singleElement().satisfies(c -> assertThat(c.content()).isEmpty());
-        assertThat(draft.getPointOptions()).contains(new PointOption(point, "平量"));
+        Path dir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve("it-techpack");
+        Files.createDirectories(dir);
+        Path xlsx = dir.resolve("craft-" + suffix() + ".xlsx");
+        try (XSSFWorkbook wb = new XSSFWorkbook(); OutputStream out = Files.newOutputStream(xlsx)) {
+            Sheet sheet = wb.createSheet("工艺");
+            sheet.createRow(0).createCell(0).setCellValue("缝制要求");
+            sheet.createRow(1).createCell(1).setCellValue("针距 3cm 12 针");
+            wb.write(out);
+        }
+        try {
+            TechPackSaveReq req = saveReq(0, f, null);
+            req.setFiles(List.of(file("PATTERN", "/files/it-techpack/p-" + suffix() + ".prj", "纸样.prj"),
+                    file("CRAFT_SHEET", "/files/it-techpack/" + xlsx.getFileName(), "工艺单.xlsx")));
+            int lock = techPackService.save(id, req);
+            List<PackFileVO> files = techPackService.detail(id).getFiles();
+            assertThat(files).extracting(PackFileVO::category).containsExactly("CRAFT_SHEET", "PATTERN");
+            assertThat(files.getFirst().url()).contains("/files/it-techpack/" + xlsx.getFileName());
 
-        texts.setPackingMode("NO_SUCH_MODE");
-        assertThatThrownBy(() -> craftStandardService.saveTexts(texts)).isInstanceOf(BizException.class);
+            ExcelPreview.Book book = techPackService.preview(id, files.getFirst().id());
+            assertThat(book.sheets()).singleElement().satisfies(s -> {
+                assertThat(s.name()).isEqualTo("工艺");
+                assertThat(s.cells()).extracting(ExcelPreview.CellView::v).contains("缝制要求", "针距 3cm 12 针");
+            });
+            assertThatThrownBy(() -> techPackService.preview(id, files.get(1).id()))
+                    .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR));
+
+            TechPackSaveReq wrong = saveReq(lock, f, null);
+            wrong.setFiles(List.of(file("CRAFT_SHEET", "/files/it-techpack/p.prj", "纸样.prj")));
+            assertThatThrownBy(() -> techPackService.save(id, wrong)).isInstanceOf(BizException.class).hasMessageContaining("不收 .prj");
+            assertThat(techPackService.files(id)).hasSize(2);
+
+            techPackService.publish(id, lock);
+            long v2 = techPackService.revise(id);
+            assertThat(techPackService.files(v2)).extracting(PackFileVO::name).containsExactly("工艺单.xlsx", "纸样.prj");
+        } finally {
+            Files.deleteIfExists(xlsx);
+        }
     }
 
     /**
-     * 规则（PRD §6.4.6、架构 §11.1）：导出的工艺单读回文字——不含价格时没有单价、单件成本、工序工价；草稿印"草稿"；
-     * 物料清单按颜色出，SKU 写成"物料名-颜色"；工艺标准的图片一张一页附在后面，不附就没有；只出一个颜色时没有别的颜色；每次导出记一条操作记录
+     * 规则（RFC 011 §4）：BOM 表按款号认 sheet，物料按名称对上物料库，写了几个颜色 → 随款色、每个颜色配同色 SKU；
+     * 损耗整列是系数 1.03 → 3%，A 料 → 大身，"含税运"换成两个标记，加工费、运费从汇总块读；物料库里没有的 UNMATCHED，
+     * 人工挑了物料（picks）再认一次就对上了。只解析不写库；不是草稿 1002
      */
     @Test
-    void exportPdf() throws Exception {
+    void bomImport_matchesAndPicks() {
+        Fixture f = fixture();
+        long id = techPackService.create(f.style);
+        String code = styleCode(f.style);
+        String colorA = jdbcTemplate.queryForObject("SELECT name FROM bas_color WHERE id = ?", String.class, f.colorA);
+        String colorB = jdbcTemplate.queryForObject("SELECT name FROM bas_color WHERE id = ?", String.class, f.colorB);
+        String supplier = jdbcTemplate.queryForObject("SELECT short_name FROM sup_supplier WHERE id = ?", String.class, f.supplier);
+        // 每个用例的物料都叫"IT 资料包面料"：改个这一次独有的名字，不然同名的有好几个
+        String fabricName = "IT 导入面料" + suffix();
+        jdbcTemplate.update("UPDATE bas_material SET name = ? WHERE id = ?", fabricName, f.material);
+        byte[] bom = workbook(wb -> {
+            Sheet other = wb.createSheet("别的款");
+            other.createRow(0).createCell(0).setCellValue("X999 别的款 BOM");
+            header(other.createRow(1));
+            Sheet sheet = wb.createSheet("本款");
+            sheet.createRow(0).createCell(0).setCellValue(code + " IT 资料包款 BOM");
+            header(sheet.createRow(1));
+            cells(sheet.createRow(2), "A料", "面料A", fabricName, "", colorA + "、" + colorB, 20, "米", 1.2, 1.03, 24.72, supplier, "含税运");
+            cells(sheet.createRow(3), "辅料", "辅料", "IT 不存在的扣子", "", "/", 0.5, "个", 2, 1.0, 1, "", "");
+            cells(sheet.createRow(5), "加工费", "", "", "", "", null, "", null, null, 25.5, "", "");
+            cells(sheet.createRow(6), "运费：", "", "", "", "", null, "", null, null, 1.2, "", "");
+            wb.createSheet("说明").createRow(0).createCell(0).setCellValue("改版记录");
+        });
+
+        BomImportVO parsed = techPackService.bomImport(id, new ByteArrayInputStream(bom), null, Map.of());
+        assertThat(parsed.sheet()).isEqualTo(1);
+        assertThat(parsed.sheets()).extracting(BomImportVO.Sheet::bom).containsExactly(true, true, false);
+        assertThat(parsed.laborPrice()).isEqualByComparingTo("25.5");
+        assertThat(parsed.fees()).singleElement().satisfies(fee -> {
+            assertThat(fee.name()).isEqualTo("运费");
+            assertThat(fee.amount()).isEqualByComparingTo("1.2");
+        });
+        assertThat(parsed.rows()).hasSize(2);
+        BomImportVO.Row fabric = parsed.rows().getFirst();
+        assertThat(fabric.line()).isEqualTo(3);
+        assertThat(fabric.status()).as(fabric.notes().toString()).isEqualTo("OK");
+        assertThat(fabric.item().getMaterialId()).isEqualTo(f.material);
+        assertThat(fabric.item().getPart()).isEqualTo("BODY");
+        assertThat(fabric.item().getSkuMode()).isEqualTo(BomSkuMode.BY_COLOR);
+        assertThat(fabric.item().getSkus()).extracting(s -> s.getMaterialSkuId()).containsExactly(f.skuA, f.skuB);
+        assertThat(fabric.item().getLossPct()).isEqualByComparingTo("3");
+        assertThat(fabric.item().getUsageQty()).isEqualByComparingTo("1.2");
+        assertThat(fabric.item().getRefPrice()).isEqualByComparingTo("20");
+        assertThat(fabric.item().getSupplierId()).isEqualTo(f.supplier);
+        assertThat(fabric.item().getPriceTaxIncluded()).isTrue();
+        assertThat(fabric.item().getPriceFreightIncluded()).isTrue();
+        BomImportVO.Row button = parsed.rows().get(1);
+        assertThat(button.status()).isEqualTo("UNMATCHED");
+        assertThat(button.item()).isNull();
+        assertThat(button.source().name()).isEqualTo("IT 不存在的扣子");
+
+        BomImportVO picked = techPackService.bomImport(id, new ByteArrayInputStream(bom), 1, Map.of(4, f.material));
+        assertThat(picked.rows().get(1).item()).isNotNull();
+        assertThat(picked.rows().get(1).status()).isEqualTo("CHECK");   // 单位是个，物料按米管：要人看
+        assertThat(count("SELECT count(*) FROM tp_bom_item WHERE tech_pack_id = ?", id)).isZero();
+
+        assertThatThrownBy(() -> techPackService.bomImport(id, new ByteArrayInputStream(bom), 2, Map.of()))
+                .isInstanceOf(BizException.class).hasMessageContaining("不是物料清单");
+        assertThatThrownBy(() -> techPackService.bomImport(id, new ByteArrayInputStream("不是表".getBytes()), null, Map.of()))
+                .isInstanceOf(BizException.class);
+        techPackService.publish(id, techPackService.save(id, saveReq(0, f, null)));
+        assertThatThrownBy(() -> techPackService.bomImport(id, new ByteArrayInputStream(bom), null, Map.of()))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.STATE_CHANGED));
+    }
+
+    /** 规则（RFC 011 §3.1）：加工费存在资料包上，按外发算的核价用它；排单取锁定版本的加工费 */
+    @Test
+    void laborPrice_savedAndUsed() {
         Fixture f = fixture();
         long id = techPackService.create(f.style);
         TechPackSaveReq req = saveReq(0, f, null);
-        SpecPointForm spec = new SpecPointForm();
-        spec.setPoint("后中长");
-        spec.setMethod("后领中量到底边");
-        spec.setToleranceCm(new BigDecimal("0.5"));
-        spec.setValues(Map.of("S", new BigDecimal("64"), "M", new BigDecimal("66"), "L", new BigDecimal("68")));
-        req.setSpecPoints(List.of(spec));
-        ProcessForm process = new ProcessForm();
-        process.setName("合肩缝");
-        process.setStdSeconds(40);
-        process.setPrice(new BigDecimal("1.2"));
-        req.setProcesses(List.of(process));
+        TechPackCostForm cost = new TechPackCostForm();
+        cost.setCostMode(CostMode.OUTSOURCE);
+        cost.setLaborPrice(new BigDecimal("25.5"));
+        cost.setItems(List.of());
+        req.setCost(cost);
         techPackService.save(id, req);
-        String code = jdbcTemplate.queryForObject("SELECT code FROM sty_style WHERE id = ?", String.class, f.style);
-
-        Path dir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve("it-techpack");
-        Files.createDirectories(dir);
-        Path png = dir.resolve("std-" + suffix() + ".png");
-        ImageIO.write(new BufferedImage(400, 200, BufferedImage.TYPE_INT_RGB), "png", png.toFile());
-        Long attachment = jdbcTemplate.queryForObject("""
-                INSERT INTO biz_attachment (doc_type, doc_id, category, sort, file_url, file_name, file_size)
-                VALUES ('CRAFT_STANDARD', 0, 'FILE', 0, ?, '做工标准.png', 100) RETURNING id""",
-                Long.class, "/files/it-techpack/" + png.getFileName());
-        try {
-            TechPackPdfService.PdfFile plain = pdfService.export(id, null, false, true);
-            assertThat(plain.fileName()).isEqualTo(code + "-IT 资料包款-工艺单-V1.pdf");
-            String text = flat(plain.content());
-            assertThat(text).contains("工艺单", "草稿", "尺寸标准指示", "后中长", "面料用量", "IT资料包面料-IT甲色", "IT资料包面料-IT乙色",
-                    "缝制要求", "针距3cm12针", "附页1·做工标准");
-            assertThat(text).doesNotContain("18.50", "单件成本", "合肩缝", "核价");
-
-            TechPackPdfService.PdfFile priced = pdfService.export(id, f.colorA, true, false);
-            String pricedText = flat(priced.content());
-            assertThat(pricedText).contains("18.50/米", "28.58", "核价", "合肩缝", "IT资料包面料-IT甲色")
-                    .doesNotContain("IT资料包面料-IT乙色", "附页");
-            assertThat(count("SELECT count(*) FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ? AND action = 'export-pdf'", id))
-                    .isEqualTo(2);
-            // 留一份在 target/ 下，改版式时打开看
-            Files.write(Paths.get("target", "techpack-it-plain.pdf"), plain.content());
-            Files.write(Paths.get("target", "techpack-it-priced.pdf"), priced.content());
-        } finally {
-            jdbcTemplate.update("DELETE FROM biz_attachment WHERE id = ?", attachment);
-            Files.deleteIfExists(png);
-        }
+        TechPackCostVO vo = costService.cost(id, null);
+        assertThat(vo.getLaborPrice()).isEqualByComparingTo("25.5");
+        assertThat(vo.getSummary().labor()).isEqualByComparingTo("25.5");
+        assertThat(techPackService.laborPrices(List.of(id))).containsEntry(id, new BigDecimal("25.5000"));
     }
 
     // ---------------------------------------------------------------- 数据
@@ -409,7 +456,7 @@ class TechPackServiceImplIT {
         return new Fixture(style, colorA, colorB, material, skuA, skuB, supplier);
     }
 
-    /** 一行随款色的面料，统一用量 1.5、损耗 3%、单价 18.5，两个颜色各配一个 SKU；工艺指示写一段 */
+    /** 一行随款色的面料，统一用量 1.5、损耗 3%、单价 18.5，两个颜色各配一个 SKU */
     private static TechPackSaveReq saveReq(int versionLock, Fixture f, String note) {
         BomItemForm item = new BomItemForm();
         item.setPart("大身");
@@ -422,18 +469,47 @@ class TechPackServiceImplIT {
         item.setSupplierId(f.supplier);
         item.setRefPrice(new BigDecimal("18.5"));
         item.setSkus(List.of(skuForm(f.colorA, f.skuA), skuForm(f.colorB, f.skuB)));
-        CraftSectionForm sewing = new CraftSectionForm();
-        sewing.setSection(CraftSection.SEWING);
-        sewing.setContent("针距 3cm 12 针");
-        sewing.setImages(List.of());
         TechPackSaveReq req = new TechPackSaveReq();
         req.setVersionLock(versionLock);
         req.setVersionNote(note);
-        req.setSpecPoints(new ArrayList<>());
         req.setBomItems(List.of(item));
-        req.setCraftSections(List.of(sewing));
-        req.setProcesses(new ArrayList<>());
         return req;
+    }
+
+    private static PackFileForm file(String category, String url, String name) {
+        PackFileForm form = new PackFileForm();
+        form.setCategory(category);
+        form.setUrl(url);
+        form.setName(name);
+        form.setSize(100L);
+        return form;
+    }
+
+    /** 甲方 BOM 表的表头（列的顺序和原件一样：项目、类别没有表头字） */
+    private static void header(Row row) {
+        cells(row, "项目", "", "物料名称", "规格", "颜色", "单价", "单位", "单件用量", "损耗", "预估价", "工厂", "备注");
+    }
+
+    /** 一行格子：数字写成数字格，null 和 "" 留空 */
+    private static void cells(Row row, Object... values) {
+        for (int i = 0; i < values.length; i++) {
+            Object v = values[i];
+            if (v instanceof Number n) {
+                row.createCell(i).setCellValue(n.doubleValue());
+            } else if (v instanceof String t && !t.isEmpty()) {
+                row.createCell(i).setCellValue(t);
+            }
+        }
+    }
+
+    private static byte[] workbook(java.util.function.Consumer<XSSFWorkbook> body) {
+        try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            body.accept(wb);
+            wb.write(out);
+            return out.toByteArray();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 
     private static BomSkuForm skuForm(long colorId, long skuId) {
@@ -458,13 +534,6 @@ class TechPackServiceImplIT {
     private int count(String sql, Object... args) {
         Integer n = jdbcTemplate.queryForObject(sql, Integer.class, args);
         return n == null ? 0 : n;
-    }
-
-    /** PDF 里的文字，去掉所有空白（表格里折行的地方会断开） */
-    private static String flat(byte[] pdf) throws Exception {
-        try (PDDocument doc = Loader.loadPDF(pdf)) {
-            return new PDFTextStripper().getText(doc).replaceAll("\\s+", "");
-        }
     }
 
     private static String suffix() {

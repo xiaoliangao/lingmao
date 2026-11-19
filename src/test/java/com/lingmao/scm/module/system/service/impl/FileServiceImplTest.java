@@ -134,7 +134,7 @@ class FileServiceImplTest {
         try (var files = Files.walk(tempDir)) { assertThat(files.filter(Files::isRegularFile)).isEmpty(); }
     }
 
-    /** 规则：设计源文件 AI、PSD 收，不做缩略图，最大 100MB；别的类型还是 10MB，超了 400 说清楚 */
+    /** 规则：设计源文件 AI、PSD 和打版的纸样 PRJ（RFC 011 §2.2）收，不做缩略图，最大 100MB；别的类型还是 10MB，超了 400 说清楚 */
     @Test
     void upload_designSource_largerLimit() {
         FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
@@ -144,12 +144,13 @@ class FileServiceImplTest {
         assertThat(psd.url()).contains(".psd?");
         assertThat(psd.thumbUrl()).isNull();
         assertThat(service.upload(sized("印花.ai", eleven)).url()).contains(".ai?");
+        assertThat(service.upload(sized("裤子纸样.prj", eleven)).url()).contains(".prj?");
 
         assertThatThrownBy(() -> service.upload(sized("大图.jpg", eleven)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400))
                 .hasMessage("大图.jpg 太大：图片、PDF、Word、Excel 最大 10MB");
         assertThatThrownBy(() -> service.upload(sized("超大.psd", FileServiceImpl.MAX_DESIGN_SOURCE_BYTES + 1)))
-                .hasMessage("超大.psd 太大：AI、PSD 最大 100MB");
+                .hasMessage("超大.psd 太大：AI、PSD、PRJ 最大 100MB");
     }
 
     /** 规则：不在白名单里的扩展名（比如 html）不收 */

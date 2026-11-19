@@ -20,6 +20,7 @@ final class PackFinancialAccess {
         if (req.getCost() != null) {
             var cost = req.getCost();
             FieldPermissions.price(FieldPermissions.COST, head.getBuyPrice(), cost.getBuyPrice());
+            FieldPermissions.price(FieldPermissions.COST, head.getLaborPrice(), cost.getLaborPrice());
             FieldPermissions.preserve(FieldPermissions.COST, head.getCostMode(), cost.getCostMode());
             if (cost.getItems() != null && !cost.getItems().isEmpty()) FieldPermissions.require(FieldPermissions.COST);
             req.setCost(null); // Existing cost header and other-cost rows remain outside the replacement.
@@ -53,16 +54,6 @@ final class PackFinancialAccess {
                         && Objects.equals(s.getColorId(), colorId) && Objects.equals(s.getSizeCode(), sizeCode)).findFirst().orElse(null);
                 sku.setRefPrice(FieldPermissions.price(FieldPermissions.COST, prior == null ? null : prior.getRefPrice(), sku.getRefPrice()));
             }
-        }
-        Set<Long> usedProcesses = new HashSet<>();
-        for (var form : req.getProcesses() == null ? List.<com.lingmao.scm.module.techpack.dto.ProcessForm>of() : req.getProcesses()) {
-            var candidates = old.processes().stream().filter(r -> form.getId() != null ? Objects.equals(r.process().getId(), form.getId())
-                    : Objects.equals(r.process().getName(), text(form.getName())) && Objects.equals(r.process().getCategory(), text(form.getCategory()))).toList();
-            if (candidates.size() > 1) throw new BizException(400, "重复工序缺少明细身份，请刷新资料包后保存");
-            var previous = candidates.isEmpty() ? null : candidates.getFirst().process();
-            if (form.getId() != null && previous == null) throw new BizException(400, "工序行不属于当前资料包，请刷新后保存");
-            if (previous != null && !usedProcesses.add(previous.getId())) throw new BizException(400, "同一工序明细不能重复提交");
-            form.setPrice(FieldPermissions.price(FieldPermissions.COST, previous == null ? null : previous.getPrice(), form.getPrice()));
         }
     }
 
