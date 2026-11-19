@@ -443,6 +443,8 @@ const importVisible = ref(false)
 
 .name {
   display: inline-flex;
+  /* 缩略图比行高高：按中线对齐，不然整格按图的底边落在基线上、往上偏几像素 */
+  vertical-align: middle;
   align-items: center;
   gap: 8px;
 }
