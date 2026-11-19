@@ -7,7 +7,7 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { categoryApi, sizeGroupApi } from '@/api/basic'
 import { styleApi, type StyleCreateForm } from '@/api/style'
 import type { MaterialPickRow, SizeGroup, TreeNode } from '@/types/basic'
-import type { StylePickRow } from '@/types/style'
+import type { StyleDetail, StylePickRow } from '@/types/style'
 import PageHeader from '@/components/PageHeader.vue'
 import BlankState from '@/components/BlankState.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -40,6 +40,8 @@ const user = useUserStore()
 const path = route.path
 const id = route.params.id ? routeId(route.params.id) : null
 const editing = id !== null
+/** 复制成新款（RFC 012 §5.4）：从这个款带资料、颜色、图片过来，尺码组能换、款号重新发；保存时连生效的资料包一起复制 */
+const copyFrom = !editing && typeof route.query.copyFrom === 'string' && /^[1-9]\d*$/.test(route.query.copyFrom) ? route.query.copyFrom : null
 
 const classes = useDict('style_class')
 const sources = useDict('style_source')
@@ -89,6 +91,8 @@ const names = reactive({
   factory: null as string | null,
   material: null as string | null,
   categoryName: null as string | null,
+  /** 复制成新款时老款的款号 */
+  copyCode: null as string | null,
 })
 const skuCount = ref(0)
 const loaded = ref(!editing)
@@ -121,6 +125,26 @@ async function loadOptions() {
 }
 
 async function load() {
+  if (!editing && copyFrom) {
+    const [d] = await Promise.all([styleApi.get(copyFrom), loadOptions()])
+    fill(d)
+    // 新款只能用启用的：老款的品类、尺码组停用了要重新选，停用的颜色不带
+    const inTree = (nodes: TreeNode[]): boolean => nodes.some((n) => n.id === d.categoryId || inTree(n.children ?? []))
+    if (!inTree(categories.value)) {
+      form.categoryId = null
+      names.categoryName = null
+    }
+    if (!sizeGroups.value.some((g) => g.id === d.sizeGroupId)) form.sizeGroupId = sizeGroups.value[0]?.id ?? null
+    Object.assign(form, {
+      colorIds: d.colors.filter((c) => c.status === 1 && c.colorStatus === 1).map((c) => c.colorId),
+      images: d.images.map(({ url, thumbUrl, name, size }) => ({ url, thumbUrl, name, size })),
+      files: d.files.map(({ url, thumbUrl, name, size }) => ({ url, thumbUrl, name, size })),
+    })
+    names.copyCode = d.code
+    tabs.rename(path, `复制 ${d.code}`)
+    guard.markSaved()
+    return
+  }
   if (!editing) {
     await loadOptions()
     const firstClass = classes.enabled.value[0]?.value
@@ -131,17 +155,8 @@ async function load() {
   }
   try {
     const [d] = await Promise.all([styleApi.get(id!), loadOptions()])
-    Object.assign(form, {
-      name: d.name, aliasName: d.aliasName ?? '', styleClass: d.styleClass, brand: d.brand, categoryId: d.categoryId, year: d.year,
-      season: d.season, wave: d.wave, styleTag: d.styleTag, series: d.series, gender: d.gender, designerId: d.designerId,
-      patternMakerId: d.patternMakerId, source: d.source, sizeGroupId: d.sizeGroupId, mainMaterialId: d.mainMaterialId,
-      productName: d.productName ?? '', composition: d.composition ?? '', execStandard: d.execStandard, safetyCategory: d.safetyCategory,
-      tagPrice: d.tagPrice, refCost: d.refCost, defaultFactoryId: d.defaultFactoryId, launchDate: d.launchDate, remark: d.remark ?? '',
-    })
-    Object.assign(names, {
-      code: d.code, designer: d.designerName, patternMaker: d.patternMakerName, factory: d.defaultFactoryName,
-      material: d.mainMaterialCode ? `${d.mainMaterialCode} ${d.mainMaterialName}` : null, categoryName: d.categoryName,
-    })
+    fill(d)
+    names.code = d.code
     skuCount.value = d.skuCount
     // 编辑旧款：尺码组停用了也留着（不在启用的列表里，补进去）
     if (!sizeGroups.value.some((g) => g.id === d.sizeGroupId)) {
@@ -154,6 +169,21 @@ async function load() {
     if (e instanceof ApiError && e.code === 404) notFound.value = true
     else throw e
   }
+}
+
+/** 编辑、复制共用：款式自己的列和下拉要显示的名字 */
+function fill(d: StyleDetail) {
+  Object.assign(form, {
+    name: d.name, aliasName: d.aliasName ?? '', styleClass: d.styleClass, brand: d.brand, categoryId: d.categoryId, year: d.year,
+    season: d.season, wave: d.wave, styleTag: d.styleTag, series: d.series, gender: d.gender, designerId: d.designerId,
+    patternMakerId: d.patternMakerId, source: d.source, sizeGroupId: d.sizeGroupId, mainMaterialId: d.mainMaterialId,
+    productName: d.productName ?? '', composition: d.composition ?? '', execStandard: d.execStandard, safetyCategory: d.safetyCategory,
+    tagPrice: d.tagPrice, refCost: d.refCost, defaultFactoryId: d.defaultFactoryId, launchDate: d.launchDate, remark: d.remark ?? '',
+  })
+  Object.assign(names, {
+    designer: d.designerName, patternMaker: d.patternMakerName, factory: d.defaultFactoryName,
+    material: d.mainMaterialCode ? `${d.mainMaterialCode} ${d.mainMaterialName}` : null, categoryName: d.categoryName,
+  })
 }
 
 onMounted(load)
@@ -276,9 +306,10 @@ async function save() {
       ElMessage.success(`${names.code} 已保存`)
       await leave(`/styles/${id}`)
     } else {
-      const result = await styleApi.create(body())
+      const result = copyFrom ? await styleApi.copy(copyFrom, body()) : await styleApi.create(body())
       guard.markSaved()
-      ElMessage.success(result.skuCount ? `${result.code} 已建好，生成了 ${result.skuCount} 个 SKU` : `${result.code} 已建好`)
+      const made = copyFrom ? `从 ${names.copyCode} 复制出 ${result.code}，生效的资料包带成了草稿` : `${result.code} 已建好`
+      ElMessage.success(result.skuCount ? `${made}，生成了 ${result.skuCount} 个 SKU` : made)
       await leave(`/styles/${result.id}`)
     }
   } finally {
@@ -294,8 +325,8 @@ async function leave(to: string) {
   tabs.close(path, to)
 }
 
-const backTo = editing ? `/styles/${id}` : '/styles'
-const title = computed(() => (editing ? `编辑款式 ${names.code}` : '新建款式'))
+const backTo = editing ? `/styles/${id}` : copyFrom ? `/styles/${copyFrom}` : '/styles'
+const title = computed(() => (editing ? `编辑款式 ${names.code}` : copyFrom ? `复制成新款（从 ${names.copyCode ?? ''}）` : '新建款式'))
 </script>
 
 <template>
@@ -395,6 +426,7 @@ const title = computed(() => (editing ? `编辑款式 ${names.code}` : '新建�
               <el-option v-for="g in sizeGroupOptions" :key="g.id" :label="`${g.name}\u3000${g.sizes.join(' ')}`" :value="g.id" />
             </el-select>
             <p v-if="editing && skuCount > 0" class="hint">已经生成 {{ skuCount }} 个 SKU，不能换尺码组</p>
+            <p v-else-if="copyFrom" class="hint">可以换。资料包草稿里新尺码的用量要补，老款有、新款没有的尺码不带</p>
           </el-form-item>
           <el-form-item label="吊牌价（元）">
             <el-input-number v-model="form.tagPrice" :min="0" :precision="2" :controls="false" :value-on-clear="null" />

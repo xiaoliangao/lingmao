@@ -21,6 +21,8 @@ import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.style.entity.TechPackStatus;
+import com.lingmao.scm.module.style.dto.StyleCreateReq;
+import com.lingmao.scm.module.style.dto.StyleCreateResult;
 import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
@@ -328,6 +330,37 @@ public class TechPackServiceImpl implements TechPackService {
     }
 
     @Override
+    @Transactional
+    public StyleCreateResult copyStyle(long fromStyleId, StyleCreateReq req) {
+        PackOwner from = packOwners.style(fromStyleId);
+        TechPack source = techPackMapper.selectOne(new LambdaQueryWrapper<TechPack>().eq(TechPack::getStyleId, fromStyleId)
+                .eq(TechPack::getStage, PackStage.PROD).eq(TechPack::getStatus, PackStatus.EFFECTIVE));
+        StyleCreateResult created = styleService.create(req);
+        if (source != null) {
+            Ctx ctx = packOwners.context(packOwners.style(created.id()));
+            TechPack pack = newDraft(created.id(), PackStage.PROD);
+            copyHead(source, pack);
+            insert(pack);
+            packContent.write(pack.getId(), fit(packContent.load(source.getId()), ctx.sizes(), ctx.colorIds()), true);
+            attachmentService.copy(BizType.TECH_PACK, source.getId(), pack.getId());
+            docLogService.add(BizType.TECH_PACK, pack.getId(), LOG_CREATE, null, DRAFT,
+                    "从 " + from.code() + " " + source.getStage().versionName(source.getVersion()) + " 复制");
+        }
+        return created;
+    }
+
+    /** 复制到别的款：新款没有的尺码、颜色，配料格子和分码用量去掉（换了尺码组的，新尺码生效前检查会提示补） */
+    static Content fit(Content content, List<String> sizes, Collection<Long> colorIds) {
+        Set<String> sizeSet = Set.copyOf(sizes);
+        Set<Long> colorSet = Set.copyOf(colorIds);
+        List<BomRow> rows = content.bom().stream().map(row -> new BomRow(row.item(),
+                row.skus().stream().filter(s -> (s.getSizeCode() == null || sizeSet.contains(s.getSizeCode()))
+                        && (s.getColorId() == null || colorSet.contains(s.getColorId()))).toList(),
+                row.sizes().stream().filter(s -> sizeSet.contains(s.getSizeCode())).toList())).toList();
+        return new Content(rows, content.costItems());
+    }
+
+    @Override
     public List<BomDefaultVO> bomDefaults(long id, List<BomDefaultReq> items) {
         getEntity(id);
         return bomPricing.defaults(items);
@@ -478,17 +511,22 @@ public class TechPackServiceImpl implements TechPackService {
         rejectLocked(owner);
         rejectDraftExists(source.getStyleId(), source.getStage());
         TechPack pack = newDraft(source.getStyleId(), source.getStage());
-        pack.setUtilPct(source.getUtilPct());
-        pack.setCostMode(source.getCostMode());
-        pack.setBuyPrice(source.getBuyPrice());
-        pack.setLaborPrice(source.getLaborPrice());
-        pack.setLaborNote(source.getLaborNote());
+        copyHead(source, pack);
         insert(pack);
         Content content = packContent.load(source.getId());
         packContent.write(pack.getId(), content, true);
         attachmentService.copy(BizType.TECH_PACK, source.getId(), pack.getId());
         docLogService.add(BizType.TECH_PACK, pack.getId(), logAction, null, DRAFT, remark);
         return pack.getId();
+    }
+
+    /** 修订、复制成新款带过去的单头：利用率、核价方式、成品单价、加工费和备注 */
+    private static void copyHead(TechPack source, TechPack pack) {
+        pack.setUtilPct(source.getUtilPct());
+        pack.setCostMode(source.getCostMode());
+        pack.setBuyPrice(source.getBuyPrice());
+        pack.setLaborPrice(source.getLaborPrice());
+        pack.setLaborNote(source.getLaborNote());
     }
 
     private TechPack newDraft(long styleId, PackStage stage) {

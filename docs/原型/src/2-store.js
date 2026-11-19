@@ -513,6 +513,23 @@ function reviseTp(tp) {
   Object.assign(t, { files: c.files.map((f) => ({ ...f, id: 'TF' + ++tpFileSeq })), laborNote: c.laborNote, costs: c.costs, util: tp.util })
   return t
 }
+// 复制成新款（RFC 012 §5.4，甲方 11-18：老款翻新换尺码号型只能换款号）：照表单建新款，老款生效的资料包复制成新款的 V1 草稿；
+// 新款没有的颜色的配料、尺码的用量去掉，换了尺码组的新尺码生效前检查会提示补
+function copyStyle(fromCode, f) {
+  const tp = activeTp(fromCode)
+  const s = createStyle(f)
+  act(s, '从 ' + fromCode + ' 复制')
+  if (!tp) return s
+  const c = tpCopy(tp), sizes = sizesOf(s.sizeGroup)
+  c.bom.forEach((r) => {
+    if (r.map) r.map = Object.fromEntries(Object.entries(r.map).filter(([k]) => s.colors.includes(k)))
+    if (r.uses) r.uses = Object.fromEntries(Object.entries(r.uses).filter(([z]) => sizes.includes(z)))
+  })
+  const t = createTechpack(s.code, c.bom, c.labor, '')
+  Object.assign(t, { files: c.files.map((x) => ({ ...x, id: 'TF' + ++tpFileSeq })), laborNote: c.laborNote, costs: c.costs, util: tp.util })
+  act(t, '从 ' + fromCode + ' ' + tpName(tp) + ' 复制')
+  return s
+}
 // 删掉草稿版本（修订出来不想要了）；生效过、作废了的版本只能看
 function removeTpDraft(tp) {
   if (tp.status !== '草稿') fail(`${tpName(tp)} 是「${tp.status}」，只有草稿版本能删`)
@@ -1775,6 +1792,14 @@ function selftest() {
     && v3.files !== cfa.files && v3.files[0].id !== cfa.files[0].id && v3.costs.length === 2)
   ok('工艺单：生效了的不能换，要修订', err(() => addTpFile(cfa, '工艺单', { name: 'x.xlsx', size: 1 })).includes('先修订'))
   removeTpDraft(v3)
+  // 复制成新款（RFC 012 §5.4）：换成男装字母码（没有 S）、只要第一个颜色；生效的资料包复制成新款 V1 草稿，S 码用量和别的颜色的配料去掉
+  const cp0 = copyStyle(cfs.code, { code: 'FZTEST01', name: '复制自测', cat: cfs.cat, year: cfs.year, season: cfs.season, big: cfs.big, designer: cfs.designer, sizeGroup: 'M4', colors: [cfs.colors[0]] })
+  const cpt = activeTp(cp0.code) || tpsOf(cp0.code)[0]
+  ok('复制成新款：新款号、新尺码组；资料包 V1 草稿带着物料清单和工艺单，S 码用量、别的颜色的配料不带', cp0.sizeGroup === 'M4' && cpt?.ver === 1 && cpt.status === '草稿'
+    && cpt.bom.length === cfa.bom.length && cpt.files.length === cfa.files.length && cpt.labor === cfa.labor
+    && cpt.bom.every((r) => !r.uses || !('S' in r.uses)) && cpt.bom.every((r) => !r.map || Object.keys(r.map).every((c) => c === cfs.colors[0]))
+    && activeTp(cfs.code) === cfa, [cp0.code, cpt?.ver, cpt?.bom.map((r) => [r.uses, r.map])])
+  removeStyle(cp0)
   // 外发加工单、成品采购单（甲方 11-14）：一张表按加工方式分种类；成品采购单只领自购的料
   const cp = db.productions.find((x) => x.style === '26QW008' && x.mode === '包工包料'), jg = db.productions.find((x) => x.style === '26DS021')
   ok('生产单：包工包料是成品采购单 CP 开头，半包是外发加工单 JG 开头，各自的单价名', cp?.no.startsWith('CP') && prodKind(cp) === '成品采购单' && jg?.no.startsWith('JG') && prodKind(jg) === '外发加工单' && prodKindOf(cp).price === '成品单价（含料）', [cp?.no, jg?.no])

@@ -527,13 +527,17 @@ IMPORTS.styles = {
 // 设计师默认：自己有设计师编号就是自己，不然取第一个有编号的人（款号要用编号）
 const defaultDesigner = () => (me()?.dno ? db.me : db.users.find((u) => u.dno)?.id || db.me)
 comp('StyleForm', {
-  props: { s: Object },
+  // from：复制成新款（RFC 012 §5.4）时的老款，资料、颜色、图片带过来，尺码组能换、款号重新编
+  props: { s: Object, from: Object },
   emits: ['close'],
   setup(p, { emit }) {
     const y = +clock.today.slice(0, 4)
     const keys = [...STYLE_FIELDS.map(([k]) => k), 'sizeGroup']
-    const f = reactive(p.s
-      ? Object.fromEntries(keys.map((k) => [k, p.s[k] ?? (['tagPrice', 'cost'].includes(k) ? null : '')]))
+    const src = p.s || p.from
+    const f = reactive(src
+      ? { ...Object.fromEntries(keys.map((k) => [k, src[k] ?? (['tagPrice', 'cost'].includes(k) ? null : '')])),
+          ...(p.from ? { code: '', big: p.from.big || liveBigCats()[0]?.code || '', colors: p.from.colors.filter((c) => liveColors().some((x) => x.code === c)),
+            images: [...(p.from.images || [])], files: [...(p.from.files || [])] } : {}) }
       : { code: '', name: '', alias: '', brand: db.dicts.品牌[0], cat: liveCats()[0]?.code, year: y + 1, season: 'C', wave: db.dicts.波段[0], tag: db.dicts.风格[0], series: '', gender: '女',
           big: liveBigCats()[0]?.code || '', designer: defaultDesigner(), patterner: '', source: '自主开发', customer: '', custNo: '', sizeGroup: db.sizeGroups.find((g) => g.status !== '停用')?.id, colors: [],
           mainMat: '', product: '', comp: '', standard: '', safety: '', tagPrice: null, cost: null, factory: db.suppliers.find((x) => isFactory(x) && x.status === '合作中')?.code || '',
@@ -551,12 +555,13 @@ comp('StyleForm', {
     const toggle = (c) => { const i = f.colors.indexOf(c); i >= 0 ? f.colors.splice(i, 1) : f.colors.push(c) }
     function save() {
       if (p.s) { if (run(() => updateStyle(p.s, f))) { emit('close'); toast(p.s.code + ' 已保存') } return }
-      const st = run(() => createStyle({ ...f, colors: [...f.colors], images: [...f.images], files: [...f.files] }))
-      if (st) { emit('close'); go('/styles/' + st.code); toast(`${st.code} 已建，生成 ${st.skus.length} 个 SKU`) }
+      const form = { ...f, colors: [...f.colors], images: [...f.images], files: [...f.files] }
+      const st = run(() => (p.from ? copyStyle(p.from.code, form) : createStyle(form)))
+      if (st) { emit('close'); go('/styles/' + st.code); toast(p.from ? `从 ${p.from.code} 复制出 ${st.code}，生效的资料包带成了草稿` : `${st.code} 已建，生成 ${st.skus.length} 个 SKU`) }
     }
     return { f, auto, bigs, sgLock, years, cats, groups, factories, custs, fabrics, toggle, save }
   },
-  template: `<Modal :t="s ? '编辑款式 ' + s.code : '新建款式'" :w="780" @close="$emit('close')">
+  template: `<Modal :t="s ? '编辑款式 ' + s.code : from ? '复制成新款（从 ' + from.code + '）' : '新建款式'" :w="780" @close="$emit('close')">
     <div class="form" style="grid-template-columns:1fr 1fr 1fr">
       <h4 class="fh">基本</h4>
       <label class="f">款号<input v-if="s" class="inp code" :value="s.code" disabled title="款号保存后不能改"><input v-else class="inp code" v-model="f.code" :placeholder="auto.code ? '不填自动编：' + auto.code : '编不出来，要手填'" title="可以手填，系统查重；保存后不能改"></label>
@@ -583,7 +588,7 @@ comp('StyleForm', {
       <label class="f">主力面料<Pick class="sel" v-model="f.mainMat"><option value="">—</option><option v-for="m in fabrics" :key="m.code" :value="m.code">{{ m.code }} {{ m.name }}</option></Pick></label>
       <h4 class="fh">尺码、价格、生产</h4>
       <label class="f">尺码组<Pick class="sel" v-model="f.sizeGroup" :disabled="!!sgLock"><option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }} {{ g.sizes.join(' ') }}</option></Pick>
-        <small v-if="sgLock" class="dim">已关联 {{ sgLock }} 张订单，不可更换</small></label>
+        <small v-if="sgLock" class="dim">已关联 {{ sgLock }} 张订单，不可更换</small><small v-else-if="from" class="dim">可以换；资料包草稿里新尺码的用量要补</small></label>
       <label class="f">吊牌价<input class="inp num" type="number" v-model.number="f.tagPrice"></label>
       <label class="f">参考成本价<input class="inp num" type="number" v-model.number="f.cost" title="一期手填；资料包生效后另有测算价"></label>
       <label class="f">默认加工厂<Pick class="sel" v-model="f.factory"><option value="">—</option><option v-for="x in factories" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>
@@ -623,11 +628,13 @@ route('/styles/:code', {
       can('style', s.value, '停用') && { t: '停用', danger: true, fn: stop },
       can('style', s.value, '恢复') && { t: '恢复启用', fn: () => run(() => doAction('style', s.value, '恢复')) },
       s.value.status === '草稿' && { t: '删除', danger: true, fn: del },
+      { t: '复制成新款', fn: () => (copying.value = true) },
     ].filter(Boolean) : [])
+    const copying = ref(false)
     const unmatched = computed(() => (s.value ? unmatchedColors(s.value) : []))
     const tpc = computed(() => activeTp(p.code))
     const made = computed(() => s.value?.log?.[0])
-    return { s, tab, editing, orders, more, unmatched, tpc, made }
+    return { s, tab, editing, copying, orders, more, unmatched, tpc, made }
   },
   template: `<div v-if="s">
     <Head :t="s.code" :back="['款式', '/styles']">
@@ -691,6 +698,7 @@ route('/styles/:code', {
       </aside>
     </div>
     <StyleForm v-if="editing" :s="s" @close="editing = false"/>
+    <StyleForm v-if="copying" :from="s" @close="copying = false"/>
   </div><NotFound v-else/>`,
 }, { mod: 'styles', t: (p) => '款式 ' + p.code })
 
@@ -762,6 +770,17 @@ comp('TechPack', {
     const sizes = computed(() => sizesOf(s.value.sizeGroup))
     const verText = (t) => tpName(t) + ({ 已生效: ' 生效中', 草稿: ' 草稿', 已作废: ' 已作废' }[t.status] || '')
     const useText = (r) => (r.um === '统一' ? fq(r.use) : `${fq(r.uses[sizes.value[0]])}–${fq(r.uses[sizes.value[sizes.value.length - 1]])}`)
+    // 一键填写（RFC 012 §5.5）：勾几行，底部填一个数，一起填用量或损耗；分码的行每个码都填这个数
+    const picked = ref([]), fillVal = ref(null)
+    watch(key, () => { picked.value = [] })
+    const togglePick = (r) => { const i = picked.value.indexOf(r); i >= 0 ? picked.value.splice(i, 1) : picked.value.push(r) }
+    function fillPicked(what) {
+      const v = fillVal.value
+      if (v === '' || v == null || !(v >= 0) || (what === '损耗' && v > 100)) return toast(what === '损耗' ? '损耗填 0 到 100' : '先填一个不小于 0 的数')
+      picked.value.forEach((r) => { if (what === '损耗') r.loss = v; else if (r.um === '分码') sizes.value.forEach((z) => (r.uses[z] = v)); else r.use = v })
+      toast(`${picked.value.length} 行的${what}填成了 ${v}`)
+      picked.value = []
+    }
     function revise() { const t = run(() => reviseTp(tp.value)); if (t?.ver) { key.value = t.id; toast(`修订出 ${tpName(t)}，物料清单、工艺单、核价都带过来了，改完点「生效」`) } }
     // 没有工艺单也能生效，问一句（RFC 011 §2.1）
     async function publish() {
@@ -800,7 +819,7 @@ comp('TechPack', {
     const setLabor = (v) => { tp.value.labor = v === '' ? null : +v }
     const rowThumb = (r) => r.sku || Object.values(r.map || {})[0] || r.mat
     return { s, tps, key, tp, edit, view, tabs, bomView, byColor, open, adding, editing, importing, sizes, verText, useText, revise, publish, create, dropDraft, matSkus, supsFor, setPrice,
-      hl, hover, cur, drag, dragStart, dragOver, dropAt, k, cpRef, costGroups, ratio, addCost, setAmt, setLabor, rowThumb }
+      hl, hover, cur, drag, dragStart, dragOver, dropAt, k, cpRef, costGroups, ratio, addCost, setAmt, setLabor, rowThumb, picked, fillVal, togglePick, fillPicked }
   },
   template: `<div>
     <div v-if="!tps.length" class="empty">还没有资料包：生产 BOM 生效后才能下订单
@@ -847,13 +866,13 @@ comp('TechPack', {
 
         <div v-if="bomView === 'list'" data-c="资料包：物料清单">
           <table class="tbl inset flat">
-            <thead><tr><th v-if="edit" style="width:20px"></th><th style="width:28px">#</th><th>部位</th><th>物料</th><th>配色</th><th class="num">用量</th><th class="num">损耗</th><th>来源</th><th>供应商</th><th class="num">参考单价</th><th class="num">单件成本</th><th v-if="edit"></th></tr></thead>
+            <thead><tr><th v-if="edit" style="width:40px"></th><th style="width:28px">#</th><th>部位</th><th>物料</th><th>配色</th><th class="num">用量</th><th class="num">损耗</th><th>来源</th><th>供应商</th><th class="num">参考单价</th><th class="num">单件成本</th><th v-if="edit"></th></tr></thead>
             <tbody>
               <template v-for="g in BOM_OWNER_GROUPS" :key="g.owner">
               <tr class="bomgrp"><td :colspan="edit ? 12 : 10"><b>{{ g.title }}</b> <span class="dim">{{ tp.bom.filter((r) => bomOwnerOf(r) === g.owner).length }} 行</span></td></tr>
               <template v-for="(r, i) in tp.bom" :key="g.owner + i"><template v-if="bomOwnerOf(r) === g.owner">
                 <tr class="link" :class="{ sel: cur && cur.i === i, dragover: drag.list === tp.bom && drag.over === i }" :draggable="edit" @dragstart="dragStart(tp.bom, i)" @dragover.prevent="dragOver(tp.bom, i)" @drop.prevent="dropAt(tp.bom, i)" @dragend="drag.list = null" @mouseenter="hover(i)" @click="open = open === i ? null : i">
-                  <td v-if="edit" class="grip" title="按住拖动，调整顺序">⋮⋮</td>
+                  <td v-if="edit" class="grip" title="按住拖动，调整顺序；勾上几行可以一起填用量、损耗"><input type="checkbox" data-c="一键填写" :checked="picked.includes(r)" @click.stop="togglePick(r)"> ⋮⋮</td>
                   <td class="dim">{{ i + 1 }}</td><td>{{ r.part }}</td>
                   <td><div class="row"><Thumb :code="rowThumb(r)" :s="30"/>{{ mat(r.mat).name }}</div></td>
                   <td><span v-if="r.mode === '固定'">{{ skuOf(r.sku)?.color ? colorName(skuOf(r.sku).color) : '—' }}{{ skuOf(r.sku)?.spec ? ' ' + skuOf(r.sku).spec : '' }}</span>
@@ -890,6 +909,8 @@ comp('TechPack', {
               </template>
             </tbody>
           </table>
+          <BatchBar v-if="edit" :n="picked.length" @clear="picked = []"><input class="inp num" style="width:80px;height:26px" v-model.number="fillVal" placeholder="填一个数" aria-label="要填的数">
+            <button class="btn sm" @click="fillPicked('用量')">填用量</button><button class="btn sm" @click="fillPicked('损耗')">填损耗</button></BatchBar>
           <div v-if="canSeeCost()" class="row" style="justify-content:flex-end;gap:20px;margin-top:12px" data-c="单件成本">
             <span class="dim" style="font-size:12px">基码 {{ baseSizeOf(s.sizeGroup) }}</span>
             <span class="mut">物料 {{ fm(k.mat) }}</span><span class="mut">加工 {{ fm(k.labor) }}</span><span v-if="k.other" class="mut">其他 {{ fm(k.other) }}</span><a @click="view = 'cost'"><b>单件 {{ fm(k.total) }}</b></a>
@@ -1002,7 +1023,13 @@ comp('BomRowForm', {
       if (p.row) { Object.keys(p.row).forEach((k) => delete p.row[k]); Object.assign(p.row, r) } else p.tp.bom.push(r)
       emit('close')
     }
-    return { s, sizes, f, mats, m, skus, sups, save }
+    // 一键填写（RFC 012 §5.5）：填好基码，铺到所有码，再改不一样的
+    function sameAll() {
+      const b = f.uses[baseSizeOf(s.sizeGroup)]
+      if (b == null || b === '') return toast(`先填基码 ${baseSizeOf(s.sizeGroup)} 的用量`)
+      sizes.forEach((z) => (f.uses[z] = b))
+    }
+    return { s, sizes, f, mats, m, skus, sups, save, sameAll }
   },
   template: `<Modal :t="row ? '改第 ' + (tp.bom.indexOf(row) + 1) + ' 行：' + row.part : '加一行物料'" :w="660" @close="$emit('close')">
     <div class="form">
@@ -1013,7 +1040,8 @@ comp('BomRowForm', {
       <div v-else class="f full">款色 → 物料 SKU<div class="chips"><label v-for="c in s.colors" :key="c" class="row g4"><Sw :c="c"/><Pick class="sel" style="height:26px" v-model="f.map[c]"><option :value="undefined">未配</option><option v-for="k in skus" :key="k.code" :value="k.code">{{ skuName(k.code) }}</option></Pick></label></div></div>
       <div class="f">用量方式<Seg v-model="f.um" :items="['统一', '分码']"/></div>
       <label v-if="f.um === '统一'" class="f">单件用量（{{ m?.unit }}）<input class="inp num" v-model.number="f.use"></label>
-      <div v-else class="f full">分码用量（{{ m?.unit }}/件）<div class="row"><label v-for="z in sizes" :key="z" class="f" style="width:72px">{{ z }}<input class="inp num" v-model.number="f.uses[z]"></label></div></div>
+      <div v-else class="f full">分码用量（{{ m?.unit }}/件）<div class="row"><label v-for="z in sizes" :key="z" class="f" style="width:72px">{{ z }}<input class="inp num" v-model.number="f.uses[z]"></label>
+        <button type="button" class="btn ghost sm" style="align-self:end" data-c="一键填写" @click="sameAll">各码都填成基码的用量</button></div></div>
       <label class="f">损耗 %<input class="inp num" type="number" v-model.number="f.loss"></label>
       <label class="f">物料来源<Pick class="sel" v-model="f.src"><option v-for="x in db.dicts.物料来源" :key="x">{{ x }}</option></Pick></label>
       <label class="f">供应商<Pick class="sel" v-model="f.supplier"><option value="">按物料默认</option><option v-for="x in sups" :key="x.code" :value="x.code">{{ x.short }}</option></Pick></label>

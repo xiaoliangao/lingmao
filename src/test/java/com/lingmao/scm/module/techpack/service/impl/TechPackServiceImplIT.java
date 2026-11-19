@@ -76,6 +76,8 @@ class TechPackServiceImplIT {
     private String uploadDir;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private com.lingmao.scm.module.system.cache.DictCache dictCache;
 
     @BeforeEach
     void setUp() {
@@ -181,6 +183,59 @@ class TechPackServiceImplIT {
         TechPackDetailVO legacy = techPackService.detail(id);
         assertThat(legacy.getContextSource()).isEqualTo("LEGACY");
         assertThat(legacy.getColors()).extracting(c -> c.id()).contains(f.colorB);
+    }
+
+    /**
+     * 规则（RFC 012 §5.4）：复制成新款。新款照请求建（款号手填的新号、尺码组换成 M、L）；老款已生效的资料包复制成新款的 V1 草稿，
+     * 物料清单、加工费带过去，记一条"从 老款号 V1 复制"
+     */
+    @Test
+    void copyStyle_createsStyleAndDraftPack() {
+        Fixture f = fixture();
+        long id = techPackService.create(f.style);
+        int lock = techPackService.save(id, saveReq(0, f, null));
+        techPackService.publish(id, lock);
+        long sizeGroup = jdbcTemplate.queryForObject("INSERT INTO bas_size_group (name, base_size) VALUES (?, 'M') RETURNING id",
+                Long.class, "IT 复制尺码" + suffix());
+        jdbcTemplate.update("INSERT INTO bas_size_group_item (size_group_id, seq, size_code) VALUES (?, 1, 'M'), (?, 2, 'L')", sizeGroup, sizeGroup);
+        var old = jdbcTemplate.queryForMap("SELECT code, category_id FROM sty_style WHERE id = ?", f.style);
+        var req = new com.lingmao.scm.module.style.dto.StyleCreateReq();
+        req.setCodeMode(com.lingmao.scm.module.style.dto.StyleCreateReq.CodeMode.MANUAL);
+        req.setCode("ITCP" + suffix());
+        req.setName("IT 复制的款");
+        req.setStyleClass("FS");
+        String brand = "IT 复制品牌" + suffix();
+        req.setBrand(brand);
+        req.setCategoryId(((Number) old.get("category_id")).longValue());
+        req.setYear(2027);
+        req.setSeason("AUTUMN");
+        req.setSource("OWN");
+        req.setSizeGroupId(sizeGroup);
+        req.setColorIds(List.of(f.colorA, f.colorB));
+
+        // 品牌字典迁移要求是空的（SchemaConventionsIT），用完物理删掉
+        long brandId = jdbcTemplate.queryForObject("INSERT INTO sys_dict_data (type_code, label, value, sort) VALUES ('brand', ?, ?, 99) "
+                + "RETURNING id", Long.class, brand, brand);
+        com.lingmao.scm.module.style.dto.StyleCreateResult created;
+        try {
+            dictCache.evictNow(List.of("brand"));
+            created = techPackService.copyStyle(f.style, req);
+        } finally {
+            jdbcTemplate.update("DELETE FROM sys_dict_data WHERE id = ?", brandId);
+            dictCache.evictNow(List.of("brand"));
+        }
+
+        assertThat(created.code()).isEqualTo(req.getCode());
+        long copied = jdbcTemplate.queryForObject("SELECT id FROM tp_tech_pack WHERE style_id = ? AND status = 'DRAFT' AND version = 1",
+                Long.class, created.id());
+        TechPackDetailVO detail = techPackService.detail(copied);
+        assertThat(detail.getBomItems()).singleElement().satisfies(b -> {
+            assertThat(b.getMaterialId()).isEqualTo(f.material);
+            assertThat(b.getSkus()).hasSize(2);
+        });
+        assertThat(jdbcTemplate.queryForObject("SELECT remark FROM biz_doc_log WHERE doc_type = 'TECH_PACK' AND doc_id = ?", String.class, copied))
+                .isEqualTo("从 " + old.get("code") + " V1 复制");
+        assertThat(count("SELECT count(*) FROM tp_tech_pack WHERE style_id = ? AND status = 'EFFECTIVE'", f.style)).isEqualTo(1);
     }
 
     /**

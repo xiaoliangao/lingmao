@@ -85,7 +85,7 @@ test('intranet HTTP SHA-256 fallback matches the native implementation', () => {
   }
 })
 test('only server-protected writes can replay; read-only POST and CAS actions cannot', () => {
-  for (const url of ['/api/orders', '/api/materials', '/api/styles/9007199254740993/skus/generate', '/api/inventory-docs/from-purchase/9007199254740993', '/api/production-orders/1/nodes/2/reports']) assert.equal(canReplayWrite('post', url), true)
+  for (const url of ['/api/orders', '/api/materials', '/api/styles/9007199254740993/skus/generate', '/api/styles/9007199254740993/copy', '/api/inventory-docs/from-purchase/9007199254740993', '/api/production-orders/1/nodes/2/reports']) assert.equal(canReplayWrite('post', url), true)
   for (const [method, url] of [['post', '/api/tech-packs/1/bom-defaults'], ['post', '/api/orders/1/audit'], ['put', '/api/orders/1'], ['post', '/api/roles']]) assert.equal(canReplayWrite(method, url), false)
 })
 test('export task create, cancel and retry are protected; arbitrary export mutations cannot replay', () => {

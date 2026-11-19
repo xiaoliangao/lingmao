@@ -76,6 +76,9 @@ export const styleApi = {
     http.get<PageResult<StylePickRow>>(`${base}/pick`, params),
   create: ({ images, files, ...data }: StyleCreateForm) =>
     http.post<StyleCreateResult>(base, { ...data, images: attachmentBody(images), files: attachmentBody(files) }),
+  /** 复制成新款（RFC 012 §5.4）：请求和新建一样；老款已生效的资料包复制成新款的草稿。要 style:style:add 和 techpack:pack:add */
+  copy: (fromId: string, { images, files, ...data }: StyleCreateForm) =>
+    http.post<StyleCreateResult>(`${base}/${fromId}/copy`, { ...data, images: attachmentBody(images), files: attachmentBody(files) }),
   update: (id: string, data: StyleForm) => http.put<void>(`${base}/${id}`, data),
   remove: (id: string, options?: RequestOptions) => http.delete<void>(`${base}/${id}`, options),
   enable: (id: string, options?: RequestOptions) => http.post<void>(`${base}/${id}/enable`, undefined, options),

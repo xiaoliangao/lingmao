@@ -97,6 +97,8 @@ async function loadOverview() {
 const unmatchedNames = computed(() => (tpOverview.value?.unmatchedColors ?? []).map((c) => c.name).join('、'))
 
 /** 下订单：款式启用、有已生效的生产 BOM、有 order:order:add（看不到资料包的按款式上的资料包状态判断） */
+/** 复制成新款（RFC 012 §5.4）：建款、建资料包两样权限都要 */
+const canCopy = computed(() => user.hasPerm('style:style:add') && user.hasPerm('techpack:pack:add'))
 const canOrder = computed(() => {
   const d = detail.value
   if (!d || d.status !== 'ENABLED' || !user.hasPerm('order:order:add')) return false
@@ -369,6 +371,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
       <template v-if="s" #actions>
         <el-button v-if="can('remove')" type="danger" plain @click="remove">删除</el-button>
         <el-button v-if="can('disable')" @click="disable">停用</el-button>
+        <el-button v-if="canCopy" title="老款翻新换尺码号型只能换款号：带上资料、颜色、图片和生效的资料包" @click="router.push(`/styles/new?copyFrom=${id}`)">复制成新款</el-button>
         <el-button v-if="can('edit')" @click="router.push(`/styles/${id}/edit`)">编辑</el-button>
         <el-button v-if="can('enable')" type="primary" @click="enable">启用</el-button>
         <el-button v-if="canOrder" type="primary" @click="router.push(`/orders/new?styleId=${id}`)">下订单</el-button>

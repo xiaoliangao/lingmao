@@ -286,6 +286,16 @@ const purchaseHint = computed(() => {
   return `合 ${formatPrice(form.refPrice * def.conversionFactor)} 元/${units.labelOf(def.purchaseUnit)}`
 })
 
+/** 一键填写（RFC 012 §5.5）：大多数物料各码用量一样，填好基码一下铺到所有码，再改不一样的 */
+function sameForAllSizes() {
+  const base = form.sizeUsages[props.baseSize]
+  if (base == null) {
+    ElMessage.warning(`先填基码 ${props.baseSize} 的用量`)
+    return
+  }
+  for (const sz of props.sizes) form.sizeUsages[sz] = base
+}
+
 function submit() {
   if (!form.materialId) {
     ElMessage.warning('先选物料')
@@ -401,6 +411,7 @@ function submit() {
             <el-input-number v-model="form.sizeUsages[sz]" size="small" :min="0" :precision="4" :controls="false" />
           </div>
         </div>
+        <el-button link type="primary" class="same-all" @click="sameForAllSizes">各码都填成基码的用量</el-button>
       </el-form-item>
       <el-form-item label="损耗 %">
         <el-input-number v-model="form.lossPct" :min="0" :max="100" :precision="2" :controls="false" />
@@ -474,6 +485,10 @@ function submit() {
 .size-cell.base {
   background: var(--lm-accent-bg);
   border-color: var(--lm-accent-line);
+}
+
+.same-all {
+  margin-top: 6px;
 }
 
 .sz {

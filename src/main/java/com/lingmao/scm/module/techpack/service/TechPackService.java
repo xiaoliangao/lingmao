@@ -2,6 +2,8 @@ package com.lingmao.scm.module.techpack.service;
 
 import com.lingmao.scm.common.excel.ExcelPreview;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
+import com.lingmao.scm.module.style.dto.StyleCreateReq;
+import com.lingmao.scm.module.style.dto.StyleCreateResult;
 import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
 import com.lingmao.scm.module.techpack.dto.BomImportVO;
@@ -50,6 +52,12 @@ public interface TechPackService {
 
     /** 修订：已生效版复制成下一版草稿，返回新 id。不是已生效 → 1002；已有草稿、款式停用 → 1000 */
     long revise(long id);
+
+    /**
+     * 复制成新款（RFC 012 §5.4，老款翻新换尺码号型只能换款号）：照 req 建新款（页面上从老款带过来、尺码组可以换、款号重新发），
+     * 老款有已生效的资料包就复制成新款的 V1 草稿，新尺码组里没有的尺码的配料、用量去掉，新尺码要补。一个事务
+     */
+    StyleCreateResult copyStyle(long fromStyleId, StyleCreateReq req);
 
     /** 几行 BOM 的默认值，按请求的顺序。物料停用了 → 1000 */
     List<BomDefaultVO> bomDefaults(long id, List<BomDefaultReq> items);

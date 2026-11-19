@@ -89,6 +89,23 @@ class TechPackServiceImplTest {
         verify(techPackFiles).replace(3L, null);
     }
 
+    /** 规则（RFC 012 §5.4）：复制到换了尺码组的新款，新款没有的尺码、颜色的配料格子和分码用量去掉，其余照旧 */
+    @Test
+    void fit_dropsSizesAndColorsTheNewStyleLacks() {
+        var item = PackFixtures.item(1L, com.lingmao.scm.module.techpack.entity.BomSkuMode.BY_COLOR_SIZE, null, "0", null,
+                com.lingmao.scm.module.basic.entity.MaterialSource.PURCHASE);
+        PackContent.BomRow row = PackFixtures.row(item,
+                List.of(PackFixtures.sku(7L, "S", 71L, null), PackFixtures.sku(7L, "M", 72L, null), PackFixtures.sku(8L, "M", 82L, null)),
+                List.of(PackFixtures.size("S", "1.1"), PackFixtures.size("M", "1.2")));
+        PackContent.Content content = new PackContent.Content(List.of(row), List.of());
+
+        PackContent.BomRow fitted = TechPackServiceImpl.fit(content, List.of("M", "L"), List.of(7L)).bom().getFirst();
+
+        assertThat(fitted.item()).isSameAs(item);
+        assertThat(fitted.skus()).extracting(com.lingmao.scm.module.techpack.entity.BomItemSku::getMaterialSkuId).containsExactly(72L);
+        assertThat(fitted.sizes()).extracting(com.lingmao.scm.module.techpack.entity.BomItemSize::getSizeCode).containsExactly("M");
+    }
+
     /** 规则（docs/api/01 §3.4）：款式停用了不能建资料包（1000，说是停用了），什么都不插 */
     @Test
     void create_disabledStyle_rejected() {

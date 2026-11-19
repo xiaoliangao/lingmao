@@ -9,6 +9,7 @@ const CREATED_RESOURCES = new Set([
 const IDEMPOTENT_CHILDREN = [
   /^\/api\/materials\/\d+\/skus$/,
   /^\/api\/styles\/\d+\/skus\/generate$/,
+  /^\/api\/styles\/\d+\/copy$/,
   /^\/api\/suppliers\/\d+\/certs$/,
   /^\/api\/tech-packs\/\d+\/revise$/,
   /^\/api\/production-orders\/\d+\/nodes\/\d+\/reports$/,

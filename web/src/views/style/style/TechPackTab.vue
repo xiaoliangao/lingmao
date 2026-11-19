@@ -3,8 +3,9 @@ import { useLatestRequest } from '@/composables/useLatestRequest'
 import ThumbImage from '@/components/ThumbImage.vue'
 import { computed, h, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
 import { techPackApi } from '@/api/techpack'
+import BatchBar from '@/components/BatchBar.vue'
 import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -440,6 +441,48 @@ function removeBomRow(row: BomItem) {
   draft.bomItems.splice(draft.bomItems.indexOf(row), 1)
 }
 
+/** 一键填写（RFC 012 §5.5）：两块各自勾行，底下一个批量条，勾的行一起填用量或损耗。只改草稿，保存才算 */
+const bomSelected = reactive<Record<BomOwner, BomItem[]>>({ DEV: [], PROD: [] })
+const bomPicked = computed(() => [...bomSelected.DEV, ...bomSelected.PROD])
+const bomTables: Partial<Record<BomOwner, TableInstance>> = {}
+function bomTableRef(owner: BomOwner) {
+  return (el: unknown) => {
+    if (el) bomTables[owner] = el as TableInstance
+    else delete bomTables[owner]
+  }
+}
+function clearBomSelection() {
+  BOM_OWNERS.forEach((owner) => bomTables[owner]?.clearSelection())
+}
+
+async function fillBom(field: 'usage' | 'loss') {
+  const rows = bomPicked.value
+  const usage = field === 'usage'
+  let value: string
+  try {
+    ;({ value } = await ElMessageBox.prompt(
+      usage ? `选中的 ${rows.length} 行都填这个用量，分码的行每个码都填这个数` : `选中的 ${rows.length} 行的损耗都改成这个百分数`,
+      usage ? '填用量' : '填损耗',
+      {
+        confirmButtonText: '填上',
+        cancelButtonText: '取消',
+        inputPattern: usage ? /^\d{1,8}(\.\d{1,4})?$/ : /^(100(\.0{1,2})?|\d{1,2}(\.\d{1,2})?)$/,
+        inputErrorMessage: usage ? '填不小于 0 的数，最多 4 位小数' : '填 0 到 100，最多 2 位小数',
+      },
+    ))
+  } catch {
+    return
+  }
+  const n = Number(value)
+  for (const row of rows) {
+    if (!usage) row.lossPct = n
+    else if (row.usageMode === 'BY_SIZE') row.sizeUsages = Object.fromEntries(detail.value!.sizes.map((sz) => [sz, n]))
+    else row.usageQty = n
+  }
+  clearBomSelection()
+  ElMessage.success(`${rows.length} 行的${usage ? '用量' : '损耗'}填好了，保存以后才算数`)
+}
+
 
 // ---------- 物料清单 ----------
 const bomDialogVisible = ref(false)
@@ -865,7 +908,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
             <template v-if="bomView === 'bom'">
             <section v-for="blk in bomBlocks" :key="blk.owner" class="bom-block" :data-testid="`bom-block-${blk.owner}`">
             <h4 class="bom-block-title">{{ blk.title }} <span class="dim">{{ blk.rows.length }} 行<template v-if="editable && !blk.editable"> · 你没有这一块的权限，只能看</template></span></h4>
-            <el-table :data="blk.rows" row-key="id" :empty-text="bomEmptyText(blk.owner, blk.editable)">
+            <el-table :ref="bomTableRef(blk.owner)" :data="blk.rows" row-key="id" :empty-text="bomEmptyText(blk.owner, blk.editable)" @selection-change="bomSelected[blk.owner] = $event">
+              <el-table-column v-if="blk.editable" type="selection" width="36" />
               <el-table-column type="expand" width="32">
                 <template #default="{ row }">
                   <div class="expand">
@@ -957,6 +1001,10 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               </el-table-column>
             </el-table>
             </section>
+            <BatchBar v-if="editable" :rows="bomPicked" unit="行" :row-name="(r: BomItem) => r.materialName" @clear="clearBomSelection">
+              <el-button size="small" @click="fillBom('usage')">填用量</el-button>
+              <el-button size="small" @click="fillBom('loss')">填损耗</el-button>
+            </BatchBar>
             </template>
 
             <el-table v-else :data="colorViewRows" row-key="key" empty-text="还没有物料">
