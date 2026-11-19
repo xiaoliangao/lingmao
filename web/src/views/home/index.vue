@@ -100,7 +100,7 @@ function readFilter(): TodoFilter {
     const v = JSON.parse(raw) as Partial<TodoFilter>
     return {
       scope: v.scope === 'MINE' ? 'MINE' : 'ALL',
-      ownerId: typeof v.ownerId === 'number' ? v.ownerId : null,
+      ownerId: typeof v.ownerId === 'string' && v.ownerId ? v.ownerId : null,
       ownerName: typeof v.ownerName === 'string' ? v.ownerName : null,
     }
   } catch {

@@ -24,6 +24,16 @@
         ORDER BY pack_id, size_code
     </select>
 
+    <!-- 草稿（首页）：按品类线，旧的在前 -->
+    <select id="selectDraftPage" resultType="com.lingmao.scm.module.techpack.dto.PackDraftVO">
+        SELECT p.id, p.style_id, s.code AS style_code, s.name AS style_name, p.version, p.create_by, p.create_time
+        FROM tp_tech_pack p
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE p.status = 'DRAFT'
+        <if test="lines.limited">AND s.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
+        ORDER BY p.create_time, p.id
+    </select>
+
     <select id="selectStyleCostPage" resultType="com.lingmao.scm.module.techpack.dto.StyleCostRowVO">
         SELECT s.id AS style_id, s.code AS style_code, s.name AS style_name, s.alias_name, s.tag_price,
                p.id AS tech_pack_id, p.stage, p.version

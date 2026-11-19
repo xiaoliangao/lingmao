@@ -99,7 +99,44 @@ class MrpEngine {
         Map<Long, LocalDate> needs = needDates.of(commits);
         LocalDate needDate = needs.values().stream().filter(Objects::nonNull).min(LocalDate::compareTo).orElse(null);
 
-        List<MrpCalculator.Demand> demands = demands(calcMapper.selectDemand(orderIds));
+        Run run = run(demands(calcMapper.selectDemand(orderIds)), needDate, excluded, prevCalcId);
+        List<MrpCalculator.Row> rows = run.rows();
+
+        Map<Long, List<MrpSnapshot.Line>> lines = new LinkedHashMap<>();
+        orderLines.forEach(l -> lines.computeIfAbsent(l.orderId(), k -> new ArrayList<>())
+                .add(new MrpSnapshot.Line(l.styleSkuId(), l.qty(), l.techPackId())));
+        List<MrpSnapshot.Order> orders = heads.stream().map(h -> new MrpSnapshot.Order(h.id(), h.no(), h.commitDate(),
+                needs.get(h.id()), lines.getOrDefault(h.id(), List.of()))).toList();
+        List<MrpSnapshot.Late> lates = new ArrayList<>();
+        rows.forEach(r -> r.lates().forEach(l -> lates.add(new MrpSnapshot.Late(r.item().getMaterialSkuId(), l.lineId(), l.freeQty(), l.eta()))));
+        return new Result(rows, needDate, new MrpSnapshot(orders, lates), run.infos());
+    }
+
+    /** 算出来的行和行里每个 SKU 的采购信息 */
+    record Run(List<MrpCalculator.Row> rows, Map<Long, MaterialPurchaseInfo> infos) {
+    }
+
+    /**
+     * 审核对话框的缺料粗算（docs/api/02 §3.8）：一张还没锁版本的订单，每个款按 stylePacks 给的生产 BOM 展开，和别人都算过以后的可用量比。
+     * 只算不存；BOM 没配全的行跳过（资料包那一块会说不能审），不像算料那样整批报错
+     *
+     * @param dueDate 承诺交期 ?? 要求交期，推要料日期；null 时在途都当赶得上
+     */
+    Run preview(long orderId, Map<Long, Long> stylePacks, LocalDate dueDate) {
+        if (stylePacks.isEmpty()) {
+            return new Run(List.of(), Map.of());
+        }
+        List<MrpCalcMapper.DemandRow> rows = calcMapper.selectReviewDemand(orderId, stylePacks.entrySet().stream()
+                .map(e -> new MrpCalcMapper.StylePack(e.getKey(), e.getValue())).toList());
+        List<MrpCalcMapper.DemandRow> complete = rows.stream().filter(r -> r.materialId() == null || "CUSTOMER_SUPPLIED".equals(r.source())
+                || (r.skuId() != null && r.usage() != null)).toList();
+        Map<Long, LocalDate> commits = new HashMap<>();
+        commits.put(orderId, dueDate);
+        return run(demands(complete), needDates.of(commits).get(orderId), Set.of(), null);
+    }
+
+    /** 取物料的采购信息、参考单价、库存在途，交给 MrpCalculator 算 */
+    private Run run(List<MrpCalculator.Demand> demands, LocalDate needDate, Set<Long> excluded, Long prevCalcId) {
         Set<Long> skuIds = new LinkedHashSet<>();
         demands.stream().filter(d -> !"CUSTOMER_SUPPLIED".equals(d.source())).forEach(d -> skuIds.add(d.skuId()));
         Map<Long, MaterialPurchaseInfo> infos = materialService.purchaseInfos(skuIds);
@@ -119,16 +156,7 @@ class MrpEngine {
         }
         SupplyBook book = supplyLoader.load(skuIds, excluded);
         MrpCalculator.Inputs in = new MrpCalculator.Inputs(infos, typePcts(), prices(keys), needDate, excluded, prevCalcId);
-        List<MrpCalculator.Row> rows = MrpCalculator.calculate(demands, book, in);
-
-        Map<Long, List<MrpSnapshot.Line>> lines = new LinkedHashMap<>();
-        orderLines.forEach(l -> lines.computeIfAbsent(l.orderId(), k -> new ArrayList<>())
-                .add(new MrpSnapshot.Line(l.styleSkuId(), l.qty(), l.techPackId())));
-        List<MrpSnapshot.Order> orders = heads.stream().map(h -> new MrpSnapshot.Order(h.id(), h.no(), h.commitDate(),
-                needs.get(h.id()), lines.getOrDefault(h.id(), List.of()))).toList();
-        List<MrpSnapshot.Late> lates = new ArrayList<>();
-        rows.forEach(r -> r.lates().forEach(l -> lates.add(new MrpSnapshot.Late(r.item().getMaterialSkuId(), l.lineId(), l.freeQty(), l.eta()))));
-        return new Result(rows, needDate, new MrpSnapshot(orders, lates), infos);
+        return new Run(MrpCalculator.calculate(demands, book, in), infos);
     }
 
     /**

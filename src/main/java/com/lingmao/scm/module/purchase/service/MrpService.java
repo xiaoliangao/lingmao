@@ -11,6 +11,7 @@ import com.lingmao.scm.module.purchase.dto.MrpCreateReq;
 import com.lingmao.scm.module.purchase.dto.MrpItemForm;
 import com.lingmao.scm.module.purchase.dto.MrpOrderOptionVO;
 import com.lingmao.scm.module.purchase.dto.OrderKittingVO;
+import com.lingmao.scm.module.purchase.dto.OrderShortageVO;
 import com.lingmao.scm.module.purchase.dto.RemarkReq;
 import com.lingmao.scm.module.purchase.dto.ReservePctReq;
 import com.lingmao.scm.module.purchase.dto.ReservePctVO;
@@ -18,6 +19,7 @@ import com.lingmao.scm.module.purchase.entity.MrpCalc;
 import com.lingmao.scm.module.purchase.entity.MrpCalcItem;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +61,15 @@ public interface MrpService {
     void saveReservePcts(List<ReservePctReq> list);
 
     List<OrderKittingVO> kitting(List<Long> orderIds);
+
+    /**
+     * 审核对话框的缺料粗算（docs/api/02 §3.8、PRD §6.5.4）：按每个款现在生效的生产 BOM 展开，和可用量
+     * （库存 + 赶得上的在途 − 别的算料单占着的）比，缺的按缺口 × 单价从大到小取前 limit 种；都够是空的。只算不存
+     *
+     * @param stylePacks 款 → 现在生效的生产 BOM（没有的款不算）
+     * @param dueDate    承诺交期 ?? 要求交期：推要料日期，看在途赶不赶得上
+     */
+    List<OrderShortageVO> orderShortages(long orderId, Map<Long, Long> stylePacks, LocalDate dueDate, int limit);
 
     /**
      * 生成采购单前（PurchaseOrderServiceImpl.fromMrp 调，同一个事务）：锁住算料单，草稿先确认（没过 1000），

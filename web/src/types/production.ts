@@ -649,8 +649,9 @@ export interface BoardCards {
   /** 在制：生产中（含部分回货）的单数、件数（件数 − 已回货） */
   runningCount: number
   runningQty: number
-  /** 待开工：已下单、还没报开始的 */
+  /** 待开工：已下单、还没报开始的单数、件数（件数 − 已回货） */
   waitingCount: number
+  waitingQty: number
   nearCount: number
   lateCount: number
   nodeLateCount: number

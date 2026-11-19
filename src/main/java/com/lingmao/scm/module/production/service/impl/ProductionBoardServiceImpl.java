@@ -58,8 +58,8 @@ public class ProductionBoardServiceImpl implements ProductionBoardService {
         ProductionOrderMapper.CardRow c = prdMapper.selectCards(q, scope, support.today(), support.nearUntil());
         LocalDate today = support.today();
         long returned = prdMapper.selectReturnedQty(q, scope, today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()));
-        return new BoardCards(c.runningCount(), c.runningQty(), c.waitingCount(), c.nearCount(), c.lateCount(), c.nodeLateCount(),
-                c.issueCount(), returned, ProductionRules.NEAR_DAYS);
+        return new BoardCards(c.runningCount(), c.runningQty(), c.waitingCount(), c.waitingQty(), c.nearCount(), c.lateCount(),
+                c.nodeLateCount(), c.issueCount(), returned, ProductionRules.NEAR_DAYS);
     }
 
     @Override

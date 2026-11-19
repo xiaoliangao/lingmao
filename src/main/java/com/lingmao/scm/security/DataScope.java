@@ -62,6 +62,14 @@ public final class DataScope {
         return new DataScope(LoginUser.currentUserId(), !mine && LoginUser.hasAuthority(RoleDataScope.ALL_AUTHORITY), LineScope.current());
     }
 
+    /**
+     * 只留品类线、不按本人筛：自己看得见的单据要用到别人单据上的汇总时用（首页跟单看自己的生产单缺的料晚不晚于开裁，
+     * 那些采购行的采购员是别人）。只给内部汇总，查出来的别人的单据不能原样交给页面
+     */
+    public DataScope linesOnly() {
+        return new DataScope(userId, true, lines);
+    }
+
     /** 看全部：不加任何条件 */
     public boolean isAll() {
         return all;

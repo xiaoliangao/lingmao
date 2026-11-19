@@ -16,7 +16,7 @@ import { useColumns } from '@/composables/useColumns'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import type { DocRef } from '@/types/biz'
 import type { UpstreamDocType, UpstreamRow } from '@/types/home'
-import { ApiError, type RequestOptions } from '@/utils/request'
+import type { RequestOptions } from '@/utils/request'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateTime } from '@/utils/format'
 
@@ -66,7 +66,7 @@ const loadError = ref<string | null>(null)
 const tableRef = ref<TableInstance>()
 const selected = ref<UpstreamRow[]>([])
 
-/** 能不能看全部人的（有那种单据审核权限的人）：列表接口一起给，和首页待办的 canSeeAll 同一个规则 */
+/** 能不能看全部人的（数据范围是"全部"的人，不看审核权限）：列表接口一起给，和首页待办的 canSeeAll 同一个规则 */
 const canSeeAll = ref(false)
 
 let seq = 0
@@ -90,9 +90,7 @@ async function load() {
   } catch (error) {
     if (!read.current()) return
     if (my === seq) {
-      loadError.value = error instanceof ApiError && error.code === 404
-        ? '上游提醒接口暂未提供，暂不能取得待处理事项。'
-        : `上游提醒加载失败：${error instanceof Error ? error.message : '请重试'}`
+      loadError.value = `上游提醒加载失败：${error instanceof Error ? error.message : '请重试'}`
       selected.value = []
     }
   } finally {

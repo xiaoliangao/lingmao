@@ -62,6 +62,13 @@ public interface MrpCalcMapper extends BaseMapper<MrpCalc> {
 
     List<DemandRow> selectDemand(@Param("orderIds") Collection<Long> orderIds);
 
+    /** 款 → 用哪一版生产 BOM */
+    record StylePack(long styleId, long packId) {
+    }
+
+    /** 一张还没锁版本的订单按 packs 展开（XML，审核对话框粗算）；packs 不能是空的 */
+    List<DemandRow> selectReviewDemand(@Param("orderId") long orderId, @Param("packs") Collection<StylePack> packs);
+
     /** 订单每个 SKU 的件数、用的生产 BOM（算料单的输入快照） */
     record OrderLine(Long orderId, Long styleSkuId, Integer qty, Long techPackId) {
     }

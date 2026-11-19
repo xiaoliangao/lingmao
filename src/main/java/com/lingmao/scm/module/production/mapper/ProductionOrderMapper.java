@@ -63,8 +63,8 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
     CardRow selectCards(@Param("q") ProductionQuery query, @Param("scope") DataScope scope, @Param("today") LocalDate today,
                         @Param("nearUntil") LocalDate nearUntil);
 
-    record CardRow(long runningCount, long runningQty, long waitingCount, long nearCount, long lateCount, long nodeLateCount,
-                   long issueCount) {
+    record CardRow(long runningCount, long runningQty, long waitingCount, long waitingQty, long nearCount, long lateCount,
+                   long nodeLateCount, long issueCount) {
     }
 
     /** 看板"本月回货"：这段日期里登记、没作废的回货单件数，按种类、加工厂、跟单、品牌、数据范围筛 */

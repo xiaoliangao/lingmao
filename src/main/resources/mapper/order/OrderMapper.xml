@@ -38,6 +38,7 @@
         </if>
         <if test="q.orderDateFrom != null">AND o.order_date &gt;= #{q.orderDateFrom}</if>
         <if test="q.orderDateTo != null">AND o.order_date &lt;= #{q.orderDateTo}</if>
+        <if test="q.dueDateTo != null">AND COALESCE(o.commit_date, o.required_date) &lt;= #{q.dueDateTo}</if>
         <if test="q.unscheduled">
             AND o.status = 'APPROVED'
             AND NOT EXISTS (SELECT 1 FROM ord_order_item i WHERE i.order_id = o.id AND i.scheduled_qty &gt; 0)
@@ -74,7 +75,18 @@
         LEFT JOIN LATERAL (SELECT SUM(i.scheduled_qty) AS scheduled_qty, SUM(i.returned_qty) AS returned_qty
                            FROM ord_order_item i WHERE i.order_id = o.id) agg ON true
         <include refid="where"/>
-        ORDER BY o.order_date DESC, o.no DESC
+        <choose>
+            <when test="q.dueFirst">ORDER BY COALESCE(o.commit_date, o.required_date), o.no</when>
+            <otherwise>ORDER BY o.order_date DESC, o.no DESC</otherwise>
+        </choose>
+    </select>
+
+    <!-- 张数、件数合计（首页概况的在手订单，docs/api/06 §2.2）：条件和列表一样 -->
+    <select id="selectTotals" resultType="com.lingmao.scm.module.order.dto.OrderTotals">
+        <bind name="withStatus" value="true"/>
+        SELECT COUNT(*) AS count, COALESCE(SUM(o.total_qty), 0) AS qty
+        FROM ord_order o
+        <include refid="where"/>
     </select>
 
     <select id="selectCounts" resultType="com.lingmao.scm.common.page.StatusCount">

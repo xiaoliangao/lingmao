@@ -1,6 +1,8 @@
 package com.lingmao.scm.module.techpack.service;
 
 import com.lingmao.scm.common.excel.ExcelPreview;
+import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
 import com.lingmao.scm.module.style.dto.StyleCreateReq;
 import com.lingmao.scm.module.style.dto.StyleCreateResult;
@@ -8,6 +10,7 @@ import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
 import com.lingmao.scm.module.techpack.dto.BomImportVO;
 import com.lingmao.scm.module.techpack.dto.PackBrief;
+import com.lingmao.scm.module.techpack.dto.PackDraftVO;
 import com.lingmao.scm.module.techpack.dto.PackFileVO;
 import com.lingmao.scm.module.techpack.dto.PackRequirement;
 import com.lingmao.scm.module.techpack.dto.TechPackDetailVO;
@@ -85,6 +88,9 @@ public interface TechPackService {
 
     /** 几个款现在生效的生产 BOM：款式 id → PackBrief；没有的款不在 map 里 */
     Map<Long, PackBrief> effectiveProd(Collection<Long> styleIds);
+
+    /** 没生效的草稿，按品类线，旧的在前（首页概况、待我审核，docs/api/06）；total 是一共几个 */
+    PageResult<PackDraftVO> drafts(PageQuery page);
 
     /** 几个版本：id → PackBrief（订单锁定的、变更单换的）；查不到的不在 map 里 */
     Map<Long, PackBrief> briefs(Collection<Long> packIds);

@@ -8,6 +8,7 @@ import lombok.EqualsAndHashCode;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 
 /** 外发加工单、成品采购单列表（docs/api/05 §3.2.1）；看板列表也用它（kind 不传 = 两种都看） */
@@ -23,7 +24,7 @@ public class ProductionQuery extends PageQuery {
     private List<DocStatus> status;
     /** 和 status=RUNNING 一起用：true 部分回货、false 没回过货 */
     private Boolean returned;
-    /** LATE / NEAR / NODE_LATE / ISSUE / UPSTREAM */
+    /** LATE / NEAR / NODE_LATE / ISSUE / UPSTREAM；DELAYED = 已逾期或节点延期（首页"生产延期"一组） */
     private String risk;
     private Long factoryId;
     private Long merchId;
@@ -42,4 +43,8 @@ public class ProductionQuery extends PageQuery {
     private List<Long> ids;
     /** 看板的数字卡：RUNNING / WAITING / NEAR / LATE / NODE_LATE / ISSUE（看板列表才有） */
     private String card;
+    /** 按交期（预计交期 ?? 交期）从早到晚排，不按风险分数：首页近期交期用 */
+    private boolean dueFirst;
+    /** 只要这几张需求订单的：首页跟单的"晚于开裁" */
+    private Collection<String> orderNos;
 }

@@ -24,7 +24,7 @@ const UPSTREAM_DOC_BASE: Record<UpstreamDocType, string> = {
 
 /** 上游已变更、待处理（/upstream） */
 export const upstreamApi = {
-  /** 负责人是我的；有那种单据审核权限的人（管理层）看全部。不分页，按最新一条提醒的时间倒序 */
+  /** 负责人是我的；数据范围是"全部"的人看全部、能筛负责人。不分页，按最新一条提醒的时间倒序 */
   list: (params: UpstreamQuery) => http.get<UpstreamList>('/api/board/upstream', params),
   /** 处理一条提醒，remark 选填。批量条逐条调时传 { silent: true } */
   handle: (doc: Pick<DocRef, 'type' | 'id'>, noticeId: string, remark: string | null, options?: RequestOptions) =>

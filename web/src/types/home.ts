@@ -173,7 +173,7 @@ export interface HomeTodos {
   groups: TodoGroup[]
   /** 数是 0 的、没权限看的不在里面 */
   counts: TodoCount[]
-  /** 能不能看全部人的（有那类单据审核权限的人，一般是管理层）。true 时待办面板顶上出"全部 / 我的"和负责人筛选 */
+  /** 能不能看全部人的（数据范围是"全部"的人，不看审核权限）。true 时待办面板顶上出"全部 / 我的"和负责人筛选 */
   canSeeAll: boolean
 }
 

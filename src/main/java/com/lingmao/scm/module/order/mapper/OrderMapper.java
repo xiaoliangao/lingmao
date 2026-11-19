@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.common.page.StatusCount;
 import com.lingmao.scm.module.order.dto.OrderQuery;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
+import com.lingmao.scm.module.order.dto.OrderTotals;
 import com.lingmao.scm.module.order.dto.StyleOrderRowVO;
 import com.lingmao.scm.module.order.entity.Order;
 import com.lingmao.scm.security.DataScope;
@@ -20,6 +21,9 @@ public interface OrderMapper extends BaseMapper<Order> {
     /** 列表（XML）：已排产、已回货由明细加总；codes 是关键字里的几个单号、款号（Keywords） */
     IPage<OrderRowVO> selectRowPage(IPage<OrderRowVO> page, @Param("q") OrderQuery query, @Param("codes") List<String> codes,
                                     @Param("scope") DataScope scope);
+
+    /** 张数、件数合计（XML），条件和列表一样 */
+    OrderTotals selectTotals(@Param("q") OrderQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope);
 
     /** 各状态几张（XML），条件和列表一样，不看 q.status */
     List<StatusCount> selectCounts(@Param("q") OrderQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope);

@@ -50,11 +50,14 @@ import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
 import com.lingmao.scm.module.order.dto.OrderItemVO;
 import com.lingmao.scm.module.order.dto.OrderQuery;
+import com.lingmao.scm.module.order.dto.OrderReviewInfo;
+import com.lingmao.scm.module.order.dto.OrderReviewStyle;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
 import com.lingmao.scm.module.order.dto.OrderSaveReq;
 import com.lingmao.scm.module.order.dto.OrderStyleOptionVO;
 import com.lingmao.scm.module.order.dto.OrderStyleRef;
 import com.lingmao.scm.module.order.dto.OrderStyleVO;
+import com.lingmao.scm.module.order.dto.OrderTotals;
 import com.lingmao.scm.module.order.dto.PendingChange;
 import com.lingmao.scm.module.order.dto.ProductionProgress;
 import com.lingmao.scm.module.order.dto.StyleOrderRowVO;
@@ -195,6 +198,42 @@ public class OrderServiceImpl implements OrderService {
     public Map<String, Long> counts(OrderQuery query) {
         query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
         return StatusCount.toMap(orderMapper.selectCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())));
+    }
+
+    @Override
+    public OrderTotals totals(OrderQuery query) {
+        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
+        return orderMapper.selectTotals(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
+    }
+
+    @Override
+    public OrderReviewInfo reviewInfo(long id) {
+        Order o = getVisible(id);
+        Map<Long, List<OrderItem>> byStyle = byStyle(active(itemMapper.selectByOrder(id)));
+        List<Long> styleIds = List.copyOf(byStyle.keySet());
+        Map<Long, StyleOrderInfo> infos = styleService.orderInfos(styleIds);
+        Map<Long, PackBrief> packs = techPackService.effectiveProd(styleIds);
+        List<OrderReviewStyle> styles = new ArrayList<>();
+        byStyle.forEach((styleId, rows) -> {
+            StyleOrderInfo info = infos.get(styleId);
+            PackBrief pack = packs.get(styleId);
+            // 和提交、审核同一套检查（checkPacks），只是按款分开说
+            List<String> problems = new ArrayList<>(packProblems(rows, infos, packs));
+            if (problems.isEmpty()) {
+                try {
+                    techPackService.checkRequirements(rows.stream().map(i -> new PackRequirement(pack.id(), i.getStyleSkuId())).toList());
+                } catch (BizException e) {
+                    if (e.getData() instanceof List<?> list && !list.isEmpty()) {
+                        list.forEach(p -> problems.add(String.valueOf(p)));
+                    } else {
+                        problems.add(e.getMessage());
+                    }
+                }
+            }
+            styles.add(new OrderReviewStyle(styleId, info.code(), info.name(), pack == null ? null : pack.id(),
+                    pack == null ? null : pack.version(), problems.isEmpty() ? null : String.join("；", problems), info.defaultFactoryId()));
+        });
+        return new OrderReviewInfo(o.getId(), o.getCommitDate() != null ? o.getCommitDate() : o.getRequiredDate(), styles);
     }
 
     /** 列表行的款式（缩略图 + 款号）、人名、按钮 */

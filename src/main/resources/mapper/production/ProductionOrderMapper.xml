@@ -37,11 +37,12 @@
         <include refid="returnedJoin"/>
     </sql>
 
-    <!-- 排序分数：逾期 8、节点延期 4、有异常 2、临期 1，同分按交期从早到晚 -->
+    <!-- 排序分数：逾期 8、节点延期 4、有异常 2、临期 1，同分按交期从早到晚；dueFirst 只按交期（首页近期交期） -->
     <sql id="riskOrder">
-        ORDER BY (CASE WHEN r.late THEN 8 ELSE 0 END) + (CASE WHEN r.node_late THEN 4 ELSE 0 END)
+        <if test="q.dueFirst">ORDER BY COALESCE(p.expect_date, p.due_date), p.id</if>
+        <if test="!q.dueFirst">ORDER BY (CASE WHEN r.late THEN 8 ELSE 0 END) + (CASE WHEN r.node_late THEN 4 ELSE 0 END)
                  + (CASE WHEN r.issue THEN 2 ELSE 0 END) + (CASE WHEN r.near THEN 1 ELSE 0 END) DESC,
-                 COALESCE(p.expect_date, p.due_date), p.id DESC
+                 COALESCE(p.expect_date, p.due_date), p.id DESC</if>
     </sql>
 
     <!-- 种类、加工厂、跟单、品牌、数据范围：看板的本月回货也用 -->
@@ -83,6 +84,7 @@
                 <when test="q.risk == 'NODE_LATE'">AND r.node_late</when>
                 <when test="q.risk == 'ISSUE'">AND r.issue</when>
                 <when test="q.risk == 'UPSTREAM'">AND r.upstream</when>
+                <when test="q.risk == 'DELAYED'">AND (r.late OR r.node_late)</when>
                 <otherwise>AND false</otherwise>
             </choose>
         </if>
@@ -101,6 +103,9 @@
         <if test="q.dueDateTo != null">AND COALESCE(p.expect_date, p.due_date) &lt;= #{q.dueDateTo}</if>
         <if test="q.ids != null and q.ids.size() > 0">
             AND p.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.orderNos != null and q.orderNos.size() > 0">
+            AND o.no IN <foreach collection="q.orderNos" item="no" open="(" separator="," close=")">#{no}</foreach>
         </if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>
@@ -134,7 +139,7 @@
         SELECT p.id, p.no, p.kind, p.product_line, p.status, p.version, p.company_id, p.factory_id, f.short_name AS factory_short_name, p.process_mode,
                p.order_id, o.no AS order_no, p.style_id, s.code AS style_code, s.name AS style_name, p.total_qty, p.unit_price,
                p.total_amount, p.due_date, p.expect_date, p.issue_status, rq.returned_qty, rq.defect_qty,
-               iss.open_count AS open_issue_count, iss.first_type AS first_open_issue_type, p.merch_id, p.create_by,
+               iss.open_count AS open_issue_count, iss.first_type AS first_open_issue_type, p.merch_id, p.create_by, p.create_time,
                r.late AS risk_late, r.near AS risk_near, r.node_late AS risk_node_late, r.issue AS risk_issue,
                r.upstream AS risk_upstream
         <include refid="from"/>
@@ -180,6 +185,7 @@
         SELECT COUNT(*) FILTER (WHERE p.status = 'RUNNING') AS running_count,
                COALESCE(SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) FILTER (WHERE p.status = 'RUNNING'), 0) AS running_qty,
                COUNT(*) FILTER (WHERE p.status = 'APPROVED') AS waiting_count,
+               COALESCE(SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) FILTER (WHERE p.status = 'APPROVED'), 0) AS waiting_qty,
                COUNT(*) FILTER (WHERE r.near) AS near_count,
                COUNT(*) FILTER (WHERE r.late) AS late_count,
                COUNT(*) FILTER (WHERE r.node_late) AS node_late_count,

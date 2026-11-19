@@ -43,6 +43,7 @@ import com.lingmao.scm.module.price.service.PriceService;
 import com.lingmao.scm.module.purchase.dto.FollowReq;
 import com.lingmao.scm.module.purchase.dto.FromMrpReq;
 import com.lingmao.scm.module.purchase.dto.FromReorderReq;
+import com.lingmao.scm.module.purchase.dto.OrderCutRisk;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalCounts;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalQuery;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO;
@@ -1092,6 +1093,31 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 rows.stream().filter(r -> inTab(r, "NEAR")).count(), rows.stream().filter(r -> inTab(r, "CUT")).count());
     }
 
+    @Override
+    public Map<String, OrderCutRisk> orderCutRisks() {
+        Map<String, PendingArrivalRowVO> worst = new HashMap<>();
+        for (PendingArrivalRowVO r : pendingRows(new PendingArrivalQuery(), DataScope.current(false).linesOnly())) {
+            if (r.getCutLateDays() <= 0) {
+                continue;
+            }
+            for (String no : r.getOrderNos()) {
+                worst.merge(no, r, (a, b) -> b.getCutLateDays() > a.getCutLateDays() ? b : a);
+            }
+        }
+        if (worst.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(worst.values().stream()
+                .map(PendingArrivalRowVO::getMaterialSkuId).collect(Collectors.toSet()));
+        Map<String, OrderCutRisk> out = new HashMap<>();
+        worst.forEach((no, r) -> {
+            MaterialSkuBrief brief = briefs.get(r.getMaterialSkuId());
+            out.put(no, new OrderCutRisk(no, r.getMaterialSkuId(), brief == null ? "" : brief.getMaterialName(), r.getArriveDate(),
+                    r.getNeedDate(), r.getCutLateDays()));
+        });
+        return out;
+    }
+
     private static boolean inTab(PendingArrivalRowVO r, String tab) {
         if (tab == null || tab.isBlank()) {
             return true;
@@ -1110,8 +1136,11 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
      * 页签、要料日期都要现算，所以全取出来在这里排、分页（待到料只有没到齐的行，量不大）
      */
     private List<PendingArrivalRowVO> pendingRows(PendingArrivalQuery query) {
-        List<PendingArrivalRowVO> rows = new ArrayList<>(poMapper.selectPendingRows(query, Keywords.codes(query.getKeyword()),
-                DataScope.current(false)));
+        return pendingRows(query, DataScope.current(false));
+    }
+
+    private List<PendingArrivalRowVO> pendingRows(PendingArrivalQuery query, DataScope scope) {
+        List<PendingArrivalRowVO> rows = new ArrayList<>(poMapper.selectPendingRows(query, Keywords.codes(query.getKeyword()), scope));
         if (rows.isEmpty()) {
             return rows;
         }

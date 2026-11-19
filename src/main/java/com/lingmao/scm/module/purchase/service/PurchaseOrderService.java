@@ -6,6 +6,7 @@ import com.lingmao.scm.module.biz.dto.DocSaved;
 import com.lingmao.scm.module.purchase.dto.FollowReq;
 import com.lingmao.scm.module.purchase.dto.FromMrpReq;
 import com.lingmao.scm.module.purchase.dto.FromReorderReq;
+import com.lingmao.scm.module.purchase.dto.OrderCutRisk;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalCounts;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalQuery;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO;
@@ -18,6 +19,7 @@ import com.lingmao.scm.module.purchase.dto.PurchaseRowVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseSaveReq;
 
 import java.util.List;
+import java.util.Map;
 
 /** 采购单（docs/api/03 §3.3）、待到料（§3.4） */
 public interface PurchaseOrderService {
@@ -55,4 +57,11 @@ public interface PurchaseOrderService {
     PageResult<PendingArrivalRowVO> pendingItems(PendingArrivalQuery query);
 
     PendingArrivalCounts pendingCounts(PendingArrivalQuery query);
+
+    /**
+     * 料晚于开裁的需求订单（首页跟单的"晚于开裁"，docs/api/06 §2.3）：待到料里 CUT 的行，订单号 → 这张订单晚得最多的一行。
+     * 跟单看的是自己的生产单，那些采购行的采购员是别人，所以不按本人筛、只按品类线；只给物料名和日期，
+     * 调用方再用自己看得见的生产单去对
+     */
+    Map<String, OrderCutRisk> orderCutRisks();
 }

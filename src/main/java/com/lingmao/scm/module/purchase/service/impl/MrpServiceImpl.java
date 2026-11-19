@@ -37,6 +37,7 @@ import com.lingmao.scm.module.purchase.dto.MrpOrderOptionVO;
 import com.lingmao.scm.module.purchase.dto.MrpOrderRef;
 import com.lingmao.scm.module.purchase.dto.MrpTransitUseVO;
 import com.lingmao.scm.module.purchase.dto.OrderKittingVO;
+import com.lingmao.scm.module.purchase.dto.OrderShortageVO;
 import com.lingmao.scm.module.purchase.dto.RemarkReq;
 import com.lingmao.scm.module.purchase.dto.ReservePctReq;
 import com.lingmao.scm.module.purchase.dto.ReservePctVO;
@@ -66,6 +67,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -81,6 +83,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.lingmao.scm.module.purchase.entity.MrpStatus.CLOSED;
@@ -1054,6 +1057,25 @@ public class MrpServiceImpl implements MrpService {
                     .setSql("version = version + 1"));
             docLogService.add(BizType.MRP_CALC, c.getId(), "close", CONFIRMED, CLOSED, "订单的生产单都领齐了料，自动关闭");
         }
+    }
+
+    @Override
+    public List<OrderShortageVO> orderShortages(long orderId, Map<Long, Long> stylePacks, LocalDate dueDate, int limit) {
+        MrpEngine.Run run = engine.preview(orderId, stylePacks, dueDate);
+        // 缺口值多少钱：缺口是库存单位，参考单价是元 / 采购单位，1 采购单位 = 换算系数个库存单位
+        Function<MrpCalcItem, BigDecimal> value = i -> i.getRefPrice() == null || i.getConversionFactor() == null
+                || i.getConversionFactor().signum() == 0 ? BigDecimal.ZERO
+                : i.getNetQty().multiply(i.getRefPrice()).divide(i.getConversionFactor(), 6, RoundingMode.HALF_UP);
+        return run.rows().stream().map(MrpCalculator.Row::item)
+                .filter(i -> i.getBlock() == MrpBlock.PURCHASE && i.getNetQty().signum() > 0)
+                .sorted(Comparator.comparing(value).reversed().thenComparing(MrpCalcItem::getNetQty, Comparator.reverseOrder()))
+                .limit(limit)
+                .map(i -> {
+                    MaterialPurchaseInfo info = run.infos().get(i.getMaterialSkuId());
+                    return new OrderShortageVO(i.getMaterialSkuId(), i.getNeedQty(), i.getAvailStockQty().add(i.getAvailTransitQty()),
+                            i.getNetQty(), info == null ? null : info.leadDays());
+                })
+                .toList();
     }
 
     @Override

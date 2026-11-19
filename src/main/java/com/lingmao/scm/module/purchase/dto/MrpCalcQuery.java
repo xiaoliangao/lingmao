@@ -22,4 +22,6 @@ public class MrpCalcQuery extends PageQuery {
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate createDateTo;
     private boolean mine;
+    /** 只要这几张（首页"上游已变更"按数据范围筛提醒用） */
+    private List<Long> ids;
 }

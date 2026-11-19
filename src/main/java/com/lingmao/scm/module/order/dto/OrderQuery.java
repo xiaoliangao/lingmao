@@ -29,6 +29,11 @@ public class OrderQuery extends PageQuery {
     private LocalDate orderDateFrom;
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate orderDateTo;
+    /** 交期（承诺交期 ?? 要求交期）到这天为止，含逾期的：首页近期交期用（docs/api/06 §2.4） */
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+    private LocalDate dueDateTo;
+    /** 按交期（承诺交期 ?? 要求交期）从早到晚排，不按下单日期：首页用 */
+    private boolean dueFirst;
     /** 待排单：已审核、一件都还没排的 */
     private boolean unscheduled;
     private boolean mine;

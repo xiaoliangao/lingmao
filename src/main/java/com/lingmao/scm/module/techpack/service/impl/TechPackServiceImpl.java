@@ -8,6 +8,8 @@ import com.lingmao.scm.common.excel.ExcelPreview;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.basic.dto.ColorOption;
 import com.lingmao.scm.module.basic.dto.MaterialRef;
 import com.lingmao.scm.module.basic.dto.MaterialSkuRef;
@@ -34,6 +36,7 @@ import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
 import com.lingmao.scm.module.techpack.dto.BomImportVO;
 import com.lingmao.scm.module.techpack.dto.BomItemVO;
 import com.lingmao.scm.module.techpack.dto.BomSkuVO;
+import com.lingmao.scm.module.techpack.dto.PackDraftVO;
 import com.lingmao.scm.module.techpack.dto.PackFileVO;
 import com.lingmao.scm.module.techpack.dto.PackOwner;
 import com.lingmao.scm.module.techpack.dto.PackRequirement;
@@ -54,6 +57,7 @@ import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.BomRow;
 import com.lingmao.scm.module.techpack.service.impl.PackContent.Content;
 import com.lingmao.scm.module.techpack.service.impl.PackOwners.Ctx;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -403,6 +407,11 @@ public class TechPackServiceImpl implements TechPackService {
     }
 
     // ---------------------------------------------------------------- 给需求订单
+
+    @Override
+    public PageResult<PackDraftVO> drafts(PageQuery page) {
+        return PageResult.of(techPackMapper.selectDraftPage(page.toPage(), LineScope.current()));
+    }
 
     @Override
     public Map<Long, PackBrief> effectiveProd(Collection<Long> styleIds) {
