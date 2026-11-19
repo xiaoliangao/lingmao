@@ -7,6 +7,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { productionApi as productionApiBase } from '@/api/production'
 import { kittingApi } from '@/api/purchase'
+import { fgDocApi } from '@/api/fg'
+import type { FgReceiptStocked } from '@/types/fg'
 import { techPackApi } from '@/api/techpack'
 import ExcelPreviewDialog from '@/components/ExcelPreviewDialog.vue'
 import { PACK_FILE_GROUPS, type PackFile } from '@/types/techpack'
@@ -177,9 +179,27 @@ async function loadSubs(d: ProductionDetail) {
   await read.run(() => Promise.allSettled([
     productionApi.materials(id).then((m) => { if (read.current()) matData.value = m }),
     productionApi.issues(id).then((list) => { if (read.current()) issues.value = list }),
-    productionApi.receipts(id).then((list) => { if (read.current()) receipts.value = list }),
+    productionApi.receipts(id).then((list) => { if (read.current()) { receipts.value = list; void loadStocked(list) } }),
     loadKitting(d),
   ]))
+}
+
+/** 二期成品（07 §3.7）：每张回货单入了哪几张成品入库单；没权限、取不到就不显示这一列 */
+const canSeeFg = computed(() => user.hasPerm('fg:doc:list'))
+const stocked = ref(new Map<string, FgReceiptStocked[]>())
+async function loadStocked(list: ProductionReceipt[]) {
+  const ids = list.filter((r) => r.status === 'APPROVED').map((r) => r.id)
+  if (!canSeeFg.value || !ids.length) {
+    stocked.value = new Map()
+    return
+  }
+  try {
+    const map = new Map<string, FgReceiptStocked[]>()
+    for (const r of await fgDocApi.byReceipts(ids)) map.set(r.receiptId, [...(map.get(r.receiptId) ?? []), r])
+    stocked.value = map
+  } catch {
+    stocked.value = new Map()
+  }
 }
 
 async function loadKitting(d: ProductionDetail) {
@@ -600,6 +620,21 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               </el-table-column>
               <el-table-column label="登记" min-width="150" class-name="num">
                 <template #default="{ row }">{{ row.createByName ?? '—' }} {{ formatDateTime(row.createTime) }}</template>
+              </el-table-column>
+              <el-table-column v-if="canSeeFg" label="成品仓" width="160">
+                <template #default="{ row }">
+                  <template v-if="stocked.get(row.id)?.length">
+                    <router-link
+                      v-for="fg in stocked.get(row.id)"
+                      :key="fg.docId"
+                      :to="`/fg-in/${fg.docId}`"
+                      class="code link fg-link"
+                      @click.stop
+                    >{{ fg.no }}<template v-if="fg.status === 'DRAFT'">（草稿）</template></router-link>
+                  </template>
+                  <span v-else-if="row.status === 'APPROVED'" class="dim">待入库</span>
+                  <span v-else class="dim">—</span>
+                </template>
               </el-table-column>
               <el-table-column label="状态" width="96">
                 <template #default="{ row }">
@@ -1053,5 +1088,9 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
   font-size: 12.5px;
   color: var(--lm-accent);
   text-decoration: none;
+}
+
+.fg-link + .fg-link {
+  margin-left: 8px;
 }
 </style>

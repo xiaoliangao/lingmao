@@ -73,6 +73,9 @@ const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: strin
   { parent: '/stock-takes', file: 'inventory/count/detail', title: '物料盘点单' },
   { parent: '/production', file: 'production/order/detail', title: '外发加工单' },
   { parent: '/fp-purchases', file: 'production/order/detail', title: '成品采购单' },
+  // 二期成品（docs/api/07 §1.1）
+  { parent: '/fg-in', file: 'fg/doc/detail', title: '成品入库单' },
+  { parent: '/fg-out', file: 'fg/doc/detail', title: '成品出库单' },
 ]
 const detailPages = import.meta.glob('../views/**/{detail,form}.vue')
 /** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */

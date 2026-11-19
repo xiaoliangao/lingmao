@@ -4,6 +4,7 @@ import type { UploadFile, UploadInstance } from 'element-plus'
 import { ApiError, download, MAX_UPLOAD_SIZE, upload } from '@/utils/request'
 import { ErrorCode } from '@/utils/errorCodes'
 import { formatFileSize } from '@/utils/format'
+import { withCompanyScope } from '@/utils/companyScope'
 import BizErrorTable from './BizErrorTable.vue'
 
 /** 一条提示，格式和 1003 的错误清单一样；sheet 只在一个文件几张表时有，row 是 0 说的是整张表 */
@@ -33,8 +34,13 @@ interface ImportResult {
  *   <ImportDialog … :import-url="orderApi.importUrl(head)" :ready="headReady">
  *     <template #head><div class="form-grid">…</div></template>
  *   </ImportDialog>
+ *
+ * 导进一张单据里（成品其他入库的明细）：company-id 给这张单的主体，上传带上它（后端核对页面主体和单据一致）
  */
-const props = withDefaults(defineProps<{ title: string; templateUrl: string; importUrl: string; ready?: boolean }>(), { ready: true })
+const props = withDefaults(defineProps<{ title: string; templateUrl: string; importUrl: string; ready?: boolean; companyId?: string }>(), {
+  ready: true,
+  companyId: undefined,
+})
 const emit = defineEmits<{ success: [total: number] }>()
 const visible = defineModel<boolean>({ required: true })
 
@@ -97,7 +103,9 @@ async function submit() {
   errorMessage.value = ''
   errors.value = []
   try {
-    const result = await upload<ImportResult>(props.importUrl, file.value, { silent: true })
+    const picked = file.value
+    const send = () => upload<ImportResult>(props.importUrl, picked, { silent: true })
+    const result = await (props.companyId ? withCompanyScope(props.companyId, send) : send())
     notes.value = result.notes ?? []
     imported.value = result.total
     emit('success', result.total)

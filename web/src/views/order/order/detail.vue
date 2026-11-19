@@ -7,6 +7,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { orderApi as orderApiBase, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import { kittingApi, mrpApi } from '@/api/purchase'
+import { fgDocApi } from '@/api/fg'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -104,6 +105,22 @@ async function load() {
   }
   void loadKitting()
   void loadChanges()
+  void loadShipped()
+}
+
+/** 二期成品（07 §3.7）：已审核的发货出库，每格"发 n"；没权限、取不到就不写 */
+const shipped = ref(new Map<string, number>())
+async function loadShipped() {
+  const d = detail.value
+  if (!d || !user.hasPerm('fg:doc:list') || !['APPROVED', 'RUNNING', 'DONE', 'CLOSED'].includes(d.status)) {
+    shipped.value = new Map()
+    return
+  }
+  try {
+    shipped.value = new Map((await fgDocApi.shipped(id)).map((r) => [r.styleSkuId, r.shippedQty]))
+  } catch {
+    shipped.value = new Map()
+  }
 }
 
 async function loadKitting() {
@@ -174,10 +191,12 @@ function colorsOf(styleId: string) {
 const cellsOf = (styleId: string) => itemsOf(styleId).map((i) => ({ id: i.styleSkuId, colorId: i.colorId, sizeCode: i.sizeCode }))
 const qtysOf = (styleId: string) => Object.fromEntries(itemsOf(styleId).map((i) => [i.styleSkuId, i.qty]))
 const itemBySku = computed(() => new Map((detail.value?.items ?? []).map((i) => [i.styleSkuId, i])))
-/** 已审核以后每格小字"排 80 · 回 40" */
+/** 已审核以后每格小字"排 80 · 回 40"，发过货的再加"· 发 30" */
 const subOf = (skuId: string) => {
   const it = itemBySku.value.get(skuId)
-  return approved.value && it ? `排 ${it.scheduledQty} · 回 ${it.returnedQty}` : null
+  if (!approved.value || !it) return null
+  const sent = shipped.value.get(skuId)
+  return `排 ${it.scheduledQty} · 回 ${it.returnedQty}${sent ? ` · 发 ${sent}` : ''}`
 }
 
 /** 款的单价：都一样写一个数，不一样写"按尺码" */

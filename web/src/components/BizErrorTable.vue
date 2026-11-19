@@ -31,6 +31,10 @@ const LABELS = computed<Record<string, string>>(() => ({
   thisQty: '本次',
   maxQty: '最多',
   reason: '说明',
+  // 成品（07 §3.5）：款式 SKU 的颜色、尺码
+  styleName: '款名',
+  colorName: '颜色',
+  sizeCode: '尺码',
   // 1004 超排（02 §3.12）
   sku: 'SKU',
   orderQty: '订单数',
