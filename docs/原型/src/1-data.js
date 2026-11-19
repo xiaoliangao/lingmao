@@ -65,7 +65,7 @@ const db = reactive({
     { id: 'F', name: '均码', sizes: ['F'], base: 'F', status: '启用' },
   ],
   seasons: [{ code: 'C', name: '春' }, { code: 'X', name: '夏' }, { code: 'Q', name: '秋' }, { code: 'D', name: '冬' }],
-  bigCats: [{ code: 'FS', name: '非通勤裤', status: '启用' }, { code: 'TS', name: '通勤裤', status: '启用' }, { code: 'XZ', name: '鞋子', status: '启用' }], // 款号大类，2 位字母，进款号
+  bigCats: [{ code: 'FS', name: '非通勤裤', status: '启用' }, { code: 'TS', name: '通勤裤', status: '启用' }, { code: 'XZ', name: '鞋子', status: '启用' }, { code: 'BH', name: '百货', status: '启用' }], // 款号大类，2 位字母，进款号
   dnoUsed: {}, // 进过款号的设计师编号 → 用户 id，锁定不能改、不能给别人
   categories: [
     { code: 'F', name: '风衣', path: '女装 / 外套', shape: 'trench' },

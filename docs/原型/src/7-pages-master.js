@@ -354,7 +354,7 @@ function addSeason(f) {
   if (db.seasons.some((x) => x.name === name)) fail('已经有「' + name + '」')
   db.seasons.push({ code, name, status: '启用' })
 }
-// 款号大类（甲方 11-11 反馈 3）：2 位大写字母，是款号的头两位（TS 通勤裤、FS 非通勤裤、XZ 鞋子）；进过款号的不能删、编码不能改，只能停用
+// 款号大类（甲方 11-11 反馈 3）：2 位大写字母，是款号的头两位（TS 通勤裤、FS 非通勤裤、XZ 鞋子、BH 百货）；进过款号的不能删、编码不能改，只能停用
 const bigCatUsed = (c) => db.styles.filter((s) => s.big === c).length
 const liveBigCats = (keep) => db.bigCats.filter((x) => x.status !== '停用' || x.code === keep)
 function addBigCat(f) {

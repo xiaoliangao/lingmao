@@ -429,7 +429,7 @@ IMPORTS.styles = {
     { k: 'code', t: '款号', tip: '不填按规则自动编（大类 + 导入当天 yyMMdd + 设计师编号 + 2 位流水，如 FS2611080701），设计师要有编号；领猫里的老款号照填，系统查重', ex: '27CF009', text: true, w: 14 },
     { k: 'name', t: '款式名称', req: true, ex: '双排扣短风衣', w: 18 },
     { k: 'alias', t: '花名', tip: '选填：款式的俗称，工艺单表头上有', ex: '小短风', w: 12 },
-    { k: 'big', t: '大类', tip: '款号头两位：编码或名称（TS 通勤裤、FS 非通勤裤、XZ 鞋子），要是启用的；不填 = 第一个启用的大类', opts: () => liveBigCats().map((x) => x.code), ex: 'FS', w: 8 },
+    { k: 'big', t: '大类', tip: '款号头两位：编码或名称（TS 通勤裤、FS 非通勤裤、XZ 鞋子、BH 百货），要是启用的；不填 = 第一个启用的大类', opts: () => liveBigCats().map((x) => x.code), ex: 'FS', w: 8 },
     { k: 'cat', t: '品类', req: true, tip: '品类名称或 1 位编码，要是启用的品类', ex: '风衣' },
     { k: 'year', t: '年份', req: true, int: true, tip: '4 位年份', ex: 2027, w: 8 },
     { k: 'season', t: '季节', req: true, tip: '春 / 夏 / 秋 / 冬，或编码 C / X / Q / D', ex: '春', w: 8 },
