@@ -114,6 +114,7 @@ async function toggle(): Promise<boolean> {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 14px 16px;
   margin-bottom: 16px;
 }
 .switch-title {
