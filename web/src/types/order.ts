@@ -32,7 +32,7 @@ export type OrderSource = 'MANUAL' | 'IMPORT' | 'REPEAT'
 export const ORDER_SOURCE: Record<OrderSource, string> = {
   MANUAL: '手工',
   IMPORT: 'Excel 导入',
-  REPEAT: '翻单',
+  REPEAT: '翻单 / 补单',
 }
 
 /** 操作记录里订单自己的动作叫法（通用的提交、审核……DocLogList 自带） */
@@ -210,6 +210,9 @@ export interface OrderDetail extends DocHeader<OrderStatus, OrderAction> {
   totalQty: number
   totalAmount?: number
   source: OrderSource
+  /** 翻单、补单的原单（source = REPEAT 时有，RFC 016 §2）；原单号总给，点进去看不看得到另说 */
+  sourceOrderId: string | null
+  sourceOrderNo: string | null
   scheduledQty: number
   returnedQty: number
   styles: OrderStyle[]
@@ -256,6 +259,8 @@ export interface OrderForm {
 /** 新建多出来的：附件（和单据公共的附件同一组） */
 export interface OrderCreateForm extends OrderForm {
   files: FileVO[]
+  /** 翻单、补单：照哪张单填的（RFC 016 §2）。给了后端记成 source = REPEAT；原单看不到 404，是草稿 1000 */
+  sourceOrderId?: string | null
 }
 
 /** 保存草稿多出来的：打开时拿到的版本号 */

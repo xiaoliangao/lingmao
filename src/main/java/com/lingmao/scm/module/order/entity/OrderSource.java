@@ -7,7 +7,8 @@ import lombok.Getter;
 public enum OrderSource {
     MANUAL("手工"),
     IMPORT("Excel 导入"),
-    REPEAT("翻单");
+    /** 翻单、补单：从一张旧订单复制的（RFC 016 §2），订单类型另看 order_type */
+    REPEAT("翻单 / 补单");
 
     private final String label;
 

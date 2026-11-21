@@ -17,6 +17,7 @@ import com.lingmao.scm.module.order.dto.OrderChangeForm;
 import com.lingmao.scm.module.order.dto.OrderChangeQuery;
 import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderDetailVO;
+import com.lingmao.scm.module.order.entity.OrderSource;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
 import com.lingmao.scm.module.order.dto.OrderQuery;
@@ -183,6 +184,46 @@ class OrderIT {
         orderService.delete(id);
         assertThat(count("SELECT count(*) FROM ord_order_item WHERE order_id = ?", id)).isZero();
         assertThat(count("SELECT count(*) FROM ord_order WHERE id = ?", id)).isZero();
+    }
+
+    /**
+     * 规则（RFC 016 §2，V51）：带原单建的记成 REPEAT、详情给原单号；草稿不能当原单，看不到的原单 404；
+     * 原单被翻单后反审核回草稿删不掉；source 和 source_order_id 要一起有（检查约束）
+     */
+    @Test
+    void repeatOrder_recordsSourceAndGuardsIt() {
+        Fixture f = fixture();
+        Map<Long, Integer> qty = Map.of(f.sku("A", "M"), 10);
+        long draft = createOrder(f, qty).id();
+        assertThatThrownBy(() -> createRepeat(f, qty, draft)).isInstanceOf(BizException.class).hasMessageContaining("还是草稿");
+
+        long source = approvedOrder(f, qty);
+        long copy = createRepeat(f, qty, source).id();
+        OrderDetailVO d = orderService.detail(copy);
+        assertThat(d.getSource()).isEqualTo(OrderSource.REPEAT);
+        assertThat(d.getSourceOrderId()).isEqualTo(source);
+        assertThat(d.getSourceOrderNo()).isEqualTo(orderService.detail(source).getNo());
+        assertThat(orderService.detail(draft).getSourceOrderId()).isNull();
+
+        orderService.act(source, "unaudit", new DocActionReq(orderService.detail(source).getVersion(), null));
+        assertThatThrownBy(() -> orderService.delete(source)).isInstanceOf(BizException.class)
+                .hasMessage("订单 " + d.getNo() + " 是从这张单翻单、补单来的，不能删除，只能作废");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("UPDATE ord_order SET source_order_id = NULL WHERE id = ?", copy))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("UPDATE ord_order SET source_order_id = ? WHERE id = ?", copy, draft))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        loginAs(f.approver, PERMS);
+        assertThatThrownBy(() -> createRepeat(f, qty, copy))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+    }
+
+    private DocSaved createRepeat(Fixture f, Map<Long, Integer> quantities, long sourceOrderId) {
+        OrderCreateReq req = createReq(f, quantities);
+        req.setOrderType("REPEAT");
+        req.setSourceOrderId(sourceOrderId);
+        return orderService.create(req);
     }
 
     /**
@@ -569,6 +610,10 @@ class OrderIT {
     }
 
     private DocSaved createOrder(Fixture f, Map<Long, Integer> quantities) {
+        return orderService.create(createReq(f, quantities));
+    }
+
+    private OrderCreateReq createReq(Fixture f, Map<Long, Integer> quantities) {
         OrderCreateReq req = new OrderCreateReq();
         req.setCompanyId(f.company);
         req.setOrderType("STOCK");
@@ -586,7 +631,7 @@ class OrderIT {
             items.add(i);
         });
         req.setItems(items);
-        return orderService.create(req);
+        return req;
     }
 
     /** 单级审批（没有规则）走完：草稿 → 已审核 */

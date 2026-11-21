@@ -33,6 +33,9 @@ public class OrderDetailVO extends DocHeaderVO {
     private Integer totalQty;
     private BigDecimal totalAmount;
     private OrderSource source;
+    /** 翻单、补单的原单（source = REPEAT 时有）；原单号总给，原单看不看得到另说 */
+    private Long sourceOrderId;
+    private String sourceOrderNo;
     private int scheduledQty;
     private int returnedQty;
     private List<OrderStyleVO> styles = List.of();

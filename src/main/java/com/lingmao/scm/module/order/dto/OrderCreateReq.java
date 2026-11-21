@@ -13,4 +13,10 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 public class OrderCreateReq extends OrderForm {
     private List<@Valid AttachmentReq> files = new ArrayList<>();
+
+    /**
+     * 翻单、补单的原单（RFC 016 §2）：给了就记成 source = REPEAT。原单要在、看得到（看不到 404），不能是草稿。
+     * 明细由前端照原单填好，后端不复制
+     */
+    private Long sourceOrderId;
 }

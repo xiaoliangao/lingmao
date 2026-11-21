@@ -181,6 +181,42 @@ class OrderServiceImplTest {
         verify(orderMapper, never()).deleteById(anyLong());
     }
 
+    /** 规则（RFC 016 §2）：翻单、补单的原单要看得到——别人的、不存在的都是 404；草稿不能当原单（草稿能删） */
+    @Test
+    void repeatSource_mustBeVisibleAndNotDraft() {
+        Order done = order(DocStatus.DONE);
+        when(orderMapper.selectById(7L)).thenReturn(done);
+        assertThat(service.repeatSource(7L)).isSameAs(done);
+
+        Order others = order(DocStatus.APPROVED);
+        others.setId(8L);
+        others.setCreateBy(2L);
+        when(orderMapper.selectById(8L)).thenReturn(others);
+        assertThatThrownBy(() -> service.repeatSource(8L))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+        assertThatThrownBy(() -> service.repeatSource(9L))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+
+        Order draft = order(DocStatus.DRAFT);
+        draft.setId(10L);
+        when(orderMapper.selectById(10L)).thenReturn(draft);
+        assertThatThrownBy(() -> service.repeatSource(10L))
+                .isInstanceOf(BizException.class).hasMessage("原单 DD202611010001 还是草稿，不能翻单、补单");
+    }
+
+    /** 规则（RFC 016 §2.3）：被翻单以后反审核回草稿的原单不能删，说清楚是哪张单指着它 */
+    @Test
+    void delete_repeatSourceOnlyVoid() {
+        when(orderMapper.lockById(7L)).thenReturn(order(DocStatus.DRAFT));
+        Order copy = new Order();
+        copy.setNo("DD202611210003");
+        when(orderMapper.selectOne(any())).thenReturn(copy);
+
+        assertThatThrownBy(() -> service.delete(7L))
+                .isInstanceOf(BizException.class).hasMessage("订单 DD202611210003 是从这张单翻单、补单来的，不能删除，只能作废");
+        verify(orderMapper, never()).deleteById(anyLong());
+    }
+
     /**
      * 规则（PRD §6.5.6 规则 2、docs/api/02 §3.14）：变更写回前核对——件数不能小于已排产；"原"不等于订单现在的值 1002
      */

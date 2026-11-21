@@ -3,6 +3,7 @@ package com.lingmao.scm.module.order.service.impl;
 import com.lingmao.scm.common.scope.CompanyContext;
 import com.lingmao.scm.security.FieldPermissions;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -333,6 +334,11 @@ public class OrderServiceImpl implements OrderService {
         vo.setTotalQty(o.getTotalQty());
         vo.setTotalAmount(o.getTotalAmount());
         vo.setSource(o.getSource());
+        if (o.getSourceOrderId() != null) {
+            vo.setSourceOrderId(o.getSourceOrderId());
+            Order source = orderMapper.selectById(o.getSourceOrderId());
+            vo.setSourceOrderNo(source == null ? null : source.getNo());
+        }
         vo.setScheduledQty(items.stream().mapToInt(OrderItem::getScheduledQty).sum());
         vo.setReturnedQty(items.stream().mapToInt(OrderItem::getReturnedQty).sum());
 
@@ -546,15 +552,18 @@ public class OrderServiceImpl implements OrderService {
      * 不然打不开要他审的单
      */
     private Order visible(Order o) {
-        if (o == null || !LineScope.current().canSee(o.getProductLine())) {
-            throw new BizException(404, NOT_FOUND);
-        }
-        if (!DataScope.current(false).canSee(o.getCreateBy(), o.getSalesId(), o.getMerchId())
-                && !(o.getStatus() == PENDING && isMyTurn(o.getId()))) {
+        if (!canView(o)) {
             throw new BizException(404, NOT_FOUND);
         }
         com.lingmao.scm.common.scope.CompanyContext.target(o.getCompanyId());
         return o;
+    }
+
+    /** 品类线、数据范围（或待审核时轮到我审）；不看页面主体，翻单的原单可以是别的主体 */
+    private boolean canView(Order o) {
+        return o != null && LineScope.current().canSee(o.getProductLine())
+                && (DataScope.current(false).canSee(o.getCreateBy(), o.getSalesId(), o.getMerchId())
+                        || o.getStatus() == PENDING && isMyTurn(o.getId()));
     }
 
     private boolean isMyTurn(long id) {
@@ -571,12 +580,31 @@ public class OrderServiceImpl implements OrderService {
         Order o = new Order();
         applyForm(o, req, null);
         o.setSource(OrderSource.MANUAL);
+        if (req.getSourceOrderId() != null) {
+            o.setSource(OrderSource.REPEAT);
+            o.setSourceOrderId(repeatSource(req.getSourceOrderId()).getId());
+        }
         o.setStatus(DRAFT);
         List<OrderItem> items = buildItems(req.getItems(), new HashMap<>());
         insert(o, items);
         attachmentService.replace(BizType.ORDER, o.getId(), Attachment.FILE, req.getFiles());
         docLogService.add(BizType.ORDER, o.getId(), "create", null);
         return new DocSaved(o.getId(), o.getNo(), 0);
+    }
+
+    /**
+     * 翻单、补单的原单（RFC 016 §2）：要看得到（看不到和不存在一样 404），不能是草稿——草稿能删，被引用了就删不掉。
+     * 原单是哪个主体、什么状态（作废、结案的也行）都可以
+     */
+    Order repeatSource(long id) {
+        Order source = orderMapper.selectById(id);
+        if (!canView(source)) {
+            throw new BizException(404, "原单不存在");
+        }
+        if (source.getStatus() == DRAFT) {
+            throw new BizException("原单 " + source.getNo() + " 还是草稿，不能翻单、补单");
+        }
+        return source;
     }
 
     /** 取单号、算合计、插单头和明细（新建、导入共用） */
@@ -651,6 +679,12 @@ public class OrderServiceImpl implements OrderService {
         FLOW.next("remove", o.getStatus());
         if (changeMapper.orderHasChanges(id)) {
             throw new BizException("这张订单审核后提过变更单，不能删除，只能作废");
+        }
+        // 审核过、被翻单以后反审核回草稿的：外键会拦，先说清楚是哪张
+        Order copy = orderMapper.selectOne(new LambdaQueryWrapper<Order>().select(Order::getNo)
+                .eq(Order::getSourceOrderId, id).last("LIMIT 1"));
+        if (copy != null) {
+            throw new BizException("订单 " + copy.getNo() + " 是从这张单翻单、补单来的，不能删除，只能作废");
         }
         itemMapper.deleteByOrder(id);
         attachmentService.deleteByDoc(BizType.ORDER, id);

@@ -255,9 +255,13 @@ function onScheduled() {
   void refresh()
 }
 
-type MoreCommand = 'withdraw' | 'unaudit' | 'close' | 'reopen' | 'cancel' | 'void' | 'remove'
+type MoreCommand = 'repeat' | 'replenish' | 'withdraw' | 'unaudit' | 'close' | 'reopen' | 'cancel' | 'void' | 'remove'
+/** 翻单、补单（RFC 016 §2）：草稿以外都能点，作废、结案的也行；去新建页照这张填 */
+const canCopy = computed(() => !!detail.value && detail.value.status !== 'DRAFT' && user.hasPerm('order:order:add'))
 const moreItems = computed(() => {
   const items: (MoreItem<MoreCommand> | false)[] = [
+    canCopy.value && { command: 'repeat', label: '翻单' },
+    canCopy.value && { command: 'replenish', label: '补单' },
     can('withdraw') && { command: 'withdraw', label: '撤回' },
     can('unaudit') && { command: 'unaudit', label: '反审核' },
     can('close') && { command: 'close', label: '结案' },
@@ -270,7 +274,8 @@ const moreItems = computed(() => {
 })
 
 function onMore(command: MoreCommand) {
-  if (command === 'remove') void remove()
+  if (command === 'repeat' || command === 'replenish') void router.push(`/orders/new?from=${id}&type=${command === 'repeat' ? 'REPEAT' : 'REPLENISH'}`)
+  else if (command === 'remove') void remove()
   else if (command === 'cancel') openChange(true)
   else void act(command)
 }
@@ -420,7 +425,11 @@ function openKitting() {
               <dt>备注</dt>
               <dd>{{ detail.remark || '—' }}</dd>
               <dt>来源</dt>
-              <dd>{{ ORDER_SOURCE[detail.source] }}</dd>
+              <dd v-if="detail.sourceOrderId">
+                {{ detail.orderType === 'REPLENISH' ? '补单自' : detail.orderType === 'REPEAT' ? '翻单自' : '复制自' }}
+                <router-link :to="`/orders/${detail.sourceOrderId}`" class="code link">{{ detail.sourceOrderNo }}</router-link>
+              </dd>
+              <dd v-else>{{ ORDER_SOURCE[detail.source] }}</dd>
               <dt>制单</dt>
               <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
             </dl>

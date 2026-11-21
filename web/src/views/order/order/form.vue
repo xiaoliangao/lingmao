@@ -3,7 +3,7 @@ import ThumbImage from '@/components/ThumbImage.vue'
 import { routeId } from '@/utils/entityId'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { orderApi as orderApiBase } from '@/api/order'
 import BlankState from '@/components/BlankState.vue'
 import DataPick from '@/components/DataPick.vue'
@@ -18,8 +18,8 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import type { MaterialPickRow } from '@/types/basic'
-import type { OrderForm, OrderItemForm, OrderStyleOption } from '@/types/order'
-import type { StylePickRow } from '@/types/style'
+import type { OrderDetail, OrderForm, OrderItemForm, OrderStyleOption } from '@/types/order'
+import { STYLE_STATUS, type StylePickRow } from '@/types/style'
 import type { FileVO } from '@/types/system'
 import { formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
@@ -35,6 +35,9 @@ const orderApi = bindCompanyApi(orderApiBase, () => savedCompanyId.value ?? head
  * - 单头两列；主体空着 = 后端用我的默认主体（登录信息里没有默认主体，前端选不上）
  * - 一个款一块，逐 SKU 保存单价/交期/备注；整款与尺码输入仅在显式应用时修改对应 SKU。
  * - 新建页带 ?styleId= 先把这个款加进来（款式详情的"下订单"）；页签留着时再带别的款进来，加到后面
+ * - 翻单、补单（RFC 016 §2）：新建页带 ?from=<原单 id>&type=REPEAT|REPLENISH，照原单填单头和明细（单价照原单，看不到销售价的
+ *   原单价本来就是空的）；不带合同号、交期、行交期、附件；停用的款、SKU 不带，顶上提示是哪几个。存的时候带 sourceOrderId。
+ *   页签留着时又从别的订单点了翻单：页上有东西先问一声再换
  * - 存草稿 / 提交审核：新建成功后不管提交过没过，这张草稿已经有了——提交没过就转到它的编辑页再弹原因，
  *   不留在"新建"上（不然再点一次又建一张）。编辑页保存后记下新的 version，提交没过留在页上接着改
  */
@@ -155,17 +158,102 @@ function onPickedStyles(rows: MaterialPickRow[] | StylePickRow[]) {
 
 const queryStyleId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? value : null)
 
+// ---------- 翻单、补单（RFC 016 §2） ----------
+type CopyType = 'REPEAT' | 'REPLENISH'
+const COPY_LABEL: Record<CopyType, string> = { REPEAT: '翻单', REPLENISH: '补单' }
+/** 照哪张单填的：存的时候带它的 id */
+const copyFrom = ref<{ id: string; no: string; type: CopyType } | null>(null)
+function queryCopy(): { from: string; type: CopyType } | null {
+  const from = queryStyleId(route.query.from)
+  return from ? { from, type: route.query.type === 'REPLENISH' ? 'REPLENISH' : 'REPEAT' } : null
+}
+
+/** 订单详情 → 一个款一块。copy 时停用的款、SKU 不带，交期不带，返回没带过来的（款号、SKU 编码） */
+async function blocksOf(d: OrderDetail, copy: boolean): Promise<{ blocks: StyleBlock[]; skipped: string[] }> {
+  const opts = d.styles.length ? await orderApi.styleOptions(d.styles.map((s) => s.styleId)) : []
+  const optMap = new Map(opts.map((o) => [o.styleId, o]))
+  const skipped: string[] = []
+  const blocks = d.styles.flatMap((st) => {
+    const opt = optMap.get(st.styleId)
+    if (!opt) throw new Error(`款式 ${st.styleCode} 的矩阵信息加载不全，请重试；原明细不会被删除`)
+    if (copy && opt.status !== 'ENABLED') {
+      skipped.push(`${st.styleCode}（${STYLE_STATUS[opt.status].label}）`)
+      return []
+    }
+    let items = d.items.filter((i) => i.styleId === st.styleId)
+    if (items.some((item) => !opt.skus.some((sku) => sku.id === item.styleSkuId))) {
+      throw new Error(`款式 ${st.styleCode} 的部分历史 SKU 无法加载，请重试；原明细不会被删除`)
+    }
+    if (copy) {
+      const off = items.filter((i) => opt.skus.find((sku) => sku.id === i.styleSkuId)?.status !== 1)
+      skipped.push(...off.map((i) => i.skuCode))
+      items = items.filter((i) => !off.includes(i)).map((i) => ({ ...i, lineDueDate: null }))
+      if (!items.length) return []
+    }
+    const qtys: Record<string, number> = {}
+    const sizePrices: Record<string, number | null | undefined> = {}
+    for (const it of items) {
+      qtys[it.styleSkuId] = it.qty
+      sizePrices[it.sizeCode] = it.price
+    }
+    const prices = new Set(items.map((i) => i.price))
+    const dates = new Set(items.map((i) => i.lineDueDate))
+    const remarks = new Set(items.map((i) => i.remark))
+    return [{ opt, unitPrice: prices.size === 1 ? items[0]?.price ?? null : null, bySizePrice: false, sizePrices,
+      lineDueDate: dates.size === 1 ? items[0]?.lineDueDate ?? null : null,
+      remark: remarks.size === 1 ? items[0]?.remark ?? '' : '', qtys, values: hydrateSkuValues(items) }]
+  })
+  return { blocks, skipped }
+}
+
+/** 照原单填（原单可能是别的主体：取原单不带页面主体） */
+async function fillCopy(copy: { from: string; type: CopyType }) {
+  const d = await orderApiBase.get(copy.from)
+  Object.assign(head, {
+    companyId: d.companyId,
+    customerId: d.customerId,
+    customerOrderNo: null,
+    orderType: copy.type,
+    brand: d.brand,
+    contractNo: '',
+    orderDate: todayStr(),
+    requiredDate: '',
+    salesId: d.salesId,
+    merchId: d.merchId,
+    currency: d.currency,
+    deliveryReq: d.deliveryReq ?? '',
+    remark: d.remark ?? '',
+  })
+  names.sales = d.salesName
+  names.merch = d.merchName
+  files.value = []
+  orderLine.value = d.productLine
+  const { blocks: filled, skipped } = await blocksOf(d, true)
+  blocks.value = filled
+  copyFrom.value = { id: d.id, no: d.no, type: copy.type }
+  tabs.rename(path, `${COPY_LABEL[copy.type]} ${d.no}`)
+  if (skipped.length) ElMessage.warning(`停用了、没带过来：${skipped.join('、')}`)
+}
+
 async function init() {
   loadError.value = null
   notFound.value = false
   loaded.value = false
   if (id === null) {
+    const copy = queryCopy()
     try {
-      const sid = queryStyleId(route.query.styleId)
-      if (sid) await appendStyles([sid])
+      if (copy) {
+        await fillCopy(copy)
+      } else {
+        const sid = queryStyleId(route.query.styleId)
+        if (sid) await appendStyles([sid])
+      }
       loaded.value = true
       guard.markSaved()
-    } catch (e) { loadError.value = e instanceof Error ? e.message : '款式加载失败，请重试' }
+    } catch (e) {
+      if (copy && e instanceof ApiError && e.code === 404) notFound.value = true
+      else loadError.value = e instanceof Error ? e.message : copy ? '原单加载失败，请重试' : '款式加载失败，请重试'
+    }
     return
   }
   try {
@@ -191,28 +279,7 @@ async function init() {
     })
     names.sales = d.salesName
     names.merch = d.merchName
-    const opts = d.styles.length ? await orderApi.styleOptions(d.styles.map((s) => s.styleId)) : []
-    const optMap = new Map(opts.map((o) => [o.styleId, o]))
-    blocks.value = d.styles.flatMap((st) => {
-      const opt = optMap.get(st.styleId)
-      if (!opt) throw new Error(`款式 ${st.styleCode} 的矩阵信息加载不全，请重试；原明细不会被删除`)
-      const items = d.items.filter((i) => i.styleId === st.styleId)
-      const qtys: Record<string, number> = {}
-      const sizePrices: Record<string, number | null | undefined> = {}
-      for (const it of items) {
-        qtys[it.styleSkuId] = it.qty
-        sizePrices[it.sizeCode] = it.price
-      }
-      if (items.some((item) => !opt.skus.some((sku) => sku.id === item.styleSkuId))) {
-        throw new Error(`款式 ${st.styleCode} 的部分历史 SKU 无法加载，请重试；原明细不会被删除`)
-      }
-      const prices = new Set(items.map((i) => i.price))
-      const dates = new Set(items.map((i) => i.lineDueDate))
-      const remarks = new Set(items.map((i) => i.remark))
-      return [{ opt, unitPrice: prices.size === 1 ? items[0]?.price ?? null : null, bySizePrice: false, sizePrices,
-        lineDueDate: dates.size === 1 ? items[0]?.lineDueDate ?? null : null,
-        remark: remarks.size === 1 ? items[0]?.remark ?? '' : '', qtys, values: hydrateSkuValues(items) }]
-    })
+    blocks.value = (await blocksOf(d, false)).blocks
     tabs.rename(path, `编辑 ${d.no}`)
     loaded.value = true
     guard.markSaved()
@@ -231,6 +298,28 @@ watch(
     if (route.path !== path || editing) return
     const sid = queryStyleId(value)
     if (sid) void appendStyles([sid])
+  },
+)
+
+// 新建页签留着、又从别的订单点了翻单 / 补单：页上有东西先问，再换成照那张填
+watch(
+  () => [route.query.from, route.query.type],
+  async () => {
+    if (route.path !== path || editing) return
+    const copy = queryCopy()
+    if (!copy || (copy.from === copyFrom.value?.id && copy.type === copyFrom.value.type)) return
+    if (guard.dirty.value || blocks.value.length) {
+      try {
+        await ElMessageBox.confirm('新建页上已经填的会换成照原单填的，没保存的就没了。', `换成照原单${COPY_LABEL[copy.type]}`, {
+          confirmButtonText: '换',
+          cancelButtonText: '不换',
+          type: 'warning',
+        })
+      } catch {
+        return
+      }
+    }
+    await init()
   },
 )
 
@@ -295,7 +384,7 @@ async function save(andSubmit: boolean) {
       await leave(`/orders/${id}`)
       return
     }
-    const saved = await orderApi.create({ ...form, files: files.value })
+    const saved = await orderApi.create({ ...form, files: files.value, sourceOrderId: copyFrom.value?.id ?? null })
     guard.markSaved()
     if (andSubmit && !(await submit(saved.id, saved.version))) {
       // 草稿已经建好了：去它的编辑页接着改（原因已经弹出来了），新建页签关掉
@@ -324,7 +413,10 @@ const backTo = editing ? `/orders/${id}` : '/orders'
 
 <template>
   <div>
-    <PageHeader :title="editing ? `编辑 ${orderNo}` : '新建需求订单'" :back="{ label: editing ? orderNo || '需求订单' : '需求订单', to: backTo }">
+    <PageHeader
+      :title="editing ? `编辑 ${orderNo}` : copyFrom ? `${COPY_LABEL[copyFrom.type]}：从 ${copyFrom.no}` : '新建需求订单'"
+      :sub="copyFrom ? '改好数量和交期再保存；审核时锁定当时生效的资料包，不沿用原单的版本' : undefined"
+      :back="{ label: editing ? orderNo || '需求订单' : '需求订单', to: backTo }">
       <template #actions>
         <el-button @click="leave(backTo)">取消</el-button>
         <el-button :loading="saving" :disabled="!loaded" @click="save(false)">{{ editing ? '保存' : '存草稿' }}</el-button>

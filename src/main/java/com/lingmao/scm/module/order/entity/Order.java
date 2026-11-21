@@ -60,6 +60,10 @@ public class Order extends DocEntity {
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private OrderSource source;
 
+    /** 翻单、补单的原单（source = REPEAT 时有，RFC 016 §2）：建单时定 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Long sourceOrderId;
+
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private DocStatus status;
 }
