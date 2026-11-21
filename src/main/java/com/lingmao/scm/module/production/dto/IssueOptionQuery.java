@@ -11,5 +11,6 @@ public class IssueOptionQuery extends PageQuery {
     /** 单号、款号、加工厂 */
     private String keyword;
     private Long factoryId;
+    /** true：选可以退料的（已审核、发过料的）；false：选还能发料的（已审核、还没发完的） */
     private boolean returnable;
 }

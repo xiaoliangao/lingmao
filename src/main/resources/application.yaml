@@ -64,6 +64,8 @@ mybatis-plus:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+  # 列表的查询条件对象（OrderQuery 这种）拆成一个个查询参数，和真实请求一样，每个参数带字段上的中文注释（RFC 009 §10）
+  default-flat-param-object: true
 
 lingmao:
   jwt:

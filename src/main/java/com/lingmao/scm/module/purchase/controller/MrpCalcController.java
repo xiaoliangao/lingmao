@@ -29,6 +29,7 @@ import com.lingmao.scm.module.purchase.dto.ReservePctReq;
 import com.lingmao.scm.module.purchase.dto.ReservePctVO;
 import com.lingmao.scm.module.purchase.service.MrpService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -102,7 +103,7 @@ public class MrpCalcController extends IdempotencyReplayGuard {
     @PreAuthorize("hasAuthority('purchase:mrp:edit')")
     @OperLog(module = "算料单", action = "删行")
     public R<MrpCalcDetailVO> removeItem(@PathVariable("id") long id, @PathVariable("itemId") long itemId,
-                                         @RequestParam("version") int version) {
+                                         @Parameter(description = "页面上这张算料单的版本号：别人先改过就报错，刷新后再删") @RequestParam("version") int version) {
         return R.ok(mrpService.removeItem(id, itemId, version));
     }
 

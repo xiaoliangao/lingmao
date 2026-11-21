@@ -18,6 +18,7 @@ public class CountQuery extends PageQuery {
     private String keyword;
     private List<DocStatus> status;
     private Long warehouseId;
+    /** 盘点用途（日常盘点、期初录入……），取值见枚举 */
     private CountPurpose purpose;
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate countDateFrom;

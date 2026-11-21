@@ -15,5 +15,6 @@ public class DictDataQuery extends PageQuery {
      * 为什么是 GET 参数而不是 JSON：查询不改数据，用 GET。GET 的参数在 URL 上（?typeCode=season&page=1），Spring 会按字段名自动填进这个对象。
      */
     private String typeCode;
+    /** 字典项的名称，模糊查 */
     private String label;
 }

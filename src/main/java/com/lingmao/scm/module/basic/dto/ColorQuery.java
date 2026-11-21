@@ -10,5 +10,6 @@ import lombok.EqualsAndHashCode;
 public class ColorQuery extends PageQuery {
     private String keyword;
     private Integer status;
+    /** 色系（字典 color_family 的值） */
     private String family;
 }

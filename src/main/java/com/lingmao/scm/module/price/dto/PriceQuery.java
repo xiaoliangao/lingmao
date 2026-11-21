@@ -18,6 +18,7 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class PriceQuery extends PageQuery {
 
+    /** 价格类型，取值见枚举；不传是全部 */
     private PriceType type;
 
     private Long supplierId;

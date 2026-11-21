@@ -132,7 +132,7 @@ public class InvDocController extends IdempotencyReplayGuard {
     @Operation(summary = "从采购单带出入库 / 退货的明细（不存库）")
     @GetMapping("/from-purchase/{sourceId:\\d+}")
     @PreAuthorize("hasAuthority('inventory:doc:add')")
-    public R<InvDocDraftVO> prefillFromPurchase(@PathVariable("sourceId") long sourceId, @RequestParam("docType") InvDocType docType,
+    public R<InvDocDraftVO> prefillFromPurchase(@PathVariable("sourceId") long sourceId, @Parameter(description = "要建的单据类型，取值见枚举") @RequestParam("docType") InvDocType docType,
                                                 @Parameter(description = "只带这几行采购明细，不传 = 还能入（能退）的全部行")
                                                 @RequestParam(value = "itemIds", required = false) List<Long> itemIds) {
         return R.ok(invDocService.prefill(BizType.PURCHASE_ORDER, sourceId, docType, itemIds, null));
@@ -150,7 +150,7 @@ public class InvDocController extends IdempotencyReplayGuard {
     @Operation(summary = "从生产单带出领料 / 退料的明细（不存库）")
     @GetMapping("/from-production/{sourceId:\\d+}")
     @PreAuthorize("hasAuthority('inventory:doc:add')")
-    public R<InvDocDraftVO> prefillFromProduction(@PathVariable("sourceId") long sourceId, @RequestParam("docType") InvDocType docType,
+    public R<InvDocDraftVO> prefillFromProduction(@PathVariable("sourceId") long sourceId, @Parameter(description = "要建的单据类型，取值见枚举") @RequestParam("docType") InvDocType docType,
                                                   @Parameter(description = "领料的出仓，不传 = 第一个启用的物料仓")
                                                   @RequestParam(value = "fromWarehouseId", required = false) Long fromWarehouseId) {
         return R.ok(invDocService.prefill(BizType.PRODUCTION_ORDER, sourceId, docType, null, fromWarehouseId));

@@ -25,6 +25,7 @@ import com.lingmao.scm.module.style.dto.StyleSkuSaveReq;
 import com.lingmao.scm.module.style.dto.StyleSkuVO;
 import com.lingmao.scm.module.style.service.StyleService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -67,7 +68,7 @@ public class StyleController extends IdempotencyReplayGuard {
     @Operation(summary = "自动编号预览：只看不取，保存时才真取号（RFC 005 §3.1）")
     @GetMapping("/code-preview")
     @PreAuthorize("hasAuthority('style:style:add')")
-    public R<String> codePreview(@RequestParam("styleClass") String styleClass,
+    public R<String> codePreview(@Parameter(description = "大类（字典 style_class 的值）：按它预览下一个款号") @RequestParam("styleClass") String styleClass,
                                  @RequestParam(name = "designerId", required = false) Long designerId) {
         return R.ok(styleService.codePreview(styleClass, designerId));
     }

@@ -16,6 +16,7 @@ public class FgStockLogQuery extends PageQuery {
     private Long warehouseId;
     private Long styleSkuId;
     private Long styleId;
+    /** 变动类型（成品的单据类型），可以传几个；不传是全部 */
     private List<FgDocType> changeType;
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate bizDateFrom;

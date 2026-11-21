@@ -18,6 +18,7 @@ import java.util.List;
 public class StyleQuery extends PageQuery {
     private String keyword;
     private Long categoryId;
+    /** 大类（字典 style_class 的值） */
     private String styleClass;
     /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
     private String productLine;
@@ -27,6 +28,7 @@ public class StyleQuery extends PageQuery {
     private String wave;
     private Long designerId;
     private StyleStatus status;
+    /** 资料包状态，取值见枚举 */
     private TechPackStatus techPackStatus;
     private List<Long> ids;
 }

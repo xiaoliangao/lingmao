@@ -27,6 +27,7 @@ import com.lingmao.scm.module.biz.dto.AttachmentVO;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
 import com.lingmao.scm.module.system.dto.DictOption;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -67,9 +68,9 @@ public class MaterialController extends IdempotencyReplayGuard {
     @GetMapping("/dup-check")
     @PreAuthorize("hasAnyAuthority('basic:material:add', 'basic:material:edit')")
     public R<List<MaterialDupVO>> dupCheck(@RequestParam(name = "categoryId", required = false) Long categoryId,
-                                           @RequestParam(name = "name", required = false) String name,
+                                           @Parameter(description = "物料名称：同分类下同名的算重复") @RequestParam(name = "name", required = false) String name,
                                            @RequestParam(name = "defaultSupplierId", required = false) Long defaultSupplierId,
-                                           @RequestParam(name = "supplierItemNo", required = false) String supplierItemNo,
+                                           @Parameter(description = "供应商货号：同默认供应商下同货号的算重复") @RequestParam(name = "supplierItemNo", required = false) String supplierItemNo,
                                            @RequestParam(name = "excludeId", required = false) Long excludeId) {
         return R.ok(materialService.duplicates(categoryId, name, defaultSupplierId, supplierItemNo, excludeId));
     }

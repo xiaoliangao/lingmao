@@ -18,6 +18,7 @@ public class PurchaseQuery extends PageQuery {
     /** 采购单号、供应商、物料编码 / 名称 / SKU 码、订单号、款号、算料单号；一次查几个时单号、款号、物料编码精确查 */
     private String keyword;
     private List<DocStatus> status;
+    /** 采购类型，取值见枚举；不传是全部 */
     private PurchaseType purchaseType;
     /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
     private String productLine;

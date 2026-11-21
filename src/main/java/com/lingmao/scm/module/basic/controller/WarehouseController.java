@@ -9,6 +9,7 @@ import com.lingmao.scm.module.basic.dto.WarehouseSaveReq;
 import com.lingmao.scm.module.basic.dto.WarehouseVO;
 import com.lingmao.scm.module.basic.service.WarehouseService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +43,7 @@ public class WarehouseController {
 
     @Operation(summary = "下拉：启用的，能按类型筛（登录即可）")
     @GetMapping("/options")
-    public R<List<WarehouseOption>> options(@RequestParam(name = "type", required = false) String type) {
+    public R<List<WarehouseOption>> options(@Parameter(description = "仓库类型：MATERIAL 物料仓 / PRODUCT 成品仓 / FACTORY 工厂仓；不传是全部") @RequestParam(name = "type", required = false) String type) {
         return R.ok(warehouseService.options(type));
     }
 

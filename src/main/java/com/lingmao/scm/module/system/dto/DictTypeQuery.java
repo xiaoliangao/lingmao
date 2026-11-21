@@ -8,6 +8,8 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class DictTypeQuery extends PageQuery {
+    /** 字典编码，模糊查 */
     private String code;
+    /** 字典名称，模糊查 */
     private String name;
 }

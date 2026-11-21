@@ -17,6 +17,7 @@ public class OrderQuery extends PageQuery {
     /** 单号、合同号、款号；一次查几个时单号、款号精确查 */
     private String keyword;
     private List<DocStatus> status;
+    /** 订单类型（字典 order_type 的值） */
     private String orderType;
     private String brand;
     /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */

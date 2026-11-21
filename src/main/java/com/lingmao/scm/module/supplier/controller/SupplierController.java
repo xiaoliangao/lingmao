@@ -27,6 +27,7 @@ import com.lingmao.scm.module.supplier.service.SupplierChangeService;
 import com.lingmao.scm.module.supplier.service.SupplierExcelService;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -270,8 +271,8 @@ public class SupplierController extends IdempotencyReplayGuard {
 
     @Operation(summary = "下拉：按分类（逗号隔开多个，任一个就算）、按能不能用筛（usage 不传 = SAMPLE）、按品类线筛（productLine）")
     @GetMapping("/options")
-    public R<List<SupplierOption>> options(@RequestParam(value = "category", required = false) List<String> category,
-                                           @RequestParam(value = "usage", required = false) SupplierService.Usage usage,
+    public R<List<SupplierOption>> options(@Parameter(description = "供应商分类（字典值），可以传几个；不传是全部") @RequestParam(value = "category", required = false) List<String> category,
+                                           @Parameter(description = "选来干什么：SAMPLE 打样、录价格（待准入、准入审批中、合作中都出）/ BULK 采购单、生产单（只出合作中的）") @RequestParam(value = "usage", required = false) SupplierService.Usage usage,
                                            @RequestParam(value = "keyword", required = false) String keyword,
                                            @RequestParam(value = "includeId", required = false) Long includeId,
                                            @RequestParam(value = "productLine", required = false) String productLine) {

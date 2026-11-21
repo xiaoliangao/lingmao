@@ -11,6 +11,7 @@ import com.lingmao.scm.module.price.dto.PriceVoidReq;
 import com.lingmao.scm.module.price.entity.PriceType;
 import com.lingmao.scm.module.price.service.PriceService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -50,13 +51,13 @@ public class PriceController {
     @Operation(summary = "录价对话框用：这一组那一天的现价、单位、供应商的默认税率")
     @GetMapping("/current")
     @PreAuthorize(EDIT_ANY)
-    public R<CurrentPriceVO> current(@RequestParam("type") PriceType type,
+    public R<CurrentPriceVO> current(@Parameter(description = "MATERIAL 物料价 / PROCESS 加工价") @RequestParam("type") PriceType type,
                                      @RequestParam("supplierId") long supplierId,
                                      @RequestParam(value = "materialId", required = false) Long materialId,
                                      @RequestParam(value = "materialSkuId", required = false) Long materialSkuId,
                                      @RequestParam(value = "styleId", required = false) Long styleId,
-                                     @RequestParam(value = "processMode", required = false) String processMode,
-                                     @RequestParam(value = "date", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+                                     @Parameter(description = "加工方式（加工价才用）") @RequestParam(value = "processMode", required = false) String processMode,
+                                     @Parameter(description = "取哪天有效的价，不传是今天") @RequestParam(value = "date", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return R.ok(priceService.currentFor(type, supplierId, materialId, materialSkuId, styleId, processMode, date));
     }
 

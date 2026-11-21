@@ -53,6 +53,8 @@ public class ProbeConfiguration {
         return registration;
     }
 
+    /** 容器健康检查用，不是业务接口：不进接口文档 */
+    @io.swagger.v3.oas.annotations.Hidden
     @RestController
     public static class Probes implements AutoCloseable, DrainParticipant {
         private final DrainState state; private final DataSource dataSource; private final Flyway flyway;

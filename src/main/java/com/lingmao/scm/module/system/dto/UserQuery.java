@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class UserQuery extends PageQuery {
 
+    /** 用户名（登录账号），模糊查 */
     private String username;
 
     /** 1 启用 0 停用 */

@@ -30,6 +30,7 @@
         <java.version>21</java.version>
         <jjwt.version>0.13.0</jjwt.version>
         <poi.version>6.0.0</poi.version>
+        <therapi.version>0.15.0</therapi.version>
         <!-- 发版的版本号：deploy/build-package.sh 打包时用 -Drelease.version=2026.11.14 传进来，平时是 dev。GET /api/version 返回它 -->
         <release.version>dev</release.version>
     </properties>
@@ -78,6 +79,13 @@
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>3.1.1</version>
+        </dependency>
+        <!-- 接口文档读 Javadoc（RFC 009 §10）：字段、方法上的中文注释进 openapi.json 的 description，
+             以后助手按它认工具和参数。编译时的注解处理器（therapi-runtime-javadoc-scribe）在下面的 maven-compiler-plugin -->
+        <dependency>
+            <groupId>com.github.therapi</groupId>
+            <artifactId>therapi-runtime-javadoc</artifactId>
+            <version>${therapi.version}</version>
         </dependency>
         <!-- 安全框架：过滤器链、认证、放行规则；BCrypt 也在里面 -->
         <dependency>
@@ -186,6 +194,11 @@
                                 <path>
                                     <groupId>org.projectlombok</groupId>
                                     <artifactId>lombok</artifactId>
+                                </path>
+                                <path>
+                                    <groupId>com.github.therapi</groupId>
+                                    <artifactId>therapi-runtime-javadoc-scribe</artifactId>
+                                    <version>${therapi.version}</version>
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>

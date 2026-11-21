@@ -16,6 +16,7 @@ public class StockLogQuery extends PageQuery {
     private Long warehouseId;
     /** 点库存一行看它的流水：带上仓库 + SKU */
     private Long materialSkuId;
+    /** 变动类型（入库、出库、盘点、调拨……），可以传几个；不传是全部 */
     private List<StockChangeType> changeType;
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate bizDateFrom;

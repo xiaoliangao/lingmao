@@ -11,6 +11,7 @@ import java.time.LocalDate;
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class BoardQuery extends PageQuery {
+    /** 生产单的种类：OUTSOURCE 外发加工单 / BUY 成品采购单；不传是全部 */
     private String kind;
     /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
     private String productLine;

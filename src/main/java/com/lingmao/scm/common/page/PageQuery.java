@@ -12,9 +12,11 @@ import lombok.Data;
 @Data
 public class PageQuery {
 
+    /** 第几页，从 1 开始，默认 1 */
     @Min(value = 1, message = "page 从 1 开始")
     private long page = 1;
 
+    /** 每页几条，1–500，默认 20 */
     @Min(value = 1, message = "size 至少 1")
     @Max(value = 500, message = "size 最多 500")
     private long size = 20;

@@ -17,8 +17,10 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 public class InvDocQuery extends PageQuery {
 
+    /** IN 入库单 / OUT 出库单，必填 */
     @NotNull(message = "kind 必填：IN 入库单 / OUT 出库单")
     private InvDocKind kind;
+    /** 单据类型，取值见枚举；不传是这一边（入库或出库）的全部 */
     private InvDocType docType;
     private List<DocStatus> status;
     /** 出仓或入仓是它 */
