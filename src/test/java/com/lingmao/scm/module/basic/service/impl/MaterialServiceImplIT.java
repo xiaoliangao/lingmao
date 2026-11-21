@@ -19,6 +19,7 @@ import com.lingmao.scm.module.basic.dto.MaterialListVO;
 import com.lingmao.scm.module.basic.dto.MaterialPickQuery;
 import com.lingmao.scm.module.basic.dto.MaterialPickVO;
 import com.lingmao.scm.module.basic.dto.MaterialQuery;
+import com.lingmao.scm.module.basic.dto.MaterialSkuSaveReq;
 import com.lingmao.scm.module.basic.dto.SkuSpecReq;
 import com.lingmao.scm.module.basic.service.ColorService;
 import com.lingmao.scm.module.basic.service.MaterialCategoryService;
@@ -198,11 +199,35 @@ class MaterialServiceImplIT {
         List<FieldChangeVO> diff = updateDiff(id);
         assertThat(diff).extracting(FieldChangeVO::field).containsExactly("name", "defaultSupplierId", "refPrice");
         assertThat(diff.get(1).before()).isNull();
-        assertThat(diff.get(1).after()).startsWith("IT供应商");
+        assertThat(diff.get(1).after()).matches("ITS\\d+ IT供应商ITS\\d+");
         assertThat(diff.get(2)).isEqualTo(new FieldChangeVO("refPrice", "参考单价", "18.5", "20", false));
 
         TestIdentity.login(900501L, List.of("basic:material:edit"));
         assertThat(updateDiff(id).get(2)).isEqualTo(new FieldChangeVO("refPrice", "参考单价", null, null, true));
+    }
+
+    /** 规则（RFC 016 §3）：改 SKU 记改了什么，备注写 SKU 编码；单价要"看成本"才看得到值；叫法照页面（最小库存） */
+    @Test
+    void updateSku_recordsFieldDiff() {
+        MaterialCreateReq req = createReq(leafCategory().id(), "改动记录 SKU");
+        req.setColorIds(List.of(color()));
+        req.setSpecs(List.of(spec("150cm")));
+        long id = materialService.create(req);
+        var sku = materialService.detail(id).skus().getFirst();
+        MaterialSkuSaveReq skuReq = new MaterialSkuSaveReq();
+        skuReq.setPrice(new BigDecimal("12.50"));
+        skuReq.setSafetyStock(new BigDecimal("100"));
+
+        materialService.updateSku(id, sku.id(), skuReq);
+
+        var log = docLogService.list(BizType.MATERIAL, id).stream().filter(l -> "updateSku".equals(l.action())).findFirst().orElseThrow();
+        assertThat(log.remark()).isEqualTo(sku.code());
+        assertThat(log.diff()).containsExactly(new FieldChangeVO("price", "单价", null, "12.5", false),
+                new FieldChangeVO("safetyStock", "最小库存", null, "100", false));
+
+        TestIdentity.login(900501L, List.of("basic:material:edit"));
+        assertThat(docLogService.list(BizType.MATERIAL, id).stream().filter(l -> "updateSku".equals(l.action())).findFirst().orElseThrow()
+                .diff().getFirst()).isEqualTo(new FieldChangeVO("price", "单价", null, null, true));
     }
 
     private List<FieldChangeVO> updateDiff(long id) {

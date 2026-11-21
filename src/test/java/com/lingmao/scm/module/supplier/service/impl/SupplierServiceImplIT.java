@@ -442,8 +442,9 @@ class SupplierServiceImplIT {
                 + "AND action = 'update'", String.class, id)).doesNotContain("6222000099998888777").doesNotContain("6222000011112222333");
 
         SupplierFixtures.loginAs(USER_A, "list");
-        assertThat(actionDiff(id, "update")).extracting(FieldChangeVO::field, FieldChangeVO::hidden).containsExactly(
-                tuple("shortName", false), tuple("phone", true), tuple("creditDays", false), tuple("bankAccount", true));
+        assertThat(actionDiff(id, "update")).extracting(FieldChangeVO::field, FieldChangeVO::hidden, FieldChangeVO::before, FieldChangeVO::after)
+                .containsExactly(tuple("shortName", false, diff.get(0).before(), diff.get(0).after()), tuple("phone", true, null, null),
+                        tuple("creditDays", false, "30 天", "60 天"), tuple("bankAccount", true, null, null));
 
         SupplierFixtures.loginAs(USER_A, ALL);
         activate(id);
@@ -454,6 +455,39 @@ class SupplierServiceImplIT {
         changeService.approve(id, changeService.pending(id).id());
         assertThat(actionDiff(id, "change-approve"))
                 .containsExactly(new FieldChangeVO("creditDays", "账期", "60 天", "90 天", false));
+    }
+
+    /**
+     * 规则（RFC 016 §3，agy 复查）：擅长品类带上级写、按品类树排——换成另一个上级下的同名品类要记下来；
+     * 只改提交顺序不算改动
+     */
+    @Test
+    void update_goodAtDiff_withParentPath() {
+        String suffix = suffix();
+        long women = jdbcTemplate.queryForObject("INSERT INTO bas_category (name, level, sort) VALUES (?, 1, 1) RETURNING id", Long.class, "IT女装" + suffix);
+        long men = jdbcTemplate.queryForObject("INSERT INTO bas_category (name, level, sort) VALUES (?, 1, 2) RETURNING id", Long.class, "IT男装" + suffix);
+        long womenShirt = jdbcTemplate.queryForObject("INSERT INTO bas_category (name, level, parent_id) VALUES ('衬衫', 2, ?) RETURNING id", Long.class, women);
+        long menShirt = jdbcTemplate.queryForObject("INSERT INTO bas_category (name, level, parent_id) VALUES ('衬衫', 2, ?) RETURNING id", Long.class, men);
+        SupplierSaveReq req = newReq(true);
+        req.setGoodAtIds(List.of(womenShirt));
+        long id = create(req);
+
+        req = reqFrom(supplierService.detail(id));
+        req.setGoodAtIds(List.of(menShirt));
+        supplierService.update(id, req);
+        assertThat(actionDiff(id, "update")).containsExactly(new FieldChangeVO("goodAtIds", "擅长品类",
+                "IT女装" + suffix + "/衬衫", "IT男装" + suffix + "/衬衫", false));
+
+        req = reqFrom(supplierService.detail(id));
+        req.setGoodAtIds(List.of(menShirt, womenShirt));
+        supplierService.update(id, req);
+        assertThat(actionDiff(id, "update")).containsExactly(new FieldChangeVO("goodAtIds", "擅长品类",
+                "IT男装" + suffix + "/衬衫", "IT女装" + suffix + "/衬衫、IT男装" + suffix + "/衬衫", false));
+
+        req = reqFrom(supplierService.detail(id));
+        req.setGoodAtIds(List.of(womenShirt, menShirt).reversed());
+        supplierService.update(id, req);
+        assertThat(actionDiff(id, "update")).isEmpty();
     }
 
     private List<FieldChangeVO> actionDiff(long id, String action) {

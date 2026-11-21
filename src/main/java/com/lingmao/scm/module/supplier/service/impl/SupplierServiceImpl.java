@@ -56,6 +56,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.function.Function;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -303,14 +304,20 @@ public class SupplierServiceImpl implements SupplierService {
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         Function<Collection<String>, String> categoryText = values -> dicts.sorted(SupplierDicts.SUPPLIER_CATEGORY, values).stream()
                 .map(v -> dicts.labelOf(SupplierDicts.SUPPLIER_CATEGORY, v)).collect(Collectors.joining("、"));
+        // 擅长品类：前后都按品类树的顺序、带上级写（提交的顺序不算改动；不同上级下的同名品类分得开）
         boolean goodAtChanged = !new HashSet<>(goodAtBefore).equals(new HashSet<>(goodAtAfter));
-        Map<Long, String> goodAtNames = goodAtChanged ? goodAtCategories.names() : Map.of();
-        Function<List<Long>, String> goodAtText = ids -> ids.stream().map(i -> goodAtNames.getOrDefault(i, String.valueOf(i)))
+        Map<Long, String> goodAtPaths = goodAtChanged ? goodAtCategories.paths() : Map.of();
+        List<Long> treeOrder = List.copyOf(goodAtPaths.keySet());
+        Function<List<Long>, String> goodAtText = ids -> ids.stream()
+                .sorted(Comparator.comparingInt((Long i) -> treeOrder.contains(i) ? treeOrder.indexOf(i) : Integer.MAX_VALUE)
+                        .thenComparing(Comparator.naturalOrder()))
+                .map(i -> goodAtPaths.getOrDefault(i, String.valueOf(i)))
                 .collect(Collectors.joining("、"));
         List<FieldChange> diff = new ArrayList<>(FieldDiff.of(before, after)
                 .field("shortName", "简称", Supplier::getShortName)
                 .add("categories", "分类", categoryText.apply(categoriesBefore), categoryText.apply(categoriesAfter))
-                .field("productLines", "品类线", Supplier::getProductLines, lines -> lines.stream()
+                // 品类线和分类一样按现在的字典顺序排了再比：字典调了顺序，存的列表顺序不同不算改动
+                .field("productLines", "品类线", Supplier::getProductLines, lines -> dicts.sorted("product_line", lines).stream()
                         .map(v -> dicts.labelOf("product_line", v)).collect(Collectors.joining("、")))
                 .field("level", "等级", Supplier::getLevel, v -> v + " 级")
                 .add("goodAtIds", "擅长品类", goodAtChanged ? goodAtText.apply(goodAtBefore) : null,

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -41,11 +42,22 @@ class GoodAtCategories {
         }
     }
 
-    /** 全部品类（停用的也在）id → 名称：操作记录里写改前改后用 */
-    Map<Long, String> names() {
-        List<TreeNode> flat = new ArrayList<>();
-        flatten(categoryService.tree(), flat);
-        return flat.stream().collect(Collectors.toMap(TreeNode::getId, TreeNode::getName, (a, b) -> a));
+    /**
+     * 全部品类（停用的也在）id → 带上级的名称（"女装/衬衫"），按树的顺序：操作记录里写改前改后用。
+     * 不同上级下可以有同名品类，只写叶子名会把"女装/衬衫 → 男装/衬衫"当成没变
+     */
+    LinkedHashMap<Long, String> paths() {
+        LinkedHashMap<Long, String> into = new LinkedHashMap<>();
+        paths(categoryService.tree(), null, into);
+        return into;
+    }
+
+    private static void paths(List<TreeNode> nodes, String parent, Map<Long, String> into) {
+        for (TreeNode node : nodes) {
+            String path = parent == null ? node.getName() : parent + "/" + node.getName();
+            into.putIfAbsent(node.getId(), path);
+            paths(node.getChildren(), path, into);
+        }
     }
 
     private static void flatten(List<TreeNode> nodes, List<TreeNode> into) {

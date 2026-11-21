@@ -312,8 +312,10 @@ public class StyleServiceImpl implements StyleService {
         return m.code() + " " + m.name();
     }
 
+    /** 写"编码 简称"：简称可能重名，换成同简称的另一家只写简称就看不出来 */
     private String factoryName(Long id) {
-        return supplierService.getRef(id).shortName();
+        SupplierRef f = supplierService.getRef(id);
+        return f.code() + " " + Objects.requireNonNullElse(f.shortName(), f.name());
     }
 
     @Override

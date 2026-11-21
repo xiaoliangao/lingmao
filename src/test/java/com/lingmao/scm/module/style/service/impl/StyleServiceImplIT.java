@@ -366,7 +366,7 @@ class StyleServiceImplIT {
 
         TestIdentity.login(900502L, List.of("style:style:edit"));
         assertThat(docLogService.list(BizType.STYLE, id).stream().filter(l -> "update".equals(l.action()))
-                .findFirst().orElseThrow().diff().get(2).hidden()).isTrue();
+                .findFirst().orElseThrow().diff().get(2)).isEqualTo(new FieldChangeVO("refCost", "参考成本价（元）", null, null, true));
     }
 
     private record Fixture(long parentCategoryId, long leafId, String leafName, String leafPath, long sizeGroupId,

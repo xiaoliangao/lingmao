@@ -112,7 +112,11 @@ function statusText(log: DocLog) {
 }
 
 onMounted(reload)
-watch(() => props.load, reload)
+// 换了 load（详情页换了一条）：上一条展开过的记录不带过来
+watch(() => props.load, () => {
+  expanded.value = new Set()
+  reload()
+})
 
 defineExpose({ reload })
 </script>
@@ -142,7 +146,7 @@ defineExpose({ reload })
             <template v-else><span class="diff-before">{{ valueText(c.before) }}</span> → {{ valueText(c.after) }}</template>
           </li>
           <li v-if="(row as DocLog).diff.length > shownDiff(row as DocLog).length">
-            <el-button link type="primary" @click="expand(row as DocLog)">还有 {{ (row as DocLog).diff.length - DIFF_FOLD }} 处</el-button>
+            <el-button link type="primary" class="diff-more" @click="expand(row as DocLog)">还有 {{ (row as DocLog).diff.length - DIFF_FOLD }} 处</el-button>
           </li>
         </ul>
       </template>
@@ -179,5 +183,12 @@ defineExpose({ reload })
 
 .diff-before {
   color: var(--lm-muted);
+}
+
+/* "还有 N 处"：表格里的链接按钮全局是灰字、左右垫 8px（element.css），这里要主色、和上面的字对齐 */
+.diff .el-button.diff-more {
+  height: auto;
+  padding: 0;
+  color: var(--lm-accent);
 }
 </style>

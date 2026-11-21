@@ -67,7 +67,8 @@ public class FieldProjection {
                 && !FieldPermissions.has(FieldPermissions.BANK)) object.remove("remark");
         if (typeName.endsWith(".ChangeItemVO") && object.has("changeType") && "PRICE".equals(object.get("changeType").asText())
                 && !FieldPermissions.has(FieldPermissions.ORDER)) object.remove("text");
-        if (supplier && object.has("field")) {
+        // 旧的改动项（ChangeItemVO）按字段权限去掉前后值；操作记录的 FieldChangeVO 已经在 DocLogServiceImpl 遮成 null + hidden，留着键
+        if (supplier && object.has("field") && !typeName.endsWith(".FieldChangeVO")) {
             String named = object.get("field").asText();
             if (blocked(named, FieldPermissions.COST, true, path)) {
                 object.remove("before"); object.remove("after");
