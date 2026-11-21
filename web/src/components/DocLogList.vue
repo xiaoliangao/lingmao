@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onMounted, ref, watch } from 'vue'
-import type { DocLog } from '@/types/biz'
+import type { DocLog, FieldChange } from '@/types/biz'
 import { formatDateTime } from '@/utils/format'
 
 /**
- * 详情页的"操作记录"页签：什么时候、谁、做了什么、状态从哪到哪、备注（驳回原因、拉黑原因……）。
+ * 详情页的"操作记录"页签：什么时候、谁、做了什么、状态从哪到哪、备注（驳回原因、拉黑原因……），
+ * 物料、款式、供应商的"修改"还列出改了哪些字段（"参考单价：18.5 → 20"，RFC 016 §3），多于 5 处先收起。
  * 后端每种资源一个 GET /api/<资源>/{id}/logs，返回 DocLogVO 数组，新的在前（RFC 001 §14）。
  *
  * 动作、状态存的是英文名，同一个名字在不同单据上叫法不一样（采购单的 RUNNING 叫"部分到货"），所以中文由调用方给，
@@ -92,6 +93,18 @@ async function reload() {
   }
 }
 
+/** 改动多于这么多处先收起，点"还有 N 处"展开 */
+const DIFF_FOLD = 5
+const expanded = ref(new Set<string>())
+function shownDiff(log: DocLog): FieldChange[] {
+  const diff = log.diff ?? []
+  return expanded.value.has(log.id) ? diff : diff.slice(0, DIFF_FOLD)
+}
+function expand(log: DocLog) {
+  expanded.value = new Set(expanded.value).add(log.id)
+}
+const valueText = (value: string | null) => value ?? '空'
+
 function statusText(log: DocLog) {
   if (!log.fromStatus && !log.toStatus) return ''
   const name = (status: string | null) => (status ? (statusNames.value[status] ?? status) : '—')
@@ -120,9 +133,18 @@ defineExpose({ reload })
     <el-table-column label="状态" min-width="150">
       <template #default="{ row }">{{ statusText(row as DocLog) }}</template>
     </el-table-column>
-    <el-table-column label="备注" min-width="220">
+    <el-table-column label="备注 / 改动" min-width="280" :show-overflow-tooltip="false">
       <template #default="{ row }">
-        <span class="remark">{{ (row as DocLog).remark }}</span>
+        <span v-if="(row as DocLog).remark" class="remark">{{ (row as DocLog).remark }}</span>
+        <ul v-if="(row as DocLog).diff?.length" class="diff">
+          <li v-for="c in shownDiff(row as DocLog)" :key="c.field">
+            <span class="diff-label">{{ c.label }}</span>：<template v-if="c.hidden"><span class="muted">已修改（没有查看权限）</span></template>
+            <template v-else><span class="diff-before">{{ valueText(c.before) }}</span> → {{ valueText(c.after) }}</template>
+          </li>
+          <li v-if="(row as DocLog).diff.length > shownDiff(row as DocLog).length">
+            <el-button link type="primary" @click="expand(row as DocLog)">还有 {{ (row as DocLog).diff.length - DIFF_FOLD }} 处</el-button>
+          </li>
+        </ul>
       </template>
     </el-table-column>
     <template #empty>
@@ -136,5 +158,26 @@ defineExpose({ reload })
 /* 备注里可能有换行（调价原因、驳回原因），照原样分行 */
 .remark {
   white-space: pre-line;
+}
+
+/* 改动一行一处，长的（成分、备注）照样换行 */
+.diff {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.remark + .diff {
+  margin-top: 4px;
+}
+
+.diff-label {
+  color: var(--lm-ink-2);
+}
+
+.diff-before {
+  color: var(--lm-muted);
 }
 </style>

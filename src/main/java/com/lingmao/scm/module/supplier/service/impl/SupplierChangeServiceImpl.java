@@ -151,8 +151,8 @@ public class SupplierChangeServiceImpl implements SupplierChangeService {
             throw new BizException("统一社会信用代码 " + credit + " 和别的供应商重复了，请驳回这份改动");
         }
 
-        // 4. 操作记录：一串"账期 30 天 → 60 天"，账号遮
-        docLogService.add(BizType.SUPPLIER, supplierId, "change-approve", views.describe(change.getChanges()));
+        // 4. 操作记录：改了哪些关键字段（RFC 016 §3），账号存遮过的，银行三项要权限才看得到值
+        docLogService.add(BizType.SUPPLIER, supplierId, "change-approve", null, views.changes(change.getChanges()));
     }
 
     @Override

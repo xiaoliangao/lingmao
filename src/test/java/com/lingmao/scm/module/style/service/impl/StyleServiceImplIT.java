@@ -1,6 +1,11 @@
 package com.lingmao.scm.module.style.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import java.util.Map;
+import java.math.BigDecimal;
+import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.biz.entity.BizType;
+import com.lingmao.scm.module.biz.dto.FieldChangeVO;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.BizException;
@@ -77,6 +82,8 @@ class StyleServiceImplIT {
 
     @Autowired
     private StyleService styleService;
+    @Autowired
+    private DocLogService docLogService;
     @Autowired
     private UserService userService;
     @Autowired
@@ -335,6 +342,31 @@ class StyleServiceImplIT {
         assertThat(catchThrowableOfType(BizException.class, () -> styleService.detail(apparel.id())).getCode()).isEqualTo(404);
         BizException e = catchThrowableOfType(BizException.class, () -> styleService.create(req(f, "鞋类的人建服装款")));
         assertThat(e.getMessage()).contains("看不到的品类线");
+    }
+
+    /** 规则（RFC 016 §3）：改款式在操作记录里留改了哪些字段，字典值记中文；参考成本价没有"看成本"的人只看到"改了" */
+    @Test
+    void update_recordsFieldDiff() {
+        Fixture f = fixture();
+        StyleCreateReq req = req(f, "改动记录款");
+        long id = styleService.create(req).id();
+        req.setName("改动记录款二");
+        req.setSeason("SUMMER");
+        req.setRefCost(new BigDecimal("88.50"));
+
+        styleService.update(id, req);
+
+        List<FieldChangeVO> diff = docLogService.list(BizType.STYLE, id).stream().filter(l -> "update".equals(l.action()))
+                .findFirst().orElseThrow().diff();
+        assertThat(diff).extracting(FieldChangeVO::field).containsExactly("name", "season", "refCost");
+        Map<String, String> seasons = dictDataService.labels("season");
+        assertThat(diff.get(1)).extracting(FieldChangeVO::before, FieldChangeVO::after)
+                .containsExactly(seasons.get("SPRING"), seasons.get("SUMMER"));
+        assertThat(diff.get(2)).isEqualTo(new FieldChangeVO("refCost", "参考成本价（元）", null, "88.5", false));
+
+        TestIdentity.login(900502L, List.of("style:style:edit"));
+        assertThat(docLogService.list(BizType.STYLE, id).stream().filter(l -> "update".equals(l.action()))
+                .findFirst().orElseThrow().diff().get(2).hidden()).isTrue();
     }
 
     private record Fixture(long parentCategoryId, long leafId, String leafName, String leafPath, long sizeGroupId,

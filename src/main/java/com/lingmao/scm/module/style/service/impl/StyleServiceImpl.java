@@ -3,6 +3,8 @@ package com.lingmao.scm.module.style.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.lingmao.scm.common.doc.FieldChange;
+import com.lingmao.scm.common.doc.FieldDiff;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.exception.BizException;
@@ -51,6 +53,7 @@ import com.lingmao.scm.module.style.mapper.StyleColorMapper;
 import com.lingmao.scm.module.style.mapper.StyleMapper;
 import com.lingmao.scm.module.style.mapper.StyleSkuMapper;
 import com.lingmao.scm.module.style.service.StyleService;
+import com.lingmao.scm.security.FieldPermissions;
 import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
@@ -247,7 +250,70 @@ public class StyleServiceImpl implements StyleService {
         BeanUtils.copyProperties(s, old);
         fill(s, req, old);
         styleMapper.update(s, Updates.replaceById(s));
-        docLogService.add(BizType.STYLE, id, "update", null);
+        docLogService.add(BizType.STYLE, id, "update", null, styleDiff(old, s));
+    }
+
+    /**
+     * 款式"修改"改了哪些字段（RFC 016 §3），叫法照款式表单；大类不能改，不列。人、品类、尺码组、面料、加工厂存名字，
+     * 只有变了的才去查。参考成本价要"看成本"才看得到值
+     */
+    private List<FieldChange> styleDiff(Style before, Style after) {
+        StyleCategories.Index index = categories.index();
+        Map<Long, String> people = userService.nicknames(Stream.of(before.getDesignerId(), after.getDesignerId(),
+                        before.getPatternMakerId(), after.getPatternMakerId())
+                .filter(Objects::nonNull).collect(Collectors.toSet()));
+        return FieldDiff.of(before, after)
+                .field("name", "款式名称", Style::getName)
+                .field("aliasName", "花名", Style::getAliasName)
+                .field("designerId", "设计师", Style::getDesignerId, people::get)
+                .field("patternMakerId", "版师", Style::getPatternMakerId, people::get)
+                .field("brand", "品牌", Style::getBrand, dicts.labels(StyleDicts.BRAND)::get)
+                .field("categoryId", "品类", Style::getCategoryId, index::path)
+                .field("source", "来源", Style::getSource, dicts.labels(StyleDicts.SOURCE)::get)
+                .field("customerStyleNo", "客户款号", Style::getCustomerStyleNo)
+                .field("year", "年份", Style::getYear)
+                .field("season", "季节", Style::getSeason, dicts.labels(StyleDicts.SEASON)::get)
+                .field("wave", "波段", Style::getWave, dicts.labels(StyleDicts.WAVE)::get)
+                .field("styleTag", "风格", Style::getStyleTag, dicts.labels(StyleDicts.STYLE_TAG)::get)
+                .field("series", "系列", Style::getSeries, dicts.labels(StyleDicts.SERIES)::get)
+                .field("gender", "性别", Style::getGender, dicts.labels(StyleDicts.GENDER)::get)
+                .add("sizeGroupId", "尺码组", changed(before, after, Style::getSizeGroupId, this::sizeGroupName, true),
+                        changed(before, after, Style::getSizeGroupId, this::sizeGroupName, false))
+                .field("tagPrice", "吊牌价（元）", Style::getTagPrice)
+                .masked("refCost", "参考成本价（元）", Style::getRefCost, FieldPermissions.COST)
+                .add("mainMaterialId", "主力面料", changed(before, after, Style::getMainMaterialId, this::materialName, true),
+                        changed(before, after, Style::getMainMaterialId, this::materialName, false))
+                .add("defaultFactoryId", "默认加工厂", changed(before, after, Style::getDefaultFactoryId, this::factoryName, true),
+                        changed(before, after, Style::getDefaultFactoryId, this::factoryName, false))
+                .field("launchDate", "上市日期", Style::getLaunchDate)
+                .field("productName", "品名", Style::getProductName)
+                .field("execStandard", "执行标准", Style::getExecStandard, dicts.labels(StyleDicts.EXEC_STANDARD)::get)
+                .field("safetyCategory", "安全类别", Style::getSafetyCategory, dicts.labels(StyleDicts.SAFETY_CATEGORY)::get)
+                .field("composition", "成分", Style::getComposition)
+                .field("remark", "备注", Style::getRemark)
+                .list();
+    }
+
+    /** id 变了才查名字（before 取改前的，否则改后的）；没变两边都给 null，FieldDiff.add 就不记 */
+    private static String changed(Style before, Style after, Function<Style, Long> id, Function<Long, String> name, boolean takeBefore) {
+        Long b = id.apply(before);
+        Long a = id.apply(after);
+        if (Objects.equals(b, a)) return null;
+        Long target = takeBefore ? b : a;
+        return target == null ? null : name.apply(target);
+    }
+
+    private String sizeGroupName(Long id) {
+        return sizeGroupService.getById(id).name();
+    }
+
+    private String materialName(Long id) {
+        MaterialRef m = materialService.materialRefs(List.of(id)).getFirst();
+        return m.code() + " " + m.name();
+    }
+
+    private String factoryName(Long id) {
+        return supplierService.getRef(id).shortName();
     }
 
     @Override
@@ -402,6 +468,8 @@ public class StyleServiceImpl implements StyleService {
     @Transactional
     public void updateSku(long id, long skuId, StyleSkuSaveReq req) {
         StyleSku sku = getSku(id, skuId);
+        StyleSku old = new StyleSku();
+        BeanUtils.copyProperties(sku, old);
         String barcode = trim(req.getBarcode());
         if (barcode != null) {
             StyleSku owner = styleSkuMapper.selectOne(new LambdaQueryWrapper<StyleSku>()
@@ -417,7 +485,10 @@ public class StyleServiceImpl implements StyleService {
         } catch (DuplicateKeyException e) {
             throw new BizException("条码 " + barcode + " 刚被别的 SKU 用了");
         }
-        docLogService.add(BizType.STYLE, id, "updateSku", sku.getCode());
+        docLogService.add(BizType.STYLE, id, "updateSku", sku.getCode(), FieldDiff.of(old, sku)
+                .field("barcode", "条码", StyleSku::getBarcode)
+                .field("tagPrice", "吊牌价", StyleSku::getTagPrice)
+                .list());
     }
 
     @Override

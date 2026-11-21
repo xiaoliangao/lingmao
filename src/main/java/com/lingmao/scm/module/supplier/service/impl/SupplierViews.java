@@ -1,10 +1,13 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
+import com.lingmao.scm.common.doc.FieldChange;
 import com.lingmao.scm.module.supplier.entity.ChangeItem;
+import com.lingmao.scm.security.FieldPermissions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -46,6 +49,21 @@ class SupplierViews {
             case BANK_ACCOUNT -> showAccount ? value : BankAccounts.mask(value);
             default -> value;
         };
+    }
+
+    /** 开户行、账号、收款户名：操作记录里要有"看银行信息"的权限才看得到值 */
+    private static final Set<String> BANK_FIELDS = Set.of(SupplierKeyField.BANK_NAME.field(), SupplierKeyField.BANK_ACCOUNT.field(),
+            SupplierKeyField.BANK_ACCOUNT_NAME.field());
+
+    /**
+     * 关键字段改动 → 操作记录的改前改后（RFC 016 §3）：字典翻中文、账号一律存遮过的（操作记录不留全号），
+     * 银行三项另外要 bank 权限才看得到值；空是 null
+     */
+    List<FieldChange> changes(List<ChangeItem> items) {
+        return items.stream().map(item -> new FieldChange(item.field(), item.label(),
+                item.before() == null ? null : text(item.field(), item.before(), false),
+                item.after() == null ? null : text(item.field(), item.after(), false),
+                BANK_FIELDS.contains(item.field()) ? FieldPermissions.BANK : null)).toList();
     }
 
     /** 操作记录的备注："账期 30 天 → 60 天；税率 13% → 9%"。操作记录谁都能看，账号一律遮（RFC 004 §4 审批第 4 步） */

@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.biz.service;
 
+import com.lingmao.scm.common.doc.FieldChange;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
@@ -24,6 +25,12 @@ public interface DocLogService {
      * <pre>docLogService.add(BizType.SUPPLIER, id, "reject", SupplierStatus.ADMITTING, SupplierStatus.PENDING_ADMIT, req.getReason());</pre>
      */
     void add(BizType type, long docId, String action, Enum<?> from, Enum<?> to, String remark);
+
+    /**
+     * 档案的"修改"带上改了哪些字段（RFC 016 §3），存进 extra 的 diff；diff 是空的照样记一条（保存了、什么都没改）。
+     * 字段表用 FieldDiff 列
+     */
+    void add(BizType type, long docId, String action, String remark, List<FieldChange> diff);
 
     /** 一条记录的全部操作记录，新的在前，带操作人昵称 */
     List<DocLogVO> list(BizType type, long docId);

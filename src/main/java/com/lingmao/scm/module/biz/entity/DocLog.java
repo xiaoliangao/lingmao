@@ -40,8 +40,8 @@ public class DocLog {
     private Long operatorId;
 
     /**
-     * 附加信息快照（JSONB），如反审核撤销了哪些回写；二期的"改前 → 改后"也放这里。大多数动作没有，为空。
-     * DocLogService.log 还不收它，第一个用到的（第 3 批的反审核）加一个带 extra 的重载
+     * 附加信息快照（JSONB）。现在只有档案"修改"的改前改后：{"diff": [{field, label, before, after, permission?}]}
+     * （RFC 016 §3，DocLogService 带 diff 的 add 写）。大多数动作没有，为空
      */
     @TableField(typeHandler = JsonbTypeHandler.class)
     private Map<String, Object> extra;

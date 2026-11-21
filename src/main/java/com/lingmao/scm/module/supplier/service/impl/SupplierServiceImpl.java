@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lingmao.scm.common.doc.FieldChange;
+import com.lingmao.scm.common.doc.FieldDiff;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.exception.BizException;
@@ -39,6 +41,7 @@ import com.lingmao.scm.module.supplier.mapper.SupplierMapper;
 import com.lingmao.scm.module.supplier.service.SupplierChangeService;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.FieldPermissions;
 import com.lingmao.scm.security.LoginUser;
 import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +56,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.function.Function;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Locale;
@@ -276,8 +281,9 @@ public class SupplierServiceImpl implements SupplierService {
         supplierMapper.deleteGoodAt(id);
         insertGoodAt(id, goodAt);
 
-        // 4. 操作记录：直接生效的关键字段写进"修改"的备注；挂起的另写一条"提交改动"
-        docLogService.add(BizType.SUPPLIER, id, "update", applied.isEmpty() ? null : views.describe(applied));
+        // 4. 操作记录："修改"记普通字段、分类、擅长品类和直接生效的关键字段的改前改后（RFC 016 §3）；挂起的另写一条"提交改动"
+        docLogService.add(BizType.SUPPLIER, id, "update", null,
+                supplierDiff(current, target, currentCategories, categories, currentGoodAt, goodAt, applied));
         if (!pending.isEmpty()) {
             docLogService.add(BizType.SUPPLIER, id, "change", views.describe(pending));
         }
@@ -285,6 +291,39 @@ public class SupplierServiceImpl implements SupplierService {
         warehouseService.syncFactoryWarehouse(id, current.getCode(), target.getShortName(), SupplierDicts.hasFactory(categories));
         boolean showAccount = SupplierPerms.has(SupplierPerms.BANK);
         return new SupplierSaveResult(id, views.display(applied, showAccount), views.display(pending, showAccount));
+    }
+
+    /**
+     * 供应商"修改"改了哪些字段（RFC 016 §3），叫法照供应商表单。联系方式要"看联系方式"权限才看得到值；
+     * 关键字段只记这次直接生效的（挂起等审批的在"提交改动"那条里，批了再记）
+     */
+    private List<FieldChange> supplierDiff(Supplier before, Supplier after, List<String> categoriesBefore, List<String> categoriesAfter,
+                                           List<Long> goodAtBefore, List<Long> goodAtAfter, List<ChangeItem> applied) {
+        Map<Long, String> people = userService.nicknames(Stream.of(before.getBuyerId(), after.getBuyerId())
+                .filter(Objects::nonNull).collect(Collectors.toSet()));
+        Function<Collection<String>, String> categoryText = values -> dicts.sorted(SupplierDicts.SUPPLIER_CATEGORY, values).stream()
+                .map(v -> dicts.labelOf(SupplierDicts.SUPPLIER_CATEGORY, v)).collect(Collectors.joining("、"));
+        boolean goodAtChanged = !new HashSet<>(goodAtBefore).equals(new HashSet<>(goodAtAfter));
+        Map<Long, String> goodAtNames = goodAtChanged ? goodAtCategories.names() : Map.of();
+        Function<List<Long>, String> goodAtText = ids -> ids.stream().map(i -> goodAtNames.getOrDefault(i, String.valueOf(i)))
+                .collect(Collectors.joining("、"));
+        List<FieldChange> diff = new ArrayList<>(FieldDiff.of(before, after)
+                .field("shortName", "简称", Supplier::getShortName)
+                .add("categories", "分类", categoryText.apply(categoriesBefore), categoryText.apply(categoriesAfter))
+                .field("productLines", "品类线", Supplier::getProductLines, lines -> lines.stream()
+                        .map(v -> dicts.labelOf("product_line", v)).collect(Collectors.joining("、")))
+                .field("level", "等级", Supplier::getLevel, v -> v + " 级")
+                .add("goodAtIds", "擅长品类", goodAtChanged ? goodAtText.apply(goodAtBefore) : null,
+                        goodAtChanged ? goodAtText.apply(goodAtAfter) : null)
+                .masked("contact", "联系人", Supplier::getContact, FieldPermissions.CONTACT)
+                .masked("phone", "电话", Supplier::getPhone, FieldPermissions.CONTACT)
+                .masked("wechat", "微信", Supplier::getWechat, FieldPermissions.CONTACT)
+                .field("buyerId", "负责采购员", Supplier::getBuyerId, people::get)
+                .masked("address", "地址", Supplier::getAddress, FieldPermissions.CONTACT)
+                .field("remark", "备注", Supplier::getRemark)
+                .list());
+        diff.addAll(views.changes(applied));
+        return diff;
     }
 
     /** 关键字段的条件更新：0 行说明这期间状态变了（被拉黑、被别人补了信用代码）→ 1002 */

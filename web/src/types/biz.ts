@@ -15,6 +15,21 @@ export interface DocLog {
   operatorName: string | null
   /** 2026-11-15 10:30:00，东八区 */
   createTime: string
+  /** 改了哪些字段（二期，RFC 016 §3）：物料、款式、供应商的"修改"和供应商的"批准改动"有，别的是空数组 */
+  diff: FieldChange[]
+}
+
+/** 操作记录里的一处改动（FieldChangeVO） */
+export interface FieldChange {
+  /** 字段名，如 refPrice */
+  field: string
+  /** 叫法，照表单，如"参考单价" */
+  label: string
+  /** 改前、改后显示的文字（字典已翻成中文、id 已换成名字、账号是遮过的）；空是 null。hidden 时都是 null */
+  before: string | null
+  after: string | null
+  /** 看的人没有这个字段的权限（成本价、联系方式、银行信息）：只显示"改了"，不给值 */
+  hidden: boolean
 }
 
 /**

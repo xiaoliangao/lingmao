@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
+import com.lingmao.scm.common.doc.FieldChange;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lingmao.scm.common.exception.BizException;
@@ -158,7 +159,7 @@ class SupplierChangeTest {
         verify(supplierMapper, never()).update(any(Supplier.class), any());
     }
 
-    /** 规则：批准后写回供应商（SET credit_days = 60），操作记录写"账期 30 天 → 60 天" */
+    /** 规则：批准后写回供应商（SET credit_days = 60），操作记录记改前改后"账期 30 天 → 60 天" */
     @Test
     void approve_writesBack() {
         SupplierFixtures.loginAs(8, "admit");
@@ -174,7 +175,8 @@ class SupplierChangeTest {
         LambdaUpdateWrapper<Supplier> wrapper = (LambdaUpdateWrapper<Supplier>) written.getValue();
         assertThat(wrapper.getSqlSet()).contains("credit_days");
         assertThat(wrapper.getParamNameValuePairs()).containsValue(60);
-        verify(docLogService).add(BizType.SUPPLIER, 1L, "change-approve", "账期 30 天 → 60 天");
+        verify(docLogService).add(BizType.SUPPLIER, 1L, "change-approve", null,
+                List.of(new FieldChange("creditDays", "账期", "30 天", "60 天", null)));
     }
 
     /** 规则：提改动的人自己批被拒 */

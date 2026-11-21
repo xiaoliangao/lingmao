@@ -2,18 +2,23 @@ package com.lingmao.scm.module.biz.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lingmao.scm.common.doc.FieldChange;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.biz.dto.DocLogVO;
+import com.lingmao.scm.module.biz.dto.FieldChangeVO;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.entity.DocLog;
 import com.lingmao.scm.module.biz.mapper.DocLogMapper;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.FieldPermissions;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -34,6 +39,36 @@ public class DocLogServiceImpl implements DocLogService {
 
     @Override
     public void add(BizType type, long docId, String action, Enum<?> from, Enum<?> to, String remark) {
+        insert(type, docId, action, from, to, remark, null);
+    }
+
+    @Override
+    public void add(BizType type, long docId, String action, String remark, List<FieldChange> diff) {
+        Map<String, Object> extra = null;
+        if (diff != null && !diff.isEmpty()) {
+            // 前后的值可能是 null，Map.of 不收 null
+            List<Map<String, Object>> rows = diff.stream().map(c -> {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put(F_FIELD, c.field());
+                row.put(F_LABEL, c.label());
+                row.put(F_BEFORE, c.before());
+                row.put(F_AFTER, c.after());
+                if (c.permission() != null) row.put(F_PERMISSION, c.permission());
+                return row;
+            }).toList();
+            extra = Map.of(DIFF, rows);
+        }
+        insert(type, docId, action, null, null, remark, extra);
+    }
+
+    private static final String DIFF = "diff";
+    private static final String F_FIELD = "field";
+    private static final String F_LABEL = "label";
+    private static final String F_BEFORE = "before";
+    private static final String F_AFTER = "after";
+    private static final String F_PERMISSION = "permission";
+
+    private void insert(BizType type, long docId, String action, Enum<?> from, Enum<?> to, String remark, Map<String, Object> extra) {
         DocLog log = new DocLog();
         log.setDocType(type);
         log.setDocId(docId);
@@ -43,6 +78,7 @@ public class DocLogServiceImpl implements DocLogService {
         log.setRemark(remark);
         // 和审计列的修改人一个来源（AuditMetaObjectHandler）：调用方不用每次传，也传不错
         log.setOperatorId(LoginUser.currentUserId());
+        log.setExtra(extra);
         docLogMapper.insert(log);
     }
 
@@ -79,7 +115,26 @@ public class DocLogServiceImpl implements DocLogService {
                         log.getOperatorId(),
                         // 先判空：nicknames 可能返回 Map.of()，它的 get(null) 会抛 NullPointerException
                         log.getOperatorId() == null ? null : names.get(log.getOperatorId()),
-                        log.getCreateTime()))
+                        log.getCreateTime(),
+                        diffOf(log.getExtra())))
                 .toList();
+    }
+
+    /** extra 里的 diff → VO；要权限的字段，看的人没有权限就不给值（RFC 016 §3.2） */
+    static List<FieldChangeVO> diffOf(Map<String, Object> extra) {
+        if (extra == null || !(extra.get(DIFF) instanceof List<?> rows)) return List.of();
+        List<FieldChangeVO> out = new ArrayList<>();
+        for (Object o : rows) {
+            if (!(o instanceof Map<?, ?> row)) continue;
+            String permission = str(row.get(F_PERMISSION));
+            boolean hidden = permission != null && !FieldPermissions.has(permission);
+            out.add(new FieldChangeVO(str(row.get(F_FIELD)), str(row.get(F_LABEL)),
+                    hidden ? null : str(row.get(F_BEFORE)), hidden ? null : str(row.get(F_AFTER)), hidden));
+        }
+        return out;
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : o.toString();
     }
 }

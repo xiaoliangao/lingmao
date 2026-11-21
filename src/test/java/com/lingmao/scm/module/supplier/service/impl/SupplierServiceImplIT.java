@@ -1,6 +1,10 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import static org.assertj.core.api.Assertions.tuple;
+import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.biz.entity.BizType;
+import com.lingmao.scm.module.biz.dto.FieldChangeVO;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
@@ -71,6 +75,8 @@ class SupplierServiceImplIT {
 
     @Autowired
     private SupplierService supplierService;
+    @Autowired
+    private DocLogService docLogService;
     @Autowired
     private SupplierChangeService changeService;
     @Autowired
@@ -411,6 +417,48 @@ class SupplierServiceImplIT {
         edit.setProductLines(List.of("FOOTWEAR", "GENERAL"));
         assertThatThrownBy(() -> supplierService.update(id, edit))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("看不到的品类线"));
+    }
+
+    /**
+     * 规则（RFC 016 §3）：改供应商记普通字段和直接生效的关键字段的改前改后，账号只存遮过的；联系方式、银行要权限才看得到值。
+     * 准入后改关键字段先挂起，批准时那条"批准改动"记改前改后
+     */
+    @Test
+    void update_recordsFieldDiff_andApprovalToo() {
+        long id = create(newReq(true));
+        SupplierSaveReq req = reqFrom(supplierService.detail(id));
+        req.setShortName(req.getShortName() + "改");
+        req.setPhone("13900000001");
+        req.setCreditDays(60);
+        req.setBankAccount("6222000099998888777");
+
+        supplierService.update(id, req);
+
+        List<FieldChangeVO> diff = actionDiff(id, "update");
+        assertThat(diff).extracting(FieldChangeVO::field).containsExactly("shortName", "phone", "creditDays", "bankAccount");
+        assertThat(diff.get(2)).isEqualTo(new FieldChangeVO("creditDays", "账期", "30 天", "60 天", false));
+        assertThat(diff.get(3).after()).endsWith("8777").doesNotContain("6222000099998888777");
+        assertThat(jdbcTemplate.queryForObject("SELECT extra::text FROM biz_doc_log WHERE doc_type = 'SUPPLIER' AND doc_id = ? "
+                + "AND action = 'update'", String.class, id)).doesNotContain("6222000099998888777").doesNotContain("6222000011112222333");
+
+        SupplierFixtures.loginAs(USER_A, "list");
+        assertThat(actionDiff(id, "update")).extracting(FieldChangeVO::field, FieldChangeVO::hidden).containsExactly(
+                tuple("shortName", false), tuple("phone", true), tuple("creditDays", false), tuple("bankAccount", true));
+
+        SupplierFixtures.loginAs(USER_A, ALL);
+        activate(id);
+        req.setBankAccount(supplierService.detail(id).getBankAccount());
+        req.setCreditDays(90);
+        supplierService.update(id, req);
+        SupplierFixtures.loginAs(USER_B, ALL);
+        changeService.approve(id, changeService.pending(id).id());
+        assertThat(actionDiff(id, "change-approve"))
+                .containsExactly(new FieldChangeVO("creditDays", "账期", "60 天", "90 天", false));
+    }
+
+    private List<FieldChangeVO> actionDiff(long id, String action) {
+        return docLogService.list(BizType.SUPPLIER, id).stream().filter(l -> action.equals(l.action()))
+                .findFirst().orElseThrow().diff();
     }
 
     private long create(SupplierSaveReq req) {

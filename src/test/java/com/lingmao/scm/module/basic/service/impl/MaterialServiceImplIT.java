@@ -1,6 +1,8 @@
 package com.lingmao.scm.module.basic.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.biz.dto.FieldChangeVO;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.BizException;
@@ -62,6 +64,8 @@ class MaterialServiceImplIT {
 
     @Autowired
     private MaterialService materialService;
+    @Autowired
+    private DocLogService docLogService;
     @Autowired
     private MaterialCategoryService materialCategoryService;
     @Autowired
@@ -171,6 +175,39 @@ class MaterialServiceImplIT {
         assertThat(materialService.duplicates(other.id(), "Cotton 府绸", null, null, null)).isEmpty();
         assertThat(materialService.duplicates(leaf.id(), "Cotton 府绸", supplierId, "HF-001", id)).isEmpty();
         assertThat(materialService.duplicates(null, null, null, null, null)).isEmpty();
+    }
+
+    /**
+     * 规则（RFC 016 §3）：改物料在操作记录里留改了哪些字段（存在 extra.diff 里，JSONB 来回一趟）；默认供应商记名字；
+     * 参考单价没有"看成本"的人只看到"改了"
+     */
+    @Test
+    void update_recordsFieldDiff() {
+        Leaf leaf = leafCategory();
+        MaterialCreateReq req = createReq(leaf.id(), "改动记录面料");
+        req.setRefPrice(new BigDecimal("18.50"));
+        long id = materialService.create(req);
+        long supplierId = supplier();
+        req.setName("改动记录面料二");
+        req.setRefPrice(new BigDecimal("20"));
+        req.setDefaultSupplierId(supplierId);
+        req.setRemark("  ");
+
+        materialService.update(id, req);
+
+        List<FieldChangeVO> diff = updateDiff(id);
+        assertThat(diff).extracting(FieldChangeVO::field).containsExactly("name", "defaultSupplierId", "refPrice");
+        assertThat(diff.get(1).before()).isNull();
+        assertThat(diff.get(1).after()).startsWith("IT供应商");
+        assertThat(diff.get(2)).isEqualTo(new FieldChangeVO("refPrice", "参考单价", "18.5", "20", false));
+
+        TestIdentity.login(900501L, List.of("basic:material:edit"));
+        assertThat(updateDiff(id).get(2)).isEqualTo(new FieldChangeVO("refPrice", "参考单价", null, null, true));
+    }
+
+    private List<FieldChangeVO> updateDiff(long id) {
+        return docLogService.list(BizType.MATERIAL, id).stream().filter(l -> "update".equals(l.action()))
+                .findFirst().orElseThrow().diff();
     }
 
     /** 列表：一级分类连同下面的二级一起查、几个编码一起查（空格、顿号、换行隔开）；选 SKU：停用的 SKU 不出来，单价没填取物料的参考价，几个 SKU 码一起查 */

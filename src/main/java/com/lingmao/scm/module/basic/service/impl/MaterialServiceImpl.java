@@ -32,6 +32,10 @@ import com.lingmao.scm.module.basic.entity.Material;
 import com.lingmao.scm.module.basic.entity.MaterialCategory;
 import com.lingmao.scm.module.basic.entity.MaterialSku;
 import com.lingmao.scm.module.basic.entity.MaterialSource;
+import com.lingmao.scm.common.doc.FieldChange;
+import com.lingmao.scm.common.doc.FieldDiff;
+import com.lingmao.scm.security.FieldPermissions;
+import org.springframework.beans.BeanUtils;
 import com.lingmao.scm.module.basic.mapper.ColorMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialCategoryMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialMapper;
@@ -179,15 +183,58 @@ public class MaterialServiceImpl implements MaterialService {
             throw new BizException("库存单位建好就不能改：库存、BOM 用量都按它记，改了旧数就错了。采购单位和换算系数能改");
         }
         Material old = new Material();
-        old.setMaterialType(material.getMaterialType());
-        old.setStockUnit(material.getStockUnit());
-        old.setPurchaseUnit(material.getPurchaseUnit());
-        old.setSeason(material.getSeason());
-        old.setWithTag(material.getWithTag());
-        old.setTagNames(material.getTagNames());
+        BeanUtils.copyProperties(material, old);
+        // 默认供应商的名字：basic 不调 supplier，改了才各查一次（列表 SQL 只读 JOIN 出来的）
+        boolean supplierChanged = !Objects.equals(material.getDefaultSupplierId(), req.getDefaultSupplierId());
+        String supplierBefore = supplierChanged ? supplierName(id) : null;
         fill(material, req, old);
         materialMapper.update(material, Updates.replaceById(material));
-        docLogService.add(BizType.MATERIAL, id, "update", null);
+        docLogService.add(BizType.MATERIAL, id, "update", null,
+                materialDiff(old, material, supplierBefore, supplierChanged ? supplierName(id) : null));
+    }
+
+    private String supplierName(long materialId) {
+        return materialMapper.selectListByIds(List.of(materialId)).getFirst().getDefaultSupplierName();
+    }
+
+    /**
+     * 物料"修改"改了哪些字段（RFC 016 §3），叫法照物料表单；分类、库存单位不能改，不列。
+     * 参考单价要"看成本"才看得到值（没有这个权限的人保存时本来也改不了它，FieldPermissions.price 留原值）
+     */
+    private List<FieldChange> materialDiff(Material before, Material after, String supplierBefore, String supplierAfter) {
+        Map<String, String> types = dictDataService.labels(TYPE_DICT);
+        Map<String, String> units = dictDataService.labels(UNIT_DICT);
+        Map<String, String> seasons = dictDataService.labels(SEASON_DICT);
+        return FieldDiff.of(before, after)
+                .field("name", "名称", Material::getName)
+                .field("materialType", "物料类型", Material::getMaterialType, types::get)
+                .field("season", "季节", Material::getSeason, seasons::get)
+                .field("purchaseUnit", "采购单位", Material::getPurchaseUnit, units::get)
+                .field("conversionFactor", "换算系数", Material::getConversionFactor)
+                .field("widthCm", "门幅（厘米）", Material::getWidthCm)
+                .field("weightGsm", "克重（g/㎡）", Material::getWeightGsm)
+                .field("year", "年份", Material::getYear)
+                .field("composition", "成分", Material::getComposition)
+                .field("texture", "组织 / 纹理", Material::getTexture)
+                .field("fabricFunction", "面料功能", Material::getFabricFunction)
+                .field("withTag", "带功能吊牌", Material::getWithTag)
+                .field("tagNames", "吊牌名称", Material::getTagNames)
+                .add("defaultSupplierId", "默认供应商", supplierBefore, supplierAfter)
+                .field("supplierItemNo", "供应商货号", Material::getSupplierItemNo)
+                .masked("refPrice", "参考单价", Material::getRefPrice, FieldPermissions.COST)
+                .field("moq", "起订量", Material::getMoq)
+                .field("minPackQty", "最小包装量", Material::getMinPackQty)
+                .field("leadDays", "采购周期（天）", Material::getLeadDays)
+                .field("defaultSource", "默认物料来源", Material::getDefaultSource, MaterialServiceImpl::sourceLabel)
+                .field("defaultLossPct", "默认损耗率（%）", Material::getDefaultLossPct)
+                .field("reservePct", "备料比（%）", Material::getReservePct)
+                .field("remark", "备注", Material::getRemark)
+                .list();
+    }
+
+    private static String sourceLabel(String name) {
+        return Arrays.stream(MaterialSource.values()).filter(s -> s.name().equals(name)).map(MaterialSource::getLabel)
+                .findFirst().orElse(null);
     }
 
     @Override
@@ -243,13 +290,22 @@ public class MaterialServiceImpl implements MaterialService {
     @Transactional
     public void updateSku(long id, long skuId, MaterialSkuSaveReq req) {
         MaterialSku sku = getSku(id, skuId);
+        MaterialSku old = new MaterialSku();
+        BeanUtils.copyProperties(sku, old);
         sku.setSupplierColorNo(Texts.trim(req.getSupplierColorNo()));
         sku.setSupplierItemNo(Texts.trim(req.getSupplierItemNo()));
         sku.setPrice(com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST, sku.getPrice(), req.getPrice()));
         sku.setSafetyStock(req.getSafetyStock());
         sku.setRemark(Texts.trim(req.getRemark()));
         materialSkuMapper.update(sku, Updates.replaceById(sku));
-        docLogService.add(BizType.MATERIAL, id, "updateSku", sku.getCode());
+        // 备注写 SKU 编码，改了什么记在 diff 里（RFC 016 §3）；单价要"看成本"才看得到值
+        docLogService.add(BizType.MATERIAL, id, "updateSku", sku.getCode(), FieldDiff.of(old, sku)
+                .field("supplierColorNo", "供应商色号", MaterialSku::getSupplierColorNo)
+                .field("supplierItemNo", "供应商货号", MaterialSku::getSupplierItemNo)
+                .masked("price", "单价", MaterialSku::getPrice, FieldPermissions.COST)
+                .field("safetyStock", "安全库存", MaterialSku::getSafetyStock)
+                .field("remark", "备注", MaterialSku::getRemark)
+                .list());
     }
 
     @Override

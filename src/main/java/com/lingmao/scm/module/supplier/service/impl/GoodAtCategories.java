@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -38,6 +39,13 @@ class GoodAtCategories {
         if (!enabled.containsAll(ids)) {
             throw new BizException("擅长品类里有已经停用或者删掉的，请重新选");
         }
+    }
+
+    /** 全部品类（停用的也在）id → 名称：操作记录里写改前改后用 */
+    Map<Long, String> names() {
+        List<TreeNode> flat = new ArrayList<>();
+        flatten(categoryService.tree(), flat);
+        return flat.stream().collect(Collectors.toMap(TreeNode::getId, TreeNode::getName, (a, b) -> a));
     }
 
     private static void flatten(List<TreeNode> nodes, List<TreeNode> into) {
