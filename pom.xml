@@ -216,15 +216,16 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- Mockito 用启动参数挂 agent：JDK 21 起不再推荐运行时自己挂（会告警，以后会禁止） -->
-                    <argLine>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
+                    <!-- Mockito 用启动参数挂 agent：JDK 21 起不再推荐运行时自己挂（会告警，以后会禁止）。
+                         时区和部署的一样（TZ=Asia/Shanghai）：测试里的 LocalDate.now() 和应用的 Clock 算出同一天，本机时区是别的也不会差一天 -->
+                    <argLine>-Duser.timezone=Asia/Shanghai -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
                 </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
-                    <argLine>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
+                    <argLine>-Duser.timezone=Asia/Shanghai -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
                 </configuration>
             </plugin>
         </plugins>
