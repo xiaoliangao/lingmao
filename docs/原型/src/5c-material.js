@@ -1017,7 +1017,7 @@ IMPORTS.stock = {
 
 route('/stock', {
   setup() {
-    const s = reactive({ tab: nav.query.wh ? '全部' : '物料仓', wh: nav.query.wh || '', view: '明细', owner: '', q: '', log: null, type: '', imp: false, flt: newFlt() })
+    const s = reactive({ tab: nav.query.wh ? '全部' : '物料仓', wh: nav.query.wh || '', view: nav.query.view || '明细', owner: '', q: '', log: null, type: '', imp: false, flt: newFlt(), from: '', to: '', split: false })
     const whs = computed(() => db.warehouses.filter((w) => w.type !== '成品仓' && (s.tab === '全部' || w.type === s.tab)))
     watch(() => s.tab, () => { if (s.wh && !whs.value.some((w) => w.code === s.wh)) s.wh = '' })
     const rows = computed(() => Object.entries(db.stock).filter(([, q]) => Math.abs(q) > 0.0005).map(([k, qty]) => { const [w, sku, owner] = k.split('|'); return { k, w, sku, owner, qty, last: db.stockLogs.find((x) => x.wh === w && x.sku === sku && x.owner === owner)?.at } })
@@ -1032,6 +1032,16 @@ route('/stock', {
     // 日志：点一行看那一格的流水；日志视图按日期、类型、仓库筛，关键字搜单号、物料、缸号（PRD §6.6.5 按缸号查流水）
     const logs = computed(() => (s.log ? db.stockLogs.filter((x) => x.wh === s.log.w && x.sku === s.log.sku && x.owner === s.log.owner)
       : db.stockLogs.filter((x) => (!s.wh || x.wh === s.wh) && (!s.type || x.type === s.type) && (!s.owner || x.owner === s.owner) && passFlt(s.flt, { date: x.at }) && matchQ(s.q, x.no, x.sku, skuName(x.sku), x.lot))))
+    // 进销存（二期，RFC 016 §4）：期间默认本月（清空了也回到本月）；按页签、仓库选仓，一个 SKU 一行；拆开的列只列这段时间里有的
+    const monthStart = clock.today.slice(0, 7) + '-01'
+    const mvRows = computed(() => stockMovement(s.from || monthStart, s.to || clock.today, (w) => wh(w) && wh(w).type !== '成品仓' && (s.tab === '全部' || wh(w).type === s.tab) && (!s.wh || w === s.wh))
+      .filter((r) => matchQ(s.q, r.sku, skuName(r.sku))))
+    const partsOf = (map) => Object.values(map).filter((t, i, a) => a.indexOf(t) === i && mvRows.value.some((r) => r.parts[t]))
+    const partCol = (t) => ({ k: 'p_' + t, t, c: 'num', f: (r) => (r.parts[t] ? fq(r.parts[t]) : '') })
+    const mvCols = computed(() => [{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuName(r.sku), img: (r) => r.sku }, { k: 'open', t: '期初', c: 'num', f: (r) => fq(r.open) },
+      { k: 'in', t: '入库', c: 'num', f: (r) => fq(r.in) }, ...(s.split ? partsOf(MOVE_IN).map(partCol) : []),
+      { k: 'out', t: '出库', c: 'num', f: (r) => fq(r.out) }, ...(s.split ? partsOf(MOVE_OUT).map(partCol) : []),
+      { k: 'close', t: '期末', c: 'num', f: (r) => fq(r.close) + ' ' + unitOf(r.sku) }])
     const safety = (sku) => skuOf(sku)?.safety
     const unitTxt = (r) => unitOf(r.sku)
     const XC = {
@@ -1041,18 +1051,25 @@ route('/stock', {
       日志: [{ k: 'at', t: '日期' }, { k: 'type', t: '类型' }, { k: 'no', t: '单号', c: 'code' }, { k: 'wh', t: '仓库', f: (x) => whName(x.wh) }, { k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (x) => skuName(x.sku) },
         ...(TRADE ? [{ k: 'owner', t: '物权', f: (x) => ownerName(x.owner) }] : []), { k: 'delta', t: '变动' }, { k: 'bal', t: '结存' }, { k: 'lot', t: '缸号' }, { k: 'who', t: '操作人', f: (x) => userName(x.who) }],
     }
-    const xrows = computed(() => (s.view === '明细' ? rows.value : s.view === '按物料' ? summary.value : logs.value))
+    XC.进销存 = [{ k: 'sku', t: 'SKU', c: 'code' }, { k: 'name', t: '物料', f: (r) => skuName(r.sku) }, { k: 'unit', t: '单位', f: unitTxt }, { k: 'open', t: '期初' }, { k: 'in', t: '入库' }, { k: 'out', t: '出库' }, { k: 'close', t: '期末' },
+      ...[...new Set([...Object.values(MOVE_IN), ...Object.values(MOVE_OUT)])].map((t) => ({ k: 'p_' + t, t, f: (r) => r.parts[t] || '' }))]
+    const xrows = computed(() => (s.view === '明细' ? rows.value : s.view === '按物料' ? summary.value : s.view === '进销存' ? mvRows.value : logs.value))
     // 流水类型：入库单、出库单的类型，加上盘点单记的盘盈、盘亏、期初
     const LOG_TYPES = [...Object.keys(STOCK_TYPES), '盘盈', '盘亏', '期初']
-    return { s, whs, rows, summary, owners, logs, safety, XC, xrows, LOG_TYPES }
+    return { s, whs, rows, summary, owners, logs, safety, XC, xrows, LOG_TYPES, mvRows, mvCols, monthStart }
   },
   template: `<div>
-    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于最小库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><a class="btn" href="#/stock-takes" data-c="库存：去盘点">盘点</a><button class="btn" data-c="库存：导入期初" title="每个仓库建一张「期初录入」盘点单，审核后进库存" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : '库存'"/></Head>
+    <Head t="库存"><a v-if="reorderRows().length" class="btn" href="#/reorder" title="物料仓库存 + 在途 − 已被占用 低于最小库存">补货提醒<span class="amber" style="margin-left:4px">{{ reorderRows().length }}</span></a><a class="btn" href="#/stock-takes" data-c="库存：去盘点">盘点</a><button class="btn" data-c="库存：导入期初" title="每个仓库建一张「期初录入」盘点单，审核后进库存" @click="s.imp = true"><Ico n="upload" :s="14"/>导入期初库存</button><ExportBtn :rows="xrows" :cols="XC[s.view]" :name="s.view === '日志' ? '库存日志' : s.view === '进销存' ? '进销存' : '库存'"/></Head>
     <div class="bar" data-c="筛选">
       <Seg v-model="s.tab" :items="['物料仓', '工厂仓', '全部']"/>
       <Pick class="sel" style="height:28px;max-width:150px" v-model="s.wh" data-c="选仓库"><option value="">全部仓库</option><option v-for="w in whs" :key="w.code" :value="w.code">{{ w.name }}</option></Pick>
       <Pick v-if="TRADE" class="sel" style="height:28px" v-model="s.owner"><option value="">全部物权</option><option v-for="o in owners" :key="o" :value="o">{{ ownerName(o) }}</option></Pick>
-      <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '日志']"/><Search v-model="s.q"/>
+      <span class="sp"></span><Seg v-model="s.view" :items="['明细', '按物料', '进销存', '日志']"/><Search v-model="s.q"/>
+    </div>
+    <div v-if="s.view === '进销存'" class="bar" data-c="进销存期间"><DateRange v-model:from="s.from" v-model:to="s.to" prefix="期间" :placeholder="fd(monthStart)" :end-placeholder="fd(clock.today)" compact/>
+      <label class="row g4 mut" style="font-size:12px" title="入库、出库按单据类型拆开；反审核算进原来那一列，所以可能是负数"><input type="checkbox" v-model="s.split">入库、出库拆开看</label></div>
+    <div v-if="s.view === '进销存'" data-c="进销存">
+      <Tbl :rows="mvRows" :row-key="r => r.sku" :cols="mvCols" :empty="s.q || s.wh ? '没有符合条件的物料：换个仓库、期间，或者清空筛选' : '这段时间里没有进出，期初也都是 0'"/>
     </div>
     <div v-if="s.view === '日志'" class="bar" data-c="日志筛选"><Filters v-model="s.flt"/>
       <Pick class="sel" style="height:28px" v-model="s.type"><option value="">全部单据类型</option><option v-for="t in LOG_TYPES" :key="t" :value="t">{{ t }}</option></Pick>

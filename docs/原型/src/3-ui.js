@@ -434,7 +434,12 @@ comp('Matrix', {
 /* 单据右侧"操作记录" */
 comp('Log', {
   props: { items: Array },
-  template: `<ul class="log"><li v-for="(x, i) in [...(items || [])].reverse()" :key="i"><span>{{ fd(x.at) }}</span><div>{{ x.who }} {{ x.text }}</div></li><li v-if="!items || !items.length"><div class="dim">还没有记录</div></li></ul>`,
+  // 档案的"修改"带 diff（actDiff）：一处一行，多于 5 处先收起；open 按原来的下标记（新记录加在末尾，下标不变）
+  setup: () => ({ open: reactive({}) }),
+  template: `<ul class="log"><li v-for="(x, i) in [...(items || [])].reverse()" :key="i"><span>{{ fd(x.at) }}</span><div>{{ x.who }} {{ x.text }}
+      <div v-if="x.diff && x.diff.length" class="log-diff" data-c="改动记录"><div v-for="(d, j) in (open[items.length - 1 - i] ? x.diff : x.diff.slice(0, 5))" :key="j"><b>{{ d.t }}</b>：<em v-if="d.cost && !canSeeCost()">已修改（没有看成本的权限）</em><template v-else><em>{{ d.from }}</em> → {{ d.to }}</template></div>
+        <a v-if="x.diff.length > 5 && !open[items.length - 1 - i]" @click="open[items.length - 1 - i] = true">还有 {{ x.diff.length - 5 }} 处</a></div></div></li>
+    <li v-if="!items || !items.length"><div class="dim">还没有记录</div></li></ul>`,
 })
 /* 审批进度（多级审批，PRD §5.1）：待审核的都显示，好知道在等谁；审完了只有多级的留着看 */
 comp('ApproveSteps', {
@@ -464,7 +469,7 @@ expose({
   can, actionsOf, tpsOf, activeTp, tpOf, tpState, rowSku, rowUse, rowCost, tpMaterialCost, tpLabor, unmatchedColors, bomOwnerOf, BOM_OWNER_GROUPS,
   orderQty, orderAmt, orderStyles, orderSched, orderRet, scheduledQty, returnedQty, kitState, prodsOf, mrpsOf, describeChange,
   poQty, poAmt, poRecv, prodQty, prodRet, prodDef, prodAmt, prodRisk, expectDue, curNode, nodeState, issueState, stockDir,
-  run, toast, ask, doAction, addStyleColor, orderLive, prodLive, isFactory, canUseSupplier, arrivals, issuePlan, toD,
+  run, toast, ask, doAction, addStyleColor, removeOrder, orderProgressRows, orderLive, prodLive, isFactory, canUseSupplier, arrivals, issuePlan, toD,
   PROD_KINDS, prodKind, prodKindOf, prodLink, STOCK_TYPES, sdName, stockNoLink, stockTake, takeDiff, takeQty, TAKE_PURPOSES, TAKE_SCOPES,
 })
 

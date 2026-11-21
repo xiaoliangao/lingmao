@@ -40,9 +40,10 @@ function updateSupplier(s, f) {
   if (gated.length && s.pending) fail(`已经有一份待批改动（${userName(s.pending.by)} ${fd(s.pending.at)} 提的），先处理那份：批准、驳回或撤回以后再改`, s.pending.items.map(supChangeText))
   const direct = { ...f }
   gated.forEach(([k]) => delete direct[k])
-  const ch = applyFields(s, direct, SUP_FIELDS)
-  if (!ch.length && !gated.length) fail('没有改动')
-  if (ch.length) act(s, '改：' + ch.join('；'))
+  const rows = fieldRows(s, direct, SUP_FIELDS)
+  applyFields(s, direct, SUP_FIELDS)
+  if (!rows.length && !gated.length) fail('没有改动')
+  if (rows.length) actDiff(s, '修改', rows)
   const msg = []
   if (gated.length) {
     s.pending = { items: gated.map(([k, t]) => ({ k, t, from: s[k] ?? '', to: f[k] })), by: db.me, at: clock.today }
@@ -61,7 +62,7 @@ function approveSupChange(s) {
   if (cr) checkCredit(cr.to, s)
   p.items.forEach((i) => { s[i.k] = i.to })
   s.pending = null
-  act(s, `批准改动（${userName(p.by)} ${fd(p.at)} 提的）：${p.items.map(supChangeText).join('；')}`)
+  actDiff(s, `批准改动（${userName(p.by)} ${fd(p.at)} 提的）`, p.items.map((i) => ({ t: i.t, from: showVal(i.from), to: showVal(i.to) })))
 }
 function rejectSupChange(s, reason) {
   const p = s.pending
@@ -301,19 +302,20 @@ function updateMaterial(m, f) {
   if (!(f.factor > 0)) fail('换算系数要大于 0')
   const lock = matLockReason(m)
   if (lock && (f.unit !== m.unit || f.purUnit !== m.purUnit || f.factor !== m.factor)) fail(lock + '，单位和换算系数不能改', ['改了以后，以前单据上的数量就对不上了', '确实要换单位：新建一个物料，把这个停用'])
-  const changes = MAT_FIELDS.filter(([k]) => (f[k] ?? '') !== (m[k] ?? '')).map(([k, t, fmt]) => `${t} ${showVal(m[k], fmt)} → ${showVal(f[k], fmt)}`)
+  // 改动记录（RFC 016 §3）：参考单价、SKU 单价要看成本才看得到值
+  const changes = MAT_FIELDS.filter(([k]) => (f[k] ?? '') !== (m[k] ?? '')).map(([k, t, fmt]) => ({ t, from: showVal(m[k], fmt), to: showVal(f[k], fmt), ...(k === 'price' ? { cost: true } : {}) }))
   const skus = f.skus || []
   for (const x of skus) {
     const k = m.skus.find((y) => y.code === x.code)
-    if ((x.supColor || '') !== (k.supColor || '')) changes.push(`${k.code} 供应商色号 ${k.supColor || '空'} → ${x.supColor || '空'}`)
-    if ((x.safety ?? '') !== (k.safety ?? '')) changes.push(`${k.code} 最小库存 ${k.safety ?? '空'} → ${x.safety ?? '空'}`)
-    if ((x.price ?? '') !== (k.price ?? '')) changes.push(`${k.code} 单价 ${k.price ?? '空'} → ${x.price ?? '空'}`)
-    if ((x.status || '启用') !== (k.status || '启用')) changes.push(`${k.code} ${x.status}`)
+    if ((x.supColor || '') !== (k.supColor || '')) changes.push({ t: `${k.code} 供应商色号`, from: k.supColor || '空', to: x.supColor || '空' })
+    if ((x.safety ?? '') !== (k.safety ?? '')) changes.push({ t: `${k.code} 最小库存`, from: k.safety ?? '空', to: x.safety ?? '空' })
+    if ((x.price ?? '') !== (k.price ?? '')) changes.push({ t: `${k.code} 单价`, from: k.price ?? '空', to: x.price ?? '空', cost: true })
+    if ((x.status || '启用') !== (k.status || '启用')) changes.push({ t: k.code, from: k.status || '启用', to: x.status })
   }
   if (!changes.length) fail('没有改动')
   MAT_FIELDS.forEach(([k]) => { m[k] = f[k] })
   for (const x of skus) Object.assign(m.skus.find((y) => y.code === x.code), { supColor: x.supColor, safety: x.safety, price: x.price ?? null, status: x.status })
-  act(m, '改：' + changes.join('；'))
+  actDiff(m, '修改', changes)
 }
 
 /* ---------- 品类、物料分类（PRD §6.1.2、§6.1.4）：编码定了不改；用过的不能删，只能停用 ---------- */

@@ -283,19 +283,20 @@ const STYLE_FIELDS = [
 function updateStyle(s, f) {
   if (!f.name?.trim()) fail('款式名称要填')
   if (!f.brand || !f.cat || !f.year || !f.season || !f.source) fail('品牌、品类、年份、季节、来源都要填')
-  const ch = []
+  const rows = []
   if (f.sizeGroup !== s.sizeGroup) {
     const used = styleOrders(s.code)
     if (used.length) fail('已经有订单用这个款，尺码组不能换', used.map((o) => `${o.no}（${o.status}）`))
-    ch.push(`尺码组 ${sgName(s.sizeGroup)} → ${sgName(f.sizeGroup)}，SKU 按新尺码重新生成`)
+    rows.push({ t: '尺码组', from: sgName(s.sizeGroup), to: sgName(f.sizeGroup) + '（SKU 按新尺码重新生成）' })
   }
-  ch.push(...applyFields(s, f, STYLE_FIELDS))
-  if (!ch.length) fail('没有改动')
+  rows.push(...fieldRows(s, f, STYLE_FIELDS, ['cost']))
+  applyFields(s, f, STYLE_FIELDS)
+  if (!rows.length) fail('没有改动')
   if (f.sizeGroup !== s.sizeGroup) {
     s.sizeGroup = f.sizeGroup
     s.skus = s.colors.flatMap((c) => sizesOf(f.sizeGroup).map((z) => ({ code: `${s.code}-${c}-${z}`, color: c, size: z, status: '启用' })))
   }
-  act(s, '改：' + ch.join('；'))
+  actDiff(s, '修改', rows)
 }
 // 款式 SKU：条码、单独的吊牌价（大码加价）、启用 / 停用
 function setStyleSku(s, k, f) {

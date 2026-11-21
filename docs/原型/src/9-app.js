@@ -13,6 +13,7 @@ const NAV = [
   { g: '订单', items: [
     { k: 'orders', t: '需求订单', i: 'file', to: '/orders', ph: '一期', ref: 'M06 · 06.01–06.04（甲方 11-14 改名需求订单）' },
     { k: 'changes', t: '变更', i: 'diff', to: '/changes', ph: '一期', ref: 'M06 · 06.06' },
+    { k: 'progress', t: '进度总览', i: 'chart', to: '/order-progress', ph: '二期', ref: 'M06 · 06.07' },
   ] },
   { g: '物料', items: [
     { k: 'mrp', t: '算料', i: 'sigma', to: '/mrp', ph: '一期', ref: 'M07 · 07.01' },

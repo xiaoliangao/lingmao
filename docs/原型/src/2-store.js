@@ -26,6 +26,11 @@ function applyFields(doc, f, fields) {
   fields.forEach(([k]) => { if (k in f) doc[k] = Array.isArray(f[k]) ? [...f[k]] : f[k] })
   return ch
 }
+/* 档案（物料、款式、供应商）的改动记录（二期，RFC 016 §3）：一处一行"字段：改前 → 改后"，记当时显示的文字（字典以后改名，历史不变）；
+ * cost = 要看成本才看得到值（物料参考单价、SKU 单价、款式参考成本价），没权限的人看到"已修改"。操作记录（Log）照它分行显示，多于 5 处先收起 */
+const fieldRows = (doc, f, fields, costKeys = []) => fields.filter(([k]) => k in f && !sameVal(f[k], doc[k]))
+  .map(([k, t, fmt]) => ({ t, from: showVal(doc[k], fmt), to: showVal(f[k], fmt), ...(costKeys.includes(k) ? { cost: true } : {}) }))
+function actDiff(doc, text, rows) { (doc.log ||= []).push({ at: clock.today, who: userName(db.me), text, diff: rows }) }
 // 只有草稿能删（PRD §5.1），别的状态只能作废或结案
 function removeDraft(list, d) {
   if (d.status !== '草稿') fail(`${d.no || d.code} 是「${d.status}」，只有草稿能删，其他状态只能作废或结案`)
@@ -568,10 +573,22 @@ function createOrder(f) {
   checkOrderLines(lines)
   if (TRADE && f.type !== '自营备货' && !f.customer) fail(`${f.type || '客户订单'}要选客户`)
   if (!f.due) fail(DUE_T + '要填')
+  // 翻单、补单（二期，RFC 016 §2）：from = 原单号，src 记"翻单 / 补单"；原单要在、不能是草稿
+  if (f.from) {
+    const s = order(f.from)
+    if (!s) fail(`原单 ${f.from} 不存在`)
+    if (s.status === '草稿') fail(`${s.no} 还是草稿，不能翻单、补单`)
+  }
   // 客户、客户订单号：TRADE 关着时不填，字段留着（以后接代工用）
   const o = add(db.orders, { no: nextNo('DD'), company: myCompany(), currency: '人民币', date: clock.today, commit: null, sales: roleUser('业务'), merch: roleUser('生产跟单'), ship: '', customer: null, custNo: '', contract: '', brand: '', src: '手工', note: '', ...f, lines: lines.map((l) => ({ ver: null, price: null, ...l })), status: '草稿', log: [] })
   act(o, '新建')
   return o
+}
+// 删需求订单：只有草稿能删；翻单、补单出去过的（原单审核后被翻单、又反审核回草稿）也不能删，只能作废
+function removeOrder(o) {
+  const kid = db.orders.find((x) => x.from === o.no)
+  if (kid) fail(`订单 ${kid.no} 是从这张单翻单、补单来的，不能删除，只能作废`)
+  removeDraft(db.orders, o)
 }
 function submitOrder(o) {
   const errs = []
@@ -999,10 +1016,29 @@ function stockShortage(whCode, lines) {
   return Object.entries(need).filter(([k, q]) => (db.stock[k] || 0) < q - 0.0005)
     .map(([k, q]) => { const [, s, o] = k.split('|'); const have = db.stock[k] || 0; return `${skuName(s)}${o !== '自有' ? '（' + ownerName(o) + '）' : ''}：${whName(whCode)} 库存 ${fq(have)}，差 ${fq(rnd(q - have, 3))}` })
 }
-function changeStock(w, l, delta, d) {
+// rev = 反审核写的反向流水：进销存按"原来的方向"算，采购入库反审核记在采购入库那列（减），不算出库
+function changeStock(w, l, delta, d, rev) {
   const k = stockKey(w, l.sku, l.owner)
   db.stock[k] = rnd((db.stock[k] || 0) + delta, 3)
-  db.stockLogs.unshift({ at: clock.today, type: d.type, no: d.no, wh: w, sku: l.sku, owner: l.owner || '自有', delta: rnd(delta, 3), bal: db.stock[k], lot: l.lot || '', who: db.me })
+  db.stockLogs.unshift({ at: clock.today, type: d.type, no: d.no, wh: w, sku: l.sku, owner: l.owner || '自有', delta: rnd(delta, 3), bal: db.stock[k], lot: l.lot || '', who: db.me, ...(rev ? { rev: true } : {}) })
+}
+/* 进销存汇总（二期，RFC 016 §4）：从库存流水现算，不建表。期初 = 期间以前的变动之和，期末 = 期初 + 入 − 出；
+ * 入、出看"原来的方向"（反向流水取反）；领料、退料两个仓都记——领料出库在工厂仓那边是"领料入厂"，退料入库在工厂仓那边是"退料出厂"，
+ * 所以拆开的列加起来总等于入、出。inWh(仓库编码) 选哪些仓；期初、入、出、期末全是 0 的不列 */
+const MOVE_IN = { 采购入库: '采购入库', 客供入库: '客供入库', 退料入库: '退料入库', 领料出库: '领料入厂', 其他入库: '其他入库', 调拨: '调入', 盘盈: '盘盈', 期初: '期初录入' }
+const MOVE_OUT = { 领料出库: '领料出库', 退料入库: '退料出厂', 采购退货: '采购退货', 其他出库: '其他出库', 调拨: '调出', 盘亏: '盘亏' }
+function stockMovement(from, to, inWh) {
+  const m = {}
+  for (const x of db.stockLogs) {
+    if (x.at > to || !inWh(x.wh)) continue
+    const r = (m[x.sku] ||= { sku: x.sku, open: 0, in: 0, out: 0, parts: {} })
+    if (x.at < from) { r.open += x.delta; continue }
+    const inward = (x.delta > 0) !== !!x.rev, n = inward ? x.delta : -x.delta, col = (inward ? MOVE_IN : MOVE_OUT)[x.type] || x.type
+    r[inward ? 'in' : 'out'] += n
+    r.parts[col] = rnd((r.parts[col] || 0) + n, 3)
+  }
+  return Object.values(m).map((r) => ({ ...r, open: rnd(r.open, 3), in: rnd(r.in, 3), out: rnd(r.out, 3), close: rnd(r.open + r.in - r.out, 3) }))
+    .filter((r) => r.open || r.in || r.out || r.close).sort((a, b) => a.sku.localeCompare(b.sku))
 }
 // 审核即过账：库存不够整张不过，列出差多少
 function postStockDoc(d) {
@@ -1033,7 +1069,7 @@ function voidStockDoc(d) {
 function unpostStockDoc(d) {
   checkNotBilled(d.no, '反审核')
   if (d.to) { const s = stockShortage(d.to, d.lines); if (s.length) fail('料已经被用掉或调走，改不回去', s) }
-  d.lines.forEach((l) => { if (d.to) changeStock(d.to, l, -l.qty, d); if (d.from) changeStock(d.from, l, l.qty, d) })
+  d.lines.forEach((l) => { if (d.to) changeStock(d.to, l, -l.qty, d, true); if (d.from) changeStock(d.from, l, l.qty, d, true) })
   if (d.type === '采购入库' && d.src) {
     const p = purchase(d.src)
     d.lines.forEach((l) => { p.lines[l.poLine].received = rnd(p.lines[l.poLine].received - l.purQty, 3) })
@@ -1113,7 +1149,7 @@ function unpostTake(t) {
   if (o) fail(`${whName(t.wh)} 已经有一张没审核的盘点单 ${o.no}，一个仓同时只能有一张；先把它审完或删掉`)
   const neg = t.lines.filter((l) => l.adj && stockQty(t.wh, l.sku, l.owner) - l.adj < -0.0005).map((l) => `${skuName(l.sku)}：盘盈的 ${fq(l.adj)} 已经发出去了，现在只剩 ${fq(stockQty(t.wh, l.sku, l.owner))}`)
   if (neg.length) fail('料已经被用掉，改不回去', neg)
-  t.lines.forEach((l) => { if (l.adj) changeStock(t.wh, l, -l.adj, { type: takeLogType(t, l.adj), no: t.no }); delete l.adj })
+  t.lines.forEach((l) => { if (l.adj) changeStock(t.wh, l, -l.adj, { type: takeLogType(t, l.adj), no: t.no }, true); delete l.adj })
   move('stocktake', t, '反审核')
   delete t.auditor
 }
@@ -1216,6 +1252,25 @@ function prodRisk(p) {
   r.issue = p.issues.some((i) => i.status !== '已关闭')
   r.score = (r.late ? 8 : 0) + (r.node ? 4 : 0) + (r.issue ? 2 : 0) + (r.near ? 1 : 0)
   return r
+}
+/* 订单进度总览（二期，RFC 016 §1）：一行 = 一张在手订单（已审核、生产中）的一个款。
+ * 交期 = 承诺交期 ?? 要求交期，行交期更早用行交期；没排完、没回齐按 SKU 看（一个码多回抵不掉另一个码少的），都回齐了不算剩几天。
+ * 风险：late 交期过了还没回齐、near 剩 0–7 天还没回齐、unscheduled 还有 SKU 没排满；nodeLate、issue 这个款的生产单节点延期、有没关的异常，
+ * prodLate、prodNear 生产单自己逾期、临期——这四个算"生产有风险"。排序：逾期 8、节点延期 4、有异常 2、临期 1 相加，同分按交期、订单号、款号（和看板一样） */
+function orderProgressRows() {
+  return db.orders.filter(orderLive).flatMap((o) => orderStyles(o).map((st) => {
+    const ls = o.lines.filter((l) => l.style === st && l.qty > 0)
+    const ps = prodsOf(o).filter((p) => p.style === st)
+    const due = [o.commit || o.due, ...ls.map((l) => l.due).filter(Boolean)].sort()[0]
+    const back = ls.every((l) => returnedQty(o, l) >= l.qty)
+    const left = back ? null : daysLeft(due)
+    const pr = ps.map(prodRisk)
+    const r = { late: left != null && left < 0, near: left != null && left >= 0 && left <= 7, unscheduled: ls.some((l) => scheduledQty(o, l) < l.qty),
+      nodeLate: pr.some((x) => x.node), issue: pr.some((x) => x.issue), prodLate: pr.some((x) => x.late), prodNear: pr.some((x) => x.near) }
+    r.production = r.nodeLate || r.issue || r.prodLate || r.prodNear
+    r.score = (r.late ? 8 : 0) + (r.nodeLate ? 4 : 0) + (r.issue ? 2 : 0) + (r.near ? 1 : 0)
+    return { o, st, qty: sum(ls, (l) => l.qty), sched: sum(ls, (l) => scheduledQty(o, l)), ret: sum(ls, (l) => returnedQty(o, l)), due, left, ps, r }
+  })).sort((a, b) => b.r.score - a.r.score || a.due.localeCompare(b.due) || a.o.no.localeCompare(b.o.no) || a.st.localeCompare(b.st))
 }
 function reportIssue(p, f) {
   if (!f.type || !f.desc) fail('类型、描述都要填')
@@ -1620,6 +1675,36 @@ function selftest() {
   const e = err(() => removeDraft(db.orders, createOrder({ type: '补单', due: '2026-12-31', lines: [{ style: '27CF001', color: 'KQ', size: 'M', qty: 10 }] })))
   ok(TRADE ? '补单要选客户' : '补单不选客户也能建', TRADE ? e.includes('要选客户') : e === '', e)
   ok(TRADE ? '入库单有客供入库' : '入库单没有客供入库', ('客供入库' in STOCK_TYPES) === TRADE)
+  // 翻单、补单（RFC 016 §2）：记原单和来源；原单是草稿不能翻；被翻过的原单回到草稿也不能删
+  const rs = db.orders.find((x) => x.status !== '草稿'), rsStatus = rs.status, rsLine = { style: '27CF001', color: 'KQ', size: 'M', qty: 10 }
+  const ro = createOrder({ type: '翻单', due: '2026-12-31', from: rs.no, src: '翻单', lines: [rsLine] })
+  ok('翻单：新单记原单号和来源', ro.from === rs.no && ro.src === '翻单' && ro.status === '草稿', [ro.from, ro.src])
+  rs.status = '草稿'
+  const eDraft = err(() => createOrder({ type: '补单', due: '2026-12-31', from: rs.no, src: '补单', lines: [rsLine] }))
+  const eDel = err(() => removeOrder(rs))
+  rs.status = rsStatus
+  ok('翻单：原单是草稿不能翻', eDraft.includes('还是草稿'), eDraft)
+  ok('翻单：被翻过的原单回到草稿也不能删', eDel.includes(`订单 ${ro.no} 是从这张单翻单、补单来的`) && order(rs.no), eDel)
+  removeOrder(ro)
+  // 进销存（RFC 016 §4）：期末 = 期初 + 入 − 出，和现在的库存对得上；拆开的列加起来等于入、出；反审核记在原来那一列
+  const mvWh = (w) => wh(w)?.type !== '成品仓'
+  const mv = stockMovement('2000-01-01', clock.today, mvWh)
+  const nowQty = (sku) => rnd(sum(Object.entries(db.stock).filter(([k]) => k.split('|')[1] === sku && mvWh(k.split('|')[0])), ([, q]) => q), 3)
+  ok('进销存：期末和现在的库存对得上', mv.length && mv.every((r) => r.close === nowQty(r.sku)), mv.filter((r) => r.close !== nowQty(r.sku)).map((r) => [r.sku, r.close, nowQty(r.sku)]))
+  ok('进销存：拆开的列加起来等于入、出', mv.every((r) => rnd(sum(Object.entries(r.parts).filter(([k]) => Object.values(MOVE_IN).includes(k)), ([, q]) => q), 3) === r.in
+    && rnd(sum(Object.entries(r.parts).filter(([k]) => Object.values(MOVE_OUT).includes(k)), ([, q]) => q), 3) === r.out))
+  const mvAt = () => stockMovement(clock.today, clock.today, (w) => w === 'WL01').find((r) => r.sku === 'FX0002') || { in: 0, out: 0, parts: {} }
+  const mv0 = mvAt(), mvd = createStockDoc({ type: '其他入库', reason: '其他', to: 'WL01', lines: [{ sku: 'FX0002', qty: 3 }] })
+  postStockDoc(mvd)
+  const mv1 = mvAt()
+  unpostStockDoc(mvd)
+  const mv2 = mvAt()
+  ok('进销存：入库反审核记在原来那一列（减），不算出库', mv1.in === rnd(mv0.in + 3, 3) && mv2.in === mv0.in && mv2.out === mv0.out && (mv2.parts.其他入库 || 0) === (mv0.parts.其他入库 || 0), [mv0, mv1, mv2])
+  // 进度总览（RFC 016 §1）：只列在手订单，一个款一行；风险分高的在前；都回齐了不算剩几天
+  const pg = orderProgressRows()
+  ok('进度总览：只列已审核、生产中的订单，一个款一行', pg.length && pg.every((x) => orderLive(x.o)) && new Set(pg.map((x) => x.o.no + x.st)).size === pg.length, pg.length)
+  ok('进度总览：风险分从高到低', pg.every((x, i) => !i || pg[i - 1].r.score >= x.r.score), pg.map((x) => x.r.score))
+  ok('进度总览：都回齐了的款不算剩几天、不算逾期', pg.filter((x) => x.ret >= x.qty && x.qty).every((x) => x.left == null && !x.r.late && !x.r.near) || !pg.some((x) => x.ret >= x.qty))
   // 订单只认生效的生产 BOM（§6.4.1）：资料包还是草稿的款，提交被拦
   const s9 = style('26DY009')
   const d9 = createTechpack(s9.code, [{ part: '纽扣', mat: 'FK0021', mode: '固定', sku: 'FK0021-HE', um: '统一', use: 5, loss: 2, src: '自购', supplier: 'GYS0002' }], 20, '')

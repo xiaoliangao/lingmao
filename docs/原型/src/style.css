@@ -654,6 +654,11 @@ textarea.inp { height: auto; min-height: 76px; padding: 8px 11px; resize: vertic
 .log li { display: flex; gap: 10px; padding: 5px 0; font-size: 12px; color: var(--fg-2); border-bottom: 1px dashed var(--line-soft); }
 .log li:last-child { border-bottom: none; }
 .log li span { color: var(--fg-3); width: 44px; flex: none; font-variant-numeric: tabular-nums; }
+/* 档案改动记录（RFC 016 §3）：一处一行，改前是灰字。不用 span（上面那条会把它当日期列） */
+.log-diff { margin-top: 3px; }
+.log-diff > div { padding: 1px 0; word-break: break-all; }
+.log-diff b { font-weight: 500; color: var(--fg); }
+.log-diff em { font-style: normal; color: var(--fg-3); }
 
 /* Timeline */
 .tl { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg); overflow: hidden; }

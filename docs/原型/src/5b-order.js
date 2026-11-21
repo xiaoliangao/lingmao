@@ -85,17 +85,58 @@ route('/orders', {
   </div>`,
 }, { mod: 'orders', t: '需求订单' })
 
+/* ---------- 订单进度总览（二期，RFC 016 §1）：在手订单一个款一行，跟单一眼看出哪个款没排、没料、做到哪、会不会晚 ---------- */
+route('/order-progress', {
+  setup() {
+    const s = reactive({ seg: nav.query.s || '全部', q: '', mine: false })
+    const SEGS = { 全部: () => true, 未排完: (x) => x.r.unscheduled, 临期: (x) => x.r.near, 已逾期: (x) => x.r.late, 生产有风险: (x) => x.r.production }
+    const all = computed(() => orderProgressRows().filter((x) => inScope(s.mine, x.o) && matchQ(s.q, x.o.no, x.st, styleName(x.st))))
+    const segs = computed(() => Object.entries(SEGS).map(([k, f]) => [k, k, all.value.filter(f).length]))
+    const rows = computed(() => all.value.filter(SEGS[s.seg]))
+    // 风险列：最多两个标签，多的悬停看；只因生产单自己逾期、临期进"生产有风险"的写"生产逾期""生产临期"
+    const tags = (x) => [x.r.late && ['red', '已逾期'], x.r.nodeLate && ['red', '节点延期'], !x.r.late && x.r.prodLate && ['red', '生产逾期'], x.r.issue && ['amber', '有异常'],
+      x.r.near && ['amber', '临期'], !x.r.near && x.r.prodNear && ['amber', '生产临期'], x.r.unscheduled && ['amber', '没排完']].filter(Boolean)
+    // 生产小块：逾期、节点延期红，临期、有异常琥珀，做完绿
+    const chip = (p) => { const r = prodRisk(p); return p.status === '已完成' ? 'green' : r.late || r.node ? 'red' : r.near || r.issue ? 'amber' : '' }
+    const chipTip = (p) => `${p.no} · ${p.status}\n回货 ${prodRet(p)} / ${prodQty(p)}，交期 ${fd(expectDue(p))}\n${p.nodes.map((n) => n.name + (n.af ? ' ✓' : '')).join(' → ') || '还没排节点'}`
+    return { s, segs, rows, tags, chip, chipTip }
+  },
+  template: `<div>
+    <Head t="进度总览"/>
+    <div class="bar" data-c="筛选"><Seg v-model="s.seg" :items="segs"/><span class="sp"></span><MineToggle v-model="s.mine"/><Search v-model="s.q" ph="单号 / 款号"/></div>
+    <div data-c="进度总览列表">
+      <Tbl :rows="rows" link :row-key="x => x.o.no + '|' + x.st" @row="x => go('/orders/' + x.o.no)" :empty="s.seg === '全部' ? '没有在手的需求订单：审核以后就列在这里' : '没有' + s.seg + '的款'" :cols="[
+        { k: 'no', t: '订单号', c: 'code', f: x => x.o.no }, { k: 'st', t: '款式' }, { k: 'type', t: '品牌 / 类型' }, { k: 'qty', t: '数量', c: 'num', f: x => x.qty.toLocaleString() },
+        { k: 'due', t: '交期' }, { k: 'sched', t: '排产' }, { k: 'kit', t: '齐料' }, { k: 'prod', t: '生产' }, { k: 'ret', t: '回货' },
+        { k: 'merch', t: '跟单', f: x => userName(x.o.merch) }, { k: 'risk', t: '风险' }]">
+        <template #st="{ r }"><span class="row g4"><Thumb :code="r.st" :s="22"/><span class="code">{{ r.st }}</span><span class="mut">{{ styleName(r.st) }}</span></span></template>
+        <template #type="{ r }">{{ r.o.brand || '—' }}<small class="dim"> {{ r.o.type }}</small></template>
+        <template #due="{ r }">{{ fd(r.due) }} <Days :d="r.due" :warn="7" :done="r.left == null"/></template>
+        <template #sched="{ r }"><Prog :a="r.sched" :b="r.qty"/></template>
+        <template #kit="{ r }"><St :s="kitState(r.o).k === 'ok' ? '齐料' : kitState(r.o).k === 'part' ? '部分到货' : '未到料'" :t="kitState(r.o).t"/></template>
+        <template #prod="{ r }"><span v-if="!r.ps.length" class="dim">还没排</span><span v-else class="row g4" style="flex-wrap:wrap">
+          <a v-for="p in r.ps" :key="p.no" class="pill" :class="chip(p)" :href="'#' + prodLink(p)" :title="chipTip(p)" @click.stop>{{ supName(p.factory) }} · {{ curNode(p)?.name || p.status }}</a></span></template>
+        <template #ret="{ r }"><Prog v-if="r.sched" :a="r.ret" :b="r.qty"/><span v-else class="dim">—</span></template>
+        <template #risk="{ r }"><span class="row g4" style="flex-wrap:wrap;max-width:150px" :title="tags(r).map(t => t[1]).join('、')"><span v-for="t in tags(r).slice(0, 2)" :key="t[1]" class="pill" :class="t[0]">{{ t[1] }}</span><span v-if="tags(r).length > 2" class="dim">+{{ tags(r).length - 2 }}</span><span v-if="!tags(r).length" class="dim">—</span></span></template>
+      </Tbl>
+    </div>
+  </div>`,
+}, { mod: 'progress', t: '进度总览' })
+
 /* ---------- 新建订单、改草稿：一个款一张颜色 × 尺码矩阵；单价默认一个款一个，大码加价时按尺码填（PRD §6.5.1） ---------- */
 // 能下单的颜色：这个颜色还有没停用的 SKU
 const orderableColors = (st) => style(st).colors.filter((c) => style(st).skus.some((k) => k.color === c && k.status !== '停用'))
+/* copy = { from: 原单, type: '翻单' | '补单' }（二期，RFC 016 §2）：照原单填单头和明细，不带合同号、交期、附件；
+ * 停用的款、不能下的颜色（停用了、没配料）、停用的 SKU 不带，顶上说是哪几个 */
 comp('OrderForm', {
-  props: { st: String, customer: String, o: Object },
+  props: { st: String, customer: String, o: Object, copy: Object },
   emits: ['close'],
   setup(p, { emit }) {
-    const o = p.o
+    const o = p.o, src = p.copy?.from
     const liveCust = computed(() => db.customers.filter((c) => c.status === '启用' || c.code === o?.customer))
     const f = reactive(o
       ? { type: o.type, customer: o.customer || '', custNo: o.custNo || '', contract: o.contract || '', brand: o.brand || '', company: o.company, date: o.date, due: o.due, currency: o.currency || '人民币', sales: o.sales, merch: o.merch, ship: o.ship || '', note: o.note || '' }
+      : src ? { type: p.copy.type, customer: src.customer || '', custNo: '', contract: '', brand: src.brand || '', company: src.company, date: clock.today, due: '', currency: src.currency || '人民币', sales: src.sales, merch: src.merch, ship: src.ship || '', note: src.note || '', files: [] }
       : { type: TRADE ? '客户订单' : '自营备货', customer: TRADE ? p.customer || db.customers.find((c) => c.status === '启用')?.code || '' : '', custNo: '', contract: '', brand: db.dicts.品牌[0], company: myCompany(), date: clock.today, due: addDays(clock.today, 60), currency: '人民币', sales: roleUser('业务'), merch: roleUser('生产跟单'), ship: '', note: '', files: [] })
     // 一块 = 一个款：price 默认单价，byLine 时 sizePrice 里的码用自己的单价；due 行交期、note 行备注
     const mk = (code, ls = []) => {
@@ -103,7 +144,18 @@ comp('OrderForm', {
       for (const l of ls) if (l.price != null && l.price !== price) sizePrice[l.size] = l.price
       return { style: code, price, sizePrice, byLine: Object.keys(sizePrice).length > 0, due: ls[0]?.due || '', note: ls[0]?.note || '', qty: Object.fromEntries(ls.map((l) => [l.color + '|' + l.size, l.qty])) }
     }
-    const blocks = reactive(o ? orderStyles(o).map((st) => mk(st, o.lines.filter((l) => l.style === st))) : [])
+    const skipped = []
+    const copyLines = (st) => {
+      const s = style(st)
+      if (s?.status !== '启用') { skipped.push(`${st}（款式${s ? s.status : '已删除'}）`); return [] }
+      const ok = (l) => orderableColors(st).includes(l.color) && !unmatchedColors(s).includes(l.color) && s.skus.some((k) => k.color === l.color && k.size === l.size && k.status !== '停用')
+      const ls = src.lines.filter((l) => l.style === st)
+      const bad = [...new Set(ls.filter((l) => !ok(l)).map((l) => colorName(l.color)))]
+      if (bad.length) skipped.push(`${st} 的 ${bad.join('、')}`)
+      return ls.filter(ok)
+    }
+    const blocks = reactive(o ? orderStyles(o).map((st) => mk(st, o.lines.filter((l) => l.style === st)))
+      : src ? orderStyles(src).map((st) => [st, copyLines(st)]).filter(([, ls]) => ls.length).map(([st, ls]) => mk(st, ls)) : [])
     const pickable = computed(() => db.styles.filter((s) => s.status === '启用' && !blocks.some((b) => b.style === s.code)))
     const picking = ref(false)
     const addBlock = (code) => { if (code) blocks.push(mk(code)) }
@@ -114,7 +166,7 @@ comp('OrderForm', {
     const amount = computed(() => sum(linesOf(), (l) => l.qty * (l.price || 0)))
     const colorsFor = (b) => [...new Set([...orderableColors(b.style), ...Object.keys(b.qty).filter((k) => b.qty[k] > 0).map((k) => k.split('|')[0])])]
     function save(submit) {
-      const body = { ...f, customer: TRADE && f.type !== '自营备货' ? f.customer : null, lines: linesOf() }
+      const body = { ...f, customer: TRADE && f.type !== '自营备货' ? f.customer : null, lines: linesOf(), ...(src ? { from: src.no, src: p.copy.type } : {}) }
       if (o) {
         if (run(() => updateOrder(o, body, submit)) === undefined) return
         if (submit && !run(() => submitOrder(o))) { emit('close'); return }
@@ -126,9 +178,11 @@ comp('OrderForm', {
       if (submit && !run(() => submitOrder(x))) { emit('close'); go('/orders/' + x.no); return }
       emit('close'); go('/orders/' + x.no); toast(submit ? `${x.no} 已提交，等审核` : `${x.no} 已存草稿`)
     }
-    return { o, f, liveCust, blocks, pickable, picking, addBlock, total, amount, colorsFor, save }
+    return { o, src, skipped, f, liveCust, blocks, pickable, picking, addBlock, total, amount, colorsFor, save }
   },
-  template: `<Modal :t="o ? '改需求订单 ' + o.no : '新建需求订单'" :w="840" @close="$emit('close')">
+  template: `<Modal :t="o ? '改需求订单 ' + o.no : src ? copy.type + '：从 ' + src.no : '新建需求订单'" :w="840" @close="$emit('close')">
+    <template v-if="src"><p class="dim" style="margin:0 0 12px;font-size:12.5px" data-c="翻单、补单">改好数量和{{ DUE_T }}再保存。审核时锁定当时生效的资料包，不沿用原单的版本。</p>
+      <div v-if="skipped.length" class="banner" style="margin:0 0 12px"><Ico n="alert"/><span>停用了、没带过来：{{ skipped.join('；') }}</span></div></template>
     <div class="form" style="grid-template-columns:repeat(3,1fr)" data-c="订单单头">
       <label class="f">类型<Pick class="sel" v-model="f.type"><option v-for="x in db.dicts.订单类型" :key="x">{{ x }}</option></Pick></label>
       <label class="f" v-if="TRADE && f.type !== '自营备货'">客户<Pick class="sel" v-model="f.customer"><option v-for="c in liveCust" :key="c.code" :value="c.code">{{ c.short }}</option></Pick></label>
@@ -191,13 +245,16 @@ route('/orders/:no', {
     const pendingChange = computed(() => changes.value.find((c) => c.status === '待审核'))
     const a = (x) => docAct('order', o.value, x, x === '提交' ? `${o.value.no} 已提交，等审核` : null)
     function doMrp() { const m = run(() => createMrp([o.value.no])); if (m?.no) { go('/mrp/' + m.no); toast(`${m.no} 算好了，勾选要买的行生成采购单`) } }
-    async function remove() { if (await ask('删除需求订单 ' + o.value.no, '草稿删除后找不回来；想留个底就用「作废」。', '删除', true) && run(() => removeDraft(db.orders, o.value))) { go('/orders'); toast('删了') } }
+    async function remove() { if (await ask('删除需求订单 ' + o.value.no, '草稿删除后找不回来；想留个底就用「作废」。', '删除', true) && run(() => removeOrder(o.value))) { go('/orders'); toast('删了') } }
     const openChange = (c, cancel) => { chg.value = c || null; dlg.value = cancel ? 'cancel' : 'change' }
     const more = computed(() => [
       can('order', o.value, '撤回') && { t: '撤回', fn: () => a('撤回') },
       can('order', o.value, '反审核') && { t: '反审核', fn: () => a('反审核') },
       can('order', o.value, '结案') && { t: '结案', fn: () => a('结案') },
       can('order', o.value, '取消结案') && { t: '取消结案', fn: () => a('取消结案') },
+      // 翻单、补单（二期）：除了草稿什么状态都能点，作废的也能
+      o.value.status !== '草稿' && { t: '翻单', fn: () => { dlg.value = 'repeat' } },
+      o.value.status !== '草稿' && { t: '补单', fn: () => { dlg.value = 'replenish' } },
       orderLive(o.value) && { t: '取消订单（走变更单）', danger: true, fn: () => openChange(null, true) },
       can('order', o.value, '作废') && { t: '作废', danger: true, fn: () => a('作废') },
       o.value.status === '草稿' && { t: '删除', danger: true, fn: remove },
@@ -259,7 +316,7 @@ route('/orders/:no', {
           <dt>业务员</dt><dd>{{ userName(o.sales) }}</dd>
           <dt>跟单员</dt><dd>{{ userName(o.merch) }}</dd>
           <dt>送货要求</dt><dd class="wrap">{{ o.ship || '—' }}</dd>
-          <dt>来源</dt><dd>{{ o.src || '手工' }}</dd>
+          <dt>来源</dt><dd v-if="o.from">{{ o.src }}自 <a :href="'#/orders/' + o.from" data-c="原单">{{ o.from }}</a></dd><dd v-else>{{ o.src || '手工' }}</dd>
           <DocMeta :d="o"/>
           <template v-if="orderLive(o) || o.status === '已完成'">
             <dt>齐料</dt><dd>{{ kitState(o).t }}</dd>
@@ -273,6 +330,7 @@ route('/orders/:no', {
       </aside>
     </div>
     <OrderForm v-if="dlg === 'edit'" :o="o" @close="dlg = ''"/>
+    <OrderForm v-if="dlg === 'repeat' || dlg === 'replenish'" :copy="{ from: o, type: dlg === 'repeat' ? '翻单' : '补单' }" @close="dlg = ''"/>
     <OrderAudit v-if="dlg === 'audit'" :o="o" @close="dlg = ''"/>
     <OrderSchedule v-if="dlg === 'schedule'" :o="o" @close="dlg = ''" @done="tab = 'down'"/>
     <OrderChange v-if="dlg === 'change' || dlg === 'cancel'" :o="o" :c="chg" :cancel="dlg === 'cancel'" @close="dlg = ''" @done="tab = 'changes'"/>
