@@ -27,6 +27,10 @@ public class PendingArrivalRowVO extends MaterialSkuBrief {
     private BigDecimal qty;
     private BigDecimal receivedQty;
     private BigDecimal returnedQty;
+    /** 冲入：同组别的单多收、冲给这一行的（RFC 014） */
+    private BigDecimal offsetInQty;
+    /** 冲出：这一行多收、冲给同组别的单的 */
+    private BigDecimal offsetOutQty;
     private BigDecimal pendingQty;
     private LocalDate dueDate;
     private LocalDate expectDate;

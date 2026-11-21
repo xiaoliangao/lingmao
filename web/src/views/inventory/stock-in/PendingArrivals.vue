@@ -351,8 +351,11 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
         <template #default="{ row }">{{ row.calcNo ?? '—' }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.warehouse" label="交货地点" min-width="130" prop="warehouseName" />
-      <el-table-column v-if="cols.show.received" label="已到 / 采购" width="130" class-name="num" align="right">
-        <template #default="{ row }">{{ formatQty(row.receivedQty - row.returnedQty) }} / {{ formatQty(row.qty) }}</template>
+      <el-table-column v-if="cols.show.received" label="已到 / 采购" width="150" class-name="num" align="right">
+        <template #default="{ row }">
+          {{ formatQty(row.receivedQty - row.returnedQty) }} / {{ formatQty(row.qty) }}
+          <span v-if="row.offsetInQty > 0" class="dim">冲来 {{ formatQty(row.offsetInQty) }}</span>
+        </template>
       </el-table-column>
       <el-table-column v-if="cols.show.pending" label="未到" width="110" class-name="num" align="right">
         <template #default="{ row }"><strong>{{ formatQty(row.pendingQty) }}</strong> {{ units.labelOf(row.purchaseUnit) }}</template>

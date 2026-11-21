@@ -41,12 +41,15 @@ final class SupplyBook {
      * @param ownerConfirmed 那张算料单现在是已确认
      */
     record Line(long id, long poId, String poNo, String purchaseType, long skuId, long warehouseId, BigDecimal qty,
-                BigDecimal receivedQty, BigDecimal returnedQty, BigDecimal factor, LocalDate eta, boolean open,
+                BigDecimal arrivedQty, BigDecimal factor, LocalDate eta, boolean open,
                 boolean toMaterial, Long ownerItemId, Long ownerCalcId, boolean ownerConfirmed) {
 
-        /** 净入库，库存单位 */
+        /**
+         * 到货（净入库 + 冲入 − 冲出，RFC 014），库存单位：同组别的单多收、冲给这一行的算这一行到了（料已经在库存里）；
+         * 这一行多收、冲出去的就不算它的了
+         */
         BigDecimal receivedStock() {
-            return Num.qty(receivedQty.subtract(returnedQty).max(BigDecimal.ZERO).multiply(factor));
+            return Num.qty(arrivedQty.max(BigDecimal.ZERO).multiply(factor));
         }
 
         /** 没到的，库存单位：采购单不是已审核、部分到货的（结案了）不算在途 */
@@ -54,9 +57,9 @@ final class SupplyBook {
             return open ? remainingStock() : BigDecimal.ZERO;
         }
 
-        /** 采购数 − 净入库，库存单位，不看采购单状态：结案了没到的那部分也永远到不了，算"使用在途到了多少"时要按它，不能当成到了 */
+        /** 采购数 − 到货，库存单位，不看采购单状态：结案了没到的那部分也永远到不了，算"使用在途到了多少"时要按它，不能当成到了 */
         BigDecimal remainingStock() {
-            return Num.qty(qty.subtract(receivedQty.subtract(returnedQty)).max(BigDecimal.ZERO).multiply(factor));
+            return Num.qty(qty.subtract(arrivedQty).max(BigDecimal.ZERO).multiply(factor));
         }
     }
 

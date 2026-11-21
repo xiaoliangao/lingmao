@@ -17,7 +17,8 @@
 
     <select id="selectLines" resultType="com.lingmao.scm.module.purchase.mapper.SupplyMapper$LineRow">
         SELECT i.id, o.id AS po_id, o.no AS po_no, o.purchase_type, o.status AS po_status, i.material_sku_id AS sku_id,
-               o.warehouse_id, w.type AS warehouse_type, i.qty, i.received_qty, i.returned_qty, i.conversion_factor AS factor,
+               o.warehouse_id, w.type AS warehouse_type, i.qty, i.received_qty, i.returned_qty, i.offset_in_qty, i.offset_out_qty,
+               i.conversion_factor AS factor,
                COALESCE(i.expect_date, i.line_due_date, o.delivery_date) AS eta,
                i.calc_item_id AS owner_item_id, ci.calc_id AS owner_calc_id, c.status AS owner_calc_status
         FROM pur_order_item i
@@ -27,7 +28,7 @@
         LEFT JOIN mrp_calc c ON c.id = ci.calc_id
         WHERE i.material_sku_id IN <foreach collection="skuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
           AND o.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED')
-          AND ((o.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty &lt; i.qty)
+          AND ((o.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty + i.offset_in_qty - i.offset_out_qty &lt; i.qty)
                OR c.status = 'CONFIRMED'
                <if test="calcIds != null and calcIds.size() > 0">
                    OR ci.calc_id IN <foreach collection="calcIds" item="id" open="(" separator="," close=")">#{id}</foreach>

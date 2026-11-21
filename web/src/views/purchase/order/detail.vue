@@ -163,6 +163,9 @@ const saveFiles = (files: FileVO[]) => purchaseApi.replaceAttachments(id, files)
 const LOG_STATUSES = Object.fromEntries(Object.entries(PURCHASE_STATUS).map(([k, v]) => [k, v.label]))
 const planStyleText = computed(() => detail.value?.planStyles.map((s) => s.styleCode).join('、') ?? '')
 const sourceText = (it: PurchaseItem) => [...it.orderNos, ...it.styleCodes].join(' · ')
+/** 有冲抵的单才出"冲抵"列（RFC 014）：冲入 +、冲出 − */
+const hasOffsets = computed(() => !!detail.value?.items.some((it) => it.offsets.length))
+const offsetNet = (it: PurchaseItem) => it.offsetInQty - it.offsetOutQty
 const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).join(' ')
 </script>
 
@@ -235,6 +238,26 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
               </el-table-column>
               <el-table-column label="已退货" width="76" class-name="num" align="right">
                 <template #default="{ row }">{{ row.returnedQty ? formatQty(row.returnedQty) : '—' }}</template>
+              </el-table-column>
+              <el-table-column v-if="hasOffsets" label="冲抵" width="84" class-name="num" align="right" :show-overflow-tooltip="false">
+                <template #default="{ row }">
+                  <el-popover v-if="(row as PurchaseItem).offsets.length" trigger="hover" placement="top" :width="300">
+                    <template #reference>
+                      <span class="offset">{{ offsetNet(row as PurchaseItem) > 0 ? '+' : '−' }}{{ formatQty(Math.abs(offsetNet(row as PurchaseItem))) }}</span>
+                    </template>
+                    <div v-for="o in (row as PurchaseItem).offsets" :key="o.direction + o.purchaseOrderId" class="offset-line">
+                      <template v-if="o.direction === 'IN'">
+                        <router-link :to="`/purchases/${o.purchaseOrderId}`" class="code">{{ o.purchaseNo }}</router-link>
+                        多收，冲来 {{ formatQty(o.qty) }}<span class="dim">（入在{{ o.warehouseName }}）</span>
+                      </template>
+                      <template v-else>
+                        冲给 <router-link :to="`/purchases/${o.purchaseOrderId}`" class="code">{{ o.purchaseNo }}</router-link>
+                        {{ formatQty(o.qty) }}<span class="dim">（那张单交{{ o.warehouseName }}）</span>
+                      </template>
+                    </div>
+                  </el-popover>
+                  <span v-else class="dim">—</span>
+                </template>
               </el-table-column>
               <el-table-column label="未入库" width="84" class-name="num" align="right">
                 <template #default="{ row }"><strong>{{ formatQty(row.pendingQty) }}</strong></template>
@@ -400,6 +423,15 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
 </template>
 
 <style scoped>
+.offset {
+  border-bottom: 1px dashed var(--lm-line-strong);
+  cursor: default;
+}
+
+.offset-line + .offset-line {
+  margin-top: 4px;
+}
+
 .detail {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;

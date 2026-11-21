@@ -39,7 +39,7 @@ class SupplyLoader {
 
     private static SupplyBook.Line line(SupplyMapper.LineRow r) {
         return new SupplyBook.Line(r.id(), r.poId(), r.poNo(), r.purchaseType(), r.skuId(), r.warehouseId(), r.qty(),
-                r.receivedQty(), r.returnedQty(), r.factor(), r.eta(), OPEN.contains(r.poStatus()), "MATERIAL".equals(r.warehouseType()),
+                r.receivedQty().subtract(r.returnedQty()).add(r.offsetInQty()).subtract(r.offsetOutQty()), r.factor(), r.eta(), OPEN.contains(r.poStatus()), "MATERIAL".equals(r.warehouseType()),
                 r.ownerItemId(), r.ownerCalcId(), "CONFIRMED".equals(r.ownerCalcStatus()));
     }
 }

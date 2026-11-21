@@ -26,11 +26,14 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -43,10 +46,12 @@ import static com.lingmao.scm.common.doc.DocStatus.RUNNING;
  * 采购入库、采购退货的源单这一边（docs/api/04 §3.3、03 §3.3.9）：带出明细、查上限、过账后回写已入库 / 已退货、按到货重算状态。
  * 数量都按采购单位（SourcePosting.Line.purchaseQty）。
  * <ul>
- *   <li>入库：已审核、部分到货的单；每行净入库 + 这次 ≤ 采购数 ×（1 + 5%）（Q09，按净入库算，退了的能补发）</li>
+ *   <li>入库：已审核、部分到货的单，和靠别的单冲来的到齐、自己还没入够的单；每行净入库 + 这次 ≤ 采购数 ×（1 + 5%）
+ *       （Q09，按净入库算，退了的能补发；冲入不算进上限，RFC 014 §2）</li>
  *   <li>退货：部分到货、已到齐的单；每行这次 ≤ 净入库</li>
  * </ul>
- * check 先锁住采购单（FOR UPDATE），过账、回写都在同一个事务里，两张入库单同时审核时后一张按前一张入完的数查
+ * 过账（{@link #preparePosting}）先按 id 从小到大锁住这张采购单和冲抵会动到的同组采购单（FOR UPDATE），回写净入库、冲抵
+ * （{@link PurchaseOffsetBook}）、重算这几张单的状态都在同一个事务里，两张入库单同时审核时后一张按前一张入完的数查
  */
 @Component
 @RequiredArgsConstructor
@@ -63,6 +68,7 @@ class PurchaseStockHandler implements StockSourceHandler {
     private final MaterialService materialService;
     private final DictDataService dictDataService;
     private final DocLogService docLogService;
+    private final PurchaseOffsetBook offsetBook;
 
     @Override
     public BizType sourceType() {
@@ -76,13 +82,14 @@ class PurchaseStockHandler implements StockSourceHandler {
             throw new BizException(404, "采购单不存在");
         }
         boolean in = docType == InvDocType.PURCHASE_IN;
-        checkStatus(po, in);
+        List<PurchaseOrderItem> lines = itemMapper.selectByOrder(sourceId);
+        checkStatus(po, in, lines);
         Set<Long> wanted = itemIds == null ? null : new HashSet<>(itemIds);
         List<SourceDraft.Item> items = new ArrayList<>();
-        for (PurchaseOrderItem i : itemMapper.selectByOrder(sourceId)) {
+        for (PurchaseOrderItem i : lines) {
             BigDecimal net = i.netReceived();
             BigDecimal max = in ? maxIn(i) : net.max(BigDecimal.ZERO);
-            boolean open = in ? i.pending().signum() > 0 : net.signum() > 0;
+            boolean open = in ? i.pending().signum() > 0 || coveredByOffset(i) : net.signum() > 0;
             if (wanted == null ? !open : !wanted.contains(i.getId())) {
                 continue;
             }
@@ -100,8 +107,16 @@ class PurchaseStockHandler implements StockSourceHandler {
         return Num.maxQty(i.getQty(), OVER_PCT).subtract(i.netReceived()).max(BigDecimal.ZERO);
     }
 
-    private static void checkStatus(PurchaseOrder po, boolean in) {
-        if (!(in ? CAN_RECEIVE : CAN_RETURN).contains(po.getStatus())) {
+    /** 靠冲入到货、自己还没入够采购数的行：供应商照单再送来的照样能入，入了把冲来的还回去（RFC 014 §2） */
+    static boolean coveredByOffset(PurchaseOrderItem i) {
+        return i.getOffsetInQty() != null && i.getOffsetInQty().signum() > 0 && i.netReceived().compareTo(i.getQty()) < 0;
+    }
+
+    /** 状态不让入、不让退抛 1000。已到齐的单有靠冲入到齐的行，还能入库 */
+    static void checkStatus(PurchaseOrder po, boolean in, Collection<PurchaseOrderItem> items) {
+        boolean ok = (in ? CAN_RECEIVE : CAN_RETURN).contains(po.getStatus())
+                || in && po.getStatus() == DONE && items.stream().anyMatch(PurchaseStockHandler::coveredByOffset);
+        if (!ok) {
             throw new BizException("采购单 " + po.getNo() + " 现在是「" + PurchaseOrderServiceImpl.PO_STATUS.label(po.getStatus()).text()
                     + "」，不能" + (in ? "入库" : "退货"));
         }
@@ -111,9 +126,9 @@ class PurchaseStockHandler implements StockSourceHandler {
     public void check(SourcePosting posting) {
         PurchaseOrder po = lock(posting.sourceId());
         boolean in = posting.docType() == InvDocType.PURCHASE_IN;
-        checkStatus(po, in);
         Map<Long, PurchaseOrderItem> items = itemMapper.selectByOrder(po.getId()).stream()
                 .collect(Collectors.toMap(PurchaseOrderItem::getId, Function.identity()));
+        checkStatus(po, in, items.values());
         Map<Long, BigDecimal> thisQty = byLine(posting, items, po);
         Map<Long, MaterialSkuBrief> briefs = null;
         Map<String, String> units = null;
@@ -160,14 +175,37 @@ class PurchaseStockHandler implements StockSourceHandler {
                 .findFirst().orElse(0);
     }
 
+    /**
+     * 正反过账（库存余额锁之前）：先按 id 从小到大锁住会动到的采购单，再查上限（反审核不查）、回写、冲抵、重算状态。
+     * 只锁这张单再去锁别的单，两张入库单互相冲时会互相等（RFC 014 §6）
+     */
+    @Override
+    public void preparePosting(SourcePosting posting, boolean reverse) {
+        Set<Long> locked = lockAll(posting, reverse);
+        if (!reverse) {
+            check(posting);
+        }
+        apply(posting, reverse, locked);
+    }
+
     @Override
     public void onPosted(SourcePosting posting) {
-        apply(posting, false);
+        apply(posting, false, lockAll(posting, false));
     }
 
     @Override
     public void onUnposted(SourcePosting posting) {
-        apply(posting, true);
+        apply(posting, true, lockAll(posting, true));
+    }
+
+    /** 这次过账会动到的采购单，按 id 从小到大锁上：这一张、这几行冲过的；净入库变多（入库、反审核退货）时加上同组没到齐的 */
+    private Set<Long> lockAll(SourcePosting posting, boolean reverse) {
+        boolean growing = (posting.docType() == InvDocType.PURCHASE_IN) != reverse;
+        Set<Long> itemIds = posting.lines().stream().map(SourcePosting.Line::sourceItemId).filter(Objects::nonNull)
+                .collect(Collectors.toCollection(TreeSet::new));
+        Set<Long> ids = offsetBook.poIdsToLock(posting.sourceId(), itemIds, growing);
+        ids.forEach(this::lock);
+        return ids;
     }
 
     @Override
@@ -178,10 +216,13 @@ class PurchaseStockHandler implements StockSourceHandler {
     }
 
     /**
-     * 回写已入库 / 已退货（反审核就是减回去），再按到货重算状态（已审核、部分到货、已到齐之间换）。
+     * 回写已入库 / 已退货（反审核就是减回去），再冲抵（RFC 014：退回、还回、冲），最后按到货重算动到的每张单的状态
+     * （已审核、部分到货、已到齐之间换；结案的不动）。
      * 反审核：结案的单不让动（先取消结案）；退过货的入库不能先反审核（净入库会变负），先反审核退货单
+     *
+     * @param locked 已经锁住的采购单（lockAll）
      */
-    private void apply(SourcePosting posting, boolean reverse) {
+    private void apply(SourcePosting posting, boolean reverse, Set<Long> locked) {
         PurchaseOrder po = lock(posting.sourceId());
         boolean in = posting.docType() == InvDocType.PURCHASE_IN;
         if (reverse && po.getStatus() == CLOSED) {
@@ -190,6 +231,7 @@ class PurchaseStockHandler implements StockSourceHandler {
         Map<Long, PurchaseOrderItem> items = itemMapper.selectByOrder(po.getId()).stream()
                 .collect(Collectors.toMap(PurchaseOrderItem::getId, Function.identity()));
         Map<Long, BigDecimal> qty = byLine(posting, items, po);
+        Map<Long, BigDecimal> netDelta = new LinkedHashMap<>();
         for (Map.Entry<Long, BigDecimal> e : qty.entrySet()) {
             PurchaseOrderItem i = items.get(e.getKey());
             BigDecimal delta = reverse ? e.getValue().negate() : e.getValue();
@@ -206,15 +248,23 @@ class PurchaseStockHandler implements StockSourceHandler {
                                 received.subtract(returned), maxReceived, i.getPurchaseUnit(), "采购量 × (1 + 溢收比例)")));
             }
             itemMapper.addPosted(i.getId(), in ? delta : BigDecimal.ZERO, in ? BigDecimal.ZERO : delta);
-            i.setReceivedQty(received);
-            i.setReturnedQty(returned);
+            netDelta.put(i.getId(), in ? delta : delta.negate());
         }
         String verb = (reverse ? "反审核" : "") + (in ? "入库单 " : "出库单 ") + posting.docNo();
         docLogService.add(BizType.PURCHASE_ORDER, po.getId(), in ? "receive" : "return", verb);
+        Set<Long> touched = new TreeSet<>(offsetBook.settle(netDelta, locked, verb).poIds());
+        touched.add(po.getId());
+        for (long id : touched) {
+            refreshStatus(id == po.getId() ? po : poMapper.lockById(id), verb);
+        }
+    }
+
+    /** 按到货重算一张单的状态（已锁住）；结案的不动 */
+    private void refreshStatus(PurchaseOrder po, String verb) {
         if (po.getStatus() == CLOSED) {
             return;
         }
-        DocStatus to = PurchaseOrderServiceImpl.byArrival(List.copyOf(items.values()));
+        DocStatus to = PurchaseOrderServiceImpl.byArrival(itemMapper.selectByOrder(po.getId()));
         if (to != po.getStatus()) {
             StatusCas.update(poMapper, new PurchaseOrder(), StatusCas.of(PurchaseOrder::getId, po.getId(), PurchaseOrder::getStatus,
                     po.getStatus(), to).setSql("version = version + 1"));

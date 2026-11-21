@@ -289,7 +289,7 @@ public class MrpServiceImpl implements MrpService {
         List<Long> buyIds = items.stream().filter(i -> i.getBlock() == MrpBlock.PURCHASE).map(MrpCalcItem::getId).toList();
         if (!buyIds.isEmpty()) {
             for (PurchaseOrderItem l : poItemMapper.selectByCalcItems(buyIds)) {
-                received.merge(l.getCalcItemId(), Num.qty(l.netReceived().max(BigDecimal.ZERO).multiply(l.getConversionFactor())),
+                received.merge(l.getCalcItemId(), Num.qty(l.arrived().max(BigDecimal.ZERO).multiply(l.getConversionFactor())),
                         BigDecimal::add);
             }
         }

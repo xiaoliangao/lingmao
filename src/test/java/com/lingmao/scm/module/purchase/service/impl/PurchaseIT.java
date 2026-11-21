@@ -27,6 +27,7 @@ import com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseCreateReq;
 import com.lingmao.scm.module.purchase.dto.PurchaseDetailVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseItemReq;
+import com.lingmao.scm.module.purchase.dto.PurchaseItemVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseQuery;
 import com.lingmao.scm.module.purchase.dto.PurchaseSaveReq;
 import com.lingmao.scm.module.purchase.dto.ReorderPickItem;
@@ -200,11 +201,15 @@ class PurchaseIT {
         assertThat(referenceService.referrers(BizType.PURCHASE_ORDER, poA)).extracting(DocRef::type)
                 .contains(BizType.INV_DOC, BizType.MRP_CALC);
 
-        // B 结案、取消结案
+        // A 多收的 5 冲给同组没到齐的 B（RFC 014：B 比 C 先下单）
+        assertThat(purchaseOrderService.detail(poB).getItems().getFirst().getOffsetInQty()).isEqualByComparingTo("5");
+        assertThat(purchaseOrderService.detail(poB).getItems().getFirst().getPendingQty()).isEqualByComparingTo("45");
+
+        // B 结案、取消结案：按到货算，冲来的 5 算到了，回到部分到货
         int vb = purchaseOrderService.detail(poB).getVersion();
         purchaseOrderService.act(poB, "close", new DocActionReq(vb, null));
         purchaseOrderService.act(poB, "reopen", new DocActionReq(vb + 1, null));
-        assertThat(purchaseOrderService.detail(poB).getStatus()).isEqualTo("APPROVED");
+        assertThat(purchaseOrderService.detail(poB).getStatus()).isEqualTo("RUNNING");
 
         // 齐料、订单的下游、列表、导出
         assertThat(mrpService.kitting(List.of(orderId))).singleElement().satisfies(k -> {
@@ -611,6 +616,162 @@ class PurchaseIT {
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
     }
 
+    // ---------- 超收冲抵在途（RFC 014） ----------
+
+    /**
+     * §2 的例子在真库上走一遍，单 2 交另一个仓（甲方 11-21：不同仓库也冲）：在途 950 → 500 → 530 → 0；
+     * 待到料、物料库存页的在途（按仓）跟着变；两张单各记操作记录；冲抵表的合计和两列对得上
+     */
+    @Test
+    void overReceiptOffsetsTransit_rfcExample() {
+        Fixture f = fixture(null);
+        long otherWarehouse = jdbcTemplate.queryForObject("INSERT INTO bas_warehouse (code, name, type) VALUES (?, ?, 'MATERIAL') RETURNING id",
+                Long.class, "ITPW2" + f.skuCode.substring(4), "IT 物料二仓" + f.skuCode.substring(4));
+        long po1 = approvedStockPo(f, "1000", null);
+        long po2 = approvedStockPo(f, "1000", null, otherWarehouse);
+
+        receive(f, po1, "1050");
+        PurchaseItemVO line1 = purchaseOrderService.detail(po1).getItems().getFirst();
+        PurchaseItemVO line2 = purchaseOrderService.detail(po2).getItems().getFirst();
+        assertThat(line1.getOffsetOutQty()).isEqualByComparingTo("50");
+        assertThat(line1.getOffsets()).singleElement().satisfies(o -> {
+            assertThat(o.direction()).isEqualTo("OUT");
+            assertThat(o.purchaseOrderId()).isEqualTo(po2);
+        });
+        assertThat(line2.getOffsetInQty()).isEqualByComparingTo("50");
+        assertThat(line2.getOffsets()).singleElement().satisfies(o -> assertThat(o.warehouseName()).startsWith("IT 物料仓"));
+        assertThat(line2.getPendingQty()).isEqualByComparingTo("950");
+        assertThat(purchaseOrderService.detail(po2).getStatus()).isEqualTo("RUNNING");
+        assertThat(transitByWarehouse(f)).containsExactly(java.util.Map.entry(otherWarehouse, new BigDecimal("950.000")));
+        assertThat(offsetLogs(po1)).isEqualTo(1);
+        assertThat(offsetLogs(po2)).isEqualTo(1);
+
+        receive(f, po2, "450");
+        assertThat(transit(f)).isEqualByComparingTo("500");
+        assertThat(pendingOfSupplier(f)).isEqualByComparingTo("500");
+
+        postFromPo(po1, stockReq(f, po1, InvDocType.PURCHASE_RETURN, "30"));
+        assertThat(purchaseOrderService.detail(po1).getItems().getFirst().getOffsetOutQty()).isEqualByComparingTo("20");
+        assertThat(purchaseOrderService.detail(po1).getStatus()).isEqualTo("DONE");
+        assertThat(transit(f)).isEqualByComparingTo("530");
+        assertThat(offsetLogs(po2)).isEqualTo(2);
+
+        receive(f, po2, "530");
+        assertThat(transit(f)).isZero();
+        assertThat(purchaseOrderService.detail(po2).getStatus()).isEqualTo("DONE");
+        assertThat(purchaseOrderService.detail(po1).getReceivedQty()).as("列表、单头的已入库还是净入库").isEqualByComparingTo("1020");
+        assertThat(offsetMismatches()).isEmpty();
+    }
+
+    /**
+     * §8-2：反审核单 1 那张 1050 的入库单，冲出去的全退回来，单 2 未入库回到 550、单 1 回到已审核。
+     * 决定 1：单 2 靠冲来的 50 到齐以后还能入库（详情出"到货入库"），入了把冲来的还回去，单 1 又变成普通的超收
+     */
+    @Test
+    void offsetUndoneOnUnaudit_andDoneByOffsetStillReceives() {
+        Fixture f = fixture(null);
+        long po1 = approvedStockPo(f, "1000", null);
+        long po2 = approvedStockPo(f, "1000", null);
+        long over = postFromPo(po1, stockReq(f, po1, InvDocType.PURCHASE_IN, "1050"));
+        receive(f, po2, "450");
+
+        invDocService.act(over, "unaudit", new DocActionReq(invDocService.detail(over).getVersion(), null));
+        assertThat(purchaseOrderService.detail(po2).getItems().getFirst().getPendingQty()).isEqualByComparingTo("550");
+        assertThat(purchaseOrderService.detail(po2).getItems().getFirst().getOffsets()).isEmpty();
+        assertThat(purchaseOrderService.detail(po1).getStatus()).isEqualTo("APPROVED");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM pur_over_offset o JOIN pur_order_item i ON i.id = o.from_item_id "
+                + "WHERE i.purchase_order_id = ?", Long.class, po1)).isZero();
+
+        int draftVersion = invDocService.detail(over).getVersion();
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(over, "audit", new DocActionReq(draftVersion, null)));
+        receive(f, po2, "500");
+        PurchaseDetailVO done = purchaseOrderService.detail(po2);
+        assertThat(done.getStatus()).isEqualTo("DONE");
+        assertThat(done.getActions()).contains("receive");
+
+        receive(f, po2, "50");
+        assertThat(purchaseOrderService.detail(po2).getItems().getFirst().getOffsetInQty()).isZero();
+        assertThat(purchaseOrderService.detail(po2).getStatus()).isEqualTo("DONE");
+        assertThat(purchaseOrderService.detail(po2).getActions()).doesNotContain("receive");
+        assertThat(purchaseOrderService.detail(po1).getItems().getFirst().getOffsetOutQty()).isZero();
+        assertThat(offsetMismatches()).isEmpty();
+    }
+
+    /**
+     * §8-6：两张多收的入库单同时过账、互相冲：都成功（按 id 顺序锁，谁也不等谁），数对得上。
+     * 先过的那张冲给另一张，后过的把冲来的还回去，两张多收的各 50 都冲给第三张（它在多收以前就审核了）
+     */
+    @Test
+    void concurrentOverReceipts_bothSucceed_andBooksBalance() throws Exception {
+        Fixture f = fixture(null);
+        long po1 = approvedStockPo(f, "1000", null);
+        long po2 = approvedStockPo(f, "1000", null);
+        long po3 = approvedStockPo(f, "1000", null);
+        long d1 = invDocService.fromSource(BizType.PURCHASE_ORDER, po1, stockReq(f, po1, InvDocType.PURCHASE_IN, "1050")).id();
+        long d2 = invDocService.fromSource(BizType.PURCHASE_ORDER, po2, stockReq(f, po2, InvDocType.PURCHASE_IN, "1050")).id();
+        TestIdentity.auditorOf(jdbcTemplate, f.user);
+        var pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            java.util.function.Function<Long, java.util.concurrent.Future<?>> audit = doc -> pool.submit(() -> {
+                loginAs(f.user);
+                try {
+                    start.await();
+                    TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc, "audit", new DocActionReq(0, null)));
+                    return null;
+                } finally {
+                    TestIdentity.clear();
+                }
+            });
+            var one = audit.apply(d1);
+            var two = audit.apply(d2);
+            start.countDown();
+            one.get(20, TimeUnit.SECONDS);
+            two.get(20, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(purchaseOrderService.detail(po1).getItems().getFirst().getOffsetOutQty()).isEqualByComparingTo("50");
+        assertThat(purchaseOrderService.detail(po2).getItems().getFirst().getOffsetOutQty()).isEqualByComparingTo("50");
+        assertThat(purchaseOrderService.detail(po3).getItems().getFirst().getOffsetInQty()).isEqualByComparingTo("100");
+        assertThat(purchaseOrderService.detail(po1).getItems().getFirst().getOffsetInQty()).isZero();
+        assertThat(purchaseOrderService.detail(po2).getItems().getFirst().getOffsetInQty()).isZero();
+        assertThat(transit(f)).isEqualByComparingTo("900");
+        assertThat(offsetMismatches()).isEmpty();
+    }
+
+    /** 物料库存页的在途（库存单位，所有仓合计） */
+    private BigDecimal transit(Fixture f) {
+        return transitByWarehouse(f).values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private java.util.Map<Long, BigDecimal> transitByWarehouse(Fixture f) {
+        return supplyService.materialSupply(List.of(f.sku)).getFirst().transits().stream().filter(t -> t.qty().signum() > 0)
+                .collect(java.util.stream.Collectors.toMap(SkuSupplyVO.Transit::warehouseId, SkuSupplyVO.Transit::qty));
+    }
+
+    /** 待到料里这家供应商的未入库合计 */
+    private BigDecimal pendingOfSupplier(Fixture f) {
+        PendingArrivalQuery q = new PendingArrivalQuery();
+        q.setSupplierId(f.supplier);
+        return purchaseOrderService.pendingItems(q).getList().stream().map(PendingArrivalRowVO::getPendingQty)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private long offsetLogs(long poId) {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM biz_doc_log WHERE doc_type = 'PURCHASE_ORDER' AND doc_id = ? AND action = 'offset'",
+                Long.class, poId);
+    }
+
+    /** 冲抵表的合计和采购行上的两列对不上的行 */
+    private List<Long> offsetMismatches() {
+        return jdbcTemplate.queryForList("""
+                SELECT i.id FROM pur_order_item i
+                LEFT JOIN (SELECT to_item_id, SUM(qty) AS q FROM pur_over_offset GROUP BY to_item_id) a ON a.to_item_id = i.id
+                LEFT JOIN (SELECT from_item_id, SUM(qty) AS q FROM pur_over_offset GROUP BY from_item_id) b ON b.from_item_id = i.id
+                WHERE i.offset_in_qty <> COALESCE(a.q, 0) OR i.offset_out_qty <> COALESCE(b.q, 0)""", Long.class);
+    }
+
     // ---------- 造数 ----------
 
     record Fixture(long company, long user, long warehouse, long supplier, long style, long skuM, long skuL, long material,
@@ -717,7 +878,13 @@ class PurchaseIT {
 
     /** 已审核的备货采购单（单价按物料参考单价 20） */
     private long approvedStockPo(Fixture f, String qty, LocalDate expectDate) {
-        long id = purchaseOrderService.create(poReq(f, qty, expectDate)).id();
+        return approvedStockPo(f, qty, expectDate, f.warehouse);
+    }
+
+    private long approvedStockPo(Fixture f, String qty, LocalDate expectDate, long warehouseId) {
+        PurchaseCreateReq req = poReq(f, qty, expectDate);
+        req.setWarehouseId(warehouseId);
+        long id = purchaseOrderService.create(req).id();
         purchaseOrderService.act(id, "submit", new DocActionReq(0, null));
         TestIdentity.asAuditor(jdbcTemplate, () -> purchaseOrderService.act(id, "audit", new DocActionReq(1, null)));
         return id;

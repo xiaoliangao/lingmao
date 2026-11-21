@@ -31,6 +31,7 @@ import com.lingmao.scm.module.purchase.entity.PurchaseOrderItem;
 import com.lingmao.scm.module.purchase.entity.PurchaseType;
 import com.lingmao.scm.module.purchase.mapper.MrpCalcMapper;
 import com.lingmao.scm.module.purchase.mapper.MrpCalcTransitMapper;
+import com.lingmao.scm.module.purchase.mapper.PurchaseOffsetMapper;
 import com.lingmao.scm.module.purchase.mapper.PurchaseOrderItemMapper;
 import com.lingmao.scm.module.purchase.mapper.PurchaseOrderMapper;
 import com.lingmao.scm.module.purchase.service.MrpService;
@@ -78,6 +79,8 @@ class PurchaseOrderServiceImplTest {
     private PurchaseOrderMapper poMapper;
     @Mock
     private PurchaseOrderItemMapper itemMapper;
+    @Mock
+    private PurchaseOffsetMapper offsetMapper;
     @Mock
     private MrpCalcMapper calcMapper;
     @Mock
@@ -131,7 +134,7 @@ class PurchaseOrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PurchaseOrderServiceImpl(poMapper, itemMapper, calcMapper, transitMapper, mrpService, needDates, excel,
+        service = new PurchaseOrderServiceImpl(poMapper, itemMapper, calcMapper, transitMapper, offsetMapper, mrpService, needDates, excel,
                 materialService, supplierService, priceService, warehouseService, companyService, defaultCompanyProvider, styleService,
                 dictDataService, userService, docHeaderService, docLogService, docNoticeService, attachmentService, approvalService,
                 referenceService, serialNoGenerator, Clock.systemDefaultZone());
@@ -223,14 +226,14 @@ class PurchaseOrderServiceImplTest {
      */
     @Test
     void actions() {
-        PurchaseOrderServiceImpl.Ctx none = new PurchaseOrderServiceImpl.Ctx(false, null, false);
+        PurchaseOrderServiceImpl.Ctx none = new PurchaseOrderServiceImpl.Ctx(false, null, false, false);
         assertThat(PurchaseOrderServiceImpl.actions(DocStatus.APPROVED, none)).contains("unaudit", "close", "receive")
                 .doesNotContain("follow");
-        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.APPROVED, new PurchaseOrderServiceImpl.Ctx(false, null, true)))
+        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.APPROVED, new PurchaseOrderServiceImpl.Ctx(false, null, true, false)))
                 .doesNotContain("unaudit");
         assertThat(PurchaseOrderServiceImpl.actions(DocStatus.PENDING, none)).doesNotContain("withdraw", "audit", "reject");
         ApprovalView myTurn = new ApprovalView(1, List.of(), null, true);
-        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.PENDING, new PurchaseOrderServiceImpl.Ctx(true, myTurn, false)))
+        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.PENDING, new PurchaseOrderServiceImpl.Ctx(true, myTurn, false, false)))
                 .contains("withdraw", "audit", "reject");
 
         login("purchase:order:edit");

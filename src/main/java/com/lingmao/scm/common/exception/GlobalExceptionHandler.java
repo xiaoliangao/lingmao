@@ -50,6 +50,8 @@ public class GlobalExceptionHandler {
 
     /** PostgreSQL 的 SQLState：外键冲突 */
     private static final String FOREIGN_KEY_VIOLATION = "23503";
+    /** PostgreSQL 判了死锁、回滚了其中一个事务 */
+    private static final String DEADLOCK = "40P01";
 
     /*
      * 外键冲突的报错长这样（PgJDBC 把 detail 接在消息后面；PostgreSQL 的报错是英文的，部署包和本机开发库都没改 lc_messages）：
@@ -211,6 +213,11 @@ public class GlobalExceptionHandler {
         SQLException sql = sqlExceptionOf(e);
         if (sql != null && "P2019".equals(sql.getSQLState())) {
             return R.fail(ErrorCodes.STATE_CHANGED, "上传文件尚未完成或已清理，请重新上传后保存");
+        }
+        if (sql != null && DEADLOCK.equals(sql.getSQLState())) {
+            // 加锁都按 id 顺序（RFC 014 §6），万一还是被数据库判了死锁：这个事务已经整个回滚，让用户再点一次
+            log.warn("数据库判了死锁，已回滚: {} {}", request.getMethod(), request.getRequestURI());
+            return R.fail(ErrorCodes.STATE_CHANGED, "有人同时在改，请重试");
         }
         log.error("未处理异常: {} {} {}", request.getMethod(), request.getRequestURI(), com.lingmao.scm.common.log.SafeLog.failure(e));
         return R.fail(500, TraceIdFilter.serverErrorMsg());

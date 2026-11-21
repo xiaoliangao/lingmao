@@ -31,7 +31,7 @@ class MrpCalculatorTest {
 
     private static MrpCalculator.Row calculate(LocalDate eta) {
         SupplyBook.Line stockPo = new SupplyBook.Line(7L, 70L, "CG1", "STOCK", SKU, 1L, new BigDecimal("500"), BigDecimal.ZERO,
-                BigDecimal.ZERO, BigDecimal.ONE, eta, true, true, null, null, false);
+                BigDecimal.ONE, eta, true, true, null, null, false);
         SupplyBook book = new SupplyBook(Map.of(SKU, new BigDecimal("120")), List.of(stockPo), List.of(), List.of());
         MrpCalculator.Inputs in = new MrpCalculator.Inputs(Map.of(SKU, KHAKI), Map.of(), k -> null, NEED, Set.of(), null);
         List<MrpCalculator.Row> rows = MrpCalculator.calculate(demands(), book, in);

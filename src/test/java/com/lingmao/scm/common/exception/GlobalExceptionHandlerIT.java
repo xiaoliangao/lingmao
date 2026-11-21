@@ -8,12 +8,23 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -34,6 +45,9 @@ class GlobalExceptionHandlerIT {
 
     @Autowired
     private DictTypeMapper dictTypeMapper;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void createTables() {
@@ -103,6 +117,49 @@ class GlobalExceptionHandlerIT {
         R<Void> r = handler.handleDuplicateKey(e);
 
         assertThat(r.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
+    }
+
+    /**
+     * 规则：数据库判了死锁（40P01），返回 1002"有人同时在改，请重试"，不是 500（RFC 014 §6）。
+     * 两个事务反着顺序锁两行，真造一次死锁，看 Spring 翻译出来的是哪种异常、会不会落到兜底方法里认出来
+     */
+    @Test
+    void deadlock_returns1002() throws Exception {
+        jdbcTemplate.update("INSERT INTO it_fk_parent VALUES (2)");
+        CyclicBarrier bothLocked = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Throwable> a = pool.submit(() -> lockInOrder(1, 2, bothLocked));
+            Future<Throwable> b = pool.submit(() -> lockInOrder(2, 1, bothLocked));
+            List<Throwable> failed = Stream.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS)).filter(Objects::nonNull).toList();
+            assertThat(failed).as("恰好一个事务被判死锁").singleElement().isInstanceOf(DataAccessException.class)
+                    .isNotInstanceOf(DataIntegrityViolationException.class);
+
+            R<Void> r = handler.handleOther((Exception) failed.getFirst(), request());
+
+            assertThat(r.getCode()).isEqualTo(ErrorCodes.STATE_CHANGED);
+            assertThat(r.getMsg()).isEqualTo("有人同时在改，请重试");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** 一个事务里先锁 first、等另一个也锁上，再锁 second；返回抛出的异常，没出错是 null */
+    private Throwable lockInOrder(long first, long second, CyclicBarrier bothLocked) {
+        try {
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                jdbcTemplate.queryForList("SELECT id FROM it_fk_parent WHERE id = ? FOR UPDATE", first);
+                try {
+                    bothLocked.await(10, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+                jdbcTemplate.queryForList("SELECT id FROM it_fk_parent WHERE id = ? FOR UPDATE", second);
+            });
+            return null;
+        } catch (DataAccessException e) {
+            return e;
+        }
     }
 
     private static DictType dictType(String code) {

@@ -261,7 +261,8 @@ export const PURCHASE_STATUS: Record<PurchaseStatus, { label: string; tone: Stat
 }
 
 /**
- * 详情、列表行上能点的：通用动作，加 edit 改草稿、remove 删草稿、receive 到货入库（已审核、部分到货，要 inventory:doc:add）、
+ * 详情、列表行上能点的：通用动作，加 edit 改草稿、remove 删草稿、receive 到货入库（已审核、部分到货，和靠冲入到齐、自己还没入够的已到齐单，
+ * 要 inventory:doc:add）、
  * return 退货（部分到货、已到齐，要 inventory:doc:add）。打印不受状态限制，不在这里
  */
 export type PurchaseAction = DocAction | 'edit' | 'remove' | 'receive' | 'return'
@@ -271,6 +272,7 @@ export const PURCHASE_LOG_ACTION: Record<string, string> = {
   reopen: '取消结案',
   receive: '入库',
   return: '退货',
+  offset: '超收冲抵',
   follow: '改预计到货、跟进',
   'price-archive': '单价记进价格档案',
   'from-mrp': '由算料单生成',
@@ -362,11 +364,28 @@ export interface PurchaseItem extends MaterialSkuBrief {
   styleCodes: string[]
   receivedQty: number
   returnedQty: number
-  /** 未入库 = 采购数 −（已入库 − 已退货），不小于 0（超收了也是 0） */
+  /** 冲入：同组（同主体、供应商、品类线、SKU、采购单位）别的单多收、冲给这一行的（RFC 014） */
+  offsetInQty: number
+  /** 冲出：这一行多收、冲给同组别的单的 */
+  offsetOutQty: number
+  /** 冲抵明细：和哪张单冲了多少，同一对行合成一条；没冲过是空数组 */
+  offsets: PurchaseOffset[]
+  /** 未入库 = 采购数 − 到货，不小于 0（多收了也是 0）；到货 = 已入库 − 已退货 + 冲入 − 冲出 */
   pendingQty: number
   /** 预计到货日期、跟进备注：审核后在"待到料"里随时改（follow 接口） */
   expectDate: string | null
   followNote: string | null
+}
+
+/** 采购明细上的一笔冲抵（RFC 014）。数量按采购单位 */
+export interface PurchaseOffset {
+  /** IN 别的单多收、冲给这一行；OUT 这一行多收、冲给别的单 */
+  direction: 'IN' | 'OUT'
+  purchaseOrderId: string
+  purchaseNo: string
+  /** 对面那张单的交货仓库：不同仓库也冲，多收的料在哪个仓要看得到 */
+  warehouseName: string
+  qty: number
 }
 
 /** 详情的"入库 / 退货"块：这张单生成的物料入库单、出库单（草稿也列，标"草稿"） */
@@ -547,7 +566,10 @@ export interface PendingArrivalRow extends MaterialSkuBrief {
   qty: number
   receivedQty: number
   returnedQty: number
-  /** 未入库 = 采购数 −（已入库 − 已退货） */
+  /** 冲入、冲出（RFC 014），见 PurchaseItem */
+  offsetInQty: number
+  offsetOutQty: number
+  /** 未入库 = 采购数 −（已入库 − 已退货 + 冲入 − 冲出） */
   pendingQty: number
   /** 交期 = 行交期 ?? 单头交货日期 */
   dueDate: string

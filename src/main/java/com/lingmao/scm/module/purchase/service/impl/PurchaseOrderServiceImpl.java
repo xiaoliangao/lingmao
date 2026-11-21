@@ -54,6 +54,7 @@ import com.lingmao.scm.module.purchase.dto.PurchaseDetailVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseForm;
 import com.lingmao.scm.module.purchase.dto.PurchaseItemReq;
 import com.lingmao.scm.module.purchase.dto.PurchaseItemVO;
+import com.lingmao.scm.module.purchase.dto.PurchaseOffsetVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseLineDefault;
 import com.lingmao.scm.module.purchase.dto.PurchaseQuery;
 import com.lingmao.scm.module.purchase.dto.PurchaseRowVO;
@@ -68,6 +69,7 @@ import com.lingmao.scm.module.purchase.entity.PurchaseOrderItem;
 import com.lingmao.scm.module.purchase.entity.PurchaseType;
 import com.lingmao.scm.module.purchase.mapper.MrpCalcMapper;
 import com.lingmao.scm.module.purchase.mapper.MrpCalcTransitMapper;
+import com.lingmao.scm.module.purchase.mapper.PurchaseOffsetMapper;
 import com.lingmao.scm.module.purchase.mapper.PurchaseOrderItemMapper;
 import com.lingmao.scm.module.purchase.mapper.PurchaseOrderMapper;
 import com.lingmao.scm.module.purchase.service.MrpService;
@@ -138,7 +140,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             .on("reject", PENDING).to(DRAFT)
             .on("audit", PENDING).to(PENDING, APPROVED)
             .on("unaudit", APPROVED).to(DRAFT)
-            .on("receive", APPROVED, RUNNING).to(APPROVED, RUNNING)
+            .on("receive", APPROVED, RUNNING, DONE).to(APPROVED, RUNNING, DONE)
             .on("return", RUNNING, DONE).to(RUNNING, DONE)
             .on("follow", APPROVED, RUNNING).to(APPROVED, RUNNING)
             .on("close", APPROVED, RUNNING).to(CLOSED)
@@ -165,6 +167,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     private final PurchaseOrderItemMapper itemMapper;
     private final MrpCalcMapper calcMapper;
     private final MrpCalcTransitMapper transitMapper;
+    private final PurchaseOffsetMapper offsetMapper;
     private final MrpService mrpService;
     private final NeedDates needDates;
     private final PurchaseExcel excel;
@@ -212,12 +215,15 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             r.setFirstItem(r.getFirstSkuId() == null ? null : briefs.get(r.getFirstSkuId()));
             r.setBuyerName(names.get(r.getBuyerId()));
             r.setActions(actions(DocStatus.valueOf(r.getStatus()), new Ctx(isCreator(r.getCreateBy()),
-                    new ApprovalView(0, List.of(), null, mine.contains(r.getId())), false)));
+                    new ApprovalView(0, List.of(), null, mine.contains(r.getId())), false, false)));
         }
     }
 
-    /** 算按钮要的业务条件：creator 我是制单人（撤回），approval 审批块，referenced 有入库单、出库单或被算料单用着（不出反审核；列表不查） */
-    record Ctx(boolean creator, ApprovalView approval, boolean referenced) {
+    /**
+     * 算按钮要的业务条件：creator 我是制单人（撤回），approval 审批块，referenced 有入库单、出库单或被算料单用着（不出反审核；列表不查），
+     * offsetIn 有靠冲入到齐、自己还没入够的行（已到齐也出到货入库，RFC 014；列表不查）
+     */
+    record Ctx(boolean creator, ApprovalView approval, boolean referenced, boolean offsetIn) {
     }
 
     /** 按钮（前端 PurchaseAction）。到货入库、退货看 inventory:doc:add */
@@ -229,6 +235,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 .perm("return", "inventory:doc:add")
                 .when("withdraw", c.creator())
                 .when("unaudit", !c.referenced())
+                .when("receive", status != DONE || c.offsetIn())
                 .approval(c.approval())
                 .list();
     }
@@ -280,16 +287,20 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         vo.setReceivedQty(Num.qty(sum(items.stream().map(PurchaseOrderItem::netReceived).toList())));
         vo.setReturnedQty(Num.qty(sum(items.stream().map(PurchaseOrderItem::getReturnedQty).toList())));
         vo.setPlanStyles(poMapper.selectPlanStyles(id));
+        Map<Long, List<PurchaseOffsetVO>> offsets = offsetMapper.selectRefsOfOrder(id).stream().collect(Collectors.groupingBy(PurchaseOffsetMapper.RefRow::itemId,
+                        Collectors.mapping(r -> new PurchaseOffsetVO(r.direction(), r.purchaseOrderId(), r.purchaseNo(), r.warehouseName(),
+                                Num.qty(r.qty())), Collectors.toList())));
         vo.setItems(items.stream().map(i -> itemVO(po, i, briefs.get(i.getMaterialSkuId()), archive.get(i.getMaterialSkuId()),
-                i.getCalcItemId() == null ? null : sources.get(i.getCalcItemId()))).toList());
+                i.getCalcItemId() == null ? null : sources.get(i.getCalcItemId()), offsets.getOrDefault(i.getId(), List.of()))).toList());
         vo.setStockDocs(poMapper.selectStockDocs(id).stream().peek(d -> d.setDyeLots(PurTexts.split(d.getDyeLotsText()))).toList());
         boolean referenced = po.getStatus() == APPROVED && !referenceService.referrers(BizType.PURCHASE_ORDER, id).isEmpty();
-        vo.setActions(actions(po.getStatus(), new Ctx(isCreator(po.getCreateBy()), vo.getApproval(), referenced)));
+        boolean offsetIn = items.stream().anyMatch(PurchaseStockHandler::coveredByOffset);
+        vo.setActions(actions(po.getStatus(), new Ctx(isCreator(po.getCreateBy()), vo.getApproval(), referenced, offsetIn)));
         return vo;
     }
 
     private static PurchaseItemVO itemVO(PurchaseOrder po, PurchaseOrderItem i, MaterialSkuBrief brief, PriceRef archive,
-                                         PurchaseOrderItemMapper.CalcSource source) {
+                                         PurchaseOrderItemMapper.CalcSource source, List<PurchaseOffsetVO> offsets) {
         PurchaseItemVO v = new PurchaseItemVO();
         v.fillFrom(brief);
         v.setId(i.getId());
@@ -311,6 +322,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         v.setStyleCodes(source == null ? List.of() : PurTexts.split(source.styleCodes()));
         v.setReceivedQty(i.getReceivedQty());
         v.setReturnedQty(i.getReturnedQty());
+        v.setOffsetInQty(i.getOffsetInQty());
+        v.setOffsetOutQty(i.getOffsetOutQty());
+        v.setOffsets(offsets);
         v.setPendingQty(i.pending());
         v.setExpectDate(i.getExpectDate());
         v.setFollowNote(i.getFollowNote());
@@ -766,12 +780,15 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         docLogService.add(BizType.PURCHASE_ORDER, po.getId(), action, po.getStatus(), to, PurTexts.blankToNull(req.reason()));
     }
 
-    /** 按到货算状态：每行净入库 ≥ 采购数是已到齐，有一行到了是部分到货，都没到是已审核（审核后、过账回写、取消结案都按它） */
+    /**
+     * 按到货（净入库 + 冲入 − 冲出，RFC 014）算状态：每行到货 ≥ 采购数是已到齐，有一行到了是部分到货，都没到是已审核
+     * （审核后、过账回写、取消结案都按它）。只靠冲入、自己没入过库的也是部分到货
+     */
     static DocStatus byArrival(List<PurchaseOrderItem> items) {
-        if (items.stream().allMatch(i -> i.netReceived().compareTo(i.getQty()) >= 0)) {
+        if (items.stream().allMatch(i -> i.arrived().compareTo(i.getQty()) >= 0)) {
             return DONE;
         }
-        return items.stream().anyMatch(i -> i.netReceived().signum() > 0) ? RUNNING : APPROVED;
+        return items.stream().anyMatch(i -> i.arrived().signum() > 0) ? RUNNING : APPROVED;
     }
 
     private void submit(PurchaseOrder po, DocActionReq req) {
@@ -1162,8 +1179,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         Map<Long, LocalDate> calcNeed = calcNeedDates(calcIds);
 
         for (PendingArrivalRowVO r : rows) {
-            BigDecimal net = r.getReceivedQty().subtract(r.getReturnedQty());
-            r.setPendingQty(r.getQty().subtract(net).max(BigDecimal.ZERO));
+            BigDecimal arrived = r.getReceivedQty().subtract(r.getReturnedQty()).add(r.getOffsetInQty()).subtract(r.getOffsetOutQty());
+            r.setPendingQty(r.getQty().subtract(arrived).max(BigDecimal.ZERO));
             LocalDate arrive = r.getExpectDate() != null ? r.getExpectDate() : r.getDueDate();
             r.setArriveDate(arrive);
             r.setDaysLeft(ChronoUnit.DAYS.between(today, arrive));

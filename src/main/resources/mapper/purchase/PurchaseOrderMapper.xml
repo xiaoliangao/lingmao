@@ -143,13 +143,14 @@
         <include refid="keywordCtes"/>
         SELECT i.id AS purchase_item_id, o.id AS purchase_order_id, o.no AS purchase_no, o.purchase_type, o.supplier_id,
                s.short_name AS supplier_name, o.buyer_id, o.warehouse_id, w.name AS warehouse_name, i.material_sku_id,
-               i.purchase_unit, i.qty, i.received_qty, i.returned_qty, COALESCE(i.line_due_date, o.delivery_date) AS due_date,
+               i.purchase_unit, i.qty, i.received_qty, i.returned_qty, i.offset_in_qty, i.offset_out_qty,
+               COALESCE(i.line_due_date, o.delivery_date) AS due_date,
                i.expect_date, i.follow_note, i.calc_item_id, o.create_by
         FROM pur_order_item i
         JOIN pur_order o ON o.id = i.purchase_order_id
         JOIN sup_supplier s ON s.id = o.supplier_id
         JOIN bas_warehouse w ON w.id = o.warehouse_id
-        WHERE o.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty &lt; i.qty
+        WHERE o.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty + i.offset_in_qty - i.offset_out_qty &lt; i.qty
         <if test="scope.lines.limited">AND o.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
         <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.buyer_id = #{scope.userId})</if>
         <if test="q.supplierId != null">AND o.supplier_id = #{q.supplierId}</if>

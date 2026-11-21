@@ -24,7 +24,8 @@ public interface SupplyMapper {
      * @param eta 预计到货 ?? 行交期 ?? 单头交货日期
      */
     record LineRow(Long id, Long poId, String poNo, String purchaseType, String poStatus, Long skuId, Long warehouseId,
-                   String warehouseType, BigDecimal qty, BigDecimal receivedQty, BigDecimal returnedQty, BigDecimal factor,
+                   String warehouseType, BigDecimal qty, BigDecimal receivedQty, BigDecimal returnedQty, BigDecimal offsetInQty,
+                   BigDecimal offsetOutQty, BigDecimal factor,
                    LocalDate eta, Long ownerItemId, Long ownerCalcId, String ownerCalcStatus) {
     }
 

@@ -27,12 +27,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,6 +55,8 @@ class PurchaseStockHandlerTest {
     private DictDataService dictDataService;
     @Mock
     private DocLogService docLogService;
+    @Mock
+    private PurchaseOffsetBook offsetBook;
 
     private PurchaseStockHandler handler;
 
@@ -62,7 +68,10 @@ class PurchaseStockHandlerTest {
 
     @BeforeEach
     void setUp() {
-        handler = new PurchaseStockHandler(poMapper, itemMapper, materialService, dictDataService, docLogService);
+        handler = new PurchaseStockHandler(poMapper, itemMapper, materialService, dictDataService, docLogService, offsetBook);
+        // 冲抵的取数、写回另有 OverOffsetPlanTest 和 PurchaseIT；这里只锁这一张、什么都不冲
+        lenient().when(offsetBook.poIdsToLock(anyLong(), any(), anyBoolean())).thenReturn(new TreeSet<>(Set.of(5L)));
+        lenient().when(offsetBook.settle(any(), any(), any())).thenReturn(PurchaseOffsetBook.Settled.NONE);
     }
 
     /** 采购 100、已入 60：这次最多 105 − 60 = 45，入 50 是 1004，清单里写上限 */
@@ -90,13 +99,45 @@ class PurchaseStockHandlerTest {
     void onPosted_reachingQty_marksDone() {
         PurchaseOrder po = po(DocStatus.RUNNING);
         when(poMapper.lockById(5L)).thenReturn(po);
-        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("60", "0")));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("60", "0")), List.of(item("105", "0")));
         when(poMapper.update(any(), any())).thenReturn(1);
 
         handler.onPosted(posting(InvDocType.PURCHASE_IN, "45"));
 
         verify(itemMapper).addPosted(eq(11L), eq(new BigDecimal("45")), eq(BigDecimal.ZERO));
+        verify(offsetBook).settle(eq(Map.of(11L, new BigDecimal("45"))), eq(Set.of(5L)), any());
         verify(docLogService).add(eq(BizType.PURCHASE_ORDER), eq(5L), eq("status"), eq(DocStatus.RUNNING), eq(DocStatus.DONE), any());
+    }
+
+    /**
+     * 别的单多收冲来 5，自己入了 95 就到齐了（RFC 014）：已到齐还能入库，供应商照单再送的 5 入得进来（上限还是按净入库 105 − 95）；
+     * 自己入够了采购数的已到齐单照旧不能入
+     */
+    @Test
+    void check_doneByOffset_canStillReceive() {
+        PurchaseOrderItem covered = item("95", "0");
+        covered.setOffsetInQty(new BigDecimal("5"));
+        when(poMapper.lockById(5L)).thenReturn(po(DocStatus.DONE));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(covered), List.of(item("100", "0")));
+
+        handler.check(posting(InvDocType.PURCHASE_IN, "10"));
+
+        assertThatThrownBy(() -> handler.check(posting(InvDocType.PURCHASE_IN, "1")))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("不能入库"));
+    }
+
+    /** 退货让净入库变少：冲抵按 −30 算（退回冲出去的在 OverOffsetPlan 里） */
+    @Test
+    void return_passesNegativeNetDeltaToOffsets() {
+        when(poMapper.lockById(5L)).thenReturn(po(DocStatus.DONE));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("105", "0")), List.of(item("105", "0")), List.of(item("105", "30")));
+        when(poMapper.update(any(), any())).thenReturn(1);
+
+        handler.preparePosting(posting(InvDocType.PURCHASE_RETURN, "30"), false);
+
+        verify(offsetBook).poIdsToLock(5L, Set.of(11L), false);
+        verify(offsetBook).settle(eq(Map.of(11L, new BigDecimal("-30"))), eq(Set.of(5L)), any());
+        verify(docLogService).add(eq(BizType.PURCHASE_ORDER), eq(5L), eq("status"), eq(DocStatus.DONE), eq(DocStatus.RUNNING), any());
     }
 
     /** 入了 100、退了 30：反审核 80 的入库单会让净入库变负，先反审核退货单（1000），什么都不改 */
@@ -132,11 +173,13 @@ class PurchaseStockHandlerTest {
     @Test
     void onUnposted_returnAfterUndoingReplacement_isAllowed() {
         when(poMapper.lockById(5L)).thenReturn(po(DocStatus.RUNNING));
-        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("100", "50")));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("100", "50")), List.of(item("100", "0")));
         when(poMapper.update(any(), any())).thenReturn(1);
 
         handler.preparePosting(posting(InvDocType.PURCHASE_RETURN, "50"), true);
         verify(itemMapper).addPosted(11L, BigDecimal.ZERO, new BigDecimal("-50"));
+        verify(offsetBook).poIdsToLock(5L, Set.of(11L), true);
+        verify(offsetBook).settle(eq(Map.of(11L, new BigDecimal("50"))), eq(Set.of(5L)), any());
     }
 
     private static PurchaseOrder po(DocStatus status) {
