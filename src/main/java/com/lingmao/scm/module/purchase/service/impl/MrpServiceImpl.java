@@ -1103,8 +1103,8 @@ public class MrpServiceImpl implements MrpService {
                 : itemMapper.selectByCalcs(all).stream().filter(i -> i.getBlock() == MrpBlock.PURCHASE).toList();
         List<MrpCalcItem> live = items.stream().filter(i -> confirmed.contains(i.getCalcId())).toList();
         Map<Long, List<MrpCalcTransit>> uses = new HashMap<>();
-        for (Long calcId : confirmed) {
-            transitMapper.selectByCalc(calcId).forEach(u -> uses.computeIfAbsent(u.getCalcItemId(), k -> new ArrayList<>()).add(u));
+        if (!confirmed.isEmpty()) {
+            transitMapper.selectByCalcs(confirmed).forEach(u -> uses.computeIfAbsent(u.getCalcItemId(), k -> new ArrayList<>()).add(u));
         }
         Progress p = progress(live, uses.values().stream().flatMap(List::stream).toList(), confirmed);
         Map<Long, int[]> counts = new HashMap<>();   // 算料单 → [齐了的行, 全部行]

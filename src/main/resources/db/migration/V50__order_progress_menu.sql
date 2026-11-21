@@ -1,12 +1,14 @@
 -- 订单进度总览（RFC 016 §1，PRD §6.5.7 的 06.07）：订单 › 进度总览，一行是一张在手订单里的一个款。
 -- 只读页面，没有按钮权限。凡是能看需求订单的角色模板都给（生产经理、业务主管也有需求订单的查看）
 
+-- 已经有这个菜单（手工建过）就不再建；"订单"目录被改过路径、找不到时不建，管理员在菜单管理里补
 WITH dir AS (
-    SELECT id FROM sys_menu WHERE parent_id = 0 AND path = '/sales' AND deleted = false
+    SELECT id FROM sys_menu WHERE parent_id = 0 AND path = '/sales' AND deleted = false ORDER BY id LIMIT 1
 )
 INSERT INTO sys_menu (parent_id, name, type, path, component, perms, icon, sort, visible, admin_only)
 SELECT dir.id, '进度总览', 2, '/order-progress', 'order/progress/index', 'order:progress:list', 'TrendCharts', 30, true, false
-FROM dir;
+FROM dir
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'order:progress:list' AND deleted = false);
 
 INSERT INTO sys_role_menu (role_id, menu_id)
 SELECT r.id, m.id
@@ -20,5 +22,5 @@ ON CONFLICT DO NOTHING;
 INSERT INTO sys_role_menu (role_id, menu_id)
 SELECT rm.role_id, m.parent_id
 FROM sys_role_menu rm
-JOIN sys_menu m ON m.id = rm.menu_id AND m.perms = 'order:progress:list'
+JOIN sys_menu m ON m.id = rm.menu_id AND m.perms = 'order:progress:list' AND m.deleted = false AND m.parent_id <> 0
 ON CONFLICT DO NOTHING;

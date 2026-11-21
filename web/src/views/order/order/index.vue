@@ -366,7 +366,7 @@ function onImported(count: number) {
       </el-table-column>
       <el-table-column v-if="cols.show.kitting" label="齐料" width="136">
         <template #default="{ row }">
-          <button v-if="kittingMap[row.id]" type="button" class="tag-btn" :disabled="!kittingMap[row.id]!.calcIds.length" @click.stop="openKitting(kittingMap[row.id]!)">
+          <button v-if="kittingMap[row.id]" type="button" class="tag-btn" :disabled="!user.hasPerm('purchase:mrp:list') || !kittingMap[row.id]!.calcIds.length" @click.stop="openKitting(kittingMap[row.id]!)">
             <StatusTag :tone="KITTING_STATUS[kittingMap[row.id]!.status].tone">{{ kittingMap[row.id]!.label }}</StatusTag>
           </button>
           <span v-else class="dim">—</span>
@@ -466,6 +466,10 @@ function onImported(count: number) {
 
 .small {
   font-size: 11.5px;
+}
+
+:deep(.el-table__row.clickable) {
+  cursor: pointer;
 }
 
 .tag-btn {

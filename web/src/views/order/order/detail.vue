@@ -339,7 +339,7 @@ function openKitting() {
           {{ formatQty(detail.totalQty) }} 件<template v-if="canSeeOrderPrice"> · {{ detail.currency }} {{ formatMoney(detail.totalAmount) }}</template> ·
           {{ approved && detail.commitDate ? '承诺交期' : '要求交期' }} {{ formatDate(dueDate) }}
           <DaysLeftTag :days-left="daysLeft" />
-          <button v-if="kitting" type="button" class="tag-btn" :disabled="!kitting.calcIds.length" @click="openKitting">
+          <button v-if="kitting" type="button" class="tag-btn" :disabled="!user.hasPerm('purchase:mrp:list') || !kitting.calcIds.length" @click="openKitting">
             <StatusTag :tone="KITTING_STATUS[kitting.status].tone">{{ kitting.label }}</StatusTag>
           </button>
         </p>

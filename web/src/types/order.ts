@@ -698,7 +698,7 @@ export interface OrderChangeUpdateForm extends OrderChangeForm {
 export type OrderProgressSegment = 'ALL' | 'UNSCHEDULED' | 'NEAR' | 'LATE' | 'PRODUCTION'
 
 /**
- * 一行（订单 × 款）的风险，后端现算：late 交期过了还没回齐、near 还剩 ≤ 7 天没回齐、unscheduled 没排完、
+ * 一行（订单 × 款）的风险，后端现算（没回齐、没排完按 SKU 看）：late 交期过了还没回齐、near 还剩 ≤ 7 天没回齐、unscheduled 没排完、
  * nodeLate 这个款的生产单有节点延期、issue 有没关闭的异常、production 生产单有逾期 / 临期 / 节点延期 / 异常
  */
 export interface OrderProgressRisk {
@@ -745,8 +745,8 @@ export interface OrderProgressRow {
   returnedQty: number
   /** 承诺交期 ?? 要求交期；行交期更早的用行交期 */
   dueDate: string
-  /** 负数是逾期几天 */
-  daysLeft: number
+  /** 负数是逾期几天；每个 SKU 都回齐了是 null */
+  daysLeft: number | null
   /** 还没算过料是 null */
   kitting: OrderKitting | null
   merchId: string | null

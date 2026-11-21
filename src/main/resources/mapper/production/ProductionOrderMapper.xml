@@ -107,6 +107,9 @@
         <if test="q.orderNos != null and q.orderNos.size() > 0">
             AND o.no IN <foreach collection="q.orderNos" item="no" open="(" separator="," close=")">#{no}</foreach>
         </if>
+        <if test="q.styleIds != null and q.styleIds.size() > 0">
+            AND p.style_id IN <foreach collection="q.styleIds" item="sid" open="(" separator="," close=")">#{sid}</foreach>
+        </if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>
             <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>

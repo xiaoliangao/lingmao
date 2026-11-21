@@ -255,15 +255,29 @@ class ProductionSupport {
 
     // ---------- 列表行 ----------
 
+    /** 只算进度：节点进度条、当前节点、剩余天数、风险（进度总览的生产单小块用，不要图、人名、按钮） */
+    void fillProgress(List<ProductionRowVO> rows) {
+        if (rows.isEmpty()) {
+            return;
+        }
+        LocalDate today = today();
+        Map<Long, List<ProductionNode>> nodes = nodeMapper.selectByOrders(rows.stream().map(ProductionRowVO::getId).toList()).stream()
+                .collect(Collectors.groupingBy(ProductionNode::getPrdOrderId));
+        for (ProductionRowVO r : rows) {
+            List<ProductionNode> ns = nodes.getOrDefault(r.getId(), List.of());
+            r.setNodes(ProductionRules.dots(ns, today));
+            r.setCurrentNodeName(ProductionRules.currentNodeName(ns));
+            r.setDaysLeft(ProductionRules.daysLeft(DocStatus.valueOf(r.getStatus()), r.getDueDate(), r.getExpectDate(), today));
+            r.setRisk(new RiskVO(r.isRiskLate(), r.isRiskNear(), r.isRiskNodeLate(), r.isRiskIssue(), r.isRiskUpstream()));
+        }
+    }
+
     /** 列表、看板、导出的行：节点进度条、当前节点、剩余天数、风险、款式主图、跟单名字、按钮 */
     void fillRows(List<ProductionRowVO> rows, boolean withActions) {
         if (rows.isEmpty()) {
             return;
         }
-        LocalDate today = today();
-        List<Long> ids = rows.stream().map(ProductionRowVO::getId).toList();
-        Map<Long, List<ProductionNode>> nodes = nodeMapper.selectByOrders(ids).stream()
-                .collect(Collectors.groupingBy(ProductionNode::getPrdOrderId));
+        fillProgress(rows);
         Map<Long, String> names = userService.nicknames(rows.stream().map(ProductionRowVO::getMerchId)
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, rows.stream().map(ProductionRowVO::getStyleId).collect(Collectors.toSet()),
@@ -272,11 +286,6 @@ class ProductionSupport {
                 ? new HashSet<>(approvalService.waitingForMe(BizType.PRODUCTION_ORDER)) : Set.of();
         for (ProductionRowVO r : rows) {
             DocStatus status = DocStatus.valueOf(r.getStatus());
-            List<ProductionNode> ns = nodes.getOrDefault(r.getId(), List.of());
-            r.setNodes(ProductionRules.dots(ns, today));
-            r.setCurrentNodeName(ProductionRules.currentNodeName(ns));
-            r.setDaysLeft(ProductionRules.daysLeft(status, r.getDueDate(), r.getExpectDate(), today));
-            r.setRisk(new RiskVO(r.isRiskLate(), r.isRiskNear(), r.isRiskNodeLate(), r.isRiskIssue(), r.isRiskUpstream()));
             r.setImage(images.get(r.getStyleId()));
             r.setMerchName(names.get(r.getMerchId()));
             if (withActions) {

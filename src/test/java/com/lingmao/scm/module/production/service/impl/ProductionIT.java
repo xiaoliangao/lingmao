@@ -467,6 +467,19 @@ class ProductionIT {
         assertThat(row.getProductions()).extracting(ProductionBriefVO::status).containsOnly("DRAFT");
         assertThat(progressService.counts(q)).isEqualTo(new OrderProgressCounts(1, 0, 0, 0, 0));
 
+        // 没排完按 SKU 看：M 多排的 3 件抵不掉 L 少排的 3 件（订单的排单按钮、完成条件也是逐个 SKU 比）
+        jdbcTemplate.update("UPDATE ord_order_item SET scheduled_qty = scheduled_qty + 3 WHERE id = ?", orderLine(orderId, f.skuM));
+        jdbcTemplate.update("UPDATE ord_order_item SET scheduled_qty = scheduled_qty - 3 WHERE id = ?", orderLine(orderId, f.skuL));
+        assertThat(progressService.page(q).getList().getFirst().getRisk().unscheduled()).isTrue();
+        jdbcTemplate.update("UPDATE ord_order_item SET scheduled_qty = scheduled_qty - 3 WHERE id = ?", orderLine(orderId, f.skuM));
+        jdbcTemplate.update("UPDATE ord_order_item SET scheduled_qty = scheduled_qty + 3 WHERE id = ?", orderLine(orderId, f.skuL));
+
+        // 生产单是别人跟单、别人建的：本人范围的我能看到订单，小块照样列
+        long other = jdbcTemplate.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES (?, 'x', ?) RETURNING id",
+                Long.class, "it-prg-" + orderId, "IT 别人" + orderId);
+        jdbcTemplate.update("UPDATE prd_order SET create_by = ?, merch_id = ? WHERE id = ?", other, other, l);
+        assertThat(progressService.page(q).getList().getFirst().getProductions()).extracting(ProductionBriefVO::id).containsExactly(m, l);
+
         jdbcTemplate.update("UPDATE ord_order SET commit_date = ? WHERE id = ?", LocalDate.now().plusDays(3), orderId);
         assertThat(progressService.page(q).getList().getFirst().getRisk().near()).isTrue();
         q.setSegment("NEAR");
@@ -494,9 +507,32 @@ class ProductionIT {
         q.setSegment(null);
         assertThat(progressService.counts(q)).isEqualTo(new OrderProgressCounts(1, 0, 0, 1, 1));
 
+        // 排序按风险分，不是按交期：交期远但节点延期的（4 分）排在临期的（1 分）前面；不在页上的款的生产单不取
+        long nearOrder = approvedOrder(f, commit);
+        jdbcTemplate.update("UPDATE ord_order SET commit_date = ? WHERE id = ?", LocalDate.now().plusDays(3), nearOrder);
+        long nodeLateOrder = approvedOrder(f, commit);
+        long p3 = scheduleService.schedule(scheduleReq(f, nodeLateOrder, commit.minusDays(10), Map.of(orderLine(nodeLateOrder, f.skuM), 60)))
+                .getFirst().id();
+        productionOrderService.act(p3, "submit", new DocActionReq(productionOrderService.detail(p3).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(p3, "audit",
+                new DocActionReq(productionOrderService.detail(p3).getVersion(), null)));
+        jdbcTemplate.update("UPDATE prd_node SET plan_start = ?, plan_finish = ? WHERE prd_order_id = ?", LocalDate.now().minusDays(2), LocalDate.now().minusDays(1), p3);
+        OrderProgressQuery two = new OrderProgressQuery();
+        two.setKeyword(orderNo(nearOrder) + " " + orderNo(nodeLateOrder));
+        assertThat(progressService.page(two).getList()).extracting(OrderProgressRowVO::getOrderId).containsExactly(nodeLateOrder, nearOrder);
+        assertThat(progressService.page(two).getList().getFirst()).satisfies(r -> {
+            assertThat(r.getRisk().nodeLate()).isTrue();
+            assertThat(r.getRisk().unscheduled()).isTrue();
+            assertThat(r.getProductions()).extracting(ProductionBriefVO::id).containsExactly(p3);
+        });
+        assertThat(progressService.counts(two)).isEqualTo(new OrderProgressCounts(2, 2, 1, 0, 1));
+        // 一次查超过 200 个：400，不是 500
+        OrderProgressQuery many = new OrderProgressQuery();
+        many.setKeyword(String.join(" ", java.util.stream.IntStream.range(0, 201).mapToObj(i -> "DD" + i).toList()));
+        assertThatThrownBy(() -> progressService.page(many))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+
         // 别人（本人范围）看不到；只有鞋类的人看不到服装的单
-        long other = jdbcTemplate.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES (?, 'x', ?) RETURNING id",
-                Long.class, "it-prg-" + orderId, "IT 别人" + orderId);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 new LoginUser(other, "jti-it"), null, TestIdentity.withLines(PERMS).stream().map(SimpleGrantedAuthority::new).toList()));
         assertThat(progressService.page(q).getList()).isEmpty();
@@ -701,6 +737,10 @@ class ProductionIT {
         }
         req.setItems(List.of(i));
         return req;
+    }
+
+    private String orderNo(long orderId) {
+        return jdbcTemplate.queryForObject("SELECT no FROM ord_order WHERE id = ?", String.class, orderId);
     }
 
     private long orderLine(long orderId, long styleSkuId) {

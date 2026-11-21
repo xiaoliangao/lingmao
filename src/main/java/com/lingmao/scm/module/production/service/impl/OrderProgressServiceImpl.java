@@ -2,6 +2,7 @@ package com.lingmao.scm.module.production.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.common.doc.DocStatus;
+import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.biz.dto.AttachmentVO;
 import com.lingmao.scm.module.biz.entity.Attachment;
@@ -52,6 +53,8 @@ public class OrderProgressServiceImpl implements OrderProgressService {
 
     @Override
     public PageResult<OrderProgressRowVO> page(OrderProgressQuery query) {
+        // 一次查几个的个数、长度在这里先查（超了 400）；放到 XML 的 bind 里抛，会被 MyBatis 包成 500
+        Keywords.codes(query.getKeyword());
         DataScope scope = DataScope.current(query.isMine());
         IPage<OrderProgressRowVO> page = progressMapper.selectRowPage(query.toPage(), query, scope, support.today(), support.nearUntil());
         fill(page.getRecords(), scope);
@@ -60,6 +63,7 @@ public class OrderProgressServiceImpl implements OrderProgressService {
 
     @Override
     public OrderProgressCounts counts(OrderProgressQuery query) {
+        Keywords.codes(query.getKeyword());
         return progressMapper.selectCounts(query, DataScope.current(query.isMine()), support.today(), support.nearUntil());
     }
 
@@ -72,9 +76,10 @@ public class OrderProgressServiceImpl implements OrderProgressService {
                 .collect(Collectors.toMap(OrderKittingVO::orderId, Function.identity(), (a, b) -> a));
         ProductionQuery pq = new ProductionQuery();
         pq.setOrderNos(rows.stream().map(OrderProgressRowVO::getOrderNo).distinct().toList());
+        pq.setStyleIds(rows.stream().map(OrderProgressRowVO::getStyleId).distinct().toList());
         pq.setStatus(SHOWN);
         List<ProductionRowVO> prds = prdMapper.selectRows(pq, null, scope.linesOnly(), support.today(), support.nearUntil());
-        support.fillRows(prds, false);
+        support.fillProgress(prds);
         Map<String, List<ProductionBriefVO>> byKey = prds.stream()
                 .sorted(Comparator.comparing(ProductionRowVO::getId))
                 .collect(Collectors.groupingBy(p -> key(p.getOrderId(), p.getStyleId()),
@@ -88,7 +93,7 @@ public class OrderProgressServiceImpl implements OrderProgressService {
             r.setProductions(byKey.getOrDefault(key(r.getOrderId(), r.getStyleId()), List.of()));
             r.setImage(images.get(r.getStyleId()));
             r.setMerchName(names.get(r.getMerchId()));
-            r.setRisk(new OrderProgressRiskVO(r.isRiskLate(), r.isRiskNear(), r.getScheduledQty() < r.getQty(),
+            r.setRisk(new OrderProgressRiskVO(r.isRiskLate(), r.isRiskNear(), r.isRiskUnscheduled(),
                     r.isRiskNodeLate(), r.isRiskIssue(), r.isRiskProduction()));
         }
     }

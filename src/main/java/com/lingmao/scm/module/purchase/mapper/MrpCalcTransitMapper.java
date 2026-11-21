@@ -16,6 +16,11 @@ public interface MrpCalcTransitMapper extends BaseMapper<MrpCalcTransit> {
     @Select("SELECT t.* FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id = t.calc_item_id WHERE i.calc_id = #{calcId} ORDER BY t.id")
     List<MrpCalcTransit> selectByCalc(@Param("calcId") long calcId);
 
+    /** 几张算料单的一起取（订单列表、进度总览的齐料一列，一页几十张订单不逐张查） */
+    @Select("<script>SELECT t.* FROM mrp_calc_transit t JOIN mrp_calc_item i ON i.id = t.calc_item_id WHERE i.calc_id IN "
+            + "<foreach collection='calcIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY t.id</script>")
+    List<MrpCalcTransit> selectByCalcs(@Param("calcIds") Collection<Long> calcIds);
+
     @Delete("DELETE FROM mrp_calc_transit WHERE calc_item_id = #{itemId}")
     void deleteByItem(@Param("itemId") long itemId);
 

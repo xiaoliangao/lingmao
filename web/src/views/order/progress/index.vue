@@ -17,6 +17,7 @@ import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { useTable } from '@/composables/useTable'
+import { useUserStore } from '@/stores/user'
 import type { OrderProgressCounts, OrderProgressQuery, OrderProgressRow, OrderProgressSegment, ProductionBrief } from '@/types/order'
 import { PRODUCTION_STATUS } from '@/types/production'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
@@ -29,6 +30,8 @@ import { formatDate, formatDateRange, formatQty } from '@/utils/format'
  * 分段上的数另取，失败了只是不显示数
  */
 const router = useRouter()
+/** 齐料标签点了去算料单：没有算料权限的（开发）那个页面打不开，标签只看不点 */
+const canOpenMrp = useUserStore().hasPerm('purchase:mrp:list')
 const orderTypes = useDict('order_type')
 const brands = useDict('brand')
 
@@ -152,6 +155,11 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
   if (r.issue) tags.push({ label: '有异常', tone: 'pending' })
   if (r.near) tags.push({ label: '临期', tone: 'pending' })
   if (r.unscheduled) tags.push({ label: '未排完', tone: 'pending' })
+  // 只因为生产单自己逾期、临期进了"生产有风险"的：也要写出原因
+  if (r.production && !r.nodeLate && !r.issue) {
+    if (row.productions.some((p) => p.risk.late)) tags.push({ label: '生产逾期', tone: 'danger' })
+    else tags.push({ label: '生产临期', tone: 'pending' })
+  }
   return tags
 }
 </script>
@@ -213,15 +221,15 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
       <el-table-column v-if="cols.show.dueDate" label="交期" width="160" class-name="num">
         <template #default="{ row }">
           {{ formatDate(row.dueDate) }}
-          <DaysLeftTag v-if="row.returnedQty < row.qty" :days-left="row.daysLeft" />
+          <DaysLeftTag v-if="row.daysLeft != null" :days-left="row.daysLeft" />
         </template>
       </el-table-column>
       <el-table-column v-if="cols.show.scheduled" label="排产" width="112">
         <template #default="{ row }"><QtyProgress :done="row.scheduledQty" :total="row.qty" /></template>
       </el-table-column>
-      <el-table-column v-if="cols.show.kitting" label="齐料" width="128">
+      <el-table-column v-if="cols.show.kitting" label="齐料" width="140">
         <template #default="{ row }">
-          <button v-if="row.kitting" type="button" class="tag-btn" :disabled="!row.kitting.calcIds.length" @click.stop="openKitting(row.kitting)">
+          <button v-if="row.kitting" type="button" class="tag-btn" :disabled="!canOpenMrp || !row.kitting.calcIds.length" @click.stop="openKitting(row.kitting)">
             <StatusTag :tone="KITTING_STATUS[(row as OrderProgressRow).kitting!.status].tone">{{ row.kitting.label }}</StatusTag>
           </button>
           <span v-else class="dim">—</span>
@@ -231,7 +239,7 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
         <template #default="{ row }">
           <span v-if="!row.productions.length" class="dim">没排单</span>
           <span v-else class="chips">
-            <el-tooltip v-for="p in (row as OrderProgressRow).productions" :key="p.id" placement="top" :show-after="200">
+            <el-tooltip v-for="p in (row as OrderProgressRow).productions" :key="p.id" effect="light" placement="top" :show-after="200">
               <template #content>
                 <div class="chip-tip">
                   <div><span class="code">{{ p.no }}</span> · {{ PRODUCTION_STATUS[p.status].label }}</div>
@@ -256,7 +264,7 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
       <el-table-column v-if="cols.show.merch" label="跟单" width="96">
         <template #default="{ row }">{{ row.merchName ?? '—' }}</template>
       </el-table-column>
-      <el-table-column label="风险" width="168" fixed="right" :show-overflow-tooltip="false">
+      <el-table-column label="风险" width="216" fixed="right" :show-overflow-tooltip="false">
         <template #default="{ row }">
           <span class="risks">
             <StatusTag v-for="t in riskTags(row as OrderProgressRow).slice(0, 2)" :key="t.label" :tone="t.tone">{{ t.label }}</StatusTag>
@@ -362,5 +370,13 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.small {
+  font-size: 11.5px;
+}
+
+:deep(.el-table__row.clickable) {
+  cursor: pointer;
 }
 </style>

@@ -47,4 +47,7 @@ public class ProductionQuery extends PageQuery {
     private boolean dueFirst;
     /** 只要这几张需求订单的：首页跟单的"晚于开裁" */
     private Collection<String> orderNos;
+
+    /** 只要这几个款的（进度总览按页上的订单、款取生产单小块，内部用，页面不传） */
+    private Collection<Long> styleIds;
 }

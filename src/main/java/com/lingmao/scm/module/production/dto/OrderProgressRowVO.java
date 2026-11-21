@@ -26,7 +26,7 @@ public class OrderProgressRowVO {
     private int returnedQty;
     /** 承诺交期 ?? 要求交期；行交期更早的用行交期 */
     private LocalDate dueDate;
-    /** 交期 − 今天，负数是逾期几天 */
+    /** 交期 − 今天，负数是逾期几天；每个 SKU 都回齐了是 null（不再提醒） */
     private Integer daysLeft;
     /** 订单的齐料（03）；还没算过料是 null */
     private OrderKittingVO kitting;
@@ -41,6 +41,8 @@ public class OrderProgressRowVO {
     private boolean riskLate;
     @JsonIgnore
     private boolean riskNear;
+    @JsonIgnore
+    private boolean riskUnscheduled;
     @JsonIgnore
     private boolean riskNodeLate;
     @JsonIgnore
