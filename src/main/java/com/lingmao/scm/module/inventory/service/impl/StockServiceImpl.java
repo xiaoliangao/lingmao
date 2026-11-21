@@ -12,6 +12,8 @@ import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
+import com.lingmao.scm.module.inventory.dto.StockMovementQuery;
+import com.lingmao.scm.module.inventory.dto.StockMovementRowVO;
 import com.lingmao.scm.module.inventory.dto.StockQtyVO;
 import com.lingmao.scm.module.inventory.dto.StockQuery;
 import com.lingmao.scm.module.inventory.dto.StockRowVO;
@@ -90,6 +92,29 @@ public class StockServiceImpl implements StockService {
         fillLogs(rows);
         String next = hasMore ? logCursor.encode(query, new StockLogCursor.Position(rows.getLast().getCreateTime(), rows.getLast().getId())) : null;
         return new SeekPage<>(rows, next, hasMore);
+    }
+
+    @Override
+    public PageResult<StockMovementRowVO> movement(StockMovementQuery query) {
+        IPage<StockMovementRowVO> page = stockLogMapper.selectMovementPage(query.toPage(), query, movementCodes(query));
+        fillBriefs(page.getRecords());
+        return PageResult.of(page);
+    }
+
+    @Override
+    public byte[] exportMovement(StockMovementQuery query) {
+        List<StockMovementRowVO> rows = stockLogMapper.selectMovementPage(all(), query, movementCodes(query)).getRecords();
+        fillBriefs(rows);
+        return excel.movement(rows);
+    }
+
+    /** 期间：开始不晚于结束、最多一年（库存日志从头扫到期末，一年以上的看月度就够了）；关键字里的几个编码 */
+    private static List<String> movementCodes(StockMovementQuery query) {
+        BusinessDateRange.validate(query.getBizDateFrom(), query.getBizDateTo());
+        if (query.getBizDateTo().isAfter(query.getBizDateFrom().plusYears(1).minusDays(1))) {
+            throw new BizException(400, "期间最多选一年");
+        }
+        return Keywords.codes(query.getKeyword());
     }
 
     private void fillLogs(List<StockLogRowVO> rows) {

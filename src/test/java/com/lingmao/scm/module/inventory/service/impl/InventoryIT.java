@@ -3,6 +3,7 @@ package com.lingmao.scm.module.inventory.service.impl;
 import com.lingmao.scm.IntegrationTest;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
+import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ImportError;
@@ -11,6 +12,8 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.service.SelfAudit;
+import com.lingmao.scm.module.inventory.dto.StockMovementRowVO;
+import com.lingmao.scm.module.inventory.dto.StockMovementQuery;
 import com.lingmao.scm.module.inventory.dto.CountCreateReq;
 import com.lingmao.scm.module.inventory.dto.CountCreatedVO;
 import com.lingmao.scm.module.inventory.dto.CountDetailVO;
@@ -479,6 +482,75 @@ class InventoryIT {
     }
 
     // ---------- 工具 ----------
+
+    /**
+     * 规则（RFC 016 §4.2）：进销存从库存日志现算。期初 = 期间以前的变动；期间里按类型分列；反审核的反向日志算进原来那一列
+     * （入库反审核是入库那列减、出库反审核是出库那列减）；选中的两个仓之间的调拨同时进调入、调出；期末 = 期初 + 入 − 出，
+     * 期末是今天时和库存表对得上。期间里一笔都没有、期初期末也是 0 的 SKU 不列；期间超过一年、开始晚于结束 400
+     */
+    @Test
+    void movement_openingInOutClosing() {
+        Fixture f = fixture();
+        LocalDate today = LocalDate.now();
+        audit(createOn(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "10", today.minusDays(40)));
+        audit(create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "5"));
+        audit(create(f, InvDocType.TRANSFER, f.warehouseA, f.warehouseB, f.skuA, "3"));
+        long out = create(f, InvDocType.OTHER_OUT, f.warehouseA, null, f.skuA, "2");
+        audit(out);
+        long wrong = create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "4");
+        audit(wrong);
+        invDocService.act(wrong, "unaudit", new DocActionReq(version(wrong), "录错了"));
+        invDocService.act(out, "unaudit", new DocActionReq(version(out), "退回来"));
+
+        StockMovementQuery q = new StockMovementQuery();
+        q.setBizDateFrom(today.minusDays(10));
+        q.setBizDateTo(today);
+        q.setWarehouseType("MATERIAL");
+        q.setKeyword(skuCode(f.skuA) + " " + skuCode(f.skuB));
+        StockMovementRowVO both = stockService.movement(q).getList().stream().filter(r -> r.getMaterialSkuId() == f.skuA)
+                .findFirst().orElseThrow();
+        PageResult<StockMovementRowVO> page = stockService.movement(q);
+        assertThat(page.getList()).as("B 一笔都没有，不列").extracting(StockMovementRowVO::getMaterialSkuId).containsExactly(f.skuA);
+        assertThat(page.getTotal()).as("分页插件生成的 count 和列出来的一样").isEqualTo(1);
+        assertThat(List.of(both.getOpeningQty(), both.getInQty(), both.getOutQty(), both.getClosingQty()))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(dec("10"), dec("8"), dec("3"), dec("15"));
+        assertThat(List.of(both.getOtherIn(), both.getTransferIn(), both.getTransferOut(), both.getOtherOut(), both.getPurchaseIn()))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(dec("5"), dec("3"), dec("3"), dec("0"), dec("0"));
+        assertThat(both.getMaterialName()).isEqualTo("IT 库存面料");
+
+        q.setWarehouseId(f.warehouseA);
+        StockMovementRowVO a = stockService.movement(q).getList().getFirst();
+        assertThat(List.of(a.getOpeningQty(), a.getInQty(), a.getOutQty(), a.getClosingQty()))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(dec("10"), dec("5"), dec("3"), dec("12"));
+        assertThat(a.getClosingQty()).isEqualByComparingTo(stock(f.warehouseA, f.skuA));
+        assertThat(stockService.exportMovement(q)).isNotEmpty();
+
+        q.setBizDateFrom(today.minusDays(60));
+        q.setBizDateTo(today.minusDays(50));
+        assertThat(stockService.movement(q).getList()).isEmpty();
+        q.setBizDateTo(today.minusDays(50).plusYears(1));
+        assertThatThrownBy(() -> stockService.movement(q)).isInstanceOfSatisfying(BizException.class, e -> {
+            assertThat(e.getCode()).isEqualTo(400);
+            assertThat(e.getMessage()).contains("一年");
+        });
+        q.setBizDateTo(today.minusDays(61));
+        assertThatThrownBy(() -> stockService.movement(q)).isInstanceOfSatisfying(BizException.class,
+                e -> assertThat(e.getCode()).isEqualTo(400));
+    }
+
+    private long createOn(Fixture f, InvDocType type, Long from, Long to, long sku, String qty, LocalDate date) {
+        InvDocCreateReq req = createReq(f, type, from, to, List.of(itemReq(sku, qty)));
+        req.setDocDate(date);
+        return invDocService.create(req).id();
+    }
+
+    private String skuCode(long sku) {
+        return jdbcTemplate.queryForObject("SELECT code FROM bas_material_sku WHERE id = ?", String.class, sku);
+    }
+
+    private static BigDecimal dec(String v) {
+        return new BigDecimal(v);
+    }
 
     private record Fixture(long company, long warehouseA, long warehouseB, long skuA, long skuB, long counter) {
     }

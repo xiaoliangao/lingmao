@@ -4,7 +4,7 @@ import type { DocActionReq } from '@/types/biz'
 import type {
   CountCreated, CountCreateForm, CountDetail, CountForm, CountOpenWarehouse, CountQuery, CountRow, InvDocCreated, InvDocCreateForm,
   InvDocDetail, InvDocDraft, InvDocForm, InvDocFromSourceReq, InvDocQuery, InvDocRow, StockLogQuery, StockLogRow, StockQty, StockQuery,
-  StockRow, StockSummaryRow,
+  StockMovementQuery, StockMovementRow, StockRow, StockSummaryRow,
 } from '@/types/inventory'
 import { docApi } from './biz'
 import { currentCompanyScope } from '@/utils/companyScope'
@@ -104,6 +104,9 @@ export const stockApi = {
     http.get<StockQty[]>('/api/stocks/qty', { warehouseId, skuIds }, options),
   export: (params: StockQuery) => download('/api/stocks/export', params, '库存.xlsx'),
   exportSummary: (params: StockQuery) => download('/api/stocks/summary/export', params, '库存汇总.xlsx'),
+  /** 进销存汇总（二期，RFC 016 §4）：期间里每个物料 SKU 的期初、入库、出库、期末 */
+  movement: (params: PageParams & StockMovementQuery) => http.get<PageResult<StockMovementRow>>('/api/stocks/movement', params),
+  exportMovement: (params: StockMovementQuery) => download('/api/stocks/movement/export', params, '进销存.xlsx'),
 }
 
 export const stockLogApi = {

@@ -6,6 +6,8 @@ import com.lingmao.scm.common.page.SeekPage;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
+import com.lingmao.scm.module.inventory.dto.StockMovementQuery;
+import com.lingmao.scm.module.inventory.dto.StockMovementRowVO;
 import com.lingmao.scm.module.inventory.dto.StockQtyVO;
 import com.lingmao.scm.module.inventory.dto.StockQuery;
 import com.lingmao.scm.module.inventory.dto.StockRowVO;
@@ -70,6 +72,20 @@ public class StockController {
     @PreAuthorize("hasAuthority('inventory:stock:export')")
     public ResponseEntity<byte[]> exportSummary(@Valid StockQuery query) {
         return Excel.download(Excel.exportFileName("库存汇总", LocalDate.now(clock)), stockService.exportSummary(query));
+    }
+
+    @Operation(summary = "进销存汇总：期间里每个物料 SKU 的期初、入库、出库、期末（从库存日志现算）")
+    @GetMapping("/api/stocks/movement")
+    @PreAuthorize("hasAuthority('inventory:stock:list')")
+    public R<PageResult<StockMovementRowVO>> movement(@Valid StockMovementQuery query) {
+        return R.ok(stockService.movement(query));
+    }
+
+    @Operation(summary = "导出进销存汇总")
+    @GetMapping("/api/stocks/movement/export")
+    @PreAuthorize("hasAuthority('inventory:stock:export')")
+    public ResponseEntity<byte[]> exportMovement(@Valid StockMovementQuery query) {
+        return Excel.download(Excel.exportFileName("进销存", LocalDate.now(clock)), stockService.exportMovement(query));
     }
 
     @Operation(summary = "库存日志，新的在前")

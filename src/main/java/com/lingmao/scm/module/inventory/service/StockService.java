@@ -4,6 +4,8 @@ import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.page.SeekPage;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
+import com.lingmao.scm.module.inventory.dto.StockMovementQuery;
+import com.lingmao.scm.module.inventory.dto.StockMovementRowVO;
 import com.lingmao.scm.module.inventory.dto.StockQtyVO;
 import com.lingmao.scm.module.inventory.dto.StockQuery;
 import com.lingmao.scm.module.inventory.dto.StockRowVO;
@@ -22,6 +24,11 @@ public interface StockService {
     List<StockQtyVO> qty(long warehouseId, List<Long> skuIds);
 
     PageResult<StockLogRowVO> logs(StockLogQuery query);
+
+    /** 进销存汇总（RFC 016 §4）：期间里每个物料 SKU 的期初、入库、出库、期末 */
+    PageResult<StockMovementRowVO> movement(StockMovementQuery query);
+
+    byte[] exportMovement(StockMovementQuery query);
 
     SeekPage<StockLogRowVO> seekLogs(StockLogQuery query);
 

@@ -5,11 +5,13 @@ import com.lingmao.scm.common.excel.ExcelColumn;
 import com.lingmao.scm.common.excel.ExcelSchema;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
+import com.lingmao.scm.module.inventory.dto.StockMovementRowVO;
 import com.lingmao.scm.module.inventory.dto.StockRowVO;
 import com.lingmao.scm.module.inventory.dto.StockSummaryRowVO;
 import com.lingmao.scm.module.system.service.DictDataService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -19,7 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
-/** 库存明细、按物料汇总、库存日志的导出（docs/api/04 §3.6.5） */
+/** 库存明细、按物料汇总、库存日志、进销存汇总的导出（docs/api/04 §3.6.5、§3.6.6） */
 @Component
 @RequiredArgsConstructor
 class StockExcel {
@@ -135,6 +137,65 @@ class StockExcel {
             r.setFactoryQty(s.getFactoryQty());
             r.setQty(s.getTotalQty());
             r.setSafetyStock(s.getSafetyStock());
+            return r;
+        }).toList());
+    }
+
+    /** 进销存一行：入库、出库拆开的列都导出（页面上默认藏着） */
+    @Data
+    static class MovementRow {
+        private String skuCode;
+        private String materialCode;
+        private String materialName;
+        private String colorName;
+        private String spec;
+        private String unit;
+        private BigDecimal openingQty;
+        private BigDecimal inQty;
+        private BigDecimal outQty;
+        private BigDecimal closingQty;
+        private BigDecimal purchaseIn;
+        private BigDecimal returnIn;
+        private BigDecimal otherIn;
+        private BigDecimal transferIn;
+        private BigDecimal countGain;
+        private BigDecimal openingIn;
+        private BigDecimal issueOut;
+        private BigDecimal purchaseReturn;
+        private BigDecimal otherOut;
+        private BigDecimal transferOut;
+        private BigDecimal countLoss;
+    }
+
+    private static final ExcelSchema<MovementRow> MOVEMENT = ExcelSchema.of("进销存", MovementRow::new,
+            ExcelColumn.text("SKU 码", MovementRow::getSkuCode, MovementRow::setSkuCode),
+            ExcelColumn.text("物料编码", MovementRow::getMaterialCode, MovementRow::setMaterialCode),
+            ExcelColumn.text("物料名称", MovementRow::getMaterialName, MovementRow::setMaterialName),
+            ExcelColumn.text("颜色", MovementRow::getColorName, MovementRow::setColorName),
+            ExcelColumn.text("规格", MovementRow::getSpec, MovementRow::setSpec),
+            ExcelColumn.text("单位", MovementRow::getUnit, MovementRow::setUnit),
+            ExcelColumn.decimal("期初", 3, MovementRow::getOpeningQty, MovementRow::setOpeningQty),
+            ExcelColumn.decimal("入库", 3, MovementRow::getInQty, MovementRow::setInQty),
+            ExcelColumn.decimal("出库", 3, MovementRow::getOutQty, MovementRow::setOutQty),
+            ExcelColumn.decimal("期末", 3, MovementRow::getClosingQty, MovementRow::setClosingQty),
+            ExcelColumn.decimal("采购入库", 3, MovementRow::getPurchaseIn, MovementRow::setPurchaseIn),
+            ExcelColumn.decimal("退料入库", 3, MovementRow::getReturnIn, MovementRow::setReturnIn),
+            ExcelColumn.decimal("其他入库", 3, MovementRow::getOtherIn, MovementRow::setOtherIn),
+            ExcelColumn.decimal("调入", 3, MovementRow::getTransferIn, MovementRow::setTransferIn),
+            ExcelColumn.decimal("盘盈", 3, MovementRow::getCountGain, MovementRow::setCountGain),
+            ExcelColumn.decimal("期初录入", 3, MovementRow::getOpeningIn, MovementRow::setOpeningIn),
+            ExcelColumn.decimal("领料出库", 3, MovementRow::getIssueOut, MovementRow::setIssueOut),
+            ExcelColumn.decimal("采购退货", 3, MovementRow::getPurchaseReturn, MovementRow::setPurchaseReturn),
+            ExcelColumn.decimal("其他出库", 3, MovementRow::getOtherOut, MovementRow::setOtherOut),
+            ExcelColumn.decimal("调出", 3, MovementRow::getTransferOut, MovementRow::setTransferOut),
+            ExcelColumn.decimal("盘亏", 3, MovementRow::getCountLoss, MovementRow::setCountLoss));
+
+    byte[] movement(List<StockMovementRowVO> rows) {
+        Map<String, String> units = InvTexts.labels(dictDataService, "unit");
+        return Excel.export(MOVEMENT, rows.stream().map(m -> {
+            MovementRow r = new MovementRow();
+            BeanUtils.copyProperties(m, r);
+            r.setUnit(m.getStockUnit() == null ? null : units.getOrDefault(m.getStockUnit(), m.getStockUnit()));
             return r;
         }).toList());
     }

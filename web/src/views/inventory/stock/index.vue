@@ -21,9 +21,11 @@ import {
   STOCK_CHANGE_TYPE_LABEL,
   type StockChangeType,
   type StockLogRow,
+  type StockMovementRow,
   type StockRow,
   type StockSummaryRow,
 } from '@/types/inventory'
+import { businessToday } from '@/utils/businessDate'
 import type { SkuSupply } from '@/types/purchase'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
@@ -31,15 +33,17 @@ import { useFieldAccess } from '@/composables/useFieldAccess'
 const { canSeeCost } = useFieldAccess()
 
 /**
- * 库存（/stock，docs/api/04 §1.5、§3.6、§4）：明细 / 按物料 / 日志三个视图，认 ?view=log（只认 /stock 自己的地址）。
+ * 库存（/stock，docs/api/04 §1.5、§3.6、§4）：明细 / 按物料 / 进销存 / 日志四个视图，认 ?view=log（只认 /stock 自己的地址）。
+ * - 进销存（二期，RFC 016 §4）：期间必填（默认本月、清不掉），入库、出库按类型拆开的列在"显示列"里勾
  * - 明细的在途、低于最小库存（标黄）要等 supplyApi.bySkus 回来：和主表分开取，没回来、取不到都写"—"，不拖住主表
  * - 页头：补货提醒（n）、盘点（去新建日常盘点）、导入期初库存、导出
  * - 点明细的一行：弹它的库存日志（带上仓库和 SKU）
  */
-type View = 'detail' | 'summary' | 'logs'
+type View = 'detail' | 'summary' | 'movement' | 'logs'
 const VIEW_OPTIONS: { label: string; value: View }[] = [
   { label: '明细', value: 'detail' },
   { label: '按物料', value: 'summary' },
+  { label: '进销存', value: 'movement' },
   { label: '日志', value: 'logs' },
 ]
 const WH_TYPE_OPTIONS = [
@@ -69,6 +73,33 @@ const summaryCols = useColumns('stock-summary', [
   { key: 'factory', label: '工厂净托管' },
   { key: 'total', label: '合计' },
   { key: 'safety', label: '最小库存' },
+  { key: 'materialType', label: '物料类型', hidden: true },
+])
+type MovementPart = { key: keyof StockMovementRow & string; label: string }
+/** 入库、出库拆开的列（默认藏着）：反审核算进原来那一列，所以可能是负数 */
+const IN_PARTS: MovementPart[] = [
+  { key: 'purchaseIn', label: '采购入库' },
+  { key: 'returnIn', label: '退料入库' },
+  { key: 'otherIn', label: '其他入库' },
+  { key: 'transferIn', label: '调入' },
+  { key: 'countGain', label: '盘盈' },
+  { key: 'openingIn', label: '期初录入' },
+]
+const OUT_PARTS: MovementPart[] = [
+  { key: 'issueOut', label: '领料出库' },
+  { key: 'purchaseReturn', label: '采购退货' },
+  { key: 'otherOut', label: '其他出库' },
+  { key: 'transferOut', label: '调出' },
+  { key: 'countLoss', label: '盘亏' },
+]
+const movementCols = useColumns('stock-movement', [
+  { key: 'unit', label: '单位' },
+  { key: 'opening', label: '期初' },
+  { key: 'in', label: '入库' },
+  ...IN_PARTS.map((p) => ({ ...p, hidden: true })),
+  { key: 'out', label: '出库' },
+  ...OUT_PARTS.map((p) => ({ ...p, hidden: true })),
+  { key: 'closing', label: '期末' },
   { key: 'materialType', label: '物料类型', hidden: true },
 ])
 const logCols = useColumns('stock-log', [
@@ -144,7 +175,38 @@ const summaryTable = useTable({
   },
 })
 
-// ---------- 视图 3：库存日志 ----------
+// ---------- 视图 3：进销存 ----------
+/** 本月：1 号到今天（东八区） */
+const thisMonth = (): [string, string] => {
+  const today = businessToday()
+  return [`${today.slice(0, 8)}01`, today]
+}
+const movementTable = useTable({
+  immediate: false,
+  normalize: ({ whType, period, ...rest }) => ({
+    ...rest,
+    warehouseType: whType || undefined,
+    bizDateFrom: period?.[0] ?? thisMonth()[0],
+    bizDateTo: period?.[1] ?? thisMonth()[1],
+  }),
+  fetch: (params) => stockApi.movement(params),
+  exportUrl: '/api/stocks/movement/export',
+  exportName: '进销存.xlsx',
+  query: {
+    keyword: '',
+    whType: 'MATERIAL' as '' | 'MATERIAL' | 'FACTORY',
+    warehouseId: undefined as string | undefined,
+    period: thisMonth() as [string, string],
+  },
+})
+/** 期间清不掉：清空就回到本月 */
+function onPeriod(val: [string, string] | null | undefined) {
+  movementTable.query.period = val ?? thisMonth()
+  movementTable.search()
+}
+const partText = (v: number) => (v ? formatQty(v) : '')
+
+// ---------- 视图 4：库存日志 ----------
 const logDateRange = ref<[string, string] | null>(null)
 const exportDialog = ref<InstanceType<typeof StockLogExportDialog>>()
 const logTable = useSeekTable({
@@ -184,6 +246,7 @@ function switchView(v: View) {
   viewMode.value = v
   if (v === 'detail') detailTable.search()
   else if (v === 'summary') summaryTable.search()
+  else if (v === 'movement') movementTable.search()
   else logTable.search()
 }
 
@@ -223,6 +286,7 @@ onActivated(() => {
   void loadMeta()
   if (viewMode.value === 'detail') void detailTable.load()
   else if (viewMode.value === 'summary') void summaryTable.load()
+  else if (viewMode.value === 'movement') void movementTable.load()
   else void logTable.load()
 })
 
@@ -269,6 +333,7 @@ function goLogDoc(row: StockLogRow) {
 function doExport() {
   if (viewMode.value === 'detail') void detailTable.exportFile()
   else if (viewMode.value === 'summary') void summaryTable.exportFile()
+  else if (viewMode.value === 'movement') void movementTable.exportFile()
   else void logTable.exportFile()
 }
 watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
@@ -410,7 +475,76 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
       />
     </template>
 
-    <!-- 3. 库存日志视图 -->
+    <!-- 3. 进销存视图 -->
+    <template v-else-if="viewMode === 'movement'">
+      <FilterBar v-model:keyword="movementTable.query.keyword" placeholder="SKU 码、物料编码、名称" :columns="movementCols" @search="movementTable.search">
+        <template #left>
+          <el-segmented v-model="movementTable.query.whType" :options="WH_TYPE_OPTIONS" @change="movementTable.search" />
+        </template>
+        <FilterItem label="仓库" :text="warehouseName(movementTable.query.warehouseId)" @clear="movementTable.query.warehouseId = undefined">
+          <el-select v-model="movementTable.query.warehouseId" filterable clearable placeholder="全部仓库" :value-on-clear="undefined">
+            <el-option v-for="w in filteredWhOptions" :key="w.id" :label="w.name" :value="w.id" />
+          </el-select>
+        </FilterItem>
+        <template #right>
+          <DateRange :model-value="movementTable.query.period" :clearable="false" @update:model-value="onPeriod" />
+        </template>
+      </FilterBar>
+
+      <el-table
+        v-loading="movementTable.loading.value"
+        :data="movementTable.list.value"
+        row-key="materialSkuId"
+        scrollbar-always-on
+        :empty-text="movementTable.query.keyword || movementTable.query.warehouseId ? '没有符合条件的物料：换个仓库、期间，或者清空筛选' : '这段时间里没有进出，期初也都是 0'"
+      >
+        <el-table-column label="物料" min-width="240" fixed="left">
+          <template #default="{ row }">
+            <span class="code">{{ row.skuCode }}</span>
+            <div class="dim small">{{ (row as StockMovementRow).materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template><template v-if="row.spec"> · {{ row.spec }}</template></div>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="movementCols.show.materialType" label="物料类型" width="96">
+          <template #default="{ row }">{{ materialTypes.labelOf(row.materialType) }}</template>
+        </el-table-column>
+        <el-table-column v-if="movementCols.show.unit" label="单位" width="70">
+          <template #default="{ row }">{{ units.labelOf(row.stockUnit) }}</template>
+        </el-table-column>
+        <el-table-column v-if="movementCols.show.opening" label="期初" width="110" class-name="num" align="right">
+          <template #default="{ row }">{{ formatQty(row.openingQty) }}</template>
+        </el-table-column>
+        <el-table-column v-if="movementCols.show.in" label="入库" width="110" class-name="num" align="right">
+          <template #default="{ row }">{{ formatQty(row.inQty) }}</template>
+        </el-table-column>
+        <template v-for="p in IN_PARTS" :key="p.key">
+          <el-table-column v-if="movementCols.show[p.key]" :label="p.label" width="100" class-name="num" align="right">
+            <template #default="{ row }">{{ partText((row as StockMovementRow)[p.key] as number) }}</template>
+          </el-table-column>
+        </template>
+        <el-table-column v-if="movementCols.show.out" label="出库" width="110" class-name="num" align="right">
+          <template #default="{ row }">{{ formatQty(row.outQty) }}</template>
+        </el-table-column>
+        <template v-for="p in OUT_PARTS" :key="p.key">
+          <el-table-column v-if="movementCols.show[p.key]" :label="p.label" width="100" class-name="num" align="right">
+            <template #default="{ row }">{{ partText((row as StockMovementRow)[p.key] as number) }}</template>
+          </el-table-column>
+        </template>
+        <el-table-column v-if="movementCols.show.closing" label="期末" width="134" class-name="num" align="right" fixed="right">
+          <template #default="{ row }"><strong>{{ formatQty(row.closingQty) }}</strong></template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-model:current-page="movementTable.page.value"
+        v-model:page-size="movementTable.size.value"
+        class="pagination"
+        layout="total, sizes, prev, pager, next"
+        :page-sizes="movementTable.pageSizes"
+        :total="movementTable.total.value"
+      />
+    </template>
+
+    <!-- 4. 库存日志视图 -->
     <template v-else>
       <FilterBar v-model:keyword="logTable.query.keyword" placeholder="单号、SKU 码、物料名称、缸号" :columns="logCols" @search="logTable.search">
         <FilterItem label="仓库" :text="warehouseName(logTable.query.warehouseId)" @clear="logTable.query.warehouseId = undefined">

@@ -591,6 +591,41 @@ export interface StockSummaryRow extends MaterialSkuBrief {
   safetyStock: number | null
 }
 
+/** GET /api/stocks/movement 进销存汇总的条件（二期，RFC 016 §4）：期间必填，最多一年 */
+export interface StockMovementQuery {
+  bizDateFrom: string
+  bizDateTo: string
+  /** MATERIAL 物料仓 / FACTORY 工厂仓 / 不传 = 两种都算 */
+  warehouseType?: Extract<WarehouseType, 'MATERIAL' | 'FACTORY'>
+  warehouseId?: string | null
+  /** SKU 码、物料编码、名称；一次查几个时 SKU 码、物料编码精确查 */
+  keyword?: string
+}
+
+/**
+ * 进销存汇总的一行（StockMovementRowVO）：选中的仓里，期初 + 入库 − 出库 = 期末，从库存日志现算。
+ * 入库、出库按类型拆开（页面上默认藏着）；反审核算进原来那一列（采购入库反审核是采购入库那列减），所以拆开的数可以是负的；
+ * 选中的几个仓之间的调拨同时算进调入、调出。不出金额
+ */
+export interface StockMovementRow extends MaterialSkuBrief {
+  openingQty: number
+  inQty: number
+  outQty: number
+  closingQty: number
+  purchaseIn: number
+  returnIn: number
+  otherIn: number
+  transferIn: number
+  countGain: number
+  /** 期初录入（期初盘点单），不是"期初"那一列 */
+  openingIn: number
+  issueOut: number
+  purchaseReturn: number
+  otherOut: number
+  transferOut: number
+  countLoss: number
+}
+
 /** GET /api/stocks/qty：表单"出仓库存"那一列用，一个仓库几个 SKU 的现库存；没有库存记录的 SKU 返回 0 */
 export interface StockQty {
   materialSkuId: string

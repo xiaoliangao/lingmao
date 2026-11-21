@@ -105,4 +105,60 @@
         ORDER BY l.create_time DESC, l.id DESC
         LIMIT #{limit}
     </select>
+
+    <!--
+      进销存汇总（RFC 016 §4.2）：从库存日志现算，不建表。只算物料仓、工厂仓。
+      期初 = 业务日期早于期间的变动之和；期末 = 业务日期到期末为止的变动之和 = 期初 + 入 − 出。
+      哪一列看"原来的方向"：变动数为正是入、为负是出，反审核的反向日志（reversal_of_log_id 有值）取反，
+      所以采购入库反审核记在采购入库那列（负数），不算出库。反向日志的业务日期是原单的，反审核会改过去期间的数。
+      外面再包一层：期初、入、出、期末全是 0 的不列（期间里进了又全冲掉的也不列）
+    -->
+    <select id="selectMovementPage" resultType="com.lingmao.scm.module.inventory.dto.StockMovementRowVO">
+        SELECT * FROM (
+            SELECT v.material_sku_id, k.code AS sku_code,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE NOT v.in_period), 0) AS opening_qty,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE v.in_period AND v.inward), 0) AS in_qty,
+                   COALESCE(-SUM(v.change_qty) FILTER (WHERE v.in_period AND NOT v.inward), 0) AS out_qty,
+                   SUM(v.change_qty) AS closing_qty,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE v.in_period AND v.inward AND v.change_type = 'PURCHASE_IN'), 0) AS purchase_in,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE v.in_period AND v.inward AND v.change_type = 'RETURN_IN'), 0) AS return_in,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE v.in_period AND v.inward AND v.change_type = 'OTHER_IN'), 0) AS other_in,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE v.in_period AND v.inward AND v.change_type = 'TRANSFER'), 0) AS transfer_in,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE v.in_period AND v.inward AND v.change_type = 'COUNT_GAIN'), 0) AS count_gain,
+                   COALESCE(SUM(v.change_qty) FILTER (WHERE v.in_period AND v.inward AND v.change_type = 'OPENING'), 0) AS opening_in,
+                   COALESCE(-SUM(v.change_qty) FILTER (WHERE v.in_period AND NOT v.inward AND v.change_type = 'ISSUE_OUT'), 0) AS issue_out,
+                   COALESCE(-SUM(v.change_qty) FILTER (WHERE v.in_period AND NOT v.inward AND v.change_type = 'PURCHASE_RETURN'), 0) AS purchase_return,
+                   COALESCE(-SUM(v.change_qty) FILTER (WHERE v.in_period AND NOT v.inward AND v.change_type = 'OTHER_OUT'), 0) AS other_out,
+                   COALESCE(-SUM(v.change_qty) FILTER (WHERE v.in_period AND NOT v.inward AND v.change_type = 'TRANSFER'), 0) AS transfer_out,
+                   COALESCE(-SUM(v.change_qty) FILTER (WHERE v.in_period AND NOT v.inward AND v.change_type = 'COUNT_LOSS'), 0) AS count_loss
+            FROM (
+                SELECT l.material_sku_id, l.change_type, l.change_qty,
+                       l.biz_date &gt;= #{q.bizDateFrom} AS in_period,
+                       (l.change_qty &gt; 0) &lt;&gt; (l.reversal_of_log_id IS NOT NULL) AS inward
+                FROM inv_stock_log l
+                JOIN bas_warehouse w ON w.id = l.warehouse_id
+                WHERE w.type IN ('MATERIAL', 'FACTORY')
+                  AND l.biz_date &lt;= #{q.bizDateTo}
+                <if test="q.warehouseType != null and q.warehouseType != ''">AND w.type = #{q.warehouseType}</if>
+                <if test="q.warehouseId != null">AND l.warehouse_id = #{q.warehouseId}</if>
+                <if test="q.keyword != null and q.keyword.trim() != ''">
+                    <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+                    <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
+                    AND l.material_sku_id IN (
+                        SELECT mk.id FROM bas_material_sku mk WHERE upper(mk.code) LIKE #{keywordCode}
+                        <if test="codes != null">OR upper(mk.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                        UNION
+                        SELECT mk.id FROM bas_material_sku mk JOIN bas_material mm ON mm.id = mk.material_id
+                        WHERE upper(mm.code) LIKE #{keywordCode} OR mm.name ILIKE #{keywordContains}
+                        <if test="codes != null">OR upper(mm.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                    )
+                </if>
+            ) v
+            JOIN bas_material_sku k ON k.id = v.material_sku_id
+            GROUP BY v.material_sku_id, k.code
+        ) t
+        WHERE opening_qty &lt;&gt; 0 OR in_qty &lt;&gt; 0 OR out_qty &lt;&gt; 0 OR closing_qty &lt;&gt; 0
+        ORDER BY sku_code, material_sku_id
+    </select>
+
 </mapper>

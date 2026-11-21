@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.module.inventory.dto.StockLogQuery;
 import com.lingmao.scm.module.inventory.dto.StockLogRowVO;
+import com.lingmao.scm.module.inventory.dto.StockMovementQuery;
+import com.lingmao.scm.module.inventory.dto.StockMovementRowVO;
 import com.lingmao.scm.module.inventory.dto.PurchasePostingHistory;
 import com.lingmao.scm.module.inventory.entity.StockLog;
 import org.apache.ibatis.annotations.Mapper;
@@ -79,6 +81,10 @@ public interface StockLogMapper extends BaseMapper<StockLog> {
 
     /** 库存日志（XML）；codes 是关键字里的几个单号 / SKU 码（Keywords） */
     IPage<StockLogRowVO> selectRowPage(IPage<StockLogRowVO> page, @Param("q") StockLogQuery query, @Param("codes") List<String> codes);
+
+    /** 进销存汇总（XML，RFC 016 §4）：从库存日志现算，一个 SKU 一行，期初、入、出、期末全是 0 的不列 */
+    IPage<StockMovementRowVO> selectMovementPage(IPage<StockMovementRowVO> page, @Param("q") StockMovementQuery query,
+                                                 @Param("codes") List<String> codes);
 
     /** 一次只取 size+1，不执行 COUNT，不使用 OFFSET。 */
     List<StockLogRowVO> selectSeek(@Param("q") StockLogQuery query, @Param("codes") List<String> codes,
