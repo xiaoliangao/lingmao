@@ -3,7 +3,7 @@
  * 页面写法（其他页面照这个来）：
  *   列表页 = Head（标题 + 主按钮）→ .bar（Seg 状态 + Search）→ Tbl（点行进详情）
  *   详情页 = Head（返回 + 按状态出的按钮）→ .detail：.body（标题、页签、内容）+ .aside（属性、操作记录）
- *   区块加 data-c="名字"，意见圈位置时吸附到它
+ *   区块加 data-c="名字"（原来批注圈位置时吸附到它，现在留着给截图、检查认区块）
  * ============================================================ */
 
 /* ---------- 首页按当前用户出（PRD §3.2、§6.9.2） ----------
@@ -51,7 +51,7 @@ TODOS.push(() => {
 })
 
 // 首页：概况卡片点进去就是筛好的列表；趋势图、品类环形图是报表看板（13.06，二期），前几周是演示用的历史数
-// 排版：上面概况、快捷发起，下面两列一行一对（待办 | 待解决的意见、趋势 | 品类、交期 | 其他提醒），同一行一样高，长的在卡片里滚
+// 排版：上面概况、快捷发起，下面两列一行一对（待办 | 三期待确认、趋势 | 品类、交期 | 其他提醒），同一行一样高，长的在卡片里滚
 const HIST_ORDER = [1180, 860, 1420, 990, 1630, 1210, 1880, 1350, 1560, 2120, 1740]
 const HIST_RET = [640, 920, 780, 1150, 1020, 1310, 990, 1460, 1280, 1390, 1610]
 const CAT_COLORS = ['#9a6b3e', '#5c856b', '#cfa355', '#7e909a', '#c26b58', '#8d7b68', '#79998a', '#b88655', '#9c958b', '#a87568']
@@ -134,20 +134,15 @@ route('/', {
       const ps = live.value.map((p) => ({ k: prodKind(p), no: p.no, to: prodLink(p), img: p.style, sub: `${styleName(p.style)} · ${supName(p.factory)}`, due: expectDue(p), a: prodRet(p), b: prodQty(p) }))
       return [...os, ...ps].filter((x) => x.due && x.due <= end).sort((a, b) => a.due.localeCompare(b.due)).slice(0, 8)
     })
-    // 原型批注里还没解决的，按页面分组：最近有新意见的页排前面
-    const fbOpen = computed(() => {
-      const m = new Map()
-      fb.items.filter((x) => !x.done).forEach((x) => { if (!m.has(x.path)) m.set(x.path, { path: x.path, title: x.title, i: navItem(x.mod)?.i || 'file', items: [] }); m.get(x.path).items.push(x) })
-      return [...m.values()].map((g) => ({ ...g, items: g.items.slice().reverse() })).sort((a, b) => b.items[0].at.localeCompare(a.items[0].at))
-    })
-    const fbOpenN = computed(() => sum(fbOpen.value, (g) => g.items.length))
-    const fbDoneN = computed(() => fb.items.filter((x) => x.done).length)
+    // 三期确认清单里还没人答的（原型收甲方答复用，4-confirm.js）
+    const cfOpen = computed(() => cfOpenQs())
+    const cfTotal = CONFIRM_QS.length
     const pickWeek = (i) => go(`/orders?from=${trend.value.rng[i][0]}&to=${trend.value.rng[i][1]}`)
-    const quick = [['新建需求订单', 'file', '/orders?new=1'], ['新建款式', 'shirt', '/styles?new=1'], ['算料', 'sigma', '/mrp'], ['待到料', 'truck', '/stock-in'], ['生产看板', 'grid', '/board'], ['库存', 'package', '/stock'], ['手机报工', 'phone', '/mobile'], ['批注汇总', 'list', '/feedback']]
+    const quick = [['新建需求订单', 'file', '/orders?new=1'], ['新建款式', 'shirt', '/styles?new=1'], ['算料', 'sigma', '/mrp'], ['待到料', 'truck', '/stock-in'], ['生产看板', 'grid', '/board'], ['库存', 'package', '/stock'], ['手机报工', 'phone', '/mobile'], ['三期确认清单', 'clipboard', '/confirm']]
     const inboxTab = ref('全部')
     const inboxTabs = computed(() => [['全部', '全部', todo.value.reduce((a, g) => a + g.items.length, 0)], ...todo.value.map((g) => [g.tag, g.tag, g.items.length])])
     const shownTodo = computed(() => (inboxTab.value === '全部' ? todo.value.flatMap((g) => g.items.slice(0, 4).map((x) => ({ ...x, tag: g.tag, tone: g.tone }))) : (todo.value.find((g) => g.tag === inboxTab.value)?.items || []).map((x) => ({ ...x, tag: inboxTab.value }))))
-    return { hi, today, co, who, kpi, trend, cats, todo, others, week, quick, inboxTab, inboxTabs, shownTodo, fbOpen, fbOpenN, fbDoneN, pickWeek, fbGoto, fbResolve, fmtStamp }
+    return { hi, today, co, who, kpi, trend, cats, todo, others, week, quick, inboxTab, inboxTabs, shownTodo, cfOpen, cfTotal, pickWeek }
   },
   template: `<div>
     <Head t="首页"><template #title><span class="head-sub">{{ today }}</span></template>
@@ -195,18 +190,15 @@ route('/', {
           </div>
         </section>
 
-        <section class="panel cap" data-c="首页：待解决的意见">
-          <h3>待解决的意见<span class="acts dim" style="font-size:12px">{{ fbOpenN ? fbOpenN + ' 条 · ' + fbOpen.length + ' 个页面' : '' }}<a href="#/feedback">汇总</a></span></h3>
+        <section class="panel cap" data-c="首页：三期待确认">
+          <h3>三期待确认<span class="acts dim" style="font-size:12px">已答 {{ cfTotal - cfOpen.length }} / {{ cfTotal }}<a href="#/confirm">清单</a></span></h3>
           <div class="pb">
-            <div v-for="g in fbOpen" :key="g.path" class="fbq-g">
-              <button type="button" class="fbq-page" title="去这一页" @click="fbGoto(g.items[0])"><Ico :n="g.i" :s="14"/><span class="ell">{{ g.title }}</span><i>{{ g.items.length }}</i></button>
-              <div v-for="x in g.items" :key="x.id" class="fbq-i" role="button" tabindex="0" @click="fbGoto(x)" @keydown.enter="fbGoto(x)">
-                <p>{{ x.text }}</p>
-                <small><template v-if="x.anchor">{{ x.anchor }} · </template>{{ x.author || '未署名' }} {{ fmtStamp(x.at) }}</small>
-                <button type="button" class="btn sm" title="改好了，标成已解决" @click.stop="fbResolve(x)"><Ico n="check" :s="13"/>解决</button>
-              </div>
-            </div>
-            <div v-if="!fbOpenN" class="empty">{{ fbDoneN ? '意见都解决了（' + fbDoneN + ' 条）' : '还没有意见：在任意页面按 C，或点左下角「批注」' }}</div>
+            <a v-for="q in cfOpen" :key="q.id" class="fbq-i" :href="'#/confirm?q=' + q.id">
+              <p><b class="code">{{ q.id }}</b> {{ q.t }}</p>
+              <small>{{ q.who }} · 最晚：{{ q.due }}</small>
+              <span class="btn sm">去答</span>
+            </a>
+            <div v-if="!cfOpen.length" class="empty">都答了：到「三期确认清单」导出，发给对接人</div>
           </div>
         </section>
 

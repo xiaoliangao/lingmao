@@ -3,7 +3,7 @@
  * ph = 分期（PRD §2）：一期 / 二期 / 待定（甲方表里没标黄的）；ref = 需求确认表编号
  * ============================================================ */
 const NAV = [
-  { items: [{ k: 'home', t: '首页', i: 'home', to: '/', ph: '一期', ref: '13.04 待办' }, { k: 'flow', t: '业务流程', i: 'route', to: '/flow', ref: '原型说明，不是系统功能' }] }, // 业务流程没有 ph：不是系统功能，不标分期
+  { items: [{ k: 'home', t: '首页', i: 'home', to: '/', ph: '一期', ref: '13.04 待办' }, { k: 'flow', t: '业务流程', i: 'route', to: '/flow', ref: '原型说明，不是系统功能' }, { k: 'confirm', t: '三期确认清单', i: 'clipboard', to: '/confirm', ref: '原型收甲方答复用，不是系统功能' }] }, // 业务流程、确认清单没有 ph：不是系统功能，不标分期
   { g: '开发', items: [
     { k: 'plans', t: '企划', i: 'layers', to: '/plans', ph: '待定', ref: 'M02 · 02.01–02.02' },
     { k: 'samples', t: '样衣', i: 'scissors', to: '/samples', ph: '二期', ref: 'M03 · 03.01–03.04' },
@@ -78,7 +78,7 @@ comp('Palette', {
     <div class="pal-top"><Ico n="search" :s="16"/><input ref="inp" v-model="q" @keydown="key" placeholder="搜索页面、单号、款号、供应商…"><kbd>ESC</kbd></div>
     <ul><li v-for="(x, n) in items" :key="x.to + n" :class="{ on: n === i }" @mouseenter="i = n" @click="pick(x)"><Ico :n="x.i || 'file'" :s="15"/>{{ x.t }}<span>{{ x.sub }}</span></li>
       <li v-if="!items.length" class="dim">无匹配结果</li></ul>
-    <div class="pal-foot"><span><kbd>↑↓</kbd> 选择</span><span><kbd>↵</kbd> 跳转</span><span><kbd>[</kbd> 收起侧栏</span><span><kbd>C</kbd> 批注</span></div>
+    <div class="pal-foot"><span><kbd>↑↓</kbd> 选择</span><span><kbd>↵</kbd> 跳转</span><span><kbd>[</kbd> 收起侧栏</span><span><kbd>C</kbd> 这一页要定的</span></div>
   </div></div>`,
 })
 
@@ -131,12 +131,12 @@ const Shell = {
       if (tabs.length > 10) tabs.splice(tabs.findIndex((x, i) => i && x.k !== k), 1)
     }, { immediate: true })
     function closeTab(i) { const [t] = tabs.splice(i, 1); if (t.k === mod.value) go(tabs[Math.max(0, i - 1)].to) }
-    const tabTitle = (k) => (k === 'feedback' ? '批注汇总' : navOf(k)?.t || k)
-    const fbCount = computed(() => fb.items.filter((x) => !x.done).length || '') // 只数没解决的
+    const tabTitle = (k) => navOf(k)?.t || k
+    const hereCount = computed(() => cfHere().filter((q) => !cfAnswered(q)).length || '') // 这一页还没人答的三期问题
     const todoCount = computed(() => sum(TODOS.flatMap((f) => f()), (x) => x.n))
     watch(() => db.me, () => toast(`已切换身份：${me().name}（${me().role} · ${roleOf(me().role).scope}）`))
     const hasInfo = computed(() => !!MOD_INFO[mod.value])
-    return { shellUi, main, mod, closed, toggle, tabs, closeTab, tabTitle, fbCount, todoCount, miUi, hasInfo }
+    return { shellUi, main, mod, closed, toggle, tabs, closeTab, tabTitle, hereCount, todoCount, miUi, hasInfo }
   },
   template: `<div class="app" :data-mod="mod" :data-route="nav.path">
     <aside class="side" :class="{ shut: !shellUi.side }" data-c="侧边栏" aria-label="主导航">
@@ -148,8 +148,7 @@ const Shell = {
       </div></nav>
       <div class="side-foot">
         <div class="side-util">
-          <a class="nav-i" :class="{ on: fbUi.open }" role="button" tabindex="0" @click="fbUi.open = !fbUi.open"><Ico n="msg" :s="14"/><span>批注</span><span class="n">{{ fbCount }}</span></a>
-          <a class="nav-i" :class="{ on: mod === 'feedback' }" href="#/feedback"><Ico n="list" :s="14"/><span>汇总</span></a>
+          <a class="nav-i" :class="{ on: fbUi.open }" role="button" tabindex="0" title="这一页三期要定的问题、其他意见 (C)" @click="fbUi.open = !fbUi.open" @keydown.enter="fbUi.open = !fbUi.open"><Ico n="msg" :s="14"/><span>这一页要定的</span><span class="n">{{ hereCount }}</span></a>
         </div>
         <label class="me" data-c="切换身份"><i>{{ me().name[0] }}</i>
           <select v-model="db.me" aria-label="当前身份"><option v-for="u in db.users" :key="u.id" :value="u.id">{{ u.name }} · {{ u.role }}</option></select></label>
@@ -160,9 +159,7 @@ const Shell = {
       <main class="main" ref="main"><component v-if="nav.r" :is="nav.r.comp" :key="nav.seq" v-bind="nav.params" class="sheet" :class="{ dash: mod === 'home' }"/><NotFound v-else class="sheet"/></main>
     </div>
     <ModInfo v-if="miUi.open && hasInfo" :k="mod"/>
-    <FeedbackPanel v-if="fbUi.open"/>
-    <Pins v-if="fbUi.open"/>
-    <Picker v-if="fbUi.picking"/>
+    <ConfirmPanel v-if="fbUi.open"/>
     <Palette v-if="shellUi.pal" @close="shellUi.pal = false"/>
     <PicViewer v-if="viewer.list"/>
     <ErrBox/><AskBox/><Toasts/>
@@ -179,7 +176,7 @@ parseHash()
 app.mount('#app')
 
 if (/selftest/.test(location.search)) {
-  const r = selftest()
+  const r = [...selftest(), ...confirmSelftest()]
   window.__selftest = r
   const pass = r.filter((x) => x.ok).length
   const el = document.createElement('pre')

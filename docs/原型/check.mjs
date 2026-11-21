@@ -62,7 +62,7 @@ try {
   if (!st) { console.log('✗ 自检没跑起来'); bad++ } else st.forEach((x) => { if (!x.ok) bad++; console.log((x.ok ? '✓ ' : '✗ ') + x.name + (x.ok ? '' : '  → ' + JSON.stringify(x.got))) })
 
   await send('Page.navigate', { url }); await sleep(800)
-  const paths = only || (await evaluate(`[...NAV.flatMap(g => g.items.map(i => i.to)), '/feedback', ...SEARCH.flatMap(f => f()).map(x => x.to).filter((t, i, a) => a.findIndex(y => y.split('/')[1] === t.split('/')[1]) === i)]`))
+  const paths = only || (await evaluate(`[...NAV.flatMap(g => g.items.map(i => i.to)), ...cfLinks(), ...SEARCH.flatMap(f => f()).map(x => x.to).filter((t, i, a) => a.findIndex(y => y.split('/')[1] === t.split('/')[1]) === i)]`))
   if (shots) { rmSync(shots, { recursive: true, force: true }); mkdirSync(shots, { recursive: true }) }
   for (const p of [...new Set(paths)]) {
     const before = errors.length
