@@ -17,6 +17,7 @@
 | 按款看成本 | `/costing` | `6-pages-later.js` 的 `/costing` | 01 |
 | 工艺标准（资料包里拉出的抽屉，不单开一页） | — | `7-pages-master.js` 的 `/settings` | 01 |
 | 需求订单 | `/orders`、`/orders/:id`、`/orders/new`、`/orders/:id/edit` | `5b-order.js` | [02-需求订单](02-需求订单.md) |
+| 订单进度总览（二期） | `/order-progress` | 没有，RFC 016 §1 | [02-需求订单](02-需求订单.md) §1.6 |
 | 订单变更单 | `/order-changes`、`/order-changes/:id` | `5b-order.js` 的 `/changes` | 02 |
 | 算料 | `/mrp`、`/mrp/:id` | `5c-material.js` | [03-算料采购](03-算料采购.md) |
 | 采购单 | `/purchases`、`/purchases/:id` | `5c-material.js` | 03 |

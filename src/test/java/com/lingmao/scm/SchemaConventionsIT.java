@@ -274,7 +274,8 @@ class SchemaConventionsIT {
     /** RFC 012 §3（V42）：物料清单研发填面辅料、生产填耗材；生产跟单为此多了"编辑" */
     private static final Set<String> BOM_DEV = Set.of("techpack:bom:dev");
     private static final Set<String> BOM_PROD = Set.of("techpack:pack:edit", "techpack:bom:prod");
-    private static final Set<String> ORDER_VIEW = Set.of("order:order:list", "order:order:export");
+    /** V50（RFC 016 §1）：能看需求订单的都能看进度总览 */
+    private static final Set<String> ORDER_VIEW = Set.of("order:order:list", "order:order:export", "order:progress:list");
     private static final Set<String> ORDER_EDIT = union(ORDER_VIEW, Set.of("order:order:add", "order:order:edit",
             "order:order:remove", "order:order:submit", "order:order:void", "order:order:import"));
     private static final Set<String> CHANGE_VIEW = Set.of("order:change:list");
@@ -340,7 +341,7 @@ class SchemaConventionsIT {
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现（"工艺标准" V39 去掉了） */
     private static final List<String> MASTER = List.of("供应商", "物料", "基础");
-    private static final List<String> ORDERS = List.of("需求订单", "变更");
+    private static final List<String> ORDERS = List.of("需求订单", "变更", "进度总览");
     private static final List<String> SUPPLY_ALL = List.of("算料", "采购", "物料入库单", "物料出库单", "物料盘点单", "库存");
     private static final List<String> MAKE = List.of("外发加工单", "成品采购单", "看板");
     private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.of(

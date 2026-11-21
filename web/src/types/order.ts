@@ -5,6 +5,8 @@ import { DOC_STATUS, type Attachment, type DocAction, type DocActionReq, type Do
 import type { ColorOption, EnableStatus } from '@/types/basic'
 import type { StyleStatus, TechPackStatus } from '@/types/style'
 import type { FileVO } from '@/types/system'
+import type { NodeDot, ProductionKind, ProductionRisk, ProductionStatus } from '@/types/production'
+import type { OrderKitting } from '@/types/purchase'
 
 // ---------------------------------------------------------------- 需求订单：状态、叫法
 
@@ -683,4 +685,90 @@ export interface OrderChangeCreateForm extends OrderChangeForm {
 /** 改草稿多出来的：打开时拿到的版本号 */
 export interface OrderChangeUpdateForm extends OrderChangeForm {
   version: number
+}
+
+// ---------- 订单进度总览（RFC 016 §1，02 §3.15） ----------
+
+/** 分段：全部、未排完、临期、已逾期、生产有风险 */
+export type OrderProgressSegment = 'ALL' | 'UNSCHEDULED' | 'NEAR' | 'LATE' | 'PRODUCTION'
+
+/**
+ * 一行（订单 × 款）的风险，后端现算：late 交期过了还没回齐、near 还剩 ≤ 7 天没回齐、unscheduled 没排完、
+ * nodeLate 这个款的生产单有节点延期、issue 有没关闭的异常、production 生产单有逾期 / 临期 / 节点延期 / 异常
+ */
+export interface OrderProgressRisk {
+  late: boolean
+  near: boolean
+  unscheduled: boolean
+  nodeLate: boolean
+  issue: boolean
+  production: boolean
+}
+
+/** 一张生产单的小块：ProductionRow 的一部分，不带价格 */
+export interface ProductionBrief {
+  id: string
+  no: string
+  kind: ProductionKind
+  status: ProductionStatus
+  factoryShortName: string
+  totalQty: number
+  returnedQty: number
+  defectQty: number
+  dueDate: string
+  expectDate: string | null
+  daysLeft: number | null
+  currentNodeName: string | null
+  nodes: NodeDot[]
+  risk: ProductionRisk
+}
+
+export interface OrderProgressRow {
+  orderId: string
+  orderNo: string
+  /** 字典 order_type */
+  orderType: string
+  /** 字典 brand */
+  brand: string | null
+  status: OrderStatus
+  styleId: string
+  styleCode: string
+  styleName: string
+  image: Attachment | null
+  qty: number
+  scheduledQty: number
+  returnedQty: number
+  /** 承诺交期 ?? 要求交期；行交期更早的用行交期 */
+  dueDate: string
+  /** 负数是逾期几天 */
+  daysLeft: number
+  /** 还没算过料是 null */
+  kitting: OrderKitting | null
+  merchId: string | null
+  merchName: string | null
+  risk: OrderProgressRisk
+  /** 这个款的生产单（没作废的），排单早的在前 */
+  productions: ProductionBrief[]
+}
+
+export interface OrderProgressQuery {
+  segment?: OrderProgressSegment
+  /** 订单号、款号 */
+  keyword?: string
+  brand?: string
+  orderType?: string
+  salesId?: string | null
+  merchId?: string | null
+  dueDateFrom?: string
+  dueDateTo?: string
+  mine?: boolean
+}
+
+/** 分段上的数（行数） */
+export interface OrderProgressCounts {
+  total: number
+  unscheduled: number
+  near: number
+  late: number
+  production: number
 }

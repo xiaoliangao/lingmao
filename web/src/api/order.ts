@@ -2,7 +2,8 @@ import { http, snapshotRequestBody, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
   ChangeStatus, OrderAuditReq, OrderChangeCreateForm, OrderChangeDetail, OrderChangeQuery, OrderChangeRow, OrderChangeUpdateForm,
-  OrderCreateForm, OrderDetail, OrderImportHead, OrderQuery, OrderReview, OrderRow, OrderStatus, OrderStyleOption, OrderUpdateForm,
+  OrderCreateForm, OrderDetail, OrderImportHead, OrderProgressCounts, OrderProgressQuery, OrderProgressRow, OrderQuery, OrderReview, OrderRow,
+  OrderStatus, OrderStyleOption, OrderUpdateForm,
   ScheduleBlock, SchedulePrefill, ScheduleQuote, ScheduleResult, StyleOrderRow,
 } from '@/types/order'
 import { attachmentBody } from './basic'
@@ -47,6 +48,17 @@ export const orderApi = {
     })
     return `${base}/import?${query}`
   },
+}
+
+/**
+ * 订单进度总览（RFC 016 §1，02 §3.15）：一行是一张在手订单（已审核、生产中）里的一个款，按风险、交期排。
+ * 要 order:progress:list，照需求订单的数据范围和品类线；后端在 production 域
+ */
+export const orderProgressApi = {
+  page: (params: PageParams & OrderProgressQuery, options?: RequestOptions) =>
+    http.get<PageResult<OrderProgressRow>>('/api/order-progress', params, options),
+  /** 分段上的数：segment 不看 */
+  counts: (params: Omit<OrderProgressQuery, 'segment'>) => http.get<OrderProgressCounts>('/api/order-progress/counts', params),
 }
 
 /** 审核对话框的评审信息：资料包、缺口最大的料、默认加工厂在手（后端在 board 域；能看这张订单就能取） */

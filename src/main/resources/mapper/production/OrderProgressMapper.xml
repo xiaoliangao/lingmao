@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  订单进度总览（RFC 016 §1）：一行 = 一张在手需求订单（已审核、生产中）里的一个款。需求订单、明细、款式只读 JOIN（架构 §3.2 规则 4）。
+  f 是这一行自己的风险（交期过了 / 临期还没回齐、没排完），pr 是这个款的生产单的风险（docs/api/05 §2.3，只看已下单、生产中）。
+  款式主图、跟单名字、齐料、生产单小块由 Service 填
+-->
+<mapper namespace="com.lingmao.scm.module.production.mapper.OrderProgressMapper">
+
+    <sql id="from">
+        FROM (
+            SELECT o.id AS order_id, o.no AS order_no, o.order_type, o.brand, o.status, o.merch_id, i.style_id,
+                   SUM(i.qty) AS qty, SUM(i.scheduled_qty) AS scheduled_qty, SUM(i.returned_qty) AS returned_qty,
+                   LEAST(COALESCE(o.commit_date, o.required_date), MIN(i.line_due_date)) AS due_date
+            FROM ord_order o
+            JOIN ord_order_item i ON i.order_id = o.id AND i.qty &gt; 0
+            WHERE o.status IN ('APPROVED', 'RUNNING')
+            <if test="scope.lines.limited">AND o.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
+            <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
+            <if test="q.brand != null and q.brand != ''">AND o.brand = #{q.brand}</if>
+            <if test="q.orderType != null and q.orderType != ''">AND o.order_type = #{q.orderType}</if>
+            <if test="q.salesId != null">AND o.sales_id = #{q.salesId}</if>
+            <if test="q.merchId != null">AND o.merch_id = #{q.merchId}</if>
+            <if test="q.keyword != null and q.keyword.trim() != ''">
+                <bind name="codes" value="@com.lingmao.scm.common.page.Keywords@codes(q.keyword)"/>
+                <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+                AND (upper(o.no) LIKE #{keywordCode}
+                     <if test="codes != null">OR upper(o.no) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
+                     OR i.style_id IN (SELECT ks.id FROM sty_style ks WHERE upper(ks.code) LIKE #{keywordCode}
+                         <if test="codes != null">OR upper(ks.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>))
+            </if>
+            GROUP BY o.id, i.style_id
+        ) g
+        JOIN sty_style s ON s.id = g.style_id
+        CROSS JOIN LATERAL (
+            SELECT g.due_date &lt; #{today} AND g.returned_qty &lt; g.qty AS late,
+                   g.due_date BETWEEN #{today} AND #{nearUntil} AND g.returned_qty &lt; g.qty AS near,
+                   g.scheduled_qty &lt; g.qty AS unscheduled
+        ) f
+        CROSS JOIN LATERAL (
+            SELECT COALESCE(bool_or(EXISTS (SELECT 1 FROM prd_node n
+                                            WHERE n.prd_order_id = p.id AND n.actual_finish IS NULL AND n.plan_finish &lt; #{today})), false) AS node_late,
+                   COALESCE(bool_or(EXISTS (SELECT 1 FROM prd_issue x WHERE x.prd_order_id = p.id AND x.status &lt;&gt; 'CLOSED')), false) AS issue,
+                   COALESCE(bool_or(COALESCE(p.expect_date, p.due_date) &lt;= #{nearUntil}), false) AS due_soon
+            FROM prd_order p
+            WHERE p.order_id = g.order_id AND p.style_id = g.style_id AND p.status IN ('APPROVED', 'RUNNING')
+        ) pr
+        WHERE true
+        <if test="q.dueDateFrom != null">AND g.due_date &gt;= #{q.dueDateFrom}</if>
+        <if test="q.dueDateTo != null">AND g.due_date &lt;= #{q.dueDateTo}</if>
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.production.dto.OrderProgressRowVO">
+        SELECT g.order_id, g.order_no, g.order_type, g.brand, g.status, g.merch_id, g.style_id, s.code AS style_code, s.name AS style_name,
+               g.qty, g.scheduled_qty, g.returned_qty, g.due_date, g.due_date - #{today} AS days_left,
+               f.late AS risk_late, f.near AS risk_near, pr.node_late AS risk_node_late, pr.issue AS risk_issue,
+               (pr.node_late OR pr.issue OR pr.due_soon) AS risk_production
+        <include refid="from"/>
+        <choose>
+            <when test="q.segment == 'UNSCHEDULED'">AND f.unscheduled</when>
+            <when test="q.segment == 'NEAR'">AND f.near</when>
+            <when test="q.segment == 'LATE'">AND f.late</when>
+            <when test="q.segment == 'PRODUCTION'">AND (pr.node_late OR pr.issue OR pr.due_soon)</when>
+        </choose>
+        <!-- 排序照生产看板（docs/api/05 §2.3）：逾期 8、生产有节点延期 4、有异常 2、临期 1，同分按交期从早到晚 -->
+        ORDER BY (CASE WHEN f.late THEN 8 ELSE 0 END) + (CASE WHEN pr.node_late THEN 4 ELSE 0 END)
+                 + (CASE WHEN pr.issue THEN 2 ELSE 0 END) + (CASE WHEN f.near THEN 1 ELSE 0 END) DESC,
+                 g.due_date, g.order_no, s.code
+    </select>
+
+    <select id="selectCounts" resultType="com.lingmao.scm.module.production.dto.OrderProgressCounts">
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE f.unscheduled) AS unscheduled,
+               COUNT(*) FILTER (WHERE f.near) AS near,
+               COUNT(*) FILTER (WHERE f.late) AS late,
+               COUNT(*) FILTER (WHERE pr.node_late OR pr.issue OR pr.due_soon) AS production
+        <include refid="from"/>
+    </select>
+</mapper>

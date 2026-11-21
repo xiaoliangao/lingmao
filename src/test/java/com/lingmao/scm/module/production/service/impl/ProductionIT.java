@@ -24,6 +24,10 @@ import com.lingmao.scm.module.production.dto.IssueCloseReq;
 import com.lingmao.scm.module.production.dto.IssueReq;
 import com.lingmao.scm.module.production.dto.NodeReportReq;
 import com.lingmao.scm.module.production.dto.NodeReportResult;
+import com.lingmao.scm.module.production.dto.OrderProgressCounts;
+import com.lingmao.scm.module.production.dto.OrderProgressQuery;
+import com.lingmao.scm.module.production.dto.OrderProgressRowVO;
+import com.lingmao.scm.module.production.dto.ProductionBriefVO;
 import com.lingmao.scm.module.production.dto.ProductionDetailVO;
 import com.lingmao.scm.module.production.dto.ProductionNodeVO;
 import com.lingmao.scm.module.production.dto.ProductionQuery;
@@ -33,6 +37,7 @@ import com.lingmao.scm.module.production.dto.SchedulePrefillVO;
 import com.lingmao.scm.module.production.dto.ScheduleQuoteVO;
 import com.lingmao.scm.module.production.dto.ScheduleReq;
 import com.lingmao.scm.module.production.entity.NodeReportAction;
+import com.lingmao.scm.module.production.service.OrderProgressService;
 import com.lingmao.scm.module.production.service.ProductionBoardService;
 import com.lingmao.scm.module.production.service.ProductionIssueService;
 import com.lingmao.scm.module.production.service.ProductionNodeService;
@@ -84,6 +89,8 @@ class ProductionIT {
     private ProductionReceiptService receiptService;
     @Autowired
     private ProductionBoardService boardService;
+    @Autowired
+    private OrderProgressService progressService;
     @Autowired
     private OrderService orderService;
     @Autowired
@@ -425,6 +432,80 @@ class ProductionIT {
         assertThat(productionOrderService.page(q).getList()).isEmpty();
         assertThatThrownBy(() -> productionOrderService.detail(id))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+    }
+
+    /**
+     * 订单进度总览（RFC 016 §1）：一张订单一个款两个 SKU，分两次排给同一家工厂 → 一行、两个生产单小块；
+     * 交期挪到临期、逾期，生产单交期过了算生产有风险；分段条数跟着变。别人（本人范围）、别的品类线看不到
+     */
+    @Test
+    void orderProgress_rowsRiskSegmentsAndScope() {
+        Fixture f = fixture();
+        LocalDate commit = LocalDate.now().plusDays(30);
+        long orderId = approvedOrder(f, commit);
+        OrderProgressQuery q = new OrderProgressQuery();
+        q.setKeyword(jdbcTemplate.queryForObject("SELECT no FROM ord_order WHERE id = ?", String.class, orderId));
+
+        OrderProgressRowVO row = progressService.page(q).getList().getFirst();
+        assertThat(progressService.page(q).getList()).hasSize(1);
+        assertThat(row.getStyleId()).isEqualTo(f.style);
+        assertThat(row.getQty()).isEqualTo(100);
+        assertThat(row.getScheduledQty()).isZero();
+        assertThat(row.getDaysLeft()).isEqualTo(30);
+        assertThat(row.getProductions()).isEmpty();
+        assertThat(row.getRisk().unscheduled()).isTrue();
+        assertThat(row.getRisk().late() || row.getRisk().near() || row.getRisk().production()).isFalse();
+
+        long m = scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), Map.of(orderLine(orderId, f.skuM), 60)))
+                .getFirst().id();
+        long l = scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), Map.of(orderLine(orderId, f.skuL), 40)))
+                .getFirst().id();
+        row = progressService.page(q).getList().getFirst();
+        assertThat(row.getScheduledQty()).isEqualTo(100);
+        assertThat(row.getRisk().unscheduled()).isFalse();
+        assertThat(row.getProductions()).extracting(ProductionBriefVO::id).containsExactly(m, l);
+        assertThat(row.getProductions()).extracting(ProductionBriefVO::status).containsOnly("DRAFT");
+        assertThat(progressService.counts(q)).isEqualTo(new OrderProgressCounts(1, 0, 0, 0, 0));
+
+        jdbcTemplate.update("UPDATE ord_order SET commit_date = ? WHERE id = ?", LocalDate.now().plusDays(3), orderId);
+        assertThat(progressService.page(q).getList().getFirst().getRisk().near()).isTrue();
+        q.setSegment("NEAR");
+        assertThat(progressService.page(q).getList()).hasSize(1);
+        q.setSegment("LATE");
+        assertThat(progressService.page(q).getList()).isEmpty();
+
+        jdbcTemplate.update("UPDATE ord_order SET commit_date = ? WHERE id = ?", LocalDate.now().minusDays(1), orderId);
+        assertThat(progressService.page(q).getList()).singleElement().satisfies(r -> {
+            assertThat(r.getRisk().late()).isTrue();
+            assertThat(r.getDaysLeft()).isEqualTo(-1);
+        });
+
+        // 生产单审核后交期过了：这一行生产有风险，小块上是逾期
+        productionOrderService.act(m, "submit", new DocActionReq(productionOrderService.detail(m).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(m, "audit",
+                new DocActionReq(productionOrderService.detail(m).getVersion(), null)));
+        jdbcTemplate.update("UPDATE prd_order SET due_date = ? WHERE id = ?", LocalDate.now().minusDays(2), m);
+        q.setSegment("PRODUCTION");
+        assertThat(progressService.page(q).getList()).singleElement().satisfies(r -> {
+            assertThat(r.getRisk().production()).isTrue();
+            assertThat(r.getProductions().getFirst().risk().late()).isTrue();
+            assertThat(r.getProductions().get(1).risk().late()).isFalse();
+        });
+        q.setSegment(null);
+        assertThat(progressService.counts(q)).isEqualTo(new OrderProgressCounts(1, 0, 0, 1, 1));
+
+        // 别人（本人范围）看不到；只有鞋类的人看不到服装的单
+        long other = jdbcTemplate.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES (?, 'x', ?) RETURNING id",
+                Long.class, "it-prg-" + orderId, "IT 别人" + orderId);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new LoginUser(other, "jti-it"), null, TestIdentity.withLines(PERMS).stream().map(SimpleGrantedAuthority::new).toList()));
+        assertThat(progressService.page(q).getList()).isEmpty();
+        assertThat(progressService.counts(q).total()).isZero();
+        List<String> footwear = new java.util.ArrayList<>(PERMS);
+        footwear.add("line:FOOTWEAR");
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new LoginUser(f.user, "jti-it"), null, footwear.stream().map(SimpleGrantedAuthority::new).toList()));
+        assertThat(progressService.page(q).getList()).isEmpty();
     }
 
     private static com.lingmao.scm.module.production.dto.CutQtyReq cutReq(long item, Integer cut) {
