@@ -102,7 +102,7 @@ class PurchaseOffsetBook {
                 mapper.updateQty(id, qty);
             }
         });
-        r.added().forEach(m -> mapper.insert(m.fromId(), m.toId(), m.qty()));
+        r.added().forEach(m -> mapper.insert(m.fromId(), m.toId(), m.qty(), m.since()));
         Set<Long> touched = r.touchedLines();
         touched.stream().sorted().forEach(id -> mapper.addOffset(id, r.inDelta().getOrDefault(id, BigDecimal.ZERO),
                 r.outDelta().getOrDefault(id, BigDecimal.ZERO)));

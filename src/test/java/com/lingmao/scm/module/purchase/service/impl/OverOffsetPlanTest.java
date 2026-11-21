@@ -30,7 +30,7 @@ class OverOffsetPlanTest {
         b.line(2, "CG2", "11-11", T0);
 
         Result r = b.post(1, "1050");
-        assertThat(r.added()).containsExactly(move(1, 2, "50"));
+        assertThat(mv(r.added())).containsExactly(move(1, 2, "50"));
         assertThat(b.transit()).isEqualByComparingTo("950");
 
         r = b.post(2, "450");
@@ -38,7 +38,7 @@ class OverOffsetPlanTest {
         assertThat(b.transit()).isEqualByComparingTo("500");
 
         r = b.post(1, "-30");
-        assertThat(r.undone()).containsExactly(move(1, 2, "30"));
+        assertThat(mv(r.undone())).containsExactly(move(1, 2, "30"));
         assertThat(b.out(1)).isEqualByComparingTo("20");
         assertThat(b.transit()).isEqualByComparingTo("530");
 
@@ -59,7 +59,7 @@ class OverOffsetPlanTest {
 
         Result r = b.post(1, "-1050");
 
-        assertThat(r.undone()).containsExactly(move(1, 2, "50"));
+        assertThat(mv(r.undone())).containsExactly(move(1, 2, "50"));
         assertThat(r.updated()).containsValue(BigDecimal.ZERO);
         assertThat(b.offsets).isEmpty();
         assertThat(b.pending(2)).isEqualByComparingTo("550");
@@ -74,7 +74,7 @@ class OverOffsetPlanTest {
         b.post(1, "1050");
         b.close(2);
 
-        assertThat(b.post(1, "-20").undone()).containsExactly(move(1, 2, "20"));
+        assertThat(mv(b.post(1, "-20").undone())).containsExactly(move(1, 2, "20"));
         assertThat(b.post(1, "20").added()).isEmpty();
         assertThat(b.out(1)).isEqualByComparingTo("30");
     }
@@ -96,11 +96,36 @@ class OverOffsetPlanTest {
 
         Result r = b.post(2, "50");
 
-        assertThat(r.undone()).containsExactly(move(1, 2, "50"));
-        assertThat(r.added()).containsExactly(move(1, 4, "50"));
+        assertThat(mv(r.undone())).containsExactly(move(1, 2, "50"));
+        assertThat(mv(r.added())).containsExactly(move(1, 4, "50"));
         assertThat(b.in(2)).isZero();
         assertThat(b.in(3)).isZero();
         assertThat(b.in(4)).isEqualByComparingTo("50");
+    }
+
+    /**
+     * 决定 3 的延续：还回来再冲的那笔记的还是原来多收那一刻（T0），不是还回的时候。
+     * 冲了两跳以后再还回，T0 以后才审核的 CG5 照样不冲
+     */
+    @Test
+    void respreadKeepsOriginalOverReceiptTime_acrossTwoHops() {
+        Book b = new Book();
+        b.line(1, "CG1", "11-10", T0);
+        b.line(2, "CG2", "11-11", T0);
+        b.post(1, "1050");
+        b.line(4, "CG4", "11-20", T0.minusDays(1));
+        b.line(5, "CG5", "11-01", T0.plusDays(5));
+        b.clock = T0.plusDays(6);
+        b.post(2, "1000");
+        assertThat(b.in(4)).isEqualByComparingTo("50");
+        assertThat(b.offsets).filteredOn(o -> o.toId() == 4).singleElement().satisfies(o -> assertThat(o.createTime()).isEqualTo(T0));
+
+        Result r = b.post(4, "1000");
+
+        assertThat(mv(r.undone())).containsExactly(move(1, 4, "50"));
+        assertThat(r.added()).isEmpty();
+        assertThat(b.in(5)).isZero();
+        assertThat(b.out(1)).isZero();
     }
 
     /** 决定 2：有冲入的行自己又多收了：先把冲入的还回去，剩下多收的再冲给别的单。一行不会同时有冲入和冲出 */
@@ -114,8 +139,8 @@ class OverOffsetPlanTest {
 
         Result r = b.post(2, "1040");
 
-        assertThat(r.undone()).containsExactly(move(1, 2, "50"));
-        assertThat(r.added()).containsExactlyInAnyOrder(move(2, 3, "40"), move(1, 3, "50"));
+        assertThat(mv(r.undone())).containsExactly(move(1, 2, "50"));
+        assertThat(mv(r.added())).containsExactlyInAnyOrder(move(2, 3, "40"), move(1, 3, "50"));
         assertThat(b.in(2)).isZero();
         assertThat(b.out(2)).isEqualByComparingTo("40");
         assertThat(b.in(3)).isEqualByComparingTo("90");
@@ -135,7 +160,7 @@ class OverOffsetPlanTest {
         assertThat(b.post(1, "-5").isEmpty()).isTrue();
         Result r = b.post(1, "5");
 
-        assertThat(r.added()).containsExactly(move(1, 3, "5"));
+        assertThat(mv(r.added())).containsExactly(move(1, 3, "5"));
         assertThat(b.out(1)).isEqualByComparingTo("5");
     }
 
@@ -148,7 +173,7 @@ class OverOffsetPlanTest {
         b.lines.put(3L, new Line(3, 3, "CG3", "G", LocalDate.parse("2026-11-01"), 1, T0, true, q("1000"), q("900"), q("0"), q("10")));
         b.line(4, "CG4", "11-20", T0);
 
-        assertThat(b.post(1, "1050").added()).containsExactly(move(1, 4, "50"));
+        assertThat(mv(b.post(1, "1050").added())).containsExactly(move(1, 4, "50"));
     }
 
     /** §8-7：三张没到齐的，单据日期 11-10、11-12、11-12：先冲 11-10，再按单号冲 11-12 的两张 */
@@ -162,7 +187,7 @@ class OverOffsetPlanTest {
 
         Result r = b.post(1, "1250");
 
-        assertThat(r.added()).containsExactly(move(1, 4, "100"), move(1, 3, "100"), move(1, 2, "50"));
+        assertThat(mv(r.added())).containsExactly(move(1, 4, "100"), move(1, 3, "100"), move(1, 2, "50"));
     }
 
     /** 冲给了两张单，退货时从最近冲的那笔往前退 */
@@ -180,7 +205,7 @@ class OverOffsetPlanTest {
 
         Result r = b.post(1, "-25");
 
-        assertThat(r.undone()).containsExactly(move(1, 3, "20"), move(1, 2, "5"));
+        assertThat(mv(r.undone())).containsExactly(move(1, 3, "20"), move(1, 2, "5"));
     }
 
     // ---------- 小账本 ----------
@@ -189,8 +214,13 @@ class OverOffsetPlanTest {
         return new BigDecimal(v);
     }
 
-    private static Move move(long from, long to, String qty) {
-        return new Move(from, to, q(qty));
+    /** "from>to:数"，比数不比多收时间（时间另有 respreadKeepsOriginalOverReceiptTime 查） */
+    private static String move(long from, long to, String qty) {
+        return from + ">" + to + ":" + q(qty).stripTrailingZeros().toPlainString();
+    }
+
+    private static List<String> mv(List<Move> moves) {
+        return moves.stream().map(m -> m.fromId() + ">" + m.toId() + ":" + m.qty().stripTrailingZeros().toPlainString()).toList();
     }
 
     /** 同组（组键 G）的采购行和冲抵；post 照 PurchaseOffsetBook 写回 */
@@ -227,7 +257,7 @@ class OverOffsetPlanTest {
                     offsets.add(new Offset(oid, old.fromId(), old.toId(), qty, old.createTime()));
                 }
             });
-            r.added().forEach(m -> offsets.add(new Offset(nextId++, m.fromId(), m.toId(), m.qty(), clock)));
+            r.added().forEach(m -> offsets.add(new Offset(nextId++, m.fromId(), m.toId(), m.qty(), m.since() != null ? m.since() : clock)));
             r.touchedLines().forEach(lid -> {
                 Line x = lines.get(lid);
                 lines.put(lid, new Line(x.id(), x.poId(), x.poNo(), x.group(), x.orderDate(), x.seq(), x.auditTime(), x.open(), x.qty(),

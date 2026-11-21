@@ -60,8 +60,11 @@ public interface PurchaseOffsetMapper {
             + "ORDER BY f.id</script>")
     List<OffsetRow> selectOfItems(@Param("ids") Collection<Long> ids);
 
-    @Insert("INSERT INTO pur_over_offset (from_item_id, to_item_id, qty) VALUES (#{from}, #{to}, #{qty})")
-    void insert(@Param("from") long fromItemId, @Param("to") long toItemId, @Param("qty") BigDecimal qty);
+    /** since = 多收那一刻：null 是现在；还回来再冲的照原来那笔的时间 */
+    @Insert("INSERT INTO pur_over_offset (from_item_id, to_item_id, qty, create_time) VALUES (#{from}, #{to}, #{qty}, "
+            + "COALESCE(CAST(#{since,jdbcType=TIMESTAMP_WITH_TIMEZONE} AS timestamptz), now()))")
+    void insert(@Param("from") long fromItemId, @Param("to") long toItemId, @Param("qty") BigDecimal qty,
+                @Param("since") OffsetDateTime since);
 
     @Update("UPDATE pur_over_offset SET qty = #{qty} WHERE id = #{id}")
     void updateQty(@Param("id") long id, @Param("qty") BigDecimal qty);

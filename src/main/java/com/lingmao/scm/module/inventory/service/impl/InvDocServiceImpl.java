@@ -796,7 +796,11 @@ public class InvDocServiceImpl implements InvDocService {
             throw new BizException(400, "没有要" + (type.getKind() == InvDocKind.IN ? "入库" : "出库") + "的数");
         }
         insert(doc, items);
-        handler.check(sourcePosting(doc, items));
+        if (!req.isPost()) {
+            // 马上过账的不在这里先查：check 只锁源单这一张，过账时采购还要按 id 顺序锁同组别的单（RFC 014 §6），
+            // 先锁一张再去锁别的，会和同时过账的人互相等。过账（preparePosting）锁齐以后照样查一遍上限
+            handler.check(sourcePosting(doc, items));
+        }
         docLogService.add(BizType.INV_DOC, doc.getId(), "create", "由" + source.getLabel() + " " + doc.getSourceNo() + " 生成");
         if (req.isPost()) {
             audit(doc, 0, null);

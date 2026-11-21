@@ -56,6 +56,8 @@ class PurchaseExcel {
         private LocalDate expectDate;
         private BigDecimal receivedQty;
         private BigDecimal returnedQty;
+        /** 冲抵：冲入 − 冲出（RFC 014），正的是别的单冲来的，负的是冲给别的单的 */
+        private BigDecimal offsetQty;
         private BigDecimal pendingQty;
         private String followNote;
     }
@@ -84,6 +86,7 @@ class PurchaseExcel {
             ExcelColumn.date("预计到货", ExportRow::getExpectDate, ExportRow::setExpectDate),
             ExcelColumn.decimal("已入库", 3, ExportRow::getReceivedQty, ExportRow::setReceivedQty),
             ExcelColumn.decimal("已退货", 3, ExportRow::getReturnedQty, ExportRow::setReturnedQty),
+            ExcelColumn.decimal("冲抵", 3, ExportRow::getOffsetQty, ExportRow::setOffsetQty),
             ExcelColumn.decimal("未入库", 3, ExportRow::getPendingQty, ExportRow::setPendingQty),
             ExcelColumn.text("跟进备注", ExportRow::getFollowNote, ExportRow::setFollowNote));
 
@@ -123,6 +126,7 @@ class PurchaseExcel {
                 r.setExpectDate(i.getExpectDate());
                 r.setReceivedQty(i.getReceivedQty());
                 r.setReturnedQty(i.getReturnedQty());
+                r.setOffsetQty(i.arrived().subtract(i.netReceived()));
                 r.setPendingQty(i.pending());
                 r.setFollowNote(i.getFollowNote());
                 out.add(r);

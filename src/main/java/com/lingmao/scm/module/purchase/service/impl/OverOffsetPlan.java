@@ -46,14 +46,21 @@ final class OverOffsetPlan {
     record Offset(long id, long fromId, long toId, BigDecimal qty, OffsetDateTime createTime) {
     }
 
-    /** 一对行之间这次变了多少：新冲的、退回的、还回的都按"from 冲给 to"记，qty > 0 */
-    record Move(long fromId, long toId, BigDecimal qty) {
+    /**
+     * 一对行之间这次变了多少：新冲的、退回的、还回的都按"from 冲给 to"记，qty > 0。
+     * since 是新冲的这笔记成哪一刻多收的：null = 这次入的（现在）；还回来再冲的照原来那笔的时间，以后再还回、再冲还按它卡
+     */
+    record Move(long fromId, long toId, BigDecimal qty, OffsetDateTime since) {
+
+        Move(long fromId, long toId, BigDecimal qty) {
+            this(fromId, toId, qty, null);
+        }
     }
 
     /**
      * @param updated  改了数的冲抵：id → 新的数，0 就删掉
-     * @param added    新冲的（同一对合成一笔）
-     * @param undone   退回、还回的（同一对合成一笔）
+     * @param added    新冲的（同一对、同一个多收时间合成一笔）
+     * @param undone   退回、还回的（同一对合成一笔，since 是 null）
      * @param inDelta  每行冲入变了多少
      * @param outDelta 每行冲出变了多少
      */
@@ -113,8 +120,8 @@ final class OverOffsetPlan {
         final Map<Long, BigDecimal> qtyOf = new HashMap<>();
         final Map<Long, BigDecimal> inDelta = new HashMap<>();
         final Map<Long, BigDecimal> outDelta = new HashMap<>();
-        final Map<List<Long>, BigDecimal> added = new LinkedHashMap<>();
-        final Map<List<Long>, BigDecimal> undone = new LinkedHashMap<>();
+        final Map<List<Object>, BigDecimal> added = new LinkedHashMap<>();
+        final Map<List<Object>, BigDecimal> undone = new LinkedHashMap<>();
 
         State(Collection<Line> lines, Collection<Offset> offsets) {
             lines.forEach(l -> {
@@ -173,11 +180,16 @@ final class OverOffsetPlan {
         }
 
         /** 退回、还回一笔：这笔冲抵改小，两头的冲入、冲出跟着减 */
-        private void move(Offset o, BigDecimal take, Map<List<Long>, BigDecimal> log) {
+        private void move(Offset o, BigDecimal take, Map<List<Object>, BigDecimal> log) {
             qtyOf.merge(o.id(), take.negate(), BigDecimal::add);
             change(o.fromId(), out, outDelta, take.negate());
             change(o.toId(), in, inDelta, take.negate());
-            log.merge(List.of(o.fromId(), o.toId()), take, BigDecimal::add);
+            log.merge(key(o.fromId(), o.toId(), null), take, BigDecimal::add);
+        }
+
+        /** 同一对、同一个多收时间的合成一笔（List.of 不收 null，换成 Arrays.asList） */
+        private static List<Object> key(long from, long to, OffsetDateTime since) {
+            return java.util.Arrays.asList(from, to, since);
         }
 
         /** 第 3 步：多收的冲给同组没到齐的，先冲下单早的 */
@@ -204,7 +216,7 @@ final class OverOffsetPlan {
                 BigDecimal take = left.min(t.qty().subtract(arrived(t.id())));
                 change(from.id(), out, outDelta, take);
                 change(t.id(), in, inDelta, take);
-                added.merge(List.of(from.id(), t.id()), take, BigDecimal::add);
+                added.merge(key(from.id(), t.id(), x.since()), take, BigDecimal::add);
                 left = left.subtract(take);
             }
         }
@@ -226,8 +238,9 @@ final class OverOffsetPlan {
             return new Result(updated, moves(added), moves(undone), inDelta, outDelta);
         }
 
-        private static List<Move> moves(Map<List<Long>, BigDecimal> m) {
-            return m.entrySet().stream().map(e -> new Move(e.getKey().get(0), e.getKey().get(1), e.getValue())).toList();
+        private static List<Move> moves(Map<List<Object>, BigDecimal> m) {
+            return m.entrySet().stream().map(e -> new Move((Long) e.getKey().get(0), (Long) e.getKey().get(1), e.getValue(),
+                    (OffsetDateTime) e.getKey().get(2))).toList();
         }
     }
 }
