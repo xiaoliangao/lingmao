@@ -10,6 +10,7 @@ import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.entity.DictData;
 import com.lingmao.scm.module.system.service.DictDataService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +43,7 @@ public class DictDataController {
 
     @Operation(summary = "按类型取全部选项，停用的也在、带 status（下拉框只列启用的，显示文字用全部；不分页）")
     @GetMapping("/by-type/{typeCode}")
-    public R<List<DictOption>> listByType(@PathVariable("typeCode") String typeCode) {
+    public R<List<DictOption>> listByType(@Parameter(description = "字典类型编码，如 season") @PathVariable("typeCode") String typeCode) {
         return R.ok(dictDataService.listByType(typeCode));
     }
 

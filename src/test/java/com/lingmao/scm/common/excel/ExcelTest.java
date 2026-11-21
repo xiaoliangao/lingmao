@@ -590,6 +590,69 @@ class ExcelTest {
         }
     }
 
+    /** 规则：找图片列时表头和读表一样处理：网页复制来的不换行空格、星号不影响 */
+    @Test
+    void images_headerWithNbsp() throws IOException {
+        byte[] bytes;
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            XSSFSheet sheet = workbook.createSheet("物料信息");
+            sheet.createRow(0).createCell(0).setCellValue("\u00a0图片*\u00a0");
+            sheet.createRow(1).createCell(1).setCellValue("M1");
+            var anchor = workbook.getCreationHelper().createClientAnchor();
+            anchor.setCol1(0);
+            anchor.setRow1(1);
+            sheet.createDrawingPatriarch().createPicture(anchor, workbook.addPicture(new byte[]{1, 2, 3}, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG));
+            bytes = toBytes(workbook);
+        }
+        try (ExcelBook book = Excel.open(xlsx(bytes))) {
+            assertThat(book.images("物料信息", "图片")).singleElement().satisfies(i -> assertThat(i.row()).isEqualTo(2));
+        }
+    }
+
+    /**
+     * 规则：只有 xl/media/ 下的图片文件另算（不分大小写）；那里的 xml、rels 照普通条目算，堆满 128 个照样拦，
+     * 而大写路径下的图片照样按图片算，几百张也能打开
+     */
+    @Test
+    void archive_onlyPicturesUnderMediaCountSeparately() throws IOException {
+        byte[] base;
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            var sheet = workbook.createSheet("物料信息");
+            sheet.createRow(0).createCell(0).setCellValue("编码");
+            var anchor = workbook.getCreationHelper().createClientAnchor();
+            anchor.setRow1(1);
+            sheet.createDrawingPatriarch().createPicture(anchor,
+                    workbook.addPicture(new byte[]{1, 2, 3}, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG));
+            base = toBytes(workbook);
+        }
+        byte[] xmlUnderMedia = withExtraEntries(base, ExcelArchiveGuard.MAX_FILES, i -> "xl/media/part" + i + ".xml", "<a/>".getBytes());
+        assertThatThrownBy(() -> Excel.open(xlsx(xmlUnderMedia))).isInstanceOf(BizException.class).hasMessageStartingWith("文件结构过大");
+
+        byte[] upperCasePictures = withExtraEntries(base, ExcelArchiveGuard.MAX_FILES + 10, i -> "XL/MEDIA/extra" + i + ".png", new byte[]{1, 2, 3});
+        try (ExcelBook book = Excel.open(xlsx(upperCasePictures))) {
+            assertThat(book.images("物料信息", "编码")).hasSize(1);
+        }
+    }
+
+    /** 往 .xlsx 压缩包里再塞 count 个条目 */
+    private static byte[] withExtraEntries(byte[] base, int count, java.util.function.IntFunction<String> name, byte[] content) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (var in = new java.util.zip.ZipInputStream(new ByteArrayInputStream(base));
+             var zip = new java.util.zip.ZipOutputStream(out)) {
+            for (var e = in.getNextEntry(); e != null; e = in.getNextEntry()) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(e.getName()));
+                in.transferTo(zip);
+                zip.closeEntry();
+            }
+            for (int i = 0; i < count; i++) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(name.apply(i)));
+                zip.write(content);
+                zip.closeEntry();
+            }
+        }
+        return out.toByteArray();
+    }
+
     private static MockMultipartFile xlsx(byte[] bytes) {
         return new MockMultipartFile("file", "供应商.xlsx", Excel.CONTENT_TYPE, bytes);
     }

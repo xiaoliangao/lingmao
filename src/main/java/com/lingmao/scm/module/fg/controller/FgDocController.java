@@ -38,6 +38,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -200,7 +201,7 @@ public class FgDocController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "其他入库的草稿导入明细（按 SKU 码，单上有的改件数，没有的加一行）")
-    @PostMapping("/{id:\\d+}/items/import")
+    @PostMapping(value = "/{id:\\d+}/items/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('fg:doc:edit')")
     @OperLog(module = "成品出入库单", action = "导入明细")
     public R<ImportResult> importItems(@PathVariable("id") long id, @RequestParam("file") MultipartFile file) {

@@ -59,7 +59,9 @@ public final class LocalUploadStore implements UploadStore {
             String thumbnail = null;
             if (slot.thumbnailUrl() != null) {
                 Path thumb = resolve(slot.thumbnailUrl()); safeParent(thumb);
-                Thumbnails.create(temporary, thumb, extension); thumbnail = slot.thumbnailUrl();
+                try { Thumbnails.create(temporary, thumb, extension); }
+                catch (Thumbnails.Unreadable broken) { throw new BizException(broken.getMessage()); }
+                thumbnail = slot.thumbnailUrl();
             }
             Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
             return new Stored(bytes, HexFormat.of().formatHex(digest.digest()), thumbnail);

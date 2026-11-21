@@ -17,6 +17,7 @@ public class MaterialQuery extends PageQuery {
     private String keyword;
     private Long categoryId;
     private String materialType;
+    /** 1 启用 0 停用；不传是全部 */
     private Integer status;
     private List<Long> ids;
 }

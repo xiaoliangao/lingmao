@@ -11,5 +11,6 @@ public class WarehouseQuery extends PageQuery {
     private String keyword;
     /** 仓库类型：MATERIAL 物料仓 / PRODUCT 成品仓 / FACTORY 工厂仓；不传是全部 */
     private String type;
+    /** 1 启用 0 停用；不传是全部 */
     private Integer status;
 }

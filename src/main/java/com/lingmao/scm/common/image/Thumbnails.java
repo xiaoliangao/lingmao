@@ -46,10 +46,26 @@ public final class Thumbnails {
      */
     public static void create(Path source, Path target, String ext) throws IOException {
         boolean png = "png".equalsIgnoreCase(ext);
-        BufferedImage image = readSubsampled(source);
-        BufferedImage thumb = shrink(image, png);
+        BufferedImage thumb;
+        try {
+            thumb = shrink(readSubsampled(source), png);
+        } catch (Unreadable known) {
+            throw known;
+        } catch (IOException | RuntimeException broken) {
+            throw new Unreadable("图片打不开：内容坏了，或者和扩展名不是一种格式", broken);
+        }
         if (!ImageIO.write(thumb, png ? "png" : "jpg", target.toFile())) {
             throw new IOException("没有能写 " + ext + " 的 ImageIO 写入器");
+        }
+    }
+
+    /**
+     * 这张图本身的问题，不是磁盘的问题：数据截断、损坏（头上的宽高读得出、像素读不出），或者像素太多。
+     * message 是给用户看的，上传的地方原样报出去，不当成服务器出错
+     */
+    public static final class Unreadable extends IOException {
+        Unreadable(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 
@@ -69,7 +85,7 @@ public final class Thumbnails {
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
                 if ((long) width * height > MAX_PIXELS) {
-                    throw new IOException("图片太大，不做缩略图: " + width + "x" + height);
+                    throw new Unreadable("图片像素太多（" + width + "×" + height + "，最多 1 亿像素），请缩小后上传", null);
                 }
                 int step = Math.max(1, Math.max(width, height) / (LONG_SIDE * 2));
                 ImageReadParam param = reader.getDefaultReadParam();

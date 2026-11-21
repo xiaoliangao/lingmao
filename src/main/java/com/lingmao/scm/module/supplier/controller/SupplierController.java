@@ -31,6 +31,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -287,11 +288,11 @@ public class SupplierController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "导入：status 是 ACTIVE（默认，要 admit）或 PENDING_ADMIT")
-    @PostMapping("/import")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('supplier:supplier:import')")
     @OperLog(module = "供应商", action = "导入")
     public R<ImportResult> importExcel(@RequestParam("file") MultipartFile file,
-                                       @RequestParam(value = "status", required = false) SupplierStatus status) {
+                                       @Parameter(description = "导进来的供应商是什么状态：ACTIVE 合作中（默认，要有准入权限）/ PENDING_ADMIT 待准入") @RequestParam(value = "status", required = false) SupplierStatus status) {
         return R.ok(excelService.importExcel(file, status));
     }
 

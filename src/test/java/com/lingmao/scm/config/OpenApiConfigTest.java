@@ -24,6 +24,17 @@ class OpenApiConfigTest {
         assertThat(OpenApiConfig.fallback("auditForMe")).isEqualTo("true：只看等我审核的");
         assertThat(OpenApiConfig.fallback("whateverId")).isNull();
         assertThat(OpenApiConfig.fallback("techPackStatus")).isNull();
+        assertThat(OpenApiConfig.fallback("ownerId")).isNull();          // 各处意思不同（负责人 / 物权方），不猜
+        assertThat(OpenApiConfig.fallback("orderFrom")).isNull();        // 不带 Date 的不当日期
+    }
+
+    @Test
+    void pathFallback_unknownIsNull() {
+        assertThat(OpenApiConfig.pathFallback("id")).isEqualTo("地址里这一条的 id");
+        assertThat(OpenApiConfig.pathFallback("sourceId")).isEqualTo("来源单据的 id");
+        assertThat(OpenApiConfig.pathFallback("skuId")).isEqualTo("SKU的 id");
+        assertThat(OpenApiConfig.pathFallback("whateverId")).isNull();
+        assertThat(OpenApiConfig.pathFallback("key")).isNull();
     }
 
     @Test

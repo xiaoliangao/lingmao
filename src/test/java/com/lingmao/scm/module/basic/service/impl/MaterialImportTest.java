@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -56,6 +57,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -288,7 +290,6 @@ class MaterialImportTest {
         return (List<ImportError>) e.getData();
     }
 
-    /** 现做一个几张表的 .xlsx：表名 → 行（第一行是表头） */
     /**
      * 规则：领猫"图片"列里的图，浮在哪一行就挂到那一行建的物料、SKU 上（附件 IMAGE，第一张是主图）；
      * 一样的图只存一份文件；落在空行上的不导、进提示；写库前就存好文件，写库时只挂引用
@@ -325,7 +326,7 @@ class MaterialImportTest {
         assertThat(materialImages.getValue()).extracting(AttachmentReq::getName).containsExactly("ML0007.png", "ML0007.png");
         assertThat(materialImages.getValue()).extracting(AttachmentReq::getUrl).doesNotHaveDuplicates();
         ArgumentCaptor<List<AttachmentReq>> skuImages = ArgumentCaptor.captor();
-        verify(attachmentService).replace(eq(BizType.MATERIAL_SKU), anyLong(), eq(Attachment.IMAGE), skuImages.capture());
+        verify(attachmentService).replace(eq(BizType.MATERIAL_SKU), eq(501L), eq(Attachment.IMAGE), skuImages.capture());
         assertThat(skuImages.getValue()).singleElement().satisfies(img -> {
             assertThat(img.getName()).isEqualTo("ML0007-KQ.png");
             assertThat(img.getUrl()).isEqualTo(materialImages.getValue().get(1).getUrl());
@@ -334,6 +335,35 @@ class MaterialImportTest {
         assertThat(result.notes()).extracting(ImportError::message)
                 .anySatisfy(m -> assertThat(m).contains("图片一起导入了 3 张"))
                 .anySatisfy(m -> assertThat(m).contains("这一行没有数据，图片没导"));
+    }
+
+    /** 规则：图本身坏了（打不开、太大）的那张不导、进提示，别的照常导；存储忙（429）是整批的事，照旧报错 */
+    @Test
+    void importFile_brokenImage_skippedWithNote() throws IOException {
+        Map<String, Object[][]> sheets = new LinkedHashMap<>();
+        sheets.put("物料信息", new Object[][]{{"图片", "物料类型", "物料分类", "物料编码", "物料名称", "单位"},
+                {null, "面料", "面料>梭织", "ML0007", "全棉府绸", "米"}});
+        sheets.put("物料信息SKU", new Object[][]{{"图片", "物料编码", "物料SKU编码", "颜色编码", "颜色名称"},
+                {null, "ML0007", "ML0007-KQ", "KQ", "卡其"}});
+        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101");
+        when(fileService.save(anyString(), any())).thenAnswer(inv -> {
+            if (inv.<byte[]>getArgument(1)[0] == 'a') throw new BizException("图片打不开：内容坏了，或者和扩展名不是一种格式");
+            return new FileVO("/files/2026/11/b.png", "/files/2026/11/b_s.png", inv.getArgument(0), 3);
+        });
+
+        ImportResult result = materialImport.importFile(xlsx(sheets, Map.of("物料信息", new int[][]{{1, 'a'}, {1, 'b'}})));
+
+        ArgumentCaptor<List<AttachmentReq>> images = ArgumentCaptor.captor();
+        verify(attachmentService).replace(eq(BizType.MATERIAL), eq(101L), eq(Attachment.IMAGE), images.capture());
+        assertThat(images.getValue()).extracting(AttachmentReq::getUrl).containsExactly("/files/2026/11/b.png");
+        verify(attachmentService, never()).replace(eq(BizType.MATERIAL_SKU), anyLong(), any(), any()); // SKU 行没图：不挂空列表
+        assertThat(result.notes()).extracting(ImportError::message)
+                .anySatisfy(m -> assertThat(m).contains("图片打不开（坏了或者太大），没导"))
+                .anySatisfy(m -> assertThat(m).contains("图片一起导入了 1 张"));
+
+        doThrow(new BizException(429, "正在处理其他文件，请稍后重试")).when(fileService).save(anyString(), any());
+        assertThatThrownBy(() -> materialImport.importFile(xlsx(sheets, Map.of("物料信息", new int[][]{{1, 'b'}}))))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(429));
     }
 
     /** 带图片的文件：images 是 工作表名 → {行（从 0 数，表头是 0）, 图片内容的第一个字节}，图片都放在第 0 列 */
@@ -356,6 +386,7 @@ class MaterialImportTest {
         }
     }
 
+    /** 现做一个几张表的 .xlsx：表名 → 行（第一行是表头） */
     private static MockMultipartFile xlsx(Map<String, Object[][]> sheets) throws IOException {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             sheets.forEach((name, rows) -> {

@@ -17,6 +17,7 @@ import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -92,44 +93,42 @@ public final class ExcelBook implements AutoCloseable {
         if (drawing == null) {
             return List.of();
         }
-        record Placed(ClientAnchor anchor, ExcelImage image) {
+        // 位置、偏移、字节都在这里一次取出来：POI 读坏文件的锚点、偏移（超出 int）、图片数据都可能抛，坏的那张跳过，不让整批报错
+        record Placed(int row, int dx, int dy, ExcelImage image) {
         }
         List<Placed> placed = new ArrayList<>();
         for (Shape shape : drawing) {
             if (!(shape instanceof Picture picture)) {
                 continue;
             }
-            ClientAnchor anchor;
-            PictureData data;
             try {
-                anchor = picture.getClientAnchor();
-                data = picture.getPictureData();
+                ClientAnchor anchor = picture.getClientAnchor();
+                if (anchor == null || anchor.getCol1() != column || anchor.getRow1() < 1) {
+                    continue;
+                }
+                PictureData data = picture.getPictureData();
+                String extension = data == null ? null : IMAGE_EXTENSIONS.get(data.getMimeType());
+                byte[] bytes = extension == null ? new byte[0] : data.getData();
+                placed.add(new Placed(anchor.getRow1(), anchor.getDx1(), anchor.getDy1(),
+                        new ExcelImage(anchor.getRow1() + 1, extension, bytes)));
             } catch (RuntimeException broken) {
-                continue;
+                // 这一张读不出来：当没有
             }
-            if (anchor == null || anchor.getCol1() != column || anchor.getRow1() < 1) {
-                continue;
-            }
-            String extension = data == null ? null : IMAGE_EXTENSIONS.get(data.getMimeType());
-            placed.add(new Placed(anchor, new ExcelImage(anchor.getRow1() + 1, extension,
-                    extension == null ? new byte[0] : data.getData())));
         }
-        placed.sort(Comparator.comparingInt((Placed p) -> p.anchor().getRow1())
-                .thenComparingInt(p -> p.anchor().getDx1())
-                .thenComparingInt(p -> p.anchor().getDy1()));
+        placed.sort(Comparator.comparingInt(Placed::row).thenComparingInt(Placed::dx).thenComparingInt(Placed::dy));
         return placed.stream().map(Placed::image).toList();
     }
 
-    /** 表头（第 1 行）里叫 header 的那一列，从 0 数；没有返回 null */
+    /** 表头（第 1 行）里叫 header 的那一列，从 0 数；没有返回 null。表头文字和读表时一样处理（不换行空格、星号都去掉） */
     private static Integer columnOf(Sheet sheet, String header) {
         Row first = sheet.getRow(0);
         if (first == null) {
             return null;
         }
         String wanted = ExcelReader.normalizeHeader(header);
-        DataFormatter formatter = new DataFormatter();
+        DataFormatter formatter = new DataFormatter(Locale.ROOT);
         for (Cell cell : first) {
-            if (wanted.equals(ExcelReader.normalizeHeader(formatter.formatCellValue(cell)))) {
+            if (wanted.equals(ExcelReader.normalizeHeader(ExcelReader.textOf(cell, formatter)))) {
                 return cell.getColumnIndex();
             }
         }

@@ -29,6 +29,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -69,7 +70,7 @@ public class StyleController extends IdempotencyReplayGuard {
     @GetMapping("/code-preview")
     @PreAuthorize("hasAuthority('style:style:add')")
     public R<String> codePreview(@Parameter(description = "大类（字典 style_class 的值）：按它预览下一个款号") @RequestParam("styleClass") String styleClass,
-                                 @RequestParam(name = "designerId", required = false) Long designerId) {
+                                 @Parameter(description = "设计师的用户 id：款号里带设计师编号") @RequestParam(name = "designerId", required = false) Long designerId) {
         return R.ok(styleService.codePreview(styleClass, designerId));
     }
 
@@ -87,7 +88,7 @@ public class StyleController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "导入：只新增，有一处不对整批不导（1003）")
-    @PostMapping("/import")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('style:style:import')")
     @OperLog(module = "款式", action = "导入")
     public R<ImportResult> importExcel(@RequestParam("file") MultipartFile file) {

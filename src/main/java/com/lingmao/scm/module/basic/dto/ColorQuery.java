@@ -9,6 +9,7 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class ColorQuery extends PageQuery {
     private String keyword;
+    /** 1 启用 0 停用；不传是全部 */
     private Integer status;
     /** 色系（字典 color_family 的值） */
     private String family;

@@ -26,6 +26,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -129,7 +130,7 @@ public class TechPackController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "从甲方的 BOM 表认出物料清单（只解析、不写库；只有草稿能调）")
-    @PostMapping("/{id:\\d+}/bom-import")
+    @PostMapping(value = "/{id:\\d+}/bom-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('techpack:pack:edit')")
     public R<BomImportVO> bomImport(@PathVariable("id") long id, @RequestParam("file") MultipartFile file,
                                     @Parameter(description = "用第几张 sheet（从 0 起），不给 = 按款号、款名自动对") @RequestParam(value = "sheet", required = false) Integer sheet,

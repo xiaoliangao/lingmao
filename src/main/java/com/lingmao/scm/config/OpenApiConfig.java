@@ -8,6 +8,7 @@ import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 import java.util.Objects;
@@ -19,15 +20,17 @@ import java.util.regex.Pattern;
  * 说明先取 @Operation、@Parameter，没写的取 Javadoc（therapi，见 pom）；列表的查询条件对象拆成一个个查询参数
  * （application.yaml 的 default-flat-param-object）。
  * <p>
- * 当前登录的人（@AuthenticationPrincipal LoginUser）不是请求参数：拆的时候要跳过，不然文档里多出 userId、jti 两个假参数。
- * 查询参数还是没有说明的，按名字补一句通用的（parameterFallbacks）：xxxId、xxxDateFrom 这种各处意思一样的不用每个 Query 写一遍；
- * 意思因接口而异的（keyword 查哪些字段）写在 Query 字段的 Javadoc 上，那里写了就用那里的
+ * 拆的时候两样不能拆：当前登录的人（@AuthenticationPrincipal LoginUser）不是请求参数，拆了多出 userId、jti 两个假参数；
+ * 上传的文件（MultipartFile）是接口、没有字段，拆了就没了，上传、导入接口的 file 会从文档里消失。
+ * 参数还是没有说明的，按名字补一句通用的（parameterFallbacks）：xxxId、xxxDateFrom 这种各处意思一样的不用每个 Query 写一遍，
+ * 认不出的不编。意思因接口而异的（keyword 查哪些字段、status 的取值）写在 Query 字段的 Javadoc 或 @Parameter 上，那里写了就用那里的
  */
 @Configuration(proxyBeanMethods = false)
 public class OpenApiConfig {
 
     static {
         SpringDocUtils.getConfig().addRequestWrapperToIgnore(LoginUser.class);
+        SpringDocUtils.getConfig().addSimpleTypesForParameterObject(MultipartFile.class);
     }
 
     /** xxxId、xxxIds 的 xxx → 叫法 */
@@ -38,7 +41,12 @@ public class OpenApiConfig {
             Map.entry("defaultSupplier", "默认供应商"), Map.entry("sales", "业务员"), Map.entry("buyer", "采购员"),
             Map.entry("designer", "设计师"), Map.entry("sku", "SKU"), Map.entry("material", "物料"),
             Map.entry("materialSku", "物料 SKU"), Map.entry("partner", "往来单位"), Map.entry("company", "主体公司"),
-            Map.entry("owner", "物权方"), Map.entry("receipt", "回货单"));
+            Map.entry("receipt", "回货单"));
+    /** 路径里 /{id}/xxx/{xxxId} 的 xxx → 地址里这一条下面的哪一样；NOUNS 里有的也认 */
+    private static final Map<String, String> PATH_NOUNS = Map.ofEntries(
+            Map.entry("source", "来源单据"), Map.entry("notice", "提醒"), Map.entry("node", "进度节点"),
+            Map.entry("issue", "异常"), Map.entry("item", "明细行"), Map.entry("color", "颜色"),
+            Map.entry("change", "改动申请"), Map.entry("cert", "证照"), Map.entry("file", "文件"));
     /** xxxDateFrom、xxxDateTo 的 xxx → 哪个日期 */
     private static final Map<String, String> DATES = Map.of(
             "order", "下单日期", "due", "交期", "biz", "业务日期", "doc", "单据日期", "create", "创建日期",
@@ -49,7 +57,7 @@ public class OpenApiConfig {
             Map.entry("mine", "true：只看和我有关的（我建的或我负责的）"),
             Map.entry("auditForMe", "true：只看等我审核的"),
             Map.entry("keyword", "关键字：单号、编码、名称这类，模糊查"),
-            Map.entry("status", "状态，取值见枚举；不传是全部"),
+            Map.entry("status", "状态；不传是全部"),
             Map.entry("createBy", "创建人的用户 id"),
             Map.entry("brand", "品牌（字典 brand 的值）"), Map.entry("season", "季节（字典 season 的值）"),
             Map.entry("year", "年份"), Map.entry("wave", "波段"), Map.entry("productLine", "品类线"),
@@ -59,7 +67,7 @@ public class OpenApiConfig {
             Map.entry("includeId", "不管别的条件，这一条也带上（编辑时回显已经选的）"),
             Map.entry("excludeId", "不要这一条（比如改的就是它自己）"));
     private static final Pattern ID = Pattern.compile("^([a-z][A-Za-z]*?)Ids?$");
-    private static final Pattern DATE = Pattern.compile("^([a-z]+?)(?:Date)?(From|To)$");
+    private static final Pattern DATE = Pattern.compile("^([a-z]+?)Date(From|To)$");
 
     /** 没有说明的参数，按名字补一句通用的；有说明（注解、Javadoc）的不动。路径里的 {id} 是地址里那一条 */
     @Bean
@@ -71,19 +79,22 @@ public class OpenApiConfig {
             if ("query".equals(parameter.getIn())) {
                 parameter.setDescription(fallback(parameter.getName()));
             } else if ("path".equals(parameter.getIn())) {
-                parameter.setDescription("id".equals(parameter.getName()) ? "地址里这一条的 id" : pathFallback(parameter.getName()));
+                parameter.setDescription(pathFallback(parameter.getName()));
             }
         });
     }
 
-    /** 路径里的 xxxId：这一条下面的哪个 xxx */
-    private static String pathFallback(String name) {
+    /** 路径里的 xxxId：这一条下面的哪个 xxx；认不出的是 null */
+    static String pathFallback(String name) {
+        if ("id".equals(name)) {
+            return "地址里这一条的 id";
+        }
         Matcher id = ID.matcher(name == null ? "" : name);
         if (!id.matches()) {
             return null;
         }
-        String noun = NOUNS.get(id.group(1));
-        return (noun != null ? noun : id.group(1)) + "的 id";
+        String noun = PATH_NOUNS.getOrDefault(id.group(1), NOUNS.get(id.group(1)));
+        return noun == null ? null : noun + "的 id";
     }
 
     private static java.util.stream.Stream<Parameter> parameters(OpenAPI openApi) {

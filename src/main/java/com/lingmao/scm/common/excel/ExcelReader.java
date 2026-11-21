@@ -214,7 +214,7 @@ final class ExcelReader {
     }
 
     /** 单元格显示的文字，去掉首尾空白。网页上复制来的不换行空格（ ）也算空白 */
-    private static String textOf(Cell cell, DataFormatter formatter) {
+    static String textOf(Cell cell, DataFormatter formatter) {
         return formatter.formatCellValue(cell).replace(' ', ' ').strip();
     }
 

@@ -36,14 +36,19 @@ public class FileServiceImpl implements FileService {
     private final UploadStore storage;
     private final UploadCatalog catalog;
     private final FileUrlSigner signer;
+    /** 同时最多存两个文件（缩略图吃内存）；页面上传拿不到就 429，不排队 */
     private final Semaphore capacity = new Semaphore(2);
+    /** 导入时批量存的图（save）同时只占一个，留一个给页面上传：导入几百张图时别人照样能传 */
+    private final Semaphore bulk = new Semaphore(1);
 
     @Override public FileVO upload(MultipartFile file) {
         return store(file, false);
     }
 
     @Override public FileVO save(String fileName, byte[] content) {
-        return store(new BytesFile(fileName, content), true);
+        if (!acquire(bulk, true)) throw new BizException(429, "正在处理其他文件，请稍后重试");
+        try { return store(new BytesFile(fileName, content), true); }
+        finally { bulk.release(); }
     }
 
     private FileVO store(MultipartFile file, boolean wait) {
@@ -55,7 +60,7 @@ public class FileServiceImpl implements FileService {
         boolean source = DESIGN_SOURCE.contains(ext);
         long limit = source ? MAX_DESIGN_SOURCE_BYTES : MAX_BYTES;
         if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD、PRJ、PLT 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
-        if (!acquire(wait)) throw new BizException(429, "正在处理其他文件，请稍后重试");
+        if (!acquire(capacity, wait)) throw new BizException(429, "正在处理其他文件，请稍后重试");
         UploadStore.Slot slot = null; boolean saved = false;
         try {
             slot = storage.allocate(ext); catalog.begin(slot);
@@ -71,9 +76,9 @@ public class FileServiceImpl implements FileService {
             capacity.release();
         }
     }
-    private boolean acquire(boolean wait) {
-        if (!wait) return capacity.tryAcquire();
-        try { return capacity.tryAcquire(30, TimeUnit.SECONDS); }
+    private static boolean acquire(Semaphore slots, boolean wait) {
+        if (!wait) return slots.tryAcquire();
+        try { return slots.tryAcquire(30, TimeUnit.SECONDS); }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return false; }
     }
 
@@ -82,8 +87,8 @@ public class FileServiceImpl implements FileService {
         @Override public String getName() { return "file"; }
         @Override public String getOriginalFilename() { return fileName; }
         @Override public String getContentType() { return null; }
-        @Override public boolean isEmpty() { return content.length == 0; }
-        @Override public long getSize() { return content.length; }
+        @Override public boolean isEmpty() { return content == null || content.length == 0; }
+        @Override public long getSize() { return content == null ? 0 : content.length; }
         @Override public byte[] getBytes() { return content.clone(); }
         @Override public InputStream getInputStream() { return new ByteArrayInputStream(content); }
         @Override public void transferTo(File dest) throws IOException { Files.write(dest.toPath(), content); }

@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.basic.service.impl;
 
+import com.lingmao.scm.common.exception.BizException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.num.Num;
@@ -49,6 +50,7 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -719,12 +721,12 @@ public class MaterialImport {
                 sku.setCode(SkuCodes.compose(m.getCode(), planned.colorCode(), sku.getSpecCode()));
                 materialSkuMapper.insert(sku);
                 List<AttachmentReq> skuImages = plan.skuImages.get(sku);
-                if (skuImages != null) {
+                if (skuImages != null && !skuImages.isEmpty()) {
                     attachmentService.replace(BizType.MATERIAL_SKU, sku.getId(), Attachment.IMAGE, skuImages);
                 }
             }
             List<AttachmentReq> images = plan.materialImages.get(e.getKey());
-            if (images != null) {
+            if (images != null && !images.isEmpty()) {
                 attachmentService.replace(BizType.MATERIAL, m.getId(), Attachment.IMAGE, images);
             }
             docLogService.add(BizType.MATERIAL, m.getId(), "import", null);
@@ -736,12 +738,13 @@ public class MaterialImport {
     /**
      * 领猫导出的"图片"列：图片浮在哪一行，就挂到那一行的物料（"物料信息"）或 SKU（"物料信息SKU"）上，同一行几张的第一张是主图。
      * 文件在这里就存好：解析不在写事务里，写库只挂引用；没导成的文件没人引用，24 小时后自动清掉（FileService.save）。
-     * 同一个文件里一样的图只存一份。落在空行上的、不是 jpg/png/gif 的不导，进提示，不拦导入
+     * 同一个文件里一样的图只存一份。落在空行上的、不是 jpg/png/gif 的、图本身坏了的不导，进提示，不拦导入；
+     * 存储那边忙（429）、空间不足（503）是整批的事，照旧报错
      */
     private void saveImages(ExcelBook book, ExcelImport<MaterialRow> materials, ExcelImport<SkuRow> skus, Plan plan) {
         Map<Integer, String> codeAtRow = new HashMap<>();
         plan.rowOf.forEach((code, line) -> codeAtRow.put(line.row(), code));
-        Map<String, FileVO> saved = new HashMap<>();
+        Map<String, Optional<FileVO>> saved = new HashMap<>();
         int count = attachImages(book.images(MATERIAL_SHEET, IMAGE_COLUMN), materials, saved, row -> {
             String code = codeAtRow.get(row);
             return code == null ? null : new ImageTarget(code, plan.materialImages.computeIfAbsent(code, k -> new ArrayList<>()));
@@ -760,7 +763,7 @@ public class MaterialImport {
     private record ImageTarget(String name, List<AttachmentReq> images) {
     }
 
-    private int attachImages(List<ExcelImage> images, ExcelImport<?> sheet, Map<String, FileVO> saved,
+    private int attachImages(List<ExcelImage> images, ExcelImport<?> sheet, Map<String, Optional<FileVO>> saved,
                              IntFunction<ImageTarget> targetAt) {
         int count = 0;
         for (ExcelImage image : images) {
@@ -773,8 +776,19 @@ public class MaterialImport {
                 sheet.note(image.row(), IMAGE_COLUMN, "图片不是 jpg、png、gif，没导：导完在物料页面上传");
                 continue;
             }
-            FileVO file = saved.computeIfAbsent(sha256(image.data()),
-                    k -> fileService.save(target.name() + "." + image.extension(), image.data()));
+            Optional<FileVO> stored = saved.computeIfAbsent(sha256(image.data()), k -> {
+                try {
+                    return Optional.of(fileService.save(target.name() + "." + image.extension(), image.data()));
+                } catch (BizException broken) {
+                    if (broken.getCode() == 429 || broken.getCode() == 503) throw broken;
+                    return Optional.empty();
+                }
+            });
+            if (stored.isEmpty()) {
+                sheet.note(image.row(), IMAGE_COLUMN, "图片打不开（坏了或者太大），没导：导完在物料页面上传");
+                continue;
+            }
+            FileVO file = stored.get();
             AttachmentReq req = new AttachmentReq();
             req.setUrl(file.url());
             req.setThumbUrl(file.thumbUrl());

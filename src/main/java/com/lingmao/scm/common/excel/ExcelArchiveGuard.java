@@ -52,11 +52,13 @@ final class ExcelArchiveGuard {
             while ((entry = zip.getNextEntry()) != null) {
                 if (!zip.canReadEntryData(entry)) throw new BizException("文件压缩格式不受支持，请另存为 .xlsx 后重试");
                 String name = entry.getName();
-                if (name.startsWith("xl/media/") ? ++media > MAX_MEDIA_FILES : paths.size() - media >= MAX_FILES) throw tooLarge();
+                String lower = name.toLowerCase(java.util.Locale.ROOT);
+                // 图片另算：只认 xl/media/ 下的文件本身，不认目录和 xml、rels（那些要逐个解析，照普通条目算）
+                boolean picture = lower.startsWith("xl/media/") && !entry.isDirectory() && !lower.endsWith(".xml") && !lower.endsWith(".rels");
+                if (picture ? ++media > MAX_MEDIA_FILES : paths.size() - media >= MAX_FILES) throw tooLarge();
                 if (name.startsWith("/") || name.contains("\\") || name.contains(":")
                         || java.util.Arrays.asList(name.split("/", -1)).contains("..") || !paths.add(name))
                     throw new BizException("文件包含不安全或重复的压缩路径，请另存为 .xlsx 后重试");
-                String lower = name.toLowerCase(java.util.Locale.ROOT);
                 if (lower.contains("vbaproject") || lower.startsWith("xl/externallinks/")
                         || lower.startsWith("xl/activex/") || lower.startsWith("xl/embeddings/"))
                     throw new BizException("导入文件不能包含宏、外部工作簿链接或嵌入对象，请移除后重试");

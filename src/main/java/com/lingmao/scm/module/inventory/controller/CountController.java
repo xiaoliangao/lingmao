@@ -28,6 +28,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -181,7 +182,7 @@ public class CountController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "导回实盘数（草稿）")
-    @PostMapping("/{id:\\d+}/import")
+    @PostMapping(value = "/{id:\\d+}/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('inventory:count:import')")
     @OperLog(module = "物料盘点单", action = "导回实盘数")
     public R<ImportResult> importSheet(@PathVariable("id") long id, @RequestParam("file") MultipartFile file) {

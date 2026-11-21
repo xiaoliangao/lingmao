@@ -45,9 +45,11 @@ public class ProductionQuery extends PageQuery {
     private String card;
     /** 按交期（预计交期 ?? 交期）从早到晚排，不按风险分数：首页近期交期用 */
     private boolean dueFirst;
-    /** 只要这几张需求订单的：首页跟单的"晚于开裁" */
+    /** 只要这几张需求订单的：首页跟单的"晚于开裁"（Service 里填，页面不传，不进接口文档） */
+    @JsonIgnore
     private Collection<String> orderNos;
 
-    /** 只要这几个款的（进度总览按页上的订单、款取生产单小块，内部用，页面不传） */
+    /** 只要这几个款的（进度总览按页上的订单、款取生产单小块，内部用，页面不传，不进接口文档） */
+    @JsonIgnore
     private Collection<Long> styleIds;
 }

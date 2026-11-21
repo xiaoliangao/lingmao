@@ -31,6 +31,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -89,7 +90,7 @@ public class MaterialController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "导入：只新增，有一处不对整批不导（1003）")
-    @PostMapping("/import")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('basic:material:import')")
     @OperLog(module = "物料", action = "导入")
     public R<ImportResult> importExcel(@RequestParam("file") MultipartFile file) {

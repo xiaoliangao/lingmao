@@ -134,6 +134,19 @@ class FileServiceImplTest {
         try (var files = Files.walk(tempDir)) { assertThat(files.filter(Files::isRegularFile)).isEmpty(); }
     }
 
+    /** 头是好的、后面截断的图：格式校验能过、缩略图解不开，报"图片打不开"（不是服务器出错），不留文件 */
+    @Test
+    void upload_truncatedImage_rejectedAsBizError() throws Exception {
+        FileServiceImpl service = new FileServiceImpl(new LocalUploadStore(tempDir.toString(), CLOCK), mock(UploadCatalog.class), SIGNER);
+        byte[] whole = image(600, 400, "png", false);
+        byte[] half = java.util.Arrays.copyOf(whole, 120);
+
+        assertThatThrownBy(() -> service.upload(new MockMultipartFile("file", "半截.png", "image/png", half)))
+                .isInstanceOf(BizException.class).hasMessageContaining("图片打不开");
+        assertThatThrownBy(() -> service.save("空.png", null)).isInstanceOf(BizException.class).hasMessage("文件不能为空");
+        try (var files = Files.walk(tempDir)) { assertThat(files.filter(Files::isRegularFile)).isEmpty(); }
+    }
+
     /** 规则：设计源文件 AI、PSD 和打版的纸样 PRJ（RFC 011 §2.2）收，不做缩略图，最大 100MB；别的类型还是 10MB，超了 400 说清楚 */
     @Test
     void upload_designSource_largerLimit() {

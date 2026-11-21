@@ -34,6 +34,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -207,7 +208,7 @@ public class OrderController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "导入：单头在查询参数里，按分单号一组一张草稿；有一处不对整批不导（1003）")
-    @PostMapping("/import")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('order:order:import')")
     @OperLog(module = "需求订单", action = "导入")
     public R<ImportResult> importExcel(@Valid OrderImportHead head, @RequestParam("file") MultipartFile file) {
