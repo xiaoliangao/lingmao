@@ -37,6 +37,9 @@ public interface OrderChangeService {
 
     void checkVisible(long id);
 
+    /** 改附件前查：在本人数据范围里，不放"审核不受数据范围限制"（只能审，不能改）；不在 → 404 */
+    void checkEditable(long id);
+
     /** 原成功操作的来源对象仍须在当前可见范围内；不重验可生成状态。 */
     void checkSourceOrderVisible(long orderId);
 }

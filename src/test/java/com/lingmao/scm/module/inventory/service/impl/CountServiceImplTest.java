@@ -26,6 +26,7 @@ import com.lingmao.scm.module.inventory.mapper.InvCountItemMapper;
 import com.lingmao.scm.module.inventory.mapper.InvCountMapper;
 import com.lingmao.scm.module.inventory.mapper.StockLogMapper;
 import com.lingmao.scm.module.inventory.mapper.StockMapper;
+import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LoginUser;
 import org.junit.jupiter.api.AfterEach;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
@@ -187,6 +189,32 @@ class CountServiceImplTest {
                 .isInstanceOf(BizException.class).hasMessage(SelfAudit.REJECT_MESSAGE);
         verifyNoInteractions(ledger);
         verify(countMapper, never()).update(any(), any());
+    }
+
+    /**
+     * 规则（用户 11-21 定，PRD §3.2）：本人范围的人看不到别人建的盘点单；角色勾了"审核不受数据范围限制"又有审核权限，
+     * 待审核的看得到，但只能审：改附件（checkEditable）、撤回这些照旧 404；草稿看不到
+     */
+    @Test
+    void auditAnyScope_seesPendingOnlyForAudit() {
+        when(countMapper.selectById(7L)).thenReturn(count(DocStatus.PENDING, CountPurpose.DAILY));   // 1 号建、1 号盘
+        loginAs(2L, "inventory:count:audit", "inventory:count:submit");
+        assertThatThrownBy(() -> service.checkVisible(7L)).isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
+
+        loginAs(2L, "inventory:count:audit", "inventory:count:submit", RoleDataScope.AUDIT_ANY_AUTHORITY);
+        service.checkVisible(7L);
+        assertThatThrownBy(() -> service.checkEditable(7L)).isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
+        assertThatThrownBy(() -> service.act(7L, "withdraw", new DocActionReq(0, null)))
+                .isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
+
+        when(countMapper.selectById(7L)).thenReturn(count(DocStatus.DRAFT, CountPurpose.DAILY));
+        assertThatThrownBy(() -> service.checkVisible(7L)).isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
+        verify(countMapper, never()).update(any(), any());
+    }
+
+    private static void loginAs(long userId, String... authorities) {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new LoginUser(userId, "jti"), null, java.util.Arrays.stream(authorities).map(SimpleGrantedAuthority::new).toList()));
     }
 
     private static InvCount count(DocStatus status, CountPurpose purpose) {

@@ -48,4 +48,7 @@ public interface CountService {
     String no(long id);
 
     void checkVisible(long id);
+
+    /** 改附件前查：在本人数据范围里，不放"审核不受数据范围限制"（只能审，不能改）；不在 → 404 */
+    void checkEditable(long id);
 }

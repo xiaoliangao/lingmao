@@ -67,6 +67,8 @@ export interface Role {
   status: number
   remark: string | null
   dataScope: DataScope
+  /** 审核不受数据范围限制（V49）：本人范围的角色勾上后，有审核权限的变更单、出入库单、盘点单待审时也看得到、审得了。全部范围的总是 false */
+  auditAnyScope: boolean
   createTime: string
 }
 

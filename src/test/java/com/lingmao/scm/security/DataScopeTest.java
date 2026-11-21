@@ -66,6 +66,22 @@ class DataScopeTest {
         assertThat(DataScope.current(true).canSee(8L)).isFalse();
     }
 
+    /**
+     * 规则（用户 11-21 定）：审核不受数据范围限制 = data:audit-any 加上这种单的审核权限，待审的单、自己审过的单不按本人筛；
+     * 少一样、或者单不是待审也不是我审的，照旧本人
+     */
+    @Test
+    void orAuditing_needsFlagAndAuditPermission() {
+        login(7L, RoleDataScope.AUDIT_ANY_AUTHORITY, "inventory:doc:audit");
+        assertThat(DataScope.current(false).orAuditing(true, null, "inventory:doc:audit").canSee(8L)).isTrue();
+        assertThat(DataScope.current(false).orAuditing(false, 7L, "inventory:doc:audit").canSee(8L)).as("我审过的").isTrue();
+        assertThat(DataScope.current(false).orAuditing(false, 9L, "inventory:doc:audit").canSee(8L)).as("不是待审也不是我审的").isFalse();
+        assertThat(DataScope.current(false).orAuditing(true, null, "inventory:count:audit").canSee(8L)).as("没有这种单的审核权限").isFalse();
+
+        login(7L, "inventory:doc:audit");
+        assertThat(DataScope.current(false).orAuditing(true, null, "inventory:doc:audit").canSee(8L)).as("角色没勾").isFalse();
+    }
+
     /** 规则：没登录算本人、什么都看不到（列 = NULL 不成立，这里直接 1 = 0） */
     @Test
     void anonymous_seesNothing() {

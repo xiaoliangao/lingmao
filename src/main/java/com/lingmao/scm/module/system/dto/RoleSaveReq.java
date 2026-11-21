@@ -37,4 +37,11 @@ public class RoleSaveReq {
     /** ALL 全部 / SELF 本人；不传是本人：忘了设最多是看不到别人的单，不会看到不该看的（RFC 001 §8）。别的值在读请求体时就是 400 */
     @NotNull(message = "数据范围不能为空")
     private RoleDataScope dataScope = RoleDataScope.SELF;
+
+    /**
+     * 审核不受数据范围限制（PRD §3.2，用户 11-21 定）：本人范围的角色勾上后，有审核权限的变更单、出入库单、盘点单待审时
+     * 也看得到、审得了。不传是 false；数据范围是全部的存 false（用不着）
+     */
+    @NotNull(message = "审核不受数据范围限制不能为空")
+    private Boolean auditAnyScope = false;
 }

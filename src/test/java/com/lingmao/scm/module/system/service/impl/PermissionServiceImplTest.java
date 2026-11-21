@@ -69,7 +69,7 @@ class PermissionServiceImplTest {
         user.setProductLines(List.of("FOOTWEAR", "GENERAL"));
         when(sysUserMapper.selectById(2L)).thenReturn(user);
         when(sysMenuMapper.selectPermsByUserId(2L)).thenReturn(List.of("system:user:list"));
-        when(sysRoleMapper.selectScopeFlags(2L)).thenReturn(new SysRoleMapper.ScopeFlags(true, false));
+        when(sysRoleMapper.selectScopeFlags(2L)).thenReturn(new SysRoleMapper.ScopeFlags(true, false, false));
 
         assertThat(permissionService.loadPermissions(2L))
                 .containsExactly("system:user:list", "data:all", "line:FOOTWEAR", "line:GENERAL");
@@ -84,8 +84,21 @@ class PermissionServiceImplTest {
         user.setProductLines(List.of("APPAREL"));
         when(sysUserMapper.selectById(1L)).thenReturn(user);
         when(sysMenuMapper.selectPermsByUserId(1L)).thenReturn(List.of());
-        when(sysRoleMapper.selectScopeFlags(1L)).thenReturn(new SysRoleMapper.ScopeFlags(true, true));
+        when(sysRoleMapper.selectScopeFlags(1L)).thenReturn(new SysRoleMapper.ScopeFlags(true, true, false));
 
         assertThat(permissionService.loadPermissions(1L)).containsExactly("data:all", "line:all");
+    }
+
+    /** 规则（用户 11-21 定）：有一个启用的角色勾了"审核不受数据范围限制"，多给 data:audit-any，不给 data:all */
+    @Test
+    void loadPermissions_auditAnyScope_addsAuditAny() {
+        SysUser user = new SysUser();
+        user.setId(3L);
+        user.setStatus(1);
+        when(sysUserMapper.selectById(3L)).thenReturn(user);
+        when(sysMenuMapper.selectPermsByUserId(3L)).thenReturn(List.of("inventory:doc:audit"));
+        when(sysRoleMapper.selectScopeFlags(3L)).thenReturn(new SysRoleMapper.ScopeFlags(false, false, true));
+
+        assertThat(permissionService.loadPermissions(3L)).containsExactly("inventory:doc:audit", "data:audit-any");
     }
 }

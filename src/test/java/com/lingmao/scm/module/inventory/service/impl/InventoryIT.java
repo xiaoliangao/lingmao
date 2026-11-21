@@ -162,6 +162,47 @@ class InventoryIT {
         assertThat(count("SELECT COUNT(*) FROM inv_doc WHERE id = ?", draft)).isZero();
     }
 
+    /**
+     * 规则（用户 11-21 定，PRD §3.2）：本人范围的审核人看不到别人建的单；角色勾了"审核不受数据范围限制"，
+     * 待我审核只列草稿（审过的不列），详情只给"审核"，能审、审完还看得到；别人的草稿改不了、附件改不了
+     */
+    @Test
+    void selfScopeAuditor_auditAnyScope() {
+        Fixture f = fixture();
+        long draft = create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "2");
+        long done = create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "1");
+        audit(done);
+        InvDocQuery forMe = new InvDocQuery();
+        forMe.setKind(InvDocKind.IN);
+        forMe.setAuditForMe(true);
+
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, false, () -> invDocService.page(forMe).getList()))
+                .extracting(InvDocRowVO::getId).doesNotContain(draft, done);
+        assertThatThrownBy(() -> TestIdentity.asSelfAuditor(jdbcTemplate, false, () -> invDocService.detail(draft)))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> invDocService.page(forMe).getList()))
+                .as("只列草稿").extracting(InvDocRowVO::getId).contains(draft).doesNotContain(done);
+        InvDocDetailVO seen = TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> invDocService.detail(draft));
+        assertThat(seen.getActions()).containsExactly("audit");
+        InvDocItemReq row = itemReq(f.skuA, "3");
+        row.setId(seen.getItems().getFirst().getId());
+        assertThatThrownBy(() -> TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> invDocService.update(draft, saveReq(seen, List.of(row)))))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+        assertThatThrownBy(() -> TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> {
+            invDocService.checkEditable(draft);
+            return null;
+        })).isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+
+        TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> {
+            invDocService.act(draft, "audit", new DocActionReq(seen.getVersion(), null));
+            return null;
+        });
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> invDocService.detail(draft)).getActions())
+                .as("自己审过的还看得到，能反审核").containsExactly("unaudit");
+        assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("3");
+    }
+
     /** 规则（§3.4.1）：调拨两种料都不够，整张单都试一遍、两种一起报 1001；事务回滚，库存、状态都没动 */
     @Test
     void shortageRollsBackAndListsAll() {

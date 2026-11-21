@@ -114,6 +114,25 @@ class PermissionServiceImplIT {
         assertThat(permissionService.loadPermissions(adminId())).contains(RoleDataScope.ALL_AUTHORITY);
     }
 
+    /**
+     * 规则（用户 11-21 定，V49）：本人范围的角色勾了"审核不受数据范围限制"，多给 data:audit-any（不给 data:all）；
+     * 角色改成"全部"范围时存 false，以后改回"本人"不会悄悄带着它
+     */
+    @Test
+    void auditAnyScope_addsAuthorityAndClearedForAllScope() {
+        RoleSaveReq req = roleReq("it_" + UUID.randomUUID().toString().substring(0, 8), RoleDataScope.SELF);
+        req.setAuditAnyScope(true);
+        Long id = roleService.create(req);
+        grant(id);
+        assertThat(permissionService.loadPermissions(userId))
+                .contains(RoleDataScope.AUDIT_ANY_AUTHORITY).doesNotContain(RoleDataScope.ALL_AUTHORITY);
+
+        req.setDataScope(RoleDataScope.ALL);
+        roleService.update(id, req);
+        assertThat(roleService.getById(id).getAuditAnyScope()).isFalse();
+        assertThat(permissionService.loadPermissions(userId)).doesNotContain(RoleDataScope.AUDIT_ANY_AUTHORITY);
+    }
+
     private SysMenu menu(Long parentId, int type, String perms) {
         SysMenu menu = new SysMenu();
         menu.setParentId(parentId);

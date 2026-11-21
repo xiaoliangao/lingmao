@@ -70,6 +70,29 @@ public final class DataScope {
         return new DataScope(userId, true, lines);
     }
 
+    /**
+     * 审核不受数据范围限制（PRD §3.2，用户 11-21 定）：角色勾了这个（权限里有 data:audit-any），又有这种单的审核权限，
+     * 待审的单和自己审过的单不按本人筛（品类线照旧）。只给单级审核的变更单、物料出入库单、盘点单用；
+     * 多级审批的单另有例外（轮到我审的能看，ApprovalService）。
+     * <pre>
+     * DataScope.current(false).orAuditing(c.getStatus() == PENDING, c.getAuditBy(), "order:change:audit").check(...)   // 详情、审核
+     * DataScope.current(mine &amp;&amp; !auditForMe).orAuditing(auditForMe, null, "order:change:audit")                        // 待我审核列表（SQL 只列待审的）
+     * </pre>
+     * 改单、删单不用它：别人的草稿照旧改不了
+     *
+     * @param pending        这张单现在等着审（列表上是"待我审核"勾上了）
+     * @param auditBy        单据的审核人：是我就算（审完回详情还看得到，能反审核）；列表传 null
+     * @param auditAuthority 这种单的审核权限
+     */
+    public DataScope orAuditing(boolean pending, Long auditBy, String auditAuthority) {
+        boolean auditable = pending || (userId != null && userId.equals(auditBy));
+        if (all || !auditable
+                || !LoginUser.hasAuthority(RoleDataScope.AUDIT_ANY_AUTHORITY) || !LoginUser.hasAuthority(auditAuthority)) {
+            return this;
+        }
+        return new DataScope(userId, true, lines);
+    }
+
     /** 看全部：不加任何条件 */
     public boolean isAll() {
         return all;

@@ -94,6 +94,8 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 public class CountServiceImpl implements CountService {
 
     /** 状态转换表（docs/api/04 §2.2）。remove、void 都从草稿来，过没过过账决定给哪个 */
+    static final String AUDIT_PERM = "inventory:count:audit";
+
     static final StatusFlow<DocStatus> FLOW = StatusFlow.of(DocStatus.class)
             .on("edit", DRAFT).to(DRAFT)
             .on("refreshBook", DRAFT).to(DRAFT)
@@ -131,12 +133,13 @@ public class CountServiceImpl implements CountService {
 
     @Override
     public PageResult<CountRowVO> page(CountQuery query) {
-        IPage<CountRowVO> page = countMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine() && !query.isAuditForMe()));
-        fillRows(page.getRecords());
+        IPage<CountRowVO> page = countMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()), listScope(query));
+        fillRows(page.getRecords(), query.isAuditForMe());
         return PageResult.of(page);
     }
 
-    private void fillRows(List<CountRowVO> rows) {
+    /** auditForMe：待我审核视图，行上只给审核类按钮 */
+    private void fillRows(List<CountRowVO> rows, boolean auditForMe) {
         if (rows.isEmpty()) {
             return;
         }
@@ -146,7 +149,7 @@ public class CountServiceImpl implements CountService {
         for (CountRowVO r : rows) {
             r.setCounterName(names.get(r.getCounterId()));
             r.setScopeText(scopeText(r.getScope(), r.getCategoryNames(), r.getItemCount()));
-            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId()), r.getCreateBy()));
+            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId()), r.getCreateBy(), auditForMe));
         }
     }
 
@@ -158,8 +161,11 @@ public class CountServiceImpl implements CountService {
         };
     }
 
-    /** 按钮：撤回只给制单人，审核、驳回不给制单人（自己建的单不能自己审，SelfAudit）；没过过账的草稿给"删除"，过过账的给"作废" */
-    static List<String> actions(DocStatus status, boolean posted, Long createBy) {
+    /**
+     * 按钮：撤回只给制单人，审核、驳回不给制单人（自己建的单不能自己审，SelfAudit）；没过过账的草稿给"删除"，过过账的给"作废"；
+     * auditOnly：只靠"审核不受数据范围限制"看到的单、待我审核视图里的行，只给审核、驳回、反审核
+     */
+    static List<String> actions(DocStatus status, boolean posted, Long createBy, boolean auditOnly) {
         return DocActions.of(FLOW, status, PERM)
                 .perm("edit", PERM + "edit")
                 .perm("refreshBook", PERM + "edit")
@@ -169,6 +175,7 @@ public class CountServiceImpl implements CountService {
                 .createdBy(createBy)
                 .when("remove", !posted)
                 .when("void", posted)
+                .auditOnly(auditOnly)
                 .list();
     }
 
@@ -226,7 +233,8 @@ public class CountServiceImpl implements CountService {
                 : 0);
         boolean posted = !postedItems.isEmpty();
         vo.setPosted(posted);
-        vo.setActions(actions(count.getStatus(), posted, count.getCreateBy()));
+        vo.setActions(actions(count.getStatus(), posted, count.getCreateBy(),
+                !DataScope.current(false).canSee(count.getCreateBy(), count.getCounterId())));
         return vo;
     }
 
@@ -261,13 +269,36 @@ public class CountServiceImpl implements CountService {
         getVisible(id);
     }
 
-    /** 数据范围：制单人或盘点人是自己（docs/api/04 §3.1） */
-    private InvCount getVisible(long id) {
+    @Override
+    public void checkEditable(long id) {
         InvCount count = countMapper.selectById(id);
         if (count == null) {
             throw new BizException(404, "单据不存在");
         }
         DataScope.current(false).check(count.getCreateBy(), count.getCounterId());
+    }
+
+    /**
+     * 列表、导出的范围：待我审核不看"我的"（看自己范围里别人建的）；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列待审核的）
+     */
+    private static DataScope listScope(CountQuery query) {
+        return DataScope.current(query.isMine() && !query.isAuditForMe()).orAuditing(query.isAuditForMe(), null, AUDIT_PERM);
+    }
+
+    /**
+     * 数据范围：制单人或盘点人是自己（docs/api/04 §3.1）；角色勾了"审核不受数据范围限制"的，待审核的和自己审过的也算
+     * （只在待审核、已审核时放开，草稿照旧改不了、删不了）
+     */
+    private static DataScope scopeOf(InvCount count) {
+        return DataScope.current(false).orAuditing(count.getStatus() == PENDING, count.getAuditBy(), AUDIT_PERM);
+    }
+
+    private InvCount getVisible(long id) {
+        InvCount count = countMapper.selectById(id);
+        if (count == null) {
+            throw new BizException(404, "单据不存在");
+        }
+        scopeOf(count).check(count.getCreateBy(), count.getCounterId());
         com.lingmao.scm.common.scope.CompanyContext.target(count.getCompanyId());
         return count;
     }
@@ -277,7 +308,7 @@ public class CountServiceImpl implements CountService {
         if (count == null) {
             throw new BizException(404, "单据不存在");
         }
-        DataScope.current(false).check(count.getCreateBy(), count.getCounterId());
+        scopeOf(count).check(count.getCreateBy(), count.getCounterId());
         com.lingmao.scm.common.scope.CompanyContext.target(count.getCompanyId());
         if (count.getVersion() != version) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这张单已经被别人改过，请刷新后再改");
@@ -557,6 +588,9 @@ public class CountServiceImpl implements CountService {
     @Transactional
     public void act(long id, String action, DocActionReq req) {
         InvCount count = getVisible(id);
+        if (!DocActions.AUDIT_ACTIONS.contains(action)) {
+            DataScope.current(false).check(count.getCreateBy(), count.getCounterId());   // 只靠"审核不受数据范围限制"看到的单只能审
+        }
         switch (action) {
             case "submit" -> submit(count, req);
             case "withdraw" -> {
@@ -796,9 +830,9 @@ public class CountServiceImpl implements CountService {
     @Override
     public byte[] export(CountQuery query) {
         Page<CountRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine() && !query.isAuditForMe())).getRecords();
+        List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), listScope(query)).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, CountRowVO::getId, CountRowVO::getCompanyId);
-        fillRows(rows);
+        fillRows(rows, query.isAuditForMe());
         return excel.export(rows);
     }
 }

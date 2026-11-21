@@ -70,12 +70,28 @@ public final class TestIdentity {
      * <pre>TestIdentity.asAuditor(jdbc, () -> invDocService.act(id, "audit", new DocActionReq(v, null)));</pre>
      */
     public static <T> T asAuditor(JdbcTemplate jdbc, Supplier<T> action) {
+        return asAuditor(jdbc, perms -> {
+            if (!perms.contains(RoleDataScope.ALL_AUTHORITY)) perms.add(RoleDataScope.ALL_AUTHORITY);
+        }, action);
+    }
+
+    /**
+     * 同 {@link #asAuditor}，但审核人是"本人"范围（去掉 data:all）；auditAnyScope = 角色勾了"审核不受数据范围限制"（加 data:audit-any）
+     */
+    public static <T> T asSelfAuditor(JdbcTemplate jdbc, boolean auditAnyScope, Supplier<T> action) {
+        return asAuditor(jdbc, perms -> {
+            perms.remove(RoleDataScope.ALL_AUTHORITY);
+            if (auditAnyScope) perms.add(RoleDataScope.AUDIT_ANY_AUTHORITY);
+        }, action);
+    }
+
+    private static <T> T asAuditor(JdbcTemplate jdbc, java.util.function.Consumer<List<String>> adjust, Supplier<T> action) {
         Authentication original = SecurityContextHolder.getContext().getAuthentication();
         if (original == null || !(original.getPrincipal() instanceof LoginUser me)) {
             throw new IllegalStateException("asAuditor 要先登录（TestIdentity.login）");
         }
         List<String> perms = new ArrayList<>(original.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList());
-        if (!perms.contains(RoleDataScope.ALL_AUTHORITY)) perms.add(RoleDataScope.ALL_AUTHORITY);
+        adjust.accept(perms);
         login(auditorOf(jdbc, me.userId()), perms);
         try {
             return action.get();

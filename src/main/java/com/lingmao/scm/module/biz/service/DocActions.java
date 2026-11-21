@@ -36,6 +36,9 @@ public final class DocActions {
 
     private static final Set<String> APPROVAL_ACTIONS = Set.of("audit", "reject");
 
+    /** 审核类动作。只靠"审核不受数据范围限制"看到的单（DataScope.orAuditing）只能做这几个，后端 act 也照这个拦 */
+    public static final Set<String> AUDIT_ACTIONS = Set.of("audit", "reject", "unaudit");
+
     private final List<String> candidates;
     private final String permPrefix;
     private final Map<String, String> customPerms = new HashMap<>();
@@ -75,6 +78,17 @@ public final class DocActions {
         if (SelfAudit.isMine(createBy)) {
             blocked.add("audit");
             blocked.add("reject");
+        }
+        return this;
+    }
+
+    /**
+     * only 是 true 时只出审核、驳回、反审核（{@link #AUDIT_ACTIONS}）：只靠"审核不受数据范围限制"看到的单（不在本人范围里），
+     * 还有"待我审核"视图里的行。改、删、作废、提交这些不给
+     */
+    public DocActions auditOnly(boolean only) {
+        if (only) {
+            candidates.stream().filter(a -> !AUDIT_ACTIONS.contains(a)).forEach(blocked::add);
         }
         return this;
     }

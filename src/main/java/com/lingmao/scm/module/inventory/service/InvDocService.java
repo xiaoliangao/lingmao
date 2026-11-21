@@ -44,4 +44,7 @@ public interface InvDocService {
 
     /** 详情的公共页签（logs、attachments……）先过它：不存在、不在数据范围里 404 */
     void checkVisible(long id);
+
+    /** 改附件、处理提醒前查：在本人数据范围里，不放"审核不受数据范围限制"（只能审，不能改）；不在 → 404 */
+    void checkEditable(long id);
 }

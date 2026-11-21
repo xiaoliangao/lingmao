@@ -46,7 +46,7 @@ onMounted(load)
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
-const form = reactive({ code: '', name: '', sort: 0, status: 1, dataScope: 'SELF' as DataScope, remark: '' })
+const form = reactive({ code: '', name: '', sort: 0, status: 1, dataScope: 'SELF' as DataScope, auditAnyScope: false, remark: '' })
 const guard = useUnsavedChanges(form, dialogVisible)
 const rules: FormRules = {
   code: [
@@ -59,21 +59,23 @@ const rules: FormRules = {
 function openCreate() {
   editingId.value = null
   // 默认"本人"：忘了改最多是看不到别人的单，不会看到不该看的（RFC 001 §8）
-  Object.assign(form, { code: '', name: '', sort: 0, status: 1, dataScope: 'SELF', remark: '' })
+  Object.assign(form, { code: '', name: '', sort: 0, status: 1, dataScope: 'SELF', auditAnyScope: false, remark: '' })
   dialogVisible.value = true
 }
 
 function openEdit(row: Role) {
   editingId.value = row.id
   Object.assign(form, {
-    code: row.code, name: row.name, sort: row.sort, status: row.status, dataScope: row.dataScope, remark: row.remark ?? '',
+    code: row.code, name: row.name, sort: row.sort, status: row.status, dataScope: row.dataScope, auditAnyScope: row.auditAnyScope,
+    remark: row.remark ?? '',
   })
   dialogVisible.value = true
 }
 
 async function save() {
   await formRef.value?.validate()
-  const data = { ...form, remark: form.remark || null }
+  // 全部范围用不着"审核不受数据范围限制"，后端也存 false
+  const data = { ...form, auditAnyScope: form.dataScope === 'SELF' && form.auditAnyScope, remark: form.remark || null }
   if (editingId.value === null) {
     await roleApi.create(data)
   } else {
@@ -162,8 +164,10 @@ async function saveMenus() {
       <el-table-column prop="name" label="名称" min-width="120" />
       <el-table-column prop="code" label="编码" min-width="140" class-name="code" />
       <el-table-column prop="sort" label="排序" width="80" align="right" class-name="num" />
-      <el-table-column label="数据范围" width="100">
-        <template #default="{ row }">{{ DATA_SCOPE_LABEL[(row as Role).dataScope] }}</template>
+      <el-table-column label="数据范围" width="150">
+        <template #default="{ row }">
+          {{ DATA_SCOPE_LABEL[(row as Role).dataScope] }}<span v-if="(row as Role).auditAnyScope" class="dim"> · 审核不限</span>
+        </template>
       </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
@@ -221,6 +225,10 @@ async function saveMenus() {
             <el-radio value="SELF">本人</el-radio>
           </el-radio-group>
           <p class="dim field-tip">本人：只看自己是制单人，或者业务员、跟单员、采购员是自己的单据</p>
+          <template v-if="form.dataScope === 'SELF'">
+            <el-checkbox v-model="form.auditAnyScope">审核不受数据范围限制</el-checkbox>
+            <p class="dim field-tip">勾上后，有审核权限的订单变更单、物料出入库单、盘点单，别人建的待审单也看得到、审得了</p>
+          </template>
         </el-form-item>
         <el-form-item label="备注" class="full">
           <el-input v-model="form.remark" type="textarea" />

@@ -94,6 +94,8 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 public class InvDocServiceImpl implements InvDocService {
 
     /** 状态转换表（docs/api/04 §2.1）。remove、void 都从草稿来，过没过过账决定给哪个（actions 里只出一个） */
+    static final String AUDIT_PERM = "inventory:doc:audit";
+
     static final StatusFlow<DocStatus> FLOW = StatusFlow.of(DocStatus.class)
             .on("edit", DRAFT).to(DRAFT)
             .on("audit", DRAFT).to(APPROVED)
@@ -161,12 +163,13 @@ public class InvDocServiceImpl implements InvDocService {
     @Override
     public PageResult<InvDocRowVO> page(InvDocQuery query) {
         IPage<InvDocRowVO> page = invDocMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine() && !query.isAuditForMe()));
-        fillRows(page.getRecords());
+                listScope(query));
+        fillRows(page.getRecords(), query.isAuditForMe());
         return PageResult.of(page);
     }
 
-    private void fillRows(List<InvDocRowVO> rows) {
+    /** auditForMe：待我审核视图，行上只给审核类按钮（批量审核用） */
+    private void fillRows(List<InvDocRowVO> rows, boolean auditForMe) {
         if (rows.isEmpty()) {
             return;
         }
@@ -178,12 +181,15 @@ public class InvDocServiceImpl implements InvDocService {
         for (InvDocRowVO r : rows) {
             r.setFirstItem(briefs.get(r.getFirstSkuId()));
             r.setCreateByName(r.getCreateBy() == null ? null : names.get(r.getCreateBy()));
-            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId()), r.getCreateBy()));
+            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId()), r.getCreateBy(), auditForMe));
         }
     }
 
-    /** 按钮（docs/api/04 §2.1）：没过过账的草稿给"删除"，过过账的给"作废"，都要 inventory:doc:remove；自己建的不给"审核"（SelfAudit） */
-    static List<String> actions(DocStatus status, boolean posted, Long createBy) {
+    /**
+     * 按钮（docs/api/04 §2.1）：没过过账的草稿给"删除"，过过账的给"作废"，都要 inventory:doc:remove；自己建的不给"审核"（SelfAudit）；
+     * auditOnly：只靠"审核不受数据范围限制"看到的单、待我审核视图里的行，只给审核、反审核
+     */
+    static List<String> actions(DocStatus status, boolean posted, Long createBy, boolean auditOnly) {
         return DocActions.of(FLOW, status, PERM)
                 .perm("edit", PERM + "edit")
                 .perm("remove", PERM + "remove")
@@ -191,6 +197,7 @@ public class InvDocServiceImpl implements InvDocService {
                 .when("remove", !posted)
                 .when("void", posted)
                 .createdBy(createBy)
+                .auditOnly(auditOnly)
                 .list();
     }
 
@@ -253,7 +260,7 @@ public class InvDocServiceImpl implements InvDocService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         boolean posted = !postedItems.isEmpty();
         vo.setPosted(posted);
-        vo.setActions(actions(doc.getStatus(), posted, doc.getCreateBy()));
+        vo.setActions(actions(doc.getStatus(), posted, doc.getCreateBy(), !DataScope.current(false).canSee(doc.getCreateBy())));
         return vo;
     }
 
@@ -281,17 +288,36 @@ public class InvDocServiceImpl implements InvDocService {
         getVisible(id);
     }
 
+    @Override
+    public void checkEditable(long id) {
+        find(id, false);
+    }
+
+    /**
+     * 列表、导出的范围：待我审核不看"我的"（看自己范围里别人建的）；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列草稿）
+     */
+    private static DataScope listScope(InvDocQuery query) {
+        return DataScope.current(query.isMine() && !query.isAuditForMe()).orAuditing(query.isAuditForMe(), null, AUDIT_PERM);
+    }
+
+    /** 看、做动作：制单人是自己；角色勾了"审核不受数据范围限制"的，草稿（等着审）和自己审过的也能看、能审（act 里再拦别的动作） */
     private InvDoc getVisible(long id) {
+        return find(id, true);
+    }
+
+    /** asAuditor：放不放"审核不受数据范围限制"。看、审核放；改附件、处理提醒（checkEditable）不放 */
+    private InvDoc find(long id, boolean asAuditor) {
         InvDoc doc = invDocMapper.selectById(id);
         if (doc == null) {
             throw new BizException(404, "单据不存在");
         }
-        DataScope.current(false).check(doc.getCreateBy());
+        DataScope scope = DataScope.current(false);
+        (asAuditor ? scope.orAuditing(doc.getStatus() == DRAFT, doc.getAuditBy(), AUDIT_PERM) : scope).check(doc.getCreateBy());
         com.lingmao.scm.common.scope.CompanyContext.target(doc.getCompanyId());
         return doc;
     }
 
-    /** 改、删之前锁住单头：和审核、反审核排队，后到的看到的是改完的状态 */
+    /** 改、删之前锁住单头：和审核、反审核排队，后到的看到的是改完的状态。不放"审核不受数据范围限制"：别人的草稿审得了、改不了 */
     private InvDoc lock(long id) {
         InvDoc doc = invDocMapper.lockById(id);
         if (doc == null) {
@@ -563,6 +589,9 @@ public class InvDocServiceImpl implements InvDocService {
     @Transactional
     public void act(long id, String action, DocActionReq req) {
         InvDoc doc = getVisible(id);
+        if (!DocActions.AUDIT_ACTIONS.contains(action)) {
+            DataScope.current(false).check(doc.getCreateBy());   // 只靠"审核不受数据范围限制"看到的单只能审核、反审核
+        }
         switch (action) {
             case "audit" -> audit(doc, req.version(), req.reason());
             case "unaudit" -> unaudit(doc, req);
@@ -706,7 +735,7 @@ public class InvDocServiceImpl implements InvDocService {
     @Transactional
     public InvDocCreatedVO fromSource(BizType source, long sourceId, InvDocFromSourceReq req) {
         checkSource(source, req.getDocType());
-        if (!LoginUser.hasAuthority("inventory:doc:add") || (req.isPost() && !LoginUser.hasAuthority("inventory:doc:audit"))) {
+        if (!LoginUser.hasAuthority("inventory:doc:add") || (req.isPost() && !LoginUser.hasAuthority(AUDIT_PERM))) {
             throw new BizException(403, "没有新建或审核库存单的权限");
         }
         String operation = source == BizType.PURCHASE_ORDER ? "INV_FROM_PURCHASE" : "INV_FROM_PRODUCTION";
@@ -874,7 +903,7 @@ public class InvDocServiceImpl implements InvDocService {
     public byte[] export(InvDocQuery query) {
         Page<InvDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine() && !query.isAuditForMe())).getRecords();
+                listScope(query)).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), docs, InvDocRowVO::getId, InvDocRowVO::getCompanyId);
         Map<Long, List<InvDocItem>> items = docs.isEmpty() ? Map.of()
                 : itemMapper.selectByDocs(docs.stream().map(InvDocRowVO::getId).toList()).stream()

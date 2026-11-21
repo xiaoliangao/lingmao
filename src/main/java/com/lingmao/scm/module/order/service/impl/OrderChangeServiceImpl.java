@@ -96,6 +96,8 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 public class OrderChangeServiceImpl implements OrderChangeService {
 
     /** 状态转换表（docs/api/02 §2.2）。审过不能反审核：要改回去再提一张 */
+    static final String AUDIT_PERM = "order:change:audit";
+
     static final StatusFlow<DocStatus> FLOW = StatusFlow.of(DocStatus.class)
             .on("edit", DRAFT).to(DRAFT)
             .on("submit", DRAFT).to(PENDING)
@@ -136,17 +138,18 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     @Override
     public PageResult<OrderChangeRowVO> page(OrderChangeQuery query) {
         IPage<OrderChangeRowVO> page = changeMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine() && !query.isAuditForMe()));
-        fillRows(page.getRecords());
+                listScope(query));
+        fillRows(page.getRecords(), query.isAuditForMe());
         return PageResult.of(page);
     }
 
     @Override
     public Map<String, Long> counts(OrderChangeQuery query) {
-        return StatusCount.toMap(changeMapper.selectCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine() && !query.isAuditForMe())));
+        return StatusCount.toMap(changeMapper.selectCounts(query, Keywords.codes(query.getKeyword()), listScope(query)));
     }
 
-    private void fillRows(List<OrderChangeRowVO> rows) {
+    /** auditForMe：待我审核视图，行上只给审核类按钮 */
+    private void fillRows(List<OrderChangeRowVO> rows, boolean auditForMe) {
         if (rows.isEmpty()) {
             return;
         }
@@ -166,7 +169,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             r.setSummary(ChangeTexts.summary(r.getChangeTypes().contains(ChangeType.CANCEL), texts));
             r.setCreateByName(names.get(r.getCreateBy()));
             r.setAuditByName(r.getAuditBy() == null ? null : names.get(r.getAuditBy()));
-            r.setActions(actions(DocStatus.valueOf(r.getStatus()), r.getCreateBy()));
+            r.setActions(actions(DocStatus.valueOf(r.getStatus()), r.getCreateBy(), auditForMe));
         }
     }
 
@@ -187,13 +190,17 @@ public class OrderChangeServiceImpl implements OrderChangeService {
                 .collect(Collectors.joining(","));
     }
 
-    /** 按钮：撤回只给制单人，审核、驳回不给制单人（自己建的单不能自己审，SelfAudit）；改、删看 order:change:edit、:remove */
-    static List<String> actions(DocStatus status, Long createBy) {
+    /**
+     * 按钮：撤回只给制单人，审核、驳回不给制单人（自己建的单不能自己审，SelfAudit）；改、删看 order:change:edit、:remove；
+     * auditOnly：只靠"审核不受数据范围限制"看到的单、待我审核视图里的行，只给审核、驳回
+     */
+    static List<String> actions(DocStatus status, Long createBy, boolean auditOnly) {
         return DocActions.of(FLOW, status, PERM)
                 .perm("edit", PERM + "edit")
                 .perm("remove", PERM + "remove")
                 .when("withdraw", isCreator(createBy))
                 .createdBy(createBy)
+                .auditOnly(auditOnly)
                 .list();
     }
 
@@ -229,7 +236,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             return itemVO(ci, n, row == null ? null : row.getScheduledQty());
         }).toList());
         vo.setSummary(ChangeTexts.summary(cancel, items.stream().map(ci -> ChangeTexts.text(ci, n, null)).toList()));
-        vo.setActions(actions(c.getStatus(), c.getCreateBy()));
+        vo.setActions(actions(c.getStatus(), c.getCreateBy(), !inScope(o, c)));
         return vo;
     }
 
@@ -270,21 +277,49 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         visible(changeMapper.selectById(id));
     }
 
-    /** 能看变更单 = 能看它的订单（制单人、业务员、跟单员），或者是变更单的制单人；返回订单 */
+    @Override
+    public void checkEditable(long id) {
+        visible(changeMapper.selectById(id), false);
+    }
+
+    /**
+     * 列表、条数的范围：待我审核不看"我的"（看自己范围里别人提的）；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列待审核的）
+     */
+    private static DataScope listScope(OrderChangeQuery query) {
+        return DataScope.current(query.isMine() && !query.isAuditForMe()).orAuditing(query.isAuditForMe(), null, AUDIT_PERM);
+    }
+
+    /**
+     * 能看变更单 = 能看它的订单（制单人、业务员、跟单员），或者是变更单的制单人；返回订单。
+     * 角色勾了"审核不受数据范围限制"的，待审核的和自己审过的也能看（只在待审核、已审核时放开，草稿照旧改不了）；品类线照旧
+     */
     private Order visible(OrderChange c) {
+        return visible(c, true);
+    }
+
+    /** asAuditor：放不放"审核不受数据范围限制"。看、做动作放（act 里再拦审核以外的动作）；改、删、改附件不放 */
+    private Order visible(OrderChange c, boolean asAuditor) {
         if (c == null) {
             throw new BizException(404, NOT_FOUND);
         }
         Order o = orderMapper.selectById(c.getOrderId());
         com.lingmao.scm.common.scope.CompanyContext.target(c.getCompanyId());
         LineScope.current().check(o.getProductLine());
-        DataScope.current(false).check(o.getCreateBy(), o.getSalesId(), o.getMerchId(), c.getCreateBy());
+        DataScope scope = DataScope.current(false);
+        (asAuditor ? scope.orAuditing(c.getStatus() == PENDING, c.getAuditBy(), AUDIT_PERM) : scope)
+                .check(o.getCreateBy(), o.getSalesId(), o.getMerchId(), c.getCreateBy());
         return o;
     }
 
-    private OrderChange lock(long id) {
+    /** 在本人数据范围里（不算"审核不受数据范围限制"） */
+    private static boolean inScope(Order o, OrderChange c) {
+        return DataScope.current(false).canSee(o.getCreateBy(), o.getSalesId(), o.getMerchId(), c.getCreateBy());
+    }
+
+    /** 锁住再查范围；asAuditor 同 {@link #visible(OrderChange, boolean)} */
+    private OrderChange lock(long id, boolean asAuditor) {
         OrderChange c = changeMapper.lockById(id);
-        visible(c);
+        visible(c, asAuditor);
         return c;
     }
 
@@ -320,7 +355,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     @Override
     @Transactional
     public int update(long id, OrderChangeSaveReq req) {
-        OrderChange c = lock(id);
+        OrderChange c = lock(id, false);
         FLOW.next("edit", c.getStatus());
         if (!c.getVersion().equals(req.getVersion())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, STALE);
@@ -374,7 +409,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     @Override
     @Transactional
     public void delete(long id) {
-        OrderChange c = lock(id);
+        OrderChange c = lock(id, false);
         FLOW.next("remove", c.getStatus());
         changeItemMapper.deleteByChange(id);
         attachmentService.deleteByDoc(BizType.ORDER_CHANGE, id);
@@ -700,7 +735,10 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     @Override
     @Transactional
     public void act(long id, String action, DocActionReq req) {
-        OrderChange c = lock(id);
+        OrderChange c = lock(id, true);
+        if (!DocActions.AUDIT_ACTIONS.contains(action)) {
+            visible(c, false);   // 只靠"审核不受数据范围限制"看到的单只能审核、驳回
+        }
         switch (action) {
             case "submit" -> submit(c, req);
             case "withdraw" -> {

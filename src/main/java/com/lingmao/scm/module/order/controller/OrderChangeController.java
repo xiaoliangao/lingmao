@@ -159,7 +159,7 @@ public class OrderChangeController extends IdempotencyReplayGuard {
     @PreAuthorize("hasAuthority('order:change:edit')")
     @OperLog(module = "订单变更单", action = "换附件")
     public R<List<AttachmentVO>> replaceAttachments(@PathVariable("id") long id, @RequestBody List<@Valid AttachmentReq> files) {
-        return R.ok(docCommonService.replaceAttachments(BizType.ORDER_CHANGE, id, files, changeService::checkVisible));
+        return R.ok(docCommonService.replaceAttachments(BizType.ORDER_CHANGE, id, files, changeService::checkEditable));
     }
 
     /** 重放只读检查当前对象范围，不能因为曾经成功就绕过之后的降权。 */

@@ -201,7 +201,7 @@ public class InvDocController extends IdempotencyReplayGuard {
     @PreAuthorize("hasAuthority('inventory:doc:edit')")
     @OperLog(module = "物料出入库单", action = "换附件")
     public R<List<AttachmentVO>> replaceAttachments(@PathVariable("id") long id, @RequestBody List<@Valid AttachmentReq> files) {
-        return R.ok(docCommonService.replaceAttachments(BizType.INV_DOC, id, files, invDocService::checkVisible));
+        return R.ok(docCommonService.replaceAttachments(BizType.INV_DOC, id, files, invDocService::checkEditable));
     }
 
     @Operation(summary = "下游单据（入库单、出库单没有下游，是空的）")
@@ -223,7 +223,7 @@ public class InvDocController extends IdempotencyReplayGuard {
     @PreAuthorize("hasAuthority('inventory:doc:edit')")
     public R<Void> handleNotice(@PathVariable("id") long id, @PathVariable("noticeId") long noticeId,
                                 @Valid @RequestBody NoticeHandleReq req) {
-        docCommonService.handleNotice(BizType.INV_DOC, id, noticeId, req.getRemark(), invDocService::checkVisible);
+        docCommonService.handleNotice(BizType.INV_DOC, id, noticeId, req.getRemark(), invDocService::checkEditable);
         return R.ok();
     }
 

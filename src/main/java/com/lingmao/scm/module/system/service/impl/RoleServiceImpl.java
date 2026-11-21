@@ -6,6 +6,7 @@ import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.system.dto.RoleQuery;
 import com.lingmao.scm.module.system.dto.RoleSaveReq;
+import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.module.system.entity.SysMenu;
 import com.lingmao.scm.module.system.entity.SysRole;
 import com.lingmao.scm.module.system.entity.SysRoleMenu;
@@ -82,6 +83,7 @@ public class RoleServiceImpl implements RoleService {
         ensureCodeUnique(req.getCode(), null);
         SysRole role = new SysRole();
         BeanUtils.copyProperties(req, role);
+        normalizeScope(role);
         sysRoleMapper.insert(role);
         return role.getId();
     }
@@ -93,7 +95,15 @@ public class RoleServiceImpl implements RoleService {
         ensureNotAdmin(role);
         ensureCodeUnique(req.getCode(), id);
         BeanUtils.copyProperties(req, role);
+        normalizeScope(role);
         sysRoleMapper.update(role, Updates.replaceById(role));   // 整体覆盖，备注能清空（bug 005）
+    }
+
+    /** 数据范围是"全部"的，"审核不受数据范围限制"用不着，存 false：以后改回"本人"不会悄悄带着它 */
+    private static void normalizeScope(SysRole role) {
+        if (role.getDataScope() == RoleDataScope.ALL) {
+            role.setAuditAnyScope(false);
+        }
     }
 
     @Override

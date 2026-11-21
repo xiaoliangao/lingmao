@@ -20,4 +20,6 @@ public class SysRole extends BaseEntity {
     private String remark;
     /** 数据范围：全部 / 本人（V8）。超级管理员是全部 */
     private RoleDataScope dataScope;
+    /** 审核不受数据范围限制（V49）：本人范围的角色勾上后，单级审核的单据待审时不按本人筛。数据范围是全部的存 false */
+    private Boolean auditAnyScope;
 }

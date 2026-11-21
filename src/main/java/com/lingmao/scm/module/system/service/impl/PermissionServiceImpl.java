@@ -36,6 +36,10 @@ public class PermissionServiceImpl implements PermissionService {
         if (flags != null && flags.allData()) {
             perms.add(RoleDataScope.ALL_AUTHORITY);
         }
+        // 审核不受数据范围限制（V49）：同理多给一个 data:audit-any，DataScope.orAuditing 看它
+        if (flags != null && flags.auditAny()) {
+            perms.add(RoleDataScope.AUDIT_ANY_AUTHORITY);
+        }
         if (flags != null && flags.admin()) {
             perms.add(LineScope.ALL_AUTHORITY);
         } else if (user.getProductLines() != null) {

@@ -17,4 +17,10 @@ public enum RoleDataScope {
 
     /** 数据范围是"全部"的人多出的这个权限标识 */
     public static final String ALL_AUTHORITY = "data:all";
+
+    /**
+     * 角色勾了"审核不受数据范围限制"（sys_role.audit_any_scope，V49）的人多出的权限标识：单级审核的单据待审时不按本人筛，
+     * 还要有那种单的审核权限才管用（DataScope.orAuditing）
+     */
+    public static final String AUDIT_ANY_AUTHORITY = "data:audit-any";
 }

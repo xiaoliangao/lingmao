@@ -41,6 +41,8 @@ export interface RoleForm {
   status: number
   remark?: string | null
   dataScope: DataScope
+  /** 数据范围是 ALL 时后端存 false */
+  auditAnyScope: boolean
 }
 
 export const roleApi = {
