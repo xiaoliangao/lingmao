@@ -81,6 +81,7 @@ public final class TestIdentity {
     public static <T> T asSelfAuditor(JdbcTemplate jdbc, boolean auditAnyScope, Supplier<T> action) {
         return asAuditor(jdbc, perms -> {
             perms.remove(RoleDataScope.ALL_AUTHORITY);
+            perms.remove(RoleDataScope.AUDIT_ANY_AUTHORITY);
             if (auditAnyScope) perms.add(RoleDataScope.AUDIT_ANY_AUTHORITY);
         }, action);
     }

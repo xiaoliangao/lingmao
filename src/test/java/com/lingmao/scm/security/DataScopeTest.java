@@ -82,6 +82,23 @@ class DataScopeTest {
         assertThat(DataScope.current(false).orAuditing(true, null, "inventory:doc:audit").canSee(8L)).as("角色没勾").isFalse();
     }
 
+    /**
+     * 规则：单级审核单据的待我审核（forSingleAudit）不看 mine；没有这种单的审核权限的一条都没有（和首页计数一样）；
+     * 不是待我审核时照 current(mine)
+     */
+    @Test
+    void forSingleAudit_noAuditPermissionSeesNothing() {
+        login(7L, RoleDataScope.ALL_AUTHORITY, "inventory:doc:list");
+        DataScope none = DataScope.forSingleAudit(false, true, "inventory:doc:audit");
+        assertThat(none.isSelf()).isTrue();
+        assertThat(none.getUserId()).isNull();
+        assertThat(none.canSee(7L)).isFalse();
+        assertThat(DataScope.forSingleAudit(true, false, "inventory:doc:audit").isSelf()).as("我的").isTrue();
+
+        login(7L, RoleDataScope.ALL_AUTHORITY, "inventory:doc:audit");
+        assertThat(DataScope.forSingleAudit(true, true, "inventory:doc:audit").isAll()).as("待我审核不看 mine").isTrue();
+    }
+
     /** 规则：没登录算本人、什么都看不到（列 = NULL 不成立，这里直接 1 = 0） */
     @Test
     void anonymous_seesNothing() {

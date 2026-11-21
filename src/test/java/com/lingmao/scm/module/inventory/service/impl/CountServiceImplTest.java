@@ -15,6 +15,7 @@ import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.inventory.dto.CountCreateReq;
 import com.lingmao.scm.module.inventory.dto.CountOpenWarehouseVO;
+import com.lingmao.scm.module.inventory.dto.CountSaveReq;
 import com.lingmao.scm.module.inventory.entity.CountPurpose;
 import com.lingmao.scm.module.inventory.entity.CountScope;
 import com.lingmao.scm.module.inventory.entity.InvCount;
@@ -206,10 +207,30 @@ class CountServiceImplTest {
         assertThatThrownBy(() -> service.checkEditable(7L)).isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
         assertThatThrownBy(() -> service.act(7L, "withdraw", new DocActionReq(0, null)))
                 .isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
+        assertThatThrownBy(() -> service.importSheet(7L, null)).isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
+        when(countMapper.lockById(7L)).thenReturn(count(DocStatus.PENDING, CountPurpose.DAILY));
+        CountSaveReq save = new CountSaveReq();
+        save.setVersion(0);
+        assertThatThrownBy(() -> service.update(7L, save)).as("改草稿的锁不放例外").isInstanceOf(BizException.class)
+                .extracting("code").isEqualTo(404);
 
         when(countMapper.selectById(7L)).thenReturn(count(DocStatus.DRAFT, CountPurpose.DAILY));
         assertThatThrownBy(() -> service.checkVisible(7L)).isInstanceOf(BizException.class).extracting("code").isEqualTo(404);
         verify(countMapper, never()).update(any(), any());
+    }
+
+    /** 规则：改附件前的检查也要核对页面主体（和看详情一样），不一致 403 */
+    @Test
+    void checkEditable_checksCompany() {
+        InvCount c = count(DocStatus.APPROVED, CountPurpose.DAILY);
+        c.setCompanyId(5L);
+        when(countMapper.selectById(7L)).thenReturn(c);
+        com.lingmao.scm.TestIdentity.company(6L);
+        try {
+            assertThatThrownBy(() -> service.checkEditable(7L)).isInstanceOf(BizException.class).extracting("code").isEqualTo(403);
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
     }
 
     private static void loginAs(long userId, String... authorities) {

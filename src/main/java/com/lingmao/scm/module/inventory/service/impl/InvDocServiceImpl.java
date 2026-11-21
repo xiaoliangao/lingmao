@@ -260,7 +260,9 @@ public class InvDocServiceImpl implements InvDocService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         boolean posted = !postedItems.isEmpty();
         vo.setPosted(posted);
-        vo.setActions(actions(doc.getStatus(), posted, doc.getCreateBy(), !DataScope.current(false).canSee(doc.getCreateBy())));
+        boolean inScope = DataScope.current(false).canSee(doc.getCreateBy());
+        vo.setActions(actions(doc.getStatus(), posted, doc.getCreateBy(), !inScope));
+        vo.setFilesEditable(inScope && LoginUser.hasAuthority(PERM + "edit"));
         return vo;
     }
 
@@ -294,10 +296,10 @@ public class InvDocServiceImpl implements InvDocService {
     }
 
     /**
-     * 列表、导出的范围：待我审核不看"我的"（看自己范围里别人建的）；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列草稿）
+     * 列表、导出的范围：待我审核不看"我的"（看自己范围里别人建的）；没有审核权限的一条都没有；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列草稿）
      */
     private static DataScope listScope(InvDocQuery query) {
-        return DataScope.current(query.isMine() && !query.isAuditForMe()).orAuditing(query.isAuditForMe(), null, AUDIT_PERM);
+        return DataScope.forSingleAudit(query.isMine(), query.isAuditForMe(), AUDIT_PERM);
     }
 
     /** 看、做动作：制单人是自己；角色勾了"审核不受数据范围限制"的，草稿（等着审）和自己审过的也能看、能审（act 里再拦别的动作） */

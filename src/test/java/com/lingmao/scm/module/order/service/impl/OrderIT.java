@@ -25,6 +25,7 @@ import com.lingmao.scm.module.order.entity.ChangeType;
 import com.lingmao.scm.module.order.entity.ResponsibleParty;
 import com.lingmao.scm.module.order.service.OrderChangeService;
 import com.lingmao.scm.module.order.service.OrderService;
+import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.security.LoginUser;
 import com.lingmao.scm.security.DataScope;
 import org.apache.ibatis.scripting.defaults.DefaultParameterHandler;
@@ -238,6 +239,53 @@ class OrderIT {
         TestIdentity.asAuditor(jdbcTemplate, () -> changeService.act(cc.id(), "audit", new DocActionReq(1, null)));
         assertThat(orderService.detail(id).getStatus()).isEqualTo("VOIDED");
         assertThat(changeService.counts(cq)).containsEntry("APPROVED", 2L);
+    }
+
+    /**
+     * 规则（用户 11-21 定，PRD §3.2）：本人范围的审核人没勾"审核不受数据范围限制"，别人订单上的待审变更单看不到；勾了出现在
+     * 待我审核（列表、条数）里，详情只给审核、驳回，作废 404，能审；品类线照旧（只有鞋类线的看不到服装的）；没有审核权限的待我审核是空的
+     */
+    @Test
+    void changeAuditAnyScope() {
+        Fixture f = fixture();
+        long id = approvedOrder(f, Map.of(f.sku("A", "M"), 100));
+        OrderChangeCreateReq req = changeReq(id);
+        req.setQuantities(List.of(new OrderChangeForm.Qty(f.sku("A", "M"), 90)));
+        DocSaved ch = changeService.create(req);
+        changeService.act(ch.id(), "submit", new DocActionReq(0, null));
+        OrderChangeQuery forMe = new OrderChangeQuery();
+        forMe.setOrderId(id);
+        forMe.setAuditForMe(true);
+
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, false, () -> changeService.page(forMe).getList())).isEmpty();
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> changeService.page(forMe).getList()))
+                .extracting(r -> r.getId()).containsExactly(ch.id());
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> changeService.counts(forMe))).containsEntry("PENDING", 1L);
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> changeService.detail(ch.id()).getActions()))
+                .containsExactlyInAnyOrder("reject", "audit");
+        assertThatThrownBy(() -> TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> {
+            changeService.act(ch.id(), "void", new DocActionReq(1, "不要了"));
+            return null;
+        })).isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+
+        long auditor = TestIdentity.auditorOf(jdbcTemplate, f.user());
+        List<String> footwearOnly = new ArrayList<>(PERMS);
+        footwearOnly.addAll(List.of(RoleDataScope.AUDIT_ANY_AUTHORITY, "line:FOOTWEAR"));
+        TestIdentity.login(auditor, footwearOnly);
+        assertThat(changeService.page(forMe).getList()).as("不在我的品类线").isEmpty();
+        List<String> noAudit = new ArrayList<>(PERMS);
+        noAudit.remove("order:change:audit");
+        noAudit.add(RoleDataScope.ALL_AUTHORITY);
+        TestIdentity.login(auditor, noAudit);
+        assertThat(changeService.page(forMe).getList()).as("没有审核权限").isEmpty();
+        assertThat(changeService.counts(forMe)).isEmpty();
+        loginAs(f.user(), PERMS);
+
+        TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> {
+            changeService.act(ch.id(), "audit", new DocActionReq(1, null));
+            return null;
+        });
+        assertThat(changeService.detail(ch.id()).getStatus()).isEqualTo("APPROVED");
     }
 
     /** 审核/作废的非 SKU 变更详情：不对 Map.of() 查 null，不拼 SKU 已排产提示。 */

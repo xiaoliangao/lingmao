@@ -146,7 +146,7 @@ async function quickAct(row: OrderChangeRow, action: 'audit' | 'reject') {
         <DateRange :model-value="dateRange" @update:model-value="onDateChange" />
       </FilterItem>
       <template #right>
-        <el-checkbox v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
+        <el-checkbox v-perm="'order:change:audit'" v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
         <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>

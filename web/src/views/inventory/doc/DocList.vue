@@ -173,7 +173,7 @@ defineExpose({ reload: load, exportAll, exporting })
         <SupplierSelect v-model="query.partnerId" v-model:label="partnerName" usage="BULK" clearable placeholder="全部往来单位" />
       </FilterItem>
       <template #right>
-        <el-checkbox v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
+        <el-checkbox v-perm="'inventory:doc:audit'" v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
         <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>

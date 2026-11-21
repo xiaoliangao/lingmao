@@ -34,6 +34,7 @@ import com.lingmao.scm.module.inventory.entity.InvDocType;
 import com.lingmao.scm.module.inventory.service.CountService;
 import com.lingmao.scm.module.inventory.service.InvDocService;
 import com.lingmao.scm.module.inventory.service.StockService;
+import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.security.LoginUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -185,6 +186,15 @@ class InventoryIT {
                 .as("只列草稿").extracting(InvDocRowVO::getId).contains(draft).doesNotContain(done);
         InvDocDetailVO seen = TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> invDocService.detail(draft));
         assertThat(seen.getActions()).containsExactly("audit");
+        assertThat(seen.isFilesEditable()).as("附件不能改").isFalse();
+        assertThat(invDocService.detail(draft).isFilesEditable()).as("制单人能改附件").isTrue();
+        // 没有审核权限的，待我审核一条都没有（全部范围也一样，和首页计数一致）
+        List<String> noAudit = new ArrayList<>(PERMS);
+        noAudit.remove("inventory:doc:audit");
+        noAudit.add(RoleDataScope.ALL_AUTHORITY);
+        TestIdentity.login(TestIdentity.auditorOf(jdbcTemplate, USER), noAudit);
+        assertThat(invDocService.page(forMe).getList()).isEmpty();
+        loginAs();
         InvDocItemReq row = itemReq(f.skuA, "3");
         row.setId(seen.getItems().getFirst().getId());
         assertThatThrownBy(() -> TestIdentity.asSelfAuditor(jdbcTemplate, true, () -> invDocService.update(draft, saveReq(seen, List.of(row)))))

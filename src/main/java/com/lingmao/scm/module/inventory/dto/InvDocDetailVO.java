@@ -34,5 +34,7 @@ public class InvDocDetailVO extends DocHeaderVO {
     private BigDecimal totalAmount;
     /** 过过账（审核过又反审核回来的草稿）：不能删，只能作废；过过账的行不能删、不能换物料 */
     private boolean posted;
+    /** 附件能不能改：在本人数据范围里、有 :edit 权限（只靠"审核不受数据范围限制"看到的单不能改），不看状态 */
+    private boolean filesEditable;
     private List<InvDocItemVO> items;
 }

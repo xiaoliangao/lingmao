@@ -196,6 +196,8 @@ export interface InvDocDetail extends DocHeader<InvDocStatus, InvDocAction> {
   totalAmount?: number
   /** 过过账（有库存日志）：草稿时 actions 给 void 不给 remove */
   posted: boolean
+  /** 附件能不能改：在本人数据范围里、有 inventory:doc:edit（只靠"审核不受数据范围限制"看到的单不能改），不看状态 */
+  filesEditable: boolean
   items: InvDocItem[]
 }
 
@@ -504,6 +506,8 @@ export interface CountDetail extends DocHeader<CountStatus, CountAction> {
   movesSinceBook: number
   /** 过过账（有库存日志）：草稿时 actions 给 void 不给 remove */
   posted: boolean
+  /** 附件能不能改：在本人数据范围里、有 inventory:count:edit（只靠"审核不受数据范围限制"看到的单不能改），不看状态 */
+  filesEditable: boolean
   items: CountItem[]
 }
 

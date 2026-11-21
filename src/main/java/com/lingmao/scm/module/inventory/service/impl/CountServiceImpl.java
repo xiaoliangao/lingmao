@@ -233,8 +233,9 @@ public class CountServiceImpl implements CountService {
                 : 0);
         boolean posted = !postedItems.isEmpty();
         vo.setPosted(posted);
-        vo.setActions(actions(count.getStatus(), posted, count.getCreateBy(),
-                !DataScope.current(false).canSee(count.getCreateBy(), count.getCounterId())));
+        boolean inScope = DataScope.current(false).canSee(count.getCreateBy(), count.getCounterId());
+        vo.setActions(actions(count.getStatus(), posted, count.getCreateBy(), !inScope));
+        vo.setFilesEditable(inScope && LoginUser.hasAuthority(PERM + "edit"));
         return vo;
     }
 
@@ -271,44 +272,41 @@ public class CountServiceImpl implements CountService {
 
     @Override
     public void checkEditable(long id) {
-        InvCount count = countMapper.selectById(id);
-        if (count == null) {
-            throw new BizException(404, "单据不存在");
-        }
-        DataScope.current(false).check(count.getCreateBy(), count.getCounterId());
+        find(id, false);
     }
 
     /**
-     * 列表、导出的范围：待我审核不看"我的"（看自己范围里别人建的）；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列待审核的）
+     * 列表、导出的范围：待我审核不看"我的"（看自己范围里别人建的）；没有审核权限的一条都没有；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列待审核的）
      */
     private static DataScope listScope(CountQuery query) {
-        return DataScope.current(query.isMine() && !query.isAuditForMe()).orAuditing(query.isAuditForMe(), null, AUDIT_PERM);
+        return DataScope.forSingleAudit(query.isMine(), query.isAuditForMe(), AUDIT_PERM);
     }
 
-    /**
-     * 数据范围：制单人或盘点人是自己（docs/api/04 §3.1）；角色勾了"审核不受数据范围限制"的，待审核的和自己审过的也算
-     * （只在待审核、已审核时放开，草稿照旧改不了、删不了）
-     */
-    private static DataScope scopeOf(InvCount count) {
-        return DataScope.current(false).orAuditing(count.getStatus() == PENDING, count.getAuditBy(), AUDIT_PERM);
-    }
-
+    /** 看、做动作：制单人或盘点人是自己（docs/api/04 §3.1）；角色勾了"审核不受数据范围限制"的，待审核的和自己审过的也能看、能审（act 里再拦别的动作） */
     private InvCount getVisible(long id) {
+        return find(id, true);
+    }
+
+    /** asAuditor：放不放"审核不受数据范围限制"。看、审核放；改附件、导入实盘不放。主体两种都查 */
+    private InvCount find(long id, boolean asAuditor) {
         InvCount count = countMapper.selectById(id);
         if (count == null) {
             throw new BizException(404, "单据不存在");
         }
-        scopeOf(count).check(count.getCreateBy(), count.getCounterId());
+        DataScope scope = DataScope.current(false);
+        (asAuditor ? scope.orAuditing(count.getStatus() == PENDING, count.getAuditBy(), AUDIT_PERM) : scope)
+                .check(count.getCreateBy(), count.getCounterId());
         com.lingmao.scm.common.scope.CompanyContext.target(count.getCompanyId());
         return count;
     }
 
+    /** 改草稿（存、加料、重拍账面、提交、导回实盘）前锁住；只按本人范围，不放"审核不受数据范围限制" */
     private InvCount lock(long id, int version) {
         InvCount count = countMapper.lockById(id);
         if (count == null) {
             throw new BizException(404, "单据不存在");
         }
-        scopeOf(count).check(count.getCreateBy(), count.getCounterId());
+        DataScope.current(false).check(count.getCreateBy(), count.getCounterId());
         com.lingmao.scm.common.scope.CompanyContext.target(count.getCompanyId());
         if (count.getVersion() != version) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这张单已经被别人改过，请刷新后再改");
@@ -661,6 +659,7 @@ public class CountServiceImpl implements CountService {
 
     /** 审核过账：差异不为 0 的行把差异加到现在的库存上（调完是负的 1001） */
     private void audit(InvCount count, DocActionReq req) {
+        FLOW.next("audit", count.getStatus());
         SelfAudit.check(count.getCreateBy());
         change(count, "audit", req);
         List<InvCountItem> items = itemMapper.selectByCount(count.getId());
@@ -712,6 +711,7 @@ public class CountServiceImpl implements CountService {
             throw new BizException(404, "单据不存在");
         }
         DataScope.current(false).check(count.getCreateBy(), count.getCounterId());
+        com.lingmao.scm.common.scope.CompanyContext.target(count.getCompanyId());
         FLOW.next("remove", count.getStatus());
         if (stockLogMapper.countPosted(id)) {
             throw new BizException("这张单过过账（库存日志里有它），不能删，只能作废");
@@ -741,7 +741,7 @@ public class CountServiceImpl implements CountService {
      */
     @Override
     public ImportResult importSheet(long id, MultipartFile file) {
-        InvCount count = getVisible(id);
+        InvCount count = find(id, false);
         FLOW.next("edit", count.getStatus());
         return imports.execute("count", "count:" + id, "inventory:count:import", file, Map.of("companyId", count.getCompanyId()),
                 () -> excel.read(file), rows -> writeImport(count, rows));

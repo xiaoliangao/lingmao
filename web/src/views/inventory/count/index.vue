@@ -168,7 +168,7 @@ function openCreate(purpose: CountPurpose) {
         <DateRange :model-value="dateRange" @update:model-value="onDateChange" />
       </FilterItem>
       <template #right>
-        <el-checkbox v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
+        <el-checkbox v-perm="'inventory:count:audit'" v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
       </template>
     </FilterBar>
 

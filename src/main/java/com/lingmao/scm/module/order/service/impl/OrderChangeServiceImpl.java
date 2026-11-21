@@ -283,10 +283,10 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     }
 
     /**
-     * 列表、条数的范围：待我审核不看"我的"（看自己范围里别人提的）；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列待审核的）
+     * 列表、条数的范围：待我审核不看"我的"（看自己范围里别人提的）；没有审核权限的一条都没有；角色勾了"审核不受数据范围限制"的再放开到全部（SQL 只列待审核的）
      */
     private static DataScope listScope(OrderChangeQuery query) {
-        return DataScope.current(query.isMine() && !query.isAuditForMe()).orAuditing(query.isAuditForMe(), null, AUDIT_PERM);
+        return DataScope.forSingleAudit(query.isMine(), query.isAuditForMe(), AUDIT_PERM);
     }
 
     /**

@@ -433,7 +433,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
         <section class="panel">
           <div class="panel-head">附件</div>
           <div class="panel-body">
-            <DocAttachments :load="loadFiles" :save="saveFiles" />
+            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="!detail?.filesEditable" />
           </div>
         </section>
 

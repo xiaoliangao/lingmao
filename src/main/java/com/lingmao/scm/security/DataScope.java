@@ -93,6 +93,24 @@ public final class DataScope {
         return new DataScope(userId, true, lines);
     }
 
+    /**
+     * 单级审核的单据（变更单、物料出入库单、盘点单）列表、条数、导出的范围：
+     * <ul>
+     *   <li>不是待我审核：照 {@link #current(boolean)}</li>
+     *   <li>待我审核：不看 mine；没有这种单的审核权限的什么都没有（和首页计数一样）；
+     *       角色勾了"审核不受数据范围限制"的放开（{@link #orAuditing}），所以 SQL 一定要卡住待审状态、去掉自己建的</li>
+     * </ul>
+     */
+    public static DataScope forSingleAudit(boolean mine, boolean auditForMe, String auditAuthority) {
+        if (!auditForMe) {
+            return current(mine);
+        }
+        if (!LoginUser.hasAuthority(auditAuthority)) {
+            return new DataScope(null, false, LineScope.current());   // 本人范围、没有"我"：列 = NULL 永远不成立，一条都没有
+        }
+        return current(false).orAuditing(true, null, auditAuthority);
+    }
+
     /** 看全部：不加任何条件 */
     public boolean isAll() {
         return all;
