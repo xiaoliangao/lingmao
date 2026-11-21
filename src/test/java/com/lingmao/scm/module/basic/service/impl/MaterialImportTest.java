@@ -17,9 +17,15 @@ import com.lingmao.scm.module.basic.mapper.ColorMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialCategoryMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialSkuMapper;
+import com.lingmao.scm.module.biz.dto.AttachmentReq;
+import com.lingmao.scm.module.biz.entity.Attachment;
+import com.lingmao.scm.module.biz.entity.BizType;
+import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.system.dto.DictOption;
+import com.lingmao.scm.module.system.dto.FileVO;
 import com.lingmao.scm.module.system.service.DictDataService;
+import com.lingmao.scm.module.system.service.FileService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -45,6 +51,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
@@ -75,6 +84,10 @@ class MaterialImportTest {
     private SerialNoGenerator serialNoGenerator;
     @Mock
     private DocLogService docLogService;
+    @Mock
+    private FileService fileService;
+    @Mock
+    private AttachmentService attachmentService;
 
     private MaterialImport materialImport;
 
@@ -88,7 +101,8 @@ class MaterialImportTest {
     @BeforeEach
     void setUp() {
         materialImport = new MaterialImport(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
-                dictDataService, serialNoGenerator, new TradeFeature(false), docLogService, com.lingmao.scm.DirectFileImports.INSTANCE);
+                dictDataService, serialNoGenerator, new TradeFeature(false), docLogService, com.lingmao.scm.DirectFileImports.INSTANCE,
+                fileService, attachmentService);
         lenient().when(dictDataService.listByType("material_type")).thenReturn(List.of(new DictOption("面料", "FABRIC", 1)));
         lenient().when(dictDataService.listByType("unit")).thenReturn(List.of(new DictOption("米", "M", 1)));
         lenient().when(dictDataService.listByType("season")).thenReturn(List.of(new DictOption("夏", "SUMMER", 1)));
@@ -275,6 +289,73 @@ class MaterialImportTest {
     }
 
     /** 现做一个几张表的 .xlsx：表名 → 行（第一行是表头） */
+    /**
+     * 规则：领猫"图片"列里的图，浮在哪一行就挂到那一行建的物料、SKU 上（附件 IMAGE，第一张是主图）；
+     * 一样的图只存一份文件；落在空行上的不导、进提示；写库前就存好文件，写库时只挂引用
+     */
+    @Test
+    void importFile_imagesFollowTheirRows() throws IOException {
+        Map<String, Object[][]> sheets = new LinkedHashMap<>();
+        sheets.put("物料信息", new Object[][]{{"图片", "物料类型", "物料分类", "物料编码", "物料名称", "单位"},
+                {null, "面料", "面料>梭织", "ML0007", "全棉府绸", "米"},
+                {null, "面料", "面料>梭织", "ML0012", "涤纶里布", "米"}});
+        sheets.put("物料信息SKU", new Object[][]{{"图片", "物料编码", "物料SKU编码", "颜色编码", "颜色名称"},
+                {null, "ML0007", "ML0007-KQ", "KQ", "卡其"}});
+        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101", "ML0102");
+        AtomicLong files = new AtomicLong();
+        when(fileService.save(anyString(), any())).thenAnswer(inv -> {
+            long n = files.incrementAndGet();
+            return new FileVO("/files/2026/11/" + n + ".png", "/files/2026/11/" + n + "_s.png", inv.getArgument(0), 3);
+        });
+        AtomicLong skuIds = new AtomicLong(500);
+        doAnswer(inv -> {
+            inv.<MaterialSku>getArgument(0).setId(skuIds.incrementAndGet());
+            return 1;
+        }).when(materialSkuMapper).insert(any(MaterialSku.class));
+
+        // ML0007 那一行两张（第二张和 SKU 那张是同一张图），ML0012 没有图，第 6 行是空行
+        ImportResult result = materialImport.importFile(xlsx(sheets, Map.of(
+                "物料信息", new int[][]{{1, 'a'}, {1, 'b'}, {5, 'z'}},
+                "物料信息SKU", new int[][]{{1, 'b'}})));
+
+        // a、b 两个文件：b 在物料、SKU 上各挂一次只存一份，空行上的 z 不存
+        verify(fileService, times(2)).save(anyString(), any());
+        ArgumentCaptor<List<AttachmentReq>> materialImages = ArgumentCaptor.captor();
+        verify(attachmentService).replace(eq(BizType.MATERIAL), eq(101L), eq(Attachment.IMAGE), materialImages.capture());
+        assertThat(materialImages.getValue()).extracting(AttachmentReq::getName).containsExactly("ML0007.png", "ML0007.png");
+        assertThat(materialImages.getValue()).extracting(AttachmentReq::getUrl).doesNotHaveDuplicates();
+        ArgumentCaptor<List<AttachmentReq>> skuImages = ArgumentCaptor.captor();
+        verify(attachmentService).replace(eq(BizType.MATERIAL_SKU), anyLong(), eq(Attachment.IMAGE), skuImages.capture());
+        assertThat(skuImages.getValue()).singleElement().satisfies(img -> {
+            assertThat(img.getName()).isEqualTo("ML0007-KQ.png");
+            assertThat(img.getUrl()).isEqualTo(materialImages.getValue().get(1).getUrl());
+        });
+        verify(attachmentService, never()).replace(eq(BizType.MATERIAL), eq(102L), any(), any());
+        assertThat(result.notes()).extracting(ImportError::message)
+                .anySatisfy(m -> assertThat(m).contains("图片一起导入了 3 张"))
+                .anySatisfy(m -> assertThat(m).contains("这一行没有数据，图片没导"));
+    }
+
+    /** 带图片的文件：images 是 工作表名 → {行（从 0 数，表头是 0）, 图片内容的第一个字节}，图片都放在第 0 列 */
+    private static MockMultipartFile xlsx(Map<String, Object[][]> sheets, Map<String, int[][]> images) throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(xlsx(sheets).getInputStream())) {
+            images.forEach((name, placed) -> {
+                var drawing = workbook.getSheet(name).createDrawingPatriarch();
+                for (int[] p : placed) {
+                    var anchor = workbook.getCreationHelper().createClientAnchor();
+                    anchor.setRow1(p[0]);
+                    anchor.setRow2(p[0] + 1);
+                    anchor.setCol2(1);
+                    drawing.createPicture(anchor, workbook.addPicture(new byte[]{(byte) p[1], 1, 2},
+                            org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG));
+                }
+            });
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return new MockMultipartFile("file", "物料.xlsx", Excel.CONTENT_TYPE, out.toByteArray());
+        }
+    }
+
     private static MockMultipartFile xlsx(Map<String, Object[][]> sheets) throws IOException {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             sheets.forEach((name, rows) -> {

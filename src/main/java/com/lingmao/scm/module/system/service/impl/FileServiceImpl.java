@@ -11,13 +11,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -34,6 +39,14 @@ public class FileServiceImpl implements FileService {
     private final Semaphore capacity = new Semaphore(2);
 
     @Override public FileVO upload(MultipartFile file) {
+        return store(file, false);
+    }
+
+    @Override public FileVO save(String fileName, byte[] content) {
+        return store(new BytesFile(fileName, content), true);
+    }
+
+    private FileVO store(MultipartFile file, boolean wait) {
         if (file == null || file.isEmpty()) throw new BizException("文件不能为空");
         String original = safeName(file.getOriginalFilename());
         String ext = StringUtils.getFilenameExtension(original);
@@ -42,7 +55,7 @@ public class FileServiceImpl implements FileService {
         boolean source = DESIGN_SOURCE.contains(ext);
         long limit = source ? MAX_DESIGN_SOURCE_BYTES : MAX_BYTES;
         if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD、PRJ、PLT 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
-        if (!capacity.tryAcquire()) throw new BizException(429, "正在处理其他文件，请稍后重试");
+        if (!acquire(wait)) throw new BizException(429, "正在处理其他文件，请稍后重试");
         UploadStore.Slot slot = null; boolean saved = false;
         try {
             slot = storage.allocate(ext); catalog.begin(slot);
@@ -58,6 +71,24 @@ public class FileServiceImpl implements FileService {
             capacity.release();
         }
     }
+    private boolean acquire(boolean wait) {
+        if (!wait) return capacity.tryAcquire();
+        try { return capacity.tryAcquire(30, TimeUnit.SECONDS); }
+        catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return false; }
+    }
+
+    /** save 用：内存里的字节当成一个上传文件，存储那边只读 getInputStream */
+    private record BytesFile(String fileName, byte[] content) implements MultipartFile {
+        @Override public String getName() { return "file"; }
+        @Override public String getOriginalFilename() { return fileName; }
+        @Override public String getContentType() { return null; }
+        @Override public boolean isEmpty() { return content.length == 0; }
+        @Override public long getSize() { return content.length; }
+        @Override public byte[] getBytes() { return content.clone(); }
+        @Override public InputStream getInputStream() { return new ByteArrayInputStream(content); }
+        @Override public void transferTo(File dest) throws IOException { Files.write(dest.toPath(), content); }
+    }
+
     @Override public Optional<Path> localPath(String url) { return storage.localPath(signer.strip(url)); }
     private static String safeName(String name) {
         String clean = name == null ? "" : name.replace('\\', '/');

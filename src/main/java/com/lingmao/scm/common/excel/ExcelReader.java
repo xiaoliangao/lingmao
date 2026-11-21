@@ -34,7 +34,8 @@ final class ExcelReader {
      */
     static {
         ZipSecureFile.setMaxEntrySize(ExcelArchiveGuard.MAX_ENTRY_BYTES);
-        ZipSecureFile.setMaxFileCount(ExcelArchiveGuard.MAX_FILES);
+        // 图片另算（ExcelArchiveGuard 分开数：别的条目 128 个，xl/media/ 下 5000 个）
+        ZipSecureFile.setMaxFileCount(ExcelArchiveGuard.MAX_FILES + ExcelArchiveGuard.MAX_MEDIA_FILES);
     }
 
     private ExcelReader() {

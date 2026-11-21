@@ -627,4 +627,59 @@ class ExcelTest {
             assertThat(validation.getRegions().getCellRangeAddress(0).getLastRow()).isEqualTo(Excel.MAX_IMPORT_ROWS);
         }
     }
+
+    /**
+     * 规则：images 只取左上角落在那一列、表头以下的图片，行号和 Line.row 一样（表头第 1 行），
+     * 同一行几张按从左到右排；emf 这种认不了的格式 extension 是 null。领猫导出一行一张图，几百张也要能打开（图片不算进 128 个条目）
+     */
+    @Test
+    void images_inColumnByRow() throws IOException {
+        byte[] bytes;
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            XSSFSheet sheet = workbook.createSheet("物料信息");
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("编码");
+            header.createCell(1).setCellValue("图片");
+            for (int i = 1; i <= 210; i++) {
+                sheet.createRow(i).createCell(0).setCellValue("M" + i);
+            }
+            var drawing = sheet.createDrawingPatriarch();
+            var helper = workbook.getCreationHelper();
+            // 第 3 行两张，右边那张先加；第 2 行一张；表头上一张、第 0 列一张，都不算；第 4 行一张 emf
+            int[][] placed = {{1, 2, 300, 'b'}, {1, 2, 0, 'a'}, {1, 1, 0, 'c'}, {1, 0, 0, 'h'}, {0, 1, 0, 'x'}};
+            for (int[] p : placed) {
+                var anchor = helper.createClientAnchor();
+                anchor.setCol1(p[0]);
+                anchor.setRow1(p[1]);
+                anchor.setDx1(p[2]);
+                anchor.setCol2(p[0] + 1);
+                anchor.setRow2(p[1] + 1);
+                drawing.createPicture(anchor, workbook.addPicture(new byte[]{(byte) p[3], 1, 2}, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_PNG));
+            }
+            var emf = helper.createClientAnchor();
+            emf.setCol1(1);
+            emf.setRow1(3);
+            drawing.createPicture(emf, workbook.addPicture(new byte[]{9, 9}, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_EMF));
+            // 再铺 200 张，压缩包里的条目远超 128 个
+            for (int i = 10; i < 210; i++) {
+                var anchor = helper.createClientAnchor();
+                anchor.setCol1(1);
+                anchor.setRow1(i);
+                drawing.createPicture(anchor, workbook.addPicture(new byte[]{(byte) i, (byte) (i >> 8), 7}, org.apache.poi.ss.usermodel.Workbook.PICTURE_TYPE_JPEG));
+            }
+            bytes = toBytes(workbook);
+        }
+
+        try (ExcelBook book = Excel.open(xlsx(bytes))) {
+            List<ExcelImage> images = book.images("物料信息", "图片");
+            assertThat(images).hasSize(4 + 200);
+            assertThat(images.subList(0, 4)).extracting(ExcelImage::row).containsExactly(2, 3, 3, 4);
+            assertThat(images.subList(0, 3)).extracting(i -> (char) i.data()[0]).containsExactly('c', 'a', 'b');
+            assertThat(images.subList(0, 3)).extracting(ExcelImage::extension).containsOnly("png");
+            assertThat(images.get(3).supported()).isFalse();
+            assertThat(images.get(4).extension()).isEqualTo("jpg");
+            assertThat(book.images("物料信息", "没有这一列")).isEmpty();
+            assertThat(book.images("没有这张表", "图片")).isEmpty();
+        }
+    }
 }

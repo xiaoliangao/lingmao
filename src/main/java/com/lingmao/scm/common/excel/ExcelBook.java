@@ -1,13 +1,23 @@
 package com.lingmao.scm.common.excel;
 
 import com.lingmao.scm.common.exception.BizException;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.ClientAnchor;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Drawing;
+import org.apache.poi.ss.usermodel.Picture;
+import org.apache.poi.ss.usermodel.PictureData;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Shape;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 一个文件几张表的导入：按工作表的名字读（领猫导出的物料是"物料信息""物料信息SKU"两张表，"物料信息多单位"可有可无）。
@@ -27,6 +37,10 @@ import java.util.List;
  * 问题清单、提示清单里每一项都带工作表名，按读表的顺序、表里按行号排。
  */
 public final class ExcelBook implements AutoCloseable {
+
+    /** images 认的图片格式：MIME 类型 → 存文件用的扩展名（上传接口也收这几种） */
+    private static final Map<String, String> IMAGE_EXTENSIONS = Map.of(
+            "image/jpeg", "jpg", "image/png", "png", "image/gif", "gif");
 
     private final Workbook workbook;
     /** 读过的表，按读的顺序：问题、提示按这个顺序列 */
@@ -64,6 +78,62 @@ public final class ExcelBook implements AutoCloseable {
         }
         sheets.add(result);
         return result;
+    }
+
+    /**
+     * 一张表里浮在某一列上的图片（领猫导出的"图片"列：一行一张，图片左上角落在那一格里）。
+     * 按行号排，同一行几张的按从左到右、从上到下；左上角不在这一列的、落在表头上的不算。
+     * 没有这张表、表头里没有这一列、没有图片，都返回空的。不检查行上有没有数据，调用方按行号对自己的行
+     */
+    public List<ExcelImage> images(String sheetName, String header) {
+        Sheet sheet = workbook.getSheet(sheetName);
+        Integer column = sheet == null ? null : columnOf(sheet, header);
+        Drawing<?> drawing = column == null ? null : sheet.getDrawingPatriarch();
+        if (drawing == null) {
+            return List.of();
+        }
+        record Placed(ClientAnchor anchor, ExcelImage image) {
+        }
+        List<Placed> placed = new ArrayList<>();
+        for (Shape shape : drawing) {
+            if (!(shape instanceof Picture picture)) {
+                continue;
+            }
+            ClientAnchor anchor;
+            PictureData data;
+            try {
+                anchor = picture.getClientAnchor();
+                data = picture.getPictureData();
+            } catch (RuntimeException broken) {
+                continue;
+            }
+            if (anchor == null || anchor.getCol1() != column || anchor.getRow1() < 1) {
+                continue;
+            }
+            String extension = data == null ? null : IMAGE_EXTENSIONS.get(data.getMimeType());
+            placed.add(new Placed(anchor, new ExcelImage(anchor.getRow1() + 1, extension,
+                    extension == null ? new byte[0] : data.getData())));
+        }
+        placed.sort(Comparator.comparingInt((Placed p) -> p.anchor().getRow1())
+                .thenComparingInt(p -> p.anchor().getDx1())
+                .thenComparingInt(p -> p.anchor().getDy1()));
+        return placed.stream().map(Placed::image).toList();
+    }
+
+    /** 表头（第 1 行）里叫 header 的那一列，从 0 数；没有返回 null */
+    private static Integer columnOf(Sheet sheet, String header) {
+        Row first = sheet.getRow(0);
+        if (first == null) {
+            return null;
+        }
+        String wanted = ExcelReader.normalizeHeader(header);
+        DataFormatter formatter = new DataFormatter();
+        for (Cell cell : first) {
+            if (wanted.equals(ExcelReader.normalizeHeader(formatter.formatCellValue(cell)))) {
+                return cell.getColumnIndex();
+            }
+        }
+        return null;
     }
 
     public boolean hasErrors() {

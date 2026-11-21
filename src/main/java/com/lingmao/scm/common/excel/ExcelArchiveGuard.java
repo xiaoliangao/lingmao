@@ -22,6 +22,8 @@ import java.util.Set;
 /** POI 建工作簿对象之前，先检查 OOXML 压缩包，大小和条目都有上限。 */
 final class ExcelArchiveGuard {
     static final int MAX_FILES = 128;
+    /** xl/media/ 下的图片另算：领猫导出的物料一行一张图，按最多 5000 行算；总大小还受 10MB 和解压后 32MB 管 */
+    static final int MAX_MEDIA_FILES = Excel.MAX_IMPORT_ROWS;
     static final long MAX_ENTRY_BYTES = 16L * 1024 * 1024;
     static final long MAX_EXPANDED_BYTES = 32L * 1024 * 1024;
     static final int MAX_CELLS = 250_000;
@@ -38,6 +40,7 @@ final class ExcelArchiveGuard {
             throw new BizException("文件打不开：只收真正的 .xlsx 文件，请另存为 .xlsx 后重试");
         Budget budget = new Budget();
         Set<String> paths = new HashSet<>();
+        int media = 0;
         XMLInputFactory xml = XMLInputFactory.newFactory();
         xml.setProperty(XMLInputFactory.SUPPORT_DTD, false);
         xml.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
@@ -49,7 +52,7 @@ final class ExcelArchiveGuard {
             while ((entry = zip.getNextEntry()) != null) {
                 if (!zip.canReadEntryData(entry)) throw new BizException("文件压缩格式不受支持，请另存为 .xlsx 后重试");
                 String name = entry.getName();
-                if (paths.size() >= MAX_FILES) throw tooLarge();
+                if (name.startsWith("xl/media/") ? ++media > MAX_MEDIA_FILES : paths.size() - media >= MAX_FILES) throw tooLarge();
                 if (name.startsWith("/") || name.contains("\\") || name.contains(":")
                         || java.util.Arrays.asList(name.split("/", -1)).contains("..") || !paths.add(name))
                     throw new BizException("文件包含不安全或重复的压缩路径，请另存为 .xlsx 后重试");

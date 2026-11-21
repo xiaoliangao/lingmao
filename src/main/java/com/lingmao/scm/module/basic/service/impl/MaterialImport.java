@@ -5,6 +5,7 @@ import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.num.Num;
 import com.lingmao.scm.common.excel.ExcelBook;
 import com.lingmao.scm.common.excel.ExcelColumn;
+import com.lingmao.scm.common.excel.ExcelImage;
 import com.lingmao.scm.common.excel.ExcelImport;
 import com.lingmao.scm.common.excel.ExcelOption;
 import com.lingmao.scm.common.excel.ExcelSchema;
@@ -21,9 +22,14 @@ import com.lingmao.scm.module.basic.mapper.ColorMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialCategoryMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialSkuMapper;
+import com.lingmao.scm.module.biz.dto.AttachmentReq;
+import com.lingmao.scm.module.biz.entity.Attachment;
 import com.lingmao.scm.module.biz.entity.BizType;
+import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.system.dto.DictOption;
+import com.lingmao.scm.module.system.dto.FileVO;
+import com.lingmao.scm.module.system.service.FileService;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.security.FieldPermissions;
 import lombok.Data;
@@ -32,16 +38,21 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -52,6 +63,7 @@ import java.util.stream.Collectors;
  * <p>
  * 只新增：编码已存在算错误。有一处不对整批不导（1003）；新建了颜色、客供改成自购这类，导完列在提示里。
  * 导完把每个分类码的流水推到已用的最大号，之后新建不撞（RFC 003 §7.1）。
+ * 领猫导出的"图片"列（两张表都有）：浮在哪一行，就挂到那一行建的物料或 SKU 上（saveImages）。
  * 导出：两张表的列和模板一样，导出来改了能导回去（编码已存在的要先删）
  */
 @Component
@@ -63,6 +75,8 @@ public class MaterialImport {
     static final String UNIT_SHEET = "物料信息多单位";
     static final String MULTI_SUPPLIER_SHEET = "物料信息多供应商";
     static final String MULTI_SUPPLIER_UNIT_SHEET = "物料信息多供应商多单位";
+    /** 领猫两张表里放图片的列：图片浮在这一列上，单元格是空的 */
+    static final String IMAGE_COLUMN = "图片";
     /** 领猫附加属性里放"物料分类"完整路径的键（领猫分了三级以上时） */
     static final String CATEGORY_PATH_KEY = "物料分类";
 
@@ -97,6 +111,8 @@ public class MaterialImport {
     private final TradeFeature tradeFeature;
     private final DocLogService docLogService;
     private final com.lingmao.scm.module.system.service.FileImportService imports;
+    private final FileService fileService;
+    private final AttachmentService attachmentService;
 
     // ---------- 行对象 ----------
 
@@ -302,6 +318,7 @@ public class MaterialImport {
             notSkipped(multiSupplier, "多供应商的报价进价格档案，等价格档案的导入（数据库设计附录 A.2）");
             notSkipped(multiSupplierUnit, "一期一个物料一个采购单位，不分供应商换单位");
             book.throwIfInvalid();
+            saveImages(book, materials, skus, plan);
 
             plan.result = book.result(plan.materials.size());
             return plan;
@@ -322,6 +339,12 @@ public class MaterialImport {
         /** 颜色编码 → 库里有的颜色、或者要新建的颜色（新建的没有 id） */
         final Map<String, Color> colors = new HashMap<>();
         final List<Color> newColors = new ArrayList<>();
+        /** "物料信息SKU"的行号 → 那一行要建的 SKU（挂图片时按行找） */
+        final Map<Integer, MaterialSku> skuAtRow = new HashMap<>();
+        /** 物料编码 → 存好的图片，写库时挂到物料上，第一张是主图 */
+        final Map<String, List<AttachmentReq>> materialImages = new HashMap<>();
+        /** 要挂图片的 SKU（还没有 id，按对象认）→ 存好的图片 */
+        final Map<MaterialSku, List<AttachmentReq>> skuImages = new IdentityHashMap<>();
     }
 
     private record PlannedSku(MaterialSku sku, String colorCode) {
@@ -545,6 +568,7 @@ public class MaterialImport {
             sku.setStatus(disabledText(r.getStatus()) ? Statuses.DISABLED : Statuses.ENABLED);
             sku.setRemark(r.getRemark());
             plan.skus.computeIfAbsent(r.getMaterialCode(), k -> new ArrayList<>()).add(new PlannedSku(sku, colorCode));
+            plan.skuAtRow.put(row, sku);
         }
 
         // 没有 SKU 行的物料：建一个不带颜色、规格的，系统码 = 物料编码，领猫编码 = 物料的领猫编码
@@ -694,8 +718,79 @@ public class MaterialImport {
                 sku.setColorId(planned.colorCode() == null ? null : plan.colors.get(planned.colorCode()).getId());
                 sku.setCode(SkuCodes.compose(m.getCode(), planned.colorCode(), sku.getSpecCode()));
                 materialSkuMapper.insert(sku);
+                List<AttachmentReq> skuImages = plan.skuImages.get(sku);
+                if (skuImages != null) {
+                    attachmentService.replace(BizType.MATERIAL_SKU, sku.getId(), Attachment.IMAGE, skuImages);
+                }
+            }
+            List<AttachmentReq> images = plan.materialImages.get(e.getKey());
+            if (images != null) {
+                attachmentService.replace(BizType.MATERIAL, m.getId(), Attachment.IMAGE, images);
             }
             docLogService.add(BizType.MATERIAL, m.getId(), "import", null);
+        }
+    }
+
+    // ---------- 图片 ----------
+
+    /**
+     * 领猫导出的"图片"列：图片浮在哪一行，就挂到那一行的物料（"物料信息"）或 SKU（"物料信息SKU"）上，同一行几张的第一张是主图。
+     * 文件在这里就存好：解析不在写事务里，写库只挂引用；没导成的文件没人引用，24 小时后自动清掉（FileService.save）。
+     * 同一个文件里一样的图只存一份。落在空行上的、不是 jpg/png/gif 的不导，进提示，不拦导入
+     */
+    private void saveImages(ExcelBook book, ExcelImport<MaterialRow> materials, ExcelImport<SkuRow> skus, Plan plan) {
+        Map<Integer, String> codeAtRow = new HashMap<>();
+        plan.rowOf.forEach((code, line) -> codeAtRow.put(line.row(), code));
+        Map<String, FileVO> saved = new HashMap<>();
+        int count = attachImages(book.images(MATERIAL_SHEET, IMAGE_COLUMN), materials, saved, row -> {
+            String code = codeAtRow.get(row);
+            return code == null ? null : new ImageTarget(code, plan.materialImages.computeIfAbsent(code, k -> new ArrayList<>()));
+        });
+        count += attachImages(book.images(SKU_SHEET, IMAGE_COLUMN), skus, saved, row -> {
+            MaterialSku sku = plan.skuAtRow.get(row);
+            return sku == null ? null : new ImageTarget(sku.getLegacyCode() != null ? sku.getLegacyCode() : "SKU图片",
+                    plan.skuImages.computeIfAbsent(sku, k -> new ArrayList<>()));
+        });
+        if (count > 0) {
+            materials.note(0, IMAGE_COLUMN, "图片一起导入了 " + count + " 张，挂在各自那一行的物料或 SKU 上");
+        }
+    }
+
+    /** 图片要挂到哪：文件名用领猫编码，images 是那条物料或 SKU 的图片列表 */
+    private record ImageTarget(String name, List<AttachmentReq> images) {
+    }
+
+    private int attachImages(List<ExcelImage> images, ExcelImport<?> sheet, Map<String, FileVO> saved,
+                             IntFunction<ImageTarget> targetAt) {
+        int count = 0;
+        for (ExcelImage image : images) {
+            ImageTarget target = targetAt.apply(image.row());
+            if (target == null) {
+                sheet.note(image.row(), IMAGE_COLUMN, "这一行没有数据，图片没导");
+                continue;
+            }
+            if (!image.supported()) {
+                sheet.note(image.row(), IMAGE_COLUMN, "图片不是 jpg、png、gif，没导：导完在物料页面上传");
+                continue;
+            }
+            FileVO file = saved.computeIfAbsent(sha256(image.data()),
+                    k -> fileService.save(target.name() + "." + image.extension(), image.data()));
+            AttachmentReq req = new AttachmentReq();
+            req.setUrl(file.url());
+            req.setThumbUrl(file.thumbUrl());
+            req.setName(target.name() + "." + image.extension());
+            req.setSize(file.size());
+            target.images().add(req);
+            count++;
+        }
+        return count;
+    }
+
+    private static String sha256(byte[] data) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
         }
     }
 
