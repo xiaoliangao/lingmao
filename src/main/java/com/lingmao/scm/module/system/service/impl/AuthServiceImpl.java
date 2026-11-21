@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.LoginReq;
 import com.lingmao.scm.module.system.dto.AuthTokens;
+import com.lingmao.scm.module.system.dto.FeaturesVO;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.AuthService;
 import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import com.lingmao.scm.module.system.service.PermissionService;
@@ -34,6 +36,7 @@ public class AuthServiceImpl implements AuthService {
     private final LoginFailCounter loginFailCounter;
     private final DefaultCompanyProvider defaultCompanyProvider;
     private final RefreshSessionService refreshSessions;
+    private final AiSwitchService aiSwitchService;
 
     @Override
     @Transactional
@@ -77,7 +80,8 @@ public class AuthServiceImpl implements AuthService {
                 permissionService.loadRoleCodes(userId),
                 permissionService.loadPermissions(userId),
                 permissionService.loadMenuTree(userId),
-                defaultCompanyProvider.resolve(user.getDefaultCompanyId()));
+                defaultCompanyProvider.resolve(user.getDefaultCompanyId()),
+                new FeaturesVO(aiSwitchService.enabled()));
     }
 
     @Override

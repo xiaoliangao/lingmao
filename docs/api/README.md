@@ -97,6 +97,7 @@
 - **受控字段**：本轮 A2 收紧为后端物理剥离。`techpack:cost:query` 控制物料、BOM、采购和库存成本；`order:price:query` 单独控制订单销售报价；`production:price:query` 单独控制生产成交/参考价及 PROCESS 加工价档案。权限不互相隐含授予。供应商联系方式由 `supplier:supplier:contact` 控制，银行信息由 `supplier:supplier:bank` 控制。无权限字段不返回掩码/null，详情、列表、嵌套快照、系统摘要、导出保持一致。编辑请求不得把省略字段清零或越权改价，详见 `docs/architecture/production-contract.md`。
 - **新建、保存的返回**：新建单据返回 `DocSaved { id, no, version }`（有的多几个字段），保存草稿返回新的 `version`。"存草稿并提交"拿它接着调 `submit`，不用再取一次详情。
 - **主体**：单据上的 `companyId` 必填。新建时默认填我的默认主体：登录信息（`GET /api/auth/me`）里的 `defaultCompany`，页面用 `user.defaultCompanyId`。它是 `null`（没设默认主体、启用的主体又不止一个）时空着，让人选。
+- **功能开关**：登录信息里的 `features`，现在只有 `ai`（AI 功能统一开关，RFC 017 §3.7）。只用来决定入口显示不显示，拦截在后端；超级管理员在管理后台改了以后，别人刷新页面才变。
 
 ### 3.4 选数据
 
@@ -271,4 +272,5 @@ cd web && pnpm dev:mock
 | 11-21 | §4.2 自己建的单不能自己审（Q10）：制单人不出审核、驳回，待我审核不列，后端回 1000；建单时 `post: true` 跟着过不去 |
 | 11-21 | §4.2 复查补：制单人驳回后端也拦；单级单据 `auditForMe` 不看 `mine` |
 | 11-21 | §4.2 角色"审核不受数据范围限制"（`Role.auditAnyScope`）；单级单据 `auditForMe` 只列待审的 |
+| 11-21 | §3.3 登录信息加 `features.ai`（AI 功能统一开关，RFC 017 §3.7）；开关本身是管理后台的 `GET`、`PUT /api/admin/ai-switch`，只给超级管理员，写在 Swagger |
 | 11-21 | §4.3 操作记录加 `diff`（物料、款式、供应商的字段级改前改后，RFC 016 §3） |

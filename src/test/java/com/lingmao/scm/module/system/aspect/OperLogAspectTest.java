@@ -97,6 +97,24 @@ class OperLogAspectTest {
                 .doesNotContain("6222000011112222333");
     }
 
+    /** 规则：方法里用 OperLogDetail 补的值（开关的改前、改后）进 params 的 detail；一次请求一份，不串到下一次 */
+    @Test
+    void detail_savedIntoParams() {
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(new org.springframework.mock.web.MockHttpServletRequest()));
+        try {
+            proxy.toggle();
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+        proxy.saveSupplier(java.util.Map.of());
+
+        ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
+        verify(sysOperLogMapper, org.mockito.Mockito.times(2)).insert(saved.capture());
+        assertThat(saved.getAllValues().get(0).getParams()).contains("\"detail\":{\"改前\":\"关\",\"改后\":\"开\"}");
+        assertThat(saved.getAllValues().get(1).getParams()).doesNotContain("detail");
+    }
+
     /** 规则：业务失败也记，success=false，带上原因；异常照样抛给调用方 */
     @Test
     void failure_savesLogAndRethrows() {
@@ -145,6 +163,12 @@ class OperLogAspectTest {
 
         @OperLog(module = "供应商", action = "修改")
         public void saveSupplier(java.util.Map<String, Object> req) {
+        }
+
+        @OperLog(module = "AI 功能", action = "开关")
+        public void toggle() {
+            com.lingmao.scm.common.log.OperLogDetail.put("改前", "关");
+            com.lingmao.scm.common.log.OperLogDetail.put("改后", "开");
         }
     }
 }

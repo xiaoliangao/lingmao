@@ -18,6 +18,8 @@ export interface UserInfo {
    * 用户上设的停用了、或者没设，启用的只有一个就是那个；不止一个时是 null，单据上自己选
    */
   defaultCompany: { id: string; name: string } | null
+  /** 功能开关，只决定入口显示不显示（真正的拦截在后端）。ai：AI 功能统一开关（RFC 017 §3.7），改了要刷新页面才变 */
+  features: { ai: boolean }
 }
 
 export interface MenuNode {
@@ -172,4 +174,13 @@ export interface BackupStatus {
   sizeBytes: number | null
   /** 最近一次备份超过 36 小时了（一次都没有也算） */
   stale: boolean
+}
+
+/** 管理后台 › AI 功能：统一开关（RFC 017 §3.7） */
+export interface AiSwitch {
+  /** 开着没有。设置被删了、读出错都是 false */
+  enabled: boolean
+  /** 上次谁改的（昵称，没有昵称是账号），装好以后没人改过是 null */
+  updatedBy: string | null
+  updatedAt: string | null
 }

@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.aspect;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.OperLog;
+import com.lingmao.scm.common.log.OperLogDetail;
 import com.lingmao.scm.common.log.TraceIdFilter;
 import com.lingmao.scm.common.web.TrustedProxyResolver;
 import com.lingmao.scm.module.system.entity.SysOperLog;
@@ -109,6 +110,11 @@ public class OperLogAspect {
             if (arg instanceof ServletRequest || arg instanceof ServletResponse || arg instanceof MultipartFile || arg instanceof LoginUser) continue;
             String name = names != null && names.length > i ? names[i] : "arg" + i;
             params.put(name, arg == null ? "null" : arg.getClass().getSimpleName());
+        }
+        // 方法里用 OperLogDetail 补的值（如开关的改前、改后）
+        Map<String, Object> detail = OperLogDetail.current();
+        if (!detail.isEmpty()) {
+            params.put("detail", detail);
         }
         return jsonMapper.writeValueAsString(params);
     }

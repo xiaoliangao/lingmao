@@ -4,9 +4,11 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.CompanyBrief;
 import com.lingmao.scm.module.system.dto.LoginReq;
 import com.lingmao.scm.module.system.dto.AuthTokens;
+import com.lingmao.scm.module.system.dto.FeaturesVO;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
 import com.lingmao.scm.module.system.entity.SysUser;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
@@ -57,6 +59,9 @@ class AuthServiceImplTest {
 
     @Mock
     private DefaultCompanyProvider defaultCompanyProvider;
+
+    @Mock
+    private AiSwitchService aiSwitchService;
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -191,11 +196,12 @@ class AuthServiceImplTest {
         when(permissionService.loadPermissions(1L)).thenReturn(Set.of("system:user:list"));
         when(permissionService.loadMenuTree(1L)).thenReturn(List.of());
         when(defaultCompanyProvider.resolve(3L)).thenReturn(new CompanyBrief(3L, "测试主体"));
+        when(aiSwitchService.enabled()).thenReturn(true);
 
         UserInfoVO info = authService.me(1L);
 
         assertThat(info).isEqualTo(new UserInfoVO(1L, "admin", null,
-                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体")));
+                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体"), new FeaturesVO(true)));
     }
 
     @Test

@@ -1,9 +1,12 @@
 package com.lingmao.scm.module.system.mapper;
 
+import lombok.Data;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+
+import java.time.OffsetDateTime;
 
 /** sys_config：一个键一行，值是 JSONB。没有实体：只按键取、按键存，读写都是 JSON 文本 */
 @Mapper
@@ -12,6 +15,10 @@ public interface ConfigMapper {
     @Select("SELECT config_value::text FROM sys_config WHERE config_key = #{key}")
     String selectValue(@Param("key") String key);
 
+    /** 连同谁、什么时候改的一起取（设置页显示"上次谁改的"）；没有这一行是 null */
+    @Select("SELECT config_value::text AS config_value, update_by, update_time FROM sys_config WHERE config_key = #{key}")
+    Row selectRow(@Param("key") String key);
+
     @Insert("""
             INSERT INTO sys_config (config_key, config_value, update_by, update_time)
             VALUES (#{key}, CAST(#{json} AS jsonb), #{userId}, now())
@@ -19,4 +26,12 @@ public interface ConfigMapper {
             SET config_value = EXCLUDED.config_value, update_by = EXCLUDED.update_by, update_time = now()
             """)
     void upsert(@Param("key") String key, @Param("json") String json, @Param("userId") Long userId);
+
+    /** selectRow 的一行：值是 JSON 文本 */
+    @Data
+    class Row {
+        private String configValue;
+        private Long updateBy;
+        private OffsetDateTime updateTime;
+    }
 }

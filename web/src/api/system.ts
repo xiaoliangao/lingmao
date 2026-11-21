@@ -1,6 +1,6 @@
 import { http, request, upload } from '@/utils/request'
 import type {
-  BackupStatus, DataScope, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, UserOption,
+  AiSwitch, BackupStatus, DataScope, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, UserOption,
   VersionInfo,
 } from '@/types/system'
 
@@ -126,4 +126,11 @@ export const versionApi = {
 export const backupApi = {
   /** 只有超级管理员能调（别人 403）。取不到不弹消息：首页不显示备份情况就是了 */
   status: () => request<BackupStatus>({ url: '/api/admin/backup-status', silent: true }),
+}
+
+export const aiSwitchApi = {
+  /** 只有超级管理员能调（别人 403） */
+  get: () => http.get<AiSwitch>('/api/admin/ai-switch'),
+  /** 打开或关闭，立刻生效；操作日志里记改前、改后 */
+  set: (enabled: boolean) => http.put<AiSwitch>('/api/admin/ai-switch', { enabled }),
 }
