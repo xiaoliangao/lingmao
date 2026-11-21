@@ -51,6 +51,8 @@ public class OperLogAspect {
     @Around("@annotation(operLog)")
     public Object around(ProceedingJoinPoint joinPoint, OperLog operLog) throws Throwable {
         long start = System.currentTimeMillis();
+        // 方法里 OperLogDetail.put 的只算这一次：外层（同一请求里别的 @OperLog）的先拿走，写完再放回
+        Map<String, Object> outer = OperLogDetail.take();
         Throwable error = null;
         try {
             return joinPoint.proceed();
@@ -58,18 +60,21 @@ public class OperLogAspect {
             error = t;
             throw t;
         } finally {
-            save(joinPoint, operLog, error, System.currentTimeMillis() - start);
+            Map<String, Object> detail = OperLogDetail.take();
+            // 抛了异常：事务回滚了，"改成了什么"不成立，不记
+            save(joinPoint, operLog, error, System.currentTimeMillis() - start, error == null ? detail : Map.of());
+            OperLogDetail.restore(outer);
         }
     }
 
-    private void save(ProceedingJoinPoint joinPoint, OperLog operLog, Throwable error, long costMs) {
+    private void save(ProceedingJoinPoint joinPoint, OperLog operLog, Throwable error, long costMs, Map<String, Object> detail) {
         try {
             MethodSignature signature = (MethodSignature) joinPoint.getSignature();
             SysOperLog record = new SysOperLog();
             record.setModule(operLog.module());
             record.setAction(operLog.action());
             record.setMethod(signature.getDeclaringType().getSimpleName() + "." + signature.getName());
-            record.setParams(toParamsJson(signature.getParameterNames(), joinPoint.getArgs()));
+            record.setParams(toParamsJson(signature.getParameterNames(), joinPoint.getArgs(), detail));
             record.setSuccess(error == null);
             record.setErrorMsg(error == null ? null : errorMessage(error));
             record.setCostMs((int) Math.min(costMs, Integer.MAX_VALUE));
@@ -103,7 +108,7 @@ public class OperLogAspect {
     }
 
     /** 操作日志只存参数类型。金额类的值记在按权限过滤的字段审计里。 */
-    String toParamsJson(String[] names, Object[] args) {
+    String toParamsJson(String[] names, Object[] args, Map<String, Object> detail) {
         Map<String, Object> params = new LinkedHashMap<>();
         for (int i = 0; i < Math.min(args.length, 32); i++) {
             Object arg = args[i];
@@ -112,7 +117,6 @@ public class OperLogAspect {
             params.put(name, arg == null ? "null" : arg.getClass().getSimpleName());
         }
         // 方法里用 OperLogDetail 补的值（如开关的改前、改后）
-        Map<String, Object> detail = OperLogDetail.current();
         if (!detail.isEmpty()) {
             params.put("detail", detail);
         }

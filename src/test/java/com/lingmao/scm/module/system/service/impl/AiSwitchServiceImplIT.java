@@ -17,9 +17,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @IntegrationTest
 class AiSwitchServiceImplIT {
 
-    /** 审计人没有外键，随便一个 id */
-    private static final long ADMIN = 900101L;
-
     @Autowired
     private AiSwitchService aiSwitchService;
 
@@ -28,16 +25,22 @@ class AiSwitchServiceImplIT {
 
     private Map<String, Object> original;
 
+    /** 改开关的人：测试里建的临时账号 */
+    private long admin;
+
     @BeforeEach
     void remember() {
         original = jdbc.queryForList("SELECT config_value::text AS v, remark FROM sys_config WHERE config_key = 'ai.switch'")
                 .stream().findFirst().orElse(null);
+        admin = jdbc.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES ('it_ai_switch', 'x', '开关测试员') RETURNING id",
+                Long.class);
     }
 
     /** 测完放回原样：别的测试看到的还是 V52 装好的那一行 */
     @AfterEach
     void restore() {
         jdbc.update("DELETE FROM sys_config WHERE config_key = 'ai.switch'");
+        jdbc.update("DELETE FROM sys_user WHERE id = ?", admin);
         if (original != null) {
             jdbc.update("INSERT INTO sys_config (config_key, config_value, remark) VALUES ('ai.switch', CAST(? AS jsonb), ?)",
                     original.get("v"), original.get("remark"));
@@ -54,33 +57,37 @@ class AiSwitchServiceImplIT {
                 WHERE m.perms = 'system:ai:switch' AND m.deleted = false""", Boolean.class)).isTrue();
     }
 
-    /** 规则：打开、关闭下一次读就变（不缓存）；记下谁、什么时候改的；值里别的键留着 */
+    /** 规则：打开、关闭下一次读就变（不缓存）；记下谁、什么时候改的，改的人账号删了也显示名字；值里别的键留着 */
     @Test
     void switchTakesEffectImmediately() {
         jdbc.update("UPDATE sys_config SET config_value = '{\"enabled\": false, \"features\": {\"x\": true}}' WHERE config_key = 'ai.switch'");
 
-        AiSwitchVO on = aiSwitchService.set(true, ADMIN);
+        AiSwitchVO on = aiSwitchService.set(true, admin);
         assertThat(on.enabled()).isTrue();
         assertThat(on.updatedAt()).isNotNull();
+        assertThat(on.updatedBy()).isEqualTo("开关测试员");
         assertThat(aiSwitchService.enabled()).isTrue();
         assertThat(jdbc.queryForObject("SELECT config_value->'features'->>'x' FROM sys_config WHERE config_key = 'ai.switch'", String.class))
                 .isEqualTo("true");
-        assertThat(jdbc.queryForObject("SELECT update_by FROM sys_config WHERE config_key = 'ai.switch'", Long.class)).isEqualTo(ADMIN);
+        assertThat(jdbc.queryForObject("SELECT update_by FROM sys_config WHERE config_key = 'ai.switch'", Long.class)).isEqualTo(admin);
 
-        aiSwitchService.set(false, ADMIN);
+        aiSwitchService.set(false, admin);
         assertThat(aiSwitchService.enabled()).isFalse();
+
+        jdbc.update("UPDATE sys_user SET deleted = true WHERE id = ?", admin);
+        assertThat(aiSwitchService.get().updatedBy()).isEqualTo("开关测试员");
     }
 
     /** 规则：开着的时候有人把这一行删了，马上按关；再开会把这一行建回来 */
     @Test
     void rowDeleted_meansOff() {
-        aiSwitchService.set(true, ADMIN);
+        aiSwitchService.set(true, admin);
         jdbc.update("DELETE FROM sys_config WHERE config_key = 'ai.switch'");
 
         assertThat(aiSwitchService.enabled()).isFalse();
         assertThat(aiSwitchService.get().enabled()).isFalse();
 
-        aiSwitchService.set(true, ADMIN);
+        aiSwitchService.set(true, admin);
         assertThat(aiSwitchService.enabled()).isTrue();
     }
 }

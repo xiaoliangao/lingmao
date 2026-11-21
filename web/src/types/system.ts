@@ -178,9 +178,9 @@ export interface BackupStatus {
 
 /** 管理后台 › AI 功能：统一开关（RFC 017 §3.7） */
 export interface AiSwitch {
-  /** 开着没有。设置被删了、读出错都是 false */
+  /** 开着没有。设置被删了是 false；读库出错时接口报错 */
   enabled: boolean
-  /** 上次谁改的（昵称，没有昵称是账号），装好以后没人改过是 null */
+  /** 上次谁改的（昵称，没有昵称是账号；账号删了也照样有）。改没改过看 updatedAt：装好以后没人改过是 null */
   updatedBy: string | null
   updatedAt: string | null
 }

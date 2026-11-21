@@ -78,10 +78,10 @@ async function toggle(): Promise<boolean> {
       <section class="panel switch-row">
         <div>
           <div class="switch-title">AI 功能</div>
-          <div v-if="data?.updatedBy" class="dim">
-            上次 {{ data.updatedBy }} 在 {{ formatDateTime(data.updatedAt) }} {{ data.enabled ? '打开' : '关闭' }}
+          <div v-if="data?.updatedAt" class="dim">
+            上次 {{ data.updatedBy ?? '（账号查不到）' }} 在 {{ formatDateTime(data.updatedAt) }} {{ data.enabled ? '打开' : '关闭' }}
           </div>
-          <div v-else class="dim">装好以后还没人改过</div>
+          <div v-else-if="data" class="dim">装好以后还没人改过</div>
         </div>
         <el-switch
           :model-value="data?.enabled ?? false"

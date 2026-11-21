@@ -97,22 +97,29 @@ class OperLogAspectTest {
                 .doesNotContain("6222000011112222333");
     }
 
-    /** 规则：方法里用 OperLogDetail 补的值（开关的改前、改后）进 params 的 detail；一次请求一份，不串到下一次 */
+    /**
+     * 规则：方法里用 OperLogDetail 补的值（开关的改前、改后）进 params 的 detail；每个 @OperLog 方法各记各的，
+     * 同一个请求里后面的方法不带前面的；方法抛了异常（没改成）不记 detail
+     */
     @Test
     void detail_savedIntoParams() {
         org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
                 new org.springframework.web.context.request.ServletRequestAttributes(new org.springframework.mock.web.MockHttpServletRequest()));
         try {
             proxy.toggle();
+            proxy.saveSupplier(java.util.Map.of());
+            assertThatThrownBy(() -> proxy.toggleThenFail()).isInstanceOf(BizException.class);
+            assertThat(com.lingmao.scm.common.log.OperLogDetail.current()).isEmpty();
         } finally {
             org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
         }
-        proxy.saveSupplier(java.util.Map.of());
 
         ArgumentCaptor<SysOperLog> saved = ArgumentCaptor.forClass(SysOperLog.class);
-        verify(sysOperLogMapper, org.mockito.Mockito.times(2)).insert(saved.capture());
+        verify(sysOperLogMapper, org.mockito.Mockito.times(3)).insert(saved.capture());
         assertThat(saved.getAllValues().get(0).getParams()).contains("\"detail\":{\"改前\":\"关\",\"改后\":\"开\"}");
         assertThat(saved.getAllValues().get(1).getParams()).doesNotContain("detail");
+        assertThat(saved.getAllValues().get(2).getSuccess()).isFalse();
+        assertThat(saved.getAllValues().get(2).getParams()).doesNotContain("detail");
     }
 
     /** 规则：业务失败也记，success=false，带上原因；异常照样抛给调用方 */
@@ -163,6 +170,12 @@ class OperLogAspectTest {
 
         @OperLog(module = "供应商", action = "修改")
         public void saveSupplier(java.util.Map<String, Object> req) {
+        }
+
+        @OperLog(module = "AI 功能", action = "开关")
+        public void toggleThenFail() {
+            com.lingmao.scm.common.log.OperLogDetail.put("改后", "开");
+            throw new BizException("保存失败");
         }
 
         @OperLog(module = "AI 功能", action = "开关")

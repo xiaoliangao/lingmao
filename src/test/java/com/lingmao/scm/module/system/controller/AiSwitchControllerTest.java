@@ -81,6 +81,22 @@ class AiSwitchControllerTest {
         verify(aiSwitchService, never()).set(anyBoolean(), anyLong());
     }
 
+    /** 规则：超级管理员能看；没登录 → 401，不去读 */
+    @Test
+    void get_superAdminSees_anonymous401() throws Exception {
+        when(permissionService.loadRoleCodes(1L)).thenReturn(List.of("admin"));
+        when(aiSwitchService.get()).thenReturn(new AiSwitchVO(false, null, null));
+
+        mockMvc.perform(get("/api/admin/ai-switch").with(loginAs(1L)))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.enabled").value(false))
+                .andExpect(jsonPath("$.data.updatedAt").doesNotExist());
+        mockMvc.perform(get("/api/admin/ai-switch"))
+                .andExpect(jsonPath("$.code").value(401));
+
+        verify(aiSwitchService, org.mockito.Mockito.times(1)).get();
+    }
+
     /** 规则：没说开还是关 → 400，不改 */
     @Test
     void set_missingEnabled_returns400() throws Exception {

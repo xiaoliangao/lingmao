@@ -15,6 +15,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -39,13 +41,8 @@ public class AiSwitchServiceImpl implements AiSwitchService {
 
     @Override
     public AiSwitchVO get() {
-        ConfigMapper.Row row;
-        try {
-            row = configMapper.selectRow(KEY);
-        } catch (RuntimeException e) {
-            log.warn("读 AI 功能开关出错，按关处理", e);
-            return new AiSwitchVO(false, null, null);
-        }
+        // 设置页读出错就报错，不按关：页面上显示"关"会让人以为已经关了（拦功能的 enabled() 才按关）
+        ConfigMapper.Row row = configMapper.selectRow(KEY);
         if (row == null) {
             return new AiSwitchVO(false, null, null);
         }
@@ -55,15 +52,18 @@ public class AiSwitchServiceImpl implements AiSwitchService {
     @Override
     @Transactional
     public AiSwitchVO set(boolean enabled, Long userId) {
-        String old = configMapper.selectValue(KEY);
+        // 锁住这一行再读：两个人同时切，后来的读到前一个改完的值，日志里的"改前"才对，值里别的键也不会被旧值盖掉
+        configMapper.ensure(KEY);
+        String old = configMapper.selectValueForUpdate(KEY);
         boolean before = enabledIn(old);
         // 值里别的键（以后各档的分开关）原样留着，只改总开关
         ObjectNode value = parseObject(old);
         value.put("enabled", enabled);
         configMapper.upsert(KEY, jsonMapper.writeValueAsString(value), userId);
+        AiSwitchVO result = get();
         OperLogDetail.put("改前", before ? "开" : "关");
         OperLogDetail.put("改后", enabled ? "开" : "关");
-        return get();
+        return result;
     }
 
     private boolean enabledIn(String json) {
@@ -96,10 +96,12 @@ public class AiSwitchServiceImpl implements AiSwitchService {
         if (userId == null) {
             return null;
         }
-        SysUser user = sysUserMapper.selectById(userId);
-        if (user == null) {
+        // 删了的人也要取到名字（selectById 会滤掉逻辑删除的）
+        List<SysUser> users = sysUserMapper.selectNamesByIds(List.of(userId));
+        if (users.isEmpty()) {
             return null;
         }
+        SysUser user = users.getFirst();
         return StringUtils.hasText(user.getNickname()) ? user.getNickname() : user.getUsername();
     }
 }
