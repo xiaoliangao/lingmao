@@ -65,8 +65,12 @@ public class MaterialSaveReq {
     @Size(max = 255, message = "面料功能最长 255 个字")
     private String fabricFunction;
 
-    /** 是否带吊牌；null = 没填 */
+    /** 带不带功能性吊牌；null = 没填 */
     private Boolean withTag;
+
+    /** 功能吊牌的名称，几个用顿号隔开；withTag 是 true 时必填，不是 true 时不存 */
+    @Size(max = 255, message = "吊牌名称最长 255 个字")
+    private String tagNames;
 
     /** 默认供应商：只当默认值，后端不查状态（架构 A23）。一期页面上先不给选（第 3 步接供应商下拉） */
     private Long defaultSupplierId;

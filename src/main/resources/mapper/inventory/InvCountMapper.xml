@@ -46,6 +46,7 @@
                            WHERE cc.count_id = c.id) cat ON true
         WHERE true
         <if test="scope.self">AND (c.create_by = #{scope.userId} OR c.counter_id = #{scope.userId})</if>
+        <if test="q.auditForMe">AND c.create_by IS DISTINCT FROM #{scope.userId}</if>
         <if test="q.status != null and q.status.size() > 0">
             AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
         </if>

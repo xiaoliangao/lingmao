@@ -110,9 +110,12 @@ class HomeIT {
             assertThat(l.factoryId()).isEqualTo(f.factory);
             assertThat(l.wipQty()).isZero();
         });
-        assertThat(items(homeService.todos(new HomeTodoQuery()), "AUDIT")).extracting(TodoItem::title).contains("需求订单 " + orderNo);
+        // 自己建的单不在自己的"待我审核"里（甲方 11-21 答 Q10），别的有审核权限的人那里有
+        assertThat(items(homeService.todos(new HomeTodoQuery()), "AUDIT")).extracting(TodoItem::title).doesNotContain("需求订单 " + orderNo);
+        assertThat(items(TestIdentity.asAuditor(jdbcTemplate, () -> homeService.todos(new HomeTodoQuery())), "AUDIT"))
+                .extracting(TodoItem::title).contains("需求订单 " + orderNo);
 
-        orderService.audit(order, new OrderAuditReq(1, today.plusDays(5)));
+        TestIdentity.asAuditor(jdbcTemplate, () -> orderService.audit(order, new OrderAuditReq(1, today.plusDays(5))));
         HomeKpi kpi = homeService.kpi();
         assertThat(kpi.order()).isEqualTo(new HomeKpi.Order(100, 1, 0, 1, null));
         HomeTodos todos = homeService.todos(new HomeTodoQuery());
@@ -175,7 +178,7 @@ class HomeIT {
         Fixture f = fixture();
         LocalDate today = LocalDate.now();
         long order = submittedOrder(f, today.plusDays(20));
-        orderService.audit(order, new OrderAuditReq(1, today.plusDays(20)));
+        TestIdentity.asAuditor(jdbcTemplate, () -> orderService.audit(order, new OrderAuditReq(1, today.plusDays(20))));
         long prd = approvedProduction(f, order, today.plusDays(60));
         jdbcTemplate.update("UPDATE prd_order SET due_date = ? WHERE id = ?", today.minusDays(2), prd);
         docNoticeService.add(BizType.PRODUCTION_ORDER, prd, BizType.ORDER, order, "订单改了", f.user);
@@ -331,7 +334,7 @@ class HomeIT {
         req.setBlocks(List.of(b));
         long id = scheduleService.schedule(req).getFirst().id();
         productionOrderService.act(id, "submit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
-        productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null)));
         return id;
     }
 }

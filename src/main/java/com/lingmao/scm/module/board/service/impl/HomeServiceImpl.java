@@ -314,7 +314,8 @@ public class HomeServiceImpl implements HomeService {
 
     /**
      * 待我审核：需求订单、采购单、生产单和对应列表的"待我审核"同一个查询（轮到我这一级）；
-     * 变更单、资料包、出入库、盘点、供应商要列表权限加上审核（生效、准入）权限，范围按各自列表。旧的在前
+     * 变更单、资料包、出入库、盘点、供应商要列表权限加上审核（生效、准入）权限，范围按各自列表。旧的在前。
+     * 自己建的单都不列（自己建的单不能自己审，SelfAudit）：前三种在 ApprovalService.waitingForMe 里去掉，变更单、出入库、盘点用 auditForMe
      */
     private TodoGroup audit(Map<String, Long> counts) {
         List<Ranked> items = new ArrayList<>();
@@ -366,6 +367,7 @@ public class HomeServiceImpl implements HomeService {
         }
         if (can(CHANGE_LIST) && can(CHANGE_AUDIT)) {
             OrderChangeQuery q = new OrderChangeQuery();
+            q.setAuditForMe(true);
             q.setStatus(List.of(DocStatus.PENDING));
             q.setSize(GROUP_SIZE);
             PageResult<OrderChangeRowVO> page = changeService.page(q);
@@ -390,6 +392,7 @@ public class HomeServiceImpl implements HomeService {
             for (InvDocKind kind : InvDocKind.values()) {
                 InvDocQuery q = new InvDocQuery();
                 q.setKind(kind);
+                q.setAuditForMe(true);
                 q.setStatus(List.of(DocStatus.DRAFT));
                 q.setSize(GROUP_SIZE);
                 PageResult<InvDocRowVO> page = invDocService.page(q);
@@ -405,6 +408,7 @@ public class HomeServiceImpl implements HomeService {
         }
         if (can(COUNT_LIST) && can(COUNT_AUDIT)) {
             CountQuery q = new CountQuery();
+            q.setAuditForMe(true);
             q.setStatus(List.of(DocStatus.PENDING));
             q.setSize(GROUP_SIZE);
             PageResult<CountRowVO> page = countService.page(q);

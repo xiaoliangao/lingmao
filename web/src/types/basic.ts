@@ -127,6 +127,8 @@ export interface MaterialRow {
   composition: string | null
   fabricFunction: string | null
   withTag: boolean | null
+  /** 功能吊牌的名称，几个用顿号隔开；withTag 是 true 才有 */
+  tagNames: string | null
   defaultSupplierId: string | null
   defaultSupplierName: string | null
   supplierItemNo: string | null
@@ -155,8 +157,10 @@ export interface Material {
   texture: string | null
   /** 面料功能，文字；面料、里料才有（RFC 012 §5.1） */
   fabricFunction: string | null
-  /** 是否带吊牌，null = 没填 */
+  /** 带不带功能性吊牌（领猫叫"是否带吊牌"），null = 没填 */
   withTag: boolean | null
+  /** 功能吊牌的名称，几个用顿号隔开；withTag 是 true 才有（甲方 11-21） */
+  tagNames: string | null
   defaultSupplierId: string | null
   supplierItemNo: string | null
   refPrice?: number | null

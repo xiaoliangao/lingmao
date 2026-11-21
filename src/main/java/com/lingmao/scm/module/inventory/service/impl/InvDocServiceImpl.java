@@ -27,6 +27,7 @@ import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.ActionRequestService;
 import com.lingmao.scm.module.biz.service.DocActions;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.biz.service.DocHeaderService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.biz.service.ReferenceService;
@@ -177,18 +178,19 @@ public class InvDocServiceImpl implements InvDocService {
         for (InvDocRowVO r : rows) {
             r.setFirstItem(briefs.get(r.getFirstSkuId()));
             r.setCreateByName(r.getCreateBy() == null ? null : names.get(r.getCreateBy()));
-            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId())));
+            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId()), r.getCreateBy()));
         }
     }
 
-    /** 按钮（docs/api/04 §2.1）：没过过账的草稿给"删除"，过过账的给"作废"，都要 inventory:doc:remove */
-    static List<String> actions(DocStatus status, boolean posted) {
+    /** 按钮（docs/api/04 §2.1）：没过过账的草稿给"删除"，过过账的给"作废"，都要 inventory:doc:remove；自己建的不给"审核"（SelfAudit） */
+    static List<String> actions(DocStatus status, boolean posted, Long createBy) {
         return DocActions.of(FLOW, status, PERM)
                 .perm("edit", PERM + "edit")
                 .perm("remove", PERM + "remove")
                 .perm("void", PERM + "remove")
                 .when("remove", !posted)
                 .when("void", posted)
+                .createdBy(createBy)
                 .list();
     }
 
@@ -251,7 +253,7 @@ public class InvDocServiceImpl implements InvDocService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         boolean posted = !postedItems.isEmpty();
         vo.setPosted(posted);
-        vo.setActions(actions(doc.getStatus(), posted));
+        vo.setActions(actions(doc.getStatus(), posted, doc.getCreateBy()));
         return vo;
     }
 
@@ -572,6 +574,7 @@ public class InvDocServiceImpl implements InvDocService {
     /** 审核过账：比较并交换（锁住这张单）→ 源单查上限 → 改库存、记日志 → 回写源单 */
     private void audit(InvDoc doc, int version, String remark) {
         FLOW.next("audit", doc.getStatus());
+        SelfAudit.check(doc.getCreateBy());   // 建单时顺手过账（post）也走这里：自己建、自己过账不行
         StatusCas.update(invDocMapper, new InvDoc(), StatusCas.of(InvDoc::getId, doc.getId(), InvDoc::getStatus, DRAFT, APPROVED)
                 .set(InvDoc::getAuditBy, LoginUser.currentUserId())
                 .set(InvDoc::getAuditTime, OffsetDateTime.now(clock))

@@ -113,7 +113,7 @@ const draft = reactive({
 
 const editable = computed(() => detail.value?.actions.includes('edit') ?? false)
 const { ownerOf: bomOwnerOf, canFill: canFillBom, canFillAny: canFillBomAny, pickParams: bomPickParams } = useBomOwner()
-/** 物料清单分两块（RFC 012 §3）：研发填的面辅料、生产填的耗材，按物料类型分；没有这一块权限的只读 */
+/** 物料清单分两块（RFC 012 §3，甲方 11-21 改分工）：开发填的主料和工艺、生产填的辅料，按物料类型分；没有这一块权限的只读 */
 const bomBlocks = computed(() => BOM_OWNERS.map((owner) => ({
   owner,
   title: BOM_OWNER_TITLE[owner],
@@ -373,7 +373,7 @@ async function samePatternAs(d: TechPackDetail): Promise<string | null> {
 
 /**
  * 生效：有没保存的修改先存。检查没过的一次列全（1000 + PublishProblem[]，弹清单）。
- * 不拦、问一句的：没有工艺单（RFC 011 §2.1）、耗材还没填、纸样和上一版一样（RFC 012 §3.3、§2.6）
+ * 不拦、问一句的：没有工艺单（RFC 011 §2.1）、辅料还没填、纸样和上一版一样（RFC 012 §3.3、§2.6）
  */
 async function publishPack() {
   const d = detail.value
@@ -381,7 +381,7 @@ async function publishPack() {
   const noCraft = !draft.files.some((f) => f.category === 'CRAFT_SHEET')
   const notes: string[] = []
   if (noCraft) notes.push('还没有工艺单，发工厂时没有文件可发。')
-  if (!draft.bomItems.some((b) => bomOwnerOf(b.materialType) === 'PROD')) notes.push('耗材（生产填）还没填。有的款确实没有耗材；生效以后要补得修订。')
+  if (!draft.bomItems.some((b) => bomOwnerOf(b.materialType) === 'PROD')) notes.push('辅料（生产填）还没填。生效以后要补得修订。')
   const samePattern = await samePatternAs(d)
   if (samePattern) notes.push(`纸样和 ${samePattern} 是同一份文件，版型没改过吗？`)
   if (notes.length) {
@@ -495,8 +495,8 @@ const bomSkuIds = computed(() => draft.bomItems.flatMap((b) => b.skus.map((s) =>
 let tempId = 0
 
 function bomEmptyText(owner: BomOwner, canEdit: boolean): string {
-  if (owner === 'DEV') return canEdit ? '还没有面辅料：点「从物料库选」加，或者从甲方的 BOM 表导入' : '这一版没有面辅料'
-  return canEdit ? '还没有耗材：点「从物料库选」加' : '还没有耗材，由生产填'
+  if (owner === 'DEV') return canEdit ? '还没有主料和工艺：点「从物料库选」加，或者从 BOM 表导入' : '这一版没有主料和工艺'
+  return canEdit ? '还没有辅料：点「从物料库选」加，或者从 BOM 表导入' : '还没有辅料，由生产填'
 }
 
 function openAddBom() {

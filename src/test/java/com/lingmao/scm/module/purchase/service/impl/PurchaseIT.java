@@ -170,7 +170,7 @@ class PurchaseIT {
         int version = purchaseOrderService.update(poC, save);
         assertThat(mrpService.detail(calc.id()).getItems().getFirst().getConvertedQty()).isEqualByComparingTo("35");
         purchaseOrderService.act(poC, "submit", new DocActionReq(version, null));
-        purchaseOrderService.act(poC, "audit", new DocActionReq(version + 1, null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> purchaseOrderService.act(poC, "audit", new DocActionReq(version + 1, null)));
         assertThat(purchaseOrderService.detail(poC).getStatus()).isEqualTo("APPROVED");
 
         // 待到料：三行按哪天到排；C 是已确认的算料单生成的，有要料日期
@@ -272,7 +272,7 @@ class PurchaseIT {
 
         receive(f, po, "200");
         assertSharedTransit(f, po, calcA, calcB, "200", "0", "150", "50");
-        invDocService.fromSource(BizType.PURCHASE_ORDER, po, stockReq(f, po, InvDocType.PURCHASE_RETURN, "100"));
+        postFromPo(po, stockReq(f, po, InvDocType.PURCHASE_RETURN, "100"));
         assertSharedTransit(f, po, calcA, calcB, "200", "100", "100", "0");
 
         long nextB = mrpService.recalc(calcB, new DocActionReq(mrpService.detail(calcB).getVersion(), null)).id();
@@ -346,8 +346,8 @@ class PurchaseIT {
         Fixture f = fixture(null);
         long po = approvedStockPo(f, "100", LocalDate.now().plusDays(3));
         receive(f, po, "100");
-        long returned = invDocService.fromSource(BizType.PURCHASE_ORDER, po, stockReq(f, po, InvDocType.PURCHASE_RETURN, "50")).id();
-        long replacement = invDocService.fromSource(BizType.PURCHASE_ORDER, po, stockReq(f, po, InvDocType.PURCHASE_IN, "50")).id();
+        long returned = postFromPo(po, stockReq(f, po, InvDocType.PURCHASE_RETURN, "50"));
+        long replacement = postFromPo(po, stockReq(f, po, InvDocType.PURCHASE_IN, "50"));
         long logs = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM inv_stock_log WHERE material_sku_id=?", Long.class, f.sku);
         int version = invDocService.detail(returned).getVersion();
         assertThatThrownBy(() -> invDocService.act(returned, "unaudit", new DocActionReq(version, null)))
@@ -391,6 +391,8 @@ class PurchaseIT {
             assertThat(invDocService.fromSource(BizType.PURCHASE_ORDER, po, req)).isEqualTo(replay);
         } finally { pool.shutdownNow(); }
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM inv_doc WHERE source_type='PURCHASE_ORDER' AND source_id=?", Long.class, po)).isEqualTo(1);
+        long created = jdbcTemplate.queryForObject("SELECT id FROM inv_doc WHERE source_type='PURCHASE_ORDER' AND source_id=?", Long.class, po);
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(created, "audit", new DocActionReq(0, null)));
         assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("60");
         req.getItems().getFirst().setQty(new BigDecimal("61"));
         assertThatThrownBy(() -> invDocService.fromSource(BizType.PURCHASE_ORDER, po, req))
@@ -402,6 +404,7 @@ class PurchaseIT {
         rejected.getItems().getFirst().setQty(new BigDecimal("30"));
         var retry = invDocService.fromSource(BizType.PURCHASE_ORDER, po, rejected);
         assertThat(invDocService.fromSource(BizType.PURCHASE_ORDER, po, rejected)).isEqualTo(retry);
+        post(retry);
         assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("90");
     }
 
@@ -412,9 +415,10 @@ class PurchaseIT {
         long po = approvedStockPo(f, "100", LocalDate.now().plusDays(3));
         jdbcTemplate.update("INSERT INTO inv_stock (warehouse_id, material_sku_id, qty) VALUES (?, ?, 0)", f.warehouse, f.sku);
         InvDocFromSourceReq req = stockReq(f, po, InvDocType.PURCHASE_IN, "20");
-        req.setPost(false);
         long doc = invDocService.fromSource(BizType.PURCHASE_ORDER, po, req).id();
-        assertWaitsOnPoBeforeRow(f.user, po, () -> invDocService.act(doc, "audit", new DocActionReq(0, null)), """
+        TestIdentity.auditorOf(jdbcTemplate, f.user);   // 审核人先建好，别在等锁的事务里建
+        assertWaitsOnPoBeforeRow(f.user, po,
+                () -> TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc, "audit", new DocActionReq(0, null))), """
                 SELECT id FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?
                   AND owner_type='OWN' AND owner_id=0 AND location_id=0 FOR UPDATE NOWAIT""", f.warehouse, f.sku);
         assertThat(purchaseOrderService.detail(po).getReceivedQty()).isEqualByComparingTo("20");
@@ -544,7 +548,7 @@ class PurchaseIT {
         assertThat(reorderRow(f).getOpenDrafts()).extracting(ReorderRowVO.OpenDraft::id).containsExactly(po);
 
         purchaseOrderService.act(po, "submit", new DocActionReq(0, null));
-        purchaseOrderService.act(po, "audit", new DocActionReq(1, null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> purchaseOrderService.act(po, "audit", new DocActionReq(1, null)));
         assertThat(supplyService.reorderItems()).noneMatch(x -> x.getMaterialSkuId().equals(f.sku));
         assertThat(supplyService.materialSupply(List.of(f.sku))).singleElement().satisfies((SkuSupplyVO s) -> {
             assertThat(s.transits()).singleElement().satisfies(t -> assertThat(t.qty()).isEqualByComparingTo("180"));
@@ -680,7 +684,7 @@ class PurchaseIT {
         req.setItems(List.of(orderItem(f.skuM, 60), orderItem(f.skuL, 40)));
         long id = orderService.create(req).id();
         orderService.act(id, "submit", new DocActionReq(0, null));
-        orderService.audit(id, new OrderAuditReq(1, commitDate));
+        TestIdentity.asAuditor(jdbcTemplate, () -> orderService.audit(id, new OrderAuditReq(1, commitDate)));
         return id;
     }
 
@@ -715,7 +719,7 @@ class PurchaseIT {
     private long approvedStockPo(Fixture f, String qty, LocalDate expectDate) {
         long id = purchaseOrderService.create(poReq(f, qty, expectDate)).id();
         purchaseOrderService.act(id, "submit", new DocActionReq(0, null));
-        purchaseOrderService.act(id, "audit", new DocActionReq(1, null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> purchaseOrderService.act(id, "audit", new DocActionReq(1, null)));
         return id;
     }
 
@@ -746,7 +750,17 @@ class PurchaseIT {
 
     /** 到货入库并马上过账（数量按采购单位） */
     private void receive(Fixture f, long poId, String qty) {
-        invDocService.fromSource(BizType.PURCHASE_ORDER, poId, stockReq(f, poId, InvDocType.PURCHASE_IN, qty));
+        postFromPo(poId, stockReq(f, poId, InvDocType.PURCHASE_IN, qty));
+    }
+
+    /** 由采购单建入库 / 退货单，换审核人过账（自己建的单不能自己审，甲方 11-21 答 Q10），返回单据 id */
+    private long postFromPo(long poId, InvDocFromSourceReq req) {
+        return post(invDocService.fromSource(BizType.PURCHASE_ORDER, poId, req)).id();
+    }
+
+    private com.lingmao.scm.module.inventory.dto.InvDocCreatedVO post(com.lingmao.scm.module.inventory.dto.InvDocCreatedVO doc) {
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc.id(), "audit", new DocActionReq(doc.version(), null)));
+        return doc;
     }
 
     private InvDocFromSourceReq stockReq(Fixture f, long poId, InvDocType type, String qty) {
@@ -759,7 +773,6 @@ class PurchaseIT {
         i.setMaterialSkuId(f.sku);
         i.setQty(new BigDecimal(qty));
         req.setItems(List.of(i));
-        req.setPost(true);
         return req;
     }
 

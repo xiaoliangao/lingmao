@@ -27,6 +27,7 @@ import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocActions;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.biz.service.DocHeaderService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.inventory.dto.CountAddItemsReq;
@@ -157,7 +158,7 @@ public class CountServiceImpl implements CountService {
         };
     }
 
-    /** 按钮：撤回只给制单人；没过过账的草稿给"删除"，过过账的给"作废" */
+    /** 按钮：撤回只给制单人，审核、驳回不给制单人（自己建的单不能自己审，SelfAudit）；没过过账的草稿给"删除"，过过账的给"作废" */
     static List<String> actions(DocStatus status, boolean posted, Long createBy) {
         return DocActions.of(FLOW, status, PERM)
                 .perm("edit", PERM + "edit")
@@ -165,6 +166,7 @@ public class CountServiceImpl implements CountService {
                 .perm("remove", PERM + "remove")
                 .perm("void", PERM + "remove")
                 .when("withdraw", Objects.equals(createBy, LoginUser.currentUserId()))
+                .createdBy(createBy)
                 .when("remove", !posted)
                 .when("void", posted)
                 .list();
@@ -623,6 +625,7 @@ public class CountServiceImpl implements CountService {
 
     /** 审核过账：差异不为 0 的行把差异加到现在的库存上（调完是负的 1001） */
     private void audit(InvCount count, DocActionReq req) {
+        SelfAudit.check(count.getCreateBy());
         change(count, "audit", req);
         List<InvCountItem> items = itemMapper.selectByCount(count.getId());
         if (items.stream().anyMatch(i -> i.getBookRevision() == null)) {

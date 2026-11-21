@@ -587,6 +587,8 @@ export interface OrderChangeQuery {
   createDateFrom?: string
   createDateTo?: string
   mine?: boolean
+  /** 不列自己建的（自己建的单不能自己审，Q10）；首页待我审核用 */
+  auditForMe?: boolean
 }
 
 /** 变更明细的一处改动（ord_change_item） */

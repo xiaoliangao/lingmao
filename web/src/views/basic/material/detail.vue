@@ -94,7 +94,7 @@ const infoRows = computed(() => {
     ['成分', x.composition],
     ['组织 / 纹理', x.texture],
     ...(x.materialType === 'FABRIC' || x.materialType === 'LINING' ? [['面料功能', x.fabricFunction]] : []),
-    ['是否带吊牌', x.withTag == null ? '' : x.withTag ? '是' : '否'],
+    ['带功能吊牌', x.withTag == null ? '' : x.withTag ? `是${x.tagNames ? '：' + x.tagNames : ''}` : '否'],
     ['默认供应商', d.defaultSupplierName],
     ['供应商货号', x.supplierItemNo],
     ...(canSeeCost.value ? [['参考单价', x.refPrice == null ? '' : `${formatPrice(x.refPrice)} 元 / ${purchaseUnit.value}`]] : []),

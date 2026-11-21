@@ -34,6 +34,7 @@
             AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId}
                  OR c.create_by = #{scope.userId})
         </if>
+        <if test="q.auditForMe">AND c.create_by IS DISTINCT FROM #{scope.userId}</if>
         <if test="withStatus and q.status != null and q.status.size() > 0">
             AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
         </if>

@@ -24,8 +24,8 @@ import ReceiveDialog from './ReceiveDialog.vue'
  *
  *   <PendingReceipts @received="docList?.reload()" />
  *
- * - 行上"入库"开 ReceiveDialog（矩阵能改少）；勾几行批量"入库并过账"：逐张调生成接口、每行还没入的全入，
- *   没成的列出原因、留着勾
+ * - 行上"入库"开 ReceiveDialog（矩阵能改少）；勾几行批量"入库"：逐张调生成接口、每行还没入的全入，存成草稿
+ *   （自己建的单不能自己审核过账，甲方 11-21 答 Q10），没成的列出原因、留着勾
  * - 只列启用成品模块以后登记的回货（之前的当作已经在仓里，走"其他入库 · 期初"）
  */
 const emit = defineEmits<{
@@ -99,11 +99,11 @@ function onCreated(id: string, posted: boolean) {
 
 const batchActions: BatchAction<FgPendingReceiptRow>[] = [
   {
-    label: '入库并过账',
-    perm: 'fg:doc:audit',
-    confirm: '每张回货单还没入的良品全入，入仓用回货单的收货仓（不是成品仓的用第一个成品仓），马上加库存。',
+    label: '入库',
+    perm: 'fg:doc:add',
+    confirm: '每张回货单还没入的良品全入，入仓用回货单的收货仓（不是成品仓的用第一个成品仓），存成草稿，要别人审核过账才加库存。',
     run: (r, o) =>
-      fgDocApi.fromReceipt(r.receiptId, newClientAction({ post: true, docDate: null, warehouseId: null, remark: null, items: null }), o),
+      fgDocApi.fromReceipt(r.receiptId, newClientAction({ post: false, docDate: null, warehouseId: null, remark: null, items: null }), o),
   },
 ]
 

@@ -141,6 +141,8 @@ export interface InvDocQuery {
   /** 单号、源单号、送货单号、物流单号、物料编码 / 名称 / SKU 码、缸号；一次查几个（README §3.2）时单号、源单号精确查 */
   keyword?: string
   mine?: boolean
+  /** 不列自己建的（自己建的单不能自己审，Q10）；首页待我审核用 */
+  auditForMe?: boolean
   /** 导出选中的 */
   ids?: string[]
 }
@@ -448,6 +450,8 @@ export interface CountQuery {
   countDateFrom?: string
   countDateTo?: string
   ids?: string[]
+  /** 不列自己建的（自己建的单不能自己审，Q10）；首页待我审核用 */
+  auditForMe?: boolean
 }
 
 export interface CountItem extends MaterialSkuBrief {

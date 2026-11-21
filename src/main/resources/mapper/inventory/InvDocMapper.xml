@@ -9,6 +9,7 @@
     <sql id="where">
         WHERE d.kind = #{q.kind}
         <if test="scope.self">AND d.create_by = #{scope.userId}</if>
+        <if test="q.auditForMe">AND d.create_by IS DISTINCT FROM #{scope.userId}</if>
         <if test="q.docType != null">AND d.doc_type = #{q.docType}</if>
         <if test="q.status != null and q.status.size() > 0">
             AND d.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>

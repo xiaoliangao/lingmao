@@ -24,7 +24,8 @@ import { fgCells, fgColors, fgSizes } from '../doc/fgMatrix'
  *   <ReceiveDialog v-model="visible" :editing-doc="detail" @saved="refresh" />                改回货入库的草稿
  *
  * - 一个颜色 × 尺码矩阵：格子默认还没入的良品、能改少（上限就是它，超了标红、后端 1004 拦），每格下面"良品 n · 已入 n"
- * - "存草稿"、"入库并过账"（要 fg:doc:audit）；生成接口带 clientActionId，结果不确定时重试用原来的那一笔，不会入两次
+ * - 只能"存草稿"：自己建的单不能自己审核过账，要别人审（甲方 11-21 答 Q10，后端 SelfAudit 也拦）；
+ *   生成接口带 clientActionId，结果不确定时重试用原来的那一笔，不会入两次
  * - 改草稿只改单上已有的几格（改少、改日期、换仓）；要补别的 SKU，作废这张、再从"待入库"入一张
  */
 const visible = defineModel<boolean>({ required: true })
@@ -259,8 +260,7 @@ async function restart() {
         <el-button type="primary" :loading="submitting" @click="submit(pendingAction?.request.post ?? false)">重试原来那笔</el-button>
       </template>
       <template v-else>
-        <el-button :loading="submitting" :disabled="loading" @click="submit(false)">存草稿</el-button>
-        <el-button v-perm="'fg:doc:audit'" type="primary" :loading="submitting" :disabled="loading" @click="submit(true)">入库并过账</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="loading" @click="submit(false)">存草稿</el-button>
       </template>
     </template>
   </el-dialog>

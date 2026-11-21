@@ -38,6 +38,7 @@ import com.lingmao.scm.module.techpack.entity.PackStage;
 import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.service.TechPackService;
 import com.lingmao.scm.security.LineScope;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.security.LoginUser;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
@@ -64,6 +65,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -197,7 +199,10 @@ class OrderChangeServiceImplTest {
         service.check(order(), 9L, true, ResponsibleParty.SELF, List.of());
     }
 
-    /** 规则（docs/api/02 §3.14）：审核先写回订单，再给每张下游单据插一条变更提醒，提醒给那张单的负责人 */
+    /**
+     * 规则（docs/api/02 §3.14）：审核先写回订单，再给每张下游单据插一条变更提醒，提醒给那张单的负责人。
+     * 甲方 11-21（Q10）：自己建的变更单自己审不了，什么都不写；别人（2 号）建的才审得过
+     */
     @Test
     void audit_writesBackThenNotifies() {
         OrderChange c = new OrderChange();
@@ -206,7 +211,7 @@ class OrderChangeServiceImplTest {
         c.setOrderId(7L);
         c.setStatus(DocStatus.PENDING);
         c.setVersion(2);
-        c.setCreateBy(1L);
+        c.setCreateBy(2L);
         c.setChangeTypes("QTY");
         List<OrderChangeItem> items = List.of(qty(ChangeType.QTY, 12, 50, 30));
         when(changeMapper.lockById(5L)).thenReturn(c);
@@ -217,6 +222,12 @@ class OrderChangeServiceImplTest {
                 new DocRef(BizType.PRODUCTION_ORDER, "OUTSOURCE", null, "外发加工单", 30, "JG202611180001", "RUNNING", "生产中", null, 4L, null)));
         when(changeTexts.names(items)).thenReturn(new ChangeTexts.Names(Map.of(1L, "27CF001"), Map.of(12L, "27CF001-KQ-L"), Map.of()));
 
+        c.setCreateBy(1L);
+        assertThatThrownBy(() -> service.act(5L, "audit", new DocActionReq(2, null)))
+                .isInstanceOf(BizException.class).hasMessage(SelfAudit.MESSAGE);
+        verify(orderService, never()).applyChange(any(), any());
+
+        c.setCreateBy(2L);
         service.act(5L, "audit", new DocActionReq(2, null));
 
         verify(orderService).applyChange(c, items);

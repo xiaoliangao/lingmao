@@ -17,7 +17,6 @@ import {
 } from '@/types/inventory'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
-import { useUserStore } from '@/stores/user'
 import { formatPrice, formatQty } from '@/utils/format'
 import { newClientAction, unknownActionResult } from '@/utils/clientAction'
 import { ApiError } from '@/utils/request'
@@ -40,7 +39,7 @@ const invDocApi = bindCompanyApi(invDocApiBase, () => sourceCompanyId.value)
  * - 采购入库超过未入库、没超上限：琥珀色"超收 n"；超过 maxQty 标红、按钮灰掉（后端也会回 1004）
  * - 领料超过还差：琥珀色，超领原因必填。领料换了出仓重新带出（还差、出仓库存跟着出仓变）
  * - 有出仓的显示出仓库存（库存单位）。采购退货的"本次"是采购单位，乘换算系数再和库存比；不够标红但不拦（审核时会失败）
- * - 本次是 0 的行不建，全是 0 时按钮灰掉；没有 inventory:doc:audit 的只有"存草稿"
+ * - 本次是 0 的行不建，全是 0 时按钮灰掉；只能存草稿：自己建的单不能自己审核过账，要别人审（甲方 11-21 答 Q10，后端 SelfAudit 也拦）
  * - 建好发 created（{ id, no, posted }），页面刷新自己
  */
 const visible = defineModel<boolean>({ required: true })
@@ -58,7 +57,6 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
-const user = useUserStore()
 const units = useDict('unit')
 
 interface DraftRow extends InvDocDraftItem {
@@ -113,7 +111,6 @@ const guard = useUnsavedChanges(
 
 const meta = computed(() => INV_DOC_TYPE[props.docType])
 const isPurchase = computed(() => props.sourceKind === 'PURCHASE')
-const canAudit = computed(() => user.hasPerm('inventory:doc:audit'))
 
 const fromOptions = computed(() => {
   const allowed = meta.value.from
@@ -513,8 +510,7 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
     <template #footer>
       <span v-if="blockedTip && rows.length" class="foot-tip">{{ blockedTip }}</span>
       <el-button @click="visible = false">取消</el-button>
-      <el-button :loading="submitting" :disabled="!!blockedTip" @click="submit(false)">存草稿</el-button>
-      <el-button v-if="canAudit" type="primary" :loading="submitting" :disabled="!!blockedTip" @click="submit(true)">{{ verb }}并过账</el-button>
+      <el-button type="primary" :loading="submitting" :disabled="!!blockedTip" @click="submit(false)">存草稿</el-button>
     </template>
   </el-dialog>
 </template>

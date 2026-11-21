@@ -9,7 +9,7 @@
     <sql id="listColumns">
         m.id, m.code, m.legacy_code, m.name, m.category_id, c.code AS category_code, c.name AS category_name, p.name AS parent_category_name,
         m.material_type, m.stock_unit, m.purchase_unit, m.conversion_factor, m.width_cm, m.weight_gsm, m.composition,
-        m.fabric_function, m.with_tag, m.default_supplier_id, s.short_name AS default_supplier_name, m.supplier_item_no, m.ref_price, m.status,
+        m.fabric_function, m.with_tag, m.tag_names, m.default_supplier_id, s.short_name AS default_supplier_name, m.supplier_item_no, m.ref_price, m.status,
         (SELECT count(*) FROM bas_material_sku k WHERE k.material_id = m.id) AS sku_count,
         m.update_time
     </sql>

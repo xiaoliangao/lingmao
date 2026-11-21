@@ -66,7 +66,9 @@ class FullFlowHttpIT {
         Fixture f = fixture();
         LocalDate today = LocalDate.now();
         Account sales = account("sales", f), manager = account("manager", f), buyer = account("buyer", f),
-                warehouse = account("warehouse", f), merch = account("merchandiser", f);
+                warehouse = account("warehouse", f), merch = account("merchandiser", f),
+                // 自己建的单不能自己审（甲方 11-21 答 Q10）：仓管建的出入库单由另一个仓管过账
+                warehouse2 = account("warehouse", f);
 
         // 业务员录单（M 60、L 40）、提交
         long order = id(ok(sales, "POST", "/api/orders", map("companyId", f.company, "orderType", "STOCK", "orderDate", today,
@@ -102,12 +104,16 @@ class FullFlowHttpIT {
         ok(manager, "POST", "/api/purchase-orders/" + po + "/audit", map("version", version(manager, "/api/purchase-orders/" + po)));
         assertThat(status("pur_order", po)).isEqualTo("APPROVED");
 
-        // 仓管：按采购单收料 150 米、直接过账，进采购单上的仓库
+        // 仓管：按采购单收料 150 米存草稿，进采购单上的仓库；另一个仓管过账
         JsonNode inPrefill = ok(warehouse, "GET", "/api/inventory-docs/from-purchase/" + po + "?docType=PURCHASE_IN", null);
         long materialWarehouse = id(inPrefill.path("toWarehouseId"));
-        withAction(warehouse, "/api/inventory-docs/from-purchase/" + po, map("docType", "PURCHASE_IN", "post", true,
+        long inDoc = id(withAction(warehouse, "/api/inventory-docs/from-purchase/" + po, map("docType", "PURCHASE_IN", "post", false,
                 "items", List.of(map("sourceItemId", id(inPrefill.path("items").get(0).path("sourceItemId")), "materialSkuId", f.materialSku,
-                        "qty", "150"))));
+                        "qty", "150")))).path("id"));
+        List<String> ownActions = new ArrayList<>();
+        ok(warehouse, "GET", "/api/inventory-docs/" + inDoc, null).path("actions").forEach(a -> ownActions.add(a.stringValue()));
+        assertThat(ownActions).as("自己建的不给审核").contains("edit").doesNotContain("audit");
+        ok(warehouse2, "POST", "/api/inventory-docs/" + inDoc + "/audit", map("version", 0));
         assertThat(stock(materialWarehouse, f.materialSku)).isEqualByComparingTo("150");
 
         // 跟单：排单给默认加工厂、提交；管理层审
@@ -126,9 +132,10 @@ class FullFlowHttpIT {
         // 仓管：按生产单发料 150 米，从刚才收料的仓库出
         JsonNode outPrefill = ok(warehouse, "GET", "/api/inventory-docs/from-production/" + prd + "?docType=ISSUE_OUT", null);
         assertThat(outPrefill.path("items").get(0).path("needQty").decimalValue()).isEqualByComparingTo("150");
-        withAction(warehouse, "/api/inventory-docs/from-production/" + prd, map("docType", "ISSUE_OUT", "post", true,
+        long outDoc = id(withAction(warehouse, "/api/inventory-docs/from-production/" + prd, map("docType", "ISSUE_OUT", "post", false,
                 "fromWarehouseId", materialWarehouse, "items", List.of(map("sourceItemId", outPrefill.path("items").get(0).path("sourceItemId"),
-                        "materialSkuId", f.materialSku, "qty", "150"))));
+                        "materialSkuId", f.materialSku, "qty", "150")))).path("id"));
+        ok(warehouse2, "POST", "/api/inventory-docs/" + outDoc + "/audit", map("version", 0));
         assertThat(stock(materialWarehouse, f.materialSku)).isEqualByComparingTo("0");
         JsonNode production = ok(merch, "GET", "/api/production-orders/" + prd, null);
         assertThat(production.path("issueStatus").stringValue()).isEqualTo("DONE");
@@ -225,12 +232,13 @@ class FullFlowHttpIT {
         return reply.path("data");
     }
 
-    /** 由源单生成出入库单、登记回货：幂等键和 clientActionId 用同一个 */
-    private void withAction(Account who, String path, Map<String, Object> body) throws Exception {
+    /** 由源单生成出入库单、登记回货：幂等键和 clientActionId 用同一个；返回 data */
+    private JsonNode withAction(Account who, String path, Map<String, Object> body) throws Exception {
         String action = UUID.randomUUID().toString();
         body.put("clientActionId", action);
         JsonNode reply = send(who, "POST", path, body, action);
         assertThat(reply.path("code").intValue()).as("POST %s → %s %s", path, reply.path("msg").asText(), reply.path("data")).isZero();
+        return reply.path("data");
     }
 
     private JsonNode send(Account who, String method, String path, Object body, String idempotencyKey) throws Exception {

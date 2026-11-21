@@ -11,6 +11,8 @@ import com.lingmao.scm.module.biz.entity.ApprovalStepStatus;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.mapper.ApprovalRuleMapper;
 import com.lingmao.scm.module.biz.mapper.ApprovalStepMapper;
+import com.lingmao.scm.module.biz.service.DocCreatorProvider;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.module.system.service.RoleService;
 import com.lingmao.scm.module.system.service.UserService;
@@ -34,9 +36,12 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -67,6 +72,20 @@ class ApprovalServiceImplTest {
 
     private ApprovalServiceImpl service;
 
+    /** 单据 id → 制单人：没放进来的当别人建的；测"自己建的"时放 */
+    private final Map<Long, Long> createdBy = new HashMap<>();
+    private final DocCreatorProvider creators = new DocCreatorProvider() {
+        @Override
+        public BizType type() {
+            return BizType.PURCHASE_ORDER;
+        }
+
+        @Override
+        public Map<Long, Long> creators(Collection<Long> ids) {
+            return ids.stream().filter(createdBy::containsKey).collect(Collectors.toMap(id -> id, createdBy::get));
+        }
+    };
+
     @BeforeAll
     static void initTableInfo() {
         MybatisConfiguration configuration = new MybatisConfiguration();
@@ -77,7 +96,7 @@ class ApprovalServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new ApprovalServiceImpl(ruleMapper, stepMapper, permissionService, roleService, userService,
-                Clock.fixed(Instant.parse("2026-11-17T02:00:00Z"), ZoneId.of("Asia/Shanghai")));
+                Clock.fixed(Instant.parse("2026-11-17T02:00:00Z"), ZoneId.of("Asia/Shanghai")), List.of(creators));
     }
 
     @AfterEach
@@ -174,6 +193,42 @@ class ApprovalServiceImplTest {
         assertThatThrownBy(() -> service.pass(BizType.PURCHASE_ORDER, 30L))
                 .isInstanceOf(BizException.class)
                 .extracting("code").isEqualTo(1002);
+    }
+
+    /**
+     * 规则（甲方 11-21 答 Q10）：自己建的单不能自己审——有审核权限、正轮到他也不行，一行都不改（1000）；
+     * 详情的 canPass 是 false，审核、驳回按钮不出。别人建的照常能审
+     */
+    @Test
+    void pass_ownDoc_rejected_viewCannotPass() {
+        login(7L, PO_AUDIT);
+        createdBy.put(30L, 7L);
+        givenSteps(step(1, PO_AUDIT, null, null, ApprovalStepStatus.CURRENT));
+
+        assertThatThrownBy(() -> service.pass(BizType.PURCHASE_ORDER, 30L))
+                .isInstanceOf(BizException.class)
+                .hasMessage(SelfAudit.MESSAGE)
+                .extracting("code").isEqualTo(1000);
+        verify(stepMapper, never()).update(any(Wrapper.class));
+        assertThat(service.view(BizType.PURCHASE_ORDER, 30L).canPass()).isFalse();
+
+        createdBy.put(30L, 8L);
+        assertThat(service.view(BizType.PURCHASE_ORDER, 30L).canPass()).isTrue();
+    }
+
+    /** 规则：待我审核去掉自己建的（列表的"待我审核"、首页待办、列表行的审核按钮都用它） */
+    @Test
+    void waitingForMe_skipsOwnDocs() {
+        login(7L, PO_AUDIT);
+        when(permissionService.loadRoleIds(7L)).thenReturn(List.of());
+        ApprovalStep mine = step(1, PO_AUDIT, null, null, ApprovalStepStatus.CURRENT);
+        ApprovalStep others = step(1, PO_AUDIT, null, null, ApprovalStepStatus.CURRENT);
+        others.setDocId(31L);
+        when(stepMapper.selectList(any())).thenReturn(List.of(mine, others));
+        createdBy.put(30L, 7L);
+        createdBy.put(31L, 8L);
+
+        assertThat(service.waitingForMe(BizType.PURCHASE_ORDER)).containsExactly(31L);
     }
 
     /** 规则：驳回时没审的级作废（CANCELLED）；重新提交是新的一轮（round + 1），从第 1 级审起 */

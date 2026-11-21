@@ -216,8 +216,12 @@ class SchemaConventionsIT {
                         "stock_in_reason:OPENING", "currency:CNY", "unit:PIECE", "style_source:OWN",
                         "bom_owner:DEV", "bom_owner:PROD",    // V42 物料清单谁填（RFC 012 §3）
                         "product_line:APPAREL", "product_line:FOOTWEAR", "product_line:GENERAL");   // V44 品类线（RFC 013 §2）
+        // V48（甲方 11-21）：主料和工艺开发填，辅料、标签吊牌、配件、包材生产填
         assertThat(jdbc.queryForList("SELECT value FROM sys_dict_data WHERE type_code = 'material_type' AND text_value = 'PROD' "
-                + "AND deleted = false", String.class)).as("物料清单归生产填的物料类型").containsExactly("PACKING");
+                + "AND deleted = false", String.class)).as("物料清单归生产填的物料类型")
+                .containsExactlyInAnyOrder("TRIM", "PACKING", "LABEL", "ACCESSORY");
+        assertThat(jdbc.queryForList("SELECT value || '=' || label FROM sys_dict_data WHERE type_code = 'bom_owner' AND deleted = false "
+                + "ORDER BY sort", String.class)).containsExactly("DEV=开发", "PROD=生产");
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_dict_data WHERE type_code = 'brand'", Integer.class))
                 .isZero();
@@ -295,41 +299,43 @@ class SchemaConventionsIT {
             "production:order:edit", "production:order:remove", "production:order:submit", "production:order:void",
             "production:order:close", "production:node:edit", "production:issue:edit", "production:receipt:add",
             "production:receipt:void", "production:mobile:list"));
-    /** 二期成品（V46，RFC 008 §8）：仓管全给，销售、跟单、生产经理、财务、管理层只看 */
-    private static final Set<String> FG_VIEW = Set.of("fg:doc:list", "fg:stock:list");
-    private static final Set<String> FG_EDIT = union(FG_VIEW, Set.of("fg:doc:add", "fg:doc:edit", "fg:doc:remove", "fg:doc:audit",
-            "fg:doc:export", "fg:stock:export"));
+    // 二期成品（V46）的授权 V48 全收回了：甲方 11-21 答 Q44 成品库存以聚水潭为准，所以下面没有一个角色带 fg:
 
     private static final Map<String, Set<String>> ROLE_PERMS = new LinkedHashMap<>();
 
     static {
         // 每行前半是第 2 批（V16），后半是第 3、4 批（V17）
+        // V48（甲方 11-21）：开发全员能看成本，和开发主管一样了
         ROLE_PERMS.put("dev", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
-                PACK_EDIT, BOM_DEV, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
+                PACK_EDIT, BOM_DEV, COST, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("dev_lead", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
                 PACK_EDIT, BOM_DEV, COST, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
         ROLE_PERMS.put("sales", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
-                PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, ORDER_PRICE, PURCHASE_VIEW, PRODUCTION_VIEW, FG_VIEW));
-        ROLE_PERMS.put("merchandiser", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
+                PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, ORDER_PRICE, PURCHASE_VIEW, PRODUCTION_VIEW));
+        // V48：生产跟单看供应商联系方式（找工厂），银行信息不给
+        ROLE_PERMS.put("merchandiser", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, CONTACT, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:process:edit"),
-                PACK_VIEW, BOM_PROD, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE, FG_VIEW));
+                PACK_VIEW, BOM_PROD, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE));
         ROLE_PERMS.put("buyer", union(BASICS_VIEW, MATERIAL_EDIT, SUPPLIER_EDIT, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:material:edit"),
                 PACK_VIEW, COST, ORDER_VIEW, CHANGE_VIEW, PURCHASE_EDIT, PURCHASE_CLOSE, STOCK_VIEW, COUNT_VIEW,
                 PRODUCTION_VIEW, PRODUCTION_PRICE));
         ROLE_PERMS.put("warehouse", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW,
-                PACK_VIEW, PURCHASE_VIEW, STOCK_EDIT, COUNT_EDIT, PRODUCTION_VIEW, FG_EDIT));
+                PACK_VIEW, PURCHASE_VIEW, STOCK_EDIT, COUNT_EDIT, PRODUCTION_VIEW));
         ROLE_PERMS.put("finance", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
-                PACK_VIEW, COST, ORDER_VIEW, ORDER_PRICE, CHANGE_VIEW, PURCHASE_VIEW, STOCK_VIEW, COUNT_VIEW, PRODUCTION_VIEW, PRODUCTION_PRICE, FG_VIEW));
+                PACK_VIEW, COST, ORDER_VIEW, ORDER_PRICE, CHANGE_VIEW, PURCHASE_VIEW, STOCK_VIEW, COUNT_VIEW, PRODUCTION_VIEW, PRODUCTION_PRICE));
         ROLE_PERMS.put("manager", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, Set.of("supplier:supplier:admit"),
                 BANK, CONTACT, STYLE_VIEW, PRICE_VIEW, Set.of("price:material:edit", "price:process:edit"),
                 PACK_VIEW, COST, ORDER_VIEW, Set.of("order:order:audit"), CHANGE_VIEW,
                 Set.of("order:change:audit"), ORDER_PRICE, PURCHASE_VIEW, Set.of("purchase:order:audit"), PURCHASE_CLOSE, STOCK_VIEW,
                 COUNT_VIEW, Set.of("inventory:count:audit"), PRODUCTION_VIEW,
-                Set.of("production:order:audit", "production:order:close"), PRODUCTION_PRICE, FG_VIEW));
+                Set.of("production:order:audit", "production:order:close"), PRODUCTION_PRICE));
         // V43（RFC 013 §3，甲方 Q10）：生产经理 = 生产跟单 + 需求订单、变更、采购单、盘点单、生产单的审核，盘点单能看
+        // V48：生产经理审单要看得到金额，加看订单销售价、看成本
         ROLE_PERMS.put("prod_manager", union(ROLE_PERMS.get("merchandiser"), COUNT_VIEW, Set.of("order:order:audit", "order:change:audit",
-                "purchase:order:audit", "inventory:count:audit", "production:order:audit")));
+                "purchase:order:audit", "inventory:count:audit", "production:order:audit"), ORDER_PRICE, COST));
+        // V48（甲方 11-21）：业务主管 = 业务，数据范围全部
+        ROLE_PERMS.put("sales_lead", ROLE_PERMS.get("sales"));
     }
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现（"工艺标准" V39 去掉了） */
@@ -337,30 +343,30 @@ class SchemaConventionsIT {
     private static final List<String> ORDERS = List.of("需求订单", "变更");
     private static final List<String> SUPPLY_ALL = List.of("算料", "采购", "物料入库单", "物料出库单", "物料盘点单", "库存");
     private static final List<String> MAKE = List.of("外发加工单", "成品采购单", "看板");
-    private static final List<String> FG = List.of("成品入库单", "成品出库单", "成品库存");
     private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.of(
-            "dev", Map.of("开发", List.of("款式"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
+            "dev", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
             "dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
-            "sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "成品", FG, "资料", MASTER),
+            "sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER),
+            "sales_lead", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER),
             "merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
                     "物料", List.of("算料", "采购", "物料入库单", "物料出库单", "库存"),
-                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "成品", FG, "资料", MASTER),
+                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER),
             "buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
-            "warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "成品", FG, "资料", MASTER),
-            "finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "成品", FG, "资料", MASTER),
-            "manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE,
-                    "成品", FG, "资料", MASTER),
-            "prod_manager", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "成品", FG, "资料", MASTER));
+            "warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
+            "finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
+            "manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
+            "prod_manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
+                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */
     private static final Map<String, RoleDataScope> ROLE_SCOPES = Map.of(
             "dev", RoleDataScope.ALL, "dev_lead", RoleDataScope.ALL, "sales", RoleDataScope.SELF,
             "merchandiser", RoleDataScope.SELF, "buyer", RoleDataScope.SELF, "warehouse", RoleDataScope.ALL,
-            "finance", RoleDataScope.ALL, "manager", RoleDataScope.ALL, "prod_manager", RoleDataScope.ALL);
+            "finance", RoleDataScope.ALL, "manager", RoleDataScope.ALL, "prod_manager", RoleDataScope.ALL,
+            "sales_lead", RoleDataScope.ALL);
 
     /**
-     * 规则：九个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
+     * 规则：十个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
      * （第 2 批 RFC 003 §13.2，第 3、4 批 V17），data:all 跟着数据范围走；侧边栏正好是 ROLE_SIDEBARS 那样（目录也授了才挂得上），
      * 没有"价格档案""资料包"（visible = false，只为在角色页里勾），也没有管理后台的"审批规则"。走的是登录时真正用的 PermissionService
      */

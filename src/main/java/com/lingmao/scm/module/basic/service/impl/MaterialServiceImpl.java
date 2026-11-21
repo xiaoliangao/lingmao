@@ -527,6 +527,12 @@ public class MaterialServiceImpl implements MaterialService {
         // 面料功能只有面料、里料有（RFC 012 §5.1）；改成别的类型时清掉，页面上也不显示
         material.setFabricFunction(FABRIC_TYPES.contains(type) ? Texts.trim(req.getFabricFunction()) : null);
         material.setWithTag(req.getWithTag());
+        // 功能吊牌（甲方 11-21）：选了"是"要写是哪几个吊牌；不是"是"的不存名称
+        String tagNames = Boolean.TRUE.equals(req.getWithTag()) ? Texts.trim(req.getTagNames()) : null;
+        if (Boolean.TRUE.equals(req.getWithTag()) && tagNames == null) {
+            throw new BizException(400, "带功能吊牌选了\"是\"，要填吊牌名称");
+        }
+        material.setTagNames(tagNames);
         material.setDefaultSupplierId(req.getDefaultSupplierId());   // 只当默认值，外键保证存在，不查状态（架构 A23）
         material.setSupplierItemNo(Texts.trim(req.getSupplierItemNo()));
         material.setRefPrice(com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST,

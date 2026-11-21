@@ -10,6 +10,7 @@ import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.inventory.dto.CountCreateReq;
 import com.lingmao.scm.module.inventory.dto.CountCreatedVO;
 import com.lingmao.scm.module.inventory.dto.CountDetailVO;
@@ -85,6 +86,7 @@ class InventoryIT {
     @BeforeEach
     void login() {
         TestIdentity.grant(jdbcTemplate, USER, PERMS);
+        TestIdentity.auditorOf(jdbcTemplate, USER);   // 先建好审核人：并发审核的两个线程同时建会撞唯一索引
         loginAs();
     }
 
@@ -101,7 +103,8 @@ class InventoryIT {
     /**
      * 规则（docs/api/04 §3.2.6、§3.2.7）：其他入库 10 → 其他出库 4，库存 6，每笔一条日志、结存对得上；
      * 先反审核入库单会让库存变负（1001），整张单不动；先退出库单再退入库单，库存回到 0，日志 4 条一条不删。
-     * 过过账的草稿：删 → 1000 只能作废，按钮给"作废"；作废后只读。没过过账的草稿直接删
+     * 过过账的草稿：删 → 1000 只能作废，按钮给"作废"；作废后只读。没过过账的草稿直接删。
+     * 自己建的单自己审不了（甲方 11-21 答 Q10）：审核都由 TestIdentity.asAuditor 换人做
      */
     @Test
     void postUnauditAndVoid() {
@@ -129,7 +132,7 @@ class InventoryIT {
         assertThat(back.getCompanyName()).startsWith("IT 主体");
         assertThat(back.getStatus()).isEqualTo("DRAFT");
         assertThat(back.isPosted()).isTrue();
-        assertThat(back.getActions()).containsExactly("edit", "audit", "void");
+        assertThat(back.getActions()).as("自己建的不给审核（Q10）").containsExactly("edit", "void");
         assertThatThrownBy(() -> invDocService.delete(in)).isInstanceOf(BizException.class).hasMessageContaining("只能作废");
         // 过过账的行不能删（库存日志指着它），数量能改
         InvDocSaveReq save = saveReq(back, List.of());
@@ -142,7 +145,11 @@ class InventoryIT {
         assertThat(invDocService.detail(in).getActions()).isEmpty();
 
         long draft = create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "1");
-        assertThat(invDocService.detail(draft).getActions()).containsExactly("edit", "audit", "remove");
+        assertThat(invDocService.detail(draft).getActions()).containsExactly("edit", "remove");
+        assertThat(TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.detail(draft).getActions())).as("别人能审")
+                .containsExactly("edit", "audit", "remove");
+        assertThatThrownBy(() -> invDocService.act(draft, "audit", new DocActionReq(version(draft), null)))
+                .isInstanceOf(BizException.class).hasMessage(SelfAudit.MESSAGE);
         invDocService.delete(draft);
         assertThat(count("SELECT COUNT(*) FROM inv_doc WHERE id = ?", draft)).isZero();
     }
@@ -228,7 +235,7 @@ class InventoryIT {
         CountDetailVO measured = countService.detail(daily.id());
         countService.act(daily.id(), "submit", new DocActionReq(measured.getVersion(), null));
         audit(create(f, InvDocType.OTHER_OUT, f.warehouseA, null, f.skuA, "2"));
-        countService.act(daily.id(), "audit", new DocActionReq(measured.getVersion() + 1, null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> countService.act(daily.id(), "audit", new DocActionReq(measured.getVersion() + 1, null)));
         // 账面20、实盘17已在提交时确认；提交以后的出库2不改变固定差额：20−2−3=15
         assertThat(stock(f.warehouseA, f.skuA)).isEqualByComparingTo("15");
         CountDetailVO approved = countService.detail(daily.id());
@@ -297,7 +304,7 @@ class InventoryIT {
         countService.act(id, "submit", new DocActionReq(countService.detail(id).getVersion(), null));
         jdbcTemplate.update("UPDATE inv_count_item SET book_revision=NULL WHERE count_id=?", id);
         int version = countService.detail(id).getVersion();
-        assertThatThrownBy(() -> countService.act(id, "audit", new DocActionReq(version, null)))
+        assertThatThrownBy(() -> TestIdentity.asAuditor(jdbcTemplate, () -> countService.act(id, "audit", new DocActionReq(version, null))))
                 .isInstanceOf(BizException.class).extracting("code").isEqualTo(1002);
         assertThat(countService.detail(id).getStatus()).isEqualTo("PENDING");
         assertThat(count("SELECT COUNT(*) FROM inv_stock_log WHERE count_id=?", id)).isZero();
@@ -482,7 +489,7 @@ class InventoryIT {
     }
 
     private void audit(long docId) {
-        invDocService.act(docId, "audit", new DocActionReq(version(docId), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(docId, "audit", new DocActionReq(version(docId), null)));
     }
 
     /** 并发里用：成功 "ok"，业务错误返回错误码 */
@@ -582,7 +589,7 @@ class InventoryIT {
     private void submitAndAudit(long countId) {
         countService.act(countId, "submit", new DocActionReq(countService.detail(countId).getVersion(), null));
         CountDetailVO pending = countService.detail(countId);
-        countService.act(countId, "audit", new DocActionReq(pending.getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> countService.act(countId, "audit", new DocActionReq(pending.getVersion(), null)));
     }
 
 }

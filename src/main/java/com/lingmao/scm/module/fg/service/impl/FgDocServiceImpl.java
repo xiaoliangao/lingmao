@@ -27,6 +27,7 @@ import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.ActionRequestService;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocActions;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.biz.service.DocHeaderService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.fg.dto.FgDocCreateReq;
@@ -183,18 +184,19 @@ public class FgDocServiceImpl implements FgDocService {
             r.setFirstStyle(s == null ? null : new FgDocRowVO.Style(s.id(), s.code(), s.name(), s.image()));
             r.setCreateByName(r.getCreateBy() == null ? null : names.get(r.getCreateBy()));
             r.setAuditByName(r.getAuditBy() == null ? null : names.get(r.getAuditBy()));
-            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId())));
+            r.setActions(actions(DocStatus.valueOf(r.getStatus()), posted.contains(r.getId()), r.getCreateBy()));
         }
     }
 
-    /** 按钮：没过过账的草稿给"删除"，过过账的给"作废"，都要 fg:doc:remove */
-    static List<String> actions(DocStatus status, boolean posted) {
+    /** 按钮：没过过账的草稿给"删除"，过过账的给"作废"，都要 fg:doc:remove；自己建的不给"审核"（SelfAudit） */
+    static List<String> actions(DocStatus status, boolean posted, Long createBy) {
         return DocActions.of(FLOW, status, PERM)
                 .perm("edit", PERM + "edit")
                 .perm("remove", PERM + "remove")
                 .perm("void", PERM + "remove")
                 .when("remove", !posted)
                 .when("void", posted)
+                .createdBy(createBy)
                 .list();
     }
 
@@ -251,7 +253,7 @@ public class FgDocServiceImpl implements FgDocService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add) : null);
         boolean posted = logMapper.docPosted(id);
         vo.setPosted(posted);
-        vo.setActions(actions(doc.getStatus(), posted));
+        vo.setActions(actions(doc.getStatus(), posted, doc.getCreateBy()));
         return vo;
     }
 
@@ -515,6 +517,7 @@ public class FgDocServiceImpl implements FgDocService {
     /** 审核过账：比较并交换（锁住这张单）→ 回货单、订单按最新的数再查一遍上限 → 改库存、记日志 */
     private void audit(FgDoc doc, int version, String remark) {
         FLOW.next("audit", doc.getStatus());
+        SelfAudit.check(doc.getCreateBy());   // 建单时顺手过账（post）也走这里：自己建、自己过账不行
         StatusCas.update(docMapper, new FgDoc(), StatusCas.of(FgDoc::getId, doc.getId(), FgDoc::getStatus, DRAFT, APPROVED)
                 .set(FgDoc::getAuditBy, LoginUser.currentUserId())
                 .set(FgDoc::getAuditTime, OffsetDateTime.now(clock))

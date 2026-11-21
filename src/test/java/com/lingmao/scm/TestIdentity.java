@@ -1,10 +1,13 @@
 package com.lingmao.scm;
 
+import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -14,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /** Explicit identities for service integration tests; HTTP boundary tests use real authenticated requests. */
 public final class TestIdentity {
@@ -49,6 +53,42 @@ public final class TestIdentity {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
                 new LoginUser(user, "it-service"), null,
                 withLines(permissions).stream().map(SimpleGrantedAuthority::new).toList()));
+    }
+
+    /** 审核人的 id（库里没有就插一个用户）：自己建的单不能自己审（SelfAudit，甲方 11-21 答 Q10），制单人是 user 的单给它审 */
+    public static long auditorOf(JdbcTemplate jdbc, long user) {
+        String username = "it-auditor-" + user;
+        List<Long> found = jdbc.queryForList("SELECT id FROM sys_user WHERE username = ? AND deleted = false", Long.class, username);
+        if (!found.isEmpty()) return found.getFirst();
+        return jdbc.queryForObject("INSERT INTO sys_user(username, password, nickname) VALUES(?, 'unusable-test-password', ?) RETURNING id",
+                Long.class, username, "IT auditor " + user);
+    }
+
+    /**
+     * 换成审核人做一件事，做完换回原来的人（出异常也换回）。审核人 = {@link #auditorOf} 当前登录的人，权限和当前的人一样，
+     * 外加 data:all（SELF 范围看不见别人建的单）。IT 里一个人建单、审核时包一层：
+     * <pre>TestIdentity.asAuditor(jdbc, () -> invDocService.act(id, "audit", new DocActionReq(v, null)));</pre>
+     */
+    public static <T> T asAuditor(JdbcTemplate jdbc, Supplier<T> action) {
+        Authentication original = SecurityContextHolder.getContext().getAuthentication();
+        if (original == null || !(original.getPrincipal() instanceof LoginUser me)) {
+            throw new IllegalStateException("asAuditor 要先登录（TestIdentity.login）");
+        }
+        List<String> perms = new ArrayList<>(original.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList());
+        if (!perms.contains(RoleDataScope.ALL_AUTHORITY)) perms.add(RoleDataScope.ALL_AUTHORITY);
+        login(auditorOf(jdbc, me.userId()), perms);
+        try {
+            return action.get();
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(original);
+        }
+    }
+
+    public static void asAuditor(JdbcTemplate jdbc, Runnable action) {
+        asAuditor(jdbc, () -> {
+            action.run();
+            return null;
+        });
     }
 
     /** 权限里没有品类线的补一个 line:all */

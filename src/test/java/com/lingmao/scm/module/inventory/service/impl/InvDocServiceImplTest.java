@@ -120,13 +120,17 @@ class InvDocServiceImplTest {
         SecurityContextHolder.clearContext();
     }
 
-    /** 规则（用户 11-17 定）：没过过账的草稿给"删除"，过过账又反审核回来的给"作废"，两个不同时出；已审核只有反审核 */
+    /**
+     * 规则（用户 11-17 定）：没过过账的草稿给"删除"，过过账又反审核回来的给"作废"，两个不同时出；已审核只有反审核。
+     * 甲方 11-21（Q10）：自己建的（登录的是 1 号）不给"审核"，别人建的、没有制单人的照给
+     */
     @Test
     void actions_postedDraftGetsVoidInsteadOfRemove() {
-        assertThat(InvDocServiceImpl.actions(DocStatus.DRAFT, false)).containsExactly("edit", "audit", "remove");
-        assertThat(InvDocServiceImpl.actions(DocStatus.DRAFT, true)).containsExactly("edit", "audit", "void");
-        assertThat(InvDocServiceImpl.actions(DocStatus.APPROVED, true)).containsExactly("unaudit");
-        assertThat(InvDocServiceImpl.actions(DocStatus.VOIDED, true)).isEmpty();
+        assertThat(InvDocServiceImpl.actions(DocStatus.DRAFT, false, 2L)).containsExactly("edit", "audit", "remove");
+        assertThat(InvDocServiceImpl.actions(DocStatus.DRAFT, true, null)).containsExactly("edit", "audit", "void");
+        assertThat(InvDocServiceImpl.actions(DocStatus.APPROVED, true, 2L)).containsExactly("unaudit");
+        assertThat(InvDocServiceImpl.actions(DocStatus.VOIDED, true, 2L)).isEmpty();
+        assertThat(InvDocServiceImpl.actions(DocStatus.DRAFT, false, 1L)).as("自己建的").containsExactly("edit", "remove");
     }
 
     /** 规则：库存怎么动只看有没有出仓、入仓：调拨一行两笔（出仓减、入仓加），其他入库只加入仓；日志类型就是单据类型 */

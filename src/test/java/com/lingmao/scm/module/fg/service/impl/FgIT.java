@@ -11,6 +11,7 @@ import com.lingmao.scm.module.biz.dto.AttachmentReq;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.ReferenceService;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.fg.dto.FgDocCreateReq;
 import com.lingmao.scm.module.fg.dto.FgDocCreatedVO;
 import com.lingmao.scm.module.fg.dto.FgDocItemReq;
@@ -113,12 +114,17 @@ class FgIT {
         assertThat(pending.getRemainQty()).isEqualTo(98);
         assertThat(fgDocService.receiptDraft(receipt).getItems()).hasSize(2);
 
-        FgDocCreatedVO first = fgDocService.fromReceipt(receipt, fromReceipt(f, Map.of(receiptItem(receipt, f.skuM), 30), true));
-        assertThat(first.status()).isEqualTo("APPROVED");
+        // 建草稿、换审核人过账（自己建的单不能自己审，甲方 11-21 答 Q10；建单时顺手过账也一样过不去）
+        FgDocCreatedVO first = fgDocService.fromReceipt(receipt, fromReceipt(f, Map.of(receiptItem(receipt, f.skuM), 30), false));
+        assertThat(first.status()).isEqualTo("DRAFT");
+        assertThatThrownBy(() -> fgDocService.fromReceipt(receipt, fromReceipt(f, Map.of(receiptItem(receipt, f.skuM), 1), true)))
+                .isInstanceOf(BizException.class).hasMessage(SelfAudit.MESSAGE);
+        audit(first.id());
         assertThat(pending(f, receipt).getRemainQty()).isEqualTo(68);
         assertThatThrownBy(() -> fgDocService.fromReceipt(receipt, fromReceipt(f, Map.of(receiptItem(receipt, f.skuM), 29), false)))
                 .isInstanceOf(BizException.class).extracting("code").isEqualTo(ErrorCodes.OVER_LIMIT);
-        FgDocCreatedVO rest = fgDocService.fromReceipt(receipt, fromReceipt(f, null, true));
+        FgDocCreatedVO rest = fgDocService.fromReceipt(receipt, fromReceipt(f, null, false));
+        audit(rest.id());
         assertThat(stock(f, f.skuM)).isEqualTo(58);
         assertThat(stock(f, f.skuL)).isEqualTo(40);
         assertThat(pending(f, receipt)).isNull();
@@ -175,6 +181,7 @@ class FgIT {
         long a = fgDocService.create(shipReq(f, order, Map.of(f.skuM, 40))).id();
         long b = fgDocService.create(shipReq(f, order, Map.of(f.skuM, 40))).id();
 
+        TestIdentity.auditorOf(jdbcTemplate, f.user);   // 审核人先建好：两个线程同时建会撞唯一索引
         CyclicBarrier start = new CyclicBarrier(2);
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
@@ -186,7 +193,7 @@ class FgIT {
                     TestIdentity.company(f.company);
                     try {
                         start.await();
-                        fgDocService.act(id, "audit", new DocActionReq(v, null));
+                        TestIdentity.asAuditor(jdbcTemplate, () -> fgDocService.act(id, "audit", new DocActionReq(v, null)));
                         return null;
                     } finally {
                         TestIdentity.clear();
@@ -240,7 +247,7 @@ class FgIT {
     }
 
     private void audit(long docId) {
-        fgDocService.act(docId, "audit", new DocActionReq(version(docId), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> fgDocService.act(docId, "audit", new DocActionReq(version(docId), null)));
         assertThat(jdbcTemplate.queryForObject("SELECT status FROM fg_doc WHERE id = ?", String.class, docId))
                 .isEqualTo(DocStatus.APPROVED.name());
     }
@@ -323,7 +330,7 @@ class FgIT {
         req.setItems(List.of(orderItem(f.skuM, 60), orderItem(f.skuL, 40)));
         long id = orderService.create(req).id();
         orderService.act(id, "submit", new DocActionReq(0, null));
-        orderService.audit(id, new OrderAuditReq(1, commit));
+        TestIdentity.asAuditor(jdbcTemplate, () -> orderService.audit(id, new OrderAuditReq(1, commit)));
         return id;
     }
 
@@ -356,7 +363,7 @@ class FgIT {
         req.setBlocks(List.of(b));
         long id = scheduleService.schedule(req).getFirst().id();
         productionOrderService.act(id, "submit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
-        productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null)));
         return id;
     }
 

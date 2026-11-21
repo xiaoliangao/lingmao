@@ -26,8 +26,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * 物料清单研发、生产分工（RFC 012 §3，甲方 Q49 选 B）：物料类型定这一行归谁填，字典 material_type 的 text_value 写 PROD 的归生产，
- * 其余（DEV、没填）归研发。只能填一块的人，另一块的行不能加、删、换物料、改部位用量配料，改了 403。
+ * 物料清单开发、生产分工（RFC 012 §3，甲方 Q49 选 B；11-21 改成主料和工艺开发填、辅料生产填）：物料类型定这一行归谁填，
+ * 字典 material_type 的 text_value 写 PROD 的归生产，其余（DEV、没填）归开发。只能填一块的人，另一块的行不能加、删、换物料、改部位用量配料，改了 403。
  * 按服务端认出的行身份（明细 id）比对，做法和看不见价格的人改不了价格一样（PackFinancialAccess）；价格归看成本权限管，这里不比
  */
 @Component
@@ -89,7 +89,7 @@ class PackBomAccess {
     }
 
     private static FieldPermissionDenied denied(boolean prod) {
-        return new FieldPermissionDenied(prod ? "填物料清单研发的行（面辅料）的" : "填物料清单生产的行（耗材）的");
+        return new FieldPermissionDenied(prod ? "填物料清单开发的行（主料和工艺）的" : "填物料清单生产的行（辅料）的");
     }
 
     /** 除了价格，行上能改的都一样（部位、物料、配料方式和配到哪些 SKU、用量、损耗、来源、供应商、备注） */

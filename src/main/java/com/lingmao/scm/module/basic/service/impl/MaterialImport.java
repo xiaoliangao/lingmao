@@ -130,6 +130,8 @@ public class MaterialImport {
         /** 面料功能、是否带吊牌：11-18 以前进 legacy_attrs，RFC 012 §5.1 起是正式字段 */
         private String fabricFunction;
         private String withTag;
+        /** 功能吊牌的名称（甲方 11-21，领猫没有这一列） */
+        private String tagNames;
         private String purchaseUnit;
         private BigDecimal conversionFactor;
         private BigDecimal minPackQty;
@@ -227,6 +229,7 @@ public class MaterialImport {
             row.setTexture(m.getTexture());
             row.setFabricFunction(m.getFabricFunction());
             row.setWithTag(m.getWithTag() == null ? null : m.getWithTag() ? "是" : "否");
+            row.setTagNames(m.getTagNames());
             row.setPurchaseUnit(m.getPurchaseUnit());
             row.setConversionFactor(m.getConversionFactor());
             row.setMinPackQty(m.getMinPackQty());
@@ -412,6 +415,13 @@ public class MaterialImport {
                         yield null;
                     }
                 });
+            }
+            if (r.getTagNames() != null) {
+                if (Boolean.TRUE.equals(m.getWithTag())) {
+                    m.setTagNames(r.getTagNames());
+                } else {
+                    sheet.error(row, "吊牌名称", "是否带吊牌填\"是\"才填吊牌名称");
+                }
             }
             m.setSupplierItemNo(r.getSupplierItemNo());
             m.setRefPrice(zeroToNull(FieldPermissions.price(FieldPermissions.COST, null, r.getRefPrice())));
@@ -733,7 +743,10 @@ public class MaterialImport {
                 ExcelColumn.text("纹理", MaterialRow::getTexture, MaterialRow::setTexture).maxLength(64),
                 ExcelColumn.text("面料功能", MaterialRow::getFabricFunction, MaterialRow::setFabricFunction).maxLength(255)
                         .note("面料、里料才存；别的类型的留在附加属性里"),
-                ExcelColumn.text("是否带吊牌", MaterialRow::getWithTag, MaterialRow::setWithTag).maxLength(8).note("是 / 否，不填 = 没填"),
+                ExcelColumn.text("是否带吊牌", MaterialRow::getWithTag, MaterialRow::setWithTag).maxLength(8)
+                        .note("带不带功能性吊牌：是 / 否，不填 = 没填"),
+                ExcelColumn.text("吊牌名称", MaterialRow::getTagNames, MaterialRow::setTagNames).maxLength(255)
+                        .example("coolmax 吊牌").note("领猫没有这一列：功能吊牌叫什么，几个用顿号隔开；是否带吊牌填\"是\"才填"),
                 ExcelColumn.choice("采购单位", units, MaterialRow::getPurchaseUnit, MaterialRow::setPurchaseUnit)
                         .note("领猫没有这一列；不填 = 单位"),
                 ExcelColumn.decimal("换算系数", 6, MaterialRow::getConversionFactor, MaterialRow::setConversionFactor)

@@ -131,10 +131,10 @@ class FgDocServiceImplTest {
     /** 规则（照物料，用户 11-17 定）：没过过账的草稿给"删除"，过过账又反审核回来的给"作废"；已审核只有反审核 */
     @Test
     void actions_postedDraftGetsVoidInsteadOfRemove() {
-        assertThat(FgDocServiceImpl.actions(DocStatus.DRAFT, false)).containsExactly("edit", "audit", "remove");
-        assertThat(FgDocServiceImpl.actions(DocStatus.DRAFT, true)).containsExactly("edit", "audit", "void");
-        assertThat(FgDocServiceImpl.actions(DocStatus.APPROVED, true)).containsExactly("unaudit");
-        assertThat(FgDocServiceImpl.actions(DocStatus.VOIDED, true)).isEmpty();
+        assertThat(FgDocServiceImpl.actions(DocStatus.DRAFT, false, null)).containsExactly("edit", "audit", "remove");
+        assertThat(FgDocServiceImpl.actions(DocStatus.DRAFT, true, null)).containsExactly("edit", "audit", "void");
+        assertThat(FgDocServiceImpl.actions(DocStatus.APPROVED, true, null)).containsExactly("unaudit");
+        assertThat(FgDocServiceImpl.actions(DocStatus.VOIDED, true, null)).isEmpty();
     }
 
     /** 规则（RFC 008 §3.4）：每个 SKU 最多发 ⌊订单数 × 1.03⌋，整数算、往下取 */

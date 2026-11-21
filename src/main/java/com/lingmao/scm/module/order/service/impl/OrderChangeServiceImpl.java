@@ -24,6 +24,7 @@ import com.lingmao.scm.module.biz.entity.Attachment;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocActions;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.biz.service.DocHeaderService;
 import com.lingmao.scm.module.biz.service.DocLogService;
 import com.lingmao.scm.module.biz.service.DocNoticeService;
@@ -165,7 +166,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             r.setSummary(ChangeTexts.summary(r.getChangeTypes().contains(ChangeType.CANCEL), texts));
             r.setCreateByName(names.get(r.getCreateBy()));
             r.setAuditByName(r.getAuditBy() == null ? null : names.get(r.getAuditBy()));
-            r.setActions(actions(DocStatus.valueOf(r.getStatus()), isCreator(r.getCreateBy())));
+            r.setActions(actions(DocStatus.valueOf(r.getStatus()), r.getCreateBy()));
         }
     }
 
@@ -186,12 +187,13 @@ public class OrderChangeServiceImpl implements OrderChangeService {
                 .collect(Collectors.joining(","));
     }
 
-    /** 按钮：撤回只给制单人；改、删看 order:change:edit、:remove */
-    static List<String> actions(DocStatus status, boolean creator) {
+    /** 按钮：撤回只给制单人，审核、驳回不给制单人（自己建的单不能自己审，SelfAudit）；改、删看 order:change:edit、:remove */
+    static List<String> actions(DocStatus status, Long createBy) {
         return DocActions.of(FLOW, status, PERM)
                 .perm("edit", PERM + "edit")
                 .perm("remove", PERM + "remove")
-                .when("withdraw", creator)
+                .when("withdraw", isCreator(createBy))
+                .createdBy(createBy)
                 .list();
     }
 
@@ -227,7 +229,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
             return itemVO(ci, n, row == null ? null : row.getScheduledQty());
         }).toList());
         vo.setSummary(ChangeTexts.summary(cancel, items.stream().map(ci -> ChangeTexts.text(ci, n, null)).toList()));
-        vo.setActions(actions(c.getStatus(), isCreator(c.getCreateBy())));
+        vo.setActions(actions(c.getStatus(), c.getCreateBy()));
         return vo;
     }
 
@@ -752,6 +754,7 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     /** 审核：写回订单（核对"原"、件数不小于已排产，在 applyChange 里），再给下游单据发提醒 */
     private void audit(OrderChange c, DocActionReq req) {
         FLOW.next("audit", c.getStatus());
+        SelfAudit.check(c.getCreateBy());
         if (!c.getVersion().equals(req.version())) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "这张变更单刚被别人审过或改过，请刷新后再审");
         }

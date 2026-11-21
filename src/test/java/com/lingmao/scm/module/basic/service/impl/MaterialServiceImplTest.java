@@ -161,6 +161,22 @@ class MaterialServiceImplTest {
                 .extracting("code").isEqualTo(400);
     }
 
+    /** 规则（甲方 11-21）：带功能吊牌选了"是"要写吊牌名称（只有空格也不行），不插入 */
+    @Test
+    void create_withTagButNoTagNames_rejected400() {
+        stubLeafCategory();
+        stubDict();
+        MaterialCreateReq req = createReq();
+        req.setWithTag(true);
+        req.setTagNames("  ");
+
+        assertThatThrownBy(() -> materialService.create(req))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("要填吊牌名称")
+                .extracting("code").isEqualTo(400);
+        verify(materialMapper, never()).insert(any(Material.class));
+    }
+
     /** 规则：物料至少留一个 SKU */
     @Test
     void deleteSku_lastOne_rejected() {

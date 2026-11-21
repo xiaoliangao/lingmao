@@ -224,6 +224,7 @@ const skuCodeOf = (m, color, spec) => [m.code, color, specCode(spec)].filter(Boo
 // f.skus = [{ color, spec, supColor, price, safety }]（新建时一起填）；不给 = 一个不带颜色的 SKU。f.code 给导入用
 function createMaterial({ imported, ...f }) {
   if (!f.name) fail('物料名称要填')
+  if (!imported) checkTagNames(f)   // 导入的不要求（领猫没有吊牌名称这一列）
   if (!(f.factor > 0)) fail('换算系数要大于 0')
   const code = (f.code || '').trim().toUpperCase() || nextMatCode(f.cat)
   if (mat(code)) fail(`物料编码 ${code} 已经有了`)
@@ -287,10 +288,16 @@ function matLockReason(m) {
   return ''
 }
 const MAT_FIELDS = [['name', '名称'], ['cat', '分类', (v) => matCat(v).name], ['type', '类型'], ['unit', '库存单位'], ['purUnit', '采购单位'], ['factor', '换算系数'],
-  ['width', '门幅'], ['weight', '克重'], ['comp', '成分'], ['texture', '组织'], ['fabricFn', '面料功能'], ['withTag', '是否带吊牌', (v) => (v == null ? '' : v ? '是' : '否')], ['supplier', '默认供应商', (v) => supName(v)], ['supNo', '供应商货号'], ['price', '参考单价'],
+  ['width', '门幅'], ['weight', '克重'], ['comp', '成分'], ['texture', '组织'], ['fabricFn', '面料功能'], ['withTag', '带功能吊牌', (v) => (v == null ? '' : v ? '是' : '否')], ['tagNames', '吊牌名称'], ['supplier', '默认供应商', (v) => supName(v)], ['supNo', '供应商货号'], ['price', '参考单价'],
   ['moq', '起订量'], ['pack', '最小包装'], ['lead', '采购周期'], ['year', '年份'], ['season', '季节', (v) => seasonName(v)], ['note', '备注']]
+// 功能吊牌（甲方 11-21）：选了"是"要写吊牌名称，不是"是"的不留名称
+function checkTagNames(f) {
+  if (!f.withTag) f.tagNames = ''
+  else if (!f.tagNames?.trim()) fail('带功能吊牌选了「是」，要填吊牌名称')
+}
 function updateMaterial(m, f) {
   if (!f.name?.trim()) fail('物料名称要填')
+  checkTagNames(f)
   if (!(f.factor > 0)) fail('换算系数要大于 0')
   const lock = matLockReason(m)
   if (lock && (f.unit !== m.unit || f.purUnit !== m.purUnit || f.factor !== m.factor)) fail(lock + '，单位和换算系数不能改', ['改了以后，以前单据上的数量就对不上了', '确实要换单位：新建一个物料，把这个停用'])
@@ -1063,7 +1070,7 @@ comp('MaterialForm', {
     const pick = (o, ks) => Object.fromEntries(ks.map((k) => [k, o[k] ?? null]))
     const f = reactive(p.m
       ? { ...pick(p.m, MAT_FIELDS.map(([k]) => k)), skus: p.m.skus.map((k) => ({ code: k.code, color: k.color, spec: k.spec, supColor: k.supColor || '', price: k.price ?? null, safety: k.safety ?? null, status: k.status || '启用' })) }
-      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', fabricFn: '', withTag: null, supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [] })
+      : { cat: liveMatCats().some((c) => c.code === p.cat) ? p.cat : liveMatCats()[0]?.code, name: '', type: '面料', unit: '米', purUnit: '米', factor: 1, width: null, weight: null, comp: '', texture: '', fabricFn: '', withTag: null, tagNames: '', supplier: '', supNo: '', price: null, moq: null, pack: 1, lead: 7, year: +clock.today.slice(0, 4), season: '', note: '', colors: [], images: [] })
     const rows = reactive({}) // 新建：颜色 → { spec, supColor, price, safety }
     const skuRows = () => f.colors.map((c) => ({ color: c, ...rows[c] }))
     const code = computed(() => (p.m ? p.m.code : nextMatCode(f.cat)))
@@ -1109,7 +1116,8 @@ comp('MaterialForm', {
       <label class="f">成分<input class="inp" v-model="f.comp" placeholder="如 100% 棉"></label>
       <label class="f">组织 / 纹理<input class="inp" v-model="f.texture" placeholder="如 斜纹、平纹"></label>
       <label v-if="f.type === '面料' || f.type === '里料'" class="f">面料功能<input class="inp" v-model="f.fabricFn" maxlength="255" placeholder="如 防水、抗皱"></label>
-      <label class="f">是否带吊牌<Pick class="sel" :model-value="f.withTag == null ? '' : f.withTag ? '是' : '否'" @update:model-value="v => f.withTag = v === '' ? null : v === '是'"><option value="">没填</option><option>是</option><option>否</option></Pick></label>
+      <label class="f">带功能吊牌<Pick class="sel" :model-value="f.withTag == null ? '' : f.withTag ? '是' : '否'" @update:model-value="v => f.withTag = v === '' ? null : v === '是'"><option value="">没填</option><option>是</option><option>否</option></Pick></label>
+      <label v-if="f.withTag" class="f">吊牌名称<input class="inp" v-model="f.tagNames" maxlength="255" placeholder="几个用顿号隔开，如 coolmax 吊牌"></label>
       <label class="f">年份<input class="inp num" type="number" v-model.number="f.year"></label>
       <label class="f">季节<Pick class="sel" v-model="f.season"><option value="">—</option><option v-for="x in liveSeasons(f.season)" :key="x.code" :value="x.code">{{ x.name }}</option></Pick></label>
       <label class="f">默认供应商<Pick class="sel" v-model="f.supplier"><option value="">不填</option><option v-for="s in sups" :key="s.code" :value="s.code">{{ s.short }}</option></Pick></label>

@@ -135,7 +135,7 @@ class OrderIT {
         jdbcTemplate.update("INSERT INTO biz_approval_rule (biz_type, over_amount, user_id) VALUES ('ORDER', 10000, ?)", f.approver);
         try {
             orderService.act(id, "submit", new DocActionReq(0, null));
-            orderService.audit(id, new OrderAuditReq(1, LocalDate.now().plusDays(40)));
+            TestIdentity.asAuditor(jdbcTemplate, () -> orderService.audit(id, new OrderAuditReq(1, LocalDate.now().plusDays(40))));
             d = orderService.detail(id);
             assertThat(d.getStatus()).isEqualTo("PENDING");
             assertThat(d.getCommitDate()).isEqualTo(LocalDate.now().plusDays(40));
@@ -215,7 +215,7 @@ class OrderIT {
                 f.styleCode + " 资料包：V1 → V2", f.styleCode + "-A-M：100 → 80", f.styleCode + "-C-M：新加 20 件");
 
         changeService.act(ch.id(), "submit", new DocActionReq(0, null));
-        changeService.act(ch.id(), "audit", new DocActionReq(1, null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> changeService.act(ch.id(), "audit", new DocActionReq(1, null)));
 
         assertThat(jdbcTemplate.queryForList("SELECT style_sku_id, qty, tech_pack_id FROM ord_order_item WHERE order_id = ? ORDER BY seq", id))
                 .extracting(r -> r.get("style_sku_id"), r -> r.get("qty"), r -> r.get("tech_pack_id"))
@@ -235,7 +235,7 @@ class OrderIT {
         cancel.setCancel(true);
         DocSaved cc = changeService.create(cancel);
         changeService.act(cc.id(), "submit", new DocActionReq(0, null));
-        changeService.act(cc.id(), "audit", new DocActionReq(1, null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> changeService.act(cc.id(), "audit", new DocActionReq(1, null)));
         assertThat(orderService.detail(id).getStatus()).isEqualTo("VOIDED");
         assertThat(changeService.counts(cq)).containsEntry("APPROVED", 2L);
     }
@@ -257,7 +257,7 @@ class OrderIT {
         long changeId = changeService.create(req).id();
         if (status.equals("APPROVED")) {
             changeService.act(changeId, "submit", new DocActionReq(0, null));
-            changeService.act(changeId, "audit", new DocActionReq(1, null));
+            TestIdentity.asAuditor(jdbcTemplate, () -> changeService.act(changeId, "audit", new DocActionReq(1, null)));
         } else {
             changeService.act(changeId, "void", new DocActionReq(0, "测试撤销"));
         }
@@ -545,7 +545,7 @@ class OrderIT {
     private long approvedOrder(Fixture f, Map<Long, Integer> quantities) {
         long id = createOrder(f, quantities).id();
         orderService.act(id, "submit", new DocActionReq(0, null));
-        orderService.audit(id, new OrderAuditReq(1, LocalDate.now().plusDays(30)));
+        TestIdentity.asAuditor(jdbcTemplate, () -> orderService.audit(id, new OrderAuditReq(1, LocalDate.now().plusDays(30))));
         return id;
     }
 

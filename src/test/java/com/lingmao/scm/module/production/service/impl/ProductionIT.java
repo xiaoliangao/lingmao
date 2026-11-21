@@ -11,6 +11,7 @@ import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.dto.DocRef;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.ReferenceService;
+import com.lingmao.scm.module.inventory.dto.InvDocCreatedVO;
 import com.lingmao.scm.module.inventory.dto.InvDocFromSourceReq;
 import com.lingmao.scm.module.inventory.entity.InvDocType;
 import com.lingmao.scm.module.inventory.service.InvDocService;
@@ -139,7 +140,7 @@ class ProductionIT {
 
         // 审核：按字典生成节点，最后一个的计划完成 = 交期；没有档案价，记一条价格档案；订单变生产中
         productionOrderService.act(prdId, "submit", new DocActionReq(d.getVersion(), null));
-        productionOrderService.act(prdId, "audit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(prdId, "audit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null)));
         d = productionOrderService.detail(prdId);
         assertThat(d.getStatus()).isEqualTo("APPROVED");
         assertThat(d.getNodes()).extracting(ProductionNodeVO::getNodeCode).startsWith("MATERIAL", "CUT", "SEW");
@@ -164,11 +165,11 @@ class ProductionIT {
         jdbcTemplate.update("INSERT INTO inv_stock (warehouse_id, material_sku_id, qty) VALUES (?, ?, 500)", f.warehouse, f.sku);
         assertThat(productionOrderService.materials(prdId).rows()).singleElement()
                 .satisfies(m -> assertThat(m.getNeedQty()).isEqualByComparingTo("150"));
-        invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, stockReq(InvDocType.ISSUE_OUT, f, "150"));
+        postStock(prdId, stockReq(InvDocType.ISSUE_OUT, f, "150"));
         assertThat(productionOrderService.detail(prdId).getIssueStatus()).isEqualTo("DONE");
         assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, stockReq(InvDocType.RETURN_IN, f, "200")))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));
-        invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, stockReq(InvDocType.RETURN_IN, f, "10"));
+        postStock(prdId, stockReq(InvDocType.RETURN_IN, f, "10"));
         assertThat(productionOrderService.detail(prdId).getIssueStatus()).isEqualTo("PARTIAL");
         assertThat(productionOrderService.materials(prdId).rows().getFirst().getIssuedQty()).isEqualByComparingTo("140");
 
@@ -256,7 +257,7 @@ class ProductionIT {
         assertThat(scheduled(orderId)).isEqualTo(100);
 
         productionOrderService.act(prdId, "submit", new DocActionReq(d.getVersion(), null));
-        productionOrderService.act(prdId, "audit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(prdId, "audit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null)));
         d = productionOrderService.detail(prdId);
         assertThat(d.getStatus()).isEqualTo("APPROVED");
         assertThat(d.getNodes()).isNotEmpty();
@@ -441,7 +442,7 @@ class ProductionIT {
         long id = scheduleService.schedule(scheduleReq(f, order, commit.minusDays(10),
                 Map.of(orderLine(order, f.skuM), 60, orderLine(order, f.skuL), 40))).getFirst().id();
         productionOrderService.act(id, "submit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
-        productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(id, "audit", new DocActionReq(productionOrderService.detail(id).getVersion(), null)));
         return id;
     }
 
@@ -524,7 +525,7 @@ class ProductionIT {
         req.setItems(List.of(orderItem(f.skuM, 60), orderItem(f.skuL, 40)));
         long id = orderService.create(req).id();
         orderService.act(id, "submit", new DocActionReq(0, null));
-        orderService.audit(id, new OrderAuditReq(1, commitDate));
+        TestIdentity.asAuditor(jdbcTemplate, () -> orderService.audit(id, new OrderAuditReq(1, commitDate)));
         return id;
     }
 
@@ -598,7 +599,13 @@ class ProductionIT {
         return a;
     }
 
-    /** 领料、退料单，建好马上过账（数量是库存单位）；物料仓用这次建的（默认取的是库里第一个） */
+    /** 领料、退料单：建草稿，换审核人过账（自己建的单不能自己审，甲方 11-21 答 Q10） */
+    private void postStock(long prdId, InvDocFromSourceReq req) {
+        InvDocCreatedVO doc = invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, req);
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc.id(), "audit", new DocActionReq(doc.version(), null)));
+    }
+
+    /** 领料、退料单的草稿（数量是库存单位）；物料仓用这次建的（默认取的是库里第一个） */
     private static InvDocFromSourceReq stockReq(InvDocType type, Fixture f, String qty) {
         InvDocFromSourceReq.Item i = new InvDocFromSourceReq.Item();
         i.setMaterialSkuId(f.sku);
@@ -612,7 +619,6 @@ class ProductionIT {
             req.setToWarehouseId(f.warehouse);
         }
         req.setItems(List.of(i));
-        req.setPost(true);
         return req;
     }
 

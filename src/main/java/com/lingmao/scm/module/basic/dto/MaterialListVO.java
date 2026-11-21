@@ -32,6 +32,7 @@ public class MaterialListVO {
     private String composition;
     private String fabricFunction;
     private Boolean withTag;
+    private String tagNames;
     private Long defaultSupplierId;
     /** 默认供应商的简称 */
     private String defaultSupplierName;

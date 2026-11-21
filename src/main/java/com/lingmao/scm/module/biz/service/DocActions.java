@@ -68,6 +68,18 @@ public final class DocActions {
     }
 
     /**
+     * 单级审核的单据传制单人：是我建的就不出 audit、reject（{@link SelfAudit}，自己的单要撤回用 withdraw）。
+     * 多级审批的单据不用调，view.canPass 已经把制单人去掉了
+     */
+    public DocActions createdBy(Long createBy) {
+        if (SelfAudit.isMine(createBy)) {
+            blocked.add("audit");
+            blocked.add("reject");
+        }
+        return this;
+    }
+
+    /**
      * 多级审批的单据（需求订单、采购单、生产单）：audit、reject 不看权限码，只给当前这一级的审批人（view.canPass，架构 §4.8）。
      * view 是 null（还没提交过）时这两个都不出
      */

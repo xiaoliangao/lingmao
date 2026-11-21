@@ -785,7 +785,7 @@ comp('TechPack', {
     // 没有工艺单也能生效，问一句（RFC 011 §2.1）
     async function publish() {
       if (!tp.value.files.some((f) => f.cat === '工艺单') && !(await ask(`生效 ${tpName(tp.value)}`, '还没有工艺单，发工厂时没有文件可发。', '还是生效'))) { view.value = 'files'; return }
-      if (!tp.value.bom.some((r) => bomOwnerOf(r) === '生产') && !(await ask(`生效 ${tpName(tp.value)}`, '耗材（生产填）还没填。有的款确实没有耗材；生效以后要补得修订。', '还是生效'))) return
+      if (!tp.value.bom.some((r) => bomOwnerOf(r) === '生产') && !(await ask(`生效 ${tpName(tp.value)}`, '辅料（生产填）还没填。生效以后要补得修订。', '还是生效'))) return
       if (run(() => publishTp(tp.value))) toast(`${tpName(tp.value)} 已生效，可以下需求订单了`)
     }
     function create() { const t = createTechpack(p.code, [], null, ''); key.value = t.id; view.value = 'bom'; adding.value = true }
@@ -905,7 +905,7 @@ comp('TechPack', {
                   </div>
                 </td></tr>
               </template></template>
-              <tr v-if="!tp.bom.some((r) => bomOwnerOf(r) === g.owner)"><td :colspan="edit ? 12 : 10" class="empty">{{ g.owner === '研发' ? (edit ? '还没有面辅料：点「加一行」，或者从甲方的 BOM 表导入' : '这一版没有面辅料') : (edit ? '还没有耗材：生产跟单来填' : '还没有耗材') }}</td></tr>
+              <tr v-if="!tp.bom.some((r) => bomOwnerOf(r) === g.owner)"><td :colspan="edit ? 12 : 10" class="empty">{{ g.owner === '研发' ? (edit ? '还没有主料和工艺：点「加一行」，或者从甲方的 BOM 表导入' : '这一版没有主料和工艺') : (edit ? '还没有辅料：生产跟单来填' : '还没有辅料') }}</td></tr>
               </template>
             </tbody>
           </table>

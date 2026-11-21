@@ -13,6 +13,8 @@ import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.mapper.ApprovalRuleMapper;
 import com.lingmao.scm.module.biz.mapper.ApprovalStepMapper;
 import com.lingmao.scm.module.biz.service.ApprovalService;
+import com.lingmao.scm.module.biz.service.DocCreatorProvider;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.module.system.service.RoleService;
 import com.lingmao.scm.module.system.service.UserService;
@@ -25,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -52,6 +55,8 @@ public class ApprovalServiceImpl implements ApprovalService {
     private final RoleService roleService;
     private final UserService userService;
     private final Clock clock;
+    /** 各单据的制单人（自己建的单不能自己审，SelfAudit）：ORDER、PURCHASE_ORDER、PRODUCTION_ORDER 各一个 */
+    private final List<DocCreatorProvider> creatorProviders;
 
     @Override
     public boolean supports(BizType type) {
@@ -89,6 +94,9 @@ public class ApprovalServiceImpl implements ApprovalService {
         ApprovalStep current = steps.stream().filter(s -> s.getStatus() == ApprovalStepStatus.CURRENT).findFirst()
                 // 没有在审的级：被撤回、驳回了，或者最后一级刚被别人审完
                 .orElseThrow(() -> new BizException(ErrorCodes.STATE_CHANGED, "状态已变化，请刷新后再试"));
+        if (createdBy(type, docId, me)) {
+            throw new BizException(SelfAudit.MESSAGE);
+        }
         if (!canPass(current, me, myRoles)) {
             throw new BizException(403, "现在是第 " + current.getLevelNo() + " 级，等" + approverLabels(List.of(current)).get(current.getLevelNo()) + "审");
         }
@@ -139,7 +147,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         Long me = LoginUser.currentUserId();
         return new ApprovalView(current.getRound(), levels,
                 "第 " + current.getLevelNo() + " 级 · " + labels.get(current.getLevelNo()),
-                canPass(current, me, myRoles(me)));
+                canPass(current, me, myRoles(me)) && !createdBy(type, docId, me));
     }
 
     @Override
@@ -152,7 +160,7 @@ public class ApprovalServiceImpl implements ApprovalService {
         boolean firstLevel = LoginUser.hasAuthority(perm);
         List<Long> roles = permissionService.loadRoleIds(me);
         // 当前级 AND (第 1 级且我有审核权限 OR 是我的角色 OR 指定了我)；走 idx_biz_step_current
-        return stepMapper.selectList(new LambdaQueryWrapper<ApprovalStep>()
+        List<Long> ids = stepMapper.selectList(new LambdaQueryWrapper<ApprovalStep>()
                         .select(ApprovalStep::getDocId)
                         .eq(ApprovalStep::getBizType, type)
                         .eq(ApprovalStep::getStatus, ApprovalStepStatus.CURRENT)
@@ -161,6 +169,24 @@ public class ApprovalServiceImpl implements ApprovalService {
                                 .or(!roles.isEmpty(), x -> x.in(ApprovalStep::getRoleId, roles)))
                         .orderByAsc(ApprovalStep::getDocId))
                 .stream().map(ApprovalStep::getDocId).toList();
+        // 自己建的轮不到自己审（SelfAudit）：列表的"待我审核"、首页的待办、列表行的按钮都用这里，一起去掉
+        Map<Long, Long> creators = creators(type, ids);
+        return ids.stream().filter(id -> !me.equals(creators.get(id))).toList();
+    }
+
+    /** 这张单是不是 me 建的 */
+    private boolean createdBy(BizType type, long docId, Long me) {
+        return me != null && me.equals(creators(type, List.of(docId)).get(docId));
+    }
+
+    /** 单据 id → 制单人，问这种单据的 DocCreatorProvider；没有实现是程序的错（漏了就等于没拦） */
+    private Map<Long, Long> creators(BizType type, Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return creatorProviders.stream().filter(p -> p.type() == type).findFirst()
+                .orElseThrow(() -> new IllegalStateException(type + " 没有 DocCreatorProvider，查不到制单人"))
+                .creators(ids);
     }
 
     /** 不是这三种单据的（变更单、入库单……还是单级审核）调进来是程序的错 */

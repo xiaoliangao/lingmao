@@ -54,8 +54,11 @@ public class Material extends AuditEntity {
     /** 面料功能，文字，如"防水、抗皱"；面料、里料才有（RFC 012 §5.1） */
     private String fabricFunction;
 
-    /** 是否带吊牌，空 = 没填；只记录（RFC 012 §5.1） */
+    /** 带不带功能性吊牌（甲方 11-21 说明，领猫叫"是否带吊牌"），空 = 没填；只记录（RFC 012 §5.1） */
     private Boolean withTag;
+
+    /** 功能吊牌的名称，几个用顿号隔开，如"coolmax 吊牌"；withTag 是 true 才有（V48，库里有约束） */
+    private String tagNames;
 
     /** 默认供应商：只当默认值，保存时不查状态（架构 A23）；basic 不调 supplier */
     private Long defaultSupplierId;

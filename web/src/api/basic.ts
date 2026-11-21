@@ -151,6 +151,8 @@ export interface MaterialForm {
   /** 面料功能；物料类型不是面料、里料时后端不存 */
   fabricFunction?: string | null
   withTag?: boolean | null
+  /** 功能吊牌的名称；withTag 是 true 时必填，不是 true 时后端不存 */
+  tagNames?: string | null
   defaultSupplierId?: string | null
   supplierItemNo?: string | null
   refPrice?: number | null

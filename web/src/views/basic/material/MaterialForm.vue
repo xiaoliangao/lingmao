@@ -46,6 +46,7 @@ const EMPTY = {
   texture: '',
   fabricFunction: '',
   withTag: null as boolean | null,
+  tagNames: '',
   defaultSupplierId: null as string | null,
   supplierItemNo: '',
   refPrice: undefined as Num,
@@ -71,6 +72,7 @@ const rules: FormRules = {
   materialType: [{ required: true, message: '请选物料类型', trigger: 'change' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   stockUnit: [{ required: true, message: '请选库存单位', trigger: 'change' }],
+  tagNames: [{ required: true, whitespace: true, message: '带功能吊牌的要写吊牌名称', trigger: 'blur' }],
 }
 
 /** 采购单位不填或和库存单位一样：系数只能是 1 */
@@ -117,7 +119,7 @@ function openEdit(target: MaterialDetail) {
     categoryId: m.categoryId, materialType: m.materialType, name: m.name, stockUnit: m.stockUnit,
     purchaseUnit: m.purchaseUnit === m.stockUnit ? null : m.purchaseUnit, conversionFactor: m.conversionFactor,
     widthCm: m.widthCm ?? undefined, weightGsm: m.weightGsm ?? undefined, composition: m.composition ?? '', texture: m.texture ?? '',
-    fabricFunction: m.fabricFunction ?? '', withTag: m.withTag,
+    fabricFunction: m.fabricFunction ?? '', withTag: m.withTag, tagNames: m.tagNames ?? '',
     defaultSupplierId: m.defaultSupplierId, supplierItemNo: m.supplierItemNo ?? '', refPrice: m.refPrice ?? undefined, moq: m.moq ?? undefined, minPackQty: m.minPackQty,
     leadDays: m.leadDays ?? undefined, year: m.year ?? undefined, season: m.season, defaultSource: m.defaultSource,
     defaultLossPct: m.defaultLossPct ?? undefined, reservePct: m.reservePct ?? undefined, remark: m.remark ?? '',
@@ -139,6 +141,7 @@ function body(): MaterialForm {
     texture: orNull(form.texture),
     fabricFunction: isFabric.value ? orNull(form.fabricFunction) : null,
     withTag: form.withTag,
+    tagNames: form.withTag === true ? orNull(form.tagNames) : null,
     defaultSupplierId: form.defaultSupplierId,
     supplierItemNo: orNull(form.supplierItemNo),
     refPrice: form.refPrice ?? null,
@@ -310,11 +313,14 @@ defineExpose({ openCreate, openEdit })
       <el-form-item v-if="isFabric" label="面料功能" class="span2">
         <el-input v-model="form.fabricFunction" maxlength="255" placeholder="如 防水、抗皱" />
       </el-form-item>
-      <el-form-item label="是否带吊牌">
+      <el-form-item label="带功能吊牌">
         <el-select v-model="form.withTag" clearable placeholder="没填">
           <el-option label="是" :value="true" />
           <el-option label="否" :value="false" />
         </el-select>
+      </el-form-item>
+      <el-form-item v-if="form.withTag === true" label="吊牌名称" prop="tagNames" class="span2">
+        <el-input v-model="form.tagNames" maxlength="255" placeholder="几个用顿号隔开，如 coolmax 吊牌" />
       </el-form-item>
 
       <el-form-item label="供应商货号">
