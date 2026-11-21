@@ -156,11 +156,13 @@ class StockExcel {
         private BigDecimal closingQty;
         private BigDecimal purchaseIn;
         private BigDecimal returnIn;
+        private BigDecimal issueIn;
         private BigDecimal otherIn;
         private BigDecimal transferIn;
         private BigDecimal countGain;
         private BigDecimal openingIn;
         private BigDecimal issueOut;
+        private BigDecimal returnOut;
         private BigDecimal purchaseReturn;
         private BigDecimal otherOut;
         private BigDecimal transferOut;
@@ -180,11 +182,13 @@ class StockExcel {
             ExcelColumn.decimal("期末", 3, MovementRow::getClosingQty, MovementRow::setClosingQty),
             ExcelColumn.decimal("采购入库", 3, MovementRow::getPurchaseIn, MovementRow::setPurchaseIn),
             ExcelColumn.decimal("退料入库", 3, MovementRow::getReturnIn, MovementRow::setReturnIn),
+            ExcelColumn.decimal("领料入厂", 3, MovementRow::getIssueIn, MovementRow::setIssueIn),
             ExcelColumn.decimal("其他入库", 3, MovementRow::getOtherIn, MovementRow::setOtherIn),
             ExcelColumn.decimal("调入", 3, MovementRow::getTransferIn, MovementRow::setTransferIn),
             ExcelColumn.decimal("盘盈", 3, MovementRow::getCountGain, MovementRow::setCountGain),
             ExcelColumn.decimal("期初录入", 3, MovementRow::getOpeningIn, MovementRow::setOpeningIn),
             ExcelColumn.decimal("领料出库", 3, MovementRow::getIssueOut, MovementRow::setIssueOut),
+            ExcelColumn.decimal("退料出厂", 3, MovementRow::getReturnOut, MovementRow::setReturnOut),
             ExcelColumn.decimal("采购退货", 3, MovementRow::getPurchaseReturn, MovementRow::setPurchaseReturn),
             ExcelColumn.decimal("其他出库", 3, MovementRow::getOtherOut, MovementRow::setOtherOut),
             ExcelColumn.decimal("调出", 3, MovementRow::getTransferOut, MovementRow::setTransferOut),

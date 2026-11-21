@@ -19,16 +19,18 @@ public class StockMovementRowVO extends MaterialSkuBrief {
     private BigDecimal outQty;
     private BigDecimal closingQty;
 
-    // 入库拆开：采购入库、退料入库、其他入库、调入、盘盈、期初录入
+    // 入库拆开：采购入库、退料入库、领料入厂（工厂仓收到领料）、其他入库、调入、盘盈、期初录入。几列加起来 = inQty
     private BigDecimal purchaseIn;
     private BigDecimal returnIn;
+    private BigDecimal issueIn;
     private BigDecimal otherIn;
     private BigDecimal transferIn;
     private BigDecimal countGain;
     private BigDecimal openingIn;
 
-    // 出库拆开：领料出库、采购退货、其他出库、调出、盘亏
+    // 出库拆开：领料出库、退料出厂（工厂仓退回物料仓）、采购退货、其他出库、调出、盘亏。几列加起来 = outQty
     private BigDecimal issueOut;
+    private BigDecimal returnOut;
     private BigDecimal purchaseReturn;
     private BigDecimal otherOut;
     private BigDecimal transferOut;

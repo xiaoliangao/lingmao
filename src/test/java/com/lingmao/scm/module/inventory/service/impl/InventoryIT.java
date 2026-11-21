@@ -43,6 +43,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.lingmao.scm.module.inventory.entity.StockChangeType;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
@@ -54,6 +56,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -78,6 +81,10 @@ class InventoryIT {
             "inventory:doc:remove", "inventory:doc:audit", "inventory:count:list", "inventory:count:add", "inventory:count:edit",
             "inventory:count:remove", "inventory:count:submit", "inventory:count:audit", "inventory:count:import", "techpack:cost:query");
 
+    @Autowired
+    private StockLedger ledger;
+    @Autowired
+    private TransactionTemplate tx;
     @Autowired
     private InvDocService invDocService;
     @Autowired
@@ -507,9 +514,8 @@ class InventoryIT {
         q.setBizDateTo(today);
         q.setWarehouseType("MATERIAL");
         q.setKeyword(skuCode(f.skuA) + " " + skuCode(f.skuB));
-        StockMovementRowVO both = stockService.movement(q).getList().stream().filter(r -> r.getMaterialSkuId() == f.skuA)
-                .findFirst().orElseThrow();
         PageResult<StockMovementRowVO> page = stockService.movement(q);
+        StockMovementRowVO both = page.getList().getFirst();
         assertThat(page.getList()).as("B 一笔都没有，不列").extracting(StockMovementRowVO::getMaterialSkuId).containsExactly(f.skuA);
         assertThat(page.getTotal()).as("分页插件生成的 count 和列出来的一样").isEqualTo(1);
         assertThat(List.of(both.getOpeningQty(), both.getInQty(), both.getOutQty(), both.getClosingQty()))
@@ -536,6 +542,81 @@ class InventoryIT {
         q.setBizDateTo(today.minusDays(61));
         assertThatThrownBy(() -> stockService.movement(q)).isInstanceOfSatisfying(BizException.class,
                 e -> assertThat(e.getCode()).isEqualTo(400));
+    }
+
+    /**
+     * 规则（RFC 016 §4，agy 复查）：领料、退料两个仓都记——工厂仓那边是"领料入厂""退料出厂"；物料仓、工厂仓、全部三种看法下，
+     * 入库拆开的列加起来都等于入库，出库的等于出库。期间里入了又反审核冲成全 0 的 SKU 不列，total 也不算它。
+     * 一年按"结束往前推一年早于开始"算：2024-02-29 ~ 2025-02-28 可以，再多一天 400
+     */
+    @Test
+    void movement_factorySide_partsAddUp() {
+        Fixture f = fixture();
+        String s = String.valueOf(ThreadLocalRandom.current().nextInt(100_000, 1_000_000));
+        long supplier = jdbcTemplate.queryForObject("INSERT INTO sup_supplier (code, name, short_name) VALUES (?, ?, ?) RETURNING id",
+                Long.class, "ITF" + s, "IT 工厂" + s, "IT 工厂" + s);
+        long factory = jdbcTemplate.queryForObject("INSERT INTO bas_warehouse (code, name, type, factory_id) VALUES (?, ?, 'FACTORY', ?) RETURNING id",
+                Long.class, "ITF" + s, "IT 工厂仓" + s, supplier);
+        LocalDate today = LocalDate.now();
+        audit(createOn(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "100", today.minusDays(20)));
+        // 领料、退料要从生产单生成，这里直接按过账引擎的写法记两边（和 InvDocServiceImpl.posting 一样：两个仓同一个类型）
+        long holder = create(f, InvDocType.OTHER_IN, null, f.warehouseB, f.skuA, "1");
+        tx.executeWithoutResult(t -> {
+            ledger.post(new StockLedger.Posting(holder, null, "IT-LL" + s, today, List.of(
+                    new StockLedger.Move(f.warehouseA, f.skuA, dec("-60"), StockChangeType.ISSUE_OUT, 1, null, null, null),
+                    new StockLedger.Move(factory, f.skuA, dec("60"), StockChangeType.ISSUE_OUT, 1, null, null, null))));
+            ledger.post(new StockLedger.Posting(holder, null, "IT-TL" + s, today, List.of(
+                    new StockLedger.Move(factory, f.skuA, dec("-15"), StockChangeType.RETURN_IN, 1, null, null, null),
+                    new StockLedger.Move(f.warehouseA, f.skuA, dec("15"), StockChangeType.RETURN_IN, 1, null, null, null))));
+        });
+        long zero = create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuB, "7");
+        audit(zero);
+        invDocService.act(zero, "unaudit", new DocActionReq(version(zero), "录错了"));
+
+        StockMovementQuery q = new StockMovementQuery();
+        q.setBizDateFrom(today.minusDays(10));
+        q.setBizDateTo(today);
+        q.setKeyword(skuCode(f.skuA) + " " + skuCode(f.skuB));
+
+        q.setWarehouseType("MATERIAL");
+        PageResult<StockMovementRowVO> page = stockService.movement(q);
+        assertThat(page.getList()).as("B 有日志但全冲平了，不列").extracting(StockMovementRowVO::getMaterialSkuId).containsExactly(f.skuA);
+        assertThat(page.getTotal()).isEqualTo(1);
+        StockMovementRowVO material = page.getList().getFirst();
+        assertThat(List.of(material.getOpeningQty(), material.getInQty(), material.getOutQty(), material.getClosingQty(), material.getReturnIn(), material.getIssueOut()))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(dec("100"), dec("15"), dec("60"), dec("55"), dec("15"), dec("60"));
+        assertPartsAddUp(material);
+
+        q.setWarehouseType("FACTORY");
+        StockMovementRowVO fac = stockService.movement(q).getList().getFirst();
+        assertThat(List.of(fac.getOpeningQty(), fac.getInQty(), fac.getOutQty(), fac.getClosingQty(), fac.getIssueIn(), fac.getReturnOut()))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(dec("0"), dec("60"), dec("15"), dec("45"), dec("60"), dec("15"));
+        assertThat(fac.getClosingQty()).isEqualByComparingTo(stock(factory, f.skuA));
+        assertPartsAddUp(fac);
+
+        q.setWarehouseType(null);
+        StockMovementRowVO all = stockService.movement(q).getList().getFirst();
+        assertThat(List.of(all.getOpeningQty(), all.getInQty(), all.getOutQty(), all.getClosingQty()))
+                .usingElementComparator(BigDecimal::compareTo).containsExactly(dec("100"), dec("75"), dec("75"), dec("100"));
+        assertPartsAddUp(all);
+
+        q.setBizDateFrom(LocalDate.of(2024, 2, 29));
+        q.setBizDateTo(LocalDate.of(2025, 2, 28));
+        assertThat(stockService.movement(q).getList()).isEmpty();
+        q.setBizDateTo(LocalDate.of(2025, 3, 1));
+        assertThatThrownBy(() -> stockService.movement(q)).isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("一年"));
+        q.setBizDateFrom(LocalDate.of(1, 1, 1));
+        q.setBizDateTo(LocalDate.of(1, 1, 2));
+        assertThatThrownBy(() -> stockService.movement(q)).isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+    }
+
+    private static void assertPartsAddUp(StockMovementRowVO r) {
+        BigDecimal in = Stream.of(r.getPurchaseIn(), r.getReturnIn(), r.getIssueIn(), r.getOtherIn(), r.getTransferIn(), r.getCountGain(), r.getOpeningIn())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal out = Stream.of(r.getIssueOut(), r.getReturnOut(), r.getPurchaseReturn(), r.getOtherOut(), r.getTransferOut(), r.getCountLoss())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(in).as("入库拆开的列加起来").isEqualByComparingTo(r.getInQty());
+        assertThat(out).as("出库拆开的列加起来").isEqualByComparingTo(r.getOutQty());
     }
 
     private long createOn(Fixture f, InvDocType type, Long from, Long to, long sku, String qty, LocalDate date) {

@@ -605,7 +605,7 @@ export interface StockMovementQuery {
 /**
  * 进销存汇总的一行（StockMovementRowVO）：选中的仓里，期初 + 入库 − 出库 = 期末，从库存日志现算。
  * 入库、出库按类型拆开（页面上默认藏着）；反审核算进原来那一列（采购入库反审核是采购入库那列减），所以拆开的数可以是负的；
- * 选中的几个仓之间的调拨同时算进调入、调出。不出金额
+ * 选中的几个仓之间的调拨同时算进调入、调出；领料、退料在工厂仓那边是"领料入厂""退料出厂"。拆开的列加起来等于入库、出库。不出金额
  */
 export interface StockMovementRow extends MaterialSkuBrief {
   openingQty: number
@@ -614,12 +614,16 @@ export interface StockMovementRow extends MaterialSkuBrief {
   closingQty: number
   purchaseIn: number
   returnIn: number
+  /** 领料入厂：领料出库在工厂仓那边是入 */
+  issueIn: number
   otherIn: number
   transferIn: number
   countGain: number
   /** 期初录入（期初盘点单），不是"期初"那一列 */
   openingIn: number
   issueOut: number
+  /** 退料出厂：退料入库在工厂仓那边是出 */
+  returnOut: number
   purchaseReturn: number
   otherOut: number
   transferOut: number

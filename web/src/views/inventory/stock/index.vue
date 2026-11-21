@@ -76,10 +76,14 @@ const summaryCols = useColumns('stock-summary', [
   { key: 'materialType', label: '物料类型', hidden: true },
 ])
 type MovementPart = { key: keyof StockMovementRow & string; label: string }
-/** 入库、出库拆开的列（默认藏着）：反审核算进原来那一列，所以可能是负数 */
+/**
+ * 入库、出库拆开的列（默认藏着）：反审核算进原来那一列，所以可能是负数。
+ * 领料出库在工厂仓那边是"领料入厂"、退料入库在工厂仓那边是"退料出厂"，几列加起来总等于入库、出库
+ */
 const IN_PARTS: MovementPart[] = [
   { key: 'purchaseIn', label: '采购入库' },
   { key: 'returnIn', label: '退料入库' },
+  { key: 'issueIn', label: '领料入厂' },
   { key: 'otherIn', label: '其他入库' },
   { key: 'transferIn', label: '调入' },
   { key: 'countGain', label: '盘盈' },
@@ -87,6 +91,7 @@ const IN_PARTS: MovementPart[] = [
 ]
 const OUT_PARTS: MovementPart[] = [
   { key: 'issueOut', label: '领料出库' },
+  { key: 'returnOut', label: '退料出厂' },
   { key: 'purchaseReturn', label: '采购退货' },
   { key: 'otherOut', label: '其他出库' },
   { key: 'transferOut', label: '调出' },
@@ -293,6 +298,21 @@ onActivated(() => {
 const filteredWhOptions = computed(() =>
   warehouses.value.filter((w) => w.type !== 'PRODUCT'),
 )
+type WhType = '' | 'MATERIAL' | 'FACTORY'
+/** 明细、进销存的仓库下拉跟着"物料仓 / 工厂仓"页签走 */
+const whOptionsOf = (type: WhType) => filteredWhOptions.value.filter((w) => !type || w.type === type)
+/** 切了页签：已选的仓库不是这一类的就清掉（不然条件互相矛盾，查出来必是空的），再查 */
+function onWhType(query: { whType: WhType; warehouseId?: string }, search: () => void) {
+  if (query.warehouseId && !whOptionsOf(query.whType).some((w) => w.id === query.warehouseId)) query.warehouseId = undefined
+  search()
+}
+/** 页头"导出"转圈：看当前视图那张表 */
+const exporting = computed(() => {
+  if (viewMode.value === 'detail') return detailTable.exporting.value
+  if (viewMode.value === 'summary') return summaryTable.exporting.value
+  if (viewMode.value === 'movement') return movementTable.exporting.value
+  return logTable.exporting.value
+})
 
 // ---------- 单仓单 SKU 流水浮窗 ----------
 const cellLogVisible = ref(false)
@@ -354,7 +374,7 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
         <el-button v-perm="'inventory:count:add'" @click="router.push('/stock-takes?new=DAILY')">盘点</el-button>
         <el-button v-perm="'inventory:count:add'" @click="router.push('/stock-takes?new=OPENING')">导入期初库存</el-button>
         <el-button v-if="viewMode === 'logs'" v-perm="'inventory:stock:export'" @click="exportDialog?.open()">导出任务</el-button>
-        <el-button v-perm="'inventory:stock:export'" icon="Download" :loading="viewMode === 'logs' && logTable.exporting.value" @click="doExport">导出</el-button>
+        <el-button v-perm="'inventory:stock:export'" icon="Download" :loading="exporting" @click="doExport">导出</el-button>
       </template>
     </PageHeader>
 
@@ -362,11 +382,11 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
     <template v-if="viewMode === 'detail'">
       <FilterBar v-model:keyword="detailTable.query.keyword" placeholder="SKU 码、物料编码、名称、仓库" :columns="detailCols" @search="detailTable.search">
         <template #left>
-          <el-segmented v-model="detailTable.query.whType" :options="WH_TYPE_OPTIONS" @change="detailTable.search" />
+          <el-segmented v-model="detailTable.query.whType" :options="WH_TYPE_OPTIONS" @change="onWhType(detailTable.query, detailTable.search)" />
         </template>
         <FilterItem label="仓库" :text="warehouseName(detailTable.query.warehouseId)" @clear="detailTable.query.warehouseId = undefined">
           <el-select v-model="detailTable.query.warehouseId" filterable clearable placeholder="全部仓库" :value-on-clear="undefined">
-            <el-option v-for="w in filteredWhOptions" :key="w.id" :label="w.name" :value="w.id" />
+            <el-option v-for="w in whOptionsOf(detailTable.query.whType)" :key="w.id" :label="w.name" :value="w.id" />
           </el-select>
         </FilterItem>
         <template #right>
@@ -479,11 +499,11 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
     <template v-else-if="viewMode === 'movement'">
       <FilterBar v-model:keyword="movementTable.query.keyword" placeholder="SKU 码、物料编码、名称" :columns="movementCols" @search="movementTable.search">
         <template #left>
-          <el-segmented v-model="movementTable.query.whType" :options="WH_TYPE_OPTIONS" @change="movementTable.search" />
+          <el-segmented v-model="movementTable.query.whType" :options="WH_TYPE_OPTIONS" @change="onWhType(movementTable.query, movementTable.search)" />
         </template>
         <FilterItem label="仓库" :text="warehouseName(movementTable.query.warehouseId)" @clear="movementTable.query.warehouseId = undefined">
           <el-select v-model="movementTable.query.warehouseId" filterable clearable placeholder="全部仓库" :value-on-clear="undefined">
-            <el-option v-for="w in filteredWhOptions" :key="w.id" :label="w.name" :value="w.id" />
+            <el-option v-for="w in whOptionsOf(movementTable.query.whType)" :key="w.id" :label="w.name" :value="w.id" />
           </el-select>
         </FilterItem>
         <template #right>

@@ -27,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -108,12 +109,15 @@ public class StockServiceImpl implements StockService {
         return excel.movement(rows);
     }
 
-    /** 期间：开始不晚于结束、最多一年（库存日志从头扫到期末，一年以上的看月度就够了）；关键字里的几个编码 */
+    /**
+     * 期间：开始不晚于结束、最多一年（库存日志从头扫到期末，一年以上的看月度就够了）；关键字里的几个编码。
+     * 一年 = 结束往前推一年还早于开始（2024-02-29 ~ 2025-02-28 也算一年）；年份限在 1900–9999，免得推算溢出、超出数据库日期范围报 500
+     */
     private static List<String> movementCodes(StockMovementQuery query) {
-        BusinessDateRange.validate(query.getBizDateFrom(), query.getBizDateTo());
-        if (query.getBizDateTo().isAfter(query.getBizDateFrom().plusYears(1).minusDays(1))) {
-            throw new BizException(400, "期间最多选一年");
-        }
+        LocalDate from = query.getBizDateFrom(), to = query.getBizDateTo();
+        if (from.getYear() < 1900 || to.getYear() > 9999) throw new BizException(400, "日期超出支持范围");
+        BusinessDateRange.validate(from, to);
+        if (!to.minusYears(1).isBefore(from)) throw new BizException(400, "期间最多选一年");
         return Keywords.codes(query.getKeyword());
     }
 
