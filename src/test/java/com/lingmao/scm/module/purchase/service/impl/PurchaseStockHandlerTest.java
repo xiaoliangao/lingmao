@@ -71,6 +71,7 @@ class PurchaseStockHandlerTest {
         handler = new PurchaseStockHandler(poMapper, itemMapper, materialService, dictDataService, docLogService, offsetBook);
         // 冲抵的取数、写回另有 OverOffsetPlanTest 和 PurchaseIT；这里只锁这一张、什么都不冲
         lenient().when(offsetBook.poIdsToLock(anyLong(), any(), anyBoolean())).thenReturn(new TreeSet<>(Set.of(5L)));
+        lenient().when(poMapper.lockForUpdate(any())).thenReturn(List.of(5L));
         lenient().when(offsetBook.settle(any(), any(), any())).thenReturn(PurchaseOffsetBook.Settled.NONE);
     }
 
@@ -124,6 +125,51 @@ class PurchaseStockHandlerTest {
 
         assertThatThrownBy(() -> handler.check(posting(InvDocType.PURCHASE_IN, "1")))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("不能入库"));
+    }
+
+    /** 已到齐的两行单：第 1 行靠冲入到齐能再入；第 2 行自己入够了，哪怕还有溢收余量也不能再入（RFC 014 复查 #2） */
+    @Test
+    void check_doneByOffset_onlyCoveredLinesCanReceive() {
+        PurchaseOrderItem covered = item("95", "0");
+        covered.setOffsetInQty(new BigDecimal("5"));
+        PurchaseOrderItem full = item("100", "0");
+        full.setId(12L);
+        full.setSeq(2);
+        when(poMapper.lockById(5L)).thenReturn(po(DocStatus.DONE));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(covered, full));
+        SourcePosting second = new SourcePosting(1L, "RK202611170001", InvDocType.PURCHASE_IN, 5L,
+                List.of(new SourcePosting.Line(1, 12L, 100L, new BigDecimal("3"), new BigDecimal("3"))));
+
+        handler.check(posting(InvDocType.PURCHASE_IN, "5"));
+        assertThatThrownBy(() -> handler.check(second))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("第 2 行自己已经入够了"));
+    }
+
+    /** 只靠冲入变成部分到货、自己没入过库的单不能退货（复查 #7） */
+    @Test
+    void check_offsetOnly_cannotReturn() {
+        PurchaseOrderItem onlyOffset = item("0", "0");
+        onlyOffset.setOffsetInQty(new BigDecimal("50"));
+        when(poMapper.lockById(5L)).thenReturn(po(DocStatus.RUNNING));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(onlyOffset));
+
+        assertThatThrownBy(() -> handler.check(posting(InvDocType.PURCHASE_RETURN, "1")))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("不能退货"));
+    }
+
+    /** 同组别的单查的时候还在、锁之前被删了：锁不上的跳过；这张单自己没锁上才 404（复查 #4） */
+    @Test
+    void lockAll_missingOtherOrderIsSkipped_missingSelfIs404() {
+        when(offsetBook.poIdsToLock(anyLong(), any(), anyBoolean())).thenReturn(new TreeSet<>(Set.of(5L, 9L)));
+        when(poMapper.lockForUpdate(any())).thenReturn(List.of(5L), List.of(9L));
+        when(poMapper.lockById(5L)).thenReturn(po(DocStatus.RUNNING));
+        when(itemMapper.selectByOrder(5L)).thenReturn(List.of(item("0", "0")), List.of(item("10", "0")));
+
+        handler.onPosted(posting(InvDocType.PURCHASE_IN, "10"));
+        verify(offsetBook).settle(any(), eq(Set.of(5L)), any());
+
+        assertThatThrownBy(() -> handler.onPosted(posting(InvDocType.PURCHASE_IN, "10")))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
     }
 
     /** 退货让净入库变少：冲抵按 −30 算（退回冲出去的在 OverOffsetPlan 里） */

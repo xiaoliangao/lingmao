@@ -260,7 +260,7 @@ public class MrpServiceImpl implements MrpService {
     }
 
     /**
-     * 详情、齐料现取的数：每行生成的采购行净入库（库存单位，连同重新算料转过来的），本次使用在途里已经到的。
+     * 详情、齐料现取的数：每行生成的采购行到货（净入库 + 冲入 − 冲出，RFC 014；库存单位，连同重新算料转过来的），本次使用在途里已经到的。
      * 已到的只有已确认的算料单才算（activeCalcIds 里的）：草稿、已关闭的不占，按 0
      */
     record Progress(Map<Long, BigDecimal> received, Map<Long, BigDecimal> arrived) {

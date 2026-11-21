@@ -214,7 +214,7 @@ public class GlobalExceptionHandler {
         if (sql != null && "P2019".equals(sql.getSQLState())) {
             return R.fail(ErrorCodes.STATE_CHANGED, "上传文件尚未完成或已清理，请重新上传后保存");
         }
-        if (sql != null && DEADLOCK.equals(sql.getSQLState())) {
+        if (hasSqlState(e, DEADLOCK)) {
             // 加锁都按 id 顺序（RFC 014 §6），万一还是被数据库判了死锁：这个事务已经整个回滚，让用户再点一次
             log.warn("数据库判了死锁，已回滚: {} {}", request.getMethod(), request.getRequestURI());
             return R.fail(ErrorCodes.STATE_CHANGED, "有人同时在改，请重试");
@@ -256,6 +256,27 @@ public class GlobalExceptionHandler {
     }
 
     /** 顺着 cause 往下找驱动抛的 SQLException：MyBatis、Spring 会包好几层 */
+    /** 报错链里有没有这个 SQLState：沿 cause 找，也看 SQLException 的 nextException（批量执行时真正的错误挂在那里） */
+    private static boolean hasSqlState(Throwable e, String state) {
+        java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        java.util.List<Throwable> todo = new java.util.ArrayList<>();
+        todo.add(e);
+        while (!todo.isEmpty()) {
+            Throwable t = todo.removeLast();
+            if (t == null || !seen.add(t)) {
+                continue;
+            }
+            if (t instanceof SQLException sql) {
+                if (state.equals(sql.getSQLState())) {
+                    return true;
+                }
+                todo.add(sql.getNextException());
+            }
+            todo.add(t.getCause());
+        }
+        return false;
+    }
+
     private static SQLException sqlExceptionOf(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             if (t instanceof SQLException sql) {

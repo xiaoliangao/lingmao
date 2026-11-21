@@ -128,6 +128,43 @@ class OverOffsetPlanTest {
         assertThat(b.out(1)).isZero();
     }
 
+    /**
+     * 有时间限制的（还回来的）先冲、这次入的后冲（复查 #5）：单 1 原来多收的 50（T1）只能去 T1 以前审核的单 3；
+     * 单 2 这次多收的 50 哪都能去，冲给 T2 才审核的单 4。反过来先冲这次入的，会把单 3 占掉，单 1 的 50 就冲不出去了
+     */
+    @Test
+    void timeLimitedSurplusSpreadsBeforeFreshArrival() {
+        Book b = new Book();
+        b.line(1, "CG1", "11-01", T0);
+        b.line(2, "CG2", "11-02", T0);
+        b.line(3, "CG3", "11-10", T0, "50");
+        b.clock = T0.plusHours(1);
+        b.post(1, "1050");
+        assertThat(b.in(2)).isEqualByComparingTo("50");
+        b.line(4, "CG4", "11-12", T0.plusHours(2));
+        b.clock = T0.plusHours(3);
+
+        Result r = b.post(2, "1050");
+
+        assertThat(mv(r.undone())).containsExactly(move(1, 2, "50"));
+        assertThat(mv(r.added())).containsExactly(move(1, 3, "50"), move(2, 4, "50"));
+        assertThat(b.transit()).isEqualByComparingTo("950");
+    }
+
+    /** 一张入库单入了同一张采购单的两行（同一组）：第 1 行多收的先冲给同单第 2 行（同一天同单号按行号），第 2 行有了冲入就不再往外冲 */
+    @Test
+    void onePostingTwoLinesOfSameOrder() {
+        LocalDate day = LocalDate.parse("2026-11-10");
+        Line a = new Line(1, 1, "CG1", "G", day, 1, T0, true, q("1000"), q("1050"), q("0"), q("0"));
+        Line bLine = new Line(2, 1, "CG1", "G", day, 2, T0, true, q("1000"), q("500"), q("0"), q("0"));
+        Line c = new Line(3, 3, "CG2", "G", day, 1, T0, true, q("1000"), q("0"), q("0"), q("0"));
+
+        Result r = OverOffsetPlan.plan(List.of(a, bLine, c), List.of(), Map.of(1L, q("1050"), 2L, q("500")));
+
+        assertThat(mv(r.added())).containsExactly(move(1, 2, "50"));
+        assertThat(r.inDelta()).containsOnlyKeys(2L);
+    }
+
     /** 决定 2：有冲入的行自己又多收了：先把冲入的还回去，剩下多收的再冲给别的单。一行不会同时有冲入和冲出 */
     @Test
     void lineWithOffsetIn_overReceivesItself_givesBackFirst() {

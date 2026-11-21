@@ -245,14 +245,17 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
                     <template #reference>
                       <span class="offset">{{ offsetNet(row as PurchaseItem) > 0 ? '+' : '−' }}{{ formatQty(Math.abs(offsetNet(row as PurchaseItem))) }}</span>
                     </template>
-                    <div v-for="o in (row as PurchaseItem).offsets" :key="o.direction + o.purchaseOrderId" class="offset-line">
-                      <template v-if="o.direction === 'IN'">
+                    <div v-for="o in (row as PurchaseItem).offsets" :key="`${o.direction}-${o.purchaseOrderId}-${o.otherSeq}`" class="offset-line">
+                      <template v-if="o.purchaseOrderId === detail?.id">
+                        {{ o.direction === 'IN' ? `第 ${o.otherSeq} 行多收，冲来` : `冲给第 ${o.otherSeq} 行` }} {{ formatQty(o.qty) }}
+                      </template>
+                      <template v-else-if="o.direction === 'IN'">
                         <router-link :to="`/purchases/${o.purchaseOrderId}`" class="code">{{ o.purchaseNo }}</router-link>
-                        多收，冲来 {{ formatQty(o.qty) }}<span class="dim">（入在{{ o.warehouseName }}）</span>
+                        第 {{ o.otherSeq }} 行多收，冲来 {{ formatQty(o.qty) }}<span class="dim">（入在{{ o.warehouseName }}）</span>
                       </template>
                       <template v-else>
                         冲给 <router-link :to="`/purchases/${o.purchaseOrderId}`" class="code">{{ o.purchaseNo }}</router-link>
-                        {{ formatQty(o.qty) }}<span class="dim">（那张单交{{ o.warehouseName }}）</span>
+                        第 {{ o.otherSeq }} 行 {{ formatQty(o.qty) }}<span class="dim">（那张单交{{ o.warehouseName }}）</span>
                       </template>
                     </div>
                   </el-popover>

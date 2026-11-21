@@ -277,9 +277,14 @@ function isNeedOverReason(row: DraftRow): boolean {
   return props.docType === 'ISSUE_OUT' && row.thisQty > row.suggestQty + EPS
 }
 
-/** 采购入库超过未入库、没超上限的部分（溢收） */
+/**
+ * 采购入库超过采购数、没超上限的部分（溢收）。按这一行自己的净入库比：靠别的单冲来到齐的行（RFC 014），
+ * 未入库（可入）是 0，供应商照原单补送的那部分不算超收，入了会把冲来的还回去
+ */
 function overReceive(row: DraftRow): number {
-  return props.docType === 'PURCHASE_IN' && !isOverMax(row) ? Math.max(0, row.thisQty - row.suggestQty) : 0
+  if (props.docType !== 'PURCHASE_IN' || isOverMax(row)) return 0
+  const ownLeft = (row.orderedQty ?? 0) - (row.receivedQty ?? 0) + (row.returnedQty ?? 0)
+  return Math.max(0, row.thisQty - Math.max(row.suggestQty, ownLeft))
 }
 
 /** 出仓库存不够：标红，不拦（库存可能审核前就到了） */

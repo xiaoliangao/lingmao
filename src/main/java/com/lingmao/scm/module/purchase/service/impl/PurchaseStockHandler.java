@@ -112,10 +112,14 @@ class PurchaseStockHandler implements StockSourceHandler {
         return i.getOffsetInQty() != null && i.getOffsetInQty().signum() > 0 && i.netReceived().compareTo(i.getQty()) < 0;
     }
 
-    /** 状态不让入、不让退抛 1000。已到齐的单有靠冲入到齐的行，还能入库 */
+    /**
+     * 状态不让入、不让退抛 1000。已到齐的单有靠冲入到齐的行，还能入库（只能入这种行，见 check）；
+     * 只靠冲入变成部分到货、已到齐、自己一行都没入过库的单不能退货
+     */
     static void checkStatus(PurchaseOrder po, boolean in, Collection<PurchaseOrderItem> items) {
-        boolean ok = (in ? CAN_RECEIVE : CAN_RETURN).contains(po.getStatus())
-                || in && po.getStatus() == DONE && items.stream().anyMatch(PurchaseStockHandler::coveredByOffset);
+        boolean ok = in
+                ? CAN_RECEIVE.contains(po.getStatus()) || po.getStatus() == DONE && items.stream().anyMatch(PurchaseStockHandler::coveredByOffset)
+                : CAN_RETURN.contains(po.getStatus()) && items.stream().anyMatch(i -> i.netReceived().signum() > 0);
         if (!ok) {
             throw new BizException("采购单 " + po.getNo() + " 现在是「" + PurchaseOrderServiceImpl.PO_STATUS.label(po.getStatus()).text()
                     + "」，不能" + (in ? "入库" : "退货"));
@@ -130,6 +134,12 @@ class PurchaseStockHandler implements StockSourceHandler {
                 .collect(Collectors.toMap(PurchaseOrderItem::getId, Function.identity()));
         checkStatus(po, in, items.values());
         Map<Long, BigDecimal> thisQty = byLine(posting, items, po);
+        if (in && po.getStatus() == DONE) {
+            // 已到齐的单只能入靠冲入到齐的行；自己入够了的行还有溢收余量也不行（已到齐的单原来就不能再入）
+            thisQty.keySet().stream().map(items::get).filter(i -> !coveredByOffset(i)).findFirst().ifPresent(i -> {
+                throw new BizException("采购单 " + po.getNo() + " 已到齐，第 " + i.getSeq() + " 行自己已经入够了，不能再入");
+            });
+        }
         Map<Long, MaterialSkuBrief> briefs = null;
         Map<String, String> units = null;
         List<InvOverRow> over = new ArrayList<>();
@@ -198,14 +208,19 @@ class PurchaseStockHandler implements StockSourceHandler {
         apply(posting, true, lockAll(posting, true));
     }
 
-    /** 这次过账会动到的采购单，按 id 从小到大锁上：这一张、这几行冲过的；净入库变多（入库、反审核退货）时加上同组没到齐的 */
+    /**
+     * 这次过账会动到的采购单，按 id 从小到大一条语句锁上：这一张、这几行冲过的；净入库变多（入库、反审核退货）时加上同组没到齐的。
+     * 返回真锁上的：查的时候还在、锁之前被别人删了的草稿不在里面（没冲抵连着它，不冲给它就是了），只有这一张不在才 404
+     */
     private Set<Long> lockAll(SourcePosting posting, boolean reverse) {
         boolean growing = (posting.docType() == InvDocType.PURCHASE_IN) != reverse;
         Set<Long> itemIds = posting.lines().stream().map(SourcePosting.Line::sourceItemId).filter(Objects::nonNull)
                 .collect(Collectors.toCollection(TreeSet::new));
-        Set<Long> ids = offsetBook.poIdsToLock(posting.sourceId(), itemIds, growing);
-        ids.forEach(this::lock);
-        return ids;
+        Set<Long> locked = new TreeSet<>(poMapper.lockForUpdate(offsetBook.poIdsToLock(posting.sourceId(), itemIds, growing)));
+        if (!locked.contains(posting.sourceId())) {
+            throw new BizException(404, "采购单不存在");
+        }
+        return locked;
     }
 
     @Override

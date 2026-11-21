@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.purchase.service.impl;
 
+import com.lingmao.scm.module.purchase.mapper.SupplyMapper;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -34,14 +35,27 @@ class SupplyBookTest {
         assertThat(book.freeLines(SKU, Set.of(), null)).isEmpty();
     }
 
-    /** 多收、冲出去的那一行：冲出去的不算它的已到，它自己的在途是 0（多收不会变成负的在途） */
+    /**
+     * 取数（SupplyLoader.line）：多收 1050、冲出 50 的那一行，已到按 1000 算（冲出去的不算它的，算料单自己生成的这一行不多占 50）；
+     * 冲入 50、净入库 450 的那一行到货 500。没冲出去的多收（1050）在途是 0，不会变成负的
+     */
     @Test
-    void offsetOut_notCountedAsReceivedOfThatLine() {
-        SupplyBook.Line po1 = new SupplyBook.Line(1L, 10L, "CG1", "ORDER", SKU, 1L, new BigDecimal("1000"),
-                new BigDecimal("1000"), BigDecimal.ONE, null, true, true, 7L, 70L, true);
+    void loader_arrivedIncludesOffsets_andOverReceiptIsNeverNegativeTransit() {
+        SupplyBook.Line out = SupplyLoader.line(row(1L, "1050", "0", "0", "50"));
+        SupplyBook.Line in = SupplyLoader.line(row(2L, "450", "0", "50", "0"));
+        SupplyBook.Line over = SupplyLoader.line(row(3L, "1080", "30", "0", "0"));
 
-        assertThat(po1.receivedStock()).isEqualByComparingTo("1000");
-        assertThat(po1.remainingStock()).isZero();
-        assertThat(po1.pendingStock()).isZero();
+        assertThat(out.receivedStock()).isEqualByComparingTo("1000");
+        assertThat(out.pendingStock()).isZero();
+        assertThat(in.receivedStock()).isEqualByComparingTo("500");
+        assertThat(in.pendingStock()).isEqualByComparingTo("500");
+        assertThat(over.receivedStock()).isEqualByComparingTo("1050");
+        assertThat(over.pendingStock()).isZero();
+    }
+
+    private static SupplyMapper.LineRow row(long id, String received, String returned, String offsetIn, String offsetOut) {
+        return new SupplyMapper.LineRow(id, id * 10, "CG" + id, "ORDER", "RUNNING", SKU, 1L, "MATERIAL", new BigDecimal("1000"),
+                new BigDecimal(received), new BigDecimal(returned), new BigDecimal(offsetIn), new BigDecimal(offsetOut), BigDecimal.ONE,
+                null, 7L, 70L, "CONFIRMED");
     }
 }

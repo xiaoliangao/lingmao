@@ -226,14 +226,14 @@ class PurchaseOrderServiceImplTest {
      */
     @Test
     void actions() {
-        PurchaseOrderServiceImpl.Ctx none = new PurchaseOrderServiceImpl.Ctx(false, null, false, false);
+        PurchaseOrderServiceImpl.Ctx none = new PurchaseOrderServiceImpl.Ctx(false, null, false, false, true);
         assertThat(PurchaseOrderServiceImpl.actions(DocStatus.APPROVED, none)).contains("unaudit", "close", "receive")
                 .doesNotContain("follow");
-        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.APPROVED, new PurchaseOrderServiceImpl.Ctx(false, null, true, false)))
+        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.APPROVED, new PurchaseOrderServiceImpl.Ctx(false, null, true, false, true)))
                 .doesNotContain("unaudit");
         assertThat(PurchaseOrderServiceImpl.actions(DocStatus.PENDING, none)).doesNotContain("withdraw", "audit", "reject");
         ApprovalView myTurn = new ApprovalView(1, List.of(), null, true);
-        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.PENDING, new PurchaseOrderServiceImpl.Ctx(true, myTurn, false, false)))
+        assertThat(PurchaseOrderServiceImpl.actions(DocStatus.PENDING, new PurchaseOrderServiceImpl.Ctx(true, myTurn, false, false, true)))
                 .contains("withdraw", "audit", "reject");
 
         login("purchase:order:edit");

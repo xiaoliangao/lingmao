@@ -143,7 +143,7 @@ export interface MrpItem extends MaterialSkuBrief {
   estAmount?: number | null
   /** 已转采购量，采购单位：生成采购单时加，采购单草稿改数量、删除、作废时跟着改 */
   convertedQty: number
-  /** 这一行（连同重新算料带过来的）生成的采购行净入库（已入库 − 已退货），库存单位 */
+  /** 这一行（连同重新算料带过来的）生成的采购行到货（净入库 + 冲入 − 冲出，RFC 014），库存单位 */
   receivedQty: number
   /** 齐料还差多少 = 需求 − 本次使用库存 − 本次使用在途里已到的 − 已入库，不小于 0。0 显示"齐"，> 0 显示"差 n"（PRD §6.6.3）；厂购的行是 0 */
   shortQty: number
@@ -383,7 +383,9 @@ export interface PurchaseOffset {
   direction: 'IN' | 'OUT'
   purchaseOrderId: string
   purchaseNo: string
-  /** 对面那张单的交货仓库：不同仓库也冲，多收的料在哪个仓要看得到 */
+  /** 对面那一行的行号；同一张单的两行之间也会冲，这时 purchaseOrderId 就是本单 */
+  otherSeq: number
+  /** 对面那张单的交货仓库：物料仓之间不同仓库也冲，多收的料在哪个仓要看得到 */
   warehouseName: string
   qty: number
 }

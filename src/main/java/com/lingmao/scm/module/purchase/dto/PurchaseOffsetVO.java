@@ -8,8 +8,10 @@ import java.math.BigDecimal;
  * @param direction       IN 别的单多收、冲给这一行；OUT 这一行多收、冲给别的单
  * @param purchaseOrderId 对面那张采购单
  * @param purchaseNo      对面那张采购单的单号
+ * @param otherSeq        对面那一行的行号（同一张单的两行之间也会冲，对面可能就是本单）
  * @param warehouseName   对面那张采购单的交货仓库：不同仓库也冲，多收的料在哪个仓要看得到
  * @param qty             冲了多少，> 0
  */
-public record PurchaseOffsetVO(String direction, Long purchaseOrderId, String purchaseNo, String warehouseName, BigDecimal qty) {
+public record PurchaseOffsetVO(String direction, Long purchaseOrderId, String purchaseNo, Integer otherSeq, String warehouseName,
+                               BigDecimal qty) {
 }

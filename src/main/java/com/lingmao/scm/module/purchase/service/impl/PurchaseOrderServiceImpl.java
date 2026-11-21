@@ -215,15 +215,16 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             r.setFirstItem(r.getFirstSkuId() == null ? null : briefs.get(r.getFirstSkuId()));
             r.setBuyerName(names.get(r.getBuyerId()));
             r.setActions(actions(DocStatus.valueOf(r.getStatus()), new Ctx(isCreator(r.getCreateBy()),
-                    new ApprovalView(0, List.of(), null, mine.contains(r.getId())), false, false)));
+                    new ApprovalView(0, List.of(), null, mine.contains(r.getId())), false, false, true)));
         }
     }
 
     /**
      * 算按钮要的业务条件：creator 我是制单人（撤回），approval 审批块，referenced 有入库单、出库单或被算料单用着（不出反审核；列表不查），
-     * offsetIn 有靠冲入到齐、自己还没入够的行（已到齐也出到货入库，RFC 014；列表不查）
+     * offsetIn 有靠冲入到齐、自己还没入够的行（已到齐也出到货入库，RFC 014；列表不查），
+     * returnable 有净入库 > 0 的行（只靠冲入变成部分到货、已到齐的单没有能退的，不出退货；列表不查，按有）
      */
-    record Ctx(boolean creator, ApprovalView approval, boolean referenced, boolean offsetIn) {
+    record Ctx(boolean creator, ApprovalView approval, boolean referenced, boolean offsetIn, boolean returnable) {
     }
 
     /** 按钮（前端 PurchaseAction）。到货入库、退货看 inventory:doc:add */
@@ -236,6 +237,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                 .when("withdraw", c.creator())
                 .when("unaudit", !c.referenced())
                 .when("receive", status != DONE || c.offsetIn())
+                .when("return", c.returnable())
                 .approval(c.approval())
                 .list();
     }
@@ -288,14 +290,15 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         vo.setReturnedQty(Num.qty(sum(items.stream().map(PurchaseOrderItem::getReturnedQty).toList())));
         vo.setPlanStyles(poMapper.selectPlanStyles(id));
         Map<Long, List<PurchaseOffsetVO>> offsets = offsetMapper.selectRefsOfOrder(id).stream().collect(Collectors.groupingBy(PurchaseOffsetMapper.RefRow::itemId,
-                        Collectors.mapping(r -> new PurchaseOffsetVO(r.direction(), r.purchaseOrderId(), r.purchaseNo(), r.warehouseName(),
+                        Collectors.mapping(r -> new PurchaseOffsetVO(r.direction(), r.purchaseOrderId(), r.purchaseNo(), r.otherSeq(), r.warehouseName(),
                                 Num.qty(r.qty())), Collectors.toList())));
         vo.setItems(items.stream().map(i -> itemVO(po, i, briefs.get(i.getMaterialSkuId()), archive.get(i.getMaterialSkuId()),
                 i.getCalcItemId() == null ? null : sources.get(i.getCalcItemId()), offsets.getOrDefault(i.getId(), List.of()))).toList());
         vo.setStockDocs(poMapper.selectStockDocs(id).stream().peek(d -> d.setDyeLots(PurTexts.split(d.getDyeLotsText()))).toList());
         boolean referenced = po.getStatus() == APPROVED && !referenceService.referrers(BizType.PURCHASE_ORDER, id).isEmpty();
         boolean offsetIn = items.stream().anyMatch(PurchaseStockHandler::coveredByOffset);
-        vo.setActions(actions(po.getStatus(), new Ctx(isCreator(po.getCreateBy()), vo.getApproval(), referenced, offsetIn)));
+        boolean returnable = items.stream().anyMatch(i -> i.netReceived().signum() > 0);
+        vo.setActions(actions(po.getStatus(), new Ctx(isCreator(po.getCreateBy()), vo.getApproval(), referenced, offsetIn, returnable)));
         return vo;
     }
 

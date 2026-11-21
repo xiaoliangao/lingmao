@@ -698,6 +698,41 @@ class PurchaseIT {
     }
 
     /**
+     * 组键的 SQL 在真库上过一遍（复查 #1、#8）：直发工厂仓的单只和同一个工厂仓的单冲，不冲给物料仓的单（物料仓的单下得早也不冲）；
+     * 物料仓的单多收了，同组只剩工厂仓的单和别的供应商的单，就不冲
+     */
+    @Test
+    void overReceipt_staysWithinFactoryWarehouseAndSupplier() {
+        Fixture f = fixture(null);
+        String s = f.skuCode.substring(4);
+        long factoryWh = jdbcTemplate.queryForObject(
+                "INSERT INTO bas_warehouse (code, name, type, factory_id) VALUES (?, ?, 'FACTORY', ?) RETURNING id",
+                Long.class, "ITPF" + s, "IT 工厂仓" + s, f.supplier);
+        long poM = approvedStockPo(f, "1000", null);
+        long poF1 = approvedStockPo(f, "1000", null, factoryWh);
+        long poF2 = approvedStockPo(f, "1000", null, factoryWh);
+
+        receive(f, poF1, "1050");
+        assertThat(purchaseOrderService.detail(poF2).getItems().getFirst().getOffsetInQty()).isEqualByComparingTo("50");
+        assertThat(purchaseOrderService.detail(poM).getItems().getFirst().getOffsetInQty()).isZero();
+
+        long otherSupplier = jdbcTemplate.queryForObject(
+                "INSERT INTO sup_supplier (code, name, short_name, status, settle_method, tax_pct) VALUES (?, ?, ?, 'ACTIVE', 'MONTHLY', 13) RETURNING id",
+                Long.class, "ITPS2" + s, "IT 辅料厂" + s + "有限公司", "IT 辅料厂" + s);
+        PurchaseCreateReq req = poReq(f, "1000", null);
+        req.setSupplierId(otherSupplier);
+        long poOther = purchaseOrderService.create(req).id();
+        purchaseOrderService.act(poOther, "submit", new DocActionReq(0, null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> purchaseOrderService.act(poOther, "audit", new DocActionReq(1, null)));
+
+        receive(f, poM, "1050");
+        assertThat(purchaseOrderService.detail(poM).getItems().getFirst().getOffsetOutQty()).isZero();
+        assertThat(purchaseOrderService.detail(poOther).getItems().getFirst().getOffsetInQty()).isZero();
+        assertThat(purchaseOrderService.detail(poF2).getItems().getFirst().getOffsetInQty()).isEqualByComparingTo("50");
+        assertThat(offsetMismatches()).isEmpty();
+    }
+
+    /**
      * §8-6：两张多收的入库单同时过账、互相冲：都成功（按 id 顺序锁，谁也不等谁），数对得上。
      * 先过的那张冲给另一张，后过的把冲来的还回去，两张多收的各 50 都冲给第三张（它在多收以前就审核了）
      */

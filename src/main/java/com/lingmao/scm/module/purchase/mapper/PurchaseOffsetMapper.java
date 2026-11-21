@@ -20,9 +20,18 @@ import java.util.List;
 @Mapper
 public interface PurchaseOffsetMapper {
 
-    /** 同一组的键：主体、供应商、品类线、SKU、采购单位、换算系数 */
+    /**
+     * 交货地点那一段（WH_CLASS_*）：物料仓之间不分仓（甲方 11-21：不同仓库也冲）；直发工厂仓的只和同一个工厂仓冲——
+     * 工厂仓的料不算进物料仓的库存、在途（算料、补货只看物料仓），跨过去冲，两边的账就对不上了
+     */
+    String WH_CLASS_HEAD = "(SELECT CASE WHEN w.type = 'MATERIAL' THEN 'MATERIAL' ELSE w.id::text END FROM bas_warehouse w WHERE w.id = ";
+    /** 采购单 o 的交货地点那一段 */
+    String WH_CLASS_O = WH_CLASS_HEAD + "o.warehouse_id)";
+    String WH_CLASS_PO = WH_CLASS_HEAD + "po.warehouse_id)";
+
+    /** 同一组的键：主体、供应商、品类线、SKU、采购单位、换算系数、交货地点（WH_CLASS） */
     String GROUP_KEY = "concat_ws('|', o.company_id, o.supplier_id, COALESCE(o.product_line, ''), i.material_sku_id, i.purchase_unit, "
-            + "i.conversion_factor)";
+            + "i.conversion_factor, " + WH_CLASS_O + ")";
     String LINE_COLUMNS = "SELECT i.id, o.id AS po_id, o.no AS po_no, o.status AS po_status, " + GROUP_KEY + " AS group_key, "
             + "o.order_date, i.seq, o.audit_time, i.qty, i.received_qty, i.returned_qty, i.offset_in_qty, i.offset_out_qty ";
 
@@ -40,6 +49,7 @@ public interface PurchaseOffsetMapper {
     @Select("<script>" + LINE_COLUMNS + "FROM pur_order_item p JOIN pur_order po ON po.id = p.purchase_order_id "
             + "JOIN pur_order o ON o.company_id = po.company_id AND o.supplier_id = po.supplier_id "
             + "AND o.product_line IS NOT DISTINCT FROM po.product_line AND o.status IN ('APPROVED', 'RUNNING') "
+            + "AND " + WH_CLASS_O + " = " + WH_CLASS_PO + " "
             + "JOIN pur_order_item i ON i.purchase_order_id = o.id AND i.material_sku_id = p.material_sku_id "
             + "AND i.purchase_unit = p.purchase_unit AND i.conversion_factor = p.conversion_factor "
             + "AND i.received_qty - i.returned_qty + i.offset_in_qty - i.offset_out_qty &lt; i.qty "
@@ -60,9 +70,8 @@ public interface PurchaseOffsetMapper {
             + "ORDER BY f.id</script>")
     List<OffsetRow> selectOfItems(@Param("ids") Collection<Long> ids);
 
-    /** since = 多收那一刻：null 是现在；还回来再冲的照原来那笔的时间 */
-    @Insert("INSERT INTO pur_over_offset (from_item_id, to_item_id, qty, create_time) VALUES (#{from}, #{to}, #{qty}, "
-            + "COALESCE(CAST(#{since,jdbcType=TIMESTAMP_WITH_TIMEZONE} AS timestamptz), now()))")
+    /** since = 多收那一刻：新冲的是现在（应用的时钟，和采购单的 audit_time 同一个来源）；还回来再冲的照原来那笔的时间 */
+    @Insert("INSERT INTO pur_over_offset (from_item_id, to_item_id, qty, create_time) VALUES (#{from}, #{to}, #{qty}, #{since})")
     void insert(@Param("from") long fromItemId, @Param("to") long toItemId, @Param("qty") BigDecimal qty,
                 @Param("since") OffsetDateTime since);
 
@@ -76,11 +85,12 @@ public interface PurchaseOffsetMapper {
     @Update("UPDATE pur_order_item SET offset_in_qty = offset_in_qty + #{in}, offset_out_qty = offset_out_qty + #{out} WHERE id = #{id}")
     void addOffset(@Param("id") long itemId, @Param("in") BigDecimal in, @Param("out") BigDecimal out);
 
-    /** 采购单详情的"冲抵"：这张单的行和别的单之间的冲抵，带对面的单号和交货仓库 */
-    record RefRow(Long itemId, String direction, Long purchaseOrderId, String purchaseNo, String warehouseName, BigDecimal qty) {
+    /** 采购单详情的"冲抵"：这张单的行和别的行之间的冲抵（同一对行合成一条），带对面的单号、行号和交货仓库 */
+    record RefRow(Long itemId, String direction, Long purchaseOrderId, String purchaseNo, Integer otherSeq, String warehouseName,
+                  BigDecimal qty) {
     }
 
-    @Select("SELECT x.item_id, x.direction, o.id AS purchase_order_id, o.no AS purchase_no, w.name AS warehouse_name, x.qty "
+    @Select("SELECT x.item_id, x.direction, o.id AS purchase_order_id, o.no AS purchase_no, oi.seq AS other_seq, w.name AS warehouse_name, x.qty "
             + "FROM (SELECT f.to_item_id AS item_id, 'IN' AS direction, f.from_item_id AS other_id, SUM(f.qty) AS qty "
             + "      FROM pur_over_offset f JOIN pur_order_item i ON i.id = f.to_item_id WHERE i.purchase_order_id = #{poId} "
             + "      GROUP BY f.to_item_id, f.from_item_id "
@@ -89,6 +99,6 @@ public interface PurchaseOffsetMapper {
             + "      FROM pur_over_offset f JOIN pur_order_item i ON i.id = f.from_item_id WHERE i.purchase_order_id = #{poId} "
             + "      GROUP BY f.from_item_id, f.to_item_id) x "
             + "JOIN pur_order_item oi ON oi.id = x.other_id JOIN pur_order o ON o.id = oi.purchase_order_id "
-            + "JOIN bas_warehouse w ON w.id = o.warehouse_id ORDER BY x.item_id, x.direction, o.no")
+            + "JOIN bas_warehouse w ON w.id = o.warehouse_id ORDER BY x.item_id, x.direction, o.no, oi.seq")
     List<RefRow> selectRefsOfOrder(@Param("poId") long poId);
 }

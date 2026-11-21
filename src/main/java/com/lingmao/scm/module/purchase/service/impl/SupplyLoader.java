@@ -37,7 +37,8 @@ class SupplyLoader {
         return new SupplyBook(stock, lines, uses, items);
     }
 
-    private static SupplyBook.Line line(SupplyMapper.LineRow r) {
+    /** 一条采购行：已入、没到都按到货（净入库 + 冲入 − 冲出，RFC 014）算 */
+    static SupplyBook.Line line(SupplyMapper.LineRow r) {
         return new SupplyBook.Line(r.id(), r.poId(), r.poNo(), r.purchaseType(), r.skuId(), r.warehouseId(), r.qty(),
                 r.receivedQty().subtract(r.returnedQty()).add(r.offsetInQty()).subtract(r.offsetOutQty()), r.factor(), r.eta(), OPEN.contains(r.poStatus()), "MATERIAL".equals(r.warehouseType()),
                 r.ownerItemId(), r.ownerCalcId(), "CONFIRMED".equals(r.ownerCalcStatus()));

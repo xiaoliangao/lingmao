@@ -23,7 +23,8 @@ import java.util.Set;
  *   <li><b>还回</b>：这次过账的行到货超过采购数了、它又有冲入的，先把冲入的从最近一笔往前还给多收的那一行
  *       （靠冲入到齐的单，供应商照单再送来的，入了就把冲来的还回去）；</li>
  *   <li><b>冲</b>：还有多收的，冲给同一组没到齐的行（已审核、部分到货），先冲下单早的，同一天按单号、行号。
- *       冲的只是这次入的那部分；还回来的那部分只冲给多收那一刻以前就审核了的单（RFC 014 §1"先超收、后下的单不冲"）。</li>
+ *       冲的只是这次入的那部分；还回来的那部分只冲给多收那一刻以前就审核了的单（RFC 014 §1"先超收、后下的单不冲"）。
+ *       有时间限制的（还回来的）先冲、早的先冲，这次入的不受限制、最后冲：反过来，这次入的会先占掉还回来的能去的单，还回来的就冲不出去了。</li>
  * </ol>
  */
 final class OverOffsetPlan {
@@ -98,15 +99,14 @@ final class OverOffsetPlan {
         for (long id : ids) {
             surplus.addAll(s.giveBack(id));
         }
-        List<Surplus> fresh = new ArrayList<>();
+        List<Surplus> order = new ArrayList<>(surplus.stream().sorted(Comparator.comparing(Surplus::since)).toList());
         for (long id : ids) {
             BigDecimal delta = posted.get(id);
             if (delta != null && delta.signum() > 0) {
-                fresh.add(new Surplus(id, delta, null));
+                order.add(new Surplus(id, delta, null));
             }
         }
-        fresh.addAll(surplus);
-        for (Surplus x : fresh) {
+        for (Surplus x : order) {
             s.spread(x);
         }
         return s.result();
