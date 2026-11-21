@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.basic.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.exception.ErrorCodes;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.num.Num;
@@ -79,6 +80,8 @@ public class MaterialImport {
     static final String MULTI_SUPPLIER_UNIT_SHEET = "物料信息多供应商多单位";
     /** 领猫两张表里放图片的列：图片浮在这一列上，单元格是空的 */
     static final String IMAGE_COLUMN = "图片";
+    /** FileService.save 报的这几种是这张图本身的问题（打不开、格式不对、太大）：跳过这张，别的照导 */
+    private static final Set<Integer> IMAGE_ERRORS = Set.of(ErrorCodes.BIZ_ERROR, 400, 413);
     /** 领猫附加属性里放"物料分类"完整路径的键（领猫分了三级以上时） */
     static final String CATEGORY_PATH_KEY = "物料分类";
 
@@ -739,7 +742,7 @@ public class MaterialImport {
      * 领猫导出的"图片"列：图片浮在哪一行，就挂到那一行的物料（"物料信息"）或 SKU（"物料信息SKU"）上，同一行几张的第一张是主图。
      * 文件在这里就存好：解析不在写事务里，写库只挂引用；没导成的文件没人引用，24 小时后自动清掉（FileService.save）。
      * 同一个文件里一样的图只存一份。落在空行上的、不是 jpg/png/gif 的、图本身坏了的不导，进提示，不拦导入；
-     * 存储那边忙（429）、空间不足（503）是整批的事，照旧报错
+     * 只认图本身的错（IMAGE_ERRORS），存储忙（429）、空间不足（503）、登记冲突（409）这些是整批的事，照旧报错
      */
     private void saveImages(ExcelBook book, ExcelImport<MaterialRow> materials, ExcelImport<SkuRow> skus, Plan plan) {
         Map<Integer, String> codeAtRow = new HashMap<>();
@@ -780,7 +783,7 @@ public class MaterialImport {
                 try {
                     return Optional.of(fileService.save(target.name() + "." + image.extension(), image.data()));
                 } catch (BizException broken) {
-                    if (broken.getCode() == 429 || broken.getCode() == 503) throw broken;
+                    if (!IMAGE_ERRORS.contains(broken.getCode())) throw broken;
                     return Optional.empty();
                 }
             });

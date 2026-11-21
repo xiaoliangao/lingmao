@@ -1,5 +1,6 @@
 package com.lingmao.scm.common.image;
 
+import javax.imageio.IIOException;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
@@ -8,11 +9,13 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.io.EOFException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Set;
+import java.util.zip.ZipException;
 
 /**
  * 图片缩略图（RFC 001 §10）：长边 320px，列表、卡片上显示它，点开看原图。只用 JDK 自带的 ImageIO，不加依赖。
@@ -46,22 +49,23 @@ public final class Thumbnails {
      */
     public static void create(Path source, Path target, String ext) throws IOException {
         boolean png = "png".equalsIgnoreCase(ext);
+        BufferedImage image = readSubsampled(source);
         BufferedImage thumb;
         try {
-            thumb = shrink(readSubsampled(source), png);
-        } catch (Unreadable known) {
-            throw known;
-        } catch (IOException | RuntimeException broken) {
-            throw new Unreadable("图片打不开：内容坏了，或者和扩展名不是一种格式", broken);
+            thumb = shrink(image, png);
+        } catch (RuntimeException broken) {
+            throw new Unreadable(BROKEN, broken);
         }
         if (!ImageIO.write(thumb, png ? "png" : "jpg", target.toFile())) {
             throw new IOException("没有能写 " + ext + " 的 ImageIO 写入器");
         }
     }
 
+    private static final String BROKEN = "图片打不开：内容坏了，或者和扩展名不是一种格式";
+
     /**
-     * 这张图本身的问题，不是磁盘的问题：数据截断、损坏（头上的宽高读得出、像素读不出），或者像素太多。
-     * message 是给用户看的，上传的地方原样报出去，不当成服务器出错
+     * 这张图本身的问题，不是磁盘的问题：认不出格式、数据截断、损坏（头上的宽高读得出、像素读不出），或者像素太多。
+     * message 是给用户看的，上传的地方原样报出去，不当成服务器出错。打不开文件、读盘出错还是普通的 IOException
      */
     public static final class Unreadable extends IOException {
         Unreadable(String message, Throwable cause) {
@@ -77,7 +81,7 @@ public final class Thumbnails {
             }
             Iterator<ImageReader> readers = ImageIO.getImageReaders(in);
             if (!readers.hasNext()) {
-                throw new IOException("不是认得的图片格式");
+                throw new Unreadable(BROKEN, null);
             }
             ImageReader reader = readers.next();
             try {
@@ -91,10 +95,35 @@ public final class Thumbnails {
                 ImageReadParam param = reader.getDefaultReadParam();
                 param.setSourceSubsampling(step, step, 0, 0);
                 return reader.read(0, param);
+            } catch (Unreadable known) {
+                throw known;
+            } catch (IOException failure) {
+                if (decodeError(failure)) {
+                    throw new Unreadable(BROKEN, failure);
+                }
+                throw failure;
+            } catch (RuntimeException broken) {
+                throw new Unreadable(BROKEN, broken);
             } finally {
                 reader.dispose();
             }
         }
+    }
+
+    /**
+     * 解码器报的错是不是图片内容的问题：数据提前没了（EOF）、解码器自己报的格式错（IIOException，
+     * PNG 的压缩数据坏了也包在里面）。IIOException 里包着别的 IOException（读盘出错）的，不算
+     */
+    private static boolean decodeError(IOException failure) {
+        if (failure instanceof EOFException) {
+            return true;
+        }
+        if (!(failure instanceof IIOException)) {
+            return false;
+        }
+        Throwable cause = failure.getCause();
+        return !(cause instanceof IOException)
+                || cause instanceof EOFException || cause instanceof ZipException || cause instanceof IIOException;
     }
 
     /** 先对半缩到不足两倍目标大小，最后一步缩到长边 320；本来就小的只换一下像素格式 */

@@ -4,6 +4,12 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.module.system.dto.FileVO;
 import com.lingmao.scm.module.system.service.UploadCatalog;
+import com.lingmao.scm.module.system.service.UploadStore;
+import org.springframework.web.multipart.MultipartFile;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 import java.nio.charset.StandardCharsets;
 import static org.mockito.Mockito.mock;
 import org.junit.jupiter.api.BeforeAll;
@@ -145,6 +151,51 @@ class FileServiceImplTest {
                 .isInstanceOf(BizException.class).hasMessageContaining("图片打不开");
         assertThatThrownBy(() -> service.save("空.png", null)).isInstanceOf(BizException.class).hasMessage("文件不能为空");
         try (var files = Files.walk(tempDir)) { assertThat(files.filter(Files::isRegularFile)).isEmpty(); }
+    }
+
+    /**
+     * 规则：导入存图（save）同时只占一个位置。一批导入正在存、另一批在排队时，页面上传照样拿得到剩下那个位置，不被挤成 429；
+     * 排队的那批等前一张存完接着存
+     */
+    @Test
+    void save_bulkLeavesOneSlotForUpload() throws Exception {
+        CountDownLatch inWrite = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        LocalUploadStore real = new LocalUploadStore(tempDir.toString(), CLOCK);
+        UploadStore slow = new UploadStore() {
+            @Override public Slot allocate(String extension) { return real.allocate(extension); }
+            @Override public Stored write(Slot slot, MultipartFile source, long maxBytes) throws IOException {
+                if (source.getOriginalFilename().startsWith("导入")) {
+                    inWrite.countDown();
+                    try { release.await(10, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                }
+                return real.write(slot, source, maxBytes);
+            }
+            @Override public void delete(Slot slot) throws IOException { real.delete(slot); }
+            @Override public Optional<Path> localPath(String url) { return real.localPath(url); }
+        };
+        FileServiceImpl service = new FileServiceImpl(slow, mock(UploadCatalog.class), SIGNER);
+        FutureTask<FileVO> first = new FutureTask<>(() -> service.save("导入1.pdf", PDF));
+        FutureTask<FileVO> second = new FutureTask<>(() -> service.save("导入2.pdf", PDF));
+        Thread a = new Thread(first), b = new Thread(second);
+        try {
+            a.start();
+            assertThat(inWrite.await(5, TimeUnit.SECONDS)).isTrue();
+            b.start();
+            for (int i = 0; i < 500 && b.getState() != Thread.State.TIMED_WAITING; i++) Thread.sleep(10);
+            assertThat(b.getState()).isEqualTo(Thread.State.TIMED_WAITING);   // 第二批在排队
+
+            FileVO page = service.upload(new MockMultipartFile("file", "页面.pdf", "application/pdf", PDF));
+            assertThat(page.url()).contains(".pdf?");
+
+            release.countDown();
+            assertThat(first.get(5, TimeUnit.SECONDS).url()).contains(".pdf?");
+            assertThat(second.get(5, TimeUnit.SECONDS).url()).contains(".pdf?");
+        } finally {
+            release.countDown();
+            a.join(5000);
+            b.join(5000);
+        }
     }
 
     /** 规则：设计源文件 AI、PSD 和打版的纸样 PRJ（RFC 011 §2.2）收，不做缩略图，最大 100MB；别的类型还是 10MB，超了 400 说清楚 */

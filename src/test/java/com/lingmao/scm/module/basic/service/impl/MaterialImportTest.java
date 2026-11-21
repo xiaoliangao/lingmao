@@ -337,7 +337,10 @@ class MaterialImportTest {
                 .anySatisfy(m -> assertThat(m).contains("这一行没有数据，图片没导"));
     }
 
-    /** 规则：图本身坏了（打不开、太大）的那张不导、进提示，别的照常导；存储忙（429）是整批的事，照旧报错 */
+    /**
+     * 规则：图本身坏了（打不开、太大）的那张不导、进提示，别的照常导；SKU 行上只有坏图的，不给它挂空列表（不清掉已有的图）。
+     * 存储忙（429）、登记冲突（409）是整批的事，照旧报错
+     */
     @Test
     void importFile_brokenImage_skippedWithNote() throws IOException {
         Map<String, Object[][]> sheets = new LinkedHashMap<>();
@@ -351,19 +354,23 @@ class MaterialImportTest {
             return new FileVO("/files/2026/11/b.png", "/files/2026/11/b_s.png", inv.getArgument(0), 3);
         });
 
-        ImportResult result = materialImport.importFile(xlsx(sheets, Map.of("物料信息", new int[][]{{1, 'a'}, {1, 'b'}})));
+        ImportResult result = materialImport.importFile(xlsx(sheets, Map.of(
+                "物料信息", new int[][]{{1, 'a'}, {1, 'b'}},
+                "物料信息SKU", new int[][]{{1, 'a'}})));
 
         ArgumentCaptor<List<AttachmentReq>> images = ArgumentCaptor.captor();
         verify(attachmentService).replace(eq(BizType.MATERIAL), eq(101L), eq(Attachment.IMAGE), images.capture());
         assertThat(images.getValue()).extracting(AttachmentReq::getUrl).containsExactly("/files/2026/11/b.png");
-        verify(attachmentService, never()).replace(eq(BizType.MATERIAL_SKU), anyLong(), any(), any()); // SKU 行没图：不挂空列表
+        verify(attachmentService, never()).replace(eq(BizType.MATERIAL_SKU), anyLong(), any(), any()); // SKU 行只有坏图：不挂空列表
         assertThat(result.notes()).extracting(ImportError::message)
                 .anySatisfy(m -> assertThat(m).contains("图片打不开（坏了或者太大），没导"))
                 .anySatisfy(m -> assertThat(m).contains("图片一起导入了 1 张"));
 
-        doThrow(new BizException(429, "正在处理其他文件，请稍后重试")).when(fileService).save(anyString(), any());
-        assertThatThrownBy(() -> materialImport.importFile(xlsx(sheets, Map.of("物料信息", new int[][]{{1, 'b'}}))))
-                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(429));
+        for (int code : new int[]{429, 409}) {
+            doThrow(new BizException(code, "存储那边的问题")).when(fileService).save(anyString(), any());
+            assertThatThrownBy(() -> materialImport.importFile(xlsx(sheets, Map.of("物料信息", new int[][]{{1, 'b'}}))))
+                    .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(code));
+        }
     }
 
     /** 带图片的文件：images 是 工作表名 → {行（从 0 数，表头是 0）, 图片内容的第一个字节}，图片都放在第 0 列 */

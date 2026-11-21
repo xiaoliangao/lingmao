@@ -18,6 +18,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -33,6 +34,8 @@ public class FileServiceImpl implements FileService {
     private static final Set<String> DESIGN_SOURCE = Set.of("ai", "psd", "prj", "plt");
     static final long MAX_BYTES = 10L * 1024 * 1024;
     static final long MAX_DESIGN_SOURCE_BYTES = 100L * 1024 * 1024;
+    /** 导入存图最多等多久（两把信号量合计） */
+    static final Duration WAIT = Duration.ofSeconds(30);
     private final UploadStore storage;
     private final UploadCatalog catalog;
     private final FileUrlSigner signer;
@@ -46,12 +49,11 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override public FileVO save(String fileName, byte[] content) {
-        if (!acquire(bulk, true)) throw new BizException(429, "正在处理其他文件，请稍后重试");
-        try { return store(new BytesFile(fileName, content), true); }
-        finally { bulk.release(); }
+        return store(new BytesFile(fileName, content), true);
     }
 
-    private FileVO store(MultipartFile file, boolean wait) {
+    /** bulk：导入时存的图，先占 bulk 再等 capacity，两把一共最多等 30 秒；页面上传拿不到 capacity 立刻 429 */
+    private FileVO store(MultipartFile file, boolean bulkSave) {
         if (file == null || file.isEmpty()) throw new BizException("文件不能为空");
         String original = safeName(file.getOriginalFilename());
         String ext = StringUtils.getFilenameExtension(original);
@@ -60,7 +62,18 @@ public class FileServiceImpl implements FileService {
         boolean source = DESIGN_SOURCE.contains(ext);
         long limit = source ? MAX_DESIGN_SOURCE_BYTES : MAX_BYTES;
         if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD、PRJ、PLT 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));
-        if (!acquire(capacity, wait)) throw new BizException(429, "正在处理其他文件，请稍后重试");
+        long deadline = System.nanoTime() + WAIT.toNanos();
+        if (bulkSave && !acquire(bulk, deadline)) throw busy();
+        try {
+            if (!(bulkSave ? acquire(capacity, deadline) : capacity.tryAcquire())) throw busy();
+            try { return write(file, ext, limit, original); }
+            finally { capacity.release(); }
+        } finally {
+            if (bulkSave) bulk.release();
+        }
+    }
+
+    private FileVO write(MultipartFile file, String ext, long limit, String original) {
         UploadStore.Slot slot = null; boolean saved = false;
         try {
             slot = storage.allocate(ext); catalog.begin(slot);
@@ -73,14 +86,13 @@ public class FileServiceImpl implements FileService {
                 try { storage.delete(slot); catalog.failed(slot); }
                 catch (IOException | RuntimeException failure) { log.warn("上传文件清理暂未完成，将由后台重试", failure); }
             }
-            capacity.release();
         }
     }
-    private static boolean acquire(Semaphore slots, boolean wait) {
-        if (!wait) return slots.tryAcquire();
-        try { return slots.tryAcquire(30, TimeUnit.SECONDS); }
+    private static boolean acquire(Semaphore slots, long deadline) {
+        try { return slots.tryAcquire(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS); }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return false; }
     }
+    private static BizException busy() { return new BizException(429, "正在处理其他文件，请稍后重试"); }
 
     /** save 用：内存里的字节当成一个上传文件，存储那边只读 getInputStream */
     private record BytesFile(String fileName, byte[] content) implements MultipartFile {

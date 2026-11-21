@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,9 +25,11 @@ class OpenApiDocsIT {
     @Test
     void apiDocs_flattenedWithoutLosingUploads() throws Exception {
         String docs = MockMvcBuilders.webAppContextSetup(context).build()
-                .perform(get("/v3/api-docs")).andReturn().getResponse().getContentAsString();
+                .perform(get("/v3/api-docs")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
 
-        for (String upload : List.of("/api/files", "/api/materials/import", "/api/orders/import")) {
+        for (String upload : List.of("/api/files", "/api/materials/import", "/api/orders/import", "/api/styles/import",
+                "/api/suppliers/import", "/api/tech-packs/{id}/bom-import", "/api/inventory-counts/{id}/import",
+                "/api/fg-docs/{id}/items/import")) {
             assertThat((String) JsonPath.read(docs, "$.paths['" + upload + "'].post.requestBody.content['multipart/form-data']"
                     + ".schema.properties.file.format")).as(upload).isEqualTo("binary");
         }
