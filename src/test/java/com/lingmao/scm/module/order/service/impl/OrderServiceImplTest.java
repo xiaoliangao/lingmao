@@ -8,6 +8,7 @@ import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.config.TradeFeature;
 import com.lingmao.scm.module.basic.service.CompanyService;
+import com.lingmao.scm.module.biz.dto.ApprovalView;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.ApprovalService;
 import com.lingmao.scm.module.biz.service.AttachmentService;
@@ -196,6 +197,15 @@ class OrderServiceImplTest {
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
         assertThatThrownBy(() -> service.repeatSource(9L))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(404));
+
+        // 只因为轮到我审才看得到的：不能拿来翻单
+        Order pending = order(DocStatus.PENDING);
+        pending.setId(11L);
+        pending.setCreateBy(2L);
+        when(orderMapper.selectById(11L)).thenReturn(pending);
+        when(approvalService.view(BizType.ORDER, 11L)).thenReturn(new ApprovalView(1, List.of(), null, true));
+        assertThatThrownBy(() -> service.repeatSource(11L))
+                .isInstanceOf(BizException.class).hasMessageContaining("不在你的数据范围里");
 
         Order draft = order(DocStatus.DRAFT);
         draft.setId(10L);

@@ -62,6 +62,9 @@ const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: strin
   { parent: '/orders', file: 'order/order/detail', title: '需求订单' },
   { parent: '/orders', path: '/orders/new', file: 'order/order/form', title: '新建需求订单' },
   { parent: '/orders', path: '/orders/:id(\\d+)/edit', file: 'order/order/form', title: '编辑需求订单' },
+  // 翻单、补单（RFC 016 §2）：每张原单自己一个页签（keep-alive 和本地草稿都按地址分），不和"新建需求订单"挤在一起
+  { parent: '/orders', path: '/orders/:id(\\d+)/repeat', file: 'order/order/form', title: '翻单' },
+  { parent: '/orders', path: '/orders/:id(\\d+)/replenish', file: 'order/order/form', title: '补单' },
   { parent: '/order-changes', file: 'order/change/detail', title: '订单变更' },
   { parent: '/mrp', file: 'purchase/mrp/detail', title: '算料单' },
   { parent: '/purchases', file: 'purchase/order/detail', title: '采购单' },

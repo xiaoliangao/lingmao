@@ -274,7 +274,7 @@ const moreItems = computed(() => {
 })
 
 function onMore(command: MoreCommand) {
-  if (command === 'repeat' || command === 'replenish') void router.push(`/orders/new?from=${id}&type=${command === 'repeat' ? 'REPEAT' : 'REPLENISH'}`)
+  if (command === 'repeat' || command === 'replenish') void router.push(`/orders/${id}/${command}`)
   else if (command === 'remove') void remove()
   else if (command === 'cancel') openChange(true)
   else void act(command)

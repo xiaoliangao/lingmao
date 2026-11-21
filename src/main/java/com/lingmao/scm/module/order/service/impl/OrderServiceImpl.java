@@ -594,12 +594,16 @@ public class OrderServiceImpl implements OrderService {
 
     /**
      * 翻单、补单的原单（RFC 016 §2）：要看得到（看不到和不存在一样 404），不能是草稿——草稿能删，被引用了就删不掉。
+     * 只是"待审核轮到我审"才看得到的不行：审完他就看不到了，原单的制单人却会被一张自己看不到的单挡住删草稿。
      * 原单是哪个主体、什么状态（作废、结案的也行）都可以
      */
     Order repeatSource(long id) {
         Order source = orderMapper.selectById(id);
         if (!canView(source)) {
             throw new BizException(404, "原单不存在");
+        }
+        if (!DataScope.current(false).canSee(source.getCreateBy(), source.getSalesId(), source.getMerchId())) {
+            throw new BizException("原单 " + source.getNo() + " 不在你的数据范围里（你是它这一级的审批人），不能拿它翻单、补单");
         }
         if (source.getStatus() == DRAFT) {
             throw new BizException("原单 " + source.getNo() + " 还是草稿，不能翻单、补单");
@@ -682,7 +686,7 @@ public class OrderServiceImpl implements OrderService {
         }
         // 审核过、被翻单以后反审核回草稿的：外键会拦，先说清楚是哪张
         Order copy = orderMapper.selectOne(new LambdaQueryWrapper<Order>().select(Order::getNo)
-                .eq(Order::getSourceOrderId, id).last("LIMIT 1"));
+                .eq(Order::getSourceOrderId, id).orderByAsc(Order::getId).last("LIMIT 1"));
         if (copy != null) {
             throw new BizException("订单 " + copy.getNo() + " 是从这张单翻单、补单来的，不能删除，只能作废");
         }
