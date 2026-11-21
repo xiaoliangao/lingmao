@@ -310,7 +310,7 @@ export interface InvDocFromSourceItem {
  * items 和 itemIds 二选一：
  * - 对话框填好了数：发 items，itemIds 发 null；
  * - "待到料"勾几行直接点"入库"（不弹对话框）：items 发 null，itemIds 发勾的采购明细 id，每行按 suggestQty 建草稿；两个都是 null = 源单上还能入的全部行
- * post = true：建好马上审核过账（"入库并过账"），一个事务，审核不过（1001、1004）连单据也不建；要 inventory:doc:add 和 :audit
+ * post 一律发 false：自己建的单不能自己审（Q10），post = true 后端总回 1000、单据不建；建完由别人审核过账
  */
 export interface InvDocFromSourceReq {
   /** 同一动作重试保留 UUID 和原始请求体 */

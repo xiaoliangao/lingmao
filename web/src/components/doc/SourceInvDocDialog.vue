@@ -40,7 +40,7 @@ const invDocApi = bindCompanyApi(invDocApiBase, () => sourceCompanyId.value)
  * - 领料超过还差：琥珀色，超领原因必填。领料换了出仓重新带出（还差、出仓库存跟着出仓变）
  * - 有出仓的显示出仓库存（库存单位）。采购退货的"本次"是采购单位，乘换算系数再和库存比；不够标红但不拦（审核时会失败）
  * - 本次是 0 的行不建，全是 0 时按钮灰掉；只能存草稿：自己建的单不能自己审核过账，要别人审（甲方 11-21 答 Q10，后端 SelfAudit 也拦）
- * - 建好发 created（{ id, no, posted }），页面刷新自己
+ * - 建好发 created（{ id, no }），页面刷新自己
  */
 const visible = defineModel<boolean>({ required: true })
 
@@ -53,7 +53,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  created: [payload: { id: string; no: string; posted: boolean }]
+  created: [payload: { id: string; no: string }]
 }>()
 
 const router = useRouter()
@@ -323,7 +323,7 @@ function notifyDraft(id: string, no: string) {
   })
 }
 
-async function submit(post: boolean) {
+async function submit() {
   if (pendingAction.value) { await sendOriginal(toRaw(pendingAction.value)); return }
   if (loadError.value || loading.value || !props.sourceId || !draft.value || blockedTip.value) return
   if (meta.value.from && !head.fromWarehouseId) {
@@ -361,7 +361,7 @@ async function submit(post: boolean) {
     remark: orNull(head.remark),
     items,
     itemIds: null,
-    post,
+    post: false,
   })
   pendingActions.value[actionKey.value] = req
   await sendOriginal(req)
@@ -381,10 +381,8 @@ async function sendOriginal(req: InvDocFromSourceReq) {
     delete pendingActions.value[key]
     delete uncertainKeys.value[key]
     if (key === actionKey.value) { guard.markSaved(); visible.value = false }
-    const posted = res.status === 'APPROVED'
-    if (posted) ElMessage.success(`${verb.value}了，库存已更新（${res.no}）`)
-    else notifyDraft(res.id, res.no)
-    emit('created', { id: res.id, no: res.no, posted })
+    notifyDraft(res.id, res.no)
+    emit('created', { id: res.id, no: res.no })
   } catch (e) {
     // 1001 库存不够、1004 超上限弹清单表格，别的一行消息；对话框留着改
     uncertainKeys.value[key] = unknownActionResult(e instanceof ApiError ? e.code : undefined)
@@ -410,7 +408,7 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
   <el-dialog v-model="visible" :title="dialogTitle" width="920px" :close-on-click-modal="false" :before-close="guard.beforeClose">
     <el-alert v-if="loadError" type="error" :closable="false" :title="loadError"><el-button @click="init">重试加载</el-button></el-alert>
     <el-alert v-if="uncertain" type="warning" :closable="false" title="登记结果尚未确认。重试使用原动作和原内容，关窗重开仍保留。">
-      <el-button :loading="submitting" @click="submit(false)">重试原登记</el-button><el-button link @click="restartAction">重新登记</el-button>
+      <el-button :loading="submitting" @click="submit()">重试原登记</el-button><el-button link @click="restartAction">重新登记</el-button>
     </el-alert>
     <div v-loading="loading" :inert="!!pendingAction || submitting">
       <el-form label-position="top" class="head-grid">
@@ -510,7 +508,7 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
     <template #footer>
       <span v-if="blockedTip && rows.length" class="foot-tip">{{ blockedTip }}</span>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" :disabled="!!blockedTip" @click="submit(false)">存草稿</el-button>
+      <el-button type="primary" :loading="submitting" :disabled="!!blockedTip" @click="submit()">存草稿</el-button>
     </template>
   </el-dialog>
 </template>

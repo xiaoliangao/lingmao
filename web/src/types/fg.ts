@@ -287,7 +287,7 @@ export interface FgReceiptDraft {
 
 /**
  * 由回货单生成（POST /api/fg-docs/from-receipt/{receiptId}）。没填的单头发 null，按带出的默认值建。
- * items 是 null = 每行按还没入的全入（批量入库用）；给了就按给的，0 的行不建。post = true 建完马上过账，要 fg:doc:audit
+ * items 是 null = 每行按还没入的全入（批量入库用）；给了就按给的，0 的行不建。post 一律发 false：自己建的单不能自己审（Q10），true 后端总回 1000
  */
 export interface FgFromReceiptReq {
   clientActionId: string

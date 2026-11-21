@@ -211,6 +211,7 @@ class ApprovalServiceImplTest {
                 .extracting("code").isEqualTo(1000);
         verify(stepMapper, never()).update(any(Wrapper.class));
         assertThat(service.view(BizType.PURCHASE_ORDER, 30L).canPass()).isFalse();
+        assertThat(service.view(BizType.PURCHASE_ORDER, 30L).waitingFor()).as("驳回的 403 也用这句").endsWith("（制单人以外）");
 
         createdBy.put(30L, 8L);
         assertThat(service.view(BizType.PURCHASE_ORDER, 30L).canPass()).isTrue();

@@ -67,13 +67,15 @@ const EMPTY = {
 const form = reactive(structuredClone(EMPTY))
 const guard = useUnsavedChanges(form, visible)
 
-const rules: FormRules = {
+/** 领猫导进来的带吊牌物料没有吊牌名称（领猫没有这一列）：没改成别的时名称可以先空着，后端同样放行；新选"是"的必填 */
+const tagNamesOptional = computed(() => detail.value?.material.withTag === true && !detail.value.material.tagNames)
+const rules = computed<FormRules>(() => ({
   categoryId: [{ required: true, message: '请选分类', trigger: 'change' }],
   materialType: [{ required: true, message: '请选物料类型', trigger: 'change' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   stockUnit: [{ required: true, message: '请选库存单位', trigger: 'change' }],
-  tagNames: [{ required: true, whitespace: true, message: '带功能吊牌的要写吊牌名称', trigger: 'blur' }],
-}
+  tagNames: tagNamesOptional.value ? [] : [{ required: true, whitespace: true, message: '带功能吊牌的要写吊牌名称', trigger: 'blur' }],
+}))
 
 /** 采购单位不填或和库存单位一样：系数只能是 1 */
 const sameUnit = computed(() => !form.purchaseUnit || form.purchaseUnit === form.stockUnit)
@@ -320,7 +322,7 @@ defineExpose({ openCreate, openEdit })
         </el-select>
       </el-form-item>
       <el-form-item v-if="form.withTag === true" label="吊牌名称" prop="tagNames" class="span2">
-        <el-input v-model="form.tagNames" maxlength="255" placeholder="几个用顿号隔开，如 coolmax 吊牌" />
+        <el-input v-model="form.tagNames" maxlength="255" :placeholder="tagNamesOptional ? '领猫导入时没有，知道了再补；几个用顿号隔开' : '几个用顿号隔开，如 coolmax 吊牌'" />
       </el-form-item>
 
       <el-form-item label="供应商货号">

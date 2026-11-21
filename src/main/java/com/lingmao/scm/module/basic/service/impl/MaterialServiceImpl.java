@@ -183,6 +183,8 @@ public class MaterialServiceImpl implements MaterialService {
         old.setStockUnit(material.getStockUnit());
         old.setPurchaseUnit(material.getPurchaseUnit());
         old.setSeason(material.getSeason());
+        old.setWithTag(material.getWithTag());
+        old.setTagNames(material.getTagNames());
         fill(material, req, old);
         materialMapper.update(material, Updates.replaceById(material));
         docLogService.add(BizType.MATERIAL, id, "update", null);
@@ -527,9 +529,11 @@ public class MaterialServiceImpl implements MaterialService {
         // 面料功能只有面料、里料有（RFC 012 §5.1）；改成别的类型时清掉，页面上也不显示
         material.setFabricFunction(FABRIC_TYPES.contains(type) ? Texts.trim(req.getFabricFunction()) : null);
         material.setWithTag(req.getWithTag());
-        // 功能吊牌（甲方 11-21）：选了"是"要写是哪几个吊牌；不是"是"的不存名称
+        // 功能吊牌（甲方 11-21）：选了"是"要写是哪几个吊牌；不是"是"的不存名称。
+        // 领猫导进来的带吊牌物料没有名称（领猫没有这一列）：原来就是"是"、没有名称的，改别的字段时照旧能存，名称以后补
         String tagNames = Boolean.TRUE.equals(req.getWithTag()) ? Texts.trim(req.getTagNames()) : null;
-        if (Boolean.TRUE.equals(req.getWithTag()) && tagNames == null) {
+        boolean importedWithoutNames = old != null && Boolean.TRUE.equals(old.getWithTag()) && old.getTagNames() == null;
+        if (Boolean.TRUE.equals(req.getWithTag()) && tagNames == null && !importedWithoutNames) {
             throw new BizException(400, "带功能吊牌选了\"是\"，要填吊牌名称");
         }
         material.setTagNames(tagNames);

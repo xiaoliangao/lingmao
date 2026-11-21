@@ -161,7 +161,7 @@ public class InvDocServiceImpl implements InvDocService {
     @Override
     public PageResult<InvDocRowVO> page(InvDocQuery query) {
         IPage<InvDocRowVO> page = invDocMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine()));
+                DataScope.current(query.isMine() && !query.isAuditForMe()));
         fillRows(page.getRecords());
         return PageResult.of(page);
     }
@@ -874,7 +874,7 @@ public class InvDocServiceImpl implements InvDocService {
     public byte[] export(InvDocQuery query) {
         Page<InvDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine())).getRecords();
+                DataScope.current(query.isMine() && !query.isAuditForMe())).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), docs, InvDocRowVO::getId, InvDocRowVO::getCompanyId);
         Map<Long, List<InvDocItem>> items = docs.isEmpty() ? Map.of()
                 : itemMapper.selectByDocs(docs.stream().map(InvDocRowVO::getId).toList()).stream()

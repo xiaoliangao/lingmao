@@ -26,7 +26,8 @@ const { canSeeCost } = useFieldAccess()
  *   <DocList ref="listRef" kind="IN" />          页头"导出"调 listRef.value?.exportAll()，建了单调 listRef.value?.reload()
  *
  * - 分段控件按类型（全部 + 这种单的几种）；筛选：状态、日期、仓库（出仓或入仓是它）、往来单位；我的 / 全部
- * - 认地址上的 ?status=DRAFT（首页待办点进来），只认本页（/stock-in、/stock-out）自己的地址
+ * - 认地址上的 ?status=DRAFT、?auditForMe=1（首页待办点进来），只认本页（/stock-in、/stock-out）自己的地址；
+ *   待我审核 = 不列自己建的（自己建的单不能自己审，Q10），勾上时"我的 / 全部"不管用
  * - 勾选后批量审核（先确认"审核后马上改库存"，逐条做，失败的留着勾）、导出选中
  */
 const props = defineProps<{ kind: InvDocKind }>()
@@ -79,16 +80,19 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     docDateFrom: undefined as string | undefined,
     docDateTo: undefined as string | undefined,
     mine: false,
+    auditForMe: route.query.auditForMe === '1',
   },
 })
 
 watch(
-  () => route.query.status,
-  (value) => {
+  () => [route.query.status, route.query.auditForMe],
+  ([value, auditForMe]) => {
     if (route.path !== basePath.value) return
     const st = pickStatus(value)
-    if (st !== query.statusTab) {
+    const forMe = auditForMe === '1'
+    if (st !== query.statusTab || forMe !== query.auditForMe) {
       query.statusTab = st
+      query.auditForMe = forMe
       search()
     }
   },
@@ -118,6 +122,7 @@ const filtered = computed(
   () => !!(query.keyword.trim() || query.docTypeTab || query.statusTab || query.warehouseId || query.partnerId || query.docDateFrom),
 )
 const emptyText = computed(() => {
+  if (query.auditForMe) return `没有等你审核的${docName.value}（自己建的要别人审）`
   if (filtered.value) return `没有符合条件的${docName.value}：换个类型，或者清空筛选`
   if (query.mine) return `还没有你建的${docName.value}，切到「全部」看所有人的`
   return props.kind === 'IN'
@@ -168,7 +173,8 @@ defineExpose({ reload: load, exportAll, exporting })
         <SupplierSelect v-model="query.partnerId" v-model:label="partnerName" usage="BULK" clearable placeholder="全部往来单位" />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-checkbox v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
+        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

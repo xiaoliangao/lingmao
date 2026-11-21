@@ -17,7 +17,8 @@ import ChangeTable, { CHANGE_COLUMNS } from './ChangeTable.vue'
 /**
  * 订单变更单列表（/order-changes，docs/api/02 §1.4、§3.14）。没有"新建"：变更从订单详情的"提变更"进来。
  * "已驳回"不是状态（库里是草稿）：发 status=DRAFT&rejected=true；"草稿"发 rejected=false（后端筛，分页才对）。
- * 认 ?status=（首页"待我审核"点进来），只认 /order-changes 自己的地址
+ * 认 ?status=、?auditForMe=1（首页"待我审核"点进来），只认 /order-changes 自己的地址。
+ * 待我审核 = 不列自己建的（自己建的单不能自己审，Q10），勾上时"我的 / 全部"不管用
  */
 type TabKey = '' | 'PENDING' | 'REJECTED' | 'DRAFT' | 'APPROVED' | 'VOIDED'
 const TAB_KEYS: TabKey[] = ['', 'PENDING', 'REJECTED', 'DRAFT', 'APPROVED', 'VOIDED']
@@ -62,16 +63,19 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
     createDateFrom: undefined as string | undefined,
     createDateTo: undefined as string | undefined,
     mine: false,
+    auditForMe: route.query.auditForMe === '1',
   },
 })
 
 watch(
-  () => route.query.status,
-  (value) => {
+  () => [route.query.status, route.query.auditForMe],
+  ([value, auditForMe]) => {
     if (route.path !== '/order-changes') return
     const tab = pickTab(value)
-    if (tab !== query.tabKey) {
+    const forMe = auditForMe === '1'
+    if (tab !== query.tabKey || forMe !== query.auditForMe) {
       query.tabKey = tab
+      query.auditForMe = forMe
       search()
     }
   },
@@ -101,6 +105,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 
 const filtered = computed(() => !!(query.keyword.trim() || query.tabKey || query.changeType || query.createDateFrom))
 const emptyText = computed(() => {
+  if (query.auditForMe) return '没有等你审核的变更单（自己提的要别人审）'
   if (query.mine && !filtered.value) return '还没有你提的变更单，切到「全部」看所有人的'
   return '没有符合条件的变更单。已审核的订单在详情页「提变更」'
 })
@@ -141,7 +146,8 @@ async function quickAct(row: OrderChangeRow, action: 'audit' | 'reject') {
         <DateRange :model-value="dateRange" @update:model-value="onDateChange" />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-checkbox v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
+        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

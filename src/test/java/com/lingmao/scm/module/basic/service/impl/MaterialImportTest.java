@@ -224,6 +224,32 @@ class MaterialImportTest {
         verify(materialSkuMapper, never()).insert(any(MaterialSku.class));
     }
 
+    /** 规则（甲方 11-21）：吊牌名称（领猫没有这一列）跟着"是否带吊牌"：填"是"的存下来；填"否"还写了名称，报出这一行这一列，整批不导 */
+    @Test
+    void importFile_tagNamesNeedWithTag() throws IOException {
+        String[] headers = {"物料类型", "物料分类", "物料编码", "物料名称", "单位", "是否带吊牌", "吊牌名称"};
+        Map<String, Object[][]> ok = new LinkedHashMap<>();
+        ok.put("物料信息", new Object[][]{headers, {"面料", "面料>梭织", "ML0007", "全棉府绸", "米", "是", "coolmax 吊牌"}});
+        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101");
+
+        materialImport.importFile(xlsx(ok));
+
+        ArgumentCaptor<Material> material = ArgumentCaptor.captor();
+        verify(materialMapper).insert(material.capture());
+        assertThat(material.getValue().getWithTag()).isTrue();
+        assertThat(material.getValue().getTagNames()).isEqualTo("coolmax 吊牌");
+
+        Map<String, Object[][]> bad = new LinkedHashMap<>();
+        bad.put("物料信息", new Object[][]{headers, {"面料", "面料>梭织", "ML0008", "涤纶里布", "米", "否", "coolmax 吊牌"}});
+        BizException e = catchThrowableOfType(BizException.class, () -> materialImport.importFile(xlsx(bad)));
+        assertThat(e.getCode()).isEqualTo(ErrorCodes.IMPORT_INVALID);
+        assertThat(errors(e)).singleElement().satisfies(err -> {
+            assertThat(err.row()).isEqualTo(2);
+            assertThat(err.column()).isEqualTo("吊牌名称");
+        });
+        verify(materialMapper).insert(any(Material.class));   // 还是第一次那一条
+    }
+
     /** 规则：有一行的分类对不上，整批不导（别的行对得上也不导），报出是哪一行 */
     @Test
     void importFile_categoryNotFound_wholeBatchRejected() throws IOException {

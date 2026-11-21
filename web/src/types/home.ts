@@ -129,16 +129,16 @@ export type TodoCountKey =
   | 'CERT_EXPIRING'
   | 'REORDER'
 
-/** 叫法、点了去哪、数字什么颜色（danger 红、pending 琥珀、null 不上色）。地址参数各模块文档里定好了 */
+/** 叫法、点了去哪、数字什么颜色（danger 红、pending 琥珀、null 不上色）。地址参数各模块文档里定好了；待审核的几块带 auditForMe=1，和首页的数一样（不含自己建的） */
 export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone: StatusTone | null }> = {
-  ORDER_PENDING: { label: '待审核的需求订单', to: '/orders?status=PENDING', tone: null },
-  CHANGE_PENDING: { label: '待审核的订单变更', to: '/order-changes?status=PENDING', tone: null },
-  PURCHASE_PENDING: { label: '待审核的采购单', to: '/purchases?status=PENDING', tone: null },
-  OUTSOURCE_PENDING: { label: '待审核的外发加工单', to: '/production?status=PENDING', tone: null },
-  BUY_PENDING: { label: '待审核的成品采购单', to: '/fp-purchases?status=PENDING', tone: null },
-  STOCK_IN_DRAFT: { label: '物料入库单待审核', to: '/stock-in?tab=docs&status=DRAFT', tone: null },
-  STOCK_OUT_DRAFT: { label: '物料出库单待审核', to: '/stock-out?status=DRAFT', tone: null },
-  COUNT_PENDING: { label: '物料盘点单待审核', to: '/stock-takes?status=PENDING', tone: null },
+  ORDER_PENDING: { label: '待审核的需求订单', to: '/orders?status=PENDING&auditForMe=1', tone: null },
+  CHANGE_PENDING: { label: '待审核的订单变更', to: '/order-changes?status=PENDING&auditForMe=1', tone: null },
+  PURCHASE_PENDING: { label: '待审核的采购单', to: '/purchases?status=PENDING&auditForMe=1', tone: null },
+  OUTSOURCE_PENDING: { label: '待审核的外发加工单', to: '/production?status=PENDING&auditForMe=1', tone: null },
+  BUY_PENDING: { label: '待审核的成品采购单', to: '/fp-purchases?status=PENDING&auditForMe=1', tone: null },
+  STOCK_IN_DRAFT: { label: '物料入库单待审核', to: '/stock-in?tab=docs&status=DRAFT&auditForMe=1', tone: null },
+  STOCK_OUT_DRAFT: { label: '物料出库单待审核', to: '/stock-out?status=DRAFT&auditForMe=1', tone: null },
+  COUNT_PENDING: { label: '物料盘点单待审核', to: '/stock-takes?status=PENDING&auditForMe=1', tone: null },
   FG_PENDING: { label: '回货待入成品仓', to: '/fg-in?tab=pending', tone: 'pending' },
   SUPPLIER_APPROVE: { label: '供应商待审批', to: '/suppliers?toApprove=1', tone: null },
   UNSCHEDULED: { label: '已审核还没排单的需求订单', to: '/orders?unscheduled=1', tone: 'pending' },

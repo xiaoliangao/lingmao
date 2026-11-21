@@ -145,9 +145,11 @@ public class ApprovalServiceImpl implements ApprovalService {
             return new ApprovalView(steps.getFirst().getRound(), levels, null, false);
         }
         Long me = LoginUser.currentUserId();
+        // 制单人自己看：写明要别人审（审核、驳回都不给他，后端驳回时的 403 也用这句）
+        boolean mine = createdBy(type, docId, me);
         return new ApprovalView(current.getRound(), levels,
-                "第 " + current.getLevelNo() + " 级 · " + labels.get(current.getLevelNo()),
-                canPass(current, me, myRoles(me)) && !createdBy(type, docId, me));
+                "第 " + current.getLevelNo() + " 级 · " + labels.get(current.getLevelNo()) + (mine ? "（制单人以外）" : ""),
+                !mine && canPass(current, me, myRoles(me)));
     }
 
     @Override

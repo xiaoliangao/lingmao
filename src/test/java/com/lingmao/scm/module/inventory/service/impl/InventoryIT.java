@@ -150,6 +150,14 @@ class InventoryIT {
                 .containsExactly("edit", "audit", "remove");
         assertThatThrownBy(() -> invDocService.act(draft, "audit", new DocActionReq(version(draft), null)))
                 .isInstanceOf(BizException.class).hasMessage(SelfAudit.MESSAGE);
+        // 待我审核（首页、列表的 auditForMe）：制单人那里没有，审核人那里有；勾了"我的"也不影响
+        InvDocQuery forMe = new InvDocQuery();
+        forMe.setKind(InvDocKind.IN);
+        forMe.setStatus(List.of(DocStatus.DRAFT));
+        forMe.setAuditForMe(true);
+        forMe.setMine(true);
+        assertThat(invDocService.page(forMe).getList()).extracting(r -> r.getId()).doesNotContain(draft);
+        assertThat(TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.page(forMe).getList())).extracting(r -> r.getId()).contains(draft);
         invDocService.delete(draft);
         assertThat(count("SELECT COUNT(*) FROM inv_doc WHERE id = ?", draft)).isZero();
     }

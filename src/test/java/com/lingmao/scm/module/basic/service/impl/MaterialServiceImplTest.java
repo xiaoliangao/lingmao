@@ -177,6 +177,28 @@ class MaterialServiceImplTest {
         verify(materialMapper, never()).insert(any(Material.class));
     }
 
+    /** 规则：领猫导进来的带吊牌物料没有名称，改别的字段照旧能存；原来没带吊牌、这次新选"是"的才必填 */
+    @Test
+    void update_importedWithTagWithoutNames_stillSaves() {
+        Material old = new Material();
+        old.setId(100L);
+        old.setCategoryId(5L);
+        old.setStockUnit("M");
+        old.setPurchaseUnit("M");
+        old.setMaterialType("FABRIC");
+        old.setWithTag(true);
+        when(materialMapper.selectById(100L)).thenReturn(old);
+        MaterialSaveReq req = createReq();
+        req.setWithTag(true);
+
+        materialService.update(100L, req);
+        verify(materialMapper).update(any(), any());
+
+        old.setWithTag(false);
+        assertThatThrownBy(() -> materialService.update(100L, req))
+                .isInstanceOf(BizException.class).hasMessageContaining("要填吊牌名称");
+    }
+
     /** 规则：物料至少留一个 SKU */
     @Test
     void deleteSku_lastOne_rejected() {

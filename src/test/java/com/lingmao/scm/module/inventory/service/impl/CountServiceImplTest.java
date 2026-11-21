@@ -12,6 +12,7 @@ import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.service.AttachmentService;
 import com.lingmao.scm.module.biz.service.DocHeaderService;
 import com.lingmao.scm.module.biz.service.DocLogService;
+import com.lingmao.scm.module.biz.service.SelfAudit;
 import com.lingmao.scm.module.inventory.dto.CountCreateReq;
 import com.lingmao.scm.module.inventory.dto.CountOpenWarehouseVO;
 import com.lingmao.scm.module.inventory.entity.CountPurpose;
@@ -173,6 +174,19 @@ class CountServiceImplTest {
         assertThatThrownBy(() -> service.act(7L, "unaudit", new DocActionReq(2, null)))
                 .isInstanceOf(BizException.class).hasMessageContaining("PD202611170002");
         verifyNoInteractions(ledger);
+    }
+
+    /** 规则（甲方 11-21 答 Q10）：自己建的盘点单自己审不了、也驳回不了（要退回用撤回）；库存不动，状态不改 */
+    @Test
+    void auditOrReject_ownCount_rejected() {
+        when(countMapper.selectById(7L)).thenReturn(count(DocStatus.PENDING, CountPurpose.DAILY));
+
+        assertThatThrownBy(() -> service.act(7L, "audit", new DocActionReq(1, null)))
+                .isInstanceOf(BizException.class).hasMessage(SelfAudit.MESSAGE);
+        assertThatThrownBy(() -> service.act(7L, "reject", new DocActionReq(1, "数不对")))
+                .isInstanceOf(BizException.class).hasMessage(SelfAudit.REJECT_MESSAGE);
+        verifyNoInteractions(ledger);
+        verify(countMapper, never()).update(any(), any());
     }
 
     private static InvCount count(DocStatus status, CountPurpose purpose) {

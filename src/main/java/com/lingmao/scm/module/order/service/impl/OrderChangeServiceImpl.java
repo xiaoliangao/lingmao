@@ -136,14 +136,14 @@ public class OrderChangeServiceImpl implements OrderChangeService {
     @Override
     public PageResult<OrderChangeRowVO> page(OrderChangeQuery query) {
         IPage<OrderChangeRowVO> page = changeMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine()));
+                DataScope.current(query.isMine() && !query.isAuditForMe()));
         fillRows(page.getRecords());
         return PageResult.of(page);
     }
 
     @Override
     public Map<String, Long> counts(OrderChangeQuery query) {
-        return StatusCount.toMap(changeMapper.selectCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())));
+        return StatusCount.toMap(changeMapper.selectCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine() && !query.isAuditForMe())));
     }
 
     private void fillRows(List<OrderChangeRowVO> rows) {
@@ -714,6 +714,8 @@ public class OrderChangeServiceImpl implements OrderChangeService {
                 if (reason == null) {
                     throw new BizException(400, "请写驳回原因");
                 }
+                FLOW.next("reject", c.getStatus());
+                SelfAudit.checkReject(c.getCreateBy());
                 change(c, "reject", DRAFT, req, cas(c, DRAFT, req).set(OrderChange::getRejectReason, reason));
             }
             case "audit" -> audit(c, req);

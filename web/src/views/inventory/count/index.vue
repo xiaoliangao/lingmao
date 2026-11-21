@@ -24,7 +24,7 @@ import CountCreateDialog from './CountCreateDialog.vue'
 
 /**
  * 物料盘点单列表（/stock-takes，docs/api/04 §1.5、§4）。只认本页地址上的参数：
- * ?status=PENDING（首页待办）；?new=DAILY|OPENING（库存页"盘点""导入期初库存"）直接开新建对话框、用途选好，开了就从地址上去掉
+ * ?status=PENDING&auditForMe=1（首页待办；待我审核 = 不列自己建的，自己建的单不能自己审，Q10）；?new=DAILY|OPENING（库存页"盘点""导入期初库存"）直接开新建对话框、用途选好，开了就从地址上去掉
  */
 const route = useRoute()
 const router = useRouter()
@@ -62,18 +62,21 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     purpose: undefined as CountPurpose | undefined,
     countDateFrom: undefined as string | undefined,
     countDateTo: undefined as string | undefined,
+    auditForMe: route.query.auditForMe === '1',
   },
   exportUrl: '/api/inventory-counts/export',
   exportName: '物料盘点单.xlsx',
 })
 
 watch(
-  () => route.query.status,
-  (value) => {
+  () => [route.query.status, route.query.auditForMe],
+  ([value, auditForMe]) => {
     if (route.path !== '/stock-takes') return
     const st = pickStatus(value)
-    if (st !== query.statusTab) {
+    const forMe = auditForMe === '1'
+    if (st !== query.statusTab || forMe !== query.auditForMe) {
       query.statusTab = st
+      query.auditForMe = forMe
       search()
     }
   },
@@ -118,9 +121,10 @@ const whText = computed(() =>
 /** 盘点只盘物料仓、工厂仓 */
 const countWarehouses = computed(() => warehouses.value.filter((w) => w.type !== 'PRODUCT'))
 const filtered = computed(() => !!(query.keyword.trim() || query.statusTab || query.warehouseId || query.purpose || query.countDateFrom))
-const emptyText = computed(() =>
-  filtered.value ? '没有符合条件的盘点单：换个状态，或者清空筛选' : '还没有盘点单：点「新建盘点单」，刚上线先「录期初库存」',
-)
+const emptyText = computed(() => {
+  if (query.auditForMe) return '没有等你审核的盘点单（自己建的要别人审）'
+  return filtered.value ? '没有符合条件的盘点单：换个状态，或者清空筛选' : '还没有盘点单：点「新建盘点单」，刚上线先「录期初库存」'
+})
 
 function openRow(row: CountRow) {
   void router.push(`/stock-takes/${row.id}`)
@@ -163,6 +167,9 @@ function openCreate(purpose: CountPurpose) {
       <FilterItem label="盘点日期" :text="formatDateRange(dateRange)" @clear="onDateChange(null)">
         <DateRange :model-value="dateRange" @update:model-value="onDateChange" />
       </FilterItem>
+      <template #right>
+        <el-checkbox v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
+      </template>
     </FilterBar>
 
     <el-table

@@ -91,10 +91,10 @@ function openReceive(row: FgPendingReceiptRow) {
   receiveVisible.value = true
 }
 
-function onCreated(id: string, posted: boolean) {
+function onCreated(id: string) {
   emit('received')
   void load()
-  if (!posted) void router.push(`/fg-in/${id}`)
+  void router.push(`/fg-in/${id}`)
 }
 
 const batchActions: BatchAction<FgPendingReceiptRow>[] = [

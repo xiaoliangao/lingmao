@@ -36,7 +36,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  created: [id: string, posted: boolean]
+  created: [id: string]
   saved: []
 }>()
 
@@ -133,13 +133,13 @@ function check(): boolean {
   return true
 }
 
-async function submit(post: boolean) {
+async function submit() {
   if (props.editingDoc) return save()
   if (pendingAction.value) return send(pendingAction.value.receiptId, pendingAction.value.request)
   const r = draft.value
   if (!r || !check()) return
   const request = newClientAction({
-    post,
+    post: false,
     docDate: form.docDate,
     warehouseId: form.warehouseId,
     remark: orNull(form.remark),
@@ -156,10 +156,10 @@ async function send(receiptId: string, request: FgFromReceiptReq) {
     pendingAction.value = null
     uncertain.value = false
     const qty = formatQty((request.items ?? []).reduce((sum, it) => sum + it.qty, 0))
-    ElMessage.success(request.post ? `${res.no} 已入库 ${qty} 件` : `${res.no} 草稿存好了（${qty} 件），核对后审核过账`)
+    ElMessage.success(`${res.no} 草稿存好了（${qty} 件），由别人审核过账`)
     guard.markSaved()
     visible.value = false
-    emit('created', res.id, request.post)
+    emit('created', res.id)
   } catch (e) {
     uncertain.value = unknownActionResult(e instanceof ApiError ? e.code : undefined)
     if (!uncertain.value) pendingAction.value = null
@@ -257,10 +257,10 @@ async function restart() {
         <el-button type="primary" :loading="submitting" @click="save">保存</el-button>
       </template>
       <template v-else-if="uncertain">
-        <el-button type="primary" :loading="submitting" @click="submit(pendingAction?.request.post ?? false)">重试原来那笔</el-button>
+        <el-button type="primary" :loading="submitting" @click="submit()">重试原来那笔</el-button>
       </template>
       <template v-else>
-        <el-button type="primary" :loading="submitting" :disabled="loading" @click="submit(false)">存草稿</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="loading" @click="submit()">存草稿</el-button>
       </template>
     </template>
   </el-dialog>

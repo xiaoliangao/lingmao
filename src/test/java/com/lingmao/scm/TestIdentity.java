@@ -58,10 +58,10 @@ public final class TestIdentity {
     /** 审核人的 id（库里没有就插一个用户）：自己建的单不能自己审（SelfAudit，甲方 11-21 答 Q10），制单人是 user 的单给它审 */
     public static long auditorOf(JdbcTemplate jdbc, long user) {
         String username = "it-auditor-" + user;
-        List<Long> found = jdbc.queryForList("SELECT id FROM sys_user WHERE username = ? AND deleted = false", Long.class, username);
-        if (!found.isEmpty()) return found.getFirst();
-        return jdbc.queryForObject("INSERT INTO sys_user(username, password, nickname) VALUES(?, 'unusable-test-password', ?) RETURNING id",
-                Long.class, username, "IT auditor " + user);
+        // 插不上（已经有了）就跳过，再查：并发的两个线程同时叫也不会撞唯一索引
+        jdbc.update("INSERT INTO sys_user(username, password, nickname) VALUES(?, 'unusable-test-password', ?) ON CONFLICT DO NOTHING",
+                username, "IT auditor " + user);
+        return jdbc.queryForObject("SELECT id FROM sys_user WHERE username = ? AND deleted = false", Long.class, username);
     }
 
     /**

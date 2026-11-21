@@ -131,7 +131,7 @@ public class CountServiceImpl implements CountService {
 
     @Override
     public PageResult<CountRowVO> page(CountQuery query) {
-        IPage<CountRowVO> page = countMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
+        IPage<CountRowVO> page = countMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine() && !query.isAuditForMe()));
         fillRows(page.getRecords());
         return PageResult.of(page);
     }
@@ -569,6 +569,8 @@ public class CountServiceImpl implements CountService {
                 if (req.reason() == null || req.reason().isBlank()) {
                     throw new BizException(400, "请写驳回原因");
                 }
+                FLOW.next("reject", count.getStatus());
+                SelfAudit.checkReject(count.getCreateBy());
                 change(count, "reject", req);
             }
             case "audit" -> audit(count, req);
@@ -794,7 +796,7 @@ public class CountServiceImpl implements CountService {
     @Override
     public byte[] export(CountQuery query) {
         Page<CountRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())).getRecords();
+        List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine() && !query.isAuditForMe())).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, CountRowVO::getId, CountRowVO::getCompanyId);
         fillRows(rows);
         return excel.export(rows);

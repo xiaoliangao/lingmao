@@ -31,7 +31,10 @@ public class InvDocQuery extends PageQuery {
     /** 单号、源单号、送货单号、物流单号、物料编码 / 名称 / SKU 码、缸号；有空格 = 按几个单号精确查 */
     private String keyword;
     private boolean mine;
-    /** 待我审核：不列自己建的（自己建的单不能自己审，SelfAudit，甲方 11-21 答 Q10）；状态由调用方另给。首页"待我审核"用 */
+    /**
+     * 待我审核：不列自己建的（自己建的单不能自己审，SelfAudit，甲方 11-21 答 Q10）；状态由调用方另给，不看 mine（和需求订单等一样）。
+     * 范围照旧按数据范围：本人范围的人本来就看不到别人建的单，所以单级审核的审核人要给"全部"范围的角色
+     */
     private boolean auditForMe;
     private List<Long> ids;
 }

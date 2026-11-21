@@ -235,7 +235,7 @@ async function act(action: DocAction) {
   if (!d) return
   // 审核时单价和价格档案对不上的先说一句（甲方 11-21 问 Q25：审核时直接提示），和采购单一样，不拦
   const note = action === 'audit' && priceChanged.value
-    ? `加工单价 ${formatPrice(d.unitPrice)} 和价格档案 ${formatPrice(d.archivePrice)} 不一样（改价原因：${d.priceChangeReason ?? '没写'}），审核后记进价格档案。`
+    ? `${kindMeta.value.priceLabel} ${formatPrice(d.unitPrice)} 和价格档案 ${formatPrice(d.archivePrice)} 不一样（改价原因：${d.priceChangeReason || '没写'}），审核后记进价格档案。`
     : undefined
   const ok = await runDocAction(action, d.no, d.version, (a, body, o) => productionApi.act(id, a, body, o), { note, reload: refresh })
   if (ok) await refresh()
