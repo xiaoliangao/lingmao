@@ -36,6 +36,15 @@ export type AssistantEvent =
   | { event: 'done'; data: { messageId: string; text: string; usage: { promptTokens: number; completionTokens: number } } }
   | { event: 'error'; data: { message: string; messageId: string } }
 
+/** GET /assistant/suggestions 的一句：推荐给这个人的问题（按他的权限筛的，手上的待办在前） */
+export interface AssistantSuggestion {
+  text: string
+  /** 哪一类："我的待办"，或者查的是什么（需求订单、采购单……） */
+  label: string
+  /** 待办的件数；别的是 null */
+  count: number | null
+}
+
 /** GET /assistant/conversations 的一行 */
 export interface AssistantConversation {
   id: string

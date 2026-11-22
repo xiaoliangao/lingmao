@@ -21,6 +21,8 @@ export interface WhitelistEntry {
   perm: string
   /** 什么时候用它，补在接口说明后面 */
   hint?: string
+  /** 一句能直接问的例句：按权限推荐给用户、输入时 Tab 补全（不给模型） */
+  ask?: string
 }
 
 interface ParamInfo {
@@ -37,6 +39,7 @@ export interface ToolDef {
   perm: string
   spec: ToolSpec
   params: ParamInfo[]
+  ask?: string
 }
 
 /** 登录就能调的接口在白名单里写 perm: login */
@@ -74,7 +77,11 @@ export function parseWhitelist(text: string): WhitelistEntry[] {
     if (typeof e.op !== 'string' || typeof e.tool !== 'string' || typeof e.perm !== 'string' || typeof e.label !== 'string') {
       throw new Error(`tools.yaml 第 ${i + 1} 条缺 op、tool、label 或 perm`)
     }
-    return { op: e.op, tool: e.tool, label: e.label, perm: e.perm, hint: typeof e.hint === 'string' ? e.hint : undefined }
+    return {
+      op: e.op, tool: e.tool, label: e.label, perm: e.perm,
+      hint: typeof e.hint === 'string' ? e.hint : undefined,
+      ask: typeof e.ask === 'string' ? e.ask : undefined,
+    }
   })
 }
 
@@ -94,6 +101,9 @@ export function buildTools(doc: OpenApiDoc, entries: WhitelistEntry[]): ToolDef[
     names.add(entry.tool)
     if (!entry.label.trim() || entry.label.length > 20) throw new Error(`${where}：label 要写，20 个字以内`)
     if (!entry.perm.trim()) throw new Error(`${where}：要写 perm（只要登录的写 ${LOGIN_ONLY}）`)
+    if (entry.ask !== undefined && (!entry.ask.trim() || entry.ask.length > 40 || /[\r\n]/.test(entry.ask))) {
+      throw new Error(`${where}：ask 是一句例句，一行、40 个字以内`)
+    }
     const op = doc.paths[path]?.get
     if (!op) throw new Error(`${where}：openapi.json 里没有 GET ${path}`)
     const content = op.responses?.['200']?.content ?? {}
@@ -125,7 +135,7 @@ export function buildTools(doc: OpenApiDoc, entries: WhitelistEntry[]): ToolDef[
         parameters: { type: 'object', properties, required, additionalProperties: false },
       },
     }
-    return { name: entry.tool, label: entry.label, path, perm: entry.perm, spec, params }
+    return { name: entry.tool, label: entry.label, path, perm: entry.perm, spec, params, ask: entry.ask?.trim() }
   })
 }
 

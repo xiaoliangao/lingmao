@@ -2,7 +2,7 @@ import { computed, effectScope, reactive, watch } from 'vue'
 import { AssistantError, assistantApi } from '@/api/assistant'
 import { authApi } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
-import type { AssistantConversation, AssistantEvent, AssistantInfo, AssistantMessage } from '@/types/assistant'
+import type { AssistantConversation, AssistantEvent, AssistantInfo, AssistantMessage, AssistantSuggestion } from '@/types/assistant'
 import { ApiError } from '@/utils/request'
 import { onSessionChanged, sessionChanged } from '@/utils/token'
 
@@ -73,6 +73,8 @@ const state = reactive({
   historyError: '',
   /** 点开的对话没打开（显示在卡片里） */
   openError: '',
+  /** 推荐给这个人的问题：卡片空着时列几句、输入时 Tab 补全；取不到是空的（不提示） */
+  suggestions: [] as AssistantSuggestion[],
 })
 
 let token: { value: string; expiresAt: number } | null = null
@@ -85,6 +87,10 @@ let viewSeq = 0
 let historySeq = 0
 /** 正在打开（请求还在路上）的对话 id：删它时要作废那次打开 */
 let openingId: string | null = null
+/** 推荐的问题：每次取加一，只认最后一次；取到的时间，5 分钟内打开卡片不再取（待办的件数会变） */
+let suggestSeq = 0
+let suggestedAt = 0
+const SUGGEST_TTL = 5 * 60_000
 let seq = 0
 let wired = false
 
@@ -95,13 +101,15 @@ function reset() {
   generation++
   viewSeq++
   historySeq++
+  suggestSeq++
+  suggestedAt = 0
   openingId = null
   controller?.abort()
   controller = null
   token = null
   Object.assign(state, {
     open: false, unread: false, status: 'unknown', statusMessage: '', checking: false, checkedAt: 0, mode: null, retentionDays: null,
-    turns: [], conversationId: null, busy: false, draft: '', history: [], historyLoading: false, historyError: '', openError: '',
+    turns: [], conversationId: null, busy: false, draft: '', history: [], historyLoading: false, historyError: '', openError: '', suggestions: [],
   })
 }
 
@@ -120,7 +128,9 @@ function wire() {
     watch(
       () => state.open,
       (open) => {
-        if (open) state.unread = false
+        if (!open) return
+        state.unread = false
+        void loadSuggestions()
       },
     )
   })
@@ -321,6 +331,21 @@ function newChat() {
   state.turns = []
   state.conversationId = null
   state.openError = ''
+}
+
+/** 取推荐的问题（打开卡片时）。取不到不提示：卡片里少几句推荐而已，问话照常 */
+async function loadSuggestions() {
+  if (Date.now() - suggestedAt < SUGGEST_TTL) return
+  const gen = generation
+  const mine = ++suggestSeq
+  try {
+    const list = await withToken(gen, (tok) => assistantApi.suggestions(tok))
+    if (gen !== generation || mine !== suggestSeq) return
+    state.suggestions = list
+    suggestedAt = Date.now()
+  } catch {
+    // 服务没起、换令牌失败：不推荐
+  }
 }
 
 async function loadHistory() {

@@ -3,10 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MAX_QUESTION, useAssistant, type ToolStep } from '@/composables/useAssistant'
 import { useFloating } from '@/composables/useFloating'
+import { completions, highlight } from '@/utils/assistantComplete'
 import { stripHtml } from '@/utils/assistantText'
 import type { AssistantConversation } from '@/types/assistant'
 import { formatDateTime } from '@/utils/format'
 import { isComposing } from '@/utils/ime'
+import { shortcut } from '@/utils/shortcut'
 import AssistantAnswer from './AssistantAnswer'
 
 /**
@@ -18,9 +20,46 @@ import AssistantAnswer from './AssistantAnswer'
 const assistant = useAssistant()
 const { state } = assistant
 
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
-const SHORTCUT = IS_MAC ? '⌘J' : 'Ctrl+J'
-const EXAMPLES = ['今天有哪些待我处理的事', '最近两周要交货的订单', '各工厂的生产情况怎么样']
+const SHORTCUT = shortcut('J')
+
+// ---------- 推荐的问题和 Tab 补全（docs/api/08 §1） ----------
+/** 卡片空着时列几句推荐（按这个人的权限筛的，手上的待办在前） */
+const examples = computed(() => state.suggestions.slice(0, 6))
+const firstSuggestion = computed(() => state.suggestions[0]?.text ?? '')
+const placeholder = computed(() => (firstSuggestion.value ? `试试：${firstSuggestion.value}，按 Tab 填入` : '比如：PO2026112001 审了没有'))
+/** 补全的候选：自己问过的话（近的在前）、推荐的问题 */
+const pool = computed(() => [
+  ...state.turns.map((t) => t.question).reverse(),
+  ...state.history.map((c) => c.title),
+  ...state.suggestions.map((s) => s.text),
+])
+const matches = computed(() => completions(state.draft, pool.value))
+const active = ref(0)
+const focused = ref(false)
+/** 按了 Esc、或者刚填进去：列表先收起，再打字才出 */
+const dismissed = ref(false)
+let filled = ''
+const showList = computed(() => focused.value && !dismissed.value && matches.value.length > 0)
+watch(
+  () => state.draft,
+  (draft) => {
+    active.value = 0
+    dismissed.value = draft === filled
+  },
+)
+
+/** 填进输入框（不发出去），光标放到最后 */
+async function fill(text: string) {
+  filled = text
+  state.draft = text
+  dismissed.value = true
+  await nextTick()
+  const box = input.value?.textarea
+  if (box) {
+    box.focus()
+    box.setSelectionRange(text.length, text.length)
+  }
+}
 
 const card = ref<HTMLElement>()
 /** 放大前在哪：还原时回到那里（放大后又拖过的，就留在拖到的地方） */
@@ -60,7 +99,7 @@ function onHeadDblclick(event: MouseEvent) {
 }
 
 const body = ref<HTMLElement>()
-const input = ref<{ focus: () => void }>()
+const input = ref<{ focus: () => void; textarea?: HTMLTextAreaElement }>()
 /** 看着最底下：新内容来了跟着滚；往上翻着看的时候不打扰 */
 let stick = true
 
@@ -110,7 +149,30 @@ function submit() {
 
 function onKeydown(event: KeyboardEvent | Event) {
   const e = event as KeyboardEvent
-  if (e.key === 'Enter' && !e.shiftKey && !isComposing(e)) {
+  if (isComposing(e)) return
+  // Tab：有可填的才拦（列表里选中的那句；输入框空着时是第一句推荐），没有就照常移焦点；Shift+Tab 不拦
+  if (e.key === 'Tab' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    const text = showList.value ? matches.value[active.value] : state.draft.trim() ? '' : firstSuggestion.value
+    if (text) {
+      e.preventDefault()
+      void fill(text)
+    }
+    return
+  }
+  if (showList.value && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault()
+    const n = matches.value.length
+    active.value = (active.value + (e.key === 'ArrowDown' ? 1 : n - 1)) % n
+    return
+  }
+  // Esc 先收起补全列表，不收卡片
+  if (showList.value && e.key === 'Escape') {
+    e.preventDefault()
+    e.stopPropagation()
+    dismissed.value = true
+    return
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submit()
   }
@@ -234,14 +296,15 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
       <div v-if="!state.turns.length" class="ast-empty">
         <p>问单据、库存、进度，助手替你查系统，用几句话回答。只能查，不能改。</p>
         <button
-          v-for="q in EXAMPLES"
-          :key="q"
+          v-for="q in examples"
+          :key="q.text"
           type="button"
           class="ast-example"
           :disabled="state.busy || assistant.unavailable.value"
-          @click="askExample(q)"
+          @click="askExample(q.text)"
         >
-          {{ q }}
+          <span class="ast-example-text">{{ q.text }}</span>
+          <span v-if="q.count !== null" class="ast-example-count" :title="`${q.label} ${q.count} 件`">{{ q.count }}</span>
         </button>
         <p v-if="modeText" class="ast-dim">{{ modeText }}</p>
       </div>
@@ -268,6 +331,23 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
     </div>
 
     <form class="ast-foot" @submit.prevent="submit">
+      <div v-if="showList" class="ast-complete">
+        <ul id="ast-complete" role="listbox" aria-label="可以这样问">
+          <li
+            v-for="(m, i) in matches"
+            :id="`ast-complete-${i}`"
+            :key="m"
+            role="option"
+            :aria-selected="i === active"
+            :class="{ on: i === active }"
+            @mousedown.prevent="fill(m)"
+            @mouseenter="active = i"
+          >
+            <template v-for="(seg, j) in highlight(m, state.draft)" :key="j"><b v-if="seg.hit">{{ seg.text }}</b><template v-else>{{ seg.text }}</template></template>
+          </li>
+        </ul>
+        <p class="ast-complete-tip">Tab 填入 · ↑↓ 选择 · Esc 收起</p>
+      </div>
       <el-input
         ref="input"
         v-model="state.draft"
@@ -275,9 +355,15 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
         :autosize="{ minRows: 1, maxRows: 6 }"
         :maxlength="MAX_QUESTION"
         resize="none"
-        placeholder="比如：PO2026112001 审了没有"
+        :placeholder="placeholder"
         aria-label="问智能助手"
+        aria-autocomplete="list"
+        aria-controls="ast-complete"
+        :aria-expanded="showList"
+        :aria-activedescendant="showList ? `ast-complete-${active}` : undefined"
         @keydown="onKeydown"
+        @focus="focused = true"
+        @blur="focused = false"
       />
       <el-button v-if="state.busy" native-type="button" @click="assistant.stop()">停止</el-button>
       <el-button v-else type="primary" native-type="submit" :disabled="!canSend">发送</el-button>
@@ -394,7 +480,9 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
 }
 
 .ast-example {
-  display: block;
+  display: flex;
+  gap: 8px;
+  align-items: center;
   width: 100%;
   margin-bottom: 8px;
   padding: 8px 12px;
@@ -406,6 +494,24 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
   background: var(--lm-subtle);
   border: 1px solid var(--lm-line-soft);
   border-radius: var(--lm-radius);
+}
+
+.ast-example-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 待办的件数：琥珀色小圆角块 */
+.ast-example-count {
+  flex: none;
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--lm-pending-text);
+  text-align: center;
+  background: var(--lm-pending-bg);
+  border-radius: 9px;
 }
 
 .ast-example:hover:not(:disabled) {
@@ -592,11 +698,61 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
 }
 
 .ast-foot {
+  position: relative;
   display: flex;
   flex: none;
   align-items: flex-end;
   gap: 8px;
   padding: 10px 16px 4px;
+  border-top: 1px solid var(--lm-line-soft);
+}
+
+/* 补全列表：贴在输入框上面，盖住对话的最后几行 */
+.ast-complete {
+  position: absolute;
+  right: 16px;
+  bottom: calc(100% - 4px);
+  left: 16px;
+  z-index: 1;
+  overflow: hidden;
+  background: var(--lm-paper);
+  border: 1px solid var(--lm-line);
+  border-radius: var(--lm-radius);
+  box-shadow: var(--lm-shadow-pop);
+}
+
+.ast-complete ul {
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+.ast-complete li {
+  padding: 6px 8px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--lm-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: calc(var(--lm-radius) - 2px);
+}
+
+.ast-complete li.on {
+  color: var(--lm-ink);
+  background: var(--lm-subtle);
+}
+
+.ast-complete b {
+  font-weight: 600;
+  color: var(--lm-ink);
+}
+
+.ast-complete-tip {
+  margin: 0;
+  padding: 4px 12px 6px;
+  font-size: 11.5px;
+  color: var(--lm-muted);
   border-top: 1px solid var(--lm-line-soft);
 }
 

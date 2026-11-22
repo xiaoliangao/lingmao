@@ -5,6 +5,7 @@ import type {
   AssistantHealth,
   AssistantInfo,
   AssistantMessage,
+  AssistantSuggestion,
 } from '@/types/assistant'
 import { readSse } from '@/utils/sse'
 
@@ -66,6 +67,8 @@ export const assistantApi = {
   messages: (token: string, id: string) => getJson<AssistantMessage[]>(`/assistant/conversations/${encodeURIComponent(id)}`, token),
   /** 删掉自己的一个对话；别人的、不存在的 404，正在答的时候 409 */
   deleteConversation: (token: string, id: string) => getJson<null>(`/assistant/conversations/${encodeURIComponent(id)}`, token, undefined, 'DELETE'),
+  /** 推荐给这个人的问题（§2.7）：卡片空着时列几句、输入时 Tab 补全 */
+  suggestions: (token: string) => getJson<AssistantSuggestion[]>('/assistant/suggestions', token),
 
   /**
    * 问一句。回的不是 SSE 就抛 AssistantError（401 由调用方换令牌重发一次）；是 SSE 就一个个事件交给 onEvent，流结束才返回。

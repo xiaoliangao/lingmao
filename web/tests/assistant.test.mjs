@@ -5,6 +5,7 @@ import { TextEncoder } from 'node:util'
 import { performance } from 'node:perf_hooks'
 import { readSse } from '../src/utils/sse.ts'
 import { PAGE_LINK, parseAnswer, parseInline, stripHtml } from '../src/utils/assistantText.ts'
+import { completions, highlight } from '../src/utils/assistantComplete.ts'
 
 /** 按给的块一块块吐字节的流 */
 function streamOf(chunks) {
@@ -102,3 +103,29 @@ test('助手服务处理过的文字（方括号换了全角、外链去掉）�
   const blocks = parseAnswer('见 ［官网］(共3张)（外部链接已去掉）\n＜img src=x>')
   assert.deepEqual(blocks, [{ kind: 'p', lines: [[{ kind: 'text', text: '见 ［官网］(共3张)（外部链接已去掉）' }], [{ kind: 'text', text: '＜img src=x>' }]] }])
 })
+
+test('输入框补全：开头对得上的在前；几段都包含也算；一样的、重复的、空的不要；最多 5 条', () => {
+  const pool = ['面料库存还剩多少', '库存流水', '库存流水', '待审核的需求订单有哪些', '待审核的采购单有几张', '  ']
+  assert.deepEqual(completions('库存', pool), ['库存流水', '面料库存还剩多少'])
+  assert.deepEqual(completions('待审核  订单', pool), ['待审核的需求订单有哪些'], '多个空格当一个，几段都要包含')
+  assert.deepEqual(completions('库存流水', pool), [], '和输入一样的不要')
+  assert.deepEqual(completions('   ', pool), [])
+  assert.deepEqual(completions('PO', ['po2026 审了没有', 'PO2026 审了没有']), ['po2026 审了没有'], '不分大小写，同一句只出一次')
+  assert.equal(completions('的', Array.from({ length: 9 }, (_, i) => `第${i}个的问题`)).length, 5)
+})
+
+test('补全列表里加粗包含输入的那几段', () => {
+  assert.deepEqual(highlight('面料库存还剩多少', '库存'), [
+    { text: '面料', hit: false },
+    { text: '库存', hit: true },
+    { text: '还剩多少', hit: false },
+  ])
+  assert.deepEqual(highlight('待审核的需求订单', '待审核 订单'), [
+    { text: '待审核', hit: true },
+    { text: '的需求', hit: false },
+    { text: '订单', hit: true },
+  ])
+  assert.deepEqual(highlight('PO 审了', 'po'), [{ text: 'PO', hit: true }, { text: ' 审了', hit: false }])
+  assert.deepEqual(highlight('随便', ''), [{ text: '随便', hit: false }])
+})
+

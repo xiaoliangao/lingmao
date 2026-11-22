@@ -49,7 +49,7 @@ ASSISTANT_OPENAPI=./openapi.json pnpm test   # 再核对仓库里的 tools.yaml
 | `ASSISTANT_LLM_STREAM_USAGE` | `true` | 模型服务不认 `stream_options` 时填 `false` |
 | `ASSISTANT_LLM_TIMEOUT_SECONDS` | 90 | 模型多久没动静算超时（连上、等第一个字、两段之间）；一直在吐字的不掐，但一轮最长是它的 3 倍 |
 | `ASSISTANT_USER_DAILY_REQUESTS` | 200 | 每人每天最多问几句 |
-| `ASSISTANT_DAILY_TOKENS` | 5000000 | 全系统每天最多用多少 token（一句话约 2 万） |
+| `ASSISTANT_DAILY_TOKENS` | 5000000 | 全系统每天最多用多少 token（一句话约 2 万到 5 万：能查的模块越多、查得越多越多） |
 | `ASSISTANT_MAX_STEPS` | 6 | 一句话里模型最多来回几轮（最后一轮不许再调工具） |
 | `ASSISTANT_MAX_CONCURRENT` | 6 | 全系统同时在答的最多几句；每人同时只能一句 |
 | `ASSISTANT_RETENTION_DAYS` | 7 | 对话留几天：超过这么多天没再问的整个删掉（启动时和之后每小时一次）；最多 365 |

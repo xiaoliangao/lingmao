@@ -11,6 +11,7 @@ import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import type { MenuNode } from '@/types/system'
 import { joinPath } from '@/utils/path'
+import { shortcut } from '@/utils/shortcut'
 import CommandPalette, { type PaletteItem } from './CommandPalette.vue'
 import PasswordDialog from './PasswordDialog.vue'
 
@@ -101,8 +102,7 @@ function toggleGroup(key: string) {
 
 // ---------- 搜索功能：点开快捷跳转，按名字找页面、按单号款号找单据和资料 ----------
 const paletteOpen = ref(false)
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
-const SHORTCUT = IS_MAC ? '⌘K' : 'Ctrl K'
+const SHORTCUT = shortcut('K')
 
 const palettePages = computed<PaletteItem[]>(() => allItems.value.map((item) => ({ name: item.name, path: item.path, icon: item.icon, sub: item.group })))
 

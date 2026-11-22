@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useAssistant } from '@/composables/useAssistant'
 import { useFloating } from '@/composables/useFloating'
+import { shortcut } from '@/utils/shortcut'
 
 /**
  * 智能助手的图标（docs/api/08-智能助手.md §1）：卡片收着时浮在页面右下角，点开对话卡片；按住能拖到别处，位置记在本机。
@@ -11,8 +12,7 @@ import { useFloating } from '@/composables/useFloating'
 const assistant = useAssistant()
 const { state } = assistant
 
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
-const SHORTCUT = IS_MAC ? '⌘J' : 'Ctrl+J'
+const SHORTCUT = shortcut('J')
 
 const el = ref<HTMLElement>()
 const float = useFloating(el, 'lingmao-assistant-launcher', { right: 24, bottom: 72 })

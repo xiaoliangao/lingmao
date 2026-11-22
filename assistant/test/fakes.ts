@@ -181,9 +181,9 @@ export const OPENAPI: OpenApiDoc = {
 }
 
 export const WHITELIST: WhitelistEntry[] = [
-  { op: 'GET /api/purchase-orders', tool: 'list_purchase_orders', label: '采购单', perm: 'purchase:order:list', hint: '按单号找采购单' },
+  { op: 'GET /api/purchase-orders', tool: 'list_purchase_orders', label: '采购单', perm: 'purchase:order:list', hint: '按单号找采购单', ask: '待审核的采购单有几张' },
   { op: 'GET /api/purchase-orders/{id}', tool: 'get_purchase_order', label: '采购单详情', perm: 'purchase:order:list' },
-  { op: 'GET /api/orders', tool: 'list_orders', label: '需求订单', perm: 'order:order:list' },
+  { op: 'GET /api/orders', tool: 'list_orders', label: '需求订单', perm: 'order:order:list', ask: '待审核的需求订单有哪些' },
 ]
 
 export const TOOLS = buildTools(OPENAPI, WHITELIST)

@@ -4,6 +4,7 @@ import { tokenScope, type AppClient, type Me } from './appClient.ts'
 import { answer, ChatRejected, cleanMessage, conversationIdOf, prepare, SHUTDOWN, type ChatDeps } from './chat.ts'
 import type { LlmConfig } from './config.ts'
 import type { Store } from './store.ts'
+import { suggestionsFor, todoGroups, type TodoGroup } from './suggest.ts'
 
 /**
  * 助手服务的接口，Nginx 把 /assistant/ 原样转过来（RFC 009 §3.1）。返回体和 app 一样是 { code, msg, data }，问话是 SSE。
@@ -14,6 +15,7 @@ import type { Store } from './store.ts'
  *   GET  /assistant/conversations          我最近的 20 个对话
  *   GET  /assistant/conversations/{id}     一个对话的全部问答（只有本人能看）
  *   DELETE /assistant/conversations/{id}   删掉自己的一个对话（正在答的时候不让删）
+ *   GET  /assistant/suggestions            推荐给这个人的问题：按他的权限筛的例句，手上有待办的先推那几类（不调模型）
  *
  * 认人：请求头 Authorization: Bearer <助手令牌>，原样拿去调 app 的 /api/auth/me（app 验签、查库，令牌过期回 401）。
  * app 只对助手令牌查 AI 开关和使用权限，普通登录令牌它照样认；所以这里自己再查三样，缺一样就 403：
@@ -102,7 +104,9 @@ async function route(deps: ServerDeps, req: IncomingMessage, res: ServerResponse
 
   const conv = /^\/assistant\/conversations(?:\/([^/]+))?$/.exec(path)
   const isChat = path === '/assistant/chat'
-  if (!conv && !isChat) return json(res, 404, 404, '没有这个地址')
+  const isSuggest = path === '/assistant/suggestions'
+  if (!conv && !isChat && !isSuggest) return json(res, 404, 404, '没有这个地址')
+  if (isSuggest && req.method !== 'GET') return json(res, 405, 405, '只能 GET')
   if (isChat && req.method !== 'POST') return json(res, 405, 405, '只能 POST')
   if (conv && req.method !== 'GET' && !(req.method === 'DELETE' && conv[1] !== undefined)) return json(res, 405, 405, '只能 GET（删一个对话用 DELETE）')
 
@@ -127,6 +131,18 @@ async function route(deps: ServerDeps, req: IncomingMessage, res: ServerResponse
   if (tokenScope(token) !== 'ASSISTANT') return json(res, 403, 403, '要用助手令牌（POST /api/auth/assistant-token 换），不收登录令牌')
   if (me.features?.ai !== true) return json(res, 403, 403, 'AI 功能没有打开')
   if (!me.perms?.includes(CHAT_PERM)) return json(res, 403, 403, '没有使用智能助手的权限')
+
+  if (isSuggest) {
+    // 待办只是给推荐排个序：查不到（app 慢、出错）就不带，不影响推荐本身
+    let todos: TodoGroup[] = []
+    try {
+      const reply = await deps.app.get(token, '/api/board/home/todos', new URLSearchParams(), requestId, AbortSignal.any([disconnect.signal, AbortSignal.timeout(3000)]))
+      if (reply.code === 0) todos = todoGroups(reply.data)
+    } catch {
+      if (disconnect.signal.aborted) return
+    }
+    return json(res, 200, 0, 'ok', suggestionsFor(new Set(me.perms), deps.chat.tools, todos))
+  }
 
   if (conv) {
     const raw = conv[1]

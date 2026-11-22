@@ -35,6 +35,11 @@ const { app } = fakeApp({
     if (t === T.appSays403) return { status: 403, body: { code: 403, msg: 'AI 功能没有打开', data: null } }
     return { status: 401, body: { code: 401, msg: '未登录或登录已过期', data: null } }
   },
+  // 推荐问题按待办排序：buyer1 有 2 张待审；别人的待办查不到（app 出错）
+  '/api/board/home/todos': (_url, auth) =>
+    auth?.slice(7) === T.good
+      ? ok({ groups: [{ key: 'AUDIT', total: 2, items: [] }, { key: 'NOT_A_GROUP', total: 1, items: [] }], counts: {} })
+      : { status: 500, body: { code: 500, msg: '出错了', data: null } },
 })
 
 /** 一直想、直到放行或被中止的模型：测同时在答、中途断开、停服务 */
@@ -191,6 +196,21 @@ describe('助手服务的接口', () => {
     assert.equal(nul.status, 200)
     await nul.text()
     assert.ok(s.store.messagesById.some((m) => m.content === '你好'))
+  })
+
+  test('推荐问题：只推他有权限的工具的例句，手上的待办在前、带件数；待办查不到照样推；要助手令牌', async () => {
+    const mine = await body(s.get('/assistant/suggestions'))
+    assert.equal(mine.code, 0)
+    assert.deepEqual(mine.data, [
+      { text: '有哪些单据等我审核', label: '我的待办', count: 2 },
+      { text: '待审核的采购单有几张', label: '采购单', count: null },
+    ], '没有订单权限，不推订单的例句；不认识的待办分组不推')
+    const other = await body(s.get('/assistant/suggestions', T.other))
+    assert.deepEqual(other.data, [{ text: '待审核的采购单有几张', label: '采购单', count: null }], '待办查不到：只是不带待办')
+    assert.equal((await s.get('/assistant/suggestions', null)).status, 401)
+    assert.equal((await s.get('/assistant/suggestions', T.login)).status, 403)
+    assert.equal((await s.get('/assistant/suggestions', T.noPerm)).status, 403)
+    assert.equal((await fetch(`${s.base}/assistant/suggestions`, { method: 'POST', headers: { Authorization: `Bearer ${T.good}` } })).status, 405)
   })
 
   test('方法、地址不对：405、404', async () => {
