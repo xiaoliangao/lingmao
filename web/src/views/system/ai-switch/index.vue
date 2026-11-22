@@ -21,7 +21,7 @@ import { shortcut } from '@/utils/shortcut'
 const FEATURES = [
   { name: '助手', what: `页面右下角的助手图标和 ${shortcut('K')} 里问单据、库存、进度，替用户查系统、回答带单据链接；只能查不能改`, live: true },
   { name: '识别预填', what: '拍码单、报价截图、工艺单，识别后填进新建表单，人核对了再保存', live: false },
-  { name: '企查查 agent', what: '定期查供应商的工商和风险，结果送回供应商档案', live: false },
+  { name: '企查查自动排查', what: '定期查供应商的工商和风险，结果送回供应商档案', live: false },
   { name: '后台归因', what: '把超耗、生产异常按原因归类', live: false },
 ]
 
