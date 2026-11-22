@@ -23,6 +23,8 @@ export interface WhitelistEntry {
   hint?: string
   /** 一句能直接问的例句：按权限推荐给用户、输入时 Tab 补全（不给模型） */
   ask?: string
+  /** 有其中一个权限码才推荐 ask（只要登录、但没有对应模块权限时查出来是空的那种：首页的交期、概况） */
+  askIf?: string[]
 }
 
 interface ParamInfo {
@@ -40,6 +42,7 @@ export interface ToolDef {
   spec: ToolSpec
   params: ParamInfo[]
   ask?: string
+  askIf?: string[]
 }
 
 /** 登录就能调的接口在白名单里写 perm: login */
@@ -81,6 +84,7 @@ export function parseWhitelist(text: string): WhitelistEntry[] {
       op: e.op, tool: e.tool, label: e.label, perm: e.perm,
       hint: typeof e.hint === 'string' ? e.hint : undefined,
       ask: typeof e.ask === 'string' ? e.ask : undefined,
+      askIf: e.askIf,
     }
   })
 }
@@ -103,6 +107,10 @@ export function buildTools(doc: OpenApiDoc, entries: WhitelistEntry[]): ToolDef[
     if (!entry.perm.trim()) throw new Error(`${where}：要写 perm（只要登录的写 ${LOGIN_ONLY}）`)
     if (entry.ask !== undefined && (!entry.ask.trim() || entry.ask.length > 40 || /[\r\n]/.test(entry.ask))) {
       throw new Error(`${where}：ask 是一句例句，一行、40 个字以内`)
+    }
+    if (entry.askIf !== undefined && (entry.ask === undefined || !Array.isArray(entry.askIf) || entry.askIf.length === 0
+      || !entry.askIf.every((p) => typeof p === 'string' && /^[a-z]+(:[a-z-]+)+$/.test(p)))) {
+      throw new Error(`${where}：askIf 是权限码的列表（有其中一个才推荐 ask），要和 ask 一起写`)
     }
     const op = doc.paths[path]?.get
     if (!op) throw new Error(`${where}：openapi.json 里没有 GET ${path}`)
@@ -135,7 +143,7 @@ export function buildTools(doc: OpenApiDoc, entries: WhitelistEntry[]): ToolDef[
         parameters: { type: 'object', properties, required, additionalProperties: false },
       },
     }
-    return { name: entry.tool, label: entry.label, path, perm: entry.perm, spec, params, ask: entry.ask?.trim() }
+    return { name: entry.tool, label: entry.label, path, perm: entry.perm, spec, params, ask: entry.ask?.trim(), askIf: entry.askIf }
   })
 }
 
@@ -245,7 +253,8 @@ function fail(message: string, args: Record<string, unknown>): ToolResult {
   return { ok: false, status: null, rows: null, content: JSON.stringify({ error: message }), args }
 }
 
-const DROP_KEYS = new Set(['image', 'images', 'imageUrl', 'thumbnail', 'thumbUrl', 'avatar', 'url', 'fileUrl', 'colorHex', 'attachments', 'actions'])
+/** 不给模型的字段：图片、文件（附件、工艺单文件、异常照片的名字和地址）、颜色值、按钮列表。新接口带了文件列表，名字要加进来（tools.test 拿真的 openapi.json 查） */
+export const DROP_KEYS = new Set(['image', 'images', 'imageUrl', 'thumbnail', 'thumbUrl', 'avatar', 'url', 'fileUrl', 'colorHex', 'attachments', 'files', 'photos', 'actions'])
 const FILE_URL = /\/files\//
 
 /**

@@ -92,7 +92,13 @@ let openingId: string | null = null
 /** 推荐的问题：每次取加一，只认最后一次；取到的时间，5 分钟内打开卡片不再取（待办的件数会变） */
 let suggestSeq = 0
 let suggestedAt = 0
+/** 正在取推荐（快速开关卡片不重复取） */
+let suggesting = false
+/** 最近的对话取到的时间：打开卡片时也取（问过的推荐排后面要用它，刷新页面后 asked 是空的），5 分钟内不再取 */
+let historyAt = 0
 const SUGGEST_TTL = 5 * 60_000
+/** 正在换的令牌：同时要令牌的（打开卡片时取推荐、取最近的对话，⌘K 问助手）共用一次请求，不各换一张 */
+let pendingToken: { gen: number; promise: Promise<string> } | null = null
 let seq = 0
 let wired = false
 
@@ -105,6 +111,9 @@ function reset() {
   historySeq++
   suggestSeq++
   suggestedAt = 0
+  suggesting = false
+  historyAt = 0
+  pendingToken = null
   openingId = null
   controller?.abort()
   controller = null
@@ -132,7 +141,9 @@ function wire() {
       (open) => {
         if (!open) return
         state.unread = false
+        if (state.status === 'down') return
         void loadSuggestions()
+        if (Date.now() - historyAt >= SUGGEST_TTL) void loadHistory()
       },
     )
   })
@@ -146,12 +157,42 @@ function wire() {
 async function freshToken(force: boolean, gen: number, signal?: AbortSignal): Promise<string> {
   if (gen !== generation || sessionChanged()) throw new Stale()
   if (!force && token && token.expiresAt - Date.now() > 5 * 60_000) return token.value
+  if (!force && pendingToken?.gen === gen) return abortable(pendingToken.promise, signal)
   token = null
-  const got = await authApi.assistantToken({ silent: true, signal })
-  if (gen !== generation || sessionChanged()) throw new Stale()
-  const at = Date.parse(got.expiresAt)
-  token = { value: got.token, expiresAt: Number.isFinite(at) ? at : Date.now() + 25 * 60_000 }
-  return token.value
+  // 换令牌的请求不跟着谁的"停止"断：别人也在等它；点了停止的只是不再等（abortable）
+  const promise = (async () => {
+    const got = await authApi.assistantToken({ silent: true })
+    if (gen !== generation || sessionChanged()) throw new Stale()
+    const at = Date.parse(got.expiresAt)
+    token = { value: got.token, expiresAt: Number.isFinite(at) ? at : Date.now() + 25 * 60_000 }
+    return token.value
+  })()
+  pendingToken = { gen, promise }
+  promise.then(
+    () => pendingToken?.promise === promise && (pendingToken = null),
+    () => pendingToken?.promise === promise && (pendingToken = null),
+  )
+  return abortable(promise, signal)
+}
+
+/** 等 promise，signal 断了就不等了（promise 本身照跑） */
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(new DOMException('停止了', 'AbortError'))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('停止了', 'AbortError'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (v) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(v)
+      },
+      (e: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(e)
+      },
+    )
+  })
 }
 
 /** 带着令牌调一次，助手服务回 401（令牌过期、换它的登录退出了）就换一张再调一次；已经清空了就不再换 */
@@ -180,6 +221,8 @@ async function checkHealth(force = false) {
     state.retentionDays = info?.retentionDays ?? null
     state.status = health.model === 'configured' ? 'up' : 'noModel'
     state.statusMessage = health.model === 'configured' ? '' : '还没有配置模型，请联系管理员'
+    // 服务恢复了（卡片里点了"再试一次"）：打开着、还没有推荐的，补取一次
+    if (state.open && state.status === 'up' && !state.suggestions.length) void loadSuggestions()
   } catch (e) {
     if (gen !== generation) return
     state.status = 'down'
@@ -338,16 +381,19 @@ function newChat() {
 
 /** 取推荐的问题（打开卡片时）。取不到不提示：卡片里少几句推荐而已，问话照常 */
 async function loadSuggestions() {
-  if (Date.now() - suggestedAt < SUGGEST_TTL) return
+  if (suggesting || Date.now() - suggestedAt < SUGGEST_TTL) return
   const gen = generation
   const mine = ++suggestSeq
+  suggesting = true
   try {
     const list = await withToken(gen, (tok) => assistantApi.suggestions(tok))
-    if (gen !== generation || mine !== suggestSeq) return
+    if (gen !== generation || mine !== suggestSeq || sessionChanged()) return
     state.suggestions = list
     suggestedAt = Date.now()
   } catch {
     // 服务没起、换令牌失败：不推荐
+  } finally {
+    if (mine === suggestSeq) suggesting = false
   }
 }
 
@@ -359,7 +405,10 @@ async function loadHistory() {
   state.historyError = ''
   try {
     const list = await withToken(gen, (tok) => assistantApi.conversations(tok))
-    if (latest()) state.history = list
+    if (latest()) {
+      state.history = list
+      historyAt = Date.now()
+    }
   } catch (e) {
     if (latest() && !(e instanceof Stale)) state.historyError = messageOf(e, '最近的对话没加载出来')
   } finally {

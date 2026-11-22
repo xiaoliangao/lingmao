@@ -3,6 +3,7 @@ import { LOGIN_ONLY, toolsFor, type ToolDef } from './tools.ts'
 /**
  * 推荐给这个人的问题（卡片空着时显示、输入时 Tab 补全；docs/api/08 §2.7）。
  * 不用模型生成：都是 tools.yaml 里写好的例句（ask），按这个人的权限筛——推荐的问题一定是他问得了的。
+ * 只要登录的工具（首页的交期、概况）没有对应模块的权限时查出来是空的，按 askIf 再筛一道。
  * 他手上有待办的，先推那几类，带件数
  */
 export interface Suggestion {
@@ -59,7 +60,7 @@ export function suggestionsFor(perms: ReadonlySet<string>, defs: ToolDef[], todo
   }
   const byModule = new Map<string, ToolDef[]>()
   for (const tool of toolsFor(perms, defs)) {
-    if (!tool.ask) continue
+    if (!tool.ask || (tool.askIf && !tool.askIf.some((p) => perms.has(p)))) continue
     const module = moduleOf(tool)
     byModule.set(module, [...(byModule.get(module) ?? []), tool])
   }

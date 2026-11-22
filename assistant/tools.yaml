@@ -7,9 +7,12 @@
 #   hint  可选，什么时候用它（补在接口说明后面）
 #   ask   可选，一句能直接问的例句：卡片里按这个人的权限推荐、输入时 Tab 补全（GET /assistant/suggestions）。
 #         要单号、款号才问得了的（详情、下游、记录）不写
+#   askIf 可选，权限码的列表：有其中一个才推荐 ask。只要登录、可没有对应模块权限时查出来是空的那种要写，不然会推给问了也白问的人
 # 启动时逐条核对（只收 GET、返回 R、不是导出 / 下载 / 预览），不合规的服务起不来。
 # 真正的拦截在 app：助手令牌调不了写接口、文件接口，拿不到文件签名地址，数据范围和字段权限照这个人的来。
 # 不进白名单：附件、资质证书、工艺单文件和预览、供应商银行账号、各种导出模板，以及建单时用的下拉和带出接口。
+# 详情里带的文件列表（files、photos、attachments）给模型前去掉（tools.ts 的 DROP_KEYS）。
+# 成品（库存、出入库单）不进：甲方 11-21 答 Q44，成品库存以聚水潭为准，本系统的成品模块收回不用。
 
 # ---- 首页 ----
 - op: GET /api/board/home/todos
@@ -22,8 +25,9 @@
   tool: upcoming_deliveries
   label: 近期交期
   perm: login
-  hint: 近期要交货、已经逾期的订单
-  ask: 最近一周要交货的订单有哪些
+  hint: 近期要交货、已经逾期的订单和生产单（没有订单、生产单权限的查出来是空的，回答"你没有权限看"，不要说没有）
+  ask: 最近一周有哪些要交货的
+  askIf: [order:order:list, production:order:list]
 
 - op: GET /api/board/home/kpi
   tool: home_overview
@@ -31,6 +35,7 @@
   perm: login
   hint: 开发款式、在手订单、在制生产、在途物料四个数；某一块是 null 是这个人没有那个模块的权限，回答"你没有权限看"，不要说 0
   ask: 现在整体的概况怎么样
+  askIf: [style:style:list, order:order:list, production:order:list, purchase:order:list]
 
 # ---- 需求订单 ----
 - op: GET /api/orders
@@ -67,15 +72,8 @@
   tool: order_progress
   label: 订单进度
   perm: order:progress:list
-  hint: 订单每个款排产、生产、回货、发货到哪一步了
+  hint: 订单每个款排产、齐料（kitting）、生产、回货、发货到哪一步了；问订单的料齐了没有也用它
   ask: 哪些订单已经逾期了
-- op: GET /api/order-kitting
-  tool: order_kitting
-  label: 订单齐料
-  # 接口只要登录，但没有订单权限的拿不到订单 id、问了也查不了：按订单权限给
-  perm: order:order:list
-  hint: 几张订单的物料齐了没有（只有状态）；先用 list_orders 拿到订单 id 再查
-  ask: 已审核的订单料齐了没有
 
 # ---- 算料、采购 ----
 - op: GET /api/mrp-calcs
@@ -198,7 +196,7 @@
   label: 生产概况
   perm: production:board:list
   hint: 在制、待开工、临期、逾期各多少
-  ask: 生产看板上有哪些延期的单
+  ask: 生产看板上在制和逾期的各有几单
 - op: GET /api/production-board/factories
   tool: production_by_factory
   label: 各工厂的生产情况
@@ -215,20 +213,6 @@
   label: 生产单的异常
   perm: production:order:list
   hint: 一张生产单上报过的异常（没关闭的在前）
-
-# ---- 成品 ----
-- op: GET /api/fg-stocks/by-style
-  tool: fg_stock_by_style
-  label: 成品库存
-  perm: fg:stock:list
-  hint: 成品按款的库存，每款带颜色 × 尺码的件数
-  ask: 成品库存按款看还有多少
-- op: GET /api/fg-docs
-  tool: list_fg_docs
-  label: 成品出入库单
-  perm: fg:doc:list
-  hint: 成品入库单（kind=IN）、出库单（kind=OUT，发货是 docType=SHIP_OUT）；kind 必填
-  ask: 最近发了哪些货
 
 # ---- 资料包、核价 ----
 - op: GET /api/tech-packs

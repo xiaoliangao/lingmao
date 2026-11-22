@@ -42,7 +42,8 @@ const pool = computed(() => [
   ...state.history.map((c) => c.title),
   ...state.suggestions.map((s) => s.text),
 ])
-const matches = computed(() => completions(state.draft, pool.value))
+/** 多行（Shift+回车换过行）的不出补全：↑↓ 要留给光标换行，Tab 也不该盖掉整段 */
+const matches = computed(() => (state.draft.includes('\n') ? [] : completions(state.draft, pool.value)))
 const active = ref(0)
 const focused = ref(false)
 /** 按了 Esc、或者刚填进去：列表先收起，再打字才出 */
@@ -54,8 +55,13 @@ watch(
   (draft) => {
     active.value = 0
     dismissed.value = draft === filled
+    filled = ''
   },
 )
+// 候选变少了（推荐刚取回、删了对话）：选中的那条没了就回到第一条
+watch(matches, (list) => {
+  if (active.value >= list.length) active.value = 0
+})
 
 /** 填进输入框（不发出去），光标放到最后 */
 async function fill(text: string) {
@@ -349,7 +355,7 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
             role="option"
             :aria-selected="i === active"
             :class="{ on: i === active }"
-            @mousedown.prevent="fill(m)"
+            @mousedown.left.prevent="fill(m)"
             @mouseenter="active = i"
           >
             <template v-for="(seg, j) in highlight(m, state.draft)" :key="j"><b v-if="seg.hit">{{ seg.text }}</b><template v-else>{{ seg.text }}</template></template>
@@ -366,8 +372,9 @@ onBeforeUnmount(() => clearTimeout(historyTimer))
         resize="none"
         :placeholder="placeholder"
         aria-label="问智能助手"
+        container-role="combobox"
         aria-autocomplete="list"
-        aria-controls="ast-complete"
+        :aria-controls="showList ? 'ast-complete' : undefined"
         :aria-expanded="showList"
         :aria-activedescendant="showList ? `ast-complete-${active}` : undefined"
         @keydown="onKeydown"

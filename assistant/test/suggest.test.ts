@@ -6,7 +6,7 @@ import { buildTools, parseWhitelist, type OpenApiDoc } from '../src/tools.ts'
 const R = { '200': { content: { '*/*': { schema: { $ref: '#/components/schemas/RObject' } } } } }
 const DOC: OpenApiDoc = {
   paths: Object.fromEntries(
-    ['/api/board/home/todos', '/api/orders', '/api/orders/{id}', '/api/order-progress', '/api/purchase-orders', '/api/order-kitting', '/api/stocks'].map((p) => [p, { get: { summary: p, responses: R } }]),
+    ['/api/board/home/todos', '/api/orders', '/api/orders/{id}', '/api/order-progress', '/api/purchase-orders', '/api/order-changes', '/api/stocks', '/api/board/home/deliveries'].map((p) => [p, { get: { summary: p, responses: R } }]),
   ),
 }
 const TOOLS = buildTools(DOC, parseWhitelist(`
@@ -15,8 +15,9 @@ const TOOLS = buildTools(DOC, parseWhitelist(`
 - { op: "GET /api/orders/{id}", tool: get_order, label: 订单详情, perm: order:order:list }
 - { op: GET /api/order-progress, tool: order_progress, label: 订单进度, perm: order:progress:list, ask: 哪些订单已经逾期了 }
 - { op: GET /api/purchase-orders, tool: list_purchase_orders, label: 采购单, perm: purchase:order:list, ask: 哪些物料到料逾期了 }
-- { op: GET /api/order-kitting, tool: order_kitting, label: 订单齐料, perm: order:order:list, ask: 已审核的订单料齐了没有 }
+- { op: GET /api/order-changes, tool: list_order_changes, label: 订单变更, perm: order:order:list, ask: 最近有哪些订单变更 }
 - { op: GET /api/stocks, tool: list_stocks, label: 物料库存, perm: inventory:stock:list, ask: 面料库存还剩多少 }
+- { op: GET /api/board/home/deliveries, tool: upcoming_deliveries, label: 近期交期, perm: login, ask: 最近一周有哪些要交货的, askIf: [order:order:list, production:order:list] }
 `))
 
 describe('推荐问题', () => {
@@ -27,12 +28,22 @@ describe('推荐问题', () => {
       '待审核的需求订单有哪些', // order 有 2 个权限码，排第一个模块
       '哪些物料到料逾期了', // purchase、inventory 各 1 个，照 tools.yaml 的顺序
       '面料库存还剩多少',
-      '哪些订单已经逾期了', // 第二轮：order 第二句
-      '已审核的订单料齐了没有',
+      '最近一周有哪些要交货的', // 第二轮：只要登录的第二句（有订单权限，askIf 过了）
+      '哪些订单已经逾期了', // order 第二句
+      '最近有哪些订单变更',
     ])
     // 仓管：库存的权限多，库存排在采购前面
     const keeper = new Set(['inventory:stock:list', 'inventory:doc:list', 'inventory:doc:add', 'purchase:order:list'])
     assert.deepEqual(suggestionsFor(keeper, TOOLS, []).map((s) => s.text), ['今天有哪些待我处理的事', '面料库存还剩多少', '哪些物料到料逾期了'])
+  })
+
+  test('只要登录的工具写了 askIf：没有其中任何一个权限的不推（交期查出来是空的），有一个就推', () => {
+    const texts = (perms: string[]) => suggestionsFor(new Set(perms), TOOLS, []).map((s) => s.text)
+    assert.equal(texts(['inventory:stock:list']).includes('最近一周有哪些要交货的'), false)
+    assert.equal(texts([]).includes('最近一周有哪些要交货的'), false)
+    assert.equal(texts(['production:order:list']).includes('最近一周有哪些要交货的'), true)
+    // 工具照样给模型（只是不推荐）：问到了答"没有权限看"
+    assert.ok(TOOLS.some((t) => t.name === 'upcoming_deliveries'))
   })
 
   test('手上的待办在前、带件数；和例句重复的只出一次（带件数的那句）；不认识的分组不推；最多 max 句', () => {
@@ -58,5 +69,14 @@ describe('推荐问题', () => {
     assert.throws(() => one('a'.repeat(41)), /ask/)
     assert.throws(() => one('第一行\n第二行'), /ask/)
     assert.throws(() => one('  '), /ask/)
+  })
+
+  test('tools.yaml 的 askIf：权限码的列表，要和 ask 一起写', () => {
+    const one = (extra: Record<string, unknown>) => buildTools(DOC, [{ op: 'GET /api/orders', tool: 'list_orders', label: '需求订单', perm: 'login', ...extra }])
+    assert.deepEqual(one({ ask: '待审核的需求订单有哪些', askIf: ['order:order:list'] })[0]!.askIf, ['order:order:list'])
+    assert.throws(() => one({ askIf: ['order:order:list'] }), /askIf/)
+    assert.throws(() => one({ ask: '问', askIf: [] }), /askIf/)
+    assert.throws(() => one({ ask: '问', askIf: 'order:order:list' }), /askIf/)
+    assert.throws(() => one({ ask: '问', askIf: ['订单'] }), /askIf/)
   })
 })
