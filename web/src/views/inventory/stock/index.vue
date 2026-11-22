@@ -35,7 +35,8 @@ const { canSeeCost } = useFieldAccess()
 /**
  * 库存（/stock，docs/api/04 §1.5、§3.6、§4）：明细 / 按物料 / 进销存 / 日志四个视图，认 ?view=log（只认 /stock 自己的地址）。
  * - 进销存（二期，RFC 016 §4）：期间必填（默认本月、清不掉），入库、出库按类型拆开的列在"显示列"里勾
- * - 明细的在途、低于最小库存（标黄）要等 supplyApi.bySkus 回来：和主表分开取，没回来、取不到都写"—"，不拖住主表
+ * - 明细的在途、低于最小库存（标黄）、按物料的在途要等 supplyApi.bySkus 回来：和主表分开取，没回来、取不到都写"—"，不拖住主表
+ * - 库存是 0 的格子有在途也默认列（用户 11-22 定）：还没有库存记录的那种 id 是 null，行的 key 用 仓库 × SKU
  * - 页头：补货提醒（n）、盘点（去新建日常盘点）、导入期初库存、导出
  * - 点明细的一行：弹它的库存日志（带上仓库和 SKU）
  */
@@ -72,6 +73,7 @@ const summaryCols = useColumns('stock-summary', [
   { key: 'material', label: '物料仓合计' },
   { key: 'factory', label: '工厂净托管' },
   { key: 'total', label: '合计' },
+  { key: 'transit', label: '在途' },
   { key: 'safety', label: '最小库存' },
   { key: 'materialType', label: '物料类型', hidden: true },
 ])
@@ -155,6 +157,9 @@ watch(detailTable.list, async (rows) => {
   }
 })
 
+/** 只有在途、还没有库存记录的格子 id 是 null */
+const stockRowKey = (row: StockRow) => row.id ?? `transit-${row.warehouseId}-${row.materialSkuId}`
+
 function transitText(row: StockRow): string {
   const s = supplyMap.value?.[row.materialSkuId]
   if (!s) return '—'
@@ -179,6 +184,28 @@ const summaryTable = useTable({
     includeZero: false,
   },
 })
+
+/** 按物料的在途：送各个仓（物料仓、直发工厂仓）的加起来；null = 还没回来或取不到 */
+const summarySupplyMap = ref<Record<string, SkuSupply> | null>(null)
+let summarySupplySeq = 0
+watch(summaryTable.list, async (rows) => {
+  const seq = ++summarySupplySeq
+  summarySupplyMap.value = null
+  const skuIds = rows.map((r) => r.materialSkuId)
+  if (!skuIds.length) return
+  try {
+    const supplies = await supplyApi.bySkus(skuIds)
+    if (seq === summarySupplySeq) summarySupplyMap.value = Object.fromEntries(supplies.map((s) => [s.materialSkuId, s]))
+  } catch {
+    // 取不到：在途写"—"，主表照常
+  }
+})
+function summaryTransitText(row: StockSummaryRow): string {
+  const s = summarySupplyMap.value?.[row.materialSkuId]
+  if (!s) return '—'
+  const qty = s.transits.reduce((acc, t) => acc + t.qty, 0)
+  return qty ? formatQty(qty) : '—'
+}
 
 // ---------- 视图 3：进销存 ----------
 /** 本月：1 号到今天（东八区） */
@@ -397,10 +424,10 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
       <el-table
         v-loading="detailTable.loading.value"
         :data="detailTable.list.value"
-        row-key="id"
+        :row-key="stockRowKey"
         :row-class-name="detailRowClass"
         scrollbar-always-on
-        :empty-text="detailTable.query.keyword || detailTable.query.warehouseId ? '没有符合条件的库存：换个仓库，或者清空筛选' : '这类仓库里还没有库存：采购入库、录期初库存后就有了'"
+        :empty-text="detailTable.query.keyword || detailTable.query.warehouseId ? '没有符合条件的库存：换个仓库，或者清空筛选' : '这类仓库里还没有库存、也没有在途：采购入库、录期初库存后就有了'"
         @row-click="openCellLogs"
       >
         <el-table-column label="仓库" width="190" fixed="left">
@@ -433,7 +460,7 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
           <template #default="{ row }">{{ row.safetyStock == null ? '—' : formatQty(row.safetyStock) }}</template>
         </el-table-column>
         <el-table-column v-if="detailCols.show.updated" label="最近变动" width="160" class-name="num">
-          <template #default="{ row }">{{ formatDateTime(row.updateTime) }}</template>
+          <template #default="{ row }">{{ formatDateTime(row.updateTime) || '—' }}</template>
         </el-table-column>
       </el-table>
 
@@ -460,7 +487,7 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
         :data="summaryTable.list.value"
         row-key="materialSkuId"
         scrollbar-always-on
-        :empty-text="summaryTable.query.keyword ? '没有符合条件的物料' : '还没有库存'"
+        :empty-text="summaryTable.query.keyword ? '没有符合条件的物料' : '还没有库存，也没有在途的料'"
       >
         <el-table-column label="物料" min-width="240" fixed="left">
           <template #default="{ row }">
@@ -479,6 +506,9 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
         </el-table-column>
         <el-table-column v-if="summaryCols.show.total" label="合计" width="120" class-name="num" align="right">
           <template #default="{ row }"><strong>{{ formatQty(row.totalQty) }}</strong></template>
+        </el-table-column>
+        <el-table-column v-if="summaryCols.show.transit" label="在途" width="110" class-name="num" align="right">
+          <template #default="{ row }">{{ summaryTransitText(row as StockSummaryRow) }}</template>
         </el-table-column>
         <el-table-column v-if="summaryCols.show.safety" label="最小库存" width="120" class-name="num" align="right">
           <template #default="{ row }">{{ row.safetyStock == null ? '—' : formatQty(row.safetyStock) }}</template>

@@ -45,17 +45,25 @@ public class StockServiceImpl implements StockService {
     private final UserService userService;
     private final StockLogCursor logCursor;
     private final com.lingmao.scm.module.inventory.service.StockLogExportService logExporter;
+    /** 采购那边给的在途格子（库存不依赖采购，没有实现时当没有在途） */
+    private final org.springframework.beans.factory.ObjectProvider<com.lingmao.scm.module.inventory.service.StockTransitSource> transitSource;
+
+    /** 有在途的 仓库 × SKU：库存是 0 的格子有在途也列（用户 11-22 定） */
+    private List<com.lingmao.scm.module.inventory.dto.WarehouseSku> transits() {
+        var source = transitSource.getIfAvailable();
+        return source == null ? List.of() : source.openTransitPlaces();
+    }
 
     @Override
     public PageResult<StockRowVO> page(StockQuery query) {
-        IPage<StockRowVO> page = stockMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
+        IPage<StockRowVO> page = stockMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()), transits());
         fillBriefs(page.getRecords());
         return PageResult.of(page);
     }
 
     @Override
     public PageResult<StockSummaryRowVO> summary(StockQuery query) {
-        IPage<StockSummaryRowVO> page = stockMapper.selectSummaryPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
+        IPage<StockSummaryRowVO> page = stockMapper.selectSummaryPage(query.toPage(), query, Keywords.codes(query.getKeyword()), transits());
         fillBriefs(page.getRecords());
         return PageResult.of(page);
     }
@@ -143,14 +151,14 @@ public class StockServiceImpl implements StockService {
 
     @Override
     public byte[] export(StockQuery query) {
-        List<StockRowVO> rows = stockMapper.selectRowPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
+        List<StockRowVO> rows = stockMapper.selectRowPage(all(), query, Keywords.codes(query.getKeyword()), transits()).getRecords();
         fillBriefs(rows);
         return excel.stocks(rows);
     }
 
     @Override
     public byte[] exportSummary(StockQuery query) {
-        List<StockSummaryRowVO> rows = stockMapper.selectSummaryPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
+        List<StockSummaryRowVO> rows = stockMapper.selectSummaryPage(all(), query, Keywords.codes(query.getKeyword()), transits()).getRecords();
         fillBriefs(rows);
         return excel.summary(rows);
     }

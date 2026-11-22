@@ -87,6 +87,12 @@ public interface MrpCalcMapper extends BaseMapper<MrpCalc> {
 
     List<OrderStyle> selectOrderStyles(@Param("orderIds") Collection<Long> orderIds);
 
+    /** 这几张算料单里，算的订单有 merchId 跟单的那几张（本人范围的跟单看得到，用户 11-22 定） */
+    @org.apache.ibatis.annotations.Select("<script>SELECT DISTINCT co.calc_id FROM mrp_calc_order co JOIN ord_order o ON o.id = co.order_id "
+            + "WHERE o.merch_id = #{merchId} AND co.calc_id IN "
+            + "<foreach collection='calcIds' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    List<Long> selectCalcIdsByMerch(@Param("calcIds") Collection<Long> calcIds, @Param("merchId") Long merchId);
+
     /**
      * 算料单 × 订单：单号、承诺交期、主体（一张算料单的订单主体都一样，checkForMrp 拦着）；
      * 品类线、制单人、业务员、跟单员用来判断当前用户打不打得开这张订单

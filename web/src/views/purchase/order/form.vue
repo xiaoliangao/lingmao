@@ -144,10 +144,7 @@ async function applyDefaults(fillHead: boolean) {
     if (fillHead) {
       head.settleMethod = def.settleMethod
       head.taxPct = def.taxPct
-      if (def.buyerId) {
-        head.buyerId = def.buyerId
-        head.buyerName = def.buyerName
-      }
+      // 采购员不跟供应商的负责采购员走：就是下单的人（新建默认填自己，用户 11-22 定）
     }
     if (def.deliveryDate && !deliveryTouched.value) head.deliveryDate = def.deliveryDate
     const bySku = new Map(def.lines.map((d) => [d.materialSkuId, d]))

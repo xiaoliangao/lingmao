@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.inventory.mapper;
 
+import com.lingmao.scm.module.inventory.dto.WarehouseSku;
+
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.module.inventory.dto.StockQuery;
@@ -68,12 +70,14 @@ public interface StockMapper extends BaseMapper<Stock> {
     @Options(flushCache = Options.FlushCachePolicy.TRUE)
     List<Stock> selectForCount(@Param("warehouseId") long warehouseId, @Param("categoryIds") Collection<Long> categoryIds);
 
-    /** 库存明细（XML） */
-    IPage<StockRowVO> selectRowPage(IPage<StockRowVO> page, @Param("q") StockQuery query, @Param("codes") List<String> codes);
+    /** 库存明细（XML）。transits：有在途的格子，没有库存记录的也列一行（数量 0、id 空），默认不藏 */
+    IPage<StockRowVO> selectRowPage(IPage<StockRowVO> page, @Param("q") StockQuery query, @Param("codes") List<String> codes,
+                                    @Param("transits") List<WarehouseSku> transits);
 
 
-    /** 按物料汇总（XML） */
+    /** 按物料汇总（XML）。transits 同上 */
     IPage<StockSummaryRowVO> selectSummaryPage(IPage<StockSummaryRowVO> page, @Param("q") StockQuery query,
-                                               @Param("codes") List<String> codes);
+                                               @Param("codes") List<String> codes,
+                                               @Param("transits") List<WarehouseSku> transits);
 
 }

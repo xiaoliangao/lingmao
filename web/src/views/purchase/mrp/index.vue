@@ -86,7 +86,7 @@ const emptyText = computed(() => {
   if (query.mine) return '还没有你算的料，切到「全部」看所有人的'
   // 跟单、财务这类只能看、不能算的：没有"选订单算料"按钮，不叫他点（走查 T-693633）
   if (!userScope.hasPerm('purchase:mrp:add')) {
-    return userScope.canSeeAll ? '还没有算料单：采购选订单算料后列在这里' : '没有你能看的算料单：算料单只给建它的采购和数据范围是「全部」的人看'
+    return userScope.canSeeAll ? '还没有算料单：采购选订单算料后列在这里' : '还没有你跟单的订单的算料单：采购算了料就列在这里'
   }
   return '还没有算料单：订单审核后点「选订单算料」'
 })

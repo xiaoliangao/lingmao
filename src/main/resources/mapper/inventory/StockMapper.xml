@@ -12,6 +12,30 @@
         <if test="q.warehouseId != null">AND s.warehouse_id = #{q.warehouseId}</if>
     </sql>
 
+    <!-- 有在途的 仓库 × SKU（StockTransitSource，采购给的） -->
+    <sql id="transitValues">(VALUES <foreach collection="transits" item="t" separator=",">(#{t.warehouseId}::bigint, #{t.skuId}::bigint)</foreach>)</sql>
+
+    <!--
+      库存行 + 有在途、还没有库存记录的格子（数量 0、id 空）。in_transit：这格有在途，库存是 0 也默认列（用户 11-22 定）
+    -->
+    <sql id="stockBase">
+        (SELECT sb.id, sb.warehouse_id, sb.material_sku_id, sb.qty, sb.update_time,
+                <choose>
+                    <when test="transits != null and transits.size() > 0">
+                        EXISTS (SELECT 1 FROM <include refid="transitValues"/> tv(warehouse_id, material_sku_id)
+                                WHERE tv.warehouse_id = sb.warehouse_id AND tv.material_sku_id = sb.material_sku_id)
+                    </when>
+                    <otherwise>false</otherwise>
+                </choose> AS in_transit
+         FROM inv_stock sb
+         <if test="transits != null and transits.size() > 0">
+         UNION ALL
+         SELECT NULL::bigint, tn.warehouse_id, tn.material_sku_id, 0::numeric, NULL::timestamptz, true
+         FROM <include refid="transitValues"/> tn(warehouse_id, material_sku_id)
+         WHERE NOT EXISTS (SELECT 1 FROM inv_stock x WHERE x.warehouse_id = tn.warehouse_id AND x.material_sku_id = tn.material_sku_id)
+         </if>)
+    </sql>
+
     <!-- 直接读取候选库存行，避免按候选 ID 再回扫全量库存；外层保留仓库/零库存过滤。 -->
     <sql id="stockSource">
         <choose>
@@ -19,7 +43,7 @@
             <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
             <bind name="keywordContains" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword, 200)"/>
             (
-                SELECT sk.* FROM inv_stock sk WHERE sk.material_sku_id IN (
+                SELECT sk.* FROM <include refid="stockBase"/> sk WHERE sk.material_sku_id IN (
                     SELECT mk.id FROM bas_material_sku mk WHERE upper(mk.code) LIKE #{keywordCode}
                     <if test="codes != null">OR upper(mk.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                     UNION
@@ -28,11 +52,11 @@
                     <if test="codes != null">OR upper(mm.code) IN <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach></if>
                 )
                 UNION
-                SELECT sw.* FROM inv_stock sw JOIN bas_warehouse mw ON mw.id = sw.warehouse_id
+                SELECT sw.* FROM <include refid="stockBase"/> sw JOIN bas_warehouse mw ON mw.id = sw.warehouse_id
                 WHERE mw.name ILIKE #{keywordContains}
             )
             </when>
-            <otherwise>inv_stock</otherwise>
+            <otherwise><include refid="stockBase"/></otherwise>
         </choose>
     </sql>
 
@@ -44,7 +68,7 @@
         JOIN bas_material_sku k ON k.id = s.material_sku_id
         JOIN bas_material m ON m.id = k.material_id
         <include refid="stockWhere"/>
-        <if test="!q.includeZero">AND s.qty != 0</if>
+        <if test="!q.includeZero">AND (s.qty != 0 OR s.in_transit)</if>
         <if test="q.ids != null and q.ids.size() > 0">
             AND s.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         </if>
@@ -62,7 +86,7 @@
         JOIN bas_material m ON m.id = k.material_id
         <include refid="stockWhere"/>
         GROUP BY s.material_sku_id
-        <if test="!q.includeZero">HAVING SUM(s.qty) != 0</if>
+        <if test="!q.includeZero">HAVING SUM(s.qty) != 0 OR bool_or(s.in_transit)</if>
         ORDER BY MAX(k.code), s.material_sku_id
     </select>
 </mapper>

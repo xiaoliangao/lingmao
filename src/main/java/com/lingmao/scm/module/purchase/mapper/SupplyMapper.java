@@ -44,6 +44,15 @@ public interface SupplyMapper {
      */
     List<LineRow> selectLines(@Param("skuIds") Collection<Long> skuIds, @Param("calcIds") Collection<Long> calcIds);
 
+    /** 有在途的 仓库 × SKU（库存页列"库存 0、有在途"的格子，StockTransitSource）：已审核、部分到货的单里没入齐的行 */
+    @org.apache.ibatis.annotations.Select("SELECT DISTINCT o.warehouse_id, i.material_sku_id AS sku_id FROM pur_order_item i "
+            + "JOIN pur_order o ON o.id = i.purchase_order_id WHERE o.status IN ('APPROVED', 'RUNNING') "
+            + "AND i.received_qty - i.returned_qty + i.offset_in_qty - i.offset_out_qty < i.qty")
+    List<TransitPlace> selectTransitPlaces();
+
+    record TransitPlace(Long warehouseId, Long skuId) {
+    }
+
     /** 已确认的算料单在这些 SKU 上的本次使用在途 */
     List<UseRow> selectActiveUses(@Param("skuIds") Collection<Long> skuIds);
 

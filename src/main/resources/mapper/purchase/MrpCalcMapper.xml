@@ -19,7 +19,10 @@
                            ORDER BY n.id DESC LIMIT 1) nx ON true
         WHERE true
         <if test="scope.lines.limited">AND c.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
-        <if test="scope.self">AND c.create_by = #{scope.userId}</if>
+        <!-- 本人：制单人是自己，或者算的订单里有自己跟单的（生产跟单看自己订单的算料单，用户 11-22 定） -->
+        <if test="scope.self">AND (c.create_by = #{scope.userId}
+            OR EXISTS (SELECT 1 FROM mrp_calc_order so JOIN ord_order oo ON oo.id = so.order_id
+                       WHERE so.calc_id = c.id AND oo.merch_id = #{scope.userId}))</if>
         <if test="q.status != null and q.status.size() > 0">
             AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
         </if>

@@ -7797,7 +7797,7 @@ comp('PurchaseForm', {
     const s0 = sup('GYS0001')
     const f = reactive(x
       ? { ...Object.fromEntries(PO_FIELDS.map(([k]) => [k, x[k]])), plan: [...(x.plan || [])], lines: x.lines.map((l) => ({ sku: l.sku, owner: l.owner || '自有', qty: l.qty, price: l.price, priceWhy: l.priceWhy || '', due: l.due || '', expect: l.expect || '', src: l.src, note: l.note })) }
-      : { company: myCompany(), supplier: s0.code, type: '备货采购', buyer: s0.buyer || 'u2', date: clock.today, due: '', wh: 'WL01', settle: s0.settle, tax: s0.tax, taxIncl: true, plan: [], note: '', files: [], lines: [{ sku: '', owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' }] })
+      : { company: myCompany(), supplier: s0.code, type: '备货采购', buyer: db.me, date: clock.today, due: '', wh: 'WL01', settle: s0.settle, tax: s0.tax, taxIncl: true, plan: [], note: '', files: [], lines: [{ sku: '', owner: '自有', qty: null, price: null, priceWhy: '', due: '', expect: '' }] })
     const sups = computed(() => db.suppliers.filter((s) => !isFactory(s)))
     const skus = computed(() => db.materials.filter((m) => m.status === '启用').flatMap((m) => m.skus.filter((k) => k.status !== '停用').map((k) => ({ code: k.code, t: skuName(k.code) + ' · ' + k.code, mine: m.supplier === f.supplier }))).sort((a, b) => b.mine - a.mine))
     const owners = computed(() => ['自有', ...db.customers.filter((c) => c.status === '启用').map((c) => c.code)])
@@ -7810,7 +7810,7 @@ comp('PurchaseForm', {
     const was = new Map() // 行 → 上次带出来的默认价
     const setSku = (l) => { l.price = dft(l); was.set(l, l.price) }
     const setSup = () => {
-      const s = sup(f.supplier); f.settle = s.settle; f.tax = s.tax; if (s.buyer) f.buyer = s.buyer
+      const s = sup(f.supplier); f.settle = s.settle; f.tax = s.tax
       f.lines.forEach((l) => { if (l.sku && (l.price == null || l.price === '' || l.price === was.get(l))) { l.price = dft(l); was.set(l, l.price) } })
     }
     const styles = computed(() => db.styles.filter((s) => s.status === '启用' && !f.plan.includes(s.code)))

@@ -432,13 +432,20 @@ public class MrpServiceImpl implements MrpService {
         return visible(calcMapper.selectById(id));
     }
 
-    /** 数据范围（PRD §3.2）：本人范围的看制单人是自己的；品类线不是我的 404（RFC 013 §2） */
+    /**
+     * 数据范围（PRD §3.2）：本人范围的看制单人是自己的，或者算的订单里有自己跟单的（生产跟单看自己订单的算料单，用户 11-22 定）；
+     * 品类线不是我的 404（RFC 013 §2）
+     */
     private MrpCalc visible(MrpCalc c) {
-        if (c == null || !LineScope.current().canSee(c.getProductLine()) || !DataScope.current(false).canSee(c.getCreateBy())) {
+        if (c == null || !LineScope.current().canSee(c.getProductLine())) {
             throw new BizException(404, NOT_FOUND);
         }
-        engine.checkSourceVisible(calcOrders(List.of(c.getId())).getOrDefault(c.getId(), List.of()).stream()
-                .map(MrpCalcMapper.CalcOrder::orderId).toList());
+        List<MrpCalcMapper.CalcOrder> orders = calcOrders(List.of(c.getId())).getOrDefault(c.getId(), List.of());
+        DataScope scope = DataScope.current(false);
+        if (!scope.canSee(c.getCreateBy()) && orders.stream().noneMatch(o -> o.merchId() != null && scope.canSee(o.merchId()))) {
+            throw new BizException(404, NOT_FOUND);
+        }
+        engine.checkSourceVisible(orders.stream().map(MrpCalcMapper.CalcOrder::orderId).toList());
         return c;
     }
 
@@ -1127,8 +1134,10 @@ public class MrpServiceImpl implements MrpService {
                 n[0]++;
             }
         }
-        // 状态按这张订单所有的算料单算；calcIds 只给我打得开的（本人范围看自己建的算料单），点标签不跳到 404（走查 T-693633）
+        // 状态按这张订单所有的算料单算；calcIds 只给我打得开的（本人范围：自己建的、算的订单有自己跟单的），点标签不跳到 404（走查 T-693633）
         DataScope scope = DataScope.current(false);
+        Set<Long> merchCalcs = scope.isAll() || all.isEmpty() ? Set.of()
+                : new HashSet<>(calcMapper.selectCalcIdsByMerch(all, scope.getUserId()));
         List<OrderKittingVO> out = new ArrayList<>();
         for (Long orderId : ids) {
             List<Long> calcIds = byOrder.getOrDefault(orderId, List.of()).stream().map(MrpCalcMapper.OrderCalc::calcId)
@@ -1150,7 +1159,7 @@ public class MrpServiceImpl implements MrpService {
                 case "NOT" -> "未到料";
                 default -> "部分到料 " + ready + "/" + total;
             };
-            List<Long> openable = byOrder.get(orderId).stream().filter(c -> scope.canSee(c.createBy()))
+            List<Long> openable = byOrder.get(orderId).stream().filter(c -> scope.canSee(c.createBy()) || merchCalcs.contains(c.calcId()))
                     .map(MrpCalcMapper.OrderCalc::calcId).sorted(Comparator.reverseOrder()).toList();
             out.add(new OrderKittingVO(orderId, status, ready, total, label, openable));
         }

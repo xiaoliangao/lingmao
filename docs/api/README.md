@@ -274,3 +274,4 @@ cd web && pnpm dev:mock
 | 11-21 | §4.2 角色"审核不受数据范围限制"（`Role.auditAnyScope`）；单级单据 `auditForMe` 只列待审的 |
 | 11-21 | §3.3 登录信息加 `features.ai`（AI 功能统一开关，RFC 017 §3.7）；开关本身是管理后台的 `GET`、`PUT /api/admin/ai-switch`，只给超级管理员，写在 Swagger |
 | 11-21 | §4.3 操作记录加 `diff`（物料、款式、供应商的字段级改前改后，RFC 016 §3） |
+| 11-22 | §3.3 登录信息加 `canSeeAll`（数据范围是"全部"）：只有这样的人列表上才出"我的 / 全部"（PRD §3.2） |

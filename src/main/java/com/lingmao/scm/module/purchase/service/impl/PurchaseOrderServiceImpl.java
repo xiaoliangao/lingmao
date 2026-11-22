@@ -406,8 +406,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             return new PurchaseLineDefault(i.skuId(), archivePrice != null ? archivePrice : Num.price(i.price()), a == null ? null : a.id(),
                     archivePrice, i.purchaseUnit(), i.conversionFactor(), i.leadDays(), i.supplierItemNo(), i.supplierColorNo());
         }).toList();
-        String buyerName = s.buyerId() == null ? null : userService.nicknames(List.of(s.buyerId())).get(s.buyerId());
-        return new PurchaseDefaultsVO(s.settleMethod(), s.taxPct(), s.buyerId(), buyerName,
+        return new PurchaseDefaultsVO(s.settleMethod(), s.taxPct(),
                 lines.isEmpty() ? null : deliveryDate(orderDate, infos.values()), lines);
     }
 

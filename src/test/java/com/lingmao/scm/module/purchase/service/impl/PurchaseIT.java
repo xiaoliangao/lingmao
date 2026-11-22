@@ -81,6 +81,8 @@ class PurchaseIT {
     @Autowired
     private SupplyService supplyService;
     @Autowired
+    private com.lingmao.scm.module.inventory.service.StockService stockService;
+    @Autowired
     private OrderService orderService;
     @Autowired
     private InvDocService invDocService;
@@ -227,6 +229,15 @@ class PurchaseIT {
         assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, false, () -> mrpService.kitting(List.of(orderId)))).singleElement().satisfies(k -> {
             assertThat(k.status()).isNotEqualTo("NONE");
             assertThat(k.calcIds()).isEmpty();
+        });
+        // 他是这张订单的跟单：算料单列表、详情、齐料标签都看得到（生产跟单看自己订单的算料单，用户 11-22 定）
+        jdbcTemplate.update("UPDATE ord_order SET merch_id = ? WHERE id = ?", TestIdentity.auditorOf(jdbcTemplate, f.user), orderId);
+        TestIdentity.asSelfAuditor(jdbcTemplate, false, () -> {
+            assertThat(mrpService.kitting(List.of(orderId)).getFirst().calcIds()).containsExactly(calc.id());
+            assertThat(mrpService.detail(calc.id()).getNo()).isNotBlank();
+            assertThat(mrpService.page(new com.lingmao.scm.module.purchase.dto.MrpCalcQuery()).getList())
+                    .extracting(com.lingmao.scm.module.purchase.dto.MrpCalcRowVO::getId).contains(calc.id());
+            return null;
         });
         assertThat(referenceService.referrers(BizType.ORDER, orderId)).extracting(DocRef::id).contains(calc.id(), poC);
         PurchaseQuery q = new PurchaseQuery();
@@ -707,6 +718,35 @@ class PurchaseIT {
         assertThat(purchaseOrderService.detail(po2).getActions()).doesNotContain("receive");
         assertThat(purchaseOrderService.detail(po1).getItems().getFirst().getOffsetOutQty()).isZero();
         assertThat(offsetMismatches()).isEmpty();
+    }
+
+    /**
+     * 库存页（用户 11-22 定）：还没有库存记录、有在途的格子也列，数量 0、id 空，明细和按物料都默认列（不用勾"含 0 库存"）；
+     * 入齐、入库以后就是普通的库存行
+     */
+    @Test
+    void stockPage_listsInTransitWithoutStock() {
+        Fixture f = fixture(null);
+        com.lingmao.scm.module.inventory.dto.StockQuery q = new com.lingmao.scm.module.inventory.dto.StockQuery();
+        q.setKeyword(f.skuCode);
+        assertThat(stockService.page(q).getList()).isEmpty();
+        assertThat(stockService.summary(q).getList()).isEmpty();
+
+        approvedStockPo(f, "100", LocalDate.now().plusDays(3));
+        assertThat(stockService.page(q).getList()).singleElement().satisfies(r -> {
+            assertThat(r.getId()).isNull();
+            assertThat(r.getWarehouseId()).isEqualTo(f.warehouse);
+            assertThat(r.getQty()).isZero();
+        });
+        assertThat(stockService.summary(q).getList()).singleElement()
+                .satisfies(r -> assertThat(r.getTotalQty()).isZero());
+        // 有库存记录、数量 0 的格子有在途也默认列；只是 0、没在途的还是藏着
+        jdbcTemplate.update("INSERT INTO inv_stock (warehouse_id, material_sku_id, qty) VALUES (?, ?, 0)", f.warehouse, f.sku);
+        assertThat(stockService.page(q).getList()).singleElement().satisfies(r -> assertThat(r.getId()).isNotNull());
+        jdbcTemplate.update("UPDATE pur_order_item SET received_qty = qty WHERE material_sku_id = ?", f.sku);
+        assertThat(stockService.page(q).getList()).isEmpty();
+        q.setIncludeZero(true);
+        assertThat(stockService.page(q).getList()).hasSize(1);
     }
 
     /**

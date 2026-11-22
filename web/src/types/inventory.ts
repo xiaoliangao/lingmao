@@ -558,8 +558,8 @@ export interface CountOpenWarehouse {
 
 /** 库存明细的一行：仓库 × 物料 SKU（物权、货位一期不显示：都是自有、不分货位） */
 export interface StockRow extends MaterialSkuBrief {
-  /** inv_stock.id */
-  id: string
+  /** inv_stock.id；还没有库存记录、只是有在途的格子（数量 0）是 null（11-22） */
+  id: string | null
   warehouseId: string
   warehouseCode: string
   warehouseName: string
@@ -567,8 +567,8 @@ export interface StockRow extends MaterialSkuBrief {
   qty: number
   /** SKU 上设的最小库存，没设是 null。低于没低于由采购那边算（supplyApi.bySkus），库存这边算不了在途和占用 */
   safetyStock: number | null
-  /** 最近变动时间 2026-11-15 10:30:00 */
-  updateTime: string
+  /** 最近变动时间 2026-11-15 10:30:00；只有在途、还没有库存记录的是 null */
+  updateTime: string | null
 }
 
 export interface StockQuery {

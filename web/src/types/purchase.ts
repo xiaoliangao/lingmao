@@ -538,11 +538,9 @@ export interface PurchaseLineDefault {
 }
 
 export interface PurchaseDefaults {
-  /** 供应商上的结算方式（字典 settle_method）、税率、采购员；没设是 null */
+  /** 供应商上的结算方式（字典 settle_method）、税率；没设是 null。不带采购员：采购员就是下单的人，不跟供应商走 */
   settleMethod: string | null
   taxPct: number | null
-  buyerId: string | null
-  buyerName: string | null
   /** 交货日期的默认值 = 下单日 + skuIds 里最长的采购周期（没设的按 7 天）；skuIds 空是 null */
   deliveryDate: string | null
   lines: PurchaseLineDefault[]
