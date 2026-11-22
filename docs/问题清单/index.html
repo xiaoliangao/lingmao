@@ -175,8 +175,9 @@ body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); 
   <h1>要请你们答的问题</h1>
   <p class="lead">整个项目做完之前还要请你们定的，一共 32 条，分三块：上线前要答的 13 条，二期开工前要答的 12 条，整个项目做完之前要定的 7 条。能截图的配了界面，要选的举了例子；已经答复的不在这里。</p>
   <div class="how">
-    <p><b>怎么答：</b>直接在每一问下面点选项、写答案；同意照"不答就这样做"的，勾上「就按这样做」。写的内容存在这台电脑（手机）的浏览器里，关掉再打开还在。</p>
-    <p><b>答完：</b>点页面最下面的「导出答案」，把下载的文件发给我们；也可以点「复制答案」，粘贴到微信里发。几个人分开答的，各自导出各自发。</p>
+    <p data-nojs><b>怎么答：</b>写编号和第几问，有选项的写选哪个，比如 <span class="code">Q55-1 选 A</span>；情况不一样的直接写，发给我们。</p>
+    <p data-js hidden><b>怎么答：</b>直接在每一问下面点选项、写答案；同意照"不答就这样做"的，勾上「就按这样做」。写的内容存在这台电脑（手机）的浏览器里，关掉再打开还在。在微信里收到的，先点右上角「用浏览器打开」再填，在微信里可能存不住、导不出。</p>
+    <p data-js hidden><b>答完：</b>点页面最下面的「导出答案」，把下载的文件发给我们；也可以点「复制答案」，粘贴到微信里发。几个人分开答的，各自导出各自发。</p>
     <p><b>不答：</b>就照每条最后的"不答就这样做"去做。</p>
     <p><b>截图：</b>都是示例数据，不是你们的。标了 <span class="tag">原型</span> 的是还没做的功能，给你们看大概的样子。点图看大图。</p>
   </div>
@@ -729,7 +730,9 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
 // 答题（11-22 用户要的）：选项能点、每问能写，存在这台机器的浏览器里（localStorage，按文件存；坏了、存不了就只是不记住）；
 // 答完导出成文本文件或复制，发回给我们。只答了的才导出，没答的列在最后（照"不答就这样做"）
 ;(function () {
-  var KEY = 'scm-qlist-answers-2026-11'
+  // 答案按"第几问、第几个选项"存，所以按这一版的日期分开存：下一版问题、选项有增删，旧的勾不会落到别的选项上
+  var edition = (document.querySelector('.top .sys').textContent.match(/\d{4}-\d{2}-\d{2}/) || ['x'])[0]
+  var KEY = 'scm-qlist-answers-' + edition
   var data
   try { data = JSON.parse(localStorage.getItem(KEY) || '{}') || {} } catch (e) { data = {} }
   data.who = data.who || ''
@@ -817,6 +820,10 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
       def.append(lab)
     }
   })
+
+  // 脚本跑起来才换成"直接点、直接写"的说明；跑不了（有的手机预览不跑脚本）还是写编号回复的老说法
+  document.querySelectorAll('.how [data-js]').forEach(function (p) { p.hidden = false })
+  document.querySelectorAll('.how [data-nojs]').forEach(function (p) { p.hidden = true })
 
   // 填写人
   var how = document.querySelector('.how')
