@@ -1,11 +1,16 @@
 package com.lingmao.scm.common.file;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.file.FileUrlSigner.Verdict;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -83,6 +88,27 @@ class FileUrlSignerTest {
         assertThat(signer.verify(PATH, String.valueOf(NOV_22 + 86400), s)).isEqualTo(Verdict.INVALID);
         assertThat(signer.verify(PATH, "-1", s)).isEqualTo(Verdict.INVALID);
         assertThat(signer.verify(PATH, e, "不是base64")).isEqualTo(Verdict.INVALID);
+    }
+
+    /**
+     * 规则：拿助手令牌来的请求不发签名地址，返回 null（RFC 017 §3.3）：签名地址 7 天有效、不认人，发出去收不回来。
+     * 外部地址照旧原样；同一个人用普通登录照旧签
+     */
+    @Test
+    void assistantRequest_noSignedUrl() {
+        FileUrlSigner signer = signerAt("2026-11-15T10:00:00+08:00");
+        try {
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("u", null,
+                    List.of(new SimpleGrantedAuthority("order:order:list"), new SimpleGrantedAuthority(CallerScope.ASSISTANT_AUTHORITY))));
+            assertThat(signer.sign(PATH)).isNull();
+            assertThat(signer.sign("https://example.com/a.jpg")).isEqualTo("https://example.com/a.jpg");
+
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("u", null,
+                    List.of(new SimpleGrantedAuthority("order:order:list"))));
+            assertThat(signer.sign(PATH)).isEqualTo(PATH + "?e=1795276800&s=C0eTHY3bqXS3P0oYrbeJAg");
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     /** 规则：没配密钥、密钥太短或带了 Nginx 配置里会出问题的字符，启动时就报出来，说清楚缺什么 */

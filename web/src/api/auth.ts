@@ -6,7 +6,7 @@ export const authApi = {
   me: () => http.get<UserInfo>('/api/auth/me'),
   logout: () => request<void>({ url: '/api/auth/logout', method: 'post', data: {}, withCredentials: true, headers: { 'X-Requested-With': 'XMLHttpRequest' } }),
   /** 换一张给智能助手用的只读令牌（要 assistant:chat:use；AI 功能关着回 403） */
-  assistantToken: () => http.post<AssistantToken>('/api/auth/assistant-token', {}),
+  assistantToken: () => http.post<AssistantToken>('/api/auth/assistant-token', {}, { readOnly: true }),
   /** 自己改密码：旧密码不对返回 1000，新密码不到 8 位返回 400 */
   changePassword: (data: { oldPassword: string; newPassword: string }) => http.put<void>('/api/auth/password', data),
 }

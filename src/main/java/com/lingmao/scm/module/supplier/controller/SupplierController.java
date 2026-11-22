@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.supplier.controller;
 
+import com.lingmao.scm.security.NoAssistant;
 import com.lingmao.scm.common.idempotency.IdempotentCreate;
 import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
 import tools.jackson.databind.JsonNode;
@@ -80,6 +81,7 @@ public class SupplierController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "银行信息全号（每调一次记一条操作日志）")
+    @NoAssistant
     @GetMapping("/{id:\\d+}/bank")
     @PreAuthorize("hasAuthority('supplier:supplier:bank')")
     @OperLog(module = "供应商", action = "查看银行账号")

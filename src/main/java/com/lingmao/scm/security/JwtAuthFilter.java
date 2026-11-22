@@ -1,5 +1,6 @@
 package com.lingmao.scm.security;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
@@ -16,6 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -100,7 +102,10 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
         if (scope != null && !perms.contains(ASSISTANT_PERM)) {
             return "没有使用智能助手的权限";
         }
-        List<SimpleGrantedAuthority> authorities = perms.stream().map(SimpleGrantedAuthority::new).toList();
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>(perms.stream().map(SimpleGrantedAuthority::new).toList());
+        if (scope != null) {
+            authorities.add(new SimpleGrantedAuthority(CallerScope.ASSISTANT_AUTHORITY));
+        }
         LoginUser loginUser = new LoginUser(session.userId(), claims.getId(), scope);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(loginUser, null, authorities));

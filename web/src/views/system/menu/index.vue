@@ -90,7 +90,8 @@ async function save() {
 }
 
 async function remove(row: MenuNode) {
-  await ElMessageBox.confirm(`删除以后侧边栏里就没有"${row.name}"了。下面还有菜单的删不掉，要先删下级。`, '删除菜单', {
+  const effect = row.type === 3 ? `删除以后角色里就勾不到"${row.name}"了，有这个权限的人也跟着没了。` : `删除以后侧边栏里就没有"${row.name}"了。下面还有菜单的删不掉，要先删下级。`
+  await ElMessageBox.confirm(effect, '删除菜单', {
     confirmButtonText: '删除',
     cancelButtonText: '取消',
     confirmButtonClass: 'el-button--danger',
@@ -120,7 +121,7 @@ async function remove(row: MenuNode) {
       </el-table-column>
       <el-table-column label="区域" width="96">
         <template #default="{ row }">
-          <template v-if="row.parentId === 0">{{ row.adminOnly ? '管理后台' : '业务菜单' }}</template>
+          <template v-if="row.parentId === '0'">{{ row.adminOnly ? '管理后台' : '业务菜单' }}</template>
         </template>
       </el-table-column>
       <el-table-column label="类型" width="64">

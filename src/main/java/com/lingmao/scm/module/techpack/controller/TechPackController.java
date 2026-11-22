@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.techpack.controller;
 
+import com.lingmao.scm.security.NoAssistant;
 import com.lingmao.scm.common.idempotency.IdempotentCreate;
 import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
 import tools.jackson.databind.JsonNode;
@@ -153,6 +154,7 @@ public class TechPackController extends IdempotencyReplayGuard {
     }
 
     @Operation(summary = "工艺单页签上一个 Excel 的表格数据（预览用；不是 Excel 1000）")
+    @NoAssistant
     @GetMapping("/{id:\\d+}/files/{fileId:\\d+}/preview")
     @PreAuthorize("hasAuthority('techpack:pack:list')")
     public R<ExcelPreview.Book> preview(@PathVariable("id") long id, @PathVariable("fileId") long fileId) {

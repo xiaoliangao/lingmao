@@ -97,6 +97,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public AssistantTokenVO assistantToken(LoginUser caller) {
         if (caller.scope() != null) {
             throw new AssistantDenied("助手令牌不能再换令牌");

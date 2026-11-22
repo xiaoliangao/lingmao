@@ -1,5 +1,6 @@
 package com.lingmao.scm.security;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import io.jsonwebtoken.JwtException;
@@ -139,6 +140,8 @@ class JwtAuthFilterTest {
 
         LoginUser user = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         assertThat(user.assistant()).isTrue();
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .as("文件签名靠这个认出是助手（common 不能依赖 security 包）").contains(CallerScope.ASSISTANT_AUTHORITY);
         assertThat(chain.getRequest()).isNotNull();
     }
 

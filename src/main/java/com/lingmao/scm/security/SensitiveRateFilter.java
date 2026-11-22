@@ -25,9 +25,7 @@ public final class SensitiveRateFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
         String operation = null; int limit = 0; Duration window = Duration.ofMinutes(1);
-        // 助手令牌的请求单独一个额度（RFC 017 §3.2）：一句话可能调好几个接口，但不能拿它刷数据
-        if (LoginUser.currentIsAssistant()) { operation = "assistant"; limit = 120; }
-        else if (method.equals("POST") && path.equals("/api/auth/assistant-token")) { operation = "assistant-token"; limit = 30; }
+        if (method.equals("POST") && path.equals("/api/auth/assistant-token")) { operation = "assistant-token"; limit = 30; }
         else if (method.equals("POST") && path.equals("/api/auth/login")) { operation = "login-ip"; limit = 600; window = Duration.ofMinutes(15); }
         else if (method.equals("POST") && path.equals("/api/auth/refresh")) { operation = "refresh"; limit = 120; }
         else if ((method.equals("PUT") && path.equals("/api/auth/password"))
@@ -42,22 +40,30 @@ public final class SensitiveRateFilter extends OncePerRequestFilter {
                 || path.matches("/api/(materials|styles|suppliers|orders)/import")
                 || path.matches("/api/inventory-counts/[1-9][0-9]*/import")
                 || path.matches("/api/tech-packs/[1-9][0-9]*/bom-import"))) { operation = "upload"; limit = 60; }
-        if (operation != null) {
-            Long user = LoginUser.currentUserId();
-            String bucket = operation + ":" + (user == null ? "anonymous" : user) + ":" + proxy.clientIp(request);
-            long retry;
-            try { retry = limiter.acquire(bucket, limit, window); }
-            catch (SecurityStateUnavailable unavailable) {
-                response.setStatus(503); response.setHeader("Retry-After", "3");
-                response.setContentType("application/json;charset=UTF-8");
-                json.writeValue(response.getWriter(), R.fail(503, unavailable.getMessage())); return;
-            }
-            if (retry > 0) {
-                response.setStatus(429); response.setHeader("Retry-After", Long.toString(retry));
-                response.setContentType("application/json;charset=UTF-8");
-                json.writeValue(response.getWriter(), R.fail(429, "操作过于频繁，请稍后重试")); return;
-            }
-        }
+        if (operation != null && !acquire(request, response, operation, limit, window)) return;
+        // 助手令牌的请求另算一个额度（RFC 017 §3.2）：一句话可能调好几个接口，但不能拿它刷数据。
+        // 上面那种专门的额度（导出、预览）照样先算，不会因为是助手就放宽
+        if (LoginUser.currentIsAssistant() && !acquire(request, response, "assistant", 120, Duration.ofMinutes(1))) return;
         chain.doFilter(request, response);
+    }
+
+    /** 拿一次额度；超了回 429、限流状态读不到回 503，返回 false */
+    private boolean acquire(HttpServletRequest request, HttpServletResponse response, String operation, int limit, Duration window)
+            throws IOException {
+        Long user = LoginUser.currentUserId();
+        String bucket = operation + ":" + (user == null ? "anonymous" : user) + ":" + proxy.clientIp(request);
+        long retry;
+        try { retry = limiter.acquire(bucket, limit, window); }
+        catch (SecurityStateUnavailable unavailable) {
+            response.setStatus(503); response.setHeader("Retry-After", "3");
+            response.setContentType("application/json;charset=UTF-8");
+            json.writeValue(response.getWriter(), R.fail(503, unavailable.getMessage())); return false;
+        }
+        if (retry > 0) {
+            response.setStatus(429); response.setHeader("Retry-After", Long.toString(retry));
+            response.setContentType("application/json;charset=UTF-8");
+            json.writeValue(response.getWriter(), R.fail(429, "操作过于频繁，请稍后重试")); return false;
+        }
+        return true;
     }
 }

@@ -1,5 +1,6 @@
 package com.lingmao.scm.common.file;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -64,10 +65,17 @@ public class FileUrlSigner {
         this.clock = clock;
     }
 
-    /** /files/... 加上过期时间和签名。空值、外部地址原样返回；已经签过的先去掉旧签名再签，签两次和签一次一样 */
+    /**
+     * /files/... 加上过期时间和签名。空值、外部地址原样返回；已经签过的先去掉旧签名再签，签两次和签一次一样。
+     * 拿助手令牌来的请求一律返回 null（RFC 017 §3.3）：签名地址 7 天有效、不认人，发出去以后关 AI 开关、退出都收不回来；
+     * 助手要读的文件由浏览器把这次对话附的文件交给它，不从接口里拿
+     */
     public String sign(String url) {
         if (url == null || !url.startsWith(PREFIX)) {
             return url;
+        }
+        if (CallerScope.assistant()) {
+            return null;
         }
         String path = strip(url);
         String expires = String.valueOf(LocalDate.now(clock).plusDays(VALID_DAYS).atStartOfDay(clock.getZone()).toEpochSecond());

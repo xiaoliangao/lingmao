@@ -134,7 +134,8 @@ export function enableCookieSessionRefresh() {
 }
 async function replayAfter401(response: AxiosResponse<unknown>, code: number): Promise<AxiosResponse<unknown> | null> {
   const config = response.config as typeof response.config & { replayed?: boolean; readOnly?: boolean; authEpoch?: string }
-  if (code !== 401 || config.url?.startsWith('/api/auth/')) return null
+  // 登录相关的接口 401 就是没登录，不刷新；换助手令牌除外：登录令牌过期了照样先用 Cookie 刷新再换（它没有副作用，能重放）
+  if (code !== 401 || (config.url?.startsWith('/api/auth/') && config.url !== '/api/auth/assistant-token')) return null
   const epoch = config.authEpoch ?? sessionEpoch()
   assertRefreshSession(epoch)
   if (!refreshHandler || !getToken() || config.replayed) return null

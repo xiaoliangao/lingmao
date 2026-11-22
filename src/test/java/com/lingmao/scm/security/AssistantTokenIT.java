@@ -1,7 +1,6 @@
 package com.lingmao.scm.security;
 
 import com.lingmao.scm.IntegrationTestConfig;
-import com.lingmao.scm.common.result.R;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +12,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
@@ -56,7 +56,10 @@ class AssistantTokenIT {
     @Autowired
     private JwtUtil jwtUtil;
     @Autowired
-    private LoginSessionStore sessions;
+    private RefreshSessionService refreshSessions;
+    /** 扫全部接口一次要调几十个导出，导出额度（每分钟 12 次）会先回 429；限流单独在 SensitiveRateFilterTest 里测，这里不让它挡在前面 */
+    @MockitoBean
+    private SharedRateLimiter rateLimiter;
     @Autowired
     @Qualifier("requestMappingHandlerMapping")
     private RequestMappingHandlerMapping mappings;
@@ -120,6 +123,7 @@ class AssistantTokenIT {
 
         jdbc.update("DELETE FROM sys_config WHERE config_key = 'ai.switch'");
         assertThat(send(assist, "GET", "/api/auth/me", null).status()).as("没有这一行等于关").isEqualTo(403);
+        assertThat(send(buyer.token(), "POST", "/api/auth/assistant-token", Map.of()).status()).as("没有这一行换不到").isEqualTo(403);
 
         setAi(true);
         assertThat(send(assist, "GET", "/api/auth/me", null).code()).isZero();
@@ -166,27 +170,41 @@ class AssistantTokenIT {
         assertThat(send(assistC, "GET", "/api/auth/me", null).status()).isEqualTo(401);
     }
 
-    /** 刷新登录令牌时，助手令牌改挂到新令牌下面：刷新不打断正在用的助手，新令牌退出时它一起失效 */
+    /** 刷新登录令牌（走 RefreshSessionService.rotate）：助手令牌改挂到新令牌下面，照样能用；新令牌退出时它一起失效 */
     @Test
-    void refreshRotation_reparentsAssistantToken() {
-        long user = jdbc.queryForObject("SELECT id FROM sys_user WHERE username = 'admin'", Long.class);
-        long version = jdbc.queryForObject("SELECT session_version FROM sys_user WHERE id = ?", Long.class, user);
-        String oldLogin = UUID.randomUUID().toString(), newLogin = UUID.randomUUID().toString(), assist = UUID.randomUUID().toString();
-        sessions.saveVersion(oldLogin, user, version, Instant.now());
-        sessions.saveScoped(assist, user, LoginUser.SCOPE_ASSISTANT, oldLogin, Instant.now().plusSeconds(1800));
+    void refreshRotation_reparentsAssistantToken() throws Exception {
+        Account a = account("buyer");
+        var family = refreshSessions.issue(a.token());
+        String assist = exchange(new Account(a.id(), a.secret(), family.accessToken())).path("token").stringValue();
 
-        sessions.reparent(oldLogin, newLogin);
-        sessions.removeAccess(oldLogin);
-        sessions.saveVersion(newLogin, user, version, Instant.now());
-        assertThat(sessions.lookup(assist)).isEqualTo(new LoginSessionStore.Session(user, LoginUser.SCOPE_ASSISTANT));
+        var rotated = refreshSessions.rotate(family.refreshToken(), family.browserToken());
+        assertThat(send(family.accessToken(), "GET", "/api/auth/me", null).status()).as("旧登录令牌作废").isEqualTo(401);
+        assertThat(send(assist, "GET", "/api/auth/me", null).code()).as("助手令牌不受刷新打断").isZero();
+        assertThat(jdbc.queryForObject("SELECT parent_jti FROM sys_login_session WHERE jti = ?", String.class, jwtUtil.parse(assist).getId()))
+                .isEqualTo(jwtUtil.parse(rotated.accessToken()).getId());
 
-        sessions.removeAccess(newLogin);
-        assertThat(sessions.lookup(assist)).isNull();
+        Reply out = sendWith(rotated.accessToken(), "POST", "/api/auth/logout", Map.of(), Map.of("X-Requested-With", "XMLHttpRequest"));
+        assertThat(out.code()).as(out.body().toString()).isZero();
+        assertThat(send(assist, "GET", "/api/auth/me", null).status()).isEqualTo(401);
+    }
+
+    /** 账号停用：助手令牌和登录一起失效；换它的登录令牌没了（并发退出漏删的那种）：它也不再认 */
+    @Test
+    void disabledUserOrMissingParent_invalidate() throws Exception {
+        Account a = account("buyer");
+        String assist = exchange(a).path("token").stringValue();
+        jdbc.update("UPDATE sys_user SET status = 0 WHERE id = ?", a.id());
+        assertThat(send(assist, "GET", "/api/auth/me", null).status()).isEqualTo(401);
+
+        Account b = account("buyer");
+        String assistB = exchange(b).path("token").stringValue();
+        jdbc.update("DELETE FROM sys_login_session WHERE jti = ?", jwtUtil.parse(b.token()).getId());
+        assertThat(send(assistB, "GET", "/api/auth/me", null).status()).as("挂在已删掉的登录下面").isEqualTo(401);
     }
 
     /**
      * 只读：路由表里每个非 GET 接口，用助手令牌调一遍，全部 403（过滤器拦，不进 Controller）；
-     * 每个不返回 R 的 GET（导出、下载、打印、模板、预览）也全部 403（拦截器拦）
+     * 每个不让助手调的 GET（不返回 R 的导出、下载、模板，拿响应对象自己写的，标了 @NoAssistant 的预览、银行账号）也全部 403（拦截器拦）
      */
     @Test
     void everyWriteAndFileEndpoint_forbidden() throws Exception {
@@ -194,20 +212,22 @@ class AssistantTokenIT {
         Set<String> writes = new TreeSet<>(), files = new TreeSet<>();
         for (Map.Entry<RequestMappingInfo, HandlerMethod> e : mappings.getHandlerMethods().entrySet()) {
             Set<RequestMethod> methods = e.getKey().getMethodsCondition().getMethods();
-            boolean returnsR = R.class.isAssignableFrom(e.getValue().getMethod().getReturnType());
+            boolean allowed = AssistantScopeInterceptor.allowed(e.getValue());
             for (String pattern : e.getKey().getPatternValues()) {
                 String path = pattern.replaceAll("\\{[^}]+}", "1");
                 for (RequestMethod m : methods.isEmpty() ? Set.of(RequestMethod.values()) : methods) {
                     if (m != RequestMethod.GET && m != RequestMethod.HEAD && m != RequestMethod.OPTIONS && m != RequestMethod.TRACE) {
                         writes.add(m.name() + " " + path);
-                    } else if (m == RequestMethod.GET && !returnsR) {
+                    } else if (m == RequestMethod.GET && !allowed) {
                         files.add("GET " + path);
                     }
                 }
             }
         }
         assertThat(writes).as("路由表里的写接口").hasSizeGreaterThan(200);
-        assertThat(files).as("返回文件的 GET").anyMatch(s -> s.endsWith("/export"));
+        // 写死几条，免得拦截器和这里用同一个判断、漏了一起漏：导出、盘点表、工艺单 Excel 预览、供应商银行账号
+        assertThat(files).as("不让助手调的 GET").contains("GET /api/materials/export", "GET /api/inventory-counts/1/sheet",
+                "GET /api/tech-packs/1/files/1/preview", "GET /api/suppliers/1/bank");
 
         List<String> leaked = new ArrayList<>();
         for (String op : writes) {
@@ -219,6 +239,7 @@ class AssistantTokenIT {
             Reply reply = send(assist, "GET", op.substring(4), null);
             if (reply.status() != 403 || reply.code() != 403) leaked.add(op + " → " + reply.status() + " " + reply.body());
         }
+        assertThat(send(assist, "HEAD", "/api/auth/me", null).status()).as("HEAD 也不是 GET").isEqualTo(403);
         assertThat(leaked).as("助手令牌调得通的写接口、文件接口").isEmpty();
     }
 
