@@ -193,18 +193,18 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             if (r.getDefectQty() > r.getQty()) {
                 throw new BizException(400, skuCode(style, line.getStyleSkuId()) + "：次品不能多于回货");
             }
-            int next = NumericLimits.pieces((long) line.getReturnedQty() + r.getQty(),
-                    "第 " + (n + 1) + " 行累计回货：");
+            NumericLimits.pieces((long) line.getReturnedQty() + r.getQty(), "第 " + (n + 1) + " 行累计回货：");
+            int good = ProductionRules.good(line);
             int max = ProductionRules.maxReturn(line);
-            if (next > max) {
-                int left = Math.max(max - line.getReturnedQty(), 0);
+            if (good + r.getQty() - r.getDefectQty() > max) {
+                int left = Math.max(max - good, 0);
                 String basis = line.getCutQty() != null ? "裁床 " + line.getCutQty() + " 件" : "加工 " + line.getQty() + " 件";
-                over.add(new ReceiptOverRow(skuCode(style, line.getStyleSkuId()), line.getQty(), line.getReturnedQty(), r.getQty(), max,
-                        basis + "，已回 " + line.getReturnedQty() + "，" + (left == 0 ? "不能再回了" : "最多还能回 " + left + " 件")));
+                over.add(new ReceiptOverRow(skuCode(style, line.getStyleSkuId()), line.getQty(), good, r.getQty() - r.getDefectQty(), max,
+                        basis + "，已回良品 " + good + "，" + (left == 0 ? "良品不能再回了" : "良品最多还能回 " + left + " 件")));
             }
         }
         if (!over.isEmpty()) {
-            throw new BizException(ErrorCodes.OVER_LIMIT, "有 " + over.size() + " 个 SKU 回多了：每个 SKU 最多回到件数（登记了裁床数按裁床数）的 105%", over);
+            throw new BizException(ErrorCodes.OVER_LIMIT, "有 " + over.size() + " 个 SKU 回多了：每个 SKU 的良品最多回到件数（登记了裁床数按裁床数）的 105%", over);
         }
         int qty = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getQty).sum(), "本次回货：");
         int defect = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getDefectQty).sum(), "本次次品：");
@@ -241,7 +241,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             if (itemMapper.addReturned(line.getId(), r.getQty(), r.getDefectQty(), ProductionRules.maxReturn(line)) == 0) {
                 throw new BizException(ErrorCodes.STATE_CHANGED, "刚有人登记了回货，请刷新后再登记");
             }
-            toOrder.merge(line.getOrderItemId(), r.getQty(), Integer::sum);
+            toOrder.merge(line.getOrderItemId(), r.getQty() - r.getDefectQty(), Integer::sum);   // 订单只记良品
         }
         receiptItemMapper.insert(items);
         attachmentService.replace(BizType.PRODUCTION_RECEIPT, receipt.getId(), Attachment.IMAGE, req.getPhotos());
@@ -285,9 +285,9 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             if (cut != null && cut > ProductionRules.maxPieces(line.getQty())) {
                 throw new BizException(400, sku + "：裁床数最多 " + ProductionRules.maxPieces(line.getQty()) + "（件数 " + line.getQty() + " 的 105%）");
             }
-            int least = ProductionRules.minCut(line.getReturnedQty());
+            int least = ProductionRules.minCut(ProductionRules.good(line));
             if (cut != null && cut < least) {
-                throw new BizException(400, sku + "：已经回了 " + line.getReturnedQty() + " 件，裁床数不能少于 " + least);
+                throw new BizException(400, sku + "：已经回了良品 " + ProductionRules.good(line) + " 件，裁床数不能少于 " + least);
             }
             itemMapper.updateCut(line.getId(), cut);
             changed.add(sku + " " + cutText(line.getCutQty()) + " → " + cutText(cut));
@@ -360,7 +360,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             if (itemMapper.addReturned(line.getId(), -i.getQty(), -i.getDefectQty(), Integer.MAX_VALUE) == 0) {
                 throw new IllegalStateException("回货单 " + r.getNo() + " 作废时已回货减成了负数：明细 " + line.getId());
             }
-            toOrder.merge(line.getOrderItemId(), -i.getQty(), Integer::sum);
+            toOrder.merge(line.getOrderItemId(), -(i.getQty() - i.getDefectQty()), Integer::sum);
         }
         orderService.addReturned(toOrder);
         String text = "回货 " + r.getNo() + " 作废（" + why + "）";

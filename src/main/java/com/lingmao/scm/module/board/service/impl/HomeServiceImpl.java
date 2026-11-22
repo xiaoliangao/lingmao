@@ -266,7 +266,7 @@ public class HomeServiceImpl implements HomeService {
         return rows.stream().map(p -> {
             LocalDate due = due(p);
             return new DeliveryRow(refs.get(p.getId()), BoardTexts.dot(p.getStyleName(), p.getFactoryShortName()), p.getImage(), due,
-                    ChronoUnit.DAYS.between(today, due), p.getReturnedQty(), p.getTotalQty());
+                    ChronoUnit.DAYS.between(today, due), p.getReturnedQty() - p.getDefectQty(), p.getTotalQty());   // 只算良品
         }).toList();
     }
 

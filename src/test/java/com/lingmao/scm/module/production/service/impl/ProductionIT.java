@@ -20,6 +20,7 @@ import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
 import com.lingmao.scm.module.order.service.OrderService;
 import com.lingmao.scm.module.production.dto.BoardQuery;
+import com.lingmao.scm.module.production.mapper.ProductionOrderItemMapper;
 import com.lingmao.scm.module.production.dto.IssueCloseReq;
 import com.lingmao.scm.module.production.dto.IssueReq;
 import com.lingmao.scm.module.production.dto.NodeReportReq;
@@ -101,6 +102,8 @@ class ProductionIT {
     private NeedDateSource needDateSource;
     @Autowired
     private FileUrlSigner signer;
+    @Autowired
+    private ProductionOrderItemMapper prdItemMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -195,14 +198,14 @@ class ProductionIT {
             assertThat(i.getActions()).isEmpty();
         });
 
-        // 回货：M 60、L 39（次品 2）= 99 ≥ 97 → 已完成，订单已完成；再回 M 4 超过 ⌊60 × 1.05⌋ = 63 → 1004
+        // 回货：M 60、L 39（次品 2），良品 97 ≥ 97 → 已完成，订单已完成、只记良品 97；再回 M 4 超过 ⌊60 × 1.05⌋ = 63 → 1004
         long itemM = prdItem(prdId, lineM);
         long itemL = prdItem(prdId, lineL);
         var receipt = receiptService.receive(prdId, receiptReq(Map.of(itemM, 60, itemL, 39), itemL, 2));
         assertThat(receipt.status()).isEqualTo("DONE");
         assertThat(orderStatus(orderId)).isEqualTo("DONE");
         assertThat(jdbcTemplate.queryForObject("SELECT sum(returned_qty) FROM ord_order_item WHERE order_id = ?", Integer.class, orderId))
-                .isEqualTo(99);
+                .isEqualTo(97);
         assertThatThrownBy(() -> receiptService.receive(prdId, receiptReq(Map.of(itemM, 4), itemM, 0)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));
 
@@ -288,7 +291,7 @@ class ProductionIT {
         assertThat(d.getDefectQty()).isEqualTo(2);
         assertThat(orderStatus(orderId)).isEqualTo("DONE");
         assertThat(jdbcTemplate.queryForObject("SELECT sum(returned_qty) FROM ord_order_item WHERE order_id=?",
-                Integer.class, orderId)).isEqualTo(100);
+                Integer.class, orderId)).isEqualTo(98);   // 订单只记良品：100 − 次品 2
 
         receiptService.voidReceipt(prdId, receipt.id(), "回货登记有误");
         d = productionOrderService.detail(prdId);
@@ -366,6 +369,44 @@ class ProductionIT {
         req.getItems().getFirst().setQty(10); req.setClientActionId(java.util.UUID.randomUUID());
         assertThat(receiptService.receive(id, req).id()).isNotEqualTo(first.id());
         assertThat(productionOrderService.detail(id).getReturnedQty()).isEqualTo(20);
+    }
+
+    /**
+     * 甲方 11-19"只计算良品"：M 60 全回、L 回 40 其中次品 4，良品 96 不到 97，还是生产中；订单只记良品；看板在制件数 4。
+     * L 的上限 ⌊40 × 1.05⌋ = 42 只看良品：再回 7 件良品（43）超；回 3 件全是次品不超（回货数到 43 也行）；返修好的 4 件再登记，良品 100 完成。
+     * 条件更新也按良品：良品 40 时直接加 3 件良品被拦（0 行）。作废第一张回货单，订单减回它的良品
+     */
+    @Test
+    void goodOnly_defectsDoNotCountTowardsDoneOrLimit() {
+        Fixture f = fixture();
+        long id = approvedProduction(f);
+        long orderId = jdbcTemplate.queryForObject("SELECT order_id FROM prd_order WHERE id = ?", Long.class, id);
+        var items = productionOrderService.detail(id).getItems();
+        long itemM = items.stream().filter(i -> i.getStyleSkuId() == f.skuM).findFirst().orElseThrow().getId();
+        long itemL = items.stream().filter(i -> i.getStyleSkuId() == f.skuL).findFirst().orElseThrow().getId();
+        String orderReturned = "SELECT sum(returned_qty) FROM ord_order_item WHERE order_id = ?";
+        BoardQuery b = new BoardQuery();
+        b.setFactoryId(f.factory);
+
+        var first = receiptService.receive(id, receiptReq(Map.of(itemM, 60, itemL, 40), itemL, 4));
+        assertThat(first.status()).isEqualTo("RUNNING");
+        assertThat(jdbcTemplate.queryForObject(orderReturned, Integer.class, orderId)).isEqualTo(96);
+        assertThat(productionOrderService.detail(id).getItems()).filteredOn(i -> i.getId() == itemL).singleElement().satisfies(i -> {
+            assertThat(i.getRemainQty()).isEqualTo(4);
+            assertThat(i.getMaxReceiveQty()).isEqualTo(6);
+        });
+        assertThat(boardService.cards(b).runningQty()).isEqualTo(4);
+
+        assertThatThrownBy(() -> receiptService.receive(id, receiptReq(Map.of(itemL, 7), itemL, 0)))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));
+        assertThat(receiptService.receive(id, receiptReq(Map.of(itemL, 3), itemL, 3)).status()).isEqualTo("RUNNING");
+        assertThat(receiptService.receive(id, receiptReq(Map.of(itemL, 4), itemL, 0)).status()).isEqualTo("DONE");
+        assertThat(jdbcTemplate.queryForObject(orderReturned, Integer.class, orderId)).isEqualTo(100);
+        assertThat(prdItemMapper.addReturned(itemL, 3, 0, 42)).isZero();
+
+        receiptService.voidReceipt(id, first.id(), "点错了");
+        assertThat(productionOrderService.detail(id).getStatus()).isEqualTo("RUNNING");
+        assertThat(jdbcTemplate.queryForObject(orderReturned, Integer.class, orderId)).isEqualTo(4);
     }
 
     /**

@@ -244,7 +244,7 @@ class OrderServiceImplTest {
         when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style(1, "27CF001", StyleStatus.ENABLED)));
 
         assertThatThrownBy(() -> service.applyChange(change, List.of(qty(11, 120, 60))))
-                .isInstanceOf(BizException.class).hasMessageStartingWith("27CF001-KQ-M：已排 80 件、已回 0 件，不能改成 60 件")
+                .isInstanceOf(BizException.class).hasMessageStartingWith("27CF001-KQ-M：已排 80 件、已回良品 0 件，不能改成 60 件")
                 .hasMessageContaining("没开始做的撤回或反审核后作废").hasMessageContaining("结案后另下新单");
         assertThatThrownBy(() -> service.applyChange(change, List.of(qty(11, 100, 90))))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.STATE_CHANGED));

@@ -265,10 +265,10 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
             v.setReturnedQty(i.getReturnedQty());
             v.setDefectQty(i.getDefectQty());
             v.setCutQty(i.getCutQty());
-            v.setRemainQty(Math.max(ProductionRules.basis(i) - i.getReturnedQty(), 0));
-            v.setMaxReceiveQty(Math.max(ProductionRules.maxReturn(i) - i.getReturnedQty(), 0));
+            v.setRemainQty(Math.max(ProductionRules.basis(i) - ProductionRules.good(i), 0));
+            v.setMaxReceiveQty(Math.max(ProductionRules.maxReturn(i) - ProductionRules.good(i), 0));
             v.setMaxCutQty(ProductionRules.maxPieces(i.getQty()));
-            v.setMinCutQty(ProductionRules.minCut(i.getReturnedQty()));
+            v.setMinCutQty(ProductionRules.minCut(ProductionRules.good(i)));
             out.add(v);
         }
         return out;

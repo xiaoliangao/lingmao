@@ -34,7 +34,8 @@ const productionApi = bindCompanyApi(productionApiBase, () => props.doc.companyI
  *   <ProdReceiveDialog v-model:create-visible="a" v-model:detail-visible="b" :doc="detail" :viewing-receipt="r" @updated="refresh" />
  *
  * 登记：
- * - 回货数矩阵（含次品）每格默认未回数，下面小字"加工 120 · 已回 0"；超过"最多还能回"的格子标红、悬停写上限，不拦，以后端 1004 为准
+ * - 回货数矩阵（含次品）每格默认未回数（只算良品，甲方 11-19），下面小字"加工 120 · 已回 40 · 次品 4"；
+ *   这一格的回货减去这一格的次品（良品）超过"最多还能回"就标红、悬停写上限，不拦，以后端 1004 为准
  * - 次品矩阵：比同一格的回货多就标红，不让提交
  * - 分色分码备注收在折叠里；回货日期不能选以后；收货仓默认第一个成品仓（一期只记录）
  * 回货单：明细带合计、照片；作废的显示红条；actions 有 void 时能作废（先写原因）
@@ -82,10 +83,15 @@ const matrixColors = computed<MatrixColor[]>(() => {
 })
 const matrixCells = computed<MatrixCell[]>(() => props.doc.items.map((it) => ({ id: it.id, colorId: it.colorId, sizeCode: it.sizeCode })))
 
-const maxOf = (id: string) => itemMap.value.get(id)?.maxReceiveQty
+/** 上限只看良品：这一格的回货 − 这一格的次品 不能超过"最多还能回"（它也是按良品算的） */
+const overOf = (id: string, qty: number) => {
+  const max = itemMap.value.get(id)?.maxReceiveQty
+  return max != null && qty - (form.defects[id] ?? 0) > max ? `良品最多还能回 ${formatQty(max)} 件` : null
+}
 const qtySub = (id: string) => {
   const it = itemMap.value.get(id)
-  return it ? `加工 ${it.qty}${it.cutQty != null ? ` · 裁 ${it.cutQty}` : ''} · 已回 ${it.returnedQty}` : null
+  if (!it) return null
+  return `加工 ${it.qty}${it.cutQty != null ? ` · 裁 ${it.cutQty}` : ''} · 已回 ${it.returnedQty}${it.defectQty ? ` · 次品 ${it.defectQty}` : ''}`
 }
 const defectError = (id: string, defect: number) => (defect > (form.qtys[id] ?? 0) ? '次品比这一格的回货还多' : null)
 
@@ -236,7 +242,7 @@ async function voidCurrentReceipt() {
       <strong>回货数（含次品）</strong>
       <span class="dim">这次 {{ formatQty(totalQty) }} 件，其中次品 {{ formatQty(totalDefect) }}</span>
     </div>
-    <SkuMatrix v-model="form.qtys" :sizes="doc.sizes" :colors="matrixColors" :skus="matrixCells" :max="maxOf" :sub="qtySub" />
+    <SkuMatrix v-model="form.qtys" :sizes="doc.sizes" :colors="matrixColors" :skus="matrixCells" :error="overOf" :sub="qtySub" />
 
     <div class="sec-title mt-12"><strong>其中次品</strong></div>
     <SkuMatrix v-model="form.defects" :sizes="doc.sizes" :colors="matrixColors" :skus="matrixCells" :error="defectError" />

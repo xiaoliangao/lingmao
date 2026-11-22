@@ -1157,7 +1157,7 @@ public class OrderServiceImpl implements OrderService {
     static String reductionMessage(OrderItem row, int target, List<DocRef> refs) {
         String production = refs.stream().filter(r -> r.type() == BizType.PRODUCTION_ORDER)
                 .map(r -> r.no() + "（" + r.statusLabel() + "）").collect(Collectors.joining("、"));
-        return "已排 " + row.getScheduledQty() + " 件、已回 " + Objects.requireNonNullElse(row.getReturnedQty(), 0)
+        return "已排 " + row.getScheduledQty() + " 件、已回良品 " + Objects.requireNonNullElse(row.getReturnedQty(), 0)
                 + " 件，不能改成 " + target + " 件。先处理生产单" + (production.isBlank() ? "" : " " + production)
                 + "：没开始做的撤回或反审核后作废、重新排；已经领料、报工或回货的，结案后另下新单";
     }

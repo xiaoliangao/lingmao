@@ -64,6 +64,20 @@ class ProductionRulesTest {
         assertThat(ProductionRules.maxPieces(33)).isEqualTo(34);
     }
 
+    /**
+     * 规则（甲方 11-19"只计算良品"）：回齐、裁床数下限只看良品（回货 − 次品）。回了 100 件但次品 4 件，良品 96 不到 97，还是生产中；
+     * 返修的 4 件补回来（再登记一次、不是次品）才算完成；只回过次品也算"回过货"，是生产中
+     */
+    @Test
+    void goodOnly_defectsDoNotCount() {
+        ProductionNode idle = node(TODAY.plusDays(5), null, null);
+
+        assertThat(ProductionRules.good(item(100, 100, 4))).isEqualTo(96);
+        assertThat(ProductionRules.byProgress(List.of(item(60, 60), item(40, 40, 4)), List.of(idle))).isEqualTo(DocStatus.RUNNING);
+        assertThat(ProductionRules.byProgress(List.of(item(60, 60), item(40, 44, 4)), List.of(idle))).isEqualTo(DocStatus.DONE);
+        assertThat(ProductionRules.byProgress(List.of(item(100, 3, 3)), List.of(idle))).isEqualTo(DocStatus.RUNNING);
+    }
+
     /** 规则（RFC 013 §4）：登记了裁床数的 SKU，回货上限、完成都按裁床数；最少裁床数让已回的不超出上限 */
     @Test
     void cutQty_isTheBasis() {
@@ -123,9 +137,14 @@ class ProductionRulesTest {
     }
 
     private static ProductionOrderItem item(int qty, int returned) {
+        return item(qty, returned, 0);
+    }
+
+    private static ProductionOrderItem item(int qty, int returned, int defect) {
         ProductionOrderItem i = new ProductionOrderItem();
         i.setQty(qty);
         i.setReturnedQty(returned);
+        i.setDefectQty(defect);
         return i;
     }
 }

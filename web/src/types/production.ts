@@ -290,11 +290,11 @@ export interface ProductionItem {
   defectQty: number
   /** 裁床数（RFC 013 §4）：null = 没登记 */
   cutQty: number | null
-  /** 未回 = 件数（登记了裁床数按裁床数）− 已回货，不小于 0；登记回货时默认填它 */
+  /** 未回 = 件数（登记了裁床数按裁床数）− 已回良品（已回货 − 次品，甲方 11-19），不小于 0；登记回货时默认填它 */
   remainQty: number
-  /** 最多还能回 = ⌊件数或裁床数 × 1.05⌋ − 已回货，不小于 0（Q09） */
+  /** 良品最多还能回 = ⌊件数或裁床数 × 1.05⌋ − 已回良品，不小于 0（Q09）；登记时按这一格的回货 − 次品比 */
   maxReceiveQty: number
-  /** 登记裁床数的范围：最多 ⌊件数 × 1.05⌋，最少让已回的不超出新上限 */
+  /** 登记裁床数的范围：最多 ⌊件数 × 1.05⌋，最少让已回的良品不超出新上限 */
   maxCutQty: number
   minCutQty: number
 }
@@ -617,12 +617,12 @@ export interface ReceiptCreated {
 export interface ReceiptOverRow {
   /** SKU 码 */
   sku: string
-  /** 加工件数、已回、这次、上限 = ⌊件数或裁床数 × 1.05⌋ */
+  /** 加工件数、已回良品、这次的良品、良品上限 = ⌊件数或裁床数 × 1.05⌋ */
   qty: number
   returnedQty: number
   thisQty: number
   maxQty: number
-  /** 如"加工 120 件，已回 120，最多还能回 3 件" */
+  /** 如"加工 120 件，已回良品 120，良品最多还能回 3 件" */
   message: string
 }
 
@@ -648,17 +648,17 @@ export interface BoardQuery {
 
 /** GET /api/production-board/cards：筛选条件和列表一样（card 不看） */
 export interface BoardCards {
-  /** 在制：生产中（含部分回货）的单数、件数（件数 − 已回货） */
+  /** 在制：生产中（含部分回货）的单数、件数（件数 − 已回良品） */
   runningCount: number
   runningQty: number
-  /** 待开工：已下单、还没报开始的单数、件数（件数 − 已回货） */
+  /** 待开工：已下单、还没报开始的单数、件数（件数 − 已回良品） */
   waitingCount: number
   waitingQty: number
   nearCount: number
   lateCount: number
   nodeLateCount: number
   issueCount: number
-  /** 本月回货件数（本月登记、没作废的回货单），不能点 */
+  /** 本月回货的良品件数（本月登记、没作废的回货单，回货 − 次品），不能点 */
   monthReturnedQty: number
   /** 临期天数，卡片写"7 天内交货" */
   nearDays: number
@@ -670,7 +670,7 @@ export interface BoardFactoryRow {
   factoryShortName: string
   /** 供应商分类的名字（成衣厂、加工厂） */
   categoryNames: string[]
-  /** 在制单数、在制件数（件数 − 已回货）、其中逾期的单数 */
+  /** 在制单数、在制件数（件数 − 已回良品）、其中逾期的单数 */
   wipCount: number
   wipQty: number
   lateCount: number

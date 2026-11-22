@@ -186,9 +186,9 @@
         <bind name="withStatus" value="false"/>
         <bind name="withCard" value="false"/>
         SELECT COUNT(*) FILTER (WHERE p.status = 'RUNNING') AS running_count,
-               COALESCE(SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) FILTER (WHERE p.status = 'RUNNING'), 0) AS running_qty,
+               COALESCE(SUM(GREATEST(p.total_qty - (rq.returned_qty - rq.defect_qty), 0)) FILTER (WHERE p.status = 'RUNNING'), 0) AS running_qty,
                COUNT(*) FILTER (WHERE p.status = 'APPROVED') AS waiting_count,
-               COALESCE(SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) FILTER (WHERE p.status = 'APPROVED'), 0) AS waiting_qty,
+               COALESCE(SUM(GREATEST(p.total_qty - (rq.returned_qty - rq.defect_qty), 0)) FILTER (WHERE p.status = 'APPROVED'), 0) AS waiting_qty,
                COUNT(*) FILTER (WHERE r.near) AS near_count,
                COUNT(*) FILTER (WHERE r.late) AS late_count,
                COUNT(*) FILTER (WHERE r.node_late) AS node_late_count,
@@ -199,7 +199,7 @@
     </select>
 
     <select id="selectReturnedQty" resultType="long">
-        SELECT COALESCE(SUM(ri.qty), 0)
+        SELECT COALESCE(SUM(ri.qty - ri.defect_qty), 0)
         FROM prd_receipt rc
         JOIN prd_receipt_item ri ON ri.receipt_id = rc.id
         JOIN prd_order p ON p.id = rc.prd_order_id
@@ -215,7 +215,7 @@
         SELECT sf.id AS factory_id, sf.short_name AS factory_short_name, COALESCE(w.wip_count, 0) AS wip_count,
                COALESCE(w.wip_qty, 0) AS wip_qty, COALESCE(w.late_count, 0) AS late_count
         FROM sup_supplier sf
-        LEFT JOIN (SELECT p.factory_id, COUNT(*) AS wip_count, SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) AS wip_qty,
+        LEFT JOIN (SELECT p.factory_id, COUNT(*) AS wip_count, SUM(GREATEST(p.total_qty - (rq.returned_qty - rq.defect_qty), 0)) AS wip_qty,
                           COUNT(*) FILTER (WHERE r.late) AS late_count
                    <include refid="from"/>
                    <include refid="where"/>

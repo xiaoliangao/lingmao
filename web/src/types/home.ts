@@ -27,7 +27,7 @@ export interface HomeOrderKpi {
 
 /** 在制生产（要 production:order:list） */
 export interface HomeProductionKpi {
-  /** 已下单、生产中的生产单（两种都算）：件数（件数 − 已回货）、张数 */
+  /** 已下单、生产中的生产单（两种都算）：件数（件数 − 已回良品）、张数 */
   qty: number
   count: number
   lateCount: number
@@ -192,7 +192,7 @@ export interface DeliveryRow {
   dueDate: string
   /** 今天到交期还有几天，逾期是负数 */
   daysLeft: number
-  /** 进度：已回货 / 件数 */
+  /** 进度：已回货（只算良品）/ 件数 */
   doneQty: number
   totalQty: number
 }

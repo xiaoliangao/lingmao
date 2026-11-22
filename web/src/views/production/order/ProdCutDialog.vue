@@ -44,11 +44,11 @@ const matrixCells = computed<MatrixCell[]>(() => props.doc.items.map((it) => ({ 
 const maxOf = (id: string) => itemMap.value.get(id)?.maxCutQty
 const sub = (id: string) => {
   const it = itemMap.value.get(id)
-  return it ? `件数 ${it.qty} · 已回 ${it.returnedQty}` : null
+  return it ? `件数 ${it.qty} · 已回良品 ${it.returnedQty - it.defectQty}` : null
 }
 const tooFew = (id: string, qty: number) => {
   const it = itemMap.value.get(id)
-  return it && qty > 0 && qty < it.minCutQty ? `已经回了 ${it.returnedQty} 件，最少填 ${it.minCutQty}` : null
+  return it && qty > 0 && qty < it.minCutQty ? `已经回了良品 ${it.returnedQty - it.defectQty} 件，最少填 ${it.minCutQty}` : null
 }
 const total = computed(() => Object.values(form.qtys).reduce((s, q) => s + (q > 0 ? q : 0), 0))
 

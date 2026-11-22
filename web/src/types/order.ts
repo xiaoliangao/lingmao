@@ -74,7 +74,7 @@ export interface OrderRow {
   currency: string
   totalQty: number
   totalAmount?: number
-  /** 已排产、已回货件数（明细加总），排产、回货两列的进度条用 */
+  /** 已排产、已回货件数（明细加总；已回货只算良品 = 回货 − 次品），排产、回货两列的进度条用 */
   scheduledQty: number
   returnedQty: number
   styles: OrderStyleRef[]
@@ -159,7 +159,7 @@ export interface OrderItem {
   lineDueDate: string | null
   /** 审核时锁定的生产 BOM；审核前是 null */
   techPackId: string | null
-  /** 已排产、已回货，下游回写 */
+  /** 已排产、已回货（只算良品 = 回货 − 次品），下游回写 */
   scheduledQty: number
   returnedQty: number
   remark: string | null
@@ -371,7 +371,7 @@ export interface OrderReviewLoad {
   factoryName: string
   /** 这张订单里哪些款的默认加工厂是它 */
   styleCodes: string[]
-  /** 在制件数 = 已下单、生产中的生产单的件数 − 已回货 */
+  /** 在制件数 = 已下单、生产中的生产单的件数 − 已回良品 */
   wipQty: number
   /** 在制的生产单张数 */
   orderCount: number

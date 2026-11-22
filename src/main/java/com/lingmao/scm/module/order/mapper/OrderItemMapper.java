@@ -44,7 +44,7 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
     @Update("UPDATE ord_order_item SET scheduled_qty = scheduled_qty + #{delta} WHERE id = #{id}")
     int addScheduled(@Param("id") long id, @Param("delta") int delta);
 
-    /** 已回货加减（登记回货、作废回货单） */
+    /** 已回货（只算良品 = 回货 − 次品，甲方 11-19）加减：登记回货、作废回货单 */
     @Update("UPDATE ord_order_item SET returned_qty = returned_qty + #{delta} WHERE id = #{id}")
     int addReturned(@Param("id") long id, @Param("delta") int delta);
 }

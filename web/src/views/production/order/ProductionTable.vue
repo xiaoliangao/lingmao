@@ -216,7 +216,7 @@ defineExpose({
     </el-table-column>
     <el-table-column v-if="columns.show.returned" label="回货" width="112">
       <template #default="{ row }">
-        <QtyProgress v-if="showReturned(row as ProductionRow)" :done="row.returnedQty" :total="row.totalQty" tone="done" />
+        <QtyProgress v-if="showReturned(row as ProductionRow)" :done="row.returnedQty - row.defectQty" :total="row.totalQty" tone="done" />
         <span v-else class="dim">—</span>
       </template>
     </el-table-column>

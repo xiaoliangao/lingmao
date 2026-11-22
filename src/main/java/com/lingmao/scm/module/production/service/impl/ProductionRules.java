@@ -66,10 +66,10 @@ final class ProductionRules {
     /** 货期预警、报进度、上报异常只看这两个状态 */
     static final Set<DocStatus> LIVE = Set.of(APPROVED, RUNNING);
 
-    /** 溢装 %（甲方 11-18 答 Q09）：每个 SKU 排产不超过 ⌊订单件数 × 1.05⌋，回货不超过 ⌊件数 × 1.05⌋，登记了裁床数按裁床数 */
+    /** 溢装 %（甲方 11-18 答 Q09）：每个 SKU 排产不超过 ⌊订单件数 × 1.05⌋，回货的良品不超过 ⌊件数 × 1.05⌋，登记了裁床数按裁床数 */
     static final BigDecimal OVER_PCT = BigDecimal.valueOf(5);
 
-    /** 短装 %（Q09，甲方没说，照默认）：累计回货 ≥ 总件数（登记了裁床数按裁床数）× 97% 算完成 */
+    /** 短装 %（Q09，甲方没说，照默认）：累计回货的良品 ≥ 总件数（登记了裁床数按裁床数）× 97% 算完成 */
     static final int SHORT_PCT = 3;
 
     /** 交期还剩几天算临期 */
@@ -97,33 +97,38 @@ final class ProductionRules {
         return item.getCutQty() != null ? item.getCutQty() : item.getQty();
     }
 
-    /** 一个 SKU 最多回到多少件：⌊件数或裁床数 × 1.05⌋ */
+    /** 良品 = 已回 − 次品。回货上限、回没回齐都只看良品（甲方 11-19）：次品退回去返修，补回来的照样能登记 */
+    static int good(ProductionOrderItem item) {
+        return item.getReturnedQty() - item.getDefectQty();
+    }
+
+    /** 一个 SKU 最多回到多少件良品：⌊件数或裁床数 × 1.05⌋ */
     static int maxReturn(ProductionOrderItem item) {
         return maxPieces(basis(item));
     }
 
-    /** 已经回了 returned 件时裁床数最少多少：⌊裁床数 × 1.05⌋ 不能小于已回 */
-    static int minCut(int returned) {
-        int cut = (int) ((long) returned * 100 / (100 + OVER_PCT.intValue()));
-        while (maxPieces(cut) < returned) {
+    /** 已经回了 good 件良品时裁床数最少多少：⌊裁床数 × 1.05⌋ 不能小于已回的良品 */
+    static int minCut(int good) {
+        int cut = (int) ((long) good * 100 / (100 + OVER_PCT.intValue()));
+        while (maxPieces(cut) < good) {
             cut++;
         }
         return cut;
     }
 
-    /** 累计回货够不够算完成：≥ 总件数 × 97% */
-    static boolean finished(int totalQty, int returnedQty) {
-        return totalQty > 0 && (long) returnedQty * 100 >= (long) totalQty * (100 - SHORT_PCT);
+    /** 累计回货的良品够不够算完成：≥ 总件数 × 97% */
+    static boolean finished(int totalQty, int goodQty) {
+        return totalQty > 0 && (long) goodQty * 100 >= (long) totalQty * (100 - SHORT_PCT);
     }
 
     /**
-     * 按进度算状态（§2.1）：回够 97%（件数，登记了裁床数的 SKU 按裁床数）已完成；回过货、或者有节点报过开始是生产中；都没有是已下单。
+     * 按进度算状态（§2.1）：良品回够 97%（件数，登记了裁床数的 SKU 按裁床数）已完成；回过货（次品也算）、或者有节点报过开始是生产中；都没有是已下单。
      * 登记回货、作废回货单、报进度、取消结案都按它
      */
     static DocStatus byProgress(List<ProductionOrderItem> items, List<ProductionNode> nodes) {
         int total = items.stream().mapToInt(ProductionRules::basis).sum();
         int returned = items.stream().mapToInt(ProductionOrderItem::getReturnedQty).sum();
-        if (finished(total, returned)) {
+        if (finished(total, items.stream().mapToInt(ProductionRules::good).sum())) {
             return DONE;
         }
         return returned > 0 || nodes.stream().anyMatch(n -> n.getActualStart() != null) ? RUNNING : APPROVED;

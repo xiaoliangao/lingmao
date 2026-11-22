@@ -91,12 +91,38 @@ class ProductionReceiptServiceImplTest {
                     List<ReceiptOverRow> rows = (List<ReceiptOverRow>) ((BizException) e).getData();
                     assertThat(rows).singleElement().satisfies(r -> {
                         assertThat(r.maxQty()).isEqualTo(105);
-                        assertThat(r.message()).isEqualTo("加工 100 件，已回 100，最多还能回 5 件");
+                        assertThat(r.message()).isEqualTo("加工 100 件，已回良品 100，良品最多还能回 5 件");
                     });
                 });
         verify(receiptMapper, never()).insert(any(ProductionReceipt.class));
         verify(itemMapper, never()).addReturned(anyLong(), anyInt(), anyInt(), anyInt());
         verify(orderService, never()).addReturned(any());
+    }
+
+    /**
+     * 规则（甲方 11-19"只计算良品"）：上限只看良品。件数 100、已回 100 其中次品 10（良品 90），这次回 18 件、次品 3：
+     * 良品到 105，不超 ⌊100 × 1.05⌋；生产单明细回写回货 18、次品 3，订单只加良品 15
+     */
+    @Test
+    void receive_limitCountsGoodOnly_andOrderGetsGood() {
+        lockedAs(DocStatus.RUNNING);
+        when(support.today()).thenReturn(TODAY);
+        ProductionOrderItem line = line(100, 100);
+        line.setDefectQty(10);
+        when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line));
+        when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
+        when(serialNoGenerator.daily(any())).thenReturn("HH202611170001");
+        when(receiptMapper.insert(any(ProductionReceipt.class))).thenAnswer(inv -> {
+            inv.<ProductionReceipt>getArgument(0).setId(77L);
+            return 1;
+        });
+        when(itemMapper.addReturned(31L, 18, 3, 105)).thenReturn(1);
+        when(support.refreshStatus(any(), eq("receive"), any())).thenReturn(DocStatus.DONE);
+
+        assertThat(service().receiveNew(3L, req(18, 3)).status()).isEqualTo("DONE");
+
+        verify(itemMapper).addReturned(31L, 18, 3, 105);
+        verify(orderService).addReturned(Map.of(11L, 15));
     }
 
     /** 规则（§3.6.2）：次品算在回货数里，不能比回货多（400） */
@@ -161,7 +187,7 @@ class ProductionReceiptServiceImplTest {
                     List<ReceiptOverRow> rows = (List<ReceiptOverRow>) ((BizException) e).getData();
                     assertThat(rows).singleElement().satisfies(r -> {
                         assertThat(r.maxQty()).isEqualTo(94);
-                        assertThat(r.message()).isEqualTo("裁床 90 件，已回 90，最多还能回 4 件");
+                        assertThat(r.message()).isEqualTo("裁床 90 件，已回良品 90，良品最多还能回 4 件");
                     });
                 });
         verify(itemMapper, never()).addReturned(anyLong(), anyInt(), anyInt(), anyInt());
