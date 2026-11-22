@@ -14,6 +14,7 @@ import { formatDateTime } from './format'
 import { currentCompanyScope } from './companyScope'
 import { canReplayWrite } from './writePolicy'
 import { visibleWriteBody } from './fieldAccess'
+import { getSessionMode, withAuthSession } from './authSession'
 
 /** 后端所有接口的统一返回体 */
 export interface R<T> {
@@ -42,6 +43,9 @@ export interface RequestOptions {
 }
 /** quietTransient：写操作遇到暂时故障先自己重试，拦截器不弹提示，最后由 performWrite 说一句 */
 type RequestConfig = AxiosRequestConfig<unknown> & RequestOptions & { replayed?: boolean; quietTransient?: boolean }
+
+/** 登录/退出会改变会话；/me 和改密码仍属于发请求时的账号。 */
+const isSessionTransition = (url: string | undefined) => url === '/api/auth/login' || url === '/api/auth/logout'
 
 function isSilent(config: AxiosRequestConfig<unknown> | undefined): boolean {
   return !!config && 'silent' in config && config.silent === true
@@ -98,7 +102,9 @@ instance.interceptors.request.use((config) => {
 })
 
 let refreshHandler: (() => Promise<string>) | undefined
-class SessionRefreshFailure extends Error {}
+class SessionRefreshFailure extends Error {
+  constructor(message: string, public readonly traceId: string | null = null) { super(message) }
+}
 /** 服务端 Cookie 刷新接好之后才打开。 */
 export function configureSessionRefresh(handler: (() => Promise<string>) | undefined) { refreshHandler = handler }
 function assertRefreshSession(epoch: string) {
@@ -119,22 +125,23 @@ const refreshOnce = singleFlight(async (failedToken: string, epoch: string) => {
     setToken(token, true)
     return token
   }
-  // 浏览器没有 Web Locks 时，靠服务端有限的后继重放窗口兜住重叠。
-  if (typeof navigator !== 'undefined' && navigator.locks?.request) {
-    return navigator.locks.request(`lingmao:session-refresh:${epoch}`, { mode: 'exclusive' }, rotate)
-  }
-  return rotate()
+  return withAuthSession((mode) => {
+    if (mode !== 'cookie') throw new ApiError(401, '登录已过期，请重新登录')
+    return rotate()
+  })
 })
 export function enableCookieSessionRefresh() {
+  if (getSessionMode() !== 'cookie') { configureSessionRefresh(undefined); return }
   configureSessionRefresh(async () => {
-    const response = await axios.post<R<string>>('/api/auth/refresh', {}, { timeout: 15_000, withCredentials: true, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-    if (response.data.code !== 0 || typeof response.data.data !== 'string') throw new ApiError(401, '登录已过期，请重新登录')
+    const response = await axios.post<R<string>>('/api/auth/refresh', {}, { timeout: 15_000, withCredentials: true, validateStatus: () => true, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Session-Mode': 'cookie', 'X-Request-Id': clientActionUuid() } })
+    const trace = response.headers['x-request-id'] ?? response.headers['x-trace-id']
+    if (response.status < 200 || response.status >= 300 || response.data?.code !== 0 || typeof response.data.data !== 'string') throw new ApiError(401, '登录已过期，请重新登录', null, typeof trace === 'string' ? trace : null)
     return response.data.data
   })
 }
 async function replayAfter401(response: AxiosResponse<unknown>, code: number): Promise<AxiosResponse<unknown> | null> {
   const config = response.config as typeof response.config & { replayed?: boolean; readOnly?: boolean; authEpoch?: string }
-  if (code !== 401 || config.url?.startsWith('/api/auth/')) return null
+  if (code !== 401 || isSessionTransition(config.url)) return null
   const epoch = config.authEpoch ?? sessionEpoch()
   assertRefreshSession(epoch)
   if (!refreshHandler || !getToken() || config.replayed) return null
@@ -146,7 +153,7 @@ async function replayAfter401(response: AxiosResponse<unknown>, code: number): P
   if (sentToken === getToken()) {
     try { await refreshOnce(sentToken, epoch) } catch (error) {
       if (error instanceof ApiError && error.code === 409) throw error
-      throw new SessionRefreshFailure('登录已过期，请重新登录')
+      throw new SessionRefreshFailure('登录已过期，请重新登录', error instanceof ApiError ? error.traceId : null)
     }
   }
   assertRefreshSession(epoch)
@@ -171,7 +178,7 @@ instance.interceptors.response.use(
       const replay = await replayAfter401(response, body?.code ?? response.status)
       if (replay) return replay
     } catch (error) {
-      if (error instanceof SessionRefreshFailure) throw fail({ code: 401, msg: error.message, data: null }, response)
+      if (error instanceof SessionRefreshFailure) throw fail({ code: 401, msg: error.message, data: null }, response, error.traceId)
       throw error
     }
     throw fail(body ?? { code: -1, msg: '服务器返回的内容不对，请稍后再试', data: null }, response)
@@ -185,7 +192,7 @@ instance.interceptors.response.use(
         const replay = await replayAfter401(error.response, body?.code ?? error.response.status)
         if (replay) return replay
       } catch (refreshError) {
-        if (refreshError instanceof SessionRefreshFailure) throw fail({ code: 401, msg: refreshError.message, data: null }, error.response)
+        if (refreshError instanceof SessionRefreshFailure) throw fail({ code: 401, msg: refreshError.message, data: null }, error.response, refreshError.traceId)
         throw refreshError
       }
     }
@@ -227,7 +234,10 @@ export function installMock(answer: (config: InternalAxiosRequestConfig<unknown>
 
 /** 后端说出错了：401 回登录页，带清单的弹表格，其他弹一行消息。返回给调用方的 ApiError */
 let redirectingToLogin = false
-function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
+function fail(body: R<unknown>, response: AxiosResponse<unknown>, traceOverride?: string | null): ApiError {
+  const epoch = (response.config as RequestConfig).authEpoch
+  // 旧响应连错误副作用也不能带到新账号，尤其不能用旧 401 清除新 token。
+  if (epoch !== undefined) assertResponseEpoch(epoch)
   const seconds = Number(response.headers['retry-after'])
   const retryAfter = Number.isFinite(seconds) && seconds >= 0 ? Math.min(seconds, 30) * 1000 : null
   const transient = [502, 503, 504].includes(body.code) || (body.code === 409 && retryAfter !== null)
@@ -249,7 +259,7 @@ function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
       ElMessage.error(`${body.msg || '请求失败'}${typeof trace === 'string' ? `（追踪码 ${trace}）` : ''}`)
     }
   }
-  const traceId = response.headers['x-request-id'] ?? response.headers['x-trace-id']
+  const traceId = traceOverride ?? response.headers['x-request-id'] ?? response.headers['x-trace-id']
   return new ApiError(body.code, body.msg, body.data ?? null, typeof traceId === 'string' ? traceId : null, transient, retryAfter)
 }
 
@@ -361,8 +371,14 @@ function forgetWrite(key: string) {
 type Settled = 'done' | 'not-done' | 'unknown'
 /** 问服务器这笔提交成功了没有。wait：还没到 SETTLE_AFTER、又查不到时，等到那时再问一次 */
 async function settle(action: PendingWrite, wait = false): Promise<Settled> {
-  const ask = () => request<{ done: boolean }>({ url: `/api/http-actions/${action.key}`, method: 'get', silent: true, signal: new AbortController().signal })
-    .then((state) => state.done, () => null)
+  const epoch = sessionEpoch()
+  const sameSession = () => !sessionChanged() && sessionEpoch() === epoch && sessionIdentity() === action.identity
+  const ask = async () => {
+    if (!sameSession()) return null
+    const done = await request<{ done: boolean }>({ url: `/api/http-actions/${action.key}`, method: 'get', silent: true, authEpoch: epoch, signal: new AbortController().signal })
+      .then((state) => state.done, () => null)
+    return sameSession() ? done : null
+  }
   let done = await ask()
   const left = action.createdAt + SETTLE_AFTER - Date.now()
   if (done === false && wait && left > 0) {
@@ -381,6 +397,7 @@ function scheduleResolve(delay: number) {
 export async function resolvePendingWrites() {
   restorePendingWrites()
   const identity = sessionIdentity()
+  const epoch = sessionEpoch()
   let next = Infinity
   for (const action of [...pendingWrites.values()]) {
     if (action.identity !== identity || action.promise || checking.has(action.key)) continue
@@ -388,6 +405,8 @@ export async function resolvePendingWrites() {
     syncNotices()
     const outcome = await settle(action)
     checking.delete(action.key)
+    // 核对期间换号，旧账号收据保留给原账号下次登录处理。
+    if (sessionChanged() || sessionEpoch() !== epoch || sessionIdentity() !== identity) break
     const when = formatDateTime(action.createdAt)
     if (outcome === 'done') {
       forgetWrite(action.key)
@@ -406,12 +425,21 @@ export async function resolvePendingWrites() {
 const activeRequests = new Set<AbortController>()
 onSessionChanged(() => { for (const controller of activeRequests) controller.abort() })
 function assertSession(url: string | undefined) {
-  if (!url?.startsWith('/api/auth/') && sessionChanged()) throw new ApiError(409, '另一个标签页已切换账号，请重新打开本页')
+  if (!isSessionTransition(url) && sessionChanged()) throw new ApiError(409, '另一个标签页已切换账号，请重新打开本页')
+}
+/** 请求已发出后身份变更，无法据此推断服务器是否提交；必须保留原账号的核对收据。 */
+function assertResponseEpoch(epoch: string) {
+  if (sessionChanged() || epoch !== sessionEpoch()) {
+    throw new ApiError(-1, '登录身份已变化，先前请求的结果需由原账号重新核对')
+  }
+}
+function assertResponseSession(url: string | undefined, epoch: string) {
+  if (!isSessionTransition(url)) assertResponseEpoch(epoch)
 }
 function prepareRequest(config: RequestConfig): RequestConfig {
   assertSession(config.url)
   const epoch = config.authEpoch ?? sessionEpoch()
-  if (!config.url?.startsWith('/api/auth/') && epoch !== sessionEpoch()) throw new ApiError(409, '登录身份已变化，请重新打开本页')
+  if (!isSessionTransition(config.url) && epoch !== sessionEpoch()) throw new ApiError(409, '登录身份已变化，请重新打开本页')
   const readOnly = config.readOnly || ['get', 'head'].includes((config.method ?? 'get').toLowerCase())
   const payload = config.data
   const bodyCompany = payload && typeof payload === 'object' && 'companyId' in payload && typeof payload.companyId === 'string' ? payload.companyId : undefined
@@ -434,7 +462,7 @@ export function snapshotRequestBody<T>(body: T): T {
 function transport<T>(prepared: RequestConfig, epoch: string): Promise<AxiosResponse<T>> {
   try {
     assertSession(prepared.url)
-    if (!prepared.url?.startsWith('/api/auth/') && epoch !== sessionEpoch()) throw new ApiError(409, '登录身份已变化，请重新打开本页')
+    if (!isSessionTransition(prepared.url) && epoch !== sessionEpoch()) throw new ApiError(409, '登录身份已变化，请重新打开本页')
   } catch (error) { return Promise.reject(error) }
   const controller = new AbortController()
   const source = prepared.signal
@@ -442,7 +470,10 @@ function transport<T>(prepared: RequestConfig, epoch: string): Promise<AxiosResp
   if (source?.aborted) controller.abort()
   else source?.addEventListener?.('abort', abort, { once: true })
   activeRequests.add(controller)
-  return instance.request<T>({ ...prepared, signal: controller.signal }).finally(() => {
+  return instance.request<T>({ ...prepared, signal: controller.signal }).then((response) => {
+    assertResponseSession(prepared.url, epoch)
+    return response
+  }).finally(() => {
     activeRequests.delete(controller)
     source?.removeEventListener?.('abort', abort)
   })
@@ -517,12 +548,20 @@ async function performWrite<T>(config: RequestConfig, prepared: RequestConfig, s
   for (const previous of matches.filter((item) => item !== action && !item.promise)) {
     if (!config.silent && Date.now() - previous.createdAt < SETTLE_AFTER) ElMessage.info('正在核对上一次提交的结果，最多等一分半钟…')
     const outcome = await settle(previous, true)
+    assertSession(config.url)
+    if (epoch !== sessionEpoch() || identity !== sessionIdentity()) throw new ApiError(409, '登录身份已变化，请重新打开本页')
     if (outcome === 'unknown') throw clientFailure(-1, `上一次的${title}还没核对出结果（网络不通），这次先不提交，请稍后再试`)
     forgetWrite(previous.key)
     if (outcome === 'done') {
       if (!config.silent) void ElMessageBox.alert(`上一次的${title}其实已经保存成功了，这次的修改没有提交，免得重复。请到列表里打开它再改。`, '上一次已经保存', { confirmButtonText: '知道了' }).catch(() => undefined)
       throw new ApiError(1002, `上一次的${title}已经保存成功，这次没有重复提交`)
     }
+  }
+  // 等待核对让出了执行权；同一份新内容可能已经由另一个调用开始提交。
+  action = [...pendingWrites.values()].find((item) => item.scope === scope && item.fingerprint === fingerprint)
+  if (action?.promise) {
+    if (config.recordWriteKey && !config.recordWriteKey(action.key)) throw clientFailure(409, '浏览器存不下提交编号，请允许网站存储后再试')
+    return action.promise as Promise<T>
   }
   if (!action) {
     const explicit = config.idempotencyKey ?? (typeof payload?.clientActionId === 'string' ? payload.clientActionId : undefined)
@@ -544,6 +583,7 @@ async function performWrite<T>(config: RequestConfig, prepared: RequestConfig, s
       }
       try {
         const value = await send()
+        assertResponseSession(prepared.url, epoch)
         forgetWrite(current.key)
         return value
       } catch (error) {

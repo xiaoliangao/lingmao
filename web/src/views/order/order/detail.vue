@@ -6,7 +6,9 @@ import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { orderApi as orderApiBase, orderChangeApi as orderChangeApiBase } from '@/api/order'
-import { kittingApi, mrpApi } from '@/api/purchase'
+import { mrpApi } from '@/api/purchase'
+import { useOrderKitting } from '@/composables/useOrderKitting'
+import KittingFeedback from '@/components/doc/KittingFeedback.vue'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -24,7 +26,7 @@ import { useUserStore } from '@/stores/user'
 import type { DocAction } from '@/types/biz'
 import type { FileVO } from '@/types/system'
 import { ORDER_LOG_ACTIONS, ORDER_SOURCE, ORDER_STATUS, type OrderAction, type OrderChangeRow, type OrderDetail, type OrderStyle } from '@/types/order'
-import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
+import { KITTING_STATUS } from '@/types/purchase'
 import { formatDate, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { businessToday } from '@/utils/businessDate'
 import { ApiError } from '@/utils/request'
@@ -44,7 +46,7 @@ const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.co
  * - 顶上按钮照 actions：编辑、提交审核、驳回 + 审核（不是我审时写"现在等××审"）、提变更、算料、排单；
  *   撤回、反审核、结案、取消结案、取消订单（走变更单）、作废、删除收进"更多"
  * - 状态动作都走 runDocAction：1002 时重新取详情（拿新 version），作废不要原因
- * - 齐料、变更单列表是另取的：取不到只是那一块空着，详情照常
+ * - 齐料、变更单列表是另取的：齐料失败可局部重试，详情照常
  * - ?tab= 跟着地址变（只认自己这一页）；排单成功切到"下游单据"
  */
 const route = useRoute()
@@ -63,7 +65,9 @@ const TABS: TabName[] = ['lines', 'down', 'changes', 'logs']
 const pickTab = (value: unknown): TabName | undefined => (TABS.includes(value as TabName) ? (value as TabName) : undefined)
 
 const detail = ref<OrderDetail | null>(null)
-const kitting = ref<OrderKitting | null>(null)
+const { byId: kittingMap, loading: kittingLoading, error: kittingError, load: readKitting, cancel: cancelKitting } = useOrderKitting()
+const kitting = computed(() => kittingMap.value[id] ?? null)
+const kittingApplicable = computed(() => !!detail.value && ['APPROVED', 'RUNNING', 'DONE'].includes(detail.value.status))
 const changes = ref<OrderChangeRow[]>([])
 const canViewChanges = computed(() => user.hasPerm('order:change:list'))
 const notFound = ref(false)
@@ -91,6 +95,7 @@ const can = (a: OrderAction) => detail.value?.actions.includes(a) ?? false
 const detailRequest = useLatestRequest()
 async function load() {
   const read = detailRequest.begin()
+  cancelKitting()
   try {
     const d = await read.run(() => orderApi.get(id))
     if (!read.current()) return
@@ -106,18 +111,7 @@ async function load() {
   void loadChanges()
 }
 
-async function loadKitting() {
-  const d = detail.value
-  if (!d || !['APPROVED', 'RUNNING', 'DONE'].includes(d.status)) {
-    kitting.value = null
-    return
-  }
-  try {
-    kitting.value = (await kittingApi.byOrders([id]))[0] ?? null
-  } catch {
-    kitting.value = null
-  }
-}
+function loadKitting() { return readKitting(kittingApplicable.value ? [id] : []) }
 
 async function loadChanges() {
   if (!canViewChanges.value) {
@@ -318,6 +312,7 @@ function openKitting() {
           <button v-if="kitting" type="button" class="tag-btn" :disabled="!kitting.calcIds.length" @click="openKitting">
             <StatusTag :tone="KITTING_STATUS[kitting.status].tone">{{ kitting.label }}</StatusTag>
           </button>
+          <KittingFeedback v-else-if="kittingApplicable" :loading="kittingLoading" :error="kittingError" @retry="loadKitting" />
         </p>
 
         <el-tabs v-model="tab">

@@ -15,7 +15,7 @@ from security_checks import run_security
 from export_checks import run_exports
 
 ROOT = Path(__file__).resolve().parents[3]
-ARTIFACTS = ROOT / 'target/test-artifacts/a3'
+ARTIFACTS = Path(os.environ.get('SCM_UI_ARTIFACTS') or ROOT / 'target/test-artifacts/a3')
 FIXTURE = ROOT / 'web/node_modules/.a3-prod-readiness'
 
 async def run():
@@ -545,7 +545,7 @@ async def run():
             await reset_refresh_tabs()
             await refresh_tabs[0].evaluate("""() => {
               window.__lockHeld = false;
-              void navigator.locks.request('lingmao:session-refresh:' + window.__a3.session().epoch, () =>
+              void navigator.locks.request(window.__a3.authCookieLock, () =>
                 new Promise(resolve => { window.__releaseLock = resolve; window.__lockHeld = true; }));
             }""")
             await refresh_tabs[0].wait_for_function('window.__lockHeld')

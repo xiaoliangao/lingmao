@@ -21,6 +21,7 @@ import {
   type BomUsageMode,
 } from '@/types/techpack'
 import { formatPrice } from '@/utils/format'
+import { fromScaledInteger, rescaleInteger, toScaledInteger } from '@/utils/fixedPoint'
 import { orNull } from '@/views/basic/common'
 import { useFieldAccess } from '@/composables/useFieldAccess'
 const { canSeeCost } = useFieldAccess()
@@ -280,7 +281,8 @@ async function onSupplierChange(id: string | null | undefined) {
 const purchaseHint = computed(() => {
   const def = lastDefault.value
   if (!def || form.refPrice == null || def.purchaseUnit === def.unit) return ''
-  return `合 ${formatPrice(form.refPrice * def.conversionFactor)} 元/${units.labelOf(def.purchaseUnit)}`
+  const product = toScaledInteger(form.refPrice, 4) * toScaledInteger(def.conversionFactor, 6)
+  return `合 ${formatPrice(fromScaledInteger(rescaleInteger(product, 10, 4), 4))} 元/${units.labelOf(def.purchaseUnit)}`
 })
 
 function submit() {

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><title>写请求恢复回归</title></head>
+  <body>
+    <h1>写请求恢复回归</h1>
+    <p>使用生产请求模块，注入网络延迟和会话切换。</p>
+    <script type="module">
+      import { http, resolvePendingWrites, restorePendingWrites } from '/src/utils/request.ts'
+      import { setToken, setSessionSubject, sessionIdentity } from '/src/utils/token.ts'
+      import { requestFingerprint, storeWriteReceipt, readWriteReceipts } from '/src/utils/pendingWrite.ts'
+
+      const url = '/api/orders'
+      const login = (other = false) => {
+        setToken(other ? 'synthetic-other-session' : 'synthetic-original-session')
+        setSessionSubject(other ? '9007199254740995' : '9007199254740993')
+      }
+      login()
+      window.__s3 = {
+        login,
+        async seed(age = 90001) {
+          const identity = sessionIdentity()
+          const key = crypto.randomUUID()
+          const receipt = {
+            scope: `${identity}|${location.pathname}|post|${url}`,
+            identity, key, url, companyId: '1', createdAt: Date.now() - age,
+            fingerprint: await requestFingerprint(JSON.stringify({ companyId: '1', qty: 1 }), '1', url),
+          }
+          if (!storeWriteReceipt(receipt)) throw new Error('fixture receipt must be persisted')
+          restorePendingWrites()
+          return key
+        },
+        write: () => http.post(url, { companyId: '1', qty: 2 }, { silent: true }),
+        resolve: resolvePendingWrites,
+        receipts: () => readWriteReceipts().map(({ key }) => key),
+      }
+    </script>
+  </body>
+</html>

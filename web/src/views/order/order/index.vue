@@ -5,7 +5,8 @@ import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type TableColumnCtx, type TableInstance } from 'element-plus'
 import { orderApi } from '@/api/order'
-import { kittingApi } from '@/api/purchase'
+import { useOrderKitting } from '@/composables/useOrderKitting'
+import KittingFeedback from '@/components/doc/KittingFeedback.vue'
 import BatchBar from '@/components/BatchBar.vue'
 import type { BatchAction } from '@/components/batchBar'
 import DateRange from '@/components/DateRange.vue'
@@ -34,7 +35,7 @@ const { canSeeOrderPrice } = useFieldAccess()
  * 需求订单列表（/orders，docs/api/02 §1.1，原型 route('/orders')）。
  * - 地址参数：?status=、?unscheduled=1（首页点进来）、?orderDateFrom=&orderDateTo=。页签留着时别处带参数点进来也要换，
  *   但只认 /orders 自己的地址：keep-alive 的页面切走以后 route 还会变，不看 path 会被别的页面的 ?status= 改掉
- * - 齐料一列（02 §3.13）：列表到了以后另取，只取已审核、生产中、已完成的；取不到显示"—"，不影响列表
+ * - 齐料一列（02 §3.13）：列表到了以后另取，只取已审核、生产中、已完成的；独立显示加载/失败与重试
  * - 状态页签上的数也是另取，失败了只是不显示数
  */
 const route = useRoute()
@@ -138,18 +139,11 @@ watch(() => route.query.auditForMe, (value) => {
 
 // ---------- 齐料（另取，02 §3.13） ----------
 const KITTING_STATUSES: OrderStatus[] = ['APPROVED', 'RUNNING', 'DONE']
-const kittingMap = ref<Record<string, OrderKitting>>({})
-let kittingSeq = 0
-watch(list, async (rows) => {
-  const current = ++kittingSeq
-  const ids = rows.filter((r) => KITTING_STATUSES.includes(r.status)).map((r) => r.id)
-  try {
-    const kits = await kittingApi.byOrders(ids)
-    if (current === kittingSeq) kittingMap.value = Object.fromEntries(kits.map((k) => [k.orderId, k]))
-  } catch {
-    if (current === kittingSeq) kittingMap.value = {}
-  }
-})
+const { byId: kittingMap, loading: kittingLoading, error: kittingError, load: readKitting } = useOrderKitting()
+function loadKitting() {
+  return readKitting(list.value.filter((row) => KITTING_STATUSES.includes(row.status)).map((row) => row.id))
+}
+watch(list, () => { void loadKitting() })
 
 function openKitting(kit: OrderKitting) {
   const calcId = kit.calcIds[0]
@@ -356,6 +350,7 @@ function onImported(count: number) {
           <button v-if="kittingMap[row.id]" type="button" class="tag-btn" :disabled="!kittingMap[row.id]!.calcIds.length" @click.stop="openKitting(kittingMap[row.id]!)">
             <StatusTag :tone="KITTING_STATUS[kittingMap[row.id]!.status].tone">{{ kittingMap[row.id]!.label }}</StatusTag>
           </button>
+          <KittingFeedback v-else-if="KITTING_STATUSES.includes((row as OrderRow).status)" :loading="kittingLoading" :error="kittingError" @retry="loadKitting" />
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>

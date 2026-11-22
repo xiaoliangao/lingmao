@@ -2,9 +2,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { ApiError, enableCookieSessionRefresh, http } from '@/utils/request'
 import { getToken, onSessionChanged, sessionChanged, sessionEpoch, sessionIdentity, setToken, startSessionSync } from '@/utils/token'
+import { AUTH_COOKIE_LOCK } from '@/utils/authSession'
 
-// Opt in only in this ignored test entry until the separate production enablement is approved.
-// These are the production cookie handler, single-flight transport, token store and login/logout actions.
+// Match production main.ts: initialize the real cookie-session handler and cross-tab sync.
+// This probe uses the production single-flight transport, token store and login/logout actions.
 enableCookieSessionRefresh()
 const stopSync = startSessionSync()
 setActivePinia(createPinia())
@@ -56,7 +57,7 @@ const probe = {
   retainAccess() { retainedAccess = getToken() },
   async holdRefresh() {
     const acquired = new Promise<void>((resolve) => {
-      heldLock = navigator.locks.request(`lingmao:session-refresh:${sessionEpoch()}`, { mode: 'exclusive' }, () =>
+      heldLock = navigator.locks.request(AUTH_COOKIE_LOCK, { mode: 'exclusive' }, () =>
         new Promise<void>((release) => { releaseLock = release; resolve() }))
     })
     await acquired
@@ -64,7 +65,7 @@ const probe = {
   async releaseRefresh() { releaseLock?.(); releaseLock = undefined; await heldLock; heldLock = undefined },
   async refreshWaiters() {
     const locks = await navigator.locks.query()
-    return locks.pending?.filter((lock) => lock.name === `lingmao:session-refresh:${sessionEpoch()}`).length ?? 0
+    return locks.pending?.filter((lock) => lock.name === AUTH_COOKIE_LOCK).length ?? 0
   },
   startBurst(tag: string) {
     burst = null

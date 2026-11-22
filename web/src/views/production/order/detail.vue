@@ -6,7 +6,8 @@ import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { productionApi as productionApiBase } from '@/api/production'
-import { kittingApi } from '@/api/purchase'
+import { useOrderKitting } from '@/composables/useOrderKitting'
+import KittingFeedback from '@/components/doc/KittingFeedback.vue'
 import { techPackApi } from '@/api/techpack'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
@@ -45,7 +46,7 @@ import {
   type ProductionReceipt,
   type ProductionStockDoc,
 } from '@/types/production'
-import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
+import { KITTING_STATUS } from '@/types/purchase'
 import type { FileVO } from '@/types/system'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
@@ -91,7 +92,9 @@ const notFound = ref(false)
 const matData = ref<ProductionMaterials | null>(null)
 const issues = ref<ProductionIssue[]>([])
 const receipts = ref<ProductionReceipt[]>([])
-const kitting = ref<OrderKitting | null>(null)
+const { byId: kittingMap, loading: kittingLoading, error: kittingError, load: readKitting, cancel: cancelKitting } = useOrderKitting()
+const kitting = computed(() => detail.value ? kittingMap.value[detail.value.orderId] ?? null : null)
+const kittingApplicable = computed(() => !!detail.value && ['APPROVED', 'RUNNING', 'DONE'].includes(detail.value.status))
 
 const tab = ref<TabName>(pickTab(route.query.tab) ?? 'progress')
 watch(
@@ -142,11 +145,10 @@ const waitingText = computed(() => {
 // ---------- 取数 ----------
 const detailRequest = useLatestRequest()
 const subsRequest = useLatestRequest()
-const kittingRequest = useLatestRequest()
 async function load() {
   const read = detailRequest.begin()
   subsRequest.cancel()
-  kittingRequest.cancel()
+  cancelKitting()
   try {
     const d = await read.run(() => productionApi.get(id))
     if (!read.current()) return
@@ -178,16 +180,8 @@ async function loadSubs(d: ProductionDetail) {
   ]))
 }
 
-async function loadKitting(d: ProductionDetail) {
-  const read = kittingRequest.begin()
-  kitting.value = null
-  if (!['APPROVED', 'RUNNING', 'DONE'].includes(d.status)) return
-  try {
-    const list = await read.run(() => kittingApi.byOrders([d.orderId]))
-    if (read.current()) kitting.value = list[0] ?? null
-  } catch {
-    // 取不到写"—"
-  }
+function loadKitting(d = detail.value) {
+  return readKitting(d && ['APPROVED', 'RUNNING', 'DONE'].includes(d.status) ? [d.orderId] : [])
 }
 
 async function refresh() {
@@ -638,6 +632,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                 <dt>齐料</dt>
                 <dd>
                   <StatusTag v-if="kitting" :tone="KITTING_STATUS[kitting.status].tone">{{ kitting.label }}</StatusTag>
+                  <KittingFeedback v-else-if="kittingApplicable" :loading="kittingLoading" :error="kittingError" @retry="loadKitting()" />
                   <span v-else class="dim">—</span>
                 </dd>
                 <dt>领料</dt>

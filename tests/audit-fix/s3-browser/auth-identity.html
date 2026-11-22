@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><title>用户资料会话隔离回归</title></head>
+  <body>
+    <h1>用户资料会话隔离回归</h1>
+    <script type="module">
+      import { createPinia, setActivePinia } from 'pinia'
+      import { useUserStore } from '/src/stores/user.ts'
+      import { getToken, sessionIdentity } from '/src/utils/token.ts'
+      setActivePinia(createPinia())
+      const user = useUserStore()
+      // 观察 401 的 Store/Token 结果，避免导航销毁当前测试页。
+      history.replaceState(null, '', '/login/s3-auth-regression')
+      await user.login('synthetic-original', 'synthetic-test-input')
+      window.__authIdentity = {
+        me: () => user.fetchMe(),
+        async switchAccount() {
+          await user.login('synthetic-next', 'synthetic-test-input')
+          await user.fetchMe()
+        },
+        state: () => ({ id: user.info?.id, perms: user.info?.perms, token: getToken(), identity: sessionIdentity() }),
+      }
+    </script>
+  </body>
+</html>

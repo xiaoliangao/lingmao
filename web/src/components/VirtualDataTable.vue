@@ -8,6 +8,7 @@ export interface VirtualColumn {
   width: number
   fixed?: 'left' | 'right'
   align?: 'left' | 'center' | 'right'
+  className?: string
 }
 const props = withDefaults(defineProps<{
   rows: Row[]
@@ -16,17 +17,19 @@ const props = withDefaults(defineProps<{
   height?: number
   emptyText?: string
 }>(), { rowKey: 'id', height: 480, emptyText: '没有符合条件的数据' })
-const slots = defineSlots<{ [name: string]: (props: { row: Row }) => VNode[] }>()
+const slots = defineSlots<{ [name: string]: (props: { row: Row; rowIndex: number }) => VNode[] }>()
 const columns = computed<Column<unknown>[]>(() => props.columns.map((column) => ({
   key: column.key,
   dataKey: column.key,
   title: column.label,
   width: column.width,
+  class: column.className,
+  headerClass: column.className,
   fixed: column.fixed === 'left' ? TableV2FixedDir.LEFT : column.fixed === 'right' ? TableV2FixedDir.RIGHT : undefined,
   align: column.align === 'center' ? TableV2Alignment.CENTER : column.align === 'right' ? TableV2Alignment.RIGHT : TableV2Alignment.LEFT,
-  cellRenderer: ({ rowData }: { rowData: unknown }) => {
+  cellRenderer: ({ rowData, rowIndex }: { rowData: unknown; rowIndex: number }) => {
     const row = rowData as Row
-    const content = slots[column.key]?.({ row })
+    const content = slots[column.key]?.({ row, rowIndex })
     const value = (rowData as Record<string, unknown>)[column.key]
     const text = value == null ? '—' : String(value)
     return h('div', { class: 'virtual-cell', title: content ? undefined : text }, content ?? text)

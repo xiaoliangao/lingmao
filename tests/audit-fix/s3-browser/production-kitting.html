@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><title>生产齐料失败态回归</title></head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp } from 'vue'
+      import { createPinia } from 'pinia'
+      import { createRouter, createMemoryHistory } from 'vue-router'
+      import ElementPlus from 'element-plus'
+      import * as icons from '@element-plus/icons-vue'
+      import zhCn from 'element-plus/es/locale/lang/zh-cn'
+      import 'element-plus/dist/index.css'
+      import '/src/styles/tokens.css'
+      import '/src/styles/base.css'
+      import '/src/styles/element.css'
+      import { setToken } from '/src/utils/token.ts'
+      import Fixture from './ProductionKittingFixture.vue'
+      setToken('synthetic-production-kitting')
+      const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+      const app = createApp(Fixture).use(createPinia()).use(router).use(ElementPlus, { locale: zhCn })
+      for (const [name, component] of Object.entries(icons)) app.component(name, component)
+      await router.push('/board')
+      await router.isReady()
+      app.mount('#app')
+    </script>
+  </body>
+</html>

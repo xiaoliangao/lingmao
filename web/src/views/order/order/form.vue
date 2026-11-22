@@ -24,6 +24,7 @@ import type { FileVO } from '@/types/system'
 import { formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { ApiError } from '@/utils/request'
 import { applySkuValues, buildSkuRows, hydrateSkuValues, lineAmountCents, MAX_UNIT_PRICE, validateOrderCapacity, type SkuValues } from '@/utils/orderSku'
+import { fromScaledInteger } from '@/utils/fixedPoint'
 import { orNull } from '@/views/basic/common'
 import { bindCompanyApi } from '@/utils/companyScope'
 import { useFieldAccess } from '@/composables/useFieldAccess'
@@ -112,16 +113,17 @@ function blockQty(b: StyleBlock): number {
   return Object.values(b.qtys).reduce((s, q) => s + (q > 0 ? q : 0), 0)
 }
 
-function blockAmount(b: StyleBlock): number {
+function blockAmountCents(b: StyleBlock): bigint {
   return b.opt.skus.reduce((sum, sk) => {
     const q = b.qtys[sk.id] ?? 0
     const p = b.values[sk.id]?.price
-    return Number.isSafeInteger(q) && q > 0 && p != null && Number.isFinite(p) && p >= 0 && p <= MAX_UNIT_PRICE ? sum + Number(lineAmountCents(p, q)) / 100 : sum
-  }, 0)
+    return Number.isSafeInteger(q) && q > 0 && p != null && Number.isFinite(p) && p >= 0 && p <= MAX_UNIT_PRICE ? sum + lineAmountCents(p, q) : sum
+  }, 0n)
 }
+const blockAmount = (b: StyleBlock) => fromScaledInteger(blockAmountCents(b), 2)
 
 const totalQty = computed(() => blocks.value.reduce((s, b) => s + blockQty(b), 0))
-const totalAmount = computed(() => blocks.value.reduce((s, b) => s + blockAmount(b), 0))
+const totalAmount = computed(() => fromScaledInteger(blocks.value.reduce((s, b) => s + blockAmountCents(b), 0n), 2))
 
 const pricePlaceholder = (opt: OrderStyleOption) => (opt.tagPrice == null ? '' : `吊牌价 ${formatPrice(opt.tagPrice)}`)
 
@@ -544,6 +546,11 @@ const backTo = editing ? `/orders/${id}` : '/orders'
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.ctrl > span {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .ctrl.grow {

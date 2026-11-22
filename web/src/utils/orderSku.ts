@@ -1,3 +1,5 @@
+import { toScaledInteger } from './fixedPoint.ts'
+
 /** SKU 行是保存的单位；批量输入只在显式应用时修改它们。 */
 export interface SkuValues {
   price?: number | null
@@ -27,7 +29,7 @@ export function applySkuValues(values: Record<string, SkuValues>, ids: readonly 
 
 /** JSON 容量以内，用整数分计算每行四位单价 × 件数后的 HALF_UP 两位金额。 */
 export function lineAmountCents(price: number, qty: number): bigint {
-  const scaled = BigInt(Math.round(price * 10000))
+  const scaled = toScaledInteger(price, 4)
   return (scaled * BigInt(qty) + 50n) / 100n
 }
 

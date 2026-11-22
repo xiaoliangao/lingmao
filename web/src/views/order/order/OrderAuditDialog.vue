@@ -5,6 +5,7 @@ import { orderApi, orderReviewApi } from '@/api/order'
 import StatusTag from '@/components/StatusTag.vue'
 import { reloadOnConflict, showSilentError } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
+import { useLatestRequest } from '@/composables/useLatestRequest'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import type { OrderDetail, OrderReview } from '@/types/order'
 import { formatDate, formatQty } from '@/utils/format'
@@ -26,6 +27,7 @@ const submitting = ref(false)
 const review = ref<OrderReview | null>(null)
 const reviewError = ref(false)
 let reviewSeq = 0
+const reviewRequest = useLatestRequest()
 const form = reactive({ commitDate: '' })
 const guard = useUnsavedChanges(form, visible)
 
@@ -34,25 +36,27 @@ const blocked = computed(() => (review.value?.packs ?? []).some((p) => p.problem
 /** 承诺交期不能早于下单日期（后端 400） */
 const disabledDate = (date: Date) => date < new Date(`${props.order.orderDate}T00:00:00`)
 
-watch(visible, (on) => {
-  if (!on) { reviewSeq++; return }
+watch([visible, () => props.order.id], ([on]) => {
+  if (!on) { reviewSeq++; reviewRequest.cancel(); return }
   form.commitDate = props.order.commitDate ?? props.order.requiredDate
   guard.markSaved()
   void loadReview()
-})
+}, { immediate: true })
 async function loadReview() {
+  const read = reviewRequest.begin()
   const seq = ++reviewSeq
   review.value = null
   reviewError.value = false
   loading.value = true
   try {
-    const result = await orderReviewApi.get(props.order.id)
-    if (seq === reviewSeq && visible.value) review.value = result
+    const result = await read.run(() => orderReviewApi.get(props.order.id))
+    if (read.current() && seq === reviewSeq && visible.value) review.value = result
   } catch (e) {
+    if (!read.current()) return
     if (seq === reviewSeq) reviewError.value = true
     if (!(e instanceof ApiError)) throw e
   } finally {
-    if (seq === reviewSeq) loading.value = false
+    if (read.current() && seq === reviewSeq) loading.value = false
   }
 }
 
@@ -64,6 +68,7 @@ function nextLevelLabel(): string | null {
 }
 
 async function pass() {
+  if (submitting.value || loading.value || blocked.value) return
   if (!form.commitDate) {
     ElMessage.warning('填承诺交期')
     return

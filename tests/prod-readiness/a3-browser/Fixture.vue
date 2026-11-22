@@ -22,6 +22,7 @@ import { clientActionUuid } from '@/utils/clientAction'
 import { routeId } from '@/utils/entityId'
 import { claimChunkReload } from '@/utils/chunkRecovery'
 import { businessToday, pickerDay, pickerDate } from '@/utils/businessDate'
+import { AUTH_COOKIE_LOCK } from '@/utils/authSession'
 
 const user = useUserStore()
 user.info = { id: '9007199254740993', username: 'synthetic', nickname: '回归测试', roles: [], perms: ['techpack:cost:query', 'order:price:query', 'production:price:query', 'supplier:supplier:contact', 'supplier:supplier:bank'], menus: [], defaultCompany: { id: '1', name: '测试主体' } }
@@ -56,6 +57,7 @@ configureSessionRefresh(async () => {
   return result.data
 })
 const testApi = {
+  authCookieLock: AUTH_COOKIE_LOCK,
   refresh: () => Promise.all(Array.from({ length: 8 }, (_, i) => http.get<string>(`/probe/auth/${i}`, undefined, { silent: true }))),
   cookieRefresh: enableCookieSessionRefresh,
   logout: user.logout,

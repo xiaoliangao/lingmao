@@ -5,7 +5,7 @@ import { createLatestRequest, currentReadScope } from '../../../web/src/utils/re
 import { routeId } from '../../../web/src/utils/entityId.ts'
 import { isComposing } from '../../../web/src/utils/ime.ts'
 import { businessToday, pickerDate, pickerDay, addBusinessDays } from '../../../web/src/utils/businessDate.ts'
-import { validateKeywords } from '../../../web/src/utils/keywords.ts'
+import { validateKeywords, hasSeparator, MAX_CODES, MAX_KEYWORD_LENGTH } from '../../../web/src/utils/keywords.ts'
 import { containsSecrets, restoreDraftValue } from '../../../web/src/utils/draft.ts'
 import { sha256 } from '../../../web/src/utils/sha256.ts'
 import { canReplayWrite } from '../../../web/src/utils/writePolicy.ts'
@@ -92,9 +92,22 @@ test('export task create, cancel and retry are protected; arbitrary export mutat
   for (const path of ['/api/export-jobs/stock-logs', '/api/export-jobs/9007199254740993/cancel', '/api/export-jobs/9007199254740993/retry']) assert.equal(canReplayWrite('post', path), true)
   for (const [method, path] of [['post', '/api/export-jobs/9007199254740993/file'], ['post', '/api/export-jobs/9007199254740993'], ['put', '/api/export-jobs/9007199254740993/retry'], ['post', '/api/export-jobs/stock-logs/extra']]) assert.equal(canReplayWrite(method, path), false)
 })
-test('batch search accepts 200 distinct codes and rejects 201', () => {
-  validateKeywords(Array.from({ length: 200 }, (_, i) => `A${i}`).join(','))
-  assert.throws(() => validateKeywords(Array.from({ length: 201 }, (_, i) => `A${i}`).join(' ')), /200/)
+test('batch search accepts 100 distinct codes and rejects 101', () => {
+  assert.equal(MAX_CODES, 100)
+  validateKeywords(Array.from({ length: 100 }, (_, i) => `A${i}`).join(','))
+  assert.throws(() => validateKeywords(Array.from({ length: 101 }, (_, i) => `A${i}`).join(' ')), /100/)
+  validateKeywords(Array.from({ length: 200 }, (_, i) => `${i % 2 ? 'a' : 'A'}${i % 100}`).join(','))
+})
+test('batch keywords share the backend Unicode whitespace and length limits', () => {
+  assert.equal(MAX_KEYWORD_LENGTH, 8192)
+  for (const separator of ['\u00a0', '\u0085', '\ufeff', '\u3000', '\u2003']) {
+    assert.equal(hasSeparator(`${separator}A001${separator}`), false)
+    assert.equal(hasSeparator(`${separator}A001${separator}A002${separator}`), true)
+    validateKeywords(separator.repeat(100))
+    assert.throws(() => validateKeywords(Array.from({ length: 101 }, (_, i) => `A${i}`).join(separator)), /100/)
+  }
+  validateKeywords('A'.repeat(8192))
+  assert.throws(() => validateKeywords('A'.repeat(8193)), /过长/)
 })
 test('draft restore keeps reactive containers and never writes dangerous prototype fields', () => {
   const lines = [{ qty: 1 }]

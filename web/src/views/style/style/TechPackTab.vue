@@ -11,6 +11,7 @@ import DictSelect from '@/components/DictSelect.vue'
 import DocLogList from '@/components/DocLogList.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import VirtualDataTable, { type VirtualColumn } from '@/components/VirtualDataTable.vue'
 import { reloadOnConflict, showSilentError } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
@@ -45,10 +46,12 @@ import {
   type TechPackSaveForm,
 } from '@/types/techpack'
 import { formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
+import { fromScaledInteger, rescaleInteger, toScaledInteger } from '@/utils/fixedPoint'
 import { ApiError } from '@/utils/request'
 import { confirmRemove, orNull } from '@/views/basic/common'
 import CraftStandardDrawer from '@/views/techpack/standard/CraftStandardDrawer.vue'
 import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
+import WideSpecTable from './WideSpecTable.vue'
 
 /**
  * 款式详情的"资料包"页签（docs/api/01 §1.1、§4，原型 TechPack）：版本条、版本信息、四个子页签（尺寸指示、物料清单、工艺指示、核价）+ 操作记录。
@@ -675,8 +678,8 @@ function bomProblems(b: BomItem): string[] {
 }
 
 /** 单件成本：草稿上按输入即时算（保存后以后端为准）。基码用量 ×（1 + 损耗）× 单价；随款色取第一个款色的 SKU 价，随尺码取基码的 */
-function unitCostOf(b: BomItem): number | null {
-  if (!editable.value) return b.unitCost ?? null
+function unitCostOf(b: BomItem): string | null {
+  if (!editable.value) return b.unitCost == null ? null : String(b.unitCost)
   const d = detail.value
   if (!d || b.source !== 'PURCHASE') return null
   const usage = b.usageMode === 'UNIFORM' ? b.usageQty : b.sizeUsages[d.baseSize]
@@ -686,7 +689,10 @@ function unitCostOf(b: BomItem): number | null {
     (s) => (s.colorId == null || s.colorId === firstColor) && (s.sizeCode == null || s.sizeCode === d.baseSize),
   )
   const price = sku?.refPrice ?? b.refPrice
-  return price == null ? null : usage * (1 + b.lossPct / 100) * price
+  if (price == null) return null
+  // 用量 6 位 × 损耗因子 4 位 × 单价 4 位，最终金额按 2 位取舍。
+  const product = toScaledInteger(usage, 6) * (10_000n + toScaledInteger(b.lossPct, 2)) * toScaledInteger(price, 4)
+  return fromScaledInteger(rescaleInteger(product, 14, 2), 2)
 }
 
 /** "按颜色"视图（01 §4.4）：这个颜色实际要用的每个物料 SKU 和各码用量，一个 SKU 一行（随尺码的按码拆开） */
@@ -715,6 +721,14 @@ const colorViewRows = computed<ColorViewRow[]>(() => {
   })
   return rows
 })
+const colorVirtualColumns = computed<VirtualColumn[]>(() => [
+  { key: 'part', label: '部位', width: 100, fixed: 'left' },
+  { key: 'material', label: '物料', width: 170, fixed: 'left' },
+  { key: 'sku', label: '物料 SKU', width: 200 },
+  ...(detail.value?.sizes ?? []).map((size) => ({ key: `size:${size}`, label: size, width: 80, align: 'right' as const })),
+  { key: 'unit', label: '单位', width: 56, fixed: 'right' },
+  { key: 'source', label: '来源', width: 80, fixed: 'right' },
+])
 
 // ---------- 工艺指示、工序工价 ----------
 function sectionFormOf(sec: CraftSection): CraftSectionForm {
@@ -734,7 +748,7 @@ function addProcess() {
   draft.processes.push({ category: null, name: '', requirement: '', stdSeconds: null, price: null, remark: '', images: [] })
 }
 
-const totalProcessLabor = computed(() => draft.processes.reduce((sum, p) => sum + (Number(p.price) || 0), 0))
+const totalProcessLabor = computed(() => fromScaledInteger(draft.processes.reduce((sum, p) => sum + toScaledInteger(p.price ?? 0, 4), 0n), 4))
 const totalProcessSeconds = computed(() => draft.processes.reduce((sum, p) => sum + (Number(p.stdSeconds) || 0), 0))
 
 // ---------- 核价（按上次保存的算，01 §6） ----------
@@ -761,7 +775,8 @@ const notCountedText = (row: CostRow) => (row.source === 'FACTORY' ? '含在加�
 const devDiff = computed(() => {
   const c = costData.value
   if (!c?.dev) return null
-  return c.summary.total - c.dev.summary.total
+  const cents = toScaledInteger(c.summary.total, 2) - toScaledInteger(c.dev.summary.total, 2)
+  return { increased: cents > 0n, nonnegative: cents >= 0n, amount: fromScaledInteger(cents < 0n ? -cents : cents, 2) }
 })
 
 // ---------- 导出 PDF ----------
@@ -885,7 +900,19 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <el-button size="small" @click="generateByGrade">按档差生成</el-button>
               <span class="dim">单位 cm</span>
             </div>
-            <el-table :data="draft.specPoints" empty-text="还没有尺寸指示（不是必填）">
+            <WideSpecTable
+              v-if="detail.sizes.length + (editable ? 7 : 6) >= 30"
+              data-testid="wide-spec-table"
+              :rows="draft.specPoints"
+              :sizes="detail.sizes"
+              :base-size="detail.baseSize"
+              :point-options="detail.pointOptions"
+              :editable="editable"
+              @point-picked="onPointPicked"
+              @move="(index, step) => moveItem(draft.specPoints, index, step)"
+              @remove="(index) => draft.specPoints.splice(index, 1)"
+            />
+            <el-table v-else :data="draft.specPoints" empty-text="还没有尺寸指示（不是必填）">
               <el-table-column label="#" width="44" class-name="num">
                 <template #default="{ $index }">{{ $index + 1 }}</template>
               </el-table-column>
@@ -1016,7 +1043,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="#" width="40" class-name="num">
+              <el-table-column label="#" width="52" class-name="num sequence-col">
                 <template #default="{ $index }">{{ $index + 1 }}</template>
               </el-table-column>
               <el-table-column label="" width="48">
@@ -1078,6 +1105,17 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               </el-table-column>
             </el-table>
 
+            <VirtualDataTable v-else-if="colorVirtualColumns.length >= 30" data-testid="wide-bom-colors" :rows="colorViewRows" :columns="colorVirtualColumns" row-key="key" empty-text="还没有物料">
+              <template #part="{ row }">{{ bomParts.labelOf(row.item.part) }}</template>
+              <template #material="{ row }"><button type="button" data-testid="bom-row" class="link-btn" @mouseenter="inspectedBomId = row.item.id" @focus="inspectedBomId = row.item.id" @click="inspectedBomId = row.item.id">{{ row.item.materialName }}</button></template>
+              <template #sku="{ row }">
+                <template v-if="row.sku"><span class="code" :class="{ danger: row.sku.skuStatus === 0 }">{{ row.sku.skuCode }}</span> {{ [row.sku.skuColorName, row.sku.skuSpec].filter(Boolean).join(' ') }}</template>
+                <span v-else class="danger">这个颜色没配料</span>
+              </template>
+              <template v-for="size in detail.sizes" :key="size" #[`size:${size}`]="{ row }"><span class="num">{{ row.usages[size] == null ? '' : formatQty(row.usages[size]) }}</span></template>
+              <template #unit="{ row }">{{ units.labelOf(row.item.unit) }}</template>
+              <template #source="{ row }">{{ MATERIAL_SOURCE_LABEL[row.item.source] }}</template>
+            </VirtualDataTable>
             <el-table v-else :data="colorViewRows" row-key="key" empty-text="还没有物料">
               <el-table-column label="部位" width="100">
                 <template #default="{ row }">{{ bomParts.labelOf(row.item.part) }}</template>
@@ -1311,8 +1349,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 <span v-if="costData.mixedBasis" class="warn-txt">单价口径不一（有的含税有的不含），照录入的数加总</span>
                 <span v-if="costData.tagPrice != null">吊牌价 ¥{{ formatMoney(costData.tagPrice) }}</span>
                 <span v-if="costData.ratio != null">倍率 {{ costData.ratio }}</span>
-                <span v-if="devDiff != null && costData.dev" :class="{ 'danger': devDiff > 0 }">
-                  比研发估{{ devDiff >= 0 ? '高' : '低' }} {{ formatMoney(Math.abs(devDiff)) }}
+                <span v-if="devDiff != null && costData.dev" :class="{ 'danger': devDiff.increased }">
+                  比研发估{{ devDiff.nonnegative ? '高' : '低' }} {{ formatMoney(devDiff.amount) }}
                 </span>
               </div>
             </div>
@@ -1508,6 +1546,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 .small {
   font-size: 11.5px;
 }
+
+:deep(.sequence-col .cell) { white-space: nowrap; }
 
 :deep(.base-col) {
   background: var(--lm-accent-bg);

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><title>认证 Cookie 顺序回归</title></head>
+  <body>
+    <h1>认证 Cookie 顺序回归</h1>
+    <script type="module">
+      import { createPinia, setActivePinia } from 'pinia'
+      import { useUserStore } from '/src/stores/user.ts'
+      import { authApi } from '/src/api/auth.ts'
+      import { enableCookieSessionRefresh, http } from '/src/utils/request.ts'
+      import { getToken, sessionChanged, sessionIdentity, startSessionSync } from '/src/utils/token.ts'
+      setActivePinia(createPinia())
+      const user = useUserStore()
+      enableCookieSessionRefresh()
+      // 本组先证明 HTTP Set-Cookie 的真实效果；竞争中不依赖广播恰好先于响应到达。
+      const sync = new URLSearchParams(location.search).get('sync') === '1'
+      const stop = sync ? startSessionSync() : () => undefined
+      window.addEventListener('pagehide', stop, { once: true })
+      history.replaceState(null, '', '/login/s3-cookie-regression')
+      window.__cookies = {
+        ready: true,
+        async login(who) { await user.login(who, 'synthetic-test-input'); await user.fetchMe() },
+        logout: () => user.logout(),
+        password: () => authApi.changePassword({ oldPassword: 'synthetic-old-input', newPassword: 'synthetic-new-input' }),
+        read: () => http.get('/api/probe/needs-refresh', undefined, { silent: true }),
+        state: () => ({ stale: sessionChanged(), id: user.info?.id, hasAccess: Boolean(getToken()), isNext: getToken() === 'synthetic-next-access', identity: sessionIdentity(), secure: isSecureContext, locks: Boolean(navigator.locks?.request) }),
+        storedNext: () => JSON.parse(localStorage.getItem('lingmao-token') || '{}').token === 'synthetic-next-access',
+        async pending() { return navigator.locks ? (await navigator.locks.query()).pending?.some(lock => lock.name === 'lingmao:auth-cookie') : false },
+      }
+    </script>
+  </body>
+</html>

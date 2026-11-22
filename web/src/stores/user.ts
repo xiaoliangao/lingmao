@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { authApi } from '@/api/auth'
 import type { UserInfo } from '@/types/system'
-import { clearToken, getToken, setToken, setSessionSubject } from '@/utils/token'
+import { clearToken, getToken, setToken, setSessionSubject, sessionEpoch, sessionChanged } from '@/utils/token'
+import { ApiError } from '@/utils/request'
+import { withAuthSession } from '@/utils/authSession'
 import { setFieldPermissionCheck } from '@/utils/fieldAccess'
 
 /** 当前登录的人：token、基本信息、权限、菜单 */
@@ -19,24 +21,40 @@ export const useUserStore = defineStore('user', () => {
   const adminMenus = computed(() => (info.value?.menus ?? []).filter((m) => m.adminOnly))
 
   async function login(username: string, password: string) {
-    const newToken = await authApi.login(username, password)
-    setToken(newToken)
-    token.value = newToken
+    await withAuthSession(async (mode) => {
+      const newToken = await authApi.login(username, password, mode)
+      setToken(newToken)
+      token.value = newToken
+      info.value = null
+    })
   }
 
   async function fetchMe() {
-    info.value = await authApi.me()
-    setSessionSubject(info.value.id)
+    const epoch = sessionEpoch()
+    const next = await authApi.me()
+    if (sessionChanged() || sessionEpoch() !== epoch) throw new ApiError(-1, '登录身份已变化，请重新获取当前账号资料')
+    info.value = next
+    setSessionSubject(next.id)
   }
 
   async function logout() {
-    try {
-      await authApi.logout()
-    } finally {
-      clearToken()
-      token.value = ''
-      info.value = null
-    }
+    const epoch = sessionEpoch()
+    await withAuthSession(async (mode) => {
+      // 等锁期间别的页签可能已登录；旧退出不能拿新 Cookie 再发一次。
+      if (sessionChanged() || sessionEpoch() !== epoch) throw new ApiError(409, '登录身份已变化，本次退出已取消')
+      let superseded: boolean
+      try {
+        await authApi.logout(mode)
+      } finally {
+        superseded = sessionChanged() || sessionEpoch() !== epoch
+        if (!superseded) {
+          clearToken()
+          token.value = ''
+          info.value = null
+        }
+      }
+      if (superseded) throw new ApiError(-1, '登录身份已变化，本次退出不影响新账号')
+    })
   }
 
   /** 有没有某个权限标识：按钮显不显示就看它 */

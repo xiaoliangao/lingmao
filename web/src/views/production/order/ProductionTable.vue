@@ -48,7 +48,8 @@ import ThumbImage from '@/components/ThumbImage.vue'
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
-import { kittingApi } from '@/api/purchase'
+import { useOrderKitting } from '@/composables/useOrderKitting'
+import KittingFeedback from '@/components/doc/KittingFeedback.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
 import NodeDots from '@/components/doc/NodeDots.vue'
@@ -63,7 +64,7 @@ import {
   type ProductionRow,
   type ProductionStatus,
 } from '@/types/production'
-import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
+import { KITTING_STATUS } from '@/types/purchase'
 import { formatDate, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { useFieldAccess } from '@/composables/useFieldAccess'
 const { canSeeProductionPrice } = useFieldAccess()
@@ -79,7 +80,7 @@ const { canSeeProductionPrice } = useFieldAccess()
  *
  * - list：有勾选、金额、领料；board：没有这三列，多种类、异常两列
  * - 勾选、单号固定在左边，状态固定在右边；列多了横着滚
- * - 齐料由这里拿当前页的 orderId 另取（kittingApi.byOrders），只给已下单、生产中、已完成的行显示；没回来、取不到写"—"，不拖住主表
+ * - 齐料另取当前页的 orderId，只给已下单、生产中、已完成的行显示；加载和失败有独立提示、重试，不拖住主表
  * - 交期显示"预计交期 ?? 交期"，有预计交期时原交期划掉放下面；剩余天数的颜色按后端的 risk
  * - 回货：草稿、待审核、已作废写"—"
  * - 状态后面：有没关闭的异常一个琥珀色感叹号，上游变更了一个"变更"小图标
@@ -103,23 +104,11 @@ const issueTypes = useDict('issue_type')
 
 // ---------- 齐料（另取） ----------
 const KITTING_STATUSES: ProductionStatus[] = ['APPROVED', 'RUNNING', 'DONE']
-const kittingMap = ref<Record<string, OrderKitting>>({})
-let kittingSeq = 0
-watch(
-  () => props.rows,
-  async (rows) => {
-    const seq = ++kittingSeq
-    kittingMap.value = {}
-    const ids = [...new Set(rows.filter((r) => KITTING_STATUSES.includes(r.status)).map((r) => r.orderId))]
-    try {
-      const kits = await kittingApi.byOrders(ids)
-      if (seq === kittingSeq) kittingMap.value = Object.fromEntries(kits.map((k) => [k.orderId, k]))
-    } catch {
-      // 取不到：齐料列写"—"
-    }
-  },
-  { immediate: true },
-)
+const { byId: kittingMap, loading: kittingLoading, error: kittingError, load: readKitting } = useOrderKitting()
+function loadKitting() {
+  return readKitting(props.rows.filter((row) => KITTING_STATUSES.includes(row.status)).map((row) => row.orderId))
+}
+watch(() => props.rows, () => { void loadKitting() }, { immediate: true })
 const kittingOf = (row: ProductionRow) => (KITTING_STATUSES.includes(row.status) ? kittingMap.value[row.orderId] : undefined)
 
 const statusOf = (row: ProductionRow) => (row.status === 'RUNNING' && row.returnedQty > 0 ? PRODUCTION_PARTIAL : PRODUCTION_STATUS[row.status])
@@ -197,6 +186,7 @@ defineExpose({
     <el-table-column v-if="columns.show.kitting" label="齐料" width="140">
       <template #default="{ row }">
         <StatusTag v-if="kittingOf(row as ProductionRow)" :tone="KITTING_STATUS[kittingOf(row as ProductionRow)!.status].tone">{{ kittingOf(row as ProductionRow)!.label }}</StatusTag>
+        <KittingFeedback v-else-if="KITTING_STATUSES.includes((row as ProductionRow).status)" :loading="kittingLoading" :error="kittingError" @retry="loadKitting" />
         <span v-else class="dim">—</span>
       </template>
     </el-table-column>

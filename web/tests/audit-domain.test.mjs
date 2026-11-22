@@ -46,6 +46,7 @@ test('line amounts use four-place prices and HALF_UP cents', () => {
   assert.equal(lineAmountCents(1.005, 1), 101n)
   assert.equal(lineAmountCents(1.005, 3), 302n)
   assert.equal(lineAmountCents(12.3456, 2), 2469n)
+  assert.equal(lineAmountCents(1.00185, 100), 10019n)
   assert.equal(lineAmountCents(MAX_UNIT_PRICE, 1), 1000000000000n)
 })
 test('order capacity rejects total quantity, row amount and total amount separately', () => {
