@@ -151,6 +151,7 @@ body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); 
 .manual p { font-size: 14px; color: var(--ink-2); }
 .manual textarea { font: 13px/1.6 var(--font); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-height: 240px; resize: none; }
 .manual button { justify-self: end; font: inherit; font-size: 14px; padding: 7px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
+.manual button:focus-visible, .manual textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (max-width: 600px) {
   body { font-size: 15px; }
@@ -764,13 +765,15 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
     if (timer) { clearTimeout(timer); timer = null }
     if (canStore) try { localStorage.setItem(KEY, JSON.stringify(data)) } catch (e) { /* 存不了：这次照样能导出 */ }
   }
-  // 打字时攒 150ms 再存；点选项立刻存；切走、关页前再存一次
+  // 打字时攒 150ms 再存；点选项立刻存；切走、关页前把还没存的那一下存掉。
+  // 只存"还没存的"：同一个文件开了两个标签，关掉没动过的那个不能拿它的旧数据把另一个盖掉
   function save(now) {
     if (now) flush(); else { clearTimeout(timer); timer = setTimeout(flush, 150) }
     refresh()
   }
-  window.addEventListener('pagehide', flush)
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush() })
+  var flushPending = function () { if (timer) flush() }
+  window.addEventListener('pagehide', flushPending)
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushPending() })
 
   function el(tag, props) { var x = document.createElement(tag); for (var k in props) x[k] = props[k]; return x }
   var text = function (node) { return node ? node.textContent.replace(/\s+/g, ' ').trim() : '' }
@@ -802,6 +805,7 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
             }
           })
           input.addEventListener('keyup', function () { setTimeout(function () { cleared = false }, 0) })
+          input.addEventListener('blur', function () { cleared = false })
           input.addEventListener('click', function () {
             if (cleared) { cleared = false; input.checked = false; return }
             if (data.picks[key] === letter) { input.checked = false; delete data.picks[key]; save(true) }
@@ -969,14 +973,25 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
     toastTimer = setTimeout(function () { toastBox.textContent = '' }, 3200)
   }
   // 复制、下载都不行时：全文放进一个框，让人长按（或 Ctrl+A、Ctrl+C）复制
+  // 按 Esc、点外面、点「关闭」都关；开着时 Tab 只在框里转；关了焦点回到原来的按钮
   function manual(s) {
+    var old = document.querySelector('.manual')
+    if (old) old.remove()
+    var prev = document.activeElement
     var box = el('div', { className: 'manual' })
     box.setAttribute('role', 'dialog')
+    box.setAttribute('aria-modal', 'true')
     box.setAttribute('aria-label', '答案全文')
     var inner = el('div', {})
     var ta = el('textarea', { value: s, readOnly: true })
     var close = el('button', { type: 'button', textContent: '关闭' })
-    close.addEventListener('click', function () { box.remove() })
+    var shut = function () { box.remove(); if (prev && prev.focus) prev.focus({ preventScroll: true }) }
+    close.addEventListener('click', shut)
+    box.addEventListener('click', function (e) { if (e.target === box) shut() })
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); shut() }
+      else if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === ta ? close : ta).focus() }
+    })
     inner.append(el('p', { textContent: '没能自动复制。请长按下面的文字全选、复制，再粘贴到微信里发给我们。' }), ta, close)
     box.append(inner)
     document.body.append(box)
@@ -984,6 +999,7 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
   }
   // 先用同步的办法复制（还在这次点击里，Safari 也认）；不行再试新接口；都不行给全文框
   function copySync(s) {
+    var prev = document.activeElement
     var ta = el('textarea', { value: s, readOnly: true })
     ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.left = '0'; ta.style.opacity = '0'
     document.body.append(ta)
@@ -991,6 +1007,7 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
     var ok = false
     try { ok = document.execCommand('copy') } catch (e) { ok = false }
     ta.remove()
+    if (prev && prev.focus) prev.focus({ preventScroll: true })
     return ok
   }
   bar.addEventListener('click', function (e) {
