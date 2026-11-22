@@ -49,7 +49,11 @@ if [ "$answer" != 恢复 ]; then
 fi
 
 step "停应用和定时备份"
+# 智能助手也停：它的表在同一个库里，恢复以后要重新执行它自己的迁移（备份可能是装助手以前的）
 docker compose stop app backup
+if assistant_enabled; then
+  docker compose stop assistant
+fi
 
 step "把现在的库备份一份"
 if ! bash "$TARGET"/scripts/backup.sh pre-restore; then
@@ -58,6 +62,9 @@ if ! bash "$TARGET"/scripts/backup.sh pre-restore; then
   read -r answer || true
   if [ "$answer" != 继续 ]; then
     docker compose up -d app backup
+    if assistant_enabled; then
+      docker compose up -d assistant
+    fi
     die "取消了，库没动，应用已经重新启动"
   fi
 fi
@@ -75,9 +82,14 @@ if ! in_backup_container pg_restore --no-owner --exit-on-error --single-transact
 fi
 
 step "起应用"
+# 恢复出来的表都归 scm（pg_restore --no-owner）：智能助手的 schema 交还给它的账号；换了服务器、还没有这个账号的就建上
+ensure_assistant_db
 # Redis 里的登录状态、字典缓存还是恢复前的，清掉。Redis 不落盘，重启一下就清空了
 docker compose restart redis
 docker compose up -d app backup
+if assistant_enabled; then
+  docker compose up -d assistant
+fi
 version=$(env_get .env SCM_VERSION)
 if ! wait_for_version "$version" 180; then
   docker compose logs --tail 100 app

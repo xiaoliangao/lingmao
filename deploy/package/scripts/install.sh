@@ -4,7 +4,8 @@
 #   sudo ./scripts/install.sh              装到 /opt/scm
 #   sudo ./scripts/install.sh /data/scm    装到别的目录（写绝对路径）
 #
-# 做什么：检查 Docker 和服务器 → 把包里的文件复制到安装目录 → 生成 .env（密钥随机生成）→ 建目录 → 载入镜像 → 启动 → 等应用起来。
+# 做什么：检查 Docker 和服务器 → 把包里的文件复制到安装目录 → 生成 .env（密钥随机生成）→ 建目录 → 载入镜像 →
+# 先起数据库、建智能助手的库账号 → 启动全部 → 等应用起来。智能助手默认不起，要用见部署手册第 10 节。
 # 可以重复执行：.env、证书、数据、nginx/trusted-proxies.conf 已经有的都不动。已经装了别的版本时不往下走，升级用 upgrade.sh。
 set -euo pipefail
 
@@ -58,6 +59,9 @@ load_images
 require_images "$PKG_VERSION"
 
 step "启动"
+# 先起数据库，建好智能助手的库账号（不管开没开助手都建，以后要开只改 .env），再起其他服务
+docker compose up -d --wait postgres
+ensure_assistant_db
 docker compose up -d --remove-orphans
 info "  等应用起来。第一次启动要建表，最多等 3 分钟 ..."
 if ! wait_for_version "$PKG_VERSION" 180; then
@@ -66,6 +70,7 @@ if ! wait_for_version "$PKG_VERSION" 180; then
   die "3 分钟内应用没起来，上面是最近 100 行日志。部署手册第 9 节有常见问题；解决不了就把这些日志发给我们"
 fi
 check_through_nginx "$PKG_VERSION"
+check_assistant
 
 if [ "$(env_get .env SCM_WEB_MODE)" = https ]; then
   url="https://<域名>/"

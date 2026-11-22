@@ -10,7 +10,8 @@
 # 工作区除了 docs/ 是干净的（打的是 HEAD，没提交的改动不会进包，干净才不会搞混）。docs/ 不进包——包里的部署手册在
 # deploy/package/——所以那里没提交的文档不挡打包。
 #
-# 步骤：导出 HEAD → 备好导出 PDF 的字体 → mvn verify（跑测试）→ pnpm build → 起一次应用导出 openapi.json → 按服务器的 CPU 架构打镜像 →
+# 步骤：导出 HEAD → 备好导出 PDF 的字体 → mvn verify（跑测试）→ pnpm build → 起一次应用导出 openapi.json →
+# 智能助手：单测（拿这份 openapi.json 核对白名单）、连库测、编译、装生产依赖 → 按服务器的 CPU 架构打三个镜像 →
 # docker save → 连同 deploy/package/ 打成 dist/scm-<版本>[-full].tar.gz，附 sha256 校验值。
 # 这个脚本在 Mac 自带的 bash 3.2 上跑，不用 bash 4 才有的写法。
 set -euo pipefail
@@ -160,6 +161,27 @@ with open(path, 'w', encoding='utf-8') as f:
 PY
 echo "  导出了 $(wc -c < "$BUILD/openapi.json" | tr -d ' ') 字节"
 
+step "智能助手：单测、核对白名单、连库测、编译"
+# 单测带上这次导出的 openapi.json：tools.yaml 里每个工具都要对得上（只收 GET、返回 R、不像导出下载），对不上不打包。
+# 连库测连本机开发库容器里的 scm_assistant_test（setup-db.sh 没有就建，测试每次清空 assistant schema），和 mvn verify 的集成测试一样
+ASSISTANT_SRC=$BUILD/src/assistant
+if ! (cd "$ASSISTANT_SRC" && pnpm install --frozen-lockfile --silent && pnpm -s typecheck \
+  && ASSISTANT_OPENAPI="$BUILD/openapi.json" pnpm -s test && ./dev/setup-db.sh scm_assistant_test && pnpm -s test:db \
+  && pnpm -s build) > "$BUILD/assistant-build.log" 2>&1; then
+  tail -n 60 "$BUILD/assistant-build.log" >&2
+  die "智能助手的测试或编译没过，上面是最后 60 行"
+fi
+if grep -Eq '^# skipped [1-9]' "$BUILD/assistant-build.log"; then
+  die "智能助手有被跳过的测试（白名单没核对上？），见 $BUILD/assistant-build.log"
+fi
+# 镜像里只放运行要的：编译后的 js、生产依赖（pg、yaml，纯 JS，平铺不用符号链接）、迁移、白名单、这次的接口文档
+mkdir -p "$BUILD/ctx/assistant"
+cp -R "$ASSISTANT_SRC/dist" "$ASSISTANT_SRC/migrations" "$BUILD/ctx/assistant/"
+cp "$ASSISTANT_SRC/package.json" "$ASSISTANT_SRC/pnpm-lock.yaml" "$ASSISTANT_SRC/tools.yaml" "$BUILD/ctx/assistant/"
+cp "$BUILD/openapi.json" "$BUILD/ctx/assistant/openapi.json"
+(cd "$BUILD/ctx/assistant" && pnpm install --prod --frozen-lockfile --silent --ignore-scripts --config.node-linker=hoisted)
+echo "  好了：$(ls "$BUILD/ctx/assistant/node_modules" | tr '\n' ' ')"
+
 step "打镜像（linux/${ARCH}；和本机 CPU 不一样时 Docker 要模拟，慢一点）"
 mkdir -p "$BUILD/ctx/app" "$BUILD/ctx/web"
 cp "$JAR" "$BUILD/ctx/app/app.jar"
@@ -169,6 +191,8 @@ docker buildx build --platform "linux/$ARCH" --provenance=false --sbom=false --l
   -f "$BUILD/src/deploy/app.Dockerfile" -t "scm-app:$VERSION" "$BUILD/ctx/app"
 docker buildx build --platform "linux/$ARCH" --provenance=false --sbom=false --load \
   -f "$BUILD/src/deploy/web.Dockerfile" -t "scm-web:$VERSION" "$BUILD/ctx/web"
+docker buildx build --platform "linux/$ARCH" --provenance=false --sbom=false --load \
+  -f "$BUILD/src/deploy/assistant.Dockerfile" -t "scm-assistant:$VERSION" "$BUILD/ctx/assistant"
 
 step "组装安装包"
 PKG=$BUILD/pkg/$NAME
@@ -182,6 +206,7 @@ printf '%s\n' "$ARCH" > "$PKG/ARCH"
 chmod 755 "$PKG"/scripts/*.sh
 docker save --platform "linux/$ARCH" -o "$PKG/images/scm-app.tar" "scm-app:$VERSION"
 docker save --platform "linux/$ARCH" -o "$PKG/images/scm-web.tar" "scm-web:$VERSION"
+docker save --platform "linux/$ARCH" -o "$PKG/images/scm-assistant.tar" "scm-assistant:$VERSION"
 if [ "$FULL" = 1 ]; then
   for img in postgres:16 redis:7; do
     echo "  拉 ${img}（linux/${ARCH}）"
@@ -215,6 +240,6 @@ cat <<EOF
 
 发出去以后打个标签，以后好找这个版本的代码：
   git tag v$VERSION $COMMIT && git push origin v$VERSION
-本机还留着 scm-app:${VERSION}、scm-web:$VERSION 两个镜像（本机测安装、升级用），不要了就删：
-  docker image rm scm-app:$VERSION scm-web:$VERSION
+本机还留着 scm-app:${VERSION}、scm-web:${VERSION}、scm-assistant:$VERSION 三个镜像（本机测安装、升级用），不要了就删：
+  docker image rm scm-app:$VERSION scm-web:$VERSION scm-assistant:$VERSION
 EOF

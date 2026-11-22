@@ -172,6 +172,43 @@ services:
       timeout: 5s
       retries: 5
 
+  # 智能助手（可选，RFC 017）：默认不起。.env 里写 COMPOSE_PROFILES=assistant 才起，模型的地址和 Key 也在 .env（部署手册第 10 节）。
+  # 只能替用户查数据：拿浏览器换来的 30 分钟只读令牌调 app，写接口、导出下载在 app 那边就拦了。
+  # 自己的表在同一个库的 assistant schema，用单独的库账号 scm_assistant（读不到 app 的表），安装、升级、恢复脚本负责建它
+  assistant:
+    profiles: ["assistant"]
+    image: scm-assistant:${SCM_VERSION:?.env 里没有 SCM_VERSION}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      ASSISTANT_DATABASE_URL: postgres://scm_assistant@postgres:5432/scm
+      # 不写进连接串：密码里有特殊字符也不用转义。不写成必填（:?）：没开助手时 compose 照样要展开这一段，
+      # .env 里缺这一项会让所有 compose 命令都报错；缺了由安装、升级脚本说清楚（lib.sh 的 ensure_assistant_db）
+      PGPASSWORD: ${ASSISTANT_DB_PASSWORD:-}
+      ASSISTANT_APP_URL: http://app:8080
+      ASSISTANT_LLM_BASE_URL: ${ASSISTANT_LLM_BASE_URL:-}
+      ASSISTANT_LLM_API_KEY: ${ASSISTANT_LLM_API_KEY:-}
+      ASSISTANT_LLM_MODEL: ${ASSISTANT_LLM_MODEL:-}
+      ASSISTANT_LLM_MODE: ${ASSISTANT_LLM_MODE:-external}
+      ASSISTANT_LLM_STREAM_USAGE: ${ASSISTANT_LLM_STREAM_USAGE:-true}
+      ASSISTANT_USER_DAILY_REQUESTS: ${ASSISTANT_USER_DAILY_REQUESTS:-200}
+      ASSISTANT_DAILY_TOKENS: ${ASSISTANT_DAILY_TOKENS:-5000000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 25s              # 正在答的最多等 20 秒说完
+    networks:
+      - default                         # 连 postgres
+      - edge                            # Nginx 转 /assistant/ 过来；它也从这里调 app
+    mem_limit: 192m
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/assistant/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   # 每天定时备份数据库（scripts/backup-loop.sh），备份在 backups/ 下。复用 postgres 镜像：pg_dump 和数据库版本一致
   backup:
     image: postgres:16

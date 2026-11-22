@@ -89,6 +89,10 @@ EOF
 }
 
 step "重启应用（大约一分钟，这期间页面会提示系统正在升级）"
+# 智能助手的库账号：以前的版本没有，这里补上；有了就按 .env 的密码重设一遍。数据库不重建，只确认它起着
+if ! docker compose up -d --wait postgres || ! ensure_assistant_db; then
+  rollback_help "建智能助手的库账号出错了（上面是报错），应用还没有重启。请发给我们。"
+fi
 if ! docker compose up -d --remove-orphans; then
   rollback_help "启动新版本出错了，上面是报错，请发给我们。"
 fi
@@ -106,6 +110,7 @@ if ! wait_for_version "$NEW" 300; then
 日志里如果还在执行数据库迁移（数据多的时候会慢），再等等：cd $TARGET && sudo docker compose logs -f app"
 fi
 check_through_nginx "$NEW"
+check_assistant
 
 step "清理旧镜像（留最近 3 个版本，回滚用）"
 prune_old_images "$NEW"

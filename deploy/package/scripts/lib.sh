@@ -9,7 +9,9 @@
 
 # .env 是这些配置的唯一来源。docker compose 会优先用 shell 里的同名环境变量，先清掉，免得被 root 的环境悄悄覆盖
 unset SCM_VERSION SCM_HTTP_PORT SCM_HTTPS_PORT SCM_WEB_MODE POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET \
-      FILE_SIGN_KEY INIT_ADMIN_PASSWORD BACKUP_TIME BACKUP_KEEP_DAYS COMPOSE_FILE COMPOSE_PROJECT_NAME
+      FILE_SIGN_KEY INIT_ADMIN_PASSWORD BACKUP_TIME BACKUP_KEEP_DAYS COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES \
+      ASSISTANT_DB_PASSWORD ASSISTANT_LLM_BASE_URL ASSISTANT_LLM_API_KEY ASSISTANT_LLM_MODEL ASSISTANT_LLM_MODE \
+      ASSISTANT_LLM_STREAM_USAGE ASSISTANT_USER_DAILY_REQUESTS ASSISTANT_DAILY_TOKENS
 
 # 脚本在服务器上写的时间（backup.log、屏幕上显示的备份文件时间）按北京时间，和 backup 容器里写的一致。
 # 不设的话按服务器的时区：云服务器常常是 UTC，backup.log 里两种时间混在一起（2c 在 Mac 上测出来的）
@@ -133,7 +135,7 @@ random_password() {
 initial_value() {
   case $1 in
     SCM_VERSION) printf '%s' "$PKG_VERSION" ;;
-    POSTGRES_PASSWORD | REDIS_PASSWORD) random_hex 16 ;;
+    POSTGRES_PASSWORD | REDIS_PASSWORD | ASSISTANT_DB_PASSWORD) random_hex 16 ;;
     JWT_SECRET) random_base64 48 ;;                  # 应用要求 Base64、解码后至少 32 字节
     FILE_SIGN_KEY) random_hex 32 ;;                  # 只有字母和数字：原样写进 Nginx 配置，不用转义
     INIT_ADMIN_PASSWORD) random_password 16 ;;
@@ -238,6 +240,72 @@ check_env() {
     [01][0-9]:[0-5][0-9] | 2[0-3]:[0-5][0-9]) ;;
     *) die "BACKUP_TIME 要写成 02:30 这样的 24 小时制时间，.env 里现在是 \"${backup_time}\"" ;;
   esac
+  local profiles assistant_pw
+  profiles=$(env_get "$TARGET"/.env COMPOSE_PROFILES)
+  case $profiles in
+    '' | assistant) ;;
+    *) die "COMPOSE_PROFILES 只能空着（不起助手）或者写 assistant，.env 里现在是 \"${profiles}\"。见部署手册第 10 节" ;;
+  esac
+  # 原样写进数据库的 ALTER ROLE，只收字母、数字、- 和 _（安装脚本生成的是 32 位十六进制）
+  assistant_pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
+  if [ -n "$assistant_pw" ] && ! printf '%s' "$assistant_pw" | grep -Eq '^[A-Za-z0-9_-]{16,}$'; then
+    die "ASSISTANT_DB_PASSWORD 只能用字母、数字、- 和 _，至少 16 位"
+  fi
+}
+
+# 助手开着没有（.env 里 COMPOSE_PROFILES=assistant）
+assistant_enabled() {
+  [ "$(env_get "$TARGET"/.env COMPOSE_PROFILES)" = assistant ]
+}
+
+# 智能助手的库账号和 schema（RFC 017 §3.4）：账号 scm_assistant 只拥有 assistant 这个 schema，app 的表没给它授权。
+# 安装、升级、恢复都执行一遍，重跑不出错：没有账号就建；密码按 .env 的 ASSISTANT_DB_PASSWORD 重设（.env 改过也跟上）；
+# schema 和里面的表都归这个账号——pg_restore --no-owner 恢复出来的归 scm，不改回来助手连上了也动不了自己的表。
+# 不管开没开助手都建好：以后要开只改 .env。要求 postgres 已经起来。
+# 密码从标准输入交给 psql，不出现在命令行上（ps 看得到命令行），数据库日志也不记语句（compose.yml 里 log_statement=none）
+ensure_assistant_db() {
+  local pw
+  pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
+  if [ -z "$pw" ]; then
+    die ".env 里没有 ASSISTANT_DB_PASSWORD（升级脚本会自动补上，手动改过 .env 的话照 env.example 补一行）"
+  fi
+  {
+    printf '%s\n' "\\set pw '$pw'"
+    cat <<'SQL'
+SELECT 'CREATE ROLE scm_assistant LOGIN' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'scm_assistant') \gexec
+SELECT format('ALTER ROLE scm_assistant LOGIN PASSWORD %L', :'pw') \gexec
+ALTER ROLE scm_assistant SET search_path = assistant;
+CREATE SCHEMA IF NOT EXISTS assistant AUTHORIZATION scm_assistant;
+ALTER SCHEMA assistant OWNER TO scm_assistant;
+SELECT format('ALTER TABLE assistant.%I OWNER TO scm_assistant', tablename) FROM pg_tables
+ WHERE schemaname = 'assistant' AND tableowner <> 'scm_assistant' \gexec
+SQL
+  } | docker compose exec -T postgres psql -U scm -d scm -v ON_ERROR_STOP=1 -q > /dev/null
+}
+
+# 开着助手时从 Nginx 走一遍 /assistant/health。只警告：应用已经好了，助手的问题单独查（最多等 60 秒，它要先执行自己的迁移）
+check_assistant() {
+  local waited=0 url=http://127.0.0.1/assistant/health got=''
+  if ! assistant_enabled; then
+    return 0
+  fi
+  if [ "$(env_get "$TARGET"/.env SCM_WEB_MODE)" = https ]; then
+    url=https://127.0.0.1/assistant/health
+  fi
+  while [ "$waited" -lt 60 ]; do
+    got=$(docker compose exec -T web curl -fsSk --max-time 5 "$url" 2>/dev/null < /dev/null || true)
+    case $got in
+      *'"status":"UP"'*)
+        case $got in
+          *'"model":"none"'*) warn "智能助手起来了，但还没配模型（.env 里的 ASSISTANT_LLM_*），问话会回\"还没有配置模型\"" ;;
+          *) info "  智能助手也正常" ;;
+        esac
+        return 0 ;;
+    esac
+    sleep 5
+    waited=$((waited + 5))
+  done
+  warn "开着智能助手，但它 1 分钟内没起来。看一下：docker compose logs --tail 50 assistant"
 }
 
 # 这台机器上已经有一套装在别的目录、compose 项目名一样（默认都是 scm）时停下来：接着 up 的话，
@@ -301,7 +369,7 @@ load_images() {
 
 require_images() {
   local img missing=''
-  for img in "scm-app:$1" "scm-web:$1" postgres:16 redis:7; do
+  for img in "scm-app:$1" "scm-web:$1" "scm-assistant:$1" postgres:16 redis:7; do
     if ! docker image inspect "$img" >/dev/null 2>&1; then
       missing="$missing $img"
     fi
@@ -343,7 +411,7 @@ check_through_nginx() {
 # 每个应用镜像只留最近 3 个版本（回滚要用上一个），再加上正在用的
 prune_old_images() {
   local repo tag
-  for repo in scm-app scm-web; do
+  for repo in scm-app scm-web scm-assistant; do
     while read -r tag; do
       if [ -n "$tag" ] && [ "$tag" != "$1" ]; then
         docker image rm "$repo:$tag" >/dev/null 2>&1 || true
