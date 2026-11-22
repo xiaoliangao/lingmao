@@ -410,7 +410,7 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="dialogTitle" width="920px" :close-on-click-modal="false" :before-close="guard.beforeClose">
+  <el-dialog v-model="visible" :title="dialogTitle" width="min(1120px, 94vw)" :close-on-click-modal="false" :before-close="guard.beforeClose">
     <el-alert v-if="loadError" type="error" :closable="false" :title="loadError"><el-button @click="init">重试加载</el-button></el-alert>
     <el-alert v-if="uncertain" type="warning" :closable="false" title="登记结果尚未确认。重试使用原动作和原内容，关窗重开仍保留。">
       <el-button :loading="submitting" @click="submit()">重试原登记</el-button><el-button link @click="restartAction">重新登记</el-button>
@@ -447,12 +447,13 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
         </el-form-item>
       </el-form>
 
-      <el-table :data="rows" row-key="materialSkuId" :empty-text="`这张单上没有要${verb}的物料`">
-        <el-table-column label="物料" min-width="190">
+      <!-- 列加起来比对话框宽时横着滚，滚动条一直在（走查 T-33e438：原来右边的备注被切掉） -->
+      <el-table :data="rows" row-key="materialSkuId" scrollbar-always-on :empty-text="`这张单上没有要${verb}的物料`">
+        <el-table-column label="物料" min-width="190" fixed="left">
           <template #default="{ row }">
             <div class="sku-cell">
               <span class="code">{{ row.skuCode }}</span>
-              <span class="sub">{{ row.materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template><template v-if="row.spec"> {{ row.spec }}</template></span>
+              <span class="sub">{{ row.materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template><template v-if="row.spec"> · {{ row.spec }}</template></span>
             </div>
           </template>
         </el-table-column>

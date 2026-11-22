@@ -41,6 +41,12 @@ const LABELS = computed<Record<string, string>>(() => ({
   scheduledQty: '已排产',
 }))
 
+/** 数字列（右对齐、定宽）和几列短字段的宽度：差多少、单位要一眼看到（走查 T-33e438：原来"差""单位"被挤出去） */
+const NUM_KEYS = new Set(['stockQty', 'needQty', 'shortQty', 'thisQty', 'maxQty', 'orderQty', 'scheduledQty'])
+const FIXED_WIDTH: Record<string, number> = { row: 64, seq: 64, seqs: 72, unit: 64, sizeCode: 72, colorName: 90, skuCode: 140, sku: 140 }
+const width = (key: string) => FIXED_WIDTH[key] ?? (NUM_KEYS.has(key) ? 96 : undefined)
+const minWidth = (key: string) => (key === 'message' ? 240 : key === 'materialName' || key === 'warehouseName' ? 130 : 100)
+
 /** 不是对象的（只有一句话）当成 message */
 const rows = computed<Item[]>(() =>
   props.items.map((item) => (item !== null && typeof item === 'object' ? (item as Item) : { message: item })),
@@ -57,16 +63,23 @@ function text(key: string, value: unknown) {
 </script>
 
 <template>
-  <el-table :data="rows" max-height="360" empty-text="这个错误没有带明细">
+  <el-table :data="rows" max-height="360" scrollbar-always-on empty-text="这个错误没有带明细">
     <el-table-column
       v-for="key in columns"
       :key="key"
       :label="LABELS[key] ?? key"
-      :width="key === 'row' ? 64 : undefined"
-      :min-width="key === 'message' ? 240 : 100"
-      :class-name="key === 'row' ? 'num' : undefined"
+      :width="width(key)"
+      :min-width="minWidth(key)"
+      :class-name="key === 'row' || key === 'seq' || key === 'seqs' || NUM_KEYS.has(key) ? 'num' : undefined"
+      :align="NUM_KEYS.has(key) ? 'right' : undefined"
     >
-      <template #default="{ row }">{{ text(key, (row as Item)[key]) }}</template>
+      <template #default="{ row }"><strong v-if="key === 'shortQty'" class="short">{{ text(key, (row as Item)[key]) }}</strong><template v-else>{{ text(key, (row as Item)[key]) }}</template></template>
     </el-table-column>
   </el-table>
 </template>
+
+<style scoped>
+.short {
+  color: var(--lm-danger-text);
+}
+</style>

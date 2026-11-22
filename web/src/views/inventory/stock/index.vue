@@ -257,7 +257,7 @@ const logTable = useSeekTable({
 const logVirtualColumns = computed<VirtualColumn[]>(() => [
   { key: 'bizDate', label: '日期', width: 116, fixed: 'left' as const },
   { key: 'docNo', label: '单号', width: 164, fixed: 'left' as const },
-  ...(logCols.show.type ? [{ key: 'changeType', label: '类型', width: 100 }] : []),
+  ...(logCols.show.type ? [{ key: 'changeType', label: '类型', width: 132 }] : []),
   ...(logCols.show.warehouse ? [{ key: 'warehouseName', label: '仓库', width: 130 }] : []),
   ...(logCols.show.material ? [{ key: 'material', label: '物料', width: 240 }] : []),
   ...(logCols.show.changeQty ? [{ key: 'changeQty', label: '变动数量', width: 130 }] : []),
@@ -616,11 +616,12 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
       <VirtualDataTable v-loading="logTable.loading.value" :rows="logTable.list.value" :columns="logVirtualColumns" empty-text="没有符合条件的库存变动">
         <template #bizDate="{ row }">{{ formatDate(row.bizDate) }}</template>
         <template #docNo="{ row }"><button type="button" class="link-btn code" @click="goLogDoc(row)">{{ row.docNo }}</button></template>
-        <template #changeType="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[row.changeType] }}</template>
+        <!-- 反审核冲销的标在类型上：没有看价权限的（仓管）也看得到，原来只在单价 / 金额列里（走查 T-33e438） -->
+        <template #changeType="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[row.changeType] }}<span v-if="row.reversalOfLogId" class="dim"> · 冲销</span></template>
         <template #material="{ row }"><span class="code">{{ row.skuCode }}</span> {{ row.materialName }}</template>
         <template #changeQty="{ row }"><span :class="row.changeQty >= 0 ? 'gain' : 'loss'">{{ row.changeQty >= 0 ? '+' : '' }}{{ formatQty(row.changeQty) }} {{ row.stockUnit == null ? '单位未知' : units.labelOf(row.stockUnit) }}</span></template>
         <template #balanceQty="{ row }">{{ formatQty(row.balanceQty) }}</template>
-        <template #valuation="{ row }"><span v-if="row.valuationStatus === 'UNKNOWN'" class="dim">估值未知</span><span v-else>{{ row.unitPrice == null ? '—' : formatPrice(row.unitPrice) }} / {{ row.amount == null ? '—' : formatMoney(row.amount) }} {{ row.currency || '' }}</span><small v-if="row.reversalOfLogId"> · 冲销 #{{ row.reversalOfLogId }}</small></template>
+        <template #valuation="{ row }"><span v-if="row.valuationStatus === 'UNKNOWN'" class="dim">估值未知</span><span v-else>{{ row.unitPrice == null ? '—' : formatPrice(row.unitPrice) }} / {{ row.amount == null ? '—' : formatMoney(row.amount) }} {{ row.currency || '' }}</span></template>
         <template #createTime="{ row }">{{ formatDateTime(row.createTime) }}</template>
       </VirtualDataTable>
       <div class="pagination seek-pagination">
@@ -633,13 +634,14 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
     <StockLogExportDialog v-if="user.hasPerm('inventory:stock:export')" ref="exportDialog" />
 
     <!-- 单格库存流水浮窗 -->
-    <el-dialog v-model="cellLogVisible" :title="cellLogTitle" width="860px">
-      <el-table v-loading="cellLogLoading" :data="cellLogRows" row-key="id" max-height="420" empty-text="这个仓里这种料还没有进出">
-        <el-table-column label="日期" width="100" class-name="num">
+    <!-- 日期、操作人放得下（走查 T-33e438：原来日期截成"2026-1…"、操作人和时间挤一格） -->
+    <el-dialog v-model="cellLogVisible" :title="cellLogTitle" width="min(1040px, 94vw)">
+      <el-table v-loading="cellLogLoading" :data="cellLogRows" row-key="id" max-height="420" scrollbar-always-on empty-text="这个仓里这种料还没有进出">
+        <el-table-column label="日期" width="116" class-name="num">
           <template #default="{ row }">{{ formatDate(row.bizDate) }}</template>
         </el-table-column>
-        <el-table-column label="类型" width="96">
-          <template #default="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[(row as StockLogRow).changeType] }}</template>
+        <el-table-column label="类型" width="132">
+          <template #default="{ row }">{{ STOCK_CHANGE_TYPE_LABEL[(row as StockLogRow).changeType] }}<span v-if="row.reversalOfLogId" class="dim"> · 冲销</span></template>
         </el-table-column>
         <el-table-column label="单号" width="150">
           <template #default="{ row }">
@@ -659,8 +661,11 @@ watch(cellLogVisible, (on) => { if (!on) cellRequest.cancel() })
         <el-table-column label="缸号" min-width="110">
           <template #default="{ row }">{{ row.dyeLot || '—' }}</template>
         </el-table-column>
-        <el-table-column label="操作人" min-width="175" class-name="num">
-          <template #default="{ row }">{{ row.operatorName ?? '' }} {{ formatDateTime(row.createTime) }}</template>
+        <el-table-column label="操作人" width="120">
+          <template #default="{ row }">{{ row.operatorName ?? '—' }}</template>
+        </el-table-column>
+        <el-table-column label="记账时间" width="184" class-name="num">
+          <template #default="{ row }">{{ formatDateTime(row.createTime) }}</template>
         </el-table-column>
       </el-table>
     </el-dialog>

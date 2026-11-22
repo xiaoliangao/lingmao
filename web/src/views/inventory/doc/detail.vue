@@ -109,7 +109,9 @@ const NOTES: Partial<Record<DocAction, string>> = {
 async function act(action: Extract<DocAction, 'audit' | 'unaudit' | 'void'>) {
   const d = detail.value
   if (!d) return
-  const ok = await runDocAction(action, d.no, d.version, (a, body, o) => invDocApi.act(id, a, body, o), { note: NOTES[action], reload: refresh })
+  // 反审核：出入库单没有"提交"，只说自己的那句，不叠"回到草稿，改完要重新提交审核"（走查 T-33e438）
+  const own = action === 'unaudit' ? { confirmText: NOTES.unaudit } : { note: NOTES[action] }
+  const ok = await runDocAction(action, d.no, d.version, (a, body, o) => invDocApi.act(id, a, body, o), { ...own, reload: refresh })
   if (ok) await refresh()
 }
 
@@ -207,6 +209,12 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
             <template #default="{ row }">{{ row.remark || '—' }}</template>
           </el-table-column>
         </el-table>
+
+        <!-- 操作记录放正文：侧栏只有 300px，五列的表只看得到时间、操作人（走查 T-33e438） -->
+        <section class="body-logs">
+          <h3>操作记录</h3>
+          <DocLogList ref="logRef" :load="loadLogs" :actions="INV_DOC_LOG_ACTION" :statuses="LOG_STATUSES" />
+        </section>
       </div>
 
       <aside class="doc-aside">
@@ -263,13 +271,6 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
             <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="!detail?.filesEditable" />
           </div>
         </section>
-
-        <section class="panel">
-          <div class="panel-head">操作记录</div>
-          <div class="panel-body">
-            <DocLogList ref="logRef" :load="loadLogs" :actions="INV_DOC_LOG_ACTION" :statuses="LOG_STATUSES" />
-          </div>
-        </section>
       </aside>
     </div>
 
@@ -293,6 +294,16 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
 
 .body {
   min-width: 0;
+}
+
+.body-logs {
+  margin-top: 24px;
+}
+
+.body-logs h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .sub {

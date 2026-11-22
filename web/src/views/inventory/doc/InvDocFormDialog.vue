@@ -7,7 +7,7 @@ import { invDocApi as invDocApiBase, stockApi } from '@/api/inventory'
 import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
-import { todayStr } from '@/components/doc/docUtils'
+import { reloadOnConflict, todayStr } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useUserStore } from '@/stores/user'
@@ -304,6 +304,9 @@ async function save() {
       visible.value = false
       emit('saved', created.id)
     }
+  } catch (e) {
+    // 别人先存了（1002）：问载不载最新，载就关掉对话框、详情重取（走查 T-33e438：原来困在旧版本里，再存还是 1002）
+    if (!reloadOnConflict(e, () => { guard.markSaved(); visible.value = false; if (props.editingDoc) emit('saved', props.editingDoc.id) })) throw e
   } finally {
     saving.value = false
   }
@@ -348,10 +351,14 @@ async function save() {
       <el-form-item v-if="meta.reasonDict" label="原因" required>
         <DictSelect v-model="head.reason" :type="meta.reasonDict" />
       </el-form-item>
-      <el-form-item v-else label="原因">
+      <el-form-item v-else-if="activeType !== 'PURCHASE_IN'" label="原因">
         <el-input v-model="head.reason" maxlength="100" />
       </el-form-item>
 
+      <!-- 采购入库的送货单号（以后对账按它认）：批量入库建的草稿在这里补、改（走查 T-33e438） -->
+      <el-form-item v-if="activeType === 'PURCHASE_IN'" label="送货单号">
+        <el-input v-model="head.supplierDeliveryNo" maxlength="64" />
+      </el-form-item>
       <el-form-item label="物流单号">
         <el-input v-model="head.logisticsNo" maxlength="60" />
       </el-form-item>

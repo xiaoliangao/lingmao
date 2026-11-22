@@ -387,7 +387,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
                 <span v-else class="dim">{{ row.remark || '—' }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="editable" label="" width="68" align="right" :show-overflow-tooltip="false">
+            <el-table-column v-if="editable" label="" width="84" align="right" :show-overflow-tooltip="false">
               <template #default="{ row }">
                 <el-tooltip v-if="(row as CountItem).posted" content="这一行过过账，不能删" placement="top">
                   <span class="dim small">不能删</span>
@@ -396,6 +396,12 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
               </template>
             </el-table-column>
         </el-table>
+
+        <!-- 操作记录放正文：侧栏只有 300px，五列的表只看得到时间、操作人（走查 T-33e438） -->
+        <section class="body-logs">
+          <h3>操作记录</h3>
+          <DocLogList ref="logRef" :load="loadLogs" :actions="COUNT_LOG_ACTION" :statuses="LOG_STATUSES" />
+        </section>
       </div>
 
       <aside class="doc-aside">
@@ -403,6 +409,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
           <div class="panel-head">盘点单信息</div>
           <div class="panel-body">
             <dl class="doc-props">
+              <dt>主体</dt>
+              <dd>{{ detail.companyName }}</dd>
               <dt>仓库</dt>
               <dd>{{ detail.warehouseName }}</dd>
               <dt>用途</dt>
@@ -413,7 +421,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
               <dd class="num">{{ formatDateTime(detail.bookTime) }}</dd>
               <dt>盘点日期</dt>
               <dd>
-                <el-date-picker v-if="editable" v-model="draftHead.countDate" size="small" type="date" value-format="YYYY-MM-DD" :clearable="false" />
+                <el-date-picker v-if="editable" v-model="draftHead.countDate" size="small" type="date" value-format="YYYY-MM-DD" :clearable="false" style="width: 100%" />
                 <span v-else class="num">{{ formatDate(detail.countDate) }}</span>
               </dd>
               <dt>盘点人</dt>
@@ -426,6 +434,12 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
                 <el-input v-if="editable" v-model="draftHead.remark" size="small" maxlength="160" />
                 <span v-else>{{ detail.remark || '—' }}</span>
               </dd>
+              <dt>制单</dt>
+              <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
+              <template v-if="detail.auditTime">
+                <dt>审核</dt>
+                <dd>{{ detail.auditByName ?? '—' }} · {{ formatDateTime(detail.auditTime) }}</dd>
+              </template>
             </dl>
           </div>
         </section>
@@ -434,13 +448,6 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
           <div class="panel-head">附件</div>
           <div class="panel-body">
             <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="!detail?.filesEditable" />
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">操作记录</div>
-          <div class="panel-body">
-            <DocLogList ref="logRef" :load="loadLogs" :actions="COUNT_LOG_ACTION" :statuses="LOG_STATUSES" />
           </div>
         </section>
       </aside>
@@ -460,6 +467,15 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
 </template>
 
 <style scoped>
+.body-logs {
+  margin-top: 24px;
+}
+
+.body-logs h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
 .detail {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 310px;

@@ -501,11 +501,13 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
             <el-table-column label="净需求" width="84" class-name="num" align="right">
               <template #default="{ row }">{{ formatQty(row.netQty) }}</template>
             </el-table-column>
-            <el-table-column label="建议采购" width="124" class-name="num" align="right">
+            <el-table-column label="建议采购" width="140" class-name="num" align="right">
               <template #default="{ row }">
+                <!-- 输入框定宽，后面的单位放得下（走查 T-33e438：原来输入框右边被切） -->
                 <el-input-number
                   v-if="isDraft"
                   v-model="row.suggestQty"
+                  class="suggest-input"
                   size="small"
                   :min="row.convertedQty"
                   :precision="3"
@@ -677,7 +679,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
   align-items: center;
 }
 
-.transit-edit .el-input-number {
+.transit-edit .el-input-number,
+.suggest-input {
   width: 88px;
 }
 

@@ -17,7 +17,7 @@ const title = computed(() => TITLES[state.code] ?? '操作没有完成')
 </script>
 
 <template>
-  <el-dialog v-model="state.visible" :title="title" width="min(640px, 94vw)">
+  <el-dialog v-model="state.visible" :title="title" width="min(920px, 94vw)">
     <p class="message">{{ state.message }}</p>
     <BizErrorTable :items="state.items" />
     <template #footer>

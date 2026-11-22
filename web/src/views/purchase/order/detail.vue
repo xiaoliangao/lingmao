@@ -17,6 +17,7 @@ import PrintSheet from '@/components/doc/PrintSheet.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
 import SourceInvDocDialog from '@/components/doc/SourceInvDocDialog.vue'
 import { isItem, runDocAction } from '@/components/doc/docUtils'
+import { useUserStore } from '@/stores/user'
 import { useDict } from '@/composables/useDict'
 import { useTabsStore } from '@/stores/tabs'
 import type { DocAction } from '@/types/biz'
@@ -102,6 +103,7 @@ const priceDiffers = (it: PurchaseItem) => canSeeCost.value && it.price != null 
 const diffCount = computed(() => detail.value?.items.filter(priceDiffers).length ?? 0)
 const lineClass = ({ row }: { row: PurchaseItem }) => (detail.value?.status === 'PENDING' && priceDiffers(row) ? 'price-diff' : '')
 /** 到货进度：草稿、待审核、作废没有 */
+const canEditFiles = useUserStore().hasPerm('purchase:order:edit')
 const showProgress = computed(() => !!detail.value && !['DRAFT', 'PENDING', 'VOIDED'].includes(detail.value.status))
 
 async function act(action: DocAction) {
@@ -202,9 +204,10 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
 
         <el-tabs v-model="tab">
           <el-tab-pane :label="`明细 ${detail.items.length}`" name="items">
-            <el-table :data="detail.items" row-key="id" :row-class-name="lineClass">
-              <el-table-column label="#" prop="seq" width="56" class-name="num" />
-              <el-table-column label="物料" min-width="200">
+            <!-- 列多了（出了"冲抵"列）横着滚：滚动条一直在、物料固定在左边，不再看着像右边的"未入库"被切掉（走查 T-33e438） -->
+            <el-table :data="detail.items" row-key="id" :row-class-name="lineClass" scrollbar-always-on>
+              <el-table-column label="#" prop="seq" width="56" class-name="num" fixed="left" />
+              <el-table-column label="物料" min-width="200" fixed="left">
                 <template #default="{ row }">
                   <span class="code">{{ row.skuCode }}</span>
                   <div class="dim small">{{ row.materialName }} {{ colorSpec(row as PurchaseItem) }}</div>
@@ -213,7 +216,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="来源" min-width="210">
+              <el-table-column label="来源" min-width="170">
                 <template #default="{ row }">
                   <router-link v-if="row.calcId" :to="`/mrp/${row.calcId}`" class="code">{{ row.calcNo }}</router-link>
                   <div v-if="sourceText(row as PurchaseItem)" class="dim small code">{{ sourceText(row as PurchaseItem) }}</div>
@@ -363,7 +366,8 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
         <section class="panel">
           <div class="panel-head">附件</div>
           <div class="panel-body">
-            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'VOIDED'" />
+            <!-- 换附件要 purchase:order:edit（后端兜底 403）：仓管、财务这类只能看的不出"上传附件"（走查 T-33e438） -->
+            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'VOIDED' || !canEditFiles" />
           </div>
         </section>
       </aside>
