@@ -102,6 +102,11 @@ env_get() {
   printf '%s' "$value"
 }
 
+# env_has <文件> <项>：有没有这一项（值空着也算有）
+env_has() {
+  grep -qE "^[[:space:]]*(export[[:space:]]+)?$2=" "$1" 2>/dev/null
+}
+
 # env_set <文件> <项> <值>：改某一项，没有就加在末尾。先写临时文件再改名：中途出错不会留下半个 .env
 env_set() {
   local tmp
@@ -240,15 +245,15 @@ check_env() {
     [01][0-9]:[0-5][0-9] | 2[0-3]:[0-5][0-9]) ;;
     *) die "BACKUP_TIME 要写成 02:30 这样的 24 小时制时间，.env 里现在是 \"${backup_time}\"" ;;
   esac
-  local profiles assistant_pw
+  local profiles
   profiles=$(env_get "$TARGET"/.env COMPOSE_PROFILES)
   case $profiles in
     '' | assistant) ;;
     *) die "COMPOSE_PROFILES 只能空着（不起助手）或者写 assistant，.env 里现在是 \"${profiles}\"。见部署手册第 10 节" ;;
   esac
-  # 空着的不管：升级前检查时旧的 .env 还没有这一项，升级脚本随后补上
-  assistant_pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
-  if [ -n "$assistant_pw" ]; then
+  # 没有这一项的不管：升级前检查时旧的 .env 还没有，升级脚本随后补上。有这一项、值却空着的要报：
+  # 升级脚本不会替它补（merge_env 只补没有的项），放过去就到建库账号那一步才停，那时文件已经换成新版本的了
+  if env_has "$TARGET"/.env ASSISTANT_DB_PASSWORD; then
     check_assistant_password
   fi
 }
@@ -256,13 +261,25 @@ check_env() {
 # 助手库账号的密码：要有，只能是字母、数字、- 和 _，至少 16 位（安装脚本生成的是 32 位十六进制）。
 # 它原样写进数据库的 ALTER ROLE 语句，所以字符要管住。恢复脚本在动库之前就查：恢复到一半才发现不对，应用就起不来了
 check_assistant_password() {
+  local problem
+  problem=$(assistant_password_problem)
+  if [ -n "$problem" ]; then
+    die "$problem"
+  fi
+}
+
+# 密码有什么不对，输出一句话；没问题输出空
+assistant_password_problem() {
   local pw re='^[A-Za-z0-9_-]{16,}$'
+  if ! env_has "$TARGET"/.env ASSISTANT_DB_PASSWORD; then
+    printf '%s' ".env 里没有 ASSISTANT_DB_PASSWORD（升级脚本会自动补上；手动改过 .env 的话，照 env.example 补一行，值用 32 位随机的字母数字，比如 openssl rand -hex 16 的输出）"
+    return 0
+  fi
   pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
   if [ -z "$pw" ]; then
-    die ".env 里没有 ASSISTANT_DB_PASSWORD（升级脚本会自动补上；手动改过 .env 的话，照 env.example 补一行，值用 32 位随机的字母数字）"
-  fi
-  if ! [[ $pw =~ $re ]]; then
-    die "ASSISTANT_DB_PASSWORD 只能用字母、数字、- 和 _，至少 16 位"
+    printf '%s' ".env 里 ASSISTANT_DB_PASSWORD 空着：填 32 位随机的字母数字（比如 openssl rand -hex 16 的输出），不要空着"
+  elif ! [[ $pw =~ $re ]]; then
+    printf '%s' "ASSISTANT_DB_PASSWORD 只能用字母、数字、- 和 _，至少 16 位"
   fi
 }
 
@@ -273,25 +290,73 @@ assistant_enabled() {
 
 # 智能助手的库账号和 schema（RFC 017 §3.4）：账号 scm_assistant 只拥有 assistant 这个 schema，app 的表没给它授权。
 # 安装、升级、恢复都执行一遍，重跑不出错：没有账号就建；密码按 .env 的 ASSISTANT_DB_PASSWORD 重设（.env 改过也跟上）；
-# schema 和里面的表都归这个账号——pg_restore --no-owner 恢复出来的归 scm，不改回来助手连上了也动不了自己的表。
+# schema 和里面的东西都归这个账号——pg_restore --no-owner 恢复出来的归 scm，不改回来助手连上了也动不了自己的表。
+# 不光是表：视图、单独建的序列、函数、类型以后的迁移加了也一样交给它（跟着表的 identity 序列随表走，不用单独交）。
 # 不管开没开助手都建好：以后要开只改 .env。要求 postgres 已经起来。
-# 密码从标准输入交给 psql，不出现在命令行上（ps 看得到命令行），数据库日志也不记语句（compose.yml 里 log_statement=none）
+# 出错时返回 1、不直接退出：升级脚本要接着告诉人怎么回到旧版本
 ensure_assistant_db() {
-  local pw
-  check_assistant_password
-  pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
-  {
-    printf '%s\n' "\\set pw '$pw'"
-    cat <<'SQL'
+  ensure_assistant_role || return 1
+  assistant_psql <<'SQL'
+CREATE SCHEMA IF NOT EXISTS assistant AUTHORIZATION scm_assistant;
+ALTER SCHEMA assistant OWNER TO scm_assistant;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT c.oid::regclass AS name,
+                  CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'S' THEN 'SEQUENCE'
+                                 WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END AS kind
+             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'assistant' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+              AND c.relowner <> 'scm_assistant'::regrole
+              AND NOT (c.relkind = 'S' AND EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_class'::regclass
+                                                      AND d.objid = c.oid AND d.deptype IN ('a', 'i')))
+  LOOP
+    EXECUTE format('ALTER %s %s OWNER TO scm_assistant', r.kind, r.name);
+  END LOOP;
+  FOR r IN SELECT p.oid::regprocedure AS name, CASE p.prokind WHEN 'p' THEN 'PROCEDURE' WHEN 'a' THEN 'AGGREGATE' ELSE 'FUNCTION' END AS kind
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'assistant' AND p.proowner <> 'scm_assistant'::regrole
+  LOOP
+    EXECUTE format('ALTER %s %s OWNER TO scm_assistant', r.kind, r.name);
+  END LOOP;
+  -- 枚举、域、单独建的复合类型（表自带的行类型、数组类型跟着走）
+  FOR r IN SELECT t.oid::regtype AS name, CASE t.typtype WHEN 'd' THEN 'DOMAIN' ELSE 'TYPE' END AS kind
+             FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE n.nspname = 'assistant' AND t.typowner <> 'scm_assistant'::regrole
+              AND (t.typtype IN ('e', 'd') OR (t.typtype = 'c' AND (SELECT relkind FROM pg_class WHERE oid = t.typrelid) = 'c'))
+  LOOP
+    EXECUTE format('ALTER %s %s OWNER TO scm_assistant', r.kind, r.name);
+  END LOOP;
+END $$;
+SQL
+}
+
+# 只建账号、设密码（不碰 schema）：恢复脚本在 pg_restore 之前调。备份里以后要是有给这个账号的 GRANT，
+# 恢复到还没有这个账号的服务器上，pg_restore 会因为找不到账号整个失败
+ensure_assistant_role() {
+  assistant_psql <<'SQL'
 SELECT 'CREATE ROLE scm_assistant LOGIN' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'scm_assistant') \gexec
 SELECT format('ALTER ROLE scm_assistant LOGIN PASSWORD %L', :'pw') \gexec
 ALTER ROLE scm_assistant SET search_path = assistant;
-CREATE SCHEMA IF NOT EXISTS assistant AUTHORIZATION scm_assistant;
-ALTER SCHEMA assistant OWNER TO scm_assistant;
-SELECT format('ALTER TABLE assistant.%I OWNER TO scm_assistant', tablename) FROM pg_tables
- WHERE schemaname = 'assistant' AND tableowner <> 'scm_assistant' \gexec
 SQL
-  } | docker compose exec -T postgres psql -U scm -d scm -v ON_ERROR_STOP=1 -q > /dev/null
+}
+
+# 用 scm 在库里执行标准输入的 SQL，里面用 :'pw' 取助手账号的密码。
+# 密码从标准输入交给 psql，不出现在命令行上（ps 看得到命令行），数据库日志也不记语句（compose.yml 里 log_statement=none）；
+# -X 不读 .psqlrc；报错原样打出来但把密码换成 ***（psql 报语法错时会带上那一行语句）
+assistant_psql() {
+  local pw problem err
+  problem=$(assistant_password_problem)
+  if [ -n "$problem" ]; then
+    printf '%s\n' "$problem" >&2
+    return 1
+  fi
+  pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
+  if ! err=$( { printf '%s\n' "\\set pw '$pw'"; cat; } \
+      | docker compose exec -T postgres psql -X -U scm -d scm -v ON_ERROR_STOP=1 -q 2>&1 > /dev/null); then
+    printf '%s\n' "${err//"$pw"/***}" >&2
+    return 1
+  fi
 }
 
 # 开着助手时从 Nginx 走一遍 /assistant/health。只警告：应用已经好了，助手的问题单独查（最多等 60 秒，它要先执行自己的迁移）

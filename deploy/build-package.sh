@@ -163,16 +163,22 @@ echo "  导出了 $(wc -c < "$BUILD/openapi.json" | tr -d ' ') 字节"
 
 step "智能助手：单测、核对白名单、连库测、编译"
 # 单测带上这次导出的 openapi.json：tools.yaml 里每个工具都要对得上（只收 GET、返回 R、不像导出下载），对不上不打包。
-# 连库测连本机开发库容器里的 scm_assistant_test（setup-db.sh 没有就建，测试每次清空 assistant schema），和 mvn verify 的集成测试一样
+# 连库测连本机开发库容器里的 scm_assistant_test（setup-db.sh 没有就建，测试每次清空 assistant schema），和 mvn verify 的集成测试一样。
+# 测试直接用 node 跑、写明 TAP 格式（不走 package.json，也不受 NODE_OPTIONS 里别的报告格式影响），下面按 TAP 找跳过的
 ASSISTANT_SRC=$BUILD/src/assistant
 if ! (cd "$ASSISTANT_SRC" && pnpm install --frozen-lockfile --silent && pnpm -s typecheck \
-  && ASSISTANT_OPENAPI="$BUILD/openapi.json" pnpm -s test && ./dev/setup-db.sh scm_assistant_test && pnpm -s test:db \
+  && ASSISTANT_OPENAPI="$BUILD/openapi.json" node --test --test-reporter=tap 'test/*.test.ts' \
+  && ./dev/setup-db.sh scm_assistant_test && node --test --test-reporter=tap 'test/*.dbtest.ts' \
   && pnpm -s build) > "$BUILD/assistant-build.log" 2>&1; then
   tail -n 60 "$BUILD/assistant-build.log" >&2
   die "智能助手的测试或编译没过，上面是最后 60 行"
 fi
-if grep -Eq '^# skipped [1-9]' "$BUILD/assistant-build.log"; then
-  die "智能助手有被跳过的测试（白名单没核对上？），见 $BUILD/assistant-build.log"
+# 跳过的、待办的都不行：单个的（ok … # SKIP）、整组的（describe.skip 也是一行 # SKIP）、汇总行。
+# -a：测试名里有 \0 这种字（防伪造记号的用例），不加的话 grep 当它是二进制文件
+skipped=$(grep -aE '^[[:space:]]*(not )?ok [0-9]+ - .*# (SKIP|TODO)|^# (skipped|todo) [1-9]' "$BUILD/assistant-build.log" || true)
+if [ -n "$skipped" ]; then
+  printf '%s\n' "$skipped" >&2
+  die "智能助手有被跳过的测试（上面几行；白名单没核对上的话，是 openapi.json 没交给单测），不打包"
 fi
 # 镜像里只放运行要的：编译后的 js、生产依赖（pg、yaml，纯 JS，平铺不用符号链接）、迁移、白名单、这次的接口文档
 mkdir -p "$BUILD/ctx/assistant"
@@ -180,6 +186,16 @@ cp -R "$ASSISTANT_SRC/dist" "$ASSISTANT_SRC/migrations" "$BUILD/ctx/assistant/"
 cp "$ASSISTANT_SRC/package.json" "$ASSISTANT_SRC/pnpm-lock.yaml" "$ASSISTANT_SRC/tools.yaml" "$BUILD/ctx/assistant/"
 cp "$BUILD/openapi.json" "$BUILD/ctx/assistant/openapi.json"
 (cd "$BUILD/ctx/assistant" && pnpm install --prod --frozen-lockfile --silent --ignore-scripts --config.node-linker=hoisted)
+# pnpm 自己的记录不进镜像：.modules.yaml 里有本机的目录（带用户名），锁文件装完就没用了
+rm -rf "$BUILD/ctx/assistant/pnpm-lock.yaml" "$BUILD/ctx/assistant/node_modules/.modules.yaml" \
+  "$BUILD/ctx/assistant/node_modules/.pnpm" "$BUILD/ctx/assistant/node_modules/.bin"
+# 依赖是在本机装的、镜像是给服务器的（CPU、系统可能不一样）：只能是纯 JS。以后哪个依赖带了编译好的二进制就停下来，
+# 不然要到甲方服务器上启动才报错
+native=$(find "$BUILD/ctx/assistant/node_modules" \( -name '*.node' -o -name '*.so' -o -name '*.so.*' -o -name '*.dylib' -o -name '*.dll' \) | head -n 5)
+if [ -n "$native" ]; then
+  printf '%s\n' "$native" >&2
+  die "智能助手的依赖里有编译好的二进制（上面几个），在本机装的给不了 linux/$ARCH 用。要改成在镜像里装依赖"
+fi
 echo "  好了：$(ls "$BUILD/ctx/assistant/node_modules" | tr '\n' ' ')"
 
 step "打镜像（linux/${ARCH}；和本机 CPU 不一样时 Docker 要模拟，慢一点）"

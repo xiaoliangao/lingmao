@@ -1,6 +1,6 @@
 # 智能助手镜像（可选服务，RFC 017 §13 ③）：Node 22 运行时 + 打好的 assistant/。
 # 由 deploy/build-package.sh 在本机编译好、装好生产依赖（pg、yaml，都是纯 JS），构建目录里是：
-#   dist/（编译后的 js）、node_modules/（平铺，没有符号链接）、package.json、tools.yaml、migrations/、openapi.json
+#   dist/（编译后的 js）、node_modules/（平铺，没有符号链接，去掉了 pnpm 自己的记录）、package.json、tools.yaml、migrations/、openapi.json
 # openapi.json 是这次打包导出的：工具的参数和说明从它取，所以助手和应用必须是同一个版本（镜像标签一样）。
 # 镜像里不装依赖、不编译：构建时不用联网，给另一种 CPU 打包也不用模拟着跑 pnpm。
 # 基础镜像用 Debian 系的 slim，不用 alpine：理由同 app.Dockerfile（不知道服务器的系统和内核）

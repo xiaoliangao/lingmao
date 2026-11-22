@@ -51,11 +51,9 @@ if [ "$answer" != 恢复 ]; then
 fi
 
 step "停应用和定时备份"
-# 智能助手也停：它的表在同一个库里，恢复以后要重新执行它自己的迁移（备份可能是装助手以前的）
-docker compose stop app backup
-if assistant_enabled; then
-  docker compose stop assistant
-fi
+# 智能助手也停：它的表在同一个库里，恢复以后要重新执行它自己的迁移（备份可能是装助手以前的）。
+# 不管 .env 里开没开都停：关了开关却没删容器的，它还在跑（服务名写明了，没开的 profile 也认）
+docker compose stop app backup assistant
 
 step "把现在的库备份一份"
 if ! bash "$TARGET"/scripts/backup.sh pre-restore; then
@@ -75,6 +73,11 @@ step "删掉现在的库，重建一个空的"
 docker compose up -d --wait postgres
 docker compose exec -T postgres psql -U scm -d postgres -v ON_ERROR_STOP=1 -q \
   -c 'DROP DATABASE IF EXISTS scm WITH (FORCE)' -c 'CREATE DATABASE scm OWNER scm' < /dev/null
+# 助手的库账号在恢复之前先有：备份里以后要是有给它的授权，没有这个账号 pg_restore 会整个失败
+if ! ensure_assistant_role; then
+  die "建智能助手的库账号出错了（上面是报错），还没开始恢复。现在库是空的，应用没有启动。
+恢复前的数据在 backups/pre-restore/ 里最新的文件；改好 .env 以后可以用它再执行一次 restore.sh"
+fi
 
 step "恢复（数据多的话要几分钟）"
 # --single-transaction：要么全部恢复，要么什么都不留，不会恢复一半
@@ -85,7 +88,9 @@ fi
 
 step "起应用"
 # 恢复出来的表都归 scm（pg_restore --no-owner）：智能助手的 schema 交还给它的账号；换了服务器、还没有这个账号的就建上
-ensure_assistant_db
+if ! ensure_assistant_db; then
+  die "数据恢复好了，但把智能助手的表交还给它的账号时出错了（上面是报错），应用没有启动。请发给我们"
+fi
 # Redis 里的登录状态、字典缓存还是恢复前的，清掉。Redis 不落盘，重启一下就清空了
 docker compose restart redis
 docker compose up -d app backup
@@ -97,6 +102,7 @@ if ! wait_for_version "$version" 180; then
   docker compose logs --tail 100 app
   die "数据恢复好了，但应用 3 分钟内没起来，上面是最近 100 行日志，请发给我们"
 fi
+check_assistant
 
 printf '%s restore 成功：从 %s 恢复\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$file" >> backups/backup.log
 info "

@@ -66,6 +66,7 @@ step "更新文件"
 copy_package_files
 # 新版本多出来的配置项补进 .env，密钥随机生成。比如 FILE_SIGN_KEY：之前装的环境没有它，不补的话 compose 拒绝启动
 merge_env env.example .env
+check_assistant_password   # 补完以后一定有；在改版本号之前再确认一次
 env_set .env SCM_VERSION "$NEW"
 ensure_dirs
 

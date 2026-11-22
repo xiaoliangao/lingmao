@@ -196,14 +196,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    stop_grace_period: 25s              # 正在答的最多等 20 秒说完
+    stop_grace_period: 25s              # 正在答的等 15 秒，没答完的中止、留 3 秒记进库；它自己 22 秒一定退出
     networks:
       - default                         # 连 postgres
       - edge                            # Nginx 转 /assistant/ 过来；它也从这里调 app
     mem_limit: 192m
     logging: *logging
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/assistant/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      # 用 http.get 不用 fetch：fetch 要加载 undici，每 30 秒多占二三十 MB，和主进程挤在同一个 192m 里
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8091/assistant/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).setTimeout(4000,()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3

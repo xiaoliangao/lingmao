@@ -52,6 +52,7 @@ chmod 600 .env
 check_other_install
 ensure_dirs
 check_env
+check_assistant_password   # 复用旧的 .env 时这一项可能空着：在载入镜像、起库之前就停下来
 check_ports
 
 step "载入镜像（要一两分钟）"
@@ -61,7 +62,9 @@ require_images "$PKG_VERSION"
 step "启动"
 # 先起数据库，建好智能助手的库账号（不管开没开助手都建，以后要开只改 .env），再起其他服务
 docker compose up -d --wait postgres
-ensure_assistant_db
+if ! ensure_assistant_db; then
+  die "建智能助手的库账号出错了，上面是报错。请发给我们"
+fi
 docker compose up -d --remove-orphans
 info "  等应用起来。第一次启动要建表，最多等 3 分钟 ..."
 if ! wait_for_version "$PKG_VERSION" 180; then
