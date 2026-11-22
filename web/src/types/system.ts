@@ -20,6 +20,8 @@ export interface UserInfo {
   defaultCompany: { id: string; name: string } | null
   /** 功能开关，只决定入口显示不显示（真正的拦截在后端）。ai：AI 功能统一开关（RFC 017 §3.7），改了要刷新页面才变 */
   features: { ai: boolean }
+  /** 数据范围是"全部"（PRD §3.2）：只有这样的人，单据列表上才出"我的 / 全部"切换；"本人"范围的切了也只看得到自己的 */
+  canSeeAll: boolean
 }
 
 export interface MenuNode {

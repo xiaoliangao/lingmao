@@ -32,6 +32,7 @@ import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.FileService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.module.techpack.dto.BomDefaultReq;
+import com.lingmao.scm.module.techpack.dto.BomItemForm;
 import com.lingmao.scm.module.techpack.dto.BomDefaultVO;
 import com.lingmao.scm.module.techpack.dto.BomImportVO;
 import com.lingmao.scm.module.techpack.dto.BomItemVO;
@@ -243,7 +244,7 @@ public class TechPackServiceImpl implements TechPackService {
         rejectLocked(ctx.owner());
         // 字段授权在内容转换之前裁定，头与费用子表必须使用同一结果（RFC010 §4.1）。
         if (!LoginUser.hasAuthority(COST_PERM)) {
-            PackFinancialAccess.preserve(req, pack, packContent.load(id));
+            priceByArchive(PackFinancialAccess.preserve(req, pack, packContent.load(id)));
         }
         Content content = packForms.toContent(req, ctx.sizes());
         // 研发、生产分工（RFC 012 §3）：只能填一块的人改不了另一块的行
@@ -362,6 +363,37 @@ public class TechPackServiceImpl implements TechPackService {
                         && (s.getColorId() == null || colorSet.contains(s.getColorId()))).toList(),
                 row.sizes().stream().filter(s -> sizeSet.contains(s.getSizeCode())).toList())).toList();
         return new Content(rows, content.costItems());
+    }
+
+    /**
+     * 没有看成本权限的人新加、换了物料或供应商的行：他填不了单价（页面上也看不到），按加行时的默认价带上
+     * （档案现价 > SKU 单价 > 物料参考单价，和 bomDefaults 同一套）。不带的话这些行没价，核价里算 0——
+     * 辅料归生产跟单填，跟单默认没有看成本（PRD §6.4.5 验收 9；走查 T-8a56c5）
+     */
+    private void priceByArchive(List<BomItemForm> forms) {
+        List<BomItemForm> rows = forms.stream().filter(f -> f.getMaterialId() != null).toList();
+        if (rows.isEmpty()) return;
+        List<BomDefaultReq> reqs = rows.stream().map(f -> {
+            BomDefaultReq r = new BomDefaultReq();
+            r.setMaterialId(f.getMaterialId());
+            r.setSupplierId(f.getSupplierId());
+            r.setSkuIds(f.getSkus() == null ? List.of() : f.getSkus().stream().map(s -> s.getMaterialSkuId())
+                    .filter(java.util.Objects::nonNull).distinct().toList());
+            return r;
+        }).toList();
+        List<BomDefaultVO> defaults = bomPricing.defaults(reqs);
+        for (int i = 0; i < rows.size(); i++) {
+            BomItemForm f = rows.get(i);
+            BomDefaultVO d = defaults.get(i);
+            f.setRefPrice(d.getRefPrice());
+            f.setPriceSourceId(d.getPriceSourceId());
+            f.setPriceTaxIncluded(d.isPriceTaxIncluded());
+            f.setPriceFreightIncluded(d.isPriceFreightIncluded());
+            // 和行上一样的 SKU 不在 skuPrices 里，用行上的价（null）
+            java.util.Map<Long, BigDecimal> skuPrices = new java.util.HashMap<>();
+            (d.getSkuPrices() == null ? List.<BomDefaultVO.SkuPrice>of() : d.getSkuPrices()).forEach(p -> skuPrices.put(p.materialSkuId(), p.refPrice()));
+            if (f.getSkus() != null) f.getSkus().forEach(s -> s.setRefPrice(skuPrices.get(s.getMaterialSkuId())));
+        }
     }
 
     @Override

@@ -201,7 +201,7 @@ class AuthServiceImplTest {
         UserInfoVO info = authService.me(1L);
 
         assertThat(info).isEqualTo(new UserInfoVO(1L, "admin", null,
-                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体"), new FeaturesVO(true)));
+                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体"), new FeaturesVO(true), false));
     }
 
     @Test

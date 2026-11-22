@@ -10,7 +10,10 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-/** 算料单详情（前端 MrpCalcDetail）。auditBy、auditTime 是确认人、确认时间；approval 一直是 null */
+/**
+ * 算料单详情（前端 MrpCalcDetail）。auditBy、auditTime 是确认人、确认时间；approval 一直是 null。
+ * companyId 是它的订单的主体（算料单本身不存主体，订单主体都一样）：页面写操作按它带 X-Company-Id
+ */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class MrpCalcDetailVO extends DocHeaderVO {

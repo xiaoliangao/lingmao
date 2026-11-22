@@ -125,6 +125,8 @@ class PurchaseIT {
         create.setOrderIds(List.of(orderId));
         DocSaved calc = mrpService.create(create);
         MrpCalcDetailVO d = mrpService.detail(calc.id());
+        // 算料单不存主体，详情按订单的主体给：页面写操作靠它带 X-Company-Id（走查 T-693633，原来是空的、写操作全报 400）
+        assertThat(d.getCompanyId()).isEqualTo(f.company);
         assertThat(d.getNeedDate()).isAfter(LocalDate.now().plusDays(3)).isBefore(LocalDate.now().plusDays(200));
         MrpItemVO row = d.getItems().getFirst();
         assertThat(d.getItems()).hasSize(1);

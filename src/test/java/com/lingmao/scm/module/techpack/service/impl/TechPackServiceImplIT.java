@@ -281,6 +281,40 @@ class TechPackServiceImplIT {
         assertThat(techPackService.detail(id).getBomItems()).extracting(b -> b.getMaterialId()).containsExactly(f.material, packing);
     }
 
+    /**
+     * 没有看成本权限的人（辅料归生产跟单填，跟单默认没有看成本）新加的行：他填不了单价，保存时按加行的默认价带上，
+     * 核价里不是 0；原来的行单价照旧（走查 T-8a56c5，PRD §6.4.5 验收 9）
+     */
+    @Test
+    void noCostUser_newRowGetsDefaultPrice() {
+        Fixture f = fixture();
+        long id = techPackService.create(f.style);
+        int version = techPackService.save(id, saveReq(0, f, null));
+        long fabricRow = jdbcTemplate.queryForObject("SELECT id FROM tp_bom_item WHERE tech_pack_id = ?", Long.class, id);
+        jdbcTemplate.update("UPDATE tp_bom_item SET ref_price = 20 WHERE id = ?", fabricRow);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(USER, "test"), null,
+                Stream.of("techpack:pack:edit", "techpack:bom:dev", "techpack:bom:prod", LineScope.ALL_AUTHORITY).map(SimpleGrantedAuthority::new).toList()));
+
+        TechPackSaveReq req = saveReq(version, f, null);
+        BomItemForm old = req.getBomItems().getFirst();
+        old.setId(fabricRow);
+        old.setRefPrice(null);
+        BomItemForm lining = new BomItemForm();
+        lining.setPart("里布");
+        lining.setMaterialId(f.material);
+        lining.setSkuMode(BomSkuMode.FIXED);
+        lining.setUsageMode(BomUsageMode.UNIFORM);
+        lining.setUsageQty(BigDecimal.ONE);
+        lining.setSkus(List.of(skuForm(f.colorA, f.skuA)));
+        req.setBomItems(List.of(old, lining));
+        techPackService.save(id, req);
+
+        assertThat(jdbcTemplate.queryForObject("SELECT ref_price FROM tp_bom_item WHERE tech_pack_id = ? AND part = '大身'", BigDecimal.class, id))
+                .as("原来的行照旧（保存是删了重写，按部位找）").isEqualByComparingTo("20");
+        assertThat(jdbcTemplate.queryForObject("SELECT ref_price FROM tp_bom_item WHERE tech_pack_id = ? AND part = '里布'", BigDecimal.class, id))
+                .as("新加的行按 SKU 单价带上").isEqualByComparingTo("18.5");
+    }
+
     @Test
     void costAuthorizationPreservesHeadAndChildren() {
         Fixture f = fixture();

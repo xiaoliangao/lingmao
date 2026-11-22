@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUserStore } from '@/stores/user'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -30,6 +31,8 @@ import { formatDateRange } from '@/utils/format'
 import ProductionTable, { productionColumns } from './ProductionTable.vue'
 import { useProductLines } from '@/composables/useProductLines'
 import LineSelect from '@/components/LineSelect.vue'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 
 /**
  * 外发加工单 / 成品采购单列表（/production、/fp-purchases，docs/api/05 §1.4）。两个菜单共用这个文件、各有一个缓存实例，
@@ -235,7 +238,7 @@ const exportPicked = () => exportSelected(selected.value.map((r) => r.id))
       </FilterItem>
       <template #right>
         <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审核</el-checkbox>
-        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="MINE_OPTIONS" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" :disabled="query.auditForMe" v-model="query.mine" :options="MINE_OPTIONS" @change="search" />
       </template>
     </FilterBar>
 

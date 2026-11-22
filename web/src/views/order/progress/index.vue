@@ -23,6 +23,8 @@ import { PRODUCTION_STATUS } from '@/types/production'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateRange, formatQty } from '@/utils/format'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 
 /**
  * 订单进度总览（/order-progress，RFC 016 §1，docs/api/02 §3.15）：一行是一张在手订单（已审核、生产中）里的一个款，
@@ -187,7 +189,7 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
         <UserSelect v-model="query.merchId" v-model:label="merchName" clearable placeholder="全部跟单员" />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
     <el-table

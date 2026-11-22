@@ -15,8 +15,12 @@ import java.util.Set;
 final class PackFinancialAccess {
     private PackFinancialAccess() { }
 
-    static void preserve(TechPackSaveReq req, TechPack head, PackContent.Content old) {
-        if (FieldPermissions.has(FieldPermissions.COST)) return;
+    /**
+     * 没有看成本权限的人保存：看不见的单价、加工费、其他费用照旧保留，交上来的不算数。
+     * 返回要重新定价的行（新加的、换了物料或供应商的）：他填不了单价，由调用方按档案价带上
+     */
+    static List<com.lingmao.scm.module.techpack.dto.BomItemForm> preserve(TechPackSaveReq req, TechPack head, PackContent.Content old) {
+        if (FieldPermissions.has(FieldPermissions.COST)) return List.of();
         if (req.getCost() != null) {
             var cost = req.getCost();
             FieldPermissions.price(FieldPermissions.COST, head.getBuyPrice(), cost.getBuyPrice());
@@ -27,6 +31,7 @@ final class PackFinancialAccess {
             req.setCost(null); // Existing cost header and other-cost rows remain outside the replacement.
         }
         Set<Long> usedBom = new HashSet<>();
+        List<com.lingmao.scm.module.techpack.dto.BomItemForm> unpriced = new java.util.ArrayList<>();
         for (var form : req.getBomItems() == null ? List.<com.lingmao.scm.module.techpack.dto.BomItemForm>of() : req.getBomItems()) {
             var candidates = old.bom().stream().filter(r -> form.getId() != null ? Objects.equals(r.item().getId(), form.getId())
                     : Objects.equals(r.item().getMaterialId(), form.getMaterialId()) && Objects.equals(r.item().getPart(), text(form.getPart()))).toList();
@@ -41,6 +46,7 @@ final class PackFinancialAccess {
                     || previous.skus().stream().anyMatch(s -> s.getRefPrice() != null)))
                 FieldPermissions.require(FieldPermissions.COST);
             var item = same ? previous.item() : null;
+            if (item == null) unpriced.add(form);
             form.setRefPrice(FieldPermissions.price(FieldPermissions.COST, item == null ? null : item.getRefPrice(), form.getRefPrice()));
             form.setPriceSourceId(FieldPermissions.preserve(FieldPermissions.COST, item == null ? null : item.getPriceSourceId(), form.getPriceSourceId()));
             form.setPriceTaxIncluded(FieldPermissions.preserve(FieldPermissions.COST, item == null ? Boolean.TRUE : item.getPriceTaxIncluded(), form.getPriceTaxIncluded()));
@@ -56,6 +62,7 @@ final class PackFinancialAccess {
                 sku.setRefPrice(FieldPermissions.price(FieldPermissions.COST, prior == null ? null : prior.getRefPrice(), sku.getRefPrice()));
             }
         }
+        return unpriced;
     }
 
     private static String text(String value) { return value == null || value.isBlank() ? null : value.strip(); }

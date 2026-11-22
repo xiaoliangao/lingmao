@@ -203,7 +203,14 @@ public class MrpServiceImpl implements MrpService {
         Map<Long, List<String>> styles = orderStyles(orders.stream().map(MrpCalcMapper.CalcOrder::orderId).toList());
 
         MrpCalcDetailVO vo = docHeaderService.fill(new MrpCalcDetailVO(), BizType.MRP_CALC, c, c.getStatus());
-        vo.setOrders(orders.stream().map(o -> new MrpOrderRef(o.orderId(), o.orderNo(), styles.getOrDefault(o.orderId(), List.of()))).toList());
+        // 算料单本身不分主体，但写操作（改行、确认、转采购……）要核对订单的主体：页面按订单的主体发 X-Company-Id。
+        // 原来这里是空的，页面不带主体，所有写操作都报 400"缺少单据主体"（走查 T-693633）
+        orders.stream().map(MrpCalcMapper.CalcOrder::companyId).filter(java.util.Objects::nonNull).findFirst().ifPresent(vo::setCompanyId);
+        // 订单详情的权限和范围（OrderController、OrderServiceImpl 的本人 = 制单人、业务员、跟单员）：打不开的不给链接，免得点进去 404
+        boolean orderPerm = LoginUser.hasAuthority("order:order:list");
+        com.lingmao.scm.security.DataScope scope = com.lingmao.scm.security.DataScope.current(false);
+        vo.setOrders(orders.stream().map(o -> new MrpOrderRef(o.orderId(), o.orderNo(), styles.getOrDefault(o.orderId(), List.of()),
+                orderPerm && scope.getLines().canSee(o.productLine()) && scope.canSee(o.createBy(), o.salesId(), o.merchId()))).toList());
         vo.setStyleCodes(styleCodes(orders, styles));
         vo.setProductLine(c.getProductLine());
         vo.setNeedDate(c.getNeedDate());

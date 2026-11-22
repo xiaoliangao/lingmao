@@ -120,6 +120,22 @@ const bomBlocks = computed(() => BOM_OWNERS.map((owner) => ({
   rows: draft.bomItems.filter((b) => bomOwnerOf(b.materialType) === owner),
   editable: editable.value && canFillBom(owner),
 })))
+/**
+ * 两块连着编号（主料 1…n，辅料接着往下），存的时候也按这个顺序交：后端报"物料清单第 N 行"的 N 和页面上的 # 对得上
+ * （原来各块从 1 编、交上去是混着的，报错行号对不上，走查 T-8a56c5）
+ */
+const bomOrdered = computed(() => {
+  const inBlocks = bomBlocks.value.flatMap((b) => b.rows)
+  return [...inBlocks, ...draft.bomItems.filter((b) => !inBlocks.includes(b))]
+})
+function bomStart(owner: BomOwner): number {
+  let n = 0
+  for (const b of bomBlocks.value) {
+    if (b.owner === owner) return n
+    n += b.rows.length
+  }
+  return n
+}
 const guard = useUnsavedChanges(() => (editable.value ? draft : null), undefined, { ready: () => !loading.value && (!canSeeCost.value || costState.value !== 'loading') })
 const can = (act: TechPackAction) => detail.value?.actions.includes(act) ?? false
 
@@ -302,7 +318,7 @@ function buildSaveForm(): TechPackSaveForm {
     versionLock: d.versionLock,
     versionNote: orNull(draft.versionNote),
     utilPct: draft.utilPct,
-    bomItems: draft.bomItems.map((b) => ({
+    bomItems: bomOrdered.value.map((b) => ({
       id: /^[1-9]\d*$/.test(b.id) ? b.id : undefined,
       part: b.part,
       materialId: b.materialId,
@@ -908,7 +924,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
             <template v-if="bomView === 'bom'">
             <section v-for="blk in bomBlocks" :key="blk.owner" class="bom-block" :data-testid="`bom-block-${blk.owner}`">
             <h4 class="bom-block-title">{{ blk.title }} <span class="dim">{{ blk.rows.length }} 行<template v-if="editable && !blk.editable"> · 你没有这一块的权限，只能看</template></span></h4>
-            <el-table :ref="bomTableRef(blk.owner)" :data="blk.rows" row-key="id" :empty-text="bomEmptyText(blk.owner, blk.editable)" @selection-change="bomSelected[blk.owner] = $event">
+            <el-table :ref="bomTableRef(blk.owner)" :data="blk.rows" row-key="id" scrollbar-always-on :empty-text="bomEmptyText(blk.owner, blk.editable)" @selection-change="bomSelected[blk.owner] = $event">
               <el-table-column v-if="blk.editable" type="selection" width="36" />
               <el-table-column type="expand" width="32">
                 <template #default="{ row }">
@@ -940,7 +956,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 </template>
               </el-table-column>
               <el-table-column label="#" width="40" class-name="num">
-                <template #default="{ $index }">{{ $index + 1 }}</template>
+                <template #default="{ $index }">{{ bomStart(blk.owner) + $index + 1 }}</template>
               </el-table-column>
               <el-table-column label="" width="48">
                 <template #default="{ row }">
@@ -991,7 +1007,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <el-table-column label="备注" min-width="100">
                 <template #default="{ row }">{{ row.remark ?? '' }}</template>
               </el-table-column>
-              <el-table-column v-if="blk.editable" label="" width="150" align="right">
+              <el-table-column v-if="blk.editable" label="" width="150" align="right" fixed="right">
                 <template #default="{ row, $index }">
                   <el-button link size="small" :disabled="$index === 0" aria-label="上移" @click="moveBomRow(blk.rows, row as BomItem, -1)"><el-icon><Top /></el-icon></el-button>
                   <el-button link size="small" :disabled="$index === blk.rows.length - 1" aria-label="下移" @click="moveBomRow(blk.rows, row as BomItem, 1)"><el-icon><Bottom /></el-icon></el-button>

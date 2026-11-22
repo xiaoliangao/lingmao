@@ -81,7 +81,7 @@
 - **多选条件**：数组参数发成 `status=A&status=B`，`request.ts` 已经这样配了。
 - **日期范围**：`xxxFrom`、`xxxTo`，`yyyy-MM-dd`，两头都含。组件用 `DateRange`。
 - **选出来的 id**：查询类型里写成 `string | null`（`UserSelect`、`SupplierSelect` 清空后是 `null`）。值是 `null` 的参数 axios 不发，等于没筛。
-- **我的 / 全部**：普通列表按 DataScope，`mine=true` 进一步只看自己负责的。"全部"只表示当前获准范围，不会把 SELF 变成 ALL；审核权限也不等于 `data:all`（PRD §3.2）。
+- **我的 / 全部**：只有数据范围是"全部"的人（`GET /api/auth/me` 的 `canSeeAll` 为 true）列表上才出这个切换，"本人"范围的不出（切了也只看得到自己的）。普通列表按 DataScope，`mine=true` 进一步只看自己负责的。"全部"只表示当前获准范围，不会把 SELF 变成 ALL；审核权限也不等于 `data:all`（PRD §3.2）。
 - **待我审核**：订单、采购、生产的 Query 增加 `auditForMe?: boolean`（默认 false）。true 只取待审核且当前审批级匹配调用人的单据；当前审批人的对象级例外不受普通 SELF 归属限制，但仍须有对应模块 `:list`。这是独立的待审视角，不再叠加 `mine/ownerId` 的普通负责人筛选；其他筛选条件仍取交集，不能扩大成全部待审核。列表、计数和导出使用同一谓词；计数去掉状态条件及相应状态子条件。页面地址可用 `auditForMe=1`，API 参数按 boolean 发送。
 - **导出**：`GET /api/<资源>/export`，筛选参数和列表一样，再加 `ids` 只导勾选的。列表加载与导出共用规范化查询；导出使用最近一次成功展示列表的条件快照，含状态页签映射，不能读取尚未查询成功的筛选框值。勾选 ID 与该快照、数据权限取交集，不绕过筛选；去掉分页参数，用 `download()`。查询中或失败时不得把新条件冒充已展示结果。
 

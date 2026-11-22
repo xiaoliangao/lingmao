@@ -349,7 +349,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
         </div>
 
         <p class="sub">
-          <router-link v-for="o in detail.orders" :key="o.orderId" :to="`/orders/${o.orderId}`" class="code">{{ o.orderNo }}</router-link>
+          <template v-for="o in detail.orders" :key="o.orderId">
+            <router-link v-if="o.canOpen" :to="`/orders/${o.orderId}`" class="code">{{ o.orderNo }}</router-link>
+            <span v-else class="code">{{ o.orderNo }}</span>
+          </template>
           <span class="code dim">{{ detail.styleCodes.join('、') }}</span>
           <span>要料 {{ detail.needDate ? formatDate(detail.needDate) : '—' }}</span>
           <span v-if="canSeeCost" class="num">预计 {{ formatMoney(detail.estAmount) }} · 已转采购 {{ formatMoney(detail.convertedAmount) }}</span>
@@ -469,18 +472,21 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
             <el-table-column label="可用在途" width="84" class-name="num" align="right">
               <template #default="{ row }">{{ formatQty(row.availTransitQty) }}</template>
             </el-table-column>
-            <el-table-column label="本次用在途" width="104" class-name="num" align="right">
+            <el-table-column label="本次用在途" :width="isDraft ? 144 : 104" class-name="num" align="right">
               <template #default="{ row }">
-                <el-input-number
-                  v-if="isDraft"
-                  v-model="row.useTransitQty"
-                  size="small"
-                  :min="0"
-                  :max="Math.min(row.availTransitQty, Math.max(0, row.needQty - row.useStockQty))"
-                  :precision="3"
-                  :controls="false"
-                  @change="saveCell(row as MrpItem)"
-                />
+                <!-- 草稿也能看用的是哪几张采购单，确认前好核对（走查 T-693633） -->
+                <span v-if="isDraft" class="transit-edit">
+                  <el-input-number
+                    v-model="row.useTransitQty"
+                    size="small"
+                    :min="0"
+                    :max="Math.min(row.availTransitQty, Math.max(0, row.needQty - row.useStockQty))"
+                    :precision="3"
+                    :controls="false"
+                    @change="saveCell(row as MrpItem)"
+                  />
+                  <button v-if="(row as MrpItem).transitUses.length" type="button" class="link-btn" @click="toggleExpand(row as MrpItem)">哪几张</button>
+                </span>
                 <button v-else type="button" class="link-btn" :disabled="!(row as MrpItem).transitUses.length" @click="toggleExpand(row as MrpItem)">
                   {{ formatQty(row.useTransitQty) }}
                 </button>
@@ -663,6 +669,16 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
   cursor: pointer;
   background: none;
   border: none;
+}
+
+.transit-edit {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.transit-edit .el-input-number {
+  width: 88px;
 }
 
 .link-btn.warn {

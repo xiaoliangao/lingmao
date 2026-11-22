@@ -14,6 +14,8 @@ export const useUserStore = defineStore('user', () => {
   const isAdmin = computed(() => info.value?.roles.includes('admin') ?? false)
   /** 默认主体的 id：新建单据的主体默认填它，没有是 null（让人选） */
   const defaultCompanyId = computed(() => info.value?.defaultCompany?.id ?? null)
+  /** 单据列表出不出"我的 / 全部"切换（本人范围的人不出）；没拿到的（假数据）按出 */
+  const canSeeAll = computed(() => info.value?.canSeeAll ?? true)
   /** 业务菜单（首页这一侧）和管理后台的菜单，按顶层目录分开 */
   const workbenchMenus = computed(() => (info.value?.menus ?? []).filter((m) => !m.adminOnly))
   const adminMenus = computed(() => (info.value?.menus ?? []).filter((m) => m.adminOnly))
@@ -45,5 +47,5 @@ export const useUserStore = defineStore('user', () => {
   }
   setFieldPermissionCheck(hasPerm)
 
-  return { token, info, isAdmin, defaultCompanyId, workbenchMenus, adminMenus, login, fetchMe, logout, hasPerm }
+  return { token, info, isAdmin, defaultCompanyId, canSeeAll, workbenchMenus, adminMenus, login, fetchMe, logout, hasPerm }
 })

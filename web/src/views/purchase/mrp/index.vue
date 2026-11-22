@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUserStore } from '@/stores/user'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -17,6 +18,8 @@ import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { MRP_STATUS, type MrpCalcRow, type MrpOrderOption, type MrpStatus, type ReservePct } from '@/types/purchase'
 import { formatDate, formatDateRange, formatQty } from '@/utils/format'
 import { useProductLines } from '@/composables/useProductLines'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 
 /**
  * 算料单列表（/mrp，docs/api/03 §1.4）。认 ?status=（首页"算料单草稿"点进来），只认 /mrp 自己的地址。
@@ -81,6 +84,10 @@ const filtered = computed(() => !!(query.keyword.trim() || query.statusTab || qu
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的算料单：换个状态，或者清空筛选'
   if (query.mine) return '还没有你算的料，切到「全部」看所有人的'
+  // 跟单、财务这类只能看、不能算的：没有"选订单算料"按钮，不叫他点（走查 T-693633）
+  if (!userScope.hasPerm('purchase:mrp:add')) {
+    return userScope.canSeeAll ? '还没有算料单：采购选订单算料后列在这里' : '没有你能看的算料单：算料单只给建它的采购和数据范围是「全部」的人看'
+  }
   return '还没有算料单：订单审核后点「选订单算料」'
 })
 
@@ -192,7 +199,7 @@ async function createCalc() {
         <DateRange :model-value="dateRange" @update:model-value="onDateChange" />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 
@@ -272,7 +279,7 @@ async function createCalc() {
         <el-table-column label="件数" width="80" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
         </el-table-column>
-        <el-table-column label="承诺交期" width="100" class-name="num">
+        <el-table-column label="承诺交期" width="112" class-name="num">
           <template #default="{ row }">{{ row.commitDate ? formatDate(row.commitDate) : '—' }}</template>
         </el-table-column>
         <el-table-column label="算过的" min-width="220" :show-overflow-tooltip="false">

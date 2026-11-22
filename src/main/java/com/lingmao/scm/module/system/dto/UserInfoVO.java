@@ -7,7 +7,8 @@ import java.util.Set;
  * 当前登录用户：前端登录后拿它决定显示什么。
  * roles 角色编码；perms 权限标识，前端据此显示 / 隐藏按钮；menus 侧边栏菜单树；
  * defaultCompany 默认主体，新建需求订单、采购单、盘点单时主体默认填它，没有（没设、停用了又不止一个启用的）是 null；
- * features 功能开关（FeaturesVO），只决定入口显示不显示
+ * features 功能开关（FeaturesVO），只决定入口显示不显示；
+ * canSeeAll 数据范围是"全部"（PRD §3.2）：只有这样的人，单据列表上才出"我的 / 全部"切换
  */
 public record UserInfoVO(Long id,
                          String username,
@@ -16,5 +17,6 @@ public record UserInfoVO(Long id,
                          Set<String> perms,
                          List<MenuVO> menus,
                          CompanyBrief defaultCompany,
-                         FeaturesVO features) {
+                         FeaturesVO features,
+                         boolean canSeeAll) {
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUserStore } from '@/stores/user'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
@@ -27,6 +28,8 @@ import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } f
 import { useFieldAccess } from '@/composables/useFieldAccess'
 import { useProductLines } from '@/composables/useProductLines'
 import LineSelect from '@/components/LineSelect.vue'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 const { canSeeCost } = useFieldAccess()
 
 /**
@@ -195,7 +198,7 @@ async function exportPicked() {
       </FilterItem>
       <template #right>
         <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审核</el-checkbox>
-        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

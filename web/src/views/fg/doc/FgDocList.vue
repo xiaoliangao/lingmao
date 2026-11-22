@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUserStore } from '@/stores/user'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
@@ -19,6 +20,8 @@ import { useTable } from '@/composables/useTable'
 import type { WarehouseOption } from '@/types/basic'
 import { FG_DOC_STATUS, FG_DOC_TYPE, type FgDocKind, type FgDocRow, type FgDocStatus, type FgDocType } from '@/types/fg'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 
 /**
  * 成品入库单、出库单列表（docs/api/07 §1.3）：一张表按 kind 分，两个菜单页各放一个，照物料的 DocList。
@@ -192,7 +195,7 @@ defineExpose({ reload: load, exportAll, exporting })
         <SupplierSelect v-model="query.factoryId" v-model:label="factoryName" :category="['GARMENT', 'PROCESSOR']" clearable placeholder="全部加工厂" />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

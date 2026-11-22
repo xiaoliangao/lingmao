@@ -134,7 +134,8 @@
     </select>
 
     <select id="selectCalcOrders" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$CalcOrder">
-        SELECT co.calc_id, o.id AS order_id, o.no AS order_no, o.commit_date
+        SELECT co.calc_id, o.id AS order_id, o.no AS order_no, o.commit_date, o.company_id,
+               o.product_line, o.create_by, o.sales_id, o.merch_id
         FROM mrp_calc_order co
         JOIN ord_order o ON o.id = co.order_id
         WHERE co.calc_id IN <foreach collection="calcIds" item="id" open="(" separator="," close=")">#{id}</foreach>

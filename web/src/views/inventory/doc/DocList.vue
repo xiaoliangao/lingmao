@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUserStore } from '@/stores/user'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { TableColumnCtx, TableInstance } from 'element-plus'
@@ -18,6 +19,8 @@ import type { WarehouseOption } from '@/types/basic'
 import { INV_DOC_STATUS, INV_DOC_TYPE, type InvDocKind, type InvDocRow, type InvDocStatus, type InvDocType } from '@/types/inventory'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatQty } from '@/utils/format'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 const { canSeeCost } = useFieldAccess()
 
 /**
@@ -174,7 +177,7 @@ defineExpose({ reload: load, exportAll, exporting })
       </FilterItem>
       <template #right>
         <el-checkbox v-perm="'inventory:doc:audit'" v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
-        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

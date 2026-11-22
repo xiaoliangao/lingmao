@@ -87,8 +87,12 @@ public interface MrpCalcMapper extends BaseMapper<MrpCalc> {
 
     List<OrderStyle> selectOrderStyles(@Param("orderIds") Collection<Long> orderIds);
 
-    /** 算料单 × 订单：单号、承诺交期 */
-    record CalcOrder(Long calcId, Long orderId, String orderNo, LocalDate commitDate) {
+    /**
+     * 算料单 × 订单：单号、承诺交期、主体（一张算料单的订单主体都一样，checkForMrp 拦着）；
+     * 品类线、制单人、业务员、跟单员用来判断当前用户打不打得开这张订单
+     */
+    record CalcOrder(Long calcId, Long orderId, String orderNo, LocalDate commitDate, Long companyId,
+                     String productLine, Long createBy, Long salesId, Long merchId) {
     }
 
     List<CalcOrder> selectCalcOrders(@Param("calcIds") Collection<Long> calcIds);

@@ -171,6 +171,8 @@ export interface MrpOrderRef {
   orderId: string
   orderNo: string
   styleCodes: string[]
+  /** 我打得开这张订单的详情；"本人"范围的采购算的是别人的订单，打不开，只显示单号 */
+  canOpen: boolean
 }
 
 /** 详情。auditBy、auditTime 在这里是确认人、确认时间；approval 一直是 null */

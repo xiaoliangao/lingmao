@@ -524,8 +524,12 @@ class OrderIT {
         }
     }
 
+    /** 夹具编号：随机起点、往后顺着加，一次跑里不重复（原来每次随机，主体编码只取后 5 位，偶尔撞 uk_bas_company_code） */
+    private static final java.util.concurrent.atomic.AtomicInteger FIXTURE_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger(ThreadLocalRandom.current().nextInt(100_000, 800_000));
+
     private Fixture fixture() {
-        String s = String.valueOf(ThreadLocalRandom.current().nextInt(100_000, 1_000_000));
+        String s = String.valueOf(FIXTURE_SEQ.getAndIncrement());
         String companyName = "IT 订单主体" + s;
         long company = jdbcTemplate.queryForObject("INSERT INTO bas_company (code, name, short_name) VALUES (?, ?, ?) RETURNING id",
                 Long.class, "D" + s.substring(1), companyName, companyName);

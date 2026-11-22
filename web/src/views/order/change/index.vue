@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUserStore } from '@/stores/user'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -13,6 +14,8 @@ import { useTable } from '@/composables/useTable'
 import { CHANGE_TYPE, type ChangeStatus, type ChangeType, type OrderChangeQuery, type OrderChangeRow } from '@/types/order'
 import { formatDateRange } from '@/utils/format'
 import ChangeTable, { CHANGE_COLUMNS } from './ChangeTable.vue'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 
 /**
  * 订单变更单列表（/order-changes，docs/api/02 §1.4、§3.14）。没有"新建"：变更从订单详情的"提变更"进来。
@@ -147,7 +150,7 @@ async function quickAct(row: OrderChangeRow, action: 'audit' | 'reject') {
       </FilterItem>
       <template #right>
         <el-checkbox v-perm="'order:change:audit'" v-model="query.auditForMe" @change="search">待我审核</el-checkbox>
-        <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>
 

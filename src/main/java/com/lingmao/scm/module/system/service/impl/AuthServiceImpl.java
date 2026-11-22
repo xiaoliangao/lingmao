@@ -81,7 +81,8 @@ public class AuthServiceImpl implements AuthService {
                 permissionService.loadPermissions(userId),
                 permissionService.loadMenuTree(userId),
                 defaultCompanyProvider.resolve(user.getDefaultCompanyId()),
-                new FeaturesVO(aiSwitchService.enabled()));
+                new FeaturesVO(aiSwitchService.enabled()),
+                com.lingmao.scm.security.DataScope.current(false).isAll());
     }
 
     @Override

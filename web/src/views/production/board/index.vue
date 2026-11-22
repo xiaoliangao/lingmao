@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUserStore } from '@/stores/user'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -17,6 +18,8 @@ import type { BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, ProductionK
 import { formatDateRange, formatQty } from '@/utils/format'
 import ProductionTable, { productionColumns } from '../order/ProductionTable.vue'
 import { useProductLines } from '@/composables/useProductLines'
+/** 本人范围的人不出"我的 / 全部"（走查 T-8a56c5） */
+const userScope = useUserStore()
 
 /**
  * 生产看板（/board，docs/api/05 §1.4、§3.7）。
@@ -195,7 +198,7 @@ const emptyText = computed(() => {
         <DictSelect v-model="query.brand" type="brand" clearable />
       </FilterItem>
       <template #right>
-        <el-segmented v-model="query.mine" :options="MINE_OPTIONS" @change="search" />
+        <el-segmented v-if="userScope.canSeeAll" v-model="query.mine" :options="MINE_OPTIONS" @change="search" />
       </template>
     </FilterBar>
 
