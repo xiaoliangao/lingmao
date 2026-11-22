@@ -61,8 +61,7 @@ import { useDict } from '@/composables/useDict'
 import {
   MATERIAL_ISSUE_STATUS,
   PRODUCTION_KIND,
-  PRODUCTION_PARTIAL,
-  PRODUCTION_STATUS,
+  productionStatusOf,
   type ProductionRow,
   type ProductionStatus,
 } from '@/types/production'
@@ -127,7 +126,7 @@ watch(
 const kittingOf = (row: ProductionRow) => (KITTING_STATUSES.includes(row.status) ? kittingMap.value[row.orderId] : undefined)
 
 /** 部分回货：回过良品（只回过次品的还是"生产中"，和回货进度条一样按良品） */
-const statusOf = (row: ProductionRow) => (row.status === 'RUNNING' && row.returnedQty - row.defectQty > 0 ? PRODUCTION_PARTIAL : PRODUCTION_STATUS[row.status])
+const statusOf = (row: ProductionRow) => productionStatusOf(row)
 /** 回货进度：审核以后才有 */
 const showReturned = (row: ProductionRow) => !['DRAFT', 'PENDING', 'VOIDED'].includes(row.status)
 

@@ -21,7 +21,7 @@ export const PRODUCTION_KIND: Record<ProductionKind, { label: string; short: str
   BUY: { label: '成品采购单', short: '成品采购', priceLabel: '成品单价（含料）', path: '/fp-purchases' },
 }
 
-/** 生产单用 DocStatus 的全部七个；RUNNING 回过货时显示成"部分回货"（PRODUCTION_PARTIAL），库里还是 RUNNING */
+/** 生产单用 DocStatus 的全部七个；RUNNING 回过良品时显示成"部分回货"（PRODUCTION_PARTIAL），库里还是 RUNNING */
 export type ProductionStatus = DocStatus
 
 export const PRODUCTION_STATUS: Record<ProductionStatus, { label: string; tone: StatusTone }> = {
@@ -34,8 +34,13 @@ export const PRODUCTION_STATUS: Record<ProductionStatus, { label: string; tone: 
   VOIDED: { label: '已作废', tone: 'void' },
 }
 
-/** status = RUNNING 且 returnedQty > 0 时用它代替 PRODUCTION_STATUS.RUNNING */
+/** status = RUNNING 且回过良品（returnedQty − defectQty > 0）时用它代替 PRODUCTION_STATUS.RUNNING；只回过次品的还是"生产中" */
 export const PRODUCTION_PARTIAL: { label: string; tone: StatusTone } = { label: '部分回货', tone: 'progress' }
+
+/** 页面上显示的状态：生产中里回过良品的叫"部分回货"（列表、详情、订单进度共用，和后端的 returned 筛选、导出一致） */
+export function productionStatusOf(p: { status: ProductionStatus; returnedQty: number; defectQty: number }): { label: string; tone: StatusTone } {
+  return p.status === 'RUNNING' && p.returnedQty - p.defectQty > 0 ? PRODUCTION_PARTIAL : PRODUCTION_STATUS[p.status]
+}
 
 /**
  * 详情、列表行上的按钮：通用的状态动作 + edit 改草稿、remove 删草稿、report 报进度、editPlan 改节点计划、
@@ -250,7 +255,7 @@ export interface ProductionQuery {
   /** 单号、订单号、款号、款名、加工厂；一次查几个（README §3.2）时单号、订单号、款号精确查 */
   keyword?: string
   status?: ProductionStatus[]
-  /** 和 status=RUNNING 一起用：true 部分回货、false 生产中（没回过货）；不传都要 */
+  /** 和 status=RUNNING 一起用：true 部分回货（回过良品）、false 生产中（没回过良品，只回过次品的也在这）；不传都要 */
   returned?: boolean
   risk?: ProductionRiskKey
   factoryId?: string | null
@@ -266,7 +271,7 @@ export interface ProductionQuery {
   ids?: string[]
 }
 
-/** 状态页签上的数：每个状态几张，没有的不在里面；PARTIAL 是 RUNNING 里回过货的几张（"生产中"页签 = RUNNING − PARTIAL） */
+/** 状态页签上的数：每个状态几张，没有的不在里面；PARTIAL 是 RUNNING 里回过良品的几张（"生产中"页签 = RUNNING − PARTIAL） */
 export type ProductionCounts = Partial<Record<ProductionStatus | 'PARTIAL', number>>
 
 // ---------------------------------------------------------------- 详情

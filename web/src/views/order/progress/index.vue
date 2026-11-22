@@ -21,7 +21,7 @@ import { useLatestRequest } from '@/composables/useLatestRequest'
 import { useTable } from '@/composables/useTable'
 import { useUserStore } from '@/stores/user'
 import type { OrderProgressCounts, OrderProgressQuery, OrderProgressRow, OrderProgressSegment, ProductionBrief } from '@/types/order'
-import { PRODUCTION_STATUS } from '@/types/production'
+import { PRODUCTION_STATUS, productionStatusOf } from '@/types/production'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import { docRoute } from '@/utils/docRoute'
 import { formatDate, formatDateRange, formatQty } from '@/utils/format'
@@ -254,7 +254,7 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
             <el-tooltip v-for="p in (row as OrderProgressRow).productions" :key="p.id" effect="light" placement="top" :show-after="200">
               <template #content>
                 <div class="chip-tip">
-                  <div><span class="code">{{ p.no }}</span> · {{ PRODUCTION_STATUS[p.status].label }}</div>
+                  <div><span class="code">{{ p.no }}</span> · {{ productionStatusOf(p).label }}</div>
                   <NodeDots :nodes="p.nodes" :current-name="p.currentNodeName" />
                   <div>回货良品 {{ formatQty(p.returnedQty - p.defectQty) }} / {{ formatQty(p.totalQty) }}<template v-if="p.defectQty">（共回 {{ formatQty(p.returnedQty) }}，次品 {{ formatQty(p.defectQty) }}）</template></div>
                   <div>交期 {{ formatDate(p.expectDate ?? p.dueDate) }}</div>

@@ -46,6 +46,7 @@ class ProductionExcel {
             r.setExpectDate(o.getExpectDate());
             r.setReturnedQty(o.getReturnedQty());
             r.setDefectQty(o.getDefectQty());
+            r.setGoodQty(o.getReturnedQty() - o.getDefectQty());
             r.setMerch(o.getMerchName());
             DocStatus status = DocStatus.valueOf(o.getStatus());
             r.setStatus(status == RUNNING && o.getReturnedQty() - o.getDefectQty() > 0 ? "部分回货" : ProductionRules.STATUS.label(status).text());
@@ -71,6 +72,7 @@ class ProductionExcel {
         private LocalDate expectDate;
         private Integer returnedQty;
         private Integer defectQty;
+        private Integer goodQty;
         private String merch;
         private String status;
     }
@@ -88,8 +90,10 @@ class ProductionExcel {
                 ExcelColumn.decimal("金额", 2, ExportRow::getAmount, ExportRow::setAmount),
                 ExcelColumn.date("交期", ExportRow::getDueDate, ExportRow::setDueDate),
                 ExcelColumn.date("预计交期", ExportRow::getExpectDate, ExportRow::setExpectDate),
-                ExcelColumn.integer("已回货", ExportRow::getReturnedQty, ExportRow::setReturnedQty),
+                ExcelColumn.integer("已回货（含次品）", ExportRow::getReturnedQty, ExportRow::setReturnedQty),
                 ExcelColumn.integer("次品", ExportRow::getDefectQty, ExportRow::setDefectQty),
+                // 回齐、部分回货、订单的已回货都按良品（甲方 11-19），单列一列免得拿含次品的数去对
+                ExcelColumn.integer("已回良品", ExportRow::getGoodQty, ExportRow::setGoodQty),
                 ExcelColumn.text("生产跟单", ExportRow::getMerch, ExportRow::setMerch),
                 ExcelColumn.text("状态", ExportRow::getStatus, ExportRow::setStatus));
     }

@@ -69,7 +69,7 @@
         <if test="q.brand != null and q.brand != ''">AND s.brand = #{q.brand}</if>
     </sql>
 
-    <!-- 列表、条数、看板共用；条数不看状态和回没回过货（withStatus = false），看板的卡片数不看 card（withCard = false） -->
+    <!-- 列表、条数、看板共用；条数不看状态和回没回过良品（withStatus = false），看板的卡片数不看 card（withCard = false） -->
     <sql id="where">
         WHERE true
         <include refid="baseWhere"/>

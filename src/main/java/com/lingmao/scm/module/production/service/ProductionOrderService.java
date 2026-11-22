@@ -23,7 +23,7 @@ public interface ProductionOrderService {
     /** 列表：kind 必传；按风险分数、交期排（§2.3） */
     PageResult<ProductionRowVO> page(ProductionQuery query);
 
-    /** 各状态几张，多一个 PARTIAL（生产中里回过货的）；条件和列表一样，不看 status、returned */
+    /** 各状态几张，多一个 PARTIAL（生产中里回过良品的）；条件和列表一样，不看 status、returned */
     Map<String, Long> counts(ProductionQuery query);
 
     /** 不存在、不在数据范围 404 */

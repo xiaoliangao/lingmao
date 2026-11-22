@@ -38,7 +38,7 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
     List<ProductionRowVO> selectRows(@Param("q") ProductionQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope,
                                      @Param("today") LocalDate today, @Param("nearUntil") LocalDate nearUntil);
 
-    /** 各状态几张，partial 是其中回过货的（只有 RUNNING 有用）；条件和列表一样，不看 status、returned */
+    /** 各状态几张，partial 是其中回过良品的（只有 RUNNING 有用）；条件和列表一样，不看 status、returned */
     List<CountRow> selectCounts(@Param("q") ProductionQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope,
                                 @Param("today") LocalDate today, @Param("nearUntil") LocalDate nearUntil);
 
@@ -72,7 +72,7 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
                            @Param("to") LocalDate to);
 
     /**
-     * 看板按工厂：合作中的成衣厂、加工厂都列，加上停用了但还有在制的；在制 = 已下单、生产中的单数和件数（件数 − 已回货）。
+     * 看板按工厂：合作中的成衣厂、加工厂都列，加上停用了但还有在制的；在制 = 已下单、生产中的单数和件数（件数 − 已回良品）。
      * 按在制件数从多到少
      */
     List<FactoryLoadRow> selectFactoryLoads(@Param("q") ProductionQuery query, @Param("scope") DataScope scope, @Param("today") LocalDate today,

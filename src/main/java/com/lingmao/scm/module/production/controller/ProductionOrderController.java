@@ -94,7 +94,7 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
         return R.ok(productionOrderService.page(query));
     }
 
-    @Operation(summary = "状态页签上的数：条件和列表一样，不看 status、returned；PARTIAL 是生产中里回过货的")
+    @Operation(summary = "状态页签上的数：条件和列表一样，不看 status、returned；PARTIAL 是生产中里回过良品的（只回过次品的不算）")
     @GetMapping("/counts")
     @PreAuthorize("hasAuthority('production:order:list')")
     public R<Map<String, Long>> counts(@Valid ProductionQuery query) {
