@@ -124,7 +124,7 @@ async function pass() {
           <el-table-column label="缺" width="80" class-name="num" align="right">
             <template #default="{ row }"><span class="danger">{{ formatQty(row.gap) }}</span></template>
           </el-table-column>
-          <el-table-column label="采购周期" width="76" class-name="num" align="right">
+          <el-table-column label="采购周期" width="88" class-name="num" align="right">
             <template #default="{ row }">{{ row.leadDays == null ? '—' : `${row.leadDays} 天` }}</template>
           </el-table-column>
         </el-table>

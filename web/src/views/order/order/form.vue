@@ -309,8 +309,25 @@ watch(
   },
 )
 
+/**
+ * 款上填了单价、行交期、行备注却没点"应用"的：保存时补进还空着的格子（格子里单独填过的不动）。
+ * 不补的话填了也静默丢掉，下成 0 元单（走查 T-8a56c5）
+ */
+function filledValues(b: StyleBlock): Record<string, SkuValues> {
+  const out: Record<string, SkuValues> = {}
+  for (const s of b.opt.skus) {
+    const v = { ...valuesOf(b, s.id) }
+    const batchPrice = b.bySizePrice ? b.sizePrices[s.sizeCode] ?? null : b.unitPrice
+    if (v.price == null && batchPrice != null) v.price = batchPrice
+    if (v.lineDueDate == null && b.lineDueDate) v.lineDueDate = b.lineDueDate
+    if (v.remark == null && orNull(b.remark)) v.remark = orNull(b.remark)
+    out[s.id] = v
+  }
+  return out
+}
+
 function buildItems(): OrderItemForm[] {
-  return blocks.value.flatMap((b) => buildSkuRows(b.opt.skus.map((s) => s.id), b.qtys, b.values))
+  return blocks.value.flatMap((b) => buildSkuRows(b.opt.skus.map((s) => s.id), b.qtys, filledValues(b)))
 }
 
 function buildForm(): OrderForm | null {

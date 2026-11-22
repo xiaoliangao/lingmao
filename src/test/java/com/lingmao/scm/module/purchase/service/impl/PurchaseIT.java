@@ -117,6 +117,10 @@ class PurchaseIT {
         long poA = approvedStockPo(f, "100", LocalDate.now().plusDays(3));
         long poB = approvedStockPo(f, "50", LocalDate.now().plusDays(200));
 
+        // "选订单算料"的行带主体：本人范围的采购打不开订单详情，前端靠它建单（走查 T-8a56c5）
+        assertThat(mrpService.orderOptions(null, new com.lingmao.scm.common.page.PageQuery()).getList())
+                .filteredOn(o -> o.getOrderId() == orderId).singleElement()
+                .satisfies(o -> assertThat(o.getCompanyId()).isEqualTo(f.company));
         MrpCreateReq create = new MrpCreateReq();
         create.setOrderIds(List.of(orderId));
         DocSaved calc = mrpService.create(create);

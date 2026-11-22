@@ -9,6 +9,8 @@ import java.util.List;
 @Data
 public class MrpOrderOptionVO {
     private Long orderId;
+    /** 订单的主体：建算料单时带上它（本人范围的采购打不开别人的订单详情，不能靠详情取主体） */
+    private Long companyId;
     private String orderNo;
     private String orderType;
     /** 品类线：一张算料单只能选一条线的订单 */

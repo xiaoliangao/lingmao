@@ -162,7 +162,7 @@ async function createCalc() {
   }
   creating.value = true
   try {
-    const created = await mrpApi.create(picked.value.map((o) => o.orderId))
+    const created = await mrpApi.create(picked.value.map((o) => o.orderId), { companyId: picked.value[0].companyId })
     ElMessage.success(`${created.no} 算好了，勾选要买的行生成采购单`)
     pickVisible.value = false
     await router.push(`/mrp/${created.id}`)

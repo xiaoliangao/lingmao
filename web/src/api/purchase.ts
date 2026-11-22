@@ -27,7 +27,10 @@ export const mrpApi = {
   get: (id: string) => http.get<MrpCalcDetail>(`${mrpBase}/${id}`),
   /** "选订单算料"对话框：已审核、生产中的需求订单 */
   orderOptions: (params: PageParams & { keyword?: string }) => http.get<PageResult<MrpOrderOption>>(`${mrpBase}/order-options`, params),
-  /** 选订单算料，存成一张草稿算料单 */
+  /**
+   * 选订单算料，存成一张草稿算料单。从"选订单算料"来的要传 options.companyId（选项行上有）：
+   * 不传就去取第一张订单的详情拿主体，本人范围的采购打不开别人的订单，会 404
+   */
   create: async (orderIds: string[], options?: RequestOptions) => http.post<MrpCreated>(mrpBase, snapshotRequestBody({ orderIds }), orderIds[0] ? await documentOptions('/api/orders', orderIds[0], options) : options),
   /** 草稿里改一行（一次改一格），返回改完的整张详情 */
   updateItem: (id: string, itemId: string, data: MrpItemForm) => http.put<MrpCalcDetail>(`${mrpBase}/${id}/items/${itemId}`, data),

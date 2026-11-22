@@ -201,6 +201,8 @@ export interface MrpCalcDetail extends DocHeader<MrpStatus, MrpAction> {
 /** "选订单算料"对话框的一行：已审核、生产中的需求订单（只有它们能算料） */
 export interface MrpOrderOption {
   orderId: string
+  /** 订单的主体：建算料单时带上（本人范围的采购打不开别人的订单详情，不能靠详情取主体） */
+  companyId: string
   orderNo: string
   /** 字典 order_type */
   orderType: string

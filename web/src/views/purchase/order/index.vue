@@ -194,7 +194,7 @@ async function exportPicked() {
         <UserSelect v-model="query.buyerId" v-model:label="buyerName" clearable placeholder="全部采购员" />
       </FilterItem>
       <template #right>
-        <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审批</el-checkbox>
+        <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审核</el-checkbox>
         <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="[{ label: '我的', value: true }, { label: '全部', value: false }]" @change="search" />
       </template>
     </FilterBar>

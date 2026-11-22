@@ -234,7 +234,7 @@ const exportPicked = () => exportSelected(selected.value.map((r) => r.id))
         <DictSelect v-model="query.brand" type="brand" clearable />
       </FilterItem>
       <template #right>
-        <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审批</el-checkbox>
+        <el-checkbox v-model="query.auditForMe" data-testid="audit-for-me-toggle" @change="search">待我审核</el-checkbox>
         <el-segmented :disabled="query.auditForMe" v-model="query.mine" :options="MINE_OPTIONS" @change="search" />
       </template>
     </FilterBar>
