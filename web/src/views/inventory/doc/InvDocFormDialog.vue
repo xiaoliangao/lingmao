@@ -16,6 +16,7 @@ import { INV_DOC_TYPE, type InvDocDetail, type InvDocItemForm, type InvDocType }
 import type { IssueOption } from '@/types/production'
 import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatQty } from '@/utils/format'
+import { quantityPriceAmount } from '@/utils/fixedPoint'
 import { orNull } from '@/views/basic/common'
 import PickProductionDialog from './PickProductionDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
@@ -100,7 +101,7 @@ const isPurchaseDoc = computed(() => activeType.value === 'PURCHASE_IN' || activ
 /** 退料入库新建时能挂源生产单（选了就走生成接口） */
 const canPickSource = computed(() => !props.editingDoc && meta.value.source === 'PRODUCTION_ORDER' && !meta.value.sourceRequired)
 const showOverReason = computed(() => activeType.value === 'ISSUE_OUT')
-const lineAmount = (l: LineRow) => (l.qty != null && l.price != null ? l.qty * l.price : null)
+const lineAmount = (l: LineRow) => quantityPriceAmount(l.qty, l.price)
 const short = (l: LineRow) => l.fromStockQty !== null && (l.qty ?? 0) > l.fromStockQty
 
 const fromOptions = computed(() => {
@@ -214,9 +215,12 @@ watch(
   () => head.fromWarehouseId,
   (whId) => {
     if (!visible.value) return
-    if (activeType.value === 'RETURN_IN' && whId) {
+    if (activeType.value === 'RETURN_IN') {
       const hit = warehouses.value.find((w) => w.id === whId)
-      if (hit?.factoryId) head.partnerId = hit.factoryId
+      if (head.partnerId !== (hit?.factoryId ?? null)) {
+        head.partnerId = hit?.factoryId ?? null
+        head.partnerName = null
+      }
     }
     if (activeType.value === 'TRANSFER' && head.toWarehouseId === whId) {
       head.toWarehouseId = null
@@ -342,7 +346,7 @@ async function save() {
         <el-button @click="prodPicking = true">选生产单</el-button>
       </el-form-item>
       <el-form-item v-if="meta.partner === 'FACTORY' && !isSourceDoc" label="往来加工厂">
-        <SupplierSelect v-model="head.partnerId" :category="['GARMENT', 'PROCESSOR']" :label="head.partnerName" clearable />
+        <SupplierSelect v-model="head.partnerId" v-model:label="head.partnerName" :company-id="head.companyId" :category="['GARMENT', 'PROCESSOR']" clearable />
       </el-form-item>
 
       <el-form-item v-if="meta.reasonDict" label="原因" required>

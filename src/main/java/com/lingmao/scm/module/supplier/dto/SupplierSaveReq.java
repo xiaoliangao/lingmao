@@ -40,7 +40,7 @@ public class SupplierSaveReq {
     private String level;
 
     @NotEmpty(message = "至少选一个分类")
-    private List<@NotBlank(message = "分类不能为空") String> categories;
+    private List<@NotBlank(message = "分类不能为空") @Size(max = 64, message = "分类编码最多 64 个字") String> categories;
 
     /** 擅长品类的 id */
     private List<Long> goodAtIds;

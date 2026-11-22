@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.inventory.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -7,6 +8,7 @@ import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.BoundedExportRows;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
@@ -873,8 +875,13 @@ public class InvDocServiceImpl implements InvDocService {
         List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), docs, InvDocRowVO::getId, InvDocRowVO::getCompanyId);
-        Map<Long, List<InvDocItem>> items = docs.isEmpty() ? Map.of()
-                : itemMapper.selectByDocs(docs.stream().map(InvDocRowVO::getId).toList()).stream()
+        BoundedExportRows.requireWithinLimit(docs.size(), Excel.MAX_EXPORT_ROWS, "物料出入库单");
+        Map<Long, List<InvDocItem>> items = BoundedExportRows.read(docs.stream().map(InvDocRowVO::getId).toList(),
+                1000, Excel.MAX_EXPORT_ROWS, "物料出入库明细", (ids, limit) ->
+                        itemMapper.selectList(new LambdaQueryWrapper<InvDocItem>()
+                                .in(InvDocItem::getDocId, ids)
+                                .orderByAsc(InvDocItem::getDocId, InvDocItem::getSeq, InvDocItem::getId)
+                                .last("LIMIT " + limit))).stream()
                 .collect(Collectors.groupingBy(InvDocItem::getDocId));
         Set<Long> skuIds = new HashSet<>();
         items.values().forEach(list -> list.forEach(i -> skuIds.add(i.getMaterialSkuId())));

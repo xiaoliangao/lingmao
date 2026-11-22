@@ -44,6 +44,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.IntBinaryOperator;
+import java.util.function.IntSupplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -63,12 +65,12 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
                 VALUES(?,'P37 synthetic material',?,'FABRIC','METER','METER') RETURNING id
                 """, Long.class, prefix, f.materialCategory());
         try {
-            assertThat(jdbc.update("""
+            seedInBatches("p37-material-sku-fixture", 25_000, 2, (from, to) -> jdbc.update("""
                     INSERT INTO bas_material_sku(material_id,code,color_id,spec_code)
                     SELECT parents.id, ? || '-' || parents.id || '-' || n, ?, 'P37-' || n
                     FROM (VALUES (CAST(? AS bigint)),(CAST(? AS bigint))) parents(id)
-                    CROSS JOIN generate_series(1,25000) n
-                    """, prefix, f.color(), f.material(), second)).isEqualTo(50_000);
+                    CROSS JOIN generate_series(?,?) n
+                    """, prefix, f.color(), f.material(), second, from, to));
             assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material_sku WHERE material_id IN (?,?)", Long.class,
                     f.material(), second)).isEqualTo(50_001L);
             authenticate(exporter);
@@ -81,7 +83,10 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
             evidence("p37-material-overflow", 2, 50_001, reply, captured);
             exactMaterialLimit(f, exporter, second, prefix);
         } finally {
-            jdbc.update("DELETE FROM bas_material_sku WHERE material_id IN (?,?) AND code LIKE ?", f.material(), second, prefix + "-%");
+            cleanupInBatches("p37-material-sku-cleanup", () -> jdbc.update("""
+                    DELETE FROM bas_material_sku WHERE id IN (
+                      SELECT id FROM bas_material_sku WHERE material_id IN (?,?) AND code LIKE ? ORDER BY id LIMIT 5000)
+                    """, f.material(), second, prefix + "-%"));
             jdbc.update("DELETE FROM bas_material WHERE id=?", second);
         }
     }
@@ -91,10 +96,10 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
         Account exporter = custom(f.company(), "ALL", "style:style:export");
         String prefix = "P37S" + suffix();
         try {
-            assertThat(jdbc.update("""
+            seedInBatches("p37-style-sku-fixture", 50_000, 1, (from, to) -> jdbc.update("""
                     INSERT INTO sty_style_sku(style_id,code,color_id,size_code)
-                    SELECT ?, ? || '-' || n, ?, 'P37-' || n FROM generate_series(1,50000) n
-                    """, f.style(), prefix, f.color())).isEqualTo(50_000);
+                    SELECT ?, ? || '-' || n, ?, 'P37-' || n FROM generate_series(?,?) n
+                    """, f.style(), prefix, f.color(), from, to));
             assertThat(jdbc.queryForObject("SELECT count(*) FROM sty_style_sku WHERE style_id=?", Long.class, f.style())).isEqualTo(50_001L);
             authenticate(exporter);
             StyleQuery query = new StyleQuery(); query.setIds(List.of(f.style()));
@@ -106,7 +111,10 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
             HttpResponse<byte[]> reply = rejectedExport(exporter, "/api/styles/export?ids=" + f.style(), "导出 SKU");
             evidence("p37-style-sku-overflow", 1, 50_001, reply, captured);
         } finally {
-            jdbc.update("DELETE FROM sty_style_sku WHERE style_id=? AND code LIKE ?", f.style(), prefix + "-%");
+            cleanupInBatches("p37-style-sku-cleanup", () -> jdbc.update("""
+                    DELETE FROM sty_style_sku WHERE id IN (
+                      SELECT id FROM sty_style_sku WHERE style_id=? AND code LIKE ? ORDER BY id LIMIT 5000)
+                    """, f.style(), prefix + "-%"));
         }
     }
 
@@ -120,7 +128,7 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
                 """, Long.class, prefix, f.category(), f.sizeGroup());
         try {
             // 25,000 synthetic shared colors on two styles exercise 50,001 child rows without 50,001 parents.
-            assertThat(jdbc.update("""
+            seedInBatches("p37-color-master-fixture", 25_000, 1, (from, to) -> jdbc.update("""
                     INSERT INTO bas_color(code,name)
                     SELECT codes.code, ? || '-' || codes.code
                     FROM (
@@ -130,14 +138,17 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
                       FROM generate_series(0,46655) n
                     ) codes
                     WHERE NOT EXISTS (SELECT 1 FROM bas_color existing WHERE existing.code=codes.code)
-                    ORDER BY codes.code LIMIT 25000
-                    """, prefix)).isEqualTo(25_000);
-            assertThat(jdbc.update("""
+                    ORDER BY codes.code LIMIT ?
+                    """, prefix, to - from + 1));
+            seedInBatches("p37-style-color-fixture", 25_000, 2, (from, to) -> jdbc.update("""
+                    WITH colors AS (
+                      SELECT id,row_number() OVER (ORDER BY id) AS n FROM bas_color WHERE name LIKE ?
+                    )
                     INSERT INTO sty_style_color(style_id,color_id,seq)
-                    SELECT parents.id,c.id,row_number() OVER (PARTITION BY parents.id ORDER BY c.id)+1
-                    FROM bas_color c CROSS JOIN (VALUES (CAST(? AS bigint)),(CAST(? AS bigint))) parents(id)
-                    WHERE c.name LIKE ?
-                    """, f.style(), second, prefix + "-%")).isEqualTo(50_000);
+                    SELECT parents.id,c.id,c.n+1
+                    FROM colors c CROSS JOIN (VALUES (CAST(? AS bigint)),(CAST(? AS bigint))) parents(id)
+                    WHERE c.n>=? AND c.n<=?
+                    """, prefix + "-%", f.style(), second, from, to));
             assertThat(jdbc.queryForObject("SELECT count(*) FROM sty_style_color WHERE style_id IN (?,?)", Long.class,
                     f.style(), second)).isEqualTo(50_001L);
             authenticate(exporter);
@@ -149,9 +160,15 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
             HttpResponse<byte[]> reply = rejectedExport(exporter, "/api/styles/export?ids=" + f.style() + "," + second, "款式颜色");
             evidence("p37-style-color-overflow", 2, 50_001, reply, captured);
         } finally {
-            jdbc.update("DELETE FROM sty_style_color WHERE style_id IN (?,?) AND color_id IN (SELECT id FROM bas_color WHERE name LIKE ?)",
-                    f.style(), second, prefix + "-%");
-            jdbc.update("DELETE FROM bas_color WHERE name LIKE ?", prefix + "-%");
+            cleanupInBatches("p37-style-color-cleanup", () -> jdbc.update("""
+                    DELETE FROM sty_style_color WHERE id IN (
+                      SELECT id FROM sty_style_color WHERE style_id IN (?,?)
+                        AND color_id IN (SELECT id FROM bas_color WHERE name LIKE ?) ORDER BY id LIMIT 5000)
+                    """, f.style(), second, prefix + "-%"));
+            cleanupInBatches("p37-color-master-cleanup", () -> jdbc.update("""
+                    DELETE FROM bas_color WHERE id IN (
+                      SELECT id FROM bas_color WHERE name LIKE ? ORDER BY id LIMIT 5000)
+                    """, prefix + "-%"));
             jdbc.update("DELETE FROM sty_style WHERE id=?", second);
         }
     }
@@ -228,6 +245,41 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
             }
         }
         writeEvidence("p37-legal-exports.json", map("workbooks", workbooks));
+    }
+
+    /** Setup/cleanup keep all production constraints and timeouts; only fixture statements are bounded. */
+    private void seedInBatches(String name, int upper, int multiplier, IntBinaryOperator insert) throws Exception {
+        List<Map<String, Object>> batches = new ArrayList<>();
+        int inserted = 0;
+        for (int from = 1; from <= upper; from += 2_500) {
+            int to = Math.min(upper, from + 2_499);
+            long started = System.nanoTime();
+            int changed = insert.applyAsInt(from, to);
+            assertThat(changed).isEqualTo((to - from + 1) * multiplier);
+            inserted += changed;
+            batches.add(map("fromInclusive", from, "toInclusive", to, "insertedRows", changed,
+                    "elapsedMs", (System.nanoTime() - started) / 1_000_000));
+        }
+        assertThat(inserted).isEqualTo(upper * multiplier);
+        writeEvidence(name + ".json", map("batches", batches, "insertedRows", inserted,
+                "statementTimeout", jdbc.queryForObject("SHOW statement_timeout", String.class)));
+    }
+
+    private void cleanupInBatches(String name, IntSupplier delete) throws Exception {
+        List<Map<String, Object>> batches = new ArrayList<>();
+        // At most 50,000 owned fixture rows; the final empty batch proves cleanup is complete.
+        for (int batch = 0; batch <= 10; batch++) {
+            long started = System.nanoTime();
+            int changed = delete.getAsInt();
+            assertThat(changed).isBetween(0, 5_000);
+            batches.add(map("deletedRows", changed, "elapsedMs", (System.nanoTime() - started) / 1_000_000));
+            if (changed == 0) {
+                writeEvidence(name + ".json", map("batches", batches,
+                        "statementTimeout", jdbc.queryForObject("SHOW statement_timeout", String.class)));
+                return;
+            }
+        }
+        throw new IllegalStateException("Synthetic export fixture cleanup exceeded its row budget");
     }
 
     private HttpResponse<byte[]> rejectedExport(Account actor, String path, String label) throws Exception {

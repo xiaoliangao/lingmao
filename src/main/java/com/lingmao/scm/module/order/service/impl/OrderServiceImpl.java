@@ -5,12 +5,14 @@ import com.lingmao.scm.security.FieldPermissions;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.BoundedExportRows;
 import com.lingmao.scm.common.excel.ImportError;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
@@ -1178,7 +1180,26 @@ public class OrderServiceImpl implements OrderService {
         List<OrderRowVO> rows = orderMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, OrderRowVO::getId, OrderRowVO::getCompanyId);
-        fillRows(rows);
+        BoundedExportRows.requireWithinLimit(rows.size(), Excel.MAX_EXPORT_ROWS, "需求订单");
+        // 每张订单虽然只导出一行，其款式关联也需要独立预算，不能先取全量再拼成一个单元格。
+        List<OrderItem> orderStyles = BoundedExportRows.read(rows.stream().map(OrderRowVO::getId).toList(),
+                1000, Excel.MAX_EXPORT_ROWS, "需求订单款式关联", (ids, limit) ->
+                        itemMapper.selectList(new QueryWrapper<OrderItem>().select("order_id", "style_id")
+                                .in("order_id", ids).gt("qty", 0).groupBy("order_id", "style_id")
+                                .last("ORDER BY order_id, MIN(seq), style_id LIMIT " + limit)));
+        Map<Long, StyleRef> styles = styleService.refs(orderStyles.stream().map(OrderItem::getStyleId).collect(Collectors.toSet()));
+        Map<Long, List<OrderStyleRef>> byOrder = new HashMap<>();
+        orderStyles.forEach(item -> byOrder.computeIfAbsent(item.getOrderId(), ignored -> new ArrayList<>())
+                .add(new OrderStyleRef(item.getStyleId(), styles.containsKey(item.getStyleId())
+                        ? styles.get(item.getStyleId()).code() : null, null)));
+        Map<Long, String> names = userService.nicknames(rows.stream()
+                .flatMap(row -> java.util.stream.Stream.of(row.getSalesId(), row.getMerchId()))
+                .filter(Objects::nonNull).collect(Collectors.toSet()));
+        rows.forEach(row -> {
+            row.setStyles(byOrder.getOrDefault(row.getId(), List.of()));
+            row.setSalesName(names.get(row.getSalesId()));
+            row.setMerchName(names.get(row.getMerchId()));
+        });
         return excel.export(rows);
     }
 

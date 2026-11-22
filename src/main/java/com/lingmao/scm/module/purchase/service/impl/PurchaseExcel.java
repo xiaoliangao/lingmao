@@ -1,6 +1,8 @@
 package com.lingmao.scm.module.purchase.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.doc.DocStatus;
+import com.lingmao.scm.common.excel.BoundedExportRows;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ExcelColumn;
 import com.lingmao.scm.common.excel.ExcelSchema;
@@ -87,10 +89,15 @@ class PurchaseExcel {
             ExcelColumn.decimal("未入库", 3, ExportRow::getPendingQty, ExportRow::setPendingQty),
             ExcelColumn.text("跟进备注", ExportRow::getFollowNote, ExportRow::setFollowNote));
 
-    /** rows 的采购员、按钮已经由 Service 填好；明细这里一次取齐 */
+    /** rows 的采购员已经由 Service 填好；明细按实际工作表行数执行 SQL 预算。 */
     byte[] export(List<PurchaseRowVO> rows) {
-        Map<Long, List<PurchaseOrderItem>> items = rows.isEmpty() ? Map.of()
-                : itemMapper.selectByOrders(rows.stream().map(PurchaseRowVO::getId).toList()).stream()
+        BoundedExportRows.requireWithinLimit(rows.size(), Excel.MAX_EXPORT_ROWS, "采购单");
+        Map<Long, List<PurchaseOrderItem>> items = BoundedExportRows.read(rows.stream().map(PurchaseRowVO::getId).toList(),
+                1000, Excel.MAX_EXPORT_ROWS, "采购单明细", (ids, limit) ->
+                        itemMapper.selectList(new LambdaQueryWrapper<PurchaseOrderItem>()
+                                .in(PurchaseOrderItem::getPurchaseOrderId, ids)
+                                .orderByAsc(PurchaseOrderItem::getPurchaseOrderId, PurchaseOrderItem::getSeq, PurchaseOrderItem::getId)
+                                .last("LIMIT " + limit))).stream()
                 .collect(Collectors.groupingBy(PurchaseOrderItem::getPurchaseOrderId));
         Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(items.values().stream().flatMap(List::stream)
                 .map(PurchaseOrderItem::getMaterialSkuId).collect(Collectors.toSet()));

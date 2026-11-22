@@ -1385,12 +1385,40 @@ class AuditUi(unittest.TestCase):
                     self.shot("inventory-list-" + doc_type.lower())
                 for label in new_types:
                     page.locator(".page-header").get_by_role("button", name="新建", exact=True).click()
-                    reads_during(["/api/companies/options", "/api/warehouses/options"],
+                    options = reads_during(["/api/companies/options", "/api/warehouses/options"],
                         lambda target=label: page.get_by_role("menuitem", name=target, exact=True).click())
                     dialog = page.get_by_role("dialog", name="新建" + label, exact=True)
                     expect(dialog.get_by_role("columnheader", name="物料", exact=True)).to_be_visible()
                     expect(dialog.get_by_role("button", name="存草稿", exact=True)).to_be_visible()
+                    if label == "退料入库":
+                        factory = next(warehouse for warehouse in options["/api/warehouses/options"]
+                                       if warehouse["type"] == "FACTORY")
+                        supplier_options = self.api.request("GET", query_path("/api/suppliers/options", {
+                            "includeId": factory["factoryId"], "category": "GARMENT,PROCESSOR"}))
+                        supplier = next(option for option in supplier_options if option["id"] == factory["factoryId"])
+                        selected = dialog.locator(".el-form-item").filter(
+                            has=page.locator("label", has_text=re.compile(r"^往来加工厂$")))
+                        # The automatic warehouse selection must resolve its label without
+                        # requiring the user to open the supplier dropdown first.
+                        expect(selected.locator(".el-select__selected-item").filter(has_text=supplier["shortName"]))\
+                            .to_be_visible()
+                        self.note("return warehouse preselect resolves its real supplier name without opening dropdown",
+                                  warehouseId=factory["id"], supplierId=supplier["id"],
+                                  supplierName=supplier["shortName"])
                     self.shot("inventory-new-" + next(code.lower() for text, code in label_pairs if text == label))
+                    table = dialog.locator(".el-table:visible").first
+                    scroll = table.locator(".el-table__body-wrapper .el-scrollbar__wrap")
+                    width = scroll.evaluate("element => ({viewport: element.clientWidth, content: element.scrollWidth})")
+                    if width["content"] > width["viewport"]:
+                        scroll.evaluate("element => { element.scrollLeft = element.scrollWidth }")
+                        self.poll(lambda: scroll.evaluate("element => element.scrollLeft") > 0)
+                        body_left = scroll.evaluate("element => element.scrollLeft")
+                        self.poll(lambda: abs(table.locator(".el-table__header-wrapper")
+                                              .evaluate("element => element.scrollLeft") - body_left) <= 1)
+                        self.note("inventory form rightmost columns are reachable and header follows horizontal scroll",
+                                  docType=label, viewport=width["viewport"], content=width["content"], scrollLeft=body_left)
+                        self.shot("inventory-new-right-edge-" + next(code.lower() for text, code in label_pairs if text == label))
+                        scroll.evaluate("element => { element.scrollLeft = 0 }")
                     if label in {"其他入库", "调拨"}:
                         sku_picker(lambda: dialog.get_by_role("button", name="从物料库选", exact=True).click(),
                                    "inventory-picker-" + kind.lower())
@@ -1866,6 +1894,104 @@ class AuditUi(unittest.TestCase):
                   actualPartialStatus="RUNNING", partialPrefillCode=0, remainingPurchaseQty=8,
                   coveredSourceStates=["DRAFT", "PENDING", "APPROVED", "RUNNING"],
                   notEnumeratedSourceStates=["DONE", "CLOSED", "VOIDED"], responseMocks=False)
+
+    def test_21_fixed_point_form_previews_match_real_backend(self):
+        """Actual stored drafts, production form components, no response mocking."""
+        material = self.api.request("GET", f"/api/materials/{self.fixture.get('materialId', 1)}")
+        sku_ids = [sku["id"] for sku in material["skus"]][:2]
+        self.assertEqual(len(sku_ids), 2, "The real fixture must supply two distinct material SKUs")
+        today = business_day()
+        made = self.api.request("POST", "/api/purchase-orders", {
+            "companyId": self.fixture["companyId"], "supplierId": self.fixture.get("supplierId", 1),
+            "purchaseType": "STOCK", "buyerId": self.fixture["userId"],
+            "orderDate": today.isoformat(), "deliveryDate": (today + timedelta(days=7)).isoformat(),
+            "warehouseId": self.fixture["warehouseId"], "settleMethod": "MONTHLY", "taxPct": 13,
+            "taxIncluded": True, "freightIncluded": True, "remark": "匿名定点预览回归",
+            "planStyleIds": [], "items": [{"calcItemId": None, "materialSkuId": sku_id,
+                "qty": 0.018, "price": 7.5, "priceChangeReason": "匿名尾差验证",
+                "lineDueDate": None, "expectDate": None} for sku_id in sku_ids],
+        })
+        purchase_path = f"/api/purchase-orders/{made['id']}"
+        purchase = self.api.request("GET", purchase_path)
+        assert_decimal_equal(purchase["totalAmount"], "0.28")
+        for row in purchase["items"]:
+            assert_decimal_equal(row["amount"], "0.14")
+
+        def amount_cells(scope):
+            table = scope.locator(".el-table:visible").first
+            expect(table.get_by_role("columnheader", name="金额", exact=True)).to_be_visible()
+            headers = table.locator(".el-table__header-wrapper th")
+            labels = [text.strip() for text in headers.all_text_contents()]
+            index = labels.index("金额")
+            return table, table.locator(f".el-table__body-wrapper tr.el-table__row > td:nth-child({index + 1}) .cell")
+
+        with self.subTest(form="purchase"):
+            with self.page.expect_response(lambda response: self.response_for(response, "GET", purchase_path)):
+                self.page.goto(f"{self.ui_base}/purchases/{made['id']}/edit")
+            expect(self.page.locator(".page-header h1")).to_have_text("编辑 " + purchase["no"])
+            table, cells = amount_cells(self.page)
+            expect(cells).to_have_count(2)
+            table.locator(".el-table__body-wrapper .el-scrollbar__wrap").evaluate(
+                "element => { element.scrollLeft = element.scrollWidth }")
+            self.shot("purchase-two-rounded-lines-before-assert")
+            expect(cells).to_have_text(["0.14", "0.14"])
+            expect(self.page.locator(".num strong")).to_have_text("0.28")
+            edge_columns = table.locator(".el-table__body-wrapper tr.el-table__row").evaluate_all("""rows => rows.map(row => {
+                const first = row.querySelector('td:first-child .cell');
+                const last = row.querySelector('td:last-child .cell');
+                const button = last.querySelector('button');
+                const width = cell => { const css = getComputedStyle(cell); return cell.clientWidth
+                    - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight); };
+                const range = document.createRange(); range.selectNodeContents(first);
+                const text = range.getBoundingClientRect();
+                return { sequence: first.textContent.trim(), sequenceContentWidth: width(first),
+                    sequenceTextWidth: text.width, sequenceTextHeight: text.height,
+                    sequenceLineHeight: parseFloat(getComputedStyle(first).lineHeight),
+                    deleteContentWidth: width(last), deleteButtonWidth: button.getBoundingClientRect().width };
+            })""")
+            for edge in edge_columns:
+                self.assertLessEqual(edge["sequenceTextWidth"], edge["sequenceContentWidth"] + 1)
+                self.assertLessEqual(edge["sequenceTextHeight"], edge["sequenceLineHeight"] + 1)
+                self.assertLessEqual(edge["deleteButtonWidth"], edge["deleteContentWidth"] + 1)
+            self.note("production purchase table edge columns fit with the real sidebar",
+                      edgeColumns=edge_columns, responseMocks=False)
+            self.note("purchase preview matches independently calculated stored line amounts",
+                      purchaseId=made["id"], qty="0.018", price="7.5", lineAmounts=["0.14", "0.14"],
+                      totalAmount="0.28", responseMocks=False)
+
+        reasons = self.api.request("GET", "/api/dict-data/by-type/stock_in_reason")
+        self.assertTrue(reasons)
+        made_inventory = self.api.request("POST", "/api/inventory-docs", {
+            "docType": "OTHER_IN", "companyId": self.fixture["companyId"], "docDate": today.isoformat(),
+            "fromWarehouseId": None, "toWarehouseId": self.fixture["warehouseId"], "partnerId": None,
+            "reason": reasons[0]["value"], "supplierDeliveryNo": None, "logisticsNo": None,
+            "remark": "匿名定点与未知估值预览回归",
+            "items": [{"id": None, "sourceItemId": None, "materialSkuId": sku_id,
+                       "qty": 0.018, "purchaseQty": None, "price": 7.5 if index == 0 else None,
+                       "dyeLot": None, "rolls": None, "overReason": None, "remark": None}
+                      for index, sku_id in enumerate(sku_ids)],
+        })
+        inventory_path = f"/api/inventory-docs/{made_inventory['id']}"
+        inventory = self.api.request("GET", inventory_path)
+        assert_decimal_equal(inventory["items"][0]["amount"], "0.14")
+        self.assertIsNone(inventory["items"][1]["amount"])
+        with self.subTest(form="inventory"):
+            with self.page.expect_response(lambda response: self.response_for(response, "GET", inventory_path)):
+                self.page.goto(f"{self.ui_base}/stock-in/{made_inventory['id']}")
+            self.page.locator(".page-header").get_by_role("button", name="编辑", exact=True).click()
+            dialog = self.page.get_by_role("dialog", name=f"编辑 {inventory['no']}（其他入库）", exact=True)
+            expect(dialog).to_be_visible()
+            table, cells = amount_cells(dialog)
+            expect(cells).to_have_count(2)
+            table.locator(".el-table__body-wrapper .el-scrollbar__wrap").evaluate(
+                "element => { element.scrollLeft = element.scrollWidth }")
+            self.shot("inventory-rounded-and-unknown-before-assert")
+            expect(cells).to_have_text(["0.14", "—"])
+            self.note("inventory preview matches stored decimal amount and preserves unknown valuation",
+                      inventoryId=made_inventory["id"], qty="0.018", price="7.5", lineAmounts=["0.14", None],
+                      responseMocks=False)
+            dialog.get_by_role("button", name="取消", exact=True).click()
+            expect(dialog).not_to_be_visible()
 
 
 if __name__ == "__main__":
