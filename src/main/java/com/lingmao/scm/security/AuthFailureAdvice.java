@@ -19,6 +19,11 @@ public class AuthFailureAdvice {
         return ResponseEntity.status(401).body(R.fail(401, failure.getMessage()));
     }
 
+    @ExceptionHandler(AssistantDenied.class)
+    public ResponseEntity<R<Void>> assistantDenied(AssistantDenied failure) {
+        return ResponseEntity.status(403).body(R.fail(403, failure.getMessage()));
+    }
+
     @ExceptionHandler(FieldPermissionDenied.class)
     public ResponseEntity<R<Void>> forbidden(FieldPermissionDenied failure) {
         return ResponseEntity.status(403).body(R.fail(403, failure.getMessage()));

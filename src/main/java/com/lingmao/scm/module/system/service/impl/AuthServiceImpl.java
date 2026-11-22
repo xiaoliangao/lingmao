@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.LoginReq;
+import com.lingmao.scm.module.system.dto.AssistantTokenVO;
 import com.lingmao.scm.module.system.dto.AuthTokens;
 import com.lingmao.scm.module.system.dto.FeaturesVO;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
@@ -16,12 +17,18 @@ import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginFailCounter;
 import com.lingmao.scm.security.LoginSessionStore;
 import com.lingmao.scm.security.RefreshSessionService;
+import com.lingmao.scm.security.AssistantDenied;
 import com.lingmao.scm.security.AuthRejected;
+import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Service
@@ -37,6 +44,10 @@ public class AuthServiceImpl implements AuthService {
     private final DefaultCompanyProvider defaultCompanyProvider;
     private final RefreshSessionService refreshSessions;
     private final AiSwitchService aiSwitchService;
+    private final Clock clock;
+
+    /** 助手令牌的有效期（RFC 017 §3.1）：不能刷新，过期了浏览器再换一张 */
+    static final Duration ASSISTANT_TTL = Duration.ofMinutes(30);
 
     @Override
     @Transactional
@@ -83,6 +94,22 @@ public class AuthServiceImpl implements AuthService {
                 defaultCompanyProvider.resolve(user.getDefaultCompanyId()),
                 new FeaturesVO(aiSwitchService.enabled()),
                 com.lingmao.scm.security.DataScope.current(false).isAll());
+    }
+
+    @Override
+    public AssistantTokenVO assistantToken(LoginUser caller) {
+        if (caller.scope() != null) {
+            throw new AssistantDenied("助手令牌不能再换令牌");
+        }
+        if (!aiSwitchService.enabled()) {
+            throw new AssistantDenied("AI 功能没有打开");
+        }
+        String jti = UUID.randomUUID().toString();
+        Instant now = clock.instant();
+        Instant expiresAt = now.plus(ASSISTANT_TTL);
+        loginSessionStore.saveScoped(jti, caller.userId(), LoginUser.SCOPE_ASSISTANT, caller.jti(), expiresAt);
+        String token = jwtUtil.createScopedToken(caller.userId(), jti, LoginUser.SCOPE_ASSISTANT, now, ASSISTANT_TTL);
+        return new AssistantTokenVO(token, OffsetDateTime.ofInstant(expiresAt, clock.getZone()));
     }
 
     @Override

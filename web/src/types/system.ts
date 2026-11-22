@@ -24,6 +24,16 @@ export interface UserInfo {
   canSeeAll: boolean
 }
 
+/**
+ * 智能助手的短期只读令牌（RFC 017 §3.1）：交给助手服务，只能调返回数据的 GET 接口。
+ * 30 分钟、不能刷新，过期了再换；AI 功能关掉、退出、改密码时提前失效
+ */
+export interface AssistantToken {
+  token: string
+  /** 过期时间，东八区 */
+  expiresAt: string
+}
+
 export interface MenuNode {
   id: string
   parentId: string

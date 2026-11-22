@@ -2,6 +2,7 @@ package com.lingmao.scm.module.biz.controller;
 
 import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.biz.service.ActionRequestService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -40,6 +41,9 @@ class ActionRequestControllerTest {
     /** SecurityConfig 要用的，这里不走 token，给假的 */
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
     @MockitoBean
     private JwtUtil jwtUtil;
     @MockitoBean

@@ -5,6 +5,7 @@ import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.inventory.dto.StockMovementQuery;
 import com.lingmao.scm.module.inventory.service.StockLogExportService;
 import com.lingmao.scm.module.inventory.service.StockService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -58,6 +59,9 @@ class StockControllerTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /** 规则（docs/api/04 §3.6.6）：进销存的期间必填、仓库类型只认物料仓 / 工厂仓，不对在入口 400，Service 不被调用 */
     @Test

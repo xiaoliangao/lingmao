@@ -25,7 +25,10 @@ public final class SensitiveRateFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
         String operation = null; int limit = 0; Duration window = Duration.ofMinutes(1);
-        if (method.equals("POST") && path.equals("/api/auth/login")) { operation = "login-ip"; limit = 600; window = Duration.ofMinutes(15); }
+        // 助手令牌的请求单独一个额度（RFC 017 §3.2）：一句话可能调好几个接口，但不能拿它刷数据
+        if (LoginUser.currentIsAssistant()) { operation = "assistant"; limit = 120; }
+        else if (method.equals("POST") && path.equals("/api/auth/assistant-token")) { operation = "assistant-token"; limit = 30; }
+        else if (method.equals("POST") && path.equals("/api/auth/login")) { operation = "login-ip"; limit = 600; window = Duration.ofMinutes(15); }
         else if (method.equals("POST") && path.equals("/api/auth/refresh")) { operation = "refresh"; limit = 120; }
         else if ((method.equals("PUT") && path.equals("/api/auth/password"))
                 || (method.equals("POST") && path.matches("/api/users/[1-9][0-9]*/reset-password"))) { operation = "password"; limit = 6; }

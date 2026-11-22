@@ -1,6 +1,7 @@
 package com.lingmao.scm.config;
 
 import com.lingmao.scm.common.result.R;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtAuthFilter;
 import com.lingmao.scm.security.JwtUtil;
@@ -30,6 +31,7 @@ public class SecurityConfig {
     private final LoginSessionStore loginSessionStore;
     private final JsonMapper jsonMapper;
     private final PermissionService permissionService;
+    private final AiSwitchService aiSwitchService;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -49,7 +51,7 @@ public class SecurityConfig {
                         .requestMatchers("/files/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint(this::writeUnauthorized))
-                .addFilterBefore(new JwtAuthFilter(jwtUtil, loginSessionStore, permissionService),
+                .addFilterBefore(new JwtAuthFilter(jwtUtil, loginSessionStore, permissionService, aiSwitchService, jsonMapper),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

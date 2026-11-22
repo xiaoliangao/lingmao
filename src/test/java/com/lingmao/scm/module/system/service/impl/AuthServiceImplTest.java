@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.service.impl;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.system.dto.CompanyBrief;
 import com.lingmao.scm.module.system.dto.LoginReq;
+import com.lingmao.scm.module.system.dto.AssistantTokenVO;
 import com.lingmao.scm.module.system.dto.AuthTokens;
 import com.lingmao.scm.module.system.dto.FeaturesVO;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
@@ -11,7 +12,9 @@ import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
 import com.lingmao.scm.module.system.service.PermissionService;
+import com.lingmao.scm.security.AssistantDenied;
 import com.lingmao.scm.security.JwtUtil;
+import com.lingmao.scm.security.LoginUser;
 import com.lingmao.scm.security.LoginFailCounter;
 import com.lingmao.scm.security.LoginSessionStore;
 import com.lingmao.scm.security.RefreshSessionService;
@@ -23,6 +26,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 
@@ -62,6 +69,9 @@ class AuthServiceImplTest {
 
     @Mock
     private AiSwitchService aiSwitchService;
+
+    @Mock
+    private Clock clock;
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -251,6 +261,47 @@ class AuthServiceImplTest {
         user.setPassword("hashed");
         user.setStatus(1);
         return user;
+    }
+
+    // ------------------------------------------------------------ 助手令牌（RFC 017 §3.1）
+
+    /** 规则：AI 功能关着 → 换不到助手令牌（403），什么都不登记 */
+    @Test
+    void assistantToken_aiOff_denied() {
+        when(aiSwitchService.enabled()).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.assistantToken(new LoginUser(1L, "login-jti")))
+                .isInstanceOf(AssistantDenied.class).hasMessageContaining("AI 功能没有打开");
+        verify(loginSessionStore, never()).saveScoped(any(), anyLong(), any(), any(), any());
+    }
+
+    /** 规则：拿助手令牌再换令牌不行（续命） */
+    @Test
+    void assistantToken_fromAssistantToken_denied() {
+        assertThatThrownBy(() -> authService.assistantToken(new LoginUser(1L, "a-jti", LoginUser.SCOPE_ASSISTANT)))
+                .isInstanceOf(AssistantDenied.class);
+        verify(loginSessionStore, never()).saveScoped(any(), anyLong(), any(), any(), any());
+    }
+
+    /** 规则：开着 → 登记一张 30 分钟的助手令牌，挂在换它的那张登录令牌下面（那张退出时一起失效） */
+    @Test
+    void assistantToken_registeredUnderLoginFor30Minutes() {
+        Instant now = Instant.parse("2026-11-22T02:00:00Z");
+        when(aiSwitchService.enabled()).thenReturn(true);
+        when(clock.instant()).thenReturn(now);
+        when(clock.getZone()).thenReturn(ZoneId.of("Asia/Shanghai"));
+        when(jwtUtil.createScopedToken(eq(1L), anyString(), eq(LoginUser.SCOPE_ASSISTANT), eq(now), eq(Duration.ofMinutes(30))))
+                .thenReturn("assist-token");
+
+        AssistantTokenVO vo = authService.assistantToken(new LoginUser(1L, "login-jti"));
+
+        ArgumentCaptor<String> jti = ArgumentCaptor.forClass(String.class);
+        verify(loginSessionStore).saveScoped(jti.capture(), eq(1L), eq(LoginUser.SCOPE_ASSISTANT), eq("login-jti"),
+                eq(now.plus(Duration.ofMinutes(30))));
+        verify(jwtUtil).createScopedToken(1L, jti.getValue(), LoginUser.SCOPE_ASSISTANT, now, Duration.ofMinutes(30));
+        assertThat(jti.getValue()).isNotEqualTo("login-jti");
+        assertThat(vo.token()).isEqualTo("assist-token");
+        assertThat(vo.expiresAt().toInstant()).isEqualTo(now.plus(Duration.ofMinutes(30)));
     }
 
     private LoginReq req(String username, String password) {

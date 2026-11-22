@@ -76,7 +76,9 @@ class A2FinancialHttpIT extends A2BusinessFixture {
         long change = id(ok(editor, "POST", "/api/order-changes", body, f.company()).path("id"));
         assertThat(jdbc.queryForObject("SELECT to_price FROM ord_change_item WHERE change_id=?", BigDecimal.class, change)).isEqualByComparingTo("10");
         ok(editor, "POST", "/api/order-changes/" + change + "/submit", Map.of("version", 0), f.company());
-        ok(editor, "POST", "/api/order-changes/" + change + "/audit", Map.of("version", 1), f.company());
+        // 自己建的单不能自己审（甲方 11-21 答 Q10）
+        Account auditor = custom(f.company(), "ALL", "order:change:list", "order:change:audit");
+        ok(auditor, "POST", "/api/order-changes/" + change + "/audit", Map.of("version", 1), f.company());
         assertThat(jdbc.queryForObject("SELECT price FROM ord_order_item WHERE order_id=? AND style_sku_id=?", BigDecimal.class, order, f.styleSku())).isEqualByComparingTo("10");
         assertThat(jdbc.queryForObject("SELECT total_amount FROM ord_order WHERE id=?", BigDecimal.class, order)).isEqualByComparingTo("110");
     }

@@ -2,6 +2,7 @@ package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
+import com.lingmao.scm.module.system.dto.AssistantTokenVO;
 import com.lingmao.scm.module.system.dto.LoginReq;
 import com.lingmao.scm.module.system.dto.PasswordChangeReq;
 import com.lingmao.scm.module.system.dto.UserInfoVO;
@@ -14,6 +15,7 @@ import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -48,6 +50,13 @@ public class AuthController {
     @GetMapping("/me")
     public R<UserInfoVO> me(@AuthenticationPrincipal LoginUser loginUser){
         return R.ok(authService.me(loginUser.userId()));
+    }
+
+    @Operation(summary = "换一张给智能助手用的短期只读令牌（30 分钟，不能刷新；AI 功能关着回 403）")
+    @PostMapping("/assistant-token")
+    @PreAuthorize("hasAuthority('assistant:chat:use')")
+    public R<AssistantTokenVO> assistantToken(@AuthenticationPrincipal LoginUser loginUser) {
+        return R.ok(authService.assistantToken(loginUser));
     }
 
     @Operation(summary = "退出登录")

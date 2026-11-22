@@ -5,6 +5,7 @@ import com.lingmao.scm.module.biz.dto.ApprovalRuleSaveReq;
 import com.lingmao.scm.module.biz.dto.ApprovalRuleVO;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.ApprovalRuleService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -48,6 +49,9 @@ class ApprovalRuleControllerTest {
     /** SecurityConfig 要用的，这里不走 token，给假的 */
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
     @MockitoBean
     private JwtUtil jwtUtil;
     @MockitoBean

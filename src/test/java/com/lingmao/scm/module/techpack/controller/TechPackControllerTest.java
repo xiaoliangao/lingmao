@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.techpack.controller;
 
 import com.lingmao.scm.config.SecurityConfig;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.module.techpack.dto.BomImportVO;
 import com.lingmao.scm.module.techpack.dto.TechPackCostVO;
@@ -61,6 +62,9 @@ class TechPackControllerTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /** 规则（docs/api/01 §3.10）：核价要 techpack:cost:query，只能看资料包的 403，Service 不被调用；有权限的照常返回 */
     @Test

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.controller;
 
 import com.lingmao.scm.config.SecurityConfig;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -36,6 +37,9 @@ class VersionControllerTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /** 规则：不带 token 也能查；返回打包时传进来的版本号，打包时间按东八区输出 */
     @Test

@@ -4,6 +4,7 @@ import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.style.dto.StyleCreateResult;
 import com.lingmao.scm.module.style.service.StyleService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -63,6 +64,9 @@ class StyleControllerTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /** 规则：款号预览要新增权限：只有查看权限的 403，Service 不被调用 */
     @Test

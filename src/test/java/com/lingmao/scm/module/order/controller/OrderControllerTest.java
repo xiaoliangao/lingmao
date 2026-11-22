@@ -4,6 +4,7 @@ import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.biz.service.DocCommonService;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.service.OrderService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -60,6 +61,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /**
      * 规则（docs/api/02 §3.1、§3.7）：审核不看权限码（谁能审由多级审批判断），但承诺交期必填；反审核要 order:order:audit

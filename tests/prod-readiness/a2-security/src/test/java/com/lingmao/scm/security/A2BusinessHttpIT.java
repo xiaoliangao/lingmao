@@ -63,7 +63,10 @@ class A2BusinessHttpIT extends A2BusinessFixture {
         long theirs = sourceOrder(f, foreign, "APPROVED", f.company());
         long calc = id(ok(owner, "POST", "/api/mrp-calcs", Map.of("orderIds", List.of(mine, theirs)), f.company()).path("id"));
         assertThat(ok(owner, "GET", "/api/mrp-calcs/" + calc, null, f.company()).path("orders").size()).isEqualTo(2);
-        assertThat(call(foreign, "GET", "/api/mrp-calcs/" + calc, null, f.company()).path("code").intValue()).isIn(403, 404);
+        // 11-22 起订单上的业务、跟单看得到含自己订单的算料单（7952a51）；和这两张订单都不相干的本人范围用户看不到
+        assertThat(call(foreign, "GET", "/api/mrp-calcs/" + calc, null, f.company()).path("code").intValue()).isZero();
+        Account outsider = role("sales", f.company());
+        assertThat(call(outsider, "GET", "/api/mrp-calcs/" + calc, null, f.company()).path("code").intValue()).isIn(403, 404);
         assertThat(call(owner, "GET", "/api/production-orders/schedule-prefill?orderId=" + theirs, null, f.company()).path("code").intValue()).isEqualTo(404);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM mrp_calc WHERE create_by=?", Long.class, owner.id())).isEqualTo(1);
         Account all = custom(f.company(), "ALL", "purchase:mrp:add", "purchase:mrp:list");
@@ -108,6 +111,8 @@ class A2BusinessHttpIT extends A2BusinessFixture {
     @Test void warehouseSourceProjectionAllowsReceivingAndIssuingWithoutOrdinarySourceListRights() throws Exception {
         Fixture f = fixture(); Account manager = role("manager", f.company());
         Account warehouse = custom(f.company(), "ALL", "inventory:doc:add", "inventory:doc:list", "inventory:doc:audit");
+        // 自己建的单不能自己审（甲方 11-21 答 Q10）：建单存草稿，另一个仓管过账
+        Account poster = custom(f.company(), "ALL", "inventory:doc:list", "inventory:doc:audit");
         long purchase = sourcePurchase(f, manager), order = sourceOrder(f, manager, "APPROVED", f.company());
         long production = sourceProduction(f, manager, order, "APPROVED");
         assertThat(call(warehouse, "GET", "/api/purchase-orders/" + purchase, null, f.company()).path("code").intValue()).isEqualTo(403);
@@ -115,19 +120,21 @@ class A2BusinessHttpIT extends A2BusinessFixture {
         assertThat(id(prefill.path("companyId"))).isEqualTo(f.company());
         assertThat(prefill.path("items").get(0).has("price")).isFalse();
         String action = UUID.randomUUID().toString();
-        var receipt = map("clientActionId", action, "docType", "PURCHASE_IN", "post", true,
+        var receipt = map("clientActionId", action, "docType", "PURCHASE_IN", "post", false,
                 "items", List.of(Map.of("sourceItemId", id(prefill.path("items").get(0).path("sourceItemId")), "materialSkuId", f.materialSku(), "qty", "4")));
         JsonNode received = node(raw(warehouse, "POST", "/api/inventory-docs/from-purchase/" + purchase, receipt, f.company(), action));
         assertThat(received.path("code").intValue()).as(received.path("msg").asText()).isZero();
+        ok(poster, "POST", "/api/inventory-docs/" + id(received.path("data").path("id")) + "/audit", Map.of("version", 0), f.company());
         assertThat(jdbc.queryForObject("SELECT unit_price FROM inv_stock_log WHERE material_sku_id=? AND change_type='PURCHASE_IN'", BigDecimal.class, f.materialSku())).isEqualByComparingTo("13.37");
         assertThat(call(warehouse, "GET", "/api/production-orders/" + production, null, f.company()).path("code").intValue()).isEqualTo(403);
         JsonNode issue = ok(warehouse, "GET", "/api/inventory-docs/from-production/" + production + "?docType=ISSUE_OUT&fromWarehouseId=" + f.warehouse(), null, null);
         assertThat(issue.path("items").get(0).has("price")).isFalse();
         String issueAction = UUID.randomUUID().toString();
-        var request = map("clientActionId", issueAction, "docType", "ISSUE_OUT", "fromWarehouseId", f.warehouse(), "post", true,
+        var request = map("clientActionId", issueAction, "docType", "ISSUE_OUT", "fromWarehouseId", f.warehouse(), "post", false,
                 "items", List.of(Map.of("materialSkuId", f.materialSku(), "qty", "1")));
         JsonNode issued = node(raw(warehouse, "POST", "/api/inventory-docs/from-production/" + production, request, f.company(), issueAction));
         assertThat(issued.path("code").intValue()).as(issued.path("msg").asText()).isZero();
+        ok(poster, "POST", "/api/inventory-docs/" + id(issued.path("data").path("id")) + "/audit", Map.of("version", 0), f.company());
         assertThat(jdbc.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?", BigDecimal.class, f.warehouse(), f.materialSku())).isEqualByComparingTo("3");
         // The current ledger does not calculate moving-average valuation. An ordinary quantity issue
         // remains explicitly UNKNOWN; it must not invent the last purchase quote as an issue cost.

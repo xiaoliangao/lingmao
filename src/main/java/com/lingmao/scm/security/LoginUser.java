@@ -5,7 +5,21 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /** 当前登录的是谁：用户 id，以及这次登录的 token 编号（退出时要用） */
-public record LoginUser(Long userId, String jti) {
+public record LoginUser(Long userId, String jti, String scope) {
+
+    /** 助手令牌（RFC 017 §3.1）：用户打开助手时换来的，30 分钟、只读、不能刷新 */
+    public static final String SCOPE_ASSISTANT = "ASSISTANT";
+
+    /** 普通登录（浏览器）：没有 scope */
+    public LoginUser(Long userId, String jti) {
+        this(userId, jti, null);
+    }
+
+    /** 这次请求是不是经助手来的 */
+    public boolean assistant() {
+        return SCOPE_ASSISTANT.equals(scope);
+    }
+
     /**
      * record 是什么：Java 16 起有的一种写法，专门用来定义"只装数据、创建以后不改"的类。这一行等于自动生成了：两个 private final 字段、一个两参数的构造器、两个读取方法 userId() 和 jti()（注意没有 get 前缀），还有 equals、toString。
      *
@@ -20,6 +34,12 @@ public record LoginUser(Long userId, String jti) {
     public static Long currentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth != null && auth.getPrincipal() instanceof LoginUser user ? user.userId() : null;
+    }
+
+    /** 当前请求是不是拿助手令牌来的（RFC 017 §3.1）。没登录返回 false */
+    public static boolean currentIsAssistant() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getPrincipal() instanceof LoginUser user && user.assistant();
     }
 
     /**

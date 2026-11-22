@@ -4,6 +4,7 @@ import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.price.dto.PriceQuery;
 import com.lingmao.scm.module.price.dto.PriceSaveReq;
 import com.lingmao.scm.module.price.service.PriceService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -50,6 +51,9 @@ class PriceControllerTest {
     /** SecurityConfig 要用的，这里不走 token，给假的 */
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
     @MockitoBean
     private JwtUtil jwtUtil;
     @MockitoBean

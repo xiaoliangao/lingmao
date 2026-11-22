@@ -3,6 +3,7 @@ package com.lingmao.scm.config;
 import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.module.system.controller.FileController;
 import com.lingmao.scm.module.system.service.FileService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -58,6 +59,9 @@ class FileAccessConfigTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     @MockitoBean
     private FileService fileService;

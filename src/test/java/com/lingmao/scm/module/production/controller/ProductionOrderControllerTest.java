@@ -7,6 +7,7 @@ import com.lingmao.scm.module.production.service.ProductionNodeService;
 import com.lingmao.scm.module.production.service.ProductionOrderService;
 import com.lingmao.scm.module.production.service.ProductionReceiptService;
 import com.lingmao.scm.module.production.service.ScheduleService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -63,6 +64,9 @@ class ProductionOrderControllerTest {
     private LoginSessionStore loginSessionStore;
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /**
      * 规则（docs/api/05 §3.2.5、§3.8）：审核只要登录；反审核要 production:order:audit；

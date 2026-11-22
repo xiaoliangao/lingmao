@@ -43,6 +43,21 @@ public class JwtUtil {
                 .compact();
     }
 
+    /** 令牌里的声明名：助手令牌（RFC 017 §3.1）带 scope = ASSISTANT；普通登录没有这一项 */
+    public static final String SCOPE_CLAIM = "scope";
+
+    /** 有用途、有效期另定的令牌：现在只有助手令牌（30 分钟） */
+    public String createScopedToken(Long userId, String jti, String scope, Instant now, Duration lifetime) {
+        return Jwts.builder()
+                .subject(String.valueOf(userId))
+                .id(jti)
+                .claim(SCOPE_CLAIM, scope)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plus(lifetime)))
+                .signWith(key)
+                .compact();
+    }
+
     /** 验签并取出内容。签名不对、已过期、格式不对，都会抛 JwtException */
     public Claims parse(String token) {
         return Jwts.parser()

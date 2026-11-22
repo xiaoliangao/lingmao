@@ -5,6 +5,7 @@ import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.production.dto.OrderProgressCounts;
 import com.lingmao.scm.module.production.dto.OrderProgressQuery;
 import com.lingmao.scm.module.production.service.OrderProgressService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -51,6 +52,9 @@ class OrderProgressControllerTest {
     private LoginSessionStore loginSessionStore;
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /** 要 order:progress:list（只有需求订单的查看不行）；筛选参数照名字绑上 */
     @Test

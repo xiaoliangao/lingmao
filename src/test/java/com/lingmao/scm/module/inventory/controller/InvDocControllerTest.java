@@ -3,6 +3,7 @@ package com.lingmao.scm.module.inventory.controller;
 import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.biz.service.DocCommonService;
 import com.lingmao.scm.module.inventory.service.InvDocService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -55,6 +56,9 @@ class InvDocControllerTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /** 规则（docs/api/04 §3.2.1）：列表的 kind 必填，没传在入口 400，Service 不被调用 */
     @Test

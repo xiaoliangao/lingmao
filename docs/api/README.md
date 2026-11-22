@@ -54,6 +54,8 @@
 
 登录 `POST /api/auth/login` 仍返回 `R<string>` access token，同时设置 HttpOnly / SameSite=Strict 刷新和浏览器绑定 Cookie。`POST /api/auth/refresh` 与 `POST /api/auth/logout` 均发送空 JSON `{}` 及 `X-Requested-With: XMLHttpRequest`；登出在 access 过期时也撤销有效刷新会话。前端通过同会话跨标签锁与同页 SingleFlight 合并刷新，重放保留原主体、请求体、幂等键；重放后的 403/500 仍是业务失败，不能据此再次刷新或登出。改密、重置、停用或删除使既有会话失效。升级时旧无版本会话要求重新登录，精确 Cookie 和轮换窗口见 [生产加固公共契约](../architecture/production-contract.md#登录刷新与日志导出接线a2--a3)。
 
+智能助手的令牌（RFC 017 §3.1）：`POST /api/auth/assistant-token`（空 JSON `{}`，要 `assistant:chat:use`）用当前登录换一张 `AssistantToken { token, expiresAt }`，30 分钟、不能刷新，交给助手服务替这个人调接口，登录令牌本身不交出去。它只能调返回数据（`R`）的 GET 接口：非 GET、导出、下载、打印一律 HTTP 403；AI 功能关着时换不到，已经换到的也回 403。换它的那次登录退出、改密码、账号停用时一起失效（401）；角色里收回 `assistant:chat:use`，下一个请求就 403。请求单独限流（每人每分钟 120 次）。
+
 | code | 意思 | 前端怎么处理 |
 |---|---|---|
 | 400 | 参数不对（必填没填、格式不对） | 自动弹消息 |
@@ -272,6 +274,7 @@ cd web && pnpm dev:mock
 | 11-21 | §4.2 自己建的单不能自己审（Q10）：制单人不出审核、驳回，待我审核不列，后端回 1000；建单时 `post: true` 跟着过不去 |
 | 11-21 | §4.2 复查补：制单人驳回后端也拦；单级单据 `auditForMe` 不看 `mine` |
 | 11-21 | §4.2 角色"审核不受数据范围限制"（`Role.auditAnyScope`）；单级单据 `auditForMe` 只列待审的 |
+| 11-22 | §3.1 加智能助手令牌 `POST /api/auth/assistant-token`（RFC 017 §3.1、§13）：只读、30 分钟、不能刷新，AI 功能关着或调了写接口、文件接口回 403 |
 | 11-21 | §3.3 登录信息加 `features.ai`（AI 功能统一开关，RFC 017 §3.7）；开关本身是管理后台的 `GET`、`PUT /api/admin/ai-switch`，只给超级管理员，写在 Swagger |
 | 11-21 | §4.3 操作记录加 `diff`（物料、款式、供应商的字段级改前改后，RFC 016 §3） |
 | 11-22 | §3.3 登录信息加 `canSeeAll`（数据范围是"全部"）：只有这样的人列表上才出"我的 / 全部"（PRD §3.2） |

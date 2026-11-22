@@ -105,6 +105,7 @@ public class RefreshSessionService {
                     issued_at=?,grace_until=?,grace_replays=0 WHERE id=?
                 """, hash(derive(row.id, nonce)), nonce, jti, LoginSessionStore.at(issued),
                 LoginSessionStore.at(now.plusSeconds(3)), row.id);
+        sessions.reparent(row.jti.toString(), jti.toString());
         sessions.removeAccess(row.jti.toString());
         sessions.saveVersion(jti.toString(), row.userId, row.version, issued);
         return tokens(new Family(row.id, row.userId, row.version, row.browserHash, null, row.tokenHash,

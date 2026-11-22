@@ -402,7 +402,7 @@ class A1KeywordQueryIT {
             InvDocQuery docDate = new InvDocQuery(); docDate.setKind(InvDocKind.IN); docDate.setKeyword("ZM05321"); docDate.setDocDateFrom(LocalDate.of(2027, 1, 1));
             assertThat(inventoryDocuments.selectRowPage(new Page<>(1, 100), docDate, null, DataScope.current(false)).getTotal()).isZero();
             StockQuery stockWarehouse = new StockQuery(); stockWarehouse.setKeyword("needleFabric"); stockWarehouse.setWarehouseId(Long.MAX_VALUE);
-            assertThat(inventoryStocks.selectRowPage(new Page<>(1, 100), stockWarehouse, null).getTotal()).isZero();
+            assertThat(inventoryStocks.selectRowPage(new Page<>(1, 100), stockWarehouse, null, null).getTotal()).isZero();
             login(user + 999999, false);
             assertThat(order("ZT05321").ids()).isEmpty();
             assertThat(purchase("needleSupplier").ids()).isEmpty();
@@ -662,8 +662,8 @@ class A1KeywordQueryIT {
     }
     private Result inventoryStock(String keyword, boolean summary) {
         StockQuery q = new StockQuery(); q.setKeyword(keyword);
-        if (!summary) return result(inventoryStocks.selectRowPage(new Page<>(1, 100), q, Keywords.codes(keyword)));
-        var page = inventoryStocks.selectSummaryPage(new Page<>(1, 100), q, Keywords.codes(keyword));
+        if (!summary) return result(inventoryStocks.selectRowPage(new Page<>(1, 100), q, Keywords.codes(keyword), null));
+        var page = inventoryStocks.selectSummaryPage(new Page<>(1, 100), q, Keywords.codes(keyword), null);
         return new Result(page.getTotal(), page.getRecords().stream().map(row -> row.getMaterialSkuId()).toList());
     }
     private Result pickSku(String keyword) {

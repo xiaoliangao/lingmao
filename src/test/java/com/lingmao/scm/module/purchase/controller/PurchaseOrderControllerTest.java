@@ -3,6 +3,7 @@ package com.lingmao.scm.module.purchase.controller;
 import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.biz.service.DocCommonService;
 import com.lingmao.scm.module.purchase.service.PurchaseOrderService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -55,6 +56,9 @@ class PurchaseOrderControllerTest {
 
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /**
      * 规则（docs/api/03 §3.3.6）：审核只要登录（谁能审由多级审批判断）；反审核要 purchase:order:audit，

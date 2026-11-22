@@ -3,6 +3,7 @@ package com.lingmao.scm.module.system.controller;
 import com.lingmao.scm.config.SecurityConfig;
 import com.lingmao.scm.module.system.dto.BackupStatusVO;
 import com.lingmao.scm.module.system.service.BackupStatusService;
+import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginSessionStore;
@@ -41,6 +42,9 @@ class BackupControllerTest {
     /** 判断是不是超级管理员要查角色 */
     @MockitoBean
     private PermissionService permissionService;
+
+    @MockitoBean
+    private AiSwitchService aiSwitchService;
 
     /** SecurityConfig 要用，这里不走 token，给假的 */
     @MockitoBean
