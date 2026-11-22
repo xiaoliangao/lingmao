@@ -24,7 +24,7 @@ public class WebConfig implements WebMvcConfigurer {
         this.uploadLocation = Paths.get(uploadDir).toAbsolutePath().normalize().toUri().toString();
     }
 
-    /** 助手令牌只能调返回数据的接口（RFC 017 §13），导出、下载、打印回 403 */
+    /** 助手令牌只能调返回数据的接口（RFC 017 §13），导出、下载、模板、预览回 403 */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new AssistantScopeInterceptor());

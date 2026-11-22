@@ -65,7 +65,7 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
      * 认出是谁，放进 SecurityContext。认不出（验签失败、过期、退出过、改过密、停用）什么都不放，后面按没登录回 401。
      * 助手令牌（RFC 017 §3.1、§3.7）认出来了但这个请求不让过时，返回原因，回 403：
      * AI 功能关着（包括关之前发出去、还没过期的）、不是 GET、没有使用助手的权限。
-     * 返回文件的 GET（导出、下载、打印）由 AssistantScopeInterceptor 拦，这里还不知道是哪个接口
+     * 返回文件的 GET（导出、下载、模板）由 AssistantScopeInterceptor 拦，这里还不知道是哪个接口
      */
     private String authenticate(String token, String method) {
         Claims claims;
@@ -102,7 +102,9 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
         if (scope != null && !perms.contains(ASSISTANT_PERM)) {
             return "没有使用智能助手的权限";
         }
-        List<SimpleGrantedAuthority> authorities = new ArrayList<>(perms.stream().map(SimpleGrantedAuthority::new).toList());
+        // scope: 开头的是这里按令牌用途放的标识，不认库里的：菜单上就算有人填了同名权限码，普通登录也不会被当成助手
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>(perms.stream()
+                .filter(p -> !p.startsWith(CallerScope.RESERVED_PREFIX)).map(SimpleGrantedAuthority::new).toList());
         if (scope != null) {
             authorities.add(new SimpleGrantedAuthority(CallerScope.ASSISTANT_AUTHORITY));
         }

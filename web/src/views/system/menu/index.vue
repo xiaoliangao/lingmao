@@ -50,7 +50,7 @@ const guard = useUnsavedChanges(form, dialogVisible)
 function openCreate(parent?: MenuNode) {
   editingId.value = null
   Object.assign(form, emptyForm(), {
-    parentId: parent?.id ?? 0,
+    parentId: parent?.id ?? '0',
     type: parent ? (parent.type === 1 ? 2 : 3) : 1,
   })
   dialogVisible.value = true

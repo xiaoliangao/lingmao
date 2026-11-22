@@ -5,6 +5,7 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.MethodParameter;
+import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -15,7 +16,7 @@ import java.io.Writer;
  * 助手令牌只能调返回数据（R）的接口（RFC 017 §13"导出、下载谁来拦"）。非 GET 在 JwtAuthFilter 就拦了，这里拦三种：
  * <ul>
  *   <li>返回的不是 R：导出、下载、模板、盘点表，和不是接口方法的处理器（静态文件）；</li>
- *   <li>参数里拿响应对象自己往外写的（HttpServletResponse、OutputStream、Writer），返回类型再像数据也不放；</li>
+ *   <li>参数里拿响应对象自己往外写的（HttpServletResponse、OutputStream、Writer，以及能取到响应的 WebRequest），返回类型再像数据也不放；</li>
  *   <li>标了 {@link NoAssistant} 的：工艺单 Excel 预览、供应商银行账号。</li>
  * </ul>
  * 按接口方法本身认，不按路径：以后新加的导出接口不用记得来这里登记。
@@ -41,7 +42,8 @@ public class AssistantScopeInterceptor implements HandlerInterceptor {
         }
         for (MethodParameter p : method.getMethodParameters()) {
             Class<?> type = p.getParameterType();
-            if (ServletResponse.class.isAssignableFrom(type) || OutputStream.class.isAssignableFrom(type) || Writer.class.isAssignableFrom(type)) {
+            if (ServletResponse.class.isAssignableFrom(type) || OutputStream.class.isAssignableFrom(type) || Writer.class.isAssignableFrom(type)
+                    || WebRequest.class.isAssignableFrom(type)) {
                 return false;
             }
         }

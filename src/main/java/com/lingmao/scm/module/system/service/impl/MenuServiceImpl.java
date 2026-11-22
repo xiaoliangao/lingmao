@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.module.system.dto.MenuSaveReq;
@@ -101,6 +102,10 @@ public class MenuServiceImpl implements MenuService {
         }
         if (type == SysMenu.TYPE_BUTTON && !StringUtils.hasText(req.getPerms())) {
             throw new BizException("按钮必须填权限标识");
+        }
+        // scope: 开头是系统按令牌用途放的标识（比如助手令牌），不能当权限码用
+        if (req.getPerms() != null && req.getPerms().trim().startsWith(CallerScope.RESERVED_PREFIX)) {
+            throw new BizException("权限标识不能以 " + CallerScope.RESERVED_PREFIX + " 开头，这是系统保留的");
         }
     }
 

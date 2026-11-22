@@ -4,6 +4,7 @@ import com.lingmao.scm.common.scope.DeploymentNamespace;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -53,6 +54,7 @@ public class LoginSessionStore implements SessionRegistry {
      * 要在事务里调：先给那张登录令牌加共享锁，和同时进行的退出、刷新（它们先加排他锁，见 lockAccess）排队，
      * 不会登记出一张挂在已删掉的登录下面、退出也删不到的令牌
      */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void saveScoped(String jti, long userId, String scope, String parentJti, Instant expiresAt) {
         var parent = jdbc.queryForList("""
                 SELECT p.session_version FROM sys_login_session p JOIN sys_user u ON u.id=p.user_id

@@ -51,7 +51,9 @@ public final class SensitiveRateFilter extends OncePerRequestFilter {
     private boolean acquire(HttpServletRequest request, HttpServletResponse response, String operation, int limit, Duration window)
             throws IOException {
         Long user = LoginUser.currentUserId();
-        String bucket = operation + ":" + (user == null ? "anonymous" : user) + ":" + proxy.clientIp(request);
+        // 助手令牌的请求另记一份：它乱调导出、预览打满了额度，不连累这个人自己在页面上导出
+        String who = (user == null ? "anonymous" : user) + (LoginUser.currentIsAssistant() ? "~assistant" : "");
+        String bucket = operation + ":" + who + ":" + proxy.clientIp(request);
         long retry;
         try { retry = limiter.acquire(bucket, limit, window); }
         catch (SecurityStateUnavailable unavailable) {

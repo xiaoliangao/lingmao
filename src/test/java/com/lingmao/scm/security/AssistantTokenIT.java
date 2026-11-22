@@ -1,6 +1,7 @@
 package com.lingmao.scm.security;
 
 import com.lingmao.scm.IntegrationTestConfig;
+import com.lingmao.scm.module.system.service.impl.SessionHousekeeping;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,8 @@ class AssistantTokenIT {
     private JwtUtil jwtUtil;
     @Autowired
     private RefreshSessionService refreshSessions;
+    @Autowired
+    private SessionHousekeeping housekeeping;
     /** 扫全部接口一次要调几十个导出，导出额度（每分钟 12 次）会先回 429；限流单独在 SensitiveRateFilterTest 里测，这里不让它挡在前面 */
     @MockitoBean
     private SharedRateLimiter rateLimiter;
@@ -186,6 +189,55 @@ class AssistantTokenIT {
         Reply out = sendWith(rotated.accessToken(), "POST", "/api/auth/logout", Map.of(), Map.of("X-Requested-With", "XMLHttpRequest"));
         assertThat(out.code()).as(out.body().toString()).isZero();
         assertThat(send(assist, "GET", "/api/auth/me", null).status()).isEqualTo(401);
+    }
+
+    /**
+     * 换它的登录令牌到点了：定时清理先留着那一行，助手令牌照样用到它自己的 30 分钟（不提前 401）；
+     * 过期的登录令牌自己认不出、换不了；助手令牌也过期以后两行一起清掉
+     */
+    @Test
+    void parentExpiry_keepsAssistantTokenUntilItsOwnExpiry() throws Exception {
+        Account a = account("buyer");
+        String assist = exchange(a).path("token").stringValue();
+        String parent = jwtUtil.parse(a.token()).getId();
+        String child = jwtUtil.parse(assist).getId();
+        jdbc.update("UPDATE sys_login_session SET expires_at = now() - interval '1 minute' WHERE jti = ?", parent);
+
+        housekeeping.runUntil(() -> false);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_login_session WHERE jti = ?", Integer.class, parent)).as("还有子令牌，先不删").isEqualTo(1);
+        assertThat(send(assist, "GET", "/api/auth/me", null).code()).as("助手令牌不受登录到点影响").isZero();
+        assertThat(send(a.token(), "GET", "/api/auth/me", null).status()).as("过期的登录令牌认不出").isEqualTo(401);
+        assertThat(send(a.token(), "POST", "/api/auth/assistant-token", Map.of()).status()).as("也换不了").isEqualTo(401);
+
+        jdbc.update("UPDATE sys_login_session SET expires_at = now() - interval '1 minute' WHERE jti = ?", child);
+        housekeeping.runUntil(() -> false);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_login_session WHERE jti IN (?, ?)", Integer.class, parent, child)).isZero();
+    }
+
+    /** 同一张资质证书：普通登录拿到签名地址，助手令牌拿到的地址是空的（签名地址 7 天有效、不认人，不发给助手） */
+    @Test
+    void signedFileUrls_withheldFromAssistant() throws Exception {
+        Account a = account("buyer");
+        String tag = UUID.randomUUID().toString().substring(0, 8);
+        long supplier = jdbc.queryForObject("""
+                INSERT INTO sup_supplier (code, name, short_name, status, settle_method, tax_pct)
+                VALUES (?, ?, ?, 'ACTIVE', 'MONTHLY', 13) RETURNING id""", Long.class, "AST" + tag, "助手测试" + tag, "助手测试" + tag);
+        jdbc.update("INSERT INTO sup_supplier_cert (supplier_id, cert_type, file_url, file_name) VALUES (?, 'LICENSE', ?, 'license.jpg')",
+                supplier, "/files/2026/11/22/" + tag + ".jpg");
+        try {
+            Reply mine = send(a.token(), "GET", "/api/suppliers/" + supplier + "/certs", null);
+            assertThat(mine.code()).as(mine.body().toString()).isZero();
+            assertThat(mine.body().path("data").get(0).path("fileUrl").stringValue()).startsWith("/files/2026/11/22/" + tag + ".jpg?e=");
+
+            String assist = exchange(a).path("token").stringValue();
+            Reply theirs = send(assist, "GET", "/api/suppliers/" + supplier + "/certs", null);
+            assertThat(theirs.code()).as(theirs.body().toString()).isZero();
+            assertThat(theirs.body().path("data").get(0).path("fileName").stringValue()).isEqualTo("license.jpg");
+            assertThat(theirs.body().path("data").get(0).path("fileUrl").isNull()).as("助手拿不到文件地址").isTrue();
+        } finally {
+            jdbc.update("DELETE FROM sup_supplier_cert WHERE supplier_id = ?", supplier);
+            jdbc.update("DELETE FROM sup_supplier WHERE id = ?", supplier);
+        }
     }
 
     /** 账号停用：助手令牌和登录一起失效；换它的登录令牌没了（并发退出漏删的那种）：它也不再认 */

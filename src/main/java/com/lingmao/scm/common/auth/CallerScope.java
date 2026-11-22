@@ -9,8 +9,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * 放在 common 里，是因为 common 的工具（文件签名）也要知道，而 common 不能依赖 security 包（ArchitectureTest 规则 5）
  */
 public final class CallerScope {
-    /** 助手令牌的请求带的权限标识。不在 sys_menu 里，角色勾不到 */
-    public static final String ASSISTANT_AUTHORITY = "scope:ASSISTANT";
+    /** 按令牌用途放的权限标识都以它开头。菜单管理不让权限码用这个开头，JwtAuthFilter 也不认库里这样开头的权限码 */
+    public static final String RESERVED_PREFIX = "scope:";
+    /** 助手令牌的请求带的权限标识 */
+    public static final String ASSISTANT_AUTHORITY = RESERVED_PREFIX + "ASSISTANT";
 
     private CallerScope() {
     }

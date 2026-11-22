@@ -72,6 +72,20 @@ class JwtAuthFilterTest {
                 .containsExactly("system:user:list");
     }
 
+    /** 规则：库里的权限码以 scope: 开头的不认（那是按令牌用途放的标识），普通登录不会被当成助手、文件地址不会变空 */
+    @Test
+    void reservedScopePermFromDb_ignored() throws Exception {
+        when(jwtUtil.parse("good-token")).thenReturn(Jwts.claims().id("jti-1").subject("1").build());
+        when(loginSessionStore.lookup("jti-1")).thenReturn(new LoginSessionStore.Session(1L, null));
+        when(permissionService.loadPermissions(1L)).thenReturn(Set.of("system:user:list", CallerScope.ASSISTANT_AUTHORITY));
+
+        filter.doFilter(requestWithToken("good-token"), new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .containsExactly("system:user:list");
+        assertThat(CallerScope.assistant()).isFalse();
+    }
+
     /** 规则：token 和会话都没问题，但账号已经停用或删除 → 认不出（不用等 token 过期） */
     @Test
     void disabledUser_notAuthenticated() throws Exception {

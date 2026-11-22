@@ -71,6 +71,21 @@ class MenuServiceImplTest {
         verify(sysMenuMapper, never()).insert(any(SysMenu.class));
     }
 
+    /** 规则：权限标识不能以 scope: 开头（系统按令牌用途放的标识，比如助手令牌），免得普通登录被当成助手 */
+    @Test
+    void create_reservedScopePerms_throws() {
+        MenuSaveReq req = new MenuSaveReq();
+        req.setParentId(2L);
+        req.setName("误建");
+        req.setType(SysMenu.TYPE_BUTTON);
+        req.setPerms(" scope:ASSISTANT");
+
+        assertThatThrownBy(() -> menuService.create(req))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("scope:");
+        verify(sysMenuMapper, never()).insert(any(SysMenu.class));
+    }
+
     /** 规则：管理后台目录下面新建的菜单，也属于管理后台。请求里传了 false 也不算数 */
     @Test
     void create_underAdminOnlyParent_inheritsAdminOnly() {
