@@ -167,7 +167,8 @@ kbd {
 
 .doc-props {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  /* 字段名至少 76px，有长的（成品单价（含料））按最长的那个放，不折行 */
+  grid-template-columns: minmax(76px, max-content) minmax(0, 1fr);
   gap: 8px 10px;
   margin: 0;
   font-size: 12.5px;

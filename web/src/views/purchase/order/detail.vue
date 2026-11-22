@@ -12,6 +12,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import ApprovalPanel from '@/components/doc/ApprovalPanel.vue'
 import DocAttachments from '@/components/doc/DocAttachments.vue'
 import DocNoticesBanner from '@/components/doc/DocNoticesBanner.vue'
+import RejectNotice from '@/components/doc/RejectNotice.vue'
 import MoreActions, { type MoreItem } from '@/components/doc/MoreActions.vue'
 import PrintSheet from '@/components/doc/PrintSheet.vue'
 import QtyProgress from '@/components/doc/QtyProgress.vue'
@@ -194,6 +195,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
     <div v-else-if="detail" class="page detail">
       <div class="body">
         <DocNoticesBanner :pending-count="detail.pendingNotices" :load="loadNotices" :handle="handleNotice" @handled="refresh" />
+        <RejectNotice :status="detail.status" :version="detail.version" :load="loadLogs" />
 
         <p class="sub">
           <span>{{ detail.supplierShortName }}<span v-if="detail.supplierStatus !== 'ACTIVE'" class="danger">（供应商已停用）</span></span>

@@ -68,7 +68,7 @@ const lastReport = computed(() => {
 function resetReportForm(node: ProductionNode | undefined) {
   reportForm.actualStart = node?.actualStart ?? todayStr()
   reportForm.actualFinish = null
-  reportForm.doneQty = node?.doneQty ?? props.totalQty
+  reportForm.doneQty = node?.doneQty ?? null
   reportForm.remark = ''
   reportForm.photos = []
   reportGuard.markSaved()
@@ -107,7 +107,8 @@ async function submitReport(action: NodeReportAction) {
       actualStart: reportForm.actualStart || null,
       // 只报开始不发实际完成；报完成没填就是今天（后端按 null 处理）
       actualFinish: action === 'START' ? null : reportForm.actualFinish || null,
-      doneQty: reportForm.doneQty,
+      // 数量不预填整单件数：原来点"只报开始"就把整单件数记成完成数（走查 T-7d453c）。只报开始只发填了的；报完成没填按整单
+      doneQty: action === 'FINISH' ? (reportForm.doneQty ?? props.totalQty) : reportForm.doneQty,
       remark: orNull(reportForm.remark),
       photos: reportForm.photos,
     })
@@ -214,8 +215,8 @@ async function savePlan() {
             placeholder="报完成时不填就是今天"
           />
         </el-form-item>
-        <el-form-item label="数量">
-          <el-input-number v-model="reportForm.doneQty" :min="0" :precision="0" :controls="false" />
+        <el-form-item label="完成数量">
+          <el-input-number v-model="reportForm.doneQty" :min="0" :precision="0" :controls="false" :placeholder="`报完成不填按整单 ${totalQty} 件`" style="width: 220px" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="reportForm.remark" maxlength="120" />

@@ -123,7 +123,7 @@ function openNodeReport(node: ProductionNode) {
   Object.assign(reportForm, {
     actualStart: node.actualStart ?? todayStr(),
     actualFinish: '',
-    doneQty: node.doneQty ?? detail.value?.totalQty ?? null,
+    doneQty: node.doneQty ?? null,
     remark: '',
     photos: [],
   })
@@ -164,7 +164,8 @@ async function submitNode(action: NodeReportAction) {
       action,
       actualStart: reportForm.actualStart || null,
       actualFinish: action === 'START' ? null : reportForm.actualFinish || null,
-      doneQty: reportForm.doneQty,
+      // 数量不预填整单件数：原来点"只报开始"就把整单件数记成完成数（走查 T-7d453c）。只报开始只发填了的；报完成没填按整单
+      doneQty: action === 'FINISH' ? (reportForm.doneQty ?? detail.value?.totalQty ?? null) : reportForm.doneQty,
       remark: orNull(reportForm.remark),
       photos: reportForm.photos,
     })
@@ -285,8 +286,8 @@ function openDesktopPage() {
         </label>
 
         <label class="m-field">
-          <span>数量</span>
-          <el-input-number v-model="reportForm.doneQty" :min="0" :precision="0" :controls="false" />
+          <span>完成数量</span>
+          <el-input-number v-model="reportForm.doneQty" :min="0" :precision="0" :controls="false" :placeholder="detail ? `报完成不填按整单 ${detail.totalQty} 件` : ''" />
         </label>
 
         <div class="m-field">
@@ -306,8 +307,9 @@ function openDesktopPage() {
       </div>
 
       <div v-else-if="view === 'issue'" class="m-body">
+        <!-- 必填的标星；控件统一 44px 高、复选框放大（走查 T-7d453c：类型框 32px、责任方 44px，高矮不一） -->
         <div class="m-field">
-          <span>类型</span>
+          <span>类型<em class="req">*</em></span>
           <DictSelect v-model="issueForm.issueType" type="issue_type" />
         </div>
 
@@ -319,12 +321,12 @@ function openDesktopPage() {
         </label>
 
         <label class="m-field">
-          <span>描述</span>
+          <span>描述<em class="req">*</em></span>
           <el-input v-model="issueForm.description" type="textarea" :rows="3" maxlength="300" />
         </label>
 
         <div class="m-field">
-          <span>照片 <em class="photo-hint">问题部位、到货短缺或现场，对责任时要用</em></span>
+          <span>照片<em class="req">*</em> <em class="photo-hint">问题部位、到货短缺或现场，对责任时要用</em></span>
           <ImageUpload v-model="issueForm.photos" :max="9" />
         </div>
 
@@ -570,6 +572,18 @@ function openDesktopPage() {
   width: 100%;
 }
 
+.m-field :deep(.el-select__wrapper),
+.m-field :deep(.el-input__wrapper) {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.req {
+  margin-left: 2px;
+  font-style: normal;
+  color: var(--lm-danger-text);
+}
+
 .native-date {
   width: 100%;
   min-height: 44px;
@@ -588,6 +602,12 @@ function openDesktopPage() {
   gap: 8px;
   min-height: 44px;
   font-size: 13.5px;
+}
+
+.m-check input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--lm-accent);
 }
 
 .dual-btns {

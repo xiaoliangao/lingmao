@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ThumbImage from '@/components/ThumbImage.vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { productionApi } from '@/api/production'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
@@ -18,6 +18,12 @@ const router = useRouter()
 const user = useUserStore()
 
 const rows = ref<MobileOrderRow[]>([])
+/** 口径和看板一样：生产中算"在制"，已下单还没开工算"待开工"（走查 T-7d453c：原来全算在制） */
+const countText = computed(() => {
+  const running = rows.value.filter((r) => r.status === 'RUNNING').length
+  const waiting = rows.value.length - running
+  return [running && `在制 ${running} 单`, waiting && `待开工 ${waiting} 单`].filter(Boolean).join(' · ') || '没有跟的单'
+})
 const loading = ref(false)
 
 const listRequest = useLatestRequest()
@@ -43,7 +49,7 @@ onMounted(load)
     <header class="m-top">
       <div class="title-box">
         <h1>我的跟单</h1>
-        <span class="dim">{{ user.info?.nickname ?? '' }} · 在制 {{ rows.length }} 单</span>
+        <span class="dim">{{ user.info?.nickname ?? '' }} · {{ countText }}</span>
       </div>
       <button type="button" class="refresh-btn" @click="load">刷新</button>
     </header>

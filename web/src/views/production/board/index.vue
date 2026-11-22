@@ -8,6 +8,7 @@ import DateRange from '@/components/DateRange.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
+import LineSelect from '@/components/LineSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
@@ -47,7 +48,10 @@ type View = 'orders' | 'factories'
 
 const route = useRoute()
 const brands = useDict('brand')
-const cols = useColumns('board', productionColumns('board', useProductLines().multi.value))
+// 几条品类线的人能按线筛（和生产单列表一样，docs/api/05 §3.2.1；走查 T-7d453c：看板原来漏了）
+const lines = useProductLines()
+const multiLine = lines.multi
+const cols = useColumns('board', productionColumns('board', multiLine.value))
 
 const pickCard = (v: unknown): BoardCardKey | undefined => (CARD_KEYS.includes(v as BoardCardKey) ? (v as BoardCardKey) : undefined)
 
@@ -69,6 +73,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   },
   query: {
     kindTab: '' as '' | ProductionKind,
+    productLine: '',
     factoryId: undefined as string | null | undefined,
     merchId: undefined as string | null | undefined,
     brand: '',
@@ -169,7 +174,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 const maxWipQty = computed(() => Math.max(1, ...factories.value.map((f) => f.wipQty)))
 const barWidth = (f: BoardFactoryRow) => `${Math.round((f.wipQty / maxWipQty.value) * 100)}%`
 
-const filtered = computed(() => !!(query.kindTab || query.factoryId || query.merchId || query.brand || query.dueDateFrom || activeCard.value))
+const filtered = computed(() => !!(query.kindTab || query.productLine || query.factoryId || query.merchId || query.brand || query.dueDateFrom || activeCard.value))
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的在制单：换张卡片，或者清空筛选'
   if (query.mine) return '你跟的单里没有在做的，切到「全部」看所有人的'
@@ -187,6 +192,9 @@ const emptyText = computed(() => {
       </template>
       <FilterItem label="交期" :text="formatDateRange(dateRange)" @clear="onDateChange(null)">
         <DateRange :model-value="dateRange" @update:model-value="onDateChange" />
+      </FilterItem>
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
       </FilterItem>
       <FilterItem label="加工厂" :text="query.factoryId ? (factoryName ?? '已选') : ''" @clear="query.factoryId = undefined">
         <SupplierSelect v-model="query.factoryId" v-model:label="factoryName" :category="['GARMENT', 'PROCESSOR']" clearable placeholder="全部加工厂" />
@@ -211,6 +219,7 @@ const emptyText = computed(() => {
       <button type="button" class="b-card" :class="{ active: activeCard === 'WAITING' }" @click="toggleCard('WAITING')">
         <span class="lbl">待开工</span>
         <strong class="num">{{ cards.waitingCount }}</strong>
+        <span class="sub num">{{ formatQty(cards.waitingQty) }} 件</span>
       </button>
       <button type="button" class="b-card" :class="{ active: activeCard === 'NEAR' }" @click="toggleCard('NEAR')">
         <span class="lbl">{{ cards.nearDays }} 天内交货</span>
@@ -230,8 +239,8 @@ const emptyText = computed(() => {
       </button>
       <div class="b-card static">
         <span class="lbl">本月回货</span>
-        <strong class="num">{{ formatQty(cards.monthReturnedQty) }}</strong>
-        <span class="sub">件</span>
+        <!-- 单位跟在数字后面，不单独占一行（走查 T-7d453c） -->
+        <strong class="num">{{ formatQty(cards.monthReturnedQty) }}<span class="unit">件</span></strong>
       </div>
     </section>
 
@@ -344,6 +353,13 @@ const emptyText = computed(() => {
 
 .b-card .sub {
   font-size: 11.5px;
+  color: var(--lm-muted);
+}
+
+.b-card .unit {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
   color: var(--lm-muted);
 }
 

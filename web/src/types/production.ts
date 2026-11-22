@@ -633,6 +633,8 @@ export type BoardCardKey = 'RUNNING' | 'WAITING' | 'NEAR' | 'LATE' | 'NODE_LATE'
 
 export interface BoardQuery {
   kind?: ProductionKind
+  /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+  productLine?: string
   factoryId?: string | null
   merchId?: string | null
   /** 字典 brand */

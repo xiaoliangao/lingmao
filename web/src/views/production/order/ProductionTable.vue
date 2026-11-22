@@ -201,7 +201,8 @@ defineExpose({
         <NodeDots :nodes="row.nodes" :current-name="row.currentNodeName" />
       </template>
     </el-table-column>
-    <el-table-column v-if="columns.show.kitting" label="齐料" width="140">
+    <!-- "部分到料 1/8"一行放下（走查 T-7d453c） -->
+    <el-table-column v-if="columns.show.kitting" label="齐料" width="160">
       <template #default="{ row }">
         <StatusTag v-if="kittingOf(row as ProductionRow)" :tone="KITTING_STATUS[kittingOf(row as ProductionRow)!.status].tone">{{ kittingOf(row as ProductionRow)!.label }}</StatusTag>
         <span v-else class="dim">—</span>

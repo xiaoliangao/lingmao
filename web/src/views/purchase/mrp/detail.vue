@@ -11,6 +11,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import DocAttachments from '@/components/doc/DocAttachments.vue'
+import { useUserStore } from '@/stores/user'
 import DocNoticesBanner from '@/components/doc/DocNoticesBanner.vue'
 import DocRefs from '@/components/doc/DocRefs.vue'
 import MoreActions, { type MoreItem } from '@/components/doc/MoreActions.vue'
@@ -62,6 +63,8 @@ const badRowIds = ref<Set<string>>(new Set())
 
 const can = (a: MrpAction) => detail.value?.actions.includes(a) ?? false
 const isDraft = computed(() => detail.value?.status === 'DRAFT' && can('edit'))
+/** 备注、附件要 purchase:mrp:edit（后端兜底 403）：跟单只能看自己订单的算料单（11-22），不出能改的框（走查 T-7d453c） */
+const canEditSide = useUserStore().hasPerm('purchase:mrp:edit')
 const supplierEditable = (row: MrpItem) => can('edit') && detail.value?.status !== 'CLOSED' && row.convertedQty < row.suggestQty
 
 const purchaseRows = computed(() => detail.value?.items.filter((i) => i.block === 'PURCHASE') ?? [])
@@ -383,7 +386,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
         <section class="panel">
           <div class="panel-head">自购<span class="dim head-sub">{{ purchaseRows.length }} 种</span></div>
           <el-table ref="tableRef" :data="purchaseRows" row-key="id" :row-class-name="rowClass" empty-text="没有要自购的料" @selection-change="selected = $event">
-            <el-table-column type="selection" width="40" :selectable="canCheck" />
+            <el-table-column v-if="can('toPurchase')" type="selection" width="40" :selectable="canCheck" />
             <el-table-column type="expand" width="1" class-name="expand-hidden">
               <template #default="{ row }">
                 <div class="expand">
@@ -558,7 +561,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
 
         <el-tabs v-model="bottomTab">
           <el-tab-pane label="生成的采购单" name="refs">
-            <DocRefs ref="refsRef" :load="loadRefs" empty-text="还没生成采购单：勾要买的行，点「生成采购单」" />
+            <DocRefs ref="refsRef" :load="loadRefs" :empty-text="can('toPurchase') ? '还没生成采购单：勾要买的行，点「生成采购单」' : '还没生成采购单'" />
           </el-tab-pane>
           <el-tab-pane label="操作记录" name="logs" lazy>
             <DocLogList ref="logRef" :load="loadLogs" :actions="MRP_LOG_ACTION" :statuses="LOG_STATUSES" />
@@ -581,7 +584,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
               </template>
               <dt>备注</dt>
               <dd>
-                <el-input v-model="remark" size="small" type="textarea" :autosize="{ minRows: 1 }" maxlength="160" :disabled="detail.status === 'CLOSED'" @change="saveRemark" />
+                <el-input v-model="remark" size="small" type="textarea" :autosize="{ minRows: 1 }" maxlength="160" :disabled="detail.status === 'CLOSED' || !canEditSide" @change="saveRemark" />
               </dd>
             </dl>
           </div>
@@ -589,7 +592,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
         <section class="panel">
           <div class="panel-head">附件</div>
           <div class="panel-body">
-            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'CLOSED'" @changed="logRef?.reload()" />
+            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'CLOSED' || !canEditSide" @changed="logRef?.reload()" />
           </div>
         </section>
       </aside>

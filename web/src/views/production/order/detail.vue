@@ -21,6 +21,7 @@ import ApprovalPanel from '@/components/doc/ApprovalPanel.vue'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
 import DocAttachments from '@/components/doc/DocAttachments.vue'
 import DocNoticesBanner from '@/components/doc/DocNoticesBanner.vue'
+import RejectNotice from '@/components/doc/RejectNotice.vue'
 import MoreActions, { type MoreItem } from '@/components/doc/MoreActions.vue'
 import PrintSheet from '@/components/doc/PrintSheet.vue'
 import SourceInvDocDialog from '@/components/doc/SourceInvDocDialog.vue'
@@ -75,8 +76,9 @@ const productionApi = bindCompanyApi(productionApiBase, () => detail.value?.comp
  * - 领料、退料、异常、回货、齐料各自取，一个取不到不影响别的
  * - 打印：页面里的 A4 打印版（PrintSheet），带颜色 × 尺码数量表和签字栏；工艺单是资料包上传的文件（RFC 011 §2.4），"工艺单"里列出来下载、预览
  */
-type TabName = 'progress' | 'lines' | 'materials' | 'issues' | 'receipts'
-const TABS: TabName[] = ['progress', 'lines', 'materials', 'issues', 'receipts']
+// 操作记录放页签（和采购单一样）：侧栏 300px 放不下五列，驳回原因被挤到看不见的地方（走查 T-7d453c）
+type TabName = 'progress' | 'lines' | 'materials' | 'issues' | 'receipts' | 'logs'
+const TABS: TabName[] = ['progress', 'lines', 'materials', 'issues', 'receipts', 'logs']
 const pickTab = (v: unknown): TabName | null => (TABS.includes(v as TabName) ? (v as TabName) : null)
 
 const route = useRoute()
@@ -443,6 +445,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
     <div v-else-if="detail" class="page detail">
       <div class="body">
         <DocNoticesBanner :pending-count="detail.pendingNotices" :load="loadNotices" :handle="handleNotice" @handled="refresh" />
+        <RejectNotice :status="detail.status" :version="detail.version" :load="loadLogs" />
 
         <div v-for="i in detail.openIssues" :key="i.id" class="issue-banner">
           <span>{{ issueBannerText(i) }}</span>
@@ -534,8 +537,9 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               </el-table>
 
               <h4 class="sub-h">领料、退料单</h4>
-              <el-table :data="matData?.docs ?? []" row-key="id" row-class-name="clickable" empty-text="还没有领料、退料单" @row-click="goStockDoc">
-                <el-table-column label="单号" prop="no" width="150" class-name="code" />
+              <!-- 日期、状态放得下，列多了横滚（走查 T-7d453c：日期截成"2026-11-..."、状态被切） -->
+              <el-table :data="matData?.docs ?? []" row-key="id" row-class-name="clickable" scrollbar-always-on empty-text="还没有领料、退料单" @row-click="goStockDoc">
+                <el-table-column label="单号" prop="no" width="150" class-name="code" fixed="left" />
                 <el-table-column label="类型" width="100">
                   <template #default="{ row }">{{ INV_DOC_TYPE[(row as ProductionStockDoc).docType].label }}</template>
                 </el-table-column>
@@ -545,10 +549,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                 <el-table-column label="物料" width="70" class-name="num" align="right">
                   <template #default="{ row }">{{ row.itemCount }} 种</template>
                 </el-table-column>
-                <el-table-column label="日期" width="100" class-name="num">
+                <el-table-column label="日期" width="116" class-name="num">
                   <template #default="{ row }">{{ formatDate(row.docDate) }}</template>
                 </el-table-column>
-                <el-table-column label="状态" width="96">
+                <el-table-column label="状态" width="120" fixed="right">
                   <template #default="{ row }">
                     <StatusTag :tone="INV_DOC_STATUS[(row as ProductionStockDoc).status].tone">
                       {{ INV_DOC_STATUS[(row as ProductionStockDoc).status].label }}
@@ -603,9 +607,9 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
           </el-tab-pane>
 
           <el-tab-pane :label="`回货 ${detail.receiptCount || ''}`" name="receipts">
-            <el-table :data="receipts" row-key="id" row-class-name="clickable" empty-text="还没有登记回货" @row-click="openReceipt">
-              <el-table-column label="单号" prop="no" width="150" class-name="code" />
-              <el-table-column label="日期" width="100" class-name="num">
+            <el-table :data="receipts" row-key="id" row-class-name="clickable" scrollbar-always-on empty-text="还没有登记回货" @row-click="openReceipt">
+              <el-table-column label="单号" prop="no" width="150" class-name="code" fixed="left" />
+              <el-table-column label="日期" width="116" class-name="num">
                 <template #default="{ row }">{{ formatDate(row.receiptDate) }}</template>
               </el-table-column>
               <el-table-column label="收货仓" min-width="120">
@@ -622,7 +626,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               <el-table-column label="物流单号" width="140" class-name="code">
                 <template #default="{ row }">{{ row.logisticsNo || '—' }}</template>
               </el-table-column>
-              <el-table-column label="登记" min-width="150" class-name="num">
+              <el-table-column label="登记" min-width="240" class-name="num">
                 <template #default="{ row }">{{ row.createByName ?? '—' }} {{ formatDateTime(row.createTime) }}</template>
               </el-table-column>
               <el-table-column v-if="canSeeFg" label="成品仓" width="160">
@@ -640,12 +644,16 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                   <span v-else class="dim">—</span>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="96">
+              <el-table-column label="状态" width="120" fixed="right">
                 <template #default="{ row }">
                   <StatusTag :tone="RECEIPT_STATUS[(row as ProductionReceipt).status].tone">{{ RECEIPT_STATUS[(row as ProductionReceipt).status].label }}</StatusTag>
                 </template>
               </el-table-column>
             </el-table>
+          </el-tab-pane>
+
+          <el-tab-pane label="操作记录" name="logs" lazy>
+            <DocLogList ref="logRef" :load="loadLogs" :actions="PRODUCTION_LOG_ACTION" :statuses="LOG_STATUSES" />
           </el-tab-pane>
         </el-tabs>
       </div>
@@ -657,6 +665,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
           <div class="panel-head">单据信息</div>
           <div class="panel-body">
             <dl class="doc-props">
+              <dt>主体</dt>
+              <dd>{{ detail.companyName }}</dd>
               <dt>需求订单</dt>
               <dd><router-link :to="`/orders/${detail.orderId}`" class="code link">{{ detail.orderNo }}</router-link></dd>
               <dt>资料包</dt>
@@ -672,6 +682,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               <dd class="num">
                 {{ formatPrice(detail.unitPrice) }}
                 <div v-if="priceChanged" class="warn small">改价：{{ detail.priceChangeReason ?? '—' }}（档案 {{ formatPrice(detail.archivePrice) }}）</div>
+                <!-- 审核后新价记进了档案，和档案一样了，原因照样留着（走查 T-7d453c：原来审完就看不到为什么改价） -->
+                <div v-else-if="detail.priceChangeReason" class="dim small">改价：{{ detail.priceChangeReason }}</div>
               </dd>
               <dt>金额</dt>
               <dd class="num">{{ formatMoney(detail.totalAmount) }}</dd></template>
@@ -709,6 +721,12 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               <dd class="pre-wrap">{{ detail.terms || '—' }}</dd>
               <dt>备注</dt>
               <dd>{{ detail.remark || '—' }}</dd>
+              <dt>制单</dt>
+              <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
+              <template v-if="detail.auditTime">
+                <dt>审核</dt>
+                <dd>{{ detail.auditByName ?? '—' }} · {{ formatDateTime(detail.auditTime) }}</dd>
+              </template>
             </dl>
           </div>
         </section>
@@ -718,14 +736,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         <section class="panel">
           <div class="panel-head">附件</div>
           <div class="panel-body">
-            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'VOIDED'" />
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">操作记录</div>
-          <div class="panel-body">
-            <DocLogList ref="logRef" :load="loadLogs" :actions="PRODUCTION_LOG_ACTION" :statuses="LOG_STATUSES" />
+            <!-- 换附件要 production:order:edit（后端兜底 403）：仓管这类只能看的不出"上传附件"（走查 T-7d453c） -->
+            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'VOIDED' || !user.hasPerm('production:order:edit')" />
           </div>
         </section>
       </aside>
@@ -767,7 +779,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         <ul v-loading="historyLoading" class="hist">
           <li v-for="h in historyRows" :key="h.id">
             <div>
-              <strong>{{ h.action === 'FINISH' ? '报完成' : '报开始' }}</strong>
+              <strong class="hist-act">{{ h.action === 'FINISH' ? '报完成' : '报开始' }}</strong>
               <span class="num small">
                 {{ h.actualStart ? formatDate(h.actualStart) : '' }}<template v-if="h.actualFinish"> ~ {{ formatDate(h.actualFinish) }}</template>
                 <template v-if="h.doneQty !== null"> · {{ formatQty(h.doneQty) }} 件</template>
@@ -853,6 +865,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
 </template>
 
 <style scoped>
+.hist-act {
+  margin-right: 8px;
+}
+
 .detail {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;

@@ -10,6 +10,7 @@ import { kittingApi, mrpApi } from '@/api/purchase'
 import { fgDocApi } from '@/api/fg'
 import BlankState from '@/components/BlankState.vue'
 import DocLogList from '@/components/DocLogList.vue'
+import RejectNotice from '@/components/doc/RejectNotice.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import SkuMatrix from '@/components/SkuMatrix.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -330,6 +331,7 @@ function openKitting() {
 
     <div v-else-if="detail" class="page detail">
       <div class="body">
+        <RejectNotice :status="detail.status" :version="detail.version" :load="loadLogs" />
         <div v-if="detail.pendingChange" class="chg-banner">
           <span>变更单 <span class="code">{{ detail.pendingChange.no }}</span> 待审核：{{ detail.pendingChange.summary }}</span>
           <el-button v-if="canViewChanges" size="small" @click="router.push(`/order-changes/${detail.pendingChange.id}`)">去看</el-button>
