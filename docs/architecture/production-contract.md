@@ -50,8 +50,8 @@
 
 ### 登录刷新与日志导出接线（A2 → A3）
 
-- 登录保持 `R<string>` access token，另设 `scm_refresh` 与浏览器绑定凭据 `scm_browser`，均为 HttpOnly / SameSite=Strict、路径 `/api/auth` 的 Cookie；HTTPS 或可信代理确认 HTTPS 时加 Secure，响应 `Cache-Control: no-store`。登录的 access 注册与刷新会话在同一数据库事务内提交。
-- `POST /api/auth/refresh` 发送 `{}` 和 `X-Requested-With: XMLHttpRequest`，使用 Cookie 原子轮换，返回 `R<string>`；跨站请求拒绝。浏览器用同会话 epoch 的 Web Locks 串行轮换，锁内重读共享 access token；同页请求用 SingleFlight 合并。仅对只读或后端明确支持幂等的原请求重放一次，保留原 body、主体和动作键；重放后的业务错误保持原码。等待刷新时发生账号切换，旧请求不得覆盖新 token。
+- 登录保持 `R<string>` access token。客户端通过 `X-Session-Mode: cookie|access-only` 明确会话模式；不支持 Web Locks 的浏览器使用 access-only，不创建刷新家族、不读写刷新 Cookie，access 到期后重新登录。非法模式在任何会话写入前拒绝。cookie 模式另设 `scm_refresh` 与浏览器绑定凭据 `scm_browser`，均为 HttpOnly / SameSite=Strict、路径 `/api/auth` 的 Cookie；HTTPS 或可信代理确认 HTTPS 时加 Secure，认证响应 `Cache-Control: no-store`。登录的 access 注册与刷新会话在同一数据库事务内提交。
+- `POST /api/auth/refresh` 发送 `{}`、`X-Session-Mode: cookie` 和 `X-Requested-With: XMLHttpRequest`，使用 Cookie 原子轮换，返回 `R<string>`；跨站请求拒绝。浏览器使用同源固定 Web Lock `lingmao:auth-cookie`，串行覆盖登录、退出、刷新、改密的 HTTP 响应接收与本地 Token 发布；不得按不同 epoch 分锁而让旧 Set-Cookie 覆盖新账号。锁内重读共享 access token，同页请求用 SingleFlight 合并。仅对只读或后端明确支持幂等的原请求重放一次，保留原 body、主体和动作键；重放后的业务错误保持原码。等待期间切换账号，旧任务发出前拒绝；已发出的旧 `/auth/me` 或业务请求在响应副作用前检查身份，不得覆盖资料、清除新 Token 或丢弃原账号的未决写入收据。
 - 服务端仅为同一 family、浏览器绑定、当前用户版本提供固定 3 秒、最多 2 次的上一凭据重放；返回同一个 successor，不再次轮换，不延长窗口。超过窗口/次数、绑定不符、账号停用或版本失效返回 401；过期旧凭据的拒绝不能删除已经有效的新 Cookie。刷新凭据只存摘要，successor 由用途隔离的 HMAC 与随机 nonce 重建，刷新会话总寿命 7 天。
 - `POST /api/auth/logout` 同样发送 `{}` 和上述自定义头；access 已过期时仍允许受同站校验保护的 Cookie 登出，撤销该 family 并清 Cookie。改密、重置密码、停用、删除即时提升用户会话版本；已有 access/refresh 随即失效。旧 Redis access 注册没有用户版本，升级后统一要求重新登录，不接受无版本旧会话。
 - `POST /api/export-jobs/stock-logs` 接收库存日志筛选 JSON，不接受 page/size/cursor，要求固定 `Idempotency-Key`，成功返回 HTTP 202 / `R<ExportJobView>`。`GET /api/export-jobs/{id}` 查状态，`GET /api/export-jobs/{id}/file` 下载；`POST /api/export-jobs/{id}/cancel`、`/retry` 取消或重推，均返回 `R<ExportJobView>`。
@@ -70,7 +70,7 @@
 - 纯日期为 YYYY-MM-DD，不转时区；事件时间以带偏移的 ISO-8601 输出。时间戳筛选用东八区业务日半开区间，DATE 列可用含首尾比较。
 - 普通列表保留 `{list,total}`。高增长流水新增 seek 契约 `{list,nextCursor,hasMore}`，游标绑定排序、筛选与授权范围；统计单独查询，不让游标页隐含 COUNT。
 - sys 表现有 PostgreSQL 存活行部分唯一索引可满足软删除重建，无须机械改成 deleted_token。业务主数据外键 RESTRICT + 停用保留。
-- 已执行 V1–V26 不改。新增迁移独立编号；大表约束 NOT VALID 后验证，在线索引按 Flyway 非事务迁移处理，避免在业务锁上无限等待。
+- 已在 main 发布的 V1–V36 不改。新增版本须先核对 main 已占用编号；独立 repeatable 迁移须幂等。大表约束先在短事务中以 NOT VALID 安装并释放强锁，再验证；在线索引按 Flyway 非事务迁移处理，避免在业务锁上无限等待。
 
 ## 4. 物理写边界
 

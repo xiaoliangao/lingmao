@@ -1,5 +1,7 @@
 # [A1] 加固数据库并发、精度、版本与大数据查询
 
+> 历史快照：本文保留当时的实现范围、测试结果与发布限制。本轮 2026-11-22 的契约、返工、修复 Commit 和验收状态统一见 [full-audit-ledger.md](full-audit-ledger.md)，不能用本文旧结果代替当前验证。
+
 建议分支：`perf/a1-db-concurrency-precision` → `dev`。这是待发布的 PR 正文；尚未创建远端 PR，也未取得远端 Actions 结果。
 
 ## 问题与改动

@@ -1,5 +1,7 @@
 # A4 可观测性、审计、生命周期与统一 CI 终审
 
+> 历史快照：本文保留当时的实现范围、测试结果与发布限制。本轮 2026-11-22 的契约、返工、修复 Commit 和验收状态统一见 [full-audit-ledger.md](full-audit-ledger.md)，不能用本文旧结果代替当前验证。
+
 前置阶段：A1 → A3 → A2，四个阶段分别保留独立分支和 PR 正文。主控在独立 `review/a4` 工作树逐文件审阅实现与测试，再运行实际 PostgreSQL、Redis、生产 JAR、浏览器和 Nginx。最终源码验收基线为 `45302d9`；范围及容量演进见 [production-hardening-rfc.md](../architecture/production-hardening-rfc.md)。
 
 ## 逐号核查

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.basic.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.lingmao.scm.common.excel.BoundedExportRows;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ExcelBook;
 import com.lingmao.scm.common.excel.ExcelColumn;
@@ -181,11 +182,16 @@ public class MaterialImport {
 
     /** ids 已经按编码排好、不超过导出上限 */
     public byte[] export(List<Long> ids) {
+        BoundedExportRows.requireWithinLimit(ids.size(), Excel.MAX_EXPORT_ROWS, MATERIAL_SHEET);
         Map<Long, Material> byId = chunked(ids, materialMapper::selectByIds).stream()
                 .collect(Collectors.toMap(Material::getId, Function.identity()));
         List<Material> materials = ids.stream().map(byId::get).filter(Objects::nonNull).toList();
-        List<MaterialSku> skus = chunked(ids, chunk -> materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>()
-                .in(MaterialSku::getMaterialId, chunk)));
+        List<MaterialSku> skus = BoundedExportRows.read(ids, CHUNK, Excel.MAX_EXPORT_ROWS, SKU_SHEET,
+                (chunk, limit) -> materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>()
+                        .in(MaterialSku::getMaterialId, chunk)
+                        .orderByAsc(MaterialSku::getMaterialId, MaterialSku::getId)
+                        // limit 是内部剩余预算，不接受请求提供的 SQL。
+                        .last("LIMIT " + limit)));
         Map<Long, Color> colors = chunked(skus.stream().map(MaterialSku::getColorId).filter(Objects::nonNull).distinct().toList(),
                 colorMapper::selectByIds).stream().collect(Collectors.toMap(Color::getId, Function.identity()));
         Map<Long, MaterialCategory> categories = materialCategoryMapper.selectList(null).stream()

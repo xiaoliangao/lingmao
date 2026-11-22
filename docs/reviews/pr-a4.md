@@ -1,5 +1,7 @@
 # [A4] 贯通字段审计、故障追踪与生产停机门禁
 
+> 历史快照：本文保留当时的实现范围、测试结果与发布限制。本轮 2026-11-22 的契约、返工、修复 Commit 和验收状态统一见 [full-audit-ledger.md](full-audit-ledger.md)，不能用本文旧结果代替当前验证。
+
 拟定分支：`perf/a4-observability-lifecycle`。Stacked PR 基线：`perf/a2-cache-outbox-security`；前置顺序为 A1 → A3 → A2。本文件是待发布正文，尚无远端 PR 链接。
 
 ## 为什么需要

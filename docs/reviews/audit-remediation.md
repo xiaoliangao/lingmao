@@ -1,5 +1,7 @@
 # PR #2 / PR #3 整改与销项验收
 
+> 历史快照：本文保留当时的实现范围、测试结果与发布限制。本轮 2026-11-22 的契约、返工、修复 Commit 和验收状态统一见 [full-audit-ledger.md](full-audit-ledger.md)，不能用本文旧结果代替当前验证。
+
 ## 1. 基准、交付范围与当前状态
 
 基线是 `main@1e126db5fe2701251bb3cf3f71d3c94288b6b37f`，仓库没有 `dev`。整改分支为 `fix/audit-remediation`，提交到 [PR #4](https://github.com/xiaoliangao/lingmao/pull/4)，不直接修改主分支。原始问题来自 [PR #2](https://github.com/xiaoliangao/lingmao/pull/2) 的 [architecture-audit.md](architecture-audit.md) 和 [PR #3](https://github.com/xiaoliangao/lingmao/pull/3) 的 [scm-full-audit.md](scm-full-audit.md)；两个原 PR 的评审评论均为空。下文用 `A/`、`S/` 区分两报告的同名编号，原文和历史定位不改写。

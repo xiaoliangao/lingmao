@@ -213,12 +213,23 @@ def main():
             'mixed-profile': {'SPRING_PROFILES_ACTIVE': 'prod,test'},
             'missing-db-password': {'DB_PASSWORD': ''},
             'missing-redis-password': {'REDIS_PASSWORD': ''},
+            'weak-db-password': {'DB_PASSWORD': 'ephemeral'},
+            'repeated-db-password': {'DB_PASSWORD': 'abcdefgh' * 4},
+            'weak-redis-password': {'REDIS_PASSWORD': 'ephemeral'},
+            'repeated-redis-password': {'REDIS_PASSWORD': 'abcdefgh' * 4},
         }
         for name, override in bad_configs.items():
             started = time.monotonic()
             process, _, logfile = start(name, override)
             process.wait(timeout=20)
-            require(process.returncode != 0 and 'Production configuration rejected' in logfile.read_text(), name + ' did not fail fast')
+            failure_log = logfile.read_text()
+            require(process.returncode != 0 and 'Production configuration rejected' in failure_log, name + ' did not fail fast')
+            require('HikariPool' not in failure_log and 'Tomcat initialized' not in failure_log,
+                    name + ' reached database pool or HTTP initialization before rejecting configuration')
+            for key, value in override.items():
+                if value and key in {'DB_PASSWORD', 'REDIS_PASSWORD', 'JWT_SECRET', 'FILE_SIGN_KEY', 'INIT_ADMIN_PASSWORD'}:
+                    require(value not in failure_log, name + ' disclosed the rejected credential')
+                    runtime_secrets.append(value)
             record({'name': name, 'passed': True, 'seconds': round(time.monotonic() - started, 3)})
 
         process, _, logfile = start('fresh-database-missing-admin', {'INIT_ADMIN_PASSWORD': ''})

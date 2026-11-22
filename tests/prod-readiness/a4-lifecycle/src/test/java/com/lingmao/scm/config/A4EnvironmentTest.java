@@ -4,12 +4,24 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class A4EnvironmentTest {
     @Test void strongProductionConfigurationPasses() { assertThatCode(()->ProductionEnvironmentGuard.validate(valid())).doesNotThrowAnyException(); }
+    @Test void weakDatabaseAndRedisCredentialsFailWithoutDisclosingTheirValues() {
+        for (String property : List.of("spring.datasource.password", "spring.data.redis.password")) {
+            for (String rejected : List.of("ephemeral", "abcdefgh".repeat(4), "abcdefgh1234567890", "Password-and-random-looking-tail-89!")) {
+                var env = valid().withProperty(property, rejected);
+                Throwable failure = org.assertj.core.api.Assertions.catchThrowable(() -> ProductionEnvironmentGuard.validate(env));
+                assertThat(failure).as(property).isInstanceOf(IllegalStateException.class);
+                assertThat(failure.getMessage()).isEqualTo("Production configuration rejected: " + property);
+            }
+        }
+    }
     @Test void missingWeakKeysDebugAndTestProfilesFailBeforeConnecting() {
         for (var entry:Map.of("lingmao.jwt.secret",Base64.getEncoder().encodeToString("dev-secret".repeat(8).getBytes()),
                 "lingmao.upload.sign-key","abcdefgh".repeat(4), "lingmao.init-admin-password","Password1234567890",
@@ -30,8 +42,8 @@ class A4EnvironmentTest {
         byte[] key=new byte[48];new SecureRandom().nextBytes(key);
         var env=new MockEnvironment();env.setActiveProfiles("prod");
         return env.withProperty("spring.datasource.url","jdbc:postgresql://127.0.0.1:5433/scm_test")
-                .withProperty("spring.datasource.username","scm").withProperty("spring.datasource.password","ephemeral")
-                .withProperty("spring.data.redis.host","127.0.0.1").withProperty("spring.data.redis.password","ephemeral")
+                .withProperty("spring.datasource.username","scm").withProperty("spring.datasource.password",java.util.HexFormat.of().formatHex(key))
+                .withProperty("spring.data.redis.host","127.0.0.1").withProperty("spring.data.redis.password",Base64.getEncoder().encodeToString(key))
                 .withProperty("lingmao.jwt.secret",Base64.getEncoder().encodeToString(key))
                 .withProperty("lingmao.upload.sign-key",java.util.HexFormat.of().formatHex(key))
                 .withProperty("spring.jackson.deserialization.fail-on-unknown-properties","true")

@@ -54,11 +54,17 @@ class S2KittingHttpIT extends A2BusinessFixture {
         rejected(production, f.company(), linked + "," + notLinked);
 
         long pending = sourceOrder(f, owner, "PENDING", f.company());
-        jdbc.update("INSERT INTO biz_approval_step(biz_type,doc_id,round,level_no,perm,status) VALUES('ORDER',?,1,1,'purchase:order:audit','CURRENT')", pending);
-        rejected(reviewer, f.company(), Long.toString(pending));
-        jdbc.update("UPDATE biz_approval_step SET perm='order:order:audit' WHERE biz_type='ORDER' AND doc_id=?", pending);
-        assertThat(ok(reviewer, "GET", "/api/order-kitting?orderIds=" + pending, null, f.company()).size()).isEqualTo(1);
-        rejected(reviewer, f.company(), Long.toString(linked)); // Approval authority never grants ALL.
+        try {
+            jdbc.update("INSERT INTO biz_approval_step(biz_type,doc_id,round,level_no,perm,status) VALUES('ORDER',?,1,1,'purchase:order:audit','CURRENT')", pending);
+            rejected(reviewer, f.company(), Long.toString(pending));
+            jdbc.update("UPDATE biz_approval_step SET perm='order:order:audit' WHERE biz_type='ORDER' AND doc_id=?", pending);
+            assertThat(ok(reviewer, "GET", "/api/order-kitting?orderIds=" + pending, null, f.company()).size()).isEqualTo(1);
+            rejected(reviewer, f.company(), Long.toString(linked)); // Approval authority never grants ALL.
+        } finally {
+            // First-level permission steps are intentionally visible to every matching reviewer. Remove only
+            // this test's step so later home queue tests do not inherit another fixture's real approval task.
+            jdbc.update("DELETE FROM biz_approval_step WHERE biz_type='ORDER' AND doc_id=?", pending);
+        }
 
         long pendingProduction = sourceProduction(f, owner, notLinked, "PENDING");
         jdbc.update("INSERT INTO biz_approval_step(biz_type,doc_id,round,level_no,user_id,status) VALUES('PRODUCTION_ORDER',?,1,1,?,'CURRENT')", pendingProduction, hiddenProduction.id());

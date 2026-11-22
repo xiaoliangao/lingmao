@@ -125,10 +125,11 @@ class CiFailureSafetyTest(unittest.TestCase):
 
     def test_sigterm_wrapper_stops_children_restores_postgres_and_removes_private_files(self):
         # This executes the unmodified wrapper entry point against the real CI
-        # PostgreSQL service. Only the expensive JVM gate and Docker log producer
-        # are fixture executables; signal handling, SQL and file cleanup are real.
+        # PostgreSQL service and its actual private collector. Only the expensive
+        # JVM gate is a fixture; Docker, SQL, signals and file cleanup are real.
+        container = wrapper.private_log.service_container()
         password = os.environ.get('SCM_CI_DB_PASSWORD', '')
-        keys = ('log_statement', 'log_parameter_max_length', 'log_parameter_max_length_on_error')
+        keys = ('log_statement', 'log_parameter_max_length', 'log_parameter_max_length_on_error', 'log_filename')
         with psycopg.connect(host='127.0.0.1', port=5433, user='scm', password=password,
                              dbname='postgres', autocommit=True, connect_timeout=5) as db:
             original = {key: db.execute(sql.SQL('SHOW {}').format(sql.Identifier(key))).fetchone()[0] for key in keys}
@@ -137,34 +138,33 @@ class CiFailureSafetyTest(unittest.TestCase):
                 script = root / 'tests/prod-readiness/a4-lifecycle/ci_two_instances.py'
                 script.parent.mkdir(parents=True)
                 shutil.copyfile(Path(__file__).with_name('ci_two_instances.py'), script)
+                shutil.copyfile(Path(__file__).with_name('ci_private_pg_log.py'), script.with_name('ci_private_pg_log.py'))
                 gate = root / 'tests/prod-readiness/a2-security/two_instances.py'
                 gate.parent.mkdir(parents=True)
                 child = 'import signal;signal.signal(signal.SIGTERM,signal.SIG_IGN);print("READY",flush=True);signal.pause()'
                 gate.write_text(
-                    'import json,os,signal,subprocess,sys\nfrom pathlib import Path\n'
+                    'import json,os,signal,subprocess,sys,time\nfrom pathlib import Path\n'
                     'from psycopg.conninfo import conninfo_to_dict\n'
                     'signal.signal(signal.SIGTERM,signal.SIG_IGN)\n'
                     f'child=subprocess.Popen([sys.executable,"-c",{child!r}],stdout=subprocess.PIPE,text=True)\n'
                     'assert child.stdout.readline().strip()=="READY"\n'
                     'pg_log=Path(sys.argv[sys.argv.index("--pg-log")+1])\n'
+                    'deadline=time.monotonic()+5\n'
+                    'while b"p36_private_sql_" not in pg_log.read_bytes():\n'
+                    ' if time.monotonic()>=deadline: raise RuntimeError("Private collector did not arrive")\n'
+                    ' time.sleep(.05)\n'
                     'Path(os.environ["SCM_CANCEL_READY"]).write_text(json.dumps({"gate":os.getpid(),"child":child.pid,'
                     '"database":conninfo_to_dict(os.environ["PG_DSN"])["dbname"],"work":str(pg_log.parent)}))\n'
                     'signal.pause()\n')
-                bin_dir = root / 'bin'
-                bin_dir.mkdir()
-                docker = bin_dir / 'docker'
-                docker.write_text('#!' + sys.executable + '\nimport signal\nprint("PRIVATE_LOG_SENTINEL",flush=True)\nsignal.pause()\n')
-                docker.chmod(0o700)
                 ready = root / 'ready.json'
                 process = subprocess.Popen([sys.executable, str(script)], env={
-                    **os.environ, 'GITHUB_ACTIONS': 'true', 'SCM_CI_POSTGRES_CONTAINER': 'a' * 64,
+                    **os.environ, 'SCM_CI_POSTGRES_CONTAINER': container,
                     'SCM_CI_DB_PASSWORD': password, 'SCM_CI_REDIS_PASSWORD': '',
-                    'SCM_CANCEL_READY': str(ready), 'TMPDIR': str(root),
-                    'PATH': str(bin_dir) + os.pathsep + os.environ.get('PATH', '')},
+                    'SCM_CANCEL_READY': str(ready), 'TMPDIR': str(root)},
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
                 state = None
                 try:
-                    deadline = time.monotonic() + 10
+                    deadline = time.monotonic() + 15
                     while not ready.is_file():
                         self.assertIsNone(process.poll(), 'Wrapper exited before the cancellation fixture started')
                         if time.monotonic() >= deadline:
@@ -172,18 +172,36 @@ class CiFailureSafetyTest(unittest.TestCase):
                         time.sleep(.05)
                     state = json.loads(ready.read_text())
                     self.assertEqual(db.execute('SELECT count(*) FROM pg_database WHERE datname=%s', (state['database'],)).fetchone()[0], 1)
-                    self.assertEqual(db.execute('SHOW log_statement').fetchone()[0], 'all')
+                    self.assertEqual(db.execute('SHOW log_statement').fetchone()[0], 'none')
+                    filename = db.execute('SHOW log_filename').fetchone()[0]
+                    self.assertRegex(filename, r'^gate-[a-f0-9]{16}\.log$')
+                    with wrapper.private_log.connect(state['database']) as scoped:
+                        self.assertEqual(scoped.execute('SHOW log_statement').fetchone()[0], 'all')
+                        self.assertEqual(scoped.execute('SHOW log_parameter_max_length').fetchone()[0], '0')
+                        self.assertEqual(scoped.execute('SHOW log_parameter_max_length_on_error').fetchone()[0], '0')
                     self.assertTrue((Path(state['work']) / 'postgres.log').is_file())
+                    self.assertEqual((Path(state['work']) / 'postgres.log').stat().st_mode & 0o777, 0o600)
                     cancelling_at = time.monotonic()
                     process.send_signal(signal.SIGTERM)
-                    process.communicate(timeout=20)
+                    stdout, stderr = process.communicate(timeout=20)
                     self.assertLess(time.monotonic() - cancelling_at, 8, 'Cancellation left too little time for runner cleanup')
                     self.assertEqual(process.returncode, 128 + signal.SIGTERM)
+                    self.assertTrue(b'p36_private_sql_' not in stdout + stderr,
+                                    'Private SQL escaped into wrapper stdout/stderr')
                     self.assertFalse(wrapper.group_has_live_members(state['gate']), 'Cancelled gate still owns live children')
                     self.assertFalse(Path(state['work']).exists(), 'Private query log survived cancellation')
                     self.assertEqual(db.execute('SELECT count(*) FROM pg_database WHERE datname=%s', (state['database'],)).fetchone()[0], 0)
                     restored = {key: db.execute(sql.SQL('SHOW {}').format(sql.Identifier(key))).fetchone()[0] for key in keys}
                     self.assertEqual(restored, original)
+                    wrapper.private_log.docker('exec', '--user', 'postgres', container, 'sh', '-c',
+                                               'test ! -e "$PGDATA/scm-ci-private-log/$1"', 'sh', filename)
+                    privacy = json.loads((root / 'target/test-artifacts/a2-instances/log-privacy.json').read_text())
+                    self.assertEqual(privacy, {
+                        'databaseScoped': True, 'sqlLiteralPrivate': True,
+                        'sqlLiteralAbsentFromContainerLogs': True, 'endSentinelVerified': False,
+                        'databaseRemoved': True, 'privateSourceRemoved': True,
+                        'configurationRestored': True, 'hostCopyRemoved': True,
+                    })
                 finally:
                     wrapper.stop_process_group(process, grace_seconds=.1)
                     if state and wrapper.group_has_live_members(state['gate']):

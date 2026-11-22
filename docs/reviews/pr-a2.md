@@ -1,5 +1,7 @@
 # [A2] 加固共享会话、Outbox、文件资源与业务权限边界
 
+> 历史快照：本文保留当时的实现范围、测试结果与发布限制。本轮 2026-11-22 的契约、返工、修复 Commit 和验收状态统一见 [full-audit-ledger.md](full-audit-ledger.md)，不能用本文旧结果代替当前验证。
+
 建议分支：`perf/a2-cache-outbox-security` → `perf/a3-frontend-perf-resilience`。依赖 A1 与 A3；四阶段独立叠放。当前是待发布 PR 正文，尚未创建远端 PR。
 
 ## 问题与改动

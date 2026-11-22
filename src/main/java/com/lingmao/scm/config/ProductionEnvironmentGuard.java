@@ -22,7 +22,8 @@ public final class ProductionEnvironmentGuard implements EnvironmentPostProcesso
         if (Arrays.stream(env.getActiveProfiles()).anyMatch(p -> p.equals("local") || p.equals("it") || p.equals("test") || p.contains("mock")))
             fail("SPRING_PROFILES_ACTIVE");
         require(env,"spring.datasource.url"); require(env,"spring.datasource.username");
-        require(env,"spring.datasource.password"); require(env,"spring.data.redis.host"); require(env,"spring.data.redis.password");
+        requireStrongCredential(env,"spring.datasource.password"); require(env,"spring.data.redis.host");
+        requireStrongCredential(env,"spring.data.redis.password");
         String jwt = require(env,"lingmao.jwt.secret");
         try { if (!strong(Base64.getDecoder().decode(jwt),32)) fail("JWT_SECRET"); }
         catch (IllegalArgumentException invalid) { fail("JWT_SECRET"); }
@@ -50,6 +51,9 @@ public final class ProductionEnvironmentGuard implements EnvironmentPostProcesso
             if (value == null || value.isBlank() || value.contains("${")) fail(key);
             return value;
         } catch (IllegalArgumentException unresolved) { throw new IllegalStateException("Production configuration rejected: " + key); }
+    }
+    private static void requireStrongCredential(ConfigurableEnvironment env, String key) {
+        if (!strong(require(env,key).getBytes(StandardCharsets.UTF_8),16)) fail(key);
     }
     private static boolean strong(byte[] bytes,int min) {
         if (bytes.length < min) return false;

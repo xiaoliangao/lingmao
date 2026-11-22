@@ -1036,6 +1036,13 @@ class AuditUi(unittest.TestCase):
             self.assertNotIn("refPrice", item)
             for sku in item["skus"]:
                 self.assertNotIn("refPrice", sku)
+        # Preserve an unchanged response subtree and all top-level field names for the final review.
+        # This is an explicit excerpt of anonymous fixture data, not an authentication/session dump.
+        write_evidence(self.case_dir / "no-cost-real-api.json", {
+            "synthetic": True, "source": "GET " + path, "responseTopLevelKeys": sorted(detail),
+            "responseExcerpt": {"id": detail["id"], "bomItems": detail["bomItems"]},
+            "verification": "Actual response before any UI projection; top-level unitCost/buyPrice and nested refPrice are physically absent",
+        }, editor.token)
         forged = pack_update(detail, {"costMode": "BUY", "buyPrice": 999.9999,
                                       "items": [{"name": "无权限伪造成本", "amount": 99.99, "remark": None}]})
         forged["versionNote"] = "有包编辑权限的合法说明"

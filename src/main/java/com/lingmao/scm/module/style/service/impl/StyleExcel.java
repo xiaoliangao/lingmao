@@ -2,6 +2,7 @@ package com.lingmao.scm.module.style.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
+import com.lingmao.scm.common.excel.BoundedExportRows;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ExcelColumn;
 import com.lingmao.scm.common.excel.ExcelImport;
@@ -155,13 +156,19 @@ public class StyleExcel {
 
     /** ids 已经按款号排好、不超过导出上限 */
     byte[] export(List<Long> ids) {
+        BoundedExportRows.requireWithinLimit(ids.size(), Excel.MAX_EXPORT_ROWS, STYLE_SHEET);
         Map<Long, Style> byId = chunked(ids, styleMapper::selectByIds).stream()
                 .collect(Collectors.toMap(Style::getId, Function.identity()));
         List<Style> styles = ids.stream().map(byId::get).filter(Objects::nonNull).toList();
-        List<StyleColor> styleColors = chunked(ids, chunk -> styleColorMapper.selectList(new LambdaQueryWrapper<StyleColor>()
-                .in(StyleColor::getStyleId, chunk).orderByAsc(StyleColor::getStyleId, StyleColor::getSeq)));
-        List<StyleSku> skus = chunked(ids, chunk -> styleSkuMapper.selectList(new LambdaQueryWrapper<StyleSku>()
-                .in(StyleSku::getStyleId, chunk)));
+        List<StyleColor> styleColors = BoundedExportRows.read(ids, CHUNK, Excel.MAX_EXPORT_ROWS, "款式颜色",
+                (chunk, limit) -> styleColorMapper.selectList(new LambdaQueryWrapper<StyleColor>()
+                        .in(StyleColor::getStyleId, chunk)
+                        .orderByAsc(StyleColor::getStyleId, StyleColor::getSeq, StyleColor::getId)
+                        .last("LIMIT " + limit)));
+        List<StyleSku> skus = BoundedExportRows.read(ids, CHUNK, Excel.MAX_EXPORT_ROWS, SKU_SHEET,
+                (chunk, limit) -> styleSkuMapper.selectList(new LambdaQueryWrapper<StyleSku>()
+                        .in(StyleSku::getStyleId, chunk).orderByAsc(StyleSku::getStyleId, StyleSku::getId)
+                        .last("LIMIT " + limit)));
         Map<Long, Color> colors = colorService.byIds(Stream.concat(styleColors.stream().map(StyleColor::getColorId),
                 skus.stream().map(StyleSku::getColorId)).collect(Collectors.toSet()));
         StyleCategories.Index index = categories.index();
