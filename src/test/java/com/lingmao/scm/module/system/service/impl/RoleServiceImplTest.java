@@ -84,12 +84,26 @@ class RoleServiceImplTest {
     @Test
     void delete_assignedToUser_throwsAndNotDelete() {
         when(sysRoleMapper.selectById(2L)).thenReturn(role(2L, "keeper"));
-        when(sysUserRoleMapper.exists(any())).thenReturn(true);
+        when(sysUserRoleMapper.assignedToActiveUser(2L)).thenReturn(true);
 
         assertThatThrownBy(() -> roleService.delete(2L))
                 .isInstanceOf(BizException.class)
                 .hasMessage("角色已分配给用户，不能删除");
         verify(sysRoleMapper, never()).deleteById(any(Long.class));
+        verify(sysUserRoleMapper, never()).delete(any());
+    }
+
+    /** 规则：只有删了的人还挂着这个角色（以前删用户不去掉关联）时能删，留下的关联一起去掉 */
+    @Test
+    void delete_onlyDeletedUsersHoldIt_deletesRoleAndLeftoverLinks() {
+        when(sysRoleMapper.selectById(2L)).thenReturn(role(2L, "keeper"));
+        when(sysUserRoleMapper.assignedToActiveUser(2L)).thenReturn(false);
+
+        roleService.delete(2L);
+
+        verify(sysRoleMapper).deleteById(2L);
+        verify(sysRoleMenuMapper).delete(any());
+        verify(sysUserRoleMapper).delete(any());
     }
 
     private SysRole role(Long id, String code) {

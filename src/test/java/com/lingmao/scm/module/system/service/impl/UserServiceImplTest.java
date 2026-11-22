@@ -109,6 +109,19 @@ class UserServiceImplTest {
         assertThat(saved.getValue().getPassword()).isEqualTo("encoded-123456");
     }
 
+    /** 规则：删人（逻辑删除）同时去掉他的角色关联，不然他的角色以后删不掉 */
+    @Test
+    void delete_removesRoleLinks() {
+        SysUser user = new SysUser();
+        user.setId(5L);
+        when(sysUserMapper.selectById(5L)).thenReturn(user);
+
+        userService.delete(5L, 1L);
+
+        verify(sysUserMapper).deleteById(5L);
+        verify(sysUserRoleMapper).delete(any());
+    }
+
     /** 规则：不能删除自己，而且不去查库、不发 delete */
     @Test
     void delete_self_throwsAndNotDelete() {

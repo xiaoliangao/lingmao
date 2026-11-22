@@ -140,6 +140,9 @@ public class UserServiceImpl implements UserService {
         }
         getEntity(id);
         sysUserMapper.deleteById(id);
+        // 账号是逻辑删除，角色关联真删：不然他的角色一直"已分配给用户"、删不掉（和删角色时去掉菜单关联一样）
+        sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
+                .eq(SysUserRole::getUserId, id));
     }
 
     @Override

@@ -111,14 +111,15 @@ public class RoleServiceImpl implements RoleService {
     public void delete(Long id) {
         SysRole role = getById(id);
         ensureNotAdmin(role);
-        boolean assigned = sysUserRoleMapper.exists(new LambdaQueryWrapper<SysUserRole>()
-                .eq(SysUserRole::getRoleId, id));
-        if (assigned) {
+        if (sysUserRoleMapper.assignedToActiveUser(id)) {
             throw new BizException("角色已分配给用户，不能删除");
         }
         sysRoleMapper.deleteById(id);
         sysRoleMenuMapper.delete(new LambdaQueryWrapper<SysRoleMenu>()
                 .eq(SysRoleMenu::getRoleId, id));
+        // 删了的人以前留下的关联（见 assignedToActiveUser）一起去掉
+        sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
+                .eq(SysUserRole::getRoleId, id));
     }
 
     @Override
