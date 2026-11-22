@@ -240,6 +240,41 @@ class AssistantTokenIT {
         }
     }
 
+    /**
+     * 供应商联系方式、银行信息不发给外部模型（用户 11-22 定）：采购（预置角色两个权限都有）自己登录看得到联系人和遮过的账号，
+     * 同一个人用助手令牌查同一家，联系人、电话、微信、地址、开户行、户名、账号都没有；名称、信用代码照常
+     */
+    @Test
+    void supplierContactAndBank_withheldFromAssistant() throws Exception {
+        Account a = account("buyer");
+        String tag = UUID.randomUUID().toString().substring(0, 8);
+        long supplier = jdbc.queryForObject("""
+                INSERT INTO sup_supplier (code, name, short_name, status, settle_method, tax_pct, credit_code,
+                                          contact, phone, wechat, address, bank_name, bank_account, bank_account_name)
+                VALUES (?, ?, ?, 'ACTIVE', 'MONTHLY', 13, ?, '张三', '13800000000', 'zs-wx', '示例路 1 号', '示例银行', '6222000011112222', '示例户名')
+                RETURNING id""", Long.class, "AST" + tag, "助手测试" + tag, "助手测试" + tag, "91330000AST" + tag.substring(0, 7));
+        try {
+            JsonNode mine = send(a.token(), "GET", "/api/suppliers/" + supplier, null).body().path("data");
+            assertThat(mine.path("contact").stringValue()).isEqualTo("张三");
+            assertThat(mine.path("bankAccount").stringValue()).as("自己看是遮过的").startsWith("6222").endsWith("2222").contains("*");
+
+            String assist = exchange(a).path("token").stringValue();
+            Reply theirs = send(assist, "GET", "/api/suppliers/" + supplier, null);
+            assertThat(theirs.code()).as(theirs.body().toString()).isZero();
+            JsonNode d = theirs.body().path("data");
+            assertThat(d.path("name").stringValue()).isEqualTo("助手测试" + tag);
+            assertThat(d.path("creditCode").stringValue()).isEqualTo("91330000AST" + tag.substring(0, 7));
+            for (String field : List.of("contact", "phone", "wechat", "address", "bankName", "bankAccount", "bankAccountName")) {
+                assertThat(d.path(field).isNull() || d.path(field).isMissingNode()).as("助手拿不到 " + field + "：" + d).isTrue();
+            }
+            Reply list = send(assist, "GET", "/api/suppliers?keyword=" + tag, null);
+            assertThat(list.code()).as(list.body().toString()).isZero();
+            assertThat(list.body().path("data").path("list").toString()).doesNotContain("张三", "13800000000", "示例银行", "6222");
+        } finally {
+            jdbc.update("DELETE FROM sup_supplier WHERE id = ?", supplier);
+        }
+    }
+
     /** 账号停用：助手令牌和登录一起失效；换它的登录令牌没了（并发退出漏删的那种）：它也不再认 */
     @Test
     void disabledUserOrMissingParent_invalidate() throws Exception {

@@ -28,6 +28,8 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
     private static final String PREFIX = "Bearer ";
     /** 使用智能助手的权限（V54）。换助手令牌要它，助手令牌的每个请求也要它：收回权限下一个请求就不能用 */
     public static final String ASSISTANT_PERM = "assistant:chat:use";
+    /** 助手令牌的请求不带的权限：供应商联系方式、银行信息不发给外部模型（用户 11-22 定，PRD §12 Q45） */
+    static final Set<String> WITHHELD_FROM_ASSISTANT = Set.of(FieldPermissions.CONTACT, FieldPermissions.BANK);
 
     private final JwtUtil jwtUtil;
     private final LoginSessionStore loginSessionStore;
@@ -102,9 +104,13 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
         if (scope != null && !perms.contains(ASSISTANT_PERM)) {
             return "没有使用智能助手的权限";
         }
-        // scope: 开头的是这里按令牌用途放的标识，不认库里的：菜单上就算有人填了同名权限码，普通登录也不会被当成助手
+        // scope: 开头的是这里按令牌用途放的标识，不认库里的：菜单上就算有人填了同名权限码，普通登录也不会被当成助手。
+        // 助手令牌不带供应商联系方式、银行信息这两个权限：这两样不发给外部模型（用户 11-22 定），
+        // 接口返回时由 FieldProjection 去掉，助手拿到的和没有这两个权限的人一样
         List<SimpleGrantedAuthority> authorities = new ArrayList<>(perms.stream()
-                .filter(p -> !p.startsWith(CallerScope.RESERVED_PREFIX)).map(SimpleGrantedAuthority::new).toList());
+                .filter(p -> !p.startsWith(CallerScope.RESERVED_PREFIX))
+                .filter(p -> scope == null || !WITHHELD_FROM_ASSISTANT.contains(p))
+                .map(SimpleGrantedAuthority::new).toList());
         if (scope != null) {
             authorities.add(new SimpleGrantedAuthority(CallerScope.ASSISTANT_AUTHORITY));
         }

@@ -42,6 +42,8 @@ describe('一句话怎么答', () => {
     assert.equal(system.role, 'system')
     assert.match(system.content as string, /采购小王/)
     assert.match(system.content as string, /没有权限看：成本/)
+    assert.doesNotMatch(system.content as string, /没有权限看：[^。]*供应商/, '供应商联系方式、银行信息不按权限说')
+    assert.match(system.content as string, /供应商的联系人、电话、微信、地址和银行信息不给助手/, '用户 11-22 定：一律不发给模型')
     assert.match(system.content as string, /2026\/11\/22/)
 
     assert.equal(s.requests.length, 1)

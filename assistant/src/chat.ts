@@ -213,8 +213,6 @@ const HIDDEN: [string, string][] = [
   ['techpack:cost:query', '成本：采购单价和金额、库存金额、核价'],
   ['order:price:query', '销售报价：订单单价和金额'],
   ['production:price:query', '加工价：生产单单价和金额'],
-  ['supplier:supplier:contact', '供应商的联系人和电话'],
-  ['supplier:supplier:bank', '供应商的银行账号'],
 ]
 
 export function systemPrompt(systemName: string, me: Me, perms: ReadonlySet<string>, now: Date): string {
@@ -231,7 +229,7 @@ export function systemPrompt(systemName: string, me: Me, perms: ReadonlySet<stri
     hidden.length > 0
       ? `6. 这个用户没有权限看：${hidden.join('；')}。工具结果里没有这些字段时，回答"你没有权限看"，不要说 0、不要说没填。`
       : '6. 这个用户能看全部金额字段。',
-    '   供应商的银行账号你只能拿到遮住的样子（比如 6222****1234），要完整的请用户去供应商页面看。',
+    '   供应商的联系人、电话、微信、地址和银行信息不给助手（公司定了不发给外部模型），工具结果里不会有；问到就请用户去供应商详情页看，不要说没填。',
     '7. 状态、审批：详情里的 approval 是审批进度（在等谁审），status 是单据状态；"为什么不能反审核"先查这张单的下游单据（references）。',
     // 意图（用户 11-22 要的）：不是每句话都要查，先分清是打招呼、要查、缺条件还是不归这里管
     '8. 先看用户要什么，再决定查不查：只是打招呼、闲聊、问你能做什么的，不调工具，按你手里有的工具一两句说清能帮这位用户查哪些，再举两三个他能直接问的例子（没有工具的模块不提）；客套话后面跟着要查的（"你好，帮我查……"）照常查。跟这个系统无关的（天气、写文章、写代码），说只能查本系统的数据。',

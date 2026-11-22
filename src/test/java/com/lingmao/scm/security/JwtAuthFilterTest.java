@@ -159,6 +159,21 @@ class JwtAuthFilterTest {
         assertThat(chain.getRequest()).isNotNull();
     }
 
+    /** 规则：供应商联系方式、银行信息不发给外部模型（用户 11-22 定）→ 助手令牌不带这两个权限，别的权限照带 */
+    @Test
+    void assistant_withoutContactAndBankPerms() throws Exception {
+        assistantToken();
+        when(aiSwitchService.enabled()).thenReturn(true);
+        when(permissionService.loadPermissions(1L)).thenReturn(Set.of(JwtAuthFilter.ASSISTANT_PERM, "supplier:supplier:list",
+                FieldPermissions.CONTACT, FieldPermissions.BANK, FieldPermissions.COST));
+
+        filter.doFilter(assistantRequest("GET"), new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities()).extracting(GrantedAuthority::getAuthority)
+                .contains("supplier:supplier:list", FieldPermissions.COST)
+                .doesNotContain(FieldPermissions.CONTACT, FieldPermissions.BANK);
+    }
+
     /** 规则：AI 功能关着 → 还没过期的助手令牌也回 403，请求不往下走 */
     @Test
     void assistantWhileAiOff_forbidden() throws Exception {
