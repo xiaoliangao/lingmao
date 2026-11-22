@@ -329,7 +329,7 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
         return R.ok();
     }
 
-    @Operation(summary = "登记回货（建 + 审核一步）：超过件数（登记了裁床数按裁床数）的 105% 1004（data 是超了的 SKU）")
+    @Operation(summary = "登记回货（建 + 审核一步）：良品（回货 − 次品）超过件数（登记了裁床数按裁床数）的 105% 1004（data 是超了的 SKU）")
     @PostMapping("/{id:\\d+}/receipts")
     @PreAuthorize("hasAuthority('production:receipt:add')")
     @OperLog(module = "生产单", action = "登记回货")

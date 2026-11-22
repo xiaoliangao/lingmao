@@ -133,7 +133,7 @@ const kindMeta = computed(() => PRODUCTION_KIND[detail.value?.kind ?? (path.star
 const statusTag = computed(() => {
   const d = detail.value
   if (!d) return PRODUCTION_STATUS.DRAFT
-  return d.status === 'RUNNING' && d.returnedQty > 0 ? PRODUCTION_PARTIAL : PRODUCTION_STATUS[d.status]
+  return d.status === 'RUNNING' && d.returnedQty - d.defectQty > 0 ? PRODUCTION_PARTIAL : PRODUCTION_STATUS[d.status]
 })
 /** 审核以后：明细格子下面写回货，侧栏多当前节点、齐料、领料、回货 */
 const audited = computed(() => !!detail.value && !['DRAFT', 'PENDING', 'VOIDED'].includes(detail.value.status))

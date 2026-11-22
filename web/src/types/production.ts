@@ -617,10 +617,13 @@ export interface ReceiptCreated {
 export interface ReceiptOverRow {
   /** SKU 码 */
   sku: string
-  /** 加工件数、已回良品、这次的良品、良品上限 = ⌊件数或裁床数 × 1.05⌋ */
+  /** 加工件数 */
   qty: number
-  returnedQty: number
-  thisQty: number
+  /** 已回良品（回货 − 次品） */
+  goodQty: number
+  /** 这次的良品 */
+  thisGoodQty: number
+  /** 良品上限 = ⌊件数或裁床数 × 1.05⌋ */
   maxQty: number
   /** 如"加工 120 件，已回良品 120，良品最多还能回 3 件" */
   message: string

@@ -141,6 +141,11 @@ class HomeIT {
         List<DeliveryRow> deliveries = homeService.deliveries();
         assertThat(deliveries).extracting(d -> d.ref().id()).containsExactly(prd, order);
         assertThat(deliveries.getFirst().daysLeft()).isEqualTo(-1);
+        // 只算良品（11-19）：回 30 件其中次品 5，交期进度 25，在制件数 100 − 25
+        jdbcTemplate.update("UPDATE prd_order_item SET returned_qty = 30, defect_qty = 5 WHERE id = (SELECT min(id) FROM prd_order_item WHERE prd_order_id = ?)", prd);
+        assertThat(homeService.deliveries().getFirst().doneQty()).isEqualTo(25);
+        assertThat(homeService.kpi().production().qty()).isEqualTo(75);
+        jdbcTemplate.update("UPDATE prd_order_item SET returned_qty = 0, defect_qty = 0 WHERE prd_order_id = ?", prd);
 
         jdbcTemplate.update("INSERT INTO prd_issue (no, prd_order_id, issue_type, description, create_by) VALUES (?, ?, 'SHORTAGE', '辅料没到', ?)",
                 "YCIT" + f.suffix, prd, f.user);

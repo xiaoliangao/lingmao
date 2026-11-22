@@ -23,6 +23,7 @@ public class OrderProgressRowVO {
     private AttachmentVO image;
     private int qty;
     private int scheduledQty;
+    /** 已回货，只算良品（生产单的回货 − 次品，甲方 11-19） */
     private int returnedQty;
     /** 承诺交期 ?? 要求交期；行交期更早的用行交期 */
     private LocalDate dueDate;

@@ -35,14 +35,17 @@ const LABELS = computed<Record<string, string>>(() => ({
   styleName: '款名',
   colorName: '颜色',
   sizeCode: '尺码',
-  // 1004 超排（02 §3.12）
+  // 1004 超排（02 §3.12）、超回货（05 §3.6.2，只算良品）
   sku: 'SKU',
+  qty: '加工',
+  goodQty: '已回良品',
+  thisGoodQty: '这次的良品',
   orderQty: '订单数',
   scheduledQty: '已排产',
 }))
 
 /** 数字列（右对齐、定宽）和几列短字段的宽度：差多少、单位要一眼看到（走查 T-33e438：原来"差""单位"被挤出去） */
-const NUM_KEYS = new Set(['stockQty', 'needQty', 'shortQty', 'thisQty', 'maxQty', 'orderQty', 'scheduledQty'])
+const NUM_KEYS = new Set(['stockQty', 'needQty', 'shortQty', 'thisQty', 'maxQty', 'orderQty', 'scheduledQty', 'qty', 'goodQty', 'thisGoodQty'])
 const FIXED_WIDTH: Record<string, number> = { row: 64, seq: 64, seqs: 72, unit: 64, sizeCode: 72, colorName: 90, skuCode: 140, sku: 140 }
 const width = (key: string) => FIXED_WIDTH[key] ?? (NUM_KEYS.has(key) ? 96 : undefined)
 const minWidth = (key: string) => (key === 'message' ? 240 : key === 'materialName' || key === 'warehouseName' ? 130 : 100)

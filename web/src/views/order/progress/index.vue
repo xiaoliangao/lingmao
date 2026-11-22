@@ -256,7 +256,7 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
                 <div class="chip-tip">
                   <div><span class="code">{{ p.no }}</span> · {{ PRODUCTION_STATUS[p.status].label }}</div>
                   <NodeDots :nodes="p.nodes" :current-name="p.currentNodeName" />
-                  <div>回货 {{ formatQty(p.returnedQty) }} / {{ formatQty(p.totalQty) }}<template v-if="p.defectQty">（次品 {{ formatQty(p.defectQty) }}）</template></div>
+                  <div>回货良品 {{ formatQty(p.returnedQty - p.defectQty) }} / {{ formatQty(p.totalQty) }}<template v-if="p.defectQty">（共回 {{ formatQty(p.returnedQty) }}，次品 {{ formatQty(p.defectQty) }}）</template></div>
                   <div>交期 {{ formatDate(p.expectDate ?? p.dueDate) }}</div>
                 </div>
               </template>

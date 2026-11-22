@@ -23,7 +23,7 @@ public record OrderReview(List<Pack> packs, List<Shortage> shortages, List<Load>
                            BigDecimal need, BigDecimal available, BigDecimal gap, Integer leadDays, AttachmentVO image) {
     }
 
-    /** 一个加工厂：这张订单里哪些款默认给它，它手上在制多少件（已下单、生产中的件数 − 已回货）、几张单 */
+    /** 一个加工厂：这张订单里哪些款默认给它，它手上在制多少件（已下单、生产中的件数 − 已回良品）、几张单 */
     public record Load(long factoryId, String factoryName, List<String> styleCodes, long wipQty, long orderCount) {
     }
 }

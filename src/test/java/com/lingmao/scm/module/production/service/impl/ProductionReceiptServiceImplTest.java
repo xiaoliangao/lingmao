@@ -125,6 +125,48 @@ class ProductionReceiptServiceImplTest {
         verify(orderService).addReturned(Map.of(11L, 15));
     }
 
+    /**
+     * 规则（只算良品）：超上限的行里已回、这次都是良品。件数 100、已回 100 其中次品 10（良品 90），这次回 20、次品 3（良品 17）：
+     * 90 + 17 = 107 > 105，1004；行里 goodQty 90、thisGoodQty 17，还能回 15
+     */
+    @Test
+    void receive_overLimitRow_showsGoodPieces() {
+        lockedAs(DocStatus.RUNNING);
+        when(support.today()).thenReturn(TODAY);
+        ProductionOrderItem line = line(100, 100);
+        line.setDefectQty(10);
+        when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line));
+        when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
+
+        assertThatThrownBy(() -> service().receiveNew(3L, req(20, 3)))
+                .isInstanceOfSatisfying(BizException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(1004);
+                    @SuppressWarnings("unchecked")
+                    List<ReceiptOverRow> rows = (List<ReceiptOverRow>) e.getData();
+                    assertThat(rows).singleElement().isEqualTo(new ReceiptOverRow("A01-RED-M", 100, 90, 17, 105,
+                            "加工 100 件，已回良品 90，良品最多还能回 15 件"));
+                });
+        verify(itemMapper, never()).addReturned(anyLong(), anyInt(), anyInt(), anyInt());
+    }
+
+    /** 规则：回货 0 却填了次品的行不能悄悄丢掉（次品算在回货数里），整张 400，什么都不写 */
+    @Test
+    void receive_zeroQtyWithDefect_400() {
+        lockedAs(DocStatus.RUNNING);
+        when(support.today()).thenReturn(TODAY);
+        ReceiptReq r = req(5, 0);
+        ReceiptReq.Item bad = new ReceiptReq.Item();
+        bad.setPrdOrderItemId(32L);
+        bad.setQty(0);
+        bad.setDefectQty(3);
+        r.setItems(List.of(r.getItems().getFirst(), bad));
+
+        assertThatThrownBy(() -> service().receiveNew(3L, r)).isInstanceOf(BizException.class)
+                .hasMessageContaining("回货是 0 却填了次品").extracting("code").isEqualTo(400);
+        verify(receiptMapper, never()).insert(any(ProductionReceipt.class));
+        verify(itemMapper, never()).addReturned(anyLong(), anyInt(), anyInt(), anyInt());
+    }
+
     /** 规则（§3.6.2）：次品算在回货数里，不能比回货多（400） */
     @Test
     void receive_defectMoreThanQty_400() {
@@ -214,6 +256,22 @@ class ProductionReceiptServiceImplTest {
         verify(itemMapper).updateCut(31L, 102);
         verify(support).refreshStatus(any(), eq("cut"), eq("登记裁床数：A01-RED-M 未登记 → 102"));
         verify(support).syncOrder(eq(5L), any());
+    }
+
+    /** 规则（只算良品）：裁床数下限按已回良品。件数 200、已回 100 其中次品 10（良品 90）：最少 86（⌊86 × 1.05⌋ = 90），不是 96 */
+    @Test
+    void registerCut_lowerBoundByGoodPieces() {
+        lockedAs(DocStatus.RUNNING);
+        ProductionOrderItem line = line(200, 100);
+        line.setDefectQty(10);
+        when(itemMapper.selectByOrder(3L)).thenReturn(List.of(line));
+        when(styleService.orderInfos(List.of(1L))).thenReturn(Map.of(1L, style()));
+
+        assertThatThrownBy(() -> service().registerCut(3L, cut(85))).isInstanceOf(BizException.class)
+                .hasMessageContaining("裁床数不能少于 86").extracting("code").isEqualTo(400);
+        when(support.refreshStatus(any(), eq("cut"), any())).thenReturn(DocStatus.RUNNING);
+        service().registerCut(3L, cut(86));
+        verify(itemMapper).updateCut(31L, 86);
     }
 
     /** 规则（§2.1）：已结案的单不能登记回货（1000）；要登记先取消结案 */

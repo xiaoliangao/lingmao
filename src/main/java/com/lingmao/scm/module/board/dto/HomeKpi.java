@@ -17,7 +17,7 @@ public record HomeKpi(Dev dev, Order order, Production production, Material mate
     public record Order(long qty, long count, long pendingCount, long unscheduledCount, Long changePendingCount) {
     }
 
-    /** 在制生产（production:order:list）：已下单、生产中的件数（件数 − 已回货）和张数；已逾期、节点延期、有没关的异常 */
+    /** 在制生产（production:order:list）：已下单、生产中的件数（件数 − 已回良品）和张数；已逾期、节点延期、有没关的异常 */
     public record Production(long qty, long count, long lateCount, long nodeLateCount, long issueCount) {
     }
 

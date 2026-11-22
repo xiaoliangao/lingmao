@@ -53,7 +53,9 @@ public class ProductionDetailVO extends DocHeaderVO {
     private String settleMethod;
     private String terms;
     private String issueStatus;
+    /** 已回货，含次品；良品 = returnedQty − defectQty（上限、回齐、未回都按良品，甲方 11-19） */
     private int returnedQty;
+    /** 其中次品（退回工厂返修，修好再登记一次回货） */
     private int defectQty;
     private String currentNodeName;
     private RiskVO risk = RiskVO.NONE;

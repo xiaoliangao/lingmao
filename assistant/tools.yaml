@@ -176,7 +176,7 @@
   tool: get_production_order
   label: 生产单详情
   perm: production:order:list
-  hint: 一张生产单的款、数量、加工厂、节点进度、审批进度
+  hint: 一张生产单的款、数量、加工厂、节点进度、审批进度；明细的 returnedQty 含次品，良品 = returnedQty − defectQty
 - op: GET /api/production-orders/{id}/references
   tool: production_order_links
   label: 生产单的关联单据

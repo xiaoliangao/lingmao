@@ -169,6 +169,10 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         if (req.getReceiptDate().isAfter(support.today())) {
             throw new BizException(400, "回货日期不能晚于今天");
         }
+        // 回货 0 的行不登记；回货 0 却填了次品的不能悄悄丢掉（次品算在回货数里）
+        if (req.getItems().stream().anyMatch(i -> i.getQty() == 0 && i.getDefectQty() > 0)) {
+            throw new BizException(400, "有一行回货是 0 却填了次品：次品算在回货数里，回货要连次品一起填");
+        }
         List<ReceiptReq.Item> rows = req.getItems().stream().filter(i -> i.getQty() > 0).toList();
         if (rows.isEmpty()) {
             throw new BizException(400, "一个数都没填");
@@ -209,7 +213,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         int qty = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getQty).sum(), "本次回货：");
         int defect = NumericLimits.pieces(rows.stream().mapToLong(ReceiptReq.Item::getDefectQty).sum(), "本次次品：");
         NumericLimits.pieces(lines.values().stream().mapToLong(ProductionOrderItem::getReturnedQty).sum() + qty, "生产单累计回货：");
-        NumericLimits.pieces(l.order().items().stream().mapToLong(OrderForProduction.Line::returnedQty).sum() + qty, "需求订单累计回货：");
+        NumericLimits.pieces(l.order().items().stream().mapToLong(OrderForProduction.Line::returnedQty).sum() + qty - defect, "需求订单累计回货：");   // 订单只记良品
 
         ProductionReceipt receipt = new ProductionReceipt();
         receipt.setNo(serialNoGenerator.daily(BizType.PRODUCTION_RECEIPT.prefix(null)));

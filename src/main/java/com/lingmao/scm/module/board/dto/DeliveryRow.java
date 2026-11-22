@@ -11,7 +11,7 @@ import java.time.LocalDate;
  * @param sub      需求订单：款名（几个款用顿号连）；生产单：款名 · 加工厂
  * @param dueDate  需求订单 = 承诺交期 ?? 要求交期；生产单 = 预计交期 ?? 交期
  * @param daysLeft 今天到交期还有几天，逾期是负数
- * @param doneQty  已回货
+ * @param doneQty  已回良品（回货 − 次品）
  */
 public record DeliveryRow(DocRef ref, String sub, AttachmentVO image, LocalDate dueDate, long daysLeft, long doneQty, long totalQty) {
 }

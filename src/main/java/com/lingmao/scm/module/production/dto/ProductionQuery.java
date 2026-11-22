@@ -22,7 +22,7 @@ public class ProductionQuery extends PageQuery {
     /** 单号、订单号、款号、款名、加工厂；一次查几个时单号、订单号、款号精确查 */
     private String keyword;
     private List<DocStatus> status;
-    /** 和 status=RUNNING 一起用：true 部分回货、false 没回过货 */
+    /** 和 status=RUNNING 一起用：true 部分回货（回过良品）、false 还没回过良品（只回过次品的也算这里） */
     private Boolean returned;
     /** LATE / NEAR / NODE_LATE / ISSUE / UPSTREAM；DELAYED = 已逾期或节点延期（首页"生产延期"一组） */
     private String risk;

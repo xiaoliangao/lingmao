@@ -48,7 +48,7 @@ class ProductionExcel {
             r.setDefectQty(o.getDefectQty());
             r.setMerch(o.getMerchName());
             DocStatus status = DocStatus.valueOf(o.getStatus());
-            r.setStatus(status == RUNNING && o.getReturnedQty() > 0 ? "部分回货" : ProductionRules.STATUS.label(status).text());
+            r.setStatus(status == RUNNING && o.getReturnedQty() - o.getDefectQty() > 0 ? "部分回货" : ProductionRules.STATUS.label(status).text());
             rows.add(r);
         }
         var columns = schema(kind);

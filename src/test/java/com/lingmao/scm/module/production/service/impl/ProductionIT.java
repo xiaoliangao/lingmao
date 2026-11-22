@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.production.service.impl;
 
+import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.IntegrationTest;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.TestColors;
@@ -387,6 +388,17 @@ class ProductionIT {
         String orderReturned = "SELECT sum(returned_qty) FROM ord_order_item WHERE order_id = ?";
         BoardQuery b = new BoardQuery();
         b.setFactoryId(f.factory);
+        ProductionQuery partial = new ProductionQuery();
+        partial.setKind("OUTSOURCE");
+        partial.setKeyword(productionOrderService.detail(id).getNo());
+        partial.setStatus(List.of(DocStatus.RUNNING));
+        partial.setReturned(true);
+
+        // 先回 2 件、全是次品：开工了（生产中），但没有良品，不算部分回货，订单不加
+        assertThat(receiptService.receive(id, receiptReq(Map.of(itemM, 2), itemM, 2)).status()).isEqualTo("RUNNING");
+        assertThat(productionOrderService.page(partial).getList()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(orderReturned, Integer.class, orderId)).isZero();
+        assertThat(boardService.cards(b).monthReturnedQty()).isZero();
 
         var first = receiptService.receive(id, receiptReq(Map.of(itemM, 60, itemL, 40), itemL, 4));
         assertThat(first.status()).isEqualTo("RUNNING");
@@ -396,6 +408,11 @@ class ProductionIT {
             assertThat(i.getMaxReceiveQty()).isEqualTo(6);
         });
         assertThat(boardService.cards(b).runningQty()).isEqualTo(4);
+        assertThat(boardService.cards(b).monthReturnedQty()).isEqualTo(96);
+        assertThat(boardService.factories(new BoardQuery())).filteredOn(row -> row.getFactoryId() == f.factory).singleElement()
+                .satisfies(row -> assertThat(row.getWipQty()).isEqualTo(4));
+        assertThat(productionOrderService.page(partial).getList()).hasSize(1);
+        assertThat(prdItemMapper.addReturned(itemL, 1, 2, 999)).as("这一次的次品比这一次的回货多：不能拿已有的良品充次品").isZero();
 
         assertThatThrownBy(() -> receiptService.receive(id, receiptReq(Map.of(itemL, 7), itemL, 0)))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));

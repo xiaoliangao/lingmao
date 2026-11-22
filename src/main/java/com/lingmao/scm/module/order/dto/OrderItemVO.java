@@ -25,6 +25,7 @@ public class OrderItemVO {
     private LocalDate lineDueDate;
     private Long techPackId;
     private Integer scheduledQty;
+    /** 已回货，只算良品（生产单的回货 − 次品，甲方 11-19） */
     private Integer returnedQty;
     private String remark;
 }

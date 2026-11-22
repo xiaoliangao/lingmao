@@ -30,6 +30,7 @@ public class OrderRowVO {
     private Integer totalQty;
     private BigDecimal totalAmount;
     private int scheduledQty;
+    /** 已回货，只算良品（生产单的回货 − 次品，甲方 11-19） */
     private int returnedQty;
     private List<OrderStyleRef> styles = List.of();
     private Long salesId;

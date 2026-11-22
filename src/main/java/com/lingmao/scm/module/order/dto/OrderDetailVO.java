@@ -37,6 +37,7 @@ public class OrderDetailVO extends DocHeaderVO {
     private Long sourceOrderId;
     private String sourceOrderNo;
     private int scheduledQty;
+    /** 已回货，只算良品（生产单的回货 − 次品，甲方 11-19） */
     private int returnedQty;
     private List<OrderStyleVO> styles = List.of();
     private List<OrderItemVO> items = List.of();

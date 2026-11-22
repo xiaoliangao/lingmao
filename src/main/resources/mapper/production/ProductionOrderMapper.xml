@@ -76,7 +76,7 @@
         <if test="withStatus and q.status != null and q.status.size() > 0">
             AND p.status IN <foreach collection="q.status" item="st" open="(" separator="," close=")">#{st}</foreach>
         </if>
-        <if test="withStatus and q.returned != null">AND (rq.returned_qty &gt; 0) = #{q.returned}</if>
+        <if test="withStatus and q.returned != null">AND (rq.returned_qty - rq.defect_qty &gt; 0) = #{q.returned}</if>
         <if test="q.risk != null and q.risk != ''">
             <choose>
                 <when test="q.risk == 'LATE'">AND r.late</when>
@@ -169,7 +169,7 @@
     <select id="selectCounts" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$CountRow">
         <bind name="withStatus" value="false"/>
         <bind name="withCard" value="false"/>
-        SELECT p.status, COUNT(*) AS count, COUNT(*) FILTER (WHERE rq.returned_qty &gt; 0) AS partial
+        SELECT p.status, COUNT(*) AS count, COUNT(*) FILTER (WHERE rq.returned_qty - rq.defect_qty &gt; 0) AS partial
         <include refid="from"/>
         <include refid="where"/>
         GROUP BY p.status
