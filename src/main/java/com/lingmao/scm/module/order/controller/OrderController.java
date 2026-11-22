@@ -62,6 +62,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OrderController extends IdempotencyReplayGuard {
 
+    /** 聚合查询开关仅由服务端构造，不能通过 GET 参数触发旁路或改变导出/COUNT 口径。 */
+    @org.springframework.web.bind.annotation.InitBinder("orderQuery")
+    void protectInternalQueryFields(org.springframework.web.bind.WebDataBinder binder) {
+        binder.setDisallowedFields("oldestFirst", "dueFirst", "approvalIds*", "approvalScope*");
+    }
+
     private final OrderService orderService;
     private final DocCommonService docCommonService;
     private final Clock clock;
@@ -69,14 +75,14 @@ public class OrderController extends IdempotencyReplayGuard {
     @Operation(summary = "列表：下单日期倒序；关键字是订单号、合同号、款号，一次查几个时订单号、款号精确查")
     @GetMapping
     @PreAuthorize("hasAuthority('order:order:list')")
-    public R<PageResult<OrderRowVO>> page(@Valid OrderQuery query) {
+    public R<PageResult<OrderRowVO>> page(@Valid @org.springframework.web.bind.annotation.ModelAttribute("orderQuery") OrderQuery query) {
         return R.ok(orderService.page(query));
     }
 
     @Operation(summary = "各状态几张：条件和列表一样，不看 status")
     @GetMapping("/counts")
     @PreAuthorize("hasAuthority('order:order:list')")
-    public R<Map<String, Long>> counts(@Valid OrderQuery query) {
+    public R<Map<String, Long>> counts(@Valid @org.springframework.web.bind.annotation.ModelAttribute("orderQuery") OrderQuery query) {
         return R.ok(orderService.counts(query));
     }
 
@@ -217,7 +223,7 @@ public class OrderController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，一张订单一行")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('order:order:export')")
-    public ResponseEntity<byte[]> export(@Valid OrderQuery query) {
+    public ResponseEntity<byte[]> export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("orderQuery") OrderQuery query) {
         return Excel.download(Excel.exportFileName("需求订单", LocalDate.now(clock)), orderService.export(query));
     }
 

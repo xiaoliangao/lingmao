@@ -85,8 +85,8 @@ export const pendingArrivalApi = {
 
 export const kittingApi = {
   /**
-   * 几张需求订单的齐料状态，每个 id 一条（登录即可）。订单列表、生产单列表的"齐料"列：拿当前页的订单 id 调一次。
-   * 生产单的齐料就是它所属订单的齐料
+   * 几张需求订单的齐料状态，每个 id 一条；后端校验整批订单的数据范围和主体。
+   * 订单列表、生产单列表只传当前页的订单 id；生产列表也可查当前可见生产单关联的订单。
    */
   byOrders: (orderIds: string[]) =>
     orderIds.length ? http.get<OrderKitting[]>('/api/order-kitting', { orderIds }, { silent: true }) : Promise.resolve([] as OrderKitting[]),
@@ -95,8 +95,8 @@ export const kittingApi = {
 // ---------- 补货提醒、物料的在途 ----------
 
 export const reorderApi = {
-  /** 补货清单（要 purchase:order:list）：差得多的在前 */
-  list: () => http.get<ReorderRow[]>('/api/reorder-items'),
+  /** 补货清单（要 purchase:order:list）：默认每页 50、最多 100；差得多的在前。 */
+  page: (params: PageParams) => http.get<PageResult<ReorderRow>>('/api/reorder-items', params),
 }
 
 export const supplyApi = {

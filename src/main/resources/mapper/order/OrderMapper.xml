@@ -13,8 +13,18 @@
             <when test="q.auditForMe">
                 AND o.status = 'PENDING'
                 <choose>
-                    <when test="q.approvalIds != null and q.approvalIds.size() > 0">
-                        AND o.id IN <foreach collection="q.approvalIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+                    <when test="q.approvalScope != null and q.approvalScope.userId != null">
+                        AND EXISTS (
+                            SELECT 1 FROM biz_approval_step approval
+                            WHERE approval.biz_type = 'ORDER' AND approval.doc_id = o.id AND approval.status = 'CURRENT'
+                              AND (approval.user_id = #{q.approvalScope.userId}
+                                <if test="q.approvalScope.firstLevel and q.approvalScope.permission != null">
+                                    OR approval.perm = #{q.approvalScope.permission}
+                                </if>
+                                <if test="q.approvalScope.roleIds != null and q.approvalScope.roleIds.size() > 0">
+                                    OR approval.role_id IN <foreach collection="q.approvalScope.roleIds" item="roleId" open="(" separator="," close=")">#{roleId}</foreach>
+                                </if>)
+                        )
                     </when>
                     <otherwise>AND false</otherwise>
                 </choose>
@@ -35,6 +45,7 @@
         </if>
         <if test="q.orderDateFrom != null">AND o.order_date &gt;= #{q.orderDateFrom}</if>
         <if test="q.orderDateTo != null">AND o.order_date &lt;= #{q.orderDateTo}</if>
+        <if test="q.dueDateTo != null">AND COALESCE(o.commit_date, o.required_date) &lt;= #{q.dueDateTo}</if>
         <if test="q.unscheduled">
             AND o.status = 'APPROVED'
             AND NOT EXISTS (SELECT 1 FROM ord_order_item i WHERE i.order_id = o.id AND i.scheduled_qty &gt; 0)
@@ -66,12 +77,29 @@
                o.currency, o.total_qty, o.total_amount, o.sales_id, o.merch_id, c.short_name AS company_name, o.source,
                o.create_by, o.create_time, o.version,
                COALESCE(agg.scheduled_qty, 0) AS scheduled_qty, COALESCE(agg.returned_qty, 0) AS returned_qty
+        <if test="q.oldestFirst">, COALESCE(submitted.create_time, o.create_time) AS pending_since</if>
         FROM ord_order o
         JOIN bas_company c ON c.id = o.company_id
         LEFT JOIN LATERAL (SELECT SUM(i.scheduled_qty) AS scheduled_qty, SUM(i.returned_qty) AS returned_qty
                            FROM ord_order_item i WHERE i.order_id = o.id) agg ON true
+        <if test="q.oldestFirst">
+            LEFT JOIN LATERAL (SELECT dl.create_time FROM biz_doc_log dl
+                               WHERE dl.doc_type = 'ORDER' AND dl.doc_id = o.id AND dl.action = 'submit'
+                               ORDER BY dl.create_time DESC, dl.id DESC LIMIT 1) submitted ON true
+        </if>
         <include refid="where"/>
-        ORDER BY o.order_date DESC, o.no DESC
+        <choose>
+            <when test="q.oldestFirst">ORDER BY COALESCE(submitted.create_time, o.create_time), o.id</when>
+            <when test="q.dueFirst">ORDER BY COALESCE(o.commit_date, o.required_date), o.no, o.id</when>
+            <otherwise>ORDER BY o.order_date DESC, o.no DESC</otherwise>
+        </choose>
+    </select>
+
+    <select id="selectTotals" resultType="com.lingmao.scm.module.order.dto.OrderTotals">
+        <bind name="withStatus" value="true"/>
+        SELECT COUNT(*) AS count, COALESCE(SUM(o.total_qty), 0) AS qty
+        FROM ord_order o
+        <include refid="where"/>
     </select>
 
     <select id="selectCounts" resultType="com.lingmao.scm.common.page.StatusCount">
@@ -80,6 +108,80 @@
         FROM ord_order o
         <include refid="where"/>
         GROUP BY o.status
+    </select>
+
+    <select id="selectKittingVisible" resultType="com.lingmao.scm.module.order.entity.Order">
+        SELECT o.* FROM ord_order o
+        WHERE <choose>
+            <when test="ids != null and ids.size() > 0">
+                o.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </when>
+            <otherwise>false</otherwise>
+        </choose>
+        <if test="companyId != null">AND o.company_id = #{companyId}</if>
+        AND (
+            <choose>
+                <when test="canOrder">
+                    (
+                        <choose>
+                            <when test="scope.all">true</when>
+                            <otherwise>(o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</otherwise>
+                        </choose>
+                        <if test="orderApproval != null and orderApproval.userId != null">
+                            OR (o.status = 'PENDING' AND EXISTS (
+                                SELECT 1 FROM biz_approval_step approval
+                                WHERE approval.biz_type = 'ORDER' AND approval.doc_id = o.id AND approval.status = 'CURRENT'
+                                  AND (approval.user_id = #{orderApproval.userId}
+                                    <if test="orderApproval.firstLevel and orderApproval.permission != null">
+                                        OR approval.perm = #{orderApproval.permission}
+                                    </if>
+                                    <if test="orderApproval.roleIds != null and orderApproval.roleIds.size() > 0">
+                                        OR approval.role_id IN <foreach collection="orderApproval.roleIds" item="roleId" open="(" separator="," close=")">#{roleId}</foreach>
+                                    </if>)
+                            ))
+                        </if>
+                    )
+                </when>
+                <otherwise>false</otherwise>
+            </choose>
+            <if test="canProduction">
+                OR EXISTS (
+                    SELECT 1 FROM prd_order p
+                    WHERE p.order_id = o.id AND p.company_id = o.company_id
+                      AND (
+                        <choose>
+                            <when test="scope.all">true</when>
+                            <otherwise>(p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</otherwise>
+                        </choose>
+                        <if test="productionApproval != null and productionApproval.userId != null">
+                            OR (p.status = 'PENDING' AND EXISTS (
+                                SELECT 1 FROM biz_approval_step approval
+                                WHERE approval.biz_type = 'PRODUCTION_ORDER' AND approval.doc_id = p.id AND approval.status = 'CURRENT'
+                                  AND (approval.user_id = #{productionApproval.userId}
+                                    <if test="productionApproval.firstLevel and productionApproval.permission != null">
+                                        OR approval.perm = #{productionApproval.permission}
+                                    </if>
+                                    <if test="productionApproval.roleIds != null and productionApproval.roleIds.size() > 0">
+                                        OR approval.role_id IN <foreach collection="productionApproval.roleIds" item="roleId" open="(" separator="," close=")">#{roleId}</foreach>
+                                    </if>)
+                            ))
+                        </if>
+                    )
+                )
+            </if>
+            <!-- 看板权限只覆盖在制单据，不继承生产列表的其他状态或待审审批例外。 -->
+            <if test="canBoard">
+                OR EXISTS (
+                    SELECT 1 FROM prd_order board_order
+                    WHERE board_order.order_id = o.id AND board_order.company_id = o.company_id
+                      AND board_order.status IN ('APPROVED', 'RUNNING')
+                    <if test="scope.self">
+                        AND (board_order.create_by = #{scope.userId} OR board_order.merch_id = #{scope.userId})
+                    </if>
+                )
+            </if>
+        )
+        ORDER BY o.id
     </select>
 
     <select id="selectStylePage" resultType="com.lingmao.scm.module.order.dto.StyleOrderRowVO">

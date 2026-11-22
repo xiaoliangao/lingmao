@@ -25,4 +25,6 @@ public class CountQuery extends PageQuery {
     private LocalDate countDateTo;
     private boolean mine;
     private List<Long> ids;
+    /** 首页审核待办：在 SQL 分页前按提交时间、ID 排序。 */
+    private boolean oldestFirst;
 }

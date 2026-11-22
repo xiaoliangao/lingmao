@@ -11,9 +11,11 @@ import com.lingmao.scm.module.order.dto.OrderDetailVO;
 import com.lingmao.scm.module.order.dto.OrderForProduction;
 import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderQuery;
+import com.lingmao.scm.module.order.dto.OrderReviewInfo;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
 import com.lingmao.scm.module.order.dto.OrderSaveReq;
 import com.lingmao.scm.module.order.dto.OrderStyleOptionVO;
+import com.lingmao.scm.module.order.dto.OrderTotals;
 import com.lingmao.scm.module.order.dto.ProductionProgress;
 import com.lingmao.scm.module.order.dto.StyleOrderRowVO;
 import com.lingmao.scm.module.order.entity.OrderChange;
@@ -31,6 +33,12 @@ public interface OrderService {
 
     /** 各状态几张，条件和列表一样（不看 status） */
     Map<String, Long> counts(OrderQuery query);
+
+    /** 张数、件数合计，条件和列表一样（看 status）：首页概况用 */
+    OrderTotals totals(OrderQuery query);
+
+    /** 审核对话框的评审信息里订单这一块（docs/api/02 §3.8）：看得到这张单（含轮到我审）才行，不然 404 */
+    OrderReviewInfo reviewInfo(long id);
 
     /** 详情：一个款一块，件数 0 的行（变更单减掉的）不出。不存在、不在数据范围 404 */
     OrderDetailVO detail(long id);
@@ -69,6 +77,9 @@ public interface OrderService {
 
     /** 来源选择/幂等重放用：只查存在和当前数据范围，不重验成功后可能改变的业务状态。 */
     void checkSourceVisible(Collection<Long> ids);
+
+    /** 齐料摘要批量对象守卫：订单、生产单或仅已下单/生产中的可见看板关联；混入不可见对象整批 404。 */
+    void checkKittingVisible(Collection<Long> ids);
 
     /**
      * 变更单审核时写回订单（同一个事务，docs/api/02 §3.14）：锁住订单，核对每一处的"原"还是订单现在的值（对不上 1002），

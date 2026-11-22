@@ -40,6 +40,7 @@ public class ProductionBoardServiceImpl implements ProductionBoardService {
         ProductionQuery q = new ProductionQuery();
         q.setKind(b.getKind());
         q.setFactoryId(b.getFactoryId());
+        q.setFactoryIds(b.getFactoryIds());
         q.setMerchId(b.getMerchId());
         q.setBrand(b.getBrand());
         q.setDueDateFrom(b.getDueDateFrom());
@@ -57,8 +58,8 @@ public class ProductionBoardServiceImpl implements ProductionBoardService {
         ProductionOrderMapper.CardRow c = prdMapper.selectCards(q, scope, support.today(), support.nearUntil());
         LocalDate today = support.today();
         long returned = prdMapper.selectReturnedQty(q, scope, today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()));
-        return new BoardCards(c.runningCount(), c.runningQty(), c.waitingCount(), c.nearCount(), c.lateCount(), c.nodeLateCount(),
-                c.issueCount(), returned, ProductionRules.NEAR_DAYS);
+        return new BoardCards(c.runningCount(), c.runningQty(), c.waitingCount(), c.waitingQty(), c.nearCount(), c.lateCount(),
+                c.nodeLateCount(), c.issueCount(), returned, ProductionRules.NEAR_DAYS);
     }
 
     @Override
@@ -71,6 +72,9 @@ public class ProductionBoardServiceImpl implements ProductionBoardService {
 
     @Override
     public List<BoardFactoryRow> factories(BoardQuery query) {
+        if (query.getFactoryIds() != null && query.getFactoryIds().size() > 200) {
+            throw new com.lingmao.scm.common.exception.BizException(400, "一次最多查询 200 个加工厂");
+        }
         ProductionQuery q = toQuery(query);
         q.setFactoryId(null);
         q.setCard(null);

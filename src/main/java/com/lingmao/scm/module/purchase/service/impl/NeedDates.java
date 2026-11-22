@@ -61,6 +61,12 @@ class NeedDates {
         return out;
     }
 
+    Integer fallbackLeadDays() {
+        LocalDate reference = LocalDate.of(2000, 1, 1);
+        LocalDate need = fallback(reference, nodes());
+        return need == null ? null : Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(need, reference));
+    }
+
     private List<Node> nodes() {
         return dictDataService.listWithText("prod_node").stream()
                 .filter(d -> Integer.valueOf(1).equals(d.getStatus()))

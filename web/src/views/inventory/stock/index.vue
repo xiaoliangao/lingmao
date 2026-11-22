@@ -206,7 +206,7 @@ async function loadMeta() {
   if (user.hasPerm('purchase:order:list')) {
     // 只为页头上的数：取不到就不显示数
     try {
-      reorderCount.value = (await reorderApi.list()).length
+      reorderCount.value = (await reorderApi.page({ page: 1, size: 1 })).total
     } catch {
       reorderCount.value = 0
     }

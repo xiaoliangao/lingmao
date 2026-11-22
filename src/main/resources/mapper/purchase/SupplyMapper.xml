@@ -66,4 +66,94 @@
         WHERE k.safety_stock &gt; 0 AND k.status = 1 AND m.status = 1
         ORDER BY k.id
     </select>
+
+    <!-- 首页数字和补货分页共用同一余额口径，不把所有补货行、图片、价格和库存装入 JVM。
+         到货分配必须按使用记录 id，与 SupplyBook.arrivedOfUse 保持一致；所有中间量为 NUMERIC。 -->
+    <sql id="reorderBalances">
+        WITH safety_skus AS (
+            SELECT k.id, k.code AS sku_code, k.safety_stock FROM bas_material_sku k JOIN bas_material m ON m.id = k.material_id
+            WHERE k.safety_stock &gt; 0 AND k.status = 1 AND m.status = 1
+        ), material_lines AS (
+            SELECT i.id, i.material_sku_id AS sku_id, ci.calc_id AS owner_calc_id,
+                   COALESCE(c.status = 'CONFIRMED', false) AS owner_confirmed,
+                   ROUND(GREATEST(i.received_qty - i.returned_qty, 0) * i.conversion_factor, 3) AS received_stock,
+                   ROUND(GREATEST(i.qty - i.received_qty + i.returned_qty, 0) * i.conversion_factor, 3) AS remaining_stock,
+                   CASE WHEN o.status IN ('APPROVED', 'RUNNING')
+                        THEN ROUND(GREATEST(i.qty - i.received_qty + i.returned_qty, 0) * i.conversion_factor, 3)
+                        ELSE 0 END AS pending_stock
+            FROM pur_order_item i JOIN safety_skus k ON k.id = i.material_sku_id
+            JOIN pur_order o ON o.id = i.purchase_order_id
+            JOIN bas_warehouse w ON w.id = o.warehouse_id AND w.type = 'MATERIAL'
+            LEFT JOIN mrp_calc_item ci ON ci.id = i.calc_item_id
+            LEFT JOIN mrp_calc c ON c.id = ci.calc_id
+            WHERE o.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED')
+        ), active_uses AS (
+            SELECT t.id, ci.calc_id, t.purchase_item_id AS line_id, l.sku_id, t.qty, l.remaining_stock,
+                   SUM(t.qty) OVER (PARTITION BY t.purchase_item_id) AS total_use,
+                   COALESCE(SUM(t.qty) OVER (PARTITION BY t.purchase_item_id ORDER BY t.id
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_use
+            FROM mrp_calc_transit t JOIN mrp_calc_item ci ON ci.id = t.calc_item_id
+            JOIN mrp_calc c ON c.id = ci.calc_id AND c.status = 'CONFIRMED'
+            JOIN safety_skus k ON k.id = ci.material_sku_id
+            JOIN material_lines l ON l.id = t.purchase_item_id
+        ), allocated_uses AS (
+            SELECT id, calc_id, line_id, sku_id, qty,
+                   LEAST(qty, GREATEST(total_use - remaining_stock - prior_use, 0)) AS arrived
+            FROM active_uses
+        ), stock_contributions AS (
+            SELECT ci.calc_id, ci.material_sku_id AS sku_id, ci.use_stock_qty - ci.issued_qty AS qty
+            FROM mrp_calc_item ci JOIN safety_skus k ON k.id = ci.material_sku_id
+            JOIN mrp_calc c ON c.id = ci.calc_id
+            WHERE c.status = 'CONFIRMED' AND ci.block = 'PURCHASE'
+            UNION ALL
+            SELECT calc_id, sku_id, arrived FROM allocated_uses
+            UNION ALL
+            SELECT owner_calc_id AS calc_id, sku_id, received_stock FROM material_lines WHERE owner_confirmed
+        ), stock_by_calc AS (
+            SELECT calc_id, sku_id, GREATEST(SUM(qty), 0) AS held
+            FROM stock_contributions GROUP BY calc_id, sku_id
+        ), held_stock AS (
+            SELECT sku_id, SUM(held) AS qty FROM stock_by_calc GROUP BY sku_id
+        ), unarrived_uses AS (
+            SELECT line_id, SUM(qty - arrived) AS qty FROM allocated_uses GROUP BY line_id
+        ), transit AS (
+            SELECT l.sku_id, SUM(l.pending_stock) AS qty,
+                   SUM(CASE WHEN l.owner_confirmed THEN l.pending_stock
+                            ELSE LEAST(l.pending_stock, COALESCE(u.qty, 0)) END) AS held
+            FROM material_lines l LEFT JOIN unarrived_uses u ON u.line_id = l.id
+            GROUP BY l.sku_id
+        ), stock AS (
+            SELECT s.material_sku_id AS sku_id, SUM(s.qty) AS qty
+            FROM inv_stock s JOIN safety_skus k ON k.id = s.material_sku_id
+            JOIN bas_warehouse w ON w.id = s.warehouse_id
+            WHERE w.type = 'MATERIAL' AND s.owner_type = 'OWN'
+            GROUP BY s.material_sku_id
+        ), reorder_balances AS (
+            SELECT k.id AS material_sku_id, k.sku_code,
+                   ROUND(COALESCE(s.qty, 0), 3) AS stock_qty,
+                   ROUND(COALESCE(t.qty, 0), 3) AS transit_qty,
+                   ROUND(COALESCE(h.qty, 0) + COALESCE(t.held, 0), 3) AS held_qty,
+                   ROUND(k.safety_stock, 3) AS safety_stock,
+                   ROUND(k.safety_stock - (COALESCE(s.qty, 0) + COALESCE(t.qty, 0)
+                                          - COALESCE(h.qty, 0) - COALESCE(t.held, 0)), 3) AS gap_qty
+            FROM safety_skus k
+            LEFT JOIN stock s ON s.sku_id = k.id
+            LEFT JOIN transit t ON t.sku_id = k.id
+            LEFT JOIN held_stock h ON h.sku_id = k.id
+        )
+    </sql>
+
+    <select id="countReorderItems" resultType="long">
+        <include refid="reorderBalances"/>
+        SELECT COUNT(*) FROM reorder_balances WHERE gap_qty &gt; 0
+    </select>
+
+    <select id="selectReorderPage" resultType="com.lingmao.scm.module.purchase.dto.ReorderRowVO">
+        <include refid="reorderBalances"/>
+        SELECT material_sku_id, stock_qty, transit_qty, held_qty, safety_stock, gap_qty
+        FROM reorder_balances
+        WHERE gap_qty &gt; 0
+        ORDER BY gap_qty DESC, sku_code, material_sku_id
+        LIMIT LEAST(GREATEST(#{limit}, 1), 100) OFFSET GREATEST(#{offset}, 0)
+    </select>
 </mapper>

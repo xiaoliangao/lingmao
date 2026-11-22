@@ -1,8 +1,10 @@
 package com.lingmao.scm.module.purchase.controller;
 
 import com.lingmao.scm.common.result.R;
+import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.purchase.dto.OrderKittingVO;
 import com.lingmao.scm.module.purchase.dto.ReorderRowVO;
+import com.lingmao.scm.module.purchase.dto.ReorderQuery;
 import com.lingmao.scm.module.purchase.dto.SkuSupplyVO;
 import com.lingmao.scm.module.purchase.service.MrpService;
 import com.lingmao.scm.module.purchase.service.SupplyService;
@@ -27,17 +29,17 @@ public class SupplyController {
     private final MrpService mrpService;
     private final SupplyService supplyService;
 
-    @Operation(summary = "几张订单的齐料状态（最多 500 张）：只回状态不回明细，登录即可")
+    @Operation(summary = "几张可见订单的齐料状态（最多 500 张）；混入不可见或不存在的订单整批拒绝")
     @GetMapping("/order-kitting")
     public R<List<OrderKittingVO>> kitting(@RequestParam("orderIds") List<Long> orderIds) {
         return R.ok(mrpService.kitting(orderIds));
     }
 
-    @Operation(summary = "补货清单：低于最小库存的物料，差得多的在前，不分页")
+    @Operation(summary = "补货清单：数据库按短缺量分页，默认 50 行、最多 100 行，独立完整计数")
     @GetMapping("/reorder-items")
     @PreAuthorize("hasAuthority('purchase:order:list')")
-    public R<List<ReorderRowVO>> reorderItems() {
-        return R.ok(supplyService.reorderItems());
+    public R<PageResult<ReorderRowVO>> reorderItems(@jakarta.validation.Valid ReorderQuery query) {
+        return R.ok(supplyService.reorderItems(query));
     }
 
     @Operation(summary = "几个 SKU 的在途（按交货仓库）、已被占用、是否低于最小库存（库存页用）")

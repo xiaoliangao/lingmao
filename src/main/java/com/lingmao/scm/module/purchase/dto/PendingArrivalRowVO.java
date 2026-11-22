@@ -37,8 +37,13 @@ public class PendingArrivalRowVO extends MaterialSkuBrief {
     private LocalDate needDate;
     private long cutLateDays;
     private List<String> orderNos;
+    /** 来源编码只展示排序后的前 20 个；总数为完整来源的去重数量。 */
+    private long orderNosTotal;
     private List<String> styleCodes;
+    private long styleCodesTotal;
     private String calcNo;
+    /** 关联算料单总数；calcNo 仅展示优先的一个来源。 */
+    private long sourcesTotal;
     private List<String> actions;
 
     /** 算要料日期、填行用，不返回 */

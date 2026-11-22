@@ -143,24 +143,31 @@ public class ApprovalServiceImpl implements ApprovalService {
     }
 
     @Override
-    public List<Long> waitingForMe(BizType type) {
-        String perm = firstLevelPerm(type);
-        Long me = LoginUser.currentUserId();
-        if (me == null) {
-            return List.of();
+    public com.lingmao.scm.module.biz.dto.ApprovalScope waitingScope(BizType type) {
+        String permission = firstLevelPerm(type);
+        Long user = LoginUser.currentUserId();
+        return new com.lingmao.scm.module.biz.dto.ApprovalScope(user,
+                user == null ? List.of() : permissionService.loadRoleIds(user), LoginUser.hasAuthority(permission), permission);
+    }
+
+    @Override
+    public List<Long> waitingForMe(BizType type, java.util.Collection<Long> candidates) {
+        if (candidates == null || candidates.isEmpty()) return List.of();
+        var scope = waitingScope(type);
+        if (scope.userId() == null) return List.of();
+        List<Long> ids = candidates.stream().filter(Objects::nonNull).distinct().toList();
+        List<Long> out = new ArrayList<>();
+        for (int from = 0; from < ids.size(); from += 500) {
+            var page = ids.subList(from, Math.min(from + 500, ids.size()));
+            out.addAll(stepMapper.selectList(new LambdaQueryWrapper<ApprovalStep>()
+                    .select(ApprovalStep::getDocId).eq(ApprovalStep::getBizType, type)
+                    .eq(ApprovalStep::getStatus, ApprovalStepStatus.CURRENT).in(ApprovalStep::getDocId, page)
+                    .and(w -> w.eq(ApprovalStep::getUserId, scope.userId())
+                            .or(scope.firstLevel(), x -> x.eq(ApprovalStep::getPerm, scope.permission()))
+                            .or(!scope.roleIds().isEmpty(), x -> x.in(ApprovalStep::getRoleId, scope.roleIds())))
+                    .orderByAsc(ApprovalStep::getDocId)).stream().map(ApprovalStep::getDocId).toList());
         }
-        boolean firstLevel = LoginUser.hasAuthority(perm);
-        List<Long> roles = permissionService.loadRoleIds(me);
-        // 当前级 AND (第 1 级且我有审核权限 OR 是我的角色 OR 指定了我)；走 idx_biz_step_current
-        return stepMapper.selectList(new LambdaQueryWrapper<ApprovalStep>()
-                        .select(ApprovalStep::getDocId)
-                        .eq(ApprovalStep::getBizType, type)
-                        .eq(ApprovalStep::getStatus, ApprovalStepStatus.CURRENT)
-                        .and(w -> w.eq(ApprovalStep::getUserId, me)
-                                .or(firstLevel, x -> x.isNotNull(ApprovalStep::getPerm))
-                                .or(!roles.isEmpty(), x -> x.in(ApprovalStep::getRoleId, roles)))
-                        .orderByAsc(ApprovalStep::getDocId))
-                .stream().map(ApprovalStep::getDocId).toList();
+        return out;
     }
 
     /** 不是这三种单据的（变更单、入库单……还是单级审核）调进来是程序的错 */

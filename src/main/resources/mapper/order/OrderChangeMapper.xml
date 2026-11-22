@@ -54,10 +54,19 @@
         SELECT c.id, c.no, c.status, CASE WHEN c.status = 'DRAFT' THEN c.reject_reason END AS reject_reason,
                c.order_id, o.no AS order_no, c.change_types AS change_types_text, c.reason, c.responsible_party, c.fee_note,
                c.create_by, c.create_time, c.audit_by, c.audit_time
+        <if test="q.oldestFirst">, COALESCE(submitted.create_time, c.create_time) AS pending_since</if>
         FROM <include refid="changeSource"/> c
         JOIN ord_order o ON o.id = c.order_id
+        <if test="q.oldestFirst">
+            LEFT JOIN LATERAL (SELECT dl.create_time FROM biz_doc_log dl
+                               WHERE dl.doc_type = 'ORDER_CHANGE' AND dl.doc_id = c.id AND dl.action = 'submit'
+                               ORDER BY dl.create_time DESC, dl.id DESC LIMIT 1) submitted ON true
+        </if>
         <include refid="where"/>
-        ORDER BY c.create_time DESC, c.id DESC
+        <choose>
+            <when test="q.oldestFirst">ORDER BY COALESCE(submitted.create_time, c.create_time), c.id</when>
+            <otherwise>ORDER BY c.create_time DESC, c.id DESC</otherwise>
+        </choose>
     </select>
 
     <select id="selectCounts" resultType="com.lingmao.scm.common.page.StatusCount">

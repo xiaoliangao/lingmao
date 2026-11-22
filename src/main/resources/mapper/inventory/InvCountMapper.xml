@@ -10,6 +10,7 @@
         SELECT c.id, c.company_id, c.no, c.warehouse_id, w.name AS warehouse_name, c.purpose, c.scope, c.count_date, c.counter_id,
                c.status, c.version, c.create_by, c.create_time,
                agg.item_count, agg.filled_count, agg.gain_count, agg.loss_count, cat.category_names
+        <if test="q.oldestFirst">, COALESCE(submitted.create_time, c.create_time) AS pending_since</if>
         FROM <choose>
             <when test="q.keyword != null and q.keyword.trim() != ''">
             <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
@@ -44,6 +45,11 @@
                            JOIN bas_material_category mc ON mc.id = cc.category_id
                            LEFT JOIN bas_material_category pc ON pc.id = mc.parent_id
                            WHERE cc.count_id = c.id) cat ON true
+        <if test="q.oldestFirst">
+            LEFT JOIN LATERAL (SELECT dl.create_time FROM biz_doc_log dl
+                               WHERE dl.doc_type = 'INV_COUNT' AND dl.doc_id = c.id AND dl.action = 'submit'
+                               ORDER BY dl.create_time DESC, dl.id DESC LIMIT 1) submitted ON true
+        </if>
         WHERE true
         <if test="scope.self">AND (c.create_by = #{scope.userId} OR c.counter_id = #{scope.userId})</if>
         <if test="q.status != null and q.status.size() > 0">
@@ -56,6 +62,9 @@
         <if test="q.ids != null and q.ids.size() > 0">
             AND c.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         </if>
-        ORDER BY c.id DESC
+        <choose>
+            <when test="q.oldestFirst">ORDER BY COALESCE(submitted.create_time, c.create_time), c.id</when>
+            <otherwise>ORDER BY c.id DESC</otherwise>
+        </choose>
     </select>
 </mapper>

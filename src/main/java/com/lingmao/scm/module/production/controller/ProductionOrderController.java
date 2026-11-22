@@ -78,6 +78,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ProductionOrderController extends IdempotencyReplayGuard {
 
+    /** 聚合查询开关仅由服务端构造，不能通过 GET 参数触发旁路或改变导出/COUNT 口径。 */
+    @org.springframework.web.bind.annotation.InitBinder("productionQuery")
+    void protectInternalQueryFields(org.springframework.web.bind.WebDataBinder binder) {
+        binder.setDisallowedFields("cutRiskFirst", "oldestFirst", "delayedFirst", "dueFirst", "factoryIds*", "orderNos*", "approvalIds*", "approvalScope*");
+    }
+
     private final ProductionOrderService productionOrderService;
     private final ScheduleService scheduleService;
     private final ProductionNodeService nodeService;
@@ -89,14 +95,14 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
     @Operation(summary = "列表：kind 必传；按风险（逾期 > 节点延期 > 有异常 > 临期）、交期排")
     @GetMapping
     @PreAuthorize("hasAuthority('production:order:list')")
-    public R<PageResult<ProductionRowVO>> page(@Valid ProductionQuery query) {
+    public R<PageResult<ProductionRowVO>> page(@Valid @org.springframework.web.bind.annotation.ModelAttribute("productionQuery") ProductionQuery query) {
         return R.ok(productionOrderService.page(query));
     }
 
     @Operation(summary = "状态页签上的数：条件和列表一样，不看 status、returned；PARTIAL 是生产中里回过货的")
     @GetMapping("/counts")
     @PreAuthorize("hasAuthority('production:order:list')")
-    public R<Map<String, Long>> counts(@Valid ProductionQuery query) {
+    public R<Map<String, Long>> counts(@Valid @org.springframework.web.bind.annotation.ModelAttribute("productionQuery") ProductionQuery query) {
         return R.ok(productionOrderService.counts(query));
     }
 
@@ -198,7 +204,7 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，加 ids；一张单一行")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('production:order:export')")
-    public ResponseEntity<byte[]> export(@Valid ProductionQuery query) {
+    public ResponseEntity<byte[]> export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("productionQuery") ProductionQuery query) {
         byte[] data = productionOrderService.export(query);
         String name = ProductionKind.valueOf(query.getKind().strip()).getLabel();
         return Excel.download(Excel.exportFileName(name, LocalDate.now(clock)), data);

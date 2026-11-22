@@ -42,4 +42,7 @@ public interface DocNoticeService {
      * docTypes 限定哪几种单据；ownerId 是 null 时所有人的（有"全部"范围的人看全部时）
      */
     List<DocNoticeGroup> pendingByDoc(Collection<BizType> docTypes, Long ownerId);
+    /** 数据库先按当前单头负责人及数据范围授权，再分组、计数及 seek 分页。 */
+    com.lingmao.scm.module.biz.dto.PendingNoticePage pendingPage(Collection<BizType> docTypes, Long ownerId,
+            com.lingmao.scm.module.biz.dto.PendingNoticePosition after, boolean oldest, int limit);
 }

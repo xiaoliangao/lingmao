@@ -104,6 +104,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.function.Function;
 
 import static com.lingmao.scm.common.doc.DocStatus.APPROVED;
 import static com.lingmao.scm.common.doc.DocStatus.CLOSED;
@@ -188,7 +189,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public PageResult<PurchaseRowVO> page(PurchaseQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PURCHASE_ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PURCHASE_ORDER) : null);
         IPage<PurchaseRowVO> page = poMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()));
         fillRows(page.getRecords());
@@ -205,7 +207,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         Map<Long, String> names = userService.nicknames(rows.stream().map(PurchaseRowVO::getBuyerId)
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         Set<Long> mine = rows.stream().anyMatch(r -> PENDING.name().equals(r.getStatus()))
-                ? new HashSet<>(approvalService.waitingForMe(BizType.PURCHASE_ORDER)) : Set.of();
+                ? new HashSet<>(approvalService.waitingForMe(BizType.PURCHASE_ORDER, rows.stream().map(PurchaseRowVO::getId).toList())) : Set.of();
         for (PurchaseRowVO r : rows) {
             r.setFirstItem(r.getFirstSkuId() == null ? null : briefs.get(r.getFirstSkuId()));
             r.setBuyerName(names.get(r.getBuyerId()));
@@ -1018,7 +1020,8 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public byte[] export(PurchaseQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PURCHASE_ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PURCHASE_ORDER) : null);
         List<PurchaseRowVO> rows = poMapper.selectRows(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
         if (rows.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException(400, "一次最多导出 " + Excel.MAX_EXPORT_ROWS + " 张，加个筛选条件再导");
@@ -1032,120 +1035,51 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public PageResult<PendingArrivalRowVO> pendingItems(PendingArrivalQuery query) {
-        List<PendingArrivalRowVO> rows = pendingRows(query).stream().filter(r -> inTab(r, query.getTab())).toList();
-        int from = (int) Math.min(rows.size(), (query.getPage() - 1) * query.getSize());
-        int to = (int) Math.min(rows.size(), from + query.getSize());
-        List<PendingArrivalRowVO> page = new ArrayList<>(rows.subList(from, to));
-        fillPendingDisplay(page);
-        return new PageResult<>(page, rows.size());
+        normalizeTab(query);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<PendingArrivalRowVO> request = query.toPage();
+        request.setOptimizeJoinOfCountSql(false);
+        var page = poMapper.selectPendingPage(request, query, Keywords.codes(query.getKeyword()),
+                DataScope.current(false), LocalDate.now(clock), needDates.fallbackLeadDays());
+        fillPendingSources(page.getRecords());
+        fillPendingDisplay(page.getRecords());
+        return PageResult.of(page);
     }
 
     @Override
     public PendingArrivalCounts pendingCounts(PendingArrivalQuery query) {
-        List<PendingArrivalRowVO> rows = pendingRows(query);
-        return new PendingArrivalCounts(rows.size(), rows.stream().filter(r -> inTab(r, "LATE")).count(),
-                rows.stream().filter(r -> inTab(r, "NEAR")).count(), rows.stream().filter(r -> inTab(r, "CUT")).count());
+        normalizeTab(query);
+        return poMapper.selectPendingCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(false),
+                LocalDate.now(clock), needDates.fallbackLeadDays());
     }
 
-    private static boolean inTab(PendingArrivalRowVO r, String tab) {
-        if (tab == null || tab.isBlank()) {
-            return true;
+    @Override
+    public Integer fallbackLeadDays() { return needDates.fallbackLeadDays(); }
+
+    private static void normalizeTab(PendingArrivalQuery query) {
+        String tab = query.getTab() == null ? null : query.getTab().strip();
+        if (tab != null && tab.isEmpty()) tab = null;
+        query.setTab(tab);
+        if (tab != null && !List.of("LATE", "NEAR", "CUT").contains(tab)) {
+            throw new BizException(400, "没有这个页签：" + tab);
         }
-        return switch (tab) {
-            case "LATE" -> "LATE".equals(r.getRisk());
-            case "NEAR" -> "NEAR".equals(r.getRisk());
-            case "CUT" -> r.getCutLateDays() > 0;
-            default -> throw new BizException(400, "没有这个页签：" + tab);
-        };
     }
 
-    /**
-     * 待到料的全部行（PRD §6.6.3）：未入库、哪天算到（预计到货 ?? 交期）、剩几天、风险；要料日期看用它的订单——
-     * 它是已确认的算料单生成的，或者被已确认的算料单用作在途，取那些算料单的订单最早的要料日期（NeedDates），没有是 null。
-     * 页签、要料日期都要现算，所以全取出来在这里排、分页（待到料只有没到齐的行，量不大）
-     */
-    private List<PendingArrivalRowVO> pendingRows(PendingArrivalQuery query) {
-        List<PendingArrivalRowVO> rows = new ArrayList<>(poMapper.selectPendingRows(query, Keywords.codes(query.getKeyword()),
-                DataScope.current(false)));
-        if (rows.isEmpty()) {
-            return rows;
-        }
-        LocalDate today = LocalDate.now(clock);
+    /** 当前页的来源编码在 SQL 去重、计数和 LIMIT 后才聚合，禁止读取完整来源集合到 JVM。 */
+    private void fillPendingSources(List<PendingArrivalRowVO> rows) {
+        if (rows.isEmpty()) return;
         List<Long> lineIds = rows.stream().map(PendingArrivalRowVO::getPurchaseItemId).toList();
-        Map<Long, PurchaseOrderItemMapper.CalcSource> sources = new HashMap<>();
-        Set<Long> calcItemIds = rows.stream().map(PendingArrivalRowVO::getCalcItemId).filter(Objects::nonNull).collect(Collectors.toSet());
-        if (!calcItemIds.isEmpty()) {
-            itemMapper.selectCalcSources(calcItemIds).forEach(s -> sources.put(s.calcItemId(), s));
+        Map<Long, PurchaseOrderItemMapper.PendingSourcePreview> sources = itemMapper.selectPendingSourcePreviews(lineIds, 20)
+                .stream().collect(Collectors.toMap(PurchaseOrderItemMapper.PendingSourcePreview::lineId, Function.identity()));
+        for (PendingArrivalRowVO row : rows) {
+            var source = sources.get(row.getPurchaseItemId());
+            // 返回的 CSV 已在 SQL 限制为 20 个编码，再拆分不会物化无界的 MRP 快照。
+            row.setOrderNos(source == null ? List.of() : PurTexts.split(source.orderNos()));
+            row.setStyleCodes(source == null ? List.of() : PurTexts.split(source.styleCodes()));
+            row.setOrderNosTotal(source == null ? 0 : source.orderNosTotal());
+            row.setStyleCodesTotal(source == null ? 0 : source.styleCodesTotal());
+            row.setSourcesTotal(source == null ? 0 : source.sourcesTotal());
+            row.setCalcNo(source == null ? null : source.calcNo());
         }
-        Map<Long, List<MrpCalcTransitMapper.LineUser>> users = transitMapper.selectLineUsers(lineIds).stream()
-                .collect(Collectors.groupingBy(MrpCalcTransitMapper.LineUser::lineId));
-        Set<Long> ownerCalcIds = sources.values().stream().map(PurchaseOrderItemMapper.CalcSource::calcId).collect(Collectors.toSet());
-        Set<Long> confirmedOwners = ownerCalcIds.isEmpty() ? Set.of() : calcMapper.selectByIds(ownerCalcIds).stream()
-                .filter(c -> c.getStatus() == MrpStatus.CONFIRMED).map(MrpCalc::getId)
-                .collect(Collectors.toSet());
-        Set<Long> calcIds = new HashSet<>(confirmedOwners);
-        users.values().forEach(list -> list.forEach(u -> calcIds.add(u.calcId())));
-        Map<Long, LocalDate> calcNeed = calcNeedDates(calcIds);
-
-        for (PendingArrivalRowVO r : rows) {
-            BigDecimal net = r.getReceivedQty().subtract(r.getReturnedQty());
-            r.setPendingQty(r.getQty().subtract(net).max(BigDecimal.ZERO));
-            LocalDate arrive = r.getExpectDate() != null ? r.getExpectDate() : r.getDueDate();
-            r.setArriveDate(arrive);
-            r.setDaysLeft(ChronoUnit.DAYS.between(today, arrive));
-            r.setRisk(r.getDaysLeft() < 0 ? "LATE" : r.getDaysLeft() <= NEAR_DAYS ? "NEAR" : "NORMAL");
-            PurchaseOrderItemMapper.CalcSource s = r.getCalcItemId() == null ? null : sources.get(r.getCalcItemId());
-            Set<String> orderNos = new LinkedHashSet<>();
-            Set<String> styleCodes = new LinkedHashSet<>();
-            LocalDate need = null;
-            if (s != null) {
-                orderNos.addAll(PurTexts.split(s.orderNos()));
-                styleCodes.addAll(PurTexts.split(s.styleCodes()));
-                r.setCalcNo(s.calcNo());
-                if (confirmedOwners.contains(s.calcId())) {
-                    need = calcNeed.get(s.calcId());
-                }
-            }
-            for (MrpCalcTransitMapper.LineUser u : users.getOrDefault(r.getPurchaseItemId(), List.of())) {
-                orderNos.addAll(PurTexts.split(u.orderNos()));
-                styleCodes.addAll(PurTexts.split(u.styleCodes()));
-                if (r.getCalcNo() == null) {
-                    r.setCalcNo(u.calcNo());
-                }
-                need = earlier(need, calcNeed.get(u.calcId()));
-            }
-            r.setOrderNos(List.copyOf(orderNos));
-            r.setStyleCodes(List.copyOf(styleCodes));
-            r.setNeedDate(need);
-            r.setCutLateDays(need != null && arrive.isAfter(need) ? ChronoUnit.DAYS.between(need, arrive) : 0);
-        }
-        rows.sort(Comparator.comparing(PendingArrivalRowVO::getArriveDate)
-                .thenComparing(PendingArrivalRowVO::getPurchaseNo)
-                .thenComparing(PendingArrivalRowVO::getPurchaseItemId));
-        return rows;
-    }
-
-    private static LocalDate earlier(LocalDate a, LocalDate b) {
-        return a == null ? b : b == null ? a : a.isBefore(b) ? a : b;
-    }
-
-    /** 算料单 → 它的订单里最早的要料日期（现算：排了单的按裁剪计划开始，没排的按承诺交期倒推） */
-    private Map<Long, LocalDate> calcNeedDates(Collection<Long> calcIds) {
-        if (calcIds.isEmpty()) {
-            return Map.of();
-        }
-        List<MrpCalcMapper.CalcOrder> orders = calcMapper.selectCalcOrders(calcIds);
-        Map<Long, LocalDate> commits = new HashMap<>();
-        orders.forEach(o -> commits.put(o.orderId(), o.commitDate()));
-        Map<Long, LocalDate> needs = needDates.of(commits);
-        Map<Long, LocalDate> out = new HashMap<>();
-        orders.forEach(o -> {
-            LocalDate d = needs.get(o.orderId());
-            if (d != null) {
-                out.merge(o.calcId(), d, PurchaseOrderServiceImpl::earlier);
-            }
-        });
-        return out;
     }
 
     /** 当前页的物料显示字段、采购员、按钮 */

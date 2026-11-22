@@ -6,9 +6,11 @@ import { download } from '@/utils/request'
 
 export interface SeekResult<Row> { list: Row[]; nextCursor: string | null; hasMore: boolean }
 /** 游标历史只属于一份筛选快照。翻页从不做 COUNT/OFFSET。 */
-export function useSeekTable<Row, Q extends object>(options: {
+export function useSeekTable<Row, Q extends object, Result extends SeekResult<Row> = SeekResult<Row>>(options: {
   query: Q
-  fetch: (params: Partial<Q> & { cursor?: string; size: number }) => Promise<SeekResult<Row>>
+  fetch: (params: Partial<Q> & { cursor?: string; size: number }) => Promise<SeekResult<Row> & Result>
+  /** 只在当前请求成功后接受统计/权限等元数据，过期响应不能回写它们。 */
+  onLoaded?: (response: Result) => void
   exportUrl?: string
   exportName?: string
   exporter?: (filters: Partial<Q>) => Promise<void> | void
@@ -33,10 +35,11 @@ export function useSeekTable<Row, Q extends object>(options: {
     try {
       const response = await read.run(() => options.fetch({ ...filters, cursor: cursors[page.value - 1], size: size.value }))
       if (!read.current()) return
-      if (!response || !Array.isArray(response.list) || typeof response.hasMore !== 'boolean' || (response.hasMore && typeof response.nextCursor !== 'string')) throw new Error('流水列表格式异常，请重试')
+      if (!response || !Array.isArray(response.list) || typeof response.hasMore !== 'boolean' || (response.hasMore && typeof response.nextCursor !== 'string')) throw new Error('列表格式异常，请重试')
       list.value = response.list
       hasMore.value = response.hasMore
       nextCursor = response.nextCursor
+      options.onLoaded?.(response)
       shown = structuredClone(filters)
       error.value = null
     } catch (cause) {

@@ -50,11 +50,14 @@ import com.lingmao.scm.module.order.dto.OrderImportHead;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
 import com.lingmao.scm.module.order.dto.OrderItemVO;
 import com.lingmao.scm.module.order.dto.OrderQuery;
+import com.lingmao.scm.module.order.dto.OrderReviewInfo;
+import com.lingmao.scm.module.order.dto.OrderReviewStyle;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
 import com.lingmao.scm.module.order.dto.OrderSaveReq;
 import com.lingmao.scm.module.order.dto.OrderStyleOptionVO;
 import com.lingmao.scm.module.order.dto.OrderStyleRef;
 import com.lingmao.scm.module.order.dto.OrderStyleVO;
+import com.lingmao.scm.module.order.dto.OrderTotals;
 import com.lingmao.scm.module.order.dto.PendingChange;
 import com.lingmao.scm.module.order.dto.ProductionProgress;
 import com.lingmao.scm.module.order.dto.StyleOrderRowVO;
@@ -182,7 +185,8 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public PageResult<OrderRowVO> page(OrderQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
         IPage<OrderRowVO> page = orderMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()));
         fillRows(page.getRecords());
@@ -191,8 +195,40 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public Map<String, Long> counts(OrderQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
         return StatusCount.toMap(orderMapper.selectCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())));
+    }
+
+    @Override
+    public OrderTotals totals(OrderQuery query) {
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
+        return orderMapper.selectTotals(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
+    }
+
+    @Override
+    public OrderReviewInfo reviewInfo(long id) {
+        Order o = getVisible(id);
+        Map<Long, List<OrderItem>> byStyle = byStyle(active(itemMapper.selectByOrder(id)));
+        List<Long> styleIds = List.copyOf(byStyle.keySet());
+        Map<Long, StyleOrderInfo> infos = styleService.orderInfos(styleIds);
+        Map<Long, PackBrief> packs = techPackService.effectiveProd(styleIds);
+        List<PackRequirement> requirements = byStyle.entrySet().stream().filter(e -> packs.get(e.getKey()) != null)
+                .flatMap(e -> e.getValue().stream().map(i -> new PackRequirement(packs.get(e.getKey()).id(), i.getStyleSkuId()))).toList();
+        Map<PackRequirement, List<String>> requirementProblems = techPackService.requirementProblems(requirements);
+        List<OrderReviewStyle> styles = new ArrayList<>();
+        byStyle.forEach((styleId, rows) -> {
+            StyleOrderInfo info = infos.get(styleId);
+            PackBrief pack = packs.get(styleId);
+            List<String> problems = new ArrayList<>(packProblems(rows, infos, packs));
+            if (problems.isEmpty() && pack != null) {
+                rows.forEach(i -> problems.addAll(requirementProblems.getOrDefault(new PackRequirement(pack.id(), i.getStyleSkuId()), List.of())));
+            }
+            styles.add(new OrderReviewStyle(styleId, info.code(), info.name(), pack == null ? null : pack.id(),
+                    pack == null ? null : pack.version(), problems.isEmpty() ? null : String.join("；", problems), info.defaultFactoryId()));
+        });
+        return new OrderReviewInfo(o.getId(), o.getCommitDate() != null ? o.getCommitDate() : o.getRequiredDate(), styles);
     }
 
     /** 列表行的款式（缩略图 + 款号）、人名、按钮 */
@@ -215,7 +251,7 @@ public class OrderServiceImpl implements OrderService {
         userIds.remove(null);
         Map<Long, String> names = userService.nicknames(userIds);
         Set<Long> mine = rows.stream().anyMatch(r -> PENDING.name().equals(r.getStatus()))
-                ? new HashSet<>(approvalService.waitingForMe(BizType.ORDER)) : Set.of();
+                ? new HashSet<>(approvalService.waitingForMe(BizType.ORDER, rows.stream().map(OrderRowVO::getId).toList())) : Set.of();
         Set<Long> openChange = changeMapper.selectOpenOrders(ids);
         Set<Long> unscheduled = itemMapper.selectUnscheduledOrders(ids);
         for (OrderRowVO r : rows) {
@@ -816,6 +852,22 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public void checkKittingVisible(Collection<Long> sourceIds) {
+        Set<Long> ids = new HashSet<>(sourceIds);
+        if (ids.isEmpty()) return;
+        if (ids.size() > 500) throw new BizException(400, "一次最多查 500 张订单");
+        boolean canOrder = LoginUser.hasAuthority("order:order:list");
+        boolean canProduction = LoginUser.hasAuthority("production:order:list");
+        boolean canBoard = LoginUser.hasAuthority("production:board:list");
+        if (!canOrder && !canProduction && !canBoard) throw new BizException(404, "单据不存在");
+        List<Order> visible = orderMapper.selectKittingVisible(ids, DataScope.current(false), canOrder, canProduction, canBoard,
+                canOrder ? approvalService.waitingScope(BizType.ORDER) : null,
+                canProduction ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null,
+                com.lingmao.scm.common.scope.CompanyContext.header(false));
+        if (visible.size() != ids.size()) throw new BizException(404, "单据不存在");
+    }
+
+    @Override
     public void checkForMrp(Collection<Long> orderIds) {
         Set<Long> ids = new HashSet<>(orderIds);
         if (ids.isEmpty()) return;
@@ -1120,7 +1172,8 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public byte[] export(OrderQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
         Page<OrderRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<OrderRowVO> rows = orderMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();

@@ -29,6 +29,8 @@ public interface SupplierService {
 
     /** 列表，条件见 SupplierQuery。不出账号 */
     PageResult<SupplierRowVO> page(SupplierQuery query);
+    /** 证照行而非供应商计数；按 validUntil、ID 排序。 */
+    PageResult<com.lingmao.scm.module.supplier.dto.ExpiringCertVO> expiringCerts(Long buyerId, com.lingmao.scm.common.page.PageQuery page);
 
     /** 详情：账号遮成前 4 后 4。不存在 404 */
     SupplierVO detail(long id);

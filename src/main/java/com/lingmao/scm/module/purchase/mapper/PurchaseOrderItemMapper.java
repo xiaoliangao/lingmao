@@ -75,4 +75,12 @@ public interface PurchaseOrderItemMapper extends BaseMapper<PurchaseOrderItem> {
             + "FROM mrp_calc_item ci JOIN mrp_calc c ON c.id = ci.calc_id WHERE ci.id IN "
             + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
     List<CalcSource> selectCalcSources(@Param("ids") Collection<Long> calcItemIds);
+
+    /** 当前已授权采购页的来源摘要；各类编号先在 SQL 内限为 20 个，再聚合为 CSV。 */
+    record PendingSourcePreview(Long lineId, String calcNo, long sourcesTotal, String orderNos,
+                                long orderNosTotal, String styleCodes, long styleCodesTotal) {
+    }
+
+    List<PendingSourcePreview> selectPendingSourcePreviews(@Param("lineIds") Collection<Long> lineIds,
+                                                          @Param("limit") int limit);
 }

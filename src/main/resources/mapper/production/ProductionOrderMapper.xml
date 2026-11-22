@@ -35,13 +35,25 @@
         JOIN sty_style s ON s.id = p.style_id
         <include refid="riskJoin"/>
         <include refid="returnedJoin"/>
+        <if test="q.oldestFirst">
+            LEFT JOIN LATERAL (SELECT dl.create_time FROM biz_doc_log dl
+                               WHERE dl.doc_type = 'PRODUCTION_ORDER' AND dl.doc_id = p.id AND dl.action = 'submit'
+                               ORDER BY dl.create_time DESC, dl.id DESC LIMIT 1) submitted ON true
+        </if>
     </sql>
 
     <!-- 排序分数：逾期 8、节点延期 4、有异常 2、临期 1，同分按交期从早到晚 -->
     <sql id="riskOrder">
-        ORDER BY (CASE WHEN r.late THEN 8 ELSE 0 END) + (CASE WHEN r.node_late THEN 4 ELSE 0 END)
-                 + (CASE WHEN r.issue THEN 2 ELSE 0 END) + (CASE WHEN r.near THEN 1 ELSE 0 END) DESC,
-                 COALESCE(p.expect_date, p.due_date), p.id DESC
+        <choose>
+            <when test="q.oldestFirst">ORDER BY COALESCE(submitted.create_time, p.create_time), p.id</when>
+            <when test="q.delayedFirst">ORDER BY r.late DESC, COALESCE(p.expect_date, p.due_date), p.id</when>
+            <when test="q.dueFirst">ORDER BY COALESCE(p.expect_date, p.due_date), p.no, p.id</when>
+            <otherwise>
+                ORDER BY (CASE WHEN r.late THEN 8 ELSE 0 END) + (CASE WHEN r.node_late THEN 4 ELSE 0 END)
+                         + (CASE WHEN r.issue THEN 2 ELSE 0 END) + (CASE WHEN r.near THEN 1 ELSE 0 END) DESC,
+                         COALESCE(p.expect_date, p.due_date), p.id DESC
+            </otherwise>
+        </choose>
     </sql>
 
     <!-- 种类、加工厂、跟单、品牌、数据范围：看板的本月回货也用 -->
@@ -50,8 +62,18 @@
             <when test="q.auditForMe">
                 AND p.status = 'PENDING'
                 <choose>
-                    <when test="q.approvalIds != null and q.approvalIds.size() > 0">
-                        AND p.id IN <foreach collection="q.approvalIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+                    <when test="q.approvalScope != null and q.approvalScope.userId != null">
+                        AND EXISTS (
+                            SELECT 1 FROM biz_approval_step approval
+                            WHERE approval.biz_type = 'PRODUCTION_ORDER' AND approval.doc_id = p.id AND approval.status = 'CURRENT'
+                              AND (approval.user_id = #{q.approvalScope.userId}
+                                <if test="q.approvalScope.firstLevel and q.approvalScope.permission != null">
+                                    OR approval.perm = #{q.approvalScope.permission}
+                                </if>
+                                <if test="q.approvalScope.roleIds != null and q.approvalScope.roleIds.size() > 0">
+                                    OR approval.role_id IN <foreach collection="q.approvalScope.roleIds" item="roleId" open="(" separator="," close=")">#{roleId}</foreach>
+                                </if>)
+                        )
                     </when>
                     <otherwise>AND false</otherwise>
                 </choose>
@@ -62,6 +84,14 @@
         </choose>
         <if test="q.kind != null and q.kind != ''">AND p.kind = #{q.kind}</if>
         <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
+        <if test="q.factoryIds != null">
+            <choose>
+                <when test="q.factoryIds.size() > 0">
+                    AND p.factory_id IN <foreach collection="q.factoryIds" item="factory" open="(" separator="," close=")">#{factory}</foreach>
+                </when>
+                <otherwise>AND false</otherwise>
+            </choose>
+        </if>
         <if test="!q.auditForMe and q.merchId != null">AND p.merch_id = #{q.merchId}</if>
         <if test="q.brand != null and q.brand != ''">AND s.brand = #{q.brand}</if>
     </sql>
@@ -79,6 +109,7 @@
                 <when test="q.risk == 'LATE'">AND r.late</when>
                 <when test="q.risk == 'NEAR'">AND r.near</when>
                 <when test="q.risk == 'NODE_LATE'">AND r.node_late</when>
+                <when test="q.risk == 'DELAYED'">AND (r.late OR r.node_late)</when>
                 <when test="q.risk == 'ISSUE'">AND r.issue</when>
                 <when test="q.risk == 'UPSTREAM'">AND r.upstream</when>
                 <otherwise>AND false</otherwise>
@@ -97,6 +128,9 @@
         </if>
         <if test="q.dueDateFrom != null">AND COALESCE(p.expect_date, p.due_date) &gt;= #{q.dueDateFrom}</if>
         <if test="q.dueDateTo != null">AND COALESCE(p.expect_date, p.due_date) &lt;= #{q.dueDateTo}</if>
+        <if test="q.orderNos != null and q.orderNos.size() > 0">
+            AND o.no IN <foreach collection="q.orderNos" item="no" open="(" separator="," close=")">#{no}</foreach>
+        </if>
         <if test="q.ids != null and q.ids.size() > 0">
             AND p.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         </if>
@@ -128,17 +162,73 @@
         </if>
     </sql>
 
-    <sql id="rowColumns">
+    <sql id="rowSelect">
         SELECT p.id, p.no, p.kind, p.status, p.version, p.company_id, p.factory_id, f.short_name AS factory_short_name, p.process_mode,
                p.order_id, o.no AS order_no, p.style_id, s.code AS style_code, s.name AS style_name, p.total_qty, p.unit_price,
                p.total_amount, p.due_date, p.expect_date, p.issue_status, rq.returned_qty, rq.defect_qty,
-               iss.open_count AS open_issue_count, iss.first_type AS first_open_issue_type, p.merch_id, p.create_by,
+               iss.open_count AS open_issue_count, iss.first_type AS first_open_issue_type, p.merch_id, p.create_by, p.create_time,
                r.late AS risk_late, r.near AS risk_near, r.node_late AS risk_node_late, r.issue AS risk_issue,
                r.upstream AS risk_upstream
-        <include refid="from"/>
+        <if test="q.oldestFirst">, COALESCE(submitted.create_time, p.create_time) AS pending_since</if>
+    </sql>
+
+    <sql id="issueSummaryJoin">
         LEFT JOIN LATERAL (SELECT COUNT(*) AS open_count, (array_agg(x.issue_type ORDER BY x.id))[1] AS first_type
                            FROM prd_issue x WHERE x.prd_order_id = p.id AND x.status &lt;&gt; 'CLOSED') iss ON true
     </sql>
+
+    <sql id="rowColumns">
+        <include refid="rowSelect"/>
+        <include refid="from"/>
+        <include refid="issueSummaryJoin"/>
+    </sql>
+
+    <!-- 只读采购风险：从当前生产单所属订单定位关联算料行，不加载全库在途行或拼巨大订单号 IN。
+         快照 token 校验保留原待到料关联语义；金额、采购员、供应商底价均不进入风险投影。 -->
+    <sql id="cutRiskJoin">
+        JOIN LATERAL (
+            SELECT i.material_sku_id, material.name AS material_name, nd.need_date,
+                   COALESCE(i.expect_date, i.line_due_date, po.delivery_date) AS arrive_date,
+                   COALESCE(i.expect_date, i.line_due_date, po.delivery_date) - nd.need_date AS cut_late_days
+            FROM (
+                SELECT owned.id FROM mrp_calc_order co
+                JOIN mrp_calc_item ci ON ci.calc_id = co.calc_id
+                JOIN pur_order_item owned ON owned.calc_item_id = ci.id
+                WHERE co.order_id = p.order_id
+                  AND string_to_array(ci.order_nos, ',') @&gt; ARRAY[o.no]::text[]
+                UNION
+                SELECT t.purchase_item_id AS id FROM mrp_calc_order co
+                JOIN mrp_calc c ON c.id = co.calc_id AND c.status = 'CONFIRMED'
+                JOIN mrp_calc_item ci ON ci.calc_id = c.id
+                JOIN mrp_calc_transit t ON t.calc_item_id = ci.id
+                WHERE co.order_id = p.order_id
+                  AND string_to_array(ci.order_nos, ',') @&gt; ARRAY[o.no]::text[]
+            ) candidate
+            JOIN pur_order_item i ON i.id = candidate.id
+            JOIN pur_order po ON po.id = i.purchase_order_id
+            JOIN bas_material_sku sku ON sku.id = i.material_sku_id
+            JOIN bas_material material ON material.id = sku.material_id
+            <include refid="com.lingmao.scm.module.purchase.mapper.PurchaseOrderMapper.pendingNeedJoin"/>
+            WHERE po.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty &lt; i.qty
+              AND COALESCE(i.expect_date, i.line_due_date, po.delivery_date) &gt; nd.need_date
+            ORDER BY cut_late_days DESC, arrive_date, i.id
+            LIMIT 1
+        ) cut_risk ON true
+    </sql>
+
+    <select id="selectCutRiskPage" resultType="com.lingmao.scm.module.production.dto.ProductionRowVO">
+        <bind name="withStatus" value="true"/>
+        <bind name="withCard" value="true"/>
+        <include refid="rowSelect"/>,
+               cut_risk.material_sku_id AS cut_material_sku_id, cut_risk.material_name AS cut_material_name,
+               cut_risk.need_date AS cut_need_date, cut_risk.arrive_date AS cut_arrive_date,
+               cut_risk.cut_late_days
+        <include refid="from"/>
+        <include refid="issueSummaryJoin"/>
+        <include refid="cutRiskJoin"/>
+        <include refid="where"/>
+        ORDER BY cut_risk.cut_late_days DESC, cut_risk.arrive_date, p.no, p.id
+    </select>
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.production.dto.ProductionRowVO">
         <bind name="withStatus" value="true"/>
@@ -178,6 +268,7 @@
         SELECT COUNT(*) FILTER (WHERE p.status = 'RUNNING') AS running_count,
                COALESCE(SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) FILTER (WHERE p.status = 'RUNNING'), 0) AS running_qty,
                COUNT(*) FILTER (WHERE p.status = 'APPROVED') AS waiting_count,
+               COALESCE(SUM(GREATEST(p.total_qty - rq.returned_qty, 0)) FILTER (WHERE p.status = 'APPROVED'), 0) AS waiting_qty,
                COUNT(*) FILTER (WHERE r.near) AS near_count,
                COUNT(*) FILTER (WHERE r.late) AS late_count,
                COUNT(*) FILTER (WHERE r.node_late) AS node_late_count,
@@ -210,10 +301,18 @@
                    <include refid="where"/>
                    AND p.status IN ('APPROVED', 'RUNNING')
                    GROUP BY p.factory_id) w ON w.factory_id = sf.id
-        WHERE w.factory_id IS NOT NULL
+        WHERE (w.factory_id IS NOT NULL
            OR (sf.status = 'ACTIVE'
                AND EXISTS (SELECT 1 FROM sup_supplier_category c WHERE c.supplier_id = sf.id
-                           AND c.category IN <foreach collection="categories" item="c" open="(" separator="," close=")">#{c}</foreach>))
+                           AND c.category IN <foreach collection="categories" item="c" open="(" separator="," close=")">#{c}</foreach>)))
+        <if test="q.factoryIds != null">
+            <choose>
+                <when test="q.factoryIds.size() > 0">
+                    AND sf.id IN <foreach collection="q.factoryIds" item="factory" open="(" separator="," close=")">#{factory}</foreach>
+                </when>
+                <otherwise>AND false</otherwise>
+            </choose>
+        </if>
         ORDER BY wip_qty DESC, sf.short_name, sf.id
     </select>
 

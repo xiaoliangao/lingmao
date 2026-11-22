@@ -41,4 +41,6 @@ public class SupplierQuery extends PageQuery {
 
     /** 只要这几家：导出选中的用 */
     private List<Long> ids;
+    /** 首页审核待办：在 SQL 分页前按提交时间、ID 排序。 */
+    private boolean oldestFirst;
 }

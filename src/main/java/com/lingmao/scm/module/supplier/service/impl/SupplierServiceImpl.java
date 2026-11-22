@@ -129,6 +129,20 @@ public class SupplierServiceImpl implements SupplierService {
     }
 
     @Override
+    public PageResult<com.lingmao.scm.module.supplier.dto.ExpiringCertVO> expiringCerts(Long buyerId, com.lingmao.scm.common.page.PageQuery query) {
+        var wrapper = new LambdaQueryWrapper<SupplierCert>()
+                .le(SupplierCert::getValidUntil, LocalDate.now(clock).plusDays(SupplierLists.CERT_EXPIRING_DAYS))
+                .apply(buyerId != null, "EXISTS (SELECT 1 FROM sup_supplier s WHERE s.id = sup_supplier_cert.supplier_id AND s.buyer_id = {0})", buyerId)
+                .orderByAsc(SupplierCert::getValidUntil, SupplierCert::getId);
+        var page = certMapper.selectPage(query.toPage(), wrapper);
+        var ids = page.getRecords().stream().map(SupplierCert::getSupplierId).distinct().toList();
+        Map<Long, SupplierRowVO> suppliers = ids.isEmpty() ? Map.of() : lists.rows(supplierMapper.selectByIds(ids)).stream()
+                .collect(java.util.stream.Collectors.toMap(SupplierRowVO::getId, s -> s));
+        return new PageResult<>(page.getRecords().stream().map(c -> new com.lingmao.scm.module.supplier.dto.ExpiringCertVO(
+                c.getId(), suppliers.get(c.getSupplierId()), c.getCertType(), c.getValidUntil())).toList(), page.getTotal());
+    }
+
+    @Override
     public SupplierVO detail(long id) {
         Supplier s = getEntity(id);
         SupplierVO vo = new SupplierVO();

@@ -52,6 +52,9 @@ public interface ApprovalService {
     /** 详情的"审批"块：最近一轮，每一级谁审、门槛、谁什么时候审的、现在等谁、我能不能审。没提交过返回 null */
     ApprovalView view(BizType type, long docId);
 
-    /** 首页"待我审核"：这种单据里当前这一级轮到我审的单据 id（第 1 级看审核权限，规则加的级看角色、人） */
-    List<Long> waitingForMe(BizType type);
+    /** SQL EXISTS 使用的可信参数；与普通数据范围无关，不授予 data:all。 */
+    com.lingmao.scm.module.biz.dto.ApprovalScope waitingScope(BizType type);
+
+    /** 仅查已授权当前页的动作状态；内部按 500 个候选 ID 分批。 */
+    List<Long> waitingForMe(BizType type, java.util.Collection<Long> candidates);
 }

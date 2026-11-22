@@ -141,12 +141,12 @@ class ApprovalServiceImplIT {
         approvalService.start(BizType.PURCHASE_ORDER, docId, BigDecimal.ZERO);
 
         login(900600L);
-        assertThat(approvalService.waitingForMe(BizType.PURCHASE_ORDER)).doesNotContain(docId);
+        assertThat(approvalService.waitingForMe(BizType.PURCHASE_ORDER, List.of(docId))).doesNotContain(docId);
         login(900600L, PO_AUDIT);
-        assertThat(approvalService.waitingForMe(BizType.PURCHASE_ORDER)).contains(docId);
+        assertThat(approvalService.waitingForMe(BizType.PURCHASE_ORDER, List.of(docId))).contains(docId);
 
         approvalService.pass(BizType.PURCHASE_ORDER, docId);
-        assertThat(approvalService.waitingForMe(BizType.PURCHASE_ORDER)).doesNotContain(docId);
+        assertThat(approvalService.waitingForMe(BizType.PURCHASE_ORDER, List.of(docId))).doesNotContain(docId);
     }
 
     private static void login(long userId, String... perms) {

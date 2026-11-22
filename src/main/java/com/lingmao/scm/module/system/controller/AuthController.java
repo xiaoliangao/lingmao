@@ -30,14 +30,17 @@ public class AuthController {
     @PostMapping("/login")
     @OperLog(module = "认证", action = "登录")
     public R<String> login(@Valid @RequestBody LoginReq req, HttpServletRequest request, HttpServletResponse response) {
-        var tokens = authService.login(req);
-        cookies.write(request, response, tokens);
+        boolean cookie = cookieMode(request);
+        var tokens = cookie ? authService.login(req) : authService.login(req, false);
+        if (cookie) cookies.write(request, response, tokens);
+        response.setHeader("Cache-Control", "no-store");
         return R.ok(tokens.accessToken());
     }
 
     @Operation(summary = "使用 HttpOnly Cookie 原子刷新会话")
     @PostMapping("/refresh")
     public R<String> refresh(HttpServletRequest request, HttpServletResponse response) {
+        if (!cookieMode(request)) throw new com.lingmao.scm.common.exception.BizException(400, "仅访问令牌会话不支持刷新，请重新登录");
         cookies.requireRefreshHeader(request);
         var tokens = authService.refresh(cookies.read(request, SessionCookies.REFRESH), cookies.read(request, SessionCookies.BROWSER));
         cookies.write(request, response, tokens);
@@ -54,10 +57,14 @@ public class AuthController {
     @PostMapping("/logout")
     @OperLog(module = "认证", action = "退出")
     public R<Void> logout(@AuthenticationPrincipal LoginUser loginUser, HttpServletRequest request, HttpServletResponse response){
-        cookies.requireRefreshHeader(request);
-        authService.revokeRefresh(cookies.read(request, SessionCookies.REFRESH), cookies.read(request, SessionCookies.BROWSER));
+        boolean cookie = cookieMode(request);
+        if (cookie) {
+            cookies.requireRefreshHeader(request);
+            authService.revokeRefresh(cookies.read(request, SessionCookies.REFRESH), cookies.read(request, SessionCookies.BROWSER));
+        }
         if (loginUser != null) authService.logout(loginUser.jti());
-        cookies.clear(request, response);
+        if (cookie) cookies.clear(request, response);
+        response.setHeader("Cache-Control", "no-store");
         return R.ok();
     }
 
@@ -66,8 +73,17 @@ public class AuthController {
     @OperLog(module = "认证", action = "改密码")
     public R<Void> changePassword(@AuthenticationPrincipal LoginUser loginUser,
                                   @Valid @RequestBody PasswordChangeReq req, HttpServletRequest request, HttpServletResponse response) {
+        boolean cookie = cookieMode(request);
         authService.changePassword(loginUser.userId(), req.getOldPassword(), req.getNewPassword());
-        cookies.clear(request, response);
+        if (cookie) cookies.clear(request, response);
+        response.setHeader("Cache-Control", "no-store");
         return R.ok();
+    }
+    /** 缺省保留既有 Cookie 协议；未知值必须在任何会话写操作之前拒绝。 */
+    private static boolean cookieMode(HttpServletRequest request) {
+        String mode = request.getHeader("X-Session-Mode");
+        if (mode == null || "cookie".equals(mode)) return true;
+        if ("access-only".equals(mode)) return false;
+        throw new com.lingmao.scm.common.exception.BizException(400, "X-Session-Mode 仅支持 cookie 或 access-only");
     }
 }

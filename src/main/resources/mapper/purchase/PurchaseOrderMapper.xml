@@ -69,8 +69,18 @@
             <when test="q.auditForMe">
                 AND o.status = 'PENDING'
                 <choose>
-                    <when test="q.approvalIds != null and q.approvalIds.size() > 0">
-                        AND o.id IN <foreach collection="q.approvalIds" item="aid" open="(" separator="," close=")">#{aid}</foreach>
+                    <when test="q.approvalScope != null and q.approvalScope.userId != null">
+                        AND EXISTS (
+                            SELECT 1 FROM biz_approval_step approval
+                            WHERE approval.biz_type = 'PURCHASE_ORDER' AND approval.doc_id = o.id AND approval.status = 'CURRENT'
+                              AND (approval.user_id = #{q.approvalScope.userId}
+                                <if test="q.approvalScope.firstLevel and q.approvalScope.permission != null">
+                                    OR approval.perm = #{q.approvalScope.permission}
+                                </if>
+                                <if test="q.approvalScope.roleIds != null and q.approvalScope.roleIds.size() > 0">
+                                    OR approval.role_id IN <foreach collection="q.approvalScope.roleIds" item="roleId" open="(" separator="," close=")">#{roleId}</foreach>
+                                </if>)
+                        )
                     </when>
                     <otherwise>AND false</otherwise>
                 </choose>
@@ -110,6 +120,7 @@
                COALESCE(agg.item_count, 0) AS item_count, agg.first_sku_id, o.total_qty, o.total_amount, o.order_date,
                o.delivery_date, o.warehouse_id, w.name AS warehouse_name, COALESCE(agg.received_qty, 0) AS received_qty,
                o.buyer_id, c.short_name AS company_name, o.status, o.version, o.create_by, o.create_time
+        <if test="q.oldestFirst">, COALESCE(submitted.create_time, o.create_time) AS pending_since</if>
         FROM <choose>
             <when test="q.keyword != null and q.keyword.trim() != ''">matching_orders</when>
             <otherwise>pur_order</otherwise>
@@ -120,32 +131,49 @@
         LEFT JOIN LATERAL (SELECT COUNT(*) AS item_count, SUM(i.received_qty - i.returned_qty) AS received_qty,
                                   (array_agg(i.material_sku_id ORDER BY i.seq))[1] AS first_sku_id
                            FROM pur_order_item i WHERE i.purchase_order_id = o.id) agg ON true
+        <if test="q.oldestFirst">
+            LEFT JOIN LATERAL (SELECT dl.create_time FROM biz_doc_log dl
+                               WHERE dl.doc_type = 'PURCHASE_ORDER' AND dl.doc_id = o.id AND dl.action = 'submit'
+                               ORDER BY dl.create_time DESC, dl.id DESC LIMIT 1) submitted ON true
+        </if>
+    </sql>
+
+    <sql id="listOrder">
+        <choose>
+            <when test="q.oldestFirst">ORDER BY COALESCE(submitted.create_time, o.create_time), o.id</when>
+            <otherwise>ORDER BY o.id DESC</otherwise>
+        </choose>
     </sql>
 
     <select id="selectRowPage" resultType="com.lingmao.scm.module.purchase.dto.PurchaseRowVO">
         <include refid="listCtes"/>
         <include refid="rowColumns"/>
         <if test="q.keyword == null or q.keyword.trim() == ''"><include refid="where"/></if>
-        ORDER BY o.id DESC
+        <include refid="listOrder"/>
     </select>
 
     <select id="selectRows" resultType="com.lingmao.scm.module.purchase.dto.PurchaseRowVO">
         <include refid="listCtes"/>
         <include refid="rowColumns"/>
         <if test="q.keyword == null or q.keyword.trim() == ''"><include refid="where"/></if>
-        ORDER BY o.id DESC
+        <include refid="listOrder"/>
     </select>
 
-    <select id="selectPendingRows" resultType="com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO">
-        <include refid="keywordCtes"/>
+    <sql id="pendingColumns">
         SELECT i.id AS purchase_item_id, o.id AS purchase_order_id, o.no AS purchase_no, o.purchase_type, o.supplier_id,
                s.short_name AS supplier_name, o.buyer_id, o.warehouse_id, w.name AS warehouse_name, i.material_sku_id,
                i.purchase_unit, i.qty, i.received_qty, i.returned_qty, COALESCE(i.line_due_date, o.delivery_date) AS due_date,
                i.expect_date, i.follow_note, i.calc_item_id, o.create_by
+    </sql>
+
+    <sql id="pendingFrom">
         FROM pur_order_item i
         JOIN pur_order o ON o.id = i.purchase_order_id
         JOIN sup_supplier s ON s.id = o.supplier_id
         JOIN bas_warehouse w ON w.id = o.warehouse_id
+    </sql>
+
+    <sql id="pendingWhere">
         WHERE o.status IN ('APPROVED', 'RUNNING') AND i.received_qty - i.returned_qty &lt; i.qty
         <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.buyer_id = #{scope.userId})</if>
         <if test="q.supplierId != null">AND o.supplier_id = #{q.supplierId}</if>
@@ -158,6 +186,103 @@
             AND i.id IN (SELECT id FROM keyword_items
                          UNION SELECT ki.id FROM pur_order_item ki JOIN keyword_heads kh ON kh.id = ki.purchase_order_id)
         </if>
+    </sql>
+
+    <!-- 与 NeedDates 相同：已确认来源/在途算料单所关联订单的最早裁剪日期，缺计划时用承诺交期倒推。
+         i 是当前采购行；生产首页也复用本片段，不在 JVM 扫全库后拼巨大 IN。 -->
+    <sql id="pendingNeedJoin">
+        LEFT JOIN LATERAL (
+            SELECT MIN(COALESCE(cut.need_date, required.commit_date - CAST(#{fallbackLeadDays,jdbcType=INTEGER} AS integer))) AS need_date
+            FROM (
+                SELECT ci.calc_id FROM mrp_calc_item ci JOIN mrp_calc c ON c.id = ci.calc_id
+                WHERE ci.id = i.calc_item_id AND c.status = 'CONFIRMED'
+                UNION
+                SELECT ci.calc_id FROM mrp_calc_transit t
+                JOIN mrp_calc_item ci ON ci.id = t.calc_item_id JOIN mrp_calc c ON c.id = ci.calc_id
+                WHERE t.purchase_item_id = i.id AND c.status = 'CONFIRMED'
+            ) related
+            JOIN mrp_calc_order co ON co.calc_id = related.calc_id
+            JOIN ord_order required ON required.id = co.order_id
+            LEFT JOIN LATERAL (
+                SELECT MIN(n.plan_start) AS need_date FROM prd_order planned
+                JOIN prd_node n ON n.prd_order_id = planned.id
+                WHERE planned.order_id = required.id AND planned.status IN ('APPROVED', 'RUNNING') AND n.node_code = 'CUT'
+            ) cut ON true
+        ) nd ON true
+    </sql>
+
+    <sql id="pendingDateJoin">
+        CROSS JOIN LATERAL (SELECT COALESCE(i.expect_date, i.line_due_date, o.delivery_date) AS arrive_date) dates
+    </sql>
+
+    <sql id="pendingTab">
+        <if test="q.tab != null and q.tab != ''">
+            <choose>
+                <when test="q.tab == 'LATE'">AND dates.arrive_date &lt; CAST(#{today} AS date)</when>
+                <when test="q.tab == 'NEAR'">AND dates.arrive_date BETWEEN CAST(#{today} AS date) AND CAST(#{today} AS date) + 3</when>
+                <when test="q.tab == 'CUT'">AND dates.arrive_date &gt; nd.need_date</when>
+                <otherwise>AND false</otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <select id="selectPendingRows" resultType="com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO">
+        <include refid="keywordCtes"/>
+        <include refid="pendingColumns"/>
+        <include refid="pendingFrom"/>
+        <include refid="pendingWhere"/>
+    </select>
+
+    <select id="selectPendingPage" resultType="com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO">
+        <include refid="keywordCtes"/>
+        <include refid="pendingColumns"/>,
+               GREATEST(i.qty - i.received_qty + i.returned_qty, 0) AS pending_qty,
+               dates.arrive_date, dates.arrive_date - CAST(#{today} AS date) AS days_left,
+               CASE WHEN dates.arrive_date &lt; CAST(#{today} AS date) THEN 'LATE'
+                    WHEN dates.arrive_date &lt;= CAST(#{today} AS date) + 3 THEN 'NEAR' ELSE 'NORMAL' END AS risk,
+               nd.need_date, GREATEST(dates.arrive_date - nd.need_date, 0) AS cut_late_days
+        <include refid="pendingFrom"/>
+        <include refid="pendingNeedJoin"/>
+        <include refid="pendingDateJoin"/>
+        <include refid="pendingWhere"/>
+        <include refid="pendingTab"/>
+        ORDER BY <if test="q.tab == 'CUT'">GREATEST(dates.arrive_date - nd.need_date, 0) DESC,</if>
+                 dates.arrive_date, o.no, i.id
+    </select>
+
+    <select id="selectPendingCounts" resultType="com.lingmao.scm.module.purchase.dto.PendingArrivalCounts">
+        <include refid="keywordCtes"/>
+        SELECT COUNT(*) AS "all",
+               COUNT(*) FILTER (WHERE dates.arrive_date &lt; CAST(#{today} AS date)) AS late,
+               COUNT(*) FILTER (WHERE dates.arrive_date BETWEEN CAST(#{today} AS date) AND CAST(#{today} AS date) + 3) AS near,
+               COUNT(*) FILTER (WHERE dates.arrive_date &gt; nd.need_date) AS cut
+        <include refid="pendingFrom"/>
+        <include refid="pendingNeedJoin"/>
+        <include refid="pendingDateJoin"/>
+        <include refid="pendingWhere"/>
+    </select>
+
+    <!-- 先按当前单据权限过滤并按 SKU/采购单去重，再计算总数和每组最多 20 条预览。 -->
+    <select id="selectOpenDraftPreviews" resultType="com.lingmao.scm.module.purchase.mapper.PurchaseOrderMapper$OpenDraftPreview">
+        WITH visible_drafts AS (
+            SELECT DISTINCT i.material_sku_id AS sku_id, o.id, o.no, o.status
+            FROM pur_order_item i JOIN pur_order o ON o.id = i.purchase_order_id
+            WHERE o.purchase_type = 'STOCK' AND o.status IN ('DRAFT', 'PENDING')
+            <choose>
+                <when test="skuIds != null and skuIds.size() > 0">
+                    AND i.material_sku_id IN <foreach collection="skuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+                </when>
+                <otherwise>AND false</otherwise>
+            </choose>
+            <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.buyer_id = #{scope.userId})</if>
+        ), ranked_drafts AS (
+            SELECT sku_id, id, no, status, COUNT(*) OVER (PARTITION BY sku_id) AS total,
+                   ROW_NUMBER() OVER (PARTITION BY sku_id ORDER BY id DESC) AS position
+            FROM visible_drafts
+        )
+        SELECT sku_id, id, no, status, total FROM ranked_drafts
+        WHERE position &lt;= LEAST(GREATEST(#{limit}, 1), 20)
+        ORDER BY sku_id, id DESC
     </select>
 
     <select id="selectStockDocs" resultType="com.lingmao.scm.module.purchase.dto.PurchaseStockDocVO">

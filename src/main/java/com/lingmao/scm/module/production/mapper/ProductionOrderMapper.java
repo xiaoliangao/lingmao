@@ -34,6 +34,12 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
                                          @Param("scope") DataScope scope, @Param("today") LocalDate today,
                                          @Param("nearUntil") LocalDate nearUntil);
 
+    /** 首页跟单晚于开裁：先过滤可见生产单，每张只取最坏采购风险，再排序分页。 */
+    IPage<ProductionRowVO> selectCutRiskPage(IPage<ProductionRowVO> page, @Param("q") ProductionQuery query,
+                                            @Param("codes") List<String> codes, @Param("scope") DataScope scope,
+                                            @Param("today") LocalDate today, @Param("nearUntil") LocalDate nearUntil,
+                                            @Param("fallbackLeadDays") Integer fallbackLeadDays);
+
     /** 导出、手机"我的跟单"：不分页 */
     List<ProductionRowVO> selectRows(@Param("q") ProductionQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope,
                                      @Param("today") LocalDate today, @Param("nearUntil") LocalDate nearUntil);
@@ -63,8 +69,8 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
     CardRow selectCards(@Param("q") ProductionQuery query, @Param("scope") DataScope scope, @Param("today") LocalDate today,
                         @Param("nearUntil") LocalDate nearUntil);
 
-    record CardRow(long runningCount, long runningQty, long waitingCount, long nearCount, long lateCount, long nodeLateCount,
-                   long issueCount) {
+    record CardRow(long runningCount, long runningQty, long waitingCount, long waitingQty, long nearCount, long lateCount,
+                   long nodeLateCount, long issueCount) {
     }
 
     /** 看板"本月回货"：这段日期里登记、没作废的回货单件数，按种类、加工厂、跟单、品牌、数据范围筛 */

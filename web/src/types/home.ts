@@ -206,19 +206,26 @@ export interface UpstreamQuery {
   mine?: boolean
   /** 只看负责人是这个人的，和 mine 二选一（同 HomeTodoQuery） */
   ownerId?: string | null
+  cursor?: string
+  /** 默认 50，最多 100；变更筛选或页大小时清空游标。 */
+  size?: number
 }
 
-/** GET /api/board/upstream：按最新一条提醒的时间倒序，不分页 */
+/** GET /api/board/upstream：按最新提醒的时间和单据身份进行游标分页。 */
 export interface UpstreamList {
   /** 能不能看全部人的，和待办的 canSeeAll 同一个规则（06 §5）。true 时出"全部 / 我的"和负责人筛选 */
   canSeeAll: boolean
   rows: UpstreamRow[]
+  nextCursor: string | null
+  hasMore: boolean
+  total: number
 }
 
 /** 一行 = 一张下游单据和它还没处理的提醒 */
 export interface UpstreamRow {
   /** 下游单据；负责人（生产跟单、采购员、算料单制单人）在 ownerName */
   doc: DocRef
-  /** 没处理的提醒，新的在前。source 是引起它的变更单，content 里写了上游订单号和改了什么 */
+  /** 没处理的提醒，新的在前，最多最近 100 条。source 是引起它的变更单。 */
   notices: DocNotice[]
+  noticesTotal: number
 }

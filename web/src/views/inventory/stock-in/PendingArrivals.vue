@@ -86,7 +86,7 @@ async function loadCounts(params: Parameters<typeof pendingArrivalApi.counts>[0]
   }
 }
 
-const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
+const { query, page, size, pageSizes, list, total, loading, error: loadError, load, search } = useTable({
   fetch: ({ riskTab, ...rest }) => {
     void loadCounts(rest)
     return pendingArrivalApi.page({ ...rest, tab: riskTab || undefined })
@@ -99,6 +99,13 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
     dueDateFrom: undefined as string | undefined,
     dueDateTo: undefined as string | undefined,
   },
+})
+
+// 失败态会卸载表格；同时清掉批量条，重试后不能保留不可见的旧勾选。
+watch(loadError, (error) => {
+  if (!error) return
+  tableRef.value?.clearSelection()
+  picked.value = []
 })
 
 watch(
@@ -293,7 +300,6 @@ async function receivePicked() {
   }
 }
 
-const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCodes].join(' · ')
 </script>
 
 <template>
@@ -313,7 +319,11 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
       </FilterItem>
     </FilterBar>
 
+    <el-alert v-if="loadError" data-testid="pending-load-error" :title="loadError" type="warning" :closable="false">
+      <el-button :loading="loading" @click="load">重试</el-button>
+    </el-alert>
     <el-table
+      v-else
       ref="tableRef"
       v-loading="loading"
       :data="list"
@@ -341,10 +351,22 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
           <div class="dim small line">{{ row.materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template></div>
         </template>
       </el-table-column>
-      <el-table-column v-if="cols.show.source" label="订单 / 款" min-width="160">
+      <el-table-column v-if="cols.show.source" label="订单 / 款" min-width="200" :show-overflow-tooltip="false">
         <template #default="{ row }">
-          <span v-if="sourceText(row as PendingArrivalRow)" class="code small">{{ sourceText(row as PendingArrivalRow) }}</span>
-          <span v-else class="dim">备货</span>
+          <div v-if="row.orderNosTotal > 0" class="source-preview">
+            <span class="dim small">订单 {{ row.orderNos.length }} / 共 {{ row.orderNosTotal }}</span>
+            <el-tooltip :content="row.orderNos.join(' · ')" :show-after="200" placement="top" :popper-style="{ maxWidth: 'min(520px, calc(100vw - 32px))', whiteSpace: 'normal', overflowWrap: 'anywhere' }">
+              <span class="code small source-codes" tabindex="0">{{ row.orderNos.join(' · ') }}</span>
+            </el-tooltip>
+          </div>
+          <div v-if="row.styleCodesTotal > 0" class="source-preview">
+            <span class="dim small">款号 {{ row.styleCodes.length }} / 共 {{ row.styleCodesTotal }}</span>
+            <el-tooltip :content="row.styleCodes.join(' · ')" :show-after="200" placement="top" :popper-style="{ maxWidth: 'min(520px, calc(100vw - 32px))', whiteSpace: 'normal', overflowWrap: 'anywhere' }">
+              <span class="code small source-codes" tabindex="0">{{ row.styleCodes.join(' · ') }}</span>
+            </el-tooltip>
+          </div>
+          <div v-if="row.sourcesTotal > 0" class="dim small">来源算料单 {{ row.sourcesTotal }} 张</div>
+          <span v-if="row.orderNosTotal === 0 && row.styleCodesTotal === 0 && row.sourcesTotal === 0" class="dim">备货</span>
         </template>
       </el-table-column>
       <el-table-column v-if="cols.show.calc" label="算料单" width="140" class-name="code">
@@ -429,6 +451,7 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
     </el-popover>
 
     <el-pagination
+      v-if="!loadError"
       v-model:current-page="page"
       v-model:page-size="size"
       class="pagination"
@@ -437,7 +460,7 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
       :total="total"
     />
 
-    <BatchBar :rows="picked" :table="tableRef" unit="行">
+    <BatchBar v-if="!loadError" :rows="picked" :table="tableRef" unit="行">
       <el-button v-perm="'inventory:doc:add'" type="primary" size="small" :loading="receiving" @click="receivePicked">入库</el-button>
     </BatchBar>
 
@@ -456,6 +479,10 @@ const sourceText = (row: PendingArrivalRow) => [...row.orderNos, ...row.styleCod
 .small {
   font-size: 11.5px;
 }
+
+.source-preview { display: flex; align-items: baseline; gap: 6px; }
+.source-preview > .dim { flex-shrink: 0; }
+.source-codes { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 物料名太长：末尾省略号，鼠标移上去看全文（表格的"看全文"按文字的实际宽度判断，省略号不挡它） */
 .line {

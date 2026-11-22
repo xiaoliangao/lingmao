@@ -31,4 +31,8 @@ public class PurchaseQuery extends PageQuery {
     @JsonIgnore
     private List<Long> approvalIds = List.of();
     private List<Long> ids;
+    /** 首页审核待办：在 SQL 分页前按提交时间、ID 排序。 */
+    private boolean oldestFirst;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private com.lingmao.scm.module.biz.dto.ApprovalScope approvalScope;
 }

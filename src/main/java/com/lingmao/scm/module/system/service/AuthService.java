@@ -12,6 +12,8 @@ public interface AuthService {
      * 同一个用户名连续输错 5 次锁 15 分钟，锁住期间密码对了也不让进
      */
     AuthTokens login(LoginReq req);
+    /** 无 Web Locks 的浏览器仅建立访问会话，不创建刷新 family。 */
+    AuthTokens login(LoginReq req, boolean withRefresh);
     AuthTokens refresh(String refreshToken, String browserToken);
     void revokeRefresh(String refreshToken, String browserToken);
 

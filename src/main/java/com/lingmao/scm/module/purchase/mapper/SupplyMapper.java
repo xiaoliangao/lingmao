@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.purchase.mapper;
 
+import com.lingmao.scm.module.purchase.dto.ReorderRowVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -51,4 +52,10 @@ public interface SupplyMapper {
 
     /** 设了最小库存（> 0）、物料和 SKU 都启用的 SKU：补货提醒只看它们 */
     List<Long> selectSafetySkus();
+
+    /** 首页只读补货数量；与 SupplyBook 的逐采购行换算、已到分配和逐算料单占用截零一致。 */
+    long countReorderItems();
+
+    /** 同一 Decimal 补货口径，先排序和分页再返回 JVM；不加载全库 SupplyBook。 */
+    List<ReorderRowVO> selectReorderPage(@Param("limit") int limit, @Param("offset") long offset);
 }

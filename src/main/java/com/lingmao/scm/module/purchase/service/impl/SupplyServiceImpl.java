@@ -2,24 +2,25 @@ package com.lingmao.scm.module.purchase.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.num.Num;
+import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.basic.dto.MaterialPurchaseInfo;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.purchase.dto.ReorderRowVO;
+import com.lingmao.scm.module.purchase.dto.ReorderQuery;
 import com.lingmao.scm.module.purchase.dto.SkuSupplyVO;
 import com.lingmao.scm.module.purchase.mapper.PurchaseOrderMapper;
 import com.lingmao.scm.module.purchase.mapper.SupplyMapper;
 import com.lingmao.scm.module.purchase.service.SupplyService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
+import com.lingmao.scm.security.DataScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,49 +48,42 @@ public class SupplyServiceImpl implements SupplyService {
     private final SupplierService supplierService;
 
     @Override
-    public List<ReorderRowVO> reorderItems() {
-        List<Long> skuIds = supplyMapper.selectSafetySkus();
-        if (skuIds.isEmpty()) {
-            return List.of();
+    public long reorderCount() { return supplyMapper.countReorderItems(); }
+
+    @Override
+    public PageResult<ReorderRowVO> reorderItems(ReorderQuery query) {
+        if (query.getPage() < 1 || query.getSize() < 1 || query.getSize() > 100) {
+            throw new BizException(400, "补货清单页码从 1 开始，每页 1 到 100 行");
         }
-        SupplyBook book = supplyLoader.load(skuIds, List.of());
-        Map<Long, MaterialPurchaseInfo> infos = materialService.purchaseInfos(skuIds);
-        List<ReorderRowVO> rows = new ArrayList<>();
-        for (Long skuId : skuIds) {
-            MaterialPurchaseInfo info = infos.get(skuId);
-            if (info == null || info.safetyStock() == null) {
-                continue;
-            }
-            Gap g = gap(book, skuId, info.safetyStock());
-            if (g.gap().signum() <= 0) {
-                continue;
-            }
-            ReorderRowVO r = new ReorderRowVO();
-            r.setMaterialSkuId(skuId);
-            r.setDefaultSupplierId(info.defaultSupplierId());
-            r.setStockQty(g.stock());
-            r.setTransitQty(g.transit());
-            r.setHeldQty(g.held());
-            r.setSafetyStock(Num.qty(info.safetyStock()));
-            r.setGapQty(g.gap());
-            r.setPurchaseUnit(info.purchaseUnit());
-            r.setConversionFactor(info.conversionFactor());
-            r.setSuggestQty(Num.suggestPurchase(g.gap(), info.conversionFactor(), info.minPackQty(), info.moq()));
-            rows.add(r);
+        long offset;
+        try {
+            offset = Math.multiplyExact(query.getPage() - 1, query.getSize());
+        } catch (ArithmeticException overflow) {
+            throw new BizException(400, "补货清单页码过大");
         }
-        if (rows.isEmpty()) {
-            return rows;
+        long total = supplyMapper.countReorderItems();
+        if (offset >= total) return new PageResult<>(List.of(), total);
+        // 数量与短缺排序在数据库中完成；JVM 只装这一页，绝不先装全量 SupplyBook 再截页。
+        List<ReorderRowVO> rows = supplyMapper.selectReorderPage((int) query.getSize(), offset);
+        Set<Long> ids = rows.stream().map(ReorderRowVO::getMaterialSkuId).collect(Collectors.toSet());
+        if (ids.isEmpty()) return new PageResult<>(List.of(), total);
+        Map<Long, MaterialPurchaseInfo> infos = materialService.purchaseInfos(ids);
+        for (ReorderRowVO row : rows) {
+            MaterialPurchaseInfo info = infos.get(row.getMaterialSkuId());
+            if (info == null) throw new BizException(409, "物料资料已变化，请刷新补货清单");
+            row.setDefaultSupplierId(info.defaultSupplierId());
+            row.setPurchaseUnit(info.purchaseUnit());
+            row.setConversionFactor(info.conversionFactor());
+            row.setSuggestQty(Num.suggestPurchase(row.getGapQty(), info.conversionFactor(), info.minPackQty(), info.moq()));
         }
-        Set<Long> ids = rows.stream().map(ReorderRowVO::getMaterialSkuId).collect(Collectors.toCollection(LinkedHashSet::new));
         Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(ids);
         Map<Long, SupplierRef> suppliers = supplierService.refs(rows.stream().map(ReorderRowVO::getDefaultSupplierId)
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         Function<MrpCalculator.PriceKey, BigDecimal> prices = engine.prices(rows.stream().filter(r -> r.getDefaultSupplierId() != null)
                 .map(r -> new MrpCalculator.PriceKey(r.getDefaultSupplierId(), infos.get(r.getMaterialSkuId()).materialId(), r.getMaterialSkuId()))
                 .toList());
-        Map<Long, List<ReorderRowVO.OpenDraft>> drafts = poMapper.selectOpenDrafts(ids).stream().collect(Collectors.groupingBy(
-                PurchaseOrderMapper.OpenDraft::skuId,
-                Collectors.mapping(d -> new ReorderRowVO.OpenDraft(d.id(), d.no(), d.status()), Collectors.toList())));
+        Map<Long, List<PurchaseOrderMapper.OpenDraftPreview>> drafts = poMapper.selectOpenDraftPreviews(ids, DataScope.current(false), 20)
+                .stream().collect(Collectors.groupingBy(PurchaseOrderMapper.OpenDraftPreview::skuId));
         for (ReorderRowVO r : rows) {
             long skuId = r.getMaterialSkuId();
             MaterialPurchaseInfo info = infos.get(skuId);
@@ -100,11 +94,11 @@ public class SupplyServiceImpl implements SupplyService {
             r.setDefaultSupplierStatus(s == null ? null : s.status().name());
             BigDecimal archived = s == null ? null : prices.apply(new MrpCalculator.PriceKey(s.id(), info.materialId(), skuId));
             r.setPrice(Num.price(archived != null ? archived : info.price()));
-            r.setOpenDrafts(drafts.getOrDefault(skuId, List.of()));
+            List<PurchaseOrderMapper.OpenDraftPreview> preview = drafts.getOrDefault(skuId, List.of());
+            r.setOpenDraftsTotal(preview.isEmpty() ? 0 : preview.getFirst().total());
+            r.setOpenDrafts(preview.stream().map(d -> new ReorderRowVO.OpenDraft(d.id(), d.no(), d.status())).toList());
         }
-        rows.sort(Comparator.comparing(ReorderRowVO::getGapQty).reversed().thenComparing(ReorderRowVO::getSkuCode,
-                Comparator.nullsLast(Comparator.naturalOrder())));
-        return rows;
+        return new PageResult<>(rows, total);
     }
 
     /** 一个 SKU 的库存、在途、已被占用、差多少（库存单位） */

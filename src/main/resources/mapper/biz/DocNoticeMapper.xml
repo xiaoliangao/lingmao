@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.biz.mapper.DocNoticeMapper">
+
+    <!-- owner_id 是写提醒时的快照；当前权限和负责人必须由现存下游单据决定。 -->
+    <sql id="visibleDocs">
+        SELECT 'PRODUCTION_ORDER'::text AS doc_type, p.id AS doc_id
+        FROM prd_order p
+        WHERE true
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="ownerId != null">AND p.merch_id = #{ownerId}</if>
+        UNION ALL
+        SELECT 'PURCHASE_ORDER'::text AS doc_type, p.id AS doc_id
+        FROM pur_order p
+        WHERE true
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.buyer_id = #{scope.userId})</if>
+        <if test="ownerId != null">AND p.buyer_id = #{ownerId}</if>
+        UNION ALL
+        SELECT 'MRP_CALC'::text AS doc_type, p.id AS doc_id
+        FROM mrp_calc p
+        WHERE true
+        <if test="scope.self">AND p.create_by = #{scope.userId}</if>
+        <if test="ownerId != null">AND p.create_by = #{ownerId}</if>
+    </sql>
+
+    <sql id="pendingGroups">
+        SELECT n.doc_type, n.doc_id, MAX(n.create_time) AS latest, COUNT(*) AS notices_total
+        FROM biz_doc_notice n
+        JOIN (<include refid="visibleDocs"/>) visible
+          ON visible.doc_type = n.doc_type AND visible.doc_id = n.doc_id
+        WHERE n.handled_time IS NULL
+        <choose>
+            <when test="types != null and types.size() > 0">
+                AND n.doc_type IN <foreach collection="types" item="type" open="(" separator="," close=")">#{type}</foreach>
+            </when>
+            <otherwise>AND false</otherwise>
+        </choose>
+        GROUP BY n.doc_type, n.doc_id
+    </sql>
+
+    <select id="selectPendingGroups" resultType="com.lingmao.scm.module.biz.mapper.DocNoticeMapper$PendingGroup">
+        SELECT g.doc_type, g.doc_id, g.latest, g.notices_total
+        FROM (<include refid="pendingGroups"/>) g
+        <if test="cursorTime != null and cursorType != null and cursorId != null">
+            WHERE (g.latest, g.doc_type, g.doc_id)
+            <choose><when test="oldest">&gt;</when><otherwise>&lt;</otherwise></choose>
+            (#{cursorTime}, CAST(#{cursorType} AS text), #{cursorId})
+        </if>
+        <choose>
+            <when test="oldest">ORDER BY g.latest, g.doc_type, g.doc_id</when>
+            <otherwise>ORDER BY g.latest DESC, g.doc_type DESC, g.doc_id DESC</otherwise>
+        </choose>
+        LIMIT LEAST(GREATEST(#{limit}, 1), 101)
+    </select>
+
+    <select id="countPendingGroups" resultType="long">
+        SELECT COUNT(*) FROM (<include refid="pendingGroups"/>) g
+    </select>
+
+    <select id="selectPendingPreviews" resultType="com.lingmao.scm.module.biz.entity.DocNotice">
+        <choose>
+            <when test="groups != null and groups.size() > 0">
+                SELECT n.*
+                FROM (VALUES <foreach collection="groups" item="g" separator=",">
+                    (CAST(#{g.docType} AS text), CAST(#{g.docId} AS bigint))
+                </foreach>) g(doc_type, doc_id)
+                JOIN (<include refid="visibleDocs"/>) visible
+                  ON visible.doc_type = g.doc_type AND visible.doc_id = g.doc_id
+                JOIN LATERAL (
+                    SELECT dn.* FROM biz_doc_notice dn
+                    WHERE dn.doc_type = g.doc_type AND dn.doc_id = g.doc_id AND dn.handled_time IS NULL
+                    ORDER BY dn.create_time DESC, dn.id DESC
+                    LIMIT LEAST(GREATEST(#{limit}, 1), 100)
+                ) n ON true
+                ORDER BY n.doc_type, n.doc_id, n.create_time DESC, n.id DESC
+            </when>
+            <otherwise>SELECT * FROM biz_doc_notice WHERE false</otherwise>
+        </choose>
+    </select>
+</mapper>

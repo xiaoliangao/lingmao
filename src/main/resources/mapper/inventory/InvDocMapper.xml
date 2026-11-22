@@ -73,6 +73,9 @@
                                   COUNT(*) AS item_count, SUM(i.qty) AS total_qty, SUM(i.amount) AS total_amount
                            FROM inv_doc_item i WHERE i.doc_id = d.id) agg ON true
         <include refid="where"/>
-        ORDER BY d.id DESC
+        <choose>
+            <when test="q.oldestFirst">ORDER BY d.create_time, d.id</when>
+            <otherwise>ORDER BY d.id DESC</otherwise>
+        </choose>
     </select>
 </mapper>

@@ -36,4 +36,7 @@ public class SupplierRowVO {
     private LocalDate certEarliestUntil;
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX", timezone = "Asia/Shanghai")
     private OffsetDateTime updateTime;
+    /** 实际提交时间；仅供首页跨域排序，不返回客户端。 */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private java.time.OffsetDateTime pendingSince;
 }

@@ -551,8 +551,14 @@ export interface PendingArrivalRow extends MaterialSkuBrief {
   needDate: string | null
   /** 晚于开裁：arriveDate 比要料日期晚几天；赶得上、没有要料日期是 0 */
   cutLateDays: number
+  /** 去重排序后的前 20 个订单号；完整数量见 orderNosTotal。 */
   orderNos: string[]
+  orderNosTotal: number
+  /** 去重排序后的前 20 个款号；完整数量见 styleCodesTotal。 */
   styleCodes: string[]
+  styleCodesTotal: number
+  /** 关联算料单去重总数，与订单号和款号数量分别统计。 */
+  sourcesTotal: number
   calcNo: string | null
   /** receive 入库（要 inventory:doc:add），follow 改预计到货、跟进备注（要 purchase:order:edit） */
   actions: ('receive' | 'follow')[]
@@ -640,8 +646,9 @@ export interface ReorderRow extends MaterialSkuBrief {
   suggestQty: number
   /** 默认供应商的默认单价（元 / 采购单位）；换了供应商用 purchaseApi.defaults 重取 */
   price?: number | null
-  /** 已经开了、还没审核的备货采购单里有这个 SKU 的（防重复生成；有的话这一行默认不勾） */
+  /** 当前用户可见的最新 20 张备货草稿/待审单；有未审核单据的行默认不勾。 */
   openDrafts: { id: string; no: string; status: PurchaseStatus }[]
+  openDraftsTotal: number
 }
 
 /** 勾选的一行：生成备货采购单 */

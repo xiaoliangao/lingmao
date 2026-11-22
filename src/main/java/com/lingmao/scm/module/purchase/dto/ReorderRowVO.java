@@ -23,6 +23,8 @@ public class ReorderRowVO extends MaterialSkuBrief {
     private BigDecimal conversionFactor;
     private BigDecimal suggestQty;
     private BigDecimal price;
+    /** 当前用户可见的完整备货单数，openDrafts 只包含最新 20 张。 */
+    private long openDraftsTotal;
     private List<OpenDraft> openDrafts;
 
     /** 已经开了、还没审核的备货采购单 */

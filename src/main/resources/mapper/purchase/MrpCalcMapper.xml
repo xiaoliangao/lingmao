@@ -23,6 +23,9 @@
             AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
         </if>
         <if test="q.createBy != null">AND c.create_by = #{q.createBy}</if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND c.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
         <if test="q.createDateFrom != null">AND c.create_time &gt;= (CAST(#{q.createDateFrom} AS date)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
         <if test="q.createDateTo != null">AND c.create_time &lt; ((CAST(#{q.createDateTo} AS date) + 1)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
         <if test="q.keyword != null and q.keyword.trim() != ''">
@@ -58,23 +61,42 @@
     </select>
 
     <!-- 配料按 BOM 行的配料方式对：固定的颜色、尺码都空；随款色的对颜色；随尺码的对尺码；都随的两个都对 -->
-    <select id="selectDemand" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$DemandRow">
-        SELECT oi.order_id, o.no AS order_no, s.code AS style_code, k.code AS style_sku_code, oi.tech_pack_id, b.seq AS bom_seq,
+    <sql id="demandColumns">
+        SELECT oi.order_id, o.no AS order_no, s.code AS style_code, k.code AS style_sku_code, b.tech_pack_id, b.seq AS bom_seq,
                b.source, b.supplier_id, b.material_id, m.code AS material_code, bs.material_sku_id AS sku_id, oi.qty,
                CASE WHEN b.usage_mode = 'BY_SIZE' THEN bz.usage_qty ELSE b.usage_qty END AS usage, b.loss_pct
         FROM ord_order_item oi
         JOIN ord_order o ON o.id = oi.order_id
         JOIN sty_style s ON s.id = oi.style_id
         JOIN sty_style_sku k ON k.id = oi.style_sku_id
-        LEFT JOIN tp_bom_item b ON b.tech_pack_id = oi.tech_pack_id
+    </sql>
+
+    <sql id="demandBomJoins">
         LEFT JOIN bas_material m ON m.id = b.material_id
         LEFT JOIN tp_bom_item_sku bs ON bs.bom_item_id = b.id
              AND bs.color_id IS NOT DISTINCT FROM (CASE WHEN b.sku_mode IN ('BY_COLOR', 'BY_COLOR_SIZE') THEN k.color_id END)
              AND bs.size_code IS NOT DISTINCT FROM (CASE WHEN b.sku_mode IN ('BY_SIZE', 'BY_COLOR_SIZE') THEN k.size_code END)
         LEFT JOIN tp_bom_item_size bz ON bz.bom_item_id = b.id AND bz.size_code = k.size_code
+    </sql>
+
+    <select id="selectDemand" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$DemandRow">
+        <include refid="demandColumns"/>
+        LEFT JOIN tp_bom_item b ON b.tech_pack_id = oi.tech_pack_id
+        <include refid="demandBomJoins"/>
         WHERE oi.qty &gt; 0
           AND oi.order_id IN <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY oi.order_id, oi.seq, b.seq
+    </select>
+
+    <!-- 审核粗算按服务端核实的当前生产 BOM；正式算料仍取订单已锁定的版本。 -->
+    <select id="selectReviewDemand" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$DemandRow">
+        <include refid="demandColumns"/>
+        JOIN (VALUES <foreach collection="packs" item="p" separator=",">(#{p.styleId}::bigint, #{p.packId}::bigint)</foreach>)
+             AS pk(style_id, pack_id) ON pk.style_id = oi.style_id
+        LEFT JOIN tp_bom_item b ON b.tech_pack_id = pk.pack_id
+        <include refid="demandBomJoins"/>
+        WHERE oi.qty &gt; 0 AND oi.order_id = #{orderId}
+        ORDER BY oi.seq, b.seq
     </select>
 
     <select id="selectOrderOptions" resultType="com.lingmao.scm.module.purchase.dto.MrpOrderOptionVO">

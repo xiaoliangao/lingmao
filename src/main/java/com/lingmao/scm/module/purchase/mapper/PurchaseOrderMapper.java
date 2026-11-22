@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalQuery;
 import com.lingmao.scm.module.purchase.dto.PendingArrivalRowVO;
+import com.lingmao.scm.module.purchase.dto.PendingArrivalCounts;
 import com.lingmao.scm.module.purchase.dto.PlanStyleVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseQuery;
 import com.lingmao.scm.module.purchase.dto.PurchaseRowVO;
@@ -19,6 +20,7 @@ import org.apache.ibatis.annotations.Update;
 
 import java.util.Collection;
 import java.util.List;
+import java.time.LocalDate;
 
 /** 采购单（XML 在 mapper/purchase/PurchaseOrderMapper.xml）。供应商、仓库、主体、物料、入库单只读 JOIN（架构 §3.2 规则 4） */
 @Mapper
@@ -47,9 +49,19 @@ public interface PurchaseOrderMapper extends BaseMapper<PurchaseOrder> {
     /** 导出：和列表一样的条件，不分页（PurchaseQuery.ids 有值时只导这几张） */
     List<PurchaseRowVO> selectRows(@Param("q") PurchaseQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope);
 
-    /** 待到料：已审核、部分到货的采购单里没入齐的行，全部取（要料日期、页签在 Service 里算完再分页） */
+    /** 原始待到料投影，供受控批量处理与索引验证；HTTP 列表必须使用 selectPendingPage。 */
     List<PendingArrivalRowVO> selectPendingRows(@Param("q") PendingArrivalQuery query, @Param("codes") List<String> codes,
                                                 @Param("scope") DataScope scope);
+
+    /** 待到料的权限、页签和排序先在数据库执行，再返回当前页；日期由业务 Clock 决定。 */
+    IPage<PendingArrivalRowVO> selectPendingPage(IPage<PendingArrivalRowVO> page, @Param("q") PendingArrivalQuery query,
+                                                @Param("codes") List<String> codes, @Param("scope") DataScope scope,
+                                                @Param("today") LocalDate today, @Param("fallbackLeadDays") Integer fallbackLeadDays);
+
+    /** 页签数量与分页查询解耦，范围一致但不使用 q.tab。 */
+    PendingArrivalCounts selectPendingCounts(@Param("q") PendingArrivalQuery query, @Param("codes") List<String> codes,
+                                              @Param("scope") DataScope scope, @Param("today") LocalDate today,
+                                              @Param("fallbackLeadDays") Integer fallbackLeadDays);
 
     @Select("SELECT p.style_id, s.code AS style_code, s.name AS style_name FROM pur_order_style p JOIN sty_style s ON s.id = p.style_id "
             + "WHERE p.purchase_order_id = #{id} ORDER BY s.code")
@@ -70,15 +82,12 @@ public interface PurchaseOrderMapper extends BaseMapper<PurchaseOrder> {
             + "AND status IN ('DRAFT', 'PENDING') ORDER BY id")
     List<String> selectOpenInDocs(@Param("id") long id);
 
-    /** 补货提醒的"已开的备货单"：草稿、待审核的备货采购单里有这些 SKU 的 */
-    record OpenDraft(Long skuId, Long id, String no, String status) {
+    /** 补货提醒：每个 SKU 的最新可见备货单预览及完整可见单数。 */
+    record OpenDraftPreview(Long skuId, Long id, String no, String status, long total) {
     }
 
-    @Select("<script>SELECT DISTINCT i.material_sku_id AS sku_id, o.id, o.no, o.status FROM pur_order_item i "
-            + "JOIN pur_order o ON o.id = i.purchase_order_id WHERE o.purchase_type = 'STOCK' AND o.status IN ('DRAFT', 'PENDING') "
-            + "AND i.material_sku_id IN <foreach collection='skuIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
-            + "ORDER BY o.id</script>")
-    List<OpenDraft> selectOpenDrafts(@Param("skuIds") Collection<Long> skuIds);
+    List<OpenDraftPreview> selectOpenDraftPreviews(@Param("skuIds") Collection<Long> skuIds,
+                                                 @Param("scope") DataScope scope, @Param("limit") int limit);
 
     /** 算料单生成的采购单（行指着它的算料行；没作废的）：算料单的"下游单据" */
     @Select("SELECT * FROM pur_order o WHERE o.status <> 'VOIDED' AND EXISTS (SELECT 1 FROM pur_order_item i "

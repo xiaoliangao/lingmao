@@ -30,6 +30,7 @@ import com.lingmao.scm.module.purchase.dto.PurchaseItemReq;
 import com.lingmao.scm.module.purchase.dto.PurchaseQuery;
 import com.lingmao.scm.module.purchase.dto.PurchaseSaveReq;
 import com.lingmao.scm.module.purchase.dto.ReorderPickItem;
+import com.lingmao.scm.module.purchase.dto.ReorderQuery;
 import com.lingmao.scm.module.purchase.dto.ReorderRowVO;
 import com.lingmao.scm.module.purchase.dto.SkuSupplyVO;
 import com.lingmao.scm.module.purchase.entity.PurchaseType;
@@ -51,6 +52,7 @@ import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.Executors;
 import java.util.concurrent.CountDownLatch;
@@ -544,7 +546,7 @@ class PurchaseIT {
 
         purchaseOrderService.act(po, "submit", new DocActionReq(0, null));
         purchaseOrderService.act(po, "audit", new DocActionReq(1, null));
-        assertThat(supplyService.reorderItems()).noneMatch(x -> x.getMaterialSkuId().equals(f.sku));
+        assertThat(findReorderRow(f)).isEmpty();
         assertThat(supplyService.materialSupply(List.of(f.sku))).singleElement().satisfies((SkuSupplyVO s) -> {
             assertThat(s.transits()).singleElement().satisfies(t -> assertThat(t.qty()).isEqualByComparingTo("180"));
             assertThat(s.belowSafety()).isFalse();
@@ -736,6 +738,20 @@ class PurchaseIT {
     }
 
     private ReorderRowVO reorderRow(Fixture f) {
-        return supplyService.reorderItems().stream().filter(x -> x.getMaterialSkuId().equals(f.sku)).findFirst().orElseThrow();
+        return findReorderRow(f).orElseThrow();
+    }
+
+    /** 真正走分页，不通过测试专用的全量读取旁路寻找夹具。 */
+    private Optional<ReorderRowVO> findReorderRow(Fixture f) {
+        ReorderQuery query = new ReorderQuery();
+        query.setSize(100);
+        for (int pageNo = 1; pageNo <= 1000; pageNo++) {
+            query.setPage(pageNo);
+            var page = supplyService.reorderItems(query);
+            var found = page.getList().stream().filter(x -> x.getMaterialSkuId().equals(f.sku)).findFirst();
+            if (found.isPresent() || (long) pageNo * query.getSize() >= page.getTotal()) return found;
+            assertThat(page.getList()).as("尚有后续页时当前页应完整").hasSize(Math.toIntExact(query.getSize()));
+        }
+        throw new AssertionError("合成补货夹具分页超过测试上限");
     }
 }

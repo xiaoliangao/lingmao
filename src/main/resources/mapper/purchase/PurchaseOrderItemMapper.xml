@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.purchase.mapper.PurchaseOrderItemMapper">
+
+    <!-- lineIds 只来自已授权的当前采购页；来源、去重和完整计数留在数据库，JVM 只接有界预览。 -->
+    <select id="selectPendingSourcePreviews" resultType="com.lingmao.scm.module.purchase.mapper.PurchaseOrderItemMapper$PendingSourcePreview">
+        WITH selected_lines AS (
+            SELECT id, calc_item_id FROM pur_order_item
+            WHERE <choose>
+                <when test="lineIds != null and lineIds.size() > 0">
+                    id IN <foreach collection="lineIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+                </when>
+                <otherwise>false</otherwise>
+            </choose>
+        ), source_items AS (
+            -- 自身来源不受算料状态限制；在途使用者只认已确认的算料单。
+            -- UNION 对同一采购行/算料行去重，防自身来源也使用了该采购行时重复。
+            SELECT l.id AS line_id, ci.id AS calc_item_id, ci.calc_id, ci.order_nos, ci.style_codes
+            FROM selected_lines l JOIN mrp_calc_item ci ON ci.id = l.calc_item_id
+            UNION
+            SELECT l.id AS line_id, ci.id AS calc_item_id, ci.calc_id, ci.order_nos, ci.style_codes
+            FROM selected_lines l JOIN mrp_calc_transit t ON t.purchase_item_id = l.id
+            JOIN mrp_calc_item ci ON ci.id = t.calc_item_id
+            JOIN mrp_calc c ON c.id = ci.calc_id AND c.status = 'CONFIRMED'
+        ), source_totals AS (
+            SELECT line_id, COUNT(DISTINCT calc_id) AS sources_total, MIN(calc_id) AS first_calc_id
+            FROM source_items GROUP BY line_id
+        ), source_tokens AS (
+            SELECT DISTINCT s.line_id, 'ORDER'::text AS kind, btrim(token.value, E' \t\r\n') AS code
+            FROM source_items s CROSS JOIN LATERAL unnest(string_to_array(s.order_nos, ',')) token(value)
+            WHERE btrim(token.value, E' \t\r\n') &lt;&gt; ''
+            UNION ALL
+            SELECT DISTINCT s.line_id, 'STYLE'::text AS kind, btrim(token.value, E' \t\r\n') AS code
+            FROM source_items s CROSS JOIN LATERAL unnest(string_to_array(s.style_codes, ',')) token(value)
+            WHERE btrim(token.value, E' \t\r\n') &lt;&gt; ''
+        ), ranked_tokens AS (
+            SELECT line_id, kind, code, COUNT(*) OVER (PARTITION BY line_id, kind) AS total,
+                   ROW_NUMBER() OVER (PARTITION BY line_id, kind ORDER BY code) AS position
+            FROM source_tokens
+        ), limited_tokens AS (
+            SELECT line_id, kind, code, total FROM ranked_tokens
+            WHERE position &lt;= LEAST(GREATEST(#{limit}, 1), 20)
+        ), previews AS (
+            -- 只有每类最多 20 个去重编号进入 string_agg，不聚合完整来源文本。
+            SELECT line_id,
+                   string_agg(code, ',' ORDER BY code) FILTER (WHERE kind = 'ORDER') AS order_nos,
+                   MAX(total) FILTER (WHERE kind = 'ORDER') AS order_nos_total,
+                   string_agg(code, ',' ORDER BY code) FILTER (WHERE kind = 'STYLE') AS style_codes,
+                   MAX(total) FILTER (WHERE kind = 'STYLE') AS style_codes_total
+            FROM limited_tokens GROUP BY line_id
+        )
+        SELECT l.id AS line_id, COALESCE(owner_calc.no, first_calc.no) AS calc_no,
+               COALESCE(t.sources_total, 0) AS sources_total, p.order_nos,
+               COALESCE(p.order_nos_total, 0) AS order_nos_total, p.style_codes,
+               COALESCE(p.style_codes_total, 0) AS style_codes_total
+        FROM selected_lines l
+        LEFT JOIN mrp_calc_item owner_item ON owner_item.id = l.calc_item_id
+        LEFT JOIN mrp_calc owner_calc ON owner_calc.id = owner_item.calc_id
+        LEFT JOIN source_totals t ON t.line_id = l.id
+        LEFT JOIN mrp_calc first_calc ON first_calc.id = t.first_calc_id
+        LEFT JOIN previews p ON p.line_id = l.id
+        ORDER BY l.id
+    </select>
+</mapper>

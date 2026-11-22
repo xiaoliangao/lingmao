@@ -1,8 +1,11 @@
 package com.lingmao.scm.module.production.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.config.TradeFeature;
 import com.lingmao.scm.module.biz.dto.AttachmentVO;
@@ -14,6 +17,7 @@ import com.lingmao.scm.module.order.entity.ResponsibleParty;
 import com.lingmao.scm.module.production.dto.IssueCloseReq;
 import com.lingmao.scm.module.production.dto.IssueCreated;
 import com.lingmao.scm.module.production.dto.IssueReq;
+import com.lingmao.scm.module.production.dto.OpenIssueVO;
 import com.lingmao.scm.module.production.dto.ProductionIssueVO;
 import com.lingmao.scm.module.production.entity.IssueStatus;
 import com.lingmao.scm.module.production.entity.ProductionIssue;
@@ -24,6 +28,7 @@ import com.lingmao.scm.module.production.service.ProductionIssueService;
 import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 生产异常（docs/api/05 §3.5）。上报只在已下单、生产中；开始处理、关闭不管生产单什么状态都能做。
@@ -57,6 +63,22 @@ public class ProductionIssueServiceImpl implements ProductionIssueService {
     private final SerialNoGenerator serialNoGenerator;
     private final TradeFeature tradeFeature;
     private final Clock clock;
+
+    @Override
+    public PageResult<OpenIssueVO> openIssues(Long merchId, PageQuery page) {
+        IPage<OpenIssueVO> result = issueMapper.selectOpenPage(page.toPage(), merchId, DataScope.current(false));
+        List<OpenIssueVO> rows = result.getRecords();
+        if (!rows.isEmpty()) {
+            Map<String, String> types = dictDataService.labels("issue_type");
+            Map<Long, String> names = userService.nicknames(rows.stream().map(OpenIssueVO::getCreateBy)
+                    .filter(Objects::nonNull).collect(Collectors.toSet()));
+            rows.forEach(r -> {
+                r.setIssueTypeName(types.getOrDefault(r.getIssueType(), r.getIssueType()));
+                r.setCreateByName(names.get(r.getCreateBy()));
+            });
+        }
+        return PageResult.of(result);
+    }
 
     @Override
     public List<ProductionIssueVO> list(long prdOrderId) {

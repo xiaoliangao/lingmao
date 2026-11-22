@@ -409,7 +409,18 @@ public class TechPackServiceImpl implements TechPackService {
     }
 
     private void checkRequirements(Collection<PackRequirement> requirements, boolean strict) {
-        if (requirements.isEmpty()) return;
+        List<String> problems = requirementProblems(requirements, strict).values().stream().flatMap(List::stream).toList();
+        if (!problems.isEmpty()) throw new BizException(ErrorCodes.BIZ_ERROR,
+                "生产 BOM 有 " + problems.size() + " 处需要处理", problems);
+    }
+
+    @Override
+    public Map<PackRequirement, List<String>> requirementProblems(Collection<PackRequirement> requirements) {
+        return requirementProblems(requirements, true);
+    }
+
+    private Map<PackRequirement, List<String>> requirementProblems(Collection<PackRequirement> requirements, boolean strict) {
+        if (requirements.isEmpty()) return Map.of();
         List<PackRequirement> requested = requirements.stream().distinct().toList();
         List<Long> packIds = requested.stream().map(PackRequirement::packId).filter(Objects::nonNull).distinct().toList();
         Map<Long, TechPack> packs = packIds.isEmpty() ? Map.of() : techPackMapper.selectByIds(packIds).stream()
@@ -419,20 +430,20 @@ public class TechPackServiceImpl implements TechPackService {
         List<BomRow> allRows = bom.values().stream().flatMap(List::stream).toList();
         Map<Long, MaterialRef> materials = materials(allRows);
         Map<Long, MaterialSkuRef> skus = skus(allRows);
-        List<String> problems = new ArrayList<>();
+        Map<PackRequirement, List<String>> problems = new LinkedHashMap<>();
         for (PackRequirement requirement : requested) {
             TechPack pack = requirement.packId() == null ? null : packs.get(requirement.packId());
             StyleOrderInfo style = pack == null ? null : styles.get(pack.getStyleId());
             StyleOrderInfo.Sku sku = style == null ? null : style.skus().stream()
                     .filter(s -> Objects.equals(s.id(), requirement.styleSkuId())).findFirst().orElse(null);
             if (pack == null || style == null || sku == null) {
-                problems.add("有一行的款式 SKU 或锁定的生产 BOM 不存在了，请刷新后再试");
+                problems.put(requirement, List.of("有一行的款式 SKU 或锁定的生产 BOM 不存在了，请刷新后再试"));
                 continue;
             }
-            problems.addAll(RequirementChecks.check(pack, style, sku, bom.getOrDefault(pack.getId(), List.of()), materials, skus, strict));
+            List<String> checks = RequirementChecks.check(pack, style, sku, bom.getOrDefault(pack.getId(), List.of()), materials, skus, strict);
+            if (!checks.isEmpty()) problems.put(requirement, checks);
         }
-        if (!problems.isEmpty()) throw new BizException(ErrorCodes.BIZ_ERROR,
-                "生产 BOM 有 " + problems.size() + " 处需要处理", problems);
+        return problems;
     }
 
     @Override
@@ -763,5 +774,9 @@ public class TechPackServiceImpl implements TechPackService {
             throw new BizException(404, NOT_FOUND);
         }
         return pack;
+    }
+    @Override
+    public com.lingmao.scm.common.page.PageResult<com.lingmao.scm.module.techpack.dto.PackDraftVO> drafts(com.lingmao.scm.common.page.PageQuery page) {
+        return com.lingmao.scm.common.page.PageResult.of(techPackMapper.selectDraftPage(page.toPage()));
     }
 }

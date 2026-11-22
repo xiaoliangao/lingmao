@@ -988,11 +988,20 @@ class AuditUi(unittest.TestCase):
                                   changesReadCode=403, browserChangeReadCount=len(change_reads))
                         with page.expect_response(lambda r: self.response_for(r, "GET", f"/api/board/orders/{current['id']}/review")) as review:
                             page.get_by_role("button", name="审核", exact=True).click()
-                        self.assertEqual(review.value.json()["code"], 404)
+                        self.assertEqual(review.value.json()["code"], 0)
+                        review_data = review.value.json()["data"]
+                        self.assertGreater(len(review_data["packs"]), 0)
+                        self.assertTrue(all(isinstance(pack["styleId"], str) for pack in review_data["packs"]))
+                        self.assertFalse(any(pack.get("problem") for pack in review_data["packs"]))
+                        self.assertIsInstance(review_data["shortages"], list)
+                        self.assertIsInstance(review_data["loads"], list)
                         dialog = page.get_by_role("dialog", name=re.compile("审核"))
-                        expect(dialog.get_by_text("评审信息暂不可用", exact=False)).to_be_visible()
+                        expect(dialog.get_by_text("评审信息暂不可用", exact=False)).not_to_be_visible()
+                        expect(dialog.get_by_role("heading", name="资料包", exact=True)).to_be_visible()
                         expect(dialog.get_by_role("button", name="通过", exact=True)).to_be_enabled()
-                        self.shot("order-review-unavailable-authoritative-audit-remains", page)
+                        self.note("current approver receives real order review", code=0, packs=review_data["packs"],
+                                  shortages=len(review_data["shortages"]), factoryLoads=len(review_data["loads"]))
+                        self.shot("order-review-real-current-approver", page)
                         with page.expect_response(lambda r: self.response_for(r, "POST", audit_path)) as passed:
                             dialog.get_by_role("button", name="通过", exact=True).click()
                     else:
@@ -1453,60 +1462,104 @@ class AuditUi(unittest.TestCase):
         self.shot("production-issue-open-cancel")
         cancel(dialog)
 
-        # Unimplemented API is a visible failure, never a fabricated successful empty list.
-        with page.expect_response(lambda response: self.response_for(response, "GET", "/api/board/upstream")) as unavailable:
+        with page.expect_response(lambda response: self.response_for(response, "GET", "/api/board/upstream")) as upstream:
             page.goto(self.ui_base + "/upstream")
-        read_result(unavailable.value, "/api/board/upstream", expected_code=404)
-        alert = page.get_by_test_id("upstream-load-error")
-        expect(alert).to_contain_text("接口暂未提供")
-        expect(page.get_by_text("没有待处理的上游变更。", exact=False)).not_to_be_visible()
-        self.shot("upstream-real-unimplemented-error")
-        with page.expect_response(lambda response: self.response_for(response, "GET", "/api/board/upstream")) as retried:
-            alert.get_by_role("button", name="重试", exact=True).click()
-        read_result(retried.value, "/api/board/upstream", expected_code=404)
-        expect(alert).to_be_visible()
-        self.note("unimplemented board contract stays explicit", route="/upstream", code=404, retry=True, fabricatedEmpty=False)
+        read_result(upstream.value, "/api/board/upstream")
+        upstream_data = upstream.value.json()["data"]
+        self.assertIsInstance(upstream_data["canSeeAll"], bool)
+        self.assertIsInstance(upstream_data["rows"], list)
+        expect(page.get_by_test_id("upstream-load-error")).not_to_be_visible()
+        if upstream_data["rows"]:
+            for row in upstream_data["rows"][:3]:
+                expect(page.locator(".el-table__body-wrapper").get_by_text(row["doc"]["no"], exact=True).first).to_be_visible()
+        else:
+            expect(page.get_by_text("没有待处理的上游变更。", exact=False)).to_be_visible()
+        self.shot("upstream-real-api-results")
+        self.note("real upstream aggregate", code=0, rows=len(upstream_data["rows"]),
+                  canSeeAll=upstream_data["canSeeAll"])
 
         self.assertEqual(mutations, [{"method": "POST", "path": export_create_path}],
                          "Open/cancel smoke sent a business mutation or duplicated the intentional export job")
         self.note("all added forms cancelled without mutation", businessMutationCount=0, exportJobCreateCount=1)
         # Parent tearDown still asserts zero console errors, zero page errors and local-only requests.
 
-    def test_18_home_unavailable_is_not_a_successful_empty_state(self):
+    def test_18_home_real_aggregates_and_independent_failure_recovery(self):
         page = self.page
         panels = (
             ("/api/board/home/kpi", "home-kpi-error", "重试概况", "概况暂不可用"),
             ("/api/board/home/todos", "home-todos-error", "重试待办", "待处理事项暂不可用"),
             ("/api/board/home/deliveries", "home-deliveries-error", "重试交期", "近期交期暂不可用"),
         )
-        # The current contract explicitly defers these aggregates. Observe their
-        # actual responses instead of replacing them with an empty fixture.
-        with ExitStack() as stack:
-            waits = [(path, stack.enter_context(page.expect_response(
-                lambda response, target=path: self.response_for(response, "GET", target))))
-                     for path, _, _, _ in panels]
-            page.goto(self.ui_base + "/home")
-        for path, wait in waits:
-            self.assertEqual(wait.value.json()["code"], 404)
-            self.note("real home aggregate unavailable", path=path, code=404)
+
+        def open_home():
+            with ExitStack() as stack:
+                waits = [(path, stack.enter_context(page.expect_response(
+                    lambda response, target=path: self.response_for(response, "GET", target))))
+                         for path, _, _, _ in panels]
+                page.goto(self.ui_base + "/home")
+            return {path: wait.value.json() for path, wait in waits}
+
+        actual = open_home()
+        self.assertTrue(all(result["code"] == 0 for result in actual.values()))
+        kpi = actual[panels[0][0]]["data"]
+        self.assertGreater(kpi["dev"]["styleCount"], 0)
+        self.assertGreater(kpi["order"]["count"], 0)
+        todos = actual[panels[1][0]]["data"]
+        self.assertIsInstance(todos["canSeeAll"], bool)
+        self.assertTrue(all(group["total"] >= len(group["items"]) for group in todos["groups"]))
+        deliveries = actual[panels[2][0]]["data"]
+        self.assertIsInstance(deliveries, list)
+        self.assertLessEqual(len(deliveries), 8)
         expect(page.locator(".page-header h1")).to_have_text("首页")
-        for _, test_id, retry, message in panels:
-            alert = page.get_by_test_id(test_id)
-            expect(alert).to_contain_text(message)
-            expect(alert.get_by_role("button", name=retry, exact=True)).to_be_visible()
-        expect(page.get_by_text("其他提醒暂不可用，未取得提醒数据", exact=True)).to_be_visible()
-        for fabricated_empty in ("暂无待处理的事", "近 7 天没有要交的单", "没有别的要处理"):
-            expect(page.get_by_text(fabricated_empty, exact=True)).not_to_be_visible()
-        expect(page.locator(".kpi-grid")).not_to_be_visible()
-        self.shot("home-real-unavailable-without-fabricated-zeros")
-        for path, test_id, retry, message in panels:
-            with self.subTest(panel=test_id):
-                with page.expect_response(lambda response, target=path: self.response_for(response, "GET", target)) as retried:
-                    page.get_by_test_id(test_id).get_by_role("button", name=retry, exact=True).click()
-                self.assertEqual(retried.value.json()["code"], 404)
-                expect(page.get_by_test_id(test_id)).to_contain_text(message)
-                self.note("home retry preserves failure state", path=path, code=404, fabricatedEmpty=False)
-        self.shot("home-independent-retries-remain-explicit")
+        expect(page.locator(".kpi-grid")).to_be_visible()
+        for _, test_id, _, _ in panels:
+            expect(page.get_by_test_id(test_id)).not_to_be_visible()
+        self.note("real home aggregates", codes=[0, 0, 0], kpi=kpi,
+                  groups=[{"key": group["key"], "total": group["total"], "items": len(group["items"])}
+                          for group in todos["groups"]], deliveries=len(deliveries))
+        self.shot("home-real-aggregates")
+
+        # Only this explicitly recorded HTTP 200 failure envelope is injected.
+        # Each retry below is released to the actual backend independently.
+        failed_paths = {path for path, _, _, _ in panels}
+        pattern = re.compile(r"/api/board/home/(kpi|todos|deliveries)(?:\?|$)")
+        def unavailable(route):
+            if urlsplit(route.request.url).path in failed_paths:
+                route.fulfill(status=200, content_type="application/json", body=json.dumps(
+                    {"code": 503, "msg": "合成聚合故障，请重试", "data": None}))
+            else:
+                route.continue_()
+        page.route(pattern, unavailable)
+        self.facts["faultInjections"].append({"kind": "home aggregate failure envelopes; retries use real backend",
+                                              "paths": sorted(failed_paths), "httpStatus": 200, "businessCode": 503})
+        try:
+            failures = open_home()
+            self.assertTrue(all(result["code"] == 503 for result in failures.values()))
+            for _, test_id, retry, message in panels:
+                alert = page.get_by_test_id(test_id)
+                expect(alert).to_contain_text(message)
+                expect(alert.get_by_role("button", name=retry, exact=True)).to_be_visible()
+            expect(page.get_by_text("其他提醒暂不可用，未取得提醒数据", exact=True)).to_be_visible()
+            for fabricated_empty in ("暂无待处理的事", "近 7 天没有要交的单", "没有别的要处理"):
+                expect(page.get_by_text(fabricated_empty, exact=True)).not_to_be_visible()
+            expect(page.locator(".kpi-grid")).not_to_be_visible()
+            self.shot("home-injected-failures-without-fabricated-zeros")
+            for path, test_id, retry, _ in panels:
+                with self.subTest(panel=test_id):
+                    failed_paths.remove(path)
+                    with page.expect_response(lambda response, target=path: self.response_for(response, "GET", target)) as retried:
+                        page.get_by_test_id(test_id).get_by_role("button", name=retry, exact=True).click()
+                    self.assertEqual(retried.value.json()["code"], 0)
+                    expect(page.get_by_test_id(test_id)).not_to_be_visible()
+                    for pending_path, pending_id, _, _ in panels:
+                        if pending_path in failed_paths:
+                            expect(page.get_by_test_id(pending_id)).to_be_visible()
+                    self.note("home panel independently recovers from real API", path=path, code=0,
+                              otherFailedPanels=len(failed_paths))
+            expect(page.locator(".kpi-grid")).to_be_visible()
+            self.shot("home-independent-retries-real-recovery")
+        finally:
+            page.unroute(pattern, unavailable)
 
     def test_19_mobile_only_self_scope_and_real_report_issue(self):
         identity = self.fixture["identities"]["mobile_only"]

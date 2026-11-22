@@ -22,4 +22,6 @@ public class BoardQuery extends PageQuery {
     private boolean mine;
     /** RUNNING / WAITING / NEAR / LATE / NODE_LATE / ISSUE */
     private String card;
+    /** 订单评审仅查询其默认工厂。 */
+    private java.util.Collection<Long> factoryIds;
 }

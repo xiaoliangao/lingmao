@@ -135,6 +135,38 @@ public class DocNoticeServiceImpl implements DocNoticeService {
         return List.copyOf(groups.values());
     }
 
+    @Override
+    public com.lingmao.scm.module.biz.dto.PendingNoticePage pendingPage(Collection<BizType> requested, Long ownerId,
+            com.lingmao.scm.module.biz.dto.PendingNoticePosition after, boolean oldest, int limit) {
+        if (limit < 1 || limit > 100 || (oldest && after != null)) {
+            throw new BizException(400, "提醒分页参数无效");
+        }
+        Set<BizType> types = new java.util.LinkedHashSet<>();
+        if (LoginUser.hasAuthority("production:order:list")) types.add(BizType.PRODUCTION_ORDER);
+        if (LoginUser.hasAuthority("purchase:order:list")) types.add(BizType.PURCHASE_ORDER);
+        if (LoginUser.hasAuthority("purchase:mrp:list")) types.add(BizType.MRP_CALC);
+        if (requested != null) types.retainAll(requested);
+        if (types.isEmpty()) return new com.lingmao.scm.module.biz.dto.PendingNoticePage(List.of(), 0, false);
+        var scope = com.lingmao.scm.security.DataScope.current(false);
+        long total = noticeMapper.countPendingGroups(types, ownerId, scope);
+        var found = noticeMapper.selectPendingGroups(types, ownerId, scope,
+                after == null ? null : after.latest(), after == null ? null : after.docType(),
+                after == null ? null : after.docId(), oldest, limit + 1);
+        boolean hasMore = found.size() > limit;
+        var groups = found.subList(0, Math.min(limit, found.size()));
+        if (groups.isEmpty()) return new com.lingmao.scm.module.biz.dto.PendingNoticePage(List.of(), total, false);
+        List<DocNotice> notices = noticeMapper.selectPendingPreviews(groups, ownerId, scope, oldest ? 1 : 100);
+        List<DocNoticeVO> vos = toVO(notices);
+        Map<String, List<DocNoticeVO>> byGroup = new LinkedHashMap<>();
+        for (int i = 0; i < notices.size(); i++) {
+            DocNotice n = notices.get(i);
+            byGroup.computeIfAbsent(n.getDocType() + ":" + n.getDocId(), k -> new ArrayList<>()).add(vos.get(i));
+        }
+        return new com.lingmao.scm.module.biz.dto.PendingNoticePage(groups.stream().map(g ->
+                new com.lingmao.scm.module.biz.dto.PendingNoticePage.Group(g.docType(), g.docId(), g.latest(), g.noticesTotal(),
+                        List.copyOf(byGroup.getOrDefault(g.docType() + ":" + g.docId(), List.of())))).toList(), total, hasMore);
+    }
+
     /** 来源单据按类型一次描述齐，处理人的昵称一次取齐 */
     private List<DocNoticeVO> toVO(List<DocNotice> notices) {
         Map<BizType, Set<Long>> sourceIds = new HashMap<>();
@@ -142,7 +174,14 @@ public class DocNoticeServiceImpl implements DocNoticeService {
             sourceIds.computeIfAbsent(n.getSourceType(), k -> new HashSet<>()).add(n.getSourceId());
         }
         Map<BizType, Map<Long, DocRef>> sources = new HashMap<>();
-        sourceIds.forEach((type, ids) -> sources.put(type, referenceService.describe(type, ids)));
+        sourceIds.forEach((type, ids) -> {
+            List<Long> batch = List.copyOf(ids);
+            Map<Long, DocRef> refs = new HashMap<>();
+            for (int from = 0; from < batch.size(); from += 500) {
+                refs.putAll(referenceService.describe(type, batch.subList(from, Math.min(batch.size(), from + 500))));
+            }
+            sources.put(type, refs);
+        });
         Set<Long> handlers = notices.stream().map(DocNotice::getHandledBy).filter(Objects::nonNull).collect(Collectors.toSet());
         Map<Long, String> names = userService.nicknames(handlers);
         return notices.stream()

@@ -125,23 +125,31 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
     private final ApprovalService approvalService;
     private final ReferenceService referenceService;
     private final Clock clock;
+    private final org.springframework.beans.factory.ObjectProvider<com.lingmao.scm.module.purchase.service.PurchaseOrderService> purchaseOrders;
 
     // ---------- 查询 ----------
 
     @Override
     public PageResult<ProductionRowVO> page(ProductionQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PRODUCTION_ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         requireKind(query);
         query.setCard(null);
-        IPage<ProductionRowVO> page = prdMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine()), support.today(), support.nearUntil());
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<ProductionRowVO> request = query.toPage();
+        request.setOptimizeJoinOfCountSql(false);
+        IPage<ProductionRowVO> page = query.isCutRiskFirst()
+                ? prdMapper.selectCutRiskPage(request, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()),
+                        support.today(), support.nearUntil(), purchaseOrders.getObject().fallbackLeadDays())
+                : prdMapper.selectRowPage(request, query, Keywords.codes(query.getKeyword()),
+                        DataScope.current(query.isMine()), support.today(), support.nearUntil());
         support.fillRows(page.getRecords(), true);
         return PageResult.of(page);
     }
 
     @Override
     public Map<String, Long> counts(ProductionQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PRODUCTION_ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         requireKind(query);
         query.setCard(null);
         Map<String, Long> out = new LinkedHashMap<>();
@@ -314,7 +322,8 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public byte[] export(ProductionQuery query) {
-        query.setApprovalIds(query.isAuditForMe() ? approvalService.waitingForMe(BizType.PRODUCTION_ORDER) : List.of());
+        query.setApprovalIds(List.of());
+        query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         ProductionKind kind = requireKind(query);
         query.setCard(null);
         List<ProductionRowVO> rows = prdMapper.selectRows(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()),

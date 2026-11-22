@@ -256,7 +256,7 @@ class ProductionSupport {
         Map<Long, AttachmentVO> images = attachmentService.firsts(BizType.STYLE, rows.stream().map(ProductionRowVO::getStyleId).collect(Collectors.toSet()),
                 Attachment.IMAGE);
         Set<Long> mine = withActions && rows.stream().anyMatch(r -> PENDING.name().equals(r.getStatus()))
-                ? new HashSet<>(approvalService.waitingForMe(BizType.PRODUCTION_ORDER)) : Set.of();
+                ? new HashSet<>(approvalService.waitingForMe(BizType.PRODUCTION_ORDER, ids)) : Set.of();
         for (ProductionRowVO r : rows) {
             DocStatus status = DocStatus.valueOf(r.getStatus());
             List<ProductionNode> ns = nodes.getOrDefault(r.getId(), List.of());

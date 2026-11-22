@@ -91,6 +91,14 @@ class SupplierLists {
         if (query.getIds() != null && !query.getIds().isEmpty()) {
             wrapper.in("id", query.getIds());
         }
+        if (query.isOldestFirst()) {
+            // 只拼可信数字 ID；排序表达式固定，不接受任何请求提供的 SQL。
+            long me = Objects.requireNonNullElse(LoginUser.currentUserId(), 0L);
+            String pending = "COALESCE(LEAST(CASE WHEN status = 'ADMITTING' AND admit_apply_by IS DISTINCT FROM " + me
+                    + " THEN admit_apply_time END, (SELECT MIN(h.apply_time) FROM sup_supplier_change h"
+                    + " WHERE h.supplier_id = sup_supplier.id AND h.status = 'PENDING' AND h.apply_by <> " + me + ")), create_time)";
+            return wrapper.orderByAsc(pending, "id");
+        }
         return wrapper.orderByAsc("code");
     }
 
@@ -113,11 +121,17 @@ class SupplierLists {
         }
         List<Long> ids = suppliers.stream().map(Supplier::getId).toList();
         Map<Long, List<String>> categories = categoriesOf(ids);
-        Set<Long> pending = changeMapper.selectList(new LambdaQueryWrapper<SupplierChange>()
-                        .select(SupplierChange::getSupplierId)
+        List<SupplierChange> changes = changeMapper.selectList(new LambdaQueryWrapper<SupplierChange>()
+                        .select(SupplierChange::getSupplierId, SupplierChange::getApplyBy, SupplierChange::getApplyTime)
                         .in(SupplierChange::getSupplierId, ids)
-                        .eq(SupplierChange::getStatus, ChangeStatus.PENDING))
-                .stream().map(SupplierChange::getSupplierId).collect(Collectors.toSet());
+                        .eq(SupplierChange::getStatus, ChangeStatus.PENDING));
+        Set<Long> pending = changes.stream().map(SupplierChange::getSupplierId).collect(Collectors.toSet());
+        Map<Long, java.time.OffsetDateTime> pendingTimes = new HashMap<>();
+        for (SupplierChange change : changes) {
+            if (!Objects.equals(change.getApplyBy(), LoginUser.currentUserId()) && change.getApplyTime() != null) {
+                pendingTimes.merge(change.getSupplierId(), change.getApplyTime(), (a, b) -> a.isBefore(b) ? a : b);
+            }
+        }
         Map<Long, CertSummary> certs = supplierMapper.selectCertSummaries(ids).stream()
                 .collect(Collectors.toMap(CertSummary::getSupplierId, Function.identity()));
         Map<Long, String> buyers = buyerNames(suppliers);
@@ -129,6 +143,12 @@ class SupplierLists {
             row.setCategories(categories.getOrDefault(s.getId(), List.of()));
             row.setBuyerName(buyers.get(s.getBuyerId()));
             row.setChangePending(pending.contains(s.getId()));
+            var time = pendingTimes.get(s.getId());
+            if (s.getStatus() == com.lingmao.scm.module.supplier.entity.SupplierStatus.ADMITTING
+                    && !Objects.equals(s.getAdmitApplyBy(), LoginUser.currentUserId()) && s.getAdmitApplyTime() != null) {
+                if (time == null || s.getAdmitApplyTime().isBefore(time)) time = s.getAdmitApplyTime();
+            }
+            row.setPendingSince(time == null ? s.getCreateTime() : time);
             CertSummary cert = certs.get(s.getId());
             row.setCertCount(cert == null ? 0 : cert.getCertCount());
             row.setCertEarliestUntil(cert == null ? null : cert.getEarliestUntil());

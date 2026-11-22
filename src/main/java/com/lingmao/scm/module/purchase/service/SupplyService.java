@@ -1,7 +1,9 @@
 package com.lingmao.scm.module.purchase.service;
 
 import com.lingmao.scm.module.purchase.dto.ReorderRowVO;
+import com.lingmao.scm.module.purchase.dto.ReorderQuery;
 import com.lingmao.scm.module.purchase.dto.SkuSupplyVO;
+import com.lingmao.scm.common.page.PageResult;
 
 import java.util.Collection;
 import java.util.List;
@@ -10,7 +12,10 @@ import java.util.List;
 public interface SupplyService {
 
     /** 低于最小库存的 SKU，差得多的在前 */
-    List<ReorderRowVO> reorderItems();
+    PageResult<ReorderRowVO> reorderItems(ReorderQuery query);
+
+    /** 补货 SKU 总数，数据库聚合，首页不加载全部物料行。 */
+    long reorderCount();
 
     /** 几个 SKU 的在途（按交货仓库）、已被占用、是否低于最小库存，每个 SKU 一条 */
     List<SkuSupplyVO> materialSupply(Collection<Long> skuIds);

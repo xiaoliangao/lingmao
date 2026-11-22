@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 生产异常跨单查询：先执行与生产列表相同的数据范围，再分页。 -->
+<mapper namespace="com.lingmao.scm.module.production.mapper.ProductionIssueMapper">
+
+    <select id="selectOpenPage" resultType="com.lingmao.scm.module.production.dto.OpenIssueVO">
+        SELECT x.id, x.no, x.prd_order_id, p.no AS prd_order_no, p.kind, p.style_id, s.name AS style_name,
+               x.issue_type, x.description, x.create_by, x.create_time
+        FROM prd_issue x
+        JOIN prd_order p ON p.id = x.prd_order_id
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE x.status &lt;&gt; 'CLOSED' AND p.status IN ('APPROVED', 'RUNNING')
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="merchId != null">AND p.merch_id = #{merchId}</if>
+        ORDER BY x.create_time, x.id
+    </select>
+</mapper>

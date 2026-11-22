@@ -38,6 +38,12 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthTokens login(LoginReq req) {
+        return login(req, true);
+    }
+
+    @Override
+    @Transactional
+    public AuthTokens login(LoginReq req, boolean withRefresh) {
         String username = req.getUsername();
         // 锁住了就不再比对密码：不然锁定期间照样能一直试，锁就白加了
         if (loginFailCounter.isLocked(username)) {
@@ -58,7 +64,8 @@ public class AuthServiceImpl implements AuthService {
         loginFailCounter.clear(username);
         String jti = UUID.randomUUID().toString();
         loginSessionStore.save(jti, user.getId(), user.getPassword());
-        return refreshSessions.issue(jwtUtil.createToken(user.getId(), jti));
+        String access = jwtUtil.createToken(user.getId(), jti);
+        return withRefresh ? refreshSessions.issue(access) : new AuthTokens(access, null, null, 0);
     }
 
     @Override

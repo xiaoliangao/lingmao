@@ -25,6 +25,11 @@ public interface DictDataService {
      */
     List<DictOption> listByType(String typeCode);
 
+    /** 已缓存字典的编码 → 展示名，不让各聚合接口重复实现。 */
+    default Map<String, String> labels(String typeCode) {
+        return listByType(typeCode).stream().collect(java.util.stream.Collectors.toMap(DictOption::value, DictOption::label, (a, b) -> a));
+    }
+
     Long create(DictDataSaveReq req);
 
     /** value、类型建好不改；内置项不能停用（RFC 003 §4.2） */

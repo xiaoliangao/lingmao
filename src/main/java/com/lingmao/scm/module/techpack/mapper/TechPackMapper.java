@@ -2,6 +2,7 @@ package com.lingmao.scm.module.techpack.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.lingmao.scm.module.techpack.dto.PackDraftVO;
 import com.lingmao.scm.module.techpack.dto.StyleCostQuery;
 import com.lingmao.scm.module.techpack.dto.PackColorRef;
 import com.lingmao.scm.module.techpack.dto.PackSizeRef;
@@ -42,6 +43,9 @@ public interface TechPackMapper extends BaseMapper<TechPack> {
     List<PackColorRef> referencedColorsBatch(@Param("packIds") Collection<Long> packIds);
 
     List<PackSizeRef> referencedSizesBatch(@Param("packIds") Collection<Long> packIds);
+
+    /** 共享主数据的草稿资料包，调用方校验模块权限；创建时间最早的先展示。 */
+    IPage<PackDraftVO> selectDraftPage(IPage<PackDraftVO> page);
 
     /** 按款看成本（resources/mapper/techpack/TechPackMapper.xml）：每个款取生产已生效版，没有取研发已生效版 */
     IPage<StyleCostRowVO> selectStyleCostPage(IPage<StyleCostRowVO> page, @Param("q") StyleCostQuery query,

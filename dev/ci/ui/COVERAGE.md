@@ -44,17 +44,17 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 | 05 / U5 | 真实登录：内部 query/hash 正常回跳；`//`、外域绝对 URL、脚本协议、反斜杠、控制字符、重复 redirect 数组安全回首页；无外域请求/脚本执行 | `redirect-internal` 等 7 张；不截登录凭据 |
 | 06 / U6 | 采购来源入库同动作重放返回原 ID、不重复库存；同键异体 `1002`，流水价/额/库存单位非空且 RECORDED。回货先 `route.fetch()` 真实落账，**再扣留成功结果并回失败 envelope**；未知结果关窗重开后，UI 重试同 UUID+原 payload 仅记一次，新 UUID 的真实第二批再记一次。查看真实 MRP/采购/入库/BUY 页面并核对单号 | `receipt-outcome-unknown`、`receipt-retry-recorded-once`、`real-flow-mrp`、`real-flow-purchase`、`real-flow-inventory`、`real-flow-buy-production` |
 | 07 / U6 | 两会话改节点计划：独立 `planRevision` 增加且单头 version 不变，旧计划 `1002`、输入保留；管理员账号在手机 390 px 页面无横向溢出，异常入口存在。仅手机权限由用例 19 单独覆盖 | `node-plan-conflict-keeps-local`、`node-plan-date-controls-contained`、`mobile-390-no-horizontal-overflow` |
-| 08 / U7 | 真实物料 1/200 编码成功、201 编码 `400`；Excel 换行粘贴归一为空格；真实空列表和超限错误有反馈，带空格物料名恢复成功 | `multi-code-paste-results`、`real-query-empty-state`、`201-codes-error-feedback` |
+| 08 / U7 | 真实物料 1/100 编码成功、101 编码 `400`；Excel 换行粘贴归一为空格；真实空列表和超限错误有反馈，带空格物料名恢复成功 | `multi-code-paste-results`、`real-query-empty-state`、`101-codes-error-feedback` |
 | 09 / U8 | 浏览器固定 UTC `2026-12-31T16:30:00`，上海/UTC/洛杉矶的新单业务日均为 `2027-01-01`；今天/近7天/近30天/本月实际请求字符串一致。只改浏览器时间、不写单据 | 每时区 `default-date-…`、`range-month-…` |
 | 10 / U9 | **暂停一个真实文件 POST，释放后仍交给后端处理**；pending 时保存必须禁用或等待，不能先 PUT 丢附件。释放后真实文件入库、整包保存回读图片数 +1 | `pending-upload-save-protected`、`upload-completed-and-persisted` |
 | 11 / U2 | 真实成本 A 响应先扣留，切到成本不同的 B；B 加载与本地说明可编辑，A 迟到后 B 的单价、说明不变，保存与真实回读均不串包 | `current-pack-before-old-cost-arrives`、`late-cost-discarded-current-pack-saved`、`other-cost-row-complete-and-contained` |
 | 12 / U1 | 三个 SKU（两个 M、一个 S）：批改控件输入但不点应用，保存完全不变；明确应用 M 单价只动两个 M；整款应用只改价格，所有行交期/备注不动，四位精度保留 | `sku-batch-input-not-applied`、`explicit-M-price-applied`、`explicit-whole-style-price-saved` |
 | 13 / U9 | 真实文件已落服务器但响应延迟；仅 pending 上传也触发换版本放弃确认。明确放弃 A 后切 B，再送达成功响应；保存 B 后 A/B 图片集合均不增加，B 未保存说明不被覆盖 | `upload-pending-is-dirty-before-discard`、`late-upload-ignored-after-version-discard` |
-| 14 / U9 | 订单/采购/生产三域 × 六身份：SELF 审核权限不等于 ALL，制单人见自单，ALL只读无审核，无 list 配置规则/提交均阻止；指定人轮到本级时进入真实待我审核列表→详情→审核，完成后对象例外消失。有订单查看权但无变更查看权时，变更API直接403、页面不发该请求并显示明确权限说明，审批不受影响。订单未实现评审聚合显示不可用，权威审核 API 正常校验 | 每域 `…-designated-in-real-list`、`…-designated-can-audit`、`…-approval-left-pending-list`；`order-approver-change-permission-explained`、`order-review-unavailable-authoritative-audit-remains` |
+| 14 / U9 | 订单/采购/生产三域 × 六身份：SELF 审核权限不等于 ALL，制单人见自单，ALL只读无审核，无 list 配置规则/提交均阻止；指定人轮到本级时进入真实待我审核列表→详情→审核，完成后对象例外消失。有订单查看权但无变更查看权时，变更API直接403、页面不发该请求并显示明确权限说明，审批不受影响。当前级审批人取得真实资料包/缺料/工厂负载评审，ID 为字符串；权威审核 API 继续校验 | 每域 `…-designated-in-real-list`、`…-designated-can-audit`、`…-approval-left-pending-list`；`order-approver-change-permission-explained`、`order-review-real-current-approver` |
 | 15 / U2 | 仅包编辑无成本权限：成本 GET 403，详情 unitCost 不泄漏；真实伪造非 null cost 的 PUT 不改变成本；UI 无核价 tab，合法说明保存发 cost=null | `pack-editor-without-cost-authority` |
 | 16 / U2 | 独立款已生效后停用一个颜色、改款名/色名，再发布新版本使旧版 VOIDED；旧详情仍 SNAPSHOT 且色码/名称一致。API及UI实际下载 PDF，pdftotext 断言含旧名、不含新名；UI仍能选择已停用历史颜色 | `voided-pack-with-frozen-context`、`snapshot-disabled-color-export-option`；两个真实 PDF 与 SHA-256 |
-| 17 / 逐页补验 | 打开其余已修改列表：款式/供应商/核价/MRP/BUY、库存明细/汇总/日志、待到料及各类型出入库；打开并取消款式/供应商/采购/出入库/物料选择器、SKU/证照/变更/排单/报工/异常表单。每页核对真实 GET；核价长款号在缩略图旁须完整单行显示，文本边界不越过单元格/裁剪祖先；款号预览等待真实成功/业务拒绝结果、附件区及供应商页脚单独拍图；MRP选订单的单号和状态必须一行完整且不溢出。库存日志实际浏览器导出并解析XLSX，含五个估值/冲销列及RECORDED/UNKNOWN；整例断言零写请求。上游提醒接口真实404展示不可用并可重试，不伪装为空待办 | `styles-list`、`supplier-new-open-cancel`、`costing-list`、`stock-material-summary-custody`、`stock-ledger-valued-or-unknown`、`inventory-list-…`、`inventory-new-…`、`order-schedule-four-place-price`、`upstream-real-unimplemented-error` 等 |
-| 18 / U9 | 首页三个聚合真实返回404时分别显示不可用和重试；不显示零概况或“暂无待办/交期/提醒”。逐一重试仍观察真实404及明确失败态，不伪造成功空列表 | `home-real-unavailable-without-fabricated-zeros`、`home-independent-retries-remain-explicit` |
+| 17 / 逐页补验 | 打开其余已修改列表：款式/供应商/核价/MRP/BUY、库存明细/汇总/日志、待到料及各类型出入库；打开并取消款式/供应商/采购/出入库/物料选择器、SKU/证照/变更/排单/报工/异常表单。每页核对真实 GET；核价长款号在缩略图旁须完整单行显示，文本边界不越过单元格/裁剪祖先；款号预览等待真实成功/业务拒绝结果、附件区及供应商页脚单独拍图；MRP选订单的单号和状态必须一行完整且不溢出。库存日志实际浏览器导出并解析XLSX，含五个估值/冲销列及RECORDED/UNKNOWN；整例断言零写请求。上游提醒真实 API 成功，表格或空态与响应一致 | `styles-list`、`supplier-new-open-cancel`、`costing-list`、`stock-material-summary-custody`、`stock-ledger-valued-or-unknown`、`inventory-list-…`、`inventory-new-…`、`order-schedule-four-place-price`、`upstream-real-api-results` 等 |
+| 18 / U9 | 首页三个聚合真实成功并核对计数/列表上限；随后明确注入三份 HTTP 200 / code 503 故障 envelope，失败不显示伪零；三个区块逐一放行重试到真实后端，各自恢复且其余仍保留失败态 | `home-real-aggregates`、`home-injected-failures-without-fabricated-zeros`、`home-independent-retries-real-recovery` |
 | 19 / S-P1-08、T09 | 独立 SELF 仅手机身份在 390 px 从 `/` 跳我的跟单，列表只含本人已下单/生产中单；本人详情可读、他人详情及报工 `404`，桌面 list/counts `403`。只读时节点禁用，桌面入口隐藏；已有桌面权限仍能原入口跳详情。精确增加 node/issue 权限后经 UI 实际报 START、上传匿名 PNG 并上报异常，真实读回节点/照片/异常且 `planRevision` 不变；待审核单审核和回货仍 `403` 且数据不变 | `mobile-desktop-authority-keeps-entry`、`mobile-only-owned-active-list`、`mobile-only-read-only-detail`、`mobile-only-foreign-detail-denied`、`mobile-only-real-start-form`、`mobile-only-start-persisted`、`mobile-only-anonymous-image-issue-form`、`mobile-only-issue-persisted` |
 | 20 / A-Q1 | 专用 SELF 仓管只有库存 add/list，没有采购或审核权限。不同采购员的 DRAFT/PENDING 源预填/生成 `1000` 且不写库；APPROVED 源可预填并建草稿；无 add 的 GET/POST 和无 audit 的 `post:true` 均 `403`，单据数/库存/源版本不变。管理员真实部分入库后源为 `RUNNING`（部分到货），仓管仍可预填余量，采购详情仍 `403` | 仅 `evidence.json` 的实际 API 方法/路径/业务码、源状态、单据计数；不声称 UI 截图或全部状态穷举 |
 
@@ -70,8 +70,8 @@ python -c 'import unittest; print(unittest.defaultTestLoader.loadTestsFromName("
 - U4：组合负责人/日期/品牌、查询失败和过期响应的快照、清空/重置、采购/盘点勾选导出。现有用例覆盖状态＋多单号＋未提交关键字以及订单勾选。
 - U5：真实会话过期 `401` 后的重登路径；已有 7 类回跳不代替这个场景。
 - U6：真实网络超时/断连；显式开启新动作。用例 19 覆盖手机实际 START/图片异常与计划 revision 不变，不代表手机 FINISH、重复报工或异常处理全流程。
-- U7：物料空单位导入 `1003`、MOQ/包装取整、采购退货反审上限错误清单；批量查询大样本性能/EXPLAIN 必须由性能验证另记，不能把 200 码返回当 SLA。
-- U9：上传失败及重试、其他未覆盖图片入口；上传期间放弃版本/迟到响应已有用例13，六身份三域权限与真实审批入口已有用例14，手机图片异常另在用例19。首页board仍按API06明确未实现；用例18只验证真实失败与独立重试，不把三列表入口说成完整首页待办。
+- U7：物料空单位导入 `1003`、MOQ/包装取整、采购退货反审上限错误清单；批量查询大样本性能/EXPLAIN 必须由性能验证另记，不能把 100 码返回当 SLA。
+- U9：上传失败及重试、其他未覆盖图片入口；上传期间放弃版本/迟到响应已有用例13，六身份三域权限与真实审批入口已有用例14，手机图片异常另在用例19。首页/上游/评审由用例14/17/18验证真实 API 与独立失败恢复；全部待办种类、负责人和排序权限边界仍需结合 S2 数据库专项结果，不能只凭首页渲染通过。
 - A-Q1：用例20仅覆盖采购入库来源的 DRAFT/PENDING/APPROVED/RUNNING（部分到货）与最小权限交叉；DONE（已到齐）、CLOSED、VOIDED、采购退货和生产领退料的完整状态矩阵未在该例穷举，不能登记为全部源类型/状态均已验收。
 - CI 断言通过后仍须逐张检查 PNG 的遮挡/错位/溢出，并将实际 run/commit 与证据绑定；没有截图与实际响应证据时不能将其登记为浏览器通过。
 

@@ -34,7 +34,7 @@ public class SecurityBoundaryConfig {
         cors.setAllowedOrigins(origins); cors.setAllowCredentials(true);
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Company-Id", "X-Tenant-Id",
-                "X-Request-Id", "X-Trace-Id", "X-Requested-With"));
+                "X-Request-Id", "X-Trace-Id", "X-Requested-With", "X-Session-Mode"));
         cors.setExposedHeaders(List.of("Content-Disposition", "X-Request-Id", "X-Trace-Id", "Retry-After", "Location"));
         cors.setMaxAge(600L);
         var source = new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/api/**", cors);

@@ -44,4 +44,7 @@ public class OrderRowVO {
     private OffsetDateTime createTime;
     private Integer version;
     private List<String> actions = List.of();
+    /** 实际提交时间；仅供首页跨域排序，不返回客户端。 */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private java.time.OffsetDateTime pendingSince;
 }

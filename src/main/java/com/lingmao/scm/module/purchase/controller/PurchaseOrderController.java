@@ -61,6 +61,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PurchaseOrderController extends IdempotencyReplayGuard {
 
+    /** 聚合查询开关仅由服务端构造，不能通过 GET 参数触发旁路或改变导出/COUNT 口径。 */
+    @org.springframework.web.bind.annotation.InitBinder("purchaseQuery")
+    void protectInternalQueryFields(org.springframework.web.bind.WebDataBinder binder) {
+        binder.setDisallowedFields("oldestFirst", "approvalIds*", "approvalScope*");
+    }
+
     private final PurchaseOrderService purchaseOrderService;
     private final DocCommonService docCommonService;
     private final Clock clock;
@@ -68,7 +74,7 @@ public class PurchaseOrderController extends IdempotencyReplayGuard {
     @Operation(summary = "列表：下单日期倒序；关键字是采购单号、供应商、物料编码，一次查几个时单号、编码精确查")
     @GetMapping
     @PreAuthorize("hasAuthority('purchase:order:list')")
-    public R<PageResult<PurchaseRowVO>> page(@Valid PurchaseQuery query) {
+    public R<PageResult<PurchaseRowVO>> page(@Valid @org.springframework.web.bind.annotation.ModelAttribute("purchaseQuery") PurchaseQuery query) {
         return R.ok(purchaseOrderService.page(query));
     }
 
@@ -215,7 +221,7 @@ public class PurchaseOrderController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，一条明细一行")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('purchase:order:export')")
-    public ResponseEntity<byte[]> export(@Valid PurchaseQuery query) {
+    public ResponseEntity<byte[]> export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("purchaseQuery") PurchaseQuery query) {
         return Excel.download(Excel.exportFileName("采购单", LocalDate.now(clock)), purchaseOrderService.export(query));
     }
 

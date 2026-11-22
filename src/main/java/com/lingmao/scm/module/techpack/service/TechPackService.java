@@ -76,10 +76,14 @@ public interface TechPackService {
      * 有问题 1000，data 是清单，一次列全
      */
     void checkRequirements(Collection<PackRequirement> requirements);
+    /** 同一套校验的只读结果；批量加载 BOM，按资料包/SKU 归属返回，避免评审逐款回源。 */
+    Map<com.lingmao.scm.module.techpack.dto.PackRequirement, List<String>> requirementProblems(Collection<com.lingmao.scm.module.techpack.dto.PackRequirement> requirements);
 
     /** 已审核订单的算料、变更单用：只查配料、用量配齐没有（缺了会算错），下单以后才停用的款式颜色、物料不拦 */
     void checkLockedRequirements(Collection<PackRequirement> requirements);
 
     /** 几个版本的工序工价合计（元 / 件，核价的"加工费"口径）：排单时外发加工的单价旁边提示用。查不到的不在 map 里 */
     Map<Long, BigDecimal> laborTotals(Collection<Long> packIds);
+    /** 资料包草稿的有界查询，按创建时间及 ID 从早到晚排列。 */
+    com.lingmao.scm.common.page.PageResult<com.lingmao.scm.module.techpack.dto.PackDraftVO> drafts(com.lingmao.scm.common.page.PageQuery page);
 }

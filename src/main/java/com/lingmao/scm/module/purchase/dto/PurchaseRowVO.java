@@ -45,4 +45,7 @@ public class PurchaseRowVO {
     private Long firstSkuId;
     @JsonIgnore
     private Long createBy;
+    /** 实际提交时间；仅供首页跨域排序，不返回客户端。 */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private java.time.OffsetDateTime pendingSince;
 }

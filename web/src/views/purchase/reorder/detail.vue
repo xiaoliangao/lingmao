@@ -10,6 +10,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
+import { PAGE_SIZES } from '@/composables/useTable'
 import { PURCHASE_STATUS, type ReorderPickItem, type ReorderRow } from '@/types/purchase'
 import { formatPrice, formatQty } from '@/utils/format'
 import { useFieldAccess } from '@/composables/useFieldAccess'
@@ -18,7 +19,7 @@ import { useUserStore } from '@/stores/user'
 
 /**
  * 补货提醒（/reorder，docs/api/03 §1.4、§3.3.8、§3.6）：低于最小库存的物料，勾选后按供应商拆成备货采购单草稿。
- * 行上能改供应商（换了重取单价）、补货量。切走再切回来不重新取：手改的量和供应商留着；要最新的点「重新取」。
+ * 当前页上能改供应商（换了重取单价）、补货量。翻页或「重新取」清除选择和改量；切走再切回来保留当前页。
  * 没有筛选，页头下面一行只有"显示列"
  */
 interface EditableReorderRow extends ReorderRow {
@@ -48,34 +49,57 @@ const cols = useColumns('reorder', [
 
 const rows = ref<EditableReorderRow[]>([])
 const selected = ref<EditableReorderRow[]>([])
+const page = ref(1)
+const size = ref(50)
+const total = ref(0)
 const loading = ref(false)
+const loadError = ref<string | null>(null)
 const submitting = ref(false)
 const tableRef = ref<TableInstance>()
 
 const loadRequest = useLatestRequest()
 async function load() {
   const read = loadRequest.begin()
+  tableRef.value?.clearSelection()
+  selected.value = []
+  rows.value = []
   loading.value = true
+  loadError.value = null
   try {
-    const data = await read.run(() => reorderApi.list())
+    const data = await read.run(() => reorderApi.page({ page: page.value, size: size.value }))
     if (!read.current()) return
-    rows.value = data.map((r) => ({
+    total.value = data.total
+    rows.value = data.list.map((r) => ({
       ...r,
       supplierIdInput: r.defaultSupplierId,
       qtyInput: r.suggestQty,
     }))
     await nextTick()
+    if (!read.current()) return
     tableRef.value?.clearSelection()
     for (const row of rows.value) {
-      if (row.openDrafts.length === 0 && row.supplierIdInput) {
+      if (row.openDraftsTotal === 0 && row.supplierIdInput) {
         tableRef.value?.toggleRowSelection(row, true)
       }
     }
   } catch (error) {
-    if (read.current()) throw error
+    if (read.current()) loadError.value = error instanceof Error ? error.message : '补货清单暂时无法读取，请重试'
   } finally {
     if (read.current()) loading.value = false
   }
+}
+
+function changePage(value: number) {
+  if (value === page.value) return
+  page.value = value
+  void load()
+}
+
+function changeSize(value: number) {
+  if (value === size.value) return
+  size.value = value
+  page.value = 1
+  void load()
 }
 
 onMounted(load)
@@ -92,13 +116,17 @@ async function onSupplierChange(row: EditableReorderRow) {
 }
 
 async function generateStockPos() {
+  if (loading.value || submitting.value || loadError.value) return
   if (!companyId) { ElMessage.warning('请先设置默认主体，再重新打开补货页面'); return }
-  if (!selected.value.length) {
+  // 生单只读当前页的新行对象，旧页勾选和旧补货量不能进入请求体。
+  const selectedIds = new Set(selected.value.map((row) => row.materialSkuId))
+  const currentRows = rows.value.filter((row) => selectedIds.has(row.materialSkuId))
+  if (!currentRows.length) {
     ElMessage.warning('先勾要补货的物料')
     return
   }
   const items: ReorderPickItem[] = []
-  for (const r of selected.value) {
+  for (const r of currentRows) {
     if (!r.supplierIdInput) {
       ElMessage.warning(`${r.skuCode} 还没选供应商`)
       return
@@ -129,12 +157,12 @@ async function generateStockPos() {
   <div>
     <PageHeader title="补货提醒" :back="{ label: '库存', to: '/stock' }">
       <template #actions>
-        <el-button :loading="loading" @click="load">重新取</el-button>
+        <el-button :loading="loading" :disabled="submitting" @click="load">重新取</el-button>
         <el-button
           v-perm="'purchase:order:add'"
           type="primary"
           :loading="submitting"
-          :disabled="!selected.length"
+          :disabled="!selected.length || loading || !!loadError"
           @click="generateStockPos"
         >
           生成备货采购单{{ selected.length ? `（${selected.length}）` : '' }}
@@ -144,7 +172,13 @@ async function generateStockPos() {
 
     <FilterBar :columns="cols" />
 
+    <p class="page-selection dim">仅勾选和修改当前页；翻页或重新取将清除当前选择及改量。</p>
+    <el-alert v-if="loadError" data-testid="reorder-load-error" :title="loadError" type="warning" :closable="false">
+      <el-button :loading="loading" @click="load">重试</el-button>
+    </el-alert>
+
     <el-table
+      v-else
       ref="tableRef"
       v-loading="loading"
       :data="rows"
@@ -205,27 +239,45 @@ async function generateStockPos() {
       <el-table-column v-if="canSeeCost && cols.show.price" label="参考单价" width="96" class-name="num" align="right">
         <template #default="{ row }">{{ row.price == null ? '—' : formatPrice(row.price) }}</template>
       </el-table-column>
-      <el-table-column v-if="cols.show.drafts" label="已开的备货单" min-width="200">
+      <el-table-column v-if="cols.show.drafts" label="已开的备货单" min-width="200" :show-overflow-tooltip="false">
         <template #default="{ row }">
-          <template v-if="(row as EditableReorderRow).openDrafts.length">
-            <router-link
-              v-for="d in (row as EditableReorderRow).openDrafts"
-              :key="d.id"
-              :to="`/purchases/${d.id}`"
-              class="draft-chip code"
-            >
-              {{ d.no }}
-              <StatusTag :tone="PURCHASE_STATUS[d.status].tone">{{ PURCHASE_STATUS[d.status].label }}</StatusTag>
-            </router-link>
+          <template v-if="row.openDraftsTotal > 0">
+            <div class="draft-count dim">显示最近 {{ row.openDrafts.length }} 张，共 {{ row.openDraftsTotal }} 张</div>
+            <div class="draft-list" tabindex="0" aria-label="已开备货单预览">
+              <router-link
+                v-for="d in (row as EditableReorderRow).openDrafts"
+                :key="d.id"
+                :to="`/purchases/${d.id}`"
+                class="draft-chip code"
+              >
+                {{ d.no }}
+                <StatusTag :tone="PURCHASE_STATUS[d.status].tone">{{ PURCHASE_STATUS[d.status].label }}</StatusTag>
+              </router-link>
+            </div>
           </template>
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      v-if="!loadError"
+      :current-page="page"
+      :page-size="size"
+      class="pagination"
+      layout="total, sizes, prev, pager, next"
+      :page-sizes="PAGE_SIZES"
+      :total="total"
+      :disabled="submitting"
+      @update:current-page="changePage"
+      @update:page-size="changeSize"
+    />
   </div>
 </template>
 
 <style scoped>
+.page-selection { margin: 0 24px 10px; font-size: 12px; }
+.draft-count { margin-bottom: 4px; font-size: 11.5px; }
+.draft-list { max-height: 160px; overflow: auto; }
 .sku-cell {
   display: flex;
   flex-direction: column;

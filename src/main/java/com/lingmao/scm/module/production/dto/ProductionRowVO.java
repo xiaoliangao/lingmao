@@ -6,6 +6,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /** 外发加工单、成品采购单列表和看板列表的一行（前端 ProductionRow）。节点、图、人名、风险、按钮由 Service 填 */
@@ -59,4 +60,20 @@ public class ProductionRowVO {
     private Long createBy;
     @JsonIgnore
     private Long companyId;
+    /** 建单时间：首页"待我审核"排先后用，不返回 */
+    @JsonIgnore
+    private OffsetDateTime createTime;
+    /** 实际提交时间；仅供首页跨域排序，不返回客户端。 */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private java.time.OffsetDateTime pendingSince;
+    @JsonIgnore
+    private Long cutMaterialSkuId;
+    @JsonIgnore
+    private String cutMaterialName;
+    @JsonIgnore
+    private LocalDate cutNeedDate;
+    @JsonIgnore
+    private LocalDate cutArriveDate;
+    @JsonIgnore
+    private Integer cutLateDays;
 }

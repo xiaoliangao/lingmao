@@ -18,6 +18,7 @@ import com.lingmao.scm.module.purchase.dto.PurchaseRowVO;
 import com.lingmao.scm.module.purchase.dto.PurchaseSaveReq;
 
 import java.util.List;
+import java.util.Map;
 
 /** 采购单（docs/api/03 §3.3）、待到料（§3.4） */
 public interface PurchaseOrderService {
@@ -55,4 +56,7 @@ public interface PurchaseOrderService {
     PageResult<PendingArrivalRowVO> pendingItems(PendingArrivalQuery query);
 
     PendingArrivalCounts pendingCounts(PendingArrivalQuery query);
+
+    /** 按当前生产节点配置倒推开裁距承诺交期的天数；没有 CUT 节点返回 null。 */
+    Integer fallbackLeadDays();
 }
