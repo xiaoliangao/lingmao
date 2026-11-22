@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
-import { buildTools, parseWhitelist, runTool, shrink, toolsFor, type OpenApiDoc } from '../src/tools.ts'
+import { buildTools, cap, parseWhitelist, runTool, shrink, toolsFor, type OpenApiDoc } from '../src/tools.ts'
 import { fakeApp, ok, OPENAPI, TOOLS, WHITELIST } from './fakes.ts'
 
 describe('白名单校验（启动时，不合规起不来）', () => {
@@ -93,24 +93,31 @@ describe('调工具', () => {
     assert.deepEqual(JSON.parse(r.content), { error: '采购单不存在', code: 404 })
   })
 
-  test('结果太长：截断并说明', async () => {
-    const { app } = fakeApp({ '/api/purchase-orders/1': ok({ remark: 'x'.repeat(10_000) }) })
+  test('结果太长：截断并说明，总长不超过上限（嵌套、带引号的也一样）', async () => {
+    const { app } = fakeApp({ '/api/purchase-orders/1': ok({ remark: 'x'.repeat(10_000), lines: Array.from({ length: 200 }, (_, i) => ({ code: `"M${i}"`, qty: '1' })) }) })
     const r = await runTool(TOOLS.find((t) => t.name === 'get_purchase_order')!, '{"id":1}', { ...ctx(app), maxResultChars: 1000 })
-    assert.ok(r.content.length <= 1000)
-    assert.equal(JSON.parse(r.content).truncated, true)
+    assert.ok(r.content.length <= 1000, `实际 ${r.content.length}`)
+    assert.match(r.content, /结果太长/)
+    assert.equal(cap('短的', 1000), '短的')
   })
 })
 
 describe('瘦身', () => {
-  test('去掉图片、文件地址、按钮列表、空值；列表最多 20 行并写明总数', () => {
-    const rows = Array.from({ length: 25 }, (_, i) => ({ id: String(i), code: `PO${i}`, image: '/files/a.png?e=1&s=x', actions: ['audit'], remark: null }))
+  test('去掉图片、缩略图、文件地址、按钮列表、空值；列表最多 20 行并写明总数', () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({ id: String(i), code: `PO${i}`, image: '/files/a.png?e=1&s=x', thumbUrl: 'https://cdn/x_s.jpg', actions: ['audit'], remark: null }))
     const { data, rows: n } = shrink({ list: rows, total: 130 })
     const page = data as { total: number; list: Record<string, unknown>[]; note: string }
-    assert.equal(n, 25)
+    assert.equal(n, 20, '记给模型的行数')
     assert.equal(page.total, 130)
     assert.equal(page.list.length, 20)
     assert.deepEqual(page.list[0], { id: '0', code: 'PO0' })
-    assert.match(page.note, /前 20 行/)
+    assert.match(page.note, /只给了 20 行，共 130 行/)
+  })
+
+  test('取了一页 20 行、总共更多：也写明还有（翻页或加条件）', () => {
+    const page = shrink({ list: Array.from({ length: 20 }, (_, i) => ({ id: String(i) })), total: 130 }).data as { note?: string }
+    assert.match(page.note ?? '', /共 130 行/)
+    assert.equal((shrink({ list: [{ id: '1' }], total: 1 }).data as { note?: string }).note, undefined)
   })
 
   test('嵌套里的文件地址、颜色值也去掉；数字和文字原样', () => {

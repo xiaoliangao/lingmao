@@ -32,10 +32,14 @@ export interface Limits {
   maxPageSize: number
   /** 带进去的历史：最近几轮问答 */
   historyTurns: number
+  /** 全系统同时在答的最多几句（每人同时只能一句）。也限住了全系统 token 额度最多超出多少：先查后记，同时在答的几句可能一起越线 */
+  maxConcurrent: number
 }
 
 export interface Config {
   port: number
+  /** 监听哪个地址：本机开发默认只听 127.0.0.1，容器里（镜像设了）听 0.0.0.0 */
+  host: string
   /** app 的地址（容器里是 http://app:8080），助手只用 GET 调它 */
   appBaseUrl: string
   /** 助手自己的库账号，只能动 assistant schema */
@@ -59,11 +63,23 @@ function int(env: Record<string, string | undefined>, key: string, fallback: num
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const baseUrl = (env.ASSISTANT_LLM_BASE_URL ?? '').trim().replace(/\/+$/, '')
   const model = (env.ASSISTANT_LLM_MODEL ?? '').trim()
+  const rawMode = (env.ASSISTANT_LLM_MODE ?? '').trim()
+  if (rawMode && rawMode !== 'external' && rawMode !== 'self-hosted') {
+    throw new Error(`ASSISTANT_LLM_MODE 只能是 external 或 self-hosted，现在是 ${rawMode}`)
+  }
+  if (Boolean(baseUrl) !== Boolean(model)) {
+    throw new Error('ASSISTANT_LLM_BASE_URL 和 ASSISTANT_LLM_MODEL 要一起填（都不填就是不用模型）')
+  }
   let llm: LlmConfig | null = null
   if (baseUrl && model) {
-    const url = new URL(baseUrl)
+    let url: URL
+    try {
+      url = new URL(baseUrl)
+    } catch {
+      throw new Error('ASSISTANT_LLM_BASE_URL 不是合法的地址')
+    }
     if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('ASSISTANT_LLM_BASE_URL 要以 http:// 或 https:// 开头')
-    const mode = env.ASSISTANT_LLM_MODE === 'self-hosted' ? 'self-hosted' : 'external'
+    const mode = rawMode === 'self-hosted' ? 'self-hosted' : 'external'
     llm = {
       baseUrl,
       apiKey: env.ASSISTANT_LLM_API_KEY ?? '',
@@ -77,6 +93,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if (!databaseUrl) throw new Error('没有 ASSISTANT_DATABASE_URL（助手自己的库账号）')
   return {
     port: int(env, 'ASSISTANT_PORT', 8091),
+    host: (env.ASSISTANT_HOST ?? '').trim() || '127.0.0.1',
     appBaseUrl: (env.ASSISTANT_APP_URL ?? 'http://app:8080').replace(/\/+$/, ''),
     databaseUrl,
     openapiPath: env.ASSISTANT_OPENAPI ?? './openapi.json',
@@ -90,8 +107,10 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       maxSteps: int(env, 'ASSISTANT_MAX_STEPS', 6),
       maxToolCallsPerStep: 4,
       maxResultChars: 12_000,
-      maxPageSize: 50,
+      // 列表一次最多取 20 行，和给模型的行数一致：多取了也是丢
+      maxPageSize: 20,
       historyTurns: 6,
+      maxConcurrent: int(env, 'ASSISTANT_MAX_CONCURRENT', 6),
     },
   }
 }

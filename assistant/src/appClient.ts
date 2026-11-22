@@ -22,6 +22,21 @@ export interface AppReply {
   data: unknown
 }
 
+/**
+ * 令牌的用途（JWT 载荷里的 scope，app 的 JwtUtil.SCOPE_CLAIM）：助手令牌是 ASSISTANT，普通登录令牌没有。
+ * 只在 app 的 /api/auth/me 认过这个令牌以后用：签名、会话 app 都查过了，这里只读载荷，不验签
+ */
+export function tokenScope(token: string): string | null {
+  const payload = token.split('.')[1]
+  if (!payload) return null
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { scope?: unknown }
+    return typeof claims.scope === 'string' ? claims.scope : null
+  } catch {
+    return null
+  }
+}
+
 const MAX_BODY = 2 * 1024 * 1024
 const SAFE_PATH = /^\/api\/[A-Za-z0-9\-_/.]*$/
 
@@ -54,13 +69,8 @@ export class AppClient {
       redirect: 'error',
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
-    const length = Number(response.headers.get('content-length') ?? '0')
-    if (length > MAX_BODY) {
-      await response.body?.cancel()
-      return { status: response.status, code: null, msg: '返回的内容太大', data: null }
-    }
-    const text = await response.text()
-    if (text.length > MAX_BODY) return { status: response.status, code: null, msg: '返回的内容太大', data: null }
+    const text = await readLimited(response, MAX_BODY)
+    if (text === null) return { status: response.status, code: null, msg: '返回的内容太大', data: null }
     try {
       const json = JSON.parse(text) as { code?: number; msg?: string; data?: unknown }
       return { status: response.status, code: typeof json.code === 'number' ? json.code : null, msg: json.msg ?? '', data: json.data ?? null }
@@ -68,4 +78,28 @@ export class AppClient {
       return { status: response.status, code: null, msg: `app 返回的不是 JSON（HTTP ${response.status}）`, data: null }
     }
   }
+}
+
+/** 读响应体，超过 max 字节就停下、返回 null（分块传输没有 Content-Length，也不会整个读进内存） */
+async function readLimited(response: Response, max: number): Promise<string | null> {
+  if (Number(response.headers.get('content-length') ?? '0') > max) {
+    await response.body?.cancel().catch(() => undefined)
+    return null
+  }
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const parts: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      size += value.length
+      if (size > max) return null
+      parts.push(value)
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  return Buffer.concat(parts).toString('utf8')
 }

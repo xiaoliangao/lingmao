@@ -39,7 +39,15 @@ export class Store {
 
   constructor(databaseUrl: string) {
     // 连接池单独开、上限设小（RFC 017 §3.4）：甲方服务器 2 核 4G，库连接是 app 的
-    this.pool = new pg.Pool({ connectionString: databaseUrl, max: 3, idleTimeoutMillis: 30_000, statement_timeout: 10_000 })
+    // 密码不写进连接串时，pg 从环境变量 PGPASSWORD 取（部署包这样传）
+    this.pool = new pg.Pool({ connectionString: databaseUrl, max: 3, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 5_000, statement_timeout: 10_000 })
+    // 空闲连接被数据库断开（重启、备份时被踢）会在池上报 error：不监听的话整个进程退出。记一笔，下次用时池会重新连
+    this.pool.on('error', (e) => console.error(JSON.stringify({ time: new Date().toISOString(), level: 'ERROR', msg: 'db idle connection lost', error: e.message })))
+  }
+
+  /** 健康检查用：库连得上 */
+  async ping(): Promise<void> {
+    await this.pool.query({ text: 'SELECT 1', query_timeout: 2_000 } as pg.QueryConfig)
   }
 
   async close(): Promise<void> {
@@ -48,11 +56,20 @@ export class Store {
 
   /** 执行还没执行过的迁移；同时只有一个实例在迁移（advisory lock） */
   async migrate(dir: string): Promise<string[]> {
-    const files = (await readdir(dir)).filter((f) => /^V\d+__\w+\.sql$/.test(f))
+    const files = (await readdir(dir)).filter((f) => f.endsWith('.sql'))
+    for (const f of files) {
+      if (!/^V\d+__\w+\.sql$/.test(f)) throw new Error(`迁移文件名 ${f} 不对：要写成 V<数字>__<字母数字下划线>.sql`)
+    }
     files.sort((a, b) => version(a) - version(b))
+    for (let i = 1; i < files.length; i++) {
+      if (version(files[i]!) === version(files[i - 1]!)) throw new Error(`两个迁移的版本号一样：${files[i - 1]}、${files[i]}`)
+    }
     const client = await this.pool.connect()
     const applied: string[] = []
+    let broken = false
     try {
+      // 等别的实例迁移完、执行慢的 DDL，都不受连接池 10 秒的语句超时管；这条连接用完就扔，不放回池里
+      await client.query('SET statement_timeout = 0')
       await client.query(`SELECT pg_advisory_lock(hashtext('scm-assistant-migrate'))`)
       await client.query(`
         CREATE TABLE IF NOT EXISTS assistant.ast_schema_version (
@@ -80,14 +97,19 @@ export class Store {
           await client.query('INSERT INTO assistant.ast_schema_version(version, name, checksum) VALUES ($1, $2, $3)', [v, file, sum])
           await client.query('COMMIT')
         } catch (e) {
-          await client.query('ROLLBACK')
+          // 回滚本身再出错（连接断了）不盖住原来的原因
+          await client.query('ROLLBACK').catch(() => undefined)
           throw new Error(`迁移 ${file} 执行失败：${(e as Error).message}`)
         }
         applied.push(file)
       }
+    } catch (e) {
+      broken = true
+      throw e
     } finally {
-      await client.query(`SELECT pg_advisory_unlock(hashtext('scm-assistant-migrate'))`).catch(() => undefined)
-      client.release()
+      if (!broken) await client.query(`SELECT pg_advisory_unlock(hashtext('scm-assistant-migrate'))`).catch(() => undefined)
+      // 销毁这条连接：会话级的锁、statement_timeout 跟着连接一起没了，不会带回池里
+      client.release(true)
     }
     return applied
   }
@@ -107,10 +129,12 @@ export class Store {
     return r.rowCount === 1
   }
 
+  /** 记到用掉的那天：23:59 问、过了零点才答完的，记在新的一天（那天还没有这个人的行就新建一行，次数记 0） */
   async addTokens(userId: string, promptTokens: number, completionTokens: number): Promise<void> {
     await this.pool.query(
-      `UPDATE assistant.ast_usage SET prompt_tokens = prompt_tokens + $2, completion_tokens = completion_tokens + $3
-       WHERE user_id = $1 AND day = ${TODAY}`,
+      `INSERT INTO assistant.ast_usage(user_id, day, requests, prompt_tokens, completion_tokens) VALUES ($1, ${TODAY}, 0, $2, $3)
+       ON CONFLICT (user_id, day) DO UPDATE SET prompt_tokens = assistant.ast_usage.prompt_tokens + EXCLUDED.prompt_tokens,
+         completion_tokens = assistant.ast_usage.completion_tokens + EXCLUDED.completion_tokens`,
       [userId, promptTokens, completionTokens],
     )
   }
@@ -141,17 +165,18 @@ export class Store {
     return r.rows.map((x) => ({ id: x.id, title: x.title, updatedAt: x.updated_at.toISOString() }))
   }
 
-  /** 最近 turns 轮问答，旧的在前；回答出错的那条不带 */
+  /**
+   * 最近 turns 轮问答，旧的在前，一问一答成对：没答出来的那一问（出错、中途停止）连同它的回答都不带。
+   * 有的模型要求 user / assistant 严格交替，留下一条落单的问题，这个对话以后就一直报 400
+   */
   async history(conversationId: string, turns: number): Promise<StoredMessage[]> {
-    const r = await this.pool.query<{ role: 'user' | 'assistant'; content: string }>(
-      `SELECT role, content FROM (
-         SELECT id, role, content FROM assistant.ast_message
-         WHERE conversation_id = $1 AND error IS NULL AND content <> ''
-         ORDER BY id DESC LIMIT $2
+    const r = await this.pool.query<{ role: 'user' | 'assistant'; content: string; error: string | null }>(
+      `SELECT role, content, error FROM (
+         SELECT id, role, content, error FROM assistant.ast_message WHERE conversation_id = $1 ORDER BY id DESC LIMIT $2
        ) t ORDER BY id`,
-      [conversationId, turns * 2],
+      [conversationId, turns * 4],
     )
-    return r.rows
+    return pairUp(r.rows, turns)
   }
 
   async messages(conversationId: string): Promise<{ id: string; role: string; content: string; error: string | null; createdAt: string }[]> {
@@ -183,19 +208,34 @@ export class Store {
         await client.query(
           `INSERT INTO assistant.ast_tool_call(message_id, tool, args, http_status, ok, rows, duration_ms)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [id, c.tool, JSON.stringify(c.args), c.status, c.ok, c.rows, c.durationMs],
+          // jsonb 存不了 \u0000：模型给的参数里有就去掉
+          [id, c.tool, JSON.stringify(c.args, (_k, v: unknown) => (typeof v === 'string' ? v.replaceAll('\0', '') : v)), c.status, c.ok, c.rows, c.durationMs],
         )
       }
       await client.query('UPDATE assistant.ast_conversation SET updated_at = now() WHERE id = $1', [conversationId])
       await client.query('COMMIT')
       return id
     } catch (e) {
-      await client.query('ROLLBACK')
+      await client.query('ROLLBACK').catch(() => undefined)
       throw e
     } finally {
       client.release()
     }
   }
+}
+
+/** 按顺序挑出"一问紧跟着一个好的回答"的对子，留最后 turns 对 */
+export function pairUp(rows: { role: 'user' | 'assistant'; content: string; error: string | null }[], turns: number): StoredMessage[] {
+  const pairs: [StoredMessage, StoredMessage][] = []
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const q = rows[i]!
+    const a = rows[i + 1]!
+    if (q.role === 'user' && a.role === 'assistant' && a.error === null && a.content !== '') {
+      pairs.push([{ role: 'user', content: q.content }, { role: 'assistant', content: a.content }])
+      i++
+    }
+  }
+  return pairs.slice(-turns).flat()
 }
 
 function version(file: string): number {

@@ -36,6 +36,22 @@ beforeEach(async () => {
   store = new Store(URL_)
 })
 
+describe('迁移文件', () => {
+  test('文件名不合规、版本号重复：起不来，不悄悄跳过', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ast-mig-'))
+    try {
+      await cp(MIGRATIONS, dir, { recursive: true })
+      await writeFile(join(dir, 'V2__add-proposal.sql'), 'SELECT 1;')
+      await assert.rejects(store.migrate(dir), /文件名 V2__add-proposal\.sql 不对/)
+      await rm(join(dir, 'V2__add-proposal.sql'))
+      await writeFile(join(dir, 'V1__again.sql'), 'SELECT 1;')
+      await assert.rejects(store.migrate(dir), /版本号一样/)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('迁移', () => {
   test('空库执行全部；再启动一次什么都不做；表都在 assistant 下、归助手账号', async () => {
     assert.deepEqual(await store.migrate(MIGRATIONS), ['V1__init.sql'])
@@ -105,6 +121,27 @@ describe('限额', () => {
     await admin.query(`INSERT INTO assistant.ast_usage(user_id, day, prompt_tokens) VALUES (3, current_date - 3, 99999)`)
     assert.equal(await store.tokensToday(), 1255, '前几天的不算')
   })
+
+  test('过了零点才答完：今天还没有这个人的行，新建一行记上（不悄悄丢掉）', async () => {
+    await store.migrate(MIGRATIONS)
+    await admin.query(`INSERT INTO assistant.ast_usage(user_id, day, requests) VALUES (4, (now() AT TIME ZONE 'Asia/Shanghai')::date - 1, 1)`)
+    await store.addTokens('4', 300, 30)
+    assert.equal(await store.tokensToday(), 330)
+    const today = await admin.query(`SELECT requests FROM assistant.ast_usage WHERE user_id = 4 AND day = (now() AT TIME ZONE 'Asia/Shanghai')::date`)
+    assert.equal(today.rows[0].requests, 0, '次数记在问的那天，这里不加')
+  })
+})
+
+describe('连接', () => {
+  test('空闲连接被数据库踢掉（重启、备份时）：进程不退出，下一次查询重新连上', async () => {
+    await store.migrate(MIGRATIONS)
+    await store.ping()
+    const killed = await admin.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'scm_assistant' AND datname = current_database() AND pid <> pg_backend_pid()`)
+    assert.ok(killed.rowCount! >= 1)
+    await new Promise((r) => setTimeout(r, 100))
+    await store.ping()
+    assert.equal(await store.tokensToday(), 0)
+  })
 })
 
 describe('对话', () => {
@@ -114,19 +151,19 @@ describe('对话', () => {
     await store.createConversation(id, '7', '待审核的采购单有几张'.repeat(20))
     await store.addUserMessage(id, '待审核的采购单有几张')
     await store.addAnswer(id, '有 3 张。', null, 500, 20, [
-      { tool: 'list_purchase_orders', args: { status: ['PENDING'] }, status: 200, ok: true, rows: 3, durationMs: 42 },
+      { tool: 'list_purchase_orders', args: { status: ['PENDING'], keyword: 'PO\u00001' }, status: 200, ok: true, rows: 3, durationMs: 42 },
     ])
     await store.addUserMessage(id, '最早的是哪张')
     await store.addAnswer(id, '', '模型太久没回应', 0, 0, [])
 
+    // 没答出来的那一问连同回答都不带：不留落单的 user（严格交替的模型会报 400）
     assert.deepEqual(await store.history(id, 6), [
       { role: 'user', content: '待审核的采购单有几张' },
       { role: 'assistant', content: '有 3 张。' },
-      { role: 'user', content: '最早的是哪张' },
     ])
     assert.deepEqual((await store.messages(id)).map((m) => [m.role, m.error]), [['user', null], ['assistant', null], ['user', null], ['assistant', '模型太久没回应']])
     const calls = await admin.query('SELECT tool, args, http_status, ok, rows FROM assistant.ast_tool_call')
-    assert.deepEqual(calls.rows, [{ tool: 'list_purchase_orders', args: { status: ['PENDING'] }, http_status: 200, ok: true, rows: 3 }])
+    assert.deepEqual(calls.rows, [{ tool: 'list_purchase_orders', args: { status: ['PENDING'], keyword: 'PO1' }, http_status: 200, ok: true, rows: 3 }], '参数里的 \\u0000 去掉了（jsonb 存不了）')
 
     assert.equal(await store.ownsConversation(id, '7'), true)
     assert.equal(await store.ownsConversation(id, '8'), false)

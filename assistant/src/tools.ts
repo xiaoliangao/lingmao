@@ -235,7 +235,7 @@ function fail(message: string, args: Record<string, unknown>): ToolResult {
   return { ok: false, status: null, rows: null, content: JSON.stringify({ error: message }), args }
 }
 
-const DROP_KEYS = new Set(['image', 'images', 'imageUrl', 'thumbnail', 'avatar', 'url', 'fileUrl', 'colorHex', 'attachments', 'actions'])
+const DROP_KEYS = new Set(['image', 'images', 'imageUrl', 'thumbnail', 'thumbUrl', 'avatar', 'url', 'fileUrl', 'colorHex', 'attachments', 'actions'])
 const FILE_URL = /\/files\//
 
 /**
@@ -262,18 +262,22 @@ export function shrink(data: unknown): { data: unknown; rows: number | null } {
   if (data && typeof data === 'object' && !Array.isArray(data) && Array.isArray((data as { list?: unknown }).list)) {
     const page = data as { list: unknown[]; total?: number }
     const list = page.list.slice(0, MAX_ROWS).map((x) => clean(x, 1))
-    const out: Record<string, unknown> = { total: page.total ?? page.list.length, list }
-    if (page.list.length > MAX_ROWS) out.note = `只给了前 ${MAX_ROWS} 行，共 ${page.total ?? page.list.length} 行`
-    return { data: out, rows: page.list.length }
+    const total = page.total ?? page.list.length
+    const out: Record<string, unknown> = { total, list }
+    if (total > list.length) out.note = `只给了 ${list.length} 行，共 ${total} 行；要看别的，加条件或翻页（page）再查`
+    return { data: out, rows: list.length }
   }
   if (Array.isArray(data)) {
     const list = data.slice(0, MAX_ROWS).map((x) => clean(x, 1))
-    return { data: data.length > MAX_ROWS ? { total: data.length, list, note: `只给了前 ${MAX_ROWS} 行` } : list, rows: data.length }
+    return { data: data.length > MAX_ROWS ? { total: data.length, list, note: `只给了前 ${MAX_ROWS} 行` } : list, rows: list.length }
   }
   return { data: clean(data, 0), rows: null }
 }
 
-function cap(text: string, max: number): string {
+const CUT_NOTE = '…（结果太长，后面截掉了；请缩小条件再查）'
+
+/** 超长直接截断再加一句说明，总长不超过 max（不再包一层 JSON：里面的引号转义以后反而更长） */
+export function cap(text: string, max: number): string {
   if (text.length <= max) return text
-  return JSON.stringify({ truncated: true, note: '结果太长，已截断；请缩小条件再查', partial: text.slice(0, max - 120) })
+  return text.slice(0, Math.max(0, max - CUT_NOTE.length)) + CUT_NOTE
 }

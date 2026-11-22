@@ -10,7 +10,7 @@ import { buildTools, parseWhitelist, type OpenApiDoc } from './tools.ts'
 
 /**
  * 启动顺序：读配置 → 执行助手自己的迁移 → 按白名单从 openapi.json 生成工具（不合规起不来）→ 开端口。
- * 收到 SIGTERM（docker stop）先不接新请求，等正在答的说完（最多 20 秒）再退
+ * 收到 SIGTERM（docker stop）先不接新请求，等正在答的说完（最多 15 秒，没答完的中止并记下）再退
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -34,35 +34,38 @@ async function main(): Promise<void> {
   const app = new AppClient(config.appBaseUrl)
   const llm = config.llm ? new OpenAiCompatible(config.llm) : null
 
-  const server = buildServer({
+  const { server, shutdown } = buildServer({
     chat: { llm, app, store, tools, limits: config.limits, systemName: config.systemName },
     app,
     store,
     llmConfig: config.llm,
   })
-  // 一句话最长：模型几轮 × 每轮超时，再加工具调用；Node 默认 5 分钟的请求超时会把长回答掐掉
-  server.requestTimeout = 0
+  // requestTimeout 只管"收完请求"（请求头 + 请求体）的时间，不管往外推回答：一句答多久都不受它限制；
+  // 设短一点，慢慢发请求体的连接 30 秒就断
+  server.requestTimeout = 30_000
   server.headersTimeout = 30_000
   server.keepAliveTimeout = 65_000
-  server.listen(config.port, () => {
+  server.listen(config.port, config.host, () => {
     log('INFO', 'started', {
+      host: config.host,
       port: config.port,
       tools: tools.length,
       model: config.llm ? { mode: config.llm.mode, host: new URL(config.llm.baseUrl).hostname, model: config.llm.model } : null,
     })
   })
 
+  // docker stop 先发 SIGTERM，compose.yml 里等 25 秒再强杀：正在答的等 15 秒，没答完的中止并记下，再关库连接
   let stopping = false
   const stop = (signal: string) => {
     if (stopping) return
     stopping = true
     log('INFO', 'stopping', { signal })
-    const force = setTimeout(() => process.exit(0), 20_000)
+    const force = setTimeout(() => process.exit(0), 22_000)
     force.unref()
-    server.close(() => {
-      store.close().finally(() => process.exit(0))
-    })
-    server.closeIdleConnections()
+    shutdown(15_000)
+      .then(() => store.close())
+      .catch((e: unknown) => log('ERROR', 'stop failed', { error: String(e) }))
+      .finally(() => process.exit(0))
   }
   process.on('SIGTERM', () => stop('SIGTERM'))
   process.on('SIGINT', () => stop('SIGINT'))

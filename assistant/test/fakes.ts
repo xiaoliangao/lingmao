@@ -1,7 +1,7 @@
 import { AppClient, type Me } from '../src/appClient.ts'
 import type { Limits } from '../src/config.ts'
-import type { ChatMessage, LlmProvider, LlmTurn, ToolSpec } from '../src/llm.ts'
-import type { ConversationRow, Store, StoredMessage, ToolCallRecord } from '../src/store.ts'
+import type { ChatMessage, ChatOptions, LlmProvider, LlmTurn, ToolSpec } from '../src/llm.ts'
+import { pairUp, type ConversationRow, type Store, type StoredMessage, type ToolCallRecord } from '../src/store.ts'
 import { buildTools, type OpenApiDoc, type WhitelistEntry } from '../src/tools.ts'
 
 /** 测试用的假件：照着脚本回话的模型、记在内存里的库、按地址回固定 JSON 的 app */
@@ -14,27 +14,33 @@ export const LIMITS: Limits = {
   maxResultChars: 4_000,
   maxPageSize: 50,
   historyTurns: 6,
+  maxConcurrent: 2,
+}
+
+/** 长得像 app 发的 JWT：载荷里有 scope（只读载荷，不验签，签名随便写） */
+export function jwt(claims: Record<string, unknown>): string {
+  return `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ sub: '7', ...claims })).toString('base64url')}.sig`
 }
 
 export const BUYER: Me = {
   id: '7',
   username: 'buyer1',
   nickname: '采购小王',
-  perms: ['purchase:order:list'],
+  perms: ['purchase:order:list', 'assistant:chat:use'],
   features: { ai: true },
 }
 
 /** 照脚本一轮轮回话；每轮记下收到的消息和工具 */
 export class ScriptedLlm implements LlmProvider {
-  readonly seen: { messages: ChatMessage[]; tools: ToolSpec[] }[] = []
+  readonly seen: { messages: ChatMessage[]; tools: ToolSpec[]; options: ChatOptions }[] = []
   private readonly turns: (LlmTurn | Error)[]
 
   constructor(turns: (LlmTurn | Error)[]) {
     this.turns = turns
   }
 
-  async chat(messages: ChatMessage[], tools: ToolSpec[], onDelta: (text: string) => void): Promise<LlmTurn> {
-    this.seen.push({ messages: structuredClone(messages), tools })
+  async chat(messages: ChatMessage[], tools: ToolSpec[], onDelta: (text: string) => void, _signal?: AbortSignal, options: ChatOptions = {}): Promise<LlmTurn> {
+    this.seen.push({ messages: structuredClone(messages), tools, options })
     const next = this.turns.shift()
     if (!next) throw new Error('脚本用完了')
     if (next instanceof Error) throw next
@@ -80,11 +86,12 @@ export class MemoryStore {
   async listConversations(userId: string): Promise<ConversationRow[]> {
     return [...this.conversations.entries()].filter(([, c]) => c.userId === userId).map(([id, c]) => ({ id, title: c.title, updatedAt: '' }))
   }
+  dbDown = false
+  async ping(): Promise<void> {
+    if (this.dbDown) throw new Error('db down')
+  }
   async history(conversationId: string, turns: number): Promise<StoredMessage[]> {
-    return this.messagesById
-      .filter((m) => m.conversationId === conversationId && m.error === null && m.content !== '')
-      .slice(-turns * 2)
-      .map((m) => ({ role: m.role, content: m.content }))
+    return pairUp(this.messagesById.filter((m) => m.conversationId === conversationId), turns)
   }
   async messages(conversationId: string) {
     return this.messagesById.filter((m) => m.conversationId === conversationId).map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error, createdAt: '' }))
