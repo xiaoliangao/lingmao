@@ -38,7 +38,8 @@ watch(visible, async (open) => {
   } finally {
     if (current === seq) loading.value = false
   }
-})
+  // immediate：页面常用 v-if 在点"预览"的同时建出这个组件，建出来时已经是打开的，不加的话第一次打开不取数、空白
+}, { immediate: true })
 
 const sheet = computed<ExcelSheet | null>(() => book.value?.sheets[active.value] ?? null)
 
