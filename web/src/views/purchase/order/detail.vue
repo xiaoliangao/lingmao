@@ -235,7 +235,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
                   <div v-if="row.priceChangeReason" class="dim small">{{ row.priceChangeReason }}</div>
                 </template>
               </el-table-column>
-              <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
+              <el-table-column v-if="canSeeCost" label="金额" width="124" class-name="num" align="right">
                 <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
               </el-table-column>
               <el-table-column label="已入库" width="84" class-name="num" align="right">

@@ -129,7 +129,8 @@ async function voidRow(row: PriceRow) {
       <el-button icon="Plus" @click="formDialog?.open(subject)">录价格</el-button>
     </div>
 
-    <el-table v-loading="currentLoading" :data="currentList" row-key="id" :empty-text="canRecord ? '还没有价格记录，点「录价格」录供应商的报价' : '还没有价格记录'">
+    <!-- 单号（CG + 12 位）、税率说明放得下；作废说明换行显示全（走查 T-120e64） -->
+    <el-table v-loading="currentLoading" :data="currentList" row-key="id" scrollbar-always-on :empty-text="canRecord ? '还没有价格记录，点「录价格」录供应商的报价' : '还没有价格记录'">
       <el-table-column v-if="mixed" label="类型" width="72">
         <template #default="{ row }"><span class="dim">{{ PRICE_TYPE_LABEL[(row as PriceRow).type] }}</span></template>
       </el-table-column>
@@ -170,7 +171,7 @@ async function voidRow(row: PriceRow) {
       <el-table-column label="调价原因" min-width="120">
         <template #default="{ row }">{{ row.reason || '—' }}</template>
       </el-table-column>
-      <el-table-column label="来源" min-width="80">
+      <el-table-column label="来源" min-width="144">
         <template #default="{ row }">
           <span v-if="row.sourceNo" class="code">{{ row.sourceNo }}</span>
           <span v-else class="dim">手工录</span>
@@ -186,7 +187,7 @@ async function voidRow(row: PriceRow) {
 
     <template v-if="historyTotal > 0">
       <h3 class="sec">调价历史</h3>
-      <el-table v-loading="historyLoading" :data="historyList" row-key="id" :row-class-name="voidClass">
+      <el-table v-loading="historyLoading" :data="historyList" row-key="id" :row-class-name="voidClass" scrollbar-always-on>
         <el-table-column label="生效日期" width="116" class-name="num nowrap">
           <template #default="{ row }">{{ formatDate(row.effectiveDate) }}</template>
         </el-table-column>
@@ -204,16 +205,16 @@ async function voidRow(row: PriceRow) {
             <div v-if="row.unitChanged" class="note pending" title="物料后来换了采购单位，这条不参与取价">单位已变</div>
           </template>
         </el-table-column>
-        <el-table-column label="税率" min-width="90">
+        <el-table-column label="税率" min-width="130">
           <template #default="{ row }"><span class="dim">{{ taxText(row as PriceRow) }}</span></template>
         </el-table-column>
-        <el-table-column label="调价原因" min-width="130">
+        <el-table-column label="调价原因" min-width="160" :show-overflow-tooltip="false">
           <template #default="{ row }">
             {{ row.reason || '—' }}
             <div v-if="row.voided" class="note danger">已作废：{{ row.voidReason }}（{{ row.voidByName }} · {{ shortDay(formatDate(row.voidTime)) }}）</div>
           </template>
         </el-table-column>
-        <el-table-column label="来源、记录" min-width="116">
+        <el-table-column label="来源、记录" min-width="144">
           <template #default="{ row }">
             <span v-if="row.sourceNo" class="code">{{ row.sourceNo }}</span>
             <span v-else>手工录</span>

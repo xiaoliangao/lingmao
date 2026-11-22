@@ -30,6 +30,8 @@ interface EditableReorderRow extends ReorderRow {
 
 const router = useRouter()
 const companyId = useUserStore().defaultCompanyId
+/** 勾选、选品类线只是为了生成备货采购单：没有 purchase:order:add 的（管理层、仓管）只看提醒（走查 T-120e64） */
+const canCreate = useUserStore().hasPerm('purchase:order:add')
 /** 品类线（RFC 013 §2）：生成的采购单都是这条线、供应商要做这条线；只有一条线的人不用选 */
 const lines = useProductLines()
 const line = ref<string | null>(lines.only.value)
@@ -138,7 +140,7 @@ async function generateStockPos() {
   <div>
     <PageHeader title="补货提醒" :back="{ label: '库存', to: '/stock' }">
       <template #actions>
-        <LineSelect v-if="lines.multi.value" v-model="line" class="line-select" placeholder="生成到哪条品类线" />
+        <LineSelect v-if="canCreate && lines.multi.value" v-model="line" class="line-select" placeholder="生成到哪条品类线" />
         <el-button :loading="loading" @click="load">重新取</el-button>
         <el-button
           v-perm="'purchase:order:add'"
@@ -163,7 +165,7 @@ async function generateStockPos() {
       empty-text="没有低于最小库存的物料"
       @selection-change="selected = $event"
     >
-      <el-table-column type="selection" width="40" fixed="left" />
+      <el-table-column v-if="canCreate" type="selection" width="40" fixed="left" />
       <el-table-column label="物料 SKU" width="220" fixed="left">
         <template #default="{ row }">
           <div class="sku-cell">

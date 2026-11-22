@@ -583,6 +583,8 @@ export interface OrderChangeRow {
 }
 
 export interface OrderChangeQuery {
+  /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+  productLine?: string
   /** 变更单号、订单号、SKU 码；一次查几个（README §3.2）时变更单号、订单号精确查 */
   keyword?: string
   status?: ChangeStatus[]
@@ -757,6 +759,8 @@ export interface OrderProgressRow {
 }
 
 export interface OrderProgressQuery {
+  /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+  productLine?: string
   segment?: OrderProgressSegment
   /** 订单号、款号 */
   keyword?: string

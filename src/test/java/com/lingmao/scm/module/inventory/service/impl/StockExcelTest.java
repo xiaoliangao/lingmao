@@ -48,7 +48,7 @@ class StockExcelTest {
             assertNumber(cell(sheet, 1, "单价"), "12.3456");
             assertNumber(cell(sheet, 1, "金额"), "24.69");
             assertThat(cell(sheet, 1, "币种").getStringCellValue()).isEqualTo("CNY");
-            assertThat(cell(sheet, 1, "估值状态").getStringCellValue()).isEqualTo("RECORDED");
+            assertThat(cell(sheet, 1, "估值状态").getStringCellValue()).isEqualTo("已记价");
             assertThat(cell(sheet, 1, "单位").getStringCellValue()).isEqualTo("米");
             assertThat(cell(sheet, 1, "冲销原流水 ID")).isNull();
         }
@@ -67,7 +67,7 @@ class StockExcelTest {
             assertThat(cell(sheet, 1, "金额")).isNull();
             assertThat(cell(sheet, 1, "币种")).isNull();
             assertThat(cell(sheet, 1, "单位")).isNull();
-            assertThat(cell(sheet, 1, "估值状态").getStringCellValue()).isEqualTo("UNKNOWN");
+            assertThat(cell(sheet, 1, "估值状态").getStringCellValue()).isEqualTo("估值未知");
             assertThat(cell(sheet, 1, "冲销原流水 ID")).isNull();
         }
     }
@@ -98,8 +98,23 @@ class StockExcelTest {
             assertThat(reference.getStringCellValue()).isEqualTo(Long.toString(originalLogId));
             assertThat(cell(sheet, 2, "单价")).isNull();
             assertThat(cell(sheet, 2, "金额")).isNull();
-            assertThat(cell(sheet, 2, "估值状态").getStringCellValue()).isEqualTo("UNKNOWN");
+            assertThat(cell(sheet, 2, "估值状态").getStringCellValue()).isEqualTo("估值未知");
             assertThat(cell(sheet, 2, "冲销原流水 ID").getStringCellValue()).isEqualTo(Long.toString(originalLogId + 1));
+        }
+    }
+
+    @Test
+    void noCostPermission_dropsAllValueColumns() throws IOException {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        StockLogRowVO log = log("RECORDED", "METER");
+        log.setUnitPrice(new BigDecimal("12.3456"));
+        log.setCurrency("CNY");
+
+        try (XSSFWorkbook workbook = export(log)) {
+            Sheet sheet = workbook.getSheet("库存日志");
+            List<String> headers = new java.util.ArrayList<>();
+            sheet.getRow(0).forEach(c -> headers.add(c.getStringCellValue()));
+            assertThat(headers).doesNotContain("单价", "金额", "币种", "估值状态").contains("单位", "冲销原流水 ID");
         }
     }
 

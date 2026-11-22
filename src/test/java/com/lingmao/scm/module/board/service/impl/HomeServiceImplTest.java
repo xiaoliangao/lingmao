@@ -224,6 +224,35 @@ class HomeServiceImplTest {
         assertThat(rows).extracting(DeliveryRow::dueDate).isSorted();
     }
 
+    /** 规则：晚于开裁只列外发加工单（成品采购单包工包料，不等我们的料）；组上的数只算外发加工单 */
+    @Test
+    void todos_cutRiskListsOutsourceOnly() {
+        login("production:order:list");
+        when(productionBoardService.cards(any())).thenReturn(new com.lingmao.scm.module.production.dto.BoardCards(0, 0, 0, 0, 0, 0, 0, 0, 0, 7));
+        when(issueService.openIssues(any(), any())).thenReturn(new PageResult<>(List.of(), 0));
+        when(purchaseService.orderCutRisks()).thenReturn(Map.of("DD2611180001", new com.lingmao.scm.module.purchase.dto.OrderCutRisk(
+                "DD2611180001", 5L, "卡其布", TODAY.plusDays(5), TODAY.plusDays(1), 4)));
+        List<String> cutKinds = new ArrayList<>();
+        when(productionService.page(any())).thenAnswer(inv -> {
+            ProductionQuery q = inv.getArgument(0);
+            if (q.getOrderNos() == null) {
+                return new PageResult<>(List.of(), 0);
+            }
+            cutKinds.add(q.getKind());
+            ProductionRowVO row = productionRow(10L, "JG261118000", TODAY.plusDays(20));
+            row.setOrderNo("DD2611180001");
+            return new PageResult<>(List.of(row), 1);
+        });
+        when(referenceService.describe(any(), anyCollection())).thenAnswer(inv -> refs(inv.getArgument(0), inv.getArgument(1)));
+
+        HomeTodos todos = service.todos(new HomeTodoQuery());
+
+        assertThat(cutKinds).containsExactly("OUTSOURCE");
+        TodoGroup cut = todos.groups().stream().filter(g -> g.key().equals("CUT_RISK")).findFirst().orElseThrow();
+        assertThat(cut.total()).isEqualTo(1);
+        assertThat(cut.items()).singleElement().satisfies(i -> assertThat(i.sub()).contains("卡其布"));
+    }
+
     // ---------------------------------------------------------------- 数据
 
     private static void login(String... authorities) {

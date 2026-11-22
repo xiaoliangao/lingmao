@@ -43,6 +43,7 @@
             AND (c.status = 'DRAFT' AND c.reject_reason IS NOT NULL) = #{q.rejected}
         </if>
         <if test="q.orderId != null">AND c.order_id = #{q.orderId}</if>
+        <if test="q.productLine != null and q.productLine != ''">AND o.product_line = #{q.productLine}</if>
         <if test="q.changeType != null">AND (',' || c.change_types || ',') LIKE '%,' || #{q.changeType} || ',%'</if>
         <if test="q.createDateFrom != null">
             AND c.create_time &gt;= (CAST(#{q.createDateFrom} AS date)::timestamp AT TIME ZONE 'Asia/Shanghai')

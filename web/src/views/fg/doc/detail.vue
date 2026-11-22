@@ -11,6 +11,7 @@ import SkuMatrix from '@/components/SkuMatrix.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import ThumbImage from '@/components/ThumbImage.vue'
 import DocAttachments from '@/components/doc/DocAttachments.vue'
+import { useUserStore } from '@/stores/user'
 import { runDocAction } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useFieldAccess } from '@/composables/useFieldAccess'
@@ -29,6 +30,8 @@ import { confirmRemove } from '@/views/basic/common'
 import ReceiveDialog from '../stock-in/ReceiveDialog.vue'
 import FgDocFormDialog from './FgDocFormDialog.vue'
 import { fgCells, fgColors, fgSizes } from './fgMatrix'
+
+const canEditFiles = useUserStore().hasPerm('fg:doc:edit')
 
 /**
  * 成品入库单、出库单详情（/fg-in/:id、/fg-out/:id 共用，docs/api/07 §1.3）。
@@ -290,7 +293,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(FG_DOC_STATUS).map(([k, v
         <section class="panel">
           <div class="panel-head">附件</div>
           <div class="panel-body">
-            <DocAttachments :load="loadFiles" :save="saveFiles" />
+            <!-- 换附件要编辑权限（后端兜底 403）：只能看、只能审的人不出"上传附件"（走查 T-120e64） -->
+            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="!canEditFiles" />
           </div>
         </section>
 

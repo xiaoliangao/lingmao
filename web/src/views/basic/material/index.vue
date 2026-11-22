@@ -158,7 +158,8 @@ function onSaved(id: string) {
             <span>{{ c.name }}{{ c.status !== 1 ? '（停用）' : '' }}</span>
           </button>
         </div>
-        <el-button v-perm="'basic:basics:list'" class="manage" link icon="Setting" @click="manageCategories">管理分类</el-button>
+        <!-- 能建、能改分类的才出（只能看的左边这棵树就够了，走查 T-120e64） -->
+        <el-button v-perm="['basic:basics:add', 'basic:basics:edit']" class="manage" link icon="Setting" @click="manageCategories">管理分类</el-button>
       </nav>
 
       <div class="main">

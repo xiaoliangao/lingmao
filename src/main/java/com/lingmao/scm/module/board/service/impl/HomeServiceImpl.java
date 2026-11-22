@@ -474,8 +474,9 @@ public class HomeServiceImpl implements HomeService {
     }
 
     /**
-     * 晚于开裁（03 待到料的 CUT）：采购员看自己采购单里的行；生产跟单看自己跟的已下单、生产中的生产单，
-     * 它的订单有这种行（那些采购行的采购员是别人，只出物料名和日期）。晚得多的在前
+     * 晚于开裁（03 待到料的 CUT）：采购员看自己采购单里的行；生产跟单看自己跟的已下单、生产中的外发加工单，
+     * 它的订单有这种行（那些采购行的采购员是别人，只出物料名和日期）。晚得多的在前。
+     * 成品采购单是工厂包工包料，不等我们的料，不列（走查 T-120e64：同一张订单另有外发加工单时 CP 也被报了）
      */
     private TodoGroup cutRisk(Long owner) {
         List<Ranked> items = new ArrayList<>();
@@ -499,16 +500,13 @@ public class HomeServiceImpl implements HomeService {
         if (can(PRODUCTION_LIST)) {
             Map<String, OrderCutRisk> risks = purchaseService.orderCutRisks();
             if (!risks.isEmpty()) {
-                List<ProductionRowVO> rows = new ArrayList<>();
-                for (String kind : PRODUCTION_KINDS) {
-                    ProductionQuery q = activeProduction(kind);
-                    q.setMerchId(owner);
-                    q.setOrderNos(risks.keySet());
-                    q.setSize(GROUP_SIZE);
-                    PageResult<ProductionRowVO> page = productionService.page(q);
-                    rows.addAll(page.getList());
-                    total += page.getTotal();
-                }
+                ProductionQuery q = activeProduction("OUTSOURCE");
+                q.setMerchId(owner);
+                q.setOrderNos(risks.keySet());
+                q.setSize(GROUP_SIZE);
+                PageResult<ProductionRowVO> page = productionService.page(q);
+                List<ProductionRowVO> rows = new ArrayList<>(page.getList());
+                total += page.getTotal();
                 Map<Long, DocRef> refs = refs(BizType.PRODUCTION_ORDER, rows, ProductionRowVO::getId);
                 for (ProductionRowVO p : rows) {
                     OrderCutRisk risk = risks.get(p.getOrderNo());

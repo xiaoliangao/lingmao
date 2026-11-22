@@ -12,6 +12,8 @@ public class StyleCostQuery extends PageQuery {
     private String keyword;
     /** 品类，含下级 */
     private Long categoryId;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     private String brand;
     private Integer year;
     private String season;

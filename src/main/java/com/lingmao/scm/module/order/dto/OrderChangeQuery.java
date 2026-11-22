@@ -20,6 +20,8 @@ public class OrderChangeQuery extends PageQuery {
     /** 和 status=DRAFT 一起用：true 只要被驳回的，false 只要没被驳回的；null 都要 */
     private Boolean rejected;
     private Long orderId;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     /** 变更类型，取值见枚举；不传是全部 */
     private ChangeType changeType;
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)

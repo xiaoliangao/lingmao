@@ -7,6 +7,8 @@ import DateRange from '@/components/DateRange.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
+import LineSelect from '@/components/LineSelect.vue'
+import { useProductLines } from '@/composables/useProductLines'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import UserSelect from '@/components/UserSelect.vue'
@@ -64,6 +66,9 @@ async function loadCounts(params: Omit<OrderProgressQuery, 'segment'>) {
   }
 }
 
+// 几条品类线的人能按线筛（PRD §3.2；走查 T-120e64：这页原来漏了）
+const lines = useProductLines()
+const multiLine = lines.multi
 const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
   fetch: (params) => {
     const { segment: _segment, page: _page, size: _size, ...countsQuery } = params
@@ -73,6 +78,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   query: {
     keyword: '',
     segment: 'ALL' as OrderProgressSegment,
+    productLine: '',
     brand: '',
     orderType: '',
     salesId: undefined as string | null | undefined,
@@ -104,7 +110,7 @@ function onDueChange(val: [string, string] | null | undefined) {
 }
 
 const filtered = computed(
-  () => !!(query.keyword.trim() || query.segment !== 'ALL' || query.brand || query.orderType || query.salesId || query.merchId || query.dueDateFrom),
+  () => !!(query.keyword.trim() || query.segment !== 'ALL' || query.productLine || query.brand || query.orderType || query.salesId || query.merchId || query.dueDateFrom),
 )
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的：换个分段，或者清空筛选'
@@ -173,6 +179,9 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
       <template #left>
         <el-segmented v-model="query.segment" :options="segmentOptions" @change="search" />
       </template>
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
+      </FilterItem>
       <FilterItem label="品牌" :text="brands.labelOf(query.brand)" @clear="query.brand = ''">
         <DictSelect v-model="query.brand" type="brand" clearable placeholder="全部品牌" />
       </FilterItem>
@@ -220,7 +229,8 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
       <el-table-column v-if="cols.show.qty" label="数量" width="84" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.qty) }}</template>
       </el-table-column>
-      <el-table-column v-if="cols.show.dueDate" label="交期" width="160" class-name="num">
+      <!-- 日期 + 剩余天数、"部分到料 1/8"一行放下（走查 T-120e64：1280 宽时被截） -->
+      <el-table-column v-if="cols.show.dueDate" label="交期" width="196" class-name="num">
         <template #default="{ row }">
           {{ formatDate(row.dueDate) }}
           <DaysLeftTag v-if="row.daysLeft != null" :days-left="row.daysLeft" />
@@ -229,7 +239,7 @@ function riskTags(row: OrderProgressRow): { label: string; tone: 'danger' | 'pen
       <el-table-column v-if="cols.show.scheduled" label="排产" width="112">
         <template #default="{ row }"><QtyProgress :done="row.scheduledQty" :total="row.qty" /></template>
       </el-table-column>
-      <el-table-column v-if="cols.show.kitting" label="齐料" width="140">
+      <el-table-column v-if="cols.show.kitting" label="齐料" width="160">
         <template #default="{ row }">
           <button v-if="row.kitting" type="button" class="tag-btn" :disabled="!canOpenMrp || !row.kitting.calcIds.length" @click.stop="openKitting(row.kitting)">
             <StatusTag :tone="KITTING_STATUS[(row as OrderProgressRow).kitting!.status].tone">{{ row.kitting.label }}</StatusTag>

@@ -18,6 +18,8 @@ public class OrderProgressQuery extends PageQuery {
     private String segment;
     /** 订单号、款号；一次查几个时精确查 */
     private String keyword;
+    /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+    private String productLine;
     /** 字典 brand */
     private String brand;
     /** 字典 order_type */

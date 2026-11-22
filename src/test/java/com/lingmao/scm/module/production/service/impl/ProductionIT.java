@@ -448,6 +448,12 @@ class ProductionIT {
 
         OrderProgressRowVO row = progressService.page(q).getList().getFirst();
         assertThat(progressService.page(q).getList()).hasSize(1);
+        // 品类线筛选（走查 T-120e64）：订单的线筛得到，别的线筛不到
+        q.setProductLine(jdbcTemplate.queryForObject("SELECT product_line FROM ord_order WHERE id = ?", String.class, orderId));
+        assertThat(progressService.page(q).getList()).hasSize(1);
+        q.setProductLine("NO_SUCH_LINE");
+        assertThat(progressService.page(q).getList()).isEmpty();
+        q.setProductLine(null);
         assertThat(row.getStyleId()).isEqualTo(f.style);
         assertThat(row.getQty()).isEqualTo(100);
         assertThat(row.getScheduledQty()).isZero();

@@ -272,6 +272,12 @@ class OrderIT {
             assertThat(r.getStatus()).isEqualTo("APPROVED");
             assertThat(r.getSummary()).contains("新加 20 件");
         });
+        // 品类线筛选（走查 T-120e64）：订单的线筛得到，别的线筛不到
+        cq.setProductLine(jdbcTemplate.queryForObject("SELECT product_line FROM ord_order WHERE id = ?", String.class, id));
+        assertThat(changeService.page(cq).getList()).hasSize(1);
+        cq.setProductLine("NO_SUCH_LINE");
+        assertThat(changeService.page(cq).getList()).isEmpty();
+        cq.setProductLine(null);
 
         OrderChangeCreateReq cancel = changeReq(id);
         cancel.setCancel(true);

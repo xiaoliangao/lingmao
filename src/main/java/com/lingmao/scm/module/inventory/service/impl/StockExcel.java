@@ -204,7 +204,20 @@ class StockExcel {
         }).toList());
     }
 
-    ExcelSchema<Row> logSchema(boolean financialColumns) { return financialColumns ? LOGS : LOGS.without("单价", "金额"); }
+    /** 没有看价权限的：价值相关的四列都不出（走查 T-120e64：原来只去了单价、金额，币种、估值状态还在） */
+    ExcelSchema<Row> logSchema(boolean financialColumns) {
+        return financialColumns ? LOGS : LOGS.without("单价", "金额", "币种", "估值状态");
+    }
+
+    /** 估值状态写中文，和页面一样（docs/api/04 §3.6.4）：RECORDED 只表示留了原始价、额 */
+    static String valuationLabel(String status) {
+        if (status == null) return null;
+        return switch (status) {
+            case "RECORDED" -> "已记价";
+            case "UNKNOWN" -> "估值未知";
+            default -> status;
+        };
+    }
 
     List<Row> logRows(List<StockLogRowVO> logs, Map<String, String> units) {
         return logs.stream().map(l -> {
@@ -212,7 +225,7 @@ class StockExcel {
             r.setBizDate(l.getBizDate()); r.setChangeType(l.getChangeType().getLabel()); r.setDocNo(l.getDocNo());
             r.setWarehouse(l.getWarehouseName()); r.setDyeLot(l.getDyeLot()); r.setQty(l.getChangeQty());
             r.setBalanceQty(l.getBalanceQty()); r.setUnitPrice(l.getUnitPrice()); r.setAmount(l.getAmount());
-            r.setCurrency(l.getCurrency()); r.setValuationStatus(l.getValuationStatus());
+            r.setCurrency(l.getCurrency()); r.setValuationStatus(valuationLabel(l.getValuationStatus()));
             r.setReversalOfLogId(l.getReversalOfLogId() == null ? null : l.getReversalOfLogId().toString());
             r.setOperator(l.getOperatorName()); r.setTime(l.getCreateTime() == null ? null : TIME.format(l.getCreateTime())); return r;
         }).toList();

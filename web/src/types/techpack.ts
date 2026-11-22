@@ -552,6 +552,8 @@ export interface StyleCostRow {
 }
 
 export interface StyleCostQuery {
+  /** 品类线（几条线的人才有这个筛选，RFC 013 §2） */
+  productLine?: string
   /** 款号、名称、花名；一次查几个（README §3.2）时款号精确查 */
   keyword?: string
   /** 品类，含下级 */

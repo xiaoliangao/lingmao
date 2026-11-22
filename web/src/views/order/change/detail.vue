@@ -10,6 +10,7 @@ import DocLogList from '@/components/DocLogList.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import DocAttachments from '@/components/doc/DocAttachments.vue'
+import { useUserStore } from '@/stores/user'
 import MoreActions, { type MoreItem } from '@/components/doc/MoreActions.vue'
 import { isItem, runDocAction } from '@/components/doc/docUtils'
 import { useTabsStore } from '@/stores/tabs'
@@ -32,6 +33,8 @@ import { confirmRemove } from '@/views/basic/common'
 import OrderChangeDialog from '../order/OrderChangeDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
 import { useFieldAccess } from '@/composables/useFieldAccess'
+
+const canEditFiles = useUserStore().hasPerm('order:change:edit')
 const { canSeeOrderPrice } = useFieldAccess()
 const orderChangeApi = bindCompanyApi(orderChangeApiBase, () => detail.value?.companyId)
 
@@ -223,7 +226,8 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(CHANGE_STATUS).map(([k, v
         <section class="panel">
           <div class="panel-head">变更依据</div>
           <div class="panel-body">
-            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status !== 'DRAFT'" @changed="logRef?.reload()" />
+            <!-- 换附件要编辑权限（后端兜底 403）：只能看、只能审的人不出"上传附件"（走查 T-120e64） -->
+            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status !== 'DRAFT' || !canEditFiles" @changed="logRef?.reload()" />
           </div>
         </section>
       </aside>

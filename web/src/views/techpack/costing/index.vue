@@ -8,6 +8,8 @@ import { styleCostApi } from '@/api/techpack'
 import DictSelect from '@/components/DictSelect.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
+import LineSelect from '@/components/LineSelect.vue'
+import { useProductLines } from '@/composables/useProductLines'
 import PageHeader from '@/components/PageHeader.vue'
 import { useColumns } from '@/composables/useColumns'
 import { useDict } from '@/composables/useDict'
@@ -38,11 +40,15 @@ const cols = useColumns('costing', [
   { key: 'ratio', label: '倍率' },
 ])
 
+// 几条品类线的人能按线筛（PRD §3.2；走查 T-120e64：这页原来漏了）
+const lines = useProductLines()
+const multiLine = lines.multi
 const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
   fetch: styleCostApi.page,
   query: {
     keyword: '',
     categoryId: undefined as string | undefined,
+    productLine: '',
     brand: '',
     year: undefined as number | undefined,
     season: '',
@@ -105,6 +111,9 @@ function openCostTab(row: StyleCostRow) {
           :value-on-clear="undefined"
         />
       </FilterItem>
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
+      </FilterItem>
       <FilterItem label="品牌" :text="brands.labelOf(query.brand)" @clear="query.brand = ''">
         <DictSelect v-model="query.brand" type="brand" clearable placeholder="全部品牌" />
       </FilterItem>
@@ -124,7 +133,7 @@ function openCostTab(row: StyleCostRow) {
       row-key="styleId"
       row-class-name="clickable"
       scrollbar-always-on
-      :empty-text="query.keyword || query.categoryId || query.brand || query.year || query.season ? '没有符合条件的款式：换个条件，或者清空筛选' : '还没有生效的资料包：资料包生效后，这里按款列出单件成本'"
+      :empty-text="query.keyword || query.categoryId || query.productLine || query.brand || query.year || query.season ? '没有符合条件的款式：换个条件，或者清空筛选' : '还没有生效的资料包：资料包生效后，这里按款列出单件成本'"
       @row-click="openCostTab"
     >
       <el-table-column label="款号" width="220" fixed="left">

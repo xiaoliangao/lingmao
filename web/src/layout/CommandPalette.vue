@@ -69,20 +69,21 @@ const SOURCES: Source[] = [
         r.list.map((p) => ({ name: p.no, path: `/purchases/${p.id}`, icon: 'ShoppingCart', sub: p.supplierName })),
       ),
   },
-  {
-    // 外发加工单、成品采购单一个接口，按 kind 去各自的详情页
-    title: '生产单',
-    menu: '/production',
-    search: (kw) =>
-      productionApi.page({ page: 1, size: SIZE, keyword: kw }, SILENT).then((r) =>
+  // 外发加工单、成品采购单一个接口，kind 必传（不传 400，SILENT 吞掉以后这组一直是空的，走查 T-120e64）：
+  // 分两组查，各看各的菜单（只开了成品采购单菜单的人也搜得到 CP）
+  ...(['OUTSOURCE', 'BUY'] as const).map((kind) => ({
+    title: PRODUCTION_KIND[kind].label,
+    menu: PRODUCTION_KIND[kind].path,
+    search: (kw: string) =>
+      productionApi.page({ page: 1, size: SIZE, keyword: kw, kind }, SILENT).then((r) =>
         r.list.map((p) => ({
           name: p.no,
           path: `${PRODUCTION_KIND[p.kind].path}/${p.id}`,
           icon: 'Scissor',
-          sub: `${PRODUCTION_KIND[p.kind].short} · ${p.styleCode} · ${p.factoryShortName}`,
+          sub: `${p.styleCode} · ${p.factoryShortName}`,
         })),
       ),
-  },
+  })),
   {
     title: '款式',
     menu: '/styles',

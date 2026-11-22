@@ -145,6 +145,12 @@ class TechPackServiceImplIT {
         });
         query.setKeyword(styleCode(f.style).toLowerCase() + "，NO-SUCH-STYLE");
         assertThat(costService.styleCosts(query).getList()).extracting(StyleCostRowVO::getTechPackId).containsExactly(prod);
+        // 品类线筛选（走查 T-120e64）：款式的线筛得到，别的线筛不到
+        query.setProductLine(jdbcTemplate.queryForObject("SELECT product_line FROM sty_style WHERE id = ?", String.class, f.style));
+        assertThat(costService.styleCosts(query).getList()).extracting(StyleCostRowVO::getTechPackId).containsExactly(prod);
+        query.setProductLine("NO_SUCH_LINE");
+        assertThat(costService.styleCosts(query).getList()).isEmpty();
+        query.setProductLine(null);
 
         long v2 = techPackService.revise(prod);
         TechPackDetailVO v2Draft = techPackService.detail(v2);

@@ -447,7 +447,8 @@ function openKitting() {
         <section class="panel">
           <div class="panel-head">附件</div>
           <div class="panel-body">
-            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'VOIDED' || detail.status === 'CLOSED'" @changed="logRef?.reload()" />
+            <!-- 换附件要编辑权限（后端兜底 403）：只能看、只能审的人不出"上传附件"（走查 T-120e64） -->
+            <DocAttachments :load="loadFiles" :save="saveFiles" :disabled="detail.status === 'VOIDED' || detail.status === 'CLOSED' || !user.hasPerm('order:order:edit')" @changed="logRef?.reload()" />
           </div>
         </section>
       </aside>

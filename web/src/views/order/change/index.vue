@@ -7,6 +7,8 @@ import { orderChangeApi } from '@/api/order'
 import DateRange from '@/components/DateRange.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
+import LineSelect from '@/components/LineSelect.vue'
+import { useProductLines } from '@/composables/useProductLines'
 import PageHeader from '@/components/PageHeader.vue'
 import { runDocAction } from '@/components/doc/docUtils'
 import { useColumns } from '@/composables/useColumns'
@@ -49,6 +51,9 @@ async function loadCounts(params: Omit<OrderChangeQuery, 'status' | 'rejected'>)
   }
 }
 
+// 几条品类线的人能按线筛（PRD §3.2；走查 T-120e64：这页原来漏了）
+const lines = useProductLines()
+const multiLine = lines.multi
 const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
   fetch: ({ tabKey, ...rest }) => {
     void loadCounts(rest)
@@ -63,6 +68,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
     keyword: '',
     tabKey: pickTab(route.query.status),
     changeType: undefined as ChangeType | undefined,
+    productLine: '',
     createDateFrom: undefined as string | undefined,
     createDateTo: undefined as string | undefined,
     mine: false,
@@ -106,7 +112,7 @@ function onDateChange(val: [string, string] | null | undefined) {
   query.createDateTo = val?.[1]
 }
 
-const filtered = computed(() => !!(query.keyword.trim() || query.tabKey || query.changeType || query.createDateFrom))
+const filtered = computed(() => !!(query.keyword.trim() || query.tabKey || query.changeType || query.productLine || query.createDateFrom))
 const emptyText = computed(() => {
   if (query.auditForMe) return '没有等你审核的变更单（自己提的要别人审）'
   if (query.mine && !filtered.value) return '还没有你提的变更单，切到「全部」看所有人的'
@@ -140,6 +146,9 @@ async function quickAct(row: OrderChangeRow, action: 'audit' | 'reject') {
       <template #left>
         <el-segmented v-model="query.tabKey" :options="tabOptions" @change="search" />
       </template>
+      <FilterItem v-if="multiLine" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
+        <LineSelect v-model="query.productLine" clearable placeholder="全部品类线" />
+      </FilterItem>
       <FilterItem label="变更类型" :text="query.changeType ? CHANGE_TYPE[query.changeType] : ''" @clear="query.changeType = undefined">
         <el-select v-model="query.changeType" filterable clearable placeholder="全部类型" :value-on-clear="undefined">
           <el-option v-for="o in CHANGE_TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />

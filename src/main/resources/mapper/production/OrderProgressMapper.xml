@@ -20,6 +20,7 @@
             WHERE o.status IN ('APPROVED', 'RUNNING')
             <if test="scope.lines.limited">AND o.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
             <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
+            <if test="q.productLine != null and q.productLine != ''">AND o.product_line = #{q.productLine}</if>
             <if test="q.brand != null and q.brand != ''">AND o.brand = #{q.brand}</if>
             <if test="q.orderType != null and q.orderType != ''">AND o.order_type = #{q.orderType}</if>
             <if test="q.salesId != null">AND o.sales_id = #{q.salesId}</if>
