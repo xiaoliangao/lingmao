@@ -794,7 +794,16 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
           var letter = text(o.querySelector('b'))
           var input = el('input', { type: 'radio', name: key, value: letter, checked: data.picks[key] === letter })
           // 选中走 change（方向键、浏览器恢复表单也算）；点已经选中的那个就取消（click 在 change 之前，这时记的还是原来的）
+          // 键盘：在选中的那个上按空格也取消（浏览器自己不会）；有的浏览器松开空格还会补一次 click，记一下别又选回去
+          var cleared = false
+          input.addEventListener('keydown', function (e) {
+            if ((e.key === ' ' || e.key === 'Spacebar') && input.checked && data.picks[key] === letter) {
+              e.preventDefault(); input.checked = false; delete data.picks[key]; cleared = true; save(true)
+            }
+          })
+          input.addEventListener('keyup', function () { setTimeout(function () { cleared = false }, 0) })
           input.addEventListener('click', function () {
+            if (cleared) { cleared = false; input.checked = false; return }
             if (data.picks[key] === letter) { input.checked = false; delete data.picks[key]; save(true) }
           })
           input.addEventListener('change', function () { if (input.checked) { data.picks[key] = letter; save(true) } })
