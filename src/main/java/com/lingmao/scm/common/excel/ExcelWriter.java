@@ -1,5 +1,7 @@
 package com.lingmao.scm.common.excel;
 
+import com.lingmao.scm.common.exception.BizException;
+import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.DataValidation;
@@ -118,7 +120,7 @@ final class ExcelWriter {
         Row header = sheet.createRow(0);
         for (int i = 0; i < columns.size(); i++) {
             Cell cell = header.createCell(i);
-            cell.setCellValue(columns.get(i).header());
+            cell.setCellValue(checkedText(header, i, columns.get(i).header(), columns.get(i).header()));
             cell.setCellStyle(styles.header);
             sheet.setColumnWidth(i, width(columns.get(i).header()));
         }
@@ -145,12 +147,26 @@ final class ExcelWriter {
                 cell.setCellStyle(styles.date);
             }
             default -> {
-                cell.setCellValue(StreamingExcel.safeText(value.toString()));
+                cell.setCellValue(checkedText(row, index, column.header(), value.toString()));
                 if (column.isCode()) {
                     cell.setCellStyle(styles.text);
                 }
             }
         }
+    }
+
+    /** 按实际写入的文本检查，公式转义新增的前导引号也占一位；不把单元格内容放进错误报文。 */
+    private static String checkedText(Row row, int index, String column, String value) {
+        String text = StreamingExcel.safeText(value);
+        int maxLength = SpreadsheetVersion.EXCEL2007.getMaxTextLength();
+        if (text.length() > maxLength) {
+            int labelEnd = column.offsetByCodePoints(0, Math.min(64, column.codePointCount(0, column.length())));
+            String label = column.substring(0, labelEnd) + (labelEnd < column.length() ? "…" : "");
+            throw new BizException("工作表「" + row.getSheet().getSheetName() + "」第 " + (row.getRowNum() + 1)
+                    + " 行第 " + (index + 1) + " 列（" + label + "）超过 " + maxLength
+                    + " 字符，请减少该单元格的关联内容后重试");
+        }
+        return text;
     }
 
     /** 选项列的下拉：只能从下拉里选，填别的 Excel 当场提示（复制粘贴进来的拦不住，导入时还会再查一遍） */

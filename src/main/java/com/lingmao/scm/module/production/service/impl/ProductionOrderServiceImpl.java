@@ -2,10 +2,13 @@ package com.lingmao.scm.module.production.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.common.excel.BoundedExportRows;
+import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.num.Num;
 import com.lingmao.scm.common.num.NumericLimits;
@@ -326,10 +329,15 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         ProductionKind kind = requireKind(query);
         query.setCard(null);
-        List<ProductionRowVO> rows = prdMapper.selectRows(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()),
-                support.today(), support.nearUntil());
+        List<ProductionRowVO> rows = prdMapper.selectRowPage(new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false),
+                query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()),
+                support.today(), support.nearUntil()).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, ProductionRowVO::getId, ProductionRowVO::getCompanyId);
-        support.fillRows(rows, false);
+        BoundedExportRows.requireWithinLimit(rows.size(), Excel.MAX_EXPORT_ROWS, "生产单");
+        // 导出没有节点、缩略图和操作列；只补实际输出的人名，避免加载全量关联节点。
+        Map<Long, String> names = userService.nicknames(rows.stream().map(ProductionRowVO::getMerchId)
+                .filter(Objects::nonNull).collect(Collectors.toSet()));
+        rows.forEach(row -> row.setMerchName(names.get(row.getMerchId())));
         return excel.export(kind, rows);
     }
 

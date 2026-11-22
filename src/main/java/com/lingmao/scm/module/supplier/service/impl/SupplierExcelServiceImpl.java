@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.lingmao.scm.common.excel.BoundedExportRows;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ExcelBook;
 import com.lingmao.scm.common.excel.ExcelColumn;
@@ -532,12 +533,18 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
             // 和 Excel.export 的提示一样；先拦住，不用为了报错把五万家的分类、品类都查一遍
             throw new BizException("要导出的超过 " + Excel.MAX_EXPORT_ROWS / 10_000 + " 万行了，请缩小筛选范围再导出");
         }
+        List<Long> ids = suppliers.stream().map(Supplier::getId).toList();
+        Map<Long, List<String>> categories = BoundedExportRows.read(ids, EXPORT_CHUNK, Excel.MAX_EXPORT_ROWS,
+                        "供应商分类关联", supplierMapper::selectExportCategoriesOf).stream()
+                .collect(Collectors.groupingBy(SupplierCategoryRow::getSupplierId, LinkedHashMap::new,
+                        Collectors.mapping(SupplierCategoryRow::getCategory, Collectors.toList())));
+        Map<Long, List<String>> goodAt = BoundedExportRows.read(ids, EXPORT_CHUNK, Excel.MAX_EXPORT_ROWS,
+                        "供应商擅长品类关联", supplierMapper::selectExportGoodAtOf).stream()
+                .collect(Collectors.groupingBy(SupplierGoodAtRow::getSupplierId, LinkedHashMap::new,
+                        Collectors.mapping(SupplierGoodAtRow::getCategoryName, Collectors.toList())));
         List<SupplierExcelRow> rows = new ArrayList<>();
         for (int from = 0; from < suppliers.size(); from += EXPORT_CHUNK) {
             List<Supplier> chunk = suppliers.subList(from, Math.min(from + EXPORT_CHUNK, suppliers.size()));
-            List<Long> ids = chunk.stream().map(Supplier::getId).toList();
-            Map<Long, List<String>> categories = lists.categoriesOf(ids);
-            Map<Long, List<String>> goodAt = lists.goodAtNamesOf(ids);
             Map<Long, String> buyers = lists.buyerNames(chunk);
             for (Supplier s : chunk) {
                 rows.add(toExcelRow(s, categories.getOrDefault(s.getId(), List.of()),

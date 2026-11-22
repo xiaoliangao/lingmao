@@ -50,6 +50,26 @@ public interface SupplierMapper extends BaseMapper<Supplier> {
             """)
     List<SupplierCategoryRow> selectCategoriesOf(@Param("ids") Collection<Long> ids);
 
+    /** 导出专用：查询在数据库内截到剩余预算 + 1 行，普通列表/表单读取不受影响。 */
+    @Select("""
+            <script>
+            SELECT c.supplier_id, c.category
+            FROM sup_supplier_category c
+            LEFT JOIN sys_dict_data d ON d.type_code = 'supplier_category' AND d.value = c.category AND d.deleted = false
+            WHERE
+            <choose>
+                <when test="ids != null and ids.size() > 0">
+                    c.supplier_id IN
+                    <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+                </when>
+                <otherwise>false</otherwise>
+            </choose>
+            ORDER BY c.supplier_id, d.sort NULLS LAST, d.id NULLS LAST, c.category
+            LIMIT #{limit}
+            </script>
+            """)
+    List<SupplierCategoryRow> selectExportCategoriesOf(@Param("ids") Collection<Long> ids, @Param("limit") int limit);
+
     @Insert("""
             <script>
             INSERT INTO sup_supplier_category (supplier_id, category) VALUES
@@ -74,6 +94,25 @@ public interface SupplierMapper extends BaseMapper<Supplier> {
             </script>
             """)
     List<SupplierGoodAtRow> selectGoodAtOf(@Param("ids") Collection<Long> ids);
+
+    /** 导出专用：同一父项内仍按品类树排序，SQL LIMIT 必须由服务端剩余预算给出。 */
+    @Select("""
+            <script>
+            SELECT g.supplier_id, g.category_id, c.name AS category_name
+            FROM sup_supplier_good_at g JOIN bas_category c ON c.id = g.category_id
+            WHERE
+            <choose>
+                <when test="ids != null and ids.size() > 0">
+                    g.supplier_id IN
+                    <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+                </when>
+                <otherwise>false</otherwise>
+            </choose>
+            ORDER BY g.supplier_id, c.level, c.sort, c.id
+            LIMIT #{limit}
+            </script>
+            """)
+    List<SupplierGoodAtRow> selectExportGoodAtOf(@Param("ids") Collection<Long> ids, @Param("limit") int limit);
 
     @Insert("""
             <script>

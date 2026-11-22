@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fromScaledInteger, rescaleInteger, toScaledInteger } from '../src/utils/fixedPoint.ts'
+import { fromScaledInteger, quantityPriceAmount, rescaleInteger, toScaledInteger } from '../src/utils/fixedPoint.ts'
 
 test('decimal HALF_UP conversion handles binary float boundaries and signed ties', () => {
   assert.equal(toScaledInteger(1.00185, 4), 10019n)
@@ -38,4 +38,14 @@ test('BOM costs and labor sums round once at the final money scale', () => {
   assert.equal(rescaleInteger(3n, 0, 4), 30_000n)
   assert.equal(rescaleInteger(12n, 2, 2), 12n)
   assert.throws(() => rescaleInteger(1n, -1, 2), /小数位数/)
+})
+
+test('document line previews preserve null valuation and sum already-rounded cents', () => {
+  assert.equal(quantityPriceAmount(0.018, 7.5), '0.14')
+  assert.equal(quantityPriceAmount('0.018', '7.5000'), '0.14')
+  assert.equal(quantityPriceAmount(0.018, 0), '0.00')
+  assert.equal(quantityPriceAmount(null, 7.5), null)
+  assert.equal(quantityPriceAmount(0.018, undefined), null)
+  const cents = [0.018, 0.018].reduce((sum, qty) => sum + toScaledInteger(quantityPriceAmount(qty, 7.5), 2), 0n)
+  assert.equal(fromScaledInteger(cents, 2), '0.28')
 })

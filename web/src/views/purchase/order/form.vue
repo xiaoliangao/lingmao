@@ -21,6 +21,7 @@ import type { CompanyOption, MaterialPickRow, WarehouseOption } from '@/types/ba
 import { PURCHASE_TYPE_LABEL, type PurchaseForm, type PurchaseItemForm, type PurchaseType } from '@/types/purchase'
 import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatPrice } from '@/utils/format'
+import { fromScaledInteger, quantityPriceAmount, toScaledInteger } from '@/utils/fixedPoint'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import { bindCompanyApi } from '@/utils/companyScope'
@@ -111,7 +112,10 @@ const TYPE_OPTIONS = Object.entries(PURCHASE_TYPE_LABEL).map(([value, label]) =>
 const warehouseOptions = computed(() => warehouses.value.filter((w) => w.type === 'MATERIAL' || w.type === 'FACTORY'))
 const haveSkuIds = computed(() => lines.value.map((l) => l.materialSkuId))
 const haveStyleIds = computed(() => head.planStyles.map((s) => s.id))
-const totalAmount = computed(() => lines.value.reduce((sum, l) => sum + (l.qty ?? 0) * (l.price ?? 0), 0))
+const lineAmount = (l: LineDraft) => l.qty ? quantityPriceAmount(l.qty, l.price) : null
+const totalAmount = computed(() => fromScaledInteger(
+  lines.value.reduce((sum, l) => sum + toScaledInteger(lineAmount(l) ?? '0', 2), 0n), 2,
+))
 
 function priceChanged(l: LineDraft): boolean {
   if (!canSeeCost.value || l.archivePrice == null || l.price == null) return false
@@ -418,7 +422,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
     <div v-else v-loading="!loaded" class="page" :inert="saving">
       <el-form label-position="top" class="head-grid">
         <el-form-item label="供应商" required>
-          <SupplierSelect :model-value="head.supplierId" :label="head.supplierName" usage="BULK" @update:model-value="onSupplierChange" />
+          <SupplierSelect :model-value="head.supplierId" :company-id="head.companyId" :label="head.supplierName" usage="BULK" @update:model-value="onSupplierChange" />
         </el-form-item>
         <el-form-item label="采购类型" required>
           <el-select v-model="head.purchaseType" filterable @change="onTypeChange">
@@ -486,7 +490,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
       </div>
 
       <el-table :data="lines" row-key="materialSkuId" empty-text="还没有物料：点「从物料库选」">
-        <el-table-column label="#" width="44" class-name="num">
+        <el-table-column label="#" width="64" class-name="num">
           <template #default="{ $index }">{{ $index + 1 }}</template>
         </el-table-column>
         <el-table-column label="物料" min-width="200">
@@ -532,7 +536,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
           </template>
         </el-table-column>
         <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
-          <template #default="{ row }">{{ row.qty && row.price !== null ? formatMoney(row.qty * row.price) : '—' }}</template>
+          <template #default="{ row }">{{ lineAmount(row as LineDraft) === null ? '—' : formatMoney(lineAmount(row as LineDraft)) }}</template>
         </el-table-column>
         <el-table-column label="行交期" width="140">
           <template #default="{ row }">
@@ -544,7 +548,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
             <el-date-picker v-model="row.expectDate" size="small" type="date" value-format="YYYY-MM-DD" placeholder="同交期" />
           </template>
         </el-table-column>
-        <el-table-column label="" width="56" align="right">
+        <el-table-column label="" width="72" align="right">
           <template #default="{ $index }">
             <el-button link type="danger" size="small" @click="removeLine($index)">删</el-button>
           </template>

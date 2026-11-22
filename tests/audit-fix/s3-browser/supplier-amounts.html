@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><title>供应商名称和行金额回归</title></head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp } from 'vue'
+      import { createPinia } from 'pinia'
+      import { createRouter, createMemoryHistory } from 'vue-router'
+      import ElementPlus from 'element-plus'
+      import * as icons from '@element-plus/icons-vue'
+      import zhCn from 'element-plus/es/locale/lang/zh-cn'
+      import 'element-plus/dist/index.css'
+      import '/src/styles/tokens.css'
+      import '/src/styles/base.css'
+      import '/src/styles/element.css'
+      import { getToken, setToken, startSessionSync } from '/src/utils/token.ts'
+      import { vPerm } from '/src/directives/perm.ts'
+      import PurchaseForm from '/src/views/purchase/order/form.vue'
+      import AppLayout from '/src/layout/AppLayout.vue'
+      import Fixture from './SupplierAmountsFixture.vue'
+      if (!getToken()) setToken('synthetic-supplier-amounts')
+      startSessionSync()
+      const params = new URLSearchParams(location.search)
+      const purchaseRoute = { path: '/purchases/:id/edit', component: PurchaseForm, meta: { title: '编辑采购单', detail: true } }
+      const router = createRouter({ history: createMemoryHistory(), routes: [
+        ...(params.get('layout') === 'app' ? [{ path: '/', component: AppLayout, props: { area: 'workbench' }, children: [purchaseRoute] }] : [purchaseRoute]),
+        { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
+      ] })
+      const app = createApp(Fixture).use(createPinia()).use(router).use(ElementPlus, { locale: zhCn })
+      for (const [name, component] of Object.entries(icons)) app.component(name, component)
+      app.directive('perm', vPerm)
+      await router.push(new URLSearchParams(location.search).get('view') === 'purchase' ? '/purchases/9007199254744001/edit' : '/supplier-check')
+      await router.isReady()
+      app.mount('#app')
+    </script>
+  </body>
+</html>
