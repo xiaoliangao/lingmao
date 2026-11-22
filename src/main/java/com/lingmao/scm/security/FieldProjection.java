@@ -99,7 +99,7 @@ public class FieldProjection {
     private static boolean blocked(String name, String permission, boolean supplier, String path) {
         // 先比字段名（便宜），对上了再看是不是助手令牌
         if ((ASSISTANT_HIDDEN.matcher(name).matches() || name.contains("地址") || name.contains("电话") || name.contains("手机")
-                || name.contains("微信") || name.contains("传真") || name.contains("联系人")) && CallerScope.assistant()) return true;
+                || name.contains("微信") || name.contains("传真") || name.contains("联系人") || name.contains("邮箱")) && CallerScope.assistant()) return true;
         if (name.equals("tagPrice") || name.equals("estTagPrice") || name.contains("吊牌价")) return false;
         if (BANK.contains(name) || supplier && (name.contains("银行") || name.contains("账号") || name.contains("账户") || name.contains("户名")))
             return !FieldPermissions.has(FieldPermissions.BANK);

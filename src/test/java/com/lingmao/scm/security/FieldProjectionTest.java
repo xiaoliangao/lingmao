@@ -23,7 +23,7 @@ class FieldProjectionTest {
     }
 
     record Place(String name, String address, String phone, String warehouseAddress, String invoiceAddressPhone,
-                 String factoryContact, String remark, java.util.Map<String, String> legacyAttrs) {
+                 String factoryContact, String remark, java.util.Map<String, String> legacyAttrs, Integer contactQty, String addressee) {
     }
 
     /**
@@ -33,7 +33,7 @@ class FieldProjectionTest {
     @Test
     void assistant_dropsEveryAddressPhoneContact() {
         Place p = new Place("一号工厂仓", "示例路 1 号", "0571-0000", "示例路 1 号", "示例开票地址 0571-0000", "张三", "放门口",
-                java.util.Map.of("地址电话", "示例路 1 号 0571", "外部编码", "X1"));
+                java.util.Map.of("地址电话", "示例路 1 号 0571", "外部编码", "X1"), 3, "收件部门");
         String controller = "com.lingmao.scm.module.basic.controller.WarehouseController";
         FieldProjection projection = new FieldProjection(JsonMapper.builder().build());
 
@@ -50,6 +50,29 @@ class FieldProjectionTest {
         assertThat(theirs.get("legacyAttrs").get("外部编码").asString()).isEqualTo("X1");
         assertThat(theirs.get("name").asString()).isEqualTo("一号工厂仓");
         assertThat(theirs.get("remark").asString()).isEqualTo("放门口");
+        // 整个名字对上才去掉：contactQty、addressee 这种不相干的留着（防以后把 matches 改成 find）
+        assertThat(theirs.get("contactQty").asInt()).isEqualTo(3);
+        assertThat(theirs.get("addressee").asString()).isEqualTo("收件部门");
+    }
+
+    /**
+     * 规则（agy 复查 T-0a5c40 #2）：供应商待批的关键字段改动，助手看不到银行、联系方式的前后值，别的字段照给
+     */
+    @Test
+    void assistant_pendingChangeHidesBankAndContact() {
+        com.lingmao.scm.module.supplier.dto.ChangeVO change = new com.lingmao.scm.module.supplier.dto.ChangeVO(1L, null, List.of(
+                new com.lingmao.scm.module.supplier.entity.ChangeItem("bankAccount", "账号", "6222000011112222", "6222000033334444"),
+                new com.lingmao.scm.module.supplier.entity.ChangeItem("phone", "电话", "0571-1", "0571-2"),
+                new com.lingmao.scm.module.supplier.entity.ChangeItem("shortName", "简称", "旧", "新")),
+                1L, "甲", OffsetDateTime.now(), null, null, null, List.of());
+
+        as(com.lingmao.scm.common.auth.CallerScope.ASSISTANT_AUTHORITY);
+        JsonNode items = new FieldProjection(JsonMapper.builder().build()).project(change, SUPPLIER_CONTROLLER).get("items");
+
+        assertThat(items.get(0).has("before") || items.get(0).has("after")).isFalse();
+        assertThat(items.get(1).has("before") || items.get(1).has("after")).isFalse();
+        assertThat(items.get(2).get("after").asString()).isEqualTo("新");
+        assertThat(items.toString()).doesNotContain("6222", "0571");
     }
 
     private static void as(String... authorities) {

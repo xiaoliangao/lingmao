@@ -255,6 +255,7 @@
   label: 供应商
   perm: supplier:supplier:list
   ask: 有哪些面料供应商
+  hint: keyword 查编码、全称、简称，不能按联系人查
 - op: GET /api/suppliers/{id}
   tool: get_supplier
   label: 供应商详情
