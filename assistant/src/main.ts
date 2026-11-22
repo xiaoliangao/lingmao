@@ -39,6 +39,7 @@ async function main(): Promise<void> {
     app,
     store,
     llmConfig: config.llm,
+    retentionDays: config.retentionDays,
   })
   // requestTimeout 只管"收完请求"（请求头 + 请求体）的时间，不管往外推回答：一句答多久都不受它限制；
   // 设短一点，慢慢发请求体的连接 30 秒就断
@@ -51,8 +52,19 @@ async function main(): Promise<void> {
       port: config.port,
       tools: tools.length,
       model: config.llm ? { mode: config.llm.mode, host: new URL(config.llm.baseUrl).hostname, model: config.llm.model } : null,
+      retentionDays: config.retentionDays,
     })
   })
+
+  // 过期的对话：启动时删一次，之后每小时一次
+  const purge = () =>
+    store
+      .purgeConversations(config.retentionDays)
+      .then((n) => n > 0 && log('INFO', 'purged', { conversations: n, olderThanDays: config.retentionDays }))
+      .catch((e: unknown) => log('ERROR', 'purge failed', { error: e instanceof Error ? e.message : String(e) }))
+  void purge()
+  const purgeTimer = setInterval(() => void purge(), 60 * 60_000)
+  purgeTimer.unref()
 
   // docker stop 先发 SIGTERM，compose.yml 里等 25 秒再强杀：正在答的等 15 秒，没答完的中止并记下，再关库连接
   let stopping = false
@@ -60,6 +72,7 @@ async function main(): Promise<void> {
     if (stopping) return
     stopping = true
     log('INFO', 'stopping', { signal })
+    clearInterval(purgeTimer)
     const force = setTimeout(() => process.exit(0), 22_000)
     force.unref()
     shutdown(15_000)

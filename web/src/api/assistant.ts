@@ -10,7 +10,7 @@ import { readSse } from '@/utils/sse'
 
 /**
  * 智能助手服务的接口（docs/api/08-智能助手.md §2）。不走 utils/request.ts：带的是助手令牌（不是登录令牌），问话是流式的，
- * 出错也不自动弹消息——抽屉里自己显示。令牌由 composables/useAssistant.ts 换、管、401 时重换
+ * 出错也不自动弹消息——对话卡片里自己显示。令牌由 composables/useAssistant.ts 换、管、401 时重换
  */
 
 /** 助手服务没答成：status 是 HTTP 状态（连不上是 0），message 能直接给用户看 */
@@ -47,8 +47,8 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
-async function getJson<T>(path: string, token?: string, signal?: AbortSignal): Promise<T> {
-  const res = await send(path, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal })
+async function getJson<T>(path: string, token?: string, signal?: AbortSignal, method = 'GET'): Promise<T> {
+  const res = await send(path, { method, headers: token ? { Authorization: `Bearer ${token}` } : {}, signal })
   if (!res.ok || !(res.headers.get('content-type') ?? '').includes('application/json')) throw await failure(res)
   const body = (await res.json()) as { code: number; msg: string; data: T }
   if (body.code !== 0) throw new AssistantError(res.status, body.msg)
@@ -64,6 +64,8 @@ export const assistantApi = {
   conversations: (token: string) => getJson<AssistantConversation[]>('/assistant/conversations', token),
   /** 一个对话的全部问答；别人的、不存在的 404 */
   messages: (token: string, id: string) => getJson<AssistantMessage[]>(`/assistant/conversations/${encodeURIComponent(id)}`, token),
+  /** 删掉自己的一个对话；别人的、不存在的 404，正在答的时候 409 */
+  deleteConversation: (token: string, id: string) => getJson<null>(`/assistant/conversations/${encodeURIComponent(id)}`, token, undefined, 'DELETE'),
 
   /**
    * 问一句。回的不是 SSE 就抛 AssistantError（401 由调用方换令牌重发一次）；是 SSE 就一个个事件交给 onEvent，流结束才返回。

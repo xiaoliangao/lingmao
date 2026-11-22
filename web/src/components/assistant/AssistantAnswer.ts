@@ -7,7 +7,7 @@ import { PAGE_LINK, parseAnswer, type Block, type Inline } from '@/utils/assista
  * 不用 v-html：utils/assistantText.ts 拆成块，这里用 h() 拼成元素，文字一律当文字（Vue 会转义）。
  * 链接要过两道：地址是 /页面 或 /页面/数字，而且 router 认得、是业务菜单这一侧的页（不是落到 404 那条，没权限的页面也没注册；
  * 登录页、管理后台、手机报工不算）；不然只显示文字。
- * 点链接在主区域打开那一页，抽屉留着；发 navigate，窄屏上抽屉盖着页面，抽屉自己收起来
+ * 点链接在主区域打开那一页，卡片留着；发 navigate，窄屏上卡片差不多盖满页面，自己收起来
  */
 export function routable(router: Router, href: string): boolean {
   if (!PAGE_LINK.test(href)) return false

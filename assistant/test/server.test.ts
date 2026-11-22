@@ -69,7 +69,7 @@ async function until(cond: () => boolean, ms = 2000) {
 
 async function start(llm: LlmProvider | null) {
   const store = new MemoryStore()
-  const s: AssistantServer = buildServer({ chat: { llm, app, store: store.asStore(), tools: TOOLS, limits: LIMITS, systemName: '服装 SCM' }, app, store: store.asStore(), llmConfig: llm ? LLM_CONFIG : null })
+  const s: AssistantServer = buildServer({ chat: { llm, app, store: store.asStore(), tools: TOOLS, limits: LIMITS, systemName: '服装 SCM' }, app, store: store.asStore(), llmConfig: llm ? LLM_CONFIG : null, retentionDays: 7 })
   await new Promise<void>((resolve) => s.server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${(s.server.address() as AddressInfo).port}`
   const chat = (token: string | null, payload: unknown, init: RequestInit = {}) =>
@@ -99,7 +99,7 @@ describe('助手服务的接口', () => {
   test('health 查库；info 只说模型是哪种，不给 Key、地址、主机名', async () => {
     assert.deepEqual(await body(s.get('/assistant/health', null)), { code: 0, msg: 'ok', data: { status: 'UP', db: 'up', model: 'configured' } })
     const info = await (await s.get('/assistant/info', null)).text()
-    assert.deepEqual(JSON.parse(info).data, { model: { mode: 'self-hosted' } })
+    assert.deepEqual(JSON.parse(info).data, { model: { mode: 'self-hosted' }, retentionDays: 7 })
     assert.ok(!info.includes('sk-secret') && !info.includes('llm.internal'))
     s.store.dbDown = true
     try {
@@ -161,6 +161,26 @@ describe('助手服务的接口', () => {
     }
   })
 
+  test('删对话：只删自己的（别人的、不合规的、删过的 404），问答跟着删；列表上删、POST 不行', async () => {
+    const del = (path: string, token: string | null = T.good) => fetch(`${s.base}${path}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    await s.store.createConversation('33333333-3333-3333-3333-333333333333', '99', '别人的')
+    assert.equal((await del('/assistant/conversations/33333333-3333-3333-3333-333333333333')).status, 404)
+    assert.ok(s.store.conversations.has('33333333-3333-3333-3333-333333333333'), '别人的没删')
+    assert.equal((await del('/assistant/conversations/not-a-uuid')).status, 404)
+    assert.equal((await del('/assistant/conversations')).status, 405)
+    assert.equal((await del('/assistant/conversations/33333333-3333-3333-3333-333333333333', null)).status, 401)
+
+    const res = await s.chat(T.good, { message: '要删的这句' })
+    const id = (await eventsOf(res))[0]![1].conversationId as string
+    assert.equal((await body(del(`/assistant/conversations/${id}`))).code, 0)
+    assert.equal(s.store.conversations.has(id), false)
+    assert.equal(s.store.messagesById.filter((m) => m.conversationId === id).length, 0, '问答跟着删')
+    assert.equal((await s.get(`/assistant/conversations/${id}`)).status, 404)
+    assert.equal((await del(`/assistant/conversations/${id}`)).status, 404, '删过的再删 404')
+    const post = await fetch(`${s.base}/assistant/conversations/${id}`, { method: 'POST', headers: { Authorization: `Bearer ${T.good}` } })
+    assert.equal(post.status, 405)
+  })
+
   test('请求体：不是 JSON、太长、缺 message、null、数组都是 400；问题里的 \\u0000 去掉照常答', async () => {
     const form = await fetch(`${s.base}/assistant/chat`, { method: 'POST', headers: { Authorization: `Bearer ${T.good}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'message=hi' })
     assert.equal(form.status, 400)
@@ -191,6 +211,10 @@ describe('同时在答、中途断开、停服务', () => {
       assert.equal(second.status, 429)
       assert.match((await body(second)).msg, /上一句还在答/)
       assert.equal(s.store.requests.get('7'), 1)
+      const [convId] = [...s.store.conversations.keys()]
+      const del = await fetch(`${s.base}/assistant/conversations/${convId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${T.good}` } })
+      assert.equal(del.status, 409, '在答的时候不让删')
+      assert.ok(s.store.conversations.has(convId!))
 
       const other = s.chat(T.other, { message: '另一个人' })
       await until(() => llm.calls === 2)
@@ -306,7 +330,7 @@ describe('没配模型', () => {
     const s = await start(null)
     try {
       assert.equal((await body(s.get('/assistant/health', null))).data.model, 'none')
-      assert.deepEqual((await body(s.get('/assistant/info', null))).data, { model: { mode: 'none' } })
+      assert.deepEqual((await body(s.get('/assistant/info', null))).data, { model: { mode: 'none' }, retentionDays: 7 })
       const res = await s.chat(T.good, { message: '你好' })
       assert.equal(res.status, 503)
       assert.match((await body(res)).msg, /还没有配置模型/)

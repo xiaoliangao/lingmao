@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { MAX_QUESTION, useAssistant, type ToolStep } from '@/composables/useAssistant'
+import { useFloating } from '@/composables/useFloating'
 import { stripHtml } from '@/utils/assistantText'
+import type { AssistantConversation } from '@/types/assistant'
 import { formatDateTime } from '@/utils/format'
 import AssistantAnswer from './AssistantAnswer'
 
 /**
- * 智能助手的抽屉（docs/api/08-智能助手.md §1，RFC 009 §6.2）：业务菜单这一侧右边，宽 420px，和页面并排、不挡页面；
- * 窄屏（900px 以下）浮在页面上。AppLayout 在抽屉开着时才渲染它，对话在 useAssistant 里，关了再开还在。
+ * 智能助手的对话卡片（docs/api/08-智能助手.md §1）：浮在页面右下角，不占页面的地方。按住标题栏能拖，位置记在本机；
+ * "放大"变宽变高（双击标题栏也行），"收起"回到右下角的图标（AssistantLauncher）。AppLayout 在卡片开着时才渲染它，
+ * 对话在 useAssistant 里，收起再打开还在、在答的接着答。
  * 用户的问题、答的过程中模型的原话只当纯文本显示；答完的全文交给 AssistantAnswer
  */
 const assistant = useAssistant()
@@ -16,6 +20,43 @@ const { state } = assistant
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
 const SHORTCUT = IS_MAC ? '⌘J' : 'Ctrl+J'
 const EXAMPLES = ['今天有哪些待我处理的事', '最近两周要交货的订单', '各工厂的生产情况怎么样']
+
+const card = ref<HTMLElement>()
+/** 放大前在哪：还原时回到那里（放大后又拖过的，就留在拖到的地方） */
+let beforeLarge: { right: number; bottom: number } | null = null
+const float = useFloating(card, 'lingmao-assistant-card', { right: 24, bottom: 24 }, () => {
+  beforeLarge = null
+})
+
+const LARGE_KEY = 'lingmao-assistant-large'
+const large = ref(readLarge())
+
+function readLarge() {
+  try {
+    return localStorage.getItem(LARGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 放大 / 还原：变了尺寸，露不全的拉回窗口里 */
+async function toggleLarge() {
+  if (!large.value) beforeLarge = { ...float.pos }
+  large.value = !large.value
+  try {
+    localStorage.setItem(LARGE_KEY, large.value ? '1' : '0')
+  } catch {
+    // 存不了就只在这次打开里有效
+  }
+  await nextTick()
+  if (!large.value && beforeLarge) Object.assign(float.pos, beforeLarge)
+  if (!large.value) beforeLarge = null
+  float.clamp()
+}
+
+function onHeadDblclick(event: MouseEvent) {
+  if (!(event.target as HTMLElement | null)?.closest('button, .el-dropdown')) void toggleLarge()
+}
 
 const body = ref<HTMLElement>()
 const input = ref<{ focus: () => void }>()
@@ -83,13 +124,31 @@ function askExample(text: string) {
   void assistant.ask(text)
 }
 
-/** 点了回答里的链接：窄屏上抽屉盖着页面，收起来 */
+/** 点了回答里的链接：窄屏上卡片差不多盖满页面，收起来 */
 function onNavigate() {
   if (window.matchMedia('(max-width: 900px)').matches) assistant.hide()
 }
 
 function onHistory(visible: boolean) {
   if (visible) void assistant.loadHistory()
+}
+
+/** 最近的对话里点删除：说清后果再删；删的是正开着的，卡片清空 */
+async function removeConversation(c: AssistantConversation) {
+  try {
+    await ElMessageBox.confirm(`"${c.title}"的问答都会删掉，找不回来。`, '删除对话', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    if (await assistant.deleteConversation(c.id)) ElMessage.success('已删除')
+  } catch (e) {
+    if (e instanceof Error && e.message) ElMessage.error(e.message)
+  }
 }
 
 async function openConversation(id: string) {
@@ -104,10 +163,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <!-- 窄屏浮在页面上：点外面收起（宽屏不显示） -->
-  <div class="ast-backdrop" @click="assistant.hide()" />
-  <aside class="ast" aria-label="智能助手">
-    <header class="ast-head">
+  <aside ref="card" class="ast" :class="{ large }" :style="float.style.value" aria-label="智能助手">
+    <header class="ast-head" title="按住拖动，双击放大或还原" @pointerdown="float.start" @dblclick="onHeadDblclick">
       <el-icon class="ast-mark"><ChatDotRound /></el-icon>
       <h2>智能助手</h2>
       <el-dropdown trigger="click" placement="bottom-end" :disabled="state.busy" @visible-change="onHistory" @command="openConversation">
@@ -121,18 +178,29 @@ onMounted(async () => {
             <li v-else-if="!state.history.length" class="ast-history-note" role="presentation">还没有问过，问过的对话会列在这里</li>
             <template v-else>
               <el-dropdown-item v-for="c in state.history" :key="c.id" :command="c.id">
-                <span class="ast-history-title">{{ c.title }}</span>
-                <small>{{ formatDateTime(c.updatedAt) }}</small>
+                <span class="ast-history-text">
+                  <span class="ast-history-title">{{ c.title }}</span>
+                  <small>{{ formatDateTime(c.updatedAt) }}</small>
+                </span>
+                <button type="button" class="ast-history-del" title="删除这个对话" aria-label="删除这个对话" @click.stop="removeConversation(c)">
+                  <el-icon><Delete /></el-icon>
+                </button>
               </el-dropdown-item>
             </template>
+            <li v-if="state.retentionDays && !state.historyLoading" class="ast-history-note ast-history-foot" role="presentation">
+              对话留 {{ state.retentionDays }} 天，超过的自动删掉
+            </li>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
       <button type="button" class="ast-icon" title="新对话" aria-label="新对话" :disabled="!state.turns.length && !state.openError" @click="assistant.newChat()">
         <el-icon><Plus /></el-icon>
       </button>
-      <button type="button" class="ast-icon" :title="`关闭（${SHORTCUT}）`" aria-label="关闭智能助手" @click="assistant.hide()">
-        <el-icon><Close /></el-icon>
+      <button type="button" class="ast-icon" :title="large ? '还原' : '放大'" :aria-label="large ? '还原' : '放大'" @click="toggleLarge">
+        <el-icon><ScaleToOriginal v-if="large" /><FullScreen v-else /></el-icon>
+      </button>
+      <button type="button" class="ast-icon" :title="`收起（${SHORTCUT}）`" aria-label="收起智能助手" @click="assistant.hide()">
+        <el-icon><Minus /></el-icon>
       </button>
     </header>
 
@@ -199,23 +267,37 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 浮在页面上的卡片：比对话框低一层（对话框、确认框盖得住它），比页面高 */
 .ast {
+  position: fixed;
+  z-index: 1900;
   display: flex;
-  flex: none;
   flex-direction: column;
-  width: 420px;
-  min-height: 0;
+  width: min(400px, calc(100vw - 16px));
+  height: min(640px, calc(100vh - 16px));
+  overflow: hidden;
   background: var(--lm-paper);
-  border-left: 1px solid var(--lm-line);
+  border-radius: var(--lm-radius-panel);
+  box-shadow: var(--lm-shadow);
 }
 
+.ast.large {
+  width: min(800px, calc(100vw - 16px));
+  height: calc(100vh - 32px);
+}
+
+/* 标题栏：按住拖 */
 .ast-head {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 4px;
-  height: 48px;
-  padding: 0 10px 0 16px;
+  gap: 2px;
+  height: 46px;
+  padding: 0 8px 0 16px;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+  background: var(--lm-subtle);
   border-bottom: 1px solid var(--lm-line-soft);
 }
 
@@ -235,6 +317,7 @@ onMounted(async () => {
 
 .ast-icon {
   display: inline-grid;
+  flex: none;
   place-items: center;
   width: 30px;
   height: 30px;
@@ -260,10 +343,6 @@ onMounted(async () => {
 .ast-icon:focus-visible {
   outline: 2px solid var(--lm-accent);
   outline-offset: -2px;
-}
-
-.ast-backdrop {
-  display: none;
 }
 
 .ast-body {
@@ -508,25 +587,6 @@ onMounted(async () => {
   font-size: 11.5px;
   color: var(--lm-muted);
 }
-
-/* 窄屏：浮在页面上，后面一层遮罩（和侧边栏的浮层一样，两个不同时开，AppLayout 管） */
-@media (max-width: 900px) {
-  .ast-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 1999;
-    display: block;
-    background: var(--lm-mask);
-  }
-
-  .ast {
-    position: fixed;
-    inset: 0 0 0 auto;
-    z-index: 2000;
-    width: min(420px, 100vw);
-    box-shadow: var(--lm-shadow);
-  }
-}
 </style>
 
 <style>
@@ -539,13 +599,21 @@ onMounted(async () => {
 
 .ast-history .el-dropdown-menu__item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   height: auto;
   line-height: 1.4;
   padding-top: 6px;
+  padding-right: 8px;
   padding-bottom: 6px;
+}
+
+.ast-history-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .ast-history-title {
@@ -566,5 +634,37 @@ onMounted(async () => {
   font-size: 12.5px;
   color: var(--lm-muted);
   list-style: none;
+}
+
+/* 删除：一直看得见（触屏没有悬停），浅一点，指上去变红 */
+.ast-history-del {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 14px;
+  color: var(--lm-muted);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: var(--lm-radius-sm);
+}
+
+.ast-history-del:hover {
+  color: var(--lm-danger-text);
+  background: var(--lm-danger-bg);
+}
+
+.ast-history-del:focus-visible {
+  outline: 2px solid var(--lm-accent);
+  outline-offset: -2px;
+}
+
+.ast-history-foot {
+  margin-top: 4px;
+  font-size: 11.5px;
+  border-top: 1px solid var(--lm-line-soft);
 }
 </style>

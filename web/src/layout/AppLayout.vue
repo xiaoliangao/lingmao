@@ -7,6 +7,7 @@ import { useSidebar } from '@/composables/useSidebar'
 import { cacheNameOf, useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import ModuleBoundary from '@/components/ModuleBoundary.vue'
+import AssistantLauncher from '@/components/assistant/AssistantLauncher.vue'
 import AssistantPanel from '@/components/assistant/AssistantPanel.vue'
 import AppSidebar from './AppSidebar.vue'
 import TabsBar from './TabsBar.vue'
@@ -17,24 +18,23 @@ import TabsBar from './TabsBar.vue'
  * - 管理后台（/admin，只有超级管理员）：没有页签，点哪页显示哪页
  *
  * 快捷键：[ 收起 / 展开侧边栏；⌘K（Windows 上 Ctrl+K）打开 / 关掉快捷跳转（侧边栏的"搜索功能"）；
- * ⌘J（Ctrl+J）打开 / 关掉智能助手的抽屉（只在首页这一侧、有入口的人）。抽屉在右边，和页面并排（docs/api/08-智能助手.md）
+ * ⌘J（Ctrl+J）打开 / 收起智能助手的对话卡片（只在首页这一侧、有入口的人）。卡片和右下角的图标都浮在页面上，不占地方（docs/api/08-智能助手.md）
  */
 const props = defineProps<{ area: 'workbench' | 'admin' }>()
 
 const route = useRoute()
 const store = useUserStore()
 const tabs = useTabsStore()
-const { toggle, closeDrawer, open: sideOpen, narrow } = useSidebar()
+const { toggle, closeDrawer, narrow } = useSidebar()
 const assistant = useAssistant()
 const withTabs = computed(() => props.area === 'workbench')
+/** 智能助手：右下角的图标和对话卡片，都浮在页面上、不占地方。出来时查一次服务好不好，用不了的图标变灰（不弹报错） */
 const withAssistant = computed(() => withTabs.value && assistant.enabled.value)
+watch(withAssistant, (on) => on && void assistant.checkHealth(), { immediate: true })
 
-// 窄屏上侧边栏和助手都是浮层，一个开了另一个收起（不然叠在一起、关了一个另一个和遮罩还在）
+// 窄屏上侧边栏是盖住页面的浮层：打开助手时收起来，不然卡片在遮罩下面
 watch(() => assistant.state.open, (on) => {
   if (on && narrow.value) closeDrawer()
-})
-watch(sideOpen, (on) => {
-  if (on && narrow.value) assistant.hide()
 })
 const menus = computed(() => (props.area === 'admin' ? store.adminMenus : store.workbenchMenus))
 
@@ -155,6 +155,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </router-view>
       </main>
     </div>
-    <AssistantPanel v-if="withAssistant && assistant.state.open" />
+    <template v-if="withAssistant">
+      <AssistantPanel v-if="assistant.state.open" />
+      <AssistantLauncher v-else />
+    </template>
   </div>
 </template>

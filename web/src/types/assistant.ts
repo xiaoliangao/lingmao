@@ -12,6 +12,8 @@ export interface AssistantHealth {
 export interface AssistantInfo {
   /** external：外部云端，问题和查到的数据会发出公司；self-hosted：公司内网自部署；none：没配模型 */
   model: { mode: 'external' | 'self-hosted' | 'none' }
+  /** 对话留几天：超过这么多天没再问的自动删掉（部署时 ASSISTANT_RETENTION_DAYS 定，默认 7） */
+  retentionDays: number
 }
 
 /** POST /assistant/chat 的请求体 */

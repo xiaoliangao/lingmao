@@ -83,6 +83,12 @@ export class MemoryStore {
   async ownsConversation(id: string, userId: string): Promise<boolean> {
     return this.conversations.get(id)?.userId === userId
   }
+  async deleteConversation(id: string, userId: string): Promise<boolean> {
+    if (this.conversations.get(id)?.userId !== userId) return false
+    this.conversations.delete(id)
+    this.messagesById = this.messagesById.filter((m) => m.conversationId !== id)
+    return true
+  }
   async listConversations(userId: string): Promise<ConversationRow[]> {
     return [...this.conversations.entries()].filter(([, c]) => c.userId === userId).map(([id, c]) => ({ id, title: c.title, updatedAt: '' }))
   }

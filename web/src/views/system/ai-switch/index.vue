@@ -18,7 +18,7 @@ import { formatDateTime } from '@/utils/format'
  * 打开前的确认按助手服务的 /assistant/info 说数据去哪（外部模型还是内网模型），服务没起也照样能开
  */
 const FEATURES = [
-  { name: '助手', what: '侧边栏和 ⌘K 里问单据、库存、进度，替用户查系统、回答带单据链接；只能查不能改', live: true },
+  { name: '助手', what: '页面右下角的助手图标和 ⌘K 里问单据、库存、进度，替用户查系统、回答带单据链接；只能查不能改', live: true },
   { name: '识别预填', what: '拍码单、报价截图、工艺单，识别后填进新建表单，人核对了再保存', live: false },
   { name: '企查查 agent', what: '定期查供应商的工商和风险，结果送回供应商档案', live: false },
   { name: '后台归因', what: '把超耗、生产异常按原因归类', live: false },
@@ -57,11 +57,11 @@ onBeforeUnmount(() => {
 })
 
 /**
- * 打开前说清楚数据去哪：问助手服务配的是外部模型还是内网模型；服务没起、没配模型的，说打开后入口显示"暂时用不了"。
+ * 打开前说清楚数据去哪：问助手服务配的是外部模型还是内网模型；服务没起、没配模型的，说打开后助手图标是灰的、点开说"暂时用不了"。
  * 最多等 3 秒（代理连不上时可能一直挂着），等不到按没启动说。离开了这页返回 null
  */
 async function whereDataGoes(): Promise<string | null> {
-  const ask = '打开后，角色里勾了"使用智能助手"的人能在侧边栏和 ⌘K 里问助手（只能查、不能改）。'
+  const ask = '打开后，角色里勾了"使用智能助手"的人能点页面右下角的助手图标、或在 ⌘K 里问助手（只能查、不能改）。'
   const ctrl = new AbortController()
   infoCtrl = ctrl
   const timer = setTimeout(() => ctrl.abort(), 3000)
@@ -69,10 +69,10 @@ async function whereDataGoes(): Promise<string | null> {
     const { model } = await assistantApi.info(ctrl.signal)
     if (model.mode === 'external') return `${ask}他们的问题和助手替他们查到的数据，会发给外部的模型服务（数据离开公司）。`
     if (model.mode === 'self-hosted') return `${ask}问题和查到的数据发给公司内网部署的模型，不出公司。`
-    return `${ask}智能助手还没有配置模型（部署手册第 10 节），打开后入口会显示"暂时用不了"。`
+    return `${ask}智能助手还没有配置模型（部署手册第 10 节），打开后助手图标是灰的，点开说"暂时用不了"。`
   } catch {
     if (left) return null
-    return `${ask}智能助手的服务现在没有启动（部署手册第 10 节），打开后入口会显示"暂时用不了"；服务起来、配好模型以后，问题和查到的数据会发给配的模型。`
+    return `${ask}智能助手的服务现在没有启动（部署手册第 10 节），打开后助手图标是灰的，点开说"暂时用不了"；服务起来、配好模型以后，问题和查到的数据会发给配的模型。`
   } finally {
     clearTimeout(timer)
     if (infoCtrl === ctrl) infoCtrl = null
@@ -83,7 +83,7 @@ async function whereDataGoes(): Promise<string | null> {
 async function toggle(): Promise<boolean> {
   if (!data.value || checking.value || saving.value) return false
   const on = !data.value.enabled
-  let message = '关闭后，谁也问不了助手，正在答的那一句再查系统会被拒；对话记录都留着，再打开接着用。'
+  let message = '关闭后，谁也问不了助手，正在答的那一句再查系统会被拒；对话记录照常留着（超过保留天数的自动删），再打开接着用。'
   if (on) {
     checking.value = true
     try {

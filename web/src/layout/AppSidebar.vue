@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { APP_MARK, APP_NAME } from '@/config'
@@ -118,11 +118,9 @@ function searchOpen() {
 
 defineExpose({ toggleSearch, searchOpen })
 
-// ---------- 智能助手：右边的抽屉，查一次服务好不好，用不了的标出来（不弹报错） ----------
+// ---------- 智能助手：入口是页面右下角的图标（AppLayout），这里只管 ⌘K 里的"问助手" ----------
 const assistant = useAssistant()
 const showAssistant = computed(() => props.area === 'workbench' && assistant.enabled.value)
-const ASSISTANT_SHORTCUT = IS_MAC ? '⌘J' : 'Ctrl J'
-watch(showAssistant, (on) => on && void assistant.checkHealth(), { immediate: true })
 
 // ---------- 当前用户 ----------
 const passwordVisible = ref(false)
@@ -206,20 +204,6 @@ async function onCommand(command: string) {
       </nav>
 
       <div class="side-foot">
-        <button
-          v-if="showAssistant"
-          type="button"
-          class="nav-i util"
-          :class="{ on: assistant.state.open }"
-          :aria-pressed="assistant.state.open"
-          :title="assistant.unavailable.value ? `暂时用不了：${assistant.state.statusMessage}` : `智能助手（${ASSISTANT_SHORTCUT}）`"
-          @click="assistant.toggle()"
-        >
-          <el-icon><ChatDotRound /></el-icon>
-          <span class="label">智能助手</span>
-          <small v-if="assistant.unavailable.value" class="ast-off">暂时用不了</small>
-          <kbd v-else>{{ ASSISTANT_SHORTCUT }}</kbd>
-        </button>
         <router-link v-if="area === 'workbench' && store.isAdmin" to="/admin" class="nav-i util">
           <el-icon><Setting /></el-icon><span class="label">管理后台</span>
         </router-link>
@@ -550,15 +534,8 @@ async function onCommand(command: string) {
   font-size: 12.5px;
 }
 
-.util kbd,
-.ast-off {
+.util kbd {
   flex: none;
-}
-
-/* 智能助手调不通：灰字说一句，不弹报错（RFC 009 §6.1） */
-.ast-off {
-  font-size: 11px;
-  color: var(--lm-side-text-dim);
 }
 
 .me-wrap {

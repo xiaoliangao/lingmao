@@ -204,6 +204,28 @@ describe('对话', () => {
     assert.equal(list[0]!.title.length, 100, '标题截到 100 个字')
   })
 
+  test('删对话只删本人的、问答和工具记录跟着删；过期清理按最后一次问答的时间', async () => {
+    await store.migrate(MIGRATIONS)
+    const mine = randomUUID()
+    const other = randomUUID()
+    await store.createConversation(mine, '7', '我的')
+    await store.createConversation(other, '8', '别人的')
+    await store.addUserMessage(mine, '问')
+    await store.addAnswer(mine, '答', null, 1, 1, [{ tool: 'list_orders', args: {}, status: 200, ok: true, rows: 1, durationMs: 5 }])
+    assert.equal(await store.deleteConversation(mine, '8'), false, '别人删不了')
+    assert.equal(await store.deleteConversation(mine, '7'), true)
+    assert.equal(await store.deleteConversation(mine, '7'), false, '删过了')
+    const left = await admin.query('SELECT (SELECT count(*) FROM assistant.ast_message)::int AS m, (SELECT count(*) FROM assistant.ast_tool_call)::int AS t')
+    assert.deepEqual(left.rows[0], { m: 0, t: 0 })
+
+    const fresh = randomUUID()
+    await store.createConversation(fresh, '7', '刚问的')
+    await admin.query("UPDATE assistant.ast_conversation SET updated_at = now() - interval '8 days' WHERE id = $1", [other])
+    await admin.query("UPDATE assistant.ast_conversation SET updated_at = now() - interval '6 days' WHERE id = $1", [fresh])
+    assert.equal(await store.purgeConversations(7), 1)
+    assert.deepEqual((await admin.query('SELECT id FROM assistant.ast_conversation')).rows.map((r) => r.id), [fresh])
+  })
+
   test('history 只取最近几轮', async () => {
     await store.migrate(MIGRATIONS)
     const id = randomUUID()

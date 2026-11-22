@@ -54,6 +54,7 @@ ASSISTANT_OPENAPI=./openapi.json pnpm test   # 再核对仓库里的 tools.yaml
 | `ASSISTANT_DAILY_TOKENS` | 5000000 | 全系统每天最多用多少 token（一句话约 2 万） |
 | `ASSISTANT_MAX_STEPS` | 6 | 一句话里模型最多来回几轮（最后一轮不许再调工具） |
 | `ASSISTANT_MAX_CONCURRENT` | 6 | 全系统同时在答的最多几句；每人同时只能一句 |
+| `ASSISTANT_RETENTION_DAYS` | 7 | 对话留几天：超过这么多天没再问的整个删掉（启动时和之后每小时一次）；最多 365 |
 | `ASSISTANT_HOST` / `ASSISTANT_PORT` | `127.0.0.1` / 8091 | 监听地址；镜像里是 `0.0.0.0` |
 | `PGPASSWORD` | 空 | 库账号的密码（不写进连接串时从这里取；部署包这样传） |
 | `ASSISTANT_SYSTEM_NAME` | 服装 SCM | 写进提示词；和前端 `web/src/config.ts` 的系统名一致 |

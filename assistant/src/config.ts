@@ -48,6 +48,8 @@ export interface Config {
   toolsPath: string
   /** 页面上显示的系统名，写进提示词 */
   systemName: string
+  /** 对话留几天：超过这么多天没再问的整个删掉（启动时和之后每小时查一次） */
+  retentionDays: number
   llm: LlmConfig | null
   limits: Limits
 }
@@ -99,6 +101,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     openapiPath: env.ASSISTANT_OPENAPI ?? './openapi.json',
     toolsPath: env.ASSISTANT_TOOLS ?? './tools.yaml',
     systemName: env.ASSISTANT_SYSTEM_NAME ?? '服装 SCM', // 和前端 web/src/config.ts 的 APP_NAME 一致
+    // 问数、问进度用不着长留，默认 7 天（用户 11-22 定）；最多留一年
+    retentionDays: Math.min(int(env, 'ASSISTANT_RETENTION_DAYS', 7), 365),
     llm,
     limits: {
       userDailyRequests: int(env, 'ASSISTANT_USER_DAILY_REQUESTS', 200),

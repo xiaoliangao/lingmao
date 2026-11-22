@@ -7,13 +7,14 @@ import { ApiError } from '@/utils/request'
 import { onSessionChanged, sessionChanged } from '@/utils/token'
 
 /**
- * 智能助手的状态和动作（docs/api/08-智能助手.md）。模块级单例：侧边栏入口、⌘K、抽屉共用一份；
+ * 智能助手的状态和动作（docs/api/08-智能助手.md）。模块级单例：右下角的图标、⌘K、对话卡片共用一份；
  * 切页签、去管理后台再回来，对话都还在。退出登录、换了人（别的页签登录了别人）时全部清掉。
  *
  *   const assistant = useAssistant()
  *   assistant.enabled        出不出入口（AI 开关开着、有 assistant:chat:use；只管显示，拦截在后端）
- *   assistant.state.open     抽屉开着没有；toggle() / show() / hide()
- *   assistant.ask('PO… 审了没有')   打开抽屉、发出这句话（在答的时候不发、放进输入框，返回 false）
+ *   assistant.state.open     对话卡片开着没有（关着显示右下角的图标）；toggle() / show() / hide()
+ *   assistant.state.unread   收起来的时候答完了一句：图标上亮个点，打开就灭
+ *   assistant.ask('PO… 审了没有')   打开卡片、发出这句话（在答的时候不发、放进输入框，返回 false）
  *
  * 令牌：用登录身份换的 30 分钟助手令牌，只放内存；剩不到 5 分钟先换新的，助手服务回 401 再换一次重发。
  * 回答：答的过程中 turn.draft 是模型的原话（只能当纯文本显示），答完 turn.answer 是处理过的全文（交给 AssistantAnswer 渲染）
@@ -49,24 +50,28 @@ export type AssistantStatus = 'unknown' | 'up' | 'noModel' | 'down'
 
 const state = reactive({
   open: false,
+  /** 收起来的时候答完了（或没答成）一句，还没看 */
+  unread: false,
   status: 'unknown' as AssistantStatus,
-  /** 用不了的原因，抽屉里显示 */
+  /** 用不了的原因，卡片里显示 */
   statusMessage: '',
   checking: false,
   checkedAt: 0,
   /** 模型是外部的还是内网的：空白页上说一句数据去哪 */
   mode: null as AssistantInfo['model']['mode'] | null,
+  /** 对话留几天（最近的对话下面写一句）；还没问到是 null */
+  retentionDays: null as number | null,
   turns: [] as ChatTurn[],
   conversationId: null as string | null,
   /** 在答：一次只答一句 */
   busy: false,
-  /** 输入框里还没发的话：关了抽屉再开还在 */
+  /** 输入框里还没发的话：收起来再打开还在 */
   draft: '',
   history: [] as AssistantConversation[],
   historyLoading: false,
   /** 最近的对话列表没加载出来（显示在下拉里） */
   historyError: '',
-  /** 点开的对话没打开（显示在抽屉里） */
+  /** 点开的对话没打开（显示在卡片里） */
   openError: '',
 })
 
@@ -74,7 +79,7 @@ let token: { value: string; expiresAt: number } | null = null
 let controller: AbortController | null = null
 /** 每次清空（退出、换人）加一：清空以前发出去的请求回来了，结果不要，令牌也不要 */
 let generation = 0
-/** 抽屉里显示的是哪一段对话：问新的、点"新对话"、打开历史都加一，慢回来的旧请求不覆盖（审查 T-c5c68e #4） */
+/** 卡片里显示的是哪一段对话：问新的、点"新对话"、打开历史都加一，慢回来的旧请求不覆盖（审查 T-c5c68e #4） */
 let viewSeq = 0
 /** 最近的对话列表：每次加载加一，只认最后一次的 */
 let historySeq = 0
@@ -92,12 +97,12 @@ function reset() {
   controller = null
   token = null
   Object.assign(state, {
-    open: false, status: 'unknown', statusMessage: '', checking: false, checkedAt: 0, mode: null,
+    open: false, unread: false, status: 'unknown', statusMessage: '', checking: false, checkedAt: 0, mode: null, retentionDays: null,
     turns: [], conversationId: null, busy: false, draft: '', history: [], historyLoading: false, historyError: '', openError: '',
   })
 }
 
-/** 退出登录、换了人时清空。挂在独立的作用域里：抽屉、侧边栏卸载了（去管理后台）也一直管着 */
+/** 退出登录、换了人时清空；打开卡片就算看过了。挂在独立的作用域里：卡片、图标卸载了（去管理后台）也一直管着 */
 function wire() {
   if (wired) return
   wired = true
@@ -107,6 +112,12 @@ function wire() {
       () => user.info?.id ?? null,
       (now, before) => {
         if (now !== before) reset()
+      },
+    )
+    watch(
+      () => state.open,
+      (open) => {
+        if (open) state.unread = false
       },
     )
   })
@@ -151,6 +162,7 @@ async function checkHealth(force = false) {
     const [health, info] = await Promise.all([assistantApi.health(), assistantApi.info().catch(() => null)])
     if (gen !== generation) return
     state.mode = info?.model.mode ?? null
+    state.retentionDays = info?.retentionDays ?? null
     state.status = health.model === 'configured' ? 'up' : 'noModel'
     state.statusMessage = health.model === 'configured' ? '' : '还没有配置模型，请联系管理员'
   } catch (e) {
@@ -258,7 +270,7 @@ async function run(turn: ChatTurn, question: string, signal: AbortSignal, gen: n
 }
 
 /**
- * 打开抽屉、发出这句话。空的不发；上一句还在答的（⌘K 里问的时候抽屉可能关着），抽屉照样打开、
+ * 打开卡片、发出这句话。空的不发；上一句还在答的（⌘K 里问的时候卡片可能收着），卡片照样打开、
  * 这句放进输入框等着（输入框里已经有字的不覆盖），返回 false（审查 T-c5c68e #8）
  */
 async function ask(text: string): Promise<boolean> {
@@ -289,6 +301,7 @@ async function ask(text: string): Promise<boolean> {
         if (step.status === 'running') step.status = turn.state === 'failed' ? 'failed' : 'stopped'
       }
       if (turn.state === 'asking') turn.state = 'stopped'
+      if (!state.open && turn.state !== 'stopped') state.unread = true
     }
   }
   return true
@@ -363,11 +376,29 @@ async function openConversation(id: string) {
   }
 }
 
+/**
+ * 删掉自己的一个对话（找不回来，调用方先确认）。删的是卡片里正开着的，卡片清空成新对话。
+ * 成功返回 true；没删成抛 AssistantError（消息能直接给人看）
+ */
+async function deleteConversation(id: string): Promise<boolean> {
+  const gen = generation
+  await withToken(gen, (tok) => assistantApi.deleteConversation(tok, id))
+  if (gen !== generation) return false
+  state.history = state.history.filter((c) => c.id !== id)
+  if (state.conversationId === id && !state.busy) {
+    viewSeq++
+    state.turns = []
+    state.conversationId = null
+    state.openError = ''
+  }
+  return true
+}
+
 export function useAssistant() {
   wire()
   const user = useUserStore()
   const enabled = computed(() => user.info?.features?.ai === true && user.hasPerm(ASSISTANT_PERM))
-  /** 查过、确实用不了（没启动、没配模型）：入口标"暂时用不了"，抽屉里不让发 */
+  /** 查过、确实用不了（没启动、没配模型）：图标变灰、提示"暂时用不了"，卡片里不让发 */
   const unavailable = computed(() => state.status === 'down' || state.status === 'noModel')
 
   function show() {
@@ -382,5 +413,5 @@ export function useAssistant() {
     else show()
   }
 
-  return { state, enabled, unavailable, show, hide, toggle, ask, stop, newChat, checkHealth, loadHistory, openConversation }
+  return { state, enabled, unavailable, show, hide, toggle, ask, stop, newChat, checkHealth, loadHistory, openConversation, deleteConversation }
 }

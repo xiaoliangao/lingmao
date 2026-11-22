@@ -159,6 +159,21 @@ export class Store {
     return r.rowCount === 1
   }
 
+  /** 删掉这个人的一个对话，问答和工具记录跟着删（外键 ON DELETE CASCADE）。不是他的、不存在的返回 false */
+  async deleteConversation(id: string, userId: string): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM assistant.ast_conversation WHERE id = $1 AND user_id = $2', [id, userId])
+    return r.rowCount === 1
+  }
+
+  /**
+   * 删掉超过 days 天没再问过的对话（按最后一次问答的时间 updated_at），返回删了几个。
+   * 助手只是问数、问进度，对话不用长留（用户 11-22 定）；用量表 ast_usage 不删，限额要看
+   */
+  async purgeConversations(days: number): Promise<number> {
+    const r = await this.pool.query('DELETE FROM assistant.ast_conversation WHERE updated_at < now() - make_interval(days => $1)', [days])
+    return r.rowCount ?? 0
+  }
+
   async listConversations(userId: string, limit: number): Promise<ConversationRow[]> {
     const r = await this.pool.query<{ id: string; title: string; updated_at: Date }>(
       'SELECT id, title, updated_at FROM assistant.ast_conversation WHERE user_id = $1 ORDER BY updated_at DESC LIMIT $2',

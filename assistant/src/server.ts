@@ -9,10 +9,11 @@ import type { Store } from './store.ts'
  * 助手服务的接口，Nginx 把 /assistant/ 原样转过来（RFC 009 §3.1）。返回体和 app 一样是 { code, msg, data }，问话是 SSE。
  *
  *   GET  /assistant/health                 不用登录：活着没有、库连得上没有、模型配了没有
- *   GET  /assistant/info                   不用登录：模型是外部的还是自部署的（打开 AI 开关前的弹窗要显示，RFC 017 §3.7）
+ *   GET  /assistant/info                   不用登录：模型是外部的还是自部署的（打开 AI 开关前的弹窗要显示，RFC 017 §3.7）、对话留几天
  *   POST /assistant/chat                   问一句：{ conversationId?, message }，回 SSE（meta / tool / delta / done / error）
  *   GET  /assistant/conversations          我最近的 20 个对话
  *   GET  /assistant/conversations/{id}     一个对话的全部问答（只有本人能看）
+ *   DELETE /assistant/conversations/{id}   删掉自己的一个对话（正在答的时候不让删）
  *
  * 认人：请求头 Authorization: Bearer <助手令牌>，原样拿去调 app 的 /api/auth/me（app 验签、查库，令牌过期回 401）。
  * app 只对助手令牌查 AI 开关和使用权限，普通登录令牌它照样认；所以这里自己再查三样，缺一样就 403：
@@ -24,6 +25,8 @@ export interface ServerDeps {
   app: AppClient
   store: Store
   llmConfig: LlmConfig | null
+  /** 对话留几天（/assistant/info 告诉前端，最近的对话下面写一句） */
+  retentionDays: number
 }
 
 export interface AssistantServer {
@@ -94,14 +97,14 @@ async function route(deps: ServerDeps, req: IncomingMessage, res: ServerResponse
   }
   if (req.method === 'GET' && path === '/assistant/info') {
     // 不给地址和主机名：这个接口不用登录，自部署模型的内网地址不往外说
-    return json(res, 200, 0, 'ok', { model: { mode: deps.llmConfig?.mode ?? 'none' } })
+    return json(res, 200, 0, 'ok', { model: { mode: deps.llmConfig?.mode ?? 'none' }, retentionDays: deps.retentionDays })
   }
 
   const conv = /^\/assistant\/conversations(?:\/([^/]+))?$/.exec(path)
   const isChat = path === '/assistant/chat'
   if (!conv && !isChat) return json(res, 404, 404, '没有这个地址')
   if (isChat && req.method !== 'POST') return json(res, 405, 405, '只能 POST')
-  if (conv && req.method !== 'GET') return json(res, 405, 405, '只能 GET')
+  if (conv && req.method !== 'GET' && !(req.method === 'DELETE' && conv[1] !== undefined)) return json(res, 405, 405, '只能 GET（删一个对话用 DELETE）')
 
   const token = bearer(req)
   if (!token) return json(res, 401, 401, '未登录或登录已过期')
@@ -129,6 +132,12 @@ async function route(deps: ServerDeps, req: IncomingMessage, res: ServerResponse
     const raw = conv[1]
     if (raw === undefined) return json(res, 200, 0, 'ok', await deps.store.listConversations(me.id, 20))
     const id = conversationIdOf(raw)
+    if (req.method === 'DELETE') {
+      // 一个人同时只答一句，不知道在答的是哪个对话：在答就都不让删（删了它记回答时外键会报错）
+      if (rt.active.has(me.id)) return json(res, 409, 409, '正在答的时候不能删，停了再删')
+      if (!id || !(await deps.store.deleteConversation(id, me.id))) return json(res, 404, 404, '这个对话不存在')
+      return json(res, 200, 0, 'ok', null)
+    }
     if (!id || !(await deps.store.ownsConversation(id, me.id))) return json(res, 404, 404, '这个对话不存在')
     return json(res, 200, 0, 'ok', await deps.store.messages(id))
   }

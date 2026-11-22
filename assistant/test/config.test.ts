@@ -28,3 +28,11 @@ test('填错的直接起不来，说清楚哪一项', () => {
   assert.throws(() => loadConfig({ ...DB, ASSISTANT_LLM_MODEL: 'm' }), /一起填/)
   assert.throws(() => loadConfig({ ...DB, ASSISTANT_LLM_BASE_URL: 'https://x/v1', ASSISTANT_LLM_MODEL: 'm', ASSISTANT_LLM_MODE: 'self_hosted' }), /ASSISTANT_LLM_MODE/, '拼错了不悄悄当成外部模型')
 })
+
+test('对话留几天：默认 7，最多 365，0 和小数起不来', () => {
+  assert.equal(loadConfig({ ...DB }).retentionDays, 7)
+  assert.equal(loadConfig({ ...DB, ASSISTANT_RETENTION_DAYS: '30' }).retentionDays, 30)
+  assert.equal(loadConfig({ ...DB, ASSISTANT_RETENTION_DAYS: '9999' }).retentionDays, 365)
+  assert.throws(() => loadConfig({ ...DB, ASSISTANT_RETENTION_DAYS: '0' }), /ASSISTANT_RETENTION_DAYS/)
+  assert.throws(() => loadConfig({ ...DB, ASSISTANT_RETENTION_DAYS: '1.5' }), /ASSISTANT_RETENTION_DAYS/)
+})
