@@ -26,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 
 /** 需求订单（docs/api/02 §3.2–§3.11）。数据范围"本人"看制单人、业务员、跟单员是自己的 */
 public interface OrderService {
@@ -84,6 +85,12 @@ public interface OrderService {
      * 算料是采购的活（PRD §3.1），采购默认"本人"范围，可订单上没有采购员这一栏，按订单的本人范围采购一张都算不了
      */
     void checkMrpSourceVisible(Collection<Long> ids);
+
+    /**
+     * 只回状态的批量查询（齐料）用：这几张里在、品类线是我的（不报错，别的线的、不存在的去掉）。
+     * 不查本人范围：生产跟单在生产单列表上要看订单齐料，订单本身他不一定看得到
+     */
+    Set<Long> lineVisible(Collection<Long> ids);
 
     /**
      * 变更单审核时写回订单（同一个事务，docs/api/02 §3.14）：锁住订单，核对每一处的"原"还是订单现在的值（对不上 1002），

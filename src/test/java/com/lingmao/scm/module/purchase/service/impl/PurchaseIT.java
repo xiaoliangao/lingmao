@@ -2,6 +2,7 @@ package com.lingmao.scm.module.purchase.service.impl;
 
 import com.lingmao.scm.IntegrationTest;
 import com.lingmao.scm.TestIdentity;
+import com.lingmao.scm.module.purchase.dto.OrderKittingVO;
 import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -225,6 +226,13 @@ class PurchaseIT {
             assertThat(k.status()).isNotEqualTo("NONE");
             assertThat(k.calcIds()).containsExactly(calc.id());
         });
+        // 别的品类线的人：这张订单（服装）不回，不报错；不存在的 id 也不回（agy 审查 T-a58245 #1）
+        List<String> footwearOnly = new java.util.ArrayList<>(PERMS);
+        footwearOnly.add("line:FOOTWEAR");
+        TestIdentity.login(f.user, footwearOnly);
+        assertThat(mrpService.kitting(List.of(orderId, -1L))).isEmpty();
+        loginAs(f.user);
+        assertThat(mrpService.kitting(List.of(orderId, -1L))).extracting(OrderKittingVO::orderId).containsExactly(orderId);
         // 别人（本人范围）看这张订单：状态一样，但算料单是 f.user 建的、他打不开，calcIds 空（标签不给跳 404，走查 T-693633）
         assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, false, () -> mrpService.kitting(List.of(orderId)))).singleElement().satisfies(k -> {
             assertThat(k.status()).isNotEqualTo("NONE");

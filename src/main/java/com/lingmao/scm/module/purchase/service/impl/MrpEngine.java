@@ -67,6 +67,9 @@ class MrpEngine {
 
     void checkSourceVisible(Collection<Long> ids) { orderService.checkMrpSourceVisible(ids); }
 
+    /** 这几张订单里在、品类线是我的（齐料只回这些） */
+    Set<Long> lineVisibleOrders(Collection<Long> ids) { return orderService.lineVisible(ids); }
+
     /** 订单都要在、都是已审核或生产中，不然 404 / 1000（选订单算料） */
     List<MrpCalcMapper.OrderHead> checkedHeads(Collection<Long> orderIds) {
         orderService.checkForMrp(orderIds);

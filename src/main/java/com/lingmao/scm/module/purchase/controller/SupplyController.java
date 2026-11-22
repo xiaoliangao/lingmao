@@ -27,7 +27,7 @@ public class SupplyController {
     private final MrpService mrpService;
     private final SupplyService supplyService;
 
-    @Operation(summary = "几张订单的齐料状态（最多 500 张）：只回状态不回明细，登录即可")
+    @Operation(summary = "几张订单的齐料状态（最多 500 张）：只回状态不回明细，登录即可；只回品类线是我的订单，别的线的、不存在的不回")
     @GetMapping("/order-kitting")
     public R<List<OrderKittingVO>> kitting(@RequestParam("orderIds") List<Long> orderIds) {
         return R.ok(mrpService.kitting(orderIds));

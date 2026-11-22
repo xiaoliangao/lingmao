@@ -915,6 +915,16 @@ public class OrderServiceImpl implements OrderService {
         sources(sourceIds, false, "来源订单不存在");
     }
 
+    @Override
+    public Set<Long> lineVisible(Collection<Long> ids) {
+        Set<Long> distinct = new HashSet<>(ids);
+        distinct.remove(null);
+        if (distinct.isEmpty()) return Set.of();
+        LineScope lines = LineScope.current();
+        return orderMapper.selectByIds(distinct).stream().filter(o -> lines.canSee(o.getProductLine()))
+                .map(Order::getId).collect(Collectors.toSet());
+    }
+
     /** 来源订单：都要在、品类线是我的、主体对得上；ownScope 时还要在本人范围里（制单人、业务员、跟单员） */
     private List<Order> sources(Collection<Long> sourceIds, boolean ownScope, String missing) {
         Set<Long> ids = new HashSet<>(sourceIds);

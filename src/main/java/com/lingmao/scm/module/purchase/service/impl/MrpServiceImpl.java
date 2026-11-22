@@ -1099,10 +1099,13 @@ public class MrpServiceImpl implements MrpService {
 
     @Override
     public List<OrderKittingVO> kitting(List<Long> orderIds) {
-        List<Long> ids = orderIds.stream().filter(Objects::nonNull).distinct().toList();
-        if (ids.size() > 500) {
+        List<Long> asked = orderIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (asked.size() > 500) {
             throw new BizException(400, "一次最多查 500 张订单");
         }
+        // 只回在的、品类线是我的（RFC 013 §2）：别的线的订单齐料到哪一步也不该知道。不查本人范围（生产跟单在生产单上看齐料）
+        Set<Long> visible = asked.isEmpty() ? Set.of() : engine.lineVisibleOrders(asked);
+        List<Long> ids = asked.stream().filter(visible::contains).toList();
         if (ids.isEmpty()) {
             return List.of();
         }

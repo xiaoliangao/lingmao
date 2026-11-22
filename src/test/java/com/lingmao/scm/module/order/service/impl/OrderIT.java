@@ -520,6 +520,8 @@ class OrderIT {
                 "SELECT no FROM ord_order WHERE id IN (?, ?)", String.class, apparel, footwear)));
         assertThat(orderService.page(query).getList()).extracting(OrderRowVO::getId).containsExactly(footwear);
         assertThat(catchThrowableOfType(BizException.class, () -> orderService.detail(apparel)).getCode()).isEqualTo(404);
+        // 齐料这类只回状态的：别的线的、不存在的去掉，不报错（agy 审查 T-a58245 #1）
+        assertThat(orderService.lineVisible(java.util.Arrays.asList(apparel, footwear, -1L, null))).containsExactly(footwear);
     }
 
     private record Fixture(long company, String companyName, long user, String userName, long approver, long style, String styleCode,
