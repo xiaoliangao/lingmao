@@ -23,6 +23,8 @@ src_dir=$(dirname "$file")
 src_name=$(basename "$file")
 cd "$TARGET"
 take_lock
+check_env                  # .env 写错的，动库之前就停下来
+check_assistant_password   # 恢复以后要用它把助手的表交还给助手的账号
 
 # 备份文件挂进一个临时的 backup 容器，用容器里的 PostgreSQL 工具读：服务器上不用装 PostgreSQL 客户端
 in_backup_container() {

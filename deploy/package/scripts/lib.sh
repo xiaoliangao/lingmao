@@ -246,9 +246,22 @@ check_env() {
     '' | assistant) ;;
     *) die "COMPOSE_PROFILES 只能空着（不起助手）或者写 assistant，.env 里现在是 \"${profiles}\"。见部署手册第 10 节" ;;
   esac
-  # 原样写进数据库的 ALTER ROLE，只收字母、数字、- 和 _（安装脚本生成的是 32 位十六进制）
+  # 空着的不管：升级前检查时旧的 .env 还没有这一项，升级脚本随后补上
   assistant_pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
-  if [ -n "$assistant_pw" ] && ! printf '%s' "$assistant_pw" | grep -Eq '^[A-Za-z0-9_-]{16,}$'; then
+  if [ -n "$assistant_pw" ]; then
+    check_assistant_password
+  fi
+}
+
+# 助手库账号的密码：要有，只能是字母、数字、- 和 _，至少 16 位（安装脚本生成的是 32 位十六进制）。
+# 它原样写进数据库的 ALTER ROLE 语句，所以字符要管住。恢复脚本在动库之前就查：恢复到一半才发现不对，应用就起不来了
+check_assistant_password() {
+  local pw re='^[A-Za-z0-9_-]{16,}$'
+  pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
+  if [ -z "$pw" ]; then
+    die ".env 里没有 ASSISTANT_DB_PASSWORD（升级脚本会自动补上；手动改过 .env 的话，照 env.example 补一行，值用 32 位随机的字母数字）"
+  fi
+  if ! [[ $pw =~ $re ]]; then
     die "ASSISTANT_DB_PASSWORD 只能用字母、数字、- 和 _，至少 16 位"
   fi
 }
@@ -265,10 +278,8 @@ assistant_enabled() {
 # 密码从标准输入交给 psql，不出现在命令行上（ps 看得到命令行），数据库日志也不记语句（compose.yml 里 log_statement=none）
 ensure_assistant_db() {
   local pw
+  check_assistant_password
   pw=$(env_get "$TARGET"/.env ASSISTANT_DB_PASSWORD)
-  if [ -z "$pw" ]; then
-    die ".env 里没有 ASSISTANT_DB_PASSWORD（升级脚本会自动补上，手动改过 .env 的话照 env.example 补一行）"
-  fi
   {
     printf '%s\n' "\\set pw '$pw'"
     cat <<'SQL'
