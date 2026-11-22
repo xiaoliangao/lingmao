@@ -24,10 +24,18 @@ const props = defineProps<{ area: 'workbench' | 'admin' }>()
 const route = useRoute()
 const store = useUserStore()
 const tabs = useTabsStore()
-const { toggle, closeDrawer } = useSidebar()
+const { toggle, closeDrawer, open: sideOpen, narrow } = useSidebar()
 const assistant = useAssistant()
 const withTabs = computed(() => props.area === 'workbench')
 const withAssistant = computed(() => withTabs.value && assistant.enabled.value)
+
+// 窄屏上侧边栏和助手都是浮层，一个开了另一个收起（不然叠在一起、关了一个另一个和遮罩还在）
+watch(() => assistant.state.open, (on) => {
+  if (on && narrow.value) closeDrawer()
+})
+watch(sideOpen, (on) => {
+  if (on && narrow.value) assistant.hide()
+})
 const menus = computed(() => (props.area === 'admin' ? store.adminMenus : store.workbenchMenus))
 
 const main = ref<HTMLElement>()
@@ -102,14 +110,17 @@ function overlayOpen() {
 
 function onKey(event: KeyboardEvent) {
   if (event.isComposing) return
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+  // 只认 ⌘ / Ctrl 加字母：带 Shift、Alt 的是浏览器的（Ctrl+Shift+J 开控制台）。开着对话框时不响应：
+  // 快捷跳转会盖在对话框上、绕过"没保存"的提示，助手会在遮罩后面抢走焦点
+  const command = (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
+  if (command && event.key.toLowerCase() === 'k') {
     event.preventDefault()
-    sidebar.value?.toggleSearch()
+    if (!overlayOpen()) sidebar.value?.toggleSearch()
     return
   }
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'j' && withAssistant.value) {
+  if (command && event.key.toLowerCase() === 'j' && withAssistant.value) {
     event.preventDefault()
-    assistant.toggle()
+    if (!overlayOpen() && !sidebar.value?.searchOpen()) assistant.toggle()
     return
   }
   const bracket = event.key === '[' || event.key === '【' || (event.code === 'BracketLeft' && !event.shiftKey)

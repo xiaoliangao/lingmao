@@ -33,6 +33,7 @@ const modeText = computed(() => {
 function toolText(step: ToolStep) {
   if (step.status === 'running') return `查${step.label}…`
   if (step.status === 'failed') return `${step.label}没查成`
+  if (step.status === 'stopped') return `${step.label}没查完`
   return step.rows === null ? `查了${step.label}` : `查了${step.label}（${step.rows} 行）`
 }
 
@@ -103,6 +104,8 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- 窄屏浮在页面上：点外面收起（宽屏不显示） -->
+  <div class="ast-backdrop" @click="assistant.hide()" />
   <aside class="ast" aria-label="智能助手">
     <header class="ast-head">
       <el-icon class="ast-mark"><ChatDotRound /></el-icon>
@@ -125,7 +128,7 @@ onMounted(async () => {
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <button type="button" class="ast-icon" title="新对话" aria-label="新对话" :disabled="!state.turns.length" @click="assistant.newChat()">
+      <button type="button" class="ast-icon" title="新对话" aria-label="新对话" :disabled="!state.turns.length && !state.openError" @click="assistant.newChat()">
         <el-icon><Plus /></el-icon>
       </button>
       <button type="button" class="ast-icon" :title="`关闭（${SHORTCUT}）`" aria-label="关闭智能助手" @click="assistant.hide()">
@@ -138,7 +141,7 @@ onMounted(async () => {
         <span>暂时用不了：{{ state.statusMessage }}</span>
         <el-button link type="primary" :loading="state.checking" @click="assistant.checkHealth(true)">再试一次</el-button>
       </div>
-      <p v-if="state.historyError && state.turns.length" class="ast-error">{{ state.historyError }}</p>
+      <p v-if="state.openError" class="ast-error" role="alert">{{ state.openError }}</p>
 
       <div v-if="!state.turns.length" class="ast-empty">
         <p>问单据、库存、进度，助手替你查系统，用几句话回答。只能查，不能改。</p>
@@ -162,6 +165,7 @@ onMounted(async () => {
             <li v-for="(step, i) in turn.tools" :key="i" :class="step.status">
               <el-icon v-if="step.status === 'running'" class="is-loading"><Loading /></el-icon>
               <el-icon v-else-if="step.status === 'ok'"><Check /></el-icon>
+              <el-icon v-else-if="step.status === 'stopped'"><Remove /></el-icon>
               <el-icon v-else><Warning /></el-icon>
               {{ toolText(step) }}
             </li>
@@ -256,6 +260,10 @@ onMounted(async () => {
 .ast-icon:focus-visible {
   outline: 2px solid var(--lm-accent);
   outline-offset: -2px;
+}
+
+.ast-backdrop {
+  display: none;
 }
 
 .ast-body {
@@ -501,8 +509,16 @@ onMounted(async () => {
   color: var(--lm-muted);
 }
 
-/* 窄屏：浮在页面上 */
+/* 窄屏：浮在页面上，后面一层遮罩（和侧边栏的浮层一样，两个不同时开，AppLayout 管） */
 @media (max-width: 900px) {
+  .ast-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1999;
+    display: block;
+    background: var(--lm-mask);
+  }
+
   .ast {
     position: fixed;
     inset: 0 0 0 auto;

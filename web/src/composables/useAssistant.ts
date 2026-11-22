@@ -4,7 +4,7 @@ import { authApi } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
 import type { AssistantConversation, AssistantEvent, AssistantInfo, AssistantMessage } from '@/types/assistant'
 import { ApiError } from '@/utils/request'
-import { onSessionChanged } from '@/utils/token'
+import { onSessionChanged, sessionChanged } from '@/utils/token'
 
 /**
  * 智能助手的状态和动作（docs/api/08-智能助手.md）。模块级单例：侧边栏入口、⌘K、抽屉共用一份；
@@ -13,7 +13,7 @@ import { onSessionChanged } from '@/utils/token'
  *   const assistant = useAssistant()
  *   assistant.enabled        出不出入口（AI 开关开着、有 assistant:chat:use；只管显示，拦截在后端）
  *   assistant.state.open     抽屉开着没有；toggle() / show() / hide()
- *   assistant.ask('PO… 审了没有')   打开抽屉、发出这句话（在答的时候不发，返回 false）
+ *   assistant.ask('PO… 审了没有')   打开抽屉、发出这句话（在答的时候不发、放进输入框，返回 false）
  *
  * 令牌：用登录身份换的 30 分钟助手令牌，只放内存；剩不到 5 分钟先换新的，助手服务回 401 再换一次重发。
  * 回答：答的过程中 turn.draft 是模型的原话（只能当纯文本显示），答完 turn.answer 是处理过的全文（交给 AssistantAnswer 渲染）
@@ -26,7 +26,8 @@ export interface ToolStep {
   name: string
   /** 查的是什么（"物料库存""采购单详情"） */
   label: string
-  status: 'running' | 'ok' | 'failed'
+  /** stopped：这句停了、断了，它没查完 */
+  status: 'running' | 'ok' | 'failed' | 'stopped'
   /** 查到几行；不是列表的是 null */
   rows: number | null
 }
@@ -63,24 +64,36 @@ const state = reactive({
   draft: '',
   history: [] as AssistantConversation[],
   historyLoading: false,
+  /** 最近的对话列表没加载出来（显示在下拉里） */
   historyError: '',
+  /** 点开的对话没打开（显示在抽屉里） */
+  openError: '',
 })
 
 let token: { value: string; expiresAt: number } | null = null
 let controller: AbortController | null = null
-/** 每次清空加一：清空以前发出去的请求回来了，结果不要 */
+/** 每次清空（退出、换人）加一：清空以前发出去的请求回来了，结果不要，令牌也不要 */
 let generation = 0
+/** 抽屉里显示的是哪一段对话：问新的、点"新对话"、打开历史都加一，慢回来的旧请求不覆盖（审查 T-c5c68e #4） */
+let viewSeq = 0
+/** 最近的对话列表：每次加载加一，只认最后一次的 */
+let historySeq = 0
 let seq = 0
 let wired = false
 
+/** 清空、换了人以后回来的请求：不写回、不提示 */
+class Stale extends Error {}
+
 function reset() {
   generation++
+  viewSeq++
+  historySeq++
   controller?.abort()
   controller = null
   token = null
   Object.assign(state, {
     open: false, status: 'unknown', statusMessage: '', checking: false, checkedAt: 0, mode: null,
-    turns: [], conversationId: null, busy: false, draft: '', history: [], historyLoading: false, historyError: '',
+    turns: [], conversationId: null, busy: false, draft: '', history: [], historyLoading: false, historyError: '', openError: '',
   })
 }
 
@@ -100,22 +113,28 @@ function wire() {
   onSessionChanged(reset)
 }
 
-async function freshToken(force: boolean): Promise<string> {
+/**
+ * 拿助手令牌。gen 是发起时的那一代：换令牌的请求在路上时退出了、别的页签换了人，回来的令牌是上一个人的，
+ * 不写进缓存、抛 Stale（审查 T-c5c68e #1）。signal：点"停止"连换令牌一起停
+ */
+async function freshToken(force: boolean, gen: number, signal?: AbortSignal): Promise<string> {
+  if (gen !== generation || sessionChanged()) throw new Stale()
   if (!force && token && token.expiresAt - Date.now() > 5 * 60_000) return token.value
   token = null
-  const got = await authApi.assistantToken({ silent: true })
+  const got = await authApi.assistantToken({ silent: true, signal })
+  if (gen !== generation || sessionChanged()) throw new Stale()
   const at = Date.parse(got.expiresAt)
   token = { value: got.token, expiresAt: Number.isFinite(at) ? at : Date.now() + 25 * 60_000 }
   return token.value
 }
 
-/** 带着令牌调一次，助手服务回 401（令牌过期、换它的登录退出了）就换一张再调一次 */
-async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
+/** 带着令牌调一次，助手服务回 401（令牌过期、换它的登录退出了）就换一张再调一次；已经清空了就不再换 */
+async function withToken<T>(gen: number, call: (token: string) => Promise<T>): Promise<T> {
   try {
-    return await call(await freshToken(false))
+    return await call(await freshToken(false, gen))
   } catch (e) {
     if (!(e instanceof AssistantError) || e.status !== 401) throw e
-    return call(await freshToken(true))
+    return call(await freshToken(true, gen))
   }
 }
 
@@ -189,9 +208,11 @@ async function run(turn: ChatTurn, question: string, signal: AbortSignal, gen: n
   for (let attempt = 0; attempt < 2; attempt++) {
     let tok: string
     try {
-      tok = await freshToken(attempt > 0)
+      tok = await freshToken(attempt > 0, gen, signal)
     } catch (e) {
-      if (gen === generation) fail(turn, messageOf(e, '换不到助手的令牌，稍后再试'))
+      if (e instanceof Stale || gen !== generation) return
+      if (signal.aborted) turn.state = 'stopped'
+      else fail(turn, messageOf(e, '换不到助手的令牌，稍后再试'))
       return
     }
     if (gen !== generation) return
@@ -236,12 +257,21 @@ async function run(turn: ChatTurn, question: string, signal: AbortSignal, gen: n
   }
 }
 
-/** 打开抽屉、发出这句话。在答的时候、空的不发，返回 false */
+/**
+ * 打开抽屉、发出这句话。空的不发；上一句还在答的（⌘K 里问的时候抽屉可能关着），抽屉照样打开、
+ * 这句放进输入框等着（输入框里已经有字的不覆盖），返回 false（审查 T-c5c68e #8）
+ */
 async function ask(text: string): Promise<boolean> {
   const question = text.trim()
-  if (!question || state.busy) return false
+  if (!question) return false
   state.open = true
   void checkHealth()
+  if (state.busy) {
+    if (!state.draft.trim()) state.draft = question
+    return false
+  }
+  viewSeq++
+  state.openError = ''
   state.turns.push({ id: ++seq, question, draft: '', answer: null, tools: [], error: null, state: 'asking' })
   const turn = state.turns[state.turns.length - 1]! // 拿响应式的那份，改了页面才跟着变
   const gen = generation
@@ -254,6 +284,11 @@ async function ask(text: string): Promise<boolean> {
     if (gen === generation) {
       state.busy = false
       if (controller === ctrl) controller = null
+      // 停了、断了：还在转圈的工具收个尾（服务端中止时不再发它的 ok / failed，审查 T-c5c68e #5）
+      for (const step of turn.tools) {
+        if (step.status === 'running') step.status = turn.state === 'failed' ? 'failed' : 'stopped'
+      }
+      if (turn.state === 'asking') turn.state = 'stopped'
     }
   }
   return true
@@ -266,21 +301,25 @@ function stop() {
 
 function newChat() {
   stop()
+  viewSeq++
   state.turns = []
   state.conversationId = null
+  state.openError = ''
 }
 
 async function loadHistory() {
   const gen = generation
+  const mine = ++historySeq
+  const latest = () => gen === generation && mine === historySeq
   state.historyLoading = true
   state.historyError = ''
   try {
-    const list = await withToken((tok) => assistantApi.conversations(tok))
-    if (gen === generation) state.history = list
+    const list = await withToken(gen, (tok) => assistantApi.conversations(tok))
+    if (latest()) state.history = list
   } catch (e) {
-    if (gen === generation) state.historyError = messageOf(e, '最近的对话没加载出来')
+    if (latest() && !(e instanceof Stale)) state.historyError = messageOf(e, '最近的对话没加载出来')
   } finally {
-    if (gen === generation) state.historyLoading = false
+    if (latest()) state.historyLoading = false
   }
 }
 
@@ -311,14 +350,16 @@ function toTurns(rows: AssistantMessage[]): ChatTurn[] {
 async function openConversation(id: string) {
   if (state.busy) return
   const gen = generation
-  state.historyError = ''
+  const view = ++viewSeq
+  const latest = () => gen === generation && view === viewSeq && !state.busy
+  state.openError = ''
   try {
-    const rows = await withToken((tok) => assistantApi.messages(tok, id))
-    if (gen !== generation || state.busy) return
+    const rows = await withToken(gen, (tok) => assistantApi.messages(tok, id))
+    if (!latest()) return
     state.turns = toTurns(rows)
     state.conversationId = id
   } catch (e) {
-    if (gen === generation) state.historyError = messageOf(e, '这个对话没打开')
+    if (latest() && !(e instanceof Stale)) state.openError = messageOf(e, '这个对话没打开')
   }
 }
 

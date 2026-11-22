@@ -47,8 +47,8 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
-async function getJson<T>(path: string, token?: string): Promise<T> {
-  const res = await send(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+async function getJson<T>(path: string, token?: string, signal?: AbortSignal): Promise<T> {
+  const res = await send(path, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal })
   if (!res.ok || !(res.headers.get('content-type') ?? '').includes('application/json')) throw await failure(res)
   const body = (await res.json()) as { code: number; msg: string; data: T }
   if (body.code !== 0) throw new AssistantError(res.status, body.msg)
@@ -58,8 +58,8 @@ async function getJson<T>(path: string, token?: string): Promise<T> {
 export const assistantApi = {
   /** 服务好不好、配没配模型。库连不上、容器没起都是 AssistantError（503） */
   health: () => getJson<AssistantHealth>('/assistant/health'),
-  /** 模型是外部的还是内网的（打开 AI 开关前的提醒） */
-  info: () => getJson<AssistantInfo>('/assistant/info'),
+  /** 模型是外部的还是内网的（打开 AI 开关前的提醒）。signal 中止时抛 AbortError */
+  info: (signal?: AbortSignal) => getJson<AssistantInfo>('/assistant/info', undefined, signal),
   /** 自己最近的对话，最多 20 个 */
   conversations: (token: string) => getJson<AssistantConversation[]>('/assistant/conversations', token),
   /** 一个对话的全部问答；别人的、不存在的 404 */

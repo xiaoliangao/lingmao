@@ -26,19 +26,42 @@ export type Block =
  * 答完的全文助手服务已经去过了，这里只为打字的那几秒别闪出 <b>。只管好看，原话照样当纯文本显示
  */
 const HTML_TAG =
-  /<\/?(?:a|b|i|u|s|em|strong|span|div|p|font|small|big|mark|del|ins|sub|sup|code|pre|kbd|h[1-6]|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|td|th|caption|center|img|hr|blockquote|details|summary|iframe|svg|input|button|form)(?:\s+[a-z][^<>]*)?\s*\/?>/gi
+  /<\/?(?:a|b|i|u|s|em|strong|span|div|p|font|small|big|mark|del|ins|sub|sup|code|pre|kbd|h[1-6]|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|td|th|caption|center|img|hr|blockquote|details|summary|iframe|svg|input|button|form)(?:\s+[a-z][^<>]*|\s*)\/?>/gi
 
 export function stripHtml(text: string): string {
   let s = text
-  for (let before = ''; before !== s; ) {
-    before = s
-    s = s
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<(script|style)(?:\s+[a-z][^<>]*)?>[\s\S]*?<\/\1\s*>/gi, '')
-      .replace(/<br\s*\/?>/gi, ' ')
-      .replace(HTML_TAG, '')
+  for (let pass = 0; pass < 3; pass++) {
+    const before = s
+    s = dropBlocks(s).replace(/<br\s*\/?>/gi, ' ').replace(HTML_TAG, '')
+    if (s === before) break
   }
   return s
+}
+
+/**
+ * 去掉 <!-- … --> 和 <script>…</script>、<style>…</style>（连里面的字）。不用 [\s\S]*? 的正则：几万个没合上的开头时
+ * 每个都扫到底，二次方；这里一段段往后找，某种结尾往后找不到了就记下、不再找
+ */
+function dropBlocks(text: string): string {
+  const open = /<!--|<(script|style)(?:\s+[a-z][^<>]*|\s*)>/gi
+  const missing = new Set<string>()
+  let out = ''
+  let from = 0
+  for (let m = open.exec(text); m; m = open.exec(text)) {
+    const tag = m[1]?.toLowerCase() ?? ''
+    if (missing.has(tag)) continue
+    const close = tag ? new RegExp(`</${tag}\\s*>`, 'gi') : /-->/g
+    close.lastIndex = open.lastIndex
+    const end = close.exec(text)
+    if (!end) {
+      missing.add(tag)
+      continue
+    }
+    out += text.slice(from, m.index)
+    from = close.lastIndex
+    open.lastIndex = from
+  }
+  return out + text.slice(from)
 }
 
 export const PAGE_LINK = /^\/[a-z][a-z-]*(?:\/\d{1,19})?$/

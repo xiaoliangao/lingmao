@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ReadableStream } from 'node:stream/web'
 import { TextEncoder } from 'node:util'
+import { performance } from 'node:perf_hooks'
 import { readSse } from '../src/utils/sse.ts'
 import { PAGE_LINK, parseAnswer, parseInline, stripHtml } from '../src/utils/assistantText.ts'
 
@@ -86,6 +87,15 @@ test('块：表格（表头、对齐行、单元格里的链接）；没有对�
 test('打字时的原话去掉常见 HTML 标签，不是标签的尖括号留着', () => {
   assert.equal(stripHtml('参考 <b>粗</b>，第一行<br>第二行<script>x</script>'), '参考 粗，第一行 第二行')
   assert.equal(stripHtml('数量<10，a<b 且 c>d'), '数量<10，a<b 且 c>d')
+})
+
+test('去标签不是二次方的：没合上的标签、注释、script，深嵌套，几十万字也很快', () => {
+  for (const input of ['<a a' + ' '.repeat(300000), '<!--'.repeat(80000), '<script>'.repeat(40000), '<'.repeat(100000) + 'b>'.repeat(100000)]) {
+    const started = performance.now()
+    stripHtml(input)
+    assert.ok(performance.now() - started < 500, `${input.slice(0, 12)}… 用了 ${Math.round(performance.now() - started)} ms`)
+  }
+  assert.equal(stripHtml('前<!-- 注 -->中<script>x</script>后<!-- 没合上'), '前中后<!-- 没合上')
 })
 
 test('助手服务处理过的文字（方括号换了全角、外链去掉）照样能显示，不出链接', () => {

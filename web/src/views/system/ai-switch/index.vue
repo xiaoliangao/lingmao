@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { assistantApi } from '@/api/assistant'
 import { aiSwitchApi } from '@/api/system'
@@ -46,24 +46,54 @@ async function load() {
 
 onMounted(() => void load())
 
-/** 打开前说清楚数据去哪：问助手服务配的是外部模型还是内网模型；服务没起、没配模型的，说打开后入口显示"暂时用不了" */
-async function whereDataGoes(): Promise<string> {
+/** 在问助手服务数据去哪：开关转圈、再点不响应（审查 T-c5c68e #9） */
+const checking = ref(false)
+/** 离开这页时停掉还在问的那一下，也不再弹确认框（不然弹在别的页上） */
+let infoCtrl: AbortController | null = null
+let left = false
+onBeforeUnmount(() => {
+  left = true
+  infoCtrl?.abort()
+})
+
+/**
+ * 打开前说清楚数据去哪：问助手服务配的是外部模型还是内网模型；服务没起、没配模型的，说打开后入口显示"暂时用不了"。
+ * 最多等 3 秒（代理连不上时可能一直挂着），等不到按没启动说。离开了这页返回 null
+ */
+async function whereDataGoes(): Promise<string | null> {
   const ask = '打开后，角色里勾了"使用智能助手"的人能在侧边栏和 ⌘K 里问助手（只能查、不能改）。'
+  const ctrl = new AbortController()
+  infoCtrl = ctrl
+  const timer = setTimeout(() => ctrl.abort(), 3000)
   try {
-    const { model } = await assistantApi.info()
+    const { model } = await assistantApi.info(ctrl.signal)
     if (model.mode === 'external') return `${ask}他们的问题和助手替他们查到的数据，会发给外部的模型服务（数据离开公司）。`
     if (model.mode === 'self-hosted') return `${ask}问题和查到的数据发给公司内网部署的模型，不出公司。`
     return `${ask}智能助手还没有配置模型（部署手册第 10 节），打开后入口会显示"暂时用不了"。`
   } catch {
+    if (left) return null
     return `${ask}智能助手的服务现在没有启动（部署手册第 10 节），打开后入口会显示"暂时用不了"；服务起来、配好模型以后，问题和查到的数据会发给配的模型。`
+  } finally {
+    clearTimeout(timer)
+    if (infoCtrl === ctrl) infoCtrl = null
   }
 }
 
 /** 开关不直接改值：先问一句，后端改成功了再按返回的显示 */
 async function toggle(): Promise<boolean> {
-  if (!data.value) return false
+  if (!data.value || checking.value || saving.value) return false
   const on = !data.value.enabled
-  const message = on ? await whereDataGoes() : '关闭后，谁也问不了助手，正在答的那一句再查系统会被拒；对话记录都留着，再打开接着用。'
+  let message = '关闭后，谁也问不了助手，正在答的那一句再查系统会被拒；对话记录都留着，再打开接着用。'
+  if (on) {
+    checking.value = true
+    try {
+      const said = await whereDataGoes()
+      if (said === null || left) return false
+      message = said
+    } finally {
+      checking.value = false
+    }
+  }
   try {
     await ElMessageBox.confirm(
       message,
@@ -101,7 +131,7 @@ async function toggle(): Promise<boolean> {
         <el-switch
           :model-value="data?.enabled ?? false"
           :disabled="!data"
-          :loading="saving"
+          :loading="saving || checking"
           :before-change="toggle"
           active-text="开"
           inactive-text="关"

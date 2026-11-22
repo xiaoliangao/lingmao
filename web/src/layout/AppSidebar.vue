@@ -111,7 +111,12 @@ function toggleSearch() {
   paletteOpen.value = !paletteOpen.value
 }
 
-defineExpose({ toggleSearch })
+/** 快捷跳转开着没有：开着的时候 ⌘J 不开助手（助手会抢走输入框的焦点） */
+function searchOpen() {
+  return paletteOpen.value
+}
+
+defineExpose({ toggleSearch, searchOpen })
 
 // ---------- 智能助手：右边的抽屉，查一次服务好不好，用不了的标出来（不弹报错） ----------
 const assistant = useAssistant()
