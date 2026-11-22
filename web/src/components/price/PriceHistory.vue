@@ -205,7 +205,8 @@ async function voidRow(row: PriceRow) {
             <div v-if="row.unitChanged" class="note pending" title="物料后来换了采购单位，这条不参与取价">单位已变</div>
           </template>
         </el-table-column>
-        <el-table-column label="税率" min-width="130">
+        <!-- "13% 含税 · 不含运费"实测 143px，加页边 24 -->
+        <el-table-column label="税率" min-width="168">
           <template #default="{ row }"><span class="dim">{{ taxText(row as PriceRow) }}</span></template>
         </el-table-column>
         <el-table-column label="调价原因" min-width="160" :show-overflow-tooltip="false">
