@@ -322,9 +322,24 @@ class InventoryIT {
                 .usingElementComparator(BigDecimal::compareTo).containsExactly(new BigDecimal("10"), new BigDecimal("-10"), new BigDecimal("15"));
         assertThat(jdbcTemplate.queryForObject("SELECT reversal_of_log_id FROM inv_stock_log WHERE inv_doc_id=? AND change_qty<0", Long.class, id))
                 .isEqualTo(original);
-        jdbcTemplate.update("UPDATE inv_stock_log SET unit_price=NULL, amount=NULL, stock_unit=NULL, currency=NULL, valuation_status='UNKNOWN' WHERE id=?", original);
-        StockLogQuery query = new StockLogQuery(); query.setKeyword(draft.getNo());
-        assertThat(stockService.logs(query).getList()).filteredOn(r -> r.getId().equals(original)).singleElement()
+    }
+
+    @Test
+    void legacyUnknownValuationIsNotReconstructedFromCurrentMasterData() {
+        Fixture f = fixture();
+        long id = create(f, InvDocType.OTHER_IN, null, f.warehouseA, f.skuA, "5");
+        // 迁移前的初始事件没有估值快照；用 INSERT 建旧夹具，不更新受保护的历史流水。
+        jdbcTemplate.update("UPDATE inv_doc SET status='APPROVED',version=version+1 WHERE id=?", id);
+        jdbcTemplate.update("INSERT INTO inv_stock(warehouse_id,material_sku_id,qty) VALUES (?,?,5)", f.warehouseA, f.skuA);
+        long legacy = jdbcTemplate.queryForObject("""
+                INSERT INTO inv_stock_log(inv_doc_id,inv_doc_item_id,change_type,doc_no,biz_date,
+                        warehouse_id,material_sku_id,change_qty,balance_qty,valuation_status,create_by)
+                SELECT d.id,i.id,'OTHER_IN',d.no,d.doc_date,d.to_warehouse_id,i.material_sku_id,
+                       5,5,'UNKNOWN',d.create_by
+                FROM inv_doc d JOIN inv_doc_item i ON i.doc_id=d.id WHERE d.id=? RETURNING id
+                """, Long.class, id);
+        StockLogQuery query = new StockLogQuery(); query.setKeyword(invDocService.detail(id).getNo());
+        assertThat(stockService.logs(query).getList()).filteredOn(r -> r.getId().equals(legacy)).singleElement()
                 .satisfies(r -> { assertThat(r.getStockUnit()).isNull(); assertThat(r.getUnitPrice()).isNull(); });
     }
 

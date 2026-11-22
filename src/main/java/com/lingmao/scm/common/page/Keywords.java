@@ -24,11 +24,13 @@ import java.util.regex.Pattern;
 public final class Keywords {
 
     /** 一次最多查几个：再多 GET 的地址就太长了（Nginx、Tomcat 默认 8KB）。前端 BatchKeyword.vue 同一个数 */
-    public static final int MAX_CODES = 200;
-    /** 整个关键字的长度上限：200 个编码连同分隔符也用不到 */
+    public static final int MAX_CODES = 100;
+    /** 整个关键字也须有界；去重前的重复输入不能无限占用内存。 */
     public static final int MAX_LENGTH = 8_192;
 
-    private static final Pattern SEPARATORS = Pattern.compile("[\\s,，、;；]+");
+    // 两端采用相同空白集合：Unicode White_Space 加 BOM（浏览器 \s 包含 BOM，但不含 NEL）。
+    private static final Pattern SEPARATORS = Pattern.compile("[\\s\\uFEFF,，、;；]+", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern OUTER_SPACE = Pattern.compile("^[\\s\\uFEFF]+|[\\s\\uFEFF]+$", Pattern.UNICODE_CHARACTER_CLASS);
 
     private Keywords() {
     }
@@ -39,7 +41,7 @@ public final class Keywords {
             return null;
         }
         if (keyword.length() > MAX_LENGTH) throw new BizException(400, "查询内容过长，请分批查询");
-        String text = keyword.strip();
+        String text = strip(keyword);
         if (!SEPARATORS.matcher(text).find()) {
             return null;
         }
@@ -56,9 +58,10 @@ public final class Keywords {
 
     /** 单个编码按包含查，和 upper(编码列) LIKE 配对；批量编码返回 null，只走调用点的精确 IN。百分号、下划线、反斜杠只是文字 */
     public static String codeContains(String keyword) {
-        if (keyword == null || keyword.isBlank()) return null;
+        if (keyword == null) return null;
         if (codes(keyword) != null) return null;
-        return "%" + escapeLike(keyword.strip().toUpperCase(Locale.ROOT)) + "%";
+        String text = strip(keyword);
+        return text.isEmpty() ? null : "%" + escapeLike(text.toUpperCase(Locale.ROOT)) + "%";
     }
 
     /** 名称仍可按完整短语包含查，但用户输入的百分号、下划线和反斜杠都只是文字。 */
@@ -68,9 +71,10 @@ public final class Keywords {
 
     /** 有界 VARCHAR 放不下完整短语时不可能命中；批量长编码不再触发无意义的名称全文扫描。 */
     public static String contains(String keyword, int maxCharacters) {
-        if (keyword == null || keyword.isBlank()) return null;
+        if (keyword == null) return null;
         codes(keyword);
-        String text = keyword.strip();
+        String text = strip(keyword);
+        if (text.isEmpty()) return null;
         if (text.codePointCount(0, text.length()) > maxCharacters) return null;
         return "%" + escapeLike(text) + "%";
     }
@@ -82,6 +86,10 @@ public final class Keywords {
     }
 
     public record CodePattern(String code, String contains) { }
+
+    private static String strip(String text) {
+        return OUTER_SPACE.matcher(text).replaceAll("");
+    }
 
     private static String escapeLike(String text) {
         return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");

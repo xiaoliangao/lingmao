@@ -66,6 +66,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -76,6 +77,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -101,6 +103,7 @@ class A1KeywordQueryIT {
             "prd_order", "prd_order_item", "tp_tech_pack", "inv_stock_log", "inv_doc", "inv_doc_item", "inv_stock", "inv_count", "inv_count_item");
 
     @Autowired JdbcTemplate jdbc;
+    @Autowired TransactionTemplate transactions;
     @Autowired SqlSessionFactory sessions;
     @Autowired JsonMapper json;
     @Autowired MaterialMapper materials;
@@ -283,11 +286,29 @@ class A1KeywordQueryIT {
         jdbc.update("DELETE FROM mrp_calc_transit WHERE calc_item_id>? AND calc_item_id<=?", BASE, BASE + SIZE + 10);
         for (String table : List.of("inv_stock_log", "inv_doc_item", "inv_doc", "inv_stock", "inv_count_item", "inv_count", "prd_order_item", "prd_order", "pur_order_item", "pur_order", "mrp_calc_item", "mrp_calc",
                 "ord_change_item", "ord_change", "ord_order_item", "ord_order", "tp_tech_pack", "sty_style_sku", "sty_style", "bas_material_sku", "bas_material", "sup_supplier")) {
+            long started = System.nanoTime();
+            if (table.equals("inv_stock_log")) {
+                // 仅迁移所有者清理本测试的匿名固定 ID 范围；业务测试从不绕过守卫。
+                // PostgreSQL DDL 随事务回滚，清理失败也不会留下已禁用的触发器。
+                transactions.executeWithoutResult(status -> {
+                    jdbc.execute("ALTER TABLE inv_stock_log DISABLE TRIGGER inventory_ledger_append_only");
+                    for (long from = BASE; from < BASE + SIZE; from += 1000) {
+                        jdbc.update("DELETE FROM inv_stock_log WHERE id>? AND id<=?", from, Math.min(from + 1000, BASE + SIZE));
+                    }
+                    jdbc.execute("ALTER TABLE inv_stock_log ENABLE TRIGGER inventory_ledger_append_only");
+                });
+                assertThat(jdbc.queryForObject("SELECT tgenabled::text FROM pg_trigger WHERE tgrelid='inv_stock_log'::regclass "
+                        + "AND tgname='inventory_ledger_append_only'", String.class)).isEqualTo("O");
+                jdbc.execute("ANALYZE inv_stock_log");
+                System.out.println("A1 fixture cleared table=" + table + " elapsedMs=" + (System.nanoTime() - started) / 1_000_000L);
+                continue;
+            }
             // 外键逐行检查也受生产 statement_timeout 约束；分小事务清理，不调整数据库超时或关闭约束。
             for (long from = BASE; from < BASE + SIZE + 10; from += 1000) {
                 jdbc.update("DELETE FROM " + table + " WHERE id>? AND id<=?", from, Math.min(from + 1000, BASE + SIZE + 10));
             }
             jdbc.execute("ANALYZE " + table);
+            System.out.println("A1 fixture cleared table=" + table + " elapsedMs=" + (System.nanoTime() - started) / 1_000_000L);
         }
     }
 
@@ -309,6 +330,10 @@ class A1KeywordQueryIT {
             explain(key + "-contains", () -> entry.getValue().apply(codePrefix + "05321"), 10, indexes.get(key) + "_trgm");
             String hundred = String.join(",", IntStream.rangeClosed(1, 100).mapToObj(n -> codePrefix + String.format("%06d", n)).toList());
             explain(key + "-100-exact-codes", () -> entry.getValue().apply(hundred), 100, indexes.get(key) + "_upper");
+            String unicodeCodes = codePrefix + "053210\u00a0" + codePrefix.toLowerCase(Locale.ROOT)
+                    + "053211\u0085" + codePrefix + "053210\uFEFF" + codePrefix + "053211";
+            explain(key + "-unicode-exact-codes", () -> entry.getValue().apply(unicodeCodes), 2, indexes.get(key) + "_upper");
+            assertThat(entry.getValue().apply(unicodeCodes).ids()).containsExactlyInAnyOrder(BASE + 53210, BASE + 53211);
             assertThat(entry.getValue().apply(codePrefix + "0532," + codePrefix + "053210").ids()).containsExactly(BASE + 53210);
         }
         explain("material-name", () -> material("needleFabric"), 1, "idx_bas_mat_text_trgm");
@@ -684,6 +709,7 @@ class A1KeywordQueryIT {
         var insert = BULK_INSERT_TABLE.matcher(prepared);
         if (!insert.find()) throw new IllegalArgumentException("Expected a static bulk INSERT fixture");
         String table = insert.group(1);
+        long started = System.nanoTime();
         if (!LARGE_TABLES.contains(table) && !"mrp_calc_order".equals(table)) {
             throw new IllegalArgumentException("Unexpected bulk fixture table");
         }
@@ -694,6 +720,8 @@ class A1KeywordQueryIT {
         }
         // 在加载子表前失效早期小表缓存的 FK 顺扫计划；保留全部数据、外键与最终统一 ANALYZE。
         jdbc.execute("ANALYZE " + table);
+        System.out.println("A1 fixture loaded table=" + table + " rows=" + SIZE
+                + " elapsedMs=" + (System.nanoTime() - started) / 1_000_000L);
     }
     private static void login(long id, boolean all) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(id, "A1 query"), null,

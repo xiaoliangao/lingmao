@@ -139,8 +139,21 @@ class A1PurchasePrecisionIT {
     @Test
     void incompleteLegacySnapshotIsRejectedWithoutChangingExistingEventsOrSourceCounters() {
         Fixture f = fixture("0.333333", "0.0050", "3");
-        long first = post(f, InvDocType.PURCHASE_IN, "1");
-        jdbc.update("UPDATE inv_stock_log SET purchase_rounding_version=NULL WHERE inv_doc_id=?", first);
+        long first = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(),
+                request(f, InvDocType.PURCHASE_IN, false, List.of("1"))).id();
+        // 直接构造迁移前已存在的初始账，不把新版不可变事件改成旧账。
+        jdbc.update("UPDATE inv_doc SET status='APPROVED',version=version+1 WHERE id=?", first);
+        jdbc.update("UPDATE pur_order SET status='RUNNING',version=version+1 WHERE id=?", f.purchase());
+        jdbc.update("UPDATE pur_order_item SET received_qty=1 WHERE id=?", f.sourceItem());
+        jdbc.update("INSERT INTO inv_stock(warehouse_id,material_sku_id,qty) VALUES (?,?,0.333)", f.warehouse(), f.sku());
+        jdbc.update("""
+                INSERT INTO inv_stock_log(inv_doc_id,inv_doc_item_id,change_type,doc_no,biz_date,
+                        warehouse_id,material_sku_id,change_qty,balance_qty,unit_price,amount,
+                        stock_unit,currency,valuation_status,create_by)
+                SELECT d.id,i.id,'PURCHASE_IN',d.no,d.doc_date,d.to_warehouse_id,i.material_sku_id,
+                       0.333,0.333,i.price,0.01,'METER','CNY','RECORDED',d.create_by
+                FROM inv_doc d JOIN inv_doc_item i ON i.doc_id=d.id WHERE d.id=?
+                """, first);
         long next = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, InvDocType.PURCHASE_IN, false, List.of("1"))).id();
         assertThatThrownBy(() -> inventory.act(next, "audit", new DocActionReq(0, null)))
                 .isInstanceOfSatisfying(BizException.class, failure -> assertThat(failure.getCode()).isEqualTo(1002))

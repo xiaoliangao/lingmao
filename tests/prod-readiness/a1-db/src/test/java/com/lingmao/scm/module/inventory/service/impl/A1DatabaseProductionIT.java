@@ -398,9 +398,9 @@ class A1DatabaseProductionIT {
                 });
         Files.writeString(ARTIFACTS.resolve("t07-seek-explain-analyze.json"), plan);
         Files.writeString(ARTIFACTS.resolve("t07-fixed-query-count.json"), json.writeValueAsString(Map.of("oneRow", small, "hundredRows", large)));
-        String twoHundred = String.join(",", IntStream.range(0, 200).mapToObj(i -> "A1" + i).toList());
-        assertThat(Keywords.codes(twoHundred)).hasSize(200);
-        assertThatThrownBy(() -> Keywords.codes(twoHundred + ",A1201")).isInstanceOf(BizException.class);
+        String oneHundred = String.join(",", IntStream.range(0, 100).mapToObj(i -> "A1" + i).toList());
+        assertThat(Keywords.codes(oneHundred)).hasSize(100);
+        assertThatThrownBy(() -> Keywords.codes(oneHundred + ",A1101")).isInstanceOf(BizException.class);
         assertThatThrownBy(() -> Keywords.codes("x".repeat(8193))).isInstanceOf(BizException.class);
         query.setPage(1000000);
         assertThatThrownBy(() -> stocks.logs(query)).isInstanceOf(BizException.class);
