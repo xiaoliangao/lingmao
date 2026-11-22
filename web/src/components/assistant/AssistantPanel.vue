@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MAX_QUESTION, useAssistant, type ToolStep } from '@/composables/useAssistant'
 import { useFloating } from '@/composables/useFloating'
-import { completions, highlight } from '@/utils/assistantComplete'
+import { completions, freshFirst, highlight, wasAsked } from '@/utils/assistantComplete'
 import { stripHtml } from '@/utils/assistantText'
 import type { AssistantConversation } from '@/types/assistant'
 import { formatDateTime } from '@/utils/format'
@@ -23,9 +23,18 @@ const { state } = assistant
 const SHORTCUT = shortcut('J')
 
 // ---------- 推荐的问题和 Tab 补全（docs/api/08 §1） ----------
-/** 卡片空着时列几句推荐（按这个人的权限筛的，手上的待办在前） */
-const examples = computed(() => state.suggestions.slice(0, 6))
-const firstSuggestion = computed(() => state.suggestions[0]?.text ?? '')
+/** 问过的话：这次打开页面以来问的、最近对话的第一句。推荐时排到后面 */
+const asked = computed(() => [...state.asked, ...state.turns.map((t) => t.question), ...state.history.map((c) => c.title)])
+/** 卡片空着时列几句推荐（按这个人的权限筛的，手上的待办在前；问过的排后面） */
+const examples = computed(() => freshFirst(state.suggestions, asked.value).slice(0, 6))
+/**
+ * 输入框里提示、空着按 Tab 填的那一句：只在对话还没开始时给，而且是没问过的第一句；
+ * 对话开始了就用默认的提示（接着问一般要看上文，推荐的用不上），都问过了也是默认的
+ */
+const firstSuggestion = computed(() => {
+  if (state.turns.length > 0) return ''
+  return state.suggestions.find((s) => !wasAsked(s.text, asked.value))?.text ?? ''
+})
 const placeholder = computed(() => (firstSuggestion.value ? `试试：${firstSuggestion.value}，按 Tab 填入` : '比如：PO2026112001 审了没有'))
 /** 补全的候选：自己问过的话（近的在前）、推荐的问题 */
 const pool = computed(() => [

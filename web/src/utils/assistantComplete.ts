@@ -41,6 +41,23 @@ export function highlight(text: string, draft: string): { text: string; hit: boo
   return out
 }
 
+/**
+ * 推荐的问题里没问过的排前面、问过的排后面（各自保持原来的顺序）。比较时不分大小写、多个空格当一个。
+ *
+ *   freshFirst(['甲', '乙', '丙'], ['乙'])   // ['甲', '丙', '乙']
+ */
+export function freshFirst<T extends string | { text: string }>(items: readonly T[], asked: readonly string[]): T[] {
+  const seen = new Set(asked.map(norm))
+  const textOf = (item: T) => (typeof item === 'string' ? item : item.text)
+  return [...items.filter((i) => !seen.has(norm(textOf(i)))), ...items.filter((i) => seen.has(norm(textOf(i))))]
+}
+
+/** 问过没有：同上的比较 */
+export function wasAsked(text: string, asked: readonly string[]): boolean {
+  const n = norm(text)
+  return asked.some((a) => norm(a) === n)
+}
+
 function norm(s: string): string {
   return s.trim().replace(/\s+/g, ' ').toLowerCase()
 }

@@ -5,7 +5,7 @@ import { TextEncoder } from 'node:util'
 import { performance } from 'node:perf_hooks'
 import { readSse } from '../src/utils/sse.ts'
 import { PAGE_LINK, parseAnswer, parseInline, stripHtml } from '../src/utils/assistantText.ts'
-import { completions, highlight } from '../src/utils/assistantComplete.ts'
+import { completions, freshFirst, highlight, wasAsked } from '../src/utils/assistantComplete.ts'
 
 /** 按给的块一块块吐字节的流 */
 function streamOf(chunks) {
@@ -127,5 +127,14 @@ test('补全列表里加粗包含输入的那几段', () => {
   ])
   assert.deepEqual(highlight('PO 审了', 'po'), [{ text: 'PO', hit: true }, { text: ' 审了', hit: false }])
   assert.deepEqual(highlight('随便', ''), [{ text: '随便', hit: false }])
+})
+
+test('推荐的问题：没问过的排前面，问过的排后面，各自保持顺序', () => {
+  assert.deepEqual(freshFirst(['甲', '乙', '丙'], ['乙']), ['甲', '丙', '乙'])
+  const items = [{ text: '哪些订单审核过了还没排单', count: 3 }, { text: '今天有哪些待我处理的事', count: null }]
+  assert.deepEqual(freshFirst(items, [' 哪些订单审核过了还没排单 ']).map((i) => i.text), ['今天有哪些待我处理的事', '哪些订单审核过了还没排单'])
+  assert.deepEqual(freshFirst(['甲'], []), ['甲'])
+  assert.equal(wasAsked('PO1  审了没有', ['po1 审了没有']), true)
+  assert.equal(wasAsked('甲', ['乙']), false)
 })
 

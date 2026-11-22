@@ -75,6 +75,8 @@ const state = reactive({
   openError: '',
   /** 推荐给这个人的问题：卡片空着时列几句、输入时 Tab 补全；取不到是空的（不提示） */
   suggestions: [] as AssistantSuggestion[],
+  /** 这次打开页面以来问过的话（开了新对话也记着）：推荐时排到后面，不老推同一句 */
+  asked: [] as string[],
 })
 
 let token: { value: string; expiresAt: number } | null = null
@@ -109,7 +111,7 @@ function reset() {
   token = null
   Object.assign(state, {
     open: false, unread: false, status: 'unknown', statusMessage: '', checking: false, checkedAt: 0, mode: null, retentionDays: null,
-    turns: [], conversationId: null, busy: false, draft: '', history: [], historyLoading: false, historyError: '', openError: '', suggestions: [],
+    turns: [], conversationId: null, busy: false, draft: '', history: [], historyLoading: false, historyError: '', openError: '', suggestions: [], asked: [],
   })
 }
 
@@ -298,6 +300,7 @@ async function ask(text: string): Promise<boolean> {
   viewSeq++
   state.openError = ''
   state.turns.push({ id: ++seq, question, draft: '', answer: null, tools: [], error: null, state: 'asking' })
+  if (!state.asked.includes(question)) state.asked.push(question)
   const turn = state.turns[state.turns.length - 1]! // 拿响应式的那份，改了页面才跟着变
   const gen = generation
   const ctrl = new AbortController()
