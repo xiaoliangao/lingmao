@@ -221,8 +221,11 @@ async function checkHealth(force = false) {
     state.retentionDays = info?.retentionDays ?? null
     state.status = health.model === 'configured' ? 'up' : 'noModel'
     state.statusMessage = health.model === 'configured' ? '' : '还没有配置模型，请联系管理员'
-    // 服务恢复了（卡片里点了"再试一次"）：打开着、还没有推荐的，补取一次
-    if (state.open && state.status === 'up' && !state.suggestions.length) void loadSuggestions()
+    // 服务恢复了（卡片里点了"再试一次"）：打开着、还没取到的，推荐和最近的对话补取一次
+    if (state.open && state.status === 'up') {
+      if (!state.suggestions.length) void loadSuggestions()
+      if (!historyAt) void loadHistory()
+    }
   } catch (e) {
     if (gen !== generation) return
     state.status = 'down'
