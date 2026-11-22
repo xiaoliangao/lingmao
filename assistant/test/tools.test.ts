@@ -50,7 +50,8 @@ describe('白名单校验（启动时，不合规起不来）', () => {
     for (const d of defs) assert.ok(!/attachments|certs|bank|files/.test(d.path), `${d.path} 不该进白名单`)
   })
 
-  // 返回里带文件列表（附件、工艺单文件、异常照片：元素有 url 的）的字段，名字要在 DROP_KEYS 里，不然文件名、大小会发给模型（agy 审查 T-a58245 #3）
+  // 返回里带文件列表（附件、工艺单文件、异常照片、证照：元素有 url / fileUrl / thumbUrl / fileName 的）的字段，名字要在 DROP_KEYS 里，
+  // 不然文件名、大小会发给模型；平铺的 fileName 也算（agy 审查 T-a58245 #3、T-c6b159 #5）
   test('仓库里的工具：返回里的文件列表都会被去掉', { skip: openapi ? false : '没有 ASSISTANT_OPENAPI' }, () => {
     type Schema = { $ref?: string; items?: Schema; properties?: Record<string, Schema>; additionalProperties?: Schema | boolean }
     const doc = JSON.parse(readFileSync(openapi!, 'utf8')) as OpenApiDoc & { components: { schemas: Record<string, Schema> } }
@@ -59,15 +60,18 @@ describe('白名单校验（启动时，不合规起不来）', () => {
       const ref = s?.$ref ?? s?.items?.$ref ?? (typeof s?.additionalProperties === 'object' ? s.additionalProperties.$ref : undefined)
       return ref?.split('/').pop()
     }
+    const FILE_FIELDS = ['url', 'fileUrl', 'thumbUrl', 'fileName']
+    const isFile = (t: string) => FILE_FIELDS.some((f) => schemas[t]?.properties?.[f])
     const leaks: string[] = []
     const walk = (name: string, path: string, seen: Set<string>) => {
       if (seen.has(name)) return
       seen.add(name)
       for (const [key, prop] of Object.entries(schemas[name]?.properties ?? {})) {
+        if (DROP_KEYS.has(key)) continue
+        if (key === 'fileName') leaks.push(`${path}.${key}`)
         const t = target(prop)
         if (!t) continue
-        if (DROP_KEYS.has(key)) continue
-        if (schemas[t]?.properties?.url) leaks.push(`${path}.${key}（${t}）`)
+        if (isFile(t)) leaks.push(`${path}.${key}（${t}）`)
         walk(t, `${path}.${key}`, seen)
       }
     }

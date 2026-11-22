@@ -99,6 +99,8 @@ let historyAt = 0
 const SUGGEST_TTL = 5 * 60_000
 /** 正在换的令牌：同时要令牌的（打开卡片时取推荐、取最近的对话，⌘K 问助手）共用一次请求，不各换一张 */
 let pendingToken: { gen: number; promise: Promise<string> } | null = null
+/** 这一代删掉的对话：删之前发出去的"最近的对话"晚回来，列表里还有它，写回时去掉（agy 审查 T-c6b159 #1） */
+const deleted = new Set<string>()
 let seq = 0
 let wired = false
 
@@ -114,6 +116,7 @@ function reset() {
   suggesting = false
   historyAt = 0
   pendingToken = null
+  deleted.clear()
   openingId = null
   controller?.abort()
   controller = null
@@ -143,7 +146,7 @@ function wire() {
         state.unread = false
         if (state.status === 'down') return
         void loadSuggestions()
-        if (Date.now() - historyAt >= SUGGEST_TTL) void loadHistory()
+        prefetchHistory()
       },
     )
   })
@@ -152,12 +155,14 @@ function wire() {
 
 /**
  * 拿助手令牌。gen 是发起时的那一代：换令牌的请求在路上时退出了、别的页签换了人，回来的令牌是上一个人的，
- * 不写进缓存、抛 Stale（审查 T-c5c68e #1）。signal：点"停止"连换令牌一起停
+ * 不写进缓存、抛 Stale（审查 T-c5c68e #1）。signal：点"停止"连换令牌一起停。
+ * replace：助手服务回 401 拒掉的那张。几个请求同时被拒，只换一次：缓存里已经是别的（别人刚换好的）就直接用，
+ * 正在换的就跟着等（被拒的那张早换好了，路上这次一定是更新的），不清掉刚换好的（agy 审查 T-c6b159 #2）
  */
-async function freshToken(force: boolean, gen: number, signal?: AbortSignal): Promise<string> {
+async function freshToken(replace: string | null, gen: number, signal?: AbortSignal): Promise<string> {
   if (gen !== generation || sessionChanged()) throw new Stale()
-  if (!force && token && token.expiresAt - Date.now() > 5 * 60_000) return token.value
-  if (!force && pendingToken?.gen === gen) return abortable(pendingToken.promise, signal)
+  if (token && token.value !== replace && token.expiresAt - Date.now() > 5 * 60_000) return token.value
+  if (pendingToken?.gen === gen) return abortable(pendingToken.promise, signal)
   token = null
   // 换令牌的请求不跟着谁的"停止"断：别人也在等它；点了停止的只是不再等（abortable）
   const promise = (async () => {
@@ -197,11 +202,12 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 
 /** 带着令牌调一次，助手服务回 401（令牌过期、换它的登录退出了）就换一张再调一次；已经清空了就不再换 */
 async function withToken<T>(gen: number, call: (token: string) => Promise<T>): Promise<T> {
+  const tok = await freshToken(null, gen)
   try {
-    return await call(await freshToken(false, gen))
+    return await call(tok)
   } catch (e) {
     if (!(e instanceof AssistantError) || e.status !== 401) throw e
-    return call(await freshToken(true, gen))
+    return call(await freshToken(tok, gen))
   }
 }
 
@@ -223,8 +229,8 @@ async function checkHealth(force = false) {
     state.statusMessage = health.model === 'configured' ? '' : '还没有配置模型，请联系管理员'
     // 服务恢复了（卡片里点了"再试一次"）：打开着、还没取到的，推荐和最近的对话补取一次
     if (state.open && state.status === 'up') {
-      if (!state.suggestions.length) void loadSuggestions()
-      if (!historyAt) void loadHistory()
+      void loadSuggestions()
+      prefetchHistory()
     }
   } catch (e) {
     if (gen !== generation) return
@@ -278,10 +284,11 @@ function fail(turn: ChatTurn, message: string) {
 }
 
 async function run(turn: ChatTurn, question: string, signal: AbortSignal, gen: number) {
+  let rejected: string | null = null
   for (let attempt = 0; attempt < 2; attempt++) {
     let tok: string
     try {
-      tok = await freshToken(attempt > 0, gen, signal)
+      tok = await freshToken(rejected, gen, signal)
     } catch (e) {
       if (e instanceof Stale || gen !== generation) return
       if (signal.aborted) turn.state = 'stopped'
@@ -313,7 +320,10 @@ async function run(turn: ChatTurn, question: string, signal: AbortSignal, gen: n
         return
       }
       if (e instanceof AssistantError) {
-        if (e.status === 401 && attempt === 0) continue
+        if (e.status === 401 && attempt === 0) {
+          rejected = tok
+          continue
+        }
         if (e.status === 404 && state.conversationId) {
           state.conversationId = null
           fail(turn, '这个对话找不到了，已经换成新对话，再问一次')
@@ -400,6 +410,11 @@ async function loadSuggestions() {
   }
 }
 
+/** 打开卡片、服务恢复时顺带取最近的对话：正在取的不再发一次，5 分钟内取过的不重取（agy 审查 T-c6b159 #3）。点开下拉是 loadHistory，总是重取 */
+function prefetchHistory() {
+  if (!state.historyLoading && Date.now() - historyAt >= SUGGEST_TTL) void loadHistory()
+}
+
 async function loadHistory() {
   const gen = generation
   const mine = ++historySeq
@@ -408,12 +423,13 @@ async function loadHistory() {
   state.historyError = ''
   try {
     const list = await withToken(gen, (tok) => assistantApi.conversations(tok))
-    if (latest()) {
-      state.history = list
+    // 别的页签换了人、通知还没到：sessionChanged() 当场查出来并清空，不把上一个人的对话写进来（agy 审查 T-c6b159 #4）
+    if (latest() && !sessionChanged()) {
+      state.history = deleted.size ? list.filter((c) => !deleted.has(c.id)) : list
       historyAt = Date.now()
     }
   } catch (e) {
-    if (latest() && !(e instanceof Stale)) state.historyError = messageOf(e, '最近的对话没加载出来')
+    if (latest() && !(e instanceof Stale) && !sessionChanged()) state.historyError = messageOf(e, '最近的对话没加载出来')
   } finally {
     if (latest()) state.historyLoading = false
   }
@@ -452,7 +468,7 @@ async function openConversation(id: string) {
   openingId = id
   try {
     const rows = await withToken(gen, (tok) => assistantApi.messages(tok, id))
-    if (!latest()) return
+    if (!latest() || sessionChanged()) return
     state.turns = toTurns(rows)
     state.conversationId = id
   } catch (e) {
@@ -476,6 +492,7 @@ async function deleteConversation(id: string): Promise<boolean> {
     throw e
   }
   if (gen !== generation || sessionChanged()) return false
+  deleted.add(id)
   state.history = state.history.filter((c) => c.id !== id)
   // 正在打开的就是它：作废那次打开，迟到的结果不再把删掉的对话显示出来
   if (openingId === id) {
