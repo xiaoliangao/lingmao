@@ -107,6 +107,39 @@ figcaption { font-size: 13px; color: var(--muted); }
 .zoom button { position: fixed; top: max(12px, env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); font: 14px/1 var(--font); padding: 8px 14px; border: 0; border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
 .zoom button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* 答题：选项能点，每问一个写答案的框；答过的条目、目录打勾；底部一条进度和导出 */
+input[type=radio], input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; transform: translateY(3px); }
+.opts li.pick { display: block; padding: 0; }
+.pick > label { display: grid; grid-template-columns: 16px 20px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.opts li.pick:hover { border-color: var(--accent-line); }
+.opts li.pick:has(input:checked) { border-color: var(--accent); background: var(--accent-bg); color: var(--ink); }
+.sub[data-pick] { list-style: none; padding-left: 0; display: grid; gap: 4px; }
+.sub[data-pick="multi"] label { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 3px 0; cursor: pointer; }
+.sub[data-pick="multi"] li:has(input:checked) { color: var(--ink); }
+.sub[data-pick="fill"] { gap: 8px; }
+.sub[data-pick="fill"] li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 220px); gap: 4px 12px; align-items: center; }
+textarea.ans, .who input, .sub[data-pick="fill"] input { font: inherit; font-size: 14px; line-height: 1.6; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 100%; }
+textarea.ans { resize: vertical; min-height: 38px; display: block; overflow: hidden; }
+textarea.ans::placeholder, .who input::placeholder, .sub[data-pick="fill"] input::placeholder { color: var(--muted); }
+textarea.ans:focus, .who input:focus, .sub[data-pick="fill"] input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+.agree { display: inline-flex; gap: 8px; align-items: baseline; margin-top: 6px; font-size: 14px; color: var(--ink); cursor: pointer; width: fit-content; }
+.who { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 6px; font-size: 14px; color: var(--ink-2); }
+.who b { color: var(--ink); }
+.q.answered { border-color: var(--accent-line); }
+.q.answered > header .no::after { content: " ✓"; }
+.toc-list li.done .n::after { content: " ✓"; }
+body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--paper); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgb(34 32 29 / 6%); padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.bar > div { max-width: 880px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.bar .prog { margin-right: auto; font-size: 14px; color: var(--ink-2); }
+.bar .prog b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.bar button { font: inherit; font-size: 14px; line-height: 1.4; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
+.bar button:hover { border-color: var(--accent-line); }
+.bar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bar button.primary:hover { background: var(--accent-2); }
+.bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toast { position: fixed; left: 50%; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; max-width: calc(100% - 32px); background: var(--ink); color: #fff; font-size: 14px; padding: 8px 14px; border-radius: 8px; }
+
 @media (max-width: 600px) {
   body { font-size: 15px; }
   .wrap { padding-block: 24px 48px; gap: 32px; }
@@ -114,6 +147,9 @@ figcaption { font-size: 13px; color: var(--muted); }
   .q { padding: 18px 16px 20px; }
   .toc-list a { grid-template-columns: 44px minmax(0, 1fr); }
   .toc-list .w { grid-column: 2; text-align: left; white-space: normal; }
+  .sub[data-pick="fill"] li { grid-template-columns: minmax(0, 1fr); }
+  .bar .prog { flex-basis: 100%; }
+  .bar button { flex: 1; }
 }
 @media print {
   body { background: #fff; }
@@ -123,6 +159,10 @@ figcaption { font-size: 13px; color: var(--muted); }
   .asks > li::before { color: var(--ink); background: none; border: 1px solid var(--ink); }
   .toc-list a:hover { background: none; }
   .zoom { display: none !important; }
+  .bar, .toast { display: none !important; }
+  body.answering { padding-bottom: 0; }
+  textarea.ans:placeholder-shown, .agree:not(:has(input:checked)) { display: none; }
+  textarea.ans { border-color: #bbb; resize: none; }
 }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 </style>
@@ -135,7 +175,8 @@ figcaption { font-size: 13px; color: var(--muted); }
   <h1>要请你们答的问题</h1>
   <p class="lead">整个项目做完之前还要请你们定的，一共 32 条，分三块：上线前要答的 13 条，二期开工前要答的 12 条，整个项目做完之前要定的 7 条。能截图的配了界面，要选的举了例子；已经答复的不在这里。</p>
   <div class="how">
-    <p><b>怎么答：</b>写编号和第几问，有选项的写选哪个，比如 <span class="code">Q55-1 选 A</span>；情况不一样的直接写。</p>
+    <p><b>怎么答：</b>直接在每一问下面点选项、写答案；同意照"不答就这样做"的，勾上「就按这样做」。写的内容存在这台电脑（手机）的浏览器里，关掉再打开还在。</p>
+    <p><b>答完：</b>点页面最下面的「导出答案」，把下载的文件发给我们；也可以点「复制答案」，粘贴到微信里发。几个人分开答的，各自导出各自发。</p>
     <p><b>不答：</b>就照每条最后的"不答就这样做"去做。</p>
     <p><b>截图：</b>都是示例数据，不是你们的。标了 <span class="tag">原型</span> 的是还没做的功能，给你们看大概的样子。点图看大图。</p>
   </div>
@@ -231,7 +272,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <ol class="asks">
     <li><div><p>账号名单能给我们吗？要每个人的姓名、岗位、管哪几条品类线（服装、鞋类、百货）。你们说过从领猫导出一份，还没收到。</p></div></li>
     <li><div><p>下面这些单，每种至少要两个人能审。各由谁审？</p>
-      <ul class="sub"><li>需求订单、订单变更</li><li>采购单</li><li>外发加工单、成品采购单</li><li>物料入库单、物料出库单</li><li>物料盘点单</li><li>供应商准入、供应商关键信息的改动</li></ul></div></li>
+      <ul class="sub" data-pick="fill"><li>需求订单、订单变更</li><li>采购单</li><li>外发加工单、成品采购单</li><li>物料入库单、物料出库单</li><li>物料盘点单</li><li>供应商准入、供应商关键信息的改动</li></ul></div></li>
     <li><div><p>「理单」这个岗位做什么事？你们说过理单的人建物料、做物料入库单和出库单，还做别的吗？我们照它配一个「理单」角色。</p></div></li>
     <li><div><p>供应商的联系人、电话、微信、地址，现在生产跟单和生产经理都能看，对吗？</p>
       <ul class="opts"><li><b>A</b><span>两个都能看</span></li><li><b>B</b><span>生产经理能看，跟单不能看</span></li><li><b>C</b><span>两个都不能看</span></li></ul></div></li>
@@ -526,7 +567,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <ol class="asks">
     <li><div><p>现在每周、每月要看哪些表？给几张你们现在做的样表最准。</p></div></li>
     <li><div><p>下面这些要哪些？</p>
-      <ul class="sub"><li>采购到货及时率</li><li>工厂交期达成率、次品率</li><li>各品类线在做的件数</li><li>订单毛利（要先有成本）</li><li>呆滞料</li></ul></div></li>
+      <ul class="sub" data-pick="multi"><li>采购到货及时率</li><li>工厂交期达成率、次品率</li><li>各品类线在做的件数</li><li>订单毛利（要先有成本）</li><li>呆滞料</li></ul></div></li>
     <li><div><p>要不要一个统一的"预警中心"？还要加哪些预警？</p></div></li>
   </ol>
   <div class="default"><b>不答就这样做</b><p>进销存汇总表已经做好了（库存页的「进销存」：按物料看一段时间的期初、入、出、期末，能导出）；别的等样表。</p></div>
@@ -547,7 +588,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <ol class="asks">
     <li><div><p>要不要用？</p>
       <ul class="opts"><li><b>A</b><span>用</span></li><li><b>B</b><span>先不用，开关一直关着，以后想用再开</span></li></ul></div></li>
-    <li><div><p>问题和查到的数据能不能发到公司外面？发出去的有：问的那句话，和它替你查到的单据、资料，比如单号、款号、数量、日期、备注、经办人、主体公司、仓库，供应商的名称和统一社会信用代码；问的人有权限的话，还有单价、金额。不发的：供应商的联系人、电话、微信、地址和银行信息（谁问都不发），图片、附件、工艺单文件。</p>
+    <li><div><p>问题和查到的数据能不能发到公司外面？发出去的有：问的那句话，和它替你查到的单据、资料，比如单号、款号、数量、日期、备注、经办人、主体公司、仓库，供应商的名称和统一社会信用代码；问的人有权限的话，还有单价、金额。不发的：联系人、电话、微信、地址（供应商的、工厂仓的都不发）和供应商的银行信息，谁问都不发；图片、附件、工艺单文件也不发。</p>
       <ul class="opts"><li><b>A</b><span>能，用外部的模型服务：不用买服务器，按用量付费</span></li><li><b>B</b><span>不能出公司，用公司内网自己部署的模型：要一台带显卡的服务器</span></li></ul></div></li>
     <li><div><p>用外部的话，用哪家？谁开通、谁付费？开通后把接口地址、模型名和 Key（相当于这个账号的密码）交给装服务器的人，照部署手册第 10 节填好、把助手启动起来，不经过我们。</p></div></li>
     <li><div><p>哪些岗位能用？现在业务岗位默认都能用（角色权限里的「使用智能助手」），管理员可以逐个去掉。</p></div></li>
@@ -567,7 +608,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <ol class="asks">
     <li><div><p>现在每个月怎么和供应商、加工厂对账？谁来对，用什么（Excel、领猫、财务软件）？</p></div></li>
     <li><div><p>要做的话，先做哪几块？可以多选：</p>
-      <ul class="sub"><li>供应商对账：按月拉出这家的入库、回货、扣款，生成对账单，双方确认</li><li>上传工厂的对账单，自动比对（上图二）</li><li>付款计划：按账期算出哪天该付谁多少</li><li>发票：收了哪些发票，和对账单对上没有</li><li>扣款、索赔：次品、超耗、延期从应付里扣</li><li>单款毛利：一个款卖了多少、成本多少</li><li>预付款、定金、尾款</li></ul></div></li>
+      <ul class="sub" data-pick="multi"><li>供应商对账：按月拉出这家的入库、回货、扣款，生成对账单，双方确认</li><li>上传工厂的对账单，自动比对（上图二）</li><li>付款计划：按账期算出哪天该付谁多少</li><li>发票：收了哪些发票，和对账单对上没有</li><li>扣款、索赔：次品、超耗、延期从应付里扣</li><li>单款毛利：一个款卖了多少、成本多少</li><li>预付款、定金、尾款</li></ul></div></li>
     <li><div><p>用金蝶、用友这类财务软件吗？要不要把对账单、付款推过去？</p></div></li>
     <li><div><p>工厂发来的对账单一般是什么样？要识别的话怎么识别？</p>
       <ul class="opts"><li><b>A</b><span>多是拍照、PDF：用第三方的识别服务，按页收费，图片会发出公司</span></li><li><b>B</b><span>多是拍照、PDF：公司自己部署识别服务，要一台带显卡的服务器</span></li><li><b>C</b><span>工厂基本都发 Excel：直接导入，不用识别</span></li></ul></div></li>
@@ -583,7 +624,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <p class="asks-title">要问的</p>
   <ol class="asks">
     <li><div><p>要不要对接？对接的话做哪几样：</p>
-      <ul class="sub"><li>回货登记以后，自动在聚水潭生成成品入库单，不用再录一遍</li><li>从聚水潭读成品库存、销量，在本系统里看（比如排单时看这个款还剩多少）</li><li>发货、退货的数据拿回来，算一个款实际卖了多少</li></ul></div></li>
+      <ul class="sub" data-pick="multi"><li>回货登记以后，自动在聚水潭生成成品入库单，不用再录一遍</li><li>从聚水潭读成品库存、销量，在本系统里看（比如排单时看这个款还剩多少）</li><li>发货、退货的数据拿回来，算一个款实际卖了多少</li></ul></div></li>
     <li><div><p>聚水潭开放平台的账号谁申请？聚水潭那边对接要不要另外收费？</p></div></li>
   </ol>
   <div class="eg"><b>举个例子</b><p>一家加工厂回货 400 件、次品 6 件，跟单在系统里登记。对接以后，聚水潭里自动多一张 394 件的成品入库单，仓库核对收货就行；不对接，仓库在聚水潭里再录一遍。</p></div>
@@ -597,7 +638,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <p class="asks-title">要问的</p>
   <ol class="asks">
     <li><div><p>要不要给加工厂开账号？要的话，让工厂在系统里做哪些：</p>
-      <ul class="sub"><li>确认接单</li><li>自己报进度、报回货</li><li>看、下载工艺单和纸样</li><li>对账（要先有 Q68 的对账）</li><li>预约送货</li></ul></div></li>
+      <ul class="sub" data-pick="multi"><li>确认接单</li><li>自己报进度、报回货</li><li>看、下载工艺单和纸样</li><li>对账（要先有 Q68 的对账）</li><li>预约送货</li></ul></div></li>
     <li><div><p>大概多少家工厂会用？他们用手机还是电脑？</p></div></li>
   </ol>
   <div class="eg"><b>举个例子</b><p>工厂接到外发加工单，老板在手机上点「确认接单」，每天报一次裁剪、车缝到哪了；跟单员不用再打电话问、替他录，只看就行。工厂只看得到发给自己的单。</p></div>
@@ -623,7 +664,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <p class="asks-title">要问的</p>
   <ol class="asks">
     <li><div><p>下面几样要不要做、先做哪个？</p>
-      <ul class="sub"><li>商品企划：季度企划、主题、价格带、计划做多少款（款式上已经记着季节、年份、波段、吊牌价）</li><li>核价与成本的其余部分：询价比价、目标成本和实际成本对比、订单毛利（资料包里的核价已经有了）</li><li>质量管理：来料检验、产前样确认、中检尾检、质量扣款（回货记着次品数，异常记着类型和责任方）</li><li>成品发货：装箱、条码、发货物流（成品以聚水潭为准，可能就在聚水潭里做）</li><li>供应商绩效：准时率、次品率、价格打分（约定交期和实际到货、次品、价格历史都在记）</li></ul></div></li>
+      <ul class="sub" data-pick="multi"><li>商品企划：季度企划、主题、价格带、计划做多少款（款式上已经记着季节、年份、波段、吊牌价）</li><li>核价与成本的其余部分：询价比价、目标成本和实际成本对比、订单毛利（资料包里的核价已经有了）</li><li>质量管理：来料检验、产前样确认、中检尾检、质量扣款（回货记着次品数，异常记着类型和责任方）</li><li>成品发货：装箱、条码、发货物流（成品以聚水潭为准，可能就在聚水潭里做）</li><li>供应商绩效：准时率、次品率、价格打分（约定交期和实际到货、次品、价格历史都在记）</li></ul></div></li>
   </ol>
   <div class="eg"><b>举个例子</b><p>比如先做供应商绩效：系统已经记着每张采购单的约定交期和实际到货日期、每次回货的次品数，做的时候直接算出"这家近三个月准时交货 82%、次品率 1.5%"，不用补数据。</p></div>
   <div class="default"><b>不答就这样做</b><p>不排；数据照常记着，你们定了先做哪个再排。</p></div>
@@ -635,7 +676,7 @@ figcaption { font-size: 13px; color: var(--muted); }
   <p class="asks-title">要问的</p>
   <ol class="asks">
     <li><div><p>下面几样要哪些、先做哪个？</p>
-      <ul class="sub"><li>样品图库和素材库</li><li>扫码出入库</li><li>呆滞料分析</li><li>订单从别的系统自动进来</li><li>工厂产线</li></ul></div></li>
+      <ul class="sub" data-pick="multi"><li>样品图库和素材库</li><li>扫码出入库</li><li>呆滞料分析</li><li>订单从别的系统自动进来</li><li>工厂产线</li></ul></div></li>
     <li><div><p>扫码出入库：用什么扫（PDA、手机、扫码枪）？物料、包装上现在有条码吗？</p></div></li>
     <li><div><p>呆滞料：多久没动算呆滞？</p></div></li>
     <li><div><p>订单从哪个系统来？</p></div></li>
@@ -684,6 +725,219 @@ document.addEventListener('keydown', (e) => {
   if (img && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); img.click() }
 })
 document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
+
+// 答题（11-22 用户要的）：选项能点、每问能写，存在这台机器的浏览器里（localStorage，按文件存；坏了、存不了就只是不记住）；
+// 答完导出成文本文件或复制，发回给我们。只答了的才导出，没答的列在最后（照"不答就这样做"）
+;(function () {
+  var KEY = 'scm-qlist-answers-2026-11'
+  var data
+  try { data = JSON.parse(localStorage.getItem(KEY) || '{}') || {} } catch (e) { data = {} }
+  data.who = data.who || ''
+  data.picks = data.picks || {}
+  data.notes = data.notes || {}
+  data.fills = data.fills || {}
+  data.agree = data.agree || {}
+  var timer
+  function save() {
+    clearTimeout(timer)
+    timer = setTimeout(function () { try { localStorage.setItem(KEY, JSON.stringify(data)) } catch (e) { /* 存不了：这次照样能导出 */ } }, 150)
+    refresh()
+  }
+  function grow(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px' }
+  function el(tag, props) { var x = document.createElement(tag); for (var k in props) x[k] = props[k]; return x }
+  var text = function (node) { return node.textContent.replace(/\s+/g, ' ').trim() }
+
+  var articles = Array.prototype.slice.call(document.querySelectorAll('article.q'))
+  var areas = []
+  articles.forEach(function (art) {
+    var qid = art.id
+    Array.prototype.forEach.call(art.querySelectorAll(':scope > ol.asks > li'), function (li, idx) {
+      var key = qid + '-' + (idx + 1)
+      var box = li.firstElementChild
+      var opts = box.querySelector(':scope > ul.opts')
+      var sub = box.querySelector(':scope > ul.sub[data-pick]')
+      if (opts) {
+        Array.prototype.forEach.call(opts.children, function (o) {
+          var letter = text(o.querySelector('b'))
+          var input = el('input', { type: 'radio', name: key, value: letter, checked: data.picks[key] === letter })
+          // 再点一下选中的就取消
+          input.addEventListener('click', function () {
+            if (data.picks[key] === letter) { input.checked = false; delete data.picks[key] } else data.picks[key] = letter
+            save()
+          })
+          var label = el('label', {})
+          label.append(input)
+          while (o.firstChild) label.append(o.firstChild)
+          o.append(label)
+          o.classList.add('pick')
+        })
+      }
+      if (sub && sub.dataset.pick === 'multi') {
+        Array.prototype.forEach.call(sub.children, function (o, i) {
+          var picked = data.picks[key] || []
+          var input = el('input', { type: 'checkbox', value: String(i + 1), checked: picked.indexOf(i + 1) >= 0 })
+          input.addEventListener('change', function () {
+            var now = (data.picks[key] || []).filter(function (n) { return n !== i + 1 })
+            if (input.checked) now.push(i + 1)
+            now.sort(function (a, b) { return a - b })
+            if (now.length) data.picks[key] = now; else delete data.picks[key]
+            save()
+          })
+          var label = el('label', {})
+          var span = el('span', {})
+          while (o.firstChild) span.append(o.firstChild)
+          label.append(input, span)
+          o.append(label)
+        })
+      }
+      if (sub && sub.dataset.pick === 'fill') {
+        Array.prototype.forEach.call(sub.children, function (o, i) {
+          var fkey = key + '-' + (i + 1)
+          var span = el('span', {})
+          while (o.firstChild) span.append(o.firstChild)
+          var input = el('input', { type: 'text', value: data.fills[fkey] || '', placeholder: '至少两个人，写名字或岗位' })
+          input.setAttribute('aria-label', text(span) + '：由谁审')
+          input.addEventListener('input', function () { if (input.value.trim()) data.fills[fkey] = input.value; else delete data.fills[fkey]; save() })
+          o.append(span, input)
+        })
+      }
+      var ta = el('textarea', { className: 'ans', rows: 1, value: data.notes[key] || '',
+        placeholder: opts || sub ? '要补充的、都不合适的，写在这里' : '在这里写答案' })
+      ta.setAttribute('aria-label', qid + ' 第 ' + (idx + 1) + ' 问的答案')
+      ta.addEventListener('input', function () { if (ta.value.trim()) data.notes[key] = ta.value; else delete data.notes[key]; grow(ta); save() })
+      box.append(ta)
+      areas.push(ta)
+    })
+    var def = art.querySelector(':scope > .default')
+    if (def) {
+      var cb = el('input', { type: 'checkbox', checked: !!data.agree[qid] })
+      cb.addEventListener('change', function () { if (cb.checked) data.agree[qid] = true; else delete data.agree[qid]; save() })
+      var lab = el('label', { className: 'agree' })
+      lab.append(cb, document.createTextNode('就按这样做'))
+      def.append(lab)
+    }
+  })
+
+  // 填写人
+  var how = document.querySelector('.how')
+  var who = el('input', { type: 'text', value: data.who, placeholder: '名字和部门，比如：张三 采购部', autocomplete: 'name' })
+  who.addEventListener('input', function () { data.who = who.value; save() })
+  var whoLabel = el('label', { className: 'who' })
+  var whoTitle = el('b', { textContent: '填写人' })
+  whoLabel.append(whoTitle, who)
+  how.append(whoLabel)
+
+  // 底部：进度、复制、导出
+  var bar = el('div', { className: 'bar' })
+  bar.setAttribute('role', 'region')
+  bar.setAttribute('aria-label', '答题进度')
+  bar.innerHTML = '<div><span class="prog" aria-live="polite">已答 <b>0</b> / ' + articles.length + ' 条</span>'
+    + '<button type="button" data-act="copy">复制答案</button><button type="button" class="primary" data-act="export">导出答案</button></div>'
+  document.body.append(bar)
+  document.body.classList.add('answering')
+
+  function answered(qid) {
+    if (data.agree[qid]) return true
+    var p = qid + '-'
+    return [data.picks, data.notes, data.fills].some(function (m) { return Object.keys(m).some(function (k) { return k.indexOf(p) === 0 }) })
+  }
+  function refresh() {
+    var n = 0
+    articles.forEach(function (art) {
+      var done = answered(art.id)
+      if (done) n++
+      art.classList.toggle('answered', done)
+      var link = document.querySelector('.toc-list a[href="#' + art.id + '"]')
+      if (link) link.parentElement.classList.toggle('done', done)
+    })
+    bar.querySelector('.prog b').textContent = n
+    return n
+  }
+
+  function stamp(sep) {
+    var d = new Date(), z = function (v) { return (v < 10 ? '0' : '') + v }
+    return d.getFullYear() + sep + z(d.getMonth() + 1) + sep + z(d.getDate()) + (sep ? ' ' + z(d.getHours()) + ':' + z(d.getMinutes()) : '')
+  }
+  function indent(s) { return s.trim().split('\n').join('\n        ') }
+  function answersText() {
+    var n = refresh()
+    var out = ['服装 SCM 问题清单 · 答复', '填写人：' + (data.who.trim() || '（没写）'), '导出时间：' + stamp('-'), '已答 ' + n + ' / ' + articles.length + ' 条', '']
+    var missing = []
+    articles.forEach(function (art) {
+      var qid = art.id
+      if (!answered(qid)) { missing.push(qid); return }
+      out.push('【' + qid + ' ' + text(art.querySelector('h3')) + '】')
+      Array.prototype.forEach.call(art.querySelectorAll(':scope > ol.asks > li'), function (li, idx) {
+        var key = qid + '-' + (idx + 1)
+        var box = li.firstElementChild
+        out.push('  ' + (idx + 1) + '. ' + text(box.querySelector('p')))
+        var said = false
+        var pick = data.picks[key]
+        var opts = box.querySelector(':scope > ul.opts')
+        var sub = box.querySelector(':scope > ul.sub[data-pick]')
+        if (opts && typeof pick === 'string') {
+          var chosen = Array.prototype.filter.call(opts.children, function (o) { return text(o.querySelector('b')) === pick })[0]
+          out.push('     选 ' + pick + '：' + (chosen ? text(chosen.querySelector('span')) : ''))
+          said = true
+        }
+        if (sub && sub.dataset.pick === 'multi' && pick && pick.length) {
+          pick.forEach(function (i) { out.push('     ☑ ' + text(sub.children[i - 1])) })
+          said = true
+        }
+        if (sub && sub.dataset.pick === 'fill') {
+          Array.prototype.forEach.call(sub.children, function (o, i) {
+            var v = data.fills[key + '-' + (i + 1)]
+            if (v) { out.push('     ' + text(o.querySelector('span')) + '：' + v.trim()); said = true }
+          })
+        }
+        if (data.notes[key]) { out.push('     ' + (said ? '补充：' : '答：') + indent(data.notes[key])); said = true }
+        if (!said) out.push('     （这一问没答）')
+      })
+      if (data.agree[qid]) out.push('  就按"不答就这样做"：' + text(art.querySelector(':scope > .default p')))
+      out.push('')
+    })
+    if (missing.length) out.push('没答的（照"不答就这样做"）：' + missing.join('、'))
+    return out.join('\n')
+  }
+
+  var toastTimer
+  function toast(msg) {
+    var t = document.querySelector('.toast') || document.body.appendChild(el('div', { className: 'toast' }))
+    t.setAttribute('role', 'status')
+    t.textContent = msg
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(function () { t.remove() }, 2600)
+  }
+  function copyFallback(s) {
+    var ta = el('textarea', { value: s })
+    ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.append(ta); ta.select()
+    var ok = false
+    try { ok = document.execCommand('copy') } catch (e) { ok = false }
+    ta.remove()
+    return ok
+  }
+  bar.addEventListener('click', function (e) {
+    var btn = e.target.closest('button')
+    if (!btn) return
+    var s = answersText()
+    if (btn.dataset.act === 'copy') {
+      var done = function () { toast('复制好了，可以粘贴到微信里发') }
+      var fail = function () { copyFallback(s) ? done() : toast('没复制成，请点「导出答案」') }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s).then(done, fail); else fail()
+    } else {
+      var name = '问题清单答复-' + (data.who.trim().replace(/[\\/:*?"<>|\s]+/g, '') || '未署名') + '-' + stamp('') + '.txt'
+      var url = URL.createObjectURL(new Blob(['﻿' + s], { type: 'text/plain;charset=utf-8' }))
+      var a = el('a', { href: url, download: name })
+      document.body.append(a); a.click(); a.remove()
+      setTimeout(function () { URL.revokeObjectURL(url) }, 4000)
+      toast('已导出：' + name)
+    }
+  })
+
+  refresh()
+  requestAnimationFrame(function () { areas.forEach(grow) })
+})()
 </script>
 </body>
 </html>
