@@ -1,0 +1,27 @@
+{
+  "name": "scm-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SCM 智能助手服务（RFC 017）：替用户只读地查系统数据，模型走 OpenAI 兼容接口",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "node --watch src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test 'test/*.test.ts'",
+    "test:db": "node --test 'test/*.dbtest.ts'"
+  },
+  "dependencies": {
+    "pg": "8.23.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "typescript": "5.9.3"
+  }
+}

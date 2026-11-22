@@ -1,0 +1,185 @@
+# 助手能用的工具（RFC 017 §3.3）：一条是 app 的一个 GET 接口，没列的模型看不见。
+# 参数和说明从 openapi.json 取（接口上的 @Operation、字段的 Javadoc），这里只写：
+#   op    "GET /api/..."，和 openapi.json 的路径一字不差
+#   tool  给模型的名字（小写字母、数字、下划线，不能重复）
+#   label 给人看的，查的时候对话里显示"正在查：…"
+#   perm  用户有这个权限码才交给模型，和接口上 @PreAuthorize 的一致；只要登录的写 login
+#   hint  可选，什么时候用它（补在接口说明后面）
+# 启动时逐条核对（只收 GET、返回 R、不是导出 / 下载 / 预览），不合规的服务起不来。
+# 真正的拦截在 app：助手令牌调不了写接口、文件接口，拿不到文件签名地址，数据范围和字段权限照这个人的来。
+# 不进白名单：附件、资质证书、工艺单文件和预览、供应商银行账号、各种导出模板，以及建单时用的下拉和带出接口。
+
+# ---- 首页 ----
+- op: GET /api/board/home/todos
+  tool: my_todos
+  label: 我的待办
+  perm: login
+  hint: 用户问"我有什么要处理的""待审核的有几张"时先用它
+- op: GET /api/board/home/deliveries
+  tool: upcoming_deliveries
+  label: 近期交期
+  perm: login
+  hint: 近期要交货、已经逾期的订单
+
+# ---- 需求订单 ----
+- op: GET /api/orders
+  tool: list_orders
+  label: 需求订单
+  perm: order:order:list
+  hint: 按订单号、合同号、款号、状态、日期找需求订单；拿到 id 再查详情
+- op: GET /api/orders/{id}
+  tool: get_order
+  label: 订单详情
+  perm: order:order:list
+  hint: 一张订单的款、颜色尺码数量、交期、审批进度（approval）
+- op: GET /api/orders/{id}/references
+  tool: order_downstream
+  label: 订单的下游单据
+  perm: order:order:list
+  hint: 订单下游有哪些生产单、算料单；"为什么不能反审核"先查它
+- op: GET /api/orders/{id}/logs
+  tool: order_logs
+  label: 订单的操作记录
+  perm: order:order:list
+  hint: 谁在什么时候建、改、提交、审核了这张订单
+- op: GET /api/order-changes
+  tool: list_order_changes
+  label: 订单变更
+  perm: order:change:list
+- op: GET /api/order-changes/{id}
+  tool: get_order_change
+  label: 变更单详情
+  perm: order:change:list
+- op: GET /api/order-progress
+  tool: order_progress
+  label: 订单进度
+  perm: order:progress:list
+  hint: 订单每个款排产、生产、回货、发货到哪一步了
+
+# ---- 算料、采购 ----
+- op: GET /api/mrp-calcs
+  tool: list_mrp_calcs
+  label: 算料单
+  perm: purchase:mrp:list
+- op: GET /api/mrp-calcs/{id}
+  tool: get_mrp_calc
+  label: 算料单详情
+  perm: purchase:mrp:list
+  hint: 一张算料单每种物料要多少、库存抵多少、要买多少
+- op: GET /api/mrp-calcs/{id}/references
+  tool: mrp_calc_downstream
+  label: 算料单的下游单据
+  perm: purchase:mrp:list
+- op: GET /api/purchase-orders
+  tool: list_purchase_orders
+  label: 采购单
+  perm: purchase:order:list
+- op: GET /api/purchase-orders/{id}
+  tool: get_purchase_order
+  label: 采购单详情
+  perm: purchase:order:list
+  hint: 一张采购单的明细、到货情况、审批进度
+- op: GET /api/purchase-orders/{id}/references
+  tool: purchase_order_downstream
+  label: 采购单的下游单据
+  perm: purchase:order:list
+  hint: 采购单下游的入库单、退货单
+- op: GET /api/purchase-orders/{id}/logs
+  tool: purchase_order_logs
+  label: 采购单的操作记录
+  perm: purchase:order:list
+- op: GET /api/purchase-orders/pending-items
+  tool: pending_arrivals
+  label: 待到料
+  perm: purchase:order:list
+  hint: 还没到齐的采购物料，"哪些料还没到""某个物料什么时候到"用它
+
+# ---- 物料库存 ----
+- op: GET /api/stocks
+  tool: list_stocks
+  label: 物料库存
+  perm: inventory:stock:list
+  hint: 某个物料 SKU 在哪个仓有多少
+- op: GET /api/stocks/summary
+  tool: stock_summary
+  label: 按物料汇总的库存
+  perm: inventory:stock:list
+  hint: 按物料汇总的库存（物料仓、工厂仓合计）
+- op: GET /api/inventory-docs
+  tool: list_inventory_docs
+  label: 出入库单
+  perm: inventory:doc:list
+  hint: 物料入库单（kind=IN）、出库单（kind=OUT）
+- op: GET /api/inventory-docs/{id}
+  tool: get_inventory_doc
+  label: 出入库单详情
+  perm: inventory:doc:list
+- op: GET /api/inventory-docs/{id}/references
+  tool: inventory_doc_links
+  label: 出入库单的关联单据
+  perm: inventory:doc:list
+
+# ---- 生产 ----
+- op: GET /api/production-orders
+  tool: list_production_orders
+  label: 生产单
+  perm: production:order:list
+- op: GET /api/production-orders/{id}
+  tool: get_production_order
+  label: 生产单详情
+  perm: production:order:list
+  hint: 一张生产单的款、数量、加工厂、节点进度、审批进度
+- op: GET /api/production-orders/{id}/references
+  tool: production_order_links
+  label: 生产单的关联单据
+  perm: production:order:list
+- op: GET /api/production-orders/{id}/receipts
+  tool: production_receipts
+  label: 生产单的回货
+  perm: production:order:list
+  hint: 这张生产单的回货记录
+- op: GET /api/production-orders/{id}/materials
+  tool: production_materials
+  label: 生产单的领料
+  perm: production:order:list
+  hint: 这张生产单要领的料、领了多少
+- op: GET /api/production-board/cards
+  tool: production_overview
+  label: 生产概况
+  perm: production:board:list
+  hint: 在制、待开工、临期、逾期各多少
+- op: GET /api/production-board/factories
+  tool: production_by_factory
+  label: 各工厂的生产情况
+  perm: production:board:list
+
+# ---- 基础资料 ----
+- op: GET /api/materials
+  tool: list_materials
+  label: 物料
+  perm: basic:material:list
+- op: GET /api/materials/{id}
+  tool: get_material
+  label: 物料详情
+  perm: basic:material:list
+- op: GET /api/styles
+  tool: list_styles
+  label: 款式
+  perm: style:style:list
+- op: GET /api/styles/{id}
+  tool: get_style
+  label: 款式详情
+  perm: style:style:list
+- op: GET /api/suppliers
+  tool: list_suppliers
+  label: 供应商
+  perm: supplier:supplier:list
+- op: GET /api/suppliers/{id}
+  tool: get_supplier
+  label: 供应商详情
+  perm: supplier:supplier:list
+- op: GET /api/warehouses/options
+  tool: list_warehouses
+  label: 仓库
+  perm: login
+  hint: 仓库的 id 和名字；按仓库查库存前先用它找 id

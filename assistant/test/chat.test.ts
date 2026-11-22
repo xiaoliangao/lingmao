@@ -1,0 +1,150 @@
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+import { answer, ChatRejected, prepare, sanitize, type ChatDeps, type ChatRequest, type Emit } from '../src/chat.ts'
+import { LlmError, type LlmTurn } from '../src/llm.ts'
+import { BUYER, call, fakeApp, LIMITS, MemoryStore, ok, ScriptedLlm, text, TOOLS, type FakeRoute } from './fakes.ts'
+
+function setup(turns: (LlmTurn | Error)[], routes: Record<string, FakeRoute> = {}) {
+  const llm = new ScriptedLlm(turns)
+  const store = new MemoryStore()
+  const { app, requests } = fakeApp(routes)
+  const deps: ChatDeps = { llm, app, store: store.asStore(), tools: TOOLS, limits: LIMITS, systemName: '服装 SCM', now: () => new Date('2026-11-22T02:00:00Z') }
+  const events: [string, Record<string, unknown>][] = []
+  const emit: Emit = (event, data) => events.push([event, data])
+  return { llm, store, requests, deps, events, emit }
+}
+
+function req(message: string, conversationId: string | null = null): ChatRequest {
+  return { token: 'assist-tok', me: BUYER, requestId: 'r1', conversationId, message }
+}
+
+async function ask(s: ReturnType<typeof setup>, message: string, conversationId: string | null = null) {
+  const r = req(message, conversationId)
+  const { conversationId: id } = await prepare(s.deps, r)
+  await answer(s.deps, r, id, s.emit, new AbortController().signal)
+  return id
+}
+
+describe('一句话怎么答', () => {
+  test('查一次再回答：工具按权限给，查的是 app，回答只留站内链接，问答和工具调用都记下', async () => {
+    const s = setup(
+      [
+        call('list_purchase_orders', { keyword: 'PO20261120' }),
+        text('PO20261120 已审核，[打开采购单](/purchases/12)。供应商官网 [点这里](https://evil.example/x) ![图](/files/a.png)'),
+      ],
+      { '/api/purchase-orders': ok({ list: [{ id: '12', code: 'PO20261120', status: 'APPROVED' }], total: 1 }) },
+    )
+    const id = await ask(s, 'PO20261120 审了没有')
+
+    assert.deepEqual(s.llm.seen[0]!.tools.map((t) => t.function.name), ['list_purchase_orders', 'get_purchase_order'], '没有订单权限，不给订单工具')
+    const system = s.llm.seen[0]!.messages[0]!
+    assert.equal(system.role, 'system')
+    assert.match(system.content as string, /采购小王/)
+    assert.match(system.content as string, /没有权限看：成本/)
+    assert.match(system.content as string, /2026\/11\/22/)
+
+    assert.equal(s.requests.length, 1)
+    assert.equal(s.requests[0]!.url.searchParams.get('keyword'), 'PO20261120')
+    assert.equal(s.requests[0]!.auth, 'Bearer assist-tok')
+    const toolMsg = s.llm.seen[1]!.messages.at(-1)!
+    assert.equal(toolMsg.role, 'tool')
+    assert.match(toolMsg.content as string, /APPROVED/)
+
+    const done = s.events.find(([e]) => e === 'done')![1]
+    assert.equal(done.text, 'PO20261120 已审核，[打开采购单](/purchases/12)。供应商官网 点这里 ')
+    assert.deepEqual(s.events.filter(([e]) => e === 'tool').map(([, d]) => d.status), ['running', 'ok'])
+    assert.equal(s.events.find(([e]) => e === 'tool')![1].label, '采购单')
+
+    assert.deepEqual(s.store.messagesById.map((m) => [m.role, m.conversationId]), [['user', id], ['assistant', id]])
+    assert.equal(s.store.messagesById[1]!.content, done.text)
+    assert.deepEqual(s.store.toolCalls.map((t) => [t.call.tool, t.call.ok, t.call.rows]), [['list_purchase_orders', true, 1]])
+    assert.equal(s.store.tokens, 80 + 10 + 100 + 20)
+  })
+
+  test('模型调了这个人没权限的工具：不调 app，告诉模型没有这个工具', async () => {
+    const s = setup([call('list_orders', {}), text('你没有权限看需求订单。')])
+    await ask(s, '最近的订单')
+    assert.equal(s.requests.length, 0)
+    assert.match(s.llm.seen[1]!.messages.at(-1)!.content as string, /没有 list_orders 这个工具/)
+    assert.deepEqual(s.store.toolCalls.map((t) => [t.call.tool, t.call.ok]), [['list_orders', false]])
+  })
+
+  test('一轮调的工具超过上限：多出来的不调', async () => {
+    const many: LlmTurn = {
+      content: '',
+      toolCalls: [1, 2, 3].map((i) => ({ id: `c${i}`, type: 'function' as const, function: { name: 'get_purchase_order', arguments: `{"id":${i}}` } })),
+      usage: null,
+    }
+    const s = setup([many, text('查完了')], { '/api/purchase-orders/1': ok({ id: '1' }), '/api/purchase-orders/2': ok({ id: '2' }), '/api/purchase-orders/3': ok({ id: '3' }) })
+    await ask(s, '三张单')
+    assert.deepEqual(s.requests.map((r) => r.url.pathname), ['/api/purchase-orders/1', '/api/purchase-orders/2'])
+    const toolMsgs = s.llm.seen[1]!.messages.filter((m) => m.role === 'tool')
+    assert.equal(toolMsgs.length, 3, '每个调用都要有回应，模型接口才认')
+    assert.match(toolMsgs[2]!.content as string, /一次最多调 2 个/)
+  })
+
+  test('轮数用完还在查：给一句换个问法的话，不无限查下去', async () => {
+    const s = setup([1, 2, 3, 4].map((i) => call('get_purchase_order', { id: i }, `c${i}`)), { '/api/purchase-orders/1': ok({}), '/api/purchase-orders/2': ok({}), '/api/purchase-orders/3': ok({}), '/api/purchase-orders/4': ok({}) })
+    await ask(s, '查个遍')
+    assert.equal(s.llm.seen.length, LIMITS.maxSteps)
+    assert.match(String(s.events.find(([e]) => e === 'done')![1].text), /换个说法/)
+  })
+
+  test('模型出错：推 error、记下原因，不推 done', async () => {
+    const s = setup([new LlmError('模型服务返回 429：rate limited', 429)])
+    await ask(s, '你好')
+    assert.deepEqual(s.events.map(([e]) => e), ['error'])
+    assert.match(String(s.events[0]![1].message), /429/)
+    assert.equal(s.store.messagesById[1]!.error, '模型服务返回 429：rate limited')
+  })
+
+  test('第二句带上第一句的问答', async () => {
+    const s = setup([text('有 3 张。'), text('最早那张是 PO1。')])
+    const id = await ask(s, '待审核的采购单有几张')
+    await ask(s, '最早的是哪张', id)
+    const second = s.llm.seen[1]!.messages.map((m) => [m.role, m.content])
+    assert.deepEqual(second.slice(1), [['user', '待审核的采购单有几张'], ['assistant', '有 3 张。'], ['user', '最早的是哪张']])
+  })
+})
+
+describe('开始答以前的检查', () => {
+  test('空的、太长的问题', async () => {
+    const s = setup([])
+    await assert.rejects(prepare(s.deps, req('   ')), (e) => e instanceof ChatRejected && e.status === 400)
+    await assert.rejects(prepare(s.deps, req('问'.repeat(2001))), (e) => e instanceof ChatRejected && e.status === 400)
+  })
+
+  test('别人的对话、不存在的对话：404', async () => {
+    const s = setup([])
+    await s.store.createConversation('11111111-1111-1111-1111-111111111111', '99', '别人的')
+    await assert.rejects(prepare(s.deps, req('接着问', '11111111-1111-1111-1111-111111111111')), (e) => e instanceof ChatRejected && e.status === 404)
+    await assert.rejects(prepare(s.deps, req('接着问', 'not-a-uuid')), (e) => e instanceof ChatRejected && e.status === 404)
+  })
+
+  test('每人每天的次数、全系统每天的 token 到上限：429', async () => {
+    const s = setup([])
+    for (let i = 0; i < LIMITS.userDailyRequests; i++) await prepare(s.deps, req(`第 ${i} 句`))
+    await assert.rejects(prepare(s.deps, req('再问一句')), (e) => e instanceof ChatRejected && e.status === 429 && /今天已经问了 3 次/.test(e.message))
+
+    const t = setup([])
+    t.store.tokens = LIMITS.dailyTokens
+    await assert.rejects(prepare(t.deps, req('你好')), (e) => e instanceof ChatRejected && e.status === 429 && /全系统/.test(e.message))
+    assert.equal(t.store.requests.size, 0, 'token 超了不扣这个人的次数')
+  })
+})
+
+describe('回答里只留站内链接', () => {
+  const cases: [string, string][] = [
+    ['[采购单](/purchases/12)', '[采购单](/purchases/12)'],
+    ['[列表](/orders?status=DRAFT)', '[列表](/orders?status=DRAFT)'],
+    ['[官网](https://evil.example)', '官网'],
+    ['[协议相对](//evil.example/x)', '协议相对'],
+    ['[脚本](javascript:alert(1))', '脚本'],
+    ['![图](/files/a.png)前', '前'],
+    ['<img src=x onerror=alert(1)>后', '后'],
+    ['看 https://evil.example/a?b=1 这里', '看 （外部链接已去掉） 这里'],
+  ]
+  for (const [input, expected] of cases) {
+    test(input, () => assert.equal(sanitize(input), expected))
+  }
+})
