@@ -80,6 +80,9 @@ export class MemoryStore {
   async createConversation(id: string, userId: string, title: string): Promise<void> {
     this.conversations.set(id, { userId, title: title.slice(0, 100) })
   }
+  async touchConversation(id: string, userId: string): Promise<boolean> {
+    return this.conversations.get(id)?.userId === userId
+  }
   async ownsConversation(id: string, userId: string): Promise<boolean> {
     return this.conversations.get(id)?.userId === userId
   }

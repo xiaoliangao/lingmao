@@ -83,6 +83,8 @@ let generation = 0
 let viewSeq = 0
 /** 最近的对话列表：每次加载加一，只认最后一次的 */
 let historySeq = 0
+/** 正在打开（请求还在路上）的对话 id：删它时要作废那次打开 */
+let openingId: string | null = null
 let seq = 0
 let wired = false
 
@@ -93,6 +95,7 @@ function reset() {
   generation++
   viewSeq++
   historySeq++
+  openingId = null
   controller?.abort()
   controller = null
   token = null
@@ -366,6 +369,7 @@ async function openConversation(id: string) {
   const view = ++viewSeq
   const latest = () => gen === generation && view === viewSeq && !state.busy
   state.openError = ''
+  openingId = id
   try {
     const rows = await withToken(gen, (tok) => assistantApi.messages(tok, id))
     if (!latest()) return
@@ -373,6 +377,8 @@ async function openConversation(id: string) {
     state.conversationId = id
   } catch (e) {
     if (latest() && !(e instanceof Stale)) state.openError = messageOf(e, '这个对话没打开')
+  } finally {
+    if (view === viewSeq) openingId = null
   }
 }
 
@@ -382,9 +388,20 @@ async function openConversation(id: string) {
  */
 async function deleteConversation(id: string): Promise<boolean> {
   const gen = generation
-  await withToken(gen, (tok) => assistantApi.deleteConversation(tok, id))
-  if (gen !== generation) return false
+  try {
+    await withToken(gen, (tok) => assistantApi.deleteConversation(tok, id))
+  } catch (e) {
+    // 删的途中退出、换了人：不报给现在这个人（报出来是上一个人的事，或者是请求被中止的英文 canceled）
+    if (gen !== generation || e instanceof Stale) return false
+    throw e
+  }
+  if (gen !== generation || sessionChanged()) return false
   state.history = state.history.filter((c) => c.id !== id)
+  // 正在打开的就是它：作废那次打开，迟到的结果不再把删掉的对话显示出来
+  if (openingId === id) {
+    viewSeq++
+    openingId = null
+  }
   if (state.conversationId === id && !state.busy) {
     viewSeq++
     state.turns = []

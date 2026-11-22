@@ -153,6 +153,17 @@ export class Store {
     await this.pool.query('INSERT INTO assistant.ast_conversation(id, user_id, title) VALUES ($1, $2, $3)', [id, userId, title.slice(0, 100)])
   }
 
+  /**
+   * 接着问之前：是这个人的对话就把 updated_at 续到现在，返回 true；不是他的、已经被清理掉的返回 false。
+   * 判断归属和续期是同一条语句：和每小时的清理（purgeConversations）同时跑时，要么先被删了、这里回 false，
+   * 要么先续上了、清理按新的 updated_at 不删，不会出现"查过还在，写的时候没了"。
+   * 超过保留天数、还没轮到清理的（最多晚一小时）照样能接着问，续上就不删了：列表里还看得到它，就让它能用
+   */
+  async touchConversation(id: string, userId: string): Promise<boolean> {
+    const r = await this.pool.query('UPDATE assistant.ast_conversation SET updated_at = now() WHERE id = $1 AND user_id = $2', [id, userId])
+    return r.rowCount === 1
+  }
+
   /** 是这个人的对话才返回 true */
   async ownsConversation(id: string, userId: string): Promise<boolean> {
     const r = await this.pool.query('SELECT 1 FROM assistant.ast_conversation WHERE id = $1 AND user_id = $2', [id, userId])
@@ -205,8 +216,12 @@ export class Store {
   }
 
   async addUserMessage(conversationId: string, content: string): Promise<void> {
-    await this.pool.query(`INSERT INTO assistant.ast_message(conversation_id, role, content) VALUES ($1, 'user', $2)`, [conversationId, content])
-    await this.pool.query('UPDATE assistant.ast_conversation SET updated_at = now() WHERE id = $1', [conversationId])
+    // 一条语句：记问题和续 updated_at 不会只做了一半
+    await this.pool.query(
+      `WITH m AS (INSERT INTO assistant.ast_message(conversation_id, role, content) VALUES ($1, 'user', $2) RETURNING conversation_id)
+       UPDATE assistant.ast_conversation c SET updated_at = now() FROM m WHERE c.id = m.conversation_id`,
+      [conversationId, content],
+    )
   }
 
   /** 记回答和这次调过的工具（出错时 content 空、error 写原因，调过的工具照样记） */

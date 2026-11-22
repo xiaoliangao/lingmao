@@ -1046,3 +1046,12 @@
   color: var(--lm-disabled);
   background: none;
 }
+
+/*
+ * 页面里的加载遮罩（v-loading）：Element 默认 z-index 2000，会盖住浮在页面上的智能助手图标和卡片（1900），还挡住点击。
+ * 降到页面内容这一层：盖得住表格（固定列最高 3），不盖吸顶的 PageHeader（8）。整屏加载（.is-fullscreen，挂在 body 下）不动。
+ * 不给 .shell-main 建层叠上下文：页面里的 el-dialog 没设 append-to-body，就渲染在 .shell-main 里，会被一起压到卡片下面
+ */
+.shell-main .el-loading-mask:not(.is-fullscreen) {
+  z-index: 7;
+}

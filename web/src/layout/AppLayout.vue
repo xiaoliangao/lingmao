@@ -25,7 +25,7 @@ const props = defineProps<{ area: 'workbench' | 'admin' }>()
 const route = useRoute()
 const store = useUserStore()
 const tabs = useTabsStore()
-const { toggle, closeDrawer, narrow } = useSidebar()
+const { toggle, closeDrawer, open: sideOpen, narrow } = useSidebar()
 const assistant = useAssistant()
 const withTabs = computed(() => props.area === 'workbench')
 /** 智能助手：右下角的图标和对话卡片，都浮在页面上、不占地方。出来时查一次服务好不好，用不了的图标变灰（不弹报错） */
@@ -33,6 +33,10 @@ const withAssistant = computed(() => withTabs.value && assistant.enabled.value)
 watch(withAssistant, (on) => on && void assistant.checkHealth(), { immediate: true })
 
 // 窄屏上侧边栏是盖住页面的浮层：打开助手时收起来，不然卡片在遮罩下面
+// 窄屏上卡片差不多盖满页面，和侧边栏只开一个：开助手收侧边栏，开侧边栏收助手
+watch(sideOpen, (on) => {
+  if (on && narrow.value) assistant.hide()
+})
 watch(() => assistant.state.open, (on) => {
   if (on && narrow.value) closeDrawer()
 })

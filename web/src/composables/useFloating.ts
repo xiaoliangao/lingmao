@@ -43,8 +43,10 @@ function save(key: string, pos: Pos) {
 
 export function useFloating(el: Ref<HTMLElement | undefined>, key: string, initial: Pos, onDragEnd?: () => void) {
   const pos = reactive<Pos>(read(key) ?? { ...initial })
-  let drag: { x: number; y: number; from: Pos; id: number } | null = null
+  let drag: { x: number; y: number; from: Pos; id: number; handle: HTMLElement | null } | null = null
   let moved = false
+  /** 拖完松手后把 moved 清掉：紧跟着的 click 读得到，之后用键盘按图标不会被当成"刚拖过" */
+  let resetTimer: ReturnType<typeof setTimeout> | undefined
 
   function clamp() {
     const box = el.value?.getBoundingClientRect()
@@ -57,6 +59,8 @@ export function useFloating(el: Ref<HTMLElement | undefined>, key: string, initi
 
   function onMove(event: PointerEvent) {
     if (!drag || event.pointerId !== drag.id) return
+    // 松手的事件没收到（切走窗口、右键菜单、在窗口外松手）：鼠标键已经不按着了，就算拖完，不再跟着指针跑
+    if (event.pointerType === 'mouse' && (event.buttons & 1) === 0) return finish(false)
     const dx = event.clientX - drag.x
     const dy = event.clientY - drag.y
     if (!moved && Math.hypot(dx, dy) < THRESHOLD) return
@@ -66,36 +70,73 @@ export function useFloating(el: Ref<HTMLElement | undefined>, key: string, initi
     clamp()
   }
 
-  function stop() {
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerup', onUp)
-    window.removeEventListener('pointercancel', onUp)
+  function onUp(event: PointerEvent) {
+    if (drag && event.pointerId === drag.id) finish(true)
   }
 
-  function onUp(event: PointerEvent) {
-    if (!drag || event.pointerId !== drag.id) return
-    stop()
+  function onCancel(event: Event) {
+    if (!drag) return
+    if (event instanceof PointerEvent && event.pointerId !== drag.id) return
+    finish(false)
+  }
+
+  /**
+   * 结束这次拖动。released：正常松手（后面跟着 click，moved 留到这一轮事件处理完）；
+   * 否则是取消（切走窗口、触屏被浏览器接管、丢了指针捕获），不会有 click，moved 直接清掉
+   */
+  function finish(released: boolean) {
+    if (!drag) return
+    const { id, handle } = drag
     drag = null
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    window.removeEventListener('pointercancel', onCancel)
+    window.removeEventListener('blur', onCancel)
+    handle?.removeEventListener('lostpointercapture', onCancel)
+    try {
+      if (handle?.hasPointerCapture(id)) handle.releasePointerCapture(id)
+    } catch {
+      // 元素已经不在页面上了
+    }
     if (moved) {
       save(key, pos)
       onDragEnd?.()
     }
+    clearTimeout(resetTimer)
+    if (!released) moved = false
+    else if (moved) resetTimer = setTimeout(() => (moved = false), 0)
   }
 
-  /** 按下：左键、不是按在按钮、输入框、下拉上 */
+  /** 按下：主指针的左键、不是按在按钮、输入框、下拉上 */
   function start(event: PointerEvent) {
-    if (event.button !== 0) return
+    if (!event.isPrimary || event.button !== 0) return
     const target = event.target as HTMLElement | null
     if (target?.closest('button:not([data-drag]), input, textarea, a, .el-dropdown')) return
-    drag = { x: event.clientX, y: event.clientY, from: { ...pos }, id: event.pointerId }
+    // 上一次没收尾（同一个指针又按下了）：先收掉；别的手指按下的不管
+    if (drag) {
+      if (event.pointerId !== drag.id) return
+      finish(false)
+    }
+    const handle = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+    drag = { x: event.clientX, y: event.clientY, from: { ...pos }, id: event.pointerId, handle }
+    clearTimeout(resetTimer)
     moved = false
+    // 捕获指针：拖出窗口、拖得太快指针离开元素，松手的事件也送到这里
+    try {
+      handle?.setPointerCapture(event.pointerId)
+      handle?.addEventListener('lostpointercapture', onCancel)
+    } catch {
+      // 捕获不了也能拖，靠下面窗口上的监听
+    }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    window.addEventListener('blur', onCancel)
   }
 
   function dragged() {
     const was = moved
+    clearTimeout(resetTimer)
     moved = false
     return was
   }
@@ -108,7 +149,8 @@ export function useFloating(el: Ref<HTMLElement | undefined>, key: string, initi
   })
   onBeforeUnmount(() => {
     window.removeEventListener('resize', clamp)
-    stop()
+    finish(false)
+    clearTimeout(resetTimer)
   })
 
   return { pos, style, start, dragged, clamp }

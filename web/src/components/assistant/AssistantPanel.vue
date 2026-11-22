@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MAX_QUESTION, useAssistant, type ToolStep } from '@/composables/useAssistant'
 import { useFloating } from '@/composables/useFloating'
 import { stripHtml } from '@/utils/assistantText'
 import type { AssistantConversation } from '@/types/assistant'
 import { formatDateTime } from '@/utils/format'
+import { isComposing } from '@/utils/ime'
 import AssistantAnswer from './AssistantAnswer'
 
 /**
@@ -109,13 +110,20 @@ function submit() {
 
 function onKeydown(event: KeyboardEvent | Event) {
   const e = event as KeyboardEvent
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+  if (e.key === 'Enter' && !e.shiftKey && !isComposing(e)) {
     e.preventDefault()
     submit()
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    assistant.hide()
   }
+}
+
+/**
+ * 卡片里任何地方按 Esc 收起（焦点在示例问题、按钮、回答上也算）。
+ * 输入法选词时按 Esc 是取消候选，不收；最近的对话下拉开着时让下拉先关
+ */
+function onCardKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || isComposing(e) || historyOpen) return
+  e.preventDefault()
+  assistant.hide()
 }
 
 function askExample(text: string) {
@@ -129,8 +137,18 @@ function onNavigate() {
   if (window.matchMedia('(max-width: 900px)').matches) assistant.hide()
 }
 
+/** 最近的对话下拉开着没有。关的时候晚一拍再记：Esc 关下拉的那一下冒泡到卡片时，还当它开着 */
+let historyOpen = false
+let historyTimer: ReturnType<typeof setTimeout> | undefined
+
 function onHistory(visible: boolean) {
-  if (visible) void assistant.loadHistory()
+  clearTimeout(historyTimer)
+  if (visible) {
+    historyOpen = true
+    void assistant.loadHistory()
+  } else {
+    historyTimer = setTimeout(() => (historyOpen = false), 0)
+  }
 }
 
 /** 最近的对话里点删除：说清后果再删；删的是正开着的，卡片清空 */
@@ -139,6 +157,7 @@ async function removeConversation(c: AssistantConversation) {
     await ElMessageBox.confirm(`"${c.title}"的问答都会删掉，找不回来。`, '删除对话', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger',
       type: 'warning',
     })
   } catch {
@@ -160,10 +179,11 @@ onMounted(async () => {
   await toBottom(true)
   input.value?.focus()
 })
+onBeforeUnmount(() => clearTimeout(historyTimer))
 </script>
 
 <template>
-  <aside ref="card" class="ast" :class="{ large }" :style="float.style.value" aria-label="智能助手">
+  <aside ref="card" class="ast" :class="{ large }" :style="float.style.value" aria-label="智能助手" @keydown="onCardKeydown">
     <header class="ast-head" title="按住拖动，双击放大或还原" @pointerdown="float.start" @dblclick="onHeadDblclick">
       <el-icon class="ast-mark"><ChatDotRound /></el-icon>
       <h2>智能助手</h2>

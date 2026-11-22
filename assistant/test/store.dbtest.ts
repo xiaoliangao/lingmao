@@ -224,6 +224,16 @@ describe('对话', () => {
     await admin.query("UPDATE assistant.ast_conversation SET updated_at = now() - interval '6 days' WHERE id = $1", [fresh])
     assert.equal(await store.purgeConversations(7), 1)
     assert.deepEqual((await admin.query('SELECT id FROM assistant.ast_conversation')).rows.map((r) => r.id), [fresh])
+
+    // 接着问：续上 updated_at，过期没清理的也续上、之后不被清理；别人的、已经删掉的续不了
+    await admin.query("UPDATE assistant.ast_conversation SET updated_at = now() - interval '8 days' WHERE id = $1", [fresh])
+    assert.equal(await store.touchConversation(fresh, '8'), false, '别人的续不了')
+    assert.equal(await store.touchConversation(fresh, '7'), true)
+    assert.equal(await store.purgeConversations(7), 0, '续上的不清理')
+    assert.equal(await store.touchConversation(other, '8'), false, '清理掉的续不了')
+    await store.addUserMessage(fresh, '接着问')
+    const row = await admin.query("SELECT updated_at > now() - interval '1 minute' AS recent, (SELECT count(*) FROM assistant.ast_message WHERE conversation_id = $1)::int AS m FROM assistant.ast_conversation WHERE id = $1", [fresh])
+    assert.deepEqual(row.rows[0], { recent: true, m: 1 })
   })
 
   test('history 只取最近几轮', async () => {
