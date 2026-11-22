@@ -249,6 +249,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
               <dd>{{ detail.remark || '—' }}</dd>
               <dt>制单</dt>
               <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
+              <template v-if="detail.auditTime">
+                <dt>审核</dt>
+                <dd>{{ detail.auditByName ?? '—' }} · {{ formatDateTime(detail.auditTime) }}</dd>
+              </template>
             </dl>
           </div>
         </section>

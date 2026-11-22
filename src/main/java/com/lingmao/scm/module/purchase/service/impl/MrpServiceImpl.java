@@ -208,7 +208,7 @@ public class MrpServiceImpl implements MrpService {
         orders.stream().map(MrpCalcMapper.CalcOrder::companyId).filter(java.util.Objects::nonNull).findFirst().ifPresent(vo::setCompanyId);
         // 订单详情的权限和范围（OrderController、OrderServiceImpl 的本人 = 制单人、业务员、跟单员）：打不开的不给链接，免得点进去 404
         boolean orderPerm = LoginUser.hasAuthority("order:order:list");
-        com.lingmao.scm.security.DataScope scope = com.lingmao.scm.security.DataScope.current(false);
+        DataScope scope = DataScope.current(false);
         vo.setOrders(orders.stream().map(o -> new MrpOrderRef(o.orderId(), o.orderNo(), styles.getOrDefault(o.orderId(), List.of()),
                 orderPerm && scope.getLines().canSee(o.productLine()) && scope.canSee(o.createBy(), o.salesId(), o.merchId()))).toList());
         vo.setStyleCodes(styleCodes(orders, styles));
@@ -323,6 +323,11 @@ public class MrpServiceImpl implements MrpService {
         Map<Long, PurchaseOrderItemMapper.LineRef> refs = lineIds.isEmpty() ? Map.of()
                 : poItemMapper.selectLineRefs(lineIds).stream().collect(Collectors.toMap(PurchaseOrderItemMapper.LineRef::id, r -> r));
         boolean open = c.getStatus() != CLOSED && !nextDraft;
+        // 采购单详情的范围（PurchaseOrderServiceImpl.visible：制单人、采购员）：打不开的不给链接，免得点进去 404
+        boolean poPerm = LoginUser.hasAuthority("purchase:order:list");
+        DataScope scope = DataScope.current(false);
+        java.util.function.Predicate<PurchaseOrderItemMapper.LineRef> canOpen =
+                r -> poPerm && scope.getLines().canSee(r.productLine()) && scope.canSee(r.createBy(), r.buyerId());
 
         List<MrpItemVO> out = new ArrayList<>();
         for (MrpCalcItem i : items) {
@@ -358,12 +363,12 @@ public class MrpServiceImpl implements MrpService {
             v.setTransitUses(mine.stream().filter(u -> refs.containsKey(u.getPurchaseItemId())).map(u -> {
                 PurchaseOrderItemMapper.LineRef r = refs.get(u.getPurchaseItemId());
                 return new MrpTransitUseVO(u.getPurchaseItemId(), r.poId(), r.poNo(), r.purchaseType(), u.getEta(), u.getQty(),
-                        p.arrivedOf(u.getId()));
+                        p.arrivedOf(u.getId()), canOpen.test(r));
             }).toList());
             v.setLateTransits(i.getBlock() != MrpBlock.PURCHASE ? List.of() : lates.stream()
                     .filter(l -> l.skuId() == i.getMaterialSkuId() && refs.containsKey(l.purchaseItemId())).map(l -> {
                         PurchaseOrderItemMapper.LineRef r = refs.get(l.purchaseItemId());
-                        return new MrpLateTransitVO(l.purchaseItemId(), r.poId(), r.poNo(), r.purchaseType(), l.eta(), l.freeQty());
+                        return new MrpLateTransitVO(l.purchaseItemId(), r.poId(), r.poNo(), r.purchaseType(), l.eta(), l.freeQty(), canOpen.test(r));
                     }).toList());
             v.setCanConvert(open && convertibleRow(i));
             out.add(v);
@@ -1122,6 +1127,8 @@ public class MrpServiceImpl implements MrpService {
                 n[0]++;
             }
         }
+        // 状态按这张订单所有的算料单算；calcIds 只给我打得开的（本人范围看自己建的算料单），点标签不跳到 404（走查 T-693633）
+        DataScope scope = DataScope.current(false);
         List<OrderKittingVO> out = new ArrayList<>();
         for (Long orderId : ids) {
             List<Long> calcIds = byOrder.getOrDefault(orderId, List.of()).stream().map(MrpCalcMapper.OrderCalc::calcId)
@@ -1143,7 +1150,9 @@ public class MrpServiceImpl implements MrpService {
                 case "NOT" -> "未到料";
                 default -> "部分到料 " + ready + "/" + total;
             };
-            out.add(new OrderKittingVO(orderId, status, ready, total, label, calcIds));
+            List<Long> openable = byOrder.get(orderId).stream().filter(c -> scope.canSee(c.createBy()))
+                    .map(MrpCalcMapper.OrderCalc::calcId).sorted(Comparator.reverseOrder()).toList();
+            out.add(new OrderKittingVO(orderId, status, ready, total, label, openable));
         }
         return out;
     }

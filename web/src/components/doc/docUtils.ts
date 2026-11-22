@@ -1,6 +1,6 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { showBizError } from '@/composables/useBizError'
-import { DOC_ACTION_CONFIRM, DOC_ACTION_LABEL, REASON_REQUIRED, type DocAction, type DocActionReq } from '@/types/biz'
+import { DOC_ACTION_CONFIRM, DOC_ACTION_LABEL, REASON_REQUIRED, type ApprovalView, type DocAction, type DocActionReq } from '@/types/biz'
 import { ErrorCode, LIST_ERROR_CODES } from '@/utils/errorCodes'
 import { ApiError, type RequestOptions } from '@/utils/request'
 import { businessToday, addBusinessDays } from '@/utils/businessDate'
@@ -81,6 +81,7 @@ export function reloadOnConflict(error: unknown, reload?: () => unknown): boolea
  * - 作废、结案、反审核、取消结案：照 DOC_ACTION_CONFIRM 说后果再确认，不要求写原因；note 是这张单据自己要多说的一句
  * - 别的直接做
  * 做成了提示一句、返回 true（调用方刷新详情）；取消了、出错了返回 false。
+ * 多级审批的单据传 approval：审的不是最后一级时提示"这一级审过了，等谁审"，不说"已审核"（单据还是待审核）
  * 出错时显示原因（showSilentError），1002 时再调 reload 重新取详情，拿新的 version
  */
 export async function runDocAction(
@@ -88,9 +89,11 @@ export async function runDocAction(
   docLabel: string,
   version: number,
   exec: (act: DocAction, body: DocActionReq, options: RequestOptions) => Promise<unknown>,
-  options: { note?: string; reload?: () => unknown } = {},
+  options: { note?: string; reload?: () => unknown; approval?: ApprovalView | null } = {},
 ): Promise<boolean> {
   const label = DOC_ACTION_LABEL[action]
+  // 先记下来：审完 approval 就变了
+  const next = action === 'audit' ? nextApprover(options.approval) : null
   let reason: string | null = null
 
   if (REASON_REQUIRED.includes(action)) {
@@ -120,6 +123,14 @@ export async function runDocAction(
     if (e.code === ErrorCode.STATE_CHANGED) void options.reload?.()
     return false
   }
-  ElMessage.success(`${docLabel} 已${label}`)
+  ElMessage.success(next ? `${docLabel} 这一级审过了，等${next}审` : `${docLabel} 已${label}`)
   return true
+}
+
+/** 多级审批里当前这一级之后还要谁审；当前就是最后一级、没在审是 null */
+export function nextApprover(approval: ApprovalView | null | undefined): string | null {
+  const levels = approval?.levels ?? []
+  const current = levels.findIndex((l) => l.status === 'CURRENT')
+  if (current < 0) return null
+  return levels.slice(current + 1).find((l) => l.status === 'WAITING')?.approverLabel ?? null
 }

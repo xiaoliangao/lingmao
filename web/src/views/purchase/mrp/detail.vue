@@ -393,7 +393,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
                       <thead><tr><th>采购单</th><th>预计到货</th><th class="num">用</th><th class="num">已到</th></tr></thead>
                       <tbody>
                         <tr v-for="t in (row as MrpItem).transitUses" :key="t.purchaseItemId">
-                          <td><router-link :to="`/purchases/${t.purchaseOrderId}`" class="code">{{ t.purchaseNo }}</router-link></td>
+                          <td><router-link v-if="t.canOpen" :to="`/purchases/${t.purchaseOrderId}`" class="code">{{ t.purchaseNo }}</router-link><span v-else class="code">{{ t.purchaseNo }}</span></td>
                           <td class="num">{{ t.eta ? formatDate(t.eta) : '—' }}</td>
                           <td class="num">{{ formatQty(t.qty) }}</td>
                           <td class="num">{{ formatQty(t.arrivedQty) }}</td>
@@ -408,7 +408,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
                       <thead><tr><th>采购单</th><th>预计到货</th><th class="num">还能用</th></tr></thead>
                       <tbody>
                         <tr v-for="t in (row as MrpItem).lateTransits" :key="t.purchaseItemId">
-                          <td><router-link :to="`/purchases/${t.purchaseOrderId}`" class="code">{{ t.purchaseNo }}</router-link></td>
+                          <td><router-link v-if="t.canOpen" :to="`/purchases/${t.purchaseOrderId}`" class="code">{{ t.purchaseNo }}</router-link><span v-else class="code">{{ t.purchaseNo }}</span></td>
                           <td class="num">{{ t.eta ? formatDate(t.eta) : '—' }}</td>
                           <td class="num">{{ formatQty(t.freeQty) }}</td>
                         </tr>
@@ -698,10 +698,14 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
   display: none;
 }
 
+/* 表格横着滚到右边再点展开，内容贴着看得见的左边，不留在最左端看不见（走查 T-693633） */
 .expand {
+  position: sticky;
+  left: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
+  width: fit-content;
   padding: 6px 16px 10px 56px;
 }
 

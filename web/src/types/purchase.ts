@@ -91,6 +91,8 @@ export interface MrpTransitUse {
   qty: number
   /** 其中已经到货的（齐料按它算） */
   arrivedQty: number
+  /** 我打得开那张采购单；别的采购建的备货单"本人"范围打不开，只显示单号 */
+  canOpen: boolean
 }
 
 /** 赶不上的在途：预计到货晚于要料日期，只列出来、不扣（计算时的快照） */
@@ -102,6 +104,8 @@ export interface MrpLateTransit {
   eta: string | null
   /** 当时还能用的数（去掉别的算料单占着的） */
   freeQty: number
+  /** 同 MrpTransitUse.canOpen */
+  canOpen: boolean
 }
 
 /** 算料结果的一行（mrp_calc_item）。数字是计算时存下的；草稿里改了本次使用、建议采购，后端重算净需求、预计金额 */
@@ -652,7 +656,7 @@ export interface OrderKitting {
   totalCount: number
   /** 标签上的字："部分到料 3/5"、"齐料"、"未算料" */
   label: string
-  /** 参与计算的算料单 */
+  /** 我打得开的算料单，新的在前（状态按所有算料单算；"本人"范围的跟单打不开采购建的，是空的，标签不能点） */
   calcIds: string[]
 }
 

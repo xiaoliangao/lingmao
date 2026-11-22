@@ -506,7 +506,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
       </div>
 
       <el-table :data="lines" row-key="materialSkuId" empty-text="还没有物料：点「从物料库选」">
-        <el-table-column label="#" width="44" class-name="num">
+        <el-table-column label="#" width="52" class-name="num">
           <template #default="{ $index }">{{ $index + 1 }}</template>
         </el-table-column>
         <el-table-column label="物料" min-width="200">
@@ -564,7 +564,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
             <el-date-picker v-model="row.expectDate" size="small" type="date" value-format="YYYY-MM-DD" placeholder="同交期" />
           </template>
         </el-table-column>
-        <el-table-column label="" width="56" align="right">
+        <el-table-column label="" width="72" align="right">
           <template #default="{ $index }">
             <el-button link type="danger" size="small" @click="removeLine($index)">删</el-button>
           </template>

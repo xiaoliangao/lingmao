@@ -237,7 +237,7 @@ async function act(action: DocAction) {
   const note = action === 'audit' && priceChanged.value
     ? `${kindMeta.value.priceLabel} ${formatPrice(d.unitPrice)} 和价格档案 ${formatPrice(d.archivePrice)} 不一样（改价原因：${d.priceChangeReason || '没写'}），审核后记进价格档案。`
     : undefined
-  const ok = await runDocAction(action, d.no, d.version, (a, body, o) => productionApi.act(id, a, body, o), { note, reload: refresh })
+  const ok = await runDocAction(action, d.no, d.version, (a, body, o) => productionApi.act(id, a, body, o), { note, reload: refresh, approval: d.approval })
   if (ok) await refresh()
 }
 

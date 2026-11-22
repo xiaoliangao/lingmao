@@ -432,6 +432,10 @@ function openKitting() {
               <dd v-else>{{ ORDER_SOURCE[detail.source] }}</dd>
               <dt>制单</dt>
               <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
+              <template v-if="detail.auditTime">
+                <dt>审核</dt>
+                <dd>{{ detail.auditByName ?? '—' }} · {{ formatDateTime(detail.auditTime) }}</dd>
+              </template>
             </dl>
           </div>
         </section>

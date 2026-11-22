@@ -108,7 +108,7 @@ async function act(action: DocAction) {
   const d = detail.value
   if (!d) return
   const note = action === 'audit' && diffCount.value ? `有 ${diffCount.value} 行单价和价格档案不一样，审核后记进价格档案。` : undefined
-  const ok = await runDocAction(action, d.no, d.version, (a, body, o) => purchaseApi.act(id, a, body, o), { note, reload: refresh })
+  const ok = await runDocAction(action, d.no, d.version, (a, body, o) => purchaseApi.act(id, a, body, o), { note, reload: refresh, approval: d.approval })
   if (ok) await refresh()
 }
 
@@ -349,6 +349,11 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
               <dd>{{ detail.remark || '—' }}</dd>
               <dt>制单</dt>
               <dd>{{ detail.createByName ?? '—' }} · {{ formatDateTime(detail.createTime) }}</dd>
+              <!-- 审核人、时间（PRD §5.1 单头）：单级审批审完以后审批块就收起了，这里还看得到（走查 T-693633） -->
+              <template v-if="detail.auditTime">
+                <dt>审核</dt>
+                <dd>{{ detail.auditByName ?? '—' }} · {{ formatDateTime(detail.auditTime) }}</dd>
+              </template>
             </dl>
           </div>
         </section>

@@ -58,11 +58,11 @@ public interface PurchaseOrderItemMapper extends BaseMapper<PurchaseOrderItem> {
             + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
     List<Long> selectCalcIdsOfItems(@Param("ids") Collection<Long> calcItemIds);
 
-    /** 采购行的单号、类型（算料单详情列本次使用在途、赶不上的在途） */
-    record LineRef(Long id, Long poId, String poNo, String purchaseType) {
+    /** 采购行的单号、类型（算料单详情列本次使用在途、赶不上的在途）；品类线、制单人、采购员用来判断当前用户打不打得开那张采购单 */
+    record LineRef(Long id, Long poId, String poNo, String purchaseType, String productLine, Long createBy, Long buyerId) {
     }
 
-    @Select("<script>SELECT i.id, o.id AS po_id, o.no AS po_no, o.purchase_type FROM pur_order_item i "
+    @Select("<script>SELECT i.id, o.id AS po_id, o.no AS po_no, o.purchase_type, o.product_line, o.create_by, o.buyer_id FROM pur_order_item i "
             + "JOIN pur_order o ON o.id = i.purchase_order_id WHERE i.id IN "
             + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
     List<LineRef> selectLineRefs(@Param("ids") Collection<Long> ids);

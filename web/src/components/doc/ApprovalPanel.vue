@@ -34,7 +34,7 @@ function levelTone(st: string) {
 
 function levelLabel(st: string) {
   if (st === 'PASSED') return '已通过'
-  if (st === 'CURRENT') return '待审批'
+  if (st === 'CURRENT') return '待审核'
   if (st === 'CANCELLED') return '已取消'
   return '等待前序'
 }

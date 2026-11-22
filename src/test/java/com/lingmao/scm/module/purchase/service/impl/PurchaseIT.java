@@ -127,6 +127,7 @@ class PurchaseIT {
         MrpCalcDetailVO d = mrpService.detail(calc.id());
         // 算料单不存主体，详情按订单的主体给：页面写操作靠它带 X-Company-Id（走查 T-693633，原来是空的、写操作全报 400）
         assertThat(d.getCompanyId()).isEqualTo(f.company);
+        assertThat(d.getOrders()).as("自己建的订单打得开").allSatisfy(o -> assertThat(o.canOpen()).isTrue());
         assertThat(d.getNeedDate()).isAfter(LocalDate.now().plusDays(3)).isBefore(LocalDate.now().plusDays(200));
         MrpItemVO row = d.getItems().getFirst();
         assertThat(d.getItems()).hasSize(1);
@@ -221,6 +222,11 @@ class PurchaseIT {
         assertThat(mrpService.kitting(List.of(orderId))).singleElement().satisfies(k -> {
             assertThat(k.status()).isNotEqualTo("NONE");
             assertThat(k.calcIds()).containsExactly(calc.id());
+        });
+        // 别人（本人范围）看这张订单：状态一样，但算料单是 f.user 建的、他打不开，calcIds 空（标签不给跳 404，走查 T-693633）
+        assertThat(TestIdentity.asSelfAuditor(jdbcTemplate, false, () -> mrpService.kitting(List.of(orderId)))).singleElement().satisfies(k -> {
+            assertThat(k.status()).isNotEqualTo("NONE");
+            assertThat(k.calcIds()).isEmpty();
         });
         assertThat(referenceService.referrers(BizType.ORDER, orderId)).extracting(DocRef::id).contains(calc.id(), poC);
         PurchaseQuery q = new PurchaseQuery();
