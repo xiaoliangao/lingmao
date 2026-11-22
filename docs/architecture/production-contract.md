@@ -6,7 +6,7 @@
 
 以下接口冻结：`Idempotency-Key` 为一次逻辑写动作的 UUID，未知结果保留原 body/主体/键；`X-Request-Id` 为规范追踪头，旧头兼容；`X-Company-Id` 必须匹配可信持久化目标且不能代替授权；BIGINT ID 十进制字符串，版本/页码/数量维持数值；seek 使用现有签名游标与 `{list,nextCursor,hasMore}`；错误仍为 `R{code,msg,data}`，HTTP 409/429/503 与业务码均真实处理。无请求刷新接口、无全域租户 ACL 或无财务域时，不允许前端/文档虚构能力。
 
-主控问题和写边界以 `docs/reviews/full-audit-ledger.md` 为准。不得改动已发布迁移，新增版本先协调；历史报告的结果不是本轮已通过证明。本轮授权包含代码修复和向 dev 提 PR，不包含合并 main、写参考系统或上线真实数据。
+主控问题和写边界以 `docs/reviews/full-audit-ledger.md` 为准，成品/公共标签功能增量另见 `functional-completion-contract.md`。不得改动已发布迁移，新增版本先协调；历史报告的结果不是本轮已通过证明。本轮授权包含代码修复和向 dev 提 PR，不包含合并 main、写参考系统或上线真实数据。
 
 基线：`7c757c83fbd794e051347cb8edff04d346294e75`（2026-11-17）。本轮任务授权四阶段实施，覆盖仓库旧的直接提交 main / 不开子代理约定；集成分支为 dev，绝不向 main 提交。本文由主控冻结，阶段代理不得各自改变公共契约。
 
@@ -70,7 +70,7 @@
 - 纯日期为 YYYY-MM-DD，不转时区；事件时间以带偏移的 ISO-8601 输出。时间戳筛选用东八区业务日半开区间，DATE 列可用含首尾比较。
 - 普通列表保留 `{list,total}`。高增长流水新增 seek 契约 `{list,nextCursor,hasMore}`，游标绑定排序、筛选与授权范围；统计单独查询，不让游标页隐含 COUNT。
 - sys 表现有 PostgreSQL 存活行部分唯一索引可满足软删除重建，无须机械改成 deleted_token。业务主数据外键 RESTRICT + 停用保留。
-- 已在 main 发布的 V1–V36 不改。新增版本须先核对 main 已占用编号；独立 repeatable 迁移须幂等。大表约束先在短事务中以 NOT VALID 安装并释放强锁，再验证；在线索引按 Flyway 非事务迁移处理，避免在业务锁上无限等待。
+- 已在 main 发布的 V1–V56 不改；当前 dev 工作树只含 V1–V36，不能据此推断 main 最高版本。新增版本须先核对 main 已占用编号及缺失低版本的整合风险；独立 repeatable 迁移须幂等。大表约束先在短事务中以 NOT VALID 安装并释放强锁，再验证；在线索引按 Flyway 非事务迁移处理，避免在业务锁上无限等待。
 
 ## 4. 物理写边界
 

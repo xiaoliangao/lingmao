@@ -11,6 +11,7 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
     state = {'perms': []}
     purchase_state = {'version': 3, 'company': '1', 'item': '9007199254740999'}
     requests, writes, unknown = [], [], []
+    supplier_option_reads = []
     metrics['security_requests'] = requests
     metrics['security_writes'] = writes
     cost, order_price, prod_price = 'techpack:cost:query', 'order:price:query', 'production:price:query'
@@ -62,6 +63,20 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
         elif path.startswith('/api/dict-data/by-type/'):
             data = [{'value': value, 'label': label, 'status': 1} for value, label in dicts.get(path.rsplit('/', 1)[-1], [])]
         elif path == '/api/companies/options': data = companies
+        elif req.method == 'GET' and path == '/api/suppliers/options':
+            assert set(query) <= {'includeId', 'usage', 'category'}, query
+            assert query.get('includeId') == ['13'] and query.get('usage') == ['BULK'], query
+            assert query.get('category') in [None, ['GARMENT,PROCESSOR']], query
+            company = req.headers.get('x-company-id')
+            assert company in {'1', '2'}, 'Supplier options must carry the selected company'
+            identity_matches = await req.frame.evaluate("""async authorization => {
+                const { getToken, sessionIdentity } = await import('/src/utils/token.ts')
+                return authorization === `Bearer ${getToken()}` && sessionIdentity() === 'user:9007199254740993'
+            }""", req.headers.get('authorization'))
+            assert identity_matches, 'Supplier options must use the current fixture identity'
+            data = [{'id': '13', 'code': 'GY-SYNTHETIC', 'shortName': '合成供应商', 'status': 'ACTIVE'}]
+            assert set(data[0]) == {'id', 'code', 'shortName', 'status'}
+            supplier_option_reads.append({'include_id': '13', 'company': company, 'current_identity_matches': identity_matches, 'fields': sorted(data[0])})
         elif path == '/api/warehouses/options': data = [{'id': '31', 'name': '原料仓', 'code': 'YL', 'type': 'MATERIAL', 'companyId': '1', 'status': 1}, {'id': '32', 'name': '加工厂仓', 'code': 'GC', 'type': 'FACTORY', 'companyId': '1', 'supplierId': '13', 'status': 1}]
         elif path == '/api/orders/style-options': data = [style]
         elif path in ['/api/categories/tree', '/api/material-categories/tree', '/api/colors/options']: data = []
@@ -244,6 +259,7 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
         page = await new_page(mode)
         await expect(page.get_by_role('button', name='保存', exact=True)).to_be_enabled()
         await choose_company(page, page.locator('main.security-fixture'))
+        if mode == 'purchase-edit': await expect(field(page.locator('main.security-fixture'), '供应商')).to_contain_text('合成供应商')
         async with page.expect_response(lambda r: r.url.endswith(path) and r.request.method == 'PUT'):
             await page.get_by_role('button', name='保存', exact=True).click()
         saved = writes[-1]
@@ -256,6 +272,7 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
     page = await new_page('purchase-retry')
     await expect(page.get_by_role('button', name='保存并提交', exact=True)).to_be_enabled()
     await choose_company(page, page.locator('main.security-fixture'))
+    await expect(field(page.locator('main.security-fixture'), '供应商')).to_contain_text('合成供应商')
     before = len(requests)
     async with page.expect_response(lambda r: r.url.endswith('/api/purchase-orders/705/submit')):
         await page.get_by_role('button', name='保存并提交', exact=True).click()
@@ -292,6 +309,9 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
     metrics['checks']['security_duplicate_bom_and_process_identity'] = True
     await page.close()
     assert not unknown, unknown
+    assert len(supplier_option_reads) == 2 and all(read['company'] == '2' for read in supplier_option_reads), supplier_option_reads
+    metrics['checks']['security_supplier_option_preselection_projection'] = True
+    metrics['security_supplier_option_reads'] = supplier_option_reads
     metrics['security_requests'] = requests
     metrics['security_writes'] = writes
     await context.close()

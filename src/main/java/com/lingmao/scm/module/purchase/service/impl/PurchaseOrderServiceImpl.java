@@ -2,6 +2,7 @@ package com.lingmao.scm.module.purchase.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.doc.StatusFlow;
@@ -1022,12 +1023,15 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     public byte[] export(PurchaseQuery query) {
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PURCHASE_ORDER) : null);
-        List<PurchaseRowVO> rows = poMapper.selectRows(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
+        List<PurchaseRowVO> rows = poMapper.selectRowPage(new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false),
+                query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())).getRecords();
         if (rows.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException(400, "一次最多导出 " + Excel.MAX_EXPORT_ROWS + " 张，加个筛选条件再导");
         }
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, PurchaseRowVO::getId, PurchaseRowVO::getCompanyId);
-        fillRows(rows);
+        Map<Long, String> names = userService.nicknames(rows.stream().map(PurchaseRowVO::getBuyerId)
+                .filter(Objects::nonNull).collect(Collectors.toSet()));
+        rows.forEach(row -> row.setBuyerName(names.get(row.getBuyerId())));
         return excel.export(rows);
     }
 

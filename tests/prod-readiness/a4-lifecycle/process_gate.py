@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import zipfile
@@ -69,6 +70,16 @@ def eventually(predicate, timeout, message, interval=.05):
 def active_queries(db, database):
     return db.execute("""SELECT pid,wait_event_type,wait_event,query FROM pg_stat_activity
         WHERE datname=%s AND pid<>pg_backend_pid() AND state='active'""", (database,)).fetchall()
+
+
+def application_sessions(db, database, application_name, clients_only=True):
+    """Only this JVM's actual PostgreSQL clients; diagnostics exclude SQL and values."""
+    columns = ('pid', 'backendType', 'applicationName', 'state', 'waitEventType', 'waitEvent')
+    backend_filter = " AND backend_type='client backend'" if clients_only else ''
+    rows = db.execute("""SELECT pid,backend_type,application_name,state,wait_event_type,wait_event
+        FROM pg_stat_activity WHERE datname=%s AND application_name=%s""" + backend_filter + ' ORDER BY pid',
+                      (database, application_name)).fetchall()
+    return [dict(zip(columns, row)) for row in rows]
 
 
 def closed_in_order(logfile, completed=True):
@@ -157,6 +168,7 @@ def main():
         print('PASS ' + result['name'], flush=True)
     logs = []
     processes = []
+    application_names = {}
     runtime_secrets = []
     work = Path(tempfile.mkdtemp(prefix='a4-process-'))
     admin = psycopg.connect(**pg, dbname='postgres', autocommit=True)
@@ -184,10 +196,19 @@ def main():
             output = logfile.open('w')
             logs.append(output)
             case_env = {**env, 'LOGGING_FILE_NAME': str(work / (name + '-file.log')), **(overrides or {})}
+            # PostgreSQL truncates application_name at 63 bytes. Each real JVM gets
+            # a fresh ASCII identity, so background work and observers cannot pass
+            # as its JDBC connections even when they use the same disposable DB.
+            application_name = 'a4-' + name[:24] + '-' + secrets.token_hex(8)
+            jdbc_base, _, jdbc_query = case_env['DB_URL'].partition('?')
+            jdbc_params = [(key, value) for key, value in urllib.parse.parse_qsl(jdbc_query, keep_blank_values=True)
+                           if key.lower() != 'applicationname']
+            case_env['DB_URL'] = jdbc_base + '?' + urllib.parse.urlencode(jdbc_params + [('ApplicationName', application_name)])
             process = subprocess.Popen([java, '-Xmx512m', '-XX:ActiveProcessorCount=4', '-jar', str(jar), f'--server.port={port}',
                                         f'--logging.logback.rollingpolicy.file-name-pattern={work}/rolling-%d{{yyyy-MM-dd}}.%i.log', *arguments],
                                        env=case_env, stdout=output, stderr=subprocess.STDOUT)
             processes.append(process)
+            application_names[process.pid] = application_name
             if ready:
                 deadline = time.monotonic() + 90
                 while True:
@@ -339,8 +360,10 @@ def main():
         # download in Tomcat socket output. Both must finish before pool destruction.
         housekeeping_lock = secrets.randbits(62)
         stream_trace = 'a4-stream-' + str(uuid.uuid4())
+        unrelated_name = 'a4-unrelated-' + secrets.token_hex(8)
         with psycopg.connect(**pg, dbname=database, autocommit=True) as db, \
-                psycopg.connect(**pg, dbname=database, autocommit=True) as blocker:
+                psycopg.connect(**pg, dbname=database, autocommit=True) as blocker, \
+                psycopg.connect(**pg, dbname=database, application_name=unrelated_name, autocommit=True) as unrelated:
             db.execute("""INSERT INTO sys_login_session(tenant_id,jti,user_id,session_version,expires_at)
                 SELECT %s,'a4-housekeeping-drain',id,session_version,clock_timestamp()-interval '1 hour'
                 FROM sys_user WHERE username='admin'""", (env['LINGMAO_TENANT_ID'],))
@@ -375,9 +398,21 @@ def main():
                             'connection pool closed while an actual housekeeping query and stream were still active')
                     require(any(kind == 'Lock' and 'DELETE FROM sys_login_session' in query
                                 for _, kind, _, query in active_queries(db, database)), 'housekeeping was interrupted before its drain window')
-                    pool_pids = [row[0] for row in db.execute('SELECT pid FROM pg_stat_activity WHERE datname=%s AND pid NOT IN (%s,%s)',
-                                (database, db.info.backend_pid, blocker.info.backend_pid)).fetchall()]
+                    # The old whole-database query must actually misclassify this
+                    # third live observer, while the exact JVM query must exclude it.
+                    unrelated_pid = unrelated.execute('SELECT pg_backend_pid()').fetchone()[0]
+                    legacy_pids = [row[0] for row in db.execute('SELECT pid FROM pg_stat_activity WHERE datname=%s AND pid NOT IN (%s,%s)',
+                                   (database, db.info.backend_pid, blocker.info.backend_pid)).fetchall()]
+                    application_name = application_names[process.pid]
+                    pool_sessions = application_sessions(db, database, application_name)
+                    pool_pids = [row['pid'] for row in pool_sessions]
+                    metrics['jdbcSessionDrain'] = {'applicationName': application_name, 'captured': pool_sessions,
+                                                  'unrelatedPid': unrelated_pid, 'unrelatedApplicationName': unrelated_name,
+                                                  'legacySamplerCapturedUnrelated': unrelated_pid in legacy_pids,
+                                                  'exactSamplerCapturedUnrelated': unrelated_pid in pool_pids}
+                    require(unrelated_pid in legacy_pids, 'negative control did not exercise the old broad JDBC sampler')
                     require(bool(pool_pids), 'no real application JDBC sessions were observed during drain')
+                    require(unrelated_pid not in pool_pids, 'unrelated client was counted as an application JDBC session')
                     blocker.execute('SELECT pg_advisory_unlock(%s)', (housekeeping_lock,))
                     eventually(lambda: db.execute("SELECT count(*) FROM sys_login_session WHERE jti='a4-housekeeping-drain'").fetchone()[0] == 0,
                                4, 'in-flight housekeeping transaction did not finish')
@@ -395,11 +430,21 @@ def main():
                             'SIGTERM truncated or changed the actual XLSX response')
                 process.wait(timeout=35)
                 closed_in_order(logfile)
-                require(db.execute('SELECT count(*) FROM pg_stat_activity WHERE pid=ANY(%s)', (pool_pids,)).fetchone()[0] == 0,
+                # Check every backend with this unique identity, including any
+                # unexpected parallel worker, rather than only previously seen PIDs.
+                remaining_sessions = application_sessions(db, database, application_name, clients_only=False)
+                unrelated_alive = unrelated.execute('SELECT pg_backend_pid()').fetchone()[0] == unrelated_pid
+                legacy_remaining = db.execute('SELECT pid FROM pg_stat_activity WHERE pid=ANY(%s)', (legacy_pids,)).fetchall()
+                metrics['jdbcSessionDrain'].update(remaining=remaining_sessions, unrelatedStillConnected=unrelated_alive,
+                                                  legacyRemainingPids=[row[0] for row in legacy_remaining])
+                require(not remaining_sessions,
                         'application JDBC sessions remained after process termination')
+                require(unrelated_alive and unrelated_pid in [row[0] for row in legacy_remaining],
+                        'negative-control observer did not survive the actual JVM shutdown')
                 record({'name': 'real-SIGTERM-XLSX-and-housekeeping-drain', 'passed': True,
                                           'rows': export_rows, 'bytes': actual_size, 'sha256': expected_hash,
-                                          'socketBlockedInJvm': True, 'housekeepingSqlBlocked': True})
+                                          'socketBlockedInJvm': True, 'housekeepingSqlBlocked': True,
+                                          'jdbcSessionsClosed': len(pool_pids), 'unrelatedClientSurvived': unrelated_alive})
             finally:
                 blocker.execute('SELECT pg_advisory_unlock(%s)', (housekeeping_lock,))
                 db.execute('DROP TRIGGER a4_hold_cleanup ON sys_login_session')

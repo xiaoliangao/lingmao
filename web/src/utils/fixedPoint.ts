@@ -39,3 +39,9 @@ export function rescaleInteger(value: bigint, fromScale: number, toScale: number
   const rounded = (absolute + divisor / 2n) / divisor
   return value < 0n ? -rounded : rounded
 }
+
+/** 单据行：数量 3 位 × 单价 4 位，按后端规则逐行 HALF_UP 到分；未估值仍为空。 */
+export function quantityPriceAmount(qty: number | string | null | undefined, price: number | string | null | undefined): string | null {
+  if (qty == null || price == null) return null
+  return fromScaledInteger(rescaleInteger(toScaledInteger(qty, 3) * toScaledInteger(price, 4), 7, 2), 2)
+}

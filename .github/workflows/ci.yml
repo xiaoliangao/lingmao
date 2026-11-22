@@ -96,7 +96,9 @@ jobs:
         run: python3 tests/prod-readiness/a3-browser/run.py
       - name: S3 — write recovery, real wide forms and bounded upstream pages
         if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
-        run: python3 tests/audit-fix/s3-browser/write-recovery.py
+        run: |
+          python3 tests/audit-fix/s3-browser/write-recovery.py
+          python3 tests/audit-fix/s3-browser/supplier-amounts.py
       - name: S3 — actual cross-tab authentication cookies and insecure HTTP origin
         if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
         env:
