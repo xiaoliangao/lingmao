@@ -15,7 +15,7 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 public class SupplierQuery extends PageQuery {
 
-    /** 编码、全称、简称、联系人包含它 */
+    /** 编码、全称、简称包含它；有「看供应商联系方式」权限的还按联系人查 */
     private String keyword;
 
     /** 字典 supplier_category 的 value：分类里有它的 */

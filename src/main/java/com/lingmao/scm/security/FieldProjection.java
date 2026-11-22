@@ -1,5 +1,6 @@
 package com.lingmao.scm.security;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -25,6 +26,12 @@ public class FieldProjection {
             "priceTaxIncluded", "priceFreightIncluded");
     private static final Set<String> CONTACT = Set.of("contact", "phone", "wechat", "address", "supplierContact", "supplierPhone", "factoryContact", "factoryPhone");
     private static final Set<String> BANK = Set.of("bankName", "bankAccount", "bankAccountName");
+    /**
+     * 拿助手令牌来的请求一律去掉的：谁的地址、电话、联系人、微信都不给（用户 11-22 定联系方式不发给外部模型）。
+     * 不只供应商的：工厂仓的地址就是加工厂的收货地址（agy 复查 T-a43c80 #3），按字段名认，以后新加的同名字段自动算进来
+     */
+    private static final java.util.regex.Pattern ASSISTANT_HIDDEN =
+            java.util.regex.Pattern.compile("(phone|address|contact|wechat|fax)|.*(Phone|Address|Contact|Wechat|Fax)");
     private static final ConcurrentHashMap<Class<?>, Map<String, Field>> FIELDS = new ConcurrentHashMap<>();
     private final JsonMapper json;
 
@@ -90,6 +97,9 @@ public class FieldProjection {
     }
 
     private static boolean blocked(String name, String permission, boolean supplier, String path) {
+        // 先比字段名（便宜），对上了再看是不是助手令牌
+        if ((ASSISTANT_HIDDEN.matcher(name).matches() || name.contains("地址") || name.contains("电话") || name.contains("手机")
+                || name.contains("微信") || name.contains("传真") || name.contains("联系人")) && CallerScope.assistant()) return true;
         if (name.equals("tagPrice") || name.equals("estTagPrice") || name.contains("吊牌价")) return false;
         if (BANK.contains(name) || supplier && (name.contains("银行") || name.contains("账号") || name.contains("账户") || name.contains("户名")))
             return !FieldPermissions.has(FieldPermissions.BANK);

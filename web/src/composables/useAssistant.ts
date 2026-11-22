@@ -472,7 +472,7 @@ async function openConversation(id: string) {
     state.turns = toTurns(rows)
     state.conversationId = id
   } catch (e) {
-    if (latest() && !(e instanceof Stale)) state.openError = messageOf(e, '这个对话没打开')
+    if (latest() && !(e instanceof Stale) && !sessionChanged()) state.openError = messageOf(e, '这个对话没打开')
   } finally {
     if (view === viewSeq) openingId = null
   }

@@ -269,7 +269,13 @@ class AssistantTokenIT {
             }
             Reply list = send(assist, "GET", "/api/suppliers?keyword=" + tag, null);
             assertThat(list.code()).as(list.body().toString()).isZero();
+            assertThat(list.body().path("data").path("total").intValue()).as("确实搜中了这一家").isEqualTo(1);
             assertThat(list.body().path("data").path("list").toString()).doesNotContain("张三", "13800000000", "示例银行", "6222");
+
+            // 按联系人名搜：自己（有看联系方式的权限）搜得到，助手搜不到，不然拿名字一搜就知道是哪家的联系人（agy 复查 T-a43c80 #1）
+            String byContact = "/api/suppliers?keyword=" + java.net.URLEncoder.encode("张三", java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(send(a.token(), "GET", byContact, null).body().path("data").path("list").toString()).contains("助手测试" + tag);
+            assertThat(send(assist, "GET", byContact, null).body().path("data").path("list").toString()).doesNotContain("助手测试" + tag);
         } finally {
             jdbc.update("DELETE FROM sup_supplier WHERE id = ?", supplier);
         }

@@ -59,7 +59,11 @@ class SupplierLists {
             List<String> codes = Keywords.codes(query.getKeyword());
             wrapper.and(w -> {
                 w.apply("upper(code) LIKE {0}", Keywords.codeContains(query.getKeyword())).or().apply("name ILIKE {0}", like)
-                        .or().apply("short_name ILIKE {0}", like).or().apply("contact ILIKE {0}", like);
+                        .or().apply("short_name ILIKE {0}", like);
+                // 按联系人搜只给看得到联系人的：不然拿名字一搜就知道是哪家的联系人（助手令牌不带这个权限，agy 复查 T-a43c80 #1）
+                if (com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.CONTACT)) {
+                    w.or().apply("contact ILIKE {0}", like);
+                }
                 if (codes != null) {
                     // 几个编码一起精确查（Keywords）
                     w.or().apply("upper(code) IN (" + IntStream.range(0, codes.size()).mapToObj(i -> "{" + i + "}")
