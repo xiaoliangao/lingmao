@@ -107,27 +107,32 @@ figcaption { font-size: 13px; color: var(--muted); }
 .zoom button { position: fixed; top: max(12px, env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); font: 14px/1 var(--font); padding: 8px 14px; border: 0; border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
 .zoom button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* 答题：选项能点，每问一个写答案的框；答过的条目、目录打勾；底部一条进度和导出 */
+/* 答题：选项能点，每问一个写答案的框；答过的条目、目录打勾；底部一条进度和导出。
+   只在脚本跑起来（body.answering）时生效：不跑脚本的预览里列表照原样显示；选中的样子用脚本加的 .on，不靠 :has()（旧手机浏览器不认） */
 input[type=radio], input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; transform: translateY(3px); }
 .opts li.pick { display: block; padding: 0; }
 .pick > label { display: grid; grid-template-columns: 16px 20px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
 .opts li.pick:hover { border-color: var(--accent-line); }
-.opts li.pick:has(input:checked) { border-color: var(--accent); background: var(--accent-bg); color: var(--ink); }
-.sub[data-pick] { list-style: none; padding-left: 0; display: grid; gap: 4px; }
-.sub[data-pick="multi"] label { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 3px 0; cursor: pointer; }
-.sub[data-pick="multi"] li:has(input:checked) { color: var(--ink); }
-.sub[data-pick="fill"] { gap: 8px; }
-.sub[data-pick="fill"] li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 220px); gap: 4px 12px; align-items: center; }
+.opts li.pick.on { border-color: var(--accent); background: var(--accent-bg); color: var(--ink); }
+body.answering .sub[data-pick] { list-style: none; padding-left: 0; display: grid; gap: 4px; }
+body.answering .sub[data-pick="multi"] label { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 3px 0; cursor: pointer; }
+body.answering .sub[data-pick="multi"] li.on { color: var(--ink); }
+body.answering .sub[data-pick="fill"] { gap: 8px; }
+body.answering .sub[data-pick="fill"] li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 220px); gap: 4px 12px; align-items: center; }
 textarea.ans, .who input, .sub[data-pick="fill"] input { font: inherit; font-size: 14px; line-height: 1.6; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 100%; }
 textarea.ans { resize: vertical; min-height: 38px; display: block; overflow: hidden; }
 textarea.ans::placeholder, .who input::placeholder, .sub[data-pick="fill"] input::placeholder { color: var(--muted); }
 textarea.ans:focus, .who input:focus, .sub[data-pick="fill"] input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+/* 打印时答案框换成这块字（框的高度是按屏幕宽算的，纸上会切掉字） */
+.ans-print { display: none; }
 .agree { display: inline-flex; gap: 8px; align-items: baseline; margin-top: 6px; font-size: 14px; color: var(--ink); cursor: pointer; width: fit-content; }
 .who { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 6px; font-size: 14px; color: var(--ink-2); }
 .who b { color: var(--ink); }
+.warn { margin-top: 4px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--pending-line); background: var(--pending-bg); color: var(--pending-text); font-size: 14px; }
 .q.answered { border-color: var(--accent-line); }
 .q.answered > header .no::after { content: " ✓"; }
 .toc-list li.done .n::after { content: " ✓"; }
+html { scroll-padding-bottom: 96px; }
 body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 .bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--paper); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgb(34 32 29 / 6%); padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 .bar > div { max-width: 880px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
@@ -138,7 +143,14 @@ body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); 
 .bar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .bar button.primary:hover { background: var(--accent-2); }
 .bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.toast { position: fixed; left: 50%; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; max-width: calc(100% - 32px); background: var(--ink); color: #fff; font-size: 14px; padding: 8px 14px; border-radius: 8px; }
+.toast { position: fixed; left: 50%; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; width: max-content; max-width: calc(100% - 32px); background: var(--ink); color: #fff; font-size: 14px; padding: 8px 14px; border-radius: 8px; }
+.toast:empty { display: none; }
+/* 复制、下载都不行时（比如在微信里），把全文放在这里让人长按复制 */
+.manual { position: fixed; inset: 0; z-index: 10; background: rgb(28 24 18 / 60%); display: grid; place-items: center; padding: 16px; }
+.manual > div { background: var(--paper); border-radius: 12px; padding: 16px; width: min(640px, 100%); max-height: calc(100% - 32px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; }
+.manual p { font-size: 14px; color: var(--ink-2); }
+.manual textarea { font: 13px/1.6 var(--font); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; min-height: 240px; resize: none; }
+.manual button { justify-self: end; font: inherit; font-size: 14px; padding: 7px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
 
 @media (max-width: 600px) {
   body { font-size: 15px; }
@@ -147,9 +159,13 @@ body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); 
   .q { padding: 18px 16px 20px; }
   .toc-list a { grid-template-columns: 44px minmax(0, 1fr); }
   .toc-list .w { grid-column: 2; text-align: left; white-space: normal; }
-  .sub[data-pick="fill"] li { grid-template-columns: minmax(0, 1fr); }
+  body.answering .sub[data-pick="fill"] li { grid-template-columns: minmax(0, 1fr); }
   .bar .prog { flex-basis: 100%; }
   .bar button { flex: 1; }
+  /* 手机上底栏两行高；输入框 16px，iPhone 点进去不会把整页放大 */
+  html { scroll-padding-bottom: 116px; }
+  .toast { bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+  textarea.ans, .who input, .sub[data-pick="fill"] input { font-size: 16px; }
 }
 @media print {
   body { background: #fff; }
@@ -159,10 +175,10 @@ body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); 
   .asks > li::before { color: var(--ink); background: none; border: 1px solid var(--ink); }
   .toc-list a:hover { background: none; }
   .zoom { display: none !important; }
-  .bar, .toast { display: none !important; }
   body.answering { padding-bottom: 0; }
-  textarea.ans:placeholder-shown, .agree:not(:has(input:checked)) { display: none; }
-  textarea.ans { border-color: #bbb; resize: none; }
+  .bar, .toast, .manual, textarea.ans, .warn { display: none !important; }
+  .agree:not(.on) { display: none; }
+  .ans-print:not(:empty) { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; border: 1px solid #bbb; border-radius: 8px; padding: 6px 10px; }
 }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 </style>
@@ -176,7 +192,7 @@ body.answering { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); 
   <p class="lead">整个项目做完之前还要请你们定的，一共 32 条，分三块：上线前要答的 13 条，二期开工前要答的 12 条，整个项目做完之前要定的 7 条。能截图的配了界面，要选的举了例子；已经答复的不在这里。</p>
   <div class="how">
     <p data-nojs><b>怎么答：</b>写编号和第几问，有选项的写选哪个，比如 <span class="code">Q55-1 选 A</span>；情况不一样的直接写，发给我们。</p>
-    <p data-js hidden><b>怎么答：</b>直接在每一问下面点选项、写答案；同意照"不答就这样做"的，勾上「就按这样做」。写的内容存在这台电脑（手机）的浏览器里，关掉再打开还在。在微信里收到的，先点右上角「用浏览器打开」再填，在微信里可能存不住、导不出。</p>
+    <p data-js hidden><b>怎么答：</b>直接在每一问下面点选项、写答案；同意照"不答就这样做"的，勾上「就按这样做」。写的内容存在这台电脑（手机）的浏览器里，关掉再打开还在。在微信里收到的，先点右上角，选「用其他应用打开」或「用浏览器打开」，用浏览器打开再填，在微信里可能存不住、导不出。</p>
     <p data-js hidden><b>答完：</b>点页面最下面的「导出答案」，把下载的文件发给我们；也可以点「复制答案」，粘贴到微信里发。几个人分开答的，各自导出各自发。</p>
     <p><b>不答：</b>就照每条最后的"不答就这样做"去做。</p>
     <p><b>截图：</b>都是示例数据，不是你们的。标了 <span class="tag">原型</span> 的是还没做的功能，给你们看大概的样子。点图看大图。</p>
@@ -727,28 +743,38 @@ document.addEventListener('keydown', (e) => {
 })
 document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
 
-// 答题（11-22 用户要的）：选项能点、每问能写，存在这台机器的浏览器里（localStorage，按文件存；坏了、存不了就只是不记住）；
+// 答题（11-22 用户要的）：选项能点、每问能写，存在这台机器的浏览器里（localStorage；存不了就在顶上提示一次填完马上导出）；
 // 答完导出成文本文件或复制，发回给我们。只答了的才导出，没答的列在最后（照"不答就这样做"）
 ;(function () {
   // 答案按"第几问、第几个选项"存，所以按这一版的日期分开存：下一版问题、选项有增删，旧的勾不会落到别的选项上
   var edition = (document.querySelector('.top .sys').textContent.match(/\d{4}-\d{2}-\d{2}/) || ['x'])[0]
   var KEY = 'scm-qlist-answers-' + edition
+  var isObj = function (v) { return !!v && typeof v === 'object' && !Array.isArray(v) }
   var data
-  try { data = JSON.parse(localStorage.getItem(KEY) || '{}') || {} } catch (e) { data = {} }
-  data.who = data.who || ''
-  data.picks = data.picks || {}
-  data.notes = data.notes || {}
-  data.fills = data.fills || {}
-  data.agree = data.agree || {}
-  var timer
-  function save() {
-    clearTimeout(timer)
-    timer = setTimeout(function () { try { localStorage.setItem(KEY, JSON.stringify(data)) } catch (e) { /* 存不了：这次照样能导出 */ } }, 150)
+  try { data = JSON.parse(localStorage.getItem(KEY) || '{}') } catch (e) { data = {} }
+  if (!isObj(data)) data = {}
+  data.who = typeof data.who === 'string' ? data.who : ''
+  ;['picks', 'notes', 'fills', 'agree'].forEach(function (k) { if (!isObj(data[k])) data[k] = {} })
+  // 试一下存不存得住（隐私模式、有的 App 里打开会存不了）
+  var canStore = true
+  try { localStorage.setItem(KEY + '-probe', '1'); localStorage.removeItem(KEY + '-probe') } catch (e) { canStore = false }
+
+  var timer = null
+  function flush() {
+    if (timer) { clearTimeout(timer); timer = null }
+    if (canStore) try { localStorage.setItem(KEY, JSON.stringify(data)) } catch (e) { /* 存不了：这次照样能导出 */ }
+  }
+  // 打字时攒 150ms 再存；点选项立刻存；切走、关页前再存一次
+  function save(now) {
+    if (now) flush(); else { clearTimeout(timer); timer = setTimeout(flush, 150) }
     refresh()
   }
-  function grow(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px' }
+  window.addEventListener('pagehide', flush)
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush() })
+
   function el(tag, props) { var x = document.createElement(tag); for (var k in props) x[k] = props[k]; return x }
-  var text = function (node) { return node.textContent.replace(/\s+/g, ' ').trim() }
+  var text = function (node) { return node ? node.textContent.replace(/\s+/g, ' ').trim() : '' }
+  function grow(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px' }
 
   var articles = Array.prototype.slice.call(document.querySelectorAll('article.q'))
   var areas = []
@@ -757,17 +783,21 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
     Array.prototype.forEach.call(art.querySelectorAll(':scope > ol.asks > li'), function (li, idx) {
       var key = qid + '-' + (idx + 1)
       var box = li.firstElementChild
+      var ask = box.querySelector(':scope > p')
+      ask.id = 'ask-' + key
       var opts = box.querySelector(':scope > ul.opts')
       var sub = box.querySelector(':scope > ul.sub[data-pick]')
       if (opts) {
+        opts.setAttribute('role', 'radiogroup')
+        opts.setAttribute('aria-labelledby', ask.id)
         Array.prototype.forEach.call(opts.children, function (o) {
           var letter = text(o.querySelector('b'))
           var input = el('input', { type: 'radio', name: key, value: letter, checked: data.picks[key] === letter })
-          // 再点一下选中的就取消
+          // 选中走 change（方向键、浏览器恢复表单也算）；点已经选中的那个就取消（click 在 change 之前，这时记的还是原来的）
           input.addEventListener('click', function () {
-            if (data.picks[key] === letter) { input.checked = false; delete data.picks[key] } else data.picks[key] = letter
-            save()
+            if (data.picks[key] === letter) { input.checked = false; delete data.picks[key]; save(true) }
           })
+          input.addEventListener('change', function () { if (input.checked) { data.picks[key] = letter; save(true) } })
           var label = el('label', {})
           label.append(input)
           while (o.firstChild) label.append(o.firstChild)
@@ -776,15 +806,17 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
         })
       }
       if (sub && sub.dataset.pick === 'multi') {
+        sub.setAttribute('role', 'group')
+        sub.setAttribute('aria-labelledby', ask.id)
         Array.prototype.forEach.call(sub.children, function (o, i) {
-          var picked = data.picks[key] || []
+          var picked = Array.isArray(data.picks[key]) ? data.picks[key] : []
           var input = el('input', { type: 'checkbox', value: String(i + 1), checked: picked.indexOf(i + 1) >= 0 })
           input.addEventListener('change', function () {
-            var now = (data.picks[key] || []).filter(function (n) { return n !== i + 1 })
+            var now = (Array.isArray(data.picks[key]) ? data.picks[key] : []).filter(function (n) { return n !== i + 1 })
             if (input.checked) now.push(i + 1)
             now.sort(function (a, b) { return a - b })
             if (now.length) data.picks[key] = now; else delete data.picks[key]
-            save()
+            save(true)
           })
           var label = el('label', {})
           var span = el('span', {})
@@ -798,23 +830,30 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
           var fkey = key + '-' + (i + 1)
           var span = el('span', {})
           while (o.firstChild) span.append(o.firstChild)
-          var input = el('input', { type: 'text', value: data.fills[fkey] || '', placeholder: '至少两个人，写名字或岗位' })
+          var input = el('input', { type: 'text', value: typeof data.fills[fkey] === 'string' ? data.fills[fkey] : '', placeholder: '至少两个人，写名字或岗位' })
           input.setAttribute('aria-label', text(span) + '：由谁审')
           input.addEventListener('input', function () { if (input.value.trim()) data.fills[fkey] = input.value; else delete data.fills[fkey]; save() })
           o.append(span, input)
         })
       }
-      var ta = el('textarea', { className: 'ans', rows: 1, value: data.notes[key] || '',
+      var note = typeof data.notes[key] === 'string' ? data.notes[key] : ''
+      var ta = el('textarea', { className: 'ans', rows: 1, value: note,
         placeholder: opts || sub ? '要补充的、都不合适的，写在这里' : '在这里写答案' })
       ta.setAttribute('aria-label', qid + ' 第 ' + (idx + 1) + ' 问的答案')
-      ta.addEventListener('input', function () { if (ta.value.trim()) data.notes[key] = ta.value; else delete data.notes[key]; grow(ta); save() })
-      box.append(ta)
+      var printed = el('div', { className: 'ans-print', textContent: note.trim() ? note : '' })
+      ta.addEventListener('input', function () {
+        if (ta.value.trim()) data.notes[key] = ta.value; else delete data.notes[key]
+        printed.textContent = ta.value.trim() ? ta.value : ''
+        grow(ta); save()
+      })
+      box.append(ta, printed)
       areas.push(ta)
     })
     var def = art.querySelector(':scope > .default')
     if (def) {
       var cb = el('input', { type: 'checkbox', checked: !!data.agree[qid] })
-      cb.addEventListener('change', function () { if (cb.checked) data.agree[qid] = true; else delete data.agree[qid]; save() })
+      cb.setAttribute('aria-label', qid + ' 就按"不答就这样做"')
+      cb.addEventListener('change', function () { if (cb.checked) data.agree[qid] = true; else delete data.agree[qid]; save(true) })
       var lab = el('label', { className: 'agree' })
       lab.append(cb, document.createTextNode('就按这样做'))
       def.append(lab)
@@ -830,17 +869,21 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
   var who = el('input', { type: 'text', value: data.who, placeholder: '名字和部门，比如：张三 采购部', autocomplete: 'name' })
   who.addEventListener('input', function () { data.who = who.value; save() })
   var whoLabel = el('label', { className: 'who' })
-  var whoTitle = el('b', { textContent: '填写人' })
-  whoLabel.append(whoTitle, who)
+  whoLabel.append(el('b', { textContent: '填写人' }), who)
   how.append(whoLabel)
+  if (!canStore) {
+    how.append(el('p', { className: 'warn', textContent: '这样打开存不住写的内容，关掉就没了：请一次填完，马上点最下面的「复制答案」或「导出答案」。能换浏览器打开更好。' }))
+  }
 
-  // 底部：进度、复制、导出
+  // 底部：进度、复制、导出；提示条先放好，读屏才读得到
   var bar = el('div', { className: 'bar' })
   bar.setAttribute('role', 'region')
   bar.setAttribute('aria-label', '答题进度')
-  bar.innerHTML = '<div><span class="prog" aria-live="polite">已答 <b>0</b> / ' + articles.length + ' 条</span>'
+  bar.innerHTML = '<div><span class="prog" aria-live="polite" aria-atomic="true">已答 <b>0</b> / ' + articles.length + ' 条</span>'
     + '<button type="button" data-act="copy">复制答案</button><button type="button" class="primary" data-act="export">导出答案</button></div>'
-  document.body.append(bar)
+  var toastBox = el('div', { className: 'toast' })
+  toastBox.setAttribute('role', 'status')
+  document.body.append(bar, toastBox)
   document.body.classList.add('answering')
 
   function answered(qid) {
@@ -848,6 +891,7 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
     var p = qid + '-'
     return [data.picks, data.notes, data.fills].some(function (m) { return Object.keys(m).some(function (k) { return k.indexOf(p) === 0 }) })
   }
+  var shown = -1
   function refresh() {
     var n = 0
     articles.forEach(function (art) {
@@ -857,7 +901,11 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
       var link = document.querySelector('.toc-list a[href="#' + art.id + '"]')
       if (link) link.parentElement.classList.toggle('done', done)
     })
-    bar.querySelector('.prog b').textContent = n
+    // 选中的样子用 .on（不靠 :has()）
+    document.querySelectorAll('.opts li.pick input, .sub[data-pick="multi"] input, .agree input').forEach(function (i) {
+      i.closest('li, .agree').classList.toggle('on', i.checked)
+    })
+    if (n !== shown) { bar.querySelector('.prog b').textContent = n; shown = n }
     return n
   }
 
@@ -865,7 +913,7 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
     var d = new Date(), z = function (v) { return (v < 10 ? '0' : '') + v }
     return d.getFullYear() + sep + z(d.getMonth() + 1) + sep + z(d.getDate()) + (sep ? ' ' + z(d.getHours()) + ':' + z(d.getMinutes()) : '')
   }
-  function indent(s) { return s.trim().split('\n').join('\n        ') }
+  function indent(s) { return s.trim().split(/\r?\n/).join('\n        ') }
   function answersText() {
     var n = refresh()
     var out = ['服装 SCM 问题清单 · 答复', '填写人：' + (data.who.trim() || '（没写）'), '导出时间：' + stamp('-'), '已答 ' + n + ' / ' + articles.length + ' 条', '']
@@ -877,27 +925,25 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
       Array.prototype.forEach.call(art.querySelectorAll(':scope > ol.asks > li'), function (li, idx) {
         var key = qid + '-' + (idx + 1)
         var box = li.firstElementChild
-        out.push('  ' + (idx + 1) + '. ' + text(box.querySelector('p')))
+        out.push('  ' + (idx + 1) + '. ' + text(box.querySelector(':scope > p')))
         var said = false
         var pick = data.picks[key]
         var opts = box.querySelector(':scope > ul.opts')
         var sub = box.querySelector(':scope > ul.sub[data-pick]')
         if (opts && typeof pick === 'string') {
           var chosen = Array.prototype.filter.call(opts.children, function (o) { return text(o.querySelector('b')) === pick })[0]
-          out.push('     选 ' + pick + '：' + (chosen ? text(chosen.querySelector('span')) : ''))
-          said = true
+          if (chosen) { out.push('     选 ' + pick + '：' + text(chosen.querySelector('span'))); said = true }
         }
-        if (sub && sub.dataset.pick === 'multi' && pick && pick.length) {
-          pick.forEach(function (i) { out.push('     ☑ ' + text(sub.children[i - 1])) })
-          said = true
+        if (sub && sub.dataset.pick === 'multi' && Array.isArray(pick)) {
+          pick.forEach(function (i) { var o = sub.children[i - 1]; if (o) { out.push('     ☑ ' + text(o)); said = true } })
         }
         if (sub && sub.dataset.pick === 'fill') {
           Array.prototype.forEach.call(sub.children, function (o, i) {
             var v = data.fills[key + '-' + (i + 1)]
-            if (v) { out.push('     ' + text(o.querySelector('span')) + '：' + v.trim()); said = true }
+            if (typeof v === 'string' && v.trim()) { out.push('     ' + text(o.querySelector('span')) + '：' + v.trim()); said = true }
           })
         }
-        if (data.notes[key]) { out.push('     ' + (said ? '补充：' : '答：') + indent(data.notes[key])); said = true }
+        if (typeof data.notes[key] === 'string' && data.notes[key].trim()) { out.push('     ' + (said ? '补充：' : '答：') + indent(data.notes[key])); said = true }
         if (!said) out.push('     （这一问没答）')
       })
       if (data.agree[qid]) out.push('  就按"不答就这样做"：' + text(art.querySelector(':scope > .default p')))
@@ -909,16 +955,30 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
 
   var toastTimer
   function toast(msg) {
-    var t = document.querySelector('.toast') || document.body.appendChild(el('div', { className: 'toast' }))
-    t.setAttribute('role', 'status')
-    t.textContent = msg
+    toastBox.textContent = msg
     clearTimeout(toastTimer)
-    toastTimer = setTimeout(function () { t.remove() }, 2600)
+    toastTimer = setTimeout(function () { toastBox.textContent = '' }, 3200)
   }
-  function copyFallback(s) {
-    var ta = el('textarea', { value: s })
-    ta.style.position = 'fixed'; ta.style.opacity = '0'
-    document.body.append(ta); ta.select()
+  // 复制、下载都不行时：全文放进一个框，让人长按（或 Ctrl+A、Ctrl+C）复制
+  function manual(s) {
+    var box = el('div', { className: 'manual' })
+    box.setAttribute('role', 'dialog')
+    box.setAttribute('aria-label', '答案全文')
+    var inner = el('div', {})
+    var ta = el('textarea', { value: s, readOnly: true })
+    var close = el('button', { type: 'button', textContent: '关闭' })
+    close.addEventListener('click', function () { box.remove() })
+    inner.append(el('p', { textContent: '没能自动复制。请长按下面的文字全选、复制，再粘贴到微信里发给我们。' }), ta, close)
+    box.append(inner)
+    document.body.append(box)
+    ta.focus(); ta.select(); ta.scrollTop = 0
+  }
+  // 先用同步的办法复制（还在这次点击里，Safari 也认）；不行再试新接口；都不行给全文框
+  function copySync(s) {
+    var ta = el('textarea', { value: s, readOnly: true })
+    ta.style.position = 'fixed'; ta.style.top = '0'; ta.style.left = '0'; ta.style.opacity = '0'
+    document.body.append(ta)
+    ta.focus(); ta.select(); ta.setSelectionRange(0, s.length)
     var ok = false
     try { ok = document.execCommand('copy') } catch (e) { ok = false }
     ta.remove()
@@ -930,20 +990,26 @@ document.querySelectorAll('figure img').forEach((img) => { img.tabIndex = 0 })
     var s = answersText()
     if (btn.dataset.act === 'copy') {
       var done = function () { toast('复制好了，可以粘贴到微信里发') }
-      var fail = function () { copyFallback(s) ? done() : toast('没复制成，请点「导出答案」') }
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s).then(done, fail); else fail()
+      if (copySync(s)) done()
+      else if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s).then(done, function () { manual(s) })
+      else manual(s)
     } else {
+      flush()
       var name = '问题清单答复-' + (data.who.trim().replace(/[\\/:*?"<>|\s]+/g, '') || '未署名') + '-' + stamp('') + '.txt'
-      var url = URL.createObjectURL(new Blob(['﻿' + s], { type: 'text/plain;charset=utf-8' }))
+      // Windows 记事本：带 BOM、换行用 \r\n
+      var url = URL.createObjectURL(new Blob(['\ufeff' + s.replace(/\n/g, '\r\n')], { type: 'text/plain;charset=utf-8' }))
       var a = el('a', { href: url, download: name })
       document.body.append(a); a.click(); a.remove()
       setTimeout(function () { URL.revokeObjectURL(url) }, 4000)
-      toast('已导出：' + name)
+      toast('已导出：' + name + '。没看到文件的，点「复制答案」')
     }
   })
 
   refresh()
-  requestAnimationFrame(function () { areas.forEach(grow) })
+  var resizeTimer
+  var regrow = function () { areas.forEach(grow) }
+  window.addEventListener('resize', function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(regrow, 120) })
+  requestAnimationFrame(regrow)
 })()
 </script>
 </body>
