@@ -49,7 +49,7 @@ ASSISTANT_OPENAPI=./openapi.json pnpm test   # 再核对仓库里的 tools.yaml
 | `ASSISTANT_LLM_BASE_URL` / `_MODEL` / `_API_KEY` | 空 | 模型服务；地址到 `/v1` 为止。地址和模型名要一起填（都不填是不用模型），只填一个起不来 |
 | `ASSISTANT_LLM_MODE` | `external` | `external` 外部云端（数据出公司）/ `self-hosted` 内网自部署；开 AI 开关前的弹窗显示。别的值起不来 |
 | `ASSISTANT_LLM_STREAM_USAGE` | `true` | 模型服务不认 `stream_options` 时填 `false` |
-| `ASSISTANT_LLM_TIMEOUT_SECONDS` | 90 | 一次模型调用最多等多久 |
+| `ASSISTANT_LLM_TIMEOUT_SECONDS` | 90 | 模型多久没动静算超时（连上、等第一个字、两段之间）；一直在吐字的不掐，但一轮最长是它的 3 倍 |
 | `ASSISTANT_USER_DAILY_REQUESTS` | 200 | 每人每天最多问几句 |
 | `ASSISTANT_DAILY_TOKENS` | 5000000 | 全系统每天最多用多少 token（一句话约 2 万） |
 | `ASSISTANT_MAX_STEPS` | 6 | 一句话里模型最多来回几轮（最后一轮不许再调工具） |

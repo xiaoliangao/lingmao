@@ -65,6 +65,8 @@ export class Store {
       if (version(files[i]!) === version(files[i - 1]!)) throw new Error(`两个迁移的版本号一样：${files[i - 1]}、${files[i]}`)
     }
     const client = await this.pool.connect()
+    // 借出去的连接断了（数据库重启、被踢），pool 的 error 监听管不到，不挂一个进程会崩（审查 R-01）。这条用完就扔，监听不用摘
+    client.on('error', (e) => dbLost('migrate', e))
     const applied: string[] = []
     let broken = false
     try {
@@ -196,6 +198,12 @@ export class Store {
   async addAnswer(conversationId: string, content: string, error: string | null, promptTokens: number, completionTokens: number,
                   calls: ToolCallRecord[]): Promise<string> {
     const client = await this.pool.connect()
+    let lost = false
+    const onError = (e: Error) => {
+      lost = true
+      dbLost('addAnswer', e)
+    }
+    client.on('error', onError)
     try {
       await client.query('BEGIN')
       const r = await client.query<{ id: string }>(
@@ -219,9 +227,18 @@ export class Store {
       await client.query('ROLLBACK').catch(() => undefined)
       throw e
     } finally {
-      client.release()
+      // 断过的连接扔掉，好的放回池里（放回去的要把监听摘掉，不然借一次多挂一个）
+      if (lost) client.release(true)
+      else {
+        client.off('error', onError)
+        client.release()
+      }
     }
   }
+}
+
+function dbLost(where: string, e: Error): void {
+  console.error(JSON.stringify({ level: 'WARN', msg: 'db connection lost', where, error: e.message }))
 }
 
 /** 按顺序挑出"一问紧跟着一个好的回答"的对子，留最后 turns 对 */
@@ -235,7 +252,7 @@ export function pairUp(rows: { role: 'user' | 'assistant'; content: string; erro
       i++
     }
   }
-  return pairs.slice(-turns).flat()
+  return turns > 0 ? pairs.slice(-turns).flat() : []
 }
 
 function version(file: string): number {

@@ -138,7 +138,9 @@ async function route(deps: ServerDeps, req: IncomingMessage, res: ServerResponse
   if (!llm) return json(res, 503, 503, '还没有配置模型，请联系管理员')
   if (rt.stopping()) return json(res, 503, 503, '助手正在重启，过一会儿再问')
   const body = await readJson(req)
-  if (body === null) return // 浏览器发到一半走了
+  if (body === null || disconnect.signal.aborted) return // 浏览器发到一半走了
+  // 请求体发得慢、发完时已经在停机：不再开始（停机时只中止已经在答的，这一句没人中止，审查 R-02）
+  if (rt.stopping()) return json(res, 503, 503, '助手正在重启，过一会儿再问')
   if (!body.ok) return json(res, 400, 400, body.message)
   const value = body.value
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return json(res, 400, 400, '请求体要是 { message, conversationId? }')

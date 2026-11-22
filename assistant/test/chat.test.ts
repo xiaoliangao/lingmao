@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { answer, ChatRejected, prepare, sanitize, type ChatDeps, type ChatRequest, type Emit } from '../src/chat.ts'
 import { LlmError, type LlmTurn } from '../src/llm.ts'
+import { pairUp } from '../src/store.ts'
 import { BUYER, call, fakeApp, LIMITS, MemoryStore, ok, ScriptedLlm, text, TOOLS, type FakeRoute } from './fakes.ts'
 
 function setup(turns: (LlmTurn | Error)[], routes: Record<string, FakeRoute> = {}) {
@@ -115,6 +116,18 @@ describe('一句话怎么答', () => {
     assert.match(String(s.events[0]![1].message), /^助手出错了，错误编号 r1$/)
   })
 
+  test('历史配对：连着出错、落单的问题都不带；要 0 轮就是空的（审查 R-05）', () => {
+    const rows = [
+      { role: 'user' as const, content: 'q1', error: null },
+      { role: 'assistant' as const, content: '', error: '用户中途停止' },
+      { role: 'user' as const, content: 'q2', error: null },
+      { role: 'user' as const, content: 'q3', error: null },
+      { role: 'assistant' as const, content: 'a3', error: null },
+    ]
+    assert.deepEqual(pairUp(rows, 6), [{ role: 'user', content: 'q3' }, { role: 'assistant', content: 'a3' }])
+    assert.deepEqual(pairUp(rows, 0), [])
+  })
+
   test('上一句没答出来：历史里连那一问一起不带，不留落单的问题（严格交替的模型会报 400）', async () => {
     const s = setup([new LlmError('模型太久没回应，稍后再问'), text('有 3 张。'), text('PO1')])
     const id = await ask(s, '第一问没答出来')
@@ -174,6 +187,17 @@ describe('回答里只留站内链接', () => {
     ['看 https://evil.example/a?b=1 这里', '看 （外部链接已去掉） 这里'],
     ['看 www.evil.example/leak?d=1 这里', '看 （外部链接已去掉） 这里'],
     ['伪造记号 \u00000\u0000', '伪造记号 0'],
+    // 审查 R-03：去掉的链接文字以 ! 结尾、紧挨着站内链接，不能拼成图片
+    ['[!](https://evil.example)[图片](/orders/1)', '[图片](/orders/1)'],
+    ['[hello!](https://evil.example)[pic](/purchases/12)', 'hello[pic](/purchases/12)'],
+    ['[!](x)[图片](/orders/1)', '［!］(x)[图片](/orders/1)'],
+    // 不是地址的括号是话的一部分，留着（方括号换全角，成不了链接）
+    ['[待审核](共3张) 和 [ML0001](棉布)', '［待审核］(共3张) 和 ［ML0001］(棉布)'],
+    // 网址到中文标点为止，后面的话留着
+    ['详见https://evil.example。接下来还有重要内容', '详见（外部链接已去掉）。接下来还有重要内容'],
+    ['看www.evil.example，再说', '看（外部链接已去掉），再说'],
+    // 链接文字是网址：不当链接
+    ['[https://evil.example/leak?d=1](/orders/1)', '（外部链接已去掉）'],
   ]
   for (const [input, expected] of cases) {
     test(input, () => assert.equal(sanitize(input), expected))
@@ -196,11 +220,14 @@ describe('回答里只留站内链接', () => {
     '[click](\n//evil.example/leak)',
     '<//evil.example/leak>',
     '[<img src=x onerror=alert(1)>](/orders/1)',
+    '[!](x)[图片](/orders/1)',
+    '[a!](//evil.example)![b](/orders/1)',
   ]
   for (const input of attacks) {
     test(`绕不过：${JSON.stringify(input).slice(1, 40)}`, () => {
       const out = sanitize(input)
       assert.ok(!out.includes('<'), `留下了 <：${out}`)
+      assert.ok(!out.includes('!['), `能拼成图片：${out}`)
       assert.ok(!/[[\]]/.test(out.replace(/\[[^[\]]+\]\(\/(?:orders|purchases)(?:\/\d+)?\)/g, '')), `留下了站内链接以外的方括号：${out}`)
     })
   }

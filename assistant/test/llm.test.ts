@@ -84,6 +84,12 @@ describe('读流', () => {
     assert.equal(a.toolCalls[0]!.function.arguments, '{}', '没 index 没 id 的片段接在上一个后面')
     assert.match(a.toolCalls[0]!.id, /^call_/)
     assert.notEqual(a.toolCalls[0]!.id, b.toolCalls[0]!.id)
+
+    // 同一块里两个调用，index、id 都没有（审查 R-05）：上一个已经在拼参数、这一片又带名字，是下一个调用；名字分两片来的照样拼上
+    const bare = sse({ choices: [{ delta: { tool_calls: [{ function: { name: 'list_', arguments: '' } }, { function: { name: 'orders', arguments: '{"a"' } }] } }] })
+      + sse({ choices: [{ delta: { tool_calls: [{ function: { arguments: ':1}' } }, { function: { name: 'list_stocks', arguments: '{}' } }] } }] }) + 'data: [DONE]\n\n'
+    const c = await readStream(streamOf(bare), () => undefined)
+    assert.deepEqual(c.toolCalls.map((x) => [x.function.name, x.function.arguments]), [['list_orders', '{"a":1}'], ['list_stocks', '{}']])
   })
 })
 
@@ -157,6 +163,38 @@ describe('调模型', () => {
       assert.deepEqual(deltas, ['先说一半'])
       const dropped = new OpenAiCompatible({ ...config, baseUrl: `http://127.0.0.1:${port}/drop` })
       await assert.rejects(dropped.chat([], [], () => undefined, new AbortController().signal), (e) => e instanceof LlmError && /连接断了/.test(e.message))
+    } finally {
+      server.closeAllConnections()
+      server.close()
+    }
+  })
+
+  test('超时按"没有动静"算：一直在吐字的长回答不掐；一个字一个字慢慢滴，到总上限（3 倍）也掐（审查 R-04）', async () => {
+    const server = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      let n = 0
+      const timer = setInterval(() => {
+        n++
+        if (req.url?.includes('steady') && n > 6) {
+          clearInterval(timer)
+          res.end('data: [DONE]\n\n')
+          return
+        }
+        res.write(sse({ choices: [{ delta: { content: String(n) } }] }))
+      }, 60)
+      res.on('close', () => clearInterval(timer))
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const port = (server.address() as AddressInfo).port
+    try {
+      // 每 60ms 一段、一共 420ms：超过 150ms，但从没停过 150ms
+      const steady = new OpenAiCompatible({ ...config, baseUrl: `http://127.0.0.1:${port}/steady`, timeoutMs: 150 })
+      assert.equal((await steady.chat([], [], () => undefined, new AbortController().signal)).content, '123456')
+      const drip = new OpenAiCompatible({ ...config, baseUrl: `http://127.0.0.1:${port}/drip`, timeoutMs: 150 })
+      const started = Date.now()
+      await assert.rejects(drip.chat([], [], () => undefined, new AbortController().signal), (e) => e instanceof LlmError && /太久没回应/.test(e.message))
+      const took = Date.now() - started
+      assert.ok(took >= 400 && took < 1500, `用了 ${took}ms`)
     } finally {
       server.closeAllConnections()
       server.close()

@@ -89,24 +89,35 @@ export class OpenAiCompatible implements LlmProvider {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' }
     if (this.config.apiKey) headers.Authorization = `Bearer ${this.config.apiKey}`
 
-    // 超时管整个回合（连上、等第一个字、读完流），流读到一半卡住、断开也在这里变成 LlmError
-    const timeout = AbortSignal.timeout(this.config.timeoutMs)
+    // 两道超时（审查 R-04）：timeoutMs 没有任何动静（连上、等第一个字、两段之间）就算卡住；一直在吐字的长回答不掐，
+    // 但一轮最长 timeoutMs 的 3 倍，防一个字一个字慢慢滴。流读到一半卡住、断开也在这里变成 LlmError
+    const total = AbortSignal.timeout(this.config.timeoutMs * 3)
+    const idle = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const alive = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => idle.abort(new DOMException('没有动静', 'TimeoutError')), this.config.timeoutMs)
+    }
+    alive()
     try {
       const response = await this.fetchImpl(`${this.config.baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: AbortSignal.any([signal, timeout]),
+        signal: AbortSignal.any([signal, total, idle.signal]),
       })
+      alive()
       if (!response.ok || !response.body) {
         throw new LlmError(statusMessage(response.status), response.status, await brief(response))
       }
-      return await readStream(response.body, onDelta)
+      return await readStream(response.body, onDelta, alive)
     } catch (e) {
       if (signal.aborted) throw e
       if (e instanceof LlmError) throw e
-      if (timeout.aborted || isTimeout(e)) throw new LlmError('模型太久没回应，稍后再问')
+      if (total.aborted || idle.signal.aborted || isTimeout(e)) throw new LlmError('模型太久没回应，稍后再问')
       throw new LlmError('和模型服务的连接断了，稍后再问', null, e instanceof Error ? e.message : String(e))
+    } finally {
+      clearTimeout(timer)
     }
   }
 }
@@ -121,10 +132,11 @@ function statusMessage(status: number): string {
 }
 
 /**
- * 读 SSE：一行一个 data:，[DONE] 结束。拼文字、拼工具调用、记用量。
- * 工具调用按 index 拼；有的服务不给 index，就按 id 分（同一个 id 是同一个调用的后续片段），id 也没有就接在上一个后面
+ * 读 SSE：一行一个 data:，[DONE] 结束。拼文字、拼工具调用、记用量。onChunk：每收到一块调一次（续上没动静的超时）。
+ * 工具调用按 index 拼；有的服务不给 index，就按 id 分（同一个 id 是同一个调用的后续片段）；id 也没有，就接在上一个后面，
+ * 除非上一个已经在拼参数、这一片又带了名字（名字总在参数前面，这是下一个调用）
  */
-export async function readStream(stream: ReadableStream<Uint8Array>, onDelta: (text: string) => void): Promise<LlmTurn> {
+export async function readStream(stream: ReadableStream<Uint8Array>, onDelta: (text: string) => void, onChunk: () => void = () => undefined): Promise<LlmTurn> {
   const decoder = new TextDecoder()
   let buffer = ''
   let content = ''
@@ -165,7 +177,11 @@ export async function readStream(stream: ReadableStream<Uint8Array>, onDelta: (t
       let index: number
       if (typeof part.index === 'number') index = part.index
       else if (part.id) index = [...calls].find(([, c]) => c.id === part.id)?.[0] ?? (calls.size === 0 ? 0 : Math.max(...calls.keys()) + 1)
-      else index = lastIndex >= 0 ? lastIndex : 0
+      else {
+        const prev = calls.get(lastIndex)
+        const next = calls.size === 0 ? 0 : Math.max(...calls.keys()) + 1
+        index = prev && !(part.function?.name && prev.function.arguments !== '') ? lastIndex : next
+      }
       lastIndex = index
       let call = calls.get(index)
       if (!call) {
@@ -185,6 +201,7 @@ export async function readStream(stream: ReadableStream<Uint8Array>, onDelta: (t
     while (!done) {
       const { value, done: end } = await reader.read()
       if (end) break
+      onChunk()
       buffer += decoder.decode(value, { stream: true })
       let newline: number
       while (!done && (newline = buffer.indexOf('\n')) >= 0) {

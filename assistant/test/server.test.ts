@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, before, describe, test } from 'node:test'
 import type { LlmConfig } from '../src/config.ts'
@@ -267,6 +268,36 @@ describe('同时在答、中途断开、停服务', () => {
     assert.match(String(events[2]![1].message), /服务在重启/)
     assert.equal(s.store.messagesById.find((m) => m.role === 'assistant')!.error, '服务在重启，这句没答完，过一会儿再问')
     await assert.rejects(s.chat(T.good, { message: '还在吗' }), '端口已经关了')
+  })
+
+  test('停服务时请求体才发完（审查 R-02）：不开始答，回 503；只中止停服务那一刻在答的', async () => {
+    const llm = new GateLlm()
+    const s = await start(llm)
+    const a = await s.chat(T.good, { message: '慢慢答' })
+    await until(() => llm.calls === 1)
+    const payload = JSON.stringify({ message: '发得慢的一句' })
+    const req = request(`${s.base}/assistant/chat`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${T.other}`, 'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(payload)) },
+    })
+    const replied = new Promise<{ status: number; body: string }>((resolve, reject) => {
+      req.on('response', (r) => {
+        let d = ''
+        r.on('data', (c: Buffer) => (d += c))
+        r.on('end', () => resolve({ status: r.statusCode!, body: d }))
+      })
+      req.on('error', reject)
+    })
+    req.write(payload.slice(0, 5))
+    await new Promise((r) => setTimeout(r, 50)) // 认完人、在等请求体
+    const stopping = s.shutdown(100)
+    req.end(payload.slice(5))
+    const b = await replied
+    assert.equal(b.status, 503)
+    assert.match(b.body, /正在重启/)
+    await stopping
+    await a.text().catch(() => '')
+    assert.equal(llm.calls, 1)
   })
 })
 

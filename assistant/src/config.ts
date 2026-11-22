@@ -13,7 +13,7 @@ export interface LlmConfig {
   mode: 'external' | 'self-hosted'
   /** 流式输出时要不要 stream_options.include_usage（有的接口不认这个参数，回 400 时关掉） */
   streamUsage: boolean
-  /** 一次模型调用最多等多久 */
+  /** 模型多久没动静算超时（一轮最长是它的 3 倍） */
   timeoutMs: number
 }
 

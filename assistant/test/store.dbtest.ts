@@ -142,6 +142,38 @@ describe('连接', () => {
     await store.ping()
     assert.equal(await store.tokensToday(), 0)
   })
+
+  test('记回答的事务做到一半连接被踢（审查 R-01）：这次报错、进程不退出，断掉的连接不放回池里，下一次照常记', async () => {
+    await store.migrate(MIGRATIONS)
+    const id = randomUUID()
+    await store.createConversation(id, '7', '断连')
+    const connect = store.pool.connect.bind(store.pool)
+    let killedPid: number | null = null
+    // 只踢第一次借出的那条：第二条 SQL（INSERT ast_message）做完、下一条还没发时踢掉，等数据库那边真的断开
+    ;(store.pool as { connect: () => Promise<pg.PoolClient> }).connect = async () => {
+      const client = await connect()
+      if (killedPid !== null) return client
+      const query = client.query.bind(client) as (...a: unknown[]) => Promise<unknown>
+      let n = 0
+      ;(client as unknown as { query: (...a: unknown[]) => Promise<unknown> }).query = async (...a: unknown[]) => {
+        const r = await query(...a)
+        if (++n === 2) {
+          killedPid = (client as unknown as { processID: number }).processID
+          await admin.query('SELECT pg_terminate_backend($1)', [killedPid])
+          await new Promise((res) => setTimeout(res, 150))
+        }
+        return r
+      }
+      return client
+    }
+    const calls = [{ tool: 't', args: {}, status: 200, ok: true, rows: 1, durationMs: 1 }]
+    await assert.rejects(store.addAnswer(id, '一半', null, 1, 1, calls))
+    assert.ok(killedPid !== null)
+    // 池子按后进先出借：断掉的那条要是放回去了，这一次就借到它、报错
+    await store.addAnswer(id, '好了', null, 1, 1, calls)
+    const kept = await admin.query(`SELECT content FROM assistant.ast_message WHERE conversation_id = $1`, [id])
+    assert.deepEqual(kept.rows.map((r: { content: string }) => r.content), ['好了'])
+  })
 })
 
 describe('对话', () => {
