@@ -22,13 +22,11 @@ cd assistant && pnpm install
 起服务（app 在 8080 或自己起的 18080；`openapi.json` 从 app 的 `/v3/api-docs` 存一份）。默认只听 `127.0.0.1:8091`，局域网连不上；容器里镜像设了 `ASSISTANT_HOST=0.0.0.0`：
 
 ```sh
-ASSISTANT_DATABASE_URL=postgres://scm_assistant@127.0.0.1:5433/scm \
-ASSISTANT_APP_URL=http://127.0.0.1:8080 ASSISTANT_OPENAPI=./openapi.json \
-ASSISTANT_LLM_BASE_URL=https://模型服务/v1 ASSISTANT_LLM_MODEL=模型名 ASSISTANT_LLM_API_KEY=… \
-pnpm dev
+cp .env.example .env         # 填模型地址、模型名、Key（.env 在 gitignore 里）
+pnpm dev                     # 读 .env；没有 .env 也能起（没配模型，问话回 503）
 ```
 
-模型的 Key 只放环境变量或 gitignore 的 `.env`，不写进仓库。
+命令行上给的同名环境变量优先于 `.env`（比如临时连别的库：`ASSISTANT_DATABASE_URL=… pnpm dev`）。模型的 Key 只放环境变量或 `.env`，不写进仓库。
 
 ## 测试
 
