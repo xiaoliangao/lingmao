@@ -15,6 +15,8 @@ import { PRODUCTION_KIND } from '@/types/production'
  * - 一打开列出所有页面；输入字就按名字（和所在目录）筛，几个词用空格隔开都要对上
  * - 输入两个字以上，同时按单号、款号、编码、名称去查需求订单、采购单、生产单、款式、物料、供应商，每样最多 5 条；
  *   只查侧边栏里有的（没权限的不查），查不到、出错都不弹提示（silent），只是没有这一组
+ * - 有智能助手入口的（canAsk），输入两个字以上时最后一项是"问助手：<输入的话>"，回车打开助手抽屉并发出这句话
+ *   （RFC 009 §6.1 原来只在什么都搜不到时出；"ML0001 还有多少库存"这种，物料搜得到，就没有问助手了，所以改成一直在最后）
  * - ↑↓ 选，回车打开，Esc 或点外面关掉
  */
 export interface PaletteItem {
@@ -23,10 +25,13 @@ export interface PaletteItem {
   icon: string | null
   /** 右边的灰字：页面所在目录、单据的补充信息 */
   sub: string
+  /** 有这个就不是去哪一页，是把这句话交给智能助手 */
+  ask?: string
 }
 
-const props = defineProps<{ pages: PaletteItem[] }>()
+const props = defineProps<{ pages: PaletteItem[]; canAsk?: boolean }>()
 const visible = defineModel<boolean>({ required: true })
+const emit = defineEmits<{ ask: [question: string] }>()
 
 const router = useRouter()
 const keyword = ref('')
@@ -147,7 +152,13 @@ watch(keyword, (value) => {
 })
 
 // ---------- 列表、键盘 ----------
-const groups = computed(() => [{ title: keyword.value.trim() ? '页面' : '所有页面', items: pageHits.value }, ...records.value].filter((g) => g.items.length))
+const askItem = computed<PaletteItem[]>(() => {
+  const kw = keyword.value.trim()
+  return props.canAsk && kw.length >= 2 ? [{ name: `问助手：${kw}`, path: 'assistant:ask', icon: 'ChatDotRound', sub: '打开智能助手', ask: kw }] : []
+})
+const groups = computed(() =>
+  [{ title: keyword.value.trim() ? '页面' : '所有页面', items: pageHits.value }, ...records.value, { title: '智能助手', items: askItem.value }].filter((g) => g.items.length),
+)
 const flat = computed(() => groups.value.flatMap((group) => group.items))
 
 /** 第几组第几条在整个列表里排第几（高亮、回车用） */
@@ -158,6 +169,10 @@ function indexOf(groupIndex: number, itemIndex: number) {
 function go(item: PaletteItem | undefined) {
   if (!item) return
   visible.value = false
+  if (item.ask) {
+    emit('ask', item.ask)
+    return
+  }
   // 单独成页的（手机报工）和侧边栏一样在新标签里打开
   if (isStandalone(item.path)) window.open(item.path, '_blank')
   else router.push(item.path)

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { APP_MARK, APP_NAME } from '@/config'
+import { useAssistant } from '@/composables/useAssistant'
 import { useSidebar } from '@/composables/useSidebar'
 import { useVersion } from '@/composables/useVersion'
 import { isStandalone } from '@/router/standalone'
@@ -15,7 +16,7 @@ import PasswordDialog from './PasswordDialog.vue'
 
 /**
  * 侧边栏（照原型的外框）：浅暖灰底，顶上系统名和收起按钮，下面"搜索功能"（点开是快捷跳转 CommandPalette），再下面按目录分组的菜单；
- * 最底下是切换区域（管理后台 / 回首页）和当前用户（点开改密码、退出登录）。
+ * 最底下是智能助手（有入口的人，首页这一侧）、切换区域（管理后台 / 回首页）和当前用户（点开改密码、退出登录）。
  * 菜单只有两层：顶层目录是一组（组名可以点着收起来），目录下面的页面一个一个列出来；更深的目录摊平
  */
 const props = defineProps<{ menus: MenuNode[]; area: 'workbench' | 'admin' }>()
@@ -112,6 +113,12 @@ function toggleSearch() {
 
 defineExpose({ toggleSearch })
 
+// ---------- 智能助手：右边的抽屉，查一次服务好不好，用不了的标出来（不弹报错） ----------
+const assistant = useAssistant()
+const showAssistant = computed(() => props.area === 'workbench' && assistant.enabled.value)
+const ASSISTANT_SHORTCUT = IS_MAC ? '⌘J' : 'Ctrl J'
+watch(showAssistant, (on) => on && void assistant.checkHealth(), { immediate: true })
+
 // ---------- 当前用户 ----------
 const passwordVisible = ref(false)
 const nickname = computed(() => store.info?.nickname ?? '')
@@ -194,6 +201,20 @@ async function onCommand(command: string) {
       </nav>
 
       <div class="side-foot">
+        <button
+          v-if="showAssistant"
+          type="button"
+          class="nav-i util"
+          :class="{ on: assistant.state.open }"
+          :aria-pressed="assistant.state.open"
+          :title="assistant.unavailable.value ? `暂时用不了：${assistant.state.statusMessage}` : `智能助手（${ASSISTANT_SHORTCUT}）`"
+          @click="assistant.toggle()"
+        >
+          <el-icon><ChatDotRound /></el-icon>
+          <span class="label">智能助手</span>
+          <small v-if="assistant.unavailable.value" class="ast-off">暂时用不了</small>
+          <kbd v-else>{{ ASSISTANT_SHORTCUT }}</kbd>
+        </button>
         <router-link v-if="area === 'workbench' && store.isAdmin" to="/admin" class="nav-i util">
           <el-icon><Setting /></el-icon><span class="label">管理后台</span>
         </router-link>
@@ -219,7 +240,7 @@ async function onCommand(command: string) {
     </div>
     <PasswordDialog v-model="passwordVisible" />
   </aside>
-  <CommandPalette v-model="paletteOpen" :pages="palettePages" />
+  <CommandPalette v-model="paletteOpen" :pages="palettePages" :can-ask="showAssistant" @ask="assistant.ask($event)" />
 </template>
 
 <style scoped>
@@ -522,6 +543,17 @@ async function onCommand(command: string) {
 .util {
   height: 28px;
   font-size: 12.5px;
+}
+
+.util kbd,
+.ast-off {
+  flex: none;
+}
+
+/* 智能助手调不通：灰字说一句，不弹报错（RFC 009 §6.1） */
+.ast-off {
+  font-size: 11px;
+  color: var(--lm-side-text-dim);
 }
 
 .me-wrap {

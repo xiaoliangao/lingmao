@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { assistantApi } from '@/api/assistant'
 import { aiSwitchApi } from '@/api/system'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -11,11 +12,13 @@ import { formatDateTime } from '@/utils/format'
 
 /**
  * 管理后台 › AI 功能（RFC 017 §3.7）：只给超级管理员。一个总开关，管所有让模型或 agent 碰系统的功能。
- * 改了立刻生效（后端每次都读，助手令牌、agent 的请求随各自那一档上线时接上拦截）；别人的入口看登录信息的 features.ai，刷新页面后才变。
- * 下面的表列出它管哪几档。现在都还没上线，开关打开也没有变化；哪一档上线了，把它的 live 改成 true，再加它自己的分开关
+ * 改了立刻生效（后端每次都读：助手令牌换不到、换到的也用不了）；别人的入口看登录信息的 features.ai，刷新页面后才变。
+ * 下面的表列出它管哪几档；哪一档上线了，把它的 live 改成 true。现在只有助手上线，总开关就是它的开关；
+ * 第二档上线时再加各档的分开关（RFC 017 §3.7 "分开关随那一档做"）。
+ * 打开前的确认按助手服务的 /assistant/info 说数据去哪（外部模型还是内网模型），服务没起也照样能开
  */
 const FEATURES = [
-  { name: '助手', what: '一句话问数、打开筛好的列表、问"为什么不能反审核"', live: false },
+  { name: '助手', what: '侧边栏和 ⌘K 里问单据、库存、进度，替用户查系统、回答带单据链接；只能查不能改', live: true },
   { name: '识别预填', what: '拍码单、报价截图、工艺单，识别后填进新建表单，人核对了再保存', live: false },
   { name: '企查查 agent', what: '定期查供应商的工商和风险，结果送回供应商档案', live: false },
   { name: '后台归因', what: '把超耗、生产异常按原因归类', live: false },
@@ -43,15 +46,27 @@ async function load() {
 
 onMounted(() => void load())
 
+/** 打开前说清楚数据去哪：问助手服务配的是外部模型还是内网模型；服务没起、没配模型的，说打开后入口显示"暂时用不了" */
+async function whereDataGoes(): Promise<string> {
+  const ask = '打开后，角色里勾了"使用智能助手"的人能在侧边栏和 ⌘K 里问助手（只能查、不能改）。'
+  try {
+    const { model } = await assistantApi.info()
+    if (model.mode === 'external') return `${ask}他们的问题和助手替他们查到的数据，会发给外部的模型服务（数据离开公司）。`
+    if (model.mode === 'self-hosted') return `${ask}问题和查到的数据发给公司内网部署的模型，不出公司。`
+    return `${ask}智能助手还没有配置模型（部署手册第 10 节），打开后入口会显示"暂时用不了"。`
+  } catch {
+    return `${ask}智能助手的服务现在没有启动（部署手册第 10 节），打开后入口会显示"暂时用不了"；服务起来、配好模型以后，问题和查到的数据会发给配的模型。`
+  }
+}
+
 /** 开关不直接改值：先问一句，后端改成功了再按返回的显示 */
 async function toggle(): Promise<boolean> {
   if (!data.value) return false
   const on = !data.value.enabled
+  const message = on ? await whereDataGoes() : '关闭后，谁也问不了助手，正在答的那一句再查系统会被拒；对话记录都留着，再打开接着用。'
   try {
     await ElMessageBox.confirm(
-      on
-        ? '打开后，已上线的 AI 功能就能用：用户的问题和他能看到的数据会发给部署时配的模型。现在还没有上线的 AI 功能，打开后没有变化。'
-        : '关闭后，助手和 agent 的请求马上被拒；对话、提案、风险记录都留着，再打开接着用。',
+      message,
       on ? '打开 AI 功能' : '关闭 AI 功能',
       { confirmButtonText: on ? '打开' : '关闭', cancelButtonText: '取消', type: on ? 'info' : 'warning' },
     )

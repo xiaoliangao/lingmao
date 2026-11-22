@@ -239,6 +239,8 @@ export function systemPrompt(systemName: string, me: Me, perms: ReadonlySet<stri
 
 /**
  * 回答里只留站内页面的链接。不去"认出"各种坏写法（引用式、实体、嵌套括号、拆开的 HTML……认不全），反过来只放行一种：
+ *   0. 模型偶尔夹的常见 HTML 标签（<b>、<br>、<a href>、表格里的 <br>……）去掉、只留里面的字，script / style 连内容去掉，
+ *      反复去到不变为止（<<b>b> 这种拆开的也去干净）。只为好看（原样换全角显示成"＜b>粗＜/b>"，用户 11-22 嫌难看），安全不靠这一步；
  *   1. 先把 [文字](/页面) 收起来——文字里没有方括号、尖括号、换行和网址，地址是 PAGES 里的页面。
  *      地址像网址、路径的（[官网](https://…)、[x](javascript:…)）只留文字；像 [待审核](共3张) 这种不是地址的原样留给第 2 步；
  *   2. 剩下的 [ ] < 一律换成全角 ［ ］ ＜：拼不出任何链接、图片、引用定义、自动链接和 HTML；
@@ -249,7 +251,7 @@ export function systemPrompt(systemName: string, me: Me, perms: ReadonlySet<stri
  */
 export function sanitize(text: string): string {
   const kept: string[] = []
-  let s = cleanMessage(text).replace(/!+(?=\[)/g, '')
+  let s = stripHtml(cleanMessage(text)).replace(/!+(?=\[)/g, '')
   // 地址里允许一层括号，只为把 [x](javascript:alert(1)) 这种整段换成文字、显示干净；认不全的写法照样在第 2 步被换掉，安全不靠这一步
   s = s.replace(/\[([^[\]\n]{1,100})\]\(((?:[^()\n]|\([^()\n]*\))*)\)/g, (whole: string, label: string, target: string) => {
     if (LINK_TARGET.test(target) && !/[<>]/.test(label) && !WEB_ADDRESS.test(label)) {
@@ -261,6 +263,23 @@ export function sanitize(text: string): string {
   s = s.replace(/\[/g, '［').replace(/\]/g, '］').replace(/</g, '＜')
   s = s.replace(new RegExp(WEB_ADDRESS.source, 'gi'), '（外部链接已去掉）')
   return s.replace(/!+(?=\u0000)/g, '').replace(/\u0000(\d+)\u0000/g, (_m, i: string) => kept[Number(i)] ?? '')
+}
+
+/** 常见的 HTML 标签：名字在下面、属性以英文字母开头（<x>、"a<b 且 c>d" 里的 <b 且 c> 不算，后面换成全角 ＜） */
+const HTML_TAG =
+  /<\/?(?:a|b|i|u|s|em|strong|span|div|p|font|small|big|mark|del|ins|sub|sup|code|pre|kbd|h[1-6]|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|td|th|caption|center|img|hr|blockquote|details|summary|iframe|svg|input|button|form)(?:\s+[a-z][^<>]*)?\s*\/?>/gi
+
+export function stripHtml(text: string): string {
+  let s = text
+  for (let before = ''; before !== s; ) {
+    before = s
+    s = s
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<(script|style)(?:\s+[a-z][^<>]*)?>[\s\S]*?<\/\1\s*>/gi, '')
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(HTML_TAG, '')
+  }
+  return s
 }
 
 /** 网址：http(s)/ftp:// 或 www. 开头，到空白、中文标点、引号括号为止 */

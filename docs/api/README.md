@@ -36,6 +36,7 @@
 | 首页的概况、待办 | `/home` | `5a-home-style.js` 的 `/` | [06-首页](06-首页.md) |
 | 上游已变更、待处理 | `/upstream` | `5a-home-style.js` | 06 |
 | 设置 › 审批（管理后台） | `/system/approval-rule` | `7-pages-master.js` 的 `/settings` | 本文 §4.6 |
+| 智能助手（业务菜单侧的右侧抽屉，不是页面） | — | 没有，RFC 009 §6 | [08-智能助手](08-智能助手.md) |
 
 单据详情页的地址写在 `web/src/utils/docRoute.ts`：报错清单、"下游单据"页签、首页待办里点单号都用它。
 
@@ -283,3 +284,4 @@ cd web && pnpm dev:mock
 | 11-21 | §3.3 登录信息加 `features.ai`（AI 功能统一开关，RFC 017 §3.7）；开关本身是管理后台的 `GET`、`PUT /api/admin/ai-switch`，只给超级管理员，写在 Swagger |
 | 11-21 | §4.3 操作记录加 `diff`（物料、款式、供应商的字段级改前改后，RFC 016 §3） |
 | 11-22 | §3.3 登录信息加 `canSeeAll`（数据范围是"全部"）：只有这样的人列表上才出"我的 / 全部"（PRD §3.2） |
+| 11-22 | 加 [08-智能助手](08-智能助手.md)：助手服务的 `/assistant/*`（SSE 问话、对话记录、health、info），前端抽屉和入口（RFC 017 §13 第③步） |

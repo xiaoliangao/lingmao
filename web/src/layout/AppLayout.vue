@@ -2,10 +2,12 @@
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { onBeforeRouteLeave, useRoute, type RouteLocationNormalizedLoaded } from 'vue-router'
+import { useAssistant } from '@/composables/useAssistant'
 import { useSidebar } from '@/composables/useSidebar'
 import { cacheNameOf, useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 import ModuleBoundary from '@/components/ModuleBoundary.vue'
+import AssistantPanel from '@/components/assistant/AssistantPanel.vue'
 import AppSidebar from './AppSidebar.vue'
 import TabsBar from './TabsBar.vue'
 
@@ -14,7 +16,8 @@ import TabsBar from './TabsBar.vue'
  * - 首页这一侧（/，所有人）：右边顶上多一条页签，开过的菜单页面用 keep-alive 留着，切回来还是原来的样子
  * - 管理后台（/admin，只有超级管理员）：没有页签，点哪页显示哪页
  *
- * 快捷键：[ 收起 / 展开侧边栏；⌘K（Windows 上 Ctrl+K）打开 / 关掉快捷跳转（侧边栏的"搜索功能"）
+ * 快捷键：[ 收起 / 展开侧边栏；⌘K（Windows 上 Ctrl+K）打开 / 关掉快捷跳转（侧边栏的"搜索功能"）；
+ * ⌘J（Ctrl+J）打开 / 关掉智能助手的抽屉（只在首页这一侧、有入口的人）。抽屉在右边，和页面并排（docs/api/08-智能助手.md）
  */
 const props = defineProps<{ area: 'workbench' | 'admin' }>()
 
@@ -22,7 +25,9 @@ const route = useRoute()
 const store = useUserStore()
 const tabs = useTabsStore()
 const { toggle, closeDrawer } = useSidebar()
+const assistant = useAssistant()
 const withTabs = computed(() => props.area === 'workbench')
+const withAssistant = computed(() => withTabs.value && assistant.enabled.value)
 const menus = computed(() => (props.area === 'admin' ? store.adminMenus : store.workbenchMenus))
 
 const main = ref<HTMLElement>()
@@ -102,6 +107,11 @@ function onKey(event: KeyboardEvent) {
     sidebar.value?.toggleSearch()
     return
   }
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'j' && withAssistant.value) {
+    event.preventDefault()
+    assistant.toggle()
+    return
+  }
   const bracket = event.key === '[' || event.key === '【' || (event.code === 'BracketLeft' && !event.shiftKey)
   if (bracket && !event.metaKey && !event.ctrlKey && !event.altKey && !typing(event.target) && !overlayOpen()) {
     event.preventDefault()
@@ -134,5 +144,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </router-view>
       </main>
     </div>
+    <AssistantPanel v-if="withAssistant && assistant.state.open" />
   </div>
 </template>
