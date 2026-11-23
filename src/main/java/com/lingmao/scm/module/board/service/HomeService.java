@@ -16,7 +16,8 @@ import java.util.List;
 public interface HomeService {
 
     /** 四个概况格子 */
-    HomeKpi kpi();
+    default HomeKpi kpi(){return kpi(null);}
+    HomeKpi kpi(Long companyId);
 
     /** 待办分组和"其他提醒"的数 */
     HomeTodos todos(HomeTodoQuery query);

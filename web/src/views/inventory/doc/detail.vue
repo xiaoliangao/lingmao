@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
@@ -173,7 +174,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
               <div class="dim small">{{ row.materialName }}<template v-if="row.colorName"> · {{ row.colorName }}</template></div>
             </template>
           </el-table-column>
-          <el-table-column v-if="showStock" label="出仓库存" width="110" class-name="num" align="right">
+          <el-table-column v-if="showStock" label="出仓库存" width="180" class-name="num" align="right">
             <template #default="{ row }">
               <span :class="{ danger: short(row as InvDocItem) }">{{ row.fromStockQty === null ? '—' : formatQty(row.fromStockQty) }}</span>
               <div v-if="short(row as InvDocItem)" class="danger small">库存不够</div>
@@ -182,7 +183,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
           <el-table-column label="数量" width="180" class-name="num" align="right">
             <template #default="{ row }">{{ formatQty(row.qty) }} <span class="dim">{{ units.labelOf(row.stockUnit) }}</span></template>
           </el-table-column>
-          <el-table-column v-if="isPurchase" label="采购单位数量" width="120" class-name="num" align="right">
+          <el-table-column v-if="isPurchase" label="采购单位数量" width="180" class-name="num" align="right">
             <template #default="{ row }">
               <template v-if="row.purchaseQty !== null">{{ formatQty(row.purchaseQty) }} <span class="dim">{{ units.labelOf(row.purchaseUnit ?? '') }}</span></template>
               <span v-else class="dim">—</span>
@@ -197,7 +198,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
           <el-table-column label="缸号" width="110">
             <template #default="{ row }">{{ row.dyeLot || '—' }}</template>
           </el-table-column>
-          <el-table-column label="卷数" width="64" class-name="num" align="right">
+          <el-table-column label="卷数" width="110" class-name="num" align="right">
             <template #default="{ row }">{{ row.rolls ?? '—' }}</template>
           </el-table-column>
           <el-table-column v-if="detail.docType === 'ISSUE_OUT'" label="超领原因" min-width="120">
@@ -210,6 +211,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
       </div>
 
       <aside class="doc-aside">
+        <ObjectTags type="INV_DOC" :object-id="id" :company-id="detail.companyId" :editable="detail.status === 'DRAFT' && can('edit')" @saved="logRef?.reload()" />
         <section class="panel">
           <div class="panel-head">单据信息</div>
           <div class="panel-body">

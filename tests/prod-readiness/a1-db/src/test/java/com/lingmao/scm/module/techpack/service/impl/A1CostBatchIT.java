@@ -220,20 +220,21 @@ class A1CostBatchIT {
         var pack = packs.selectById(packIds.getFirst()); var context = owners.context(pack);
         assertThat(context.colors()).hasSize(50);
         // Match the reference-dictionary cache state; BOM, material and price SQL remains uncached.
-        for (String dictionary : List.of("unit", "season", "process_category")) dictionaries.listByType(dictionary);
+        for (String dictionary : List.of("unit", "season", "packing_mode", "process_category")) dictionaries.listByType(dictionary);
         var smallCapture = SqlStatementCapture.capture(() -> pdf.sheet(pack, context, context.colors().subList(0, 1), true));
         var largeCapture = SqlStatementCapture.capture(() -> pdf.sheet(pack, context, context.colors(), true));
         List<String> small = sqlText(smallCapture.statements()), large = sqlText(largeCapture.statements());
         PdfSheet first = smallCapture.result(), fifty = largeCapture.result();
+        // Preserve both raw SQL sequences even when the cardinality assertion fails in CI.
+        Path artifacts = Path.of("target", "a2-production"); Files.createDirectories(artifacts);
+        Files.writeString(artifacts.resolve("pdf-color-query-count.json"), json.writeValueAsString(Map.of(
+                "oneColorSelects", small.size(), "fiftyColorSelects", large.size(), "firstColorCost", fifty.getCost().getTotal(),
+                "one", small, "fifty", large)));
         assertThat(large).hasSize(small.size());
         assertThat(fifty.getBoms()).hasSize(50);
         assertThat(fifty.getBoms().getFirst()).usingRecursiveComparison().isEqualTo(first.getBoms().getFirst());
         assertThat(fifty.getCost()).usingRecursiveComparison().isEqualTo(first.getCost());
         assertThat(fifty.getCost().getTotal()).isEqualTo("8.10");
-        Path artifacts = Path.of("target", "a2-production"); Files.createDirectories(artifacts);
-        Files.writeString(artifacts.resolve("pdf-color-query-count.json"), json.writeValueAsString(Map.of(
-                "oneColorSelects", small.size(), "fiftyColorSelects", large.size(), "firstColorCost", fifty.getCost().getTotal(),
-                "one", small, "fifty", large)));
     }
 
     @AfterAll

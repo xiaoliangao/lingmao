@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { useLatestRequest } from '@/composables/useLatestRequest'
+import { useEntityContext, useEntityRead } from '@/composables/useEntityContext'
 import ThumbImage from '@/components/ThumbImage.vue'
 import { businessToday } from '@/utils/businessDate'
-import { computed, onActivated, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { homeApi } from '@/api/home'
 import { backupApi } from '@/api/system'
@@ -122,14 +122,15 @@ const SCOPE_OPTIONS = [
 ]
 
 let kpiSeq = 0
-const loadKpiRequest = useLatestRequest()
+const loadKpiRequest = useEntityRead()
 async function loadKpi() {
   const read = loadKpiRequest.begin()
   const seq = ++kpiSeq
+  const companyId = store.defaultCompanyId ?? undefined
   loadingKpi.value = true
   kpiFailed.value = false
   try {
-    const result = await read.run(() => homeApi.kpi())
+    const result = await read.run(() => homeApi.kpi(companyId))
     if (!read.current()) return
     if (seq === kpiSeq) kpi.value = result
   } catch {
@@ -144,7 +145,7 @@ async function loadKpi() {
 }
 
 let todoSeq = 0
-const loadTodosRequest = useLatestRequest()
+const loadTodosRequest = useEntityRead()
 async function loadTodos() {
   const read = loadTodosRequest.begin()
   const seq = ++todoSeq
@@ -171,7 +172,7 @@ async function loadTodos() {
 }
 
 let deliverySeq = 0
-const loadDeliveriesRequest = useLatestRequest()
+const loadDeliveriesRequest = useEntityRead()
 async function loadDeliveries() {
   const read = loadDeliveriesRequest.begin()
   const seq = ++deliverySeq
@@ -193,7 +194,7 @@ async function loadDeliveries() {
 }
 
 const backup = ref<BackupStatus | null>(null)
-const loadBackupRequest = useLatestRequest()
+const loadBackupRequest = useEntityRead()
 async function loadBackup() {
   const read = loadBackupRequest.begin()
   if (!store.isAdmin) return
@@ -214,6 +215,16 @@ function reloadAll() {
   void loadBackup()
 }
 
+const homeContext: ReturnType<typeof useEntityContext> = useEntityContext(() => {
+  loadKpiRequest.cancel(); loadTodosRequest.cancel(); loadDeliveriesRequest.cancel(); loadBackupRequest.cancel()
+  kpi.value = null; todos.value = null; deliveries.value = []; backup.value = null
+  kpiFailed.value = false; todosFailed.value = false; deliveriesFailed.value = false
+  loadingKpi.value = true; loadingTodos.value = true; loadingDeliveries.value = true
+  const current = homeContext.capture()
+  // 一次身份更新可能连续改变主体、角色与权限；仅最后一次有效上下文补读。
+  void nextTick().then(() => { if (current() && store.info && store.token) reloadAll() })
+})
+watch(() => JSON.stringify([...(store.info?.perms ?? [])].sort()), () => homeContext.cancel(), { flush: 'sync' })
 onMounted(reloadAll)
 let activatedOnce = false
 onActivated(() => {
@@ -259,12 +270,20 @@ const allPreview = computed(() =>
 const activeGroup = computed<TodoGroup | null>(() =>
   activeTodoGroup.value === 'ALL' ? null : ((todos.value?.groups ?? []).find((g) => g.key === activeTodoGroup.value) ?? null),
 )
-const moreOf = (g: TodoGroup) => (g.total > g.items.length ? TODO_GROUP_MORE[g.key] : null)
+const moreOf = (g: TodoGroup) => {
+  if (g.total <= g.items.length) return null
+  const to = TODO_GROUP_MORE[g.key]
+  if (g.key === 'SAMPLE_REVIEW' || g.key === 'SAMPLE_LATE') {
+    const company = g.items[0]?.ref.companyId
+    return company && to ? `${to}&companyId=${encodeURIComponent(company)}` : null
+  }
+  return to
+}
 const itemKey = (key: string, item: TodoItem) => `${key}-${item.ref.type}-${item.ref.id}`
 
 function countTo(count: TodoCount) {
   const base = TODO_COUNT[count.key].to
-  return count.key === 'FG_PENDING' && count.companyId ? `${base}&companyId=${encodeURIComponent(count.companyId)}` : base
+  return count.companyId ? `${base}&companyId=${encodeURIComponent(count.companyId)}` : base
 }
 
 function goRef(item: TodoItem | DeliveryRow) {
@@ -313,15 +332,23 @@ const backupLine = computed(() => {
       </el-alert>
       <p v-else-if="loadingKpi" role="status" class="dim">正在取得概况…</p>
       <section v-else-if="hasAnyKpi && kpi" class="kpi-grid">
-        <div v-if="kpi.dev" class="kpi-card">
-          <button type="button" class="kpi-top" @click="router.push('/styles')">
+        <div v-if="kpi.dev && (store.hasPerm('style:style:list') || store.hasPerm('dev:sample:list') || (kpi.dev.packDraftCount !== null && store.hasPerm('techpack:pack:list')))" class="kpi-card">
+          <button v-if="kpi.dev.styleCount !== null && store.hasPerm('style:style:list')" type="button" class="kpi-top" @click="router.push('/styles')">
             <span class="kpi-label">开发款式</span>
             <strong class="kpi-num num">{{ formatQty(kpi.dev.styleCount) }}<small>款</small></strong>
           </button>
-          <div class="kpi-subs">
-            <span class="sub-chip static">
+          <button v-else-if="kpi.dev.sampleMakingCount !== null && kpi.dev.companyId && store.hasPerm('dev:sample:list')" type="button" class="kpi-top" @click="router.push(`/samples?status=MAKING&companyId=${kpi.dev.companyId}`)">
+            <span class="kpi-label">打样中</span><strong class="kpi-num num">{{ formatQty(kpi.dev.sampleMakingCount) }}<small>款</small></strong>
+          </button>
+          <div v-else-if="kpi.dev.packDraftCount !== null && store.hasPerm('techpack:pack:list')" class="kpi-top"><span class="kpi-label">资料包草稿</span><strong class="kpi-num num">{{ formatQty(kpi.dev.packDraftCount) }}<small>份</small></strong></div>
+          <div v-else class="kpi-top"><span class="kpi-label">研发打样</span><span class="dim">选择主体后查看</span></div>
+          <div v-if="(kpi.dev.styleCount !== null && store.hasPerm('style:style:list')) || (kpi.dev.sampleMakingCount !== null && kpi.dev.companyId && store.hasPerm('dev:sample:list'))" class="kpi-subs">
+            <span v-if="kpi.dev.packDraftCount !== null && store.hasPerm('techpack:pack:list')" class="sub-chip static">
               资料包草稿 <b class="num" :class="toneOf(kpi.dev.packDraftCount, 'warn')">{{ kpi.dev.packDraftCount }}</b>
             </span>
+            <button v-if="kpi.dev.styleCount !== null && kpi.dev.sampleMakingCount !== null && kpi.dev.companyId && store.hasPerm('dev:sample:list')" type="button" class="sub-chip" @click="router.push(`/samples?status=MAKING&companyId=${kpi.dev.companyId}`)">
+              打样中 <b class="num" :class="toneOf(kpi.dev.sampleMakingCount, 'warn')">{{ kpi.dev.sampleMakingCount }}</b>
+            </button>
           </div>
         </div>
 

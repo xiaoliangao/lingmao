@@ -56,6 +56,7 @@ const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: strin
   { parent: '/materials', file: 'basic/material/detail', title: '物料' },
   { parent: '/suppliers', file: 'supplier/supplier/detail', title: '供应商' },
   { parent: '/styles', file: 'style/style/detail', title: '款式' },
+  { parent: '/samples', file: 'dev/sample/detail', title: '样衣' },
   { parent: '/styles', path: '/styles/new', file: 'style/style/form', title: '新建款式' },
   { parent: '/styles', path: '/styles/:id(\\d+)/edit', file: 'style/style/form', title: '编辑款式' },
   // 第 3、4 批（docs/api 各模块文档的"页面"一节）

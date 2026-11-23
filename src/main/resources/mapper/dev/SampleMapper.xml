@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.dev.mapper.SampleMapper">
+    <sql id="currentOrder">
+        LEFT JOIN LATERAL (
+            SELECT x.* FROM dev_sample_order x
+            WHERE x.tenant_key=s.tenant_key AND x.company_id=s.company_id AND x.sample_id=s.id
+            ORDER BY x.sample_version DESC LIMIT 1
+        ) o ON true
+    </sql>
+    <sql id="scope">
+        <if test="scope.self">
+            AND (s.create_by=#{scope.userId} OR s.designer_id=#{scope.userId} OR o.maker_id=#{scope.userId})
+        </if>
+    </sql>
+    <select id="selectVisible" resultType="com.lingmao.scm.module.dev.entity.Sample">
+        SELECT s.* FROM dev_sample s <include refid="currentOrder"/>
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{id} AND s.deleted_token=0
+        <include refid="scope"/>
+    </select>
+    <select id="selectIdentity" resultType="com.lingmao.scm.module.dev.entity.Sample">
+        SELECT s.* FROM dev_sample s <include refid="currentOrder"/>
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{id}
+        <include refid="scope"/>
+    </select>
+    <select id="selectByStyle" resultType="com.lingmao.scm.module.dev.entity.Sample">
+        SELECT s.* FROM dev_sample s <include refid="currentOrder"/>
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.converted_style_id=#{styleId} AND s.deleted_token=0
+        <include refid="scope"/>
+    </select>
+    <select id="selectVisibleIds" resultType="com.lingmao.scm.module.dev.entity.Sample">
+        SELECT s.* FROM dev_sample s <include refid="currentOrder"/>
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.deleted_token=0
+        <choose><when test="ids != null and !ids.isEmpty()">
+            AND s.id IN <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        </when><otherwise>AND false</otherwise></choose>
+        <include refid="scope"/> ORDER BY s.id LIMIT 101
+    </select>
+    <select id="selectConvertedSource" resultType="com.lingmao.scm.module.dev.entity.Sample">
+        SELECT s.* FROM dev_sample s
+        WHERE s.tenant_key=#{tenant} AND s.converted_style_id=#{styleId} AND s.deleted_token=0 LIMIT 1
+    </select>
+    <select id="lockVisible" resultType="com.lingmao.scm.module.dev.entity.Sample">
+        SELECT s.* FROM dev_sample s <include refid="currentOrder"/>
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{id} AND s.deleted_token=0
+        <include refid="scope"/> FOR UPDATE OF s
+    </select>
+    <sql id="currentNode">
+        LEFT JOIN LATERAL (
+            SELECT n.* FROM dev_sample_node n
+            WHERE n.tenant_key=o.tenant_key AND n.company_id=o.company_id AND n.sample_order_id=o.id AND n.done_date IS NULL
+            ORDER BY n.seq,n.id LIMIT 1
+        ) cn ON true
+    </sql>
+    <!-- A batch has at most 100 exact codes. Resolve its unique same-company heads before
+         ORDER BY/LIMIT can choose to visit every head and run LATERAL for the whole company.
+         Both code namespaces are unique, so this materialized set has at most 200 heads.
+         SELF, dates and business filters below still run before public pagination/counting. -->
+    <sql id="batchCandidates">
+        <if test="codes != null">
+            WITH matching_samples AS MATERIALIZED (
+                SELECT s.* FROM dev_sample s
+                WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.deleted_token=0
+                    AND s.id IN (
+                        SELECT b.id FROM dev_sample b
+                        WHERE b.tenant_key=#{tenant} AND b.company_id=#{companyId} AND b.deleted_token=0
+                            AND b.code IN <foreach collection="codes" item="code" open="(" close=")" separator=",">#{code}</foreach>
+                        UNION
+                        SELECT d.sample_id FROM dev_sample_order d
+                        WHERE d.tenant_key=#{tenant} AND d.company_id=#{companyId}
+                            AND d.no IN <foreach collection="codes" item="code" open="(" close=")" separator=",">#{code}</foreach>
+                    )
+            )
+        </if>
+    </sql>
+    <sql id="searchHeads">
+        FROM <choose><when test="codes != null">matching_samples</when><otherwise>dev_sample</otherwise></choose> s
+    </sql>
+    <sql id="filters">
+        s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.deleted_token=0
+        <include refid="scope"/>
+        <if test="q.impossibleKeyword">AND false</if>
+        <if test="codes == null and keyword != null">
+                AND (s.code ILIKE #{keyword} OR s.name ILIKE #{keyword}
+                    OR EXISTS(SELECT 1 FROM dev_sample_order k WHERE k.tenant_key=s.tenant_key AND k.company_id=s.company_id
+                        AND k.sample_id=s.id AND k.no ILIKE #{keyword}))
+        </if>
+        <if test="q.categoryIds != null">
+            <choose><when test="!q.categoryIds.isEmpty()">
+                AND s.category_id IN <foreach collection="q.categoryIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+            </when><otherwise>AND false</otherwise></choose>
+        </if>
+        <if test="q.year != null">AND s.year=#{q.year}</if>
+        <if test="q.season != null and q.season != ''">AND s.season=#{q.season}</if>
+        <if test="q.brand != null and q.brand != ''">AND s.brand=#{q.brand}</if>
+        <if test="q.designerId != null">AND s.designer_id=#{q.designerId}</if>
+        <if test="q.factoryId != null">AND o.factory_id=#{q.factoryId}</if>
+        <if test="q.makerId != null">AND o.maker_id=#{q.makerId}</if>
+        <if test="q.nodeCode != null and q.nodeCode != ''">AND cn.node_code=#{q.nodeCode}</if>
+        <if test="q.late">AND EXISTS(SELECT 1 FROM dev_sample_node ln
+            WHERE ln.tenant_key=s.tenant_key AND ln.company_id=s.company_id AND ln.sample_order_id=o.id
+            AND ln.done_date IS NULL AND ln.plan_date &lt; #{today}) AND o.status IN ('MAKING','WAIT_REVIEW')</if>
+        <if test="q.needFrom != null">AND o.need_date &gt;= #{q.needFrom}</if>
+        <if test="q.needTo != null">AND o.need_date &lt; (CAST(#{q.needTo} AS date)+1)</if>
+        <if test="q.createdFrom != null">AND s.create_time &gt;= (CAST(#{q.createdFrom} AS date)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
+        <if test="q.createdTo != null">AND s.create_time &lt; ((CAST(#{q.createdTo} AS date)+1)::timestamp AT TIME ZONE 'Asia/Shanghai')</if>
+    </sql>
+    <sql id="rowColumns">
+        s.*,c.name AS category_name,u.nickname AS designer_name,pm.nickname AS pattern_maker_name,
+            st.code AS converted_style_code,o.id AS current_order_id,o.no AS current_order_no,
+            o.sample_version AS current_sample_version,o.version AS current_order_version,o.sample_type,
+            o.status AS order_status,o.make_way,o.factory_id,f.short_name AS factory_name,
+            o.maker_id,m.nickname AS maker_name,o.qty,o.need_date,
+            cn.id AS current_node_id,cn.node_code AS current_node_code,cn.node_name AS current_node_name,
+            cn.plan_date AS current_node_plan_date,cn.owner_id AS current_node_owner_id,nu.nickname AS current_node_owner_name,
+            (o.status IN ('MAKING','WAIT_REVIEW') AND EXISTS(SELECT 1 FROM dev_sample_node ln
+                WHERE ln.tenant_key=s.tenant_key AND ln.company_id=s.company_id AND ln.sample_order_id=o.id
+                AND ln.done_date IS NULL AND ln.plan_date &lt; #{today})) AS late,
+            CASE WHEN s.status='DEVELOPING' THEN o.status ELSE s.status END AS show_status
+    </sql>
+    <sql id="displayJoins">
+        LEFT JOIN bas_category c ON c.id=s.category_id
+        LEFT JOIN sys_user u ON u.id=s.designer_id LEFT JOIN sys_user pm ON pm.id=s.pattern_maker_id
+        LEFT JOIN sty_style st ON st.id=s.converted_style_id LEFT JOIN sup_supplier f ON f.id=o.factory_id
+        LEFT JOIN sys_user m ON m.id=o.maker_id LEFT JOIN sys_user nu ON nu.id=cn.owner_id
+    </sql>
+    <select id="selectRows" resultType="com.lingmao.scm.module.dev.mapper.SampleRow">
+        <include refid="batchCandidates"/>
+        SELECT <include refid="rowColumns"/>
+        <include refid="searchHeads"/> <include refid="currentOrder"/> <include refid="currentNode"/> <include refid="displayJoins"/>
+        WHERE <include refid="filters"/>
+        <if test="q.showStatus != null and q.showStatus != ''">
+            AND CASE WHEN s.status='DEVELOPING' THEN o.status ELSE s.status END=#{q.showStatus}
+        </if>
+        ORDER BY
+        <choose>
+            <when test="q.sort.name() == 'CREATED_ASC'">s.create_time ASC,s.id ASC</when>
+            <when test="q.sort.name() == 'NEED_ASC'">o.need_date ASC,s.id ASC</when>
+            <when test="q.sort.name() == 'NEED_DESC'">o.need_date DESC,s.id DESC</when>
+            <when test="q.sort.name() == 'CODE_ASC'">s.code ASC,s.id ASC</when>
+            <when test="q.sort.name() == 'CODE_DESC'">s.code DESC,s.id DESC</when>
+            <otherwise>s.create_time DESC,s.id DESC</otherwise>
+        </choose>
+    </select>
+    <select id="selectCounts" resultType="com.lingmao.scm.module.dev.mapper.SampleMapper$StatusCount">
+        <include refid="batchCandidates"/>
+        SELECT CASE WHEN s.status='DEVELOPING' THEN o.status ELSE s.status END AS status,count(*)::bigint AS total
+        <include refid="searchHeads"/> <include refid="currentOrder"/> <include refid="currentNode"/>
+        WHERE <include refid="filters"/>
+        GROUP BY CASE WHEN s.status='DEVELOPING' THEN o.status ELSE s.status END
+    </select>
+    <sql id="homeFilters">
+        s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.deleted_token=0 AND s.status='DEVELOPING'
+        <include refid="scope"/>
+        <choose>
+            <when test="kind == 'REVIEW'">
+                AND o.status='WAIT_REVIEW'
+                <if test="ownerId != null">AND s.designer_id=#{ownerId}</if>
+            </when>
+            <when test="kind == 'LATE'">
+                AND o.status='MAKING' AND EXISTS(SELECT 1 FROM dev_sample_node n
+                    WHERE n.tenant_key=s.tenant_key AND n.company_id=s.company_id AND n.sample_order_id=o.id
+                        AND n.done_date IS NULL AND n.plan_date &lt; #{today})
+                <if test="ownerId != null">AND cn.owner_id=#{ownerId}</if>
+            </when>
+            <otherwise>AND false</otherwise>
+        </choose>
+    </sql>
+    <select id="selectHomePreview" resultType="com.lingmao.scm.module.dev.mapper.SampleRow">
+        SELECT <include refid="rowColumns"/>,
+        <choose>
+            <when test="kind == 'REVIEW'">
+                COALESCE((SELECT n.done_date FROM dev_sample_node n
+                    WHERE n.tenant_key=s.tenant_key AND n.company_id=s.company_id AND n.sample_order_id=o.id AND n.node_code='SEND'),
+                    (o.update_time AT TIME ZONE 'Asia/Shanghai')::date)
+            </when>
+            <otherwise>
+                (SELECT min(n.plan_date) FROM dev_sample_node n
+                    WHERE n.tenant_key=s.tenant_key AND n.company_id=s.company_id AND n.sample_order_id=o.id AND n.done_date IS NULL)
+            </otherwise>
+        </choose> AS home_rank_date
+        FROM dev_sample s <include refid="currentOrder"/> <include refid="currentNode"/> <include refid="displayJoins"/>
+        WHERE <include refid="homeFilters"/>
+        ORDER BY home_rank_date ASC NULLS LAST,o.id ASC LIMIT #{limit}
+    </select>
+    <select id="selectHomeCount" resultType="long">
+        SELECT count(*) FROM dev_sample s <include refid="currentOrder"/> <include refid="currentNode"/>
+        WHERE <include refid="homeFilters"/>
+    </select>
+    <update id="updateCas">
+        UPDATE dev_sample SET company_id=#{row.companyId},name=#{row.name},brand=#{row.brand},category_id=#{row.categoryId},
+            year=#{row.year},season=#{row.season},wave=#{row.wave},designer_id=#{row.designerId},pattern_maker_id=#{row.patternMakerId},
+            source=#{row.source},customer_id=#{row.customerId},customer_style_no=#{row.customerStyleNo},size_group_id=#{row.sizeGroupId},
+            sample_factory_id=#{row.sampleFactoryId},fabric_supplier_id=#{row.fabricSupplierId},fabric_desc=#{row.fabricDesc},
+            expect_finish_date=#{row.expectFinishDate},est_tag_price=#{row.estTagPrice},est_cost=#{row.estCost},remark=#{row.remark},
+            status=#{row.status},converted_style_id=#{row.convertedStyleId},convert_by=#{row.convertBy},convert_time=#{row.convertTime},
+            version=version+1,update_by=#{row.updateBy},update_time=clock_timestamp()
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND id=#{row.id} AND deleted_token=0
+            AND version=#{expectedVersion} AND version &lt; 2147483647 AND status=#{expectedStatus}
+    </update>
+    <update id="touchCas">
+        UPDATE dev_sample SET version=version+1,update_by=#{actor},update_time=clock_timestamp()
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND id=#{id} AND deleted_token=0
+            AND version=#{expectedVersion} AND version &lt; 2147483647 AND status=#{expectedStatus}
+    </update>
+    <update id="tombstoneCas">
+        UPDATE dev_sample SET deleted_token=id,version=version+1,update_by=#{actor},update_time=clock_timestamp()
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND id=#{id} AND deleted_token=0
+            AND version=#{expectedVersion} AND version &lt; 2147483647 AND status='DEVELOPING'
+    </update>
+</mapper>

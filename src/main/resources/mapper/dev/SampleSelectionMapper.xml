@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.dev.mapper.SampleSelectionMapper">
+    <select id="selectSampleColors" resultType="com.lingmao.scm.module.dev.entity.SampleColor">
+        SELECT tenant_key,company_id,sample_id,color_id,seq FROM dev_sample_color
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND sample_id=#{sampleId} ORDER BY seq,color_id LIMIT 101
+    </select>
+    <select id="selectOrderColors" resultType="com.lingmao.scm.module.dev.entity.SampleOrderColor">
+        SELECT tenant_key,company_id,sample_order_id,color_id,seq,color_code,color_name,color_hex FROM dev_sample_order_color
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId}
+        <choose><when test="orderIds != null and !orderIds.isEmpty()">
+            AND sample_order_id IN <foreach collection="orderIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        </when><otherwise>AND false</otherwise></choose>
+        ORDER BY sample_order_id,seq,color_id LIMIT 10001
+    </select>
+    <select id="selectOrderSizes" resultType="com.lingmao.scm.module.dev.entity.SampleOrderSize">
+        SELECT tenant_key,company_id,sample_order_id,size_group_id,seq,size_code FROM dev_sample_order_size
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId}
+        <choose><when test="orderIds != null and !orderIds.isEmpty()">
+            AND sample_order_id IN <foreach collection="orderIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        </when><otherwise>AND false</otherwise></choose>
+        ORDER BY sample_order_id,seq,size_code LIMIT 10001
+    </select>
+    <delete id="deleteSampleColors">DELETE FROM dev_sample_color
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND sample_id=#{sampleId}</delete>
+    <delete id="deleteOrderColors">DELETE FROM dev_sample_order_color
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND sample_order_id=#{orderId}</delete>
+    <delete id="deleteOrderSizes">DELETE FROM dev_sample_order_size
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND sample_order_id=#{orderId}</delete>
+    <insert id="insertSampleColors">
+        INSERT INTO dev_sample_color(tenant_key,company_id,sample_id,color_id,seq) VALUES
+        <foreach collection="items" item="i" separator=",">(#{i.tenantKey},#{i.companyId},#{i.sampleId},#{i.colorId},#{i.seq})</foreach>
+    </insert>
+    <insert id="insertOrderColors">
+        INSERT INTO dev_sample_order_color(tenant_key,company_id,sample_order_id,color_id,seq,color_code,color_name,color_hex) VALUES
+        <foreach collection="items" item="i" separator=",">(#{i.tenantKey},#{i.companyId},#{i.sampleOrderId},#{i.colorId},#{i.seq},
+            #{i.colorCode},#{i.colorName},#{i.colorHex})</foreach>
+    </insert>
+    <insert id="insertOrderSizes">
+        INSERT INTO dev_sample_order_size(tenant_key,company_id,sample_order_id,size_group_id,seq,size_code) VALUES
+        <foreach collection="items" item="i" separator=",">(#{i.tenantKey},#{i.companyId},#{i.sampleOrderId},#{i.sizeGroupId},#{i.seq},#{i.sizeCode})</foreach>
+    </insert>
+    <update id="moveSampleColors">UPDATE dev_sample_color SET company_id=#{newCompany}
+        WHERE tenant_key=#{tenant} AND company_id=#{oldCompany} AND sample_id=#{sampleId}</update>
+    <update id="moveOrderColors">UPDATE dev_sample_order_color c SET company_id=#{newCompany}
+        FROM dev_sample_order o WHERE o.tenant_key=#{tenant} AND o.company_id=#{newCompany} AND o.sample_id=#{sampleId}
+        AND c.tenant_key=#{tenant} AND c.company_id=#{oldCompany} AND c.sample_order_id=o.id</update>
+    <update id="moveOrderSizes">UPDATE dev_sample_order_size c SET company_id=#{newCompany}
+        FROM dev_sample_order o WHERE o.tenant_key=#{tenant} AND o.company_id=#{newCompany} AND o.sample_id=#{sampleId}
+        AND c.tenant_key=#{tenant} AND c.company_id=#{oldCompany} AND c.sample_order_id=o.id</update>
+</mapper>

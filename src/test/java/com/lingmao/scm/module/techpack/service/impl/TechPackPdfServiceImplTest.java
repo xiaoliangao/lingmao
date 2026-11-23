@@ -82,6 +82,8 @@ class TechPackPdfServiceImplTest {
     private DocLogService docLogService;
     @Mock
     private PdfRenderer pdfRenderer;
+    @Mock
+    private PackReadTransactions snapshots;
 
     private TechPackPdfServiceImpl service;
     private TechPack pack;
@@ -89,7 +91,7 @@ class TechPackPdfServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new TechPackPdfServiceImpl(techPackMapper, packOwners, packContent, costCalculator, craftStandardService,
-                materialService, attachmentService, fileService, dictDataService, docLogService, pdfRenderer, CLOCK);
+                materialService, attachmentService, fileService, dictDataService, docLogService, pdfRenderer, CLOCK, snapshots);
         pack = new TechPack();
         pack.setId(7L);
         pack.setStyleId(1L);
@@ -190,7 +192,8 @@ class TechPackPdfServiceImplTest {
     /** 规则：只出一个颜色时，颜色要是款式现在启用的；不是 → 1000，不生成、不记操作记录 */
     @Test
     void export_rejectsColorNotOnStyle() {
-        when(techPackMapper.selectById(7L)).thenReturn(pack);
+        when(snapshots.read(any())).thenAnswer(call -> ((java.util.function.Supplier<?>) call.getArgument(0)).get());
+        when(packOwners.read(7L)).thenReturn(pack);
         when(packOwners.context(pack)).thenReturn(ctx());
 
         assertThatThrownBy(() -> service.export(7L, 99L, false, true))

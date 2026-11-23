@@ -11,6 +11,11 @@ import java.util.List;
 @Data
 public class TechPackOverviewVO {
     private Long styleId;
+    private Long sampleId;
+    private Long companyId;
+    private Boolean hasMore;
+    private Integer nextBeforeVersion;
+    private Long total;
     /** 研发在前、生产在后，各自新版本在前 */
     private List<TechPackBriefVO> packs;
     /** 生产草稿 > 生产已生效 > 研发草稿 > 研发已生效；一个都没有是 null */

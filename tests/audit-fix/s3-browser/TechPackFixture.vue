@@ -6,7 +6,7 @@ import { setSessionSubject } from '@/utils/token'
 import type { TechPackOverview } from '@/types/techpack'
 
 const user = useUserStore()
-user.info = { id: '9007199254740993', username: 'synthetic', nickname: '资料包回归', roles: [], perms: ['techpack:cost:query'], menus: [], defaultCompany: { id: '1', name: '合成主体' } }
+user.info = { id: '9007199254740993', username: 'synthetic', nickname: '资料包回归', roles: [], perms: ['techpack:pack:list', 'techpack:pack:edit', 'techpack:cost:query'], menus: [], defaultCompany: { id: '1', name: '合成主体' } }
 setSessionSubject(user.info.id)
 const pack = ref<InstanceType<typeof TechPackTab>>()
 const overview: TechPackOverview = {

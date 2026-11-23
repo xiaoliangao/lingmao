@@ -31,7 +31,7 @@
         SELECT p.id, p.style_id, s.code AS style_code, s.name AS style_name, p.version, p.create_by, p.create_time
         FROM tp_tech_pack p
         JOIN sty_style s ON s.id = p.style_id
-        WHERE p.status = 'DRAFT'
+        WHERE p.style_id IS NOT NULL AND p.status = 'DRAFT'
         ORDER BY p.create_time, p.id
     </select>
 
@@ -40,7 +40,7 @@
                p.id AS tech_pack_id, p.stage, p.version
         FROM tp_tech_pack p
         JOIN sty_style s ON s.id = p.style_id
-        WHERE p.status = 'EFFECTIVE'
+        WHERE p.style_id IS NOT NULL AND p.status = 'EFFECTIVE'
           AND (p.stage = 'PROD'
                OR (p.stage = 'DEV' AND NOT EXISTS (SELECT 1 FROM tp_tech_pack x
                                                    WHERE x.style_id = p.style_id AND x.stage = 'PROD' AND x.status = 'EFFECTIVE')))
@@ -60,4 +60,49 @@
         <if test="q.stage != null">AND p.stage = #{q.stage}</if>
         ORDER BY s.code DESC, s.id DESC
     </select>
+    <select id="ownerIdentity" resultType="com.lingmao.scm.module.techpack.mapper.TechPackMapper$OwnerIdentity">
+        SELECT p.id,p.style_id,p.sample_id,
+            CASE WHEN p.style_id IS NULL THEN s.company_id ELSE NULL END AS company_id,p.version_lock
+        FROM tp_tech_pack p LEFT JOIN dev_sample s ON s.id=p.sample_id WHERE p.id=#{id}
+    </select>
+    <select id="selectSamplePacks" resultType="com.lingmao.scm.module.techpack.mapper.TechPackMapper$SamplePackHead">
+        SELECT p.id,p.style_id,p.sample_id,s.company_id,p.stage,p.status,p.version,p.version_lock,p.version_note,
+            p.source_pack_id,source.version AS source_version,p.publish_by,p.publish_time,p.create_by,p.create_time,p.update_time
+        FROM tp_tech_pack p JOIN dev_sample s ON s.id=p.sample_id
+        LEFT JOIN tp_tech_pack source ON source.id=p.source_pack_id
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{sampleId} AND s.deleted_token=0
+            AND p.style_id IS NULL AND p.stage='DEV'
+        <if test="beforeVersion != null">AND p.version &lt; #{beforeVersion}</if>
+        ORDER BY p.version DESC,p.id DESC LIMIT #{limit}
+    </select>
+    <select id="lockSamplePacks" resultType="com.lingmao.scm.module.techpack.mapper.TechPackMapper$SamplePackIdentity">
+        SELECT p.id,p.style_id,p.sample_id,s.company_id,p.stage,p.status,p.version,p.version_lock
+        FROM tp_tech_pack p JOIN dev_sample s ON s.id=p.sample_id
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{sampleId} AND s.deleted_token=0
+            AND p.style_id IS NULL AND p.stage='DEV'
+        ORDER BY p.id LIMIT #{limit} FOR UPDATE OF p
+    </select>
+    <select id="countSamplePacks" resultType="long">
+        SELECT count(*) FROM tp_tech_pack p JOIN dev_sample s ON s.id=p.sample_id
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{sampleId} AND s.deleted_token=0
+            AND p.style_id IS NULL AND p.stage='DEV'
+    </select>
+    <select id="maxSampleVersion" resultType="int">
+        SELECT COALESCE(max(p.version),0) FROM tp_tech_pack p JOIN dev_sample s ON s.id=p.sample_id
+        WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{sampleId} AND s.deleted_token=0
+            AND p.style_id IS NULL AND p.stage='DEV'
+    </select>
+    <select id="existsForSample" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM tp_tech_pack p JOIN dev_sample s ON s.id=p.sample_id
+            WHERE s.tenant_key=#{tenant} AND s.company_id=#{companyId} AND s.id=#{sampleId})
+    </select>
+    <update id="adoptSamplePacks">
+        UPDATE tp_tech_pack p SET style_id=#{styleId},version_lock=p.version_lock+1,
+            update_by=#{actor},update_time=clock_timestamp()
+        FROM dev_sample s WHERE s.id=p.sample_id AND s.tenant_key=#{tenant} AND s.company_id=#{companyId}
+            AND s.id=#{sampleId} AND s.deleted_token=0 AND s.status='PASSED' AND p.style_id IS NULL AND p.stage='DEV'
+            <!-- 外层来源已固定为 sampleId；整组版本上限检查与每个待移交头解关联，只执行一次。 -->
+            AND NOT EXISTS(SELECT 1 FROM tp_tech_pack bad WHERE bad.sample_id=#{sampleId} AND bad.style_id IS NULL AND bad.stage='DEV'
+                AND (bad.version_lock &gt;= 2147483647 OR bad.version_lock &lt; 0))
+    </update>
 </mapper>

@@ -44,6 +44,7 @@ class PackOwners {
     private final ColorService colorService;
     private final AttachmentService attachmentService;
     private final TechPackMapper techPackMapper;
+    private final com.lingmao.scm.module.techpack.service.SamplePackOwner sampleOwner;
 
     /** 主人 + 算出来的尺码、基码、颜色：详情、核价、生效检查都要 */
     record Ctx(PackOwner owner, List<String> sizes, String baseSize, List<ColorOption> colors) {
@@ -59,8 +60,54 @@ class PackOwners {
 
     /** 款式不存在 404 */
     PackOwner of(TechPack pack) {
-        return style(pack.getStyleId());
+        if(pack.getStyleId()!=null)return style(pack.getStyleId());
+        var identity=readIdentity(pack.getId());
+        sameOwner(identity,pack);
+        return sampleOwner.resolve(identity.companyId(),identity.sampleId(),com.lingmao.scm.module.techpack.service.SamplePackOwner.Access.READ).owner();
     }
+
+    TechPackMapper.OwnerIdentity readIdentity(long id) {
+        var identity=techPackMapper.ownerIdentity(id);
+        if(identity==null)throw missing();
+        if(identity.styleId()==null){
+            if(identity.sampleId()==null||identity.companyId()==null)throw missing();
+            sampleOwner.checkReadable(identity.companyId(),identity.sampleId());
+        }
+        return identity;
+    }
+
+    /** 快照/正文的任何读取之前都先用小投影授权。 */
+    TechPack read(long id){
+        var identity=readIdentity(id);TechPack pack=techPackMapper.selectById(id);
+        if(pack==null)throw missing();sameOwner(identity,pack);return pack;
+    }
+
+    /** 原 style 路径保持；样衣必须先父锁，再按需要的 TP id 升序加锁。 */
+    TechPack lock(long id,boolean publication){
+        var identity=techPackMapper.ownerIdentity(id);if(identity==null)throw missing();
+        if(identity.styleId()==null){
+            if(identity.sampleId()==null||identity.companyId()==null)throw missing();
+            sampleOwner.resolve(identity.companyId(),identity.sampleId(),com.lingmao.scm.module.techpack.service.SamplePackOwner.Access.EDIT);
+            if(publication){
+                // 同一个样衣父锁串行化所有 DEV 版本动作；这里只锁目标与原生效版两行。
+                List<TechPack> rows=techPackMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TechPack>()
+                        .eq(TechPack::getSampleId,identity.sampleId()).isNull(TechPack::getStyleId)
+                        .and(w->w.eq(TechPack::getId,id).or().eq(TechPack::getStatus,PackStatus.EFFECTIVE))
+                        .select(TechPack::getId,TechPack::getStyleId,TechPack::getSampleId,TechPack::getVersionLock)
+                        .orderByAsc(TechPack::getId).last("LIMIT 3 FOR UPDATE"));
+                if(rows.size()>2)throw new com.lingmao.scm.common.exception.BizException(1002,"资料包状态已变化，请刷新后再试");
+            }
+        }
+        TechPack pack=techPackMapper.lockById(id);if(pack==null)throw missing();sameOwner(identity,pack);
+        if(!java.util.Objects.equals(identity.versionLock(),pack.getVersionLock()))
+            throw new com.lingmao.scm.common.exception.BizException(1002,"资料包版本已变化，请刷新后重试");
+        return pack;
+    }
+    private static void sameOwner(TechPackMapper.OwnerIdentity identity,TechPack pack){
+        if(!java.util.Objects.equals(identity.styleId(),pack.getStyleId())||!java.util.Objects.equals(identity.sampleId(),pack.getSampleId()))
+            throw new com.lingmao.scm.common.exception.BizException(1002,"资料包归属已经变化，请重新打开");
+    }
+    private static com.lingmao.scm.common.exception.BizException missing(){return new com.lingmao.scm.common.exception.BizException(404,"资料包不存在");}
 
     PackOwner style(long styleId) {
         return toOwner(styleService.packInfo(styleId));
@@ -75,11 +122,22 @@ class PackOwners {
 
     /** 主图（PDF 表头）：款式图的第一张；没有是 null */
     AttachmentVO mainImage(TechPack pack) {
-        return attachmentService.firsts(BizType.STYLE, List.of(pack.getStyleId()), Attachment.IMAGE).get(pack.getStyleId());
+        if(pack.getStyleId()!=null)return attachmentService.firsts(BizType.STYLE,List.of(pack.getStyleId()),Attachment.IMAGE).get(pack.getStyleId());
+        var identity=readIdentity(pack.getId());sameOwner(identity,pack);return sampleOwner.mainImage(identity.companyId(),identity.sampleId());
     }
 
     Ctx context(PackOwner owner) {
-        SizeGroupVO group = sizeGroupService.getById(owner.sizeGroupId());
+        return context(owner,false);
+    }
+
+    Ctx liveContext(TechPack pack) {
+        return context(of(pack),pack.getStyleId()==null);
+    }
+
+    private Ctx context(PackOwner owner,boolean sample) {
+        SizeGroupVO group = sample?sizeGroupService.getByIdsBounded(List.of(owner.sizeGroupId()),100).get(owner.sizeGroupId()):sizeGroupService.getById(owner.sizeGroupId());
+        if(sample && (group==null || group.sizes().isEmpty() || !group.sizes().contains(group.baseSize())))
+            throw new com.lingmao.scm.common.exception.BizException(400,"样衣尺码组没有有效基码");
         Map<Long, Color> colors = colorService.byIds(owner.colorIds());
         List<ColorOption> options = owner.colorIds().stream().map(colors::get).filter(Objects::nonNull)
                 .map(ColorOption::from).toList();
@@ -88,11 +146,14 @@ class PackOwners {
 
     /** 读取版次：草稿实时；新生效版冻结；旧版保留已知停用色码并明确为 LEGACY。 */
     Ctx context(TechPack pack) {
-        if (pack.getStatus() == PackStatus.DRAFT) return context(of(pack));
+        // 已生效快照也必须先验证当前真实 owner；不能用历史快照绕开后来改派/移交。
+        if(pack.getStyleId()==null){var identity=readIdentity(pack.getId());sameOwner(identity,pack);}
+        if (pack.getStatus() == PackStatus.DRAFT) return liveContext(pack);
         PackOwnerSnapshot frozen = pack.getOwnerSnapshot();
         if (frozen != null) return new Ctx(frozen.owner(), frozen.sizes(), frozen.baseSize(), frozen.colors());
         PackOwner live = of(pack);
-        Ctx current = context(live);
+        Ctx current = context(live,pack.getStyleId()==null);
+        if(pack.getStyleId()==null)return current;
         StyleOrderInfo info = styleService.orderInfos(List.of(pack.getStyleId())).get(pack.getStyleId());
         if (info == null) return current;
         LinkedHashSet<Long> colorIds = new LinkedHashSet<>();
@@ -113,7 +174,8 @@ class PackOwners {
     /** 列表按批读取实时/旧版上下文；冻结版仍完全使用自己的快照。 */
     Map<Long, Ctx> contexts(Collection<TechPack> packs, Map<Long, PackOwner> owners) {
         Map<Long, Ctx> result = new HashMap<>();
-        List<TechPack> livePacks = packs.stream().filter(p -> p.getStatus() == PackStatus.DRAFT || p.getOwnerSnapshot() == null)
+        for(TechPack pack:packs)if(pack.getStyleId()==null)result.put(pack.getId(),context(pack));
+        List<TechPack> livePacks = packs.stream().filter(p->p.getStyleId()!=null).filter(p -> p.getStatus() == PackStatus.DRAFT || p.getOwnerSnapshot() == null)
                 .filter(p -> owners.containsKey(p.getStyleId())).toList();
         List<TechPack> legacy = livePacks.stream().filter(p -> p.getStatus() != PackStatus.DRAFT).toList();
         Map<Long, SizeGroupVO> groups = sizeGroupService.getByIds(livePacks.stream()
@@ -130,6 +192,7 @@ class PackOwners {
         referencedColors.values().forEach(allColors::addAll);
         Map<Long, Color> known = colorService.byIds(allColors);
         for (TechPack pack : packs) {
+            if(pack.getStyleId()==null)continue;
             PackOwnerSnapshot frozen = pack.getOwnerSnapshot();
             if (pack.getStatus() != PackStatus.DRAFT && frozen != null) {
                 result.put(pack.getId(), new Ctx(frozen.owner(), frozen.sizes(), frozen.baseSize(), frozen.colors()));

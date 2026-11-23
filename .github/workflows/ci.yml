@@ -15,9 +15,10 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 95
     env:
       JAVA_TOOL_OPTIONS: -Xmx1200m -XX:ActiveProcessorCount=4 -Dspring.test.context.cache.maxSize=4
+      SCM_TEST_PG_BIN: /usr/lib/postgresql/16/bin
     services:
       postgres:
         image: postgres:16
@@ -62,7 +63,9 @@ jobs:
           python -m pip install --requirement dev/ci/requirements.txt
           python -m playwright install --with-deps chromium
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends openssh-server poppler-utils
+          sudo apt-get install -y --no-install-recommends openssh-server poppler-utils fonts-noto-cjk curl ca-certificates gpg
+          python3 dev/ci/install-pg16-client-test.py
+          bash dev/ci/install-pg16-client.sh
           bash dev/fetch-font.sh
       - name: P36 — private PostgreSQL helper guards and cleanup failure regressions
         run: python3 tests/audit-fix/s4-lifecycle/private-pg-log-test.py
@@ -74,7 +77,10 @@ jobs:
       - name: CI credential redaction and process-group cleanup regressions
         env:
           SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
-        run: python3 tests/prod-readiness/a4-lifecycle/ci_helpers_test.py
+        run: |
+          python3 tests/audit-fix/s4-lifecycle/redaction-structure-test.py
+          python3 tests/audit-fix/s4-lifecycle/sample-restore-diagnostics-test.py
+          python3 tests/prod-readiness/a4-lifecycle/ci_helpers_test.py
       - name: T01–T10 and T12 — real database concurrency, security, migration and audit; production JAR
         id: backend
         run: ./mvnw -B -ntp -Pprod-readiness verify
@@ -104,7 +110,17 @@ jobs:
           python3 tests/audit-fix/s3-browser/fg-session.py
           python3 tests/audit-fix/s3-browser/fg-compact.py
           python3 tests/audit-fix/s3-browser/inv-compact.py
+          python3 tests/audit-fix/s3-browser/inventory-numeric-widths.py
           python3 tests/audit-fix/s3-browser/matrix-cells.py
+      - name: S3 — public tags, sample lifecycle and production BOM visual regressions
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
+        run: |
+          python3 tests/audit-fix/s3-browser/tags.py
+          python3 tests/audit-fix/s3-browser/samples.py
+          python3 tests/audit-fix/s3-browser/sample-review-limit.py
+          python3 tests/audit-fix/s3-browser/techpack-reactivation.py
+          python3 tests/audit-fix/s3-browser/sample-lifecycle.py
+          python3 tests/audit-fix/s3-browser/sample-visual.py --label ci
       - name: S3 — actual cross-tab authentication cookies and insecure HTTP origin
         if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
         env:

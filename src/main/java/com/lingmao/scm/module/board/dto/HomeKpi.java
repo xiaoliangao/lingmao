@@ -7,7 +7,8 @@ package com.lingmao.scm.module.board.dto;
 public record HomeKpi(Dev dev, Order order, Production production, Material material) {
 
     /** 开发款式（style:style:list）：没停用的款数、资料包草稿 */
-    public record Dev(long styleCount, long packDraftCount) {
+    public record Dev(Long styleCount,Long packDraftCount,Long sampleMakingCount,Long companyId) {
+        public Dev(long styleCount,long packDraftCount){this(styleCount,packDraftCount,null,null);}
     }
 
     /**

@@ -40,8 +40,9 @@ public class TechPackCostServiceImpl implements TechPackCostService {
     private final AttachmentService attachmentService;
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly=true,isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public TechPackCostVO cost(long id, Long colorId) {
-        TechPack pack = techPackMapper.selectById(id);
+        TechPack pack = packOwners.read(id);
         if (pack == null) {
             throw new BizException(404, "这一版资料包不存在，可能已经被删除了");
         }

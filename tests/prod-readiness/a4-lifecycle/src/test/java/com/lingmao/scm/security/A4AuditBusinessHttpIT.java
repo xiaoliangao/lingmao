@@ -28,8 +28,8 @@ class A4AuditBusinessHttpIT extends A2BusinessFixture {
                 "year", 2026, "season", "AUTUMN", "sizeGroupId", f.sizeGroup(), "tagPrice", "329", "refCost", "456.78");
         ok(admin, "PUT", "/api/styles/" + f.style(), style, null);
         for (Account reader : List.of(cost, sales, production)) {
-            assertPrice(reader, "prc_price", materialPrice, "price", "13.37", reader == cost);
-            assertPrice(reader, "prc_price", processPrice, "price", "38.31", reader == production);
+            assertPriceArchive(reader, materialPrice, "13.37", reader == cost);
+            assertPriceArchive(reader, processPrice, "38.31", reader == production);
             assertPrice(reader, "ord_order_item", orderLine, "price", "89.23", reader == sales);
             assertPrice(reader, "prd_order", scheduled, "unit_price", "38.31", reader == production);
             assertThat(history(reader, "sty_style", f.style()).get(0).path("diff").path("tag_price").path("new").decimalValue()).isEqualByComparingTo("329");
@@ -116,13 +116,30 @@ class A4AuditBusinessHttpIT extends A2BusinessFixture {
         assertThat(read.get("ip")).isEqualTo("127.0.0.1"); assertThat(read.get("trace_id")).isNotNull();
     }
 
-    private Account auditor(Fixture f, String permission) throws Exception { return custom(f.company(), "ALL", "system:audit:query", permission); }
+    private Account auditor(Fixture f, String permission) throws Exception {
+        // 读对象和读价格是两条独立权限轴；仍只授予本用例指定的一种价格权限。
+        return custom(f.company(), "ALL", "system:audit:query", permission, "style:style:list", "techpack:pack:list",
+                "order:order:list", "purchase:order:list", "production:order:list", "supplier:supplier:list", "price:price:list");
+    }
     private void evidence(String name, JsonNode value) throws Exception {
         java.nio.file.Path file = java.nio.file.Path.of("target/test-artifacts/a4", name);
         java.nio.file.Files.createDirectories(file.getParent());
         java.nio.file.Files.writeString(file, json.writerWithDefaultPrettyPrinter().writeValueAsString(value));
     }
-    private JsonNode history(Account account, String table, long row) throws Exception { return ok(account, "GET", "/api/data-logs?table="+table+"&rowId="+row, null, null); }
+    private JsonNode history(Account account, String table, long row) throws Exception {
+        Long company = jdbc.queryForObject("SELECT default_company_id FROM sys_user WHERE id=?", Long.class, account.id());
+        return ok(account, "GET", "/api/data-logs?table="+table+"&rowId="+row, null, company);
+    }
+    private void assertPriceArchive(Account reader, long row, String value, boolean visible) throws Exception {
+        // 价格档案按真实 MATERIAL/PROCESS 类型授权；缺该价格域时整个对象不可读。
+        if (visible) {
+            assertPrice(reader, "prc_price", row, "price", value, true);
+        } else {
+            JsonNode denied = call(reader, "GET", "/api/data-logs?table=prc_price&rowId=" + row, null, null);
+            assertThat(denied.path("code").intValue()).isEqualTo(403);
+            assertThat(denied.toString()).doesNotContain("\"diff\"", "\"price\"", value);
+        }
+    }
     private void assertPrice(Account reader, String table, long row, String field, String value, boolean visible) throws Exception {
         JsonNode entries = history(reader, table, row);
         assertThat(entries.size()).isPositive();

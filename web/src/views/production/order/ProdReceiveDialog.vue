@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
+import { useUserStore } from '@/stores/user'
 import ThumbImage from '@/components/ThumbImage.vue'
 import { isFutureBusinessDay } from '@/utils/businessDate'
 import { computed, reactive, ref, shallowRef, toRaw, watch } from 'vue'
@@ -179,6 +181,11 @@ async function restartReceipt() {
 }
 
 // ---------- 回货单 ----------
+const tagUser = useUserStore()
+const canEditReceiptTags = computed(() => !!tagUser.info && props.viewingReceipt?.status === 'APPROVED'
+  && ['APPROVED', 'RUNNING', 'DONE'].includes(props.doc.status)
+  && (tagUser.hasPerm('data:all') || props.doc.createBy === tagUser.info.id || props.doc.merchId === tagUser.info.id))
+
 const voiding = ref(false)
 const receiptTotal = computed(() => {
   const items = props.viewingReceipt?.items ?? []
@@ -281,6 +288,9 @@ async function voidCurrentReceipt() {
         <span>物流 <span class="code">{{ viewingReceipt.logisticsNo ?? '—' }}</span></span>
         <span class="dim">{{ viewingReceipt.createByName ?? '—' }} 登记于 {{ formatDateTime(viewingReceipt.createTime) }}</span>
       </div>
+
+      <ObjectTags v-if="detailVisible" type="PRODUCTION_RECEIPT" :object-id="viewingReceipt.id" :company-id="doc.companyId"
+        :editable="canEditReceiptTags" @saved="emit('updated')" />
 
       <el-table :data="viewingReceipt.items" size="small" row-key="id" show-summary :summary-method="summaryMethod">
         <el-table-column label="颜色" min-width="110">

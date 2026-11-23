@@ -51,6 +51,10 @@ async def run_wide_pack(browser, base, artifacts, metrics):
         elif path == '/api/tech-packs/709':
             await route.fulfill(json={'code': 503, 'msg': '合成资料包临时失败', 'data': None})
             return
+        elif path in ['/api/tags/objects/TECH_PACK/706', '/api/tags/objects/TECH_PACK/707']:
+            assert route.request.method == 'GET'
+            assert await route.request.frame.evaluate("async()=>{const{useUserStore}=await import('/src/stores/user.ts');return useUserStore().hasPerm('techpack:pack:list')}")
+            data = {'version': 0, 'tags': []}
         elif path.startswith('/api/dict-data/by-type/'):
             data = [{'value': 'BODY', 'label': '大身', 'status': 1}] if path.endswith('/bom_part') else [{'value': 'M', 'label': '米', 'status': 1}] if path.endswith('/unit') else []
         else:
@@ -110,7 +114,7 @@ async def run_wide_pack(browser, base, artifacts, metrics):
         await fixed_rows.nth(2).get_by_role('button', name='删', exact=True).click()
         await page.get_by_role('tab', name='尺寸指示（99）', exact=True).wait_for()
         await page.get_by_role('button', name='保存', exact=True).click()
-        await page.get_by_text('V1 已保存', exact=True).wait_for()
+        await page.get_by_text('资料包已保存', exact=True).wait_for()
         assert len(writes) == 1 and len(writes[0]['specPoints']) == 99, writes
         assert writes[0]['specPoints'][0]['values']['S0'] == 12.3
         assert writes[0]['specPoints'][2]['point'] == '部位004'

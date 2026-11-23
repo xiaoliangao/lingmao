@@ -7,6 +7,9 @@ import DataPick from '@/components/DataPick.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
 import { useDict } from '@/composables/useDict'
+import { useEntityContext, useEntityRead } from '@/composables/useEntityContext'
+import { ApiError } from '@/utils/request'
+import { sessionEpoch } from '@/utils/token'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { MATERIAL_SOURCE_LABEL, type ColorOption, type MaterialPickRow, type MaterialSku, type MaterialSource } from '@/types/basic'
 import type { StylePickRow } from '@/types/style'
@@ -50,6 +53,7 @@ const visible = defineModel<boolean>({ required: true })
 
 const props = defineProps<{
   packId: string
+  companyId?: string
   sizes: string[]
   baseSize: string
   colors: ColorOption[]
@@ -87,7 +91,13 @@ const form = reactive({
 
 /** 配料：格子（'FIXED' | 'C:款色' | 'S:尺码' | 'CS:款色:尺码'）→ 选的物料 SKU 和它单独的单价（null = 用行上的） */
 const skuMap = reactive<Record<string, { materialSkuId: string; refPrice?: number | null }>>({})
-const guard = useUnsavedChanges(() => ({ form, skuMap }), visible)
+const guard = useUnsavedChanges(() => ({ form, skuMap }), visible, { scope: () => `${props.companyId ?? 'shared'}:${props.packId}:${props.editingRow?.id ?? 'new'}` })
+const materialRead = useEntityRead(), defaultRead = useEntityRead()
+const materialLoading = ref(false), defaultsLoading = ref(false), materialError = ref<string | null>(null), defaultsError = ref<string | null>(null)
+let retryDefaultsFull = false
+const context = useEntityContext(() => { materialRead.cancel(); defaultRead.cancel(); materialSkus.value = []; lastDefault.value = null; picking.value = false; visible.value = false })
+const options = () => ({ companyId: props.companyId, authEpoch: sessionEpoch(), silent: true })
+function readError(cause: unknown) { return cause instanceof ApiError && [403, 404].includes(cause.code) ? '权限已变化或资料不可见，请重新读取' : cause instanceof ApiError ? cause.message : '读取失败，请重试' }
 
 /** 这个物料的 SKU（配料下拉） */
 const materialSkus = ref<MaterialSku[]>([])
@@ -127,16 +137,18 @@ const skuOptions = computed(() => {
 })
 const skuOf = (id: string | undefined) => materialSkus.value.find((s) => s.id === id)
 
-async function loadMaterialSkus(materialId: string) {
-  if (!materialId) {
-    materialSkus.value = []
-    return
-  }
+async function loadMaterialSkus(materialId: string): Promise<boolean> {
+  const read = materialRead.begin()
+  materialError.value = null; materialLoading.value = false; materialSkus.value = []
+  if (!materialId) return false
+  materialLoading.value = true
   try {
-    materialSkus.value = (await materialApi.get(materialId)).skus
-  } catch {
-    materialSkus.value = []
-  }
+    const result = await read.run(() => materialApi.get(materialId))
+    if (!read.current() || !visible.value || form.materialId !== materialId) return false
+    materialSkus.value = result.skus
+    return true
+  } catch (cause) { if (read.current()) materialError.value = readError(cause); return false }
+  finally { if (read.current()) materialLoading.value = false }
 }
 
 function resetFromProps() {
@@ -194,32 +206,39 @@ function resetFromProps() {
   guard.markSaved()
 }
 
-watch(visible, (on) => {
-  if (on) resetFromProps()
-})
+watch(() => [visible.value, props.packId, props.companyId, props.editingRow?.id], () => {
+  materialRead.cancel(); defaultRead.cancel(); materialError.value = null; defaultsError.value = null; materialLoading.value = false; defaultsLoading.value = false
+  if (visible.value) resetFromProps()
+}, { immediate: true })
 
 /** 问后端这一行的默认值。full：换物料，整套覆盖；否则（换供应商、换 SKU）只覆盖单价那几项 */
 async function applyDefaults(full: boolean) {
-  if (!form.materialId) return
+  const read = defaultRead.begin(), materialId = form.materialId
+  defaultsError.value = null; defaultsLoading.value = false; retryDefaultsFull = full
+  if (!materialId) return
+  const supplierId = form.supplierId
   const skuIds = [...new Set(Object.values(skuMap).map((v) => v.materialSkuId))]
-  const [def] = await techPackApi.bomDefaults(props.packId, [{ materialId: form.materialId, supplierId: form.supplierId, skuIds }])
-  if (!def) return
-  lastDefault.value = def
-  if (full) {
-    form.unit = def.unit
-    form.lossPct = def.lossPct
-    form.source = def.source
-    if (!form.supplierId) form.supplierId = def.supplierId
-  }
-  // 供应商的名字以后端为准（换了供应商、带出默认供应商都在这里同步）
-  if (form.supplierId === def.supplierId) form.supplierName = def.supplierName
-  form.refPrice = def.refPrice
-  form.priceSourceId = def.priceSourceId
-  form.priceTaxIncluded = def.priceTaxIncluded
-  form.priceFreightIncluded = def.priceFreightIncluded
-  // 和行上一样的不在 skuPrices 里：没列到的配料用行上的价（null）
-  const prices = new Map((def.skuPrices ?? []).map((p) => [p.materialSkuId, p.refPrice]))
-  for (const entry of Object.values(skuMap)) entry.refPrice = prices.get(entry.materialSkuId) ?? null
+  defaultsLoading.value = true
+  try {
+    const [def] = await techPackApi.bomDefaults(props.packId, [{ materialId, supplierId, skuIds }], { ...options(), signal: read.signal })
+    if (!read.current() || !visible.value || form.materialId !== materialId || form.supplierId !== supplierId) return
+    if (!def) throw new ApiError(500, '未取得这一行的默认值')
+    lastDefault.value = def
+    if (full) {
+      form.unit = def.unit
+      form.lossPct = def.lossPct
+      form.source = def.source
+      if (!form.supplierId) form.supplierId = def.supplierId
+    }
+    if (form.supplierId === def.supplierId) form.supplierName = def.supplierName
+    form.refPrice = def.refPrice
+    form.priceSourceId = def.priceSourceId
+    form.priceTaxIncluded = def.priceTaxIncluded
+    form.priceFreightIncluded = def.priceFreightIncluded
+    const prices = new Map((def.skuPrices ?? []).map((p) => [p.materialSkuId, p.refPrice]))
+    for (const entry of Object.values(skuMap)) entry.refPrice = prices.get(entry.materialSkuId) ?? null
+  } catch (cause) { if (read.current()) defaultsError.value = readError(cause) }
+  finally { if (read.current()) defaultsLoading.value = false }
 }
 
 /** 换了配色方式：随款色的按颜色自动配上（物料 SKU 的颜色和款色是同一张颜色表），配不上的空着 */
@@ -247,8 +266,9 @@ watch(
 
 /** 从物料库换一种物料：配料清空，按选的 SKU 先配上，再整套取默认值 */
 async function onPickMaterial(rows: MaterialPickRow[] | StylePickRow[]) {
-  const picked = (rows as MaterialPickRow[])[0]
-  if (!picked) return
+  const picked = (rows as MaterialPickRow[])[0], current = context.capture()
+  if (!picked || !visible.value) return
+  defaultRead.cancel()
   Object.keys(skuMap).forEach((k) => delete skuMap[k])
   Object.assign(form, {
     materialId: picked.materialId,
@@ -259,7 +279,7 @@ async function onPickMaterial(rows: MaterialPickRow[] | StylePickRow[]) {
     supplierId: null,
     supplierName: null,
   })
-  await loadMaterialSkus(picked.materialId)
+  if (!await loadMaterialSkus(picked.materialId) || !current() || form.materialId !== picked.materialId) return
   if (form.skuMode === 'FIXED') skuMap.FIXED = { materialSkuId: picked.skuId, refPrice: null }
   else autoMatch()
   await applyDefaults(true)
@@ -286,6 +306,7 @@ const purchaseHint = computed(() => {
 })
 
 function submit() {
+  if (materialLoading.value || defaultsLoading.value || materialError.value || defaultsError.value) return
   if (!form.materialId) {
     ElMessage.warning('先选物料')
     return
@@ -344,6 +365,9 @@ function submit() {
     :close-on-click-modal="false"
     :before-close="guard.beforeClose"
   >
+    <p v-if="materialLoading || defaultsLoading" role="status" class="dim">正在读取配料资料…</p>
+    <el-alert v-if="materialError" :title="materialError" type="error" :closable="false"><el-button @click="loadMaterialSkus(form.materialId)">重试 SKU</el-button></el-alert>
+    <el-alert v-if="defaultsError" :title="defaultsError" type="error" :closable="false"><el-button @click="applyDefaults(retryDefaultsFull)">重试默认值</el-button></el-alert>
     <el-form label-position="top" class="form-grid">
       <el-form-item label="部位">
         <DictSelect v-model="form.part" type="bom_part" />
@@ -432,7 +456,7 @@ function submit() {
 
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" @click="submit">确定</el-button>
+      <el-button type="primary" :disabled="materialLoading || defaultsLoading || !!materialError || !!defaultsError" @click="submit">确定</el-button>
     </template>
   </el-dialog>
 

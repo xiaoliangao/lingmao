@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { sampleApi } from '@/api/sample'
 import { fgDocApi } from '@/api/fg'
 import { fgReadError } from '@/views/fg/fgRead'
 import CompanySelect from '@/components/doc/CompanySelect.vue'
 import { useUserStore } from '@/stores/user'
 import { useLatestRequest } from '@/composables/useLatestRequest'
-import { onSessionChanged } from '@/utils/token'
+import { onSessionChanged, sessionEpoch } from '@/utils/token'
 import { useRouter } from 'vue-router'
 import { orderApi } from '@/api/order'
 import { purchaseApi } from '@/api/purchase'
@@ -38,6 +39,7 @@ const router = useRouter()
 const user = useUserStore()
 const fgCompanyId = ref<string | null>(user.defaultCompanyId)
 const hasFgPages = computed(() => props.pages.some((page) => ['/fg-in', '/fg-out'].includes(page.path)))
+const hasSamplePage = computed(() => user.hasPerm('dev:sample:list') && props.pages.some((page) => page.path === '/samples'))
 const keyword = ref('')
 const active = ref(0)
 const input = ref<HTMLInputElement>()
@@ -59,10 +61,17 @@ interface Source {
   /** 侧边栏里有这个页面才查 */
   menu: string
   companyScoped?: boolean
+  permission?: string
   search: (keyword: string) => Promise<PaletteItem[]>
 }
 
 const SOURCES: Source[] = [
+  { title: '样衣', menu: '/samples', companyScoped: true, permission: 'dev:sample:list',
+    search: (keyword) => {
+      const companyId = fgCompanyId.value
+      return companyId ? sampleApi.page({ companyId, keyword, page: 1, size: SIZE }, SILENT).then((result) => result.list.map((row) => ({ name: `${row.code} ${row.name}`, path: `/samples/${row.id}?companyId=${row.companyId}`, icon: 'Scissor', sub: `${row.currentOrderNo} · 第 ${row.currentSampleVersion} 版` }))) : Promise.resolve([])
+    },
+  },
   ...(['IN', 'OUT'] as const).map((kind): Source => ({
     title: kind === 'IN' ? '成品入库单' : '成品出库单', menu: kind === 'IN' ? '/fg-in' : '/fg-out', companyScoped: true,
     search: (kw) => fgDocApi.page({ companyId: fgCompanyId.value, kind, page: 1, size: SIZE, keyword: kw }, SILENT).then((response) =>
@@ -126,7 +135,7 @@ const SOURCES: Source[] = [
 
 const sources = computed(() => {
   const open = new Set(props.pages.map((page) => page.path))
-  return SOURCES.filter((source) => open.has(source.menu) && (!source.companyScoped || !!fgCompanyId.value))
+  return SOURCES.filter((source) => open.has(source.menu) && (!source.permission || user.hasPerm(source.permission)) && (!source.companyScoped || !!fgCompanyId.value))
 })
 
 const records = ref<{ title: string; items: PaletteItem[] }[]>([])
@@ -140,7 +149,9 @@ const latest = useLatestRequest()
 function cancelSearch() { clearTimeout(timer); latest.cancel(); seq++; searching.value = false; records.value = []; sourceErrors.value = [] }
 onBeforeUnmount(cancelSearch)
 onBeforeUnmount(onSessionChanged(() => { cancelSearch(); fgCompanyId.value = null; visible.value = false }))
-watch(() => [user.info?.id, user.token], () => { cancelSearch(); fgCompanyId.value = null; visible.value = false }, { flush: 'sync' })
+watch([() => user.info?.id, () => { void user.token; return sessionEpoch() }], () => { cancelSearch(); fgCompanyId.value = null; visible.value = false }, { flush: 'sync' })
+
+watch(() => user.defaultCompanyId, (company) => { cancelSearch(); fgCompanyId.value = company })
 
 watch([keyword, fgCompanyId, sources, retrySearch], ([value]) => {
   active.value = 0
@@ -246,8 +257,8 @@ watch(visible, async (open) => {
           <span v-if="searching" class="pal-busy">查找中…</span>
           <kbd>Esc</kbd>
         </div>
-        <div v-if="hasFgPages" class="pal-fg-scope"><span>成品主体</span><CompanySelect v-model="fgCompanyId" :popper-style="{ zIndex: 3100 }" placeholder="选择主体以查成品单" aria-label="成品搜索主体" /></div>
-        <div v-if="sourceErrors.length" class="pal-fg-errors" role="alert"><span v-for="error in sourceErrors" :key="error.title">{{ error.title }}：{{ error.message }}</span><button type="button" @click="retrySearch++">重试成品查询</button></div>
+        <div v-if="hasFgPages || hasSamplePage" class="pal-fg-scope"><span>{{ hasSamplePage ? '查询主体' : '成品主体' }}</span><CompanySelect v-model="fgCompanyId" :popper-style="{ zIndex: 3100 }" :placeholder="hasSamplePage ? '选择主体以查样衣 / 成品' : '选择主体以查成品单'" :aria-label="hasSamplePage ? '样衣与成品搜索主体' : '成品搜索主体'" /></div>
+        <div v-if="sourceErrors.length" class="pal-fg-errors" role="alert"><span v-for="error in sourceErrors" :key="error.title">{{ error.title }}：{{ error.message }}</span><button type="button" @click="retrySearch++">{{ hasSamplePage ? '重试查询' : '重试成品查询' }}</button></div>
         <div id="pal-list" ref="listEl" class="pal-list" role="listbox">
           <section v-for="(group, gi) in groups" :key="group.title">
             <h3>{{ group.title }}</h3>

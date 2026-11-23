@@ -24,6 +24,10 @@ public class TechPack extends AuditEntity {
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Long styleId;
 
+    /** 未转款时的真实样衣 owner；移交后保留来源，owner 以 styleId 优先。 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Long sampleId;
+
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private PackStage stage;
 

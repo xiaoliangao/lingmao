@@ -1,0 +1,3 @@
+/* 样衣长表单沿原型正文滚动，标题和动作始终留在视口内。 */
+.sample-dialog { max-width: calc(100vw - 32px); }
+.sample-dialog .el-dialog__body { max-height: 68vh; overflow-y: auto; }

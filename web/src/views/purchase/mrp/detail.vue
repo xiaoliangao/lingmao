@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, h, onActivated, onMounted, ref } from 'vue'
@@ -558,6 +559,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(MRP_STATUS).map(([k, v]) 
       </div>
 
       <aside class="doc-aside">
+        <ObjectTags type="MRP_CALC" :object-id="id" :company-id="detail.companyId" :editable="['DRAFT', 'CONFIRMED'].includes(detail.status) && can('edit')" @saved="logRef?.reload()" />
         <section class="panel">
           <div class="panel-head">算料单信息</div>
           <div class="panel-body">

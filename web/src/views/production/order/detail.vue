@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import ThumbImage from '@/components/ThumbImage.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
@@ -623,6 +624,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
       </div>
 
       <aside class="doc-aside">
+        <ObjectTags type="PRODUCTION_ORDER" :object-id="id" :company-id="detail.companyId" :editable="detail.status === 'DRAFT' && can('edit')" @saved="logRef?.reload()" />
         <img v-if="detail.image" :src="detail.image.url" alt="" class="style-img" />
 
         <section class="panel">

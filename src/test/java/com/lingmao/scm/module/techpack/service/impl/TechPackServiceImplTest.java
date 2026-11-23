@@ -73,10 +73,9 @@ class TechPackServiceImplTest {
     private void saveCost(boolean authorized, TechPackCostForm cost, boolean withCost) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(1L, "test"), null,
                 authorized ? List.of(new SimpleGrantedAuthority("techpack:cost:query")) : List.of()));
-        TechPack p = new TechPack(); p.setId(3L); p.setStatus(PackStatus.DRAFT);
-        when(techPackMapper.selectById(3L)).thenReturn(p);
-        when(packOwners.of(p)).thenReturn(PackFixtures.owner(null));
-        when(packOwners.context(PackFixtures.owner(null))).thenReturn(PackFixtures.ctx());
+        TechPack p = new TechPack(); p.setId(3L); p.setStatus(PackStatus.DRAFT); p.setVersionLock(0);
+        when(packOwners.lock(3L, false)).thenReturn(p);
+        when(packOwners.liveContext(p)).thenReturn(PackFixtures.ctx());
         TechPackSaveReq req = new TechPackSaveReq(); req.setVersionLock(0); req.setCost(cost); req.setCraftSections(List.of());
         PackContent.Content content = new PackContent.Content(List.of(), List.of(), List.of(), List.of(), List.of());
         when(packForms.toContent(req, PackFixtures.ctx().sizes())).thenAnswer(inv -> {
@@ -123,7 +122,8 @@ class TechPackServiceImplTest {
         voided.setId(9L);
         voided.setStatus(PackStatus.VOIDED);
         voided.setStage(PackStage.PROD);
-        when(techPackMapper.lockById(9L)).thenReturn(voided);
+        voided.setVersionLock(0);
+        when(packOwners.lock(9L, false)).thenReturn(voided);
 
         for (Runnable action : List.<Runnable>of(() -> service.delete(9L), () -> service.revise(9L))) {
             assertThatThrownBy(action::run)

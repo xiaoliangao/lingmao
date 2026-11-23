@@ -5,6 +5,7 @@ import type { DocRef } from '@/types/biz'
  * 地址表在 docs/api/README.md §2；加一种单据在这里加一项
  */
 export function docRoute(ref: Pick<DocRef, 'type' | 'kind' | 'id' | 'parentId' | 'companyId'>): string | null {
+  const companyQuery = ref.companyId ? `companyId=${encodeURIComponent(ref.companyId)}` : ''
   switch (ref.type) {
     case 'SUPPLIER':
       return `/suppliers/${ref.id}`
@@ -12,8 +13,13 @@ export function docRoute(ref: Pick<DocRef, 'type' | 'kind' | 'id' | 'parentId' |
       return `/materials/${ref.id}`
     case 'STYLE':
       return `/styles/${ref.id}`
+    case 'SAMPLE':
+      return `/samples/${ref.id}${companyQuery ? `?${companyQuery}` : ''}`
+    case 'SAMPLE_ORDER':
+    case 'SAMPLE_REVIEW':
+      return ref.parentId ? `/samples/${ref.parentId}?tab=versions${companyQuery ? `&${companyQuery}` : ''}` : null
     case 'TECH_PACK':
-      return ref.parentId ? `/styles/${ref.parentId}?tab=techpack&techPackId=${ref.id}` : null
+      return ref.parentId ? `${ref.kind === 'SAMPLE' ? '/samples' : '/styles'}/${ref.parentId}?tab=techpack&techPackId=${ref.id}${ref.kind === 'SAMPLE' && companyQuery ? `&${companyQuery}` : ''}` : null
     case 'ORDER':
       return `/orders/${ref.id}`
     case 'ORDER_CHANGE':

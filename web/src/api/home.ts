@@ -8,9 +8,9 @@ import type { DeliveryRow, HomeKpi, HomeTodoQuery, HomeTodos, UpstreamDocType, U
  */
 export const homeApi = {
   /** 四个概况格子 */
-  kpi: () => http.get<HomeKpi>('/api/board/home/kpi', undefined, { silent: true }),
+  kpi: (companyId?: string, options?: RequestOptions) => http.get<HomeKpi>('/api/board/home/kpi', { companyId }, { ...options, silent: true, companyId }),
   /** 待办（分组、具体到单据）和"其他提醒"的数。管理层默认全部，能按"我的"、负责人筛 */
-  todos: (params: HomeTodoQuery = {}) => http.get<HomeTodos>('/api/board/home/todos', params, { silent: true }),
+  todos: (params: HomeTodoQuery = {}, options?: RequestOptions) => http.get<HomeTodos>('/api/board/home/todos', params, { ...options, silent: true, companyId: params.companyId }),
   /** 近期交期：7 天内要交的和已经逾期的需求订单、生产单，最多 8 条 */
   deliveries: () => http.get<DeliveryRow[]>('/api/board/home/deliveries', undefined, { silent: true }),
 }

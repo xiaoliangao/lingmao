@@ -31,6 +31,8 @@ def create_identities(admin: ApiClient, company_id: int) -> dict:
         "warehouse_only": ("SELF", {"inventory:doc:list", "inventory:doc:add"}),
         "fg_maker": ("ALL", {"fg:doc:list", "fg:doc:add", "fg:doc:edit", "fg:doc:remove", "fg:doc:audit", "fg:stock:list"}),
         "fg_auditor": ("ALL", {"fg:doc:list", "fg:doc:audit", "fg:stock:list"}),
+        "sample_reader": ("ALL", {"dev:sample:list", "techpack:pack:list", "style:style:list"}),
+        "tag_reader": ("ALL", {"order:order:list", "biz:tag:list"}),
     }
     password = os.environ.get("SCM_UI_PASSWORD")
     if not password:
@@ -63,6 +65,8 @@ def create_identities(admin: ApiClient, company_id: int) -> dict:
             raise AssertionError(f"Anonymous {key} identity does not have its declared permissions")
         if key == "pack_editor" and "techpack:cost:query" in me["perms"]:
             raise AssertionError("The no-cost editor must not have cost authority")
+        if key == "sample_reader" and "techpack:cost:query" in me["perms"]:
+            raise AssertionError("The sample reader must not have cost authority")
         if key in {"designated", "all_reader", "outsider", "no_list"} and any(p.endswith(":audit") for p in me["perms"]):
             raise AssertionError("Read-only identity accidentally received an audit permission")
         if key == "mobile_only" and set(me["perms"]) != permissions:

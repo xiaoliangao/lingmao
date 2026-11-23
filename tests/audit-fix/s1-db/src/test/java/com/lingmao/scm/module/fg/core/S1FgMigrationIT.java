@@ -5,16 +5,21 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.flywaydb.database.postgresql.PostgreSQLConfigurationExtension;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -28,6 +33,58 @@ class S1FgMigrationIT {
     @Autowired DataSource dataSource;
     @Value("${spring.datasource.password:}") String databasePassword;
     @Value("${audit.fg.legacy-negative-control:false}") boolean legacyNegativeControl;
+
+    /** Exact resources for the historical V46 -> V57 contract; later domains run in their full-schema tests. */
+    @TempDir Path historicalMigrations;
+    private static final List<String> HISTORICAL_RESOURCES = List.of(
+            "V1__init.sql",
+            "V2__dict_data_unique_value.sql",
+            "V3__sys_user.sql",
+            "V4__sys_menu.sql",
+            "V5__sys_role.sql",
+            "V6__sys_oper_log.sql",
+            "V7__sys_menu_admin_only.sql",
+            "V8__sys_framework.sql",
+            "V9__biz_doc_log_attachment.sql",
+            "V10__basic_base.sql",
+            "V11__sys_dict_user.sql",
+            "V12__supplier.sql",
+            "V13__basic_material_warehouse.sql",
+            "V14__style.sql",
+            "V15__price.sql",
+            "V16__menu_master.sql",
+            "V17__menu_batch34.sql",
+            "V18__craft_standard_hidden.sql",
+            "V19__biz_notice_approval.sql",
+            "V20__techpack.sql",
+            "V21__inventory.sql",
+            "V22__order.sql",
+            "V23__purchase.sql",
+            "V24__material_type_reserve_pct.sql",
+            "V25__production.sql",
+            "V26__audit_remediation.sql",
+            "V27__production_write_guards.sql",
+            "V28__online_flow_indexes.sql",
+            "V28__online_flow_indexes.sql.conf",
+            "V29__purchase_posting_precision.sql",
+            "V30__shared_security_state.sql",
+            "V31__security_schema_comments.sql",
+            "V32__durable_jobs.sql",
+            "V33__upload_file_lifecycle.sql",
+            "V33__upload_file_lifecycle.sql.conf",
+            "V34__export_storage_identity.sql",
+            "V34__export_storage_identity.sql.conf",
+            "V35__file_import_receipts.sql",
+            "V36__append_only_field_audit.sql",
+            "V46__fg.sql",
+            "V57__fg_company_ledger_guards.sql",
+            "R__fg_field_audit.sql",
+            "R__home_read_model_indexes.sql",
+            "R__home_read_model_indexes.sql.conf",
+            "R__inventory_ledger_append_only.sql",
+            "R__security_field_audit.sql",
+            "R__security_field_audit.sql.conf"
+    );
 
     /** 同一断言可对发布 V46 做真实失败负控；默认始终验收 V57，绝不修改生产守卫。 */
     @Test
@@ -159,10 +216,26 @@ class S1FgMigrationIT {
     }
     private Flyway latest(JdbcTemplate jdbc) {
         String schema=jdbc.queryForObject("SELECT current_schema()",String.class);
-        return configured(jdbc.getDataSource()).schemas(schema).defaultSchema(schema).load();
+        // This fixture proves the published V46 -> V57 ledger upgrade, not later independent domains.
+        return configured(jdbc.getDataSource()).schemas(schema).defaultSchema(schema).target("57").load();
     }
     private FluentConfiguration configured(DataSource source) {
-        FluentConfiguration configuration=Flyway.configure().dataSource(source).locations("classpath:db/migration");
+        // Flyway repeatables are not bounded by target(46/57). Stage the exact historical inputs,
+        // including their nontransactional sidecars, rather than executing future-domain triggers.
+        try {
+            for (String name : HISTORICAL_RESOURCES) {
+                Path target = historicalMigrations.resolve(name);
+                if (!Files.exists(target)) {
+                    try (var input = new ClassPathResource("db/migration/" + name).getInputStream()) {
+                        Files.copy(input, target);
+                    }
+                }
+            }
+        } catch (IOException failure) {
+            throw new UncheckedIOException("Cannot prepare the fixed V46 to V57 migration resources", failure);
+        }
+        FluentConfiguration configuration=Flyway.configure().dataSource(source)
+                .locations("filesystem:" + historicalMigrations.toAbsolutePath());
         // 与生产 OnlineMigrationConfiguration 相同：CONCURRENTLY 不能被事务级迁移锁的快照阻塞。
         configuration.getConfigurationExtension(PostgreSQLConfigurationExtension.class).setTransactionalLock(false);
         return configuration;

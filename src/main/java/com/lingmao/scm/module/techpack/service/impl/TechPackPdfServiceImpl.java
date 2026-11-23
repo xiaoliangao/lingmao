@@ -87,69 +87,68 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
     private final DocLogService docLogService;
     private final PdfRenderer pdfRenderer;
     private final Clock clock;
+    private final PackReadTransactions snapshots;
+
+    /** 只包含已授权查询结果；渲染阶段不再访问 DAO/基础服务。 */
+    private record PdfInput(TechPack pack,Ctx ctx,List<ColorOption> colors,Content content,
+            Map<Long,MaterialRef> materials,Map<Long,MaterialSkuRef> skus,Map<String,Map<String,String>> labels,
+            CostCalculator.Inputs costInputs,AttachmentVO mainImage,Map<CraftSection,List<AttachmentVO>> craftImages,
+            List<AttachmentVO> appendixFiles) { }
+
 
     @Override
     public PdfFile export(long id, Long colorId, boolean price, boolean appendix) {
-        TechPack pack = techPackMapper.selectById(id);
-        if (pack == null) {
-            throw new BizException(404, "这一版资料包不存在，可能已经被删除了");
-        }
-        Ctx ctx = packOwners.context(pack);
-        List<ColorOption> colors = ctx.colors();
-        if (colorId != null) {
-            colors = colors.stream().filter(c -> c.id().equals(colorId)).toList();
-            if (colors.isEmpty()) {
-                throw new BizException("这个颜色不在这一版本的展示范围内，请刷新后再选");
-            }
-        }
-        PdfSheet sheet = sheet(pack, ctx, colors, price);
-        List<byte[]> parts = new ArrayList<>();
-        parts.add(pdfRenderer.render(SHEET_TEMPLATE, Map.of("sheet", sheet)));
-        if (appendix) {
-            parts.addAll(appendix());
-        }
-        byte[] pdf = PdfRenderer.merge(parts);
-        docLogService.add(BizType.TECH_PACK, id, LOG_EXPORT, "颜色：" + (colorId == null ? "全部" : colors.getFirst().name())
-                + "；" + (price ? "含价格" : "不含价格") + "；" + (appendix ? "附工艺标准" : "不附工艺标准"));
-        return new PdfFile(fileName(ctx.owner(), pack), pdf);
+        PdfInput input=snapshots.read(()->{
+            TechPack pack=packOwners.read(id);Ctx ctx=packOwners.context(pack);List<ColorOption> colors=ctx.colors();
+            if(colorId!=null){colors=colors.stream().filter(c->c.id().equals(colorId)).toList();
+                if(colors.isEmpty())throw new BizException("这个颜色不在这一版本的展示范围内，请刷新后再选");}
+            return loadInput(pack,ctx,colors,price,appendix);
+        });
+        PdfSheet sheet=sheet(input,price);
+        List<byte[]> parts=new ArrayList<>();parts.add(pdfRenderer.render(SHEET_TEMPLATE,Map.of("sheet",sheet)));
+        if(appendix)parts.addAll(appendix(input.appendixFiles()));
+        byte[] pdf=PdfRenderer.merge(parts);
+        docLogService.add(BizType.TECH_PACK,id,LOG_EXPORT,"颜色："+(colorId==null?"全部":input.colors().getFirst().name())
+                +"；"+(price?"含价格":"不含价格")+"；"+(appendix?"附工艺标准":"不附工艺标准"));
+        return new PdfFile(fileName(input.ctx().owner(),input.pack()),pdf);
     }
 
-    /** 拼工艺单：选项（颜色、含不含价格）在这里套进去，模板不再判断 */
-    PdfSheet sheet(TechPack pack, Ctx ctx, List<ColorOption> colors, boolean price) {
-        PackOwner owner = ctx.owner();
-        Content content = packContent.load(pack.getId());
-        Map<Long, MaterialRef> materials = materials(content.bom());
-        Map<Long, MaterialSkuRef> skus = skus(content.bom());
-        Map<String, String> units = labels("unit");
+    private PdfInput loadInput(TechPack pack,Ctx ctx,List<ColorOption> colors,boolean price,boolean appendix){
+        Content content=packContent.load(pack.getId());Map<Long,MaterialRef> materials=materials(content.bom());
+        Map<Long,MaterialSkuRef> skus=skus(content.bom());Map<String,Map<String,String>> labels=new HashMap<>();
+        for(String type:List.of("unit","season","packing_mode","process_category"))labels.put(type,labels(type));
+        CostCalculator.Inputs costs=price?costCalculator.preload(List.of(pack),Map.of(pack.getId(),ctx)).get(pack.getId()):null;
+        Map<CraftSection,List<AttachmentVO>> images=new java.util.EnumMap<>(CraftSection.class);
+        for(CraftSection section:CraftSection.values())images.put(section,attachmentService.list(BizType.TECH_PACK,pack.getId(),section.name()));
+        return new PdfInput(pack,ctx,colors,content,materials,skus,Map.copyOf(labels),costs,packOwners.mainImage(pack),
+                Map.copyOf(images),appendix?craftStandardService.files():List.of());
+    }
 
-        PdfSheet.Meta meta = new PdfSheet.Meta(orNone(owner.sampleNo()), owner.code(), owner.name(), orNone(owner.aliasName()),
-                (pack.getStatus() == PackStatus.EFFECTIVE && pack.getPublishTime() != null
-                        ? pack.getPublishTime().atZoneSameInstant(clock.getZone()).toLocalDate() : LocalDate.now(clock)).format(DATE),
-                pack.getStage().getLabel() + " V" + pack.getVersion(),
-                colors.stream().map(ColorOption::name).collect(Collectors.joining("、")),
-                String.join(" / ", ctx.sizes()),
-                orNone(owner.productName()),
-                pack.getUtilPct() == null ? NONE : qty(pack.getUtilPct()) + "%",
-                orNone(owner.composition()),
-                StringUtils.hasText(pack.getVersionNote()) ? pack.getVersionNote() : null);
+    /** 原有包内纯布局测试入口；公开导出在上面的 RR 中先取得相同输入再在事务外组版。 */
+    PdfSheet sheet(TechPack pack,Ctx ctx,List<ColorOption> colors,boolean price){return sheet(loadInput(pack,ctx,colors,price,false),price);}
 
-        Map<Long, TechPackCostVO> costs = new HashMap<>();
-        CostCalculator.Inputs costInputs = price ? costCalculator.preload(List.of(pack), Map.of(pack.getId(), ctx)).get(pack.getId()) : null;
-        if (price) {
-            colors.forEach(c -> costs.put(c.id(), costCalculator.computePrepared(pack, ctx, c.id(), costInputs)));
-        }
-        List<PdfSheet.BomTable> boms = colors.stream().map(c -> new PdfSheet.BomTable(c.name(), c.code(),
-                bomRows(content.bom(), c, ctx, materials, skus, units, price ? costs.get(c.id()) : null))).toList();
-
-        return new PdfSheet(title(owner), statusMark(pack.getStatus()), meta, image(packOwners.mainImage(pack)),
-                spec(content, ctx), fabricUsage(content.bom(), ctx, materials, units), ctx.sizes(), boms, price,
-                price ? cost(pack, ctx, colors, costs, costInputs) : null, craftGroups(pack, content, price));
+    private PdfSheet sheet(PdfInput input,boolean price){
+        TechPack pack=input.pack();Ctx ctx=input.ctx();List<ColorOption> colors=input.colors();PackOwner owner=ctx.owner();
+        Content content=input.content();Map<Long,MaterialRef> materials=input.materials();Map<Long,MaterialSkuRef> skus=input.skus();
+        Map<String,String> units=input.labels().get("unit");
+        PdfSheet.Meta meta=new PdfSheet.Meta(orNone(owner.sampleNo()),owner.code(),owner.name(),orNone(owner.aliasName()),
+                (pack.getStatus()==PackStatus.EFFECTIVE&&pack.getPublishTime()!=null?pack.getPublishTime().atZoneSameInstant(clock.getZone()).toLocalDate():LocalDate.now(clock)).format(DATE),
+                pack.getStage().getLabel()+" V"+pack.getVersion(),colors.stream().map(ColorOption::name).collect(Collectors.joining("、")),String.join(" / ",ctx.sizes()),
+                orNone(owner.productName()),pack.getUtilPct()==null?NONE:qty(pack.getUtilPct())+"%",orNone(owner.composition()),
+                StringUtils.hasText(pack.getVersionNote())?pack.getVersionNote():null);
+        Map<Long,TechPackCostVO> costs=new HashMap<>();
+        if(price)colors.forEach(c->costs.put(c.id(),costCalculator.computePrepared(pack,ctx,c.id(),input.costInputs())));
+        List<PdfSheet.BomTable> boms=colors.stream().map(c->new PdfSheet.BomTable(c.name(),c.code(),
+                bomRows(content.bom(),c,ctx,materials,skus,units,price?costs.get(c.id()):null))).toList();
+        return new PdfSheet(title(owner,input.labels().get("season")),statusMark(pack.getStatus()),meta,image(input.mainImage()),spec(content,ctx),
+                fabricUsage(content.bom(),ctx,materials,units),ctx.sizes(),boms,price,
+                price?cost(pack,ctx,colors,costs,input.costInputs()):null,craftGroups(input,price));
     }
 
     // ---------------------------------------------------------------- 各块
 
-    private String title(PackOwner owner) {
-        String season = owner.season() == null ? "" : labels("season").getOrDefault(owner.season(), owner.season()) + "季";
+    private String title(PackOwner owner,Map<String,String> seasons) {
+        String season = owner.season() == null ? "" : seasons.getOrDefault(owner.season(), owner.season()) + "季";
         return (owner.year() == null ? "" : owner.year().toString()) + season + "工艺单";
     }
 
@@ -242,20 +241,21 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
     }
 
     /** 九段按三块分；没字、没图（包装要求还要没选包装方式）的段不出，一段都没有的那块不出。工序工价只在含价格时放车间缝制下面 */
-    private List<PdfSheet.CraftGroup> craftGroups(TechPack pack, Content content, boolean price) {
+    private List<PdfSheet.CraftGroup> craftGroups(PdfInput input,boolean price) {
+        TechPack pack=input.pack();Content content=input.content();
         Map<CraftSection, String> texts = new HashMap<>();
         for (CraftText t : content.texts()) {
             texts.put(t.getSection(), t.getContent());
         }
         String packingMode = pack.getPackingMode() == null ? null
-                : labels("packing_mode").getOrDefault(pack.getPackingMode(), pack.getPackingMode());
+                : input.labels().get("packing_mode").getOrDefault(pack.getPackingMode(), pack.getPackingMode());
         Map<String, List<PdfSheet.CraftItem>> groups = new LinkedHashMap<>();
         for (CraftSection section : CraftSection.values()) {
             String text = StringUtils.hasText(texts.get(section)) ? texts.get(section) : null;
             String mode = section == CraftSection.PACKING ? packingMode : null;
             List<String> images = new ArrayList<>();
             List<String> skipped = new ArrayList<>();
-            for (AttachmentVO a : attachmentService.list(BizType.TECH_PACK, pack.getId(), section.name())) {
+            for (AttachmentVO a : input.craftImages().getOrDefault(section,List.of())) {
                 String data = dataUri(a.url());
                 if (data != null) {
                     images.add(data);
@@ -269,7 +269,7 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
             }
         }
         List<PackContent.ProcessRow> processes = price ? content.processes() : List.of();
-        Map<String, String> categories = processes.isEmpty() ? Map.of() : labels("process_category");
+        Map<String, String> categories = processes.isEmpty() ? Map.of() : input.labels().get("process_category");
         List<PdfSheet.CraftGroup> result = new ArrayList<>();
         groups.forEach((name, items) -> {
             boolean withProcesses = name.equals(PROCESS_GROUP) && !processes.isEmpty();
@@ -294,10 +294,10 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
     }
 
     /** 工艺标准文件按顺序：PDF 直接拼，图片一张一页；文件不在了、打不开的跳过（记 warn），不让整份导出失败 */
-    private List<byte[]> appendix() {
+    private List<byte[]> appendix(List<AttachmentVO> files) {
         List<byte[]> parts = new ArrayList<>();
         int n = 0;
-        for (AttachmentVO file : craftStandardService.files()) {
+        for (AttachmentVO file : files) {
             Optional<Path> path = fileService.localPath(file.url());
             String ext = extension(file.url());
             if (path.isEmpty()) {

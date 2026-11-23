@@ -27,6 +27,10 @@ import java.util.Set;
  */
 public interface SupplierService {
 
+    /** 以固定工厂分类 EXISTS 校验，避免为单次派单展开无限分类关联。 */
+    void checkFactory(long id, Usage usage);
+
+
     /** 列表，条件见 SupplierQuery。不出账号 */
     PageResult<SupplierRowVO> page(SupplierQuery query);
     /** 证照行而非供应商计数；按 validUntil、ID 排序。 */

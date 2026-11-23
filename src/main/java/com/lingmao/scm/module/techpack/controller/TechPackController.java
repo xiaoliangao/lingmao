@@ -57,7 +57,11 @@ public class TechPackController extends IdempotencyReplayGuard {
     @Operation(summary = "一个款的版本列表和概况（默认选哪一版、能建哪个阶段、单件成本）")
     @GetMapping
     @PreAuthorize("hasAuthority('techpack:pack:list')")
-    public R<TechPackOverviewVO> overview(@Parameter(description = "款式 id") @RequestParam("styleId") long styleId) {
+    public R<TechPackOverviewVO> overview(@RequestParam(value="styleId",required=false) Long styleId,
+            @RequestParam(value="sampleId",required=false) Long sampleId,@RequestParam(value="companyId",required=false) Long companyId,
+            @RequestParam(value="beforeVersion",required=false) Integer beforeVersion,@RequestParam(value="size",defaultValue="20") int size) {
+        if((styleId==null)==(sampleId==null))throw new BizException(400,"请选择唯一资料包归属");
+        if(sampleId!=null){if(companyId==null)throw new BizException(400,"请选择样衣主体公司");return R.ok(techPackService.sampleOverview(companyId,sampleId,beforeVersion,size));}
         return R.ok(techPackService.overview(styleId));
     }
 
@@ -74,7 +78,12 @@ public class TechPackController extends IdempotencyReplayGuard {
     @OperLog(module = "资料包", action = "新建")
     @IdempotentCreate("TECHPACK_CREATE")
     public R<Long> create(@Valid @RequestBody TechPackCreateReq req) {
-        return R.ok(techPackService.create(req.getStyleId(), req.getStage()));
+        if((req.getStyleId()==null)==(req.getSampleId()==null))throw new BizException(400,"请选择唯一资料包归属");
+        if(req.getSampleId()!=null){
+            if(req.getCompanyId()==null||req.getStage()!=com.lingmao.scm.module.techpack.entity.PackStage.DEV)throw new BizException(400,"样衣只允许建立研发资料包，并须选择主体");
+            return R.ok(techPackService.createForSample(req.getCompanyId(),req.getSampleId()));
+        }
+        return R.ok(techPackService.create(req.getStyleId(),req.getStage()));
     }
 
     @Operation(summary = "保存草稿（整版覆盖），返回新的 versionLock。cost 是 null 时不动核价")

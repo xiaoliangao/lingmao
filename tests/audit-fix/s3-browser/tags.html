@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>公共标签实际组件回归</title></head>
+<body><div id="app"></div>
+<script type="module">
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ElementPlus from 'element-plus'
+import * as icons from '@element-plus/icons-vue'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import 'element-plus/dist/index.css'
+import '/src/styles/tokens.css'
+import '/src/styles/base.css'
+import '/src/styles/element.css'
+import { getToken, setToken, startSessionSync } from '/src/utils/token.ts'
+import { vPerm } from '/src/directives/perm.ts'
+import AppLayout from '/src/layout/AppLayout.vue'
+import TagLibrary from '/src/views/biz/tag/index.vue'
+import StyleDetail from '/src/views/style/style/detail.vue'
+import MaterialDetail from '/src/views/basic/material/detail.vue'
+import SupplierDetail from '/src/views/supplier/supplier/detail.vue'
+import OrderDetail from '/src/views/order/order/detail.vue'
+import MrpDetail from '/src/views/purchase/mrp/detail.vue'
+import PurchaseDetail from '/src/views/purchase/order/detail.vue'
+import InventoryDetail from '/src/views/inventory/doc/detail.vue'
+import CountDetail from '/src/views/inventory/count/detail.vue'
+import ProductionDetail from '/src/views/production/order/detail.vue'
+import FgDetail from '/src/views/fg/doc/detail.vue'
+import Fixture from './TagsFixture.vue'
+import Panels from './TagsPanel.vue'
+if (!getToken()) setToken('synthetic-tags-session')
+startSessionSync()
+const router = createRouter({ history: createMemoryHistory(), routes: [
+  { path: '/', component: AppLayout, props: { area: 'workbench' }, children: [
+    { path: '/tags', component: TagLibrary, meta: { title: '公共标签库' } },
+    { path: '/tag-objects', component: Panels, meta: { title: '对象标签' } },
+    { path: '/styles/:id', component: StyleDetail, meta: { title: '款式', detail: true } },
+    { path: '/materials/:id', component: MaterialDetail, meta: { title: '物料', detail: true } },
+    { path: '/suppliers/:id', component: SupplierDetail, meta: { title: '供应商', detail: true } },
+    { path: '/orders/:id', component: OrderDetail, meta: { title: '订单', detail: true } },
+    { path: '/mrp/:id', component: MrpDetail, meta: { title: '算料', detail: true } },
+    { path: '/purchases/:id', component: PurchaseDetail, meta: { title: '采购', detail: true } },
+    { path: '/stock-in/:id', component: InventoryDetail, meta: { title: '物料入库', detail: true } },
+    { path: '/stock-takes/:id', component: CountDetail, meta: { title: '盘点', detail: true } },
+    { path: '/production/:id', component: ProductionDetail, meta: { title: '外发加工', detail: true } },
+    { path: '/fg-in/:id', component: FgDetail, meta: { title: '成品入库', detail: true } },
+  ] },
+] })
+const app = createApp(Fixture).use(createPinia()).use(router).use(ElementPlus, { locale: zhCn })
+for (const [name, component] of Object.entries(icons)) app.component(name, component)
+app.directive('perm', vPerm)
+await router.push(new URLSearchParams(location.search).get('path') || '/tag-objects')
+await router.isReady()
+app.mount('#app')
+</script>
+</body>
+</html>

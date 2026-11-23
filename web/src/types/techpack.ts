@@ -9,6 +9,9 @@ import type { FileVO } from '@/types/system'
 /** 阶段（tp_tech_pack.stage）：研发 BOM 只估价；生产 BOM 发工厂、算料，需求订单只认它（PRD §6.4.1） */
 export type PackStage = 'DEV' | 'PROD'
 
+/** 未转款样衣拥有独立 DEV 资料包；保留旧 styleId 调用时转换为 STYLE owner。 */
+export type TechPackOwner = { kind: 'STYLE'; styleId: string } | { kind: 'SAMPLE'; sampleId: string; companyId: string }
+
 /** 原型里研发是琥珀色小标签、生产是蓝色小标签；阶段不是状态，页面上用普通的 el-tag 就行 */
 export const PACK_STAGE: Record<PackStage, { label: string; short: string }> = {
   DEV: { label: '研发 BOM', short: '研发' },
@@ -118,7 +121,12 @@ export interface TechPackBrief {
 
 /** GET /api/tech-packs?styleId=：一个款的资料包概况。资料包页签、款式页顶上的"新颜色未配料"提示、基本信息里的"资料包核价"都用它 */
 export interface TechPackOverview {
-  styleId: string
+  styleId: string | null
+  sampleId?: string | null
+  companyId?: string | null
+  hasMore?: boolean | null
+  nextBeforeVersion?: number | null
+  total?: number | null
   /** 全部版本：研发在前、生产在后，各自新版本在前 */
   packs: TechPackBrief[]
   /** 打开页签默认选哪一版：生产草稿 > 生产已生效 > 研发草稿 > 研发已生效；一个版本都没有是 null */
@@ -334,7 +342,9 @@ export interface TechPackDetail {
   /** 颜色尺码取自哪里：LIVE 草稿取款式现在的，SNAPSHOT 生效时记下的，LEGACY 升级前生效的老版本 */
   contextSource: 'LIVE' | 'SNAPSHOT' | 'LEGACY'
   id: string
-  styleId: string
+  styleId: string | null
+  sampleId?: string | null
+  companyId?: string | null
   styleCode: string
   styleName: string
   /** 花名 */

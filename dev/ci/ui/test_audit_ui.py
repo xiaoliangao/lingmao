@@ -22,6 +22,8 @@ from uuid import uuid4
 from playwright.sync_api import expect, sync_playwright
 
 from fixtures.domain_seed import DomainFixture
+from fixtures.sample_flow import run_sample_lifecycle
+from fixtures.tag_flow import run_tag_lifecycle
 from harness import (
     LOCAL_HOSTS, ApiClient, anonymous_png, assert_decimal_equal, business_day, cost_values,
     count_update, line_values, local_url, node_plan, order_update, pack_update, pdf_text, query_path, read_fixture,
@@ -2202,6 +2204,12 @@ class AuditUi(unittest.TestCase):
                   selfAuditCode=403, downstreamVoidCode=1005, negativeStockReverseCode=1001,
                   priceFieldsPhysicallyAbsent=True, responseMocks=False)
 
+
+    def test_25_public_tags_create_conflict_rename_archive_and_permissions(self):
+        run_tag_lifecycle(self)
+
+    def test_24_sample_create_revise_convert_and_field_audit(self):
+        run_sample_lifecycle(self)
 
     def test_23_inventory_large_aggregates(self):
         """Two thousand real legal SKUs/lines, exact totals and actual visible cells."""

@@ -1,8 +1,11 @@
 package com.lingmao.scm.security;
 
+import com.lingmao.scm.IsolatedRoleMigration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.JsonNode;
 
 import java.net.URI;
@@ -11,7 +14,10 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** 实际用户/角色 API、数据库触发器及审计响应；从不伪造一条成功审计记录。 */
 class S4SecurityAuditHttpIT extends A2BusinessFixture {
     @Autowired javax.sql.DataSource dataSource;
+    @Value("${spring.datasource.password:}") String databasePassword;
     private static final Set<String> USER_FIELDS = Set.of("id", "status", "deleted", "default_company_id", "session_version", "designer_no_locked");
     private static final Set<String> ROLE_FIELDS = Set.of("id", "code", "status", "deleted", "sort", "data_scope");
 
@@ -136,34 +143,87 @@ class S4SecurityAuditHttpIT extends A2BusinessFixture {
     }
 
     @Test void identityConstraintsRejectMalformedRelationshipsAndRepeatableDdlRunsTwice() throws Exception {
-        try (var source = getClass().getResourceAsStream("/db/migration/R__security_field_audit.sql")) {
-            assertThat(source).isNotNull();
-            String ddl = new String(source.readAllBytes(), StandardCharsets.UTF_8);
-            // 脚本先提交短元数据锁，再以另一事务验证存量；绝不能套进一个长外层事务。
-            for (int run = 0; run < 2; run++) jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
-                assertThat(connection.getAutoCommit()).isTrue();
-                try (var statement = connection.createStatement()) { statement.execute(ddl); }
-                return null;
-            });
-        }
         String namespace = jdbc.queryForObject("SELECT tenant_id FROM sys_deployment_namespace WHERE singleton", String.class);
-        for (String key : List.of("{}", "[]", "{\"user_id\":\"1\"}", "{\"user_id\":1,\"role_id\":\"2\"}",
-                "{\"user_id\":\"1\",\"role_id\":\"2\",\"extra\":\"3\"}", "{\"user_id\":\"0\",\"role_id\":\"2\"}",
-                "{\"user_id\":null,\"role_id\":\"2\"}", "{\"user_id\":\"-1\",\"role_id\":\"2\"}",
-                "{\"user_id\":\"9223372036854775808\",\"role_id\":\"2\"}", "{\"user_id\":\"3\",\"role_id\":\"2\"}")) {
-            assertThatThrownBy(() -> jdbc.update("""
+        JsonNode sharedBefore = auditDefinitions(jdbc);
+        assertFixedWrapperPaths(sharedBefore);
+        String isolatedDatabase;
+        JsonNode isolatedBefore;
+        List<JsonNode> replayed = new ArrayList<>();
+        // Old CREATE OR REPLACE resets function SET options. Replaying it in the application
+        // database would undo the newer audit wrapper configuration without changing Flyway history.
+        // Use the existing profile-only fresh-database fixture; the published script stays untouched.
+        try (var migration = IsolatedRoleMigration.migrate(dataSource, databasePassword, "59")) {
+            JdbcTemplate isolated = migration.jdbc();
+            isolatedDatabase = isolated.queryForObject("SELECT current_database()", String.class);
+            assertThat(isolatedDatabase).isNotEqualTo(jdbc.queryForObject("SELECT current_database()", String.class));
+            isolated.update("INSERT INTO sys_deployment_namespace(singleton,tenant_id) VALUES(true,?)", namespace);
+            isolatedBefore = auditDefinitions(isolated);
+            assertFixedWrapperPaths(isolatedBefore);
+            try (var source = getClass().getResourceAsStream("/db/migration/R__security_field_audit.sql")) {
+                assertThat(source).isNotNull();
+                String ddl = new String(source.readAllBytes(), StandardCharsets.UTF_8);
+                // Keep the real short metadata COMMIT followed by the separate validation transaction.
+                for (int run = 0; run < 2; run++) {
+                    isolated.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
+                        assertThat(connection.getAutoCommit()).isTrue();
+                        try (var statement = connection.createStatement()) { statement.execute(ddl); }
+                        return null;
+                    });
+                    JsonNode actual = auditDefinitions(isolated);
+                    replayed.add(actual);
+                    assertThat(actual.path("functions").path("scm_security_audit_link_valid").isNull()).isTrue();
+                    assertThat(actual.path("functions").path("scm_sample_audit_identity_valid"))
+                            .isEqualTo(isolatedBefore.path("functions").path("scm_sample_audit_identity_valid"));
+                    assertThat(actual.path("rowIdentitySha256")).isEqualTo(isolatedBefore.path("rowIdentitySha256"));
+                }
+            }
+            for (String key : List.of("{}", "[]", "{\"user_id\":\"1\"}", "{\"user_id\":1,\"role_id\":\"2\"}",
+                    "{\"user_id\":\"1\",\"role_id\":\"2\",\"extra\":\"3\"}", "{\"user_id\":\"0\",\"role_id\":\"2\"}",
+                    "{\"user_id\":null,\"role_id\":\"2\"}", "{\"user_id\":\"-1\",\"role_id\":\"2\"}",
+                    "{\"user_id\":\"9223372036854775808\",\"role_id\":\"2\"}", "{\"user_id\":\"3\",\"role_id\":\"2\"}")) {
+                assertThatThrownBy(() -> isolated.update("""
                     INSERT INTO sys_data_log(tenant_key,table_name,row_id,row_key,root_table,root_id,price_domain,action,diff,transaction_id)
                     VALUES(?,'sys_user_role',NULL,?::jsonb,'sys_user',1,'SECURITY','INSERT','{}',txid_current())
                     """, namespace, key)).isInstanceOf(DataIntegrityViolationException.class);
-        }
-        assertThatThrownBy(() -> jdbc.update("""
+            }
+            assertThatThrownBy(() -> isolated.update("""
                 INSERT INTO sys_data_log(tenant_key,table_name,row_id,root_table,root_id,price_domain,action,diff,transaction_id)
                 VALUES(?,'bas_company',NULL,'bas_company',1,'COST','INSERT','{}',txid_current())
                 """, namespace)).isInstanceOf(DataIntegrityViolationException.class);
-        for (String statement : List.of("UPDATE sys_data_log SET row_key=row_key WHERE false", "DELETE FROM sys_data_log WHERE false", "TRUNCATE sys_data_log"))
-            assertThatThrownBy(() -> jdbc.execute(statement)).isInstanceOf(org.springframework.dao.DataAccessException.class);
-        assertThat(jdbc.queryForList("SELECT convalidated FROM pg_constraint WHERE conrelid='sys_data_log'::regclass AND conname IN ('ck_data_log_row_identity','ck_data_log_price_domain_security')", Boolean.class))
+            for (String statement : List.of("UPDATE sys_data_log SET row_key=row_key WHERE false", "DELETE FROM sys_data_log WHERE false", "TRUNCATE sys_data_log"))
+                assertThatThrownBy(() -> isolated.execute(statement)).isInstanceOf(org.springframework.dao.DataAccessException.class);
+            assertThat(isolated.queryForList("SELECT convalidated FROM pg_constraint WHERE conrelid='sys_data_log'::regclass AND conname IN ('ck_data_log_row_identity','ck_data_log_price_domain_security')", Boolean.class))
                 .hasSize(2).containsOnly(true);
+        }
+        JsonNode sharedAfter = auditDefinitions(jdbc);
+        assertThat(sharedAfter).isEqualTo(sharedBefore);
+        boolean isolatedRemoved = Boolean.TRUE.equals(jdbc.queryForObject("SELECT NOT EXISTS(SELECT 1 FROM pg_database WHERE datname=?)", Boolean.class, isolatedDatabase));
+        assertThat(isolatedRemoved).isTrue();
+        evidence("security-repeatable-isolation.json", json.valueToTree(Map.of(
+                "sharedBefore", sharedBefore, "isolatedDatabase", isolatedDatabase,
+                "isolatedBefore", isolatedBefore, "isolatedAfterEachReplay", replayed,
+                "sharedAfter", sharedAfter, "isolatedDatabaseRemoved", isolatedRemoved)));
+    }
+
+    private JsonNode auditDefinitions(JdbcTemplate source) throws Exception {
+        JsonNode functions = json.readTree(source.queryForObject("""
+                SELECT jsonb_object_agg(proname,to_jsonb(proconfig)) FROM pg_catalog.pg_proc
+                WHERE oid IN ('public.scm_security_audit_link_valid(text,jsonb,text,bigint)'::regprocedure,
+                              'public.scm_sample_audit_identity_valid(text,text,bigint,jsonb,text,bigint)'::regprocedure)
+                """, String.class));
+        String check = source.queryForObject("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='sys_data_log'::regclass AND conname='ck_data_log_row_identity'", String.class);
+        assertThat(check).isNotNull();
+        return json.valueToTree(Map.of("functions", functions, "rowIdentitySha256",
+                HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(check.getBytes(StandardCharsets.UTF_8)))));
+    }
+
+    private static void assertFixedWrapperPaths(JsonNode definitions) {
+        for (String name : List.of("scm_security_audit_link_valid", "scm_sample_audit_identity_valid")) {
+            JsonNode configuration = definitions.path("functions").path(name);
+            assertThat(configuration.isArray()).as(name).isTrue();
+            assertThat(configuration.size()).as(name).isOne();
+            assertThat(configuration.get(0).asText()).as(name).isEqualTo("search_path=pg_catalog, public");
+        }
     }
 
     @Test void committedMetadataPhaseAllowsRealConcurrentWritesDuringConstraintValidation() throws Exception {

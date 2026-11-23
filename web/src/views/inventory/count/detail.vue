@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
@@ -399,6 +400,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
       </div>
 
       <aside class="doc-aside">
+        <ObjectTags type="INV_COUNT" :object-id="id" :company-id="detail.companyId" :editable="editable" @saved="logRef?.reload()" />
         <section class="panel">
           <div class="panel-head">盘点单信息</div>
           <div class="panel-body">

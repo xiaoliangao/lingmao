@@ -30,7 +30,7 @@ export function visibleWriteBody<T>(url: string, body: T, can: PermissionCheck =
   let domain: string | undefined
   if (/^\/api\/(orders|order-changes)(\/|$)/.test(path)) domain = FIELD_PERMISSIONS.orderPrice
   else if (/^\/api\/production-orders(\/|$)/.test(path)) domain = FIELD_PERMISSIONS.productionPrice
-  else if (/^\/api\/(materials|styles|tech-packs|purchase-orders|mrp-calcs|inventory-docs|inventory-counts)(\/|$)/.test(path)) domain = FIELD_PERMISSIONS.cost
+  else if (/^\/api\/(materials|styles|samples|tech-packs|purchase-orders|mrp-calcs|inventory-docs|inventory-counts)(\/|$)/.test(path)) domain = FIELD_PERMISSIONS.cost
   else if (path === '/api/prices' && 'type' in body && (body.type === 'MATERIAL' || body.type === 'PROCESS')) domain = priceReadPermission(body.type)
   const supplier = /^\/api\/suppliers(\/|$)/.test(path)
   if (!domain && !supplier) return body
