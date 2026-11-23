@@ -85,8 +85,8 @@ test('intranet HTTP SHA-256 fallback matches the native implementation', () => {
   }
 })
 test('only server-protected writes can replay; read-only POST and CAS actions cannot', () => {
-  for (const url of ['/api/orders', '/api/materials', '/api/styles/9007199254740993/skus/generate', '/api/inventory-docs/from-purchase/9007199254740993', '/api/production-orders/1/nodes/2/reports']) assert.equal(canReplayWrite('post', url), true)
-  for (const [method, url] of [['post', '/api/tech-packs/1/bom-defaults'], ['post', '/api/orders/1/audit'], ['put', '/api/orders/1'], ['post', '/api/roles']]) assert.equal(canReplayWrite(method, url), false)
+  for (const url of ['/api/orders', '/api/materials', '/api/samples', '/api/styles/9007199254740993/skus/generate', '/api/inventory-docs/from-purchase/9007199254740993', '/api/production-orders/1/nodes/2/reports']) assert.equal(canReplayWrite('post', url), true)
+  for (const [method, url] of [['post', '/api/tech-packs/1/bom-defaults'], ['post', '/api/orders/1/audit'], ['put', '/api/orders/1'], ['post', '/api/roles'], ['post', '/api/samples/1/convert'], ['post', '/api/sample-orders/1/dispatch'], ['put', '/api/samples/1']]) assert.equal(canReplayWrite(method, url), false)
 })
 test('export task create, cancel and retry are protected; arbitrary export mutations cannot replay', () => {
   for (const path of ['/api/export-jobs/stock-logs', '/api/export-jobs/9007199254740993/cancel', '/api/export-jobs/9007199254740993/retry']) assert.equal(canReplayWrite('post', path), true)
@@ -139,6 +139,8 @@ test('financial visibility keeps sales, production and cost grants independent',
   assert.equal(visibleWriteBody('/api/production-orders/1', { unitPrice: 12.3 }, production).unitPrice, 12.3)
   assert.equal(visibleWriteBody('/api/materials', { refPrice: 12.3 }, production).refPrice, undefined)
   assert.equal(visibleWriteBody('/api/materials', { refPrice: 12.3 }, cost).refPrice, 12.3)
+  assert.deepEqual(visibleWriteBody('/api/samples/9007199254740993?companyId=1', { version: 7, estCost: '12.3456', estTagPrice: '88.99' }, production), { version: 7, estTagPrice: '88.99' })
+  assert.equal(visibleWriteBody('/api/samples', { estCost: '12.3456' }, cost).estCost, '12.3456')
   assert.deepEqual(visibleWriteBody('/api/orders', body, () => false), { id: '9007199254740993', version: 3, companyId: '1', items: [{ id: '9007199254740995', qty: 7 }], tagPrice: 88 })
   assert.equal(body.items[0].price, 12.3, 'caller data must not be mutated')
 })

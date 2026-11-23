@@ -42,6 +42,13 @@ public class FgAuditTargetGuard implements AuditTargetGuard {
 
     @Override public Set<String> tables() { return TABLES; }
 
+    @Override public void checkHistoricalRoot(String table, long id) {
+        if (!table.equals("fg_doc") || !LoginUser.hasAuthority("fg:doc:list") || docMapper.selectById(id) != null) throw missing();
+        Long company = CompanyContext.header(true);
+        if (company == null) throw new BizException(400, "审计读取需要明确主体");
+        checkDeletedDoc(id, company);
+    }
+
     @Override public void check(String table, long id) {
         if (!TABLES.contains(table)) throw missing();
         String permission = table.equals("fg_stock") ? "fg:stock:list" : "fg:doc:list";
@@ -81,6 +88,10 @@ public class FgAuditTargetGuard implements AuditTargetGuard {
             docs.checkVisible(id, company);
             return;
         }
+        checkDeletedDoc(id, company);
+    }
+
+    private void checkDeletedDoc(long id, long company) {
         var deleted = lastDelete("fg_doc", id);
         if (!deleted.rootTable().equals("fg_doc") || deleted.rootId() != id
                 || oldId(deleted, "company_id") != company) throw missing();

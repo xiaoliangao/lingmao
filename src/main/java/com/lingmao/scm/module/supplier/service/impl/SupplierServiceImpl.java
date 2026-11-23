@@ -599,6 +599,15 @@ public class SupplierServiceImpl implements SupplierService {
     }
 
     @Override
+    public void checkFactory(long id, Usage usage) {
+        checkUsable(id, usage);
+        boolean factory = supplierMapper.exists(new LambdaQueryWrapper<Supplier>()
+                .eq(Supplier::getId, id).apply("EXISTS (SELECT 1 FROM sup_supplier_category c "
+                        + "WHERE c.supplier_id = sup_supplier.id AND c.category IN ('GARMENT','PROCESSOR'))"));
+        if (!factory) throw new BizException(400, "请选择成衣厂或加工厂");
+    }
+
+    @Override
     public void checkUsable(long id, Usage usage) {
         Supplier s = getEntity(id);
         if (!SupplierRules.USABLE.get(usage).contains(s.getStatus())) {

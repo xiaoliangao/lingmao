@@ -7,9 +7,11 @@ import type { Attachment, DocNotice, DocRef, StatusTone } from '@/types/biz'
 /** 开发款式（要 style:style:list） */
 export interface HomeDevKpi {
   /** 没停用的款 */
-  styleCount: number
+  styleCount: number | null
   /** 资料包草稿，研发、生产两个阶段都算 */
-  packDraftCount: number
+  packDraftCount: number | null
+  sampleMakingCount: number | null
+  companyId: string | null
 }
 
 /** 在手订单（要 order:order:list） */
@@ -58,10 +60,12 @@ export interface HomeKpi {
 // ---------------------------------------------------------------- 待办（具体到单据）
 
 /** 待办分组，后端按这个顺序给（PRD §6.9.2） */
-export type TodoGroupKey = 'AUDIT' | 'PRODUCTION_LATE' | 'CUT_RISK' | 'ARRIVAL_LATE' | 'UPSTREAM' | 'UNSCHEDULED' | 'ISSUE' | 'CERT'
+export type TodoGroupKey = 'AUDIT' | 'PRODUCTION_LATE' | 'CUT_RISK' | 'ARRIVAL_LATE' | 'UPSTREAM' | 'UNSCHEDULED' | 'ISSUE' | 'CERT' | 'SAMPLE_REVIEW' | 'SAMPLE_LATE'
 
 /** 分组的叫法和标签颜色（分段控件、"全部"里每条后面的小标签） */
 export const TODO_GROUP: Record<TodoGroupKey, { label: string; tone: StatusTone }> = {
+  SAMPLE_REVIEW: { label: '样衣待评审', tone: 'pending' },
+  SAMPLE_LATE: { label: '样衣节点延期', tone: 'danger' },
   AUDIT: { label: '待我审核', tone: 'pending' },
   PRODUCTION_LATE: { label: '生产延期', tone: 'danger' },
   CUT_RISK: { label: '晚于开裁', tone: 'danger' },
@@ -96,6 +100,8 @@ export interface TodoGroup {
 
 /** 一组超过 20 条时"还有 n 条"去哪；没有对应列表的组是 null（不出这句） */
 export const TODO_GROUP_MORE: Record<TodoGroupKey, string | null> = {
+  SAMPLE_REVIEW: '/samples?status=WAIT_REVIEW',
+  SAMPLE_LATE: '/samples?late=true',
   AUDIT: null,
   PRODUCTION_LATE: '/board?card=LATE',
   CUT_RISK: '/stock-in?tab=pending&risk=CUT',
@@ -116,6 +122,8 @@ export type TodoCountKey =
   | 'STOCK_IN_DRAFT'
   | 'STOCK_OUT_DRAFT'
   | 'FG_PENDING'
+  | 'SAMPLE_REVIEW'
+  | 'SAMPLE_LATE'
   | 'COUNT_PENDING'
   | 'SUPPLIER_APPROVE'
   | 'UNSCHEDULED'
@@ -131,6 +139,8 @@ export type TodoCountKey =
 
 /** 叫法、点了去哪、数字什么颜色（danger 红、pending 琥珀、null 不上色）。地址参数各模块文档里定好了 */
 export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone: StatusTone | null }> = {
+  SAMPLE_REVIEW: { label: '样衣待评审', to: '/samples?status=WAIT_REVIEW', tone: 'pending' },
+  SAMPLE_LATE: { label: '样衣节点延期', to: '/samples?late=true', tone: 'danger' },
   ORDER_PENDING: { label: '待审核的需求订单', to: '/orders?status=PENDING', tone: null },
   CHANGE_PENDING: { label: '待审核的订单变更', to: '/order-changes?status=PENDING', tone: null },
   PURCHASE_PENDING: { label: '待审核的采购单', to: '/purchases?status=PENDING', tone: null },
@@ -155,8 +165,8 @@ export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone:
 
 /** 成品提醒必须带计数时的主体；其他提醒保持原接口。 */
 export type TodoCount =
-  | { key: 'FG_PENDING'; count: number; companyId: string }
-  | { key: Exclude<TodoCountKey, 'FG_PENDING'>; count: number; companyId?: never }
+  | { key: 'FG_PENDING' | 'SAMPLE_REVIEW' | 'SAMPLE_LATE'; count: number; companyId: string }
+  | { key: Exclude<TodoCountKey, 'FG_PENDING' | 'SAMPLE_REVIEW' | 'SAMPLE_LATE'>; count: number; companyId?: never }
 
 /**
  * 待办的筛选（用户 11-15 定：管理层默认看全部，可以筛）。只对 canSeeAll 的人有用，别人发了也只看自己的。

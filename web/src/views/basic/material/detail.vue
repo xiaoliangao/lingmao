@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import ThumbImage from '@/components/ThumbImage.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
@@ -300,6 +301,7 @@ const LOG_ACTIONS = {
       </div>
 
       <aside class="aside">
+        <ObjectTags type="MATERIAL" :object-id="id" :editable="canEdit" @saved="logList?.reload()" />
         <section class="panel">
           <div class="panel-head">图片<span class="acts dim">第一张是主图</span></div>
           <div class="panel-body">

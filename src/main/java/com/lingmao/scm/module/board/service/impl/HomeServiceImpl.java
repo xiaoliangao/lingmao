@@ -130,7 +130,7 @@ public class HomeServiceImpl implements HomeService {
     static final List<String> COUNT_KEYS = List.of("ORDER_PENDING", "CHANGE_PENDING", "PURCHASE_PENDING", "OUTSOURCE_PENDING",
             "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
             "PRODUCTION_NEAR", "PRODUCTION_NODE_LATE", "PRODUCTION_ISSUE", "ARRIVAL_LATE", "ARRIVAL_CUT", "UPSTREAM", "CERT_EXPIRING",
-            "REORDER", "FG_PENDING");
+            "REORDER", "FG_PENDING", "SAMPLE_REVIEW", "SAMPLE_LATE");
 
     /** 供应商的状态叫法、颜色（和前端 SUPPLIER_STATUS 一样）：待办里的供应商没有 ReferenceService 能描述，这里自己造 DocRef */
     static final StatusLabels<SupplierStatus> SUPPLIER_STATUS = StatusLabels.of(SupplierStatus.class)
@@ -160,18 +160,22 @@ public class HomeServiceImpl implements HomeService {
     private final UpstreamCursor upstreamCursor;
     private final Clock clock;
     private final com.lingmao.scm.module.fg.service.FgDocService fgDocService;
+    private final com.lingmao.scm.module.dev.service.SampleHomeService sampleHomeService;
 
     // ---------------------------------------------------------------- 概况
 
     @Override
-    public HomeKpi kpi() {
-        return new HomeKpi(can(STYLE_LIST) ? devKpi() : null, can(ORDER_LIST) ? orderKpi() : null,
+    public HomeKpi kpi(Long companyId) {
+        if(companyId!=null){if(companyId<=0)throw new BizException(400,"主体编号无效");com.lingmao.scm.common.scope.CompanyContext.create(companyId);}
+        return new HomeKpi(can(STYLE_LIST)||can("dev:sample:list") ? devKpi(companyId) : null, can(ORDER_LIST) ? orderKpi() : null,
                 can(PRODUCTION_LIST) ? productionKpi() : null, can(PURCHASE_LIST) ? materialKpi() : null);
     }
 
-    private HomeKpi.Dev devKpi() {
-        long styles = styleTotal(StyleStatus.DRAFT) + styleTotal(StyleStatus.ENABLED);
-        return new HomeKpi.Dev(styles, techPackService.drafts(first(1)).getTotal());
+    private HomeKpi.Dev devKpi(Long companyId) {
+        Long styles=can(STYLE_LIST)?styleTotal(StyleStatus.DRAFT)+styleTotal(StyleStatus.ENABLED):null;
+        Long drafts=can("techpack:pack:list")?techPackService.drafts(first(1)).getTotal():null;
+        boolean sampleVisible=can("dev:sample:list")&&companyId!=null;
+        return new HomeKpi.Dev(styles,drafts,sampleVisible?sampleHomeService.makingCount(companyId):null,sampleVisible?companyId:null);
     }
 
     private long styleTotal(StyleStatus status) {
@@ -296,9 +300,18 @@ public class HomeServiceImpl implements HomeService {
             com.lingmao.scm.common.scope.CompanyContext.create(fgCompany);
         }
         if (can("fg:doc:add") && fgCompany != null) counts.put("FG_PENDING", fgDocService.pendingReceiptCount(fgCompany));
+        if(can("dev:sample:list")&&fgCompany!=null){
+            if(can("dev:sample:review"))add(groups,sampleTodo(fgCompany,owner,"SAMPLE_REVIEW",com.lingmao.scm.module.dev.service.SampleHomeService.Kind.REVIEW,counts));
+            add(groups,sampleTodo(fgCompany,owner,"SAMPLE_LATE",com.lingmao.scm.module.dev.service.SampleHomeService.Kind.LATE,counts));
+        }
         List<TodoCount> out = COUNT_KEYS.stream().filter(k -> counts.getOrDefault(k, 0L) > 0)
-                .map(k -> new TodoCount(k, counts.get(k), "FG_PENDING".equals(k) ? fgCompany : null)).toList();
+                .map(k -> new TodoCount(k, counts.get(k), java.util.Set.of("FG_PENDING","SAMPLE_REVIEW","SAMPLE_LATE").contains(k) ? fgCompany : null)).toList();
         return new HomeTodos(groups, out, canSeeAll);
+    }
+
+    private TodoGroup sampleTodo(long companyId,Long owner,String key,com.lingmao.scm.module.dev.service.SampleHomeService.Kind kind,Map<String,Long> counts){
+        var group=sampleHomeService.todos(companyId,kind,owner);counts.put(key,group.total());
+        return new TodoGroup(key,group.total(),group.items().stream().map(i->new TodoItem(i.ref(),i.title(),i.sub(),i.image())).toList());
     }
 
     /** 一条待办和它在组里的排序键（小的在前） */

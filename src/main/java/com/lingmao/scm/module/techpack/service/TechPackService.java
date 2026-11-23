@@ -23,6 +23,15 @@ import java.util.Map;
  * 核价、按款看成本在 TechPackCostService；工艺标准在 CraftStandardService；导出 PDF 在 TechPackPdfService
  */
 public interface TechPackService {
+    record SampleEffectiveHead(Long id,int version) { }
+    /** 样衣 owner 的版本条：普通 owner 授权后只加载有界轻量头。 */
+    TechPackOverviewVO sampleOverview(long companyId,long sampleId,Integer beforeVersion,int size);
+    long createForSample(long companyId,long sampleId);
+    /** dev 已授权真实父头后的内部完整性/转换入口；不对外单独暴露。 */
+    boolean hasSamplePacks(long companyId,long sampleId);
+    SampleEffectiveHead sampleEffectiveHead(long companyId,long sampleId);
+    Long adoptSamplePacks(long companyId,long sampleId,long styleId);
+
 
     /** 一个款的版本列表和概况。款式不存在 404 */
     TechPackOverviewVO overview(long styleId);

@@ -1,0 +1,33 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>样衣实际组件验证</title></head><body><div id="app"></div><script type="module">
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ElementPlus from 'element-plus'
+import * as icons from '@element-plus/icons-vue'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import 'element-plus/dist/index.css'
+import '/src/styles/tokens.css'
+import '/src/styles/base.css'
+import '/src/styles/element.css'
+import { getToken, setToken, startSessionSync } from '/src/utils/token.ts'
+import { vPerm } from '/src/directives/perm.ts'
+import AppLayout from '/src/layout/AppLayout.vue'
+import Samples from '/src/views/dev/sample/index.vue'
+import SampleDetail from '/src/views/dev/sample/detail.vue'
+import StyleDetail from '/src/views/style/style/detail.vue'
+import Home from '/src/views/home/index.vue'
+import Fixture from './SamplesFixture.vue'
+if (!getToken()) setToken('synthetic-sample-session')
+startSessionSync()
+const router = createRouter({ history:createMemoryHistory(), routes:[{ path:'/', component:AppLayout, props:{area:'workbench'}, children:[
+{path:'/samples',component:Samples,meta:{title:'样衣',cacheName:'Menu301'}},
+{path:'/samples/:id',component:SampleDetail,meta:{title:'样衣',detail:true}},
+{path:'/styles/:id',component:StyleDetail,meta:{title:'款式',detail:true}},
+{path:'/home',component:Home,meta:{title:'首页'}},
+]}]})
+const app=createApp(Fixture).use(createPinia()).use(router).use(ElementPlus,{locale:zhCn})
+for(const [name,component] of Object.entries(icons)) app.component(name,component)
+app.directive('perm',vPerm)
+await router.push(new URLSearchParams(location.search).get('path')||'/samples?companyId=1')
+await router.isReady();app.mount('#app')
+</script></body></html>

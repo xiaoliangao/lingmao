@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, ref } from 'vue'
@@ -501,6 +502,7 @@ reloadAll()
       </div>
 
       <aside class="aside">
+        <ObjectTags type="SUPPLIER" :object-id="id" :editable="supplier.status !== 'ADMITTING' && can('edit')" @saved="logsRef?.reload()" />
         <dl class="props">
           <dt>编码</dt><dd class="code">{{ supplier.code }}</dd>
           <dt>全称</dt><dd>{{ supplier.name }}</dd>

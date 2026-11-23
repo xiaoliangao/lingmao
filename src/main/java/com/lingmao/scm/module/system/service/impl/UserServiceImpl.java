@@ -81,6 +81,19 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public java.util.Set<Long> enabledIds(Collection<Long> ids) {
+        if (ids == null || ids.size() > 100 || ids.stream().anyMatch(id -> id == null || id <= 0))
+            throw new BizException(400, "一次最多校验100名人员");
+        if (ids.isEmpty()) return java.util.Set.of();
+        if (new java.util.HashSet<>(ids).size()!=ids.size())throw new BizException(400,"人员编号不能重复");
+        java.util.Set<Long> enabled=sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                .select(SysUser::getId).in(SysUser::getId, ids).eq(SysUser::getStatus, 1))
+                .stream().map(SysUser::getId).collect(Collectors.toSet());
+        if(enabled.size()!=ids.size())throw new BizException(400,"所选人员不存在或已停用");
+        return enabled;
+    }
+
+    @Override
     public boolean isEnabled(long id) {
         return sysUserMapper.exists(new LambdaQueryWrapper<SysUser>().eq(SysUser::getId, id).eq(SysUser::getStatus, 1));
     }

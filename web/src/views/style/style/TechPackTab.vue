@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { useLatestRequest } from '@/composables/useLatestRequest'
+import ObjectTags from '@/components/tags/ObjectTags.vue'
+import { useEntityContext, useEntityRead } from '@/composables/useEntityContext'
+import { useActionReceipt } from '@/composables/useActionReceipt'
 import ThumbImage from '@/components/ThumbImage.vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { techPackApi } from '@/api/techpack'
@@ -12,7 +14,7 @@ import DocLogList from '@/components/DocLogList.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import VirtualDataTable, { type VirtualColumn } from '@/components/VirtualDataTable.vue'
-import { reloadOnConflict, showSilentError } from '@/components/doc/docUtils'
+import { showSilentError } from '@/components/doc/docUtils'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { useUserStore } from '@/stores/user'
@@ -43,11 +45,13 @@ import {
   type TechPackCost,
   type TechPackDetail,
   type TechPackOverview,
+  type TechPackOwner,
   type TechPackSaveForm,
 } from '@/types/techpack'
 import { formatDateTime, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { fromScaledInteger, rescaleInteger, toScaledInteger } from '@/utils/fixedPoint'
-import { ApiError } from '@/utils/request'
+import { ApiError, snapshotRequestBody } from '@/utils/request'
+import { sessionEpoch } from '@/utils/token'
 import { confirmRemove, orNull } from '@/views/basic/common'
 import CraftStandardDrawer from '@/views/techpack/standard/CraftStandardDrawer.vue'
 import BomRowDialog, { type BomDraftRow } from './BomRowDialog.vue'
@@ -67,13 +71,15 @@ import WideSpecTable from './WideSpecTable.vue'
  * - 工艺标准（公司通用的默认文字、测量方法、附页文件）不单开一页，从这里拉出抽屉 CraftStandardDrawer：版本条上的"工艺标准"、
  *   还没有资料包时的空状态、导出 PDF 对话框"附工艺标准"旁边的"看附页文件"。要 techpack:standard:list
  */
-const props = defineProps<{
-  styleId: string
+const props = withDefaults(defineProps<{
+  styleId?: string
+  owner?: TechPackOwner
+  styleEnabled?: boolean
   styleCode: string
   styleName: string
   styleImage?: FileVO | null
-  overview: TechPackOverview | null
-}>()
+  overview?: TechPackOverview | null
+}>(), { styleEnabled: undefined })
 
 const emit = defineEmits<{
   changed: []
@@ -81,6 +87,18 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const user = useUserStore()
+const owner = computed<TechPackOwner | null>(() => props.owner ?? (props.styleId ? { kind: 'STYLE', styleId: props.styleId } : null))
+const ownerKey = computed(() => owner.value?.kind === 'SAMPLE' ? `SAMPLE:${owner.value.companyId}:${owner.value.sampleId}` : owner.value ? `STYLE:${owner.value.styleId}` : '')
+const ownerCompany = computed(() => owner.value?.kind === 'SAMPLE' ? owner.value.companyId : undefined)
+const ownerReadable = computed(() => user.hasPerm('techpack:pack:list') && (owner.value?.kind !== 'SAMPLE' || user.hasPerm('dev:sample:list')))
+const ownerWritable = computed(() => ownerReadable.value && props.styleEnabled !== false)
+const ownerOptions = () => ({ companyId: ownerCompany.value, authEpoch: sessionEpoch() })
+const ownOverview = ref<TechPackOverview | null>(null)
+const overview = computed(() => owner.value?.kind === 'SAMPLE' ? ownOverview.value : props.overview ?? null)
+const overviewLoading = ref(false), overviewError = ref<string | null>(null)
+const beforeVersion = ref<number | undefined>(), overviewBack = ref<(number | undefined)[]>([])
+const overviewRequest = useEntityRead()
+
 
 const bomParts = useDict('bom_part')
 const units = useDict('unit')
@@ -99,7 +117,8 @@ const viewColorId = ref<string | undefined>(undefined)
 const costColorId = ref<string | undefined>(undefined)
 
 const loading = ref(false)
-const saving = ref(false)
+const waitingUploads = ref(false)
+const saving = computed(() => waitingUploads.value || packAction.busy.value)
 const detail = ref<TechPackDetail | null>(null)
 const costData = ref<TechPackCost | null>(null)
 const costState = ref<'idle' | 'loading' | 'ready' | 'error' | 'forbidden'>('idle')
@@ -123,9 +142,39 @@ const draft = reactive({
   costItems: [] as CostItemForm[],
 })
 
-const editable = computed(() => detail.value?.actions.includes('edit') ?? false)
-const guard = useUnsavedChanges(() => (editable.value ? draft : null), undefined, { ready: () => !loading.value && (!canSeeCost.value || costState.value !== 'loading') })
-const can = (act: TechPackAction) => detail.value?.actions.includes(act) ?? false
+type PackOperation =
+  | { kind: 'create'; owner: TechPackOwner; stage: PackStage }
+  | { kind: 'revise' | 'toProd'; id: string }
+  | { kind: 'save'; id: string; form: TechPackSaveForm }
+  | { kind: 'publish'; id: string; versionLock: number }
+  | { kind: 'remove'; id: string }
+type PackReceipt = { kind: 'opened'; id: string } | { kind: 'saved'; id: string; versionLock: number } | { kind: 'published' | 'removed'; id: string }
+const writeScope = () => ownerKey.value ? `${ownerKey.value}:${activePackId.value ?? 'new'}:${detail.value?.versionLock ?? 0}` : null
+const packAction = useActionReceipt<PackOperation, PackReceipt>(writeScope, () => ownerWritable.value,
+  async (operation, options) => {
+    switch (operation.kind) {
+      case 'create': return { kind: 'opened', id: await techPackApi.createForOwner(operation.owner, operation.stage, options) }
+      case 'revise': return { kind: 'opened', id: await techPackApi.revise(operation.id, options) }
+      case 'toProd': return { kind: 'opened', id: await techPackApi.toProd(operation.id, options) }
+      case 'save': return { kind: 'saved', id: operation.id, versionLock: await techPackApi.save(operation.id, operation.form, options) }
+      case 'publish': await techPackApi.publish(operation.id, operation.versionLock, options); return { kind: 'published', id: operation.id }
+      case 'remove': await techPackApi.remove(operation.id, options); return { kind: 'removed', id: operation.id }
+    }
+  })
+const actionPermission: Record<TechPackAction, string> = { edit: 'edit', remove: 'remove', publish: 'publish', revise: 'add', toProd: 'add' }
+const can = (act: TechPackAction) => ownerWritable.value && !!detail.value?.actions.includes(act) && user.hasPerm(`techpack:pack:${actionPermission[act]}`) && !(owner.value?.kind === 'SAMPLE' && act === 'toProd')
+const editable = computed(() => can('edit'))
+const guard = useUnsavedChanges(() => (editable.value ? draft : null), undefined, {
+  scope: () => detail.value && ownerKey.value ? `${ownerKey.value}:${detail.value.id}:${detail.value.versionLock}` : null,
+  ready: () => !loading.value && (!canSeeCost.value || (costState.value !== 'idle' && costState.value !== 'loading')),
+})
+const context = useEntityContext(() => {
+  overviewRequest.cancel(); packRequest.cancel(); costRequest.cancel(); pdfRead.cancel(); ++loadSeq; ++costSeq
+  waitingUploads.value = false; guard.discardUploads()
+  ownOverview.value = null; detail.value = null; activePackId.value = null; costData.value = null; loadError.value = null
+  overviewLoading.value = false; loading.value = false; bomDialogVisible.value = false; pdfVisible.value = false; skuPicking.value = false
+  draft.specPoints = []; draft.bomItems = []; draft.craftSections = []; draft.processes = []; draft.costItems = []
+})
 
 const ALL_SECTIONS: CraftSection[] = ['CUTTING', 'SEWING', 'PART', 'QUALITY', 'BUTTON', 'IRONING', 'LABEL', 'PACKING', 'NOTE']
 
@@ -158,14 +207,14 @@ function hydrateDraft(d: TechPackDetail) {
 /** 主表和核价独立加载；核价失败不构造核价内容，未授权时请求层省略 cost。 */
 let costSeq = 0
 let loadSeq = 0
-const costRequest = useLatestRequest()
+const costRequest = useEntityRead()
 async function loadCost(packId: string, colorId?: string) {
   const read = costRequest.begin()
   const current = ++costSeq
   if (!canSeeCost.value) { costState.value = 'forbidden'; costData.value = null; return }
   costState.value = 'loading'
   try {
-    const result = await read.run(() => techPackApi.cost(packId, colorId))
+    const result = await read.run(() => techPackApi.cost(packId, colorId, ownerOptions()))
     if (!read.current()) return
     if (current !== costSeq || activePackId.value !== packId || detail.value?.id !== packId) return
     costData.value = result
@@ -187,10 +236,11 @@ async function loadCost(packId: string, colorId?: string) {
   }
 }
 
-const packRequest = useLatestRequest()
+const packRequest = useEntityRead()
 let loadedPackRead: ReturnType<typeof packRequest.begin> | undefined
 async function loadPack(packId: string) {
   const read = packRequest.begin()
+  if (!ownerReadable.value) { detail.value = null; loading.value = false; return }
   costRequest.cancel()
   const current = ++loadSeq
   ++costSeq
@@ -202,9 +252,11 @@ async function loadPack(packId: string) {
   loading.value = true
   detail.value = null
   try {
-    const d = await read.run(() => techPackApi.get(packId))
+    const d = await read.run(() => techPackApi.get(packId, ownerOptions()))
     if (!read.current()) return
     if (current !== loadSeq || activePackId.value !== packId) return
+    const own = owner.value
+    if (!own || (own.kind === 'SAMPLE' ? d.styleId != null || d.sampleId !== own.sampleId || d.companyId !== own.companyId : d.styleId !== own.styleId)) throw new ApiError(1002, '资料包归属已变化，请重新读取所属样衣或款式')
     detail.value = d
     loadedPackRead = read
     viewColorId.value = d.colors[0]?.id
@@ -218,8 +270,26 @@ async function loadPack(packId: string) {
   }
 }
 
+// keep-alive 离开会取消读取；首次插入不重启已有请求，返回时才恢复。
+let wasDeactivated = false
+onDeactivated(() => {
+  wasDeactivated = true
+  if (costState.value === 'loading') { ++costSeq; costState.value = 'idle' }
+})
+onActivated(() => {
+  if (!wasDeactivated) return
+  wasDeactivated = false
+  if (!ownerReadable.value) return
+  if (owner.value?.kind === 'SAMPLE' && overviewLoading.value) { void loadOwnerOverview(); return }
+  if (loading.value && activePackId.value) { void loadPack(activePackId.value); return }
+  const d = detail.value
+  if (!d || d.id !== activePackId.value) return
+  loadedPackRead = packRequest.begin()
+  if (costState.value === 'idle') void loadCost(d.id, costColorId.value ?? d.colors[0]?.id)
+})
+
 // ---------- 选哪一版：地址参数只在第一次、地址变了时用（01 §1.1） ----------
-const stylePath = `/styles/${props.styleId}`
+const stylePath = computed(() => owner.value?.kind === 'SAMPLE' ? `/samples/${owner.value.sampleId}` : `/styles/${props.styleId ?? (owner.value?.kind === 'STYLE' ? owner.value.styleId : '')}`)
 const queryId = (value: unknown) => (typeof value === 'string' && /^\d+$/.test(value) ? value : null)
 /** 地址上要的版本，等概况到了再切，切过就清掉 */
 let wantedPackId: string | null = queryId(route.query.techPackId)
@@ -227,12 +297,12 @@ const initialSub = route.query.sub
 if (typeof initialSub === 'string' && (SUB_TABS as readonly string[]).includes(initialSub)) subTab.value = initialSub as SubTab
 
 function pickPack() {
-  const ov = props.overview
+  const ov = overview.value
   if (!ov) return
   const has = (id: string | null): id is string => id != null && ov.packs.some((p) => p.id === id)
   let target: string | null
-  if (has(wantedPackId)) target = wantedPackId
-  else target = has(activePackId.value) ? activePackId.value : ov.defaultPackId
+  if (wantedPackId && (has(wantedPackId) || owner.value?.kind === 'SAMPLE')) target = wantedPackId
+  else target = has(activePackId.value) ? activePackId.value : owner.value?.kind === 'SAMPLE' ? ov.packs[0]?.id ?? ov.defaultPackId : ov.defaultPackId
   wantedPackId = null
   if (target == null) {
     activePackId.value = null
@@ -243,13 +313,13 @@ function pickPack() {
   if (target !== activePackId.value || !detail.value) void switchPack(target)
 }
 
-watch(() => props.overview, pickPack, { immediate: true })
+watch(overview, pickPack, { immediate: true })
 
 // 页签留着、别处带着 ?techPackId=&sub= 又点进来（1005 清单里点了另一版）
 watch(
   () => [route.query.techPackId, route.query.sub] as const,
   ([pid, sub]) => {
-    if (route.path !== stylePath) return
+    if (route.path !== stylePath.value) return
     if (typeof sub === 'string' && (SUB_TABS as readonly string[]).includes(sub)) subTab.value = sub as SubTab
     const want = queryId(pid)
     if (want != null && want !== activePackId.value) {
@@ -266,61 +336,90 @@ async function open(packId: string, sub?: SubTab) {
 }
 defineExpose({ open })
 
-const activeBrief = computed<TechPackBrief | undefined>(() => props.overview?.packs.find((p) => p.id === activePackId.value))
+const activeBrief = computed<TechPackBrief | undefined>(() => overview.value?.packs.find((p) => p.id === activePackId.value))
 
-/** 换版本：有没保存的修改先问 */
-async function switchPack(id: string) {
-  if (saving.value) return
-  if (id === activePackId.value && detail.value) return
-  if (guard.dirty.value && detail.value) {
-    try {
-      await ElMessageBox.confirm(`${packName(detail.value)} 有没保存的修改，不要了吗？`, '换版本', {
-        confirmButtonText: '不要了',
-        cancelButtonText: '继续编辑',
-        confirmButtonClass: 'el-button--danger',
-      })
-    } catch {
-      return
-    }
+async function discardBeforeSwitch(): Promise<boolean> {
+  if (saving.value || packAction.locked.value) return false
+  const current = context.capture(), previous = detail.value, previousKey = ownerKey.value
+  if (guard.dirty.value && previous) {
+    try { await ElMessageBox.confirm(`${packName(previous)} 有没保存的修改，不要了吗？`, '换版本', { confirmButtonText: '不要了', cancelButtonText: '继续编辑', confirmButtonClass: 'el-button--danger' }) }
+    catch { return false }
   }
-  guard.discardUploads()
+  if (!current() || previous !== detail.value || previousKey !== ownerKey.value) return false
+  guard.discardDraft(); guard.discardUploads(); return true
+}
+async function switchPack(id: string) {
+  if (id === activePackId.value && detail.value) return
+  if (!await discardBeforeSwitch()) return
   activePackId.value = id
   await loadPack(id)
 }
+async function loadOwnerOverview() {
+  const read = overviewRequest.begin(), own = owner.value
+  overviewLoading.value = false; overviewError.value = null
+  if (own?.kind !== 'SAMPLE' || !ownerReadable.value) { ownOverview.value = null; return }
+  overviewLoading.value = true
+  try {
+    const result = await techPackApi.sampleOverview(own.sampleId, own.companyId, { beforeVersion: beforeVersion.value, size: 20 }, { signal: read.signal, ...ownerOptions(), silent: true })
+    if (!read.current()) return
+    if (result.sampleId !== own.sampleId || result.companyId !== own.companyId || result.styleId != null) throw new ApiError(1002, '资料包归属已变化，请重新读取样衣')
+    ownOverview.value = result
+  } catch (cause) { if (read.current()) { ownOverview.value = null; overviewError.value = cause instanceof ApiError && [403, 404].includes(cause.code) ? '无权限或样衣已不可见' : cause instanceof Error ? cause.message : '资料包概况读取失败' } }
+  finally { if (read.current()) overviewLoading.value = false }
+}
+async function pageVersions(direction: 'next' | 'back') {
+  if (overviewLoading.value || !await discardBeforeSwitch()) return
+  if (direction === 'next') { const next = overview.value?.nextBeforeVersion; if (next == null || !overview.value?.hasMore) return; overviewBack.value.push(beforeVersion.value); beforeVersion.value = next }
+  else { if (!overviewBack.value.length) return; beforeVersion.value = overviewBack.value.pop() }
+  activePackId.value = null; detail.value = null; await loadOwnerOverview()
+}
+async function changed() {
+  if (owner.value?.kind === 'SAMPLE') { beforeVersion.value = undefined; overviewBack.value = []; await loadOwnerOverview() }
+  emit('changed')
+}
+watch(ownerKey, (_value, previous) => { if (previous !== undefined) context.cancel(); overviewRequest.cancel(); beforeVersion.value = undefined; overviewBack.value = []; if (owner.value?.kind === 'SAMPLE') void loadOwnerOverview() }, { immediate: true })
+watch(ownerReadable, (canRead) => { if (!canRead) { context.cancel(); } else if (owner.value?.kind === 'SAMPLE') void loadOwnerOverview() })
 
 // ---------- 新建、修订、转生产、保存、生效、删除 ----------
 
 /** 这个阶段一个版本都还没有、又能建：出"建研发 BOM""建生产 BOM"（有版本的阶段走修订） */
 const newStageButtons = computed(() => {
-  const ov = props.overview
-  if (!ov) return []
-  return (['PROD', 'DEV'] as PackStage[]).filter((st) => ov.creatableStages.includes(st) && !ov.packs.some((p) => p.stage === st))
+  const ov = overview.value
+  if (!ov || !ownerWritable.value || !user.hasPerm('techpack:pack:add')) return []
+  return (['PROD', 'DEV'] as PackStage[]).filter((st) => (owner.value?.kind !== 'SAMPLE' || st === 'DEV') && ov.creatableStages.includes(st) && !ov.packs.some((p) => p.stage === st))
 })
 
-/** 新建、修订、转生产出来的新草稿：切过去，再让款式详情重取概况（概况到了 pickPack 看到它已经是当前的，不再切） */
-async function gotoNew(newId: string, message: string) {
-  ElMessage.success(message)
-  guard.markSaved()
-  activePackId.value = newId
-  await loadPack(newId)
-  emit('changed')
+async function finishWrite(receipt: PackReceipt, toast = true) {
+  const current = context.capture()
+  guard.discardDraft()
+  if (toast) ElMessage.success(receipt.kind === 'opened' ? '已生成资料包草稿' : receipt.kind === 'published' ? '资料包已生效' : receipt.kind === 'removed' ? '草稿已删除' : '资料包已保存')
+  if (receipt.kind === 'removed') { activePackId.value = null; detail.value = null }
+  else { activePackId.value = receipt.id; await loadPack(receipt.id) }
+  if (!current()) return
+  await changed()
 }
-
 async function createStage(stage: PackStage) {
-  const newId = await techPackApi.create(props.styleId, stage)
-  await gotoNew(newId, `建了${PACK_STAGE[stage].label}草稿，填好点「生效」`)
+  if (!owner.value || !newStageButtons.value.includes(stage) || loading.value) return
+  const receipt = await packAction.execute({ kind: 'create', owner: snapshotRequestBody(owner.value), stage }, ownerCompany.value)
+  if (receipt) await finishWrite(receipt)
 }
-
 async function revisePack() {
-  if (!detail.value) return
-  const newId = await techPackApi.revise(detail.value.id)
-  await gotoNew(newId, `修订出 ${packName({ stage: detail.value.stage, version: detail.value.version + 1 })}，尺寸、物料、工艺、其他费用都带过来了，改完点「生效」`)
+  if (!detail.value || !can('revise') || loading.value) return
+  const receipt = await packAction.execute({ kind: 'revise', id: detail.value.id }, ownerCompany.value)
+  if (receipt) await finishWrite(receipt)
 }
-
 async function convertToProd() {
-  if (!detail.value) return
-  const newId = await techPackApi.toProd(detail.value.id)
-  await gotoNew(newId, '复制成生产 BOM 草稿：单价按价格档案重新取了，改完点「生效」')
+  if (!detail.value || !can('toProd') || loading.value) return
+  const receipt = await packAction.execute({ kind: 'toProd', id: detail.value.id }, ownerCompany.value)
+  if (receipt) await finishWrite(receipt)
+}
+async function retryPackAction() {
+  const pending = packAction.pendingBody.value
+  if (!pending || !ownerWritable.value) return
+  const permission = pending.kind === 'create' ? 'add' : pending.kind === 'save' ? 'edit' : pending.kind === 'publish' ? 'publish' : pending.kind === 'remove' ? 'remove' : 'add'
+  if (!user.hasPerm(`techpack:pack:${permission}`)) return
+  const receipt = await packAction.retry()
+  if (receipt) await finishWrite(receipt)
 }
 
 function buildSaveForm(): TechPackSaveForm {
@@ -362,65 +461,36 @@ function buildSaveForm(): TechPackSaveForm {
   }
 }
 
-/** 保存草稿。返回新的 versionLock（生效接着用），没存上返回 null */
+/** 写收据与随后的读取分离；刷新失权不把成功写入当失败再提交。 */
 async function saveDraft(toast = true): Promise<number | null> {
-  const d = detail.value
-  if (!d || saving.value) return null
-  saving.value = true
+  const d = detail.value, current = context.capture()
+  if (!d || saving.value || loading.value || !can('edit')) return null
+  waitingUploads.value = true
   try {
-    if (!(await guard.waitForUploads())) return null
-    const lock = await techPackApi.save(d.id, buildSaveForm())
-    guard.markSaved()
-    if (toast) ElMessage.success(`${packName(d)} 已保存`)
-    // 重新取一次：单件成本、核价以后端算的为准
-    await loadPack(d.id)
-    emit('changed')
-    return lock
-  } catch (e) {
-    // 别人改过、已经生效了：重新取一遍（消息 request.ts 弹过了）
-    if (reloadOnConflict(e, () => loadPack(d.id))) return null
-    if (!(e instanceof ApiError)) throw e
-    return null
-  } finally {
-    saving.value = false
-  }
+    if (!await guard.waitForUploads() || !current() || detail.value !== d) return null
+    const receipt = await packAction.execute({ kind: 'save', id: d.id, form: buildSaveForm() }, ownerCompany.value)
+    if (!receipt || receipt.kind !== 'saved' || !current()) return null
+    await finishWrite(receipt, toast)
+    return receipt.versionLock
+  } finally { if (current()) waitingUploads.value = false }
 }
-
-/** 生效：有没保存的修改先存。检查没过的一次列全（1000 + PublishProblem[]，弹清单） */
 async function publishPack() {
-  const d = detail.value
-  if (!d) return
+  const d = detail.value, current = context.capture()
+  if (!d || saving.value || loading.value || !can('publish')) return
   let lock: number | null = d.versionLock
-  if (guard.dirty.value) {
-    lock = await saveDraft(false)
-    if (lock == null) return
-  }
-  saving.value = true
-  try {
-    await techPackApi.publish(d.id, lock, { silent: true })
-    ElMessage.success(d.stage === 'DEV' ? `${packName(d)} 已生效，要下大货就点「转生产 BOM」` : `${packName(d)} 已生效`)
-    await loadPack(d.id)
-    emit('changed')
-  } catch (e) {
-    if (!(e instanceof ApiError)) throw e
-    showSilentError(e)
-    reloadOnConflict(e, () => loadPack(d.id))
-  } finally {
-    saving.value = false
-  }
+  if (guard.dirty.value) { lock = await saveDraft(false); if (lock == null || !current()) return }
+  if (!can('publish')) return
+  const receipt = await packAction.execute({ kind: 'publish', id: d.id, versionLock: lock }, ownerCompany.value)
+  if (receipt && current()) await finishWrite(receipt)
+  else if (packAction.failure.value instanceof ApiError) showSilentError(packAction.failure.value)
 }
-
 async function removeDraft() {
-  const d = detail.value
-  if (!d) return
-  await confirmRemove(`删除 ${packName(d)} 草稿`, '这一版改的内容都不要了，删除后找不回来；已生效的版本不受影响。')
-  await techPackApi.remove(d.id)
-  ElMessage.success(`已删除 ${packName(d)} 草稿`)
-  guard.markSaved()
-  // 概况重取后选 defaultPackId
-  activePackId.value = null
-  detail.value = null
-  emit('changed')
+  const d = detail.value, current = context.capture()
+  if (!d || saving.value || loading.value || !can('remove')) return
+  try { await confirmRemove(`删除 ${packName(d)} 草稿`, '这一版改的内容都不要了，删除后找不回来；已生效的版本不受影响。') } catch { return }
+  if (!current() || detail.value !== d) return
+  const receipt = await packAction.execute({ kind: 'remove', id: d.id }, ownerCompany.value)
+  if (receipt) await finishWrite(receipt)
 }
 
 /** 上移、下移一格（代替拖动排序） */
@@ -449,7 +519,7 @@ function onPointPicked(row: SpecPointForm) {
 
 /** 按档差生成：填了基码和档差的行，其他码 = 基码 ± 离基码第几档 × 档差（01 §4.3） */
 async function generateByGrade() {
-  const d = detail.value
+  const d = detail.value, current = context.capture()
   if (!d) return
   const baseIdx = d.sizes.indexOf(d.baseSize)
   if (baseIdx < 0) return
@@ -463,6 +533,7 @@ async function generateByGrade() {
   if (overwrite) {
     await ElMessageBox.confirm('已经填了数的格子会被覆盖。', '按档差生成', { confirmButtonText: '生成', cancelButtonText: '取消' })
   }
+  if (!current() || detail.value !== d || !editable.value) return
   for (const row of ready) {
     const base = row.values[d.baseSize]!
     d.sizes.forEach((sz, idx) => {
@@ -616,6 +687,7 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
     const defaults = await read.run(() => techPackApi.bomDefaults(
       d.id,
       added.map((b) => ({ materialId: b.materialId, supplierId: null, skuIds: b.skus.map((s) => s.materialSkuId) })),
+      ownerOptions(),
     ))
     if (!read.current()) return
     // 加行：整套带默认值（01 §3.9）
@@ -638,7 +710,8 @@ async function onPickSkus(rows: MaterialPickRow[] | StylePickRow[]) {
     })
   } catch {
     if (!read.current()) return
-    // 取不到默认值也留着这几行，单价、供应商可以自己填
+    // 保留本地新增行，但明确说明默认值未取得。
+    ElMessage.warning('新增行的默认供应商与价格未取得，请逐行打开重试或核对后填写')
   }
   ElMessage.success(`加了 ${added.length} 行，选好部位、填上用量`)
 }
@@ -782,7 +855,9 @@ const devDiff = computed(() => {
 // ---------- 导出 PDF ----------
 const pdfVisible = ref(false)
 const pdfForm = reactive({ colorId: undefined as string | undefined, price: false, appendix: true })
-const exportingPdf = ref(false)
+const exportingPdf = ref(false), pdfError = ref<string | null>(null)
+const pdfRead = useEntityRead(() => { exportingPdf.value = false; pdfVisible.value = false; pdfError.value = null })
+watch(pdfVisible, (open) => { if (!open) { pdfRead.cancel(); exportingPdf.value = false } })
 
 function openPdf() {
   // 微信里下载不了文件（01 §4.7）
@@ -791,27 +866,28 @@ function openPdf() {
     return
   }
   Object.assign(pdfForm, { colorId: undefined, price: false, appendix: true })
-  pdfVisible.value = true
+  pdfError.value = null; pdfVisible.value = true
 }
 
 async function doExportPdf() {
-  const d = detail.value
-  if (!d) return
-  exportingPdf.value = true
+  const d = detail.value, read = pdfRead.begin()
+  if (!d || !ownerReadable.value) return
+  exportingPdf.value = true; pdfError.value = null
   try {
     await techPackApi.pdf(
       d.id,
       { colorId: pdfForm.colorId, price: canSeeCost.value && pdfForm.price, appendix: pdfForm.appendix },
       `${props.styleCode}-${props.styleName}-工艺单-${packName(d)}.pdf`,
+      { ...ownerOptions(), signal: read.signal, silent: true },
     )
-    pdfVisible.value = false
-  } finally {
-    exportingPdf.value = false
-  }
+    if (read.current()) pdfVisible.value = false
+  } catch (cause) { if (read.current()) pdfError.value = cause instanceof ApiError && [403, 404].includes(cause.code) ? '权限已变化或资料包不可见' : '导出暂时失败，请重试' }
+  finally { if (read.current()) exportingPdf.value = false }
 }
 
 // ---------- 操作记录 ----------
-const loadLogs = () => techPackApi.logs(activePackId.value!)
+const logRef = ref<InstanceType<typeof DocLogList>>()
+const loadLogs = () => techPackApi.logs(activePackId.value!, ownerOptions())
 const LOG_STATUSES = Object.fromEntries(Object.entries(PACK_STATUS).map(([k, v]) => [k, v.label]))
 
 /** 版本条上的字："V2 生效中""V3 草稿""研发 V1 已作废" */
@@ -819,8 +895,19 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 </script>
 
 <template>
-  <div v-loading="loading" class="tp-wrap">
-    <BlankState v-if="overview && !overview.packs.length" title="还没有资料包：生产 BOM 生效后才能下订单">
+  <div v-loading="loading || overviewLoading" class="tp-wrap">
+    <el-alert v-if="overviewError" :title="overviewError" type="error" :closable="false"><el-button @click="loadOwnerOverview">重试读取</el-button></el-alert>
+    <el-alert v-if="packAction.error.value" :title="packAction.error.value" type="error" :closable="false">
+      <span v-if="packAction.uncertain.value">结果未确认，输入已锁定。</span>
+      <el-button v-if="packAction.uncertain.value" :loading="saving" @click="retryPackAction">重试原提交</el-button>
+      <el-button v-else-if="activePackId" @click="async () => { if (await discardBeforeSwitch()) await loadPack(activePackId!) }">重新读取并核对</el-button>
+    </el-alert>
+    <div v-if="owner?.kind === 'SAMPLE' && overview && (overviewBack.length || overview.hasMore)" class="sample-pack-pages">
+      <el-button :disabled="!overviewBack.length || saving || overviewLoading" @click="pageVersions('back')">上一页版本</el-button>
+      <span class="dim">共 {{ overview.total }} 版 · 第 {{ overviewBack.length + 1 }} 页</span>
+      <el-button :disabled="!overview.hasMore || saving || overviewLoading" @click="pageVersions('next')">更早版本</el-button>
+    </div>
+    <BlankState v-if="overview && !overview.packs.length" :title="owner?.kind === 'SAMPLE' ? '还没有研发资料包，建一版记录样衣尺寸与用料' : '还没有资料包：生产 BOM 生效后才能下订单'">
       <el-button v-for="st in newStageButtons" :key="st" :type="st === 'PROD' ? 'primary' : 'default'" @click="createStage(st)">
         建{{ PACK_STAGE[st].label }}
       </el-button>
@@ -892,7 +979,9 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           <span v-else-if="activeBrief?.versionNote" class="dim">说明：{{ activeBrief.versionNote }}</span>
         </div>
 
-        <el-tabs v-model="subTab" :inert="saving || loading">
+        <ObjectTags title="资料包标签" :object-hint="`${styleCode} · ${PACK_STAGE[detail.stage].short} V${detail.version}`" type="TECH_PACK" :object-id="detail.id" :company-id="ownerCompany" :active="!loading && ownerReadable" :editable="editable && detail.status === 'DRAFT' && styleEnabled === true" @saved="logRef?.reload()" />
+
+        <el-tabs v-model="subTab" :inert="saving || loading || packAction.locked.value">
           <!-- 尺寸指示 -->
           <el-tab-pane :label="`尺寸指示（${draft.specPoints.length}）`" name="spec">
             <div v-if="editable" class="sub-toolbar">
@@ -912,8 +1001,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               @move="(index, step) => moveItem(draft.specPoints, index, step)"
               @remove="(index) => draft.specPoints.splice(index, 1)"
             />
-            <el-table v-else :data="draft.specPoints" empty-text="还没有尺寸指示（不是必填）">
-              <el-table-column label="#" width="44" class-name="num">
+            <el-table v-else :data="draft.specPoints" class="spec-table" empty-text="还没有尺寸指示（不是必填）">
+              <el-table-column label="#" width="60" class-name="num spec-sequence">
                 <template #default="{ $index }">{{ $index + 1 }}</template>
               </el-table-column>
               <el-table-column label="部位" min-width="130">
@@ -939,13 +1028,13 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <span v-else>{{ row.method || '—' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="公差 ±" width="78" class-name="num" align="right">
+              <el-table-column label="公差 ±" width="90" class-name="num" align="right">
                 <template #default="{ row }">
                   <el-input-number v-if="editable" v-model="row.toleranceCm" size="small" :min="0" :precision="1" :controls="false" />
                   <span v-else>{{ row.toleranceCm == null ? '—' : formatQty(row.toleranceCm) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="档差" width="78" class-name="num" align="right">
+              <el-table-column label="档差" width="90" class-name="num" align="right">
                 <template #default="{ row }">
                   <el-input-number v-if="editable" v-model="row.gradeCm" size="small" :precision="1" :controls="false" />
                   <span v-else>{{ row.gradeCm == null ? '—' : formatQty(row.gradeCm) }}</span>
@@ -956,7 +1045,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                 :key="sz"
                 :label="sz === detail.baseSize ? `${sz}（基码）` : sz"
                 :class-name="sz === detail.baseSize ? 'num base-col' : 'num'"
-                width="84"
+                width="104"
                 align="right"
               >
                 <template #default="{ row }">
@@ -970,7 +1059,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <span v-else>{{ row.remark || '' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column v-if="editable" label="" width="96" align="right">
+              <el-table-column v-if="editable" label="" width="112" class-name="spec-actions" align="right">
                 <template #default="{ $index }">
                   <el-button link size="small" :disabled="$index === 0" aria-label="上移" @click="moveItem(draft.specPoints, $index, -1)"><el-icon><Top /></el-icon></el-button>
                   <el-button link size="small" :disabled="$index === draft.specPoints.length - 1" aria-label="下移" @click="moveItem(draft.specPoints, $index, 1)"><el-icon><Bottom /></el-icon></el-button>
@@ -997,7 +1086,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <div class="bom-style-image">
                 <el-image v-if="styleImage" :src="styleImage.thumbUrl || styleImage.url" :preview-src-list="[styleImage.url]" preview-teleported fit="contain" />
                 <span v-else class="dim">暂无主图</span>
-                <small>{{ detail.styleCode }} {{ detail.styleName }} · 当前款式主图</small>
+                <small>{{ detail.styleCode }} {{ detail.styleName }} · {{ owner?.kind === 'SAMPLE' ? '当前样衣主图' : '当前款式主图' }}</small>
               </div>
               <div v-if="inspectedBom" data-testid="bom-row-card" class="bom-row-card" tabindex="0">
                 <strong>{{ inspectedBom.materialCode }} {{ inspectedBom.materialName }}</strong>
@@ -1013,8 +1102,8 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <span v-else class="dim">悬停、聚焦或点击物料编码查看料卡</span>
             </aside>
 
-            <el-table v-if="bomView === 'bom'" :data="draft.bomItems" row-key="id" empty-text="还没有物料：点「从物料库选」加">
-              <el-table-column type="expand" width="32">
+            <el-table v-if="bomView === 'bom'" :data="draft.bomItems" row-key="id" empty-text="还没有物料：点「从物料库选」加" scrollbar-always-on>
+              <el-table-column type="expand" width="32" fixed="left">
                 <template #default="{ row }">
                   <div class="expand">
                     <table class="mini">
@@ -1043,21 +1132,21 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="#" width="52" class-name="num sequence-col">
+              <el-table-column label="#" width="52" fixed="left" class-name="num sequence-col">
                 <template #default="{ $index }">{{ $index + 1 }}</template>
               </el-table-column>
-              <el-table-column label="" width="48">
+              <el-table-column label="" width="48" fixed="left">
                 <template #default="{ row }">
                   <ThumbImage v-if="row.image" :src="row.image.thumbUrl" alt="" class="thumb" />
                 </template>
               </el-table-column>
-              <el-table-column label="部位" width="110">
+              <el-table-column label="部位" width="110" fixed="left">
                 <template #default="{ row }">
                   <DictSelect v-if="editable" v-model="row.part" type="bom_part" size="small" placeholder="选部位" :class="{ missing: !row.part }" />
                   <span v-else>{{ bomParts.labelOf(row.part) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="物料" min-width="170">
+              <el-table-column label="物料" min-width="170" fixed="left">
                 <template #default="{ row }">
                   <button type="button" data-testid="bom-row" class="link-btn code" :class="{ danger: row.materialStatus === 0 }" @mouseenter="inspectedBomId = row.id" @focus="inspectedBomId = row.id" @click="inspectedBomId = row.id">{{ row.materialCode }}</button>
                   {{ row.materialName }}
@@ -1080,7 +1169,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <el-table-column label="损耗 %" width="66" class-name="num" align="right">
                 <template #default="{ row }">{{ formatQty(row.lossPct) }}</template>
               </el-table-column>
-              <el-table-column label="来源" width="80">
+              <el-table-column label="来源" width="96" fixed="right">
                 <template #default="{ row }">{{ MATERIAL_SOURCE_LABEL[(row as BomItem).source] }}</template>
               </el-table-column>
               <el-table-column label="供应商" min-width="100">
@@ -1116,11 +1205,11 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <template #unit="{ row }">{{ units.labelOf(row.item.unit) }}</template>
               <template #source="{ row }">{{ MATERIAL_SOURCE_LABEL[row.item.source] }}</template>
             </VirtualDataTable>
-            <el-table v-else :data="colorViewRows" row-key="key" empty-text="还没有物料">
-              <el-table-column label="部位" width="100">
+            <el-table v-else :data="colorViewRows" row-key="key" empty-text="还没有物料" scrollbar-always-on>
+              <el-table-column label="部位" width="100" fixed="left">
                 <template #default="{ row }">{{ bomParts.labelOf(row.item.part) }}</template>
               </el-table-column>
-              <el-table-column label="物料" min-width="170">
+              <el-table-column label="物料" min-width="170" fixed="left">
                 <template #default="{ row }"><button type="button" data-testid="bom-row" class="link-btn" @mouseenter="inspectedBomId = row.item.id" @focus="inspectedBomId = row.item.id" @click="inspectedBomId = row.item.id">{{ row.item.materialName }}</button></template>
               </el-table-column>
               <el-table-column label="物料 SKU" min-width="170">
@@ -1138,7 +1227,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
               <el-table-column label="单位" width="56">
                 <template #default="{ row }">{{ units.labelOf(row.item.unit) }}</template>
               </el-table-column>
-              <el-table-column label="来源" width="80">
+              <el-table-column label="来源" width="96" fixed="right">
                 <template #default="{ row }">{{ MATERIAL_SOURCE_LABEL[(row as ColorViewRow).item.source] }}</template>
               </el-table-column>
             </el-table>
@@ -1357,7 +1446,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
           </el-tab-pane>
 
           <el-tab-pane label="操作记录" name="logs" lazy>
-            <DocLogList :key="detail.id" :load="loadLogs" :actions="TECH_PACK_LOG_ACTIONS" :statuses="LOG_STATUSES" />
+            <DocLogList ref="logRef" :key="detail.id" :load="loadLogs" :actions="TECH_PACK_LOG_ACTIONS" :statuses="LOG_STATUSES" />
           </el-tab-pane>
         </el-tabs>
       </template>
@@ -1366,7 +1455,9 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
     <BomRowDialog
       v-if="detail"
       v-model="bomDialogVisible"
+      :key="`${ownerKey}:${detail.id}`"
       :pack-id="detail.id"
+      :company-id="ownerCompany"
       :sizes="detail.sizes"
       :base-size="detail.baseSize"
       :colors="detail.colors"
@@ -1376,6 +1467,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
     <DataPick v-model="skuPicking" kind="sku" :have="bomSkuIds" @pick="onPickSkus" />
 
     <el-dialog v-model="pdfVisible" title="导出工艺单" width="440px">
+      <el-alert v-if="pdfError" :title="pdfError" type="error" :closable="false" />
       <el-form v-if="detail" label-position="top">
         <el-form-item label="颜色">
           <el-select v-model="pdfForm.colorId" filterable clearable placeholder="全部颜色">
@@ -1403,6 +1495,11 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
 </template>
 
 <style scoped>
+.spec-table :deep(.el-input-number) { width: 100%; min-width: 0; }
+.spec-table :deep(.spec-sequence .cell) { white-space: nowrap; }
+.spec-table :deep(.spec-actions .cell) { display: flex; justify-content: flex-end; align-items: center; gap: 4px; white-space: nowrap; }
+.spec-table :deep(.spec-actions .el-button + .el-button) { margin-left: 0; }
+.sample-pack-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .bom-inspector { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--lm-line-soft); border-radius: var(--lm-radius); }
 .bom-style-image { display: flex; flex-direction: column; gap: 6px; min-width: 140px; max-width: 220px; }
 .bom-style-image .el-image { width: 120px; height: 120px; }

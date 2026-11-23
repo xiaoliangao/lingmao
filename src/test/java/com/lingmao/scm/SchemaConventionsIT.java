@@ -6,13 +6,18 @@ import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.MenuVO;
 import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.module.system.service.PermissionService;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.database.postgresql.PostgreSQLConfigurationExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+import javax.sql.DataSource;
 import java.sql.SQLException;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -22,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -44,6 +50,8 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
  */
 @IntegrationTest
 class SchemaConventionsIT {
+    @Autowired DataSource dataSource;
+    @Value("${spring.datasource.password:}") String databasePassword;
 
     /** 叫 xxx_id、却没有外键的列，每一条都要有理由。以后加的"类型 + id"列、物权 owner_id（自有存 0）照这样加进来 */
     private static final Map<String, String> NO_FK = Map.ofEntries(
@@ -61,6 +69,7 @@ class SchemaConventionsIT {
             Map.entry("biz_doc_log.doc_id", "类型 + id 指向各种单据，加不了外键（数据库设计 §1.4）"),
             Map.entry("biz_doc_log.operator_id", "审计人，和 create_by 一样不加外键"),
             Map.entry("biz_attachment.doc_id", "类型 + id"),
+            Map.entry("biz_tag_object.object_id", "固定 CASE 多态目标；V58/V59 真实父行锁、删除清理及截断守卫，不能用单个外键表达"),
             Map.entry("prc_price.source_id", "类型 + id：来源单据"),
             Map.entry("biz_doc_notice.doc_id", "类型 + id：收到提醒的单据"),
             Map.entry("biz_doc_notice.source_id", "类型 + id：引起它的单据"),
@@ -199,33 +208,61 @@ class SchemaConventionsIT {
      * 品牌预置为空（甲方的名字不进公开仓库）；物料类型带上了 Q40 的配件、工艺、鞋底，备料比默认 0；生产节点带默认天数
      */
     @Test
-    void dictPresets() {
-        assertThat(jdbc.queryForList("SELECT code FROM sys_dict_type WHERE deleted = false", String.class))
-                .contains("style_class", "season", "wave", "style_tag", "brand", "series", "gender", "style_source",
-                        "exec_standard", "safety_category", "color_family", "unit", "currency", "tax_rate",
-                        "settle_method", "invoice_type", "material_type", "supplier_category", "order_type",
-                        "process_mode", "prod_node", "issue_type", "bom_part", "process_category", "size_point",
-                        "packing_mode", "cert_type", "stock_in_reason", "stock_out_reason");
+    void dictPresets() throws SQLException {
+        withPristineDictionary(jdbc -> {
+            assertThat(jdbc.queryForList("SELECT code FROM sys_dict_type WHERE deleted = false", String.class))
+                    .contains("style_class", "season", "wave", "style_tag", "brand", "series", "gender", "style_source",
+                            "exec_standard", "safety_category", "color_family", "unit", "currency", "tax_rate",
+                            "settle_method", "invoice_type", "material_type", "supplier_category", "order_type",
+                            "process_mode", "prod_node", "issue_type", "bom_part", "process_category", "size_point",
+                            "packing_mode", "cert_type", "stock_in_reason", "stock_out_reason");
 
-        assertThat(jdbc.queryForList(
-                "SELECT type_code || ':' || value FROM sys_dict_data WHERE builtin AND deleted = false", String.class))
-                .containsExactlyInAnyOrder("style_source:CUSTOMER_SAMPLE", "material_type:FABRIC",
-                        "material_type:LINING", "supplier_category:GARMENT", "supplier_category:PROCESSOR",
-                        "order_type:CUSTOMER", "process_mode:FULL", "prod_node:CUT", "cert_type:LICENSE",
-                        "stock_in_reason:OPENING", "currency:CNY", "unit:PIECE", "style_source:OWN");
+            assertThat(jdbc.queryForList(
+                    "SELECT type_code || ':' || value FROM sys_dict_data WHERE builtin AND deleted = false", String.class))
+                    .containsExactlyInAnyOrder("style_source:CUSTOMER_SAMPLE", "material_type:FABRIC",
+                            "material_type:LINING", "supplier_category:GARMENT", "supplier_category:PROCESSOR",
+                            "order_type:CUSTOMER", "process_mode:FULL", "prod_node:CUT", "cert_type:LICENSE",
+                            "stock_in_reason:OPENING", "currency:CNY", "unit:PIECE", "style_source:OWN", "sample_node:SEND");
 
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_dict_data WHERE type_code = 'brand'", Integer.class))
-                .isZero();
-        assertThat(jdbc.queryForList("""
-                SELECT label || '=' || num_value::int FROM sys_dict_data
-                WHERE type_code = 'material_type' AND deleted = false ORDER BY sort
-                """, String.class))
-                .containsExactly("面料=3", "里料=3", "辅料=3", "包材=3", "标签吊牌=3", "配件=3", "工艺=3", "鞋底=3");   // V24（Q18）
-        assertThat(jdbc.queryForMap("""
-                SELECT t.num_label, d.num_value::int AS days FROM sys_dict_type t
-                JOIN sys_dict_data d ON d.type_code = t.code AND d.deleted = false
-                WHERE t.code = 'prod_node' AND t.deleted = false AND d.value = 'CUT'
-                """)).containsEntry("num_label", "默认天数").containsEntry("days", 4);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_dict_data WHERE type_code = 'brand'", Integer.class))
+                    .isZero();
+            assertThat(jdbc.queryForList("""
+                    SELECT label || '=' || num_value::int FROM sys_dict_data
+                    WHERE type_code = 'material_type' AND deleted = false ORDER BY sort
+                    """, String.class))
+                    .containsExactly("面料=3", "里料=3", "辅料=3", "包材=3", "标签吊牌=3", "配件=3", "工艺=3", "鞋底=3");   // V24（Q18）
+            assertThat(jdbc.queryForMap("""
+                    SELECT t.num_label, d.num_value::int AS days FROM sys_dict_type t
+                    JOIN sys_dict_data d ON d.type_code = t.code AND d.deleted = false
+                    WHERE t.code = 'prod_node' AND t.deleted = false AND d.value = 'CUT'
+                    """)).containsEntry("num_label", "默认天数").containsEntry("days", 4);
+        });
+    }
+
+    /** 字典初始值只验完整迁移的新库；业务测试合法新增的品牌不能影响预置断言。 */
+    private void withPristineDictionary(Consumer<JdbcTemplate> assertions) throws SQLException {
+        var admin = new JdbcTemplate(dataSource);
+        assertThat(admin.queryForObject("SELECT current_database()", String.class)).endsWith("_test");
+        String database = "s1_dict_" + UUID.randomUUID().toString().replace("-", "") + "_test";
+        String url, user;
+        try (var connection = dataSource.getConnection()) {
+            String current = connection.getMetaData().getURL();
+            int query = current.indexOf('?');
+            String address = query < 0 ? current : current.substring(0, query);
+            url = address.substring(0, address.lastIndexOf('/') + 1) + database + (query < 0 ? "" : current.substring(query));
+            user = connection.getMetaData().getUserName();
+        }
+        admin.execute("CREATE DATABASE " + database);
+        try {
+            // 沿用已验证的隔离库机制，CONCURRENTLY DDL 必须能获得各自连接及 session 迁移锁。
+            var separate = new DriverManagerDataSource(url, user, databasePassword);
+            var configuration = Flyway.configure().dataSource(separate).locations("classpath:db/migration");
+            configuration.getConfigurationExtension(PostgreSQLConfigurationExtension.class).setTransactionalLock(false);
+            configuration.load().migrate();
+            assertions.accept(new JdbcTemplate(separate));
+        } finally {
+            admin.execute("DROP DATABASE " + database + " WITH (FORCE)");
+        }
     }
 
     /** RFC 003 §13.2 的表：看 = list、export；改 = 看 + add、edit、remove、import */
@@ -283,45 +320,50 @@ class SchemaConventionsIT {
     private static final Set<String> FG_VIEW = Set.of("fg:doc:list", "fg:stock:list");
     private static final Set<String> FG_EDIT = union(FG_VIEW, Set.of("fg:doc:add", "fg:doc:edit",
             "fg:doc:remove", "fg:doc:audit", "fg:doc:export", "fg:stock:export"));
+    private static final Set<String> TAG_VIEW = Set.of("biz:tag:list");
+    private static final Set<String> TAG_MANAGE = Set.of("biz:tag:manage");
+    private static final Set<String> SAMPLE_VIEW_REVIEW = Set.of("dev:sample:list", "dev:sample:review");
+    private static final Set<String> SAMPLE_EDIT = union(SAMPLE_VIEW_REVIEW, Set.of("dev:sample:add", "dev:sample:edit",
+            "dev:sample:remove", "dev:sample:make", "dev:sample:convert"));
 
     private static final Map<String, Set<String>> ROLE_PERMS = new LinkedHashMap<>();
 
     static {
         // 每行前半是第 2 批（V16），后半是第 3、4 批（V17）
         ROLE_PERMS.put("dev", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
-                PACK_EDIT, STANDARD_VIEW, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
+                PACK_EDIT, STANDARD_VIEW, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW, TAG_VIEW, SAMPLE_EDIT));
         ROLE_PERMS.put("dev_lead", union(BASICS_EDIT, MATERIAL_EDIT, SUPPLIER_VIEW, STYLE_EDIT, PRICE_VIEW,
-                PACK_EDIT, COST, STANDARD_EDIT, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW));
+                PACK_EDIT, COST, STANDARD_EDIT, ORDER_VIEW, CHANGE_VIEW, PRODUCTION_VIEW, TAG_VIEW, SAMPLE_EDIT));
         ROLE_PERMS.put("sales", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
-                PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, ORDER_PRICE, PURCHASE_VIEW, PRODUCTION_VIEW, FG_VIEW));
+                PACK_VIEW, ORDER_EDIT, CHANGE_EDIT, ORDER_PRICE, PURCHASE_VIEW, PRODUCTION_VIEW, FG_VIEW, TAG_VIEW));
         ROLE_PERMS.put("merchandiser", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:process:edit"),
-                PACK_VIEW, STANDARD_VIEW, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE, FG_VIEW));
+                PACK_VIEW, STANDARD_VIEW, ORDER_VIEW, CHANGE_EDIT, PURCHASE_VIEW, STOCK_VIEW, PRODUCTION_EDIT, PRODUCTION_PRICE, FG_VIEW, TAG_VIEW));
         ROLE_PERMS.put("buyer", union(BASICS_VIEW, MATERIAL_EDIT, SUPPLIER_EDIT, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
                 Set.of("price:material:edit"),
                 PACK_VIEW, COST, ORDER_VIEW, CHANGE_VIEW, PURCHASE_EDIT, PURCHASE_CLOSE, STOCK_VIEW, COUNT_VIEW,
-                PRODUCTION_VIEW, PRODUCTION_PRICE));
+                PRODUCTION_VIEW, PRODUCTION_PRICE, TAG_VIEW));
         ROLE_PERMS.put("warehouse", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, STYLE_VIEW,
-                PACK_VIEW, PURCHASE_VIEW, STOCK_EDIT, COUNT_EDIT, PRODUCTION_VIEW, FG_EDIT));
+                PACK_VIEW, PURCHASE_VIEW, STOCK_EDIT, COUNT_EDIT, PRODUCTION_VIEW, FG_EDIT, TAG_VIEW));
         ROLE_PERMS.put("finance", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, BANK, CONTACT, STYLE_VIEW, PRICE_VIEW,
-                PACK_VIEW, COST, ORDER_VIEW, ORDER_PRICE, CHANGE_VIEW, PURCHASE_VIEW, STOCK_VIEW, COUNT_VIEW, PRODUCTION_VIEW, PRODUCTION_PRICE, FG_VIEW));
+                PACK_VIEW, COST, ORDER_VIEW, ORDER_PRICE, CHANGE_VIEW, PURCHASE_VIEW, STOCK_VIEW, COUNT_VIEW, PRODUCTION_VIEW, PRODUCTION_PRICE, FG_VIEW, TAG_VIEW));
         ROLE_PERMS.put("manager", union(BASICS_VIEW, MATERIAL_VIEW, SUPPLIER_VIEW, Set.of("supplier:supplier:admit"),
                 BANK, CONTACT, STYLE_VIEW, PRICE_VIEW, Set.of("price:material:edit", "price:process:edit"),
                 PACK_VIEW, COST, STANDARD_VIEW, ORDER_VIEW, Set.of("order:order:audit"), CHANGE_VIEW,
                 Set.of("order:change:audit"), ORDER_PRICE, PURCHASE_VIEW, Set.of("purchase:order:audit"), PURCHASE_CLOSE, STOCK_VIEW,
                 COUNT_VIEW, Set.of("inventory:count:audit"), PRODUCTION_VIEW,
-                Set.of("production:order:audit", "production:order:close"), PRODUCTION_PRICE, FG_VIEW));
+                Set.of("production:order:audit", "production:order:close"), PRODUCTION_PRICE, FG_VIEW, TAG_VIEW, TAG_MANAGE, SAMPLE_VIEW_REVIEW));
     }
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包""工艺标准"（V18 起是资料包里的抽屉）是 visible = false 的，不出现 */
-    private static final List<String> MASTER = List.of("供应商", "物料", "基础");
+    private static final List<String> MASTER = List.of("供应商", "物料", "基础", "公共标签库");
     private static final List<String> ORDERS = List.of("需求订单", "变更");
     private static final List<String> SUPPLY_ALL = List.of("算料", "采购", "物料入库单", "物料出库单", "物料盘点单", "库存");
     private static final List<String> MAKE = List.of("外发加工单", "成品采购单", "看板");
     private static final List<String> FG = List.of("成品入库单", "成品出库单", "成品库存");
     private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.of(
-            "dev", Map.of("开发", List.of("款式"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
-            "dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
+            "dev", Map.of("开发", List.of("样衣", "款式"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
+            "dev_lead", Map.of("开发", List.of("样衣", "款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
             "sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "成品", FG, "资料", MASTER),
             "merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
                     "物料", List.of("算料", "采购", "物料入库单", "物料出库单", "库存"),
@@ -329,7 +371,7 @@ class SchemaConventionsIT {
             "buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
             "warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "成品", FG, "资料", MASTER),
             "finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "成品", FG, "资料", MASTER),
-            "manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE,
+            "manager", Map.of("开发", List.of("样衣", "款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE,
                     "成品", FG, "资料", MASTER));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */
@@ -362,7 +404,7 @@ class SchemaConventionsIT {
                     userId, role.getKey());
 
             Set<String> perms = permissionService.loadPermissions(userId);
-            assertThat(perms.stream().filter(p -> p.matches("(basic|supplier|style|price|techpack|order|purchase|inventory|production|fg|biz):.*"))
+            assertThat(perms.stream().filter(p -> p.matches("(basic|supplier|style|price|techpack|order|purchase|inventory|production|fg|biz|dev):.*"))
                     .collect(Collectors.toSet()))
                     .as(role.getKey() + " 的权限码").isEqualTo(role.getValue());
             assertThat(perms.contains(RoleDataScope.ALL_AUTHORITY))

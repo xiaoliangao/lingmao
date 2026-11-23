@@ -25,6 +25,9 @@ public enum BizType {
     MATERIAL("物料", null),
     MATERIAL_SKU("物料 SKU", null),
     STYLE("款式", null),
+    SAMPLE("样衣", "YY"),
+    SAMPLE_ORDER("打样单", "DY"),
+    SAMPLE_REVIEW("样衣评审", null),
     TECH_PACK("资料包", null),
     /** 设置 › 工艺标准的文件（biz_attachment，doc_id 固定 0，架构 §4.9） */
     CRAFT_STANDARD("工艺标准", null),
@@ -39,7 +42,9 @@ public enum BizType {
     PRODUCTION_ISSUE("生产异常", "YC"),
     /** 报工（照片挂在 biz_attachment 上），没有单号 */
     PRODUCTION_NODE_REPORT("报工", null),
-    FG_DOC("成品出入库单", null, new Kind("IN", "成品入库单", "CR"), new Kind("OUT", "成品出库单", "CC"));
+    FG_DOC("成品出入库单", null, new Kind("IN", "成品入库单", "CR"), new Kind("OUT", "成品出库单", "CC")),
+    /** 公共标签库的操作时间轴；不提供业务单号、附件或通用对象写入口。 */
+    PUBLIC_TAG("公共标签", null);
 
     /** 一张表两种单据里的一种：kind 的值、中文名、单号前缀 */
     public record Kind(String code, String label, String prefix) {

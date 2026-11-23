@@ -60,6 +60,10 @@ async def run_security(browser, url, artifacts, observe_context, metrics):
             data.update(version=purchase_state['version'], companyId=purchase_state['company'])
             data['items'][0]['id'] = purchase_state['item']
         elif path == '/api/tech-packs/706': data = pack_detail
+        elif path == '/api/tags/objects/TECH_PACK/706':
+            assert req.method == 'GET' and not query
+            assert await req.frame.evaluate("async()=>{const{useUserStore}=await import('/src/stores/user.ts');return useUserStore().hasPerm('techpack:pack:list')&&!useUserStore().hasPerm('techpack:cost:query')}")
+            data = {'version': 0, 'tags': []}
         elif path.startswith('/api/dict-data/by-type/'):
             data = [{'value': value, 'label': label, 'status': 1} for value, label in dicts.get(path.rsplit('/', 1)[-1], [])]
         elif path == '/api/companies/options': data = companies

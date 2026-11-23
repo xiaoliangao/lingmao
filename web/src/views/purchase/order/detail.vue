@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, ref } from 'vue'
@@ -287,6 +288,7 @@ const colorSpec = (it: PurchaseItem) => [it.colorName, it.spec].filter(Boolean).
       </div>
 
       <aside class="doc-aside">
+        <ObjectTags type="PURCHASE_ORDER" :object-id="id" :company-id="detail.companyId" :editable="detail.status === 'DRAFT' && can('edit')" @saved="logRef?.reload()" />
         <section class="panel">
           <div class="panel-head">采购单信息</div>
           <div class="panel-body">

@@ -327,7 +327,7 @@ const pendingWrites = new Map<string, PendingWrite>()
 const checking = new Set<string>()
 /** 改单、审核这类操作连点两下：内容一样就合并成一次 */
 const inflight = new Map<string, Promise<unknown>>()
-const RESOURCE_NAMES: Record<string, string> = { 'fg-docs': '成品单据', orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式', 'tech-packs': '资料包', 'export-jobs': '导出任务' }
+const RESOURCE_NAMES: Record<string, string> = { samples: '样衣', 'fg-docs': '成品单据', orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式', 'tech-packs': '资料包', 'export-jobs': '导出任务' }
 const CHILD_NAMES: [RegExp, string][] = [
   [/\/skus(\/generate)?$/, 'SKU'], [/\/certs$/, '供应商证照'], [/\/revise$/, '资料包改版'], [/\/to-prod$/, '大货资料包'],
   [/\/reports$/, '报工'], [/\/issues$/, '生产问题'], [/\/receipts$/, '成品入库'], [/\/from-(purchase|production)\/\d+$/, '入库单'],
@@ -447,7 +447,12 @@ function prepareRequest(config: RequestConfig): RequestConfig {
   const pageCompany = config.companyId ?? currentCompanyScope()
   // 只有这几种草稿保存允许明确换主体，别的接口主体必须一致。
   const draftUpdate = (config.method ?? '').toLowerCase() === 'put' && /^\/api\/(orders|purchase-orders|production-orders)\/[1-9]\d*$/.test(config.url ?? '')
-  const expectedCompany = draftUpdate && payload && typeof payload === 'object' && 'expectedCompanyId' in payload && typeof payload.expectedCompanyId === 'string' ? payload.expectedCompanyId : undefined
+  // API09 的主档换主体：query 是原主体，body 是新主体。仅该精确 PUT 使用此契约。
+  const [path, query = ''] = (config.url ?? '').split('?')
+  const sampleDraftUpdate = (config.method ?? '').toLowerCase() === 'put' && /^\/api\/samples\/[1-9]\d*$/.test(path ?? '')
+  const sampleCompany = sampleDraftUpdate ? new URLSearchParams(query).get('companyId') : null
+  if (sampleDraftUpdate && (!sampleCompany || !pageCompany || sampleCompany !== pageCompany)) throw new ApiError(409, '样衣原主体与页面装载时不一致，请重新读取')
+  const expectedCompany = sampleCompany ?? (draftUpdate && payload && typeof payload === 'object' && 'expectedCompanyId' in payload && typeof payload.expectedCompanyId === 'string' ? payload.expectedCompanyId : undefined)
   if (expectedCompany && pageCompany && expectedCompany !== pageCompany) throw new ApiError(409, '已保存主体与页面装载时不一致，请重新核对主体')
   if (!expectedCompany && bodyCompany && pageCompany && bodyCompany !== pageCompany) throw new ApiError(409, '表单主体与当前单据不一致，请重新核对主体')
   const company = expectedCompany ?? pageCompany ?? bodyCompany ?? paramsCompany

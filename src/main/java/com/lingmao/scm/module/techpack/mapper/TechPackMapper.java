@@ -8,12 +8,14 @@ import com.lingmao.scm.module.techpack.dto.PackColorRef;
 import com.lingmao.scm.module.techpack.dto.PackSizeRef;
 import com.lingmao.scm.module.techpack.dto.StyleCostRowVO;
 import com.lingmao.scm.module.techpack.entity.PackStage;
+import com.lingmao.scm.module.techpack.entity.PackStatus;
 import com.lingmao.scm.module.techpack.entity.TechPack;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.ResultMap;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Collection;
 
@@ -50,4 +52,40 @@ public interface TechPackMapper extends BaseMapper<TechPack> {
     /** 按款看成本（resources/mapper/techpack/TechPackMapper.xml）：每个款取生产已生效版，没有取研发已生效版 */
     IPage<StyleCostRowVO> selectStyleCostPage(IPage<StyleCostRowVO> page, @Param("q") StyleCostQuery query,
                                               @Param("codes") List<String> codes, @Param("categoryIds") List<Long> categoryIds);
+    /** 只读识别 owner，随后必须由 Service 授权并先锁真实父头，再锁资料包、重查身份。 */
+    OwnerIdentity ownerIdentity(@Param("id") long id);
+
+    /** 样衣详情版本列表；调用者已通过 SamplePackOwner，limit 必须有界。 */
+    List<SamplePackHead> selectSamplePacks(@Param("tenant") String tenant, @Param("companyId") long companyId,
+                                    @Param("sampleId") long sampleId, @Param("beforeVersion") Integer beforeVersion, @Param("limit") int limit);
+
+    /** 调用前持有样衣父锁；返回包始终按 id 升序，不能先锁包再等样衣。 */
+    List<SamplePackIdentity> lockSamplePacks(@Param("tenant") String tenant, @Param("companyId") long companyId,
+                                  @Param("sampleId") long sampleId, @Param("limit") int limit);
+
+    long countSamplePacks(@Param("tenant") String tenant, @Param("companyId") long companyId,
+                          @Param("sampleId") long sampleId);
+
+    int maxSampleVersion(@Param("tenant") String tenant, @Param("companyId") long companyId,
+                         @Param("sampleId") long sampleId);
+
+    boolean existsForSample(@Param("tenant") String tenant, @Param("companyId") long companyId,
+                            @Param("sampleId") long sampleId);
+
+    /** 先锁全体样衣包并校验读取上限；移交不改内容，version_lock 原子 +1，结果须与锁定行数相等。 */
+    int adoptSamplePacks(@Param("tenant") String tenant, @Param("companyId") long companyId,
+                         @Param("sampleId") long sampleId, @Param("styleId") long styleId,
+                         @Param("actor") Long actor);
+
+    /** 锁定/移交只读这八个小字段，绝不把每版 ownerSnapshot 放进内存。 */
+    record SamplePackIdentity(Long id, Long styleId, Long sampleId, Long companyId,
+                              PackStage stage, PackStatus status, Integer version, Integer versionLock) { }
+
+    /** 版本条投影；成本/快照需要时另经授权读取被选中的单个包。 */
+    record SamplePackHead(Long id, Long styleId, Long sampleId, Long companyId, PackStage stage,
+                          PackStatus status, Integer version, Integer versionLock, String versionNote,
+                          Long sourcePackId, Integer sourceVersion, Long publishBy, OffsetDateTime publishTime,
+                          Long createBy, OffsetDateTime createTime, OffsetDateTime updateTime) { }
+
+    record OwnerIdentity(Long id, Long styleId, Long sampleId, Long companyId, Integer versionLock) { }
 }

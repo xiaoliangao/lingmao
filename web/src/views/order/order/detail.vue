@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import ThumbImage from '@/components/ThumbImage.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
@@ -397,6 +398,7 @@ function openKitting() {
       </div>
 
       <aside class="doc-aside">
+        <ObjectTags type="ORDER" :object-id="id" :company-id="detail.companyId" :editable="detail.status === 'DRAFT' && can('edit')" @saved="logRef?.reload()" />
         <section class="panel">
           <div class="panel-head">订单信息</div>
           <div class="panel-body">

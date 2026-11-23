@@ -3,8 +3,11 @@ package com.lingmao.scm.config;
 import com.lingmao.scm.IntegrationTestConfig;
 import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.scope.DeploymentNamespace;
+import com.lingmao.scm.module.system.cache.CacheInvalidationHandler;
+import com.lingmao.scm.module.system.cache.RedisSharedCache;
 import com.lingmao.scm.module.system.service.OutboxService;
 import com.lingmao.scm.module.system.service.impl.OutboxDispatcher;
+import com.lingmao.scm.module.system.service.impl.OutboxStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +16,7 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -43,6 +47,7 @@ class A4AuditHttpIT {
     @Autowired JdbcTemplate jdbc; @Autowired JsonMapper json; @Autowired PasswordEncoder passwords;
     @Autowired PlatformTransactionManager manager; @Autowired OutboxService outbox; @Autowired OutboxDispatcher dispatcher;
     @Autowired DeploymentNamespace namespace;
+    @Autowired StringRedisTemplate redis;
     private static final String PASSWORD="A4-Synthetic-Login-9374";
 
     @Test void actualHttpChangeRecordsPreciseDiffActorRealIpAndBothLogLayers() throws Exception {
@@ -116,6 +121,8 @@ class A4AuditHttpIT {
 
     @Test void databaseFailureIsSafeAndSlowSqlAndOutboxKeepTheSameRequestId(CapturedOutput output) throws Exception {
         Account account=account(true);String trace="trace-20261118001234567";
+        Map<String,Object> evidence=new java.util.LinkedHashMap<>();
+        List<JsonNode> correlated=new ArrayList<>();
         String code=UUID.randomUUID().toString().substring(0,6).toUpperCase(java.util.Locale.ROOT);
         long id=jdbc.queryForObject("INSERT INTO bas_company(code,name,short_name) VALUES(?,?,?) RETURNING id",Long.class,code,"before","before");
         jdbc.execute("CREATE FUNCTION a4_reject_company() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.name='A4_FAIL' THEN PERFORM pg_sleep(0.05); RAISE EXCEPTION 'password=Sensitive-9374 bankAccount=6222023333333333333 SELECT hidden_table'; END IF; RETURN NEW; END $$");
@@ -125,21 +132,57 @@ class A4AuditHttpIT {
             JsonNode error=json.readTree(response.body()); assertThat(error.get("code").intValue()).isEqualTo(500);
             assertThat(error.get("msg").asText()).contains(trace);
             assertThat(response.body()).doesNotContain("hidden_table","Sensitive-9374","SQLException","stack");
+            evidence.put("httpResponse",error); evidence.put("httpRequestId",response.headers().firstValue("X-Request-Id").orElseThrow());
+            assertThat(response.headers().firstValue("X-Request-Id")).contains(trace);
             assertThat(jdbc.queryForObject("SELECT name FROM bas_company WHERE id=?",String.class,id)).isEqualTo("before");
             assertThat(output.getAll()).contains("slow_sql",trace).doesNotContain("Sensitive-9374","6222023333333333333","SELECT hidden_table");
         } finally {jdbc.execute("DROP TRIGGER a4_reject_company ON bas_company");jdbc.execute("DROP FUNCTION a4_reject_company()");}
-        long job=outbox.enqueue("CACHE_INVALIDATE","a4-"+UUID.randomUUID(),json.writeValueAsString(namespace.sharedKey("dict","a4")),account.id,trace);
-        // The real scheduler/handler/Redis run; only test-profile automatic startup is disabled.
-        var enabled=new OutboxDispatcher((com.lingmao.scm.module.system.service.impl.OutboxStore)outbox,
-                List.of(new com.lingmao.scm.module.system.cache.CacheInvalidationHandler(sharedCache,json)),List.of(),true);
+        // Only these real infrastructure instances use an isolated test queue. The application's
+        // trusted namespace and sys_deployment_namespace remain unchanged; this is not business tenancy.
+        var queueNamespace=new DeploymentNamespace("a4_trace_"+UUID.randomUUID());
+        var isolatedStore=new OutboxStore(jdbc,queueNamespace,manager);
+        var isolatedCache=new RedisSharedCache(redis,queueNamespace);
+        String key=queueNamespace.sharedKey("dict","a4");
+        redis.opsForValue().set(key,"synthetic-cache-value",Duration.ofMinutes(1));
+        long sentinel=outbox.enqueue("CACHE_INVALIDATE","a4-other-"+UUID.randomUUID(),json.writeValueAsString(namespace.sharedKey("dict","a4-other")),account.id,trace+"-other");
+        List<Map<String,Object>> previous=queueSummary(namespace.tenant());
+        long job=isolatedStore.enqueue("CACHE_INVALIDATE","a4-"+UUID.randomUUID(),json.writeValueAsString(key),account.id,trace);
+        evidence.put("applicationNamespace",namespace.tenant()); evidence.put("infrastructureTestNamespace",queueNamespace.tenant());
+        evidence.put("targetBefore",queueRow(job)); evidence.put("originalQueueBefore",previous);
+        evidence.put("sentinelBefore",queueRow(sentinel)); evidence.put("timeoutSeconds",10);
+        // The real scheduler, database lease, handler and Redis execute; the it profile disables only automatic startup.
+        var enabled=new OutboxDispatcher(isolatedStore,List.of(new CacheInvalidationHandler(isolatedCache,json)),List.of(),true);
         try {
             enabled.start();long deadline=System.nanoTime()+Duration.ofSeconds(10).toNanos();
-            while(!outbox.state(job).status().equals("SUCCEEDED") && System.nanoTime()<deadline)Thread.sleep(25);
-            assertThat(outbox.state(job).status()).isEqualTo("SUCCEEDED");
-            assertThat(output.getAll()).contains("outbox_completed",trace);
-        } finally {enabled.stop();}
+            while(!isolatedStore.state(job).status().equals("SUCCEEDED") && System.nanoTime()<deadline)Thread.sleep(25);
+            assertThat(isolatedStore.state(job).status()).isEqualTo("SUCCEEDED");
+            assertThat(redis.hasKey(key)).isFalse();
+            assertThat(queueSummary(namespace.tenant())).isEqualTo(previous);
+            assertThat(outbox.state(sentinel).status()).isEqualTo("PENDING");
+            assertThat(outbox.state(sentinel).attempts()).isZero();
+            assertThat(jdbc.queryForObject("SELECT tenant_id FROM sys_deployment_namespace WHERE singleton",String.class)).isEqualTo(namespace.tenant());
+        } finally {
+            enabled.stop();
+            evidence.put("targetAfter",queueRow(job)); evidence.put("originalQueueAfter",queueSummary(namespace.tenant()));
+            evidence.put("sentinelAfter",queueRow(sentinel)); evidence.put("redisKeyPresentAfter",redis.hasKey(key));
+            evidence.put("persistedBusinessNamespace",jdbc.queryForObject("SELECT tenant_id FROM sys_deployment_namespace WHERE singleton",String.class));
+            correlated.addAll(output.getAll().lines().filter(line->line.startsWith("{")).map(json::readTree)
+                    .filter(row->row.path("requestId").asText().equals(trace))
+                    .filter(row->List.of("slow_sql ","outbox_started ","outbox_completed ").stream().anyMatch(event->row.path("message").asText().startsWith(event))).toList());
+            evidence.put("correlatedStructuredLogs",correlated);
+            Path file=Path.of("target/test-artifacts/a4/outbox-trace-isolated.json");Files.createDirectories(file.getParent());
+            Files.writeString(file,json.writerWithDefaultPrettyPrinter().writeValueAsString(evidence));
+        }
+        // stop() has drained the real control thread, so SUCCEEDED cannot race the final completion log.
+        for(String event:List.of("slow_sql ","outbox_started ","outbox_completed "))
+            assertThat(correlated).anyMatch(row->row.path("message").asText().startsWith(event));
     }
-    @Autowired com.lingmao.scm.module.system.cache.SharedCache sharedCache;
+    private List<Map<String,Object>> queueSummary(String tenant) {
+        return jdbc.queryForList("SELECT status,count(*) AS rows,coalesce(sum(attempts),0) AS attempts FROM sys_outbox WHERE tenant_key=? GROUP BY status ORDER BY status",tenant);
+    }
+    private Map<String,Object> queueRow(long id) {
+        return jdbc.queryForMap("SELECT id::text,tenant_key,kind,status,attempts,request_id FROM sys_outbox WHERE id=?",id);
+    }
 
     @Test void probesArePublicAndLiveDoesNotBorrowDatabaseConnection() throws Exception {
         try(var http=HttpClient.newHttpClient()) {
@@ -150,7 +193,7 @@ class A4AuditHttpIT {
     private Account account(boolean financial) throws Exception {
         String username="a4-"+UUID.randomUUID().toString().substring(0,12);
         long id=jdbc.queryForObject("INSERT INTO sys_user(username,password,nickname) VALUES(?,?,?) RETURNING id",Long.class,username,passwords.encode(PASSWORD),"A4审计测试");
-        var grants=new ArrayList<>(List.of("basic:basics:add","basic:basics:edit","supplier:supplier:add","supplier:supplier:edit","supplier:supplier:list","system:audit:query","data:all"));
+        var grants=new ArrayList<>(List.of("basic:basics:list","basic:basics:add","basic:basics:edit","supplier:supplier:add","supplier:supplier:edit","supplier:supplier:list","system:audit:query","data:all"));
         if(financial)grants.addAll(List.of("supplier:supplier:bank","supplier:supplier:contact","techpack:cost:query","order:price:query","production:price:query"));
         TestIdentity.grant(jdbc,id,grants);
         try(var http=HttpClient.newHttpClient()) {return new Account(id,data(send(http,"POST","/api/auth/login",Map.of("username",username,"password",PASSWORD),null,"a4-login-"+UUID.randomUUID())).asText());}

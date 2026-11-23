@@ -14,6 +14,10 @@ import java.util.Map;
 /** 用户管理：给管理员用的增删改查。和 AuthService（登录、当前用户）分开 */
 public interface UserService {
 
+    /** 业务单据一次校验有界人员集合；不返回密码或账号详情。 */
+    java.util.Set<Long> enabledIds(java.util.Collection<Long> ids);
+
+
     PageResult<UserVO> page(UserQuery query);
 
     UserVO getById(Long id);

@@ -39,6 +39,17 @@ public class DictDataServiceImpl implements DictDataService {
     private final TradeFeature tradeFeature;
 
     @Override
+    public List<DictData> enabledForUse(String typeCode, int maxRows) {
+        if (typeCode == null || typeCode.isBlank() || maxRows < 1 || maxRows > 100)
+            throw new BizException(400, "字典模板查询参数不合法");
+        List<DictData> rows = dictDataMapper.selectList(new LambdaQueryWrapper<DictData>()
+                .eq(DictData::getTypeCode, typeCode).eq(DictData::getStatus, 1)
+                .orderByAsc(DictData::getSort, DictData::getId).last("LIMIT " + (maxRows + 1)));
+        if (rows.size() > maxRows) throw new BizException(400, "字典模板启用项超过 " + maxRows + " 项");
+        return List.copyOf(rows);
+    }
+
+    @Override
     public PageResult<DictDataVO> page(DictDataQuery query) {
         /**
          * LambdaQueryWrapper 是用 Java 代码拼 WHERE 条件的工具。

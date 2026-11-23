@@ -50,6 +50,7 @@ const COMMON_ACTIONS: Record<string, string> = {
   void: '作废',
   close: '结案',
   images: '换图片',
+  'replace-tags': '修改标签',
 }
 
 /** 单据的通用状态（架构 §4.2）；主数据、各单据自己的状态由 statuses 给 */

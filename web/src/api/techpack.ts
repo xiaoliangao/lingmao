@@ -3,7 +3,7 @@ import type { FileVO, PageResult } from '@/types/system'
 import type { Attachment, DocLog } from '@/types/biz'
 import type {
   BomDefault, BomDefaultReq, CraftStandard, CraftTextsForm, PackStage, PdfOptions, SizePointMethodForm, StyleCostQuery, StyleCostRow,
-  TechPackCost, TechPackDetail, TechPackOverview, TechPackSaveForm,
+  TechPackCost, TechPackDetail, TechPackOverview, TechPackSaveForm, TechPackOwner,
 } from '@/types/techpack'
 import { attachmentBody } from './basic'
 import type { PageParams } from './system'
@@ -17,37 +17,42 @@ const base = '/api/tech-packs'
 
 export const techPackApi = {
   /** 一个款的全部版本、默认选哪版、能建哪个阶段、新颜色未配料、资料包核价 */
-  overview: (styleId: string) => http.get<TechPackOverview>(base, { styleId }),
+  overview: (styleId: string, options?: RequestOptions) => http.get<TechPackOverview>(base, { styleId }, options),
+  sampleOverview: (sampleId: string, companyId: string, params: { beforeVersion?: number; size?: number }, options?: RequestOptions) =>
+    http.get<TechPackOverview>(base, { sampleId, companyId, ...params }, { ...options, companyId }),
   /** 一个版本：单头 + 尺寸指示、物料清单、工艺指示（核价另取） */
-  get: (id: string) => http.get<TechPackDetail>(`${base}/${id}`),
+  get: (id: string, options?: RequestOptions) => http.get<TechPackDetail>(`${base}/${id}`, undefined, options),
   /** 新建一个阶段的下一版草稿，返回 id。这个阶段已经有草稿、款式停用了回 1000 */
-  create: (styleId: string, stage: PackStage) => http.post<string>(base, { styleId, stage }),
+  create: (styleId: string, stage: PackStage, options?: RequestOptions) => http.post<string>(base, { styleId, stage }, options),
+  createForOwner: (owner: TechPackOwner, stage: PackStage, options?: RequestOptions) => owner.kind === 'STYLE'
+    ? http.post<string>(base, { styleId: owner.styleId, stage }, options)
+    : http.post<string>(base, { sampleId: owner.sampleId, companyId: owner.companyId, stage }, { ...options, companyId: owner.companyId }),
   /** 保存草稿：整版覆盖，返回新的 versionLock（"有修改时点生效"接着用它生效）。不是草稿了、versionLock 对不上回 1002 */
-  save: (id: string, form: TechPackSaveForm) =>
+  save: (id: string, form: TechPackSaveForm, options?: RequestOptions) =>
     http.put<number>(`${base}/${id}`, {
       ...form,
       craftSections: form.craftSections.map((s) => ({ ...s, images: attachmentBody(s.images) })),
       processes: form.processes.map((p) => ({ ...p, images: attachmentBody(p.images) })),
-    }),
+    }, options),
   /** 删草稿（已生效、已作废的只能看） */
-  remove: (id: string) => http.delete<void>(`${base}/${id}`),
+  remove: (id: string, options?: RequestOptions) => http.delete<void>(`${base}/${id}`, options),
   /**
    * 生效。检查没通过回 1000，data 是 PublishProblem[]（一次列全）：调的时候传 { silent: true }，
    * 出错自己用 showBizError 弹清单（照供应商"申请准入"的写法）
    */
   publish: (id: string, versionLock: number, options?: RequestOptions) => http.post<void>(`${base}/${id}/publish`, { versionLock }, options),
   /** 修订：复制出同阶段的下一版草稿，返回新 id */
-  revise: (id: string) => http.post<string>(`${base}/${id}/revise`),
+  revise: (id: string, options?: RequestOptions) => http.post<string>(`${base}/${id}/revise`, undefined, options),
   /** 转生产 BOM：生效的研发版复制成生产版草稿，单价按价格档案重新取，返回新 id */
-  toProd: (id: string) => http.post<string>(`${base}/${id}/to-prod`),
+  toProd: (id: string, options?: RequestOptions) => http.post<string>(`${base}/${id}/to-prod`, undefined, options),
   /** 几行 BOM 的默认值（供应商、损耗、来源、参考单价……），按请求的顺序返回 */
   bomDefaults: (id: string, items: BomDefaultReq[], options?: RequestOptions) => http.post<BomDefault[]>(`${base}/${id}/bom-defaults`, { items }, { ...options, readOnly: true }),
   /** 核价页签，colorId 不给 = 款式的第一个颜色。没有 techpack:cost:query 回 403 */
-  cost: (id: string, colorId?: string) => http.get<TechPackCost>(`${base}/${id}/cost`, { colorId }),
+  cost: (id: string, colorId?: string, options?: RequestOptions) => http.get<TechPackCost>(`${base}/${id}/cost`, { colorId }, options),
   /** 这个版本的操作记录，新的在前 */
-  logs: (id: string) => http.get<DocLog[]>(`${base}/${id}/logs`),
+  logs: (id: string, options?: RequestOptions) => http.get<DocLog[]>(`${base}/${id}/logs`, undefined, options),
   /** 导出工艺单 PDF。文件名后端给（款号-款名-工艺单-V版本.pdf），取不到用 fallbackName */
-  pdf: (id: string, options: PdfOptions, fallbackName: string) => download(`${base}/${id}/pdf`, options, fallbackName),
+  pdf: (id: string, options: PdfOptions, fallbackName: string, requestOptions?: RequestOptions) => download(`${base}/${id}/pdf`, options, fallbackName, requestOptions),
 }
 
 /** 按款看成本（/costing，要 techpack:cost:query） */

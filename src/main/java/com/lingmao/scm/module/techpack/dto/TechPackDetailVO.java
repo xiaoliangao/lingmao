@@ -15,6 +15,8 @@ import java.util.List;
 public class TechPackDetailVO {
     private Long id;
     private Long styleId;
+    private Long sampleId;
+    private Long companyId;
     private String styleCode;
     private String styleName;
     private String aliasName;

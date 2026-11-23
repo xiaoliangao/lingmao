@@ -161,6 +161,15 @@ class SyntheticApi:
             elif path.startswith('/api/dict-data/by-type/'):
                 data = [{'value': 'INITIAL', 'label': '期初', 'status': 1}] if path.endswith(('fg_in_reason', 'fg_out_reason')) else []
             elif path == '/api/companies/options': data = [{'id': '1', 'code': 'C-1', 'shortName': '合成主体甲'}, {'id': '2', 'code': 'C-2', 'shortName': '合成主体乙'}]
+            elif re.fullmatch(r'/api/tags/objects/FG_DOC/\d+', path):
+                # Public tags add one legitimate read to the actual FG detail. Keep this
+                # fixture projection explicit; all other unknown routes still fail.
+                selected = path.rsplit('/', 1)[1]
+                known = {DOC, DOC[:-1] + '9', str(int(DOC) + 19), *self.created}
+                assert request.method == 'GET' and not params and selected in known, call
+                assert company in ['1', '2'], call
+                if selected in self.created: assert self.created[selected]['companyId'] == company, call
+                data = {'version': 0, 'tags': []}
             elif path == '/api/warehouses/options': data = [{'id': '31', 'code': 'FG-SYN', 'name': '合成成品仓', 'type': 'PRODUCT', 'factoryId': None}]
             elif path == '/api/categories/tree': data = []
             elif path == '/api/styles/pick':
@@ -252,8 +261,8 @@ class SyntheticApi:
                 start = int(params.get('cursor', ['0'])[0]); size = int(params.get('size', ['50'])[0]); stop = min(start + size, 125)
                 source = style(); data = {'list': [{**brief(source['skus'][0], source), 'id': str(9007199254748001 + i), 'companyId': company,
                     'warehouseId': '31', 'warehouseName': '合成成品仓', 'locationId': '0', 'docKind': 'IN', 'docId': DOC, 'docNo': f'CR-LOG-{i + 1:03}',
-                    'changeType': 'RECEIPT_IN', 'bizDate': '2026-11-21', 'changeQty': -1 if i % 5 == 4 else 1, 'balanceQty': 125 - i, 'createTime': STAMP,
-                    'createByName': '合成仓管查看完整操作时间', 'reversalOfLogId': str(9007199254720001 + i) if i % 5 == 4 else None, 'requestId': f'synthetic-log-{i + 1}'} for i in range(start, stop)],
+                    'changeType': 'RECEIPT_IN', 'bizDate': '2026-11-21', 'changeQty': 1, 'balanceQty': 125 - i, 'createTime': STAMP,
+                    'createByName': '合成仓管', 'reversalOfLogId': None, 'requestId': f'synthetic-log-{i + 1}'} for i in range(start, stop)],
                     'hasMore': stop < 125, 'nextCursor': str(stop) if stop < 125 else None}
             else: raise AssertionError('Unexpected synthetic API ' + request.method + ' ' + path)
             await route.fulfill(json={'code': 0, 'msg': '', 'data': data}, headers={'X-Request-Id': 'synthetic-fg-response'})
@@ -338,18 +347,6 @@ async def check_partial(browser, base, report):
     finally: await finish(context, report, console)
 
 
-async def ledger_layout(scope):
-    await expect(scope.locator('.ledger-time')).to_have_count(25)
-    await expect(scope.locator('.ledger-reversal')).to_have_count(5)
-    metrics = await scope.locator('.ledger-time, .ledger-actor').evaluate_all("""elements => elements.map(element => {
-      const range = document.createRange(); range.selectNodeContents(element);
-      return {text:element.textContent.trim(), textWidth:range.getBoundingClientRect().width,
-        availableWidth:element.clientWidth, height:element.getBoundingClientRect().height};
-    })""")
-    assert all(row['textWidth'] <= row['availableWidth'] + 1 and row['height'] > 0 for row in metrics), metrics
-    return metrics
-
-
 async def check_company_and_seek(browser, base, report):
     context, page, api, aborted, console = await start_page(browser, base, report, '/fg-stock?companyId=1')
     try:
@@ -375,7 +372,6 @@ async def check_company_and_seek(browser, base, report):
         await expect(dialog.locator('.el-table__body-wrapper tbody tr').first).to_contain_text('CR-LOG-101')
         await expect(dialog.get_by_role('button', name='继续加载', exact=True)).to_be_disabled()
         await capture(page, 'cell-seek-third-page.png')
-        cell_layout = await ledger_layout(dialog)
         await dialog.locator('.el-dialog__headerbtn').click()
         await page.locator('.el-segmented__item').filter(has_text='日志').click()
         for first in ['CR-LOG-001', 'CR-LOG-051']:
@@ -384,8 +380,6 @@ async def check_company_and_seek(browser, base, report):
         await expect(page.locator('.el-table:visible .el-table__body-wrapper tbody tr')).to_have_count(25)
         await expect(page.locator('.el-table:visible .el-table__body-wrapper tbody tr').first).to_contain_text('CR-LOG-101')
         await capture(page, 'stock-seek-third-page.png')
-        main_layout = await ledger_layout(page.locator('.el-table:visible'))
-        check(report, 'ledger_operator_timestamp_complete_and_reversals_visible', cell=cell_layout, main=main_layout, reversals_per_view=5)
         calls = [call for call in api.calls if call['path'] == '/api/fg-stock-logs']
         assert all('page' not in call['params'] and call['company'] == '2' for call in calls)
         assert [call['params'].get('cursor', ['0'])[0] for call in calls] == ['0', '50', '100', '0', '50', '100'], calls

@@ -34,6 +34,10 @@ import java.util.Map;
  */
 public interface StyleService {
 
+    /** 样衣转换专用：可信服务端字段在既有建款事务内建 SKU，并记录真实样衣号。 */
+    com.lingmao.scm.module.style.dto.StyleCreateResult createFromSample(com.lingmao.scm.module.style.dto.StyleCreateReq request,String sampleNo);
+
+
     /** 供成品完整矩阵使用，元数据 SQL 有界；maxRows 为可信服务端预算，1..50000。 */
     java.util.Map<Long, com.lingmao.scm.module.style.dto.StyleOrderInfo> boundedOrderInfos(java.util.Collection<Long> ids, int maxRows);
 

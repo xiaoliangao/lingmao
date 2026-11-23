@@ -37,8 +37,8 @@ public class BoardController {
 
     @Operation(summary = "概况四个格子：开发款式、在手订单、在制生产、在途物料；没有模块权限的是 null")
     @GetMapping("/home/kpi")
-    public R<HomeKpi> kpi() {
-        return R.ok(homeService.kpi());
+    public R<HomeKpi> kpi(@org.springframework.web.bind.annotation.RequestParam(value="companyId",required=false) Long companyId) {
+        return R.ok(homeService.kpi(companyId));
     }
 
     @Operation(summary = "待办分组和其他提醒的数；数据范围是全部的人能按 mine、ownerId 筛负责人")

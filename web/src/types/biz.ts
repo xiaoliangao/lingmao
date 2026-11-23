@@ -43,6 +43,9 @@ export type BizType =
   | 'MATERIAL'
   | 'MATERIAL_SKU'
   | 'STYLE'
+  | 'SAMPLE'
+  | 'SAMPLE_ORDER'
+  | 'SAMPLE_REVIEW'
   | 'TECH_PACK'
   | 'CRAFT_STANDARD'
   | 'ORDER'
@@ -128,7 +131,7 @@ export interface DocActionReq {
  * 点了去哪：utils/docRoute.ts 的 docRoute(ref)
  */
 export interface DocRef {
-  /** 成品引用必填；用于保持跳转后的主体范围。其他既有类型可不带。 */
+  /** 成品与样衣引用必填；用于保持跳转后的主体范围。其他既有类型可不带。 */
   companyId?: string | null
   type: BizType
   /** 一张表两种单据的：PRODUCTION_ORDER 是 OUTSOURCE / BUY，INV_DOC 是 IN / OUT；别的 null */

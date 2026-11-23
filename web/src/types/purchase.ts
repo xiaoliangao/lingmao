@@ -172,7 +172,9 @@ export interface MrpOrderRef {
 }
 
 /** 详情。auditBy、auditTime 在这里是确认人、确认时间；approval 一直是 null */
-export interface MrpCalcDetail extends DocHeader<MrpStatus, MrpAction> {
+export interface MrpCalcDetail extends Omit<DocHeader<MrpStatus, MrpAction>, 'companyId'> {
+  /** 早期跨订单算料单的主头可为 NULL，不根据当前请求主体补造归属。 */
+  companyId: string | null
   orders: MrpOrderRef[]
   styleCodes: string[]
   /** 要料日期：几张订单里最早的"裁剪"计划开始，没排单的按承诺交期倒推；算不出来是 null */

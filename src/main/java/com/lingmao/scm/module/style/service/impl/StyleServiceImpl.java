@@ -207,10 +207,30 @@ public class StyleServiceImpl implements StyleService {
     @Override
     @Transactional
     public StyleCreateResult create(StyleCreateReq req) {
+        return createInternal(req,null);
+    }
+
+    @Override
+    @Transactional
+    public StyleCreateResult createFromSample(StyleCreateReq req,String sampleNo) {
+        if (sampleNo==null || !sampleNo.matches("YY[0-9]{8}")) throw new BizException(400,"样衣来源编号不合法");
+        return createInternal(req,sampleNo);
+    }
+
+    private StyleCreateResult createInternal(StyleCreateReq req,String sampleNo) {
         Style s = new Style();
-        fill(s, req, null);
+        StyleCreateReq fields=req;
+        if(sampleNo!=null){
+            // 成本来自已锁样衣的服务端值，不能再次按客户端字段权限清空或拒绝合法转换。
+            fields=new StyleCreateReq();BeanUtils.copyProperties(req,fields);fields.setRefCost(null);
+        }
+        SizeGroupVO sampleGroup=sampleNo==null?null:sizeGroupService.getByIdsBounded(List.of(req.getSizeGroupId()),100).get(req.getSizeGroupId());
+        if(sampleNo!=null && (sampleGroup==null || sampleGroup.sizes().isEmpty() || !sampleGroup.sizes().contains(sampleGroup.baseSize())))
+            throw new BizException(400,"样衣尺码组没有有效基码");
+        fill(s, fields, null, sampleGroup);
+        if(sampleNo!=null){s.setSampleNo(sampleNo);s.setRefCost(req.getRefCost());}
         List<Color> colors = resolveColors(req.getColorIds());
-        List<String> sizes = sizeGroupService.getById(s.getSizeGroupId()).sizes();
+        List<String> sizes = sampleGroup==null?sizeGroupService.getById(s.getSizeGroupId()).sizes():sampleGroup.sizes();
         // 字段都查过了再取号：前面报错时不碰流水那一行的锁
         String code = req.getCodeMode() == StyleCreateReq.CodeMode.MANUAL
                 ? codes.manual(req.getCode())
@@ -228,6 +248,7 @@ public class StyleServiceImpl implements StyleService {
         attachmentService.replace(BizType.STYLE, s.getId(), Attachment.IMAGE, req.getImages());
         attachmentService.replace(BizType.STYLE, s.getId(), DESIGN, req.getFiles());
         docLogService.add(BizType.STYLE, s.getId(), "create", null, DRAFT, skus.isEmpty() ? null : "生成 " + skus.size() + " 个 SKU");
+        if(sampleNo!=null) docLogService.add(BizType.STYLE,s.getId(),"from-sample","由样衣 "+sampleNo+" 转大货");
         return new StyleCreateResult(s.getId(), code, skus.size());
     }
 
@@ -765,6 +786,11 @@ public class StyleServiceImpl implements StyleService {
      * 后来停用了也照样留着；新选的要启用。默认加工厂只当默认值，不查状态（架构 A23）
      */
     private void fill(Style s, StyleSaveReq req, Style old) {
+        fill(s,req,old,null);
+    }
+
+    /** 样衣转款沿本域原建款校验，但尺码仅取一次有界的可信投影。 */
+    private void fill(Style s, StyleSaveReq req, Style old, SizeGroupVO sampleGroup) {
         String source = Objects.requireNonNullElse(trim(req.getSource()), StyleDicts.OWN);
         String customerStyleNo = trim(req.getCustomerStyleNo());
         tradeFeature.rejectIfOff(StyleDicts.CUSTOMER_SAMPLE.equals(source), "来源「客户来样」");
@@ -796,7 +822,7 @@ public class StyleServiceImpl implements StyleService {
             categoryService.checkSelectable(req.getCategoryId());
         }
         if (creating || !Objects.equals(req.getSizeGroupId(), old.getSizeGroupId())) {
-            SizeGroupVO group = sizeGroupService.getById(req.getSizeGroupId());
+            SizeGroupVO group = sampleGroup==null?sizeGroupService.getById(req.getSizeGroupId()):sampleGroup;
             if (group.status() == null || group.status() != ENABLED_FLAG) {
                 throw new BizException("尺码组「" + group.name() + "」已经停用了，请换一个");
             }

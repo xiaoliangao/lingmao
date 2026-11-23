@@ -13,6 +13,10 @@ import java.util.Map;
 
 public interface DictDataService {
 
+    /** 可信业务模板的有界启用项读取，超限明确拒绝；maxRows只由服务端给定。 */
+    java.util.List<com.lingmao.scm.module.system.entity.DictData> enabledForUse(String typeCode, int maxRows);
+
+
     /** 字典页：带 trade（代工保留值）标记 */
     PageResult<DictDataVO> page(DictDataQuery query);
 

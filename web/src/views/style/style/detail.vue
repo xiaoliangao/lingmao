@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
+import SampleOrigin from './SampleOrigin.vue'
 import { useLatestRequest } from '@/composables/useLatestRequest'
 import { routeId } from '@/utils/entityId'
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
@@ -418,6 +420,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
                 <template v-else>—</template>
               </dd>
             </dl>
+            <SampleOrigin v-if="user.hasPerm('dev:sample:list')" :style-id="id" />
             <template v-if="legacy.length">
               <h4 class="sec">领猫附加属性<span class="dim">导入时带过来的，只看</span></h4>
               <dl class="props info">
@@ -430,7 +433,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
           </el-tab-pane>
 
           <el-tab-pane v-if="canSeePack" label="资料包" name="techpack" lazy>
-            <TechPackTab ref="techPack" :style-id="id" :style-code="s.code" :style-name="s.name" :style-image="s.images[0] ?? null" :overview="tpOverview" @changed="loadOverview" />
+            <TechPackTab ref="techPack" :style-id="id" :style-enabled="s.status === 'ENABLED'" :style-code="s.code" :style-name="s.name" :style-image="s.images[0] ?? null" :overview="tpOverview" @changed="loadOverview" />
           </el-tab-pane>
 
           <el-tab-pane :label="`颜色尺码（${skus.length}）`" name="skus">
@@ -542,6 +545,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(STYLE_STATUS).map(([k, v]
       </div>
 
       <aside class="aside">
+        <ObjectTags title="款式标签" :object-hint="`${s.code} · ${s.name}`" type="STYLE" :object-id="id" :editable="can('edit')" @saved="logList?.reload()" />
         <section class="panel">
           <div class="panel-head">图片<span class="acts dim">第一张是主图</span></div>
           <div class="panel-body">

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.dev.mapper.SampleNodeMapper">
+    <select id="selectByOrders" resultType="com.lingmao.scm.module.dev.entity.SampleNode">
+        SELECT * FROM dev_sample_node WHERE tenant_key=#{tenant} AND company_id=#{companyId}
+        <choose><when test="orderIds != null and !orderIds.isEmpty()">
+            AND sample_order_id IN <foreach collection="orderIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        </when><otherwise>AND false</otherwise></choose>
+        ORDER BY sample_order_id,seq,id LIMIT 10001
+    </select>
+    <select id="lockByOrder" resultType="com.lingmao.scm.module.dev.entity.SampleNode">
+        SELECT * FROM dev_sample_node WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND sample_order_id=#{orderId}
+        ORDER BY id LIMIT 101 FOR UPDATE
+    </select>
+    <insert id="insertAll">
+        INSERT INTO dev_sample_node(tenant_key,company_id,sample_order_id,seq,node_code,node_name,duration_days,
+            plan_date,done_date,done_by,owner_id,remark,update_by,update_time) VALUES
+        <foreach collection="items" item="i" separator=",">(#{i.tenantKey},#{i.companyId},#{i.sampleOrderId},#{i.seq},
+            #{i.nodeCode},#{i.nodeName},#{i.durationDays},#{i.planDate},NULL,NULL,#{i.ownerId},#{i.remark},#{i.updateBy},clock_timestamp())</foreach>
+    </insert>
+    <update id="updatePlans">
+        UPDATE dev_sample_node n SET plan_date=v.plan_date,owner_id=v.owner_id,remark=v.remark,
+            update_by=#{actor},update_time=clock_timestamp()
+        FROM (VALUES <foreach collection="items" item="i" separator=",">
+            (CAST(#{i.id} AS bigint),CAST(#{i.planDate} AS date),CAST(#{i.ownerId} AS bigint),CAST(#{i.remark} AS varchar))
+        </foreach>) AS v(id,plan_date,owner_id,remark)
+        WHERE n.tenant_key=#{tenant} AND n.company_id=#{companyId} AND n.sample_order_id=#{orderId} AND n.id=v.id
+    </update>
+    <update id="setDone">
+        UPDATE dev_sample_node SET done_date=#{doneDate},done_by=CASE WHEN CAST(#{doneDate} AS date) IS NULL THEN NULL ELSE #{actor} END,
+            update_by=#{actor},update_time=clock_timestamp()
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND sample_order_id=#{orderId} AND id=#{id}
+    </update>
+    <update id="reassignUndone">
+        UPDATE dev_sample_node SET owner_id=#{ownerId},update_by=#{actor},update_time=clock_timestamp()
+        WHERE tenant_key=#{tenant} AND company_id=#{companyId} AND sample_order_id=#{orderId} AND done_date IS NULL
+    </update>
+</mapper>

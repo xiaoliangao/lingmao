@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ObjectTags from '@/components/tags/ObjectTags.vue'
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -271,6 +272,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(FG_DOC_STATUS).map(([k, v
       </div>
 
       <aside class="doc-aside">
+        <ObjectTags type="FG_DOC" :object-id="id" :company-id="detail.companyId" :editable="detail.status === 'DRAFT' && can('edit')" @saved="logRef?.reload()" />
         <section class="panel">
           <div class="panel-head">单据信息</div>
           <div class="panel-body">
