@@ -179,6 +179,10 @@ async def check_page_consumers(browser, base, metrics):
                 data = production_document()
             elif path == '/api/production-orders/9007199254741001/materials':
                 data = {'rows': [], 'docs': []}
+            elif path in (f'/api/tags/objects/ORDER/{ORDER_BASE + 1}',
+                          '/api/tags/objects/PRODUCTION_ORDER/9007199254741001'):
+                assert route.request.method == 'GET', route.request.method
+                data = {'version': 0, 'tags': []}
             elif path.endswith(('/attachments', '/logs', '/references', '/issues', '/receipts')):
                 data = []
             elif path == '/api/order-kitting':
