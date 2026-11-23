@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 成品库存日志（docs/api/07 §3.6）：仓库、单据的 kind 只读 JOIN；SKU 的显示字段由 Service 补 -->
+<mapper namespace="com.lingmao.scm.module.fg.mapper.FgStockLogMapper">
+
+    <sql id="rows">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+        SELECT l.id, l.company_id, l.reversal_of_log_id, l.request_id, l.biz_date, l.change_type, l.fg_doc_id AS doc_id, d.kind AS doc_kind, l.doc_no, l.warehouse_id,
+               w.name AS warehouse_name, l.style_sku_id, l.change_qty, l.balance_qty, l.create_by, l.create_time
+        FROM fg_stock_log l
+        JOIN fg_doc d ON d.id = l.fg_doc_id
+        JOIN bas_warehouse w ON w.id = l.warehouse_id
+        JOIN sty_style_sku k ON k.id = l.style_sku_id
+        JOIN sty_style st ON st.id = k.style_id
+        WHERE l.company_id = #{companyId}
+        <if test="q.warehouseId != null">AND l.warehouse_id = #{q.warehouseId}</if>
+        <if test="q.styleSkuId != null">AND l.style_sku_id = #{q.styleSkuId}</if>
+        <if test="q.styleId != null">AND k.style_id = #{q.styleId}</if>
+        <if test="q.changeType != null and q.changeType.size() > 0">
+            AND l.change_type IN <foreach collection="q.changeType" item="t" open="(" separator="," close=")">#{t}</foreach>
+        </if>
+        <if test="q.bizDateFrom != null">AND l.biz_date &gt;= #{q.bizDateFrom}</if>
+        <if test="q.bizDateTo != null">AND l.biz_date &lt;= #{q.bizDateTo}</if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            <choose>
+                <when test="codes != null">
+                    AND (upper(l.doc_no) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                         OR upper(k.code) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                         OR upper(st.code) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>)
+                </when>
+                <otherwise>AND (upper(l.doc_no) LIKE #{kw} OR upper(k.code) LIKE #{kw} OR upper(st.code) LIKE #{kw})</otherwise>
+            </choose>
+        </if>
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.fg.dto.FgStockLogRowVO">
+        <include refid="rows"/>
+        ORDER BY l.create_time DESC, l.id DESC
+    </select>
+
+    <select id="selectSeek" resultType="com.lingmao.scm.module.fg.dto.FgStockLogRowVO">
+        <include refid="rows"/>
+        <if test="afterTime != null and afterId != null">
+            AND (l.create_time,l.id) &lt; (#{afterTime},#{afterId})
+        </if>
+        ORDER BY l.create_time DESC, l.id DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

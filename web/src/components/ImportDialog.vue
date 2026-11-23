@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { withCompanyScope } from '@/utils/companyScope'
 import type { UploadFile, UploadInstance } from 'element-plus'
 import { ApiError, download, MAX_UPLOAD_SIZE, upload } from '@/utils/request'
 import { ErrorCode } from '@/utils/errorCodes'
@@ -34,7 +35,7 @@ interface ImportResult {
  *     <template #head><div class="form-grid">…</div></template>
  *   </ImportDialog>
  */
-const props = withDefaults(defineProps<{ title: string; templateUrl: string; importUrl: string; ready?: boolean }>(), { ready: true })
+const props = withDefaults(defineProps<{ title: string; templateUrl: string; importUrl: string; ready?: boolean; companyId?: string }>(), { ready: true })
 const emit = defineEmits<{ success: [total: number] }>()
 const visible = defineModel<boolean>({ required: true })
 
@@ -97,7 +98,7 @@ async function submit() {
   errorMessage.value = ''
   errors.value = []
   try {
-    const result = await upload<ImportResult>(props.importUrl, file.value, { silent: true })
+    const result = await withCompanyScope(props.companyId, () => upload<ImportResult>(props.importUrl, file.value!, { silent: true }))
     notes.value = result.notes ?? []
     imported.value = result.total
     emit('success', result.total)

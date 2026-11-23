@@ -119,7 +119,7 @@ export interface WarehouseForm {
 export const warehouseApi = {
   page: (params: PageParams & { keyword?: string; type?: WarehouseType; status?: number }) =>
     http.get<PageResult<Warehouse>>('/api/warehouses', params),
-  options: (type?: WarehouseType) => http.get<WarehouseOption[]>('/api/warehouses/options', { type }),
+  options: (type?: WarehouseType, options?: RequestOptions) => http.get<WarehouseOption[]>('/api/warehouses/options', { type }, options),
   create: (data: WarehouseForm) => http.post<string>('/api/warehouses', data),
   update: (id: string, data: WarehouseForm) => http.put<void>(`/api/warehouses/${id}`, data),
   ...statusApi('/api/warehouses'),

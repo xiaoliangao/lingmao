@@ -74,6 +74,50 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
     private final ActionRequestService actionRequestService;
     private final Clock clock;
 
+    private static void stockSourcePermission() {
+        if (!LoginUser.hasAuthority("production:order:list") && !LoginUser.hasAuthority("fg:doc:add")
+                && !LoginUser.hasAuthority("fg:doc:edit") && !LoginUser.hasAuthority("fg:doc:audit")
+                && !LoginUser.hasAuthority("fg:doc:remove"))
+            throw new BizException(403, "没有读取成品回货来源的权限");
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public com.lingmao.scm.module.production.dto.ReceiptForStock forStock(long receiptId, long companyId) {
+        stockSourcePermission();
+        if (companyId <= 0) throw new BizException(400, "请明确选择主体");
+        com.lingmao.scm.common.scope.CompanyContext.create(companyId);
+        ProductionReceipt receipt = receiptMapper.lockById(receiptId);
+        if (receipt == null || !java.util.Objects.equals(receipt.getCompanyId(), companyId))
+            throw new BizException(404, "回货单不存在");
+        ProductionOrder prd = support.getVisible(receipt.getPrdOrderId());
+        if (prd == null || !java.util.Objects.equals(prd.getCompanyId(), companyId))
+            throw new BizException(404, "回货单不存在");
+        com.lingmao.scm.security.DataScope.current(false).check(prd.getCreateBy(), prd.getMerchId());
+        if (receipt.getStatus() != APPROVED) throw new BizException(1002, "回货单已作废，请刷新来源");
+        var items = receiptItemMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ProductionReceiptItem>()
+                .eq(ProductionReceiptItem::getReceiptId, receiptId).orderByAsc(ProductionReceiptItem::getSeq, ProductionReceiptItem::getId)
+                .last("LIMIT 50001"));
+        if (items.size() > 50_000) throw new BizException(400, "回货来源明细超过 50000 行，请分单处理");
+        return new com.lingmao.scm.module.production.dto.ReceiptForStock(receipt.getId(), receipt.getNo(), companyId,
+                prd.getId(), prd.getNo(), prd.getKind().name(), prd.getStyleId(), prd.getFactoryId(), receipt.getReceiptDate(),
+                receipt.getWarehouseId(), items.stream().map(i -> new com.lingmao.scm.module.production.dto.ReceiptForStock.Item(
+                i.getId(), i.getStyleSkuId(), i.getQty(), i.getDefectQty())).toList());
+    }
+
+    @Override
+    public Map<Long, Long> stockSourceQuantities(java.util.Collection<Long> receiptIds, long companyId) {
+        if (!LoginUser.hasAuthority("fg:doc:list")) stockSourcePermission();
+        if (companyId <= 0 || receiptIds == null || receiptIds.isEmpty() || receiptIds.size() > 100
+                || receiptIds.stream().anyMatch(id -> id == null || id <= 0)) throw new BizException(400, "最多查询 100 个有效回货来源");
+        com.lingmao.scm.common.scope.CompanyContext.create(companyId);
+        List<Long> ids = receiptIds.stream().distinct().toList();
+        Map<Long, Long> good = receiptMapper.selectStockSources(ids, com.lingmao.scm.security.DataScope.current(false), companyId)
+                .stream().collect(Collectors.toMap(ProductionReceiptMapper.StockSource::id, ProductionReceiptMapper.StockSource::goodQty));
+        if (good.size() != ids.size() || !good.keySet().containsAll(ids)) throw new BizException(404, "回货单不存在");
+        return good;
+    }
+
     @Override
     public List<ProductionReceiptVO> list(long prdOrderId) {
         ProductionOrder p = support.getVisible(prdOrderId);
@@ -260,7 +304,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         }
         ProductionSupport.Locked l = support.lockWithOrder(prdOrderId);
         ProductionOrder p = l.prd();
-        ProductionReceipt r = receiptMapper.selectById(receiptId);
+        ProductionReceipt r = receiptMapper.lockById(receiptId);
         if (r == null || r.getPrdOrderId() != prdOrderId) {
             throw new BizException(404, "回货单不存在");
         }
@@ -270,6 +314,13 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         if (p.getStatus() == CLOSED || p.getStatus() == VOIDED) {
             throw new BizException(ProductionSupport.label(p) + " 已结案，回货不能作废");
         }
+        StatusCas.update(receiptMapper, new ProductionReceipt(), StatusCas.of(ProductionReceipt::getId, receiptId,
+                        ProductionReceipt::getStatus, APPROVED, VOIDED)
+                .set(ProductionReceipt::getVoidReason, why)
+                .set(ProductionReceipt::getVoidBy, LoginUser.currentUserId())
+                .set(ProductionReceipt::getVoidTime, OffsetDateTime.now(clock))
+                .eq(ProductionReceipt::getVersion, r.getVersion())
+                .setSql("version = version + 1"));
         referenceService.assertNoReferrer(BizType.PRODUCTION_RECEIPT, receiptId, "作废");
         Map<Long, ProductionOrderItem> lines = itemMapper.selectByOrder(prdOrderId).stream()
                 .collect(Collectors.toMap(ProductionOrderItem::getId, Function.identity()));
@@ -281,12 +332,6 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             }
             toOrder.merge(line.getOrderItemId(), -i.getQty(), Integer::sum);
         }
-        StatusCas.update(receiptMapper, new ProductionReceipt(), StatusCas.of(ProductionReceipt::getId, receiptId,
-                        ProductionReceipt::getStatus, APPROVED, VOIDED)
-                .set(ProductionReceipt::getVoidReason, why)
-                .set(ProductionReceipt::getVoidBy, LoginUser.currentUserId())
-                .set(ProductionReceipt::getVoidTime, OffsetDateTime.now(clock))
-                .setSql("version = version + 1"));
         orderService.addReturned(toOrder);
         String text = "回货 " + r.getNo() + " 作废（" + why + "）";
         support.refreshStatus(p, "void-receipt", text);

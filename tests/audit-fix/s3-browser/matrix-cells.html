@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>矩阵单格渲染回归</title></head><body>
+<div id="app"></div><script type="module">
+import { createApp } from 'vue'
+import '/src/styles/tokens.css'
+import '/src/styles/base.css'
+import Fixture from './MatrixCellsFixture.vue'
+const app=createApp(Fixture)
+const rowBefore=new WeakMap()
+function cells(vnode, out=[]) {
+  if (!vnode || typeof vnode!=='object') return out
+  if (vnode.type==='td' && String(vnode.props?.class ?? '').split(/\s+/).includes('cell')) out.push(vnode)
+  if (vnode.component) cells(vnode.component.subTree,out)
+  else if (Array.isArray(vnode.children)) for (const child of vnode.children) cells(child,out)
+  return out
+}
+window.__matrixProbe={updates:{},cellIds:[],recreatedCellVNodes:0}
+app.mixin({
+  beforeUpdate() {
+    const name=this.$options.__name
+    if (!['SkuMatrix','SkuMatrixRow','SkuMatrixCell'].includes(name)) return
+    const probe=window.__matrixProbe
+    probe.updates[name]=(probe.updates[name]??0)+1
+    if(name==='SkuMatrixCell') probe.cellIds.push(this.$props.cell?.id??null)
+    if(name==='SkuMatrixRow') rowBefore.set(this.$,cells(this.$.subTree))
+  },
+  updated() {
+    if(this.$options.__name!=='SkuMatrixRow') return
+    const before=rowBefore.get(this.$)??[],after=cells(this.$.subTree)
+    window.__matrixProbe.recreatedCellVNodes+=after.filter((vnode,index)=>vnode!==before[index]).length
+  },
+})
+app.mount('#app')
+</script></body></html>

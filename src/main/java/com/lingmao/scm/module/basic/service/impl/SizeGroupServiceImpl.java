@@ -64,6 +64,30 @@ public class SizeGroupServiceImpl implements SizeGroupService {
     }
 
     @Override
+    public Map<Long, SizeGroupVO> getByIdsBounded(Collection<Long> ids, int maxRows) {
+        if (maxRows < 1 || maxRows > 50_000) throw new IllegalArgumentException("尺码投影预算必须为 1..50000");
+        List<Long> wanted = ids == null ? List.of() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        if (wanted.isEmpty()) return Map.of();
+        if (wanted.size() > maxRows) throw new BizException(400, "尺码组超过矩阵查询预算，请缩小范围");
+        List<SizeGroup> groups = new ArrayList<>(); List<SizeGroupItem> allItems = new ArrayList<>();
+        for (int from = 0; from < wanted.size(); from += 1000) {
+            var batch = wanted.subList(from, Math.min(wanted.size(), from + 1000));
+            groups.addAll(sizeGroupMapper.selectByIds(batch));
+            List<SizeGroupItem> items = sizeGroupItemMapper.selectList(new LambdaQueryWrapper<SizeGroupItem>()
+                    .in(SizeGroupItem::getSizeGroupId, batch)
+                    .orderByAsc(SizeGroupItem::getSizeGroupId, SizeGroupItem::getSeq, SizeGroupItem::getId)
+                    .last("LIMIT " + (maxRows - allItems.size() + 1)));
+            if (items.size() > maxRows - allItems.size()) throw new BizException(400, "尺码超过 " + maxRows + " 行，请缩小矩阵范围");
+            allItems.addAll(items);
+        }
+        if (groups.size() != wanted.size()) throw new BizException(404, "尺码组不存在");
+        Map<Long, List<SizeGroupItem>> items = allItems.stream().collect(Collectors.groupingBy(SizeGroupItem::getSizeGroupId));
+        return groups.stream().map(g -> new SizeGroupVO(g.getId(), g.getName(), g.getBaseSize(), g.getStatus(),
+                items.getOrDefault(g.getId(), List.of()).stream().map(SizeGroupItem::getSizeCode).toList()))
+                .collect(Collectors.toMap(SizeGroupVO::id, g -> g));
+    }
+
+    @Override
     @Transactional
     public Long create(SizeGroupCreateReq req) {
         String name = Texts.trim(req.getName());

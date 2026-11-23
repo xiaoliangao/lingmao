@@ -19,6 +19,7 @@ import { formatQty } from '@/utils/format'
  *   变更改得比已排还少），返回一句话就标红并悬停显示，返回 null 是没问题。两个都标在格子上，不拦输入
  * - sub：每格下面的小字（"排 80 · 回 40""原 120 · 已排 80""新加"），没有返回 null
  * - 只收正整数：输入里有小数点、字母这些就不收（输入框回到原来的数），不四舍五入
+ * - maxDigits：默认 7 位；成品数量契约允许 8 位时由调用方显式设为 8
  * - 插槽 #prepend（参数 sizes）：表头下面多加一行，如"按尺码填单价"：<tr><td>单价</td><td v-for="s in sizes">…</td><td /></tr>
  */
 export interface MatrixColor {
@@ -47,6 +48,8 @@ const props = withDefaults(
     colors: MatrixColor[]
     skus: MatrixCell[]
     readonly?: boolean
+    /** 原有业务默认 7 位；成品域使用 8 位（上限 99,999,999） */
+    maxDigits?: 7 | 8
     /** 每格的上限：{ 格子 id: 最多几件 } 或函数；没有上限的不给 */
     max?: Record<string, number> | ((id: string) => number | null | undefined)
     /** 调用方的检查：有问题返回一句话（格子标红、悬停显示） */
@@ -56,20 +59,25 @@ const props = withDefaults(
     /** 合计列、合计行的标题 */
     totalLabel?: string
   }>(),
-  { readonly: false, max: undefined, error: undefined, sub: undefined, totalLabel: '合计' },
+  { readonly: false, maxDigits: 7, max: undefined, error: undefined, sub: undefined, totalLabel: '合计' },
 )
 
 const emit = defineEmits<{ 'update:modelValue': [value: Record<string, number>] }>()
 
-/** 每行只跟踪自己的响应式格子，敲一个键只改一列小计。 */
+/** 每行只跟踪自己的数量；单元格接收稳定的独立值，编辑只渲染该格并更新行列合计。 */
 const quantities = reactive<Record<string, number>>({})
 const columnTotals = reactive<Record<string, number>>({})
 const grandTotal = ref(0)
 const cellMap = computed(() => new Map(props.skus.map((cell) => [`${cell.colorId}|${cell.sizeCode}`, cell])))
 const cellsById = computed(() => new Map(props.skus.map((cell) => [cell.id, cell])))
+const topology = computed(() => JSON.stringify([props.sizes, props.colors.map((color) => color.id), props.skus.map((cell) => [cell.id, cell.colorId, cell.sizeCode])]))
 let emitted: Record<string, number> | undefined
-watch([() => props.modelValue, () => props.skus], ([value]) => {
-  if (toRaw(value) === emitted && Object.keys(value).length === Object.keys(quantities).length && Object.entries(value).every(([key, qty]) => quantities[key] === qty)) { emitted = undefined; return }
+let syncedTopology: string | undefined
+watch([() => props.modelValue, topology], ([value, shape]) => {
+  // 父组件接收输入时也可能替换来源或色码映射；只有结构未变的原样回传可走增量快路径。
+  if (shape === syncedTopology && toRaw(value) === emitted && Object.keys(value).length === Object.keys(quantities).length && Object.entries(value).every(([key, qty]) => quantities[key] === qty)) { emitted = undefined; return }
+  syncedTopology = shape
+  emitted = undefined
   for (const key of Object.keys(quantities)) if (!(key in value)) delete quantities[key]
   for (const [key, qty] of Object.entries(value)) quantities[key] = Number.isSafeInteger(qty) && qty > 0 ? qty : 0
   for (const key of Object.keys(columnTotals)) delete columnTotals[key]
@@ -93,24 +101,24 @@ function updateCell(id: string, value: number) {
 </script>
 
 <template>
-  <div class="sku-matrix">
+  <div class="sku-matrix" :style="{ '--matrix-quantity-width': `${maxDigits}ch` }">
     <table>
       <thead>
         <tr>
           <th class="color-col">颜色 \ 尺码</th>
           <th v-for="size in sizes" :key="size" class="num">{{ size }}</th>
-          <th class="num total-col">{{ totalLabel }}</th>
+          <th class="num total-col edge-total">{{ totalLabel }}</th>
         </tr>
         <slot name="prepend" :sizes="sizes" />
       </thead>
       <tbody>
-        <SkuMatrixRow v-for="color in colors" :key="color.id" :color="color" :sizes="sizes" :cells="cellMap" :quantities="quantities" :readonly="readonly" :max="max" :error="error" :sub="sub" @change="updateCell" />
+        <SkuMatrixRow v-for="color in colors" :key="color.id" :color="color" :sizes="sizes" :cells="cellMap" :quantities="quantities" :readonly="readonly" :max-digits="maxDigits" :max="max" :error="error" :sub="sub" @change="updateCell" />
       </tbody>
       <tfoot>
         <tr>
           <td class="color-col">{{ totalLabel }}</td>
           <td v-for="size in sizes" :key="size" class="num total-col">{{ formatQty(columnTotals[size] ?? 0) }}</td>
-          <td class="num total-col grand">{{ formatQty(grandTotal) }}</td>
+          <td class="num total-col edge-total grand">{{ formatQty(grandTotal) }}</td>
         </tr>
       </tfoot>
     </table>
@@ -146,6 +154,29 @@ function updateCell(id: string, value: number) {
   min-width: 132px;
   text-align: left;
   white-space: nowrap;
+}
+
+:deep(.color-col),
+:deep(thead tr > :first-child) {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--lm-paper);
+  box-shadow: 1px 0 0 var(--lm-line-soft);
+}
+
+/* 只有最末列固定；底部各尺码小计仍跟随对应的尺码列滚动。 */
+:deep(.edge-total),
+:deep(thead tr > :last-child) {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--lm-subtle);
+  box-shadow: -1px 0 0 var(--lm-line-soft);
+}
+
+:deep(thead tr > :first-child) {
+  background: var(--lm-subtle);
 }
 
 :deep(.swatch) {
@@ -187,7 +218,7 @@ function updateCell(id: string, value: number) {
 
 :deep(.qty-input) {
   width: 100%;
-  min-width: calc(7ch + 18px);
+  min-width: calc(var(--matrix-quantity-width, 7ch) + 18px);
   height: 26px;
   padding: 0 6px;
   font-size: 12.5px;

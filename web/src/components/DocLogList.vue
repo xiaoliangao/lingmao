@@ -31,6 +31,8 @@ const props = defineProps<{
   actions?: Record<string, string>
   /** 状态的中文名，如 { PENDING_ADMIT: '待准入' } */
   statuses?: Record<string, string>
+  /** 窄侧栏按记录分行显示；省略时保留完整五列表格 */
+  compact?: boolean
 }>()
 
 /** 各种单据、主数据都用得上的动作叫法；单据自己的叫法（供应商的 audit 是"准入通过"）由 actions 盖掉 */
@@ -105,7 +107,25 @@ defineExpose({ reload })
 </script>
 
 <template>
-  <el-table v-loading="loading" :data="logs" class="doc-log-list">
+  <div v-if="compact" class="doc-log-list doc-log-compact" :aria-busy="loading">
+    <p v-if="loading" class="log-feedback muted" role="status">正在加载操作记录…</p>
+    <p v-else-if="failed" class="log-feedback" role="alert">
+      操作记录没加载出来 <el-button link type="primary" @click="reload">再试一次</el-button>
+    </p>
+    <ol v-else-if="logs.length" class="log-entries" aria-label="操作记录">
+      <li v-for="log in logs" :key="log.id" class="log-entry">
+        <time class="log-time num muted">{{ formatDateTime(log.createTime) }}</time>
+        <div class="log-person"><span class="muted">操作人 · </span>{{ log.operatorName ?? '系统' }}</div>
+        <div class="log-transition">
+          <span class="log-action">{{ actionNames[log.action] ?? log.action }}</span>
+          <span v-if="statusText(log)" class="log-status muted">{{ statusText(log) }}</span>
+        </div>
+        <p v-if="log.remark" class="log-remark remark">{{ log.remark }}</p>
+      </li>
+    </ol>
+    <p v-else class="log-feedback muted">还没有操作记录</p>
+  </div>
+  <el-table v-else v-loading="loading" :data="logs" class="doc-log-list">
     <el-table-column label="时间" width="170" class-name="num">
       <template #default="{ row }">{{ formatDateTime((row as DocLog).createTime) }}</template>
     </el-table-column>
@@ -136,5 +156,47 @@ defineExpose({ reload })
 /* 备注里可能有换行（调价原因、驳回原因），照原样分行 */
 .remark {
   white-space: pre-line;
+}
+
+.doc-log-compact {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.log-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.log-entry + .log-entry {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--lm-line-soft);
+}
+
+.log-time {
+  display: block;
+  font-size: 11.5px;
+}
+
+.log-transition {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.log-action {
+  font-weight: 600;
+}
+
+.log-remark {
+  margin: 4px 0 0;
+}
+
+.log-feedback {
+  margin: 0;
 }
 </style>

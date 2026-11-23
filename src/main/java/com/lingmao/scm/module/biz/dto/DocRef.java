@@ -31,7 +31,13 @@ public record DocRef(BizType type,
                      String statusLabel,
                      StatusTone statusTone,
                      Long ownerId,
-                     String ownerName) {
+                     String ownerName,
+                     Long companyId) {
+
+    public DocRef(BizType type, String kind, Long parentId, String typeLabel, long id, String no, String status,
+                  String statusLabel, StatusTone statusTone, Long ownerId, String ownerName) {
+        this(type, kind, parentId, typeLabel, id, no, status, statusLabel, statusTone, ownerId, ownerName, null);
+    }
 
     /** 造一个：状态按 labels 翻成这种单据的叫法和颜色；kind、parentId、负责人昵称先空着 */
     public static <S extends Enum<S>> DocRef of(BizType type, long id, String no, S status, StatusLabels<S> labels, Long ownerId) {
@@ -41,15 +47,19 @@ public record DocRef(BizType type,
 
     /** 一张表两种单据的：带上 kind，typeLabel 换成这一种的叫法（BizType.label(kind)） */
     public DocRef withKind(String kind) {
-        return new DocRef(type, kind, parentId, type.label(kind), id, no, status, statusLabel, statusTone, ownerId, ownerName);
+        return new DocRef(type, kind, parentId, type.label(kind), id, no, status, statusLabel, statusTone, ownerId, ownerName, companyId);
     }
 
     /** 挂在上一级页面里的：上一级的 id */
     public DocRef withParent(Long parentId) {
-        return new DocRef(type, kind, parentId, typeLabel, id, no, status, statusLabel, statusTone, ownerId, ownerName);
+        return new DocRef(type, kind, parentId, typeLabel, id, no, status, statusLabel, statusTone, ownerId, ownerName, companyId);
+    }
+
+    public DocRef withCompany(Long companyId) {
+        return new DocRef(type, kind, parentId, typeLabel, id, no, status, statusLabel, statusTone, ownerId, ownerName, companyId);
     }
 
     public DocRef withOwnerName(String ownerName) {
-        return new DocRef(type, kind, parentId, typeLabel, id, no, status, statusLabel, statusTone, ownerId, ownerName);
+        return new DocRef(type, kind, parentId, typeLabel, id, no, status, statusLabel, statusTone, ownerId, ownerName, companyId);
     }
 }

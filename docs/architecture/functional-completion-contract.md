@@ -117,6 +117,27 @@ ReceiptForStock(id, no, companyId, prdOrderId, prdOrderNo, prdOrderKind,
 
 标签选择输入、`#` 前缀、自动入库、移除、搜索和回显复用原型视觉；停用、403、1002、503和取消有独立状态。已有 `legacy_attrs`/`style_tag` 不自动解释为公共标签，避免把未知文本静默迁成生产关系。筛选目标列表时关联过滤与原 DataScope 取交集。
 
+### 4.3 目标编辑边界
+
+每次读取、修改和幂等重放均重新使用真实领域权限与 DataScope；只在原领域确实支持时保留当前审批人的读取例外，标签写入不继承该例外。所有带实际主体的对象强制校验请求头与父头一致；共享主数据不把请求头变成对象归属。MRP 单头允许实际 NULL，继续检查全部来源订单可见性与原 CompanyContext，不能猜测或回填主体。
+
+| 对象 | 读 / 写权限后缀（沿现有前缀） | 标签可编辑状态与附加条件 |
+|---|---|---|
+| STYLE | `style:style:list/edit` | 沿现有款式编辑规则 |
+| MATERIAL | `basic:material:list/edit` | 沿现有物料编辑规则 |
+| SUPPLIER | `supplier:supplier:list/edit` | 沿 SupplierRules，排除 ADMITTING |
+| TECH_PACK | `techpack:pack:list/edit` | DRAFT，所属款式未停用 |
+| ORDER | `order:order:list/edit` | DRAFT；制单/业务/跟单普通范围 |
+| MRP_CALC | `purchase:mrp:list/edit` | DRAFT/CONFIRMED，沿改备注范围；拒 CLOSED |
+| PURCHASE_ORDER | `purchase:order:list/edit` | DRAFT；制单/采购普通范围 |
+| INV_DOC | `inventory:doc:list/edit` | DRAFT；制单普通范围 |
+| INV_COUNT | `inventory:count:list/edit` | DRAFT；制单/盘点普通范围 |
+| PRODUCTION_ORDER | `production:order:list/edit` | DRAFT；制单/跟单普通范围 |
+| FG_DOC | `fg:doc:list/edit` | DRAFT；制单普通范围 |
+| PRODUCTION_RECEIPT | 读 `production:order:list`；写 `production:receipt:add` | 单独标签元数据动作：回货 APPROVED、父生产 APPROVED/RUNNING/DONE，普通父生产 DataScope |
+
+回货标签按生产单→回货单锁序，后续不反向获取需求订单锁；只修改标签 registry/link，不改变回货状态、数量或版本。公共标签库改名/归档使用独立 `BizType.PUBLIC_TAG` 操作时间轴且不生成业务单号，日志读取要求 list 权限与可信命名空间下真实标签；不借此开放任意附件或引用写入口。
+
 ## 5. 迁移、物理边界与真实验收
 
 V46 从已发布 main 原样引入；新增 **V57 成品加固、V58 公共标签**，保留 V1–V56 原文件不改写。新增版本前再次查远端占用，发生冲突由主控重新分配。当前 dev 缺少 main 的其他低版本迁移，不能因此直接宣称未来主干升级兼容：后续整合须审查原 V37–V56 的全部依赖/业务变化，在停止写入的受控升级窗口先预演，再按审批后的迁移方案处理低版本；不得默认打开 outOfOrder，更不能伪称零停机。

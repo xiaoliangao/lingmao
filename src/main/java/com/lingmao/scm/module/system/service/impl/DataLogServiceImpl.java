@@ -4,6 +4,7 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.log.AuditContext;
 import com.lingmao.scm.common.scope.DeploymentNamespace;
 import com.lingmao.scm.module.system.dto.DataLogView;
+import com.lingmao.scm.module.system.service.AuditTargetGuard;
 import com.lingmao.scm.module.system.service.DataLogService;
 import com.lingmao.scm.security.FieldPermissions;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,7 +28,8 @@ public class DataLogServiceImpl implements DataLogService {
             "sty_style","sup_supplier","sup_supplier_change","prc_price","tp_tech_pack","tp_bom_item","tp_bom_item_sku",
             "tp_bom_item_size","tp_process","tp_cost_item","ord_order","ord_order_item","ord_change","ord_change_item",
             "pur_order","pur_order_item","prd_order","prd_order_item","inv_doc","inv_doc_item","inv_stock","inv_count","inv_count_item",
-            "sys_user","sys_role");
+            "sys_user","sys_role","fg_doc","fg_doc_item","fg_stock");
+    private static final Set<String> FG_TABLES = Set.of("fg_doc", "fg_doc_item", "fg_stock");
     /** 安全审计只读同一份明确白名单，不复用价格权限，也不透出身份资料或凭据。 */
     private static final Map<String, Set<String>> SECURITY_FIELDS = Map.of(
             "sys_user", Set.of("id", "status", "deleted", "default_company_id", "session_version", "designer_no_locked"),
@@ -39,9 +41,16 @@ public class DataLogServiceImpl implements DataLogService {
     private final JdbcTemplate jdbc;
     private final DeploymentNamespace namespace;
     private final JsonMapper json;
-    public DataLogServiceImpl(JdbcTemplate jdbc, DeploymentNamespace namespace, JsonMapper json) {
+    private final Map<String, AuditTargetGuard> targetGuards;
+    public DataLogServiceImpl(JdbcTemplate jdbc, DeploymentNamespace namespace, JsonMapper json, List<AuditTargetGuard> guards) {
         this.jdbc = jdbc; this.namespace = namespace;
         this.json = json.rebuild().enable(tools.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
+        Map<String, AuditTargetGuard> registered = new LinkedHashMap<>();
+        for (AuditTargetGuard guard : guards) for (String table : guard.tables()) {
+            if (registered.putIfAbsent(table, guard) != null) throw new IllegalStateException("Duplicate audit target guard");
+        }
+        if (!registered.keySet().containsAll(FG_TABLES)) throw new IllegalStateException("Finished-goods audit guard is required");
+        this.targetGuards = Map.copyOf(registered);
     }
 
     @Override @Transactional
@@ -54,6 +63,8 @@ public class DataLogServiceImpl implements DataLogService {
                 || root && (table != null || rowId != null) || transactionId != null && transactionId < 1
                 || beforeId != null && beforeId < 1 || limit < 1 || limit > 100)
             throw new BizException(400, "审计查询参数不正确");
+        AuditTargetGuard guard = targetGuards.get(targetTable);
+        if (guard != null) guard.check(targetTable, targetId);
         var parameters = new ArrayList<Object>(List.of(namespace.tenant(), targetTable, targetId, beforeId == null ? Long.MAX_VALUE : beforeId));
         String predicate = root ? "root_table=? AND root_id=?" : "table_name=? AND row_id=?";
         if (transactionId != null) parameters.add(transactionId);
@@ -64,7 +75,10 @@ public class DataLogServiceImpl implements DataLogService {
             String domain = rs.getString("price_domain");
             ObjectNode source = (ObjectNode) json.readTree(rs.getString("diff"));
             ObjectNode diff;
-            if ("SECURITY".equals(domain)) {
+            if (FG_TABLES.contains(actualTable)) {
+                // FG 使用订单成交价权限，不能因默认 COST 分支或历史错误域标记放出价格。
+                diff = project(actualTable, FieldPermissions.ORDER, source);
+            } else if ("SECURITY".equals(domain)) {
                 diff = projectSecurity(actualTable, source);
             } else {
                 String permission = switch (domain) {

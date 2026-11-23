@@ -6,6 +6,10 @@ import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { productionApi as productionApiBase } from '@/api/production'
+import { fgDocApi } from '@/api/fg'
+import type { FgReceiptStocked } from '@/types/fg'
+import { fgReadError, readFgBatches, useFgRead } from '@/views/fg/fgRead'
+import FgReceiptLinks from '@/views/fg/FgReceiptLinks.vue'
 import { useOrderKitting } from '@/composables/useOrderKitting'
 import KittingFeedback from '@/components/doc/KittingFeedback.vue'
 import { techPackApi } from '@/api/techpack'
@@ -146,6 +150,7 @@ const waitingText = computed(() => {
 const detailRequest = useLatestRequest()
 const subsRequest = useLatestRequest()
 async function load() {
+  stockedRequest.cancel(); stocked.value = new Map(); stockedError.value = null
   const read = detailRequest.begin()
   subsRequest.cancel()
   cancelKitting()
@@ -175,9 +180,31 @@ async function loadSubs(d: ProductionDetail) {
   await read.run(() => Promise.allSettled([
     productionApi.materials(id).then((m) => { if (read.current()) matData.value = m }),
     productionApi.issues(id).then((list) => { if (read.current()) issues.value = list }),
-    productionApi.receipts(id).then((list) => { if (read.current()) receipts.value = list }),
+    productionApi.receipts(id).then((list) => { if (read.current()) { receipts.value = list; void loadStocked(list) } }),
     loadKitting(d),
   ]))
+}
+
+const canSeeFg = computed(() => user.hasPerm('fg:doc:list'))
+const stocked = ref(new Map<string, FgReceiptStocked>())
+const stockedLoading = ref(false)
+const stockedError = ref<string | null>(null)
+const stockedRequest = useFgRead(() => { stocked.value = new Map(); stockedLoading.value = false; stockedError.value = null })
+async function loadStocked(list = receipts.value) {
+  const read = stockedRequest.begin()
+  const company = detail.value?.companyId
+  const ids = list.map((row) => row.id)
+  stocked.value = new Map(); stockedError.value = null; stockedLoading.value = false
+  if (!canSeeFg.value || !company || !ids.length) return
+  stockedLoading.value = true
+  try {
+    const rows = await readFgBatches(ids, (batch) => fgDocApi.byReceipts(batch, { companyId: company, signal: read.signal, silent: true }), read.signal)
+    if (!read.current() || detail.value?.companyId !== company) return
+    const byId = new Map(rows.map((row) => [row.receiptId, row]))
+    if (ids.some((receiptId) => !byId.has(receiptId))) throw new ApiError(502, '关联数据不完整，请重试')
+    stocked.value = byId
+  } catch (cause) { if (read.current()) stockedError.value = fgReadError(cause) }
+  finally { if (read.current()) stockedLoading.value = false }
 }
 
 function loadKitting(d = detail.value) {
@@ -579,7 +606,13 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               <el-table-column label="登记" min-width="150" class-name="num">
                 <template #default="{ row }">{{ row.createByName ?? '—' }} {{ formatDateTime(row.createTime) }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="96">
+              <el-table-column v-if="canSeeFg" label="成品仓" width="240">
+                <template #default="{ row }">
+                  <FgReceiptLinks :company-id="detail.companyId" :receipt-id="row.id" :value="stocked.get(row.id)"
+                    :loading="stockedLoading" :error="stockedError" @retry="loadStocked()" />
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="120">
                 <template #default="{ row }">
                   <StatusTag :tone="RECEIPT_STATUS[(row as ProductionReceipt).status].tone">{{ RECEIPT_STATUS[(row as ProductionReceipt).status].label }}</StatusTag>
                 </template>
@@ -791,7 +824,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
 
 @media (max-width: 1200px) {
   .detail {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

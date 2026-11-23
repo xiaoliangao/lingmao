@@ -8,6 +8,8 @@ import lombok.Data;
  */
 @Data
 public class HomeTodoQuery {
+    /** 可选：FG 待入库按这次请求选中的主体计数，须匹配 X-Company-Id。 */
+    private Long companyId;
     /** true：只看负责人是我的 */
     private boolean mine;
     /** 只看负责人是这个人的（生产跟单、采购员……），和 mine 二选一 */

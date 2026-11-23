@@ -19,6 +19,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.MDC;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,8 @@ import java.util.Map;
 @Slf4j
 @Aspect
 @Component
+// 鉴权 200 之后、HTTP 幂等事务 500 之外：提交/回滚完成才记录结果，失败事务中不能再查用户或写操作日志。
+@Order(400)
 @RequiredArgsConstructor
 public class OperLogAspect {
 

@@ -21,6 +21,7 @@ import {
   type DeliveryRow,
   type HomeKpi,
   type HomeTodos,
+  type TodoCount,
   type TodoGroup,
   type TodoGroupKey,
   type TodoItem,
@@ -147,11 +148,12 @@ const loadTodosRequest = useLatestRequest()
 async function loadTodos() {
   const read = loadTodosRequest.begin()
   const seq = ++todoSeq
+  const companyId = store.defaultCompanyId ?? undefined
   loadingTodos.value = true
   todosFailed.value = false
   try {
     const res = await read.run(() => homeApi.todos(
-      todoFilter.scope === 'MINE' ? { mine: true } : todoFilter.ownerId ? { ownerId: todoFilter.ownerId } : {},
+      { companyId, ...(todoFilter.scope === 'MINE' ? { mine: true } : todoFilter.ownerId ? { ownerId: todoFilter.ownerId } : {}) },
     ))
     if (!read.current()) return
     if (seq !== todoSeq) return
@@ -259,6 +261,11 @@ const activeGroup = computed<TodoGroup | null>(() =>
 )
 const moreOf = (g: TodoGroup) => (g.total > g.items.length ? TODO_GROUP_MORE[g.key] : null)
 const itemKey = (key: string, item: TodoItem) => `${key}-${item.ref.type}-${item.ref.id}`
+
+function countTo(count: TodoCount) {
+  const base = TODO_COUNT[count.key].to
+  return count.key === 'FG_PENDING' && count.companyId ? `${base}&companyId=${encodeURIComponent(count.companyId)}` : base
+}
 
 function goRef(item: TodoItem | DeliveryRow) {
   const to = docRoute(item.ref)
@@ -477,7 +484,7 @@ const backupLine = computed(() => {
               type="button"
               class="remind-chip"
               :class="TODO_COUNT[c.key].tone ?? ''"
-              @click="router.push(TODO_COUNT[c.key].to)"
+              @click="router.push(countTo(c))"
             >
               <span class="lbl">{{ TODO_COUNT[c.key].label }}</span>
               <strong class="num">{{ c.count }}</strong>

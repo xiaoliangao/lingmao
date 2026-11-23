@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.fg.mapper.FgDocItemMapper">
+    <update id="updateExisting">
+        <choose>
+            <when test="items != null and !items.isEmpty()">
+                UPDATE fg_doc_item AS target
+                SET seq=v.seq, qty=v.qty, prd_receipt_item_id=v.receipt_item_id,
+                    order_item_id=v.order_item_id, price=v.price, amount=v.amount, remark=v.remark
+                FROM (VALUES
+                <foreach collection="items" item="i" separator=",">
+                    (CAST(#{i.id} AS bigint), CAST(#{i.styleSkuId} AS bigint),
+                     CAST(#{i.seq} AS integer), CAST(#{i.qty} AS integer),
+                     CAST(#{i.prdReceiptItemId,jdbcType=BIGINT} AS bigint),
+                     CAST(#{i.orderItemId,jdbcType=BIGINT} AS bigint),
+                     CAST(#{i.price,jdbcType=NUMERIC} AS numeric),
+                     CAST(#{i.amount,jdbcType=NUMERIC} AS numeric),
+                     CAST(#{i.remark,jdbcType=VARCHAR} AS varchar))
+                </foreach>
+                ) AS v(id,sku_id,seq,qty,receipt_item_id,order_item_id,price,amount,remark)
+                WHERE target.doc_id=#{docId} AND target.id=v.id AND target.style_sku_id=v.sku_id
+            </when>
+            <otherwise>UPDATE fg_doc_item SET qty=qty WHERE FALSE</otherwise>
+        </choose>
+    </update>
+</mapper>

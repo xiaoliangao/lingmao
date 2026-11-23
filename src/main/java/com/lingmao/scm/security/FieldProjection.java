@@ -105,7 +105,7 @@ public class FieldProjection {
     }
 
     private static String domain(String className, String inherited) {
-        if (className.contains(".module.order.")) return FieldPermissions.ORDER;
+        if (className.contains(".module.order.") || className.contains(".module.fg.")) return FieldPermissions.ORDER;
         if (className.contains(".module.production.")) return FieldPermissions.PRODUCTION;
         if (className.contains(".module.techpack.") || className.contains(".module.inventory.")
                 || className.contains(".module.purchase.") || className.contains(".module.basic.")

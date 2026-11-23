@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.order.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+
 import com.lingmao.scm.common.scope.CompanyContext;
 import com.lingmao.scm.security.FieldPermissions;
 
@@ -520,6 +522,26 @@ public class OrderServiceImpl implements OrderService {
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         result.getRecords().forEach(r -> r.setMerchName(names.get(r.getMerchId())));
         return PageResult.of(result);
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public com.lingmao.scm.module.order.dto.OrderShipView shipView(long orderId, long companyId) {
+        if (companyId <= 0) throw new BizException(400, "请明确选择主体");
+        com.lingmao.scm.common.scope.CompanyContext.create(companyId);
+        boolean allowed = LoginUser.hasAuthority("order:order:list") || LoginUser.hasAuthority("fg:doc:add")
+                || LoginUser.hasAuthority("fg:doc:edit") || LoginUser.hasAuthority("fg:doc:audit")
+                || LoginUser.hasAuthority("fg:doc:remove");
+        if (!allowed) throw new BizException(403, "没有读取成品发货来源的权限");
+        Order order = orderMapper.lockById(orderId);
+        if (order == null || !Objects.equals(order.getCompanyId(), companyId)) throw new BizException(404, "订单不存在");
+        DataScope.current(false).check(order.getCreateBy(), order.getSalesId(), order.getMerchId());
+        var lines = itemMapper.selectList(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId)
+                .orderByAsc(OrderItem::getSeq, OrderItem::getId).last("LIMIT 50001"));
+        if (lines.size() > 50_000) throw new BizException(400, "订单来源明细超过 50000 行，请分单处理");
+        return new com.lingmao.scm.module.order.dto.OrderShipView(order.getId(), order.getNo(), order.getStatus(),
+                order.getCompanyId(), order.getDeliveryReq(), lines.stream().map(i ->
+                new com.lingmao.scm.module.order.dto.OrderShipView.Line(i.getId(), i.getStyleId(), i.getStyleSkuId(), i.getQty(), i.getPrice())).toList());
     }
 
     @Override

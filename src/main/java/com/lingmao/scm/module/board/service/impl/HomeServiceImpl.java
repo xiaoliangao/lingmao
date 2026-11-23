@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.board.service.impl;
 
+import com.lingmao.scm.common.exception.BizException;
+
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.page.PageResult;
@@ -128,7 +130,7 @@ public class HomeServiceImpl implements HomeService {
     static final List<String> COUNT_KEYS = List.of("ORDER_PENDING", "CHANGE_PENDING", "PURCHASE_PENDING", "OUTSOURCE_PENDING",
             "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
             "PRODUCTION_NEAR", "PRODUCTION_NODE_LATE", "PRODUCTION_ISSUE", "ARRIVAL_LATE", "ARRIVAL_CUT", "UPSTREAM", "CERT_EXPIRING",
-            "REORDER");
+            "REORDER", "FG_PENDING");
 
     /** 供应商的状态叫法、颜色（和前端 SUPPLIER_STATUS 一样）：待办里的供应商没有 ReferenceService 能描述，这里自己造 DocRef */
     static final StatusLabels<SupplierStatus> SUPPLIER_STATUS = StatusLabels.of(SupplierStatus.class)
@@ -157,6 +159,7 @@ public class HomeServiceImpl implements HomeService {
     private final UpstreamRows upstreamRows;
     private final UpstreamCursor upstreamCursor;
     private final Clock clock;
+    private final com.lingmao.scm.module.fg.service.FgDocService fgDocService;
 
     // ---------------------------------------------------------------- 概况
 
@@ -287,8 +290,14 @@ public class HomeServiceImpl implements HomeService {
         if (can(STOCK_LIST) && can(PURCHASE_LIST)) {
             counts.put("REORDER", supplyService.reorderCount());
         }
+        Long fgCompany = query.getCompanyId();
+        if (fgCompany != null) {
+            if (fgCompany <= 0) throw new BizException(400, "主体编号无效");
+            com.lingmao.scm.common.scope.CompanyContext.create(fgCompany);
+        }
+        if (can("fg:doc:add") && fgCompany != null) counts.put("FG_PENDING", fgDocService.pendingReceiptCount(fgCompany));
         List<TodoCount> out = COUNT_KEYS.stream().filter(k -> counts.getOrDefault(k, 0L) > 0)
-                .map(k -> new TodoCount(k, counts.get(k))).toList();
+                .map(k -> new TodoCount(k, counts.get(k), "FG_PENDING".equals(k) ? fgCompany : null)).toList();
         return new HomeTodos(groups, out, canSeeAll);
     }
 

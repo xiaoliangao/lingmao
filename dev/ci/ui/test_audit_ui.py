@@ -1994,5 +1994,215 @@ class AuditUi(unittest.TestCase):
             expect(dialog).not_to_be_visible()
 
 
+    def test_22_finished_goods_real_partial_receipts_ship_and_reverse(self):
+        """Separate real makers/reviewers; no route mocks or SQL business writes."""
+        maker, reviewer = self.actor("fg_maker"), self.actor("fg_auditor")
+        company = self.fixture["companyId"]
+        day = business_day()
+        product_warehouses = maker.request("GET", "/api/warehouses/options?type=PRODUCT")
+        self.assertTrue(product_warehouses)
+        warehouse = product_warehouses[0]["id"]
+        order = self.domain.new_order((200, 200), marker="AUDIT-FG")
+        order = self.domain.approve("/api/orders", order["id"])
+        made_production = self.api.request("POST", "/api/production-orders/schedule", {
+            "orderId": order["id"], "blocks": [{
+                "styleId": self.fixture["styleId"], "factoryId": self.fixture.get("factoryId", 3),
+                "processMode": "CMT", "unitPrice": 12.3456, "priceSourceId": None,
+                "priceChangeReason": "合成成品闭环", "dueDate": (day + timedelta(days=30)).isoformat(),
+                "merchId": self.fixture["userId"], "settleMethod": "MONTHLY", "terms": None,
+                "remark": "仅隔离回归", "items": [{"orderItemId": row["id"], "qty": 200} for row in order["items"]],
+            }]})
+        production = self.domain.approve("/api/production-orders", made_production[0]["id"])
+        receipt = self.api.request("POST", f"/api/production-orders/{production['id']}/receipts", {
+            "clientActionId": str(uuid4()), "receiptDate": day.isoformat(), "warehouseId": warehouse,
+            "logisticsNo": None, "remark": "合成400件回货，4件次品", "photos": [],
+            "items": [{"prdOrderItemId": row["id"], "qty": 200, "defectQty": 4 if n == 0 else 0,
+                       "remark": None} for n, row in enumerate(production["items"])],
+        })
+        prefix = f"/api/fg-docs/from-receipt/{receipt['id']}"
+        source = maker.request("GET", query_path(prefix, {"companyId": company}))
+        self.assertEqual(sum(row["goodQty"] for row in source["items"]), 396)
+        self.assertEqual(len(source["items"]), 2)
+        sku_ids = [row["styleSkuId"] for row in source["items"]]
+        styles = {sku["id"]: sku for sku in source["style"]["skus"]}
+        color_names = {color["id"]: color["name"] for color in source["style"]["colors"]}
+        qty_path = query_path("/api/fg-stocks/qty", {"companyId": company, "warehouseId": warehouse, "skuIds": sku_ids})
+        initial = maker.request("GET", qty_path)
+        self.assertEqual(sum(row["qty"] for row in initial), 0)
+        self.facts["rawHttp"] = []
+
+        def observed(client, method, path, body=None):
+            status, headers, raw = client.raw(method, path, body)
+            result = json.loads(raw)
+            self.facts["rawHttp"].append({"method": method, "path": path, "httpStatus": status,
+                                         "requestId": headers.get("X-Request-Id"), "response": result})
+            self.assertTrue(headers.get("X-Request-Id"))
+            return result
+
+        def detail(identity, client=maker):
+            value = observed(client, "GET", query_path(f"/api/fg-docs/{identity}", {"companyId": company}))
+            self.assertEqual(value["code"], 0)
+            self.assertIsInstance(value["data"]["id"], str)
+            self.assertIsInstance(value["data"]["version"], int)
+            return value["data"]
+
+        def fill_matrix(dialog, amounts):
+            for sku_id, amount in amounts.items():
+                sku = styles[sku_id]
+                label = f"{color_names[sku['colorId']]} {sku['sizeCode']} 件数"
+                dialog.get_by_role("textbox", name=label, exact=True).fill(str(amount))
+
+        def stock_total(expected):
+            rows = observed(maker, "GET", qty_path)
+            self.assertEqual(rows["code"], 0)
+            self.assertEqual(sum(row["qty"] for row in rows["data"]), expected)
+            self.assertTrue(all(row["qty"] >= 0 for row in rows["data"]))
+
+        make_page = self.new_context(actor=maker).new_page()
+        review_page = self.new_context(actor=reviewer).new_page()
+        self.page = make_page
+
+        def receive_in_ui(amounts, label):
+            make_page.goto(self.ui_base + query_path("/fg-in", {"companyId": company, "tab": "pending"}))
+            row = make_page.locator(".el-table__body tr").filter(has_text=receipt["no"]).first
+            expect(row).to_be_visible()
+            row.get_by_role("button", name="入库", exact=True).click()
+            dialog = make_page.get_by_role("dialog", name="回货入库 · " + receipt["no"], exact=True)
+            expect(dialog.locator(".sku-matrix")).to_be_visible()
+            fill_matrix(dialog, amounts)
+            expect(dialog.get_by_text(f"这次入 {sum(amounts.values())} 件", exact=True)).to_be_visible()
+            self.shot(label + "-matrix", page=make_page)
+            with make_page.expect_response(lambda r: self.response_for(r, "POST", prefix)) as saving:
+                dialog.get_by_role("button", name="存草稿", exact=True).click()
+            result = saving.value.json()
+            self.assertEqual(result["code"], 0)
+            value = result["data"]
+            self.assertIsInstance(value["id"], str)
+            expect(make_page).to_have_url(re.compile(r"/fg-in/" + value["id"] + r"\?companyId=" + str(company)))
+            expect(make_page.locator(".sku-matrix")).to_be_visible()
+            self.assertEqual(detail(value["id"])["totalQty"], sum(amounts.values()))
+            self.shot(label + "-saved", page=make_page)
+            return value["id"]
+
+        def action_in_ui(identity, action, kind="in"):
+            review_page.goto(self.ui_base + query_path(f"/fg-{kind}/{identity}", {"companyId": company}))
+            button_label = "审核过账" if action == "audit" else "反审核"
+            review_page.get_by_role("button", name=button_label, exact=True).click()
+            confirm = review_page.get_by_role("dialog")
+            expect(confirm).to_be_visible()
+            with review_page.expect_response(lambda r: self.response_for(r, "POST", f"/api/fg-docs/{identity}/{action}")) as acted:
+                confirm.get_by_role("button", name="审核" if action == "audit" else "反审核", exact=True).click()
+            self.assertEqual(acted.value.json()["code"], 0)
+            expect(confirm).not_to_be_visible()
+            expect(review_page.get_by_role("button", name="反审核" if action == "audit" else "审核过账", exact=True)).to_be_visible()
+            self.shot(f"{identity}-{action}", page=review_page)
+            return detail(identity, reviewer)
+
+        first_amounts = {row["styleSkuId"]: 100 if row["defectQty"] else 200 for row in source["items"]}
+        first = receive_in_ui(first_amounts, "first-300")
+        own = observed(maker, "POST", query_path(f"/api/fg-docs/{first}/audit", {"companyId": company}), {"version": 0})
+        self.assertEqual(own["code"], 403)
+        stock_total(0)
+        # Exercise editing the real persisted source matrix before a different user posts it.
+        make_page.get_by_role("button", name="编辑", exact=True).click()
+        editing = make_page.get_by_role("dialog")
+        expect(editing.locator(".sku-matrix")).to_be_visible()
+        fill_matrix(editing, first_amounts)
+        with make_page.expect_response(lambda r: self.response_for(r, "PUT", f"/api/fg-docs/{first}")) as saving:
+            editing.get_by_role("button", name="保存", exact=True).click()
+        self.assertEqual(saving.value.json()["code"], 0)
+        expect(editing).not_to_be_visible()
+        self.assertEqual(action_in_ui(first, "audit")["status"], "APPROVED")
+        stock_total(300)
+        remaining = maker.request("GET", query_path(prefix, {"companyId": company}))
+        second_amounts = {row["styleSkuId"]: row["remainingQty"] for row in remaining["items"]}
+        self.assertEqual(sum(second_amounts.values()), 96)
+        second = receive_in_ui(second_amounts, "remainder-96")
+        self.assertEqual(action_in_ui(second, "audit")["status"], "APPROVED")
+        stock_total(396)
+        links = observed(maker, "GET", query_path("/api/fg-docs/by-receipts", {"companyId": company, "receiptIds": receipt["id"]}))
+        linked = links["data"][0]
+        self.assertEqual((linked["postedQty"], linked["reservedQty"], linked["remainingQty"], linked["documentsTotal"]), (396, 0, 0, 2))
+        self.assertEqual({row["id"] for row in linked["documents"]}, {first, second})
+        blocked_void = observed(self.api, "POST", f"/api/production-orders/{production['id']}/receipts/{receipt['id']}/void", {"reason": "合成下游引用阻断验证"})
+        self.assertEqual(blocked_void["code"], 1005)
+
+        make_page.goto(self.ui_base + query_path("/fg-out", {"companyId": company}))
+        make_page.get_by_role("button", name="发货出库", exact=True).click()
+        ship_dialog = make_page.get_by_role("dialog", name="新建发货出库", exact=True)
+        expect(ship_dialog).to_be_visible()
+        order_field = ship_dialog.locator(".el-form-item").filter(
+            has=make_page.locator(".el-form-item__label").filter(has_text=re.compile(r"^需求订单$")))
+        order_input = order_field.get_by_role("combobox")
+        order_input.fill(order["no"])
+        make_page.get_by_role("option").filter(has_text=order["no"]).click()
+        expect(ship_dialog.locator(".sku-matrix")).to_be_visible()
+        fill_matrix(ship_dialog, {sku: 100 for sku in sku_ids})
+        self.shot("ship-200-matrix", page=make_page)
+        with make_page.expect_response(lambda r: self.response_for(r, "POST", "/api/fg-docs")) as saved_ship:
+            ship_dialog.get_by_role("button", name="存草稿", exact=True).click()
+        shipment = saved_ship.value.json()
+        self.assertEqual(shipment["code"], 0)
+        ship_id = shipment["data"]["id"]
+        hidden = detail(ship_id)
+        self.assertNotIn("totalAmount", hidden)
+        for item in hidden["items"]:
+            self.assertNotIn("price", item)
+            self.assertNotIn("amount", item)
+        self.assertEqual(action_in_ui(ship_id, "audit", kind="out")["status"], "APPROVED")
+        stock_total(196)
+        shipped_path = query_path("/api/fg-docs/shipped", {"companyId": company, "orderId": order["id"]})
+        self.assertEqual(observed(maker, "GET", shipped_path)["code"], 403)
+        shipped = observed(self.api, "GET", shipped_path)
+        self.assertEqual(shipped["code"], 0)
+        self.assertEqual(sum(row["shippedQty"] for row in shipped["data"]), 200)
+        incoming = detail(first, reviewer)
+        blocked_reverse = observed(reviewer, "POST", query_path(f"/api/fg-docs/{first}/unaudit", {"companyId": company}), {"version": incoming["version"]})
+        self.assertEqual(blocked_reverse["code"], 1001)
+        stock_total(196)
+        action_in_ui(ship_id, "unaudit", kind="out")
+        stock_total(396)
+        action_in_ui(first, "unaudit")
+        stock_total(96)
+        action_in_ui(second, "unaudit")
+        stock_total(0)
+        ledger = observed(maker, "GET", query_path("/api/fg-stock-logs", {
+            "companyId": company, "warehouseId": warehouse, "keyword": f"{detail(first)['no']} {detail(second)['no']} {detail(ship_id)['no']}", "size": 100}))
+        self.assertEqual(ledger["code"], 0)
+        entries = ledger["data"]["list"]
+        self.assertEqual(len(entries), 10)
+        self.assertEqual(sum(row["changeQty"] for row in entries), 0)
+        reversal_ids = [row["reversalOfLogId"] for row in entries if row.get("reversalOfLogId")]
+        original_ids = {row["id"] for row in entries if not row.get("reversalOfLogId")}
+        self.assertEqual(set(reversal_ids), original_ids)
+        self.assertEqual(len(reversal_ids), len(original_ids))
+        self.assertTrue(all(isinstance(row["id"], str) and row["requestId"] for row in entries))
+        make_page.goto(self.ui_base + query_path("/fg-stock", {"companyId": company}))
+        with make_page.expect_response(lambda r: self.response_for(r, "GET", "/api/fg-stock-logs")) as viewed_logs:
+            make_page.locator(".el-segmented__item").filter(has_text=re.compile(r"^日志$")).click()
+        self.assertEqual(viewed_logs.value.json()["code"], 0)
+        expect(make_page.locator(".el-table").first).to_be_visible()
+        self.shot("stock-after-real-reversals", page=make_page)
+        expect(make_page.locator(".ledger-time")).to_have_count(10)
+        expect(make_page.locator(".ledger-reversal")).to_have_count(5)
+        layout = make_page.locator(".ledger-time").evaluate_all("""elements => elements.map(element => {
+          const range = document.createRange(); range.selectNodeContents(element);
+          return {text:element.textContent.trim(), textWidth:range.getBoundingClientRect().width,
+            availableWidth:element.clientWidth, height:element.getBoundingClientRect().height};
+        })""")
+        for cell in layout:
+            self.assertRegex(cell["text"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
+            self.assertLessEqual(cell["textWidth"], cell["availableWidth"] + 1)
+        self.note("real stock ledger timestamps and reversal markers", timestamps=layout,
+                  visibleReversals=5, responseMocks=False)
+        self.note("real order to partial goods receipts and reversible shipment", orderId=order["id"],
+                  productionId=production["id"], receiptId=receipt["id"], goodQty=396, defectQty=4,
+                  incomingDocuments=[first, second], incomingQuantities=[300, 96], shipmentId=ship_id,
+                  shippedQty=200, finalStock=0, immutableLedgerEntries=10, separateReviewer=True,
+                  selfAuditCode=403, downstreamVoidCode=1005, negativeStockReverseCode=1001,
+                  priceFieldsPhysicallyAbsent=True, responseMocks=False)
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -99,6 +99,11 @@ jobs:
         run: |
           python3 tests/audit-fix/s3-browser/write-recovery.py
           python3 tests/audit-fix/s3-browser/supplier-amounts.py
+          python3 tests/audit-fix/s3-browser/fg.py
+          python3 tests/audit-fix/s3-browser/fg-drafts.py
+          python3 tests/audit-fix/s3-browser/fg-session.py
+          python3 tests/audit-fix/s3-browser/fg-compact.py
+          python3 tests/audit-fix/s3-browser/matrix-cells.py
       - name: S3 — actual cross-tab authentication cookies and insecure HTTP origin
         if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
         env:

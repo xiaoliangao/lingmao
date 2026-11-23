@@ -4,7 +4,7 @@ import type { DocRef } from '@/types/biz'
  * 一张单据的详情页地址：1005 的单据清单、"下游单据"页签、首页待办、变更提醒里点单号都用它。
  * 地址表在 docs/api/README.md §2；加一种单据在这里加一项
  */
-export function docRoute(ref: Pick<DocRef, 'type' | 'kind' | 'id' | 'parentId'>): string | null {
+export function docRoute(ref: Pick<DocRef, 'type' | 'kind' | 'id' | 'parentId' | 'companyId'>): string | null {
   switch (ref.type) {
     case 'SUPPLIER':
       return `/suppliers/${ref.id}`
@@ -24,6 +24,8 @@ export function docRoute(ref: Pick<DocRef, 'type' | 'kind' | 'id' | 'parentId'>)
       return `/purchases/${ref.id}`
     case 'INV_DOC':
       return ref.kind === 'OUT' ? `/stock-out/${ref.id}` : `/stock-in/${ref.id}`
+    case 'FG_DOC':
+      return `${ref.kind === 'OUT' ? '/fg-out' : '/fg-in'}/${ref.id}${ref.companyId ? `?companyId=${encodeURIComponent(ref.companyId)}` : ''}`
     case 'INV_COUNT':
       return `/stock-takes/${ref.id}`
     case 'PRODUCTION_ORDER':

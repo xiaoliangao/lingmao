@@ -7,6 +7,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { orderApi as orderApiBase, orderChangeApi as orderChangeApiBase } from '@/api/order'
 import { mrpApi } from '@/api/purchase'
+import { fgDocApi } from '@/api/fg'
+import { fgReadError, useFgRead } from '@/views/fg/fgRead'
+import FgReadFeedback from '@/views/fg/FgReadFeedback.vue'
 import { useOrderKitting } from '@/composables/useOrderKitting'
 import KittingFeedback from '@/components/doc/KittingFeedback.vue'
 import BlankState from '@/components/BlankState.vue'
@@ -96,6 +99,7 @@ const detailRequest = useLatestRequest()
 async function load() {
   const read = detailRequest.begin()
   cancelKitting()
+  shippedRequest.cancel(); shipped.value = new Map(); shippedLoaded.value = false; shippedError.value = null
   try {
     const d = await read.run(() => orderApi.get(id))
     if (!read.current()) return
@@ -109,9 +113,31 @@ async function load() {
   }
   void loadKitting()
   void loadChanges()
+  void loadShipped()
 }
 
 function loadKitting() { return readKitting(kittingApplicable.value ? [id] : []) }
+
+const canReadShipped = computed(() => user.hasPerm('fg:doc:list') && !!detail.value && ['APPROVED', 'RUNNING', 'DONE', 'CLOSED'].includes(detail.value.status))
+const shipped = ref(new Map<string, number>())
+const shippedLoading = ref(false)
+const shippedLoaded = ref(false)
+const shippedError = ref<string | null>(null)
+const shippedRequest = useFgRead(() => { shipped.value = new Map(); shippedLoaded.value = false; shippedLoading.value = false; shippedError.value = null })
+async function loadShipped() {
+  const read = shippedRequest.begin()
+  const company = detail.value?.companyId
+  shipped.value = new Map(); shippedLoaded.value = false; shippedError.value = null; shippedLoading.value = false
+  if (!canReadShipped.value || !company) return
+  shippedLoading.value = true
+  try {
+    const rows = await fgDocApi.shipped(id, { companyId: company, signal: read.signal, silent: true })
+    if (!read.current() || detail.value?.companyId !== company) return
+    shipped.value = new Map(rows.map((row) => [row.styleSkuId, row.shippedQty])); shippedLoaded.value = true
+  } catch (cause) { if (read.current()) shippedError.value = fgReadError(cause) }
+  finally { if (read.current()) shippedLoading.value = false }
+}
+
 
 async function loadChanges() {
   if (!canViewChanges.value) {
@@ -171,7 +197,8 @@ const itemBySku = computed(() => new Map((detail.value?.items ?? []).map((i) => 
 /** 已审核以后每格小字"排 80 · 回 40" */
 const subOf = (skuId: string) => {
   const it = itemBySku.value.get(skuId)
-  return approved.value && it ? `排 ${it.scheduledQty} · 回 ${it.returnedQty}` : null
+  const sent = canReadShipped.value && shippedLoaded.value ? ` · 发 ${formatQty(shipped.value.get(skuId) ?? 0)}` : ''
+  return approved.value && it ? `排 ${it.scheduledQty} · 回 ${it.returnedQty}${sent}` : null
 }
 
 /** 款的单价：都一样写一个数，不一样写"按尺码" */
@@ -313,6 +340,7 @@ function openKitting() {
             <StatusTag :tone="KITTING_STATUS[kitting.status].tone">{{ kitting.label }}</StatusTag>
           </button>
           <KittingFeedback v-else-if="kittingApplicable" :loading="kittingLoading" :error="kittingError" @retry="loadKitting" />
+          <FgReadFeedback v-if="canReadShipped" :error="shippedError" :loading="shippedLoading" label="已发数量" @retry="loadShipped" />
         </p>
 
         <el-tabs v-model="tab">

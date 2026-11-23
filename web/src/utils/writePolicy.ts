@@ -4,9 +4,10 @@ const CREATED_RESOURCES = new Set([
   '/api/purchase-orders/from-mrp', '/api/purchase-orders/from-reorder',
   '/api/inventory-docs', '/api/inventory-counts', '/api/production-orders/schedule',
   '/api/materials', '/api/styles', '/api/suppliers', '/api/tech-packs',
-  '/api/export-jobs/stock-logs',
+  '/api/export-jobs/stock-logs', '/api/fg-docs',
 ])
 const IDEMPOTENT_CHILDREN = [
+  /^\/api\/fg-docs\/from-receipt\/\d+$/,
   /^\/api\/materials\/\d+\/skus$/,
   /^\/api\/styles\/\d+\/skus\/generate$/,
   /^\/api\/suppliers\/\d+\/certs$/,

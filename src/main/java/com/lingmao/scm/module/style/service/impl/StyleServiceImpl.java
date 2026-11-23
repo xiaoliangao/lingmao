@@ -68,6 +68,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -552,6 +553,121 @@ public class StyleServiceImpl implements StyleService {
                     s.getTagPrice(), s.getDefaultFactoryId(), s.getProductName(), s.getComposition(), s.getStatus()));
         }
         return infos;
+    }
+
+    @Override
+    public Map<Long, StyleOrderInfo> boundedOrderInfos(Collection<Long> ids, int maxRows) {
+        List<Long> distinct = projectionIds(ids, maxRows);
+        if (distinct.isEmpty()) return Map.of();
+        List<StyleColor> colors = projectionRows(distinct, maxRows, "颜色", (batch, limit) -> styleColorMapper.selectList(
+                new LambdaQueryWrapper<StyleColor>().in(StyleColor::getStyleId, batch)
+                        .orderByAsc(StyleColor::getStyleId, StyleColor::getSeq, StyleColor::getId).last("LIMIT " + limit)));
+        List<StyleSku> skus = projectionRows(distinct, maxRows, "SKU", (batch, limit) -> styleSkuMapper.selectList(
+                new LambdaQueryWrapper<StyleSku>().in(StyleSku::getStyleId, batch)
+                        .orderByAsc(StyleSku::getStyleId, StyleSku::getId).last("LIMIT " + limit)));
+        return projectionInfos(distinct, colors, skus, true, maxRows);
+    }
+
+    @Override
+    public Map<Long, StyleOrderInfo> boundedOrderInfosOfSkus(Collection<Long> skuIds, int maxRows) {
+        List<Long> wanted = projectionIds(skuIds, maxRows);
+        if (wanted.isEmpty()) return Map.of();
+        List<StyleSku> skus = projectionRows(wanted, maxRows, "SKU", (batch, limit) -> styleSkuMapper.selectList(
+                new LambdaQueryWrapper<StyleSku>().in(StyleSku::getId, batch).orderByAsc(StyleSku::getId).last("LIMIT " + limit)));
+        List<Long> ids = skus.stream().map(StyleSku::getStyleId).distinct().toList();
+        if (ids.isEmpty()) return Map.of();
+        // 只查询实际 SKU 的 (款式,颜色)，不能退化为 style_id IN (...) 后全款色码加载。
+        List<StyleColor> pairs = new ArrayList<>();
+        Map<Long, Set<Long>> byStyle = new LinkedHashMap<>();
+        skus.forEach(k -> byStyle.computeIfAbsent(k.getStyleId(), ignored -> new LinkedHashSet<>()).add(k.getColorId()));
+        List<Map.Entry<Long, Set<Long>>> entries = List.copyOf(byStyle.entrySet());
+        for (int from = 0; from < entries.size(); from += 200) {
+            var batch = entries.subList(from, Math.min(entries.size(), from + 200));
+            var where = new LambdaQueryWrapper<StyleColor>();
+            where.and(w -> {
+                for (int i = 0; i < batch.size(); i++) {
+                    var pair = batch.get(i);
+                    if (i > 0) w.or();
+                    w.nested(n -> n.eq(StyleColor::getStyleId, pair.getKey()).in(StyleColor::getColorId, pair.getValue()));
+                }
+            });
+            List<StyleColor> found = styleColorMapper.selectList(where.orderByAsc(StyleColor::getStyleId, StyleColor::getSeq, StyleColor::getId)
+                    .last("LIMIT " + (maxRows - pairs.size() + 1)));
+            if (found.size() > maxRows - pairs.size()) throw projectionOverflow("颜色", maxRows);
+            pairs.addAll(found);
+        }
+        Map<Long, StyleOrderInfo> infos = projectionInfos(ids, pairs, skus, false, maxRows);
+        Map<Long, StyleOrderInfo> out = new LinkedHashMap<>();
+        skus.forEach(k -> { var info = infos.get(k.getStyleId()); if (info != null) out.put(k.getId(), info); });
+        return out;
+    }
+
+    private static List<Long> projectionIds(Collection<Long> ids, int maxRows) {
+        if (maxRows < 1 || maxRows > 50_000) throw new IllegalArgumentException("款式投影预算必须为 1..50000");
+        if (ids == null || ids.isEmpty()) return List.of();
+        if (ids.size() > maxRows || ids.stream().anyMatch(id -> id == null || id <= 0)) throw projectionOverflow("编号", maxRows);
+        return ids.stream().distinct().toList();
+    }
+
+    private static BizException projectionOverflow(String label, int maxRows) {
+        return new BizException(400, "款式矩阵" + label + "超过 " + maxRows + " 行，请缩小查询或导出范围");
+    }
+
+    private static <T> List<T> projectionRows(List<Long> ids, int maxRows, String label,
+            java.util.function.BiFunction<List<Long>, Integer, List<T>> query) {
+        List<T> result = new ArrayList<>();
+        for (int from = 0; from < ids.size(); from += 1000) {
+            int remaining = maxRows - result.size();
+            List<T> found = query.apply(ids.subList(from, Math.min(ids.size(), from + 1000)), remaining + 1);
+            if (found.size() > remaining) throw projectionOverflow(label, maxRows);
+            result.addAll(found);
+        }
+        return result;
+    }
+
+    private Map<Long, StyleOrderInfo> projectionInfos(List<Long> ids, List<StyleColor> colorRows, List<StyleSku> skuRows,
+                                                      boolean fullMatrix, int maxRows) {
+        Map<Long, Style> styleRows = new LinkedHashMap<>();
+        for (int from = 0; from < ids.size(); from += 1000)
+            styleMapper.selectByIds(ids.subList(from, Math.min(ids.size(), from + 1000))).forEach(s -> styleRows.put(s.getId(), s));
+        Map<Long, List<StyleColor>> onStyles = colorRows.stream().collect(Collectors.groupingBy(StyleColor::getStyleId));
+        Map<Long, List<StyleSku>> byStyle = skuRows.stream().collect(Collectors.groupingBy(StyleSku::getStyleId));
+        Set<Long> colorIds = new LinkedHashSet<>();
+        colorRows.forEach(c -> colorIds.add(c.getColorId())); skuRows.forEach(k -> colorIds.add(k.getColorId()));
+        Map<Long, Color> colors = colorService.byIds(colorIds);
+        Map<Long, AttachmentVO> images = new HashMap<>();
+        for (int from = 0; from < ids.size(); from += 1000)
+            images.putAll(attachmentService.firsts(BizType.STYLE, ids.subList(from, Math.min(ids.size(), from + 1000)), Attachment.IMAGE));
+        var groups = fullMatrix ? sizeGroupService.getByIdsBounded(styleRows.values().stream().map(Style::getSizeGroupId).distinct().toList(), maxRows)
+                : java.util.Map.<Long, com.lingmao.scm.module.basic.dto.SizeGroupVO>of();
+        Map<Long, StyleOrderInfo> result = new LinkedHashMap<>();
+        long axes = 0;
+        for (Long id : ids) {
+            Style s = styleRows.get(id);
+            if (s == null) continue;
+            List<StyleSku> skus = byStyle.getOrDefault(id, List.of());
+            List<String> sizes = fullMatrix ? groups.get(s.getSizeGroupId()).sizes()
+                    : skus.stream().map(StyleSku::getSizeCode).distinct().toList();
+            Map<String, Integer> sizePositions = new HashMap<>();
+            for (int index = 0; index < sizes.size(); index++) sizePositions.putIfAbsent(sizes.get(index), index);
+            axes += sizes.size();
+            if (axes > maxRows) throw projectionOverflow("尺码轴", maxRows);
+            List<StyleColor> onStyle = onStyles.getOrDefault(id, List.of());
+            Map<Long, Integer> order = new HashMap<>(); onStyle.forEach(c -> order.put(c.getColorId(), c.getSeq()));
+            List<StyleOrderInfo.Color> colorList = onStyle.stream().map(c -> {
+                Color value = colors.get(c.getColorId());
+                return new StyleOrderInfo.Color(c.getColorId(), value == null ? null : value.getCode(), value == null ? null : value.getName(),
+                        value == null ? null : value.getHex(), Integer.valueOf(ENABLED_FLAG).equals(c.getStatus()));
+            }).toList();
+            List<StyleOrderInfo.Sku> skuList = skus.stream().sorted(Comparator
+                    .comparing((StyleSku k) -> order.getOrDefault(k.getColorId(), Integer.MAX_VALUE))
+                    .thenComparing(k -> sizePositions.getOrDefault(k.getSizeCode(), Integer.MAX_VALUE)).thenComparing(StyleSku::getCode))
+                    .map(k -> new StyleOrderInfo.Sku(k.getId(), k.getColorId(), k.getSizeCode(), k.getCode(),
+                            Integer.valueOf(ENABLED_FLAG).equals(k.getStatus()))).toList();
+            result.put(id, new StyleOrderInfo(id, s.getCode(), s.getName(), s.getAliasName(), images.get(id), s.getStatus(),
+                    s.getTechPackStatus(), sizes, colorList, skuList, s.getTagPrice(), s.getDefaultFactoryId()));
+        }
+        return result;
     }
 
     @Override

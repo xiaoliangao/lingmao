@@ -6,7 +6,7 @@ import { provideUploadScope } from './usePendingUploads'
 import { useUserStore } from '@/stores/user'
 import { readDraft, saveDraft, restoreDraftValue } from '@/utils/draft'
 import { writeStorage } from '@/utils/safeStorage'
-import { sessionChanged } from '@/utils/token'
+import { sessionChanged, sessionEpoch } from '@/utils/token'
 import { trackUnsavedForm } from '@/utils/uiHealth'
 
 /**
@@ -29,7 +29,14 @@ import { trackUnsavedForm } from '@/utils/uiHealth'
  *
  * source 可以是 reactive 对象、ref（如勾选的 id 数组）或 getter；按 JSON 比较，表单里放普通的值就行
  */
-export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Ref<boolean>, options: { restore?: (value: unknown) => void | Promise<void>; ready?: () => boolean } = {}) {
+export interface DraftRestoreContext { current: () => boolean }
+interface DraftOptions {
+  restore?: (value: unknown, context: DraftRestoreContext) => void | Promise<void>
+  ready?: () => boolean
+  /** 异步加载的对象使用身份之外的稳定范围；null 表示尚未确定对象，暂不读写草稿。 */
+  scope?: () => string | null
+}
+export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Ref<boolean>, options: DraftOptions = {}) {
   const uploads = provideUploadScope()
   const serialize = () => JSON.stringify(toValue(source) ?? null)
   const snapshot = ref(serialize())
@@ -39,34 +46,58 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
   // 同一个组件里有几个守卫时分开记，重新加载后键不变。
   const owner = instance as (typeof instance & { draftCount?: number })
   const index = owner ? (owner.draftCount = (owner.draftCount ?? 0) + 1) : 1
-  const draftKey = `lingmao-draft:${location.host}:${useUserStore().info?.id ?? 'anonymous'}:${route.path}:${component}:${index}`
-  const previousDraft = readDraft(draftKey)
+  const user = useUserStore()
+  const initialIdentity = user.info?.id ?? 'anonymous'
+  const formPath = route.path
+  const draftKey = computed(() => {
+    const scope = options.scope?.()
+    if (options.scope && !scope) return null
+    const identity = options.scope ? user.info?.id ?? 'anonymous' : initialIdentity
+    return `lingmao-draft:${location.host}:${identity}:${formPath}:${component}:${index}${scope ? `:${encodeURIComponent(scope)}` : ''}`
+  })
+  let previousDraft = draftKey.value ? readDraft(draftKey.value) : null
   let offered = false
   let writtenHere = false
+  let generation = 0
+  let disposed = false
   let draftTimer: ReturnType<typeof setTimeout> | undefined
+  watch(draftKey, (key) => {
+    clearTimeout(draftTimer)
+    generation++
+    previousDraft = key ? readDraft(key) : null
+    offered = false
+    writtenHere = false
+    snapshot.value = serialize()
+  }, { flush: 'sync' })
+  function captureContext() {
+    const key = draftKey.value, ownGeneration = generation, epoch = sessionEpoch()
+    return () => !disposed && ownGeneration === generation && key === draftKey.value && epoch === sessionEpoch() && !sessionChanged() && (!active || active.value)
+  }
   async function offerDraft(loaded = false) {
-    if (offered || !previousDraft || (active && !active.value) || (options.ready && !options.ready())) return
+    const key = draftKey.value, draft = previousDraft, currentScope = captureContext()
+    if (!key || offered || !draft || !currentScope() || (options.ready && !options.ready())) return
     const current = serialize()
-    if (current !== previousDraft.baseline) {
+    if (current !== draft.baseline) {
       if (loaded) { offered = true; ElMessage.warning('服务器内容已变化，旧草稿已保留，请核对后再编辑') }
       return
     }
     offered = true
     try {
       await ElMessageBox.confirm('找到这份表单未保存的草稿，是否恢复？', '恢复草稿', { confirmButtonText: '恢复草稿', cancelButtonText: '放弃草稿', distinguishCancelAndClose: true })
-      if ((active && !active.value) || sessionChanged() || serialize() !== previousDraft.baseline) return
-      if (options.restore) await options.restore(previousDraft.data)
-      else restoreDraftValue(toValue(source), previousDraft.data)
-    } catch (reason) { if (reason === 'cancel') writeStorage(draftKey, null) }
+      if (!currentScope() || serialize() !== draft.baseline) return
+      if (options.restore) await options.restore(draft.data, { current: currentScope })
+      else restoreDraftValue(toValue(source), draft.data)
+    } catch (reason) { if (reason === 'cancel' && currentScope()) writeStorage(key, null) }
   }
   function persistDraft() {
-    if (!dirty.value || sessionChanged()) return
-    writtenHere = saveDraft(draftKey, snapshot.value, toValue(source)) || writtenHere
+    const key = draftKey.value
+    if (!key || !dirty.value || sessionChanged() || (options.ready && !options.ready())) return
+    writtenHere = saveDraft(key, snapshot.value, toValue(source)) || writtenHere
   }
   watch(serialize, () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 750) })
   onMounted(() => { void offerDraft() })
   if (options.ready) watch(options.ready, (ready) => { if (ready) void offerDraft(true) })
-  onBeforeUnmount(() => { clearTimeout(draftTimer); persistDraft() })
+  onBeforeUnmount(() => { clearTimeout(draftTimer); persistDraft(); disposed = true; generation++ })
 
   /** 有没保存的修改 */
   const dirty = computed(() => (active ? active.value : true) && (serialize() !== snapshot.value || uploads.pending.value > 0))
@@ -75,7 +106,8 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
   function discardDraft() {
     clearTimeout(draftTimer)
     snapshot.value = serialize()
-    writeStorage(draftKey, null)
+    if (draftKey.value) writeStorage(draftKey.value, null)
+    previousDraft = null
     writtenHere = false
     offered = true
   }
@@ -84,7 +116,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
   function markSaved(loaded = true) {
     snapshot.value = serialize()
     clearTimeout(draftTimer)
-    if (writtenHere) { writeStorage(draftKey, null); writtenHere = false }
+    if (writtenHere && draftKey.value) { writeStorage(draftKey.value, null); writtenHere = false; previousDraft = null }
     else void offerDraft(loaded)
   }
 
@@ -100,6 +132,7 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
     watch(
       active,
       (on) => {
+        generation++
         if (on) markSaved(false)
         else { discardDraft(); uploads.discard() }
       },
@@ -113,7 +146,11 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
       done()
       return
     }
-    confirmDiscard('有没保存的修改，关掉以后就没了（包括正在上传的文件）。', '关掉对话框', '不保存，关掉').then(() => { discardDraft(); uploads.discard(); done() }, () => {})
+    const current = captureContext()
+    confirmDiscard('有没保存的修改，关掉以后就没了（包括正在上传的文件）。', '关掉对话框', '不保存，关掉').then(() => {
+      if (!current()) return
+      discardDraft(); uploads.discard(); done()
+    }, () => {})
   }
 
   // 整页的表单：按这一页的地址登记到页签里，关页签、离开首页这一侧时由那边来问
@@ -133,8 +170,10 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
       // 页签刚关掉：关的时候已经问过了
       if (!tabs.isDirty(path)) return true
     }
+    const current = captureContext()
     try {
       await confirmDiscard('有没保存的修改，离开以后就没了。', '离开这一页', '不保存，离开')
+      if (!current()) return false
       discardDraft()
       uploads.discard()
       return true
@@ -160,5 +199,6 @@ export function useUnsavedChanges(source: MaybeRefOrGetter<unknown>, active?: Re
     if (!ok) ElMessage.warning('有文件未完成上传，本次未保存。请重试上传后再保存')
     return ok
   }
-  return { dirty, markSaved, beforeClose, discardDraft, pendingUploads: uploads.pending, waitForUploads, discardUploads: uploads.discard }
+  function retryDraft() { offered = false; void offerDraft(true) }
+  return { dirty, markSaved, beforeClose, discardDraft, retryDraft, pendingUploads: uploads.pending, waitForUploads, discardUploads: uploads.discard }
 }

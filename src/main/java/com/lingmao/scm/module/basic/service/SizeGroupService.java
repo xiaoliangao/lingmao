@@ -13,6 +13,10 @@ import java.util.Map;
  */
 public interface SizeGroupService {
 
+    /** 有界矩阵投影专用；不改变普通尺码组查询契约。 */
+    Map<Long, SizeGroupVO> getByIdsBounded(Collection<Long> ids, int maxRows);
+
+
     /** 全部，停用的也在，按名称排 */
     List<SizeGroupVO> list();
 

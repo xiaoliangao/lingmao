@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { fgDocApi } from '@/api/fg'
+import { fgReadError } from '@/views/fg/fgRead'
+import CompanySelect from '@/components/doc/CompanySelect.vue'
+import { useUserStore } from '@/stores/user'
+import { useLatestRequest } from '@/composables/useLatestRequest'
+import { onSessionChanged } from '@/utils/token'
 import { useRouter } from 'vue-router'
 import { orderApi } from '@/api/order'
 import { purchaseApi } from '@/api/purchase'
@@ -29,6 +35,9 @@ const props = defineProps<{ pages: PaletteItem[] }>()
 const visible = defineModel<boolean>({ required: true })
 
 const router = useRouter()
+const user = useUserStore()
+const fgCompanyId = ref<string | null>(user.defaultCompanyId)
+const hasFgPages = computed(() => props.pages.some((page) => ['/fg-in', '/fg-out'].includes(page.path)))
 const keyword = ref('')
 const active = ref(0)
 const input = ref<HTMLInputElement>()
@@ -49,10 +58,16 @@ interface Source {
   title: string
   /** 侧边栏里有这个页面才查 */
   menu: string
+  companyScoped?: boolean
   search: (keyword: string) => Promise<PaletteItem[]>
 }
 
 const SOURCES: Source[] = [
+  ...(['IN', 'OUT'] as const).map((kind): Source => ({
+    title: kind === 'IN' ? '成品入库单' : '成品出库单', menu: kind === 'IN' ? '/fg-in' : '/fg-out', companyScoped: true,
+    search: (kw) => fgDocApi.page({ companyId: fgCompanyId.value, kind, page: 1, size: SIZE, keyword: kw }, SILENT).then((response) =>
+      response.list.map((row) => ({ name: row.no, path: `${kind === 'IN' ? '/fg-in' : '/fg-out'}/${row.id}?companyId=${row.companyId}`, icon: 'Box', sub: row.firstStyle?.styleCode ?? '' }))),
+  })),
   {
     title: '需求订单',
     menu: '/orders',
@@ -111,21 +126,31 @@ const SOURCES: Source[] = [
 
 const sources = computed(() => {
   const open = new Set(props.pages.map((page) => page.path))
-  return SOURCES.filter((source) => open.has(source.menu))
+  return SOURCES.filter((source) => open.has(source.menu) && (!source.companyScoped || !!fgCompanyId.value))
 })
 
 const records = ref<{ title: string; items: PaletteItem[] }[]>([])
 const searching = ref(false)
+const sourceErrors = ref<{ title: string; message: string }[]>([])
+const retrySearch = ref(0)
 /** 查询的序号：后发的先回来时，先发的那次结果不要了 */
 let seq = 0
 let timer: ReturnType<typeof setTimeout> | undefined
+const latest = useLatestRequest()
+function cancelSearch() { clearTimeout(timer); latest.cancel(); seq++; searching.value = false; records.value = []; sourceErrors.value = [] }
+onBeforeUnmount(cancelSearch)
+onBeforeUnmount(onSessionChanged(() => { cancelSearch(); fgCompanyId.value = null; visible.value = false }))
+watch(() => [user.info?.id, user.token], () => { cancelSearch(); fgCompanyId.value = null; visible.value = false }, { flush: 'sync' })
 
-watch(keyword, (value) => {
+watch([keyword, fgCompanyId, sources, retrySearch], ([value]) => {
   active.value = 0
   clearTimeout(timer)
+  latest.cancel()
+  records.value = []
+  sourceErrors.value = []
   const kw = value.trim()
   const current = ++seq
-  if (kw.length < 2 || !sources.value.length) {
+  if (!visible.value || kw.length < 2 || !sources.value.length) {
     records.value = []
     searching.value = false
     return
@@ -133,9 +158,15 @@ watch(keyword, (value) => {
   searching.value = true
   // 停 0.25 秒再查，打字时不会一个字查一次
   timer = setTimeout(async () => {
-    const results = await Promise.allSettled(sources.value.map((source) => source.search(kw)))
-    if (current !== seq) return
-    records.value = sources.value
+    const read = latest.begin()
+    const chosenSources = sources.value
+    const results = await read.run(() => Promise.allSettled(chosenSources.map((source) => source.search(kw))))
+    if (current !== seq || !read.current() || !visible.value) return
+    sourceErrors.value = chosenSources.flatMap((source, index) => {
+      const result = results[index]!
+      return source.companyScoped && result.status === 'rejected' ? [{ title: source.title, message: fgReadError(result.reason) }] : []
+    })
+    records.value = chosenSources
       .map((source, i) => {
         const result = results[i]!
         return { title: source.title, items: result.status === 'fulfilled' ? result.value : [] }
@@ -170,7 +201,7 @@ async function move(step: number) {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.isComposing) return
+  if (event.isComposing || event.keyCode === 229) return
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
     void move(event.key === 'ArrowDown' ? 1 : -1)
@@ -191,8 +222,7 @@ watch(visible, async (open) => {
     await nextTick()
     input.value?.focus()
   } else {
-    clearTimeout(timer)
-    seq++
+    cancelSearch()
   }
 })
 </script>
@@ -216,6 +246,8 @@ watch(visible, async (open) => {
           <span v-if="searching" class="pal-busy">查找中…</span>
           <kbd>Esc</kbd>
         </div>
+        <div v-if="hasFgPages" class="pal-fg-scope"><span>成品主体</span><CompanySelect v-model="fgCompanyId" :popper-style="{ zIndex: 3100 }" placeholder="选择主体以查成品单" aria-label="成品搜索主体" /></div>
+        <div v-if="sourceErrors.length" class="pal-fg-errors" role="alert"><span v-for="error in sourceErrors" :key="error.title">{{ error.title }}：{{ error.message }}</span><button type="button" @click="retrySearch++">重试成品查询</button></div>
         <div id="pal-list" ref="listEl" class="pal-list" role="listbox">
           <section v-for="(group, gi) in groups" :key="group.title">
             <h3>{{ group.title }}</h3>
@@ -250,6 +282,10 @@ watch(visible, async (open) => {
 </template>
 
 <style scoped>
+.pal-fg-errors { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 16px; color: var(--lm-danger-text); font-size: 12px; }
+.pal-fg-errors button { color: var(--lm-accent); padding: 0; border: 0; background: none; cursor: pointer; font: inherit; }
+.pal-fg-scope { display: flex; align-items: center; gap: 12px; padding: 8px 16px; color: var(--lm-muted); font-size: 12px; border-bottom: 1px solid var(--lm-line-soft); }
+.pal-fg-scope :deep(.el-select) { width: 210px; }
 /* 样子照原型的 .pal：遮罩、正中偏上的白框、底下一行快捷键 */
 .pal-mask {
   position: fixed;

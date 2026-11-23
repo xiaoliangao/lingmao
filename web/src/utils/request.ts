@@ -327,7 +327,7 @@ const pendingWrites = new Map<string, PendingWrite>()
 const checking = new Set<string>()
 /** 改单、审核这类操作连点两下：内容一样就合并成一次 */
 const inflight = new Map<string, Promise<unknown>>()
-const RESOURCE_NAMES: Record<string, string> = { orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式', 'tech-packs': '资料包', 'export-jobs': '导出任务' }
+const RESOURCE_NAMES: Record<string, string> = { 'fg-docs': '成品单据', orders: '需求订单', 'order-changes': '订单变更', 'purchase-orders': '采购单', 'mrp-calcs': '算料单', 'inventory-docs': '出入库单', 'inventory-counts': '盘点单', 'production-orders': '生产单', materials: '物料', suppliers: '供应商', styles: '款式', 'tech-packs': '资料包', 'export-jobs': '导出任务' }
 const CHILD_NAMES: [RegExp, string][] = [
   [/\/skus(\/generate)?$/, 'SKU'], [/\/certs$/, '供应商证照'], [/\/revise$/, '资料包改版'], [/\/to-prod$/, '大货资料包'],
   [/\/reports$/, '报工'], [/\/issues$/, '生产问题'], [/\/receipts$/, '成品入库'], [/\/from-(purchase|production)\/\d+$/, '入库单'],

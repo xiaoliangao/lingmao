@@ -38,7 +38,8 @@ public enum BizType {
     PRODUCTION_RECEIPT("回货单", "HH"),
     PRODUCTION_ISSUE("生产异常", "YC"),
     /** 报工（照片挂在 biz_attachment 上），没有单号 */
-    PRODUCTION_NODE_REPORT("报工", null);
+    PRODUCTION_NODE_REPORT("报工", null),
+    FG_DOC("成品出入库单", null, new Kind("IN", "成品入库单", "CR"), new Kind("OUT", "成品出库单", "CC"));
 
     /** 一张表两种单据里的一种：kind 的值、中文名、单号前缀 */
     public record Kind(String code, String label, String prefix) {

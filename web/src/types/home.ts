@@ -115,6 +115,7 @@ export type TodoCountKey =
   | 'BUY_PENDING'
   | 'STOCK_IN_DRAFT'
   | 'STOCK_OUT_DRAFT'
+  | 'FG_PENDING'
   | 'COUNT_PENDING'
   | 'SUPPLIER_APPROVE'
   | 'UNSCHEDULED'
@@ -135,6 +136,7 @@ export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone:
   PURCHASE_PENDING: { label: '待审核的采购单', to: '/purchases?status=PENDING', tone: null },
   OUTSOURCE_PENDING: { label: '待审核的外发加工单', to: '/production?status=PENDING', tone: null },
   BUY_PENDING: { label: '待审核的成品采购单', to: '/fp-purchases?status=PENDING', tone: null },
+  FG_PENDING: { label: '回货待入成品仓', to: '/fg-in?tab=pending', tone: 'pending' },
   STOCK_IN_DRAFT: { label: '物料入库单待审核', to: '/stock-in?tab=docs&status=DRAFT', tone: null },
   STOCK_OUT_DRAFT: { label: '物料出库单待审核', to: '/stock-out?status=DRAFT', tone: null },
   COUNT_PENDING: { label: '物料盘点单待审核', to: '/stock-takes?status=PENDING', tone: null },
@@ -151,16 +153,18 @@ export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone:
   REORDER: { label: '物料低于最小库存', to: '/reorder', tone: null },
 }
 
-export interface TodoCount {
-  key: TodoCountKey
-  count: number
-}
+/** 成品提醒必须带计数时的主体；其他提醒保持原接口。 */
+export type TodoCount =
+  | { key: 'FG_PENDING'; count: number; companyId: string }
+  | { key: Exclude<TodoCountKey, 'FG_PENDING'>; count: number; companyId?: never }
 
 /**
  * 待办的筛选（用户 11-15 定：管理层默认看全部，可以筛）。只对 canSeeAll 的人有用，别人发了也只看自己的。
  * "待我审核"（AUDIT）一组和审核类的数不受它影响：轮到谁审就是谁的
  */
 export interface HomeTodoQuery {
+  /** 成品仓提醒按该主体计数；未选时不返回成品提醒。 */
+  companyId?: string
   /** true：只看负责人是我的 */
   mine?: boolean
   /** 只看负责人是这个人的（生产跟单、采购员……），和 mine 二选一 */

@@ -61,5 +61,5 @@ export function useSeekTable<Row, Q extends object, Result extends SeekResult<Ro
   }
   watch(size, search)
   if (options.immediate ?? true) onMounted(search)
-  return { query, list, page, size, loading, exporting, error, hasMore, canPrevious: computed(() => page.value > 1), search, load, next, previous, exportFile }
+  return { cancel: () => { latest.cancel(); loading.value = false }, query, list, page, size, loading, exporting, error, hasMore, canPrevious: computed(() => page.value > 1), search, load, next, previous, exportFile }
 }

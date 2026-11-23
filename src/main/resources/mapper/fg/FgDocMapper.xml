@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  成品单据列表、待入库、能发货的订单（docs/api/07）：仓库、回货单、生产单、加工厂、订单、款式只读 JOIN（架构 §3.2 规则 4）。
+  第一款的名称、图由 Service 调 StyleService 补
+-->
+<mapper namespace="com.lingmao.scm.module.fg.mapper.FgDocMapper">
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.fg.dto.FgDocRowVO">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.version, d.company_id,
+               COALESCE(d.to_warehouse_id, d.from_warehouse_id) AS warehouse_id, w.name AS warehouse_name,
+               d.prd_receipt_id AS receipt_id, r.no AS receipt_no, p.no AS prd_order_no, p.kind AS prd_order_kind,
+               f.short_name AS factory_name, d.order_id, o.no AS order_no, d.reason, d.ship_to, d.logistics_no,
+               d.doc_date, d.remark, d.create_by, d.audit_by, d.create_time,
+               agg.first_sku_id, agg.style_count, agg.total_qty, agg.total_amount
+        FROM fg_doc d
+        JOIN bas_warehouse w ON w.id = COALESCE(d.to_warehouse_id, d.from_warehouse_id)
+        LEFT JOIN prd_receipt r ON r.id = d.prd_receipt_id
+        LEFT JOIN prd_order p ON p.id = r.prd_order_id
+        LEFT JOIN sup_supplier f ON f.id = p.factory_id
+        LEFT JOIN ord_order o ON o.id = d.order_id
+        LEFT JOIN LATERAL (SELECT (array_agg(i.style_sku_id ORDER BY i.seq, i.id))[1] AS first_sku_id,
+                                  COUNT(DISTINCT k.style_id) AS style_count, SUM(i.qty) AS total_qty,
+                                  CASE WHEN COUNT(*) FILTER (WHERE i.amount IS NULL) &gt; 0 THEN NULL ELSE SUM(i.amount) END AS total_amount
+                           FROM fg_doc_item i JOIN sty_style_sku k ON k.id = i.style_sku_id
+                           WHERE i.doc_id = d.id) agg ON true
+        WHERE d.kind = #{q.kind} AND d.company_id = #{companyId}
+        <if test="scope.self">AND d.create_by = #{scope.userId}</if>
+        <if test="q.docType != null">AND d.doc_type = #{q.docType}</if>
+        <if test="q.status != null and q.status.size() > 0">
+            AND d.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
+        </if>
+        <if test="q.warehouseId != null">AND (d.from_warehouse_id = #{q.warehouseId} OR d.to_warehouse_id = #{q.warehouseId})</if>
+        <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
+        <if test="q.orderId != null">AND d.order_id = #{q.orderId}</if>
+        <if test="q.receiptId != null">AND d.prd_receipt_id = #{q.receiptId}</if>
+        <if test="q.styleId != null">
+            AND EXISTS (SELECT 1 FROM fg_doc_item si JOIN sty_style_sku sk ON sk.id = si.style_sku_id
+                        WHERE si.doc_id = d.id AND sk.style_id = #{q.styleId})
+        </if>
+        <if test="q.docDateFrom != null">AND d.doc_date &gt;= #{q.docDateFrom}</if>
+        <if test="q.docDateTo != null">AND d.doc_date &lt;= #{q.docDateTo}</if>
+        <if test="q.ids != null and q.ids.size() > 0">
+            AND d.id IN <foreach collection="q.ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        </if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            <choose>
+                <when test="codes != null">
+                    AND (upper(d.no) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                         OR upper(r.no) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                         OR upper(o.no) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>)
+                </when>
+                <otherwise>
+                    AND (upper(d.no) LIKE #{kw} OR upper(r.no) LIKE #{kw} OR upper(p.no) LIKE #{kw} OR upper(o.no) LIKE #{kw}
+                         OR upper(d.logistics_no) LIKE #{kw}
+                         OR EXISTS (SELECT 1 FROM fg_doc_item ki JOIN sty_style_sku kk ON kk.id = ki.style_sku_id
+                                    JOIN sty_style ks ON ks.id = kk.style_id
+                                    WHERE ki.doc_id = d.id AND (upper(ks.code) LIKE #{kw} OR upper(kk.code) LIKE #{kw})))
+                </otherwise>
+            </choose>
+        </if>
+        ORDER BY d.id DESC
+    </select>
+
+    <!-- 待入库：已登记、启用日期（sys_config fg.receipt_from）以后登记的、还有良品没入的回货单。已入算没作废的成品入库单（草稿也算） -->
+    <sql id="pendingFrom">
+        FROM prd_receipt r
+        JOIN prd_order p ON p.id = r.prd_order_id
+        JOIN sty_style s ON s.id = p.style_id
+        JOIN sup_supplier f ON f.id = p.factory_id
+        LEFT JOIN bas_warehouse w ON w.id = r.warehouse_id
+        JOIN LATERAL (SELECT SUM(ri.qty) AS qty, SUM(ri.defect_qty) AS defect_qty
+                      FROM prd_receipt_item ri WHERE ri.receipt_id = r.id) t ON true
+        LEFT JOIN LATERAL (SELECT SUM(fi.qty) AS qty,
+                                  COALESCE(SUM(fi.qty) FILTER (WHERE fd.status = 'DRAFT'),0) AS reserved_qty,
+                                  COALESCE(SUM(fi.qty) FILTER (WHERE fd.status = 'APPROVED'),0) AS posted_qty
+                           FROM fg_doc_item fi JOIN fg_doc fd ON fd.id = fi.doc_id
+                           WHERE fd.prd_receipt_id = r.id AND fd.status &lt;&gt; 'VOIDED') st ON true
+        WHERE r.status = 'APPROVED' AND r.company_id = #{companyId} AND p.company_id = r.company_id
+          <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+          AND r.create_time &gt;= COALESCE((SELECT (c.config_value #&gt;&gt; '{}')::date::timestamp AT TIME ZONE 'Asia/Shanghai'
+                                          FROM sys_config c WHERE c.config_key = 'fg.receipt_from'), '-infinity'::timestamptz)
+          AND t.qty - t.defect_qty - COALESCE(st.qty, 0) &gt; 0
+    </sql>
+
+    <select id="selectPendingPage" resultType="com.lingmao.scm.module.fg.dto.FgPendingReceiptRowVO">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+        SELECT r.id AS receipt_id, r.company_id, r.no AS receipt_no, p.id AS prd_order_id, p.no AS prd_order_no, p.kind AS prd_order_kind,
+               p.style_id, s.code AS style_code, s.name AS style_name, p.factory_id, f.short_name AS factory_name,
+               t.qty, t.defect_qty, t.qty - t.defect_qty AS good_qty, COALESCE(st.qty, 0) AS stocked_qty,
+               t.qty - t.defect_qty - COALESCE(st.qty, 0) AS remain_qty,
+               COALESCE(st.reserved_qty,0) AS reserved_qty, COALESCE(st.posted_qty,0) AS posted_qty,
+               t.qty - t.defect_qty - COALESCE(st.qty,0) AS remaining_qty,
+               r.warehouse_id, w.name AS warehouse_name, r.receipt_date
+        <include refid="pendingFrom"/>
+        <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
+        <if test="q.receiptDateFrom != null">AND r.receipt_date &gt;= #{q.receiptDateFrom}</if>
+        <if test="q.receiptDateTo != null">AND r.receipt_date &lt;= #{q.receiptDateTo}</if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            <choose>
+                <when test="codes != null">
+                    AND (upper(r.no) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                         OR upper(p.no) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                         OR upper(s.code) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>)
+                </when>
+                <otherwise>AND (upper(r.no) LIKE #{kw} OR upper(p.no) LIKE #{kw} OR upper(s.code) LIKE #{kw})</otherwise>
+            </choose>
+        </if>
+        ORDER BY r.receipt_date, r.id
+    </select>
+
+    <select id="countPending" resultType="long">
+        SELECT count(*)
+        <include refid="pendingFrom"/>
+    </select>
+
+    <!-- 能发货的订单：已审核、生产中、已完成、已结案；限当前主体；入口须有成品来源操作权限（发货的是仓管） -->
+    <select id="selectShipOrders" resultType="com.lingmao.scm.module.fg.dto.FgShipOrderOptionVO">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(keyword)"/>
+        SELECT o.id, o.no, o.order_type, o.status, o.company_id,
+               (SELECT string_agg(DISTINCT s.code, ',') FROM ord_order_item oi JOIN sty_style s ON s.id = oi.style_id
+                WHERE oi.order_id = o.id AND oi.qty &gt; 0) AS style_codes,
+               (SELECT COALESCE(SUM(oi.qty), 0) FROM ord_order_item oi WHERE oi.order_id = o.id) AS total_qty,
+               (SELECT COALESCE(SUM(fi.qty), 0) FROM fg_doc_item fi JOIN fg_doc fd ON fd.id = fi.doc_id
+                WHERE fd.order_id = o.id AND fd.doc_type = 'SHIP_OUT' AND fd.status = 'APPROVED') AS shipped_qty,
+               <choose>
+                   <when test="warehouseId != null">
+                       (SELECT COALESCE(SUM(fs.qty), 0) FROM fg_stock fs WHERE fs.company_id = #{companyId} AND fs.warehouse_id = #{warehouseId}
+                        AND fs.style_sku_id IN (SELECT oi.style_sku_id FROM ord_order_item oi WHERE oi.order_id = o.id)) AS stock_qty
+                   </when>
+                   <otherwise>NULL AS stock_qty</otherwise>
+               </choose>
+        FROM ord_order o
+        WHERE o.company_id = #{companyId} AND o.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED')
+        <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
+        <if test="keyword != null and keyword.trim() != ''">
+            <choose>
+                <when test="codes != null">
+                    AND upper(o.no) IN <foreach collection="codes" item="c" open="(" separator="," close=")">#{c}</foreach>
+                </when>
+                <otherwise>
+                    AND (upper(o.no) LIKE #{kw}
+                         OR EXISTS (SELECT 1 FROM ord_order_item ki JOIN sty_style ks ON ks.id = ki.style_id
+                                    WHERE ki.order_id = o.id AND upper(ks.code) LIKE #{kw}))
+                </otherwise>
+            </choose>
+        </if>
+        ORDER BY o.id DESC
+        LIMIT 50
+    </select>
+
+    <select id="selectReceiptOccupancy" resultType="com.lingmao.scm.module.fg.mapper.FgDocMapper$ReceiptOccupancy">
+        SELECT d.prd_receipt_id AS receipt_id,
+               COALESCE(SUM(i.qty) FILTER (WHERE d.status='DRAFT'),0) AS reserved_qty,
+               COALESCE(SUM(i.qty) FILTER (WHERE d.status='APPROVED'),0) AS posted_qty
+        FROM fg_doc d JOIN fg_doc_item i ON i.doc_id=d.id
+        WHERE d.company_id=#{companyId} AND d.status&lt;&gt;'VOIDED' AND d.prd_receipt_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY d.prd_receipt_id
+    </select>
+
+    <select id="selectReceiptDocumentCounts" resultType="com.lingmao.scm.module.fg.mapper.FgDocMapper$ReceiptDocumentCount">
+        SELECT d.prd_receipt_id AS receipt_id, COUNT(*) AS total
+        FROM fg_doc d WHERE d.company_id=#{companyId} AND d.status&lt;&gt;'VOIDED' AND d.prd_receipt_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        <if test="scope.self">AND d.create_by=#{scope.userId}</if>
+        GROUP BY d.prd_receipt_id
+    </select>
+
+    <select id="selectReceiptDocumentPreviews" resultType="com.lingmao.scm.module.fg.mapper.FgDocMapper$ReceiptDocument">
+        WITH requested(receipt_id) AS (
+            SELECT DISTINCT unnest(ARRAY[
+            <foreach collection="ids" item="id" separator=",">#{id}</foreach>
+            ]::bigint[])
+        )
+        SELECT r.receipt_id, d.id AS doc_id, d.no, d.status, COALESCE(q.qty,0) AS qty
+        FROM requested r CROSS JOIN LATERAL (
+            SELECT f.id,f.no,f.status,f.create_time FROM fg_doc f
+            WHERE f.company_id=#{companyId} AND f.prd_receipt_id=r.receipt_id AND f.status&lt;&gt;'VOIDED'
+            <if test="scope.self">AND f.create_by=#{scope.userId}</if>
+            ORDER BY f.create_time DESC,f.id DESC LIMIT 20
+        ) d
+        LEFT JOIN LATERAL (SELECT SUM(i.qty) AS qty FROM fg_doc_item i WHERE i.doc_id=d.id) q ON true
+        ORDER BY r.receipt_id,d.create_time DESC,d.id DESC
+    </select>
+</mapper>

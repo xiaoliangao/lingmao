@@ -29,6 +29,9 @@ import java.util.Map;
 /** 需求订单（docs/api/02 §3.2–§3.11）。数据范围"本人"看制单人、业务员、跟单员是自己的 */
 public interface OrderService {
 
+    /** 成品来源白名单：事务中 FOR UPDATE 锁定，权限与普通 DataScope 均校验。 */
+    com.lingmao.scm.module.order.dto.OrderShipView shipView(long orderId, long companyId);
+
     PageResult<OrderRowVO> page(OrderQuery query);
 
     /** 各状态几张，条件和列表一样（不看 status） */

@@ -34,6 +34,13 @@ import java.util.Map;
  */
 public interface StyleService {
 
+    /** 供成品完整矩阵使用，元数据 SQL 有界；maxRows 为可信服务端预算，1..50000。 */
+    java.util.Map<Long, com.lingmao.scm.module.style.dto.StyleOrderInfo> boundedOrderInfos(java.util.Collection<Long> ids, int maxRows);
+
+    /** 仅请求的 SKU 及必要颜色、款式，不加载这些 SKU 所属款式的其他色码。 */
+    java.util.Map<Long, com.lingmao.scm.module.style.dto.StyleOrderInfo> boundedOrderInfosOfSkus(java.util.Collection<Long> skuIds, int maxRows);
+
+
     PageResult<StyleListVO> page(StyleQuery query);
 
     /** 款式 + 颜色 + 尺码组 + 图片 + 设计附件 + 领猫附加属性 + 能做的动作。不存在 404 */

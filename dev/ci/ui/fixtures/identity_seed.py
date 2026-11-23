@@ -29,6 +29,8 @@ def create_identities(admin: ApiClient, company_id: int) -> dict:
         "pack_editor": ("SELF", {"style:style:list", "techpack:pack:list", "techpack:pack:edit"}),
         "mobile_only": ("SELF", {"production:mobile:list"}),
         "warehouse_only": ("SELF", {"inventory:doc:list", "inventory:doc:add"}),
+        "fg_maker": ("ALL", {"fg:doc:list", "fg:doc:add", "fg:doc:edit", "fg:doc:remove", "fg:doc:audit", "fg:stock:list"}),
+        "fg_auditor": ("ALL", {"fg:doc:list", "fg:doc:audit", "fg:stock:list"}),
     }
     password = os.environ.get("SCM_UI_PASSWORD")
     if not password:
