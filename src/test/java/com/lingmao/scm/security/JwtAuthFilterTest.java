@@ -73,6 +73,18 @@ class JwtAuthFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
+    /** 两次查询之间授权已经提交：旧会话不能携带这次读到的新权限进入 Controller。 */
+    @Test
+    void grantChangesDuringPermissionLookup_doNotAuthenticateOldSession() throws Exception {
+        when(jwtUtil.parse("good-token")).thenReturn(Jwts.claims().id("jti-1").subject("1").build());
+        when(loginSessionStore.getUserId("jti-1")).thenReturn(1L, null);
+        when(permissionService.loadPermissions(1L)).thenReturn(Set.of("system:user:list"));
+
+        filter.doFilter(requestWithToken("good-token"), new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
     /**
      * 规则：查权限时数据库出错 → 异常抛出去，不当成"没登录"（那样前端会以为登录过期、把人踢回登录页）。
      * 抛出去以后由 TraceIdFilter 回 500 和错误编号

@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class SampleServiceImpl implements SampleService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
     private final SampleRepository repository;
     private final SampleSupport support;
     private final SampleViews views;
@@ -48,11 +49,13 @@ public class SampleServiceImpl implements SampleService {
 
     @Override @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public PageResult<SampleRowVO> page(SampleQuery query) {
+        tagFilters.prepare(query);
         SampleSupport.permission("list");SampleSupport.company(query.getCompanyId());
         var page=repository.page(query.getCompanyId(),DataScope.current(false),support.search(query),query.getPage(),query.getSize());
         return new PageResult<>(views.rows(page.getRecords()),page.getTotal());
     }
     @Override public Map<String,Long> counts(SampleQuery query) {
+        tagFilters.prepare(query);
         SampleSupport.permission("list");SampleSupport.company(query.getCompanyId());
         Map<String,Long> out=new LinkedHashMap<>();
         for(String state:List.of("WAIT_ASSIGN","MAKING","WAIT_REVIEW","PASSED","CONVERTED","ELIMINATED"))out.put(state,0L);

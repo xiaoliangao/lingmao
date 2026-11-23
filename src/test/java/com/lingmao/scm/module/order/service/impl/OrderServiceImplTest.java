@@ -113,7 +113,7 @@ class OrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new OrderServiceImpl(orderMapper, itemMapper, changeMapper, changeItemMapper, excel, changeTexts, styleService,
+        service = new OrderServiceImpl(org.mockito.Mockito.mock(com.lingmao.scm.module.biz.service.TagFilterService.class), orderMapper, itemMapper, changeMapper, changeItemMapper, excel, changeTexts, styleService,
                 techPackService, companyService, dictDataService, userService, new TradeFeature(false), docHeaderService,
                 docLogService, attachmentService, approvalService, referenceService, serialNoGenerator, Clock.systemDefaultZone(), com.lingmao.scm.DirectFileImports.INSTANCE);
         SecurityContextHolder.getContext().setAuthentication(

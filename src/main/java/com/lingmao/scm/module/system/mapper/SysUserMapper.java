@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.lingmao.scm.module.system.entity.SysUser;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -12,6 +14,23 @@ import java.util.List;
 
 @Mapper
 public interface SysUserMapper extends BaseMapper<SysUser> {
+
+    /**
+     * 仅空库引导使用。先检查包括软删除的所有同名账号，再由现有活动用户名唯一索引裁决并发创建。
+     * 返回 1 才是本次创建者，才能继续授初始角色，不能把查到的既有 admin 当成新账号。
+     */
+    @Insert("""
+            INSERT INTO sys_user(username,password,nickname)
+            SELECT 'admin',#{admin.password},#{admin.nickname}
+            WHERE NOT EXISTS (SELECT 1 FROM sys_user WHERE username='admin')
+            ON CONFLICT (username) WHERE deleted=false DO NOTHING
+            """)
+    @Options(useGeneratedKeys = true, keyProperty = "admin.id", keyColumn = "id")
+    int insertInitialAdmin(@Param("admin") SysUser admin);
+
+    /** 整体替换角色先锁用户，避免并发 DELETE/INSERT 最后意外保留两组授权。 */
+    @Select("SELECT id FROM sys_user WHERE id=#{id} AND NOT deleted FOR NO KEY UPDATE")
+    Long lockAuthorization(@Param("id") Long id);
 
     /**
      * 改密码这个动作（管理员重置、自己改都用它）。密码列标了 NEVER，updateById 不会写它，只能用条件更新改（RFC 001 §4.3）。

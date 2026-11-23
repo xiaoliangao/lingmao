@@ -39,8 +39,17 @@ public class TagCache {
     }
 
     public List<TagVO> options(String canonicalPrefix, int size, List<Long> included, Supplier<List<TagVO>> loader) {
+        return options("options", canonicalPrefix, size, included, loader);
+    }
+
+    /** 历史筛选和活跃选项不能串缓存；改名/归档仍共用同一库 epoch 失效。 */
+    public List<TagVO> filterOptions(String canonicalPrefix, int size, List<Long> included, Supplier<List<TagVO>> loader) {
+        return options("filter-options", canonicalPrefix, size, included, loader);
+    }
+
+    private List<TagVO> options(String kind, String canonicalPrefix, int size, List<Long> included, Supplier<List<TagVO>> loader) {
         String fingerprint = digest(json.writeValueAsString(List.of(canonicalPrefix, size, included)));
-        String key = key("options:" + epoch(libraryEpoch()) + ":" + fingerprint);
+        String key = key(kind + ":" + epoch(libraryEpoch()) + ":" + fingerprint);
         String encoded = cache.getOrLoad(key, OPTIONS_TTL, EMPTY_TTL, () -> json.writeValueAsString(loader.get()));
         return json.readValue(encoded, new TypeReference<List<TagVO>>() { });
     }

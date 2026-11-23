@@ -21,6 +21,10 @@ export const tagApi = {
     if ((query.includeIds?.length ?? 0) > TAG_OPTION_LIMIT) throw new ApiError(400, '一次最多读取 100 个标签')
     return http.get<PublicTag[]>('/api/tags', { ...query, includeIds: query.includeIds?.join(',') }, options)
   },
+  filterOptions(query: TagQuery = {}, options?: RequestOptions) {
+    if ((query.includeIds?.length ?? 0) > TAG_OPTION_LIMIT) throw new ApiError(400, '一次最多读取 100 个标签')
+    return http.get<PublicTag[]>('/api/tags/filter-options', { ...query, includeIds: query.includeIds?.join(',') }, options)
+  },
   read: (type: TagObjectType, id: string, companyId?: string | null, options?: RequestOptions) =>
     http.get<ObjectTagSnapshot>(objectUrl(type, id), undefined, objectOptions(type, companyId, options)),
   replace: (type: TagObjectType, id: string, body: TagReplace, companyId?: string | null, options?: RequestOptions) =>

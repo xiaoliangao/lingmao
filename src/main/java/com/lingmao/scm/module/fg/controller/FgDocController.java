@@ -62,6 +62,12 @@ import java.util.List;
 @RequestMapping("/api/fg-docs")
 @RequiredArgsConstructor
 public class FgDocController extends IdempotencyReplayGuard {
+    /** 标签内部命名空间与已验证条件不能从请求绑定。 */
+    @org.springframework.web.bind.annotation.InitBinder("fgDocQuery")
+    void protectTagFilter(org.springframework.web.bind.WebDataBinder binder) {
+        binder.setDisallowedFields("tagFilter*");
+    }
+
 
     private final FgDocService fgDocService;
     private final DocCommonService docCommonService;

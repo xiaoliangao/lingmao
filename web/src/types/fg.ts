@@ -125,6 +125,8 @@ export interface FgDocRow {
 }
 
 export interface FgDocQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   companyId?: string | null
   receiptId?: string | null
   /** 必填 */

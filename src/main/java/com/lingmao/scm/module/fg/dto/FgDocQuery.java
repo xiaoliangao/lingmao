@@ -1,7 +1,7 @@
 package com.lingmao.scm.module.fg.dto;
 
 import com.lingmao.scm.common.doc.DocStatus;
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import com.lingmao.scm.module.fg.entity.FgDocKind;
 import com.lingmao.scm.module.fg.entity.FgDocType;
 import jakarta.validation.constraints.NotNull;
@@ -17,7 +17,7 @@ import java.util.List;
 /** 成品单据列表（docs/api/07 §3.2.1）。导出也用它，多一个 ids */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class FgDocQuery extends PageQuery {
+public class FgDocQuery extends TaggedPageQuery {
     @NotNull(message = "请选主体")
     private Long companyId;
     @NotNull(message = "kind 必填：IN 入库单 / OUT 出库单")

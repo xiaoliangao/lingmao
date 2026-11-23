@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { mrpApi } from '@/api/purchase'
 import DateRange from '@/components/DateRange.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -46,6 +47,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search } = use
   normalize: (query) => statusQuery(query),
   fetch: mrpApi.page,
   query: {
+    tagIds: [] as string[],
     keyword: '',
     statusTab: pickStatus(route.query.status),
     createBy: undefined as string | null | undefined,
@@ -73,7 +75,7 @@ function onDateChange(val: [string, string] | null | undefined) {
   query.createDateTo = val?.[1]
 }
 
-const filtered = computed(() => !!(query.keyword.trim() || query.statusTab || query.createBy || query.createDateFrom))
+const filtered = computed(() => !!(query.tagIds.length || query.keyword.trim() || query.statusTab || query.createBy || query.createDateFrom))
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的算料单：换个状态，或者清空筛选'
   if (query.mine) return '还没有你算的料，切到「全部」看所有人的'
@@ -178,6 +180,7 @@ async function createCalc() {
     </PageHeader>
 
     <FilterBar v-model:keyword="query.keyword" placeholder="算料单号、订单号、款号" :columns="cols" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>

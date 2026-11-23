@@ -12,6 +12,7 @@ import BatchBar from '@/components/BatchBar.vue'
 import type { BatchAction } from '@/components/batchBar'
 import DateRange from '@/components/DateRange.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
@@ -101,6 +102,7 @@ const { query, page, size, pageSizes, list, total, loading, error, cancel, load,
   exportUrl: '/api/fg-docs/export',
   exportName: `${docName.value}.xlsx`,
   query: {
+    tagIds: [] as string[],
     companyId: props.companyId,
     receiptId: typeof route.query.receiptId === 'string' ? route.query.receiptId : undefined,
     keyword: '',
@@ -172,7 +174,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 
 const warehouseText = computed(() => (query.warehouseId ? (warehouses.value.find((w) => w.id === query.warehouseId)?.name ?? '已选') : ''))
 const filtered = computed(
-  () => !!(query.keyword.trim() || query.docTypeTab || query.statusTab || query.warehouseId || query.factoryId || query.docDateFrom),
+  () => !!(query.tagIds.length || query.keyword.trim() || query.docTypeTab || query.statusTab || query.warehouseId || query.factoryId || query.docDateFrom),
 )
 const emptyText = computed(() => {
   if (filtered.value) return `没有符合条件的${docName.value}：换个类型，或者清空筛选`
@@ -213,6 +215,7 @@ defineExpose({ reload: load, exportAll, exporting })
       :columns="cols"
       @search="search"
     >
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.docTypeTab" :options="TYPE_OPTIONS" @change="search" />
       </template>

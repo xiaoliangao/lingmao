@@ -26,6 +26,17 @@
                            FROM fg_doc_item i JOIN sty_style_sku k ON k.id = i.style_sku_id
                            WHERE i.doc_id = d.id) agg ON true
         WHERE d.kind = #{q.kind} AND d.company_id = #{companyId}
+        <if test="q.tagFilter != null">
+            AND EXISTS (
+                SELECT 1 FROM biz_tag_object tag_object
+                WHERE tag_object.tenant_key=#{q.tagFilter.tenant} AND tag_object.object_type='FG_DOC'
+                  AND tag_object.object_id=d.id
+                  AND (SELECT COUNT(*) FROM biz_tag_link tag_link
+                       WHERE tag_link.tenant_key=tag_object.tenant_key AND tag_link.object_ref_id=tag_object.id
+                         AND tag_link.tag_id IN <foreach collection="q.tagFilter.ids" item="tagId" open="(" separator="," close=")">#{tagId}</foreach>
+                      )=#{q.tagFilter.size}
+            )
+        </if>
         <if test="scope.self">AND d.create_by = #{scope.userId}</if>
         <if test="q.docType != null">AND d.doc_type = #{q.docType}</if>
         <if test="q.status != null and q.status.size() > 0">

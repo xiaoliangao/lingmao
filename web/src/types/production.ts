@@ -237,6 +237,8 @@ export interface ProductionRow {
 }
 
 export interface ProductionQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   /** 当前待我审批；忽略 mine / owner，仍要求模块列表权限 */
   auditForMe?: boolean
   /** 两个菜单的列表必传；看板不传 = 两种都看 */

@@ -79,6 +79,7 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public Long create(RoleSaveReq req) {
+        sysRoleMapper.lockAuthorizationGraph();
         ensureCodeUnique(req.getCode(), null);
         SysRole role = new SysRole();
         BeanUtils.copyProperties(req, role);
@@ -89,6 +90,8 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void update(Long id, RoleSaveReq req) {
+        sysRoleMapper.lockAuthorizationGraph();
+        sysRoleMapper.lockAuthorization(id);
         SysRole role = getById(id);
         ensureNotAdmin(role);
         ensureCodeUnique(req.getCode(), id);
@@ -99,6 +102,8 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void delete(Long id) {
+        sysRoleMapper.lockAuthorizationGraph();
+        sysRoleMapper.lockAuthorization(id);
         SysRole role = getById(id);
         ensureNotAdmin(role);
         boolean assigned = sysUserRoleMapper.exists(new LambdaQueryWrapper<SysUserRole>()
@@ -122,6 +127,8 @@ public class RoleServiceImpl implements RoleService {
     @Override
     @Transactional
     public void assignMenus(Long id, List<Long> menuIds) {
+        sysRoleMapper.lockAuthorizationGraph();
+        sysRoleMapper.lockAuthorization(id);
         SysRole role = getById(id);
         ensureNotAdmin(role);
         List<Long> distinctIds = menuIds.stream().distinct().toList();
@@ -138,6 +145,9 @@ public class RoleServiceImpl implements RoleService {
                 throw new BizException("管理后台的菜单只给超级管理员，不能分配给角色");
             }
         }
+        List<Long> existing = sysRoleMenuMapper.selectList(new LambdaQueryWrapper<SysRoleMenu>()
+                .eq(SysRoleMenu::getRoleId, id)).stream().map(SysRoleMenu::getMenuId).toList();
+        if (new java.util.HashSet<>(existing).equals(new java.util.HashSet<>(distinctIds))) return;
         sysRoleMenuMapper.delete(new LambdaQueryWrapper<SysRoleMenu>()
                 .eq(SysRoleMenu::getRoleId, id));
         if (!distinctIds.isEmpty()) {

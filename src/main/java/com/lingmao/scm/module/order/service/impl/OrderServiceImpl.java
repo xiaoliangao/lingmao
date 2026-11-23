@@ -129,6 +129,7 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 @Service
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     /**
      * 状态转换表（docs/api/02 §2.1）。schedule、change、mrp 不改状态，写在这里是为了出按钮；
@@ -189,6 +190,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public PageResult<OrderRowVO> page(OrderQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
         IPage<OrderRowVO> page = orderMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
@@ -199,6 +201,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public Map<String, Long> counts(OrderQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
         return StatusCount.toMap(orderMapper.selectCounts(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())));
@@ -206,6 +209,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderTotals totals(OrderQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
         return orderMapper.selectTotals(query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
@@ -876,6 +880,20 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void lockMrpSources(Collection<Long> sourceIds) {
+        Set<Long> ids = new HashSet<>(sourceIds);
+        if (ids.isEmpty()) return;
+        List<Order> sources = orderMapper.lockMrpSources(ids);
+        if (sources.size() != ids.size()) throw new BizException(404, "来源订单不存在");
+        DataScope scope = DataScope.current(false);
+        for (Order source : sources) {
+            scope.check(source.getCreateBy(), source.getSalesId(), source.getMerchId());
+            com.lingmao.scm.common.scope.CompanyContext.target(source.getCompanyId());
+        }
+    }
+
+    @Override
     public void checkKittingVisible(Collection<Long> sourceIds) {
         Set<Long> ids = new HashSet<>(sourceIds);
         if (ids.isEmpty()) return;
@@ -1196,6 +1214,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public byte[] export(OrderQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
         Page<OrderRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);

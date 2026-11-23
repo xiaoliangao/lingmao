@@ -186,6 +186,8 @@ export type SupplierUsage = 'SAMPLE' | 'BULK'
 
 /** 列表的查询条件 */
 export interface SupplierQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   keyword?: string
   category?: string
   status?: SupplierStatus[]

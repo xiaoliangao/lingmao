@@ -214,6 +214,7 @@ jobs:
             target/failsafe-reports/
             target/audit-query-capacity.json
             target/a1-production/
+            target/a1-mrp-company/
             target/a2-production/
             target/a1-fg/
             target/a1-tags/

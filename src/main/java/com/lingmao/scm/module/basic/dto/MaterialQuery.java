@@ -1,6 +1,6 @@
 package com.lingmao.scm.module.basic.dto;
 
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -13,7 +13,7 @@ import java.util.List;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class MaterialQuery extends PageQuery {
+public class MaterialQuery extends TaggedPageQuery {
     private String keyword;
     private Long categoryId;
     private String materialType;

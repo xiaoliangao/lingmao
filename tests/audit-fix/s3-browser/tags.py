@@ -98,6 +98,10 @@ class SyntheticTags:
         self.faults, self.holds, self.receipts = {}, {}, {}
         self.tasks = set()
         self.payloads = entry_payloads()
+        self.filter_rows = [{**deepcopy(self.payloads['STYLE']), 'id': str(9007199254790000 + i),
+                             'code': 'KS-FILTER-' + str(i).zfill(3), 'name': '合成筛选款式 ' + str(i),
+                             '_tagIds': [ACTIVE, SUMMER] if i <= 24 else [ACTIVE] if i <= 32 else [SUMMER] if i <= 40 else [ARCHIVED] if i <= 45 else []}
+                            for i in range(1, 47)]
         self.production = production()
         self.production.update(status='DRAFT', actions=['edit'])
         self.production['id'] = '51'
@@ -178,7 +182,7 @@ class SyntheticTags:
                         'operatorId':'9007199254740993','operatorName':'合成制单员','createTime':STAMP})
                 else: assert request.method == 'GET'
                 data = self.object(kind, identifier)
-            elif path == '/api/tags':
+            elif path in {'/api/tags', '/api/tags/filter-options'}:
                 assert request.method == 'GET' and set(params) <= {'keyword', 'size', 'includeIds'}
                 size = int(params.get('size', ['50'])[0]); assert 1 <= size <= 100
                 includes = list(dict.fromkeys(','.join(params.get('includeIds', [])).split(','))) if params.get('includeIds') else []
@@ -189,7 +193,7 @@ class SyntheticTags:
                 except AssertionError:
                     await self.fault(route, 400); return
                 selected = [self.tags[i] for i in includes]
-                rest = sorted((t for t in self.tags.values() if not t['archived'] and t['id'] not in includes and t['name'].lower().startswith(prefix)),
+                rest = sorted((t for t in self.tags.values() if (path.endswith('/filter-options') or not t['archived']) and t['id'] not in includes and t['name'].lower().startswith(prefix)),
                               key=lambda tag: (tag['name'].lower(), tag['id']))
                 data = selected + rest[:max(size, len(includes)) - len(selected)]
                 assert len(data) <= 100
@@ -224,6 +228,12 @@ class SyntheticTags:
             self.tasks.discard(task)
 
     def entry_read(self, path, params):
+        if path == '/api/styles':
+            selected = ','.join(params.get('tagIds', [])).split(',') if params.get('tagIds') else []
+            assert len(selected) <= 30 and all(identifier in self.tags for identifier in selected)
+            rows = [row for row in self.filter_rows if set(selected) <= set(row['_tagIds'])]
+            number, size = int(params.get('page', ['1'])[0]), int(params.get('size', ['20'])[0])
+            return {'list': [{key: value for key, value in row.items() if key != '_tagIds'} for row in rows[(number - 1) * size:number * size]], 'total': len(rows)}
         endpoints = {'/api/styles/': 'STYLE', '/api/materials/': 'MATERIAL', '/api/suppliers/': 'SUPPLIER', '/api/orders/': 'ORDER',
                      '/api/mrp-calcs/': 'MRP_CALC', '/api/purchase-orders/': 'PURCHASE_ORDER', '/api/inventory-docs/': 'INV_DOC',
                      '/api/inventory-counts/': 'INV_COUNT', '/api/tech-packs/': 'TECH_PACK'}
@@ -819,6 +829,68 @@ async def check_labels(browser, base, report):
     finally: await finish(context, api, console, report)
 
 
+async def check_filters(browser, base, report):
+    context, page, api, console = await start(browser, base, report, '/styles')
+    try:
+        await expect(page.locator('.cards .card')).to_have_count(20)
+        await expect(page.locator('.el-pagination__total')).to_contain_text('46')
+        await page.locator('.pagination .btn-next').click()
+        await expect(page.locator('.cards .code').first).to_have_text('KS-FILTER-021')
+        await page.get_by_role('button', name='筛选', exact=True).click()
+        dialog = page.get_by_role('dialog', name='筛选条件', exact=True)
+        await expect(dialog.get_by_text('公共标签（同时包含）', exact=True)).to_be_visible()
+        selector = dialog.get_by_role('combobox', name='公共标签筛选')
+        await selector.click()
+        await page.get_by_role('option', name='##蓝', exact=True).click()
+        await page.get_by_role('option', name='#Summer', exact=True).click()
+        await dialog.get_by_role('button', name='完成', exact=True).click()
+        await expect(page.locator('.el-pagination__total')).to_contain_text('24')
+        await expect(page.locator('.cards .code').first).to_have_text('KS-FILTER-001')
+        await expect(page.locator('.cards .card')).to_have_count(20)
+        selected = [call for call in api.calls if call['path'] == '/api/styles'][-1]
+        assert set(selected['params']['tagIds']) == {ACTIVE, SUMMER}, selected
+        assert selected['params']['page'] == ['1'], selected
+        await page.locator('.pagination .btn-next').click()
+        await expect(page.locator('.cards .card')).to_have_count(4)
+        await expect(page.locator('.cards .code').last).to_have_text('KS-FILTER-024')
+        await expect(page.locator('.el-pagination__total')).to_contain_text('24')
+        next_page = [call for call in api.calls if call['path'] == '/api/styles'][-1]
+        assert set(next_page['params']['tagIds']) == {ACTIVE, SUMMER} and next_page['params']['page'] == ['2']
+        await capture(page, 'filter-and-second-page.png')
+        check(report, 'business_list_two_tag_and_preserves_ids_total_and_pagination', first=selected, next=next_page,
+              source='Actual StyleList + FilterBar + TagFilterItem + useTable; synthetic dataset')
+        await page.get_by_role('button', name='去掉条件：公共标签（同时包含）', exact=True).click()
+        await expect(page.locator('.el-pagination__total')).to_contain_text('46')
+        await expect(page.locator('.cards .code').first).to_have_text('KS-FILTER-001')
+        cleared = [call for call in api.calls if call['path'] == '/api/styles'][-1]
+        assert 'tagIds' not in cleared['params'] and cleared['params']['page'] == ['1'], cleared
+        check(report, 'clear_tag_filter_restores_query_and_first_page', request=cleared)
+        await page.get_by_role('button', name='筛选', exact=True).click()
+        await selector.click()
+        await page.get_by_role('option', name=re.compile('已归档')).click()
+        await dialog.get_by_role('button', name='完成', exact=True).click()
+        await expect(page.locator('.cards .card')).to_have_count(5)
+        await expect(page.locator('.el-pagination__total')).to_contain_text('5')
+        await expect(page.locator('.cards .code').first).to_have_text('KS-FILTER-041')
+        archived = [call for call in api.calls if call['path'] == '/api/styles'][-1]
+        assert archived['params']['tagIds'] == [ARCHIVED]
+        await expect(page.locator('.fchip')).to_contain_text('已归档 · ' + ARCHIVED)
+        assert not api.writes
+        await capture(page, 'filter-archived-history.png')
+        check(report, 'archived_filter_uses_historical_id_without_creating_links', request=archived, writes=0)
+    except BaseException:
+        await capture(page, 'filter-failure.png'); raise
+    finally: await finish(context, api, console, report)
+    context, page, api, console = await start(browser, base, report, '/styles', permissions=['style:style:list'])
+    try:
+        await expect(page.locator('.cards .card')).to_have_count(20)
+        await page.get_by_role('button', name='筛选', exact=True).click()
+        await expect(page.get_by_role('combobox', name='公共标签筛选')).to_have_count(0)
+        assert not any(call['path'].startswith('/api/tags') for call in api.calls), api.calls
+        check(report, 'no_library_permission_hides_filter_and_never_requests_options')
+    finally: await finish(context, api, console, report)
+
+
 async def run(only):
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     fixture = ROOT / 'web/node_modules/.s3-tags'; fixture.mkdir(parents=True, exist_ok=True)
@@ -830,7 +902,7 @@ async def run(only):
               'checks': {}, 'page_errors': [], 'console_errors': [], 'expected_console_errors': []}
     commands = {'retention': check_retention, 'conflicts': check_conflicts, 'permissions': check_permissions,
                 'races': check_races, 'library': check_library, 'entries': check_entries, 'validation': check_validation, 'states': check_states,
-                'pack-log': check_pack_log, 'labels': check_labels}
+                'pack-log': check_pack_log, 'labels': check_labels, 'filters': check_filters}
     with (ARTIFACTS / 'vite.log').open('w') as log:
         process = subprocess.Popen(['node', 'node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', str(port), '--strictPort'],
                                    cwd=ROOT / 'web', stdout=log, stderr=subprocess.STDOUT)
@@ -872,7 +944,7 @@ async def run(only):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--only', choices=['retention','conflicts','permissions','races','library','entries','validation','states','pack-log','labels'])
+    parser.add_argument('--only', choices=['retention','conflicts','permissions','races','library','entries','validation','states','pack-log','labels','filters'])
     parser.add_argument('--artifacts', type=Path)
     args = parser.parse_args()
     if args.artifacts: ARTIFACTS = args.artifacts.resolve()

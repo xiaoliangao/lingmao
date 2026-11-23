@@ -17,6 +17,7 @@ import { ApiError } from '@/utils/request'
 import { formatDate, formatDateRange, formatDateTime, formatMoney, formatPrice } from '@/utils/format'
 import PageHeader from '@/components/PageHeader.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import DateRange from '@/components/DateRange.vue'
 import DictSelect from '@/components/DictSelect.vue'
@@ -48,7 +49,7 @@ const visibleColumns = computed<ColumnsState>(() => ({ ...columns, defs: columns
 const companyId = ref<string | null>(typeof route.query.companyId === 'string' ? route.query.companyId : user.defaultCompanyId)
 const statusValue = (value: unknown): SampleShowStatus | '' => typeof value === 'string' && value in SAMPLE_STATUS ? value as SampleShowStatus : ''
 const status = ref<SampleShowStatus | ''>(statusValue(route.query.status))
-const query = reactive({ keyword: '', categoryId: null as string | null, year: undefined as number | undefined,
+const query = reactive({ tagIds: [] as string[], keyword: '', categoryId: null as string | null, year: undefined as number | undefined,
   season: '', brand: '', designerId: null as string | null, factoryId: null as string | null, makerId: null as string | null,
   nodeCode: '', late: route.query.late === 'true' || route.query.late === '1', need: null as [string, string] | null,
   created: null as [string, string] | null, sort: 'CREATED_DESC' as NonNullable<SampleQuery['sort']> })
@@ -66,7 +67,7 @@ useSampleContext(() => { clear(); companyId.value = null; categories.value = [] 
 function params(): SampleQuery {
   if (!companyId.value) throw new Error('请先选择主体')
   try { validateKeywords(query.keyword) } catch (cause) { throw new ApiError(400, cause instanceof Error ? cause.message : '最多输入 100 个编码') }
-  return { companyId: companyId.value, keyword: query.keyword || undefined, status: status.value || undefined,
+  return { companyId: companyId.value, tagIds: query.tagIds.length ? [...query.tagIds] : undefined, keyword: query.keyword || undefined, status: status.value || undefined,
     categoryId: query.categoryId ?? undefined, year: query.year, season: query.season || undefined, brand: query.brand || undefined,
     designerId: query.designerId ?? undefined, factoryId: query.factoryId ?? undefined, makerId: query.makerId ?? undefined,
     nodeCode: query.nodeCode || undefined, late: query.late || undefined, needFrom: query.need?.[0], needTo: query.need?.[1],
@@ -141,6 +142,7 @@ function created(result: SampleCreated) {
     <template v-else>
       <div v-if="countsLoading || countsError" class="counts-feedback"><SampleFeedback :loading="countsLoading" :error="countsError" label="状态数量" @retry="loadCounts" /></div>
       <FilterBar v-model:keyword="query.keyword" :columns="visibleColumns" placeholder="样衣号、打样单号、名称" @search="search">
+        <TagFilterItem v-model="query.tagIds" />
         <template #left><el-segmented v-model="status" :options="statusOptions" aria-label="样衣状态" @change="search" /></template>
         <FilterItem label="品类" :text="query.categoryId ? '已选择' : ''" @clear="query.categoryId = null">
           <el-tree-select v-model="query.categoryId" :data="categories" :loading="metadataLoading" node-key="id" :props="{ label: 'name', children: 'children' }" check-strictly clearable filterable />

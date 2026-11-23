@@ -129,7 +129,7 @@ class PurchaseOrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PurchaseOrderServiceImpl(poMapper, itemMapper, calcMapper, transitMapper, mrpService, needDates, excel,
+        service = new PurchaseOrderServiceImpl(org.mockito.Mockito.mock(com.lingmao.scm.module.biz.service.TagFilterService.class), poMapper, itemMapper, calcMapper, transitMapper, mrpService, needDates, excel,
                 materialService, supplierService, priceService, warehouseService, companyService, defaultCompanyProvider, styleService,
                 dictDataService, userService, docHeaderService, docLogService, docNoticeService, attachmentService, approvalService,
                 referenceService, serialNoGenerator, Clock.systemDefaultZone());

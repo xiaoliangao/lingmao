@@ -8,6 +8,7 @@ import type { BatchAction } from '@/components/batchBar'
 import DateRange from '@/components/DateRange.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
@@ -93,6 +94,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     return productionApi.page(params)
   },
   query: {
+    tagIds: [] as string[],
     keyword: '',
     tabKey: pickTab(route.query.status),
     risk: pickRisk(route.query.risk),
@@ -154,7 +156,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 
 const filtered = computed(
   () =>
-    !!(query.keyword.trim() || query.tabKey || query.risk || query.factoryId || query.merchId || query.brand || query.dueDateFrom),
+    !!(query.tagIds.length || query.keyword.trim() || query.tabKey || query.risk || query.factoryId || query.merchId || query.brand || query.dueDateFrom),
 )
 const emptyText = computed(() => {
   if (filtered.value) return `没有符合条件的${kindMeta.label}：换个状态，或者清空筛选`
@@ -204,6 +206,7 @@ const exportPicked = () => exportSelected(selected.value.map((r) => r.id))
     </PageHeader>
 
     <FilterBar v-model:keyword="query.keyword" placeholder="单号、订单号、款号、加工厂" :columns="cols" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.tabKey" :options="tabOptions" @change="search" />
       </template>

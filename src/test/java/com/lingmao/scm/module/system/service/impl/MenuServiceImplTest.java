@@ -5,6 +5,7 @@ import com.lingmao.scm.module.system.dto.MenuSaveReq;
 import com.lingmao.scm.module.system.entity.SysMenu;
 import com.lingmao.scm.module.system.mapper.SysMenuMapper;
 import com.lingmao.scm.module.system.mapper.SysRoleMenuMapper;
+import com.lingmao.scm.module.system.mapper.SysRoleMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -27,6 +28,9 @@ class MenuServiceImplTest {
 
     @Mock
     private SysRoleMenuMapper sysRoleMenuMapper;
+
+    @Mock
+    private SysRoleMapper sysRoleMapper;
 
     @InjectMocks
     private MenuServiceImpl menuService;

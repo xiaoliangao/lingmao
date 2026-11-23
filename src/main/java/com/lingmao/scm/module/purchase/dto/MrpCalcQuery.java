@@ -1,6 +1,6 @@
 package com.lingmao.scm.module.purchase.dto;
 
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import com.lingmao.scm.module.purchase.entity.MrpStatus;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -12,7 +12,7 @@ import java.util.List;
 /** 算料单列表（docs/api/03 §3.2.1） */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class MrpCalcQuery extends PageQuery {
+public class MrpCalcQuery extends TaggedPageQuery {
     /** 算料单号、订单号、款号；一次查几个时这三个都精确查 */
     private String keyword;
     private List<MrpStatus> status;

@@ -81,6 +81,9 @@ public interface OrderService {
     /** 来源选择/幂等重放用：只查存在和当前数据范围，不重验成功后可能改变的业务状态。 */
     void checkSourceVisible(Collection<Long> ids);
 
+    /** 算料创建/重算的稳定来源：必须在业务事务中、任何算料头锁之前调用；按 ID 锁后检查完整来源可见性。 */
+    void lockMrpSources(Collection<Long> ids);
+
     /** 齐料摘要批量对象守卫：订单、生产单或仅已下单/生产中的可见看板关联；混入不可见对象整批 404。 */
     void checkKittingVisible(Collection<Long> ids);
 

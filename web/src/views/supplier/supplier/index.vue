@@ -10,6 +10,7 @@ import { useDict } from '@/composables/useDict'
 import { useUserStore } from '@/stores/user'
 import PageHeader from '@/components/PageHeader.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import UserSelect from '@/components/UserSelect.vue'
@@ -29,6 +30,7 @@ const settleDict = useDict('settle_method')
 const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected: exportSelectedRows } = useTable({
   fetch: supplierApi.page,
   query: {
+    tagIds: [] as string[],
     keyword: '',
     category: '',
     status: [] as SupplierStatus[],
@@ -75,7 +77,7 @@ const buyerName = computed(() => (query.buyerId ? list.value.find((row) => row.b
 const buyerText = computed(() => (query.buyerId ? (buyerName.value ?? '已选') : ''))
 
 const filtered = computed(
-  () => !!(query.keyword.trim() || query.category || query.status.length || query.level || query.buyerId || flagText.value),
+  () => !!(query.tagIds.length || query.keyword.trim() || query.category || query.status.length || query.level || query.buyerId || flagText.value),
 )
 
 function categoryNames(row: SupplierRow) {
@@ -177,6 +179,7 @@ async function exportSelected() {
     </PageHeader>
 
     <FilterBar v-model:keyword="query.keyword" placeholder="编码、名称、联系人" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.category" :options="categoryOptions" @change="search" />
       </template>

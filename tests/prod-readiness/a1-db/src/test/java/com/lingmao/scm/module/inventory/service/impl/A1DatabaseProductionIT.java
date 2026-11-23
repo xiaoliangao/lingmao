@@ -245,6 +245,69 @@ class A1DatabaseProductionIT {
     }
 
     @Test
+    void t04_oppositeTransfersUseSkuFirstCompleteBalanceKeyOrderInRealPostgres() throws Exception {
+        Fixture f = fixture();
+        long otherWarehouse = jdbc.queryForObject("INSERT INTO bas_warehouse(code,name,type) VALUES(?,?,'MATERIAL') RETURNING id",
+                Long.class, "P64" + UUID.randomUUID().toString().substring(0, 8), "P64 second warehouse");
+        Fixture other = new Fixture(f.company(), otherWarehouse, f.skuA(), f.skuB());
+        audit(create(f, InvDocType.OTHER_IN, List.of(item(f.skuA(), "10"), item(f.skuB(), "10"))));
+        audit(create(other, InvDocType.OTHER_IN, List.of(item(f.skuA(), "10"), item(f.skuB(), "10"))));
+        InvDocCreateReq backwards = createRequest(other, InvDocType.TRANSFER, List.of(item(f.skuB(), "1"), item(f.skuA(), "1")));
+        backwards.setToWarehouseId(f.warehouse());
+        InvDocCreateReq forwards = createRequest(f, InvDocType.TRANSFER, List.of(item(f.skuA(), "2"), item(f.skuB(), "2")));
+        forwards.setToWarehouseId(otherWarehouse);
+        long a = documents.create(backwards).id(), b = documents.create(forwards).id();
+        String probe = "p64_" + UUID.randomUUID().toString().replace("-", "");
+        jdbc.execute("CREATE TABLE " + probe + "(seq BIGINT GENERATED ALWAYS AS IDENTITY, transaction_id BIGINT, backend_pid INT, "
+                + "sku_id BIGINT,warehouse_id BIGINT,owner_type TEXT,owner_id BIGINT,location_id BIGINT)");
+        // 记录真实余额 SQL 执行顺序；首行短暂停留使两个独立事务实际竞争同一个余额锁。
+        jdbc.execute("CREATE FUNCTION " + probe + "() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN "
+                + "IF NEW.material_sku_id IN (" + f.skuA() + "," + f.skuB() + ") AND NEW.warehouse_id IN (" + f.warehouse() + "," + otherWarehouse + ") THEN "
+                + "IF NOT EXISTS(SELECT 1 FROM " + probe + " WHERE transaction_id=txid_current()) THEN PERFORM pg_sleep(0.4); END IF; "
+                + "INSERT INTO " + probe + "(transaction_id,backend_pid,sku_id,warehouse_id,owner_type,owner_id,location_id) "
+                + "VALUES(txid_current(),pg_backend_pid(),NEW.material_sku_id,NEW.warehouse_id,NEW.owner_type,NEW.owner_id,NEW.location_id); "
+                + "END IF; RETURN NEW; END $f$");
+        jdbc.execute("CREATE TRIGGER " + probe + " AFTER INSERT OR UPDATE ON inv_stock FOR EACH ROW EXECUTE FUNCTION " + probe + "()");
+        try (var observer = Executors.newSingleThreadExecutor()) {
+            Future<Boolean> actualWait = observer.submit(() -> {
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                while (System.nanoTime() < deadline) {
+                    if (count("SELECT count(*) FROM pg_stat_activity WHERE application_name=? AND wait_event_type='Lock'", probe) > 0) return true;
+                    TimeUnit.MILLISECONDS.sleep(10);
+                }
+                return false;
+            });
+            List<Integer> outcomes = race(List.of(
+                    () -> tx.execute(status -> { jdbc.queryForObject("SELECT set_config('application_name',?,true)", String.class, probe); return tryAudit(a); }),
+                    () -> tx.execute(status -> { jdbc.queryForObject("SELECT set_config('application_name',?,true)", String.class, probe); return tryAudit(b); })));
+            assertThat(outcomes).containsExactly(0, 0);
+            assertThat(actualWait.get(15, TimeUnit.SECONDS)).as("two backend transactions actually overlap on a stock lock").isTrue();
+            assertThat(jdbc.queryForObject("SELECT count(DISTINCT backend_pid) FROM " + probe, Integer.class)).isEqualTo(2);
+            List<Long> transactions = jdbc.queryForList("SELECT DISTINCT transaction_id FROM " + probe + " ORDER BY transaction_id", Long.class);
+            assertThat(transactions).hasSize(2);
+            List<List<Object>> expected = List.of(
+                    List.of(f.skuA(), f.warehouse(), "OWN", 0L, 0L), List.of(f.skuA(), otherWarehouse, "OWN", 0L, 0L),
+                    List.of(f.skuB(), f.warehouse(), "OWN", 0L, 0L), List.of(f.skuB(), otherWarehouse, "OWN", 0L, 0L));
+            for (long transaction : transactions) {
+                List<List<Object>> keys = jdbc.query("SELECT sku_id,warehouse_id,owner_type,owner_id,location_id FROM " + probe + " WHERE transaction_id=? ORDER BY seq",
+                        (rs, n) -> List.of(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getLong(4), rs.getLong(5)), transaction);
+                assertThat(keys).as("actual SQL balances are SKU → warehouse → OWN/0/0").containsExactlyElementsOf(expected);
+            }
+            assertThat(balance(f, f.skuA())).isEqualByComparingTo("9");
+            assertThat(balance(f, f.skuB())).isEqualByComparingTo("9");
+            assertThat(balance(other, f.skuA())).isEqualByComparingTo("11");
+            assertThat(balance(other, f.skuB())).isEqualByComparingTo("11");
+            assertThat(count("SELECT count(*) FROM inv_stock_log WHERE inv_doc_id IN (?,?)", a, b)).isEqualTo(8);
+            Files.writeString(ARTIFACTS.resolve("p64-opposite-transfer-lock-order.json"), json.writeValueAsString(
+                    jdbc.queryForList("SELECT * FROM " + probe + " ORDER BY transaction_id,seq")));
+        } finally {
+            jdbc.execute("DROP TRIGGER " + probe + " ON inv_stock");
+            jdbc.execute("DROP FUNCTION " + probe + "()");
+            jdbc.execute("DROP TABLE " + probe);
+        }
+    }
+
+    @Test
     void t05_realMvcKeepsBigintIdentifiersExactAndVersionNumeric() throws Exception {
         Fixture f = fixture();
         long huge = 9_007_199_254_740_993L;

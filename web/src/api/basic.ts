@@ -128,6 +128,8 @@ export const warehouseApi = {
 // ---------- 物料 ----------
 
 export interface MaterialQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   keyword?: string
   categoryId?: string
   materialType?: string

@@ -5,6 +5,7 @@ import { warehouseApi } from '@/api/basic'
 import { countApi } from '@/api/inventory'
 import DateRange from '@/components/DateRange.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -56,6 +57,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
   normalize: (query) => statusQuery(query),
   fetch: countApi.page,
   query: {
+    tagIds: [] as string[],
     keyword: '',
     statusTab: pickStatus(route.query.status),
     warehouseId: undefined as string | undefined,
@@ -117,7 +119,7 @@ const whText = computed(() =>
 )
 /** 盘点只盘物料仓、工厂仓 */
 const countWarehouses = computed(() => warehouses.value.filter((w) => w.type !== 'PRODUCT'))
-const filtered = computed(() => !!(query.keyword.trim() || query.statusTab || query.warehouseId || query.purpose || query.countDateFrom))
+const filtered = computed(() => !!(query.tagIds.length || query.keyword.trim() || query.statusTab || query.warehouseId || query.purpose || query.countDateFrom))
 const emptyText = computed(() =>
   filtered.value ? '没有符合条件的盘点单：换个状态，或者清空筛选' : '还没有盘点单：点「新建盘点单」，刚上线先「录期初库存」',
 )
@@ -147,6 +149,7 @@ function openCreate(purpose: CountPurpose) {
     </PageHeader>
 
     <FilterBar v-model:keyword="query.keyword" placeholder="盘点单号、仓库、盘点人、物料编码/名称" :columns="cols" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>

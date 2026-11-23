@@ -39,6 +39,7 @@ abstract class A2BusinessFixture {
     @Autowired Clock clock;
     final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     record Account(long id, long role, String token) { }
+    record CookieSession(Account account, String cookies) { }
     record Fixture(long company, long otherCompany, long warehouse, long factoryWarehouse, long supplier,
                    long material, long materialSku, String materialCode, String materialSkuCode,
                    long materialCategory, String materialCategoryCode, String materialPath,
@@ -69,6 +70,35 @@ abstract class A2BusinessFixture {
         JsonNode reply = node(raw(null, "POST", "/api/auth/login", Map.of("username", name, "password", secret), null, null));
         assertThat(reply.path("code").intValue()).isZero();
         return new Account(user, role, reply.path("data").stringValue());
+    }
+    CookieSession cookieSession(Account account) throws Exception {
+        String username = jdbc.queryForObject("SELECT username FROM sys_user WHERE id=?", String.class, account.id());
+        var response = raw(null, "POST", "/api/auth/login",
+                Map.of("username", username, "password", "A2-Business-123456"), null, null);
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(node(response).path("code").intValue()).isZero();
+        String cookies = String.join("; ", response.headers().allValues("Set-Cookie").stream()
+                .map(value -> value.split(";", 2)[0]).toList());
+        assertThat(cookies.contains("scm_refresh=") && cookies.contains("scm_browser=")).isTrue();
+        return new CookieSession(new Account(account.id(), account.role(), node(response).path("data").stringValue()), cookies);
+    }
+    HttpResponse<byte[]> refreshCookieSession(CookieSession session) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/auth/refresh"))
+                .timeout(Duration.ofSeconds(20)).header("Cookie", session.cookies())
+                .header("X-Requested-With", "XMLHttpRequest").header("X-Session-Mode", "cookie")
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}")).build(),
+                HttpResponse.BodyHandlers.ofByteArray());
+    }
+    void assertRejected(HttpResponse<byte[]> response, int httpStatus, int code) {
+        assertThat(response.statusCode()).isEqualTo(httpStatus);
+        JsonNode body = node(response);
+        assertThat(body.path("code").intValue()).isEqualTo(code);
+        assertThat(body.path("data").isNull() || body.path("data").isMissingNode())
+                .as("a rejected request must not expose a completed result").isTrue();
+    }
+    String storedReceipt(Account actor, String key) {
+        return jdbc.queryForObject("SELECT row_to_json(a)::text FROM biz_http_action a WHERE user_id=? AND request_key=?",
+                String.class, actor.id(), UUID.fromString(key));
     }
     void authenticate(Account account) {
         var authorities = permissions.loadPermissions(account.id());

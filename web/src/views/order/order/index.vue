@@ -12,6 +12,7 @@ import type { BatchAction } from '@/components/batchBar'
 import DateRange from '@/components/DateRange.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import ImportDialog from '@/components/ImportDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -96,6 +97,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     return orderApi.page(params)
   },
   query: {
+    tagIds: [] as string[],
     keyword: '',
     statusTab: pickStatus(route.query.status),
     orderType: '',
@@ -169,7 +171,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 
 const filtered = computed(
   () =>
-    !!(query.keyword.trim() || query.statusTab || query.orderType || query.brand || query.salesId || query.merchId || query.orderDateFrom || query.unscheduled),
+    !!(query.tagIds.length || query.keyword.trim() || query.statusTab || query.orderType || query.brand || query.salesId || query.merchId || query.orderDateFrom || query.unscheduled),
 )
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的需求订单：换个状态页签，或者清空筛选'
@@ -257,6 +259,7 @@ function onImported(count: number) {
     </PageHeader>
 
     <FilterBar v-model:keyword="query.keyword" placeholder="单号、合同号、款号" :columns="cols" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.statusTab" :options="statusOptions" @change="search" />
       </template>

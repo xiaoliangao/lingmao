@@ -130,6 +130,8 @@ export interface InvDocRow {
 }
 
 export interface InvDocQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   /** 必填：IN 入库单列表 / OUT 出库单列表 */
   kind: InvDocKind
   docType?: InvDocType
@@ -441,6 +443,8 @@ export interface CountRow {
 }
 
 export interface CountQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   /** 单号、仓库、盘点人、物料编码 / 名称 / SKU 码 */
   keyword?: string
   status?: CountStatus[]

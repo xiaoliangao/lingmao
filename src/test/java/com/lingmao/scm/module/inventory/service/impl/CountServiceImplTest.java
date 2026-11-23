@@ -92,7 +92,7 @@ class CountServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new CountServiceImpl(countMapper, itemMapper, categoryMapper, stockMapper, stockLogMapper, ledger, excel,
+        service = new CountServiceImpl(org.mockito.Mockito.mock(com.lingmao.scm.module.biz.service.TagFilterService.class), countMapper, itemMapper, categoryMapper, stockMapper, stockLogMapper, ledger, excel,
                 materialService, materialCategoryService, warehouseService, companyService, userService, docHeaderService,
                 docLogService, attachmentService, serialNoGenerator, Clock.systemDefaultZone(), com.lingmao.scm.DirectFileImports.INSTANCE);
         SecurityContextHolder.getContext().setAuthentication(

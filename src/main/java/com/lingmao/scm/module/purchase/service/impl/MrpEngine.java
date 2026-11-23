@@ -67,20 +67,34 @@ class MrpEngine {
 
     void checkSourceVisible(Collection<Long> ids) { orderService.checkSourceVisible(ids); }
 
+    /** 由创建/重算在取得任何算料头锁前调用；后续授权、主体投影和计算共享受锁来源。 */
+    void lockSources(Collection<Long> ids) { orderService.lockMrpSources(ids); }
+
     void checkKittingVisible(Collection<Long> ids) { orderService.checkKittingVisible(ids); }
 
     /** 订单都要在、都是已审核或生产中，不然 404 / 1000（选订单算料） */
     List<MrpCalcMapper.OrderHead> checkedHeads(Collection<Long> orderIds) {
         orderService.checkForMrp(orderIds);
-        List<MrpCalcMapper.OrderHead> heads = calcMapper.selectOrderHeads(new LinkedHashSet<>(orderIds));
-        if (heads.size() != new HashSet<>(orderIds).size()) {
-            throw new BizException(404, "有订单不存在了，请刷新后再选");
-        }
+        List<MrpCalcMapper.OrderHead> heads = completeHeads(orderIds);
         List<String> bad = heads.stream().filter(h -> !CALC_ORDER_STATUS.contains(h.status()))
                 .map(h -> "订单 " + h.no() + " 不能算料：它是" + ORDER_STATUS_TEXT.getOrDefault(h.status(), h.status()) + "状态").toList();
         if (!bad.isEmpty()) {
             throw new BizException(ErrorCodes.BIZ_ERROR, bad.getFirst(), bad);
         }
+        return heads;
+    }
+
+    /** 已确认单重算前核对全部来源，已结案或取消的订单也必须可见且参与主体证明。 */
+    List<MrpCalcMapper.OrderHead> sourceHeads(Collection<Long> orderIds) {
+        orderService.checkSourceVisible(orderIds);
+        return completeHeads(orderIds);
+    }
+
+    private List<MrpCalcMapper.OrderHead> completeHeads(Collection<Long> orderIds) {
+        Set<Long> ids = new LinkedHashSet<>(orderIds);
+        if (ids.isEmpty()) throw new BizException(400, "缺少来源订单，无法证明算料单主体，请核对原单");
+        List<MrpCalcMapper.OrderHead> heads = calcMapper.selectOrderHeads(ids);
+        if (heads.size() != ids.size()) throw new BizException(404, "有订单不存在了，请刷新后再选");
         return heads;
     }
 

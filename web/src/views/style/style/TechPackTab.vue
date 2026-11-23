@@ -1341,7 +1341,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                     :precision="4"
                     :controls="false"
                     :disabled="!editable"
-                    :placeholder="costData.buyPriceDefault == null ? '' : `默认 ${formatMoney(costData.buyPriceDefault)}，取自价格档案`"
+                    :placeholder="costData.buyPriceDefault == null ? '' : `默认 ${formatPrice(costData.buyPriceDefault)}，取自价格档案`"
                     class="buy-input"
                   />
                 </template>
@@ -1394,7 +1394,7 @@ const PILL_STATUS: Record<TechPackBrief['status'], string> = { DRAFT: '草稿', 
                   <template v-else>按成品采购：成品单价{{ costData.buyPrice == null ? '（没填，用价格档案的默认价）' : '' }}</template>
                 </p>
                 <p v-if="costData.costMode === 'OUTSOURCE' && costData.buyPriceDefault != null" class="blk-line dim">
-                  成品采购参考价 ¥{{ formatMoney(costData.buyPriceDefault) }}{{ costData.defaultFactoryName ? `（${costData.defaultFactoryName}）` : '' }}，不计入
+                  成品采购参考价 ¥{{ formatPrice(costData.buyPriceDefault) }}{{ costData.defaultFactoryName ? `（${costData.defaultFactoryName}）` : '' }}，不计入
                 </p>
               </div>
 

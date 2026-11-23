@@ -148,7 +148,7 @@ class SampleSupport {
     SampleSearch search(SampleQuery q) {
         return new SampleSearch(trim(q.getKeyword()),trim(q.getStatus()),descendants(q.getCategoryId()),q.getYear(),trim(q.getSeason()),
                 trim(q.getBrand()),q.getDesignerId(),q.getFactoryId(),q.getMakerId(),trim(q.getNodeCode()),q.isLate(),
-                q.getNeedFrom(),q.getNeedTo(),q.getCreatedFrom(),q.getCreatedTo(),SampleSearch.Sort.valueOf(q.getSort().name()));
+                q.getNeedFrom(),q.getNeedTo(),q.getCreatedFrom(),q.getCreatedTo(),SampleSearch.Sort.valueOf(q.getSort().name()),q.getTagFilter());
     }
     private List<Long> descendants(Long id) {
         if(id==null)return null;

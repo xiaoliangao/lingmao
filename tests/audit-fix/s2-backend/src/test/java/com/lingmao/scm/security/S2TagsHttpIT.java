@@ -263,15 +263,27 @@ class S2TagsHttpIT extends A2BusinessFixture {
     }
 
     @Test void completedReplayRechecksPermissionsAndOwnerAfterTheOriginalCommit() throws Exception {
-        Fixture f = fixture(); Account owner = domainActor(f.company(), "SELF"), other = domainActor(f.company(), "SELF");
+        Fixture f = fixture(); CookieSession originalSession = cookieSession(domainActor(f.company(), "SELF"));
+        Account owner = originalSession.account(), other = domainActor(f.company(), "SELF");
         long order = sourceOrder(f, owner, "DRAFT", f.company()); String path = "/api/tags/objects/ORDER/" + order + "/replace", key = UUID.randomUUID().toString();
         Object body = replace(0, List.of("replay-" + suffix()), Map.of(), List.of());
-        assertThat(request(owner, "POST", path, body, f.company(), key, null).path("code").intValue()).isZero();
+        JsonNode created = request(owner, "POST", path, body, f.company(), key, null);
+        assertThat(created.path("code").intValue()).isZero();
         jdbc.update("UPDATE ord_order SET create_by=?,sales_id=?,merch_id=? WHERE id=?", other.id(), other.id(), other.id(), order);
         assertThat(request(owner, "POST", path, body, f.company(), key, null).path("code").intValue()).isEqualTo(404);
         jdbc.update("UPDATE ord_order SET create_by=?,sales_id=?,merch_id=? WHERE id=?", owner.id(), owner.id(), owner.id(), order);
-        jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='order:order:edit')", owner.role());
-        assertThat(request(owner, "POST", path, body, f.company(), key, null).path("code").intValue()).isEqualTo(403);
+        String beforeReceipt = storedReceipt(owner, key);
+        var beforeLinks = jdbc.queryForList("SELECT l.* FROM biz_tag_link l JOIN biz_tag_object o ON o.id=l.object_ref_id WHERE o.tenant_key=? AND o.object_type='ORDER' AND o.object_id=? ORDER BY l.id", namespace.tenant(), order);
+        var beforeRegistry = jdbc.queryForMap("SELECT * FROM biz_tag_object WHERE tenant_key=? AND object_type='ORDER' AND object_id=?", namespace.tenant(), order);
+        assertThat(jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='order:order:edit')", owner.role())).isPositive();
+        assertRejected(raw(owner, "POST", path, body, f.company(), key), 401, 401);
+        assertRejected(refreshCookieSession(originalSession), 401, 401);
+        Account fresh = cookieSession(owner).account();
+        assertRejected(raw(fresh, "POST", path, body, f.company(), key), 200, 403);
+        assertThat(ok(fresh, "GET", "/api/tags/objects/ORDER/" + order, null, f.company())).isEqualTo(created.path("data"));
+        assertThat(jdbc.queryForList("SELECT l.* FROM biz_tag_link l JOIN biz_tag_object o ON o.id=l.object_ref_id WHERE o.tenant_key=? AND o.object_type='ORDER' AND o.object_id=? ORDER BY l.id", namespace.tenant(), order)).isEqualTo(beforeLinks);
+        assertThat(jdbc.queryForMap("SELECT * FROM biz_tag_object WHERE tenant_key=? AND object_type='ORDER' AND object_id=?", namespace.tenant(), order)).isEqualTo(beforeRegistry);
+        assertThat(storedReceipt(fresh, key)).isEqualTo(beforeReceipt);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM biz_doc_log WHERE doc_type='ORDER' AND doc_id=? AND action='replace-tags'", Long.class, order)).isEqualTo(1);
     }
 

@@ -56,7 +56,9 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
         // 查的时候数据库、Redis 出错不在这里接：接住当成"没登录"的话，前端以为登录过期、把人踢回登录页。
         // 让它抛出去，由 TraceIdFilter 记日志、回 500 和错误编号
         Set<String> perms = permissionService.loadPermissions(userId);
-        if (perms == null) {
+        // 权限查询可能跨过一次授权事务提交：不能把已撤销的旧 token 配上刚授予的新权限。
+        // 第二次版本核对作为本次认证的完成点；已进入业务处理的请求不在这里伪装成可取消。
+        if (perms == null || !userId.equals(loginSessionStore.getUserId(claims.getId()))) {
             return;
         }
         List<SimpleGrantedAuthority> authorities = perms.stream().map(SimpleGrantedAuthority::new).toList();

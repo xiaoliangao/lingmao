@@ -93,6 +93,7 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
  */
 @Service
 public class InvDocServiceImpl implements InvDocService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     /** 状态转换表（docs/api/04 §2.1）。remove、void 都从草稿来，过没过过账决定给哪个（actions 里只出一个） */
     static final StatusFlow<DocStatus> FLOW = StatusFlow.of(DocStatus.class)
@@ -125,13 +126,15 @@ public class InvDocServiceImpl implements InvDocService {
     private final Clock clock;
     private final Map<BizType, StockSourceHandler> handlers = new EnumMap<>(BizType.class);
 
-    public InvDocServiceImpl(InvDocMapper invDocMapper, InvDocItemMapper itemMapper, StockLogMapper stockLogMapper,
+    public InvDocServiceImpl(com.lingmao.scm.module.biz.service.TagFilterService tagFilters,
+                             InvDocMapper invDocMapper, InvDocItemMapper itemMapper, StockLogMapper stockLogMapper,
                              StockMapper stockMapper, StockLedger ledger, InvDocExcel excel, MaterialService materialService,
                              WarehouseService warehouseService, CompanyService companyService, DictDataService dictDataService,
                              UserService userService, DocHeaderService docHeaderService, DocLogService docLogService,
                              AttachmentService attachmentService, ReferenceService referenceService,
                              SerialNoGenerator serialNoGenerator, ActionRequestService actionRequestService,
                              Clock clock, List<StockSourceHandler> sourceHandlers) {
+        this.tagFilters = tagFilters;
         this.invDocMapper = invDocMapper;
         this.itemMapper = itemMapper;
         this.stockLogMapper = stockLogMapper;
@@ -161,6 +164,7 @@ public class InvDocServiceImpl implements InvDocService {
 
     @Override
     public PageResult<InvDocRowVO> page(InvDocQuery query) {
+        tagFilters.prepare(query);
         IPage<InvDocRowVO> page = invDocMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()));
         fillRows(page.getRecords());
@@ -871,6 +875,7 @@ public class InvDocServiceImpl implements InvDocService {
 
     @Override
     public byte[] export(InvDocQuery query) {
+        tagFilters.prepare(query);
         Page<InvDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine())).getRecords();

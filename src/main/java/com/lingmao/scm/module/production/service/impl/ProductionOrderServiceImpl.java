@@ -103,6 +103,7 @@ import static com.lingmao.scm.module.production.service.impl.ProductionRules.FLO
 @Service
 @RequiredArgsConstructor
 public class ProductionOrderServiceImpl implements ProductionOrderService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     private final ProductionOrderMapper prdMapper;
     private final ProductionOrderItemMapper itemMapper;
@@ -134,6 +135,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public PageResult<ProductionRowVO> page(ProductionQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         requireKind(query);
@@ -151,6 +153,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public Map<String, Long> counts(ProductionQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         requireKind(query);
@@ -325,6 +328,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public byte[] export(ProductionQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         ProductionKind kind = requireKind(query);

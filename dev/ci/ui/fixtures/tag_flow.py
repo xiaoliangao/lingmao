@@ -146,6 +146,42 @@ def run_tag_lifecycle(test):
     archived = browser_reply(sent.value)
     test.assertTrue(archived["archived"])
 
+    # The real order list must apply both IDs, including the archived history ID.
+    # A second real order with only one tag makes an accidental OR visibly wrong.
+    partial = test.domain.new_order(marker="AUDIT-TAG-FILTER-PARTIAL")
+    observed(api, "POST", "/api/tags/objects/ORDER/" + partial["id"] + "/replace", {
+        "version": 0, "names": ["#" + literal], "tagVersions": {}, "retainIds": []})
+    page.goto(test.ui_base + "/orders")
+    page.get_by_role("button", name="筛选", exact=True).click()
+    filters = page.get_by_role("dialog", name="筛选条件", exact=True)
+    field = filters.get_by_role("combobox", name="公共标签筛选")
+    field.fill("#" + renamed)
+    page.get_by_role("option", name="#" + renamed + "（已归档 · " + original_id + "）", exact=True).click()
+    field.fill("#" + literal)
+    literal_id = first["tags"][1]["id"]
+
+    def both_filters(response):
+        params = parse_qs(urlsplit(response.url).query)
+        return test.response_for(response, "GET", "/api/orders") and set(params.get("tagIds", [])) == {original_id, literal_id}
+
+    with page.expect_response(both_filters) as filtered:
+        page.get_by_role("option", name="#" + literal, exact=True).click()
+        filters.get_by_role("button", name="完成", exact=True).click()
+    matches = browser_reply(filtered.value)
+    test.assertEqual(matches["total"], 1)
+    test.assertEqual([row["id"] for row in matches["list"]], [identity])
+    expect(page.locator(".el-table__body-wrapper tr")).to_have_count(1)
+    expect(page.locator(".el-pagination__total")).to_contain_text("1")
+    test.shot("tags-real-list-and-archived-history-filter")
+    with page.expect_response(lambda response: test.response_for(response, "GET", "/api/orders")
+                              and "tagIds" not in parse_qs(urlsplit(response.url).query)) as cleared:
+        page.get_by_role("button", name="去掉条件：公共标签（同时包含）", exact=True).click()
+    restored = browser_reply(cleared.value)
+    test.assertGreaterEqual(restored["total"], 2)
+    test.assertEqual(parse_qs(urlsplit(cleared.value.url).query)["page"], ["1"])
+    test.note("real list tag filter", selectedIds=[original_id, literal_id], andTotal=1,
+              partialMatchExcluded=partial["id"], clearRestoresQuery=True, responseMocks=False)
+
     page.goto(test.ui_base + route)
     archived_chip = card().locator(".tag-chip.archived").filter(has_text=renamed)
     expect(archived_chip).to_be_visible()

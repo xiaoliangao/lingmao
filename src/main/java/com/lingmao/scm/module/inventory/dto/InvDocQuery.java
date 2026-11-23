@@ -1,7 +1,7 @@
 package com.lingmao.scm.module.inventory.dto;
 
 import com.lingmao.scm.common.doc.DocStatus;
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import com.lingmao.scm.module.inventory.entity.InvDocKind;
 import com.lingmao.scm.module.inventory.entity.InvDocType;
 import jakarta.validation.constraints.NotNull;
@@ -15,7 +15,7 @@ import java.util.List;
 /** 入库单、出库单列表（docs/api/04 §3.2.1）。导出也用它，多一个 ids（只导选中的） */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class InvDocQuery extends PageQuery {
+public class InvDocQuery extends TaggedPageQuery {
 
     @NotNull(message = "kind 必填：IN 入库单 / OUT 出库单")
     private InvDocKind kind;

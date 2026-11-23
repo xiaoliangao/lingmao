@@ -10,6 +10,7 @@ import type { TreeNode } from '@/types/basic'
 import { STYLE_STATUS, TECH_PACK_STATUS, type StyleRow, type StyleStatus, type TechPackStatus } from '@/types/style'
 import PageHeader from '@/components/PageHeader.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import UserSelect from '@/components/UserSelect.vue'
@@ -41,6 +42,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
     ({ ...rest, status: status || undefined, techPackStatus: techPackStatus || undefined, designerId: designerId ?? undefined }),
   fetch: styleApi.page,
   query: {
+    tagIds: [] as string[],
     keyword: '',
     status: '' as StyleStatus | '',
     categoryId: undefined as string | undefined,
@@ -124,7 +126,7 @@ onActivated(() => {
 
 const filtered = computed(
   () =>
-    !!(query.keyword.trim() || query.categoryId !== undefined || query.styleClass || query.brand || query.year || query.season ||
+    !!(query.tagIds.length || query.keyword.trim() || query.categoryId !== undefined || query.styleClass || query.brand || query.year || query.season ||
       query.wave || query.designerId || query.techPackStatus),
 )
 const emptyText = computed(() => {
@@ -182,6 +184,7 @@ const importVisible = ref(false)
     </PageHeader>
 
     <FilterBar v-model:keyword="query.keyword" placeholder="款号、名称、花名、品名" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.status" :options="STATUS_OPTIONS" @change="search" />
       </template>

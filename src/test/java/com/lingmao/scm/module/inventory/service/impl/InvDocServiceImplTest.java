@@ -106,7 +106,7 @@ class InvDocServiceImplTest {
     @BeforeEach
     void setUp() {
         when(purchaseHandler.sourceType()).thenReturn(BizType.PURCHASE_ORDER);
-        service = new InvDocServiceImpl(invDocMapper, itemMapper, stockLogMapper, stockMapper, ledger, excel, materialService,
+        service = new InvDocServiceImpl(org.mockito.Mockito.mock(com.lingmao.scm.module.biz.service.TagFilterService.class), invDocMapper, itemMapper, stockLogMapper, stockMapper, ledger, excel, materialService,
                 warehouseService, companyService, dictDataService, userService, docHeaderService, docLogService, attachmentService,
                 referenceService, serialNoGenerator, actionRequestService,
                 CLOCK, List.of(purchaseHandler));

@@ -12,7 +12,15 @@ public record SampleSearch(String keyword, String showStatus, List<Long> categor
                            Integer year, String season, String brand, Long designerId,
                            Long factoryId, Long makerId, String nodeCode, boolean late,
                            LocalDate needFrom, LocalDate needTo, LocalDate createdFrom,
-                           LocalDate createdTo, Sort sort) {
+                           LocalDate createdTo, Sort sort, com.lingmao.scm.module.biz.dto.TagFilter tagFilter) {
+    public SampleSearch(String keyword, String showStatus, List<Long> categoryIds,
+                        Integer year, String season, String brand, Long designerId,
+                        Long factoryId, Long makerId, String nodeCode, boolean late,
+                        LocalDate needFrom, LocalDate needTo, LocalDate createdFrom,
+                        LocalDate createdTo, Sort sort) {
+        this(keyword, showStatus, categoryIds, year, season, brand, designerId, factoryId, makerId,
+                nodeCode, late, needFrom, needTo, createdFrom, createdTo, sort, null);
+    }
     public enum Sort { CREATED_DESC, CREATED_ASC, NEED_ASC, NEED_DESC, CODE_ASC, CODE_DESC }
     private static final Set<String> STATUSES = Set.of("WAIT_ASSIGN", "MAKING", "WAIT_REVIEW",
             "PASSED", "CONVERTED", "ELIMINATED");

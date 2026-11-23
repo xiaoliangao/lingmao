@@ -69,7 +69,7 @@ class StockLedgerTest {
 
     /**
      * 规则：同仓同 SKU 的两行（缸号不同）合成一次条件更新，日志还是两条、各带各的缸号，结存按这一笔之后算；
-     * 几个 SKU 按（仓库、SKU）排好序再改（防死锁）
+     * 几个 SKU 按（SKU、仓库）排好序再改（防死锁；当前货主/库位固定 OWN/0/0）
      */
     @Test
     void post_mergesSameSkuButLogsEachLine() {

@@ -7,6 +7,7 @@ import { materialApi, materialCategoryApi } from '@/api/basic'
 import type { MaterialRow, TreeNode } from '@/types/basic'
 import PageHeader from '@/components/PageHeader.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import DictSelect from '@/components/DictSelect.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -32,7 +33,8 @@ const units = useDict('unit')
 const { query, page, size, pageSizes, list, total, loading, load, search, exporting, exportFile, exportSelected } = useTable({
   normalize: ({ status, ...rest }) => ({ ...rest, status: statusParam(status) }),
   fetch: materialApi.page,
-  query: { keyword: '', categoryId: undefined as string | undefined, materialType: '', status: 1 as StatusFilter },
+  query: {
+    tagIds: [] as string[], keyword: '', categoryId: undefined as string | undefined, materialType: '', status: 1 as StatusFilter },
   exportUrl: '/api/materials/export',
   exportName: '物料.xlsx',
 })
@@ -67,7 +69,7 @@ function manageCategories() {
 }
 
 const emptyText = () => {
-  if (query.keyword || query.materialType) return '没有符合条件的物料'
+  if (query.tagIds.length || query.keyword || query.materialType) return '没有符合条件的物料'
   if (query.categoryId !== undefined) return '这个分类下没有物料'
   return query.status === 0 ? '没有停用的物料' : '还没有物料，新建一个或者从领猫导入'
 }
@@ -163,6 +165,7 @@ function onSaved(id: string) {
 
       <div class="main">
         <FilterBar v-model:keyword="query.keyword" placeholder="编码、名称、货号、成分" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
           <template #left>
             <el-segmented v-model="query.status" :options="STATUS_OPTIONS" @change="search" />
           </template>

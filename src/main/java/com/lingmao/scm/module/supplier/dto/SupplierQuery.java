@@ -1,6 +1,6 @@
 package com.lingmao.scm.module.supplier.dto;
 
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import com.lingmao.scm.module.supplier.entity.SupplierStatus;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -13,7 +13,7 @@ import java.util.List;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class SupplierQuery extends PageQuery {
+public class SupplierQuery extends TaggedPageQuery {
 
     /** 编码、全称、简称、联系人包含它 */
     private String keyword;

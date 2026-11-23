@@ -2,7 +2,7 @@ package com.lingmao.scm.module.order.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lingmao.scm.common.doc.DocStatus;
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -13,7 +13,7 @@ import java.util.List;
 /** 需求订单列表（docs/api/02 §3.2）；counts 不看 status，导出多一个 ids */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class OrderQuery extends PageQuery {
+public class OrderQuery extends TaggedPageQuery {
     /** 单号、合同号、款号；一次查几个时单号、款号精确查 */
     private String keyword;
     private List<DocStatus> status;

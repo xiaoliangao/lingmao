@@ -57,6 +57,12 @@ import java.util.List;
 @RequestMapping("/api/inventory-docs")
 @RequiredArgsConstructor
 public class InvDocController extends IdempotencyReplayGuard {
+    /** 标签内部命名空间与已验证条件不能从请求绑定。 */
+    @org.springframework.web.bind.annotation.InitBinder("invDocQuery")
+    void protectTagFilter(org.springframework.web.bind.WebDataBinder binder) {
+        binder.setDisallowedFields("tagFilter*");
+    }
+
 
     private final InvDocService invDocService;
     private final DocCommonService docCommonService;

@@ -9,6 +9,7 @@ import com.lingmao.scm.module.system.entity.SysMenu;
 import com.lingmao.scm.module.system.entity.SysRoleMenu;
 import com.lingmao.scm.module.system.mapper.SysMenuMapper;
 import com.lingmao.scm.module.system.mapper.SysRoleMenuMapper;
+import com.lingmao.scm.module.system.mapper.SysRoleMapper;
 import com.lingmao.scm.module.system.service.MenuService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -25,6 +26,7 @@ public class MenuServiceImpl implements MenuService {
 
     private final SysMenuMapper sysMenuMapper;
     private final SysRoleMenuMapper sysRoleMenuMapper;
+    private final SysRoleMapper sysRoleMapper;
 
     @Override
     public List<MenuVO> tree() {
@@ -46,6 +48,7 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @Transactional
     public Long create(MenuSaveReq req) {
+        sysRoleMapper.lockAuthorizationGraph();
         checkFields(req);
         SysMenu parent = getParent(req.getParentId());
         SysMenu menu = new SysMenu();
@@ -58,6 +61,7 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @Transactional
     public void update(Long id, MenuSaveReq req) {
+        sysRoleMapper.lockAuthorizationGraph();
         SysMenu menu = getById(id);
         checkFields(req);
         SysMenu parent = getParent(req.getParentId());
@@ -81,6 +85,7 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @Transactional
     public void delete(Long id) {
+        sysRoleMapper.lockAuthorizationGraph();
         getById(id);
         if (hasChildren(id)) {
             throw new BizException("有下级菜单，不能删除");

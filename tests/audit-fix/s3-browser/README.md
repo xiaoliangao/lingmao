@@ -47,3 +47,13 @@ python3 tests/audit-fix/s3-browser/production-kitting.py
 独立的 6 项回归挂载实际 `ProductionTable`、需求订单列表、需求订单详情和生产单详情。明确注入 HTTP 403 / 404 / 503，核对失败不能冒充“—”或“未算料”、重试不触发行导航、恢复后显示真实齐料标签；生产表还验证慢页加载提示、`net::ERR_ABORTED` 和迟到结果不覆盖新页。订单列表与详情恢复后的标签仍能跳转到对应算料单。
 
 HTTP 响应为合成契约，不能证明服务端 DataScope 或 board-only 权限已修复；真实权限回归由 S2 验证。结果、截图和原始“503 却显示 —”负向证据写入 `test-artifacts/full-audit/s3/p35-kitting/`；只将脚本和夹具提交，截图、日志继续作为 CI Artifact。
+
+## F02 公共标签列表筛选
+
+```sh
+python3 tests/audit-fix/s3-browser/tags.py --only filters
+```
+
+挂载实际款式列表、`FilterBar`、`TagFilterItem` 和 `useTable`，用明确的 46 条合成记录验证：两个标签要求同时包含，筛选从第二页回到第一页，24 条交集翻页后的总数和 ID 保持一致，清空恢复原查询，归档旧 ID 可查且不建立新关联，无标签查询权限时不请求标签选项。此用例也在 `tags.py` 默认完整执行集内，既有 CI 的公共标签 S3 命令会执行它。
+
+真实 PostgreSQL/HTTP 验证在 `S2TagFiltersHttpIT`：11 个独立列表、9 个 XLSX 导出、SELF、原有公司约束、状态计数、订单总计、归档身份、输入上限和有界 SQL。正常本地后端的浏览器链路由 `dev/ci/ui/fixtures/tag_flow.py` 的既有标签生命周期用例执行真实订单 AND 筛选和清空，使用 API 创建不同匹配集合，不拦截响应。这三层证据分别报告，浏览器未能启动不能记为通过。

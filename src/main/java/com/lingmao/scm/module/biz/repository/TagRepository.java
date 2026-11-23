@@ -130,6 +130,17 @@ public class TagRepository {
                 args.addValue("excluded", excluded), TAG_MAPPER);
     }
 
+    /** 筛选可以选择历史归档标签；仅查共享字典，不返回关联对象或命中数量。 */
+    public List<Tag> searchForFilter(String keyword, int size, Collection<Long> excludedIds) {
+        requireOptionSize(size);
+        List<Long> excluded = optionIds(excludedIds);
+        var args = parameters().addValue("prefix", literalPrefix(TagName.prefix(keyword)))
+                .addValue("limit", size).addValue("excluded", excluded);
+        String sql = "SELECT " + TAG_COLUMNS + " FROM biz_tag WHERE tenant_key=:tenant AND canonical LIKE :prefix ESCAPE '\\'"
+                + (excluded.isEmpty() ? "" : " AND id NOT IN (:excluded)") + " ORDER BY canonical,id LIMIT :limit";
+        return jdbc.query(sql, args, TAG_MAPPER);
+    }
+
     /** 仅库字典，不暴露目标信息。Service 仍需 biz:tag:list；允许回显归档标签。 */
     public List<Tag> findByIds(Collection<Long> ids) {
         List<Long> bounded = optionIds(ids);

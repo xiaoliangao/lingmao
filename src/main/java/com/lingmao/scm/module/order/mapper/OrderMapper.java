@@ -11,6 +11,7 @@ import com.lingmao.scm.module.order.dto.StyleOrderRowVO;
 import com.lingmao.scm.module.order.entity.Order;
 import com.lingmao.scm.security.DataScope;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -44,4 +45,10 @@ public interface OrderMapper extends BaseMapper<Order> {
     /** 改、删、动作之前锁住单头：和审核、变更写回排队 */
     @Select("SELECT * FROM ord_order WHERE id = #{id} FOR UPDATE")
     Order lockById(@Param("id") long id);
+
+    /** 算料创建/重算先锁全部来源；共享锁阻止非键主体/负责人更新，按 ID 统一排序。 */
+    @Select("<script>SELECT * FROM ord_order WHERE id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY id FOR SHARE</script>")
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
+    List<Order> lockMrpSources(@Param("ids") Collection<Long> ids);
 }

@@ -126,6 +126,7 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 @Service
 @RequiredArgsConstructor
 public class PurchaseOrderServiceImpl implements PurchaseOrderService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     /**
      * 状态转换表（docs/api/03 §2.2）。receive、return、follow 不改状态（到货状态由过账回写），写在这里是为了出按钮、查能不能做；
@@ -190,6 +191,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public PageResult<PurchaseRowVO> page(PurchaseQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PURCHASE_ORDER) : null);
         IPage<PurchaseRowVO> page = poMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
@@ -1021,6 +1023,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public byte[] export(PurchaseQuery query) {
+        tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PURCHASE_ORDER) : null);
         List<PurchaseRowVO> rows = poMapper.selectRowPage(new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false),

@@ -12,6 +12,14 @@ import java.util.List;
 @Mapper
 public interface SysRoleMapper extends BaseMapper<SysRole> {
 
+    /** 授权图变更的统一第一把锁；必须先于任何角色、菜单或用户行锁。 */
+    @Select("SELECT 1 FROM scm_lock_authorization_graph()")
+    int lockAuthorizationGraph();
+
+    /** 菜单整体替换和角色状态修改共用该行锁，随后才读关联、校验和写入。 */
+    @Select("SELECT id FROM sys_role WHERE id=#{id} AND NOT deleted FOR NO KEY UPDATE")
+    Long lockAuthorization(@Param("id") Long id);
+
     /** 用户的启用角色编码 */
     @Select("""
             SELECT r.code FROM sys_role r JOIN sys_user_role ur ON ur.role_id = r.id

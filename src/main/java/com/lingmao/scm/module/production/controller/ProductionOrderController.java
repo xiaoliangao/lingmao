@@ -81,7 +81,7 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
     /** 聚合查询开关仅由服务端构造，不能通过 GET 参数触发旁路或改变导出/COUNT 口径。 */
     @org.springframework.web.bind.annotation.InitBinder("productionQuery")
     void protectInternalQueryFields(org.springframework.web.bind.WebDataBinder binder) {
-        binder.setDisallowedFields("cutRiskFirst", "oldestFirst", "delayedFirst", "dueFirst", "factoryIds*", "orderNos*", "approvalIds*", "approvalScope*");
+        binder.setDisallowedFields("tagFilter*", "cutRiskFirst", "oldestFirst", "delayedFirst", "dueFirst", "factoryIds*", "orderNos*", "approvalIds*", "approvalScope*");
     }
 
     private final ProductionOrderService productionOrderService;

@@ -58,6 +58,17 @@
 
     <!-- 种类、加工厂、跟单、品牌、数据范围：看板的本月回货也用 -->
     <sql id="baseWhere">
+        <if test="q.tagFilter != null">
+            AND EXISTS (
+                SELECT 1 FROM biz_tag_object tag_object
+                WHERE tag_object.tenant_key=#{q.tagFilter.tenant} AND tag_object.object_type='PRODUCTION_ORDER'
+                  AND tag_object.object_id=p.id
+                  AND (SELECT COUNT(*) FROM biz_tag_link tag_link
+                       WHERE tag_link.tenant_key=tag_object.tenant_key AND tag_link.object_ref_id=tag_object.id
+                         AND tag_link.tag_id IN <foreach collection="q.tagFilter.ids" item="tagId" open="(" separator="," close=")">#{tagId}</foreach>
+                      )=#{q.tagFilter.size}
+            )
+        </if>
         <choose>
             <when test="q.auditForMe">
                 AND p.status = 'PENDING'

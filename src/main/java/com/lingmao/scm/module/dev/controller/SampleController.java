@@ -21,6 +21,12 @@ import java.util.Map;
 @RequestMapping("/api/samples")
 @RequiredArgsConstructor
 public class SampleController extends IdempotencyReplayGuard {
+    /** 标签内部命名空间与已验证条件不能从请求绑定。 */
+    @org.springframework.web.bind.annotation.InitBinder("sampleQuery")
+    void protectTagFilter(org.springframework.web.bind.WebDataBinder binder) {
+        binder.setDisallowedFields("tagFilter*");
+    }
+
     private final SampleService samples;
     @GetMapping @PreAuthorize("hasAuthority('dev:sample:list')")
     public R<PageResult<SampleRowVO>> page(@Valid SampleQuery query){return R.ok(samples.page(query));}

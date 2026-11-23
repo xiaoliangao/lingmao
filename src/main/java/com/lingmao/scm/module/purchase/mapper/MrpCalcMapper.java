@@ -10,6 +10,7 @@ import com.lingmao.scm.security.DataScope;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
@@ -44,11 +45,16 @@ public interface MrpCalcMapper extends BaseMapper<MrpCalc> {
     IPage<MrpCalcRowVO> selectRowPage(IPage<MrpCalcRowVO> page, @Param("q") MrpCalcQuery query, @Param("codes") List<String> codes,
                                       @Param("scope") DataScope scope);
 
-    record OrderHead(Long id, String no, String status, LocalDate commitDate) {
+    record OrderHead(Long id, String no, String status, LocalDate commitDate, Long companyId) {
     }
 
-    /** 订单的单号、状态、承诺交期 */
+    /** 订单的单号、状态、承诺交期和真实主体；不能从请求头推断算料单归属。 */
     List<OrderHead> selectOrderHeads(@Param("ids") Collection<Long> ids);
+
+    /** 直接读完整关联 ID；重算锁头后必须重新执行，不能命中首次预读的会话缓存。 */
+    @Select("SELECT order_id FROM mrp_calc_order WHERE calc_id=#{calcId} ORDER BY order_id")
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
+    List<Long> selectSourceOrderIds(@Param("calcId") long calcId);
 
     /**
      * 订单的每个 SKU × 它锁定的生产 BOM 的每一行：件数、这个尺码的单件用量、损耗、物料来源、用哪个物料 SKU（按配料方式对颜色、尺码）。

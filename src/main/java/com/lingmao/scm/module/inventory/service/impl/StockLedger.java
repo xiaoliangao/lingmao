@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
 /**
  * 过账引擎（架构 §5.2）：入库单、出库单、盘点单审核时把自己变成一张"变动"清单交给这里，反审核交反过来的那张。
  * <ol>
- *   <li>同仓同 SKU 的几笔合成一笔，按（仓库、SKU）排好序再改：两张单同时过账，加锁的顺序一样，不会死锁</li>
+ *   <li>同仓同 SKU 的几笔合成一笔，按（SKU、仓库）排好序再改：两张单同时过账，加锁的顺序一样，不会死锁</li>
  *   <li>加的：没有库存行就建、有就加（一条 INSERT … ON CONFLICT）；减的：条件更新 qty + 变动 >= 0，不够就不改</li>
  *   <li>不够的不马上停，整张单都试一遍、收集起来一起报 1001；事务回滚，前面加减成功的也一起退掉</li>
  *   <li>都够了再写库存日志：一笔一条，不合并（同 SKU 几行缸号不同，要能按缸号查），结存按这一笔之后算</li>
@@ -46,7 +46,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 class StockLedger {
 
-    private static final Comparator<Key> ORDER = Comparator.comparingLong(Key::warehouseId).thenComparingLong(Key::skuId);
+    // 当前引擎的其余完整余额键维度固定为 OWN / 0 / 0，SKU 优先后按仓库形成一致全序。
+    private static final Comparator<Key> ORDER = Comparator.comparingLong(Key::skuId).thenComparingLong(Key::warehouseId);
 
     private final StockMapper stockMapper;
     private final StockLogMapper stockLogMapper;

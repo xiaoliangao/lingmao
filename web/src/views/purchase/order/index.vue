@@ -7,6 +7,7 @@ import BatchBar from '@/components/BatchBar.vue'
 import type { BatchAction } from '@/components/batchBar'
 import DateRange from '@/components/DateRange.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import TagFilterItem from '@/components/tags/TagFilterItem.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -63,6 +64,7 @@ const { query, page, size, pageSizes, list, total, loading, load, search, export
   normalize: (query) => statusQuery(query),
   fetch: purchaseApi.page,
   query: {
+    tagIds: [] as string[],
     keyword: '',
     statusTab: pickStatus(route.query.status),
     purchaseType: undefined as PurchaseType | undefined,
@@ -102,7 +104,7 @@ function onDateChange(val: [string, string] | null | undefined) {
 }
 
 const filtered = computed(
-  () => !!(query.keyword.trim() || query.statusTab || query.purchaseType || query.supplierId || query.buyerId || query.orderDateFrom),
+  () => !!(query.tagIds.length || query.keyword.trim() || query.statusTab || query.purchaseType || query.supplierId || query.buyerId || query.orderDateFrom),
 )
 const emptyText = computed(() => {
   if (filtered.value) return '没有符合条件的采购单：换个状态，或者清空筛选'
@@ -166,6 +168,7 @@ async function exportPicked() {
     </PageHeader>
 
     <FilterBar v-model:keyword="query.keyword" placeholder="采购单号、供应商、物料编码/名称、订单号、款号" :columns="cols" @search="search">
+      <TagFilterItem v-model="query.tagIds" />
       <template #left>
         <el-segmented v-model="query.statusTab" :options="STATUS_OPTIONS" @change="search" />
       </template>

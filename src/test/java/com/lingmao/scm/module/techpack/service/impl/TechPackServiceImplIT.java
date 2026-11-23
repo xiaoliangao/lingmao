@@ -326,6 +326,33 @@ class TechPackServiceImplIT {
         assertThatThrownBy(() -> craftStandardService.saveTexts(texts)).isInstanceOf(BizException.class);
     }
 
+    /** 工序单价保留数据库的四位精度；加工费合计才按金额舍入，隐藏价格的导出仍不泄露工价。 */
+    @Test
+    void exportPdfKeepsSubCentProcessPricesAndRoundsOnlyTotals() throws Exception {
+        Fixture f = fixture();
+        long id = techPackService.create(f.style, PackStage.PROD);
+        TechPackSaveReq req = saveReq(0, f, null);
+        ProcessForm subCent = new ProcessForm();
+        subCent.setName("精细工序单价");
+        subCent.setPrice(new BigDecimal("0.0050"));
+        ProcessForm fourPlaces = new ProcessForm();
+        fourPlaces.setName("四位小数工价");
+        fourPlaces.setPrice(new BigDecimal("1.2345"));
+        req.setProcesses(List.of(subCent, fourPlaces));
+        techPackService.save(id, req);
+
+        assertThat(jdbcTemplate.queryForList("SELECT price FROM tp_process WHERE tech_pack_id=? ORDER BY seq",
+                BigDecimal.class, id)).containsExactly(new BigDecimal("0.0050"), new BigDecimal("1.2345"));
+        TechPackPdfService.PdfFile priced = pdfService.export(id, f.colorA, true, false);
+        Path evidence = Path.of(System.getProperty("pack.price.evidence", "test-artifacts/full-audit/p54/process-unit-prices.pdf"));
+        Files.createDirectories(evidence.getParent());
+        Files.write(evidence, priced.content());
+        String text = flat(priced.content());
+        assertThat(text).contains("精细工序单价", "0.005", "四位小数工价", "1.2345", "1.24");
+        String unpriced = flat(pdfService.export(id, f.colorA, false, false).content());
+        assertThat(unpriced).doesNotContain("精细工序单价", "0.005", "四位小数工价", "1.2345");
+    }
+
     /**
      * 规则（PRD §6.4.6、架构 §11.1）：导出的工艺单读回文字——不含价格时没有单价、单件成本、工序工价；草稿印"草稿"；
      * 物料清单按颜色出，SKU 写成"物料名-颜色"；工艺标准的图片一张一页附在后面，不附就没有；只出一个颜色时没有别的颜色；每次导出记一条操作记录

@@ -4,7 +4,7 @@ from pathlib import Path
 from redaction import redact_text
 
 roots = [Path('target/surefire-reports'), Path('target/failsafe-reports'), Path('test-artifacts'),
-         Path('target/test-artifacts'), Path('target/a1-production'), Path('target/a2-production'),
+         Path('target/test-artifacts'), Path('target/a1-production'), Path('target/a1-mrp-company'), Path('target/a2-production'),
          Path('target/a1-fg'), Path('target/a1-tags'), Path('target/a2-tags'),
          Path('target/a2-tags-review'), Path('target/a2-sample'), Path('target/audit-query-capacity.json')]
 for root in roots:

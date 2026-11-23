@@ -91,6 +91,7 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 @Service
 @RequiredArgsConstructor
 public class CountServiceImpl implements CountService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     /** 状态转换表（docs/api/04 §2.2）。remove、void 都从草稿来，过没过过账决定给哪个 */
     static final StatusFlow<DocStatus> FLOW = StatusFlow.of(DocStatus.class)
@@ -130,6 +131,7 @@ public class CountServiceImpl implements CountService {
 
     @Override
     public PageResult<CountRowVO> page(CountQuery query) {
+        tagFilters.prepare(query);
         IPage<CountRowVO> page = countMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()));
         fillRows(page.getRecords());
         return PageResult.of(page);
@@ -790,6 +792,7 @@ public class CountServiceImpl implements CountService {
 
     @Override
     public byte[] export(CountQuery query) {
+        tagFilters.prepare(query);
         Page<CountRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())).getRecords();
         com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, CountRowVO::getId, CountRowVO::getCompanyId);

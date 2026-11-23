@@ -15,6 +15,7 @@ import com.lingmao.scm.module.biz.dto.TagReplaceReq;
 import com.lingmao.scm.module.biz.dto.TagVO;
 import com.lingmao.scm.module.biz.entity.TagObjectType;
 import com.lingmao.scm.module.biz.service.TagService;
+import com.lingmao.scm.module.biz.service.TagFilterService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -33,7 +34,8 @@ import java.util.List;
 @RequestMapping("/api/tags")
 public class TagController extends IdempotencyReplayGuard {
     private final TagService service;
-    public TagController(TagService service) { this.service = service; }
+    private final TagFilterService filters;
+    public TagController(TagService service, TagFilterService filters) { this.service = service; this.filters = filters; }
 
     @InitBinder void queryFields(WebDataBinder binder) {
         binder.setAllowedFields("keyword", "size", "includeIds", "includeIds[*]", "page");
@@ -43,6 +45,11 @@ public class TagController extends IdempotencyReplayGuard {
     @PreAuthorize("hasAuthority('biz:tag:list')")
     @Operation(summary = "公共标签字面前缀选项；含指定历史 ID，总量最多 100")
     public R<List<TagVO>> options(@Valid TagQuery query) { return R.ok(service.options(query)); }
+
+    @GetMapping("/filter-options")
+    @PreAuthorize("hasAuthority('biz:tag:list')")
+    @Operation(summary = "列表筛选标签选项，包含归档历史标签；总量最多 100")
+    public R<List<TagVO>> filterOptions(@Valid TagQuery query) { return R.ok(filters.options(query)); }
 
     @GetMapping("/objects/{type}/{id:\\d+}")
     @PreAuthorize("isAuthenticated()")

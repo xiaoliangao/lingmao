@@ -291,8 +291,14 @@ class S4TagAuditHttpIT extends A2BusinessFixture {
         JsonNode correctCompany = history(reader, "biz_tag_object", object, false, f.otherCompany());
         assertThat(correctCompany.get(0).path("diff").path("company_id").path("new").asText()).isEqualTo(Long.toString(f.otherCompany()));
         jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='order:order:list')", reader.role());
-        assertThat(call(reader, "GET", auditPath("biz_tag_object", object, false), null, f.otherCompany()).path("code").intValue()).isEqualTo(403);
-        assertThat(call(reader, "GET", auditPath("ord_order", target.id(), true) + "&beforeId=1", null, f.otherCompany()).path("code").intValue()).isEqualTo(403);
+        // P12：旧会话已撤销，应先 401；重新登录后继续验证领域守卫的 403，不能只放宽旧断言。
+        assertThat(call(reader, "GET", auditPath("biz_tag_object", object, false), null, f.otherCompany()).path("code").intValue()).isEqualTo(401);
+        assertThat(call(reader, "GET", auditPath("ord_order", target.id(), true) + "&beforeId=1", null, f.otherCompany()).path("code").intValue()).isEqualTo(401);
+        String username = jdbc.queryForObject("SELECT username FROM sys_user WHERE id=?", String.class, reader.id());
+        Account currentReader = new Account(reader.id(), reader.role(), ok(null, "POST", "/api/auth/login",
+                map("username", username, "password", "A2-Business-123456"), null).asText());
+        assertThat(call(currentReader, "GET", auditPath("biz_tag_object", object, false), null, f.otherCompany()).path("code").intValue()).isEqualTo(403);
+        assertThat(call(currentReader, "GET", auditPath("ord_order", target.id(), true) + "&beforeId=1", null, f.otherCompany()).path("code").intValue()).isEqualTo(403);
         evidence("replay-and-current-access.json", map("first", first, "replay", replay, "firstStored", stored(firstTrace),
                 "replayStored", stored(replayTrace), "replayTimeline", timeline(replayTrace), "replayOperation", operations(replayTrace),
                 "oldCompanyReplay", refusedReplay, "newCompanyHistory", correctCompany));

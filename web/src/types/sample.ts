@@ -16,6 +16,8 @@ export type MakeWay = 'INTERNAL'|'EXTERNAL'
 export type ReviewResult = 'PASS'|'REVISE'|'ELIMINATE'
 export interface NamedId { id:Id; name:string }
 export interface SampleQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   companyId:Id; page?:number; size?:number; keyword?:string; status?:SampleShowStatus;
   categoryId?:Id; year?:number; season?:string; brand?:string; designerId?:Id;
   factoryId?:Id; makerId?:Id; nodeCode?:string; late?:boolean;

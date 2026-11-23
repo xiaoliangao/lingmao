@@ -9,6 +9,8 @@ import type { PageParams } from './system'
 const base = '/api/styles'
 
 export interface StyleQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   /** 款号、名称、花名、品名；有空格 = 按几个款号查 */
   keyword?: string
   /** 含下级 */

@@ -72,6 +72,7 @@ import java.util.stream.IntStream;
 @Service
 @RequiredArgsConstructor
 public class MaterialServiceImpl implements MaterialService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     static final String TYPE_DICT = "material_type";
     static final String UNIT_DICT = "unit";
@@ -101,6 +102,7 @@ public class MaterialServiceImpl implements MaterialService {
 
     @Override
     public PageResult<MaterialListVO> page(MaterialQuery query) {
+        tagFilters.prepare(query);
         query.setKeyword(Texts.trim(query.getKeyword()));
         IPage<MaterialListVO> page = materialMapper.selectListPage(query.toPage(), query, Keywords.codes(query.getKeyword()));
         List<MaterialListVO> rows = page.getRecords();
@@ -431,6 +433,7 @@ public class MaterialServiceImpl implements MaterialService {
 
     @Override
     public byte[] export(MaterialQuery query) {
+        tagFilters.prepare(query);
         query.setKeyword(Texts.trim(query.getKeyword()));
         List<Long> ids = materialMapper.selectIds(query, Keywords.codes(query.getKeyword()), Excel.MAX_EXPORT_ROWS + 1);
         if (ids.size() > Excel.MAX_EXPORT_ROWS) {

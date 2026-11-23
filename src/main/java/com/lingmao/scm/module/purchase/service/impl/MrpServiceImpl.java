@@ -12,6 +12,7 @@ import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
+import com.lingmao.scm.common.scope.CompanyContext;
 import com.lingmao.scm.module.basic.dto.MaterialPurchaseInfo;
 import com.lingmao.scm.module.basic.dto.MaterialSkuBrief;
 import com.lingmao.scm.module.basic.service.MaterialService;
@@ -98,12 +99,14 @@ import static com.lingmao.scm.module.purchase.entity.MrpStatus.DRAFT;
  * 重新算料（§3.2.9）：草稿就地重算；已确认的另算一张草稿（prevCalcId 指着它），新单不把上一张的占用当"别人的"，
  * 上一张自己生成的采购行也不当可用的（确认时整条转过来，见 SupplyBook 类注释）。新单确认时上一张关闭（RECALC）。
  * <p>
- * 锁的顺序：算料单（按 id 从小到大）→ 物料 SKU 的咨询锁 → 采购单。采购单改、删、作废时先锁它的算料单再锁采购单（lockCalcsOfItems），
+ * 创建/重算先按 id 共享锁全部来源订单，再锁算料单；锁头后重新核对完整来源 ID 集合，不能倒过来补抢订单锁。
+ * 后续锁的顺序：算料单（按 id 从小到大）→ 物料 SKU 的咨询锁 → 采购单。采购单改、删、作废时先锁它的算料单再锁采购单（lockCalcsOfItems），
  * 免得两边互相等
  */
 @Service
 @RequiredArgsConstructor
 public class MrpServiceImpl implements MrpService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     /**
      * 状态转换表（docs/api/03 §2.1）。edit 改行（草稿四格，已确认只能换供应商）；toPurchase 生成采购单（草稿先确认）；
@@ -154,6 +157,7 @@ public class MrpServiceImpl implements MrpService {
 
     @Override
     public PageResult<MrpCalcRowVO> page(MrpCalcQuery query) {
+        tagFilters.prepare(query);
         IPage<MrpCalcRowVO> page = calcMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()));
         List<MrpCalcRowVO> rows = page.getRecords();
@@ -486,10 +490,13 @@ public class MrpServiceImpl implements MrpService {
     @Override
     @Transactional
     public DocSaved create(MrpCreateReq req) {
+        engine.lockSources(req.getOrderIds());
         List<MrpCalcMapper.OrderHead> heads = engine.checkedHeads(req.getOrderIds());
+        long companyId = sourceCompany(heads);
         MrpEngine.Result r = engine.compute(heads, Set.of(), null);
         MrpCalc c = new MrpCalc();
         c.setNo(serialNoGenerator.daily(BizType.MRP_CALC.getPrefix()));
+        c.setCompanyId(companyId);
         c.setStatus(DRAFT);
         c.setNeedDate(r.needDate());
         c.setInputSnapshot(r.snapshot());
@@ -499,6 +506,27 @@ public class MrpServiceImpl implements MrpService {
         docLogService.add(BizType.MRP_CALC, c.getId(), "create",
                 "订单 " + heads.stream().map(MrpCalcMapper.OrderHead::no).collect(Collectors.joining("、")));
         return new DocSaved(c.getId(), c.getNo(), 0);
+    }
+
+    /** 完整来源必须证明同一非空主体；页面主体只作核对，不能补造历史归属。 */
+    private static long sourceCompany(List<MrpCalcMapper.OrderHead> heads) {
+        if (heads.isEmpty() || heads.stream().anyMatch(h -> h.companyId() == null || h.companyId() <= 0)) {
+            throw new BizException(400, "来源订单主体不完整，无法证明算料单主体，请核对原单");
+        }
+        Long companyId = heads.getFirst().companyId();
+        if (heads.stream().anyMatch(h -> !Objects.equals(companyId, h.companyId()))) {
+            throw new BizException(400, "不同主体的订单请分别算料");
+        }
+        CompanyContext.target(companyId);
+        return companyId;
+    }
+
+    /** 仅历史空主体可回填；已有归属冲突不静默覆盖。调用方持有头锁并核对请求版本。 */
+    private static void checkCompany(MrpCalc current, long companyId) {
+        CompanyContext.target(current.getCompanyId());
+        if (current.getCompanyId() != null && !Objects.equals(current.getCompanyId(), companyId)) {
+            throw new BizException(ErrorCodes.STATE_CHANGED, "算料单主体与完整来源订单不一致，请核对原单");
+        }
     }
 
     /** 结果行和它们分到的在途存进去 */
@@ -537,18 +565,26 @@ public class MrpServiceImpl implements MrpService {
     @Override
     @Transactional
     public DocSaved recalc(long id, DocActionReq req) {
+        // 来源始终在算料头之前锁；预读只用于锁计划，锁头后再比较精确集合，不能拿旧关联作证明。
+        List<Long> orderIds = calcMapper.selectSourceOrderIds(id);
+        engine.lockSources(orderIds);
         MrpCalc c = lock(id);
         FLOW.next("recalc", c.getStatus(), c.getStatus());
         checkVersion(c, req.version());
-        List<Long> orderIds = calcOrders(List.of(id)).getOrDefault(id, List.of()).stream().map(MrpCalcMapper.CalcOrder::orderId).toList();
+        if (!new HashSet<>(orderIds).equals(new HashSet<>(calcMapper.selectSourceOrderIds(id)))) {
+            throw new BizException(ErrorCodes.STATE_CHANGED, STALE);
+        }
+        List<MrpCalcMapper.OrderHead> all = c.getStatus() == DRAFT ? engine.checkedHeads(orderIds) : engine.sourceHeads(orderIds);
+        long companyId = sourceCompany(all);
+        checkCompany(c, companyId);
         if (c.getStatus() == DRAFT) {
-            List<MrpCalcMapper.OrderHead> heads = engine.checkedHeads(orderIds);
-            MrpEngine.Result r = engine.compute(heads, excludedOf(c), c.getPrevCalcId());
+            MrpEngine.Result r = engine.compute(all, excludedOf(c), c.getPrevCalcId());
             transitMapper.deleteByCalc(id);
             itemMapper.deleteByCalc(id);
             insertRows(id, r.rows());
             c.setNeedDate(r.needDate());
             c.setInputSnapshot(r.snapshot());
+            c.setCompanyId(companyId);
             if (calcMapper.update(c, Updates.replaceById(c)
                     .eq("version", req.version())
                     .setSql("version = version + 1")) == 0) {
@@ -563,14 +599,22 @@ public class MrpServiceImpl implements MrpService {
             throw new BizException("已经有一张重新算料的草稿 " + existing.getNo() + "，在那张上接着改");
         }
         // 订单后来结案、取消的不再算；都没了就不用重算，关掉这张
-        List<MrpCalcMapper.OrderHead> all = calcMapper.selectOrderHeads(orderIds);
         List<MrpCalcMapper.OrderHead> heads = all.stream().filter(h -> MrpEngine.CALC_ORDER_STATUS.contains(h.status())).toList();
         if (heads.isEmpty()) {
             throw new BizException("这张算料单的订单都结案或取消了，不用重新算料，关闭它就行");
         }
         MrpEngine.Result r = engine.compute(heads, Set.of(id), id);
+        if (c.getCompanyId() == null) {
+            if (calcMapper.update(new MrpCalc(), new LambdaUpdateWrapper<MrpCalc>()
+                    .set(MrpCalc::getCompanyId, companyId).setSql("version = version + 1")
+                    .eq(MrpCalc::getId, id).eq(MrpCalc::getStatus, CONFIRMED)
+                    .eq(MrpCalc::getVersion, req.version()).isNull(MrpCalc::getCompanyId)) != 1) {
+                throw new BizException(ErrorCodes.STATE_CHANGED, STALE);
+            }
+        }
         MrpCalc n = new MrpCalc();
         n.setNo(serialNoGenerator.daily(BizType.MRP_CALC.getPrefix()));
+        n.setCompanyId(companyId);
         n.setPrevCalcId(id);
         n.setStatus(DRAFT);
         n.setNeedDate(r.needDate());

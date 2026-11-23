@@ -107,7 +107,8 @@ class S2SampleHttpIT extends S2SampleFixture {
     @Test void companyMovingUpdateReplaysUnderItsOriginalCompanyAndRechecksTheCurrentOwner() throws Exception {
         try {
             Fixture f=fixture();Account admin=sampleActor(f);
-            Account mover=custom(f.company(),"SELF","dev:sample:list","dev:sample:edit","techpack:cost:query");
+            CookieSession originalSession=cookieSession(custom(f.company(),"SELF","dev:sample:list","dev:sample:edit","techpack:cost:query"));
+            Account mover=originalSession.account();
             var body=sampleBody(f,mover);body.put("patternMakerId",admin.id());
             long sample=id(createSample(admin,body).path("id"));
             var update=editable(body);update.put("version",0);update.put("companyId",f.otherCompany());
@@ -129,9 +130,17 @@ class S2SampleHttpIT extends S2SampleFixture {
             var reassigned=new LinkedHashMap<>(update);reassigned.put("version",1);reassigned.put("designerId",admin.id());
             sampleOk(admin,"PUT","/api/samples/"+sample+"?companyId="+f.otherCompany(),reassigned,f.otherCompany());
             assertThat(sampleCall(mover,"PUT",path,update,f.company(),key).path("code").intValue()).isEqualTo(404);
-            jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='dev:sample:edit')",mover.role());
-            assertThat(sampleCall(mover,"PUT",path,update,f.company(),key).path("code").intValue()).isEqualTo(403);
+            String beforeSample=jdbc.queryForObject("SELECT row_to_json(s)::text FROM dev_sample s WHERE id=?",String.class,sample);
+            String beforeReceipt=storedReceipt(mover,key);
+            assertThat(jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='dev:sample:edit')",mover.role())).isPositive();
+            assertRejected(raw(mover,"PUT",path,update,f.company(),key),401,401);
+            assertRejected(refreshCookieSession(originalSession),401,401);
+            Account fresh=cookieSession(mover).account();
+            assertRejected(raw(fresh,"PUT",path,update,f.company(),key),200,403);
             assertThat(jdbc.queryForObject("SELECT version FROM dev_sample WHERE id=?",Integer.class,sample)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT row_to_json(s)::text FROM dev_sample s WHERE id=?",String.class,sample)).isEqualTo(beforeSample);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM biz_doc_log WHERE doc_type='SAMPLE' AND doc_id=? AND action='update'",Integer.class,sample)).isEqualTo(2);
+            assertThat(storedReceipt(fresh,key)).isEqualTo(beforeReceipt);
         } finally {saveSampleHttp("company-update-replay-owner");}
     }
 
@@ -167,7 +176,8 @@ class S2SampleHttpIT extends S2SampleFixture {
 
     @Test void twentyConcurrentCreateRequestsUseOneReceiptAndReplayRechecksCurrentPermissionAndCompany() throws Exception {
         try {
-            Fixture f=fixture();Account actor=sampleActor(f);var body=sampleBody(f,actor);String key=UUID.randomUUID().toString();
+            Fixture f=fixture();CookieSession originalSession=cookieSession(sampleActor(f));Account actor=originalSession.account();
+            var body=sampleBody(f,actor);String key=UUID.randomUUID().toString();
             var ready=new CountDownLatch(20);var start=new CountDownLatch(1);var replies=new ArrayList<JsonNode>();
             try(var pool=Executors.newVirtualThreadPerTaskExecutor()) {
                 var futures=new ArrayList<java.util.concurrent.Future<JsonNode>>();
@@ -184,8 +194,19 @@ class S2SampleHttpIT extends S2SampleFixture {
             var different=new LinkedHashMap<>(body);different.put("name","S2 changed body");
             assertThat(sampleCall(actor,"POST","/api/samples",different,f.company(),key).path("code").intValue()).isEqualTo(1002);
             assertThat(sampleCall(actor,"POST","/api/samples",body,f.otherCompany(),key).path("code").intValue()).isEqualTo(409);
-            jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='dev:sample:add')",actor.role());
-            assertThat(sampleCall(actor,"POST","/api/samples",body,f.company(),key).path("code").intValue()).isEqualTo(403);
+            String beforeSample=jdbc.queryForObject("SELECT row_to_json(s)::text FROM dev_sample s WHERE id=?",String.class,sample);
+            String beforeReceipt=storedReceipt(actor,key);
+            long beforeLogs=jdbc.queryForObject("SELECT count(*) FROM biz_doc_log WHERE doc_type='SAMPLE' AND doc_id=?",Long.class,sample);
+            assertThat(jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='dev:sample:add')",actor.role())).isPositive();
+            assertRejected(raw(actor,"POST","/api/samples",body,f.company(),key),401,401);
+            assertRejected(refreshCookieSession(originalSession),401,401);
+            Account fresh=cookieSession(actor).account();
+            assertRejected(raw(fresh,"POST","/api/samples",body,f.company(),key),200,403);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM dev_sample WHERE company_id=? AND name=?",Integer.class,f.company(),body.get("name"))).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM dev_sample_order WHERE sample_id=?",Integer.class,sample)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT row_to_json(s)::text FROM dev_sample s WHERE id=?",String.class,sample)).isEqualTo(beforeSample);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM biz_doc_log WHERE doc_type='SAMPLE' AND doc_id=?",Long.class,sample)).isEqualTo(beforeLogs);
+            assertThat(storedReceipt(fresh,key)).isEqualTo(beforeReceipt);
         } finally {saveSampleHttp("twenty-idempotent-create");}
     }
 

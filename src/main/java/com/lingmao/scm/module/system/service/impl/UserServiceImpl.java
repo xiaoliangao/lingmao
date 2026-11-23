@@ -170,6 +170,8 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void assignRoles(Long id, List<Long> roleIds, Long currentUserId) {
+        sysRoleMapper.lockAuthorizationGraph();
+        sysUserMapper.lockAuthorization(id);
         getEntity(id);
         List<Long> distinctIds = roleIds.stream().distinct().toList();
         if (Objects.equals(id, currentUserId)) {
@@ -182,6 +184,9 @@ public class UserServiceImpl implements UserService {
                 throw new BizException("有角色不存在或已删除");
             }
         }
+        List<Long> existing = sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                .eq(SysUserRole::getUserId, id)).stream().map(SysUserRole::getRoleId).toList();
+        if (new java.util.HashSet<>(existing).equals(new java.util.HashSet<>(distinctIds))) return;
         sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
                 .eq(SysUserRole::getUserId, id));
         if (!distinctIds.isEmpty()) {

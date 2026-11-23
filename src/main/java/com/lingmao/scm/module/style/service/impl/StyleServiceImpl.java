@@ -89,6 +89,7 @@ import static com.lingmao.scm.module.style.entity.StyleStatus.ENABLED;
 @Service
 @RequiredArgsConstructor
 public class StyleServiceImpl implements StyleService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     /** 启用要有启用的 SKU（不在表里，enable 里查） */
     static final StatusFlow<StyleStatus> FLOW = StatusFlow.of(StyleStatus.class)
@@ -126,6 +127,7 @@ public class StyleServiceImpl implements StyleService {
 
     @Override
     public PageResult<StyleListVO> page(StyleQuery query) {
+        tagFilters.prepare(query);
         query.setKeyword(trim(query.getKeyword()));
         IPage<StyleListVO> page = styleMapper.selectListPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 categories.withDescendants(query.getCategoryId()));
@@ -512,6 +514,7 @@ public class StyleServiceImpl implements StyleService {
 
     @Override
     public byte[] export(StyleQuery query) {
+        tagFilters.prepare(query);
         query.setKeyword(trim(query.getKeyword()));
         List<Long> ids = styleMapper.selectIds(query, Keywords.codes(query.getKeyword()),
                 categories.withDescendants(query.getCategoryId()), Excel.MAX_EXPORT_ROWS + 1);

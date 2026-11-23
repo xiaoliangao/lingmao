@@ -89,6 +89,8 @@ export interface OrderRow {
 }
 
 export interface OrderQuery {
+  /** 同时包含全部所选公共标签；最多 30 个稳定 ID。 */
+  tagIds?: string[]
   /** 当前待我审批；忽略 mine / owner，仍要求模块列表权限 */
   auditForMe?: boolean
   /** 单号、合同号、款号；一次查几个（README §3.2）时单号、款号精确查 */

@@ -78,7 +78,7 @@ class MaterialServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        materialService = new MaterialServiceImpl(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
+        materialService = new MaterialServiceImpl(org.mockito.Mockito.mock(com.lingmao.scm.module.biz.service.TagFilterService.class), materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
                 serialNoGenerator, new DictChecks(dictDataService), new TradeFeature(false),
                 attachmentService, docLogService, materialImport, dictDataService);
     }

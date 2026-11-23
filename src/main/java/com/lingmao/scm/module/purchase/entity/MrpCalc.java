@@ -13,7 +13,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 /**
- * 算料单（数据库设计 §11.1，docs/api/03 §2.1）。auditBy、auditTime 是确认人、确认时间；不分主体（companyId 留空）。
+ * 算料单（数据库设计 §11.1，docs/api/03 §2.1）。auditBy、auditTime 是确认人、确认时间；
+ * companyId 由完整来源订单证明，历史空值只在成功重算时按版本回填，不从默认公司猜补。
  * 数字都在结果行上（MrpCalcItem），是算料时存下的快照，草稿里能改
  */
 @Data

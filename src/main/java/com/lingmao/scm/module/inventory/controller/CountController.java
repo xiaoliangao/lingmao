@@ -51,6 +51,12 @@ import java.util.List;
 @RequestMapping("/api/inventory-counts")
 @RequiredArgsConstructor
 public class CountController extends IdempotencyReplayGuard {
+    /** 标签内部命名空间与已验证条件不能从请求绑定。 */
+    @org.springframework.web.bind.annotation.InitBinder("countQuery")
+    void protectTagFilter(org.springframework.web.bind.WebDataBinder binder) {
+        binder.setDisallowedFields("tagFilter*");
+    }
+
 
     private final CountService countService;
     private final DocCommonService docCommonService;

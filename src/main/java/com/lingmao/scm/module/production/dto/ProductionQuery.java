@@ -2,7 +2,7 @@ package com.lingmao.scm.module.production.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lingmao.scm.common.doc.DocStatus;
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -14,7 +14,7 @@ import java.util.List;
 /** 外发加工单、成品采购单列表（docs/api/05 §3.2.1）；看板列表也用它（kind 不传 = 两种都看） */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ProductionQuery extends PageQuery {
+public class ProductionQuery extends TaggedPageQuery {
     /** OUTSOURCE / BUY：两个菜单的列表必传 */
     private String kind;
     /** 单号、订单号、款号、款名、加工厂；一次查几个时单号、订单号、款号精确查 */

@@ -36,17 +36,29 @@ class S2SessionModeHttpIT extends A2BusinessFixture {
 
     @Test void accessOnlyPasswordChangeRevokesOwnSessionsWithoutWritingCookies() throws Exception {
         Fixture f = fixture(); Account account = custom(f.company(), "SELF");
+        CookieSession sibling = cookieSession(account);
+        long beforeFamilies = families(account.id());
+        var login = auth("POST", "/login", credentials(account), "access-only", null, null);
+        assertThat(node(login).path("code").intValue()).isZero();
+        assertThat(login.headers().allValues("Set-Cookie")).isEmpty();
+        assertThat(families(account.id())).isEqualTo(beforeFamilies);
+        Account accessOnly = new Account(account.id(), account.role(), node(login).path("data").stringValue());
+        long authorizedVersion = sessionVersion(account.id());
         var changed = auth("PUT", "/password", Map.of("oldPassword", "A2-Business-123456", "newPassword", "S2-New-Password-123456"),
-                "access-only", account.token(), null);
+                "access-only", accessOnly.token(), null);
         assertThat(node(changed).path("code").intValue()).isZero();
         assertThat(changed.headers().allValues("Set-Cookie")).isEmpty();
-        assertThat(raw(account, "GET", "/api/auth/me", null, null, null).statusCode()).isEqualTo(401);
-        assertThat(jdbc.queryForObject("SELECT session_version FROM sys_user WHERE id=?", Long.class, account.id())).isEqualTo(1);
+        assertRejected(raw(accessOnly, "GET", "/api/auth/me", null, null, null), 401, 401);
+        assertRejected(raw(account, "GET", "/api/auth/me", null, null, null), 401, 401);
+        assertRejected(raw(sibling.account(), "GET", "/api/auth/me", null, null, null), 401, 401);
+        assertRejected(refreshCookieSession(sibling), 401, 401);
+        assertThat(sessionVersion(account.id())).isEqualTo(authorizedVersion + 1);
     }
 
     @Test void unknownModeAndAccessOnlyRefreshFailBeforeAnyCookieMutation() throws Exception {
         Fixture f = fixture(); Account account = custom(f.company(), "SELF");
         long before = families(account.id());
+        long authorizedVersion = sessionVersion(account.id());
         var invalidLogin = auth("POST", "/login", credentials(account), "invalid", null, null);
         assertThat(node(invalidLogin).path("code").intValue()).isEqualTo(400);
         assertThat(invalidLogin.headers().allValues("Set-Cookie")).isEmpty();
@@ -64,10 +76,13 @@ class S2SessionModeHttpIT extends A2BusinessFixture {
                 "invalid", account.token(), null);
         assertThat(node(unknownPassword).path("code").intValue()).isEqualTo(400);
         assertThat(unknownPassword.headers().allValues("Set-Cookie")).isEmpty();
-        assertThat(jdbc.queryForObject("SELECT session_version FROM sys_user WHERE id=?", Long.class, account.id())).isZero();
+        assertThat(sessionVersion(account.id())).isEqualTo(authorizedVersion);
+        assertThat(families(account.id())).isEqualTo(before);
+        assertThat(node(raw(account, "GET", "/api/auth/me", null, null, null)).path("code").intValue()).isZero();
     }
 
     private long families(long user) { return jdbc.queryForObject("SELECT count(*) FROM sys_refresh_session WHERE user_id=?", Long.class, user); }
+    private long sessionVersion(long user) { return jdbc.queryForObject("SELECT session_version FROM sys_user WHERE id=?", Long.class, user); }
     private Map<String, String> credentials(Account actor) {
         return Map.of("username", jdbc.queryForObject("SELECT username FROM sys_user WHERE id=?", String.class, actor.id()), "password", "A2-Business-123456");
     }

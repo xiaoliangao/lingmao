@@ -18,6 +18,17 @@
                            WHERE n.prev_calc_id = c.id AND n.status IN ('DRAFT', 'CONFIRMED')
                            ORDER BY n.id DESC LIMIT 1) nx ON true
         WHERE true
+        <if test="q.tagFilter != null">
+            AND EXISTS (
+                SELECT 1 FROM biz_tag_object tag_object
+                WHERE tag_object.tenant_key=#{q.tagFilter.tenant} AND tag_object.object_type='MRP_CALC'
+                  AND tag_object.object_id=c.id
+                  AND (SELECT COUNT(*) FROM biz_tag_link tag_link
+                       WHERE tag_link.tenant_key=tag_object.tenant_key AND tag_link.object_ref_id=tag_object.id
+                         AND tag_link.tag_id IN <foreach collection="q.tagFilter.ids" item="tagId" open="(" separator="," close=")">#{tagId}</foreach>
+                      )=#{q.tagFilter.size}
+            )
+        </if>
         <if test="scope.self">AND c.create_by = #{scope.userId}</if>
         <if test="q.status != null and q.status.size() > 0">
             AND c.status IN <foreach collection="q.status" item="s" open="(" separator="," close=")">#{s}</foreach>
@@ -54,7 +65,7 @@
     </select>
 
     <select id="selectOrderHeads" resultType="com.lingmao.scm.module.purchase.mapper.MrpCalcMapper$OrderHead">
-        SELECT o.id, o.no, o.status, o.commit_date
+        SELECT o.id, o.no, o.status, o.commit_date, o.company_id
         FROM ord_order o
         WHERE o.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY o.no

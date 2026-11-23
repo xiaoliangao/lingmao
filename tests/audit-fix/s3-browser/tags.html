@@ -18,6 +18,7 @@ import { vPerm } from '/src/directives/perm.ts'
 import AppLayout from '/src/layout/AppLayout.vue'
 import TagLibrary from '/src/views/biz/tag/index.vue'
 import StyleDetail from '/src/views/style/style/detail.vue'
+import StyleList from '/src/views/style/style/index.vue'
 import MaterialDetail from '/src/views/basic/material/detail.vue'
 import SupplierDetail from '/src/views/supplier/supplier/detail.vue'
 import OrderDetail from '/src/views/order/order/detail.vue'
@@ -35,6 +36,7 @@ const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/', component: AppLayout, props: { area: 'workbench' }, children: [
     { path: '/tags', component: TagLibrary, meta: { title: '公共标签库' } },
     { path: '/tag-objects', component: Panels, meta: { title: '对象标签' } },
+    { path: '/styles', component: StyleList, meta: { title: '款式' } },
     { path: '/styles/:id', component: StyleDetail, meta: { title: '款式', detail: true } },
     { path: '/materials/:id', component: MaterialDetail, meta: { title: '物料', detail: true } },
     { path: '/suppliers/:id', component: SupplierDetail, meta: { title: '供应商', detail: true } },

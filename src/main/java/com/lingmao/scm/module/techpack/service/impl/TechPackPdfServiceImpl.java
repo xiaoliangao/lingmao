@@ -283,7 +283,7 @@ public class TechPackPdfServiceImpl implements TechPackPdfService {
                     rows.add(new PdfSheet.ProcessRow(pr.getSeq(),
                             pr.getCategory() == null ? "" : categories.getOrDefault(pr.getCategory(), pr.getCategory()),
                             pr.getName(), orEmpty(pr.getRequirement()), pr.getStdSeconds() == null ? "" : pr.getStdSeconds().toString(),
-                            pr.getPrice() == null ? "" : money(pr.getPrice()), orEmpty(pr.getRemark())));
+                            pr.getPrice() == null ? "" : price(pr.getPrice()), orEmpty(pr.getRemark())));
                 }
             }
             int seconds = processes.stream().map(p -> p.process().getStdSeconds()).filter(Objects::nonNull).mapToInt(Integer::intValue).sum();

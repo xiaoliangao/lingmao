@@ -60,7 +60,7 @@ class A2ExportHttpIT {
     @Autowired com.lingmao.scm.module.system.service.ExportFileStore fileStore;
     @Autowired ExportJobServiceImpl jobs;
     private static final String PASSWORD = "Export-A2-Pass-123";
-    private record Account(long id, long role, String token) {}
+    private record Account(long id, long role, String token, String cookies) {}
     @AfterEach void reset() { probe.clear(); }
 
     @Test void asyncBusinessJobWritesAValidPrivateWorkbookWithSnapshotColumnsAndChecksOwnership() throws Exception {
@@ -97,18 +97,47 @@ class A2ExportHttpIT {
     @Test void permissionRevocationPreventsDownloadingOrRetryingAnExistingFinancialFile() throws Exception {
         long warehouse = fixture(2);
         try (HttpClient http = HttpClient.newHttpClient()) {
-            Account owner = account(http, true); long job = create(http, owner.token(), warehouse, UUID.randomUUID().toString());
+            Account owner = account(http, true);
+            String createKey = UUID.randomUUID().toString(), retryKey = UUID.randomUUID().toString();
+            long job = create(http, owner.token(), warehouse, createKey);
+            var cancelled = send(http, "POST", "/api/export-jobs/" + job + "/cancel", "{}", owner.token(), UUID.randomUUID().toString());
+            assertThat(json.readTree(cancelled.body()).path("data").path("status").stringValue()).isEqualTo("CANCELLED");
+            var retried = send(http, "POST", "/api/export-jobs/" + job + "/retry", "{}", owner.token(), retryKey);
+            assertThat(retried.statusCode()).isEqualTo(202);
+            assertThat(json.readTree(retried.body()).path("code").intValue()).isZero();
             OutboxDispatcher worker = worker();
             try {
                 await(http, owner.token(), job, "SUCCEEDED");
                 var download = download(http, owner.token(), job);
+                assertThat(download.statusCode()).isEqualTo(200);
                 try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(download.body()))) {
                     var headers = new java.util.ArrayList<String>(); workbook.getSheetAt(0).getRow(0).forEach(c -> headers.add(c.getStringCellValue()));
                     assertThat(headers).contains("单价", "金额");
                 }
-                jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='techpack:cost:query')", owner.role());
-                assertThat(download(http, owner.token(), job).statusCode()).isEqualTo(403);
-                assertThat(send(http, "POST", "/api/export-jobs/" + job + "/retry", "{}", owner.token(), UUID.randomUUID().toString()).statusCode()).isEqualTo(403);
+                // Replay a completed retry before revocation, then reuse exactly that key with both sessions.
+                var replay = send(http, "POST", "/api/export-jobs/" + job + "/retry", "{}", owner.token(), retryKey);
+                assertThat(replay.statusCode()).isEqualTo(202);
+                assertThat(json.readTree(replay.body()).path("data")).isEqualTo(json.readTree(retried.body()).path("data"));
+                String snapshotSql = "SELECT jsonb_build_object('job',to_jsonb(j),'outbox',to_jsonb(o))::text FROM sys_export_job j JOIN sys_outbox o ON o.id=j.outbox_id WHERE j.id=?";
+                String beforeJob = jdbc.queryForObject(snapshotSql, String.class, job);
+                String receiptSql = "SELECT row_to_json(a)::text FROM biz_http_action a WHERE user_id=? AND request_key=?";
+                String beforeRetry = jdbc.queryForObject(receiptSql, String.class, owner.id(), UUID.fromString(retryKey));
+                String beforeCreate = jdbc.queryForObject(receiptSql, String.class, owner.id(), UUID.fromString(createKey));
+                UUID file = jdbc.queryForObject("SELECT file_token FROM sys_export_job WHERE id=?", UUID.class, job);
+                assertThat(jdbc.update("DELETE FROM sys_role_menu WHERE role_id=? AND menu_id IN (SELECT id FROM sys_menu WHERE perms='techpack:cost:query')", owner.role())).isPositive();
+                assertDenied(download(http, owner.token(), job), 401);
+                assertDenied(send(http, "POST", "/api/export-jobs/" + job + "/retry", "{}", owner.token(), retryKey), 401);
+                assertDenied(refresh(http, owner), 401);
+
+                Account fresh = login(http, owner.id(), owner.role());
+                assertDenied(download(http, fresh.token(), job), 403);
+                assertDenied(send(http, "POST", "/api/export-jobs/" + job + "/retry", "{}", fresh.token(), retryKey), 403);
+                assertDenied(send(http, "POST", "/api/export-jobs/stock-logs", json.writeValueAsString(Map.of("warehouseId", warehouse)), fresh.token(), createKey), 403);
+                assertThat(jdbc.queryForObject(snapshotSql, String.class, job)).isEqualTo(beforeJob);
+                assertThat(jdbc.queryForObject(receiptSql, String.class, owner.id(), UUID.fromString(retryKey))).isEqualTo(beforeRetry);
+                assertThat(jdbc.queryForObject(receiptSql, String.class, owner.id(), UUID.fromString(createKey))).isEqualTo(beforeCreate);
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM sys_export_job WHERE owner_user_id=?", Long.class, owner.id())).isEqualTo(1);
+                assertThat(java.nio.file.Files.readAllBytes(fileStore.path(job, file))).isEqualTo(download.body());
             } finally { worker.stop(); }
         }
     }
@@ -333,9 +362,30 @@ class A2ExportHttpIT {
             jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) SELECT ?,id FROM sys_menu WHERE perms=? AND NOT deleted", role, permission);
         long id = jdbc.queryForObject("INSERT INTO sys_user(username,password,nickname) VALUES(?,?,?) RETURNING id", Long.class, name, passwords.encode(PASSWORD), name);
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", id, role);
+        return login(http, id, role);
+    }
+    private Account login(HttpClient http, long id, long role) throws Exception {
+        String name = jdbc.queryForObject("SELECT username FROM sys_user WHERE id=?", String.class, id);
         var response = send(http, "POST", "/api/auth/login", json.writeValueAsString(Map.of("username", name, "password", PASSWORD)), null, null);
+        assertThat(response.statusCode()).isEqualTo(200);
         assertThat(json.readTree(response.body()).path("code").intValue()).isZero();
-        return new Account(id, role, json.readTree(response.body()).path("data").stringValue());
+        String cookies = String.join("; ", response.headers().allValues("Set-Cookie").stream()
+                .map(value -> value.split(";", 2)[0]).toList());
+        assertThat(cookies.contains("scm_refresh=") && cookies.contains("scm_browser=")).isTrue();
+        return new Account(id, role, json.readTree(response.body()).path("data").stringValue(), cookies);
+    }
+    private HttpResponse<byte[]> refresh(HttpClient http, Account account) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create(base() + "/api/auth/refresh")).timeout(Duration.ofSeconds(15))
+                .header("Cookie", account.cookies()).header("X-Requested-With", "XMLHttpRequest")
+                .header("X-Session-Mode", "cookie").header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}")).build(), HttpResponse.BodyHandlers.ofByteArray());
+    }
+    private void assertDenied(HttpResponse<?> response, int status) {
+        assertThat(response.statusCode()).isEqualTo(status);
+        JsonNode body = response.body() instanceof byte[] bytes ? json.readTree(bytes) : json.readTree((String) response.body());
+        assertThat(body.path("code").intValue()).isEqualTo(status);
+        assertThat(body.path("data").isNull() || body.path("data").isMissingNode()).isTrue();
+        assertThat(response.headers().firstValue("Content-Disposition")).isEmpty();
     }
     private long create(HttpClient http, String token, long warehouse, String key) throws Exception {
         var response = send(http, "POST", "/api/export-jobs/stock-logs", json.writeValueAsString(Map.of("warehouseId", warehouse)), token, key);

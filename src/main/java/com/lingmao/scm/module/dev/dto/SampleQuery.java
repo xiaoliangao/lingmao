@@ -1,11 +1,11 @@
 package com.lingmao.scm.module.dev.dto;
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import java.time.LocalDate;
 @Data @EqualsAndHashCode(callSuper=true)
-public class SampleQuery extends PageQuery {
+public class SampleQuery extends TaggedPageQuery {
     public enum Sort { CREATED_DESC,CREATED_ASC,NEED_ASC,NEED_DESC,CODE_ASC,CODE_DESC }
     @NotNull(message="请选择主体公司") @Positive(message="主体公司编号不合法") private Long companyId;
     @Size(max=10099,message="查询词过长") private String keyword;

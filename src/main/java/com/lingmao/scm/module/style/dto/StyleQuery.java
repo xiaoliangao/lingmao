@@ -1,6 +1,6 @@
 package com.lingmao.scm.module.style.dto;
 
-import com.lingmao.scm.common.page.PageQuery;
+import com.lingmao.scm.module.biz.dto.TaggedPageQuery;
 import com.lingmao.scm.module.style.entity.StyleStatus;
 import com.lingmao.scm.module.style.entity.TechPackStatus;
 import lombok.Data;
@@ -15,7 +15,7 @@ import java.util.List;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class StyleQuery extends PageQuery {
+public class StyleQuery extends TaggedPageQuery {
     private String keyword;
     private Long categoryId;
     private String styleClass;

@@ -44,6 +44,7 @@ class SupplierLists {
     /** "证照快到期"：30 天内到期的（已经过期的也算） */
     static final int CERT_EXPIRING_DAYS = 30;
 
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
     private final SupplierMapper supplierMapper;
     private final SupplierChangeMapper changeMapper;
     private final UserService userService;
@@ -52,7 +53,18 @@ class SupplierLists {
 
     /** 列表、导出的条件。表不起别名，子查询里用 sup_supplier.id 指外层这一行 */
     QueryWrapper<Supplier> wrapper(SupplierQuery query) {
+        tagFilters.prepare(query);
         QueryWrapper<Supplier> wrapper = new QueryWrapper<>();
+        var tags = query.getTagFilter();
+        if (tags != null) {
+            var parameters = new ArrayList<Object>(); parameters.add(tags.tenant());
+            parameters.add(tags.ids().size()); parameters.addAll(tags.ids());
+            String marks = IntStream.range(2, parameters.size()).mapToObj(i -> "{" + i + "}").collect(Collectors.joining(","));
+            wrapper.apply("EXISTS (SELECT 1 FROM biz_tag_object tag_object WHERE tag_object.tenant_key={0}"
+                    + " AND tag_object.object_type='SUPPLIER' AND tag_object.object_id=sup_supplier.id"
+                    + " AND (SELECT COUNT(*) FROM biz_tag_link tag_link WHERE tag_link.tenant_key=tag_object.tenant_key"
+                    + " AND tag_link.object_ref_id=tag_object.id AND tag_link.tag_id IN (" + marks + "))={1})", parameters.toArray());
+        }
         if (StringUtils.hasText(query.getKeyword())) {
             String like = likePattern(query.getKeyword());
             List<String> codes = Keywords.codes(query.getKeyword());

@@ -107,6 +107,7 @@ import static com.lingmao.scm.common.doc.DocStatus.VOIDED;
 @Service
 @RequiredArgsConstructor
 public class FgDocServiceImpl implements FgDocService {
+    private final com.lingmao.scm.module.biz.service.TagFilterService tagFilters;
 
     /** 状态转换表（docs/api/07 §2）。remove、void 都从草稿来，过没过过账决定给哪个 */
     static final StatusFlow<DocStatus> FLOW = StatusFlow.of(DocStatus.class)
@@ -155,6 +156,7 @@ public class FgDocServiceImpl implements FgDocService {
 
     @Override
     public PageResult<FgDocRowVO> page(FgDocQuery query) {
+        tagFilters.prepare(query);
         BusinessDateRange.validate(query.getDocDateFrom(), query.getDocDateTo());
         IPage<FgDocRowVO> page = docMapper.selectRowPage(query.toPage(), query, Keywords.codes(query.getKeyword()),
                 DataScope.current(query.isMine()), FgScope.company(query.getCompanyId()));
@@ -1062,6 +1064,7 @@ public class FgDocServiceImpl implements FgDocService {
 
     @Override
     public byte[] export(FgDocQuery query) {
+        tagFilters.prepare(query);
         BusinessDateRange.validate(query.getDocDateFrom(), query.getDocDateTo());
         Page<FgDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
         List<FgDocRowVO> docs = docMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
