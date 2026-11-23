@@ -698,7 +698,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
         <section class="panel">
           <div class="panel-head">操作记录</div>
           <div class="panel-body">
-            <DocLogList ref="logRef" :load="loadLogs" :actions="PRODUCTION_LOG_ACTION" :statuses="LOG_STATUSES" />
+            <DocLogList ref="logRef" :load="loadLogs" :actions="PRODUCTION_LOG_ACTION" :statuses="LOG_STATUSES" compact />
           </div>
         </section>
       </aside>

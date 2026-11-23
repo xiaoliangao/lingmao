@@ -207,11 +207,11 @@ defineExpose({ reload: load, exportAll, exporting })
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="cols.show.qty" label="数量" width="100" class-name="num" align="right">
+      <el-table-column v-if="cols.show.qty" label="数量" width="190" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty(row.totalQty) }}</template>
       </el-table-column>
-      <el-table-column v-if="canSeeCost && (cols.show.amount)" label="金额" width="120" class-name="num" align="right">
-        <template #default="{ row }">{{ row.totalAmount ? formatMoney(row.totalAmount) : '—' }}</template>
+      <el-table-column v-if="canSeeCost && (cols.show.amount)" label="金额" width="220" class-name="num" align="right">
+        <template #default="{ row }">{{ row.totalAmount != null ? formatMoney(row.totalAmount) : '—' }}</template>
       </el-table-column>
       <el-table-column v-if="cols.show.date" label="日期" width="104" class-name="num">
         <template #default="{ row }">{{ formatDate(row.docDate) }}</template>

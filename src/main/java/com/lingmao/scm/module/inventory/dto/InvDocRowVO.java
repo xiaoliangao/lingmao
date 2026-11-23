@@ -35,7 +35,9 @@ public class InvDocRowVO {
     @JsonIgnore
     private Long firstSkuId;
     private int itemCount;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private BigDecimal totalQty;
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private BigDecimal totalAmount;
     private LocalDate docDate;
     private String reason;

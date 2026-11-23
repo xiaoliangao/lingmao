@@ -1,7 +1,8 @@
 // inventory 域（物料入库单、物料出库单、物料盘点单、库存、库存日志）的返回和请求，和后端 module/inventory/dto 一一对应
-// （docs/api/04-库存.md）。数量没写单位的都是库存单位，采购单位的字段名里带 purchase；NUMERIC 列到前端是 JSON 数字，显示走 utils/format.ts
+// （docs/api/04-库存.md）。数量没写单位的都是库存单位，采购单位的字段名里带 purchase；单行 NUMERIC 保持既有契约，单据聚合 totalQty/totalAmount 为十进制字符串，显示走 utils/format.ts
 import type { Attachment, DocAction, DocHeader, DocRef, DocSaved, StatusTone } from '@/types/biz'
 import type { WarehouseType } from '@/types/basic'
+import type { DecimalString } from '@/types/decimal'
 
 /**
  * 一个物料 SKU 的显示字段。入库出库明细、盘点明细、库存、库存日志，以及算料行、采购明细都带这一组（采购那边 extends 它）。
@@ -116,8 +117,8 @@ export interface InvDocRow {
   firstItem: MaterialSkuBrief | null
   itemCount: number
   /** 各行库存单位数量直接相加，只显示 */
-  totalQty: number
-  totalAmount?: number
+  totalQty: DecimalString
+  totalAmount?: DecimalString | null
   /** 实际发生日期 yyyy-MM-dd */
   docDate: string
   /** 其他入库、其他出库是字典值（stock_in_reason / stock_out_reason），别的是手填的一行字或 null */
@@ -190,8 +191,8 @@ export interface InvDocDetail extends DocHeader<InvDocStatus, InvDocAction> {
   reason: string | null
   supplierDeliveryNo: string | null
   logisticsNo: string | null
-  totalQty: number
-  totalAmount?: number
+  totalQty: DecimalString
+  totalAmount?: DecimalString | null
   /** 过过账（有库存日志）：草稿时 actions 给 void 不给 remove */
   posted: boolean
   items: InvDocItem[]

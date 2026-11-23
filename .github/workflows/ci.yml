@@ -103,6 +103,7 @@ jobs:
           python3 tests/audit-fix/s3-browser/fg-drafts.py
           python3 tests/audit-fix/s3-browser/fg-session.py
           python3 tests/audit-fix/s3-browser/fg-compact.py
+          python3 tests/audit-fix/s3-browser/inv-compact.py
           python3 tests/audit-fix/s3-browser/matrix-cells.py
       - name: S3 — actual cross-tab authentication cookies and insecure HTTP origin
         if: ${{ !cancelled() && steps.tools.outcome == 'success' && steps.web.outcome == 'success' }}
@@ -198,5 +199,10 @@ jobs:
             target/audit-query-capacity.json
             target/a1-production/
             target/a2-production/
+            target/a1-fg/
+            target/a1-tags/
+            target/a2-tags/
+            target/a2-tags-review/
+            target/a2-sample/
             target/test-artifacts/
             test-artifacts/

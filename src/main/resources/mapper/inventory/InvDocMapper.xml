@@ -70,7 +70,8 @@
         LEFT JOIN bas_warehouse fw ON fw.id = d.from_warehouse_id
         LEFT JOIN bas_warehouse tw ON tw.id = d.to_warehouse_id
         LEFT JOIN LATERAL (SELECT (array_agg(i.material_sku_id ORDER BY i.seq, i.id))[1] AS first_sku_id,
-                                  COUNT(*) AS item_count, SUM(i.qty) AS total_qty, SUM(i.amount) AS total_amount
+                                  COUNT(*) AS item_count, SUM(i.qty) AS total_qty,
+                                  CASE WHEN COUNT(i.amount) = COUNT(*) THEN SUM(i.amount) ELSE NULL END AS total_amount
                            FROM inv_doc_item i WHERE i.doc_id = d.id) agg ON true
         <include refid="where"/>
         <choose>

@@ -440,7 +440,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
         <section class="panel">
           <div class="panel-head">操作记录</div>
           <div class="panel-body">
-            <DocLogList ref="logRef" :load="loadLogs" :actions="COUNT_LOG_ACTION" :statuses="LOG_STATUSES" />
+            <DocLogList ref="logRef" :load="loadLogs" :actions="COUNT_LOG_ACTION" :statuses="LOG_STATUSES" compact />
           </div>
         </section>
       </aside>

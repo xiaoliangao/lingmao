@@ -140,7 +140,7 @@ class AuditUi(unittest.TestCase):
         if not allow_loading:
             expect(page.locator(".el-loading-mask:visible")).to_have_count(0)
         # Failed login assertions must still never capture password/username values.
-        page.screenshot(path=str(destination), full_page=True, animations="disabled",
+        page.screenshot(path=str(destination), full_page=not getattr(self, "viewport_only", False), animations="disabled",
                         mask=[page.locator('input[type="password"]'), page.locator('input[autocomplete="username"]')])
         self.facts["screenshots"].append({"file": destination.name, "route": urlsplit(page.url).path,
                                           "width": page.viewport_size["width"]})
@@ -2201,6 +2201,161 @@ class AuditUi(unittest.TestCase):
                   shippedQty=200, finalStock=0, immutableLedgerEntries=10, separateReviewer=True,
                   selfAuditCode=403, downstreamVoidCode=1005, negativeStockReverseCode=1001,
                   priceFieldsPhysicallyAbsent=True, responseMocks=False)
+
+
+    def test_23_inventory_large_aggregates(self):
+        """Two thousand real legal SKUs/lines, exact totals and actual visible cells."""
+        self.viewport_only = True  # A 2000-row detail is inspected in bounded viewport images.
+        day = business_day().isoformat()
+        base = self.api.request("GET", f"/api/materials/{self.fixture['materialId']}")["material"]
+        colors = self.api.request("GET", "/api/colors/options")
+        selected_colors = [row["id"] for row in colors[:20]]
+        occupied = {row["code"].upper() for row in colors}
+        alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for left in alphabet:
+            for right in alphabet:
+                if len(selected_colors) == 20:
+                    break
+                code = "Q" + left + right
+                if code in occupied:
+                    continue
+                identity = self.api.request("POST", "/api/colors", {
+                    "code": code, "name": "精度回归色" + code, "family": None, "hex": None})
+                self.assertIsInstance(identity, str)
+                selected_colors.append(identity)
+                occupied.add(code)
+            if len(selected_colors) == 20:
+                break
+        self.assertEqual(len(set(selected_colors)), 20)
+        material_id = self.api.request("POST", "/api/materials", {
+            "name": "匿名大额精度矩阵", "categoryId": base["categoryId"],
+            "materialType": base["materialType"], "stockUnit": base["stockUnit"],
+            "purchaseUnit": base["purchaseUnit"], "colorIds": selected_colors,
+            "specs": [{"spec": f"P45 {n:03d}", "specCode": f"P45{n:03d}"} for n in range(100)]})
+        self.assertIsInstance(material_id, str)
+        material = self.api.request("GET", f"/api/materials/{material_id}")
+        skus = material["skus"]
+        self.assertEqual(len(skus), 2000)
+        self.assertEqual(len({row["id"] for row in skus}), 2000)
+        self.assertTrue(all(isinstance(row["id"], str) for row in skus))
+        self.facts["rawHttp"] = []
+
+        def create(label, lines):
+            made = self.api.request("POST", "/api/inventory-docs", {
+                "docType": "OTHER_IN", "companyId": self.fixture["companyId"], "docDate": day,
+                "toWarehouseId": self.fixture["warehouseId"], "reason": "OTHER",
+                "remark": "匿名精度回归 " + label, "items": lines})
+            path = f"/api/inventory-docs/{made['id']}"
+            status, headers, raw = self.api.raw("GET", path)
+            response = json.loads(raw)
+            self.assertEqual(status, 200)
+            self.assertEqual(response["code"], 0)
+            self.assertTrue(headers.get("X-Request-Id"))
+            write_evidence(self.case_dir / (label + "-raw-detail.json"), response, self.api.token)
+            self.facts["rawHttp"].append({"path": path, "requestId": headers.get("X-Request-Id"),
+                                         "file": label + "-raw-detail.json", "rows": len(response["data"]["items"])})
+            return response["data"]
+
+        amount = create("amount", [{"materialSkuId": row["id"], "qty": "100",
+            "price": "9999999999.9998" if n == 1999 else "9999999999.9999"} for n, row in enumerate(skus)])
+        quantity = create("quantity", [{"materialSkuId": row["id"],
+            "qty": "99999999999.998" if n == 1999 else "99999999999.999", "price": "0"}
+            for n, row in enumerate(skus)])
+        unknown = create("mixed-unknown", [{"materialSkuId": skus[0]["id"], "qty": "1"},
+            {"materialSkuId": skus[1]["id"], "qty": "1", "price": "12.34"}])
+        self.assertEqual(amount["totalAmount"], "1999999999999979.99")
+        self.assertEqual(amount["totalQty"], "200000.000")
+        self.assertEqual(quantity["totalQty"], "199999999999997.999")
+        self.assertEqual(quantity["totalAmount"], "0.00")
+        self.assertIsNone(unknown["totalAmount"])
+        cases = [("amount", amount, "200000", "1,999,999,999,999,979.99"),
+                 ("quantity", quantity, "199999999999997.999", "0.00"),
+                 ("mixed-unknown", unknown, "2", "—")]
+
+        def cell(label):
+            table = self.page.locator(".el-table:visible").first
+            headers = table.locator(".el-table__header-wrapper th")
+            labels = [value.strip() for value in headers.all_text_contents()]
+            self.assertIn(label, labels)
+            return table.locator(".el-table__body-wrapper tbody tr").first.locator("td").nth(labels.index(label)).locator(".cell")
+
+        def measure(element):
+            return element.evaluate("""element => {
+              const range = document.createRange(); range.selectNodeContents(element);
+              const bounds = range.getBoundingClientRect(), style = getComputedStyle(element);
+              return {text: element.textContent.trim(), textWidth: bounds.width,
+                availableWidth: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+                whiteSpace: style.whiteSpace, overflow: style.overflow, clientHeight: element.clientHeight,
+                viewportWidth: innerWidth};
+            }""")
+
+        self.page.goto(self.ui_base + "/stock-in?tab=docs")
+        expect(self.page.locator(".filter-bar:visible")).to_be_visible()
+        self.page.get_by_role("button", name="显示列", exact=True).click()
+        columns = self.page.get_by_role("group", name="显示哪些列", exact=True)
+        self.checkbox(columns, "数量", True)
+        self.checkbox(columns, "金额", True)
+        self.page.get_by_role("button", name="显示列", exact=True).click()
+        for label, doc, qty_text, amount_text in cases:
+            with self.subTest(view="list", case=label):
+                search_field = self.page.locator(".filter-bar:visible .search input")
+                search_field.fill(doc["no"])
+                with self.page.expect_response(lambda response: self.response_for(response, "GET", "/api/inventory-docs")
+                    and parse_qs(urlsplit(response.url).query).get("keyword") == [doc["no"]]) as found:
+                    search_field.press("Enter")
+                response = found.value.json()
+                self.assertEqual(response["code"], 0)
+                rows = response["data"]["list"]
+                self.assertEqual([row["id"] for row in rows], [doc["id"]])
+                self.assertEqual(rows[0]["totalQty"], doc["totalQty"])
+                self.assertEqual(rows[0]["totalAmount"], doc["totalAmount"])
+                expect(cell("数量")).to_have_text(qty_text)
+                expect(cell("金额")).to_have_text(amount_text)
+                self.page.locator(".el-table:visible .el-table__body-wrapper .el-scrollbar__wrap").first.evaluate(
+                    "element => { element.scrollLeft = element.scrollWidth }")
+                # Wait for the actual selected row and composited frame before measuring/capturing.
+                active_row = self.page.locator(".el-table:visible .el-table__body-wrapper tbody tr").first
+                expect(active_row.locator("td").nth(1)).to_have_text(doc["no"])
+                self.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+                measurements = {name: measure(cell(name)) for name in ("数量", "金额")}
+                self.note("actual aggregate list cells", case=label, measurements=measurements,
+                          totalQty=doc["totalQty"], totalAmount=doc["totalAmount"], responseMocks=False)
+                self.shot(label + "-list-before-width-assert")
+                expect(active_row.locator("td").nth(1)).to_have_text(doc["no"])
+                expect(cell("数量")).to_have_text(qty_text)
+                expect(cell("金额")).to_have_text(amount_text)
+                for name, measured in measurements.items():
+                    self.assertLessEqual(measured["textWidth"], measured["availableWidth"] + 1,
+                                         f"{label} {name} must remain completely visible")
+
+        for label, doc, qty_text, amount_text in cases:
+            with self.subTest(view="detail", case=label):
+                path = f"/api/inventory-docs/{doc['id']}"
+                with self.page.expect_response(lambda response: self.response_for(response, "GET", path)):
+                    self.page.goto(self.ui_base + f"/stock-in/{doc['id']}")
+                summary = self.page.locator(".sub .num")
+                expect(summary).to_have_text(qty_text + (" · " + amount_text if amount_text != "—" else ""))
+                item_values = {
+                    "amount": ("100", "9999999999.9999", "999,999,999,999.99"),
+                    "quantity": ("99999999999.999", "0", "0.00"),
+                    "mixed-unknown": ("1", "—", "—"),
+                }[label]
+                expect(cell("数量")).to_have_text(re.compile(r"^" + re.escape(item_values[0]) + r"\s+米$"))
+                expect(cell("单价")).to_have_text(item_values[1])
+                expect(cell("金额")).to_have_text(item_values[2])
+                item_measurements = {name: measure(cell(name)) for name in ("数量", "单价", "金额")}
+                self.note("actual detail item numeric cells", case=label, measurements=item_measurements,
+                          expectedValues=item_values, responseMocks=False)
+                self.shot(label + "-detail")
+                for name, measured in item_measurements.items():
+                    self.assertLessEqual(measured["textWidth"], measured["availableWidth"] + 1,
+                                         f"{label} item {name} must remain completely visible")
+                self.note("actual aggregate detail summary", case=label, visibleText=summary.inner_text(),
+                          rowCount=len(doc["items"]), responseMocks=False)
+        self.note("real 20 colors by 100 specifications aggregate precision", materialId=material_id,
+                  skuCount=2000, documentIds=[doc["id"] for _, doc, _, _ in cases],
+                  amount="1999999999999979.99", quantity="199999999999997.999",
+                  mixedUnknownTotal=None, zeroDisplayedAs="0.00", responseMocks=False)
 
 
 

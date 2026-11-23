@@ -37,7 +37,7 @@ function openEdit() {
     auditBy: null, auditByName: null, auditTime: null, actions: ['edit'], approval: null, pendingNotices: 0,
     kind: 'IN', docType: 'RETURN_IN', source: null, fromWarehouseId: '11', fromWarehouseName: '甲工厂仓', fromWarehouseType: 'FACTORY',
     toWarehouseId: '21', toWarehouseName: '合成面料仓', toWarehouseType: 'MATERIAL', partnerId: '3', partnerName: '工厂甲',
-    docDate: '2026-11-23', reason: null, supplierDeliveryNo: null, logisticsNo: null, totalQty: 0.018, totalAmount: 0.14, posted: false,
+    docDate: '2026-11-23', reason: null, supplierDeliveryNo: null, logisticsNo: null, totalQty: '0.018', totalAmount: '0.14', posted: false,
     items: [{ id: '501', seq: 1, materialSkuId: '601', skuCode: 'ML-SYN-B', materialId: '701', materialCode: 'ML-SYN',
       materialName: '合成面料', materialType: 'FABRIC', colorName: '蓝色', colorHex: null, spec: null, stockUnit: 'M', image: null,
       posted: false, qty: 0.018, purchaseUnit: null, purchaseQty: null, conversionFactor: null, price: 7.5, amount: 0.14,

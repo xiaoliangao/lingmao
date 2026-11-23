@@ -179,7 +179,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
               <div v-if="short(row as InvDocItem)" class="danger small">库存不够</div>
             </template>
           </el-table-column>
-          <el-table-column label="数量" width="110" class-name="num" align="right">
+          <el-table-column label="数量" width="180" class-name="num" align="right">
             <template #default="{ row }">{{ formatQty(row.qty) }} <span class="dim">{{ units.labelOf(row.stockUnit) }}</span></template>
           </el-table-column>
           <el-table-column v-if="isPurchase" label="采购单位数量" width="120" class-name="num" align="right">
@@ -188,10 +188,10 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
               <span v-else class="dim">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="canSeeCost" label="单价" width="90" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="单价" width="170" class-name="num" align="right">
             <template #default="{ row }">{{ row.price === null ? '—' : formatPrice(row.price) }}</template>
           </el-table-column>
-          <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
+          <el-table-column v-if="canSeeCost" label="金额" width="180" class-name="num" align="right">
             <template #default="{ row }">{{ row.amount === null ? '—' : formatMoney(row.amount) }}</template>
           </el-table-column>
           <el-table-column label="缸号" width="110">
@@ -263,7 +263,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
         <section class="panel">
           <div class="panel-head">操作记录</div>
           <div class="panel-body">
-            <DocLogList ref="logRef" :load="loadLogs" :actions="INV_DOC_LOG_ACTION" :statuses="LOG_STATUSES" />
+            <DocLogList ref="logRef" :load="loadLogs" :actions="INV_DOC_LOG_ACTION" :statuses="LOG_STATUSES" compact />
           </div>
         </section>
       </aside>

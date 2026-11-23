@@ -249,8 +249,8 @@ public class InvDocServiceImpl implements InvDocService {
             return v;
         }).toList());
         vo.setTotalQty(items.stream().map(InvDocItem::getQty).reduce(BigDecimal.ZERO, BigDecimal::add));
-        vo.setTotalAmount(items.stream().map(InvDocItem::getAmount).filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        vo.setTotalAmount(items.stream().anyMatch(item -> item.getAmount() == null) ? null
+                : items.stream().map(InvDocItem::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add));
         boolean posted = !postedItems.isEmpty();
         vo.setPosted(posted);
         vo.setActions(actions(doc.getStatus(), posted));
