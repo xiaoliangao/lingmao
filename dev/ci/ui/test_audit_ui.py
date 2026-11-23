@@ -134,6 +134,17 @@ class AuditUi(unittest.TestCase):
         self.actor_traces.append((key, client))
         return client
 
+    def assert_revoked_access(self, actor, phase):
+        # ApiClient retains only the bearer token, not login's Set-Cookie headers.
+        # This UI fixture proves access revocation; it does not claim a refresh check.
+        status, _headers, content = actor.raw("GET", "/api/auth/me")
+        reply = json.loads(content)
+        self.assertEqual(status, 401)
+        self.assertEqual(reply["code"], 401)
+        self.assertIsNone(reply.get("data"))
+        self.note("authorization change revokes the previous access session", phase=phase,
+                  accessHttpStatus=status, accessCode=reply["code"], refreshVerified=False)
+
     def shot(self, name, page=None, *, allow_loading=False):
         page = page or self.page
         destination = self.case_dir / f"{name}.png"
@@ -940,11 +951,14 @@ class AuditUi(unittest.TestCase):
                     # Permission removal after configuration must also block submission.
                     self.api.request("PUT", f"/api/users/{identity['userId']}/roles", {"ids": []})
                     try:
+                        self.assert_revoked_access(actors["designated"], biz_type + "-roles-removed")
                         refused = self.api.envelope("POST", f"{base}/{candidate['id']}/submit", {"version": candidate["version"]})
                         self.assertEqual(refused["code"], 1000)
                         self.assertEqual(self.api.request("GET", f"{base}/{candidate['id']}")["status"], "DRAFT")
                     finally:
                         self.api.request("PUT", f"/api/users/{identity['userId']}/roles", {"ids": [identity["roleId"]]})
+                        self.assert_revoked_access(actors["designated"], biz_type + "-roles-restored")
+                        actors["designated"] = self.actor("designated")
                     pending = self.domain.submit(base, candidate["id"])
                     contradictory = {**list_scope, "keyword": pending["no"], "auditForMe": True, "mine": True, "ownerId": -999}
                     self.assertEqual({row["id"] for row in actors["auditor"].rows(base, contradictory)}, {pending["id"]})
@@ -1710,12 +1724,21 @@ class AuditUi(unittest.TestCase):
         report_menu_ids = sorted(set(identity["menuIds"]) | set(identity["reportMenuIds"]))
         self.api.request("PUT", f"/api/roles/{identity['roleId']}/menus", {"ids": report_menu_ids})
         try:
+            self.assert_revoked_access(actor, "mobile-report-permissions-granted")
+            previous_context = page.context
+            previous_context.close()
+            self.contexts.remove(previous_context)
+            actor = self.actor("mobile_only")
             assert_permissions(report_permissions)
             assert_forbidden("report-enabled")
             foreign_node = foreign["nodes"][0]
             self.assertEqual(actor.envelope("POST", f"{base}/{foreign['id']}/nodes/{foreign_node['id']}/reports", start_body)["code"], 404)
             foreign_after = self.api.request("GET", f"{base}/{foreign['id']}")
             self.assertEqual(foreign_after["nodes"], foreign["nodes"])
+            # Each context's init script captures its login token. Rebuild it after
+            # reauthentication so navigation cannot reinstall the revoked token.
+            page = self.new_context(mobile=True, actor=actor).new_page()
+            self.page = page
             with page.expect_response(lambda r: self.response_for(r, "GET", own_path)) as reloaded:
                 page.goto(f"{self.ui_base}/mobile/{owned['id']}")
             allowed = reloaded.value.json()
@@ -1799,6 +1822,7 @@ class AuditUi(unittest.TestCase):
                       desktopEntryHidden=True, viewportWidth=390, responseMocks=False)
         finally:
             self.api.request("PUT", f"/api/roles/{identity['roleId']}/menus", {"ids": identity["menuIds"]})
+            self.assert_revoked_access(actor, "mobile-report-permissions-removed")
 
     def test_20_independent_warehouse_source_state_and_post_authority(self):
         # API-only intersection of inventory authority and purchase source state.
