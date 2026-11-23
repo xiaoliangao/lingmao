@@ -63,7 +63,9 @@ jobs:
           python -m pip install --requirement dev/ci/requirements.txt
           python -m playwright install --with-deps chromium
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends openssh-server poppler-utils postgresql-client-16 fonts-noto-cjk
+          sudo apt-get install -y --no-install-recommends openssh-server poppler-utils fonts-noto-cjk curl ca-certificates gpg
+          python3 dev/ci/install-pg16-client-test.py
+          bash dev/ci/install-pg16-client.sh
           bash dev/fetch-font.sh
       - name: P36 — private PostgreSQL helper guards and cleanup failure regressions
         run: python3 tests/audit-fix/s4-lifecycle/private-pg-log-test.py
