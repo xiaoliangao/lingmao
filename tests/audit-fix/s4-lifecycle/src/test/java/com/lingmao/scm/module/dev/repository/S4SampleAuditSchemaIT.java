@@ -1,14 +1,22 @@
 package com.lingmao.scm.module.dev.repository;
 
-import com.lingmao.scm.IntegrationTest;
 import com.lingmao.scm.module.dev.entity.MakeWay;
 import com.lingmao.scm.module.dev.entity.SampleReviewResult;
 import com.lingmao.scm.security.DataScope;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestContext;
+import org.springframework.test.context.TestExecutionListeners;
+import org.springframework.test.context.support.AbstractTestExecutionListener;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -20,18 +28,56 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 /** 真正 Repository/PG 的字段事实与约束；HTTP 授权、报文及业务日志在独立 S4SampleAuditHttpIT。 */
-@IntegrationTest
+@SpringBootTest
+@ActiveProfiles("it")
+@Import(IsolatedSampleSource.Configuration.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@TestExecutionListeners(listeners = S4SampleAuditSchemaIT.SourceLifecycle.class,
+        mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 class S4SampleAuditSchemaIT extends SampleTestSupport {
     @Autowired Flyway flyway;
     @Autowired DataSource dataSource;
     @Autowired Environment environment;
+    @Autowired IsolatedSampleSource isolatedSource;
+    private static final String SOURCE_NAMESPACE = "s4-source-" + java.util.UUID.randomUUID().toString().replace("-", "");
+
+    @DynamicPropertySource
+    static void isolateCacheNamespace(DynamicPropertyRegistry properties) {
+        properties.add("lingmao.tenant-id", () -> SOURCE_NAMESPACE);
+    }
+
+    static class SourceLifecycle extends AbstractTestExecutionListener {
+        private static final String SOURCE = SourceLifecycle.class.getName() + ".source";
+        private static final String FAILURE = SourceLifecycle.class.getName() + ".failure";
+
+        // after callbacks run in reverse order. DirtiesContext (3000) closes this
+        // class's context first; no listener sees a manually closed cached context.
+        @Override public int getOrder() { return 2500; }
+        @Override public void beforeTestClass(TestContext context) {
+            context.setAttribute(SOURCE, context.getApplicationContext().getBean(IsolatedSampleSource.class));
+        }
+        @Override public void afterTestMethod(TestContext context) {
+            if (context.getTestException() != null && context.getAttribute(FAILURE) == null) {
+                context.setAttribute(FAILURE, context.getTestException());
+            }
+        }
+        @Override public void afterTestClass(TestContext context) {
+            IsolatedSampleSource source = (IsolatedSampleSource) context.removeAttribute(SOURCE);
+            Throwable primary = (Throwable) context.removeAttribute(FAILURE);
+            if (source == null) return; // Failed initialization already invokes the bean's cleanup.
+            try { source.requireRemoved(); }
+            catch (RuntimeException cleanup) {
+                if (primary != null) primary.addSuppressed(cleanup);
+                else throw new AssertionError("Dedicated S4 source cleanup failed; inspect source-isolation.json", cleanup);
+            }
+        }
+    }
     private static final Map<String, Set<String>> KEYS = Map.of(
             "dev_sample_color", Set.of("tenant_key", "company_id", "sample_id", "color_id"),
             "dev_sample_order_color", Set.of("tenant_key", "company_id", "sample_order_id", "color_id"),
@@ -243,16 +289,13 @@ class S4SampleAuditSchemaIT extends SampleTestSupport {
             command.environment().put("SCM_SAMPLE_TEST_DB_USER", connection.getMetaData().getUserName());
         }
         command.environment().put("SCM_SAMPLE_TEST_DB_PASSWORD", environment.getProperty("spring.datasource.password", ""));
-        command.redirectErrorStream(true).redirectOutput(output.resolveSibling("dump-restore-process.log").toFile());
-        Process process = command.start();
-        boolean finished = process.waitFor(240, TimeUnit.SECONDS);
-        if (!finished) {
-            process.destroy(); // Helper handles SIGTERM and performs its bounded cleanup before exiting.
-            if (!process.waitFor(10, TimeUnit.SECONDS)) { process.destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS); }
-        }
-        assertThat(finished).as("real dump/restore helper completed, no missing-tool skip").isTrue();
-        assertThat(process.exitValue()).as("inspect the safe dump-restore-process.log and JSON evidence").isZero();
+        SampleRestoreProcess.Result process = SampleRestoreProcess.run(command, output.resolveSibling("dump-restore-process.log"), json);
+        assertThat(process.finished()).as("real dump/restore helper completed, no missing-tool skip; %s", process.safeSummary()).isTrue();
+        assertThat(process.exitCode()).as("safe dump/restore process and JSON evidence; %s", process.safeSummary()).isZero();
+        assertThat(process.diagnosticsComplete()).as("bounded pipe diagnostics were completely consumed and persisted; %s", process.safeSummary()).isTrue();
         JsonNode result = json.readTree(Files.readString(output));
+        assertThat(result.path("sourceDatabase").stringValue()).isEqualTo(isolatedSource.database())
+                .isNotEqualTo(isolatedSource.sharedDatabase());
         assertThat(result.path("passed").asBoolean()).isTrue();
         assertThat(result.path("privateArchiveRemoved").asBoolean()).isTrue();
         assertThat(result.path("targetDatabaseRemoved").asBoolean()).isTrue();

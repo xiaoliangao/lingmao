@@ -7,6 +7,7 @@ archive contains the whole test database and is private, ephemeral and always re
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from urllib.parse import unquote, urlsplit
@@ -25,6 +27,61 @@ class GateFailure(RuntimeError):
     def __init__(self, message: str, diagnostic: dict[str, object] | None = None):
         super().__init__(message)
         self.diagnostic = diagnostic
+
+
+_OUTPUT_FAILED = False
+_STAGES = {"client version": "client_version", "psql test probe": "sql_probe",
+           "real pg_dump": "pg_dump", "create isolated restore database": "create_database",
+           "real pg_restore": "pg_restore", "remove isolated restore database": "drop_database"}
+
+
+class _DiscardOutput:
+    def write(self, value):
+        return len(value)
+
+    def flush(self):
+        pass
+
+
+def event(kind: str, stage: str, phase: str, **facts) -> None:
+    """Only source-owned categories and scalar diagnostics enter the parent pipe.
+
+    Never print argv, SQL, connection strings, row values or exception messages.
+    A broken diagnostic sink must not replace a command failure with exit120 at
+    interpreter shutdown; the remaining cleanup still runs normally.
+    """
+    global _OUTPUT_FAILED
+    try:
+        sys.stdout.write(json.dumps({"protocol": "s4-restore-1", "kind": kind,
+                                     "stage": stage, "phase": phase, **facts}) + "\n")
+        sys.stdout.flush()
+    except (OSError, ValueError):
+        _OUTPUT_FAILED = True
+        sys.stdout = _DiscardOutput()
+
+
+def publish_result(evidence: dict[str, object], output: Path) -> int:
+    """Separate primary/cleanup/report failures, including a full evidence volume."""
+    verified = bool(evidence["passed"])
+    evidence["safeEventOutputFailedBeforeEvidenceWrite"] = _OUTPUT_FAILED
+    written = False
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
+        written = True
+    except OSError as failure:
+        evidence["passed"] = False
+        evidence["evidenceWriteFailure"] = {"category": "disk_full" if failure.errno == errno.ENOSPC else "io_error",
+                                            "errno": failure.errno}
+        event("report", "evidence_write", "failure", errorKind="io_error",
+              category=evidence["evidenceWriteFailure"]["category"])
+    code = 0 if evidence["passed"] else 1
+    event("result", "result", "complete" if code == 0 else "failure", exitCode=code,
+          passed=bool(evidence["passed"]), verificationPassed=verified, evidenceWritten=written,
+          primaryFailure="failure" in evidence, cleanupFailed="cleanupFailure" in evidence or "archiveCleanupFailure" in evidence,
+          targetDatabaseRemoved=bool(evidence.get("targetDatabaseRemoved", False)),
+          privateArchiveRemoved=bool(evidence.get("privateArchiveRemoved", False)))
+    return code
 
 
 def safe_diagnostic(result: subprocess.CompletedProcess[bytes]) -> dict[str, object]:
@@ -40,7 +97,9 @@ def safe_diagnostic(result: subprocess.CompletedProcess[bytes]) -> dict[str, obj
     state = re.match(rb"([0-9A-Z]{5})(?::|\s|$)", message)
     if state is not None:
         diagnostic["sqlState"] = state.group(1).decode("ascii")
-    if re.search(rb"\bfunction [^\r\n]+ does not exist", message):
+    if b"no space left on device" in message.lower():
+        diagnostic["category"] = "disk_full"
+    elif re.search(rb"\bfunction [^\r\n]+ does not exist", message):
         diagnostic["category"] = "undefined_function"
         # These are source-owned identifiers, not arbitrary text copied from a database error.
         for name in ("scm_security_audit_id_valid", "scm_security_audit_link_valid", "scm_sample_audit_identity_valid"):
@@ -66,14 +125,22 @@ def safe_diagnostic(result: subprocess.CompletedProcess[bytes]) -> dict[str, obj
 
 def run(command: list[str], environment: dict[str, str], label: str, *, sql: str | None = None,
         failure_expected: bool = False, timeout: float = 60) -> subprocess.CompletedProcess[bytes]:
+    stage = _STAGES.get(label, "command")
+    started = time.monotonic()
+    event("command", stage, "start")
     try:
         result = subprocess.run(command, env=environment, input=None if sql is None else sql.encode(),
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
+        event("command", stage, "failure", elapsedMs=int((time.monotonic() - started) * 1000),
+              errorKind="timeout" if isinstance(error, subprocess.TimeoutExpired) else "io_error")
         raise GateFailure(label + ": " + type(error).__name__) from None
+    diagnostic = safe_diagnostic(result)
+    event("command", stage, "failure" if result.returncode != 0 and not failure_expected else "complete",
+          elapsedMs=int((time.monotonic() - started) * 1000), expectedFailure=failure_expected, **diagnostic)
     if result.returncode != 0 and not failure_expected:
         # PostgreSQL may put SQL/data in stderr; its raw diagnostic is never copied to stdout/artifacts.
-        raise GateFailure(label + ": exit " + str(result.returncode), safe_diagnostic(result))
+        raise GateFailure(label + ": exit " + str(result.returncode), diagnostic)
     return result
 
 
@@ -89,6 +156,7 @@ def clients() -> dict[str, str]:
 
 
 def main() -> int:
+    event("verification", "preflight", "start")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sample-id", action="append", required=True, type=int)
     parser.add_argument("--security-role-id", required=True, type=int)
@@ -247,6 +315,7 @@ def main() -> int:
         evidence.update(passed=False, failure=failed)
         if isinstance(error, GateFailure) and error.diagnostic is not None:
             evidence["failureDiagnostic"] = error.diagnostic
+        event("verification", "verification", "failure", errorKind="verification_failure", primaryFailure=True)
     finally:
         # Do not let a second cancellation interrupt bounded cleanup and leave a private archive.
         for number in (signal.SIGTERM, signal.SIGINT):
@@ -261,22 +330,23 @@ def main() -> int:
                 if not evidence["targetDatabaseRemoved"]:
                     raise GateFailure("Restore database cleanup did not finish")
             except GateFailure as error:
-                failed = str(error); evidence.update(passed=False, cleanupFailure=failed)
+                evidence.update(passed=False, cleanupFailure=str(error))
+                event("cleanup", "drop_database", "failure", errorKind="cleanup_failure")
         try:
             shutil.rmtree(private)
             evidence["privateArchiveRemoved"] = not private.exists()
         except OSError:
-            failed = "Private restore archive cleanup failed"; evidence.update(passed=False, cleanupFailure=failed)
-        arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        arguments.output.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
-    print(json.dumps({"passed": evidence["passed"], "evidence": str(arguments.output), "failure": failed}))
-    return 0 if evidence["passed"] else 1
+            evidence.update(passed=False, archiveCleanupFailure="Private restore archive cleanup failed")
+            event("cleanup", "archive_cleanup", "failure", errorKind="cleanup_failure")
+    return publish_result(evidence, arguments.output)
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except GateFailure as failure:
-        # Messages are fixed labels only; no URL, credential, SQL or subprocess output.
-        print(json.dumps({"passed": False, "failure": str(failure)}))
+    except (GateFailure, OSError, ValueError) as failure:
+        event("verification", "preflight", "failure", errorKind="guard_failure", primaryFailure=True)
+        event("result", "result", "failure", exitCode=1, passed=False, verificationPassed=False,
+              evidenceWritten=False, primaryFailure=True, cleanupFailed=False,
+              targetDatabaseRemoved=False, privateArchiveRemoved=False)
         raise SystemExit(1)
