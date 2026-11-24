@@ -1,6 +1,30 @@
 # 全量审查与修复总台账
 
-## 2026-11-23 续接进度与当前口径
+## 2026-11-24 当前进度与验收口径
+
+本台账第3、4节与 [PR #9](https://github.com/xiaoliangao/lingmao/pull/9) 最新97项销项表逐行一致：F类14项、M类9项、P类74项，**70项通过、27项未通过**。代码工作分支为 `fix/full-audit-arch-prod-hardening`，目标基线仍为 `dev@7c757c83fbd794e051347cb8edff04d346294e75`；最新已公开代码提交为 `497f55380d336b79130ecaaf67b21539789330c7`，源码树为 `302a8a33583ca237e22c4504ddbbb3b1708c0b99`。PR保持Draft，尚未合并，也不代表允许生产上线。
+
+### P33：已按完整云端证据销项
+
+P33正式实现位于 `5ec26be3e8a6745585c6c4069c563b8cb73ff108`。对应 [CI #167](https://github.com/xiaoliangao/lingmao/actions/runs/45356521615) 与 [CI #168](https://github.com/xiaoliangao/lingmao/actions/runs/45356530534) 均完整成功。已下载并独立核验CI168原始Artifact `14906781202`（55,203,379 bytes，SHA256 `dc695e872c26cc63b513d47ab55e560266f6f94383ff89c70906bc5cdb254dbe`），其552单测、534集成测试均零失败、零错误、零跳过，两个Failsafe verify均实际执行；新增12项P33 IT与原测试身份集合准确对齐。
+
+原件包含20个测点、420份读计划、140份SQL、56份写计划，39次真实psql调用（25次成功、14次预期拒绝）和真实未提交写事务下的HTTP一致性验证。其他门禁为347项浏览器检查、24项真实UI回归及1项API专用回归、24项Node单测、19项core检查、23项生产进程检查和9项网关检查；不能将API专用方法冒称真实UI。
+
+当前CI168空头分布的摘要页实际为25次采购主键查找、15行生产头顺序扫描代理值及30行摘要扫描代理值；均匀分布下，50条分页仍访问5006行摘要和5022行采购头扫描代理值。精确总数和候选筛选仍可能扩大访问量，不能承诺整个请求为O(pageSize)、统一SLA或所有分布/阶段都更快。原有回退路径、维护阶段和失败证据保留。
+
+### P21：恢复测试隔离和诊断已提交，整项仍未通过
+
+最新提交 `497f553` 仅涉及6个测试文件（3新增、3修改）；其源码树与完整本地验证的 `fc2fb7039774721110e544cf184922d01c5c55db` 完全一致。S4改用明确归属的独立空源库并执行49项迁移，继续使用完整pg_dump/restore，原5项业务断言、60秒工具时限与240秒父进程时限均保留。新增3项Java进程诊断单测，Python诊断回归由6项扩为13项；Python数量不计入Maven单测数。
+
+完整本地 `-Pprod-readiness,ci-export-capacity clean verify` 已通过 **555单测、534集成测试**，均零失败、零错误、零跳过。原件核验确认大夹具A1先结束，隔离S4随后执行；S4归档682,053 bytes，源库、目标库删除均通过实际SQL检查，私有归档也已删除。完整快照1784个原件、44,401,402 bytes，manifest SHA256 `66aa9ea12530556c92ca5cd48953ca8af4898887ecd66a1b504c0d4feaba1e4b`。这仅是本地后端完整回归，不替代最新提交的前端、浏览器及部署CI。
+
+代码提交497f553对应的 [CI #169](https://github.com/xiaoliangao/lingmao/actions/runs/45366639857) 和 [CI #170](https://github.com/xiaoliangao/lingmao/actions/runs/45366657403) 均已结束，工作流及任务结论均为success；CI169为38个步骤成功及1个按push条件跳过的PR基线截图步骤，CI170的39个步骤全部成功。本轮已核对完整run/jobs API及Artifact元数据，尚未下载这两轮Artifact逐项复核；上述555/534数量仍明确引用本地原件，CI167/168也不能当成497f553的运行证据。此前本地首轮缺固定字体依赖的1项错误原件保留，补齐已固定哈希的资源后再跑获得上述完整结果。更早共享审计库恢复的ENOSPC/PANIC与60秒超时失败也继续保留，独立小源库通过不证明大共享审计库恢复容量。**P21仍为未通过。**
+
+第1、2、5、6节及续记是保留的历史证据；其中未提交财务等候选、旧测试数量、旧运行状态只对应当时记录。未恢复的候选和私有业务表不能推定为当前已实现或已验证。P53仍只有未发布设计候选，不能计作实现或验收通过。
+
+## 2026-11-23 续接记录（历史口径）
+
+以下原记录中的“当前”“本轮”指当时快照，不替代上方当前口径或第3、4节同步后的现行表。
 
 本台账现行条目已与恢复的 [PR #9](https://github.com/xiaoliangao/lingmao/pull/9) **97项销项表**对齐：F类14项、M类9项、P类74项；沿用PR快照判定为**62项通过、35项未通过**。本轮只给 F-02、P-12、P-54、P-63、P-64、P-71 六项补充实际重建与定向证据，**六项均仍为未通过，统一集成完整结果及云端待验**；其余91行保持PR快照原判定和原文；其中未提交候选的进度叙述属于恢复时的历史记录，不表示候选当前仍在运行。
 
@@ -58,12 +82,12 @@
 
 ## 3. 功能与模型台账（当前23项）
 
-问题定位和既往证据保留原来源；本轮六项补充不预写统一集成或云端通过。财务等未恢复候选的既往实测叙述仅为历史证据，不能推定候选当前可用。
+问题定位和既往证据保留原来源；本节与PR #9当前销项表逐行一致，验收结论受顶部所列提交和运行范围约束。财务等未恢复候选的既往实测叙述仅为历史证据，不能推定候选当前可用。
 
 | ID | 级别 | 证据位置与问题 | 修复/验收方案 | 当前判定及证据边界 | 修复提交 |
 |---|---|---|---|---|---|
 | F-01 | P1 | `web/src/mock/home.ts:36`、`web/src/mock/board.ts:5`；`docs/进度.md:73,188`：首页/评审只有前端契约，正式接口缺失 | 实现真实查询、权限交集及错误/空态；删除相应 mock；真实主线 UI | 通过（实际首页/评审API及错误/空态，真实UI） | 8d2e04f / 1d78ebf |
-| F-02 | P1 | `docs/rfc/010-审查整改契约.md:81`：公共标签仅附加属性只读，缺标签编辑、关联与筛选闭环 | 按冻结规范实现标签/对象/关联、领域权限、自动入库、筛选、CAS与删后重建；缺原件不阻挡明确需求 | 未通过（2026-11-23已重建11个独立业务列表和9个导出的标签AND筛选，与原权限/数据范围取交集；13个标签对象域中TECH_PACK、PRODUCTION_RECEIPT仅为嵌套视图，未新增独立筛选。tags-final 10单测+16真实PG/HTTP通过；统一集成完整结果及云端待验） | d61e487（既有部分）；40b3321（本轮本地） |
+| F-02 | P1 | `docs/rfc/010-审查整改契约.md:81`：公共标签仅附加属性只读，缺标签编辑、关联与筛选闭环 | 按冻结规范实现标签/对象/关联、领域权限、自动入库、筛选、CAS与删后重建；缺原件不阻挡明确需求 | 通过（11个独立业务列表、9个导出实现标签AND筛选，保持原权限/数据范围及归档稳定ID语义；TECH_PACK、PRODUCTION_RECEIPT仍为嵌套视图。最新CI的真实PG/HTTP、62项Vue组件检查及实际UI25均通过；真实列表AND总数1、部分匹配排除、清空恢复已核原件与截图） | [9788aa8](https://github.com/xiaoliangao/lingmao/commit/9788aa85a84fc42bab0dafcbf10d685544f28160) / [CI #162](https://github.com/xiaoliangao/lingmao/actions/runs/45230592600) |
 | F-03 | P0 | `docs/PRD.md:72–79,1923,2112`：当前dev缺样衣、成品、完整QC/预约、财务；main已有成品，不得误报全仓缺失 | 审查复用main成品并加固；样衣按RFC007继续实施；其余链路分别补齐和验证，不能用工具代替主线 | 未通过（成品676cdac、样衣d61e487完整CI及实际UI已过；完整QC/预约、订单BOM及财务最终整合未完成） | 676cdac / d61e487（已验部分）；其余— |
 | F-04 | P1 | `module/production`、API05：FOB/CMT 共路由、排单、回货已有实现 | 真实数据库走订单→采购/外发→分批收退→回货与逆向，不以源码存在判通过 | 通过（既有物料采购/外发/分批收退路径；成品/财务断点仍见F03） | 1aebc97 / dac2a7a；本轮复验8d2e04f / 1d78ebf |
 | F-05 | P1 | `TechPackTab.vue`、原型 `3-ui.js/5a-home-style.js`：BOM 浮窗/图像/权限矩阵 | 真 API 页面逐张看截图；保留视觉、加载/空/失败态 | 通过（真实BOM浮窗/成本权限与矩阵，逐张查看截图） | 2f69ccd / 1d78ebf |
@@ -98,10 +122,10 @@
 | P-06 | P1 | dev StockLog OFFSET、无查询时限；继承 seek、超时和复合索引 | EXPLAIN 实际访问量、无隐式 COUNT、所有池连接时限 | 通过（本轮 S1 真实库专项） | 1aebc97 |
 | P-07 | P1 | dev DictCache 固定 TTL、无单飞；继承命名空间/栅栏 | 100 同起仅一次回源、回滚/慢填充/跨命名空间隔离 | 通过（真实双JVM100请求1回源；回滚与命名空间专项） | dac2a7a |
 | P-08 | P1 | dev 无 Outbox；继承持久租约状态机 | 超时接管、旧持有者拒 ack、退避/DLQ/手动重推 | 通过（缓存/库存导出真实DB租约、DLQ及重启接管；ApiQueue/TaskNotice业务另见F06） | dac2a7a |
-| P-09 | P1 | dev ExcelWriter:190 byte[]、全量行 List；继承 seek 流/导出任务 | 真实 TCP 断连停下一页；限额、清理、中文文件名 | 未通过（库存流水已实测；全部旧导出要求见P37） | dac2a7a |
+| P-09 | P1 | dev ExcelWriter:190 byte[]、全量行 List；继承 seek 流/导出任务 | 真实 TCP 断连停下一页；限额、清理、中文文件名 | 通过（15个旧业务Excel入口直接流式/≤500分页，同只读RR快照；15条真实TCP RST、原限额、finally与重试、UTF-8文件名和准备审计边界已核验。CI #165/#166全流程成功，#166原件复核完成） | [dcfb199](https://github.com/xiaoliangao/lingmao/commit/dcfb1994ede400e483d309c77e7b106a372c6999) / [CI #165](https://github.com/xiaoliangao/lingmao/actions/runs/45331126560) / [CI #166](https://github.com/xiaoliangao/lingmao/actions/runs/45331133356) |
 | P-10 | P0 | dev ExcelReader 无公式阻断、FileServiceImpl:65 只验扩展名 | =CMD 精确行列拒绝、魔数/ZIP 限制、整批零写 | 通过（真实导入/文件边界专项） | dac2a7a |
 | P-11 | P0 | 继承 FieldPolicy/DTO/Batch 范围复查 | 无权限 JSON 物理无价格/银行、Batch 混入不可见 ID 拒绝 | 通过（当前角色/数据范围；共享库多租户缺口仍见M01） | dac2a7a / 8d2e04f |
-| P-12 | P0 | dev 每次请求现查权限；继承 session_version/轮换；角色/菜单授权变更未递增会话版本 | 停用/降权即时吊销全部存量访问及刷新会话；固定家族寿命、同站 Cookie 校验 | 未通过（2026-11-23重建V60授权变更原子递增会话版本、访问/刷新共同失效及读权限后复验；授权图锁在实体锁前，四表BEFORE STATEMENT同序。auth-final 41单测+23真实IT通过，其中本项14 HTTP/PG；d61基线8项目标失败及旧图锁三事务真实死锁1次均保留。统一集成完整结果及云端待验） | 6188413 / 3ef3ec8（本轮本地）；dac2a7a / 8d2e04f（历史） |
+| P-12 | P0 | dev 每次请求现查权限；继承 session_version/轮换；角色/菜单授权变更未递增会话版本 | 停用/降权即时吊销全部存量访问及刷新会话；固定家族寿命、同站 Cookie 校验 | 通过（V60使授权变更原子递增会话版本，旧访问/刷新共同失效，并在读取权限后复验版本；授权图事务锁先于实体锁，四表BEFORE STATEMENT同序。14项真实HTTP/PG及完整CI通过；UI14/19另验证8处旧access为401，UI本身未验证refresh，刷新撤销由后端HTTP用例覆盖） | [9788aa8](https://github.com/xiaoliangao/lingmao/commit/9788aa85a84fc42bab0dafcbf10d685544f28160) / [CI #162](https://github.com/xiaoliangao/lingmao/actions/runs/45230592600) |
 | P-13 | P1 | dev OperLogAspect 直接信 XFF；继承 TrustedProxyResolver | 伪造 XFF 不能绕限流；可信代理/非默认端口同源正确 | 通过（真实HTTP、Nginx及代理边界故障） | dac2a7a |
 | P-14 | P1 | dev request.ts 401直接登出、useTable 只丢弃晚响应 | 8/16并发单刷新、真 Abort、无键写请求不重放 | 通过（真实后端16请求单刷新；当前前端105项门禁） | 2f69ccd / dac2a7a / 1d78ebf |
 | P-15 | P1 | 继承 IME/会话广播/固定单据主体/日期/草稿/局部边界；当前没有全局主体切换 store 与广播 | 拼音 Enter、真实全局公司切换、3时区、故障恢复浏览器验收 | 未通过（IME、会话广播、固定单据主体、三时区和故障回归已有实测；这些不能代替尚未实施的全局公司跨页签切换，后者随M01验证） | 2f69ccd / 1d78ebf；公司切换— |
@@ -110,7 +134,7 @@
 | P-18 | P1 | 继承 28 表 sys_data_log old/new；用户/角色关系无字段审计 | 真改价 diff、回滚不留事实、只增保护；权限管理缺口单列 | 通过（业务Diff及新增权限审计5项真实HTTP/DB） | b574e5f / 03ba1ac |
 | P-19 | P1 | 继承 live/ready、真实借连接探针与排空 | 真断库、SIGTERM在途事务/导出、租约恢复；不以Mock代替 | 通过（本轮S2云端真实进程、DB、导出排空和恢复） | b574e5f |
 | P-20 | P0 | 继承 ProductionEnvironmentGuard、产物隔离门禁 | 实际生产 JAR 弱秘钥拒启、无测试入口/Mock；一命令启动保留 | 通过（生产JAR产物/启动守卫；增强凭据另见P27） | b574e5f |
-| P-21 | P1 | 已有 `.github/workflows/ci.yml` 综合门禁 | 干净 ubuntu runner 实际结论与 Artifact，不能引用旧本地通过 | 未通过（S1–S4冻结提交全部云端已绿；后续追加修复和功能增量仍需最终门禁） | 90ba037 / 8d2e04f / 1d78ebf / 03ba1ac |
+| P-21 | P1 | 已有 `.github/workflows/ci.yml` 综合门禁 | 干净 ubuntu runner 实际结论与 Artifact，不能引用旧本地通过 | 未通过（5ec26be的CI #167/#168全部成功，#168原件已核；恢复隔离与有界诊断已追加提交497f553，同树本地555单测+534IT全过，原5项恢复在A1大夹具后通过；497f553的CI #169/#170工作流均成功，原始Artifact尚待逐项核验。剩余业务整合未完成，大审计库恢复容量未证明，仍为全项目最终门禁） | [497f553](https://github.com/xiaoliangao/lingmao/commit/497f55380d336b79130ecaaf67b21539789330c7) / [CI #168](https://github.com/xiaoliangao/lingmao/actions/runs/45356530534) / [CI #170](https://github.com/xiaoliangao/lingmao/actions/runs/45366657403) |
 | P-22 | P0 | 当前候选 `web/src/utils/request.ts`：等待旧写入回执后没有二次共享 Promise 检查；核对回执跨越会话切换后仍会改旧收据 | 真 Chromium 复现同体双 POST/双键，以及换账号后旧查询/误删；修复后必须只 1 POST/1 键，保留原身份回执 | 通过（修前真实失败、修后1POST/1键及旧身份回执保留） | 1d78ebf |
 | P-23 | P1 | 当前候选 `web/src/utils/orderSku.ts:30`：`Math.round(price * 10000)` 仍先经过二进制浮点乘法，金额合计又转 Number 累加；`TechPackTab.vue:680,691,747,774` 存在 BOM/工艺/差额浮点预览 | 统一十进制定点边界、整数分逐行汇总及显示；覆盖 `1.00185` 舍入反例、大额合计及 `0.018 × 7.5 = 0.14` BOM 成本预览 | 通过（十进制定点反例、逐行汇总与真实BOM预览） | 1d78ebf |
 | P-24 | P0 | `V36__append_only_field_audit.sql:53–65` 只保护审计表；`inv_stock_log` 缺 DB 不可变守卫，`InventoryIT:325`、`A1PurchasePrecisionIT:143` 可直接改原事件 | 追加独立 repeatable 迁移，拒 UPDATE/DELETE/TRUNCATE；真实反审只追加；历史夹具改 INSERT，清理限定迁移所有者/测试事务，不能在生产留下绕过开关 | 通过（3项本地专项；首轮CI的流水、大夹具清理均通过，整体另有搜索测试错误） | 132ffaf |
@@ -122,11 +146,11 @@
 | P-30 | P0 | 认证 HTTP 响应的 Set-Cookie 不受前端 epoch 控制：旧退出/刷新/改密晚到可覆盖新登录 Cookie；单飞刷新锁未覆盖认证切换 | 同源 Web Locks 串行认证响应与会话发布；无 Web Locks 时协商 access-only，服务器不读写刷新 Cookie，旧身份任务发出前检查 epoch；真实浏览器 Cookie/HTTP 回归及真实后端模式测试 | 通过（S4实际非安全HTTP源、未注入能力；两页签16个401只刷1次并全部重放） | 8d2e04f / 1d78ebf / 03ba1ac |
 | P-31 | P0 风险核查 | 本轮认证锁候选 `web/src/api/auth.ts:16` 持锁后执行改密，需排除 401 刷新二次申请同名锁 | 主控亲读真实浏览器结果：业务/HTTP 401 分别 21/11ms 结束，均 0 刷新、0 残锁；现有非幂等写保护已阻断嵌套刷新，无需增加代码分支 | 通过（排除假设风险，定向回归入库） | 1d78ebf |
 | P-32 | P1 | 本轮 `PurchaseOrderServiceImpl.java:1057` 接受空白 tab，但 SQL 返回空列表；`ProductionQuery.cutRiskFirst` 可 GET 绑定，列表与 counts/export 使用不同筛选 | 页签统一归一化；真正拒绝或隔离内部查询参数，不能只依赖 JSON 注解；实测 HTTP 参数与列表/计数一致 | 通过（内部GET参数不参与绑定，注入不改变结果；列表/计数一致） | 8d2e04f |
-| P-33 | P1 | `mapper/biz/DocNoticeMapper.xml:27–57` 在全量可见未处理通知 GROUP BY/MAX 后 seek，每页仍聚合完整集合 | 已测六种分布、19查询点、171份真实EXPLAIN；主控完整profile重测：计数后移在10万单组从81.599ms退化到201.343ms，LATERAL在10万空单头从50.234ms退化到192.205ms。保留原SQL，完整聚合的O(pending)容量边界与演进阈值写入RFC | 未通过（实际规模边界已确认；未改变生产聚合SQL） | 8d2e04f / 03ba1ac（测量与边界文档） |
+| P-33 | P1 | `mapper/biz/DocNoticeMapper.xml` 旧查询在全量可见未处理通知GROUP BY/MAX后seek，每页仍聚合完整集合 | 同事务精确摘要、当前头权限、独立total、原游标/预览；受控回填/对账/启用/回退；六分布加ALL无owner及真实并发/运维验收 | 通过（5ec26be的CI #167/#168全部成功；#168真实Artifact及merge树已核，552单测/534IT、两分区及两verify完整通过；20点420读计划/140SQL/56写计划、锁等待、39次psql及十万热点并发HTTP原件一致。保留旧本地磁盘失败及所有性能边界，不宣称整请求O(pageSize)或生产SLA；后续497f553仅测试基础设施） | [5ec26be](https://github.com/xiaoliangao/lingmao/commit/5ec26be3e8a6745585c6c4069c563b8cb73ff108) / [CI #168](https://github.com/xiaoliangao/lingmao/actions/runs/45356530534) |
 | P-34 | P1 | `PurchaseOrderServiceImpl.java:1064` 当前页来源仍读全部关联算料使用；`SupplyServiceImpl.java:53` 原补货列表仍全量 SKU/SupplyBook，单SKU草稿也无界 | 补货正式改PageResult（默认50/max100），SQL完整计算后分页；来源/草稿SQL预览20条加真实总数，前后端同步并验证真实分页与业务数值 | 通过（真实235SKU/125来源及9项分页浏览器） | 8d2e04f / 1d78ebf |
 | P-35 | P0 | `SupplyController.java:28`、`MrpServiceImpl.kitting`：登录即可批量读取任意orderIds的齐料与calcIds，且逐张算料selectByCalc形成N+1 | 混入不存在/不可见ID整批404；订单/生产列表与看板分别授权；看板仅APPROVED/RUNNING普通数据范围，无审批例外；一次批量预加载，真实HTTP混批和SQL次数验收 | 通过（独立看板授权、混批拒绝/1次SQL及6项浏览器失败恢复） | 8d2e04f / 1d78ebf |
 | P-36 | P1 | `tests/prod-readiness/a4-lifecycle/ci_two_instances.py:141–184` 对整个 PostgreSQL 服务启用 SQL 日志并通过 docker stdout 采集；删除本地副本后 Actions 停容器仍输出原始 SQL | 私有文件采集、测试库级配置、finally 恢复与清理；匿名 SQL 哨兵在私有日志可见且容器日志不可见，保留实际回源次数核对 | 通过（S4实际Docker、双JVM和最终容器清理日志均复核；100请求1次PG回源；未发现真实商业数据泄露证据） | 03ba1ac |
-| P-37 | P1 | `MaterialImport.java:183–190`、`StyleExcel.java:157–164`：旧多表导出只限制主档 50000 条，色码子行先完整加载再检查 Excel 限额；`ExcelWriter.java:102` 最终仍构造 byte[] | 对主子表实际导出行数实施查询前/查询中边界，并按真实内存预算验证；库存流水的 seek/异步/断连证明不可外推到所有旧导出 | 未通过（主数据/四类单据/供应商关联的SQL预算及超长单元格已修；全链路流式、峰值/并发/断连仍待完成） | 03ba1ac / 104f632（修订后完整云端已通过；原479/484失败保留） |
+| P-37 | P1 | `MaterialImport.java:183–190`、`StyleExcel.java:157–164`：旧多表导出只限制主档 50000 条，色码子行先完整加载再检查 Excel 限额；`ExcelWriter.java:102` 最终仍构造 byte[] | 对主子表实际导出行数实施查询前/查询中边界，并按真实内存预算验证；库存流水的 seek/异步/断连证明不可外推到所有旧导出 | 通过（主子表50000/50001实际边界、完整SKU成员与UTF-16顺序、单数组查询500/101/0等价/通用计划及固定暖机后原600MiB绝对堆门禁均通过。容量类独立JVM，采购单/双同进程；历史共享测试JVM超限保留，不外推长期任意负载） | [dcfb199](https://github.com/xiaoliangao/lingmao/commit/dcfb1994ede400e483d309c77e7b106a372c6999) / [CI #165](https://github.com/xiaoliangao/lingmao/actions/runs/45331126560) / [CI #166](https://github.com/xiaoliangao/lingmao/actions/runs/45331133356) |
 | P-38 | P2 | `web/src/components/SupplierSelect.vue:38–71` 仅展开才查选项，`InvDocFormDialog.vue:214–220` 自动选工厂只改ID | 根终审实际截图退料弹窗显示“供应商 3”；同一选择器更换ID还可能沿用旧label。使用既有无敏感字段options/includeId补名并隔离过期请求，真页面不展开下拉即显示实际简称 | 通过（修前真实失败；主控修后实际API/UI名称回显及11项组件回归，截图亲看） | 104f632（完整云端已通过；原479/484失败保留） |
 | P-39 | P1 | `web/src/views/inventory/doc/InvDocFormDialog.vue:103`、`web/src/views/purchase/order/form.vue:114,535` 仍用浮点相乘与求和 | 定点逐行HALF_UP到分再相加，保留未知估值；`0.018×7.5`行价0.14，两行合计0.28，不能先合计再舍入成0.27 | 通过（修前真实UI .13/.27；修后真实保存API与生产表单.14/.28一致，未知价仍空） | 104f632（完整云端已通过；原479/484失败保留） |
 | P-40 | P2 | `web/src/views/purchase/order/form.vue:493,551` 序号44px、删除56px，受全局首尾cell padding挤压 | 主控在1440含真实侧栏页面看到序号及“删”省略号；局部调整宽度/内边距，补1180内容宽和三位序号DOM测量及按钮可点验证 | 通过（两个窗口真实组件红绿、9图亲看；真实后端页面DOM和截图复核无截断） | 104f632（完整云端已通过；原479/484失败保留） |
@@ -143,7 +167,7 @@
 | P-51 | P1 | 新增样衣主体迁移PUT的旧主体header/query与新主体body，被通用幂等层误判为冲突 | 注解显式指向可信Controller原主体参数，body仍完整参与指纹；重放按对象当前主体与SELF范围再授权 | 通过（d61e487完整云端；真实主体迁移、同键回放、变体1002、旧公司404及失权403均通过，原始HTTP证据已亲读） | d61e487 |
 | P-52 | P0 | 新标签 `TagServiceImpl.object` 的样衣/样衣资料包授权、owner判别与标签查询可跨快照；缓存不能代表当前SELF权限 | 同一有界REPEATABLE_READ读取授权及结果，SAMPLE和TECH_PACK对象标签绕过对象缓存；保留其他缓存与提交后失效 | 通过（d61e487完整云端；SAMPLE/TECH_PACK冷暖4种真实双连接屏障均保持授权快照；对象缓存不替代SELF权限） | d61e487 |
 | P-53 | P0 | `common/file/FileUrlSigner.java:44` 签名有效至7天后的零点，`SignedFileFilter.java:24`与生产Nginx仅验签名；已发出URL不随账号/对象权限变更撤销；旧裸路径还能重新挂入引用 | 按 `file-access-contract.md` 实现当前会话/真实引用读取、关闭旧公开路径、单次待绑定资格与全量旧新路径排序锁；覆盖应用及Nginx | 未通过（主控类型/Lint/build、24前端单测与25组件浏览器检查通过并亲看13图；真实生产JAR+Nginx1.26.3+实际页面上传/绑定/重载/原图/PDF下载、96MiB断连及两种SIGTERM通过并亲看7图。PDF仅证明真实字节/下载；最终组合539IT及CI1.28.0待验，尚无修复Commit） | — |
-| P-54 | P1 | `TechPackSaveReq.java:24–31`、`PackContent.java:79–157` 明细/嵌套预算缺失；BOM实际弹窗全量色码控件；历史候选曾报告单价往返舍入；本轮实际确认PDF工序单价按两位显示，容量和资源问题仍待完整核验 | 历史 `pack-capacity-precision-contract.md` 尚未恢复；仍需落实原始总量/文本/NUMERIC边界、有界预检读取、完整DecimalString、真实矩阵虚拟化与PDF资源/取消/横向分页 | 未通过（2026-11-23仅重建PDF工序单价及资料包默认单价/采购参考价标签的显示精度窄修；原PDF真实失败保留，修后7单测+9真实IT通过。容量预算、完整DecimalString往返、虚拟化及PDF资源/取消/横向分页仍开放；旧资料包/PDF候选与root14最终结果未恢复。统一集成完整结果及云端待验） | 88eaccd（仅本轮单价显示窄修） |
+| P-54 | P1 | `TechPackSaveReq.java:24–31`、`PackContent.java:79–157` 明细/嵌套预算缺失；BOM实际弹窗全量色码控件；历史候选曾报告单价往返舍入；本轮实际确认PDF工序单价按两位显示，容量和资源问题仍待完整核验 | 历史 `pack-capacity-precision-contract.md` 尚未恢复；仍需落实原始总量/文本/NUMERIC边界、有界预检读取、完整DecimalString、真实矩阵虚拟化与PDF资源/取消/横向分页 | 未通过（本轮PDF工序单价及页面默认单价/采购参考价的显示精度窄修已通过最新完整CI；仍未完成容量/文本/NUMERIC预算、完整DecimalString往返、虚拟化及PDF资源/取消/横向分页。旧资料包/PDF候选与root14最终结果未恢复；本地50k轻量资料包头转换超时保留为历史失败，云端同例通过） | [9788aa8](https://github.com/xiaoliangao/lingmao/commit/9788aa85a84fc42bab0dafcbf10d685544f28160) / [CI #162](https://github.com/xiaoliangao/lingmao/actions/runs/45230592600) |
 | P-55 | P1 | 新样衣共用 `useEntityContext.ts` 在KeepAlive离开时取消读取；资料包核价、来源样衣、下游引用及取消上传后返回可能停留失效状态 | 实际慢读取→切菜单→返回；只恢复受影响读任务并保留未保存编辑；同时核对初次激活、来源/引用/品类及等待上传取消 | 通过（d61e487完整云端；实际Vue组件慢读取消后返回恢复、未保存文字保留及真实产品类选择已验，主控亲看8张云端恢复图；专项HTTP明确为合成） | d61e487 |
 | P-56 | P1 | 新样衣 `mapper/dev/SampleMapper.xml` 批量码过滤位于多LATERAL组装之后；真实5001行列表计划命中索引仍把当前版本/节点各循环5001次，最后仅命中2行 | 先按命名空间/公司及≤100编码定位有界候选头，再按原授权/筛选组装；测试同时校验真实列表和COUNT的实际处理行数与循环 | 通过（d61e487完整云端；实际5001行计划仅2个头命中，头访问3行、latest-order/node各2次，精确码索引及100码/SELF/日期语义保留，主控亲读原计划） | d61e487 |
 | P-57 | P1 | 新 `R__zz_sample_field_audit.sql:13–50` 的审计 CHECK 调用两个 SQL wrapper，wrapper 内 helper 依赖连接 search_path；真实 pg_restore 空路径装载时报函数不存在 | 仅在未发布的新样衣 repeatable 固定两个纯值 wrapper 的函数级 search_path；不改旧迁移、恢复连接或放松 CHECK | 通过（d61e487云端真实dump/restore：36样衣+2安全审计hash一致、空search_path及原CHECK/append-only守卫通过；旧失败证据保留） | d61e487 |
@@ -152,15 +176,15 @@
 | P-60 | P1 | 新样衣 `S2SampleFixture.java:129–132` 将可变请求Map直接留档，后续501→500修改反向污染已发送请求证据 | 发送前只序列化一次，同一字符串用于HTTP与精确留档；独立JSON树快照，嵌套Map/List、64位ID和Decimal字节回归 | 通过（d61e487完整云端；发送前单次序列化、独立嵌套快照、501/400与500/0真实请求留档均通过；旧污染证据保留） | d61e487 |
 | P-61 | P2 | 真实UI03 `TechPackTab.vue:1172,1230` 的BOM右侧来源可见部分被裁，Tags01 `TagHistoryDialog.vue:56` 改名说明出现缺字；原HTTP中文正常 | 检查横滚/固定列可达性与字体加载；独立窄修后真实DOM与截图复验，不删列或改业务数据 | 通过（d61e487云端实际样衣/标签UI及10项组件布局通过；主控亲看BOM来源列、中文改名历史与实际14张业务图） | d61e487 |
 | P-62 | P1 | `.github/workflows/ci.yml` 的安装步骤直接依赖发行版原生 `postgresql-client-16`；真实ubuntu-26.04 runner在业务测试前找不到包 | 原生有16则直接安装，否则验证PGDG完整签名指纹和发行版后使用限定Signed-By源；三个实际客户端都必须16，保留ubuntu-latest | 通过（d61e487在干净ubuntu-latest完整CI成功；PG16工具指纹/三客户端、536单测/463IT、类型构建、生命周期和实际UI均通过；949d7a8/26bee3d原失败保留） | d61e487 |
-| P-63 | P1 | P53组合候选 `MrpServiceImpl.java:490–503,541–587` 新建/重算不保存公司；真实diff图片expected company94却为null；MRP头未接字段审计 | 从完整真实来源证明唯一公司并校验header，新/重算持久化；历史当前头受CAS回填且version+1、同事务DataLog；不放宽文件权限 | 未通过（2026-11-23已按完整来源订单证明并持久化公司；先ORDER共享锁再MRP锁，精确复核关联集合；历史空头CAS回填并version+1，同事务字段审计及失败全回滚。空search_path下真实公司回填、标签主体同步与守卫链已修复。与P64共用最终39项定向回归通过，非两组39项；统一集成完整结果及云端待验） | af14e75 / ef6a200（本轮本地）；876f90a（证据收集） |
-| P-64 | P1 | `inventory/service/impl/StockLedger.java:49` 仍先warehouseId后skuId，与本轮明确skuId升序要求不符 | 保留一致全序，调整为skuId再完整余额键，真实反序多SKU并发及SQL顺序验证 | 未通过（2026-11-23已改为SKU→仓库的完整余额键一致全序，其余当前维度固定OWN/0/0；双仓双SKU反向调拨以真实PG后端、实际锁等待和SQL顺序验证。与P63共用最终39项定向回归通过；统一集成完整结果及云端待验） | af14e75（本轮本地） |
+| P-63 | P1 | P53组合候选 `MrpServiceImpl.java:490–503,541–587` 新建/重算不保存公司；真实diff图片expected company94却为null；MRP头未接字段审计 | 从完整真实来源证明唯一公司并校验header，新/重算持久化；历史当前头受CAS回填且version+1、同事务DataLog；不放宽文件权限 | 通过（按完整来源订单证明唯一公司并持久化；先ORDER共享锁再MRP锁，精确复核来源集合，历史空头CAS回填并version+1，字段审计与业务失败全回滚。空search_path下主体回填、标签同步及守卫链通过；与P64共用39项定向证据，最新完整CI通过） | [9788aa8](https://github.com/xiaoliangao/lingmao/commit/9788aa85a84fc42bab0dafcbf10d685544f28160) / [CI #162](https://github.com/xiaoliangao/lingmao/actions/runs/45230592600) |
+| P-64 | P1 | `inventory/service/impl/StockLedger.java:49` 仍先warehouseId后skuId，与本轮明确skuId升序要求不符 | 保留一致全序，调整为skuId再完整余额键，真实反序多SKU并发及SQL顺序验证 | 通过（当前完整余额键采用SKU→仓库一致锁序，其余当前维度固定OWN/0/0；双仓双SKU反向调拨验证实际PG后端、锁等待和SQL顺序。与P63共用39项定向证据，最新完整CI通过；不外推到M03尚未实施的库存维度） | [9788aa8](https://github.com/xiaoliangao/lingmao/commit/9788aa85a84fc42bab0dafcbf10d685544f28160) / [CI #162](https://github.com/xiaoliangao/lingmao/actions/runs/45230592600) |
 | P-65 | P1 | 新财务候选 `R__zzz_financial_field_audit.sql:33`、`DataLogServiceImpl.java:229` 的关账合计投影仅允许18位整数；两笔合法最大金额SUM可为19位，审计字段将被静默丢弃 | SQL/Java统一有界38位合计DecimalString；真实两笔付款财审→关账→有权Diff完整、无权物理剥离 | 未通过（finance-fixed-07真实HTTP/PG通过，主控亲读数据库、API和DataLog均为1999999999999999999.98；无金额权的period/summary/audit物理无金额字段。整体候选及云端仍待验） | — |
 | P-66 | P0 | 新财务 `FinancialSourceService.java:35–48` 只对本页检查退货原账，summary和空游标可绕过；混合来源第一页正常也未校验后续隐藏原账 | 同次只读RR事务内先授权全部已选头，再用无游标/无截断EXISTS校验所有待结算退货原账，最后分页或独立汇总 | 未通过（旧行为05的4项真实HTTP负控有2失败、2合法兼容例通过；普通详情404但汇总泄露CNY count1，空游标页与混选第一页错误返回成功。原报文已亲读；A1v6/A2v3修复候选06同4用例全绿；整合最终验收/云端仍待执行） | — |
 | P-67 | P1 | 样衣/标签候选 `web/src/views/inventory/doc/detail.vue:183,192,195` 覆盖已验收P45列宽180/170/180为110/90/100；26bee3d真实2000行UI截图单价/金额/数量被省略号裁切 | 恢复已验收宽度，三方保留tags/finance增量；原真实大值测试不放宽，重新测DOM与截图 | 通过（d61e487完整云端；真实2000行/20色×100规格、3份精确JSON、10项DOM断言及6张实际页面图，另4组合8张宽度边界图已亲看） | d61e487 |
 | P-68 | P2 | 样衣 `tests/audit-fix/s3-browser/samples.py:403` 等route.fulfill完成就读取异步requestfailed列表；云端assert失败而finally期间同路径abort才到达 | 切主体前登记精确请求事件等待，再核真实取消和页面清空，不加固定sleep、不删断言 | 通过（d61e487完整云端；50项组件检查中两个取消均等到精确method/path/requestId的真实ERR_ABORTED，无意外console/page错误；合成HTTP范围明确） | d61e487 |
 | P-69 | P1 | 新财务接线 `InvDocServiceImpl.java:615,621`、`FgDocServiceImpl.java:667,669` 先财务REVOKE再库存逆向；V62真实守卫要求先存在对应反向流水，合法反审返回1002 | 同一事务内先实际库存逆向再追加财务REVOKE；保留头CAS、引用/期间约束与全部DB守卫，注入REVOKE失败验证全部回滚 | 未通过（finance-fixed-07两个真实故障注入通过：触发器实际观察到逆向流水及库存变化后返回1005，头/版本/库存/实物和财务事件全部回滚，重试/重放成功；主控亲读原件。整体候选及云端待验） | — |
 | P-70 | P1 | 新财务 `BillRepository.java:275` 插入来源占用未将精确业务唯一冲突归一；20独立连接抢同来源实际抛23505/uk_stl_bill_source_claim，而非约定1002 | 精确partial arbiter识别已占用来源，完整写入计数核对；任一冲突整事务回滚，其他唯一/FK/SQL异常不吞 | 未通过（finance-fixed-07来源13项及3项真实PG负控通过；真实JDBC计数[1,0]即使仅向调用者报告SUCCESS_NO_INFO仍完整回滚，无关唯一23505及typed FK23503保持原异常。整体候选及云端待验） | — |
-| P-71 | P0 | `system/AdminInitializer.java:47–77` 在每次启动时为既有用户名admin补回管理员角色，撤销角色会被重启反转；M01一次性授权引导还可能放大此错误 | 只对本次原子新建账号授初始角色；既有/停用/软删账号不恢复；双实例创建仅一次，重启降权不回升，初始化失败整体回滚 | 未通过（2026-11-23重建原子admin引导：仅实际新建账号授角色，既有/撤权/停用/软删同名不恢复，失败整事务回滚；auth-final中9项真实PG通过，使用两个独立Spring/MyBatis事务上下文，不是双JVM验收。旧root09/root02候选叙述不作本轮证据；统一集成完整结果及云端待验） | 6188413 / 3ef3ec8（本轮本地） |
+| P-71 | P0 | `system/AdminInitializer.java:47–77` 在每次启动时为既有用户名admin补回管理员角色，撤销角色会被重启反转；M01一次性授权引导还可能放大此错误 | 只对本次原子新建账号授初始角色；既有/停用/软删账号不恢复；双实例创建仅一次，重启降权不回升，初始化失败整体回滚 | 通过（仅实际原子新建admin时授初始角色，既有/撤权/停用/软删同名不恢复，初始化失败整体回滚。9项真实PG用例及最新完整CI通过；竞争创建测试使用两个独立Spring/MyBatis事务上下文，不将其表述为双JVM初始化竞争验收） | [9788aa8](https://github.com/xiaoliangao/lingmao/commit/9788aa85a84fc42bab0dafcbf10d685544f28160) / [CI #162](https://github.com/xiaoliangao/lingmao/actions/runs/45230592600) |
 | P-72 | P1 | 财务候选 `composables/useFinance.ts:52` 写失败分支仅校验sessionEpoch，不校验请求开始时companyId | catch与成功路径使用同一公司/身份守卫，主体变化立即清除旧错误；真实慢失败切主体回归 | 未通过（v3已按公司/会话/代次统一守卫并覆盖A→B→A；真实Vue调度单测通过，实际浏览器慢失败仍待验） | — |
 | P-73 | P2 | 财务候选 `composables/useFinance.ts:11` 将403/404提前改为通用文案，丢失实际traceId | 保留安全通用文案并附原始追踪码；真实错误弹窗与响应头一致 | 未通过（v3安全提示保留原traceId，根审和403/404纯负控已过；实际传输/响应头/弹窗一致性仍待验） | — |
 | P-74 | P2 | 财务候选 `settle/payments/index.vue:113`、`settle/statements/index.vue:80` 的详情三列布局将最大合法金额拆成两行；`s3-finance/boundaries.py:114–121` 只检查水平溢出，漏检文字换行 | 数字/ID/日期完整单行，按实际容器宽度减少详情列；真实DOM文本矩形验证行数，保持原字号和原视口 | 未通过（v4的root03类型/Lint/构建/9纯测试及24组件检查通过；87图中主控亲看8图。真实UI root04截图疑似日期裁切，主控与前端复阅结果不一致，已核原图SHA不变；正在补已确认对账完整时间戳及逐字符/overflow/遮挡实际DOM核验，尚不据此改CSS或认定新缺陷） | — |
