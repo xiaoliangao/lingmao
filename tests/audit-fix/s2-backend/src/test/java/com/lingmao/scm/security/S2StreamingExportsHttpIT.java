@@ -72,7 +72,7 @@ class S2StreamingExportsHttpIT extends A2BusinessFixture {
     private static final String PRODUCTION = "ProductionOrderMapper.selectRowPage";
     private static final String PURCHASE_ITEMS = "PurchaseOrderItemMapper.selectExportBatch";
     private static final String MATERIAL = "MaterialMapper.selectByIds";
-    private static final String MATERIAL_SKU = "MaterialSkuMapper.selectByIds";
+    private static final String MATERIAL_SKU = "MaterialSkuMapper.selectExportByIds";
     private static final String MATERIAL_SKU_ORDER = "MaterialSkuMapper.selectExportOrderPage";
 
     @AfterEach void releaseBarriers() { probe.states.values().forEach(s -> s.resume.countDown()); probe.states.clear(); }
@@ -268,10 +268,25 @@ class S2StreamingExportsHttpIT extends A2BusinessFixture {
         long purchase = purchase(f, actor, 50_000); String url = "/api/purchase-orders/export?ids=" + purchase;
         Path directory = Path.of("target/a2-exports/streaming"); Files.createDirectories(directory);
         List<Path> files = new ArrayList<>();
-        try {
+        try (AutoCloseable purchaseCleanup = () -> deletePurchase(purchase);
+             AutoCloseable fileCleanup = () -> { for (Path file : files) Files.deleteIfExists(file); }) {
+            // Fixed same-application warm-up, independent of measured results; never retry until green.
+            Path warmupFile = directory.resolve("warmup-" + suffix() + ".xlsx"); files.add(warmupFile);
+            State warmupState = probe.add(null, false);
+            long warmupStarted = System.nanoTime();
+            var warmupReply = http.send(request(actor, url, warmupState), HttpResponse.BodyHandlers.ofFile(warmupFile));
+            long warmupElapsedMillis = (System.nanoTime() - warmupStarted) / 1_000_000;
+            assertThat(warmupReply.statusCode()).isEqualTo(200);
+            assertThat(purchaseRowsInSequence(warmupFile)).isEqualTo(50_000);
+            assertPagesAndSnapshot(warmupState);
+            assertThat(warmupState.streamCount(PURCHASE_ITEMS)).isEqualTo(101);
+            Map<String, Object> warmup = map("requests", 1, "rowsPerDownload", 50_000,
+                    "elapsedMillis", warmupElapsedMillis, "verifiedSequence", "1..50000, in order and exactly once",
+                    "request", warmupState.snapshot());
+            evidence("purchase-warmup", warmup);
             Path single = directory.resolve("single-" + suffix() + ".xlsx"); files.add(single);
             State one = probe.add(null, false); Map<String, Object> singleHeap;
-            try (HeapProbe heap = new HeapProbe()) {
+            try (HeapProbe heap = new HeapProbe("purchase-single")) {
                 var response = http.send(request(actor, url, one), HttpResponse.BodyHandlers.ofFile(single));
                 assertThat(response.statusCode()).isEqualTo(200);
                 assertThat(response.headers().firstValue("Content-Type").orElse("")).contains("spreadsheetml.sheet");
@@ -283,7 +298,7 @@ class S2StreamingExportsHttpIT extends A2BusinessFixture {
             Path a = directory.resolve("parallel-a-" + suffix() + ".xlsx"), b = directory.resolve("parallel-b-" + suffix() + ".xlsx");
             files.add(a); files.add(b);
             Map<String, Object> doubleHeap;
-            try (HeapProbe heap = new HeapProbe()) {
+            try (HeapProbe heap = new HeapProbe("purchase-double")) {
                 var first = http.sendAsync(request(actor, url, left), HttpResponse.BodyHandlers.ofFile(a));
                 var second = http.sendAsync(request(actor, url, right), HttpResponse.BodyHandlers.ofFile(b));
                 try {
@@ -305,9 +320,9 @@ class S2StreamingExportsHttpIT extends A2BusinessFixture {
             var followup = download(actor, "/api/purchase-orders/export?ids=" + purchase + "&keyword=NO_MATCH_" + suffix(), probe.add(null, false));
             assertThat(node(followup).path("code").intValue()).isEqualTo(404);
             evidence("purchase-capacity", map("rowsPerDownload", 50_000, "verifiedSequence", "行号 1..50000, in order and exactly once", "clientBodyStorage", "files (not byte arrays)",
-                    "singleHeap", singleHeap, "doubleHeap", doubleHeap, "single", one.snapshot(),
+                    "warmup", warmup, "singleHeap", singleHeap, "doubleHeap", doubleHeap, "single", one.snapshot(),
                     "parallelA", left.snapshot(), "parallelB", right.snapshot(), "rejected", rejected.snapshot(), "followupCode", 404));
-        } finally { files.forEach(path -> { try { Files.deleteIfExists(path); } catch (IOException e) { throw new java.io.UncheckedIOException(e); } }); deletePurchase(purchase); }
+        }
     }
 
     private long purchase(Fixture f, Account actor, int count) {
@@ -412,21 +427,87 @@ class S2StreamingExportsHttpIT extends A2BusinessFixture {
 
     static final class HeapProbe implements AutoCloseable {
         private final java.util.concurrent.ScheduledExecutorService sampler = Executors.newSingleThreadScheduledExecutor();
+        private final String scenario;
+        private final jdk.jfr.Recording allocationRecording;
         private final long baseline;
+        private final long baselineCommitted;
+        private final long baselineGcCount;
+        private final long startedNanos;
         private final AtomicLong peak = new AtomicLong();
-        HeapProbe() {
+        HeapProbe(String scenario) {
+            this.scenario = scenario;
+            if (Boolean.getBoolean("lingmao.export.heap.profile")) {
+                allocationRecording = new jdk.jfr.Recording();
+                allocationRecording.enable("jdk.ObjectAllocationSample").withStackTrace();
+                allocationRecording.setMaxSize(64L * 1024 * 1024);
+                allocationRecording.start();
+            } else allocationRecording = null;
             ManagementFactory.getMemoryMXBean().gc(); baseline = used(); peak.set(baseline);
+            baselineCommitted = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getCommitted();
+            baselineGcCount = gcCount(); startedNanos = System.nanoTime();
             sampler.scheduleAtFixedRate(() -> peak.accumulateAndGet(used(), Math::max), 0, 5, TimeUnit.MILLISECONDS);
         }
         private static long used() { return ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed(); }
+        private static long gcCount() {
+            return ManagementFactory.getGarbageCollectorMXBeans().stream()
+                    .mapToLong(bean -> Math.max(0, bean.getCollectionCount())).sum();
+        }
         Map<String, Object> snapshot() {
             peak.accumulateAndGet(used(), Math::max);
-            assertThat(peak.get()).as("measured whole-process heap ceiling for this capacity fixture").isLessThan(600L * 1024 * 1024);
-            return map("baselineBytes", baseline, "peakBytes", peak.get(), "peakIncreaseBytes", peak.get() - baseline,
+            long measuredPeak = peak.get();
+            long measuredGcCount = gcCount() - baselineGcCount;
+            long measuredCommitted = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getCommitted();
+            long measuredElapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000;
+            sampler.shutdownNow();
+            Map<String, Object> result = map("baselineBytes", baseline, "peakBytes", measuredPeak, "peakIncreaseBytes", measuredPeak - baseline,
                     "maxHeapBytes", Runtime.getRuntime().maxMemory(), "samplingIntervalMillis", 5,
+                    "baselineCommittedBytes", baselineCommitted,
+                    "committedBytesAtSnapshot", measuredCommitted,
+                    "gcCollectionsDuringMeasurement", measuredGcCount,
+                    "measurementElapsedMillis", measuredElapsedMillis,
+                    "jvmProcessId", ProcessHandle.current().pid(),
                     "scope", "entire integration-test JVM, including Tomcat, PostgreSQL client and file-streaming HTTP clients");
+            Path directory = Path.of("target/a2-exports/streaming");
+            Exception diagnosticFailure = null;
+            try {
+                Files.createDirectories(directory);
+                // Keep the actual failed measurement even if later diagnostic collection itself fails.
+                Files.writeString(directory.resolve("heap-" + scenario + ".json"),
+                        tools.jackson.databind.json.JsonMapper.builder().build().writerWithDefaultPrettyPrinter().writeValueAsString(result));
+                if (allocationRecording != null) allocationRecording.stop();
+                if (measuredPeak >= 600L * 1024 * 1024) {
+                    // Diagnostics run after measurement; neither GC nor the histogram changes the measured gate.
+                    ManagementFactory.getMemoryMXBean().gc();
+                    result.put("postMeasurementGcUsedBytes", used());
+                    Files.writeString(directory.resolve("heap-" + scenario + "-diagnostics.json"),
+                            tools.jackson.databind.json.JsonMapper.builder().build().writerWithDefaultPrettyPrinter().writeValueAsString(result));
+                    String histogram = (String) ManagementFactory.getPlatformMBeanServer().invoke(
+                            new javax.management.ObjectName("com.sun.management:type=DiagnosticCommand"),
+                            "gcClassHistogram", new Object[]{new String[0]}, new String[]{String[].class.getName()});
+                    Files.writeString(directory.resolve("heap-" + scenario + "-failure-histogram.txt"), histogram);
+                }
+            } catch (Exception e) { diagnosticFailure = e; }
+            try {
+                assertThat(measuredPeak).as("measured whole-process heap ceiling for this capacity fixture; baseline=%s", baseline)
+                        .isLessThan(600L * 1024 * 1024);
+            } catch (AssertionError failure) {
+                if (diagnosticFailure != null) failure.addSuppressed(diagnosticFailure);
+                throw failure;
+            }
+            if (diagnosticFailure != null) throw new IllegalStateException("Unable to preserve export heap evidence", diagnosticFailure);
+            return result;
         }
-        @Override public void close() { sampler.shutdownNow(); }
+        @Override public void close() throws IOException {
+            sampler.shutdownNow();
+            if (allocationRecording != null) {
+                try {
+                    if (allocationRecording.getState() == jdk.jfr.RecordingState.RUNNING) allocationRecording.stop();
+                    Path directory = Path.of(System.getProperty("lingmao.export.heap.profile.dir", "target/a2-exports/streaming"));
+                    Files.createDirectories(directory);
+                    allocationRecording.dump(directory.resolve("allocation-" + scenario + ".jfr"));
+                } finally { allocationRecording.close(); }
+            }
+        }
     }
     static final class State {
         final String id = java.util.UUID.randomUUID().toString(); final String stopAt; final boolean stopWhileStreaming;

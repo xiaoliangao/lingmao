@@ -1,11 +1,14 @@
 package com.lingmao.scm.module.dev.repository;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.SqlStatementCapture;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.dev.entity.MakeWay;
 import com.lingmao.scm.module.dev.entity.SampleOrderStatus;
 import com.lingmao.scm.module.dev.entity.SampleReviewResult;
+import com.lingmao.scm.module.dev.mapper.SampleRow;
 import com.lingmao.scm.security.DataScope;
+import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,14 +75,12 @@ class S1SampleReadModelsIT extends SampleTestSupport {
             late.add(late(f, today.minusDays(60 - i))); review.add(waitingReview(f, today.minusDays(60 - i)));
         }
         login(f.creator(), false);
-        var capture = capture(); capture.start();
-        List<S1SamplePlansIT.Executed> sql;
-        List<com.lingmao.scm.module.dev.mapper.SampleRow> oldest;
-        long total;
-        try {
-            oldest = samples.homePreview(f.company(), DataScope.current(false), SampleRepository.HomeKind.LATE, f.maker(), 20);
-            total = samples.homeCount(f.company(), DataScope.current(false), SampleRepository.HomeKind.LATE, f.maker());
-        } finally { sql = capture.finish(); }
+        var captured = SqlStatementCapture.capture(() -> new HomeRead(
+                samples.homePreview(f.company(), DataScope.current(false), SampleRepository.HomeKind.LATE, f.maker(), 20),
+                samples.homeCount(f.company(), DataScope.current(false), SampleRepository.HomeKind.LATE, f.maker())));
+        var oldest = captured.result().rows();
+        long total = captured.result().total();
+        List<Executed> sql = captured.statements().stream().map(this::executed).toList();
         assertThat(total).isEqualTo(21);
         assertThat(oldest).extracting(row -> row.getId()).containsExactlyElementsOf(late.subList(0, 20).stream().map(Created::sampleId).toList());
         assertThat(oldest).extracting(row -> row.getHomeRankDate()).isSorted();
@@ -121,12 +122,17 @@ class S1SampleReadModelsIT extends SampleTestSupport {
         return made;
     }
 
-    private S1SamplePlansIT.Capture capture() {
-        var configuration = sessions.getConfiguration();
-        synchronized (configuration) {
-            for (var interceptor : configuration.getInterceptors()) if (interceptor instanceof S1SamplePlansIT.Capture found) return found;
-            var made = new S1SamplePlansIT.Capture(configuration); configuration.addInterceptor(made); return made;
+    private record HomeRead(List<SampleRow> rows, long total) { }
+    private record Executed(String sql, List<Object> parameters) { }
+
+    private Executed executed(BoundSql bound) {
+        var meta = sessions.getConfiguration().newMetaObject(bound.getParameterObject());
+        var values = new ArrayList<Object>();
+        for (var mapping : bound.getParameterMappings()) {
+            String property = mapping.getProperty();
+            values.add(bound.hasAdditionalParameter(property) ? bound.getAdditionalParameter(property) : meta.getValue(property));
         }
+        return new Executed(bound.getSql(), Collections.unmodifiableList(values));
     }
 
     private static Fixture hidden(Fixture f) {

@@ -5,9 +5,13 @@ import com.lingmao.scm.TestColors;
 import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.basic.dto.MaterialQuery;
+import com.lingmao.scm.module.basic.entity.MaterialSku;
+import com.lingmao.scm.module.basic.mapper.MaterialSkuMapper;
 import com.lingmao.scm.module.basic.service.MaterialService;
 import com.lingmao.scm.module.style.dto.StyleQuery;
 import com.lingmao.scm.module.style.service.StyleService;
+import org.apache.ibatis.type.ArrayTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -23,6 +27,10 @@ import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler;
 import org.apache.poi.xssf.model.SharedStrings;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 import org.xml.sax.helpers.DefaultHandler;
@@ -37,6 +45,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -46,6 +55,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.IntBinaryOperator;
 import java.util.function.IntSupplier;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -55,6 +65,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
     @Autowired MaterialService materials;
     @Autowired StyleService styles;
+    @Autowired MaterialSkuMapper materialSkus;
+    @Autowired PlatformTransactionManager transactions;
 
     @Test void twoMaterialsWithFiftyThousandAndOneSkusAreRejectedByABoundedQuery() throws Exception {
         Fixture f = fixture();
@@ -297,18 +309,32 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
         assertThat(jdbc.update("DELETE FROM bas_material_sku WHERE material_id=? AND code=?", second, removed)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material_sku WHERE material_id IN (?,?)", Long.class,
                 fixture.material(), second)).isEqualTo(50_000L);
+        // One fixed, fully verified download warms this same application before measuring it.
+        warmMaterialExport(fixture, exporter, second, prefix, removed);
         HttpResponse<byte[]> reply;
         Map<String, Object> downloadHeap;
-        try (var heap = new S2StreamingExportsHttpIT.HeapProbe()) {
+        try (var heap = new S2StreamingExportsHttpIT.HeapProbe("material-50000")) {
             reply = raw(exporter, "GET", "/api/materials/export?ids=" + fixture.material() + "," + second, null, null, null);
             downloadHeap = new java.util.LinkedHashMap<>(heap.snapshot());
             downloadHeap.put("scope", "entire integration-test JVM including Tomcat, database client and the bounded byte-array HTTP verifier");
         }
-        writeEvidence("p37-material-exact-limit-heap.json", map("rows", 50_000, "heap", downloadHeap));
+        writeEvidence("p37-material-exact-limit-heap.json", map("rows", 50_000, "heap", downloadHeap,
+                "warmupRequests", 1, "warmupEvidence", "p37-material-warmup.json"));
+        verifyMaterialWorkbook(reply, fixture, second, prefix, removed, "p37-material-exact-limit");
+        verifyMaterialSkuArrayQueries(fixture, second);
+    }
+
+    private void warmMaterialExport(Fixture fixture, Account exporter, long second, String prefix, String removed) throws Exception {
+        var reply = raw(exporter, "GET", "/api/materials/export?ids=" + fixture.material() + "," + second, null, null, null);
+        verifyMaterialWorkbook(reply, fixture, second, prefix, removed, "p37-material-warmup");
+    }
+
+    private void verifyMaterialWorkbook(HttpResponse<byte[]> reply, Fixture fixture, long second,
+                                        String prefix, String removed, String artifactName) throws Exception {
         assertThat(reply.statusCode()).isEqualTo(200);
         assertThat(reply.headers().firstValue("Content-Disposition").orElse("")).contains("filename*=UTF-8''");
         Path directory = Path.of("test-artifacts/full-audit/s2"); Files.createDirectories(directory);
-        Path downloaded = directory.resolve("p37-material-exact-limit.xlsx");
+        Path downloaded = directory.resolve(artifactName + ".xlsx");
         Files.write(downloaded, reply.body()); // Preserve the actual HTTP artifact even if verification fails.
         long importEntryLimit = ZipSecureFile.getMaxEntrySize();
 
@@ -365,13 +391,115 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
         Set<String> unexpected = new HashSet<>(sku.codes); unexpected.removeAll(expected);
         assertThat(missing).as("no SKU is silently truncated at the accepted limit").isEmpty();
         assertThat(unexpected).as("the accepted workbook contains only the requested SKU rows").isEmpty();
-        writeEvidence("p37-material-exact-limit.json", map("databaseRows", 50_000, "masterRows", master.dataRows,
+        writeEvidence(artifactName + ".json", map("databaseRows", 50_000, "masterRows", master.dataRows,
                 "skuRows", sku.dataRows, "uniqueSkuCodes", sku.codes.size(), "missingSkuCodes", missing.size(),
                 "unexpectedSkuCodes", unexpected.size(), "masterHeaders", master.headers.values(), "skuHeaders", sku.headers.values(),
                 "downloadBytes", reply.body().length, "requestId", reply.headers().firstValue("X-Request-Id").orElse(""),
                 "importEntryLimitUnchanged", importEntryLimit, "validatorMaxZipEntries", ExportArchive.MAX_ENTRIES,
                 "validatorMaxEntryBytes", ExportArchive.MAX_ENTRY_BYTES, "validatorMaxExpandedBytes", ExportArchive.MAX_EXPANDED_BYTES,
                 "verification", "Real HTTP XLSX read completely with bounded JDK ZipFile and secure SAX/POI sheet events; capacity boundary only, not concurrency or disconnect proof."));
+    }
+
+    /** Reuse the accepted 50,000-row fixture after the complete HTTP/heap/SAX checks have finished. */
+    private void verifyMaterialSkuArrayQueries(Fixture fixture, long second) throws Exception {
+        jdbc.execute("ANALYZE bas_material_sku");
+        var tx = new TransactionTemplate(transactions);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        tx.setReadOnly(true);
+        List<ArrayQueryCheck> checks = tx.execute(status -> jdbc.execute((ConnectionCallback<List<ArrayQueryCheck>>) connection -> {
+            List<Long> selected = jdbc.queryForList("""
+                    SELECT id FROM bas_material_sku WHERE material_id IN (?,?) ORDER BY id LIMIT 601
+                    """, Long.class, fixture.material(), second);
+            assertThat(selected).hasSize(601);
+            List<ArrayQueryCheck> results = new ArrayList<>();
+            String preparedName = "p37_material_array_" + suffix();
+            try (var statement = connection.createStatement()) {
+                statement.execute("SET LOCAL plan_cache_mode=force_generic_plan");
+                assertThat(jdbc.queryForObject("SHOW plan_cache_mode", String.class)).isEqualTo("force_generic_plan");
+                boolean prepared = false;
+                try {
+                    for (List<Long> batch : List.of(selected.subList(0, 500), selected.subList(500, 601), List.<Long>of())) {
+                        Long[] array = batch.toArray(Long[]::new);
+                        var captured = SqlStatementCapture.capture(() -> materialSkus.selectExportByIds(array));
+                        assertThat(captured.result()).hasSize(batch.size()).extracting(MaterialSku::getId)
+                                .containsExactlyInAnyOrderElementsOf(batch);
+                        List<MaterialSku> original = batch.isEmpty() ? List.of() : materialSkus.selectByIds(batch);
+                        assertThat(captured.result().stream().sorted(Comparator.comparing(MaterialSku::getId)).toList())
+                                .usingRecursiveComparison()
+                                .isEqualTo(original.stream().sorted(Comparator.comparing(MaterialSku::getId)).toList());
+                        assertThat(captured.statements()).hasSize(1);
+                        var bound = captured.statements().getFirst();
+                        assertThat(bound.getParameterMappings()).singleElement().satisfies(mapping -> {
+                            assertThat(mapping.getProperty()).isEqualTo("ids");
+                            assertThat(mapping.getJdbcType()).isEqualTo(JdbcType.ARRAY);
+                            assertThat(mapping.getTypeHandler()).isExactlyInstanceOf(ArrayTypeHandler.class);
+                        });
+                        assertThat(((Map<?, ?>) bound.getParameterObject()).get("ids")).isSameAs(array);
+                        assertThat(bound.getSql().chars().filter(c -> c == '?').count()).isEqualTo(1);
+                        if (!prepared) {
+                            statement.execute("PREPARE " + preparedName + "(bigint[]) AS " + bound.getSql().replace("?", "$1"));
+                            prepared = true;
+                        } else assertThat(bound.getSql()).isEqualTo(results.getFirst().sql());
+                        // Only synthetic Long IDs enter this test-only EXECUTE expression; the production call above binds one JDBC array.
+                        String values = batch.stream().map(String::valueOf).collect(Collectors.joining(","));
+                        String rawPlan;
+                        try (var rows = statement.executeQuery("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) EXECUTE "
+                                + preparedName + "(ARRAY[" + values + "]::bigint[])")) {
+                            assertThat(rows.next()).isTrue(); rawPlan = rows.getString(1);
+                            assertThat(rows.next()).isFalse();
+                        }
+                        try (var counters = connection.prepareStatement(
+                                "SELECT generic_plans,custom_plans FROM pg_prepared_statements WHERE name=?")) {
+                            counters.setString(1, preparedName);
+                            try (var rows = counters.executeQuery()) {
+                                assertThat(rows.next()).isTrue();
+                                results.add(new ArrayQueryCheck(batch.size(), bound.getSql(), rawPlan, rows.getLong(1), rows.getLong(2)));
+                                assertThat(rows.next()).isFalse();
+                            }
+                        }
+                    }
+                } finally {
+                    if (prepared) statement.execute("DEALLOCATE " + preparedName);
+                }
+            }
+            return results;
+        }));
+        assertThat(checks).hasSize(3);
+        Path directory = Path.of("test-artifacts/full-audit/s2/plans"); Files.createDirectories(directory);
+        // Preserve every raw plan before asserting its shape, so a plan regression remains reviewable.
+        for (ArrayQueryCheck check : checks)
+            Files.writeString(directory.resolve("p37-material-array-" + check.rows() + "-plan.json"), check.plan());
+        List<Map<String, Object>> evidence = new ArrayList<>();
+        for (int i = 0; i < checks.size(); i++) {
+            ArrayQueryCheck check = checks.get(i);
+            JsonNode root = json.readTree(check.plan()).get(0).path("Plan");
+            List<JsonNode> nodes = new ArrayList<>(); collectPlanNodes(root, nodes);
+            assertThat(nodes).anySatisfy(node -> assertThat(node.path("Index Name").stringValue("")).isEqualTo("bas_material_sku_pkey"));
+            assertThat(root.path("Actual Rows").longValue()).isEqualTo(check.rows());
+            List<JsonNode> scans = nodes.stream().filter(node -> "bas_material_sku".equals(node.path("Relation Name").stringValue(""))).toList();
+            assertThat(scans).isNotEmpty();
+            long visited = scans.stream().mapToLong(node -> (node.path("Actual Rows").longValue()
+                    + node.path("Rows Removed by Filter").longValue(0) + node.path("Rows Removed by Index Recheck").longValue(0))
+                    * node.path("Actual Loops").longValue()).sum();
+            assertThat(visited).as("generic array scan reports only its %s requested rows, with no filtered rows", check.rows()).isEqualTo(check.rows());
+            assertThat(check.genericPlans()).isEqualTo(i + 1L);
+            assertThat(check.customPlans()).isZero();
+            evidence.add(map("requestedRows", check.rows(), "reportedScanTuples", visited,
+                    "sharedHitBlocks", root.path("Shared Hit Blocks").longValue(0), "sharedReadBlocks", root.path("Shared Read Blocks").longValue(0),
+                    "boundParameterCount", 1, "typeHandler", ArrayTypeHandler.class.getName(),
+                    "genericPlans", check.genericPlans(), "customPlans", check.customPlans(), "sql", check.sql(),
+                    "planFile", "plans/p37-material-array-" + check.rows() + "-plan.json"));
+        }
+        writeEvidence("p37-material-array-query.json", map("fixtureSkuRows", 50_000, "cases", evidence,
+                "comparison", "IDs and every entity field match selectByIds for 500 rows and the 101-row tail; empty Long[] returns no rows."));
+    }
+
+    private record ArrayQueryCheck(int rows, String sql, String plan, long genericPlans, long customPlans) { }
+
+    private static void collectPlanNodes(JsonNode node, List<JsonNode> nodes) {
+        nodes.add(node);
+        for (JsonNode child : node.path("Plans")) collectPlanNodes(child, nodes);
     }
 
     private record SheetReference(String name, String relationship) { }

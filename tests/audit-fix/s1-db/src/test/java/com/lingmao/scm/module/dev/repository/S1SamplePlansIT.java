@@ -1,16 +1,12 @@
 package com.lingmao.scm.module.dev.repository;
 
 import com.lingmao.scm.IntegrationTest;
+import com.lingmao.scm.SqlStatementCapture;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.dev.entity.MakeWay;
 import com.lingmao.scm.module.dev.mapper.SampleSearch;
 import com.lingmao.scm.security.DataScope;
-import org.apache.ibatis.executor.statement.StatementHandler;
-import org.apache.ibatis.plugin.Interceptor;
-import org.apache.ibatis.plugin.Intercepts;
-import org.apache.ibatis.plugin.Invocation;
-import org.apache.ibatis.plugin.Signature;
-import org.apache.ibatis.session.Configuration;
+import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +14,6 @@ import tools.jackson.databind.JsonNode;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -50,9 +45,12 @@ class S1SamplePlansIT extends SampleTestSupport {
             lock.sample().setName(keyword); samples.updateSample(lock, lock.sample());
         });
         jdbc.execute("ANALYZE dev_sample"); jdbc.execute("ANALYZE dev_sample_order"); jdbc.execute("ANALYZE dev_sample_node");
-        Capture capture = capture(); capture.start();
-        var page = samples.page(f.company(), DataScope.current(false), search(keyword, null, null), 1, 20);
-        List<Executed> calls = capture.finish();
+        // Pagination may reuse a COUNT MappedStatement from an earlier MyBatis configuration.
+        // Capture every test configuration's real prepare calls within this thread's scope.
+        var captured = SqlStatementCapture.capture(() ->
+                samples.page(f.company(), DataScope.current(false), search(keyword, null, null), 1, 20));
+        var page = captured.result();
+        List<Executed> calls = captured.statements().stream().map(this::executed).toList();
         assertThat(page.getRecords()).extracting(row -> row.getId()).containsExactlyInAnyOrder(a.sampleId(), b.sampleId());
         assertThat(page.getTotal()).isEqualTo(2);
         // The COUNT wrapper also contains current_order_id and inner LATERAL LIMITs.
@@ -198,37 +196,15 @@ class S1SamplePlansIT extends SampleTestSupport {
         return node.isNumber() ? node.doubleValue() : 0D;
     }
 
-    private Capture capture() {
-        Configuration configuration = sessions.getConfiguration();
-        synchronized (configuration) {
-            for (Interceptor interceptor : configuration.getInterceptors()) if (interceptor instanceof Capture capture) return capture;
-            Capture capture = new Capture(configuration); configuration.addInterceptor(capture); return capture;
-        }
-    }
-
     record Executed(String sql, List<Object> parameters) { }
 
-    /** 只观察本线程真正 prepare 的最终语句，始终继续原调用；其他线程/其他测试不采集。 */
-    @Intercepts(@Signature(type = StatementHandler.class, method = "prepare", args = {Connection.class, Integer.class}))
-    static final class Capture implements Interceptor {
-        private final Configuration configuration;
-        private final ThreadLocal<List<Executed>> current = new ThreadLocal<>();
-        Capture(Configuration configuration) { this.configuration = configuration; }
-        void start() { current.set(new ArrayList<>()); }
-        List<Executed> finish() { var found = current.get(); current.remove(); return List.copyOf(found); }
-        @Override public Object intercept(Invocation invocation) throws Throwable {
-            var collector = current.get();
-            if (collector != null) {
-                var bound = ((StatementHandler) invocation.getTarget()).getBoundSql();
-                var meta = configuration.newMetaObject(bound.getParameterObject());
-                var values = new ArrayList<Object>();
-                for (var mapping : bound.getParameterMappings()) {
-                    String property = mapping.getProperty();
-                    values.add(bound.hasAdditionalParameter(property) ? bound.getAdditionalParameter(property) : meta.getValue(property));
-                }
-                collector.add(new Executed(bound.getSql(), java.util.Collections.unmodifiableList(values)));
-            }
-            return invocation.proceed();
+    private Executed executed(BoundSql bound) {
+        var meta = sessions.getConfiguration().newMetaObject(bound.getParameterObject());
+        var values = new ArrayList<Object>();
+        for (var mapping : bound.getParameterMappings()) {
+            String property = mapping.getProperty();
+            values.add(bound.hasAdditionalParameter(property) ? bound.getAdditionalParameter(property) : meta.getValue(property));
         }
+        return new Executed(bound.getSql(), java.util.Collections.unmodifiableList(values));
     }
 }

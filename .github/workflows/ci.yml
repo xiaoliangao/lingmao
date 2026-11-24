@@ -83,7 +83,8 @@ jobs:
           python3 tests/prod-readiness/a4-lifecycle/ci_helpers_test.py
       - name: T01–T10 and T12 — real database concurrency, security, migration and audit; production JAR
         id: backend
-        run: ./mvnw -B -ntp -Pprod-readiness verify
+        # 全量 CI 不传 -Dit.test，避免覆盖两个 Failsafe 执行组的筛选。
+        run: ./mvnw -B -ntp -Pprod-readiness,ci-export-capacity verify
       - name: P33 — summarize all measured SQL distributions from raw plans
         if: ${{ !cancelled() && steps.backend.outcome == 'success' }}
         run: python3 tests/audit-fix/s4-lifecycle/summarize-notice-plans.py

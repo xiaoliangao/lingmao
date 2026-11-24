@@ -46,6 +46,24 @@ class StreamingExcelTest {
             assertThat(workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue()).isEqualTo(text);
         }
     }
+    @Test void longTextRoundTripPreservesSurrogatesAndEscapesAcrossCharacterBufferBoundaries() throws Exception {
+        String beforeText = "<row r=\"2\"><c r=\"A2\" s=\"3\" t=\"inlineStr\"><is><t xml:space=\"preserve\">";
+        String edge = "😀 & < > \" ' _x0041_ _x005F_x0041_ \r\n\t\u0000\u0001\u000b 尾😀";
+        for (int boundary : new int[]{8192, 16384}) {
+            // Flush the header first, then place the emoji's high surrogate in the buffer's last character slot.
+            // Its low surrogate and the XML/ST_Xstring escapes immediately follow in the next buffer.
+            String text = "a".repeat(boundary - beforeText.length() - 1) + edge;
+            assertThat(text.length()).isLessThanOrEqualTo(32_767);
+            byte[] bytes = Excel.exportBook().sheet(schema("长文本"), sink -> {
+                sink.flush(); sink.row(new Row(text, null, null)); sink.flush();
+            }).toBytes();
+            try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
+                String actual = workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue();
+                assertThat(actual.toCharArray()).as("UTF-16 text across character boundary %s", boundary)
+                        .containsExactly(text.toCharArray());
+            }
+        }
+    }
 
     @Test void failureDoesNotFetchLaterPagesOrFinishATruncatedWorkbook() throws Exception {
         AtomicInteger fetched = new AtomicInteger(), laterSheet = new AtomicInteger();

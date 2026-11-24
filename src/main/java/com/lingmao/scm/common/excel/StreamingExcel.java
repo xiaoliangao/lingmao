@@ -5,8 +5,10 @@ import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.ss.util.WorkbookUtil;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -107,36 +109,79 @@ public final class StreamingExcel {
             int width = Math.min(48, Math.max(12, columns.get(i).header().codePointCount(0, columns.get(i).header().length()) * 2 + 4));
             put(zip, "<col min=\"" + (i + 1) + "\" max=\"" + (i + 1) + "\" width=\"" + width + "\" customWidth=\"1\"/>");
         }
-        put(zip, "</cols><sheetData><row r=\"1\">");
-        for (int i = 0; i < columns.size(); i++) cell(zip, schema.name(), i, 1, columns.get(i).header(), columns.get(i).header(), true, true, budget);
-        put(zip, "</row>");
+        put(zip, "</cols><sheetData>");
+        SheetXml xml = new SheetXml(zip, schema.name(), columns.size(), budget);
+        xml.startRow(1);
+        for (int i = 0; i < columns.size(); i++) xml.cell(i, columns.get(i).header(), columns.get(i).header(), true, true);
+        xml.endRow();
         class Rows implements Sink<R> {
             long count;
             public void row(R row) throws IOException {
                 checkRows(++count, sheet.maxRows(), schema.name()); budget.row();
-                long number = count + 1;
-                put(zip, "<row r=\"" + number + "\">");
-                for (int i = 0; i < columns.size(); i++) cell(zip, schema.name(), i, number, columns.get(i).header(), columns.get(i).exportValue(row), columns.get(i).isCode(), false, budget);
-                put(zip, "</row>");
+                xml.startRow(count + 1);
+                for (int i = 0; i < columns.size(); i++) xml.cell(i, columns.get(i).header(), columns.get(i).exportValue(row), columns.get(i).isCode(), false);
+                xml.endRow();
             }
-            public void flush() throws IOException { budget.flush(); put(zip, "\n"); zip.flush(); }
+            public void flush() throws IOException { xml.flush(); }
             public long rows() { return count; }
         }
         Rows rows = new Rows(); sheet.producer().write(rows);
-        put(zip, "</sheetData></worksheet>"); zip.closeEntry(); zip.flush(); return rows.rows();
+        xml.finishSheet(); zip.closeEntry(); zip.flush(); return rows.rows();
     }
 
-    private static void cell(OutputStream out, String sheet, int column, long row, String header, Object value, boolean text, boolean heading, Budget budget) throws IOException {
-        if (value == null) return;
-        String reference = CellReference.convertNumToColString(column) + row;
-        if (!text && value instanceof Number number) {
-            String numeric = number instanceof BigDecimal decimal ? decimal.toPlainString() : number.toString();
-            budget.text(numeric); put(out, "<c r=\"" + reference + "\"><v>" + numeric + "</v></c>");
-        } else if (value instanceof LocalDate date) {
-            budget.text(date.toString()); put(out, "<c r=\"" + reference + "\" s=\"2\"><v>" + DateUtil.getExcelDate(date) + "</v></c>");
-        } else {
-            String string = checkedText(sheet, row, column, header, value.toString()); budget.text(string);
-            put(out, "<c r=\"" + reference + "\" s=\"" + (heading ? 1 : text ? 3 : 0) + "\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" + cellText(string) + "</t></is></c>");
+    /** 每张表只保留固定字符/UTF-8 编码缓冲；单元格直接分片写入，不构造整段 XML。 */
+    private static final class SheetXml {
+        private final BufferedWriter out;
+        private final String sheet;
+        private final String[] columns;
+        private final Budget budget;
+        private final char[] rowDigits = new char[20];
+        private int rowStart;
+        private long row;
+
+        SheetXml(FlushableZip zip, String sheet, int columnCount, Budget budget) {
+            // BufferedWriter copies String fragments into one reusable char[]; the UTF-8 encoder reuses its byte buffer.
+            out = new BufferedWriter(new OutputStreamWriter(zip, StandardCharsets.UTF_8), 8192);
+            this.sheet = sheet; this.budget = budget;
+            columns = new String[columnCount];
+            for (int i = 0; i < columnCount; i++) columns[i] = CellReference.convertNumToColString(i);
+        }
+
+        void startRow(long number) throws IOException {
+            row = number; rowStart = rowDigits.length;
+            do { rowDigits[--rowStart] = (char) ('0' + number % 10); number /= 10; } while (number > 0);
+            out.write("<row r=\""); writeRowNumber(); out.write("\">");
+        }
+
+        private void writeRowNumber() throws IOException { out.write(rowDigits, rowStart, rowDigits.length - rowStart); }
+        private void startCell(int column) throws IOException {
+            out.write("<c r=\""); out.write(columns[column]); writeRowNumber();
+        }
+
+        void cell(int column, String header, Object value, boolean text, boolean heading) throws IOException {
+            if (value == null) return;
+            if (!text && value instanceof Number number) {
+                String numeric = number instanceof BigDecimal decimal ? decimal.toPlainString() : number.toString();
+                budget.text(numeric);
+                startCell(column); out.write("\"><v>"); out.write(numeric); out.write("</v></c>");
+            } else if (value instanceof LocalDate date) {
+                budget.text(date.toString());
+                startCell(column); out.write("\" s=\"2\"><v>"); out.write(Double.toString(DateUtil.getExcelDate(date))); out.write("</v></c>");
+            } else {
+                String string = checkedText(sheet, row, column, header, value.toString()); budget.text(string);
+                startCell(column); out.write("\" s=\""); out.write(heading ? '1' : text ? '3' : '0');
+                out.write("\" t=\"inlineStr\"><is><t xml:space=\"preserve\">");
+                cellText(out, string); out.write("</t></is></c>");
+            }
+        }
+
+        void endRow() throws IOException { out.write("</row>"); }
+        void flush() throws IOException {
+            budget.flush(); out.write('\n'); out.flush();
+        }
+        void finishSheet() throws IOException {
+            out.write("</sheetData></worksheet>"); out.flush();
+            // Never close this writer: close() would also finish/close a failed ZIP and the caller's stream.
         }
     }
 
@@ -179,26 +224,33 @@ public final class StreamingExcel {
         void add(long n) { bytes += n; if (bytes > maxXml) throw new BizException("导出内容超过 250MB 资源预算，请缩小筛选范围再导出"); }
     }
     /** ST_Xstring 的控制字符编码和字面 _xHHHH_ 都必须保留，不能交给 XML 换行规范化或 Excel 自动解码。 */
-    private static String cellText(String value) {
-        StringBuilder out = new StringBuilder(value.length());
+    private static void cellText(BufferedWriter out, String value) throws IOException {
         String hex = "0123456789ABCDEF";
+        int plainStart = 0;
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
-            if (c == '_' && excelEscapeAt(value, i)) { out.append("_x005F_"); continue; }
-            if (Character.isHighSurrogate(c) && i + 1 < value.length() && Character.isLowSurrogate(value.charAt(i + 1))) {
-                out.append(c).append(value.charAt(++i)); continue;
-            }
-            if (c < 32 && c != '\t' && c != '\n' || c == '\uFFFE' || c == '\uFFFF' || Character.isSurrogate(c)) {
-                out.append("_x").append(hex.charAt(c >>> 12)).append(hex.charAt(c >>> 8 & 15))
-                        .append(hex.charAt(c >>> 4 & 15)).append(hex.charAt(c & 15)).append('_');
+            String escaped;
+            if (c == '_' && excelEscapeAt(value, i)) escaped = "_x005F_";
+            else if (Character.isHighSurrogate(c) && i + 1 < value.length() && Character.isLowSurrogate(value.charAt(i + 1))) {
+                i++; continue;
+            } else if (c < 32 && c != '\t' && c != '\n' || c == '\uFFFE' || c == '\uFFFF' || Character.isSurrogate(c)) {
+                if (plainStart < i) out.write(value, plainStart, i - plainStart);
+                out.write("_x"); out.write(hex.charAt(c >>> 12)); out.write(hex.charAt(c >>> 8 & 15));
+                out.write(hex.charAt(c >>> 4 & 15)); out.write(hex.charAt(c & 15)); out.write('_');
+                plainStart = i + 1;
                 continue;
+            } else {
+                escaped = switch (c) {
+                    case '&' -> "&amp;"; case '<' -> "&lt;"; case '>' -> "&gt;";
+                    case '"' -> "&quot;"; case '\'' -> "&apos;"; default -> null;
+                };
             }
-            switch (c) {
-                case '&' -> out.append("&amp;"); case '<' -> out.append("&lt;"); case '>' -> out.append("&gt;");
-                case '"' -> out.append("&quot;"); case '\'' -> out.append("&apos;"); default -> out.append(c);
+            if (escaped != null) {
+                if (plainStart < i) out.write(value, plainStart, i - plainStart);
+                out.write(escaped); plainStart = i + 1;
             }
         }
-        return out.toString();
+        if (plainStart < value.length()) out.write(value, plainStart, value.length() - plainStart);
     }
     private static boolean excelEscapeAt(String text, int start) {
         if (start + 6 >= text.length() || text.charAt(start + 6) != '_'

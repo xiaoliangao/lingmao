@@ -246,7 +246,8 @@ class S2FgHttpIT extends A2BusinessFixture {
         assertThat(row.has("refCost")).isFalse(); assertThat(row.has("price")).isFalse(); assertThat(row.has("legacyAttrs")).isFalse();
         assertThat(fgCall(owner, "GET", "/api/styles/" + f.style(), null, null).path("code").intValue()).isEqualTo(403);
         String prefix = "FGH" + suffix();
-        try {
+        // Keep a product assertion failure primary if fixture cleanup also fails.
+        try (AutoCloseable cleanup = () -> cleanupExactSkuProjection(f.style(), prefix)) {
             assertThat(jdbc.update("INSERT INTO sty_style_sku(style_id,code,color_id,size_code) SELECT ?,?||n,?,'Q'||n FROM generate_series(1,50001)n", f.style(), prefix, f.color())).isEqualTo(50001);
             authenticate(owner);
             var capture = SqlStatementCapture.capture(() -> styles.boundedOrderInfosOfSkus(List.of(f.styleSku()), 50_000));
@@ -276,7 +277,46 @@ class S2FgHttpIT extends A2BusinessFixture {
             write("exact-sku-projection.json", map("stylePick", pick, "actualSkuRows", 50002, "projectedSkus", 1,
                     "skuQueries", skuQueries, "detailQueries", actualQueries, "actualDetail", actualDetail, "receiptPrefill", prefill, "shipPrefill", ship,
                     "matrixControlledError", matrix, "exportBytes", export.body().length));
-        } finally { jdbc.update("DELETE FROM sty_style_sku WHERE style_id=? AND code LIKE ?", f.style(), prefix + "%"); }
+        }
+    }
+
+    private void cleanupExactSkuProjection(long styleId, String prefix) throws Exception {
+        List<Map<String, Object>> batches = new ArrayList<>();
+        Map<String, Object> evidence = map("scope", "synthetic fixture cleanup only; not product verification",
+                "maxFixtureRows", 50_001, "batchSize", 1_000, "batches", batches,
+                "deletedRows", 0, "remainingRows", null, "finalEmptyBatch", false);
+        // Preserve partial timings on failure without replacing the original SQL/assertion error.
+        try (AutoCloseable record = () -> write("exact-sku-projection-cleanup.json", evidence)) {
+            evidence.put("statementTimeout", jdbc.queryForObject("SHOW statement_timeout", String.class));
+            int deleted = 0;
+            // 50,001 fixture rows require at most 51 nonempty batches and one final empty batch.
+            for (int batch = 1; batch <= 52; batch++) {
+                long started = System.nanoTime();
+                Integer changed = null;
+                try {
+                    changed = jdbc.update("""
+                            DELETE FROM sty_style_sku WHERE id IN (
+                              SELECT id FROM sty_style_sku WHERE style_id=? AND code LIKE ? ORDER BY id LIMIT 1000)
+                            """, styleId, prefix + "%");
+                } finally {
+                    batches.add(map("batch", batch, "deletedRows", changed,
+                            "elapsedMs", (System.nanoTime() - started) / 1_000_000));
+                }
+                assertThat(changed).isBetween(0, 1_000);
+                deleted += changed;
+                evidence.put("deletedRows", deleted);
+                assertThat(deleted).as("only the synthetic projection fixture is removed").isLessThanOrEqualTo(50_001);
+                if (changed == 0) {
+                    evidence.put("finalEmptyBatch", true);
+                    long remaining = jdbc.queryForObject("SELECT count(*) FROM sty_style_sku WHERE style_id=? AND code LIKE ?",
+                            Long.class, styleId, prefix + "%");
+                    evidence.put("remainingRows", remaining);
+                    assertThat(remaining).as("synthetic projection fixture rows remaining after cleanup").isZero();
+                    return;
+                }
+            }
+            throw new IllegalStateException("Synthetic projection fixture cleanup exceeded its row budget");
+        }
     }
 
     @Test void pureReadOnlySourceProjectionAndEditPrefillKeepSeparatePermissionsAndRealRemaining() throws Exception {

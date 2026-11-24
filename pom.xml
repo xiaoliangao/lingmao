@@ -273,5 +273,55 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+            <!-- 完整 CI 显式启用；开发者的 prod-readiness / -Dit.test 路径继续使用原配置。 -->
+            <id>ci-export-capacity</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <reportsDirectory>${project.build.directory}/failsafe-reports</reportsDirectory>
+                            <failIfNoTests>true</failIfNoTests>
+                        </configuration>
+                        <executions>
+                            <!-- 接管父 POM 的默认执行，两个组的测试集合互不重叠。 -->
+                            <execution>
+                                <id>default</id>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                                <configuration>
+                                    <excludes>
+                                        <exclude>**/*$*</exclude>
+                                        <exclude>com/lingmao/scm/security/S2MasterExportBoundsHttpIT.java</exclude>
+                                        <exclude>com/lingmao/scm/security/S2StreamingExportsHttpIT.java</exclude>
+                                    </excludes>
+                                    <summaryFile>${project.build.directory}/failsafe-reports/failsafe-summary-general.xml</summaryFile>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>export-capacity</id>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                                <configuration>
+                                    <includes>
+                                        <include>com/lingmao/scm/security/S2MasterExportBoundsHttpIT.java</include>
+                                        <include>com/lingmao/scm/security/S2StreamingExportsHttpIT.java</include>
+                                    </includes>
+                                    <forkCount>1</forkCount>
+                                    <reuseForks>false</reuseForks>
+                                    <summaryFile>${project.build.directory}/failsafe-reports/failsafe-summary-export-capacity.xml</summaryFile>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>

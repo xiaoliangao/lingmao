@@ -221,7 +221,7 @@ public class MaterialImport {
                     for (int from = 0; from < skuIds.size(); from += 500) {
                         sink.flush();
                         List<Long> batch = skuIds.subList(from, Math.min(skuIds.size(), from + 500));
-                        Map<Long, MaterialSku> skus = materialSkuMapper.selectByIds(batch).stream()
+                        Map<Long, MaterialSku> skus = materialSkuMapper.selectExportByIds(batch.toArray(Long[]::new)).stream()
                                 .collect(Collectors.toMap(MaterialSku::getId, Function.identity()));
                         BoundedExportRows.requireWithinLimit((int) sink.rows() + skus.size(), Excel.MAX_EXPORT_ROWS, SKU_SHEET);
                         if (skus.isEmpty()) continue;
