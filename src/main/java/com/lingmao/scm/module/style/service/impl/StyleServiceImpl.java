@@ -513,7 +513,10 @@ public class StyleServiceImpl implements StyleService {
     }
 
     @Override
-    public byte[] export(StyleQuery query) {
+    public byte[] export(StyleQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(StyleQuery query) {
         tagFilters.prepare(query);
         query.setKeyword(trim(query.getKeyword()));
         List<Long> ids = styleMapper.selectIds(query, Keywords.codes(query.getKeyword()),
@@ -521,7 +524,7 @@ public class StyleServiceImpl implements StyleService {
         if (ids.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException("要导出的超过 " + Excel.MAX_EXPORT_ROWS / 10_000 + " 万行了，请缩小筛选范围再导出");
         }
-        return styleExcel.export(ids);
+        return styleExcel.exportPlan(ids);
     }
 
     // ------------------------------------------------------------------ 给别的域

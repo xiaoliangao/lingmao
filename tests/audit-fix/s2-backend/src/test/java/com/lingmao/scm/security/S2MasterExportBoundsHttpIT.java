@@ -85,7 +85,7 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
         } finally {
             cleanupInBatches("p37-material-sku-cleanup", () -> jdbc.update("""
                     DELETE FROM bas_material_sku WHERE id IN (
-                      SELECT id FROM bas_material_sku WHERE material_id IN (?,?) AND code LIKE ? ORDER BY id LIMIT 5000)
+                      SELECT id FROM bas_material_sku WHERE material_id IN (?,?) AND code LIKE ? ORDER BY id LIMIT 1000)
                     """, f.material(), second, prefix + "-%"));
             jdbc.update("DELETE FROM bas_material WHERE id=?", second);
         }
@@ -113,7 +113,7 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
         } finally {
             cleanupInBatches("p37-style-sku-cleanup", () -> jdbc.update("""
                     DELETE FROM sty_style_sku WHERE id IN (
-                      SELECT id FROM sty_style_sku WHERE style_id=? AND code LIKE ? ORDER BY id LIMIT 5000)
+                      SELECT id FROM sty_style_sku WHERE style_id=? AND code LIKE ? ORDER BY id LIMIT 1000)
                     """, f.style(), prefix + "-%"));
         }
     }
@@ -163,11 +163,11 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
             cleanupInBatches("p37-style-color-cleanup", () -> jdbc.update("""
                     DELETE FROM sty_style_color WHERE id IN (
                       SELECT id FROM sty_style_color WHERE style_id IN (?,?)
-                        AND color_id IN (SELECT id FROM bas_color WHERE name LIKE ?) ORDER BY id LIMIT 5000)
+                        AND color_id IN (SELECT id FROM bas_color WHERE name LIKE ?) ORDER BY id LIMIT 1000)
                     """, f.style(), second, prefix + "-%"));
             cleanupInBatches("p37-color-master-cleanup", () -> jdbc.update("""
                     DELETE FROM bas_color WHERE id IN (
-                      SELECT id FROM bas_color WHERE name LIKE ? ORDER BY id LIMIT 5000)
+                      SELECT id FROM bas_color WHERE name LIKE ? ORDER BY id LIMIT 1000)
                     """, prefix + "-%"));
             jdbc.update("DELETE FROM sty_style WHERE id=?", second);
         }
@@ -268,10 +268,10 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
     private void cleanupInBatches(String name, IntSupplier delete) throws Exception {
         List<Map<String, Object>> batches = new ArrayList<>();
         // At most 50,000 owned fixture rows; the final empty batch proves cleanup is complete.
-        for (int batch = 0; batch <= 10; batch++) {
+        for (int batch = 0; batch <= 50; batch++) {
             long started = System.nanoTime();
             int changed = delete.getAsInt();
-            assertThat(changed).isBetween(0, 5_000);
+            assertThat(changed).isBetween(0, 1_000);
             batches.add(map("deletedRows", changed, "elapsedMs", (System.nanoTime() - started) / 1_000_000));
             if (changed == 0) {
                 writeEvidence(name + ".json", map("batches", batches,
@@ -297,7 +297,14 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
         assertThat(jdbc.update("DELETE FROM bas_material_sku WHERE material_id=? AND code=?", second, removed)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM bas_material_sku WHERE material_id IN (?,?)", Long.class,
                 fixture.material(), second)).isEqualTo(50_000L);
-        HttpResponse<byte[]> reply = raw(exporter, "GET", "/api/materials/export?ids=" + fixture.material() + "," + second, null, null, null);
+        HttpResponse<byte[]> reply;
+        Map<String, Object> downloadHeap;
+        try (var heap = new S2StreamingExportsHttpIT.HeapProbe()) {
+            reply = raw(exporter, "GET", "/api/materials/export?ids=" + fixture.material() + "," + second, null, null, null);
+            downloadHeap = new java.util.LinkedHashMap<>(heap.snapshot());
+            downloadHeap.put("scope", "entire integration-test JVM including Tomcat, database client and the bounded byte-array HTTP verifier");
+        }
+        writeEvidence("p37-material-exact-limit-heap.json", map("rows", 50_000, "heap", downloadHeap));
         assertThat(reply.statusCode()).isEqualTo(200);
         assertThat(reply.headers().firstValue("Content-Disposition").orElse("")).contains("filename*=UTF-8''");
         Path directory = Path.of("test-artifacts/full-audit/s2"); Files.createDirectories(directory);
@@ -327,8 +334,10 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
                 }
             });
             assertThat(references).hasSize(2);
-            SharedStrings strings;
-            try (InputStream input = archive.open("xl/sharedStrings.xml")) { strings = new ReadOnlySharedStringsTable(input); }
+            SharedStrings strings = null;
+            if (archive.has("xl/sharedStrings.xml")) {
+                try (InputStream input = archive.open("xl/sharedStrings.xml")) { strings = new ReadOnlySharedStringsTable(input); }
+            }
             for (SheetReference reference : references) {
                 SheetCounter counter = new SheetCounter(reference.name());
                 assertThat(targets).containsKey(reference.relationship());
@@ -399,6 +408,7 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
                 zip.close(); throw failure;
             }
         }
+        private boolean has(String name) { return zip.getEntry(name) != null; }
         private InputStream open(String name) throws IOException {
             ZipEntry entry = zip.getEntry(name);
             assertThat(entry).as("export entry %s exists", name).isNotNull();
@@ -449,16 +459,19 @@ class S2MasterExportBoundsHttpIT extends A2BusinessFixture {
 
     private static void assertBounded(SqlStatementCapture.Captured<?> captured, String table, String order) {
         assertThat(Excel.MAX_EXPORT_ROWS).isEqualTo(50_000); // Never reduce the production cap for this regression.
-        assertThat(queries(captured, table)).singleElement().satisfies(sql -> {
-            assertThat(sql).endsWith("limit 50001").contains(order);
-        });
+        assertThat(captured.statements().stream().filter(bound -> bound.getSql().toLowerCase(Locale.ROOT).contains("from " + table + " ")))
+                .singleElement().satisfies(bound -> {
+                    assertThat(bound.getSql().replaceAll("\\s+", " ").strip().toLowerCase(Locale.ROOT))
+                            .startsWith("select count(*) from (select 1").contains("limit ?)");
+                    assertThat(ExportSqlLimits.limit(bound)).isEqualTo(50_001L);
+                });
     }
 
     private void evidence(String name, int parentCount, int childCount, HttpResponse<byte[]> reply,
                           SqlStatementCapture.Captured<?> captured) throws Exception {
         writeEvidence(name + ".json", map("parentRows", parentCount, "childRows", childCount, "perSheetLimit", Excel.MAX_EXPORT_ROWS,
                 "response", node(reply), "sql", captured.statements().stream().map(s -> s.getSql().replaceAll("\\s+", " ").strip()).toList(),
-                "limitation", "Bounded in-memory multi-sheet lists and complete byte[] remain; not full HTTP streaming."));
+                "limitation", "Budget rejection before response; separate streaming tests prove bounded pages, TCP cancellation and concurrency."));
     }
 
     private void sqlEvidence(String name, int parentCount, int childCount, SqlStatementCapture.Captured<BizException> captured) throws Exception {

@@ -25,6 +25,10 @@ public interface StockService {
 
     SeekPage<StockLogRowVO> seekLogs(StockLogQuery query);
 
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(StockQuery query);
+
+    com.lingmao.scm.common.excel.ExcelExport exportSummaryPlan(StockQuery query);
+
     byte[] export(StockQuery query);
 
     byte[] exportSummary(StockQuery query);

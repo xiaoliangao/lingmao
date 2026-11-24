@@ -154,113 +154,141 @@ public class StyleExcel {
         return Excel.template(styleSchema());
     }
 
-    /** ids 已经按款号排好、不超过导出上限 */
-    byte[] export(List<Long> ids) {
+    byte[] export(List<Long> ids) { return exportPlan(ids).toBytes(); }
+
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(List<Long> selected) {
+        List<Long> ids = List.copyOf(selected);
         BoundedExportRows.requireWithinLimit(ids.size(), Excel.MAX_EXPORT_ROWS, STYLE_SHEET);
-        Map<Long, Style> byId = chunked(ids, styleMapper::selectByIds).stream()
-                .collect(Collectors.toMap(Style::getId, Function.identity()));
-        List<Style> styles = ids.stream().map(byId::get).filter(Objects::nonNull).toList();
-        List<StyleColor> styleColors = BoundedExportRows.read(ids, CHUNK, Excel.MAX_EXPORT_ROWS, "款式颜色",
-                (chunk, limit) -> styleColorMapper.selectList(new LambdaQueryWrapper<StyleColor>()
-                        .in(StyleColor::getStyleId, chunk)
-                        .orderByAsc(StyleColor::getStyleId, StyleColor::getSeq, StyleColor::getId)
-                        .last("LIMIT " + limit)));
-        List<StyleSku> skus = BoundedExportRows.read(ids, CHUNK, Excel.MAX_EXPORT_ROWS, SKU_SHEET,
-                (chunk, limit) -> styleSkuMapper.selectList(new LambdaQueryWrapper<StyleSku>()
-                        .in(StyleSku::getStyleId, chunk).orderByAsc(StyleSku::getStyleId, StyleSku::getId)
-                        .last("LIMIT " + limit)));
-        Map<Long, Color> colors = colorService.byIds(Stream.concat(styleColors.stream().map(StyleColor::getColorId),
-                skus.stream().map(StyleSku::getColorId)).collect(Collectors.toSet()));
-        StyleCategories.Index index = categories.index();
-        Map<Long, String> users = userService.nicknames(styles.stream()
-                .flatMap(s -> Stream.of(s.getDesignerId(), s.getPatternMakerId())).filter(Objects::nonNull)
-                .collect(Collectors.toSet()));
-        Map<Long, SizeGroupVO> groups = sizeGroupService.list().stream()
-                .collect(Collectors.toMap(SizeGroupVO::id, Function.identity()));
-        Map<Long, LookupRow> materials = chunked(styles.stream().map(Style::getMainMaterialId).filter(Objects::nonNull)
-                .distinct().toList(), styleMapper::selectMaterialsByIds).stream()
-                .collect(Collectors.toMap(LookupRow::getId, Function.identity()));
-        Map<Long, LookupRow> factories = chunked(styles.stream().map(Style::getDefaultFactoryId).filter(Objects::nonNull)
-                .distinct().toList(), styleMapper::selectSuppliersByIds).stream()
-                .collect(Collectors.toMap(LookupRow::getId, Function.identity()));
-        Map<String, String> brandLabels = dicts.labels(StyleDicts.BRAND);
-        Map<String, String> seasonLabels = dicts.labels(StyleDicts.SEASON);
-
-        Map<Long, List<StyleColor>> colorsOf = styleColors.stream()
-                .collect(Collectors.groupingBy(StyleColor::getStyleId, LinkedHashMap::new, Collectors.toList()));
-        List<StyleRow> rows = new ArrayList<>();
-        for (Style s : styles) {
-            StyleRow row = new StyleRow();
-            row.setCode(s.getCode());
-            row.setName(s.getName());
-            row.setAliasName(s.getAliasName());
-            row.setStyleClass(s.getStyleClass());
-            row.setBrand(brandLabels.getOrDefault(s.getBrand(), s.getBrand()));
-            row.setCategoryPath(index.path(s.getCategoryId()));
-            row.setYear(s.getYear());
-            row.setSeason(seasonLabels.getOrDefault(s.getSeason(), s.getSeason()));
-            row.setWave(s.getWave());
-            row.setStyleTag(s.getStyleTag());
-            row.setSeries(s.getSeries());
-            row.setGender(s.getGender());
-            row.setSource(s.getSource());
-            row.setDesigner(StyleServiceImpl.nameOf(users, s.getDesignerId()));
-            row.setPatternMaker(StyleServiceImpl.nameOf(users, s.getPatternMakerId()));
-            SizeGroupVO group = groups.get(s.getSizeGroupId());
-            row.setSizeGroup(group == null ? null : group.name());
-            row.setColors(colorsOf.getOrDefault(s.getId(), List.of()).stream()
-                    .map(sc -> colors.get(sc.getColorId())).filter(Objects::nonNull).map(Color::getCode)
-                    .collect(Collectors.joining(",")));
-            LookupRow material = s.getMainMaterialId() == null ? null : materials.get(s.getMainMaterialId());
-            row.setMainMaterial(material == null ? null : material.getCode());
-            LookupRow factory = s.getDefaultFactoryId() == null ? null : factories.get(s.getDefaultFactoryId());
-            row.setDefaultFactory(factory == null ? null : factory.getCode());
-            row.setTagPrice(s.getTagPrice());
-            row.setRefCost(s.getRefCost());
-            row.setLaunchDate(s.getLaunchDate());
-            row.setProductName(s.getProductName());
-            row.setComposition(s.getComposition());
-            row.setExecStandard(s.getExecStandard());
-            row.setSafetyCategory(s.getSafetyCategory());
-            row.setSampleNo(s.getSampleNo());
-            row.setStatus(s.getStatus().getLabel());
-            row.setRemark(s.getRemark());
-            if (s.getLegacyAttrs() != null) {
-                row.getLegacy().putAll(s.getLegacyAttrs());
+        int colorCount = 0;
+        for (int from = 0; from < ids.size(); from += 500) {
+            colorCount += styleColorMapper.countExportRows(ids.subList(from, Math.min(ids.size(), from + 500)), Excel.MAX_EXPORT_ROWS - colorCount + 1);
+            BoundedExportRows.requireWithinLimit(colorCount, Excel.MAX_EXPORT_ROWS, "款式颜色");
+        }
+        int skuCount = 0;
+        for (int from = 0; from < ids.size(); from += 500) {
+            skuCount += styleSkuMapper.countExportRows(ids.subList(from, Math.min(ids.size(), from + 500)), Excel.MAX_EXPORT_ROWS - skuCount + 1);
+            BoundedExportRows.requireWithinLimit(skuCount, Excel.MAX_EXPORT_ROWS, SKU_SHEET);
+        }
+        var schema = FieldPermissions.has(FieldPermissions.COST) ? styleSchema() : styleSchema().without("参考成本价", "财务成本价");
+        int colorColumn = schema.columnIndex("颜色");
+        var brandLabels = dicts.labels(StyleDicts.BRAND); var seasonLabels = dicts.labels(StyleDicts.SEASON);
+        return Excel.exportBook().sheet(schema, sink -> {
+            int countedColors = 0;
+            for (int from = 0; from < ids.size(); from += 500) {
+                sink.flush();
+                List<Long> batch = ids.subList(from, Math.min(ids.size(), from + 500));
+                var styles = styleMapper.selectByIds(batch).stream().collect(Collectors.toMap(Style::getId, Function.identity()));
+                Map<Long, Long> numbers = new HashMap<>();
+                for (int i = 0; i < batch.size(); i++) numbers.put(batch.get(i), (long) from + i + 2);
+                Map<Long, StringBuilder> colorsOf = new HashMap<>();
+                for (int offset = 0; ; offset += 500) {
+                    sink.flush();
+                    int limit = Math.min(500, Excel.MAX_EXPORT_ROWS - countedColors + 1);
+                    List<StyleColor> colors = styleColorMapper.selectList(new LambdaQueryWrapper<StyleColor>()
+                            .in(StyleColor::getStyleId, batch).orderByAsc(StyleColor::getStyleId, StyleColor::getSeq, StyleColor::getId)
+                            .last("LIMIT " + limit + " OFFSET " + offset));
+                    countedColors += colors.size();
+                    BoundedExportRows.requireWithinLimit(countedColors, Excel.MAX_EXPORT_ROWS, "款式颜色");
+                    if (colors.isEmpty()) break;
+                    var labels = colorService.byIds(colors.stream().map(StyleColor::getColorId).collect(Collectors.toSet()));
+                    for (StyleColor color : colors) {
+                        Color info = labels.get(color.getColorId()); if (info == null) continue;
+                        var joined = colorsOf.computeIfAbsent(color.getStyleId(), ignored -> new StringBuilder());
+                        if (!joined.isEmpty()) joined.append(','); joined.append(info.getCode());
+                        com.lingmao.scm.common.excel.StreamingExcel.checkedText(STYLE_SHEET, numbers.get(color.getStyleId()), colorColumn, "颜色", joined.toString());
+                    }
+                    if (colors.size() < limit) break;
+                }
+                var users = userService.nicknames(styles.values().stream().flatMap(st -> Stream.of(st.getDesignerId(), st.getPatternMakerId()))
+                        .filter(Objects::nonNull).collect(Collectors.toSet()));
+                var categoryIds = styles.values().stream().map(Style::getCategoryId).filter(Objects::nonNull).distinct().toList();
+                var categoryPaths = (categoryIds.isEmpty() ? List.<LookupRow>of() : styleMapper.selectExportCategoryPaths(categoryIds)).stream()
+                        .collect(Collectors.toMap(LookupRow::getId, Function.identity()));
+                var groupIds = styles.values().stream().map(Style::getSizeGroupId).filter(Objects::nonNull).distinct().toList();
+                var groups = (groupIds.isEmpty() ? List.<LookupRow>of() : styleMapper.selectExportSizeGroupNames(groupIds)).stream()
+                        .collect(Collectors.toMap(LookupRow::getId, Function.identity()));
+                var materials = chunked(styles.values().stream().map(Style::getMainMaterialId).filter(Objects::nonNull).distinct().toList(), styleMapper::selectMaterialsByIds)
+                        .stream().collect(Collectors.toMap(LookupRow::getId, Function.identity()));
+                var factories = chunked(styles.values().stream().map(Style::getDefaultFactoryId).filter(Objects::nonNull).distinct().toList(), styleMapper::selectSuppliersByIds)
+                        .stream().collect(Collectors.toMap(LookupRow::getId, Function.identity()));
+                for (Long id : batch) {
+                    Style style = styles.get(id); if (style == null) continue;
+                    sink.row(styleRow(style, categoryPaths, users, groups, materials, factories, brandLabels, seasonLabels,
+                            colorsOf.containsKey(id) ? colorsOf.get(id).toString() : ""));
+                }
             }
-            rows.add(row);
-        }
+            sink.flush();
+        }).sheet(skuSchema(), sink -> {
+            for (int from = 0; from < ids.size(); from += 500) {
+                List<Long> batch = ids.subList(from, Math.min(ids.size(), from + 500));
+                sink.flush();
+                var styles = styleMapper.selectByIds(batch).stream().collect(Collectors.toMap(Style::getId, Function.identity()));
+                for (int offset = 0; ; offset += 500) {
+                    sink.flush();
+                    int limit = (int) Math.min(500, Excel.MAX_EXPORT_ROWS - sink.rows() + 1);
+                    var skus = styleSkuMapper.selectExportPage(batch, offset, limit); if (skus.isEmpty()) break;
+                    var colors = colorService.byIds(skus.stream().map(StyleSku::getColorId).collect(Collectors.toSet()));
+                    for (StyleSku sku : skus) sink.row(skuRow(sku, styles.get(sku.getStyleId()), colors.get(sku.getColorId())));
+                    if (skus.size() < limit) break;
+                }
+            }
+            sink.flush();
+        });
+    }
 
-        // SKU 按款式的顺序，款式里按颜色顺序、尺码顺序
-        Map<Long, Integer> styleOrder = new HashMap<>();
-        for (int i = 0; i < styles.size(); i++) {
-            styleOrder.put(styles.get(i).getId(), i);
+    private StyleRow styleRow(Style s, Map<Long, LookupRow> categoryPaths, Map<Long, String> users, Map<Long, LookupRow> groups,
+                              Map<Long, LookupRow> materials, Map<Long, LookupRow> factories, Map<String, String> brandLabels,
+                              Map<String, String> seasonLabels, String colors) {
+        StyleRow row = new StyleRow();
+        row.setCode(s.getCode());
+        row.setName(s.getName());
+        row.setAliasName(s.getAliasName());
+        row.setStyleClass(s.getStyleClass());
+        row.setBrand(brandLabels.getOrDefault(s.getBrand(), s.getBrand()));
+        row.setCategoryPath(categoryPaths.containsKey(s.getCategoryId()) ? categoryPaths.get(s.getCategoryId()).getName() : null);
+        row.setYear(s.getYear());
+        row.setSeason(seasonLabels.getOrDefault(s.getSeason(), s.getSeason()));
+        row.setWave(s.getWave());
+        row.setStyleTag(s.getStyleTag());
+        row.setSeries(s.getSeries());
+        row.setGender(s.getGender());
+        row.setSource(s.getSource());
+        row.setDesigner(StyleServiceImpl.nameOf(users, s.getDesignerId()));
+        row.setPatternMaker(StyleServiceImpl.nameOf(users, s.getPatternMakerId()));
+        LookupRow group = groups.get(s.getSizeGroupId());
+        row.setSizeGroup(group == null ? null : group.getName());
+        row.setColors(colors);
+        LookupRow material = s.getMainMaterialId() == null ? null : materials.get(s.getMainMaterialId());
+        row.setMainMaterial(material == null ? null : material.getCode());
+        LookupRow factory = s.getDefaultFactoryId() == null ? null : factories.get(s.getDefaultFactoryId());
+        row.setDefaultFactory(factory == null ? null : factory.getCode());
+        row.setTagPrice(s.getTagPrice());
+        row.setRefCost(s.getRefCost());
+        row.setLaunchDate(s.getLaunchDate());
+        row.setProductName(s.getProductName());
+        row.setComposition(s.getComposition());
+        row.setExecStandard(s.getExecStandard());
+        row.setSafetyCategory(s.getSafetyCategory());
+        row.setSampleNo(s.getSampleNo());
+        row.setStatus(s.getStatus().getLabel());
+        row.setRemark(s.getRemark());
+        if (s.getLegacyAttrs() != null) {
+            row.getLegacy().putAll(s.getLegacyAttrs());
         }
-        Map<String, Integer> colorSeq = new HashMap<>();
-        styleColors.forEach(sc -> colorSeq.put(sc.getStyleId() + "|" + sc.getColorId(), sc.getSeq()));
-        Comparator<StyleSku> order = Comparator
-                .comparing((StyleSku k) -> styleOrder.getOrDefault(k.getStyleId(), Integer.MAX_VALUE))
-                .thenComparing(k -> colorSeq.getOrDefault(k.getStyleId() + "|" + k.getColorId(), Integer.MAX_VALUE))
-                .thenComparing(k -> sizeIndex(groups.get(byId.get(k.getStyleId()).getSizeGroupId()), k.getSizeCode()))
-                .thenComparing(StyleSku::getCode);
-        List<SkuRow> skuRows = skus.stream().sorted(order).map(k -> {
-            Color color = colors.get(k.getColorId());
-            SkuRow row = new SkuRow();
-            row.setStyleCode(byId.get(k.getStyleId()).getCode());
-            row.setCode(k.getCode());
-            row.setColorCode(color == null ? null : color.getCode());
-            row.setColorName(color == null ? null : color.getName());
-            row.setSizeCode(k.getSizeCode());
-            row.setBarcode(k.getBarcode());
-            row.setTagPrice(k.getTagPrice());
-            row.setStatus(k.getStatus() != null && k.getStatus() == StyleServiceImpl.ENABLED_FLAG ? "启用" : "停用");
-            return row;
-        }).toList();
+        return row;
+    }
 
-        return Excel.exportBook()
-                .sheet(FieldPermissions.has(FieldPermissions.COST) ? styleSchema() : styleSchema().without("参考成本价", "财务成本价"), rows)
-                .sheet(skuSchema(), skuRows)
-                .toBytes();
+    private SkuRow skuRow(StyleSku k, Style style, Color color) {
+        SkuRow row = new SkuRow();
+        row.setStyleCode(style.getCode());
+        row.setCode(k.getCode());
+        row.setColorCode(color == null ? null : color.getCode());
+        row.setColorName(color == null ? null : color.getName());
+        row.setSizeCode(k.getSizeCode());
+        row.setBarcode(k.getBarcode());
+        row.setTagPrice(k.getTagPrice());
+        row.setStatus(k.getStatus() != null && k.getStatus() == StyleServiceImpl.ENABLED_FLAG ? "启用" : "停用");
+        return row;
     }
 
     // ---------- 导入 ----------

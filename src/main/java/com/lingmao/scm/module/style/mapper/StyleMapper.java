@@ -21,6 +21,19 @@ import java.util.List;
  */
 @Mapper
 public interface StyleMapper extends BaseMapper<Style> {
+    @Select("""
+            <script>SELECT c.id,concat_ws('/',p2.name,p.name,c.name) AS name FROM bas_category c
+            LEFT JOIN bas_category p ON p.id=c.parent_id LEFT JOIN bas_category p2 ON p2.id=p.parent_id
+            WHERE c.id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach></script>
+            """)
+    List<LookupRow> selectExportCategoryPaths(@Param("ids") Collection<Long> ids);
+
+    @Select("""
+            <script>SELECT id,name FROM bas_size_group WHERE id IN
+            <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach></script>
+            """)
+    List<LookupRow> selectExportSizeGroupNames(@Param("ids") Collection<Long> ids);
+
 
     IPage<StyleListVO> selectListPage(IPage<StyleListVO> page, @Param("q") StyleQuery query,
                                       @Param("codes") List<String> codes, @Param("categoryIds") Collection<Long> categoryIds);

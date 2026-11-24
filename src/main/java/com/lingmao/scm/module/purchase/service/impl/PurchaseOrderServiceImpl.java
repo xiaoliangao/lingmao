@@ -7,6 +7,7 @@ import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.BoundedExportRows;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
 import com.lingmao.scm.common.mybatis.Updates;
@@ -1023,19 +1024,66 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
 
     @Override
     public byte[] export(PurchaseQuery query) {
+        return exportPlan(query).toBytes();
+    }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(PurchaseQuery query) {
         tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PURCHASE_ORDER) : null);
-        List<PurchaseRowVO> rows = poMapper.selectRowPage(new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false),
-                query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())).getRecords();
-        if (rows.size() > Excel.MAX_EXPORT_ROWS) {
+        var scope = DataScope.current(query.isMine());
+        var codes = Keywords.codes(query.getKeyword());
+        var headsToCheck = poMapper.selectExportHeads(query, codes, scope, Excel.MAX_EXPORT_ROWS + 1);
+        if (headsToCheck.size() > Excel.MAX_EXPORT_ROWS)
             throw new BizException(400, "一次最多导出 " + Excel.MAX_EXPORT_ROWS + " 张，加个筛选条件再导");
+        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), headsToCheck,
+                PurchaseOrderMapper.ExportHead::id, PurchaseOrderMapper.ExportHead::companyId);
+        int checkedRelations = 0;
+        for (int from = 0; from < headsToCheck.size(); from += 500) {
+            var batchIds = headsToCheck.subList(from, Math.min(from + 500, headsToCheck.size())).stream()
+                    .map(PurchaseOrderMapper.ExportHead::id).toList();
+            checkedRelations += itemMapper.countExportRows(batchIds, Excel.MAX_EXPORT_ROWS - checkedRelations + 1);
+            BoundedExportRows.requireWithinLimit(checkedRelations, Excel.MAX_EXPORT_ROWS, "采购单明细");
         }
-        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, PurchaseRowVO::getId, PurchaseRowVO::getCompanyId);
-        Map<Long, String> names = userService.nicknames(rows.stream().map(PurchaseRowVO::getBuyerId)
-                .filter(Objects::nonNull).collect(Collectors.toSet()));
-        rows.forEach(row -> row.setBuyerName(names.get(row.getBuyerId())));
-        return excel.export(rows);
+        var convert = excel.exportMapper();
+        return Excel.exportBook().sheet(excel.exportSchema(), sink -> {
+            var selected = com.lingmao.scm.common.scope.ExportScope.accumulate(
+                    query.getIds(), PurchaseRowVO::getId, PurchaseRowVO::getCompanyId);
+            int heads = 0;
+            int details = 0;
+            while (true) {
+                sink.flush();
+                int size = Math.min(500, Excel.MAX_EXPORT_ROWS - heads + 1);
+                List<PurchaseRowVO> rows = poMapper.selectRowPage(new Page<>(heads / size + 1, size, false),
+                        query, codes, scope).getRecords();
+                if (heads + rows.size() > Excel.MAX_EXPORT_ROWS)
+                    throw new BizException(400, "一次最多导出 " + Excel.MAX_EXPORT_ROWS + " 张，加个筛选条件再导");
+                selected.accept(rows);
+                if (rows.isEmpty()) break;
+                Map<Long, String> names = userService.nicknames(rows.stream().map(PurchaseRowVO::getBuyerId)
+                        .filter(Objects::nonNull).collect(Collectors.toSet()));
+                rows.forEach(row -> row.setBuyerName(names.get(row.getBuyerId())));
+                Map<Long, PurchaseRowVO> byId = rows.stream().collect(Collectors.toMap(PurchaseRowVO::getId, Function.identity()));
+                List<Long> ids = rows.stream().map(PurchaseRowVO::getId).toList();
+                int offset = 0;
+                while (true) {
+                    sink.flush();
+                    int limit = Math.min(500, Excel.MAX_EXPORT_ROWS - details + 1);
+                    var batch = itemMapper.selectExportBatch(ids, offset, limit);
+                    BoundedExportRows.requireWithinLimit(details + batch.size(), Excel.MAX_EXPORT_ROWS, "采购单明细");
+                    if (batch.isEmpty()) break;
+                    var briefs = materialService.skuBriefs(batch.stream().map(PurchaseOrderItem::getMaterialSkuId).collect(Collectors.toSet()));
+                    for (var item : batch) sink.row(convert.row(byId.get(item.getPurchaseOrderId()), item, briefs.get(item.getMaterialSkuId())));
+                    details += batch.size();
+                    offset += batch.size();
+                    if (batch.size() < limit) break;
+                }
+                heads += rows.size();
+                if (rows.size() < size) break;
+            }
+            selected.finish();
+        });
     }
 
     // ---------- 待到料 ----------

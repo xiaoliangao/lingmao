@@ -24,6 +24,30 @@ public interface PurchaseOrderItemMapper extends BaseMapper<PurchaseOrderItem> {
             + "<foreach collection='poIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY purchase_order_id, seq, id</script>")
     List<PurchaseOrderItem> selectByOrders(@Param("poIds") Collection<Long> poIds);
 
+    @Select("""
+            <script>
+            SELECT COUNT(*) FROM (
+                SELECT 1 FROM pur_order_item WHERE purchase_order_id IN
+                <foreach collection="poIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+                LIMIT #{limit}
+            ) bounded
+            </script>
+            """)
+    int countExportRows(@Param("poIds") List<Long> poIds, @Param("limit") int limit);
+
+    /** 与主单页顺序一致；单个采购单的明细也必须分批读取，不能先累计再输出。 */
+    @Select("""
+            <script>
+            SELECT * FROM pur_order_item WHERE purchase_order_id IN
+            <foreach collection="poIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            ORDER BY CASE purchase_order_id
+            <foreach collection="poIds" item="id" index="position">WHEN #{id} THEN #{position}</foreach>
+            END, seq, id OFFSET #{offset} LIMIT #{limit}
+            </script>
+            """)
+    List<PurchaseOrderItem> selectExportBatch(@Param("poIds") List<Long> poIds,
+                                            @Param("offset") int offset, @Param("limit") int limit);
+
     @Delete("DELETE FROM pur_order_item WHERE purchase_order_id = #{poId}")
     void deleteByOrder(@Param("poId") long poId);
 

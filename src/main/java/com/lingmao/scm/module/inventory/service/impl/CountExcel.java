@@ -63,8 +63,16 @@ class CountExcel {
             ExcelColumn.text("备注", SheetRow::getRemark, SheetRow::setRemark).maxLength(255))
             .ignore("物料编码", "名称", "颜色", "规格", "单位", "账面数");
 
-    byte[] sheet(List<InvCountItem> items, Map<Long, MaterialSkuBrief> briefs) {
-        Map<String, String> units = InvTexts.labels(dictDataService, "unit");
+    ExcelSchema<SheetRow> sheetSchema() { return SHEET; }
+    ExcelSchema<ListRow> listSchema() { return LIST; }
+
+    byte[] sheet(List<InvCountItem> items, Map<Long, MaterialSkuBrief> briefs) { return Excel.export(SHEET, sheetRows(items, briefs)); }
+
+    Map<String, String> units() { return Map.copyOf(InvTexts.labels(dictDataService, "unit")); }
+
+    List<SheetRow> sheetRows(List<InvCountItem> items, Map<Long, MaterialSkuBrief> briefs) { return sheetRows(items, briefs, units()); }
+
+    List<SheetRow> sheetRows(List<InvCountItem> items, Map<Long, MaterialSkuBrief> briefs, Map<String, String> units) {
         List<SheetRow> rows = new ArrayList<>();
         for (InvCountItem i : items) {
             MaterialSkuBrief b = briefs.get(i.getMaterialSkuId());
@@ -82,7 +90,7 @@ class CountExcel {
             r.setRemark(i.getRemark());
             rows.add(r);
         }
-        return Excel.export(SHEET, rows);
+        return rows;
     }
 
     ExcelImport<SheetRow> read(MultipartFile file) {
@@ -117,7 +125,9 @@ class CountExcel {
             ExcelColumn.integer("盘亏", ListRow::getLossCount, ListRow::setLossCount),
             ExcelColumn.text("状态", ListRow::getStatus, ListRow::setStatus));
 
-    byte[] export(List<CountRowVO> counts) {
+    byte[] export(List<CountRowVO> counts) { return Excel.export(LIST, listRows(counts)); }
+
+    List<ListRow> listRows(List<CountRowVO> counts) {
         List<ListRow> rows = counts.stream().map(c -> {
             ListRow r = new ListRow();
             r.setNo(c.getNo());
@@ -133,6 +143,6 @@ class CountExcel {
             r.setStatus(DocStatus.valueOf(c.getStatus()).getLabel());
             return r;
         }).toList();
-        return Excel.export(LIST, rows);
+        return rows;
     }
 }

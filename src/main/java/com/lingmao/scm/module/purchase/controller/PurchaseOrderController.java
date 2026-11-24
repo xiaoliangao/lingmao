@@ -5,6 +5,7 @@ import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
 import tools.jackson.databind.JsonNode;
 
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.ExcelDownloads;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.result.R;
@@ -68,6 +69,7 @@ public class PurchaseOrderController extends IdempotencyReplayGuard {
     }
 
     private final PurchaseOrderService purchaseOrderService;
+    private final ExcelDownloads excelDownloads;
     private final DocCommonService docCommonService;
     private final Clock clock;
 
@@ -221,8 +223,8 @@ public class PurchaseOrderController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，一条明细一行")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('purchase:order:export')")
-    public ResponseEntity<byte[]> export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("purchaseQuery") PurchaseQuery query) {
-        return Excel.download(Excel.exportFileName("采购单", LocalDate.now(clock)), purchaseOrderService.export(query));
+    public void export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("purchaseQuery") PurchaseQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("采购单", LocalDate.now(clock)), () -> purchaseOrderService.exportPlan(query));
     }
 
     // ---------- 待到料 ----------

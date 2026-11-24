@@ -25,7 +25,13 @@ public interface FgStockService {
 
     byte[] export(FgStockQuery query);
 
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(FgStockQuery query);
+
     byte[] exportByStyle(FgStockQuery query);
 
+    com.lingmao.scm.common.excel.ExcelExport exportByStylePlan(FgStockQuery query);
+
     byte[] exportLogs(FgStockLogQuery query);
+
+    com.lingmao.scm.common.excel.ExcelExport exportLogsPlan(FgStockLogQuery query);
 }

@@ -50,6 +50,7 @@ public class FgStockServiceImpl implements FgStockService {
     private final FgStockLogMapper logMapper;
     private final FgStyles styles;
     private final FgExcel excel;
+    private final com.lingmao.scm.module.style.service.StyleExportProjection exportProjection;
     private final FgStockLogCursor logCursor;
     private final UserService userService;
 
@@ -131,22 +132,114 @@ public class FgStockServiceImpl implements FgStockService {
     }
 
     @Override
-    public byte[] export(FgStockQuery query) {
-        List<FgStockRowVO> rows = stockMapper.selectRowPage(new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false), query,
-                Keywords.codes(query.getKeyword()), FgScope.company(query.getCompanyId())).getRecords();
-        BoundedExportRows.requireWithinLimit(rows.size(), Excel.MAX_EXPORT_ROWS, "成品库存");
-        ExportScope.check(query.getIds(), rows, FgStockRowVO::getId, FgStockRowVO::getCompanyId);
-        fillSkus(rows);
-        return excel.exportStock(rows);
+    public byte[] export(FgStockQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(FgStockQuery query) {
+        var codes = Keywords.codes(query.getKeyword());
+        long company = FgScope.company(query.getCompanyId());
+        return Excel.exportBook().sheet(excel.stockSchema(), sink -> {
+            var scope = ExportScope.accumulate(query.getIds(), FgStockRowVO::getId, FgStockRowVO::getCompanyId);
+            int total = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<FgStockRowVO> rows = stockMapper.selectRowPage(new Page<>(page, 500, false), query, codes, company).getRecords();
+                total += rows.size();
+                BoundedExportRows.requireWithinLimit(total, Excel.MAX_EXPORT_ROWS, "成品库存");
+                scope.accept(rows);
+                sink.flush();
+                fillSkus(rows);
+                for (var row : excel.stockRows(rows)) sink.row(row);
+                if (rows.size() < 500) break;
+            }
+            scope.finish();
+        });
     }
 
     @Override
-    public byte[] exportByStyle(FgStockQuery query) {
+    public byte[] exportByStyle(FgStockQuery query) { return exportByStylePlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportByStylePlan(FgStockQuery query) {
         requireStyleFilters(query);
-        List<Long> ids = stockMapper.selectStylePage(new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false), query,
-                Keywords.codes(query.getKeyword()), FgScope.company(query.getCompanyId())).getRecords();
-        BoundedExportRows.requireWithinLimit(ids.size(), Excel.MAX_EXPORT_ROWS, "成品库存款式");
-        return excel.exportByStyle(byStyle(ids, query.getWarehouseId(), query.getCompanyId()));
+        var codes = Keywords.codes(query.getKeyword());
+        long company = FgScope.company(query.getCompanyId());
+        // 表头必须先确定，但只保留尺码并集；颜色、SKU 与行数据逐页读取后即释放。
+        LinkedHashSet<String> sizes = new LinkedHashSet<>();
+        int parents = 0, colors = 0, axes = 0, skus = 0;
+        for (int page = 1; ; page++) {
+            List<Long> ids = stockMapper.selectStylePage(new Page<>(page, 500, false), query, codes, company).getRecords();
+            parents += ids.size();
+            BoundedExportRows.requireWithinLimit(parents, Excel.MAX_EXPORT_ROWS, "成品库存款式");
+            if (ids.isEmpty()) break;
+            for (long offset = 0; ; offset += 500) {
+                var batch = exportProjection.sizes(ids, offset);
+                axes += batch.size();
+                BoundedExportRows.requireWithinLimit(axes, Excel.MAX_EXPORT_ROWS, "款式矩阵尺码轴");
+                batch.forEach(axis -> sizes.add(axis.sizeCode()));
+                FgExcel.checkMatrixBudget(colors, sizes.size());
+                if (batch.size() < 500) break;
+            }
+            for (long offset = 0; ; offset += 500) {
+                var batch = exportProjection.colors(ids, offset);
+                colors += batch.size();
+                FgExcel.checkMatrixBudget(colors, sizes.size());
+                if (batch.size() < 500) break;
+            }
+            for (long offset = 0; ; offset += 500) {
+                var batch = exportProjection.skus(ids, offset);
+                skus += batch.size();
+                BoundedExportRows.requireWithinLimit(skus, Excel.MAX_EXPORT_ROWS, "款式矩阵 SKU");
+                if (batch.size() < 500) break;
+            }
+            if (ids.size() < 500) break;
+        }
+        var columns = List.copyOf(sizes);
+        return Excel.exportBook().sheet(excel.matrixSchema(columns), sink -> {
+            int parentCount = 0, colorCount = 0, cellCount = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<Long> ids = stockMapper.selectStylePage(new Page<>(page, 500, false), query, codes, company).getRecords();
+                parentCount += ids.size();
+                BoundedExportRows.requireWithinLimit(parentCount, Excel.MAX_EXPORT_ROWS, "成品库存款式");
+                if (ids.isEmpty()) break;
+                for (long offset = 0; ; offset += 500) {
+                    sink.flush();
+                    var batch = exportProjection.colors(ids, offset);
+                    colorCount += batch.size();
+                    FgExcel.checkMatrixBudget(colorCount, columns.size());
+                    if (batch.isEmpty()) break;
+                    Map<Long, FgExcel.ByStyleRow> rows = new LinkedHashMap<>();
+                    for (var color : batch) {
+                        var row = new FgExcel.ByStyleRow();
+                        row.setStyleCode(color.styleCode()); row.setStyleName(color.styleName()); row.setColorName(color.colorName());
+                        row.setTotal(java.math.BigDecimal.ZERO); rows.put(color.relationId(), row);
+                    }
+                    for (long cellOffset = 0; ; cellOffset += 500) {
+                        sink.flush();
+                        var cells = exportProjection.cells(List.copyOf(rows.keySet()), cellOffset);
+                        cellCount += cells.size();
+                        BoundedExportRows.requireWithinLimit(cellCount, Excel.MAX_EXPORT_ROWS, "款式矩阵 SKU");
+                        if (cells.isEmpty()) break;
+                        sink.flush();
+                        var qtys = stockMapper.sumBySkus(cells.stream().map(com.lingmao.scm.module.style.dto.StyleMatrixExportRows.SkuCell::skuId).toList(),
+                                query.getWarehouseId(), company).stream().collect(Collectors.toMap(FgStockMapper.SkuQty::styleSkuId, FgStockMapper.SkuQty::qty));
+                        for (var cell : cells) {
+                            long qty = qtys.getOrDefault(cell.skuId(), 0L);
+                            if (qty != 0) {
+                                var row = rows.get(cell.relationId());
+                                row.getQtys().put(cell.sizeCode(), java.math.BigDecimal.valueOf(qty));
+                                row.setTotal(row.getTotal().add(java.math.BigDecimal.valueOf(qty)));
+                            }
+                        }
+                        if (cells.size() < 500) break;
+                    }
+                    for (var row : rows.values()) sink.row(row);
+                    if (batch.size() < 500) break;
+                }
+                if (ids.size() < 500) break;
+            }
+        });
     }
 
     /** 明细库存 ID 只用于明细导出，按款查询不能接受后静默忽略。 */
@@ -156,15 +249,30 @@ public class FgStockServiceImpl implements FgStockService {
     }
 
     @Override
-    public byte[] exportLogs(FgStockLogQuery query) {
+    public byte[] exportLogs(FgStockLogQuery query) { return exportLogsPlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportLogsPlan(FgStockLogQuery query) {
         BusinessDateRange.validate(query.getBizDateFrom(), query.getBizDateTo());
         if (query.getCursor() != null && !query.getCursor().isBlank()) throw new BizException(400, "导出请使用筛选范围，不传翻页游标");
-        List<FgStockLogRowVO> rows = logMapper.selectRowPage(new Page<>(1, LOG_LIMIT + 1, false), query,
-                Keywords.codes(query.getKeyword()), FgScope.company(query.getCompanyId())).getRecords();
-        if (rows.size() > LOG_LIMIT) {
-            throw new BizException("库存日志超过 1 万行，请缩小日期范围再导出");
-        }
-        fillLogs(rows);
-        return excel.exportLogs(rows);
+        var codes = Keywords.codes(query.getKeyword());
+        long company = FgScope.company(query.getCompanyId());
+        return Excel.exportBook().sheet(excel.logSchema(), sink -> {
+            java.time.OffsetDateTime afterTime = null;
+            Long afterId = null;
+            int total = 0;
+            while (true) {
+                sink.flush();
+                List<FgStockLogRowVO> rows = logMapper.selectSeek(query, codes, company, afterTime, afterId, 500);
+                total += rows.size();
+                if (total > LOG_LIMIT) throw new BizException("库存日志超过 1 万行，请缩小日期范围再导出");
+                sink.flush();
+                fillLogs(rows);
+                for (var row : excel.logRows(rows)) sink.row(row);
+                if (rows.size() < 500) break;
+                afterTime = rows.getLast().getCreateTime();
+                afterId = rows.getLast().getId();
+            }
+        });
     }
 }

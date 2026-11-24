@@ -121,9 +121,27 @@ class FgExcel {
         return ExcelSchema.of(in ? "成品入库单" : "成品出库单", DocRow::new, array);
     }
 
+    ExcelSchema<DocRow> exportDocSchema(FgDocKind kind) {
+        var schema = docSchema(kind);
+        return kind == FgDocKind.IN || FieldPermissions.has(FieldPermissions.ORDER) ? schema : schema.without("单价", "金额");
+    }
+
     byte[] exportDocs(FgDocKind kind, List<FgDocRowVO> docs, Map<Long, List<FgDocItem>> items,
                       Map<Long, StyleOrderInfo> bySku, Map<Long, String> userNames) {
-        Map<String, String> reasons = kind == FgDocKind.IN ? dictDataService.labels("fg_in_reason") : dictDataService.labels("fg_out_reason");
+        return Excel.export(exportDocSchema(kind), docRows(kind, docs, items, bySku, userNames));
+    }
+
+    Map<String, String> docReasons(FgDocKind kind) {
+        return Map.copyOf(kind == FgDocKind.IN ? dictDataService.labels("fg_in_reason") : dictDataService.labels("fg_out_reason"));
+    }
+
+    List<DocRow> docRows(FgDocKind kind, List<FgDocRowVO> docs, Map<Long, List<FgDocItem>> items,
+                         Map<Long, StyleOrderInfo> bySku, Map<Long, String> userNames) {
+        return docRows(kind, docs, items, bySku, userNames, docReasons(kind));
+    }
+
+    List<DocRow> docRows(FgDocKind kind, List<FgDocRowVO> docs, Map<Long, List<FgDocItem>> items,
+                         Map<Long, StyleOrderInfo> bySku, Map<Long, String> userNames, Map<String, String> reasons) {
         List<DocRow> rows = new ArrayList<>();
         for (FgDocRowVO d : docs) {
             for (FgDocItem i : items.getOrDefault(d.getId(), List.of())) {
@@ -157,9 +175,7 @@ class FgExcel {
                 rows.add(r);
             }
         }
-        ExcelSchema<DocRow> schema = docSchema(kind);
-        // 发货单价、金额是订单的（docs/api/07 §1：没有 order:price:query 的人导出里没有这两列）
-        return Excel.export(kind == FgDocKind.IN || FieldPermissions.has(FieldPermissions.ORDER) ? schema : schema.without("单价", "金额"), rows);
+        return rows;
     }
 
     // ---------- 其他入库导入明细 ----------
@@ -213,8 +229,13 @@ class FgExcel {
             ExcelColumn.text("尺码", StockRow::getSizeCode, StockRow::setSizeCode),
             ExcelColumn.integer("库存", StockRow::getQty, StockRow::setQty));
 
-    byte[] exportStock(List<FgStockRowVO> list) {
-        return Excel.export(STOCK, list.stream().map(s -> {
+    ExcelSchema<StockRow> stockSchema() { return STOCK; }
+    ExcelSchema<LogRow> logSchema() { return LOG; }
+
+    byte[] exportStock(List<FgStockRowVO> list) { return Excel.export(STOCK, stockRows(list)); }
+
+    List<StockRow> stockRows(List<FgStockRowVO> list) {
+        return list.stream().map(s -> {
             StockRow r = new StockRow();
             r.setWarehouse(s.getWarehouseName());
             r.setSkuCode(s.getSkuCode());
@@ -224,7 +245,7 @@ class FgExcel {
             r.setSizeCode(s.getSizeCode());
             r.setQty(s.getQty());
             return r;
-        }).toList());
+        }).toList();
     }
 
     @Data
@@ -241,14 +262,6 @@ class FgExcel {
         long outputRows = list.stream().mapToLong(s -> s.colors().size()).sum();
         List<String> sizes = list.stream().flatMap(s -> s.sizes().stream()).distinct().toList();
         checkMatrixBudget(outputRows, sizes.size());
-        List<ExcelColumn<ByStyleRow, ?>> cols = new ArrayList<>(List.of(
-                ExcelColumn.text("款号", ByStyleRow::getStyleCode, ByStyleRow::setStyleCode),
-                ExcelColumn.text("款名", ByStyleRow::getStyleName, ByStyleRow::setStyleName),
-                ExcelColumn.text("颜色", ByStyleRow::getColorName, ByStyleRow::setColorName)));
-        for (String size : sizes) {
-            cols.add(ExcelColumn.decimal(size, 0, r -> r.getQtys().get(size), (r, v) -> r.getQtys().put(size, v)));
-        }
-        cols.add(ExcelColumn.decimal("合计", 0, ByStyleRow::getTotal, ByStyleRow::setTotal));
         List<ByStyleRow> rows = new ArrayList<>();
         for (FgStockByStyleRowVO s : list) {
             Map<Long, List<FgStyleOptionVO.Sku>> byColor = s.skus().stream()
@@ -270,9 +283,21 @@ class FgExcel {
                 rows.add(r);
             }
         }
+        return Excel.export(matrixSchema(sizes), rows);
+    }
+
+    ExcelSchema<ByStyleRow> matrixSchema(List<String> sizes) {
+        List<ExcelColumn<ByStyleRow, ?>> cols = new ArrayList<>(List.of(
+                ExcelColumn.text("款号", ByStyleRow::getStyleCode, ByStyleRow::setStyleCode),
+                ExcelColumn.text("款名", ByStyleRow::getStyleName, ByStyleRow::setStyleName),
+                ExcelColumn.text("颜色", ByStyleRow::getColorName, ByStyleRow::setColorName)));
+        for (String size : sizes) {
+            cols.add(ExcelColumn.decimal(size, 0, r -> r.getQtys().get(size), (r, v) -> r.getQtys().put(size, v)));
+        }
+        cols.add(ExcelColumn.decimal("合计", 0, ByStyleRow::getTotal, ByStyleRow::setTotal));
         @SuppressWarnings("unchecked")
         ExcelColumn<ByStyleRow, ?>[] array = cols.toArray(ExcelColumn[]::new);
-        return Excel.export(ExcelSchema.of("成品库存（按款）", ByStyleRow::new, array), rows);
+        return ExcelSchema.of("成品库存（按款）", ByStyleRow::new, array);
     }
 
     @Data
@@ -305,8 +330,10 @@ class FgExcel {
             ExcelColumn.text("操作人", LogRow::getCreateBy, LogRow::setCreateBy),
             ExcelColumn.text("时间", LogRow::getCreateTime, LogRow::setCreateTime));
 
-    byte[] exportLogs(List<FgStockLogRowVO> list) {
-        return Excel.export(LOG, list.stream().map(l -> {
+    byte[] exportLogs(List<FgStockLogRowVO> list) { return Excel.export(LOG, logRows(list)); }
+
+    List<LogRow> logRows(List<FgStockLogRowVO> list) {
+        return list.stream().map(l -> {
             LogRow r = new LogRow();
             r.setBizDate(l.getBizDate());
             r.setChangeType(l.getChangeType().getLabel());
@@ -321,6 +348,6 @@ class FgExcel {
             r.setCreateBy(l.getCreateByName());
             r.setCreateTime(l.getCreateTime() == null ? null : TIME.format(l.getCreateTime()));
             return r;
-        }).toList());
+        }).toList();
     }
 }

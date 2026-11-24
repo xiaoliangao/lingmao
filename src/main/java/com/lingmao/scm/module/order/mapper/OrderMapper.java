@@ -25,6 +25,11 @@ public interface OrderMapper extends BaseMapper<Order> {
     IPage<OrderRowVO> selectRowPage(IPage<OrderRowVO> page, @Param("q") OrderQuery query, @Param("codes") List<String> codes,
                                     @Param("scope") DataScope scope);
 
+    /** 预算预检只保留主键和主体，不读取整张头 DTO 或显示关联。 */
+    record ExportHead(Long id, Long companyId) { }
+    List<ExportHead> selectExportHeads(@Param("q") OrderQuery query, @Param("codes") List<String> codes,
+                                       @Param("scope") DataScope scope, @Param("limit") int limit);
+
     /** 首页在手订单张数、件数：与列表使用同一权限和过滤条件，独立聚合。 */
     OrderTotals selectTotals(@Param("q") OrderQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope);
 

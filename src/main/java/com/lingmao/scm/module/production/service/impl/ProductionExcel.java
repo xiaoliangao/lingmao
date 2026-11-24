@@ -1,7 +1,6 @@
 package com.lingmao.scm.module.production.service.impl;
 
 import com.lingmao.scm.common.doc.DocStatus;
-import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.excel.ExcelColumn;
 import com.lingmao.scm.common.excel.ExcelSchema;
 import com.lingmao.scm.module.production.dto.ProductionRowVO;
@@ -14,8 +13,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -28,10 +25,15 @@ class ProductionExcel {
 
     private final DictDataService dictDataService;
 
-    byte[] export(ProductionKind kind, List<ProductionRowVO> orders) {
+    ExcelSchema<ExportRow> exportSchema(ProductionKind kind) {
+        var columns = schema(kind);
+        return com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.PRODUCTION)
+                ? columns : columns.without(kind.getPriceLabel(), "金额");
+    }
+
+    java.util.function.Function<ProductionRowVO, ExportRow> exportMapper() {
         Map<String, String> modes = labels("process_mode");
-        List<ExportRow> rows = new ArrayList<>();
-        for (ProductionRowVO o : orders) {
+        return o -> {
             ExportRow r = new ExportRow();
             r.setNo(o.getNo());
             r.setOrderNo(o.getOrderNo());
@@ -49,11 +51,8 @@ class ProductionExcel {
             r.setMerch(o.getMerchName());
             DocStatus status = DocStatus.valueOf(o.getStatus());
             r.setStatus(status == RUNNING && o.getReturnedQty() > 0 ? "部分回货" : ProductionRules.STATUS.label(status).text());
-            rows.add(r);
-        }
-        var columns = schema(kind);
-        return Excel.export(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.PRODUCTION)
-                ? columns : columns.without(kind.getPriceLabel(), "金额"), rows);
+            return r;
+        };
     }
 
     @Data

@@ -11,6 +11,10 @@ import java.util.List;
 @Mapper
 public interface InvCountItemMapper extends BaseMapper<InvCountItem> {
 
+    @Select("SELECT count(*) FROM (SELECT 1 FROM inv_count_item WHERE count_id=#{countId} LIMIT #{limit}) bounded")
+    int countExportRows(@Param("countId") long countId, @Param("limit") int limit);
+
+
     @Select("SELECT * FROM inv_count_item WHERE count_id = #{countId} ORDER BY seq, id")
     List<InvCountItem> selectByCount(@Param("countId") long countId);
 }

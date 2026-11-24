@@ -527,50 +527,85 @@ public class SupplierExcelServiceImpl implements SupplierExcelService {
     // ------------------------------------------------------------------ 导出
 
     @Override
-    public byte[] export(SupplierQuery query) {
-        List<Supplier> suppliers = supplierMapper.selectList(lists.wrapper(query).last("LIMIT " + (Excel.MAX_EXPORT_ROWS + 1)));
-        if (suppliers.size() > Excel.MAX_EXPORT_ROWS) {
-            // 和 Excel.export 的提示一样；先拦住，不用为了报错把五万家的分类、品类都查一遍
-            throw new BizException("要导出的超过 " + Excel.MAX_EXPORT_ROWS / 10_000 + " 万行了，请缩小筛选范围再导出");
+    public byte[] export(SupplierQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(SupplierQuery query) {
+        List<Long> ids = supplierMapper.<Long>selectObjs(lists.wrapper(query).select("id").last("LIMIT " + (Excel.MAX_EXPORT_ROWS + 1)));
+        BoundedExportRows.requireWithinLimit(ids.size(), Excel.MAX_EXPORT_ROWS, MAIN_SHEET);
+        int categoryCount = 0;
+        for (int from = 0; from < ids.size(); from += 500) {
+            categoryCount += supplierMapper.countExportCategories(ids.subList(from, Math.min(ids.size(), from + 500)), Excel.MAX_EXPORT_ROWS - categoryCount + 1);
+            BoundedExportRows.requireWithinLimit(categoryCount, Excel.MAX_EXPORT_ROWS, "供应商分类关联");
         }
-        List<Long> ids = suppliers.stream().map(Supplier::getId).toList();
-        Map<Long, List<String>> categories = BoundedExportRows.read(ids, EXPORT_CHUNK, Excel.MAX_EXPORT_ROWS,
-                        "供应商分类关联", supplierMapper::selectExportCategoriesOf).stream()
-                .collect(Collectors.groupingBy(SupplierCategoryRow::getSupplierId, LinkedHashMap::new,
-                        Collectors.mapping(SupplierCategoryRow::getCategory, Collectors.toList())));
-        Map<Long, List<String>> goodAt = BoundedExportRows.read(ids, EXPORT_CHUNK, Excel.MAX_EXPORT_ROWS,
-                        "供应商擅长品类关联", supplierMapper::selectExportGoodAtOf).stream()
-                .collect(Collectors.groupingBy(SupplierGoodAtRow::getSupplierId, LinkedHashMap::new,
-                        Collectors.mapping(SupplierGoodAtRow::getCategoryName, Collectors.toList())));
-        List<SupplierExcelRow> rows = new ArrayList<>();
-        for (int from = 0; from < suppliers.size(); from += EXPORT_CHUNK) {
-            List<Supplier> chunk = suppliers.subList(from, Math.min(from + EXPORT_CHUNK, suppliers.size()));
-            Map<Long, String> buyers = lists.buyerNames(chunk);
-            for (Supplier s : chunk) {
-                rows.add(toExcelRow(s, categories.getOrDefault(s.getId(), List.of()),
-                        goodAt.getOrDefault(s.getId(), List.of()), buyers.get(s.getBuyerId())));
-            }
+        int goodAtCount = 0;
+        for (int from = 0; from < ids.size(); from += 500) {
+            goodAtCount += supplierMapper.countExportGoodAt(ids.subList(from, Math.min(ids.size(), from + 500)), Excel.MAX_EXPORT_ROWS - goodAtCount + 1);
+            BoundedExportRows.requireWithinLimit(goodAtCount, Excel.MAX_EXPORT_ROWS, "供应商擅长品类关联");
         }
         var columns = exportSchema();
         if (!com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.CONTACT))
             columns = columns.without("联系人", "联系电话", "公司地址", "微信", "地址电话", "传真");
-        return Excel.export(columns, rows);
+        final var schema = columns;
+        int categoryColumn = schema.columnIndex("分类");
+        int goodAtColumn = schema.columnIndex("擅长类目");
+        var categoryLabels = dicts.options(SupplierDicts.SUPPLIER_CATEGORY).stream().collect(Collectors.toMap(DictOption::value, DictOption::label));
+        var invoiceLabels = dicts.options(SupplierDicts.INVOICE_TYPE).stream().collect(Collectors.toMap(DictOption::value, DictOption::label));
+        return Excel.exportBook().sheet(schema, sink -> {
+            int categoriesRead = 0, goodAtRead = 0;
+            for (int from = 0; from < ids.size(); from += 500) {
+                sink.flush();
+                var batch = ids.subList(from, Math.min(ids.size(), from + 500));
+                var suppliers = supplierMapper.selectByIds(batch).stream().collect(Collectors.toMap(Supplier::getId, Function.identity()));
+                var buyers = lists.buyerNames(new ArrayList<>(suppliers.values()));
+                Map<Long, Long> numbers = new HashMap<>();
+                for (int i = 0; i < batch.size(); i++) numbers.put(batch.get(i), (long) from + i + 2);
+                Map<Long, StringBuilder> categories = new HashMap<>(), goodAt = new HashMap<>();
+                for (int offset = 0; ; offset += 500) {
+                    sink.flush(); int limit = Math.min(500, Excel.MAX_EXPORT_ROWS - categoriesRead + 1);
+                    var rows = supplierMapper.selectExportCategoriesPage(batch, offset, limit);
+                    categoriesRead += rows.size(); BoundedExportRows.requireWithinLimit(categoriesRead, Excel.MAX_EXPORT_ROWS, "供应商分类关联");
+                    for (var row : rows) appendLabel(categories, row.getSupplierId(), categoryLabels.getOrDefault(row.getCategory(), row.getCategory()),
+                            numbers, categoryColumn, "分类");
+                    if (rows.size() < limit) break;
+                }
+                for (int offset = 0; ; offset += 500) {
+                    sink.flush(); int limit = Math.min(500, Excel.MAX_EXPORT_ROWS - goodAtRead + 1);
+                    var rows = supplierMapper.selectExportGoodAtPage(batch, offset, limit);
+                    goodAtRead += rows.size(); BoundedExportRows.requireWithinLimit(goodAtRead, Excel.MAX_EXPORT_ROWS, "供应商擅长品类关联");
+                    for (var row : rows) appendLabel(goodAt, row.getSupplierId(), row.getCategoryName(), numbers, goodAtColumn, "擅长类目");
+                    if (rows.size() < limit) break;
+                }
+                for (Long id : batch) {
+                    Supplier supplier = suppliers.get(id); if (supplier == null) continue;
+                    sink.row(toExcelRow(supplier, categories.containsKey(id) ? categories.get(id).toString() : "",
+                            goodAt.containsKey(id) ? goodAt.get(id).toString() : null, buyers.get(supplier.getBuyerId()), invoiceLabels));
+                }
+            }
+            sink.flush();
+        });
     }
 
-    private SupplierExcelRow toExcelRow(Supplier s, List<String> categories, List<String> goodAt, String buyer) {
+    private static void appendLabel(Map<Long, StringBuilder> values, Long id, String label, Map<Long, Long> numbers,
+                                    int column, String header) {
+        var text = values.computeIfAbsent(id, ignored -> new StringBuilder());
+        if (!text.isEmpty()) text.append("、"); text.append(label);
+        com.lingmao.scm.common.excel.StreamingExcel.checkedText(MAIN_SHEET, numbers.get(id), column, header, text.toString());
+    }
+
+    private SupplierExcelRow toExcelRow(Supplier s, String categories, String goodAt, String buyer, Map<String, String> invoiceLabels) {
         SupplierExcelRow row = new SupplierExcelRow();
         row.setCode(s.getCode());
         row.setName(s.getName());
         row.setShortName(s.getShortName());
-        row.setCategories(categories.stream().map(c -> dicts.labelOf(SupplierDicts.SUPPLIER_CATEGORY, c))
-                .collect(Collectors.joining("、")));
-        row.setGoodAt(goodAt.isEmpty() ? null : String.join("、", goodAt));
+        row.setCategories(categories);
+        row.setGoodAt(goodAt);
         row.setLevel(s.getLevel());
         row.setSettleMethod(s.getSettleMethod());
         row.setBuyer(buyer);
         row.setFrozen(s.getStatus() == DISABLED ? "是" : "否");
         row.setCreditCode(s.getCreditCode());
-        row.setInvoiceType(dicts.labelOf(SupplierDicts.INVOICE_TYPE, s.getInvoiceType()));
+        row.setInvoiceType(s.getInvoiceType() == null ? null : invoiceLabels.getOrDefault(s.getInvoiceType(), s.getInvoiceType()));
         row.setContact(s.getContact());
         row.setPhone(s.getPhone());
         row.setAddress(s.getAddress());

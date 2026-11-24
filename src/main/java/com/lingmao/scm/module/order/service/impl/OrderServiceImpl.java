@@ -7,7 +7,6 @@ import com.lingmao.scm.security.FieldPermissions;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.doc.DocStatus;
@@ -1214,34 +1213,81 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public byte[] export(OrderQuery query) {
+        return exportPlan(query).toBytes();
+    }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(OrderQuery query) {
         tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.ORDER) : null);
-        Page<OrderRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<OrderRowVO> rows = orderMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine())).getRecords();
-        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, OrderRowVO::getId, OrderRowVO::getCompanyId);
-        BoundedExportRows.requireWithinLimit(rows.size(), Excel.MAX_EXPORT_ROWS, "需求订单");
-        // 每张订单虽然只导出一行，其款式关联也需要独立预算，不能先取全量再拼成一个单元格。
-        List<OrderItem> orderStyles = BoundedExportRows.read(rows.stream().map(OrderRowVO::getId).toList(),
-                1000, Excel.MAX_EXPORT_ROWS, "需求订单款式关联", (ids, limit) ->
-                        itemMapper.selectList(new QueryWrapper<OrderItem>().select("order_id", "style_id")
-                                .in("order_id", ids).gt("qty", 0).groupBy("order_id", "style_id")
-                                .last("ORDER BY order_id, MIN(seq), style_id LIMIT " + limit)));
-        Map<Long, StyleRef> styles = styleService.refs(orderStyles.stream().map(OrderItem::getStyleId).collect(Collectors.toSet()));
-        Map<Long, List<OrderStyleRef>> byOrder = new HashMap<>();
-        orderStyles.forEach(item -> byOrder.computeIfAbsent(item.getOrderId(), ignored -> new ArrayList<>())
-                .add(new OrderStyleRef(item.getStyleId(), styles.containsKey(item.getStyleId())
-                        ? styles.get(item.getStyleId()).code() : null, null)));
-        Map<Long, String> names = userService.nicknames(rows.stream()
-                .flatMap(row -> java.util.stream.Stream.of(row.getSalesId(), row.getMerchId()))
-                .filter(Objects::nonNull).collect(Collectors.toSet()));
-        rows.forEach(row -> {
-            row.setStyles(byOrder.getOrDefault(row.getId(), List.of()));
-            row.setSalesName(names.get(row.getSalesId()));
-            row.setMerchName(names.get(row.getMerchId()));
+        var scope = DataScope.current(query.isMine());
+        var codes = Keywords.codes(query.getKeyword());
+        var headsToCheck = orderMapper.selectExportHeads(query, codes, scope, Excel.MAX_EXPORT_ROWS + 1);
+        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), headsToCheck,
+                OrderMapper.ExportHead::id, OrderMapper.ExportHead::companyId);
+        BoundedExportRows.requireWithinLimit(headsToCheck.size(), Excel.MAX_EXPORT_ROWS, "需求订单");
+        int checkedRelations = 0;
+        for (int from = 0; from < headsToCheck.size(); from += 500) {
+            var batchIds = headsToCheck.subList(from, Math.min(from + 500, headsToCheck.size())).stream()
+                    .map(OrderMapper.ExportHead::id).toList();
+            checkedRelations += itemMapper.countExportStyles(batchIds, Excel.MAX_EXPORT_ROWS - checkedRelations + 1);
+            BoundedExportRows.requireWithinLimit(checkedRelations, Excel.MAX_EXPORT_ROWS, "需求订单款式关联");
+        }
+        var convert = excel.exportMapper();
+        return Excel.exportBook().sheet(excel.exportSchema(), sink -> {
+            var selected = com.lingmao.scm.common.scope.ExportScope.accumulate(
+                    query.getIds(), OrderRowVO::getId, OrderRowVO::getCompanyId);
+            int heads = 0;
+            int relations = 0;
+            while (true) {
+                sink.flush();
+                int size = Math.min(500, Excel.MAX_EXPORT_ROWS - heads + 1);
+                List<OrderRowVO> rows = orderMapper.selectRowPage(new Page<>(heads / size + 1, size, false),
+                        query, codes, scope).getRecords();
+                BoundedExportRows.requireWithinLimit(heads + rows.size(), Excel.MAX_EXPORT_ROWS, "需求订单");
+                selected.accept(rows);
+                if (rows.isEmpty()) break;
+                Map<Long, Integer> sheetRows = new HashMap<>();
+                for (int i = 0; i < rows.size(); i++) sheetRows.put(rows.get(i).getId(), heads + i + 2);
+                Map<Long, StringBuilder> styleCodes = new HashMap<>();
+                List<Long> ids = rows.stream().map(OrderRowVO::getId).toList();
+                int offset = 0;
+                while (true) {
+                    sink.flush();
+                    int limit = Math.min(500, Excel.MAX_EXPORT_ROWS - relations + 1);
+                    var batch = itemMapper.selectExportStyles(ids, offset, limit);
+                    BoundedExportRows.requireWithinLimit(relations + batch.size(), Excel.MAX_EXPORT_ROWS, "需求订单款式关联");
+                    if (batch.isEmpty()) break;
+                    Map<Long, StyleRef> styles = styleService.refs(batch.stream().map(OrderItemMapper.OrderStyle::styleId).collect(Collectors.toSet()));
+                    for (var item : batch) {
+                        var style = styles.get(item.styleId());
+                        if (style == null || style.code() == null) continue;
+                        var text = styleCodes.computeIfAbsent(item.orderId(), ignored -> new StringBuilder());
+                        if (!text.isEmpty()) text.append("、");
+                        text.append(style.code());
+                        // 长聚合单元格及时拒绝，不为一个非法单元格累计剩余关联。
+                        if (text.length() >= 32_767) com.lingmao.scm.common.excel.StreamingExcel.checkedText(
+                                "需求订单", sheetRows.get(item.orderId()), 5, "款号", text.toString());
+                    }
+                    relations += batch.size();
+                    offset += batch.size();
+                    if (batch.size() < limit) break;
+                }
+                var names = userService.nicknames(rows.stream()
+                        .flatMap(row -> java.util.stream.Stream.of(row.getSalesId(), row.getMerchId()))
+                        .filter(Objects::nonNull).collect(Collectors.toSet()));
+                for (var row : rows) {
+                    row.setSalesName(names.get(row.getSalesId()));
+                    row.setMerchName(names.get(row.getMerchId()));
+                    var text = styleCodes.get(row.getId());
+                    sink.row(convert.apply(row, text == null ? "" : text.toString()));
+                }
+                heads += rows.size();
+                if (rows.size() < size) break;
+            }
+            selected.finish();
         });
-        return excel.export(rows);
     }
 
     // ---------- 给生产 ----------

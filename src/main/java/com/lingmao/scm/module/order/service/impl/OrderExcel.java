@@ -9,7 +9,6 @@ import com.lingmao.scm.common.excel.ExcelColumn;
 import com.lingmao.scm.common.excel.ExcelImport;
 import com.lingmao.scm.common.excel.ExcelSchema;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
-import com.lingmao.scm.module.order.dto.OrderStyleRef;
 import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.entity.StyleStatus;
 import com.lingmao.scm.module.style.service.StyleService;
@@ -224,21 +223,24 @@ class OrderExcel {
             ExcelColumn.text("来源", ExportRow::getSource, ExportRow::setSource),
             ExcelColumn.text("状态", ExportRow::getStatus, ExportRow::setStatus));
 
-    /** 一张订单一行；行上的款式、人名已经由 Service 填好 */
-    byte[] export(List<OrderRowVO> orders) {
+    ExcelSchema<ExportRow> exportSchema() {
+        return com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.ORDER)
+                ? EXPORT : EXPORT.without("金额");
+    }
+
+    /** 字典只在创建计划时读取；每个输入行立即转换，不累计整张工作表。 */
+    java.util.function.BiFunction<OrderRowVO, String, ExportRow> exportMapper() {
         Map<String, String> types = labels("order_type");
         Map<String, String> brands = labels("brand");
         Map<String, String> currencies = labels("currency");
-        List<ExportRow> rows = new ArrayList<>();
-        for (OrderRowVO o : orders) {
+        return (o, styleCodes) -> {
             ExportRow r = new ExportRow();
             r.setNo(o.getNo());
             r.setOrderDate(o.getOrderDate());
             r.setOrderType(types.getOrDefault(o.getOrderType(), o.getOrderType()));
             r.setContractNo(o.getContractNo());
             r.setBrand(o.getBrand() == null ? null : brands.getOrDefault(o.getBrand(), o.getBrand()));
-            r.setStyleCodes(o.getStyles().stream().map(OrderStyleRef::styleCode).filter(Objects::nonNull)
-                    .collect(Collectors.joining("、")));
+            r.setStyleCodes(styleCodes);
             r.setQty(o.getTotalQty());
             r.setAmount(o.getTotalAmount());
             r.setCurrency(currencies.getOrDefault(o.getCurrency(), o.getCurrency()));
@@ -251,10 +253,8 @@ class OrderExcel {
             r.setCompany(o.getCompanyName());
             r.setSource(o.getSource() == null ? null : o.getSource().getLabel());
             r.setStatus(OrderServiceImpl.ORDER_STATUS.label(DocStatus.valueOf(o.getStatus())).text());
-            rows.add(r);
-        }
-        return Excel.export(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.ORDER)
-                ? EXPORT : EXPORT.without("金额"), rows);
+            return r;
+        };
     }
 
     /** 字典 value → 中文（停用的也翻） */

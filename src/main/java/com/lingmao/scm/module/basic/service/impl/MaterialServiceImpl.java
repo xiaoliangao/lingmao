@@ -432,14 +432,17 @@ public class MaterialServiceImpl implements MaterialService {
     }
 
     @Override
-    public byte[] export(MaterialQuery query) {
+    public byte[] export(MaterialQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(MaterialQuery query) {
         tagFilters.prepare(query);
         query.setKeyword(Texts.trim(query.getKeyword()));
         List<Long> ids = materialMapper.selectIds(query, Keywords.codes(query.getKeyword()), Excel.MAX_EXPORT_ROWS + 1);
         if (ids.size() > Excel.MAX_EXPORT_ROWS) {
             throw new BizException("要导出的超过 " + Excel.MAX_EXPORT_ROWS / 10_000 + " 万行了，请缩小筛选范围再导出");
         }
-        return materialImport.export(ids);
+        return materialImport.exportPlan(ids);
     }
 
     // ---------- 内部 ----------

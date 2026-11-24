@@ -5,6 +5,7 @@ import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
 import tools.jackson.databind.JsonNode;
 
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.ExcelDownloads;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.page.PageQuery;
@@ -69,6 +70,7 @@ public class OrderController extends IdempotencyReplayGuard {
     }
 
     private final OrderService orderService;
+    private final ExcelDownloads excelDownloads;
     private final DocCommonService docCommonService;
     private final Clock clock;
 
@@ -223,8 +225,8 @@ public class OrderController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，一张订单一行")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('order:order:export')")
-    public ResponseEntity<byte[]> export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("orderQuery") OrderQuery query) {
-        return Excel.download(Excel.exportFileName("需求订单", LocalDate.now(clock)), orderService.export(query));
+    public void export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("orderQuery") OrderQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("需求订单", LocalDate.now(clock)), () -> orderService.exportPlan(query));
     }
 
     // ---------- 单据公共接口（README §4.3） ----------

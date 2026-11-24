@@ -34,6 +34,7 @@ public class StockController {
 
     private final StockService stockService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
     private final com.lingmao.scm.module.inventory.service.StockLogExportService logExporter;
 
     @Operation(summary = "库存明细：仓库 × 物料 SKU（物料仓、工厂仓）")
@@ -61,15 +62,15 @@ public class StockController {
     @Operation(summary = "导出库存明细")
     @GetMapping("/api/stocks/export")
     @PreAuthorize("hasAuthority('inventory:stock:export')")
-    public ResponseEntity<byte[]> export(@Valid StockQuery query) {
-        return Excel.download(Excel.exportFileName("库存", LocalDate.now(clock)), stockService.export(query));
+    public void export(@Valid StockQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("库存", LocalDate.now(clock)), () -> stockService.exportPlan(query));
     }
 
     @Operation(summary = "导出按物料汇总")
     @GetMapping("/api/stocks/summary/export")
     @PreAuthorize("hasAuthority('inventory:stock:export')")
-    public ResponseEntity<byte[]> exportSummary(@Valid StockQuery query) {
-        return Excel.download(Excel.exportFileName("库存汇总", LocalDate.now(clock)), stockService.exportSummary(query));
+    public void exportSummary(@Valid StockQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("库存汇总", LocalDate.now(clock)), () -> stockService.exportSummaryPlan(query));
     }
 
     @Operation(summary = "库存日志，新的在前")

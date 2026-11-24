@@ -74,4 +74,6 @@ public interface FgDocService {
     List<FgReceiptStockedVO> byReceipts(Collection<Long> receiptIds, long companyId);
 
     byte[] export(FgDocQuery query);
+
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(FgDocQuery query);
 }

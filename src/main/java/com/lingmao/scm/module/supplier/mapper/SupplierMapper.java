@@ -20,6 +20,57 @@ import java.util.List;
  */
 @Mapper
 public interface SupplierMapper extends BaseMapper<Supplier> {
+    @Select("""
+            <script>SELECT count(*) FROM (SELECT 1 FROM sup_supplier_category WHERE supplier_id IN
+            <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            LIMIT #{limit}) bounded</script>
+            """)
+    int countExportCategories(@Param("ids") Collection<Long> ids, @Param("limit") int limit);
+
+    @Select("""
+            <script>SELECT count(*) FROM (SELECT 1 FROM sup_supplier_good_at WHERE supplier_id IN
+            <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            LIMIT #{limit}) bounded</script>
+            """)
+    int countExportGoodAt(@Param("ids") Collection<Long> ids, @Param("limit") int limit);
+
+    @Select("""
+            <script>
+            SELECT c.supplier_id, c.category
+            FROM sup_supplier_category c
+            LEFT JOIN sys_dict_data d ON d.type_code = 'supplier_category' AND d.value = c.category AND d.deleted = false
+            WHERE
+            <choose>
+                <when test="ids != null and ids.size() > 0">
+                    c.supplier_id IN
+                    <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+                </when>
+                <otherwise>false</otherwise>
+            </choose>
+            ORDER BY c.supplier_id, d.sort NULLS LAST, d.id NULLS LAST, c.category
+            LIMIT #{limit} OFFSET #{offset}
+            </script>
+            """)
+    List<SupplierCategoryRow> selectExportCategoriesPage(@Param("ids") Collection<Long> ids, @Param("offset") int offset, @Param("limit") int limit);
+
+    @Select("""
+            <script>
+            SELECT g.supplier_id, g.category_id, c.name AS category_name
+            FROM sup_supplier_good_at g JOIN bas_category c ON c.id = g.category_id
+            WHERE
+            <choose>
+                <when test="ids != null and ids.size() > 0">
+                    g.supplier_id IN
+                    <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+                </when>
+                <otherwise>false</otherwise>
+            </choose>
+            ORDER BY g.supplier_id, c.level, c.sort, c.id
+            LIMIT #{limit} OFFSET #{offset}
+            </script>
+            """)
+    List<SupplierGoodAtRow> selectExportGoodAtPage(@Param("ids") Collection<Long> ids, @Param("offset") int offset, @Param("limit") int limit);
+
 
     /**
      * 锁住这一行再读（SELECT … FOR UPDATE），持有到事务结束。申请准入、删除先锁：

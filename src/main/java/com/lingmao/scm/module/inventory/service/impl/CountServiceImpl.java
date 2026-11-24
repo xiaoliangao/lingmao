@@ -8,6 +8,7 @@ import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.doc.StatusFlow;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.ExcelExport;
 import com.lingmao.scm.common.excel.ExcelImport;
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
@@ -58,6 +59,7 @@ import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -691,12 +693,38 @@ public class CountServiceImpl implements CountService {
 
     @Override
     public byte[] sheet(long id) {
-        InvCount count = getVisible(id);
-        List<InvCountItem> items = itemMapper.selectByCount(id);
-        byte[] bytes = excel.sheet(items, materialService.skuBriefs(items.stream().map(InvCountItem::getMaterialSkuId).toList()));
-        docLogService.add(BizType.INV_COUNT, count.getId(), "export-sheet", null);
+        byte[] bytes = sheetPlan(id).toBytes();
+        recordSheetExport(id);
         return bytes;
     }
+
+    @Override
+    public ExcelExport sheetPlan(long id) {
+        getVisible(id);
+        com.lingmao.scm.common.excel.BoundedExportRows.requireWithinLimit(
+                itemMapper.countExportRows(id, Excel.MAX_EXPORT_ROWS + 1), Excel.MAX_EXPORT_ROWS, "盘点表");
+        var units = excel.units();
+        return Excel.exportBook().sheet(excel.sheetSchema(), sink -> {
+            int total = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<InvCountItem> items = itemMapper.selectPage(new Page<>(page, 500, false),
+                        new LambdaQueryWrapper<InvCountItem>().eq(InvCountItem::getCountId, id)
+                                .orderByAsc(InvCountItem::getSeq, InvCountItem::getId)).getRecords();
+                total += items.size();
+                com.lingmao.scm.common.excel.BoundedExportRows.requireWithinLimit(total, Excel.MAX_EXPORT_ROWS, "盘点表");
+                sink.flush();
+                var briefs = materialService.skuBriefs(items.stream().map(InvCountItem::getMaterialSkuId).toList());
+                for (var row : excel.sheetRows(items, briefs, units)) sink.row(row);
+                if (items.size() < 500) break;
+            }
+        });
+    }
+
+    /** 预检完成、发送响应前独立提交审计，不在导出只读快照事务里写入。 */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordSheetExport(long id) { docLogService.add(BizType.INV_COUNT, id, "export-sheet", null); }
 
     /**
      * 导回实盘数（docs/api/04 §3.5.11）：按 SKU 码对上行，填实盘数和备注；实盘数空着的跳过（不清掉已填的）；
@@ -791,12 +819,32 @@ public class CountServiceImpl implements CountService {
     }
 
     @Override
-    public byte[] export(CountQuery query) {
+    public byte[] export(CountQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public ExcelExport exportPlan(CountQuery query) {
         tagFilters.prepare(query);
-        Page<CountRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<CountRowVO> rows = countMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine())).getRecords();
-        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, CountRowVO::getId, CountRowVO::getCompanyId);
-        fillRows(rows);
-        return excel.export(rows);
+        var codes = Keywords.codes(query.getKeyword());
+        var dataScope = DataScope.current(query.isMine());
+        return Excel.exportBook().sheet(excel.listSchema(), sink -> {
+            var scope = com.lingmao.scm.common.scope.ExportScope.accumulate(query.getIds(), CountRowVO::getId, CountRowVO::getCompanyId);
+            int total = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<CountRowVO> rows = countMapper.selectRowPage(new Page<>(page, 500, false), query, codes, dataScope).getRecords();
+                scope.accept(rows);
+                total += rows.size();
+                com.lingmao.scm.common.excel.BoundedExportRows.requireWithinLimit(total, Excel.MAX_EXPORT_ROWS, "物料盘点单");
+                sink.flush();
+                var names = userService.nicknames(rows.stream().map(CountRowVO::getCounterId).collect(Collectors.toSet()));
+                rows.forEach(row -> {
+                    row.setCounterName(names.get(row.getCounterId()));
+                    row.setScopeText(scopeText(row.getScope(), row.getCategoryNames(), row.getItemCount()));
+                });
+                for (var row : excel.listRows(rows)) sink.row(row);
+                if (rows.size() < 500) break;
+            }
+            scope.finish();
+        });
     }
 }

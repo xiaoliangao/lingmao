@@ -23,6 +23,11 @@ import java.util.List;
  */
 @Mapper
 public interface FgDocMapper extends BaseMapper<FgDoc> {
+    /** 预检只读编号和主体；每页不保留完整单头及聚合明细。 */
+    @org.apache.ibatis.annotations.Options(useCache = false, flushCache = org.apache.ibatis.annotations.Options.FlushCachePolicy.TRUE)
+    IPage<FgDocRowVO> selectExportHeads(IPage<FgDocRowVO> page, @Param("q") FgDocQuery query, @Param("codes") List<String> codes,
+                                  @Param("scope") DataScope scope, @Param("companyId") long companyId);
+
 
     /** 列表（XML）；codes 是关键字里的几个单号（有空格时），没有是 null */
     IPage<FgDocRowVO> selectRowPage(IPage<FgDocRowVO> page, @Param("q") FgDocQuery query, @Param("codes") List<String> codes,

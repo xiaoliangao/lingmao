@@ -6,25 +6,7 @@
 -->
 <mapper namespace="com.lingmao.scm.module.fg.mapper.FgDocMapper">
 
-    <select id="selectRowPage" resultType="com.lingmao.scm.module.fg.dto.FgDocRowVO">
-        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
-        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.version, d.company_id,
-               COALESCE(d.to_warehouse_id, d.from_warehouse_id) AS warehouse_id, w.name AS warehouse_name,
-               d.prd_receipt_id AS receipt_id, r.no AS receipt_no, p.no AS prd_order_no, p.kind AS prd_order_kind,
-               f.short_name AS factory_name, d.order_id, o.no AS order_no, d.reason, d.ship_to, d.logistics_no,
-               d.doc_date, d.remark, d.create_by, d.audit_by, d.create_time,
-               agg.first_sku_id, agg.style_count, agg.total_qty, agg.total_amount
-        FROM fg_doc d
-        JOIN bas_warehouse w ON w.id = COALESCE(d.to_warehouse_id, d.from_warehouse_id)
-        LEFT JOIN prd_receipt r ON r.id = d.prd_receipt_id
-        LEFT JOIN prd_order p ON p.id = r.prd_order_id
-        LEFT JOIN sup_supplier f ON f.id = p.factory_id
-        LEFT JOIN ord_order o ON o.id = d.order_id
-        LEFT JOIN LATERAL (SELECT (array_agg(i.style_sku_id ORDER BY i.seq, i.id))[1] AS first_sku_id,
-                                  COUNT(DISTINCT k.style_id) AS style_count, SUM(i.qty) AS total_qty,
-                                  CASE WHEN COUNT(*) FILTER (WHERE i.amount IS NULL) &gt; 0 THEN NULL ELSE SUM(i.amount) END AS total_amount
-                           FROM fg_doc_item i JOIN sty_style_sku k ON k.id = i.style_sku_id
-                           WHERE i.doc_id = d.id) agg ON true
+    <sql id="docFilters">
         WHERE d.kind = #{q.kind} AND d.company_id = #{companyId}
         <if test="q.tagFilter != null">
             AND EXISTS (
@@ -71,6 +53,39 @@
                 </otherwise>
             </choose>
         </if>
+    </sql>
+
+    <select id="selectExportHeads" resultType="com.lingmao.scm.module.fg.dto.FgDocRowVO">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+        SELECT d.id,d.company_id FROM fg_doc d
+        JOIN bas_warehouse w ON w.id=COALESCE(d.to_warehouse_id,d.from_warehouse_id)
+        LEFT JOIN prd_receipt r ON r.id=d.prd_receipt_id
+        LEFT JOIN prd_order p ON p.id=r.prd_order_id
+        LEFT JOIN ord_order o ON o.id=d.order_id
+        <include refid="docFilters"/>
+        ORDER BY d.id DESC
+    </select>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.fg.dto.FgDocRowVO">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+        SELECT d.id, d.no, d.kind, d.doc_type, d.status, d.version, d.company_id,
+               COALESCE(d.to_warehouse_id, d.from_warehouse_id) AS warehouse_id, w.name AS warehouse_name,
+               d.prd_receipt_id AS receipt_id, r.no AS receipt_no, p.no AS prd_order_no, p.kind AS prd_order_kind,
+               f.short_name AS factory_name, d.order_id, o.no AS order_no, d.reason, d.ship_to, d.logistics_no,
+               d.doc_date, d.remark, d.create_by, d.audit_by, d.create_time,
+               agg.first_sku_id, agg.style_count, agg.total_qty, agg.total_amount
+        FROM fg_doc d
+        JOIN bas_warehouse w ON w.id = COALESCE(d.to_warehouse_id, d.from_warehouse_id)
+        LEFT JOIN prd_receipt r ON r.id = d.prd_receipt_id
+        LEFT JOIN prd_order p ON p.id = r.prd_order_id
+        LEFT JOIN sup_supplier f ON f.id = p.factory_id
+        LEFT JOIN ord_order o ON o.id = d.order_id
+        LEFT JOIN LATERAL (SELECT (array_agg(i.style_sku_id ORDER BY i.seq, i.id))[1] AS first_sku_id,
+                                  COUNT(DISTINCT k.style_id) AS style_count, SUM(i.qty) AS total_qty,
+                                  CASE WHEN COUNT(*) FILTER (WHERE i.amount IS NULL) &gt; 0 THEN NULL ELSE SUM(i.amount) END AS total_amount
+                           FROM fg_doc_item i JOIN sty_style_sku k ON k.id = i.style_sku_id
+                           WHERE i.doc_id = d.id) agg ON true
+        <include refid="docFilters"/>
         ORDER BY d.id DESC
     </select>
 

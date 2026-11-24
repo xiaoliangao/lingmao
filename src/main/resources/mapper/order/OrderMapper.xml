@@ -82,6 +82,13 @@
         </if>
     </sql>
 
+    <select id="selectExportHeads" resultType="com.lingmao.scm.module.order.mapper.OrderMapper$ExportHead">
+        <bind name="withStatus" value="true"/>
+        SELECT o.id, o.company_id FROM ord_order o
+        <include refid="where"/>
+        ORDER BY o.id LIMIT #{limit}
+    </select>
+
     <select id="selectRowPage" resultType="com.lingmao.scm.module.order.dto.OrderRowVO">
         <bind name="withStatus" value="true"/>
         SELECT o.id, o.company_id, o.no, o.status, o.order_type, o.brand, o.contract_no, o.order_date, o.required_date, o.commit_date,
@@ -102,7 +109,7 @@
         <choose>
             <when test="q.oldestFirst">ORDER BY COALESCE(submitted.create_time, o.create_time), o.id</when>
             <when test="q.dueFirst">ORDER BY COALESCE(o.commit_date, o.required_date), o.no, o.id</when>
-            <otherwise>ORDER BY o.order_date DESC, o.no DESC</otherwise>
+            <otherwise>ORDER BY o.order_date DESC, o.no DESC, o.id DESC</otherwise>
         </choose>
     </select>
 

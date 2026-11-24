@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.purchase.service;
 
+import com.lingmao.scm.common.excel.ExcelExport;
+
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.biz.dto.DocSaved;
@@ -52,6 +54,8 @@ public interface PurchaseOrderService {
     void follow(long id, long itemId, FollowReq req);
 
     byte[] export(PurchaseQuery query);
+
+    ExcelExport exportPlan(PurchaseQuery query);
 
     PageResult<PendingArrivalRowVO> pendingItems(PendingArrivalQuery query);
 

@@ -38,6 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(StyleController.class)
 @Import(SecurityConfig.class)
 class StyleControllerTest {
+    @MockitoBean private com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     private static final String BODY = """
             {"codeMode": "AUTO", "name": "%s", "styleClass": "FS", "brand": "TB", "categoryId": 3, "year": 2027,

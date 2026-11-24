@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.order.service;
 
+import com.lingmao.scm.common.excel.ExcelExport;
+
 import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.page.PageQuery;
 import com.lingmao.scm.common.page.PageResult;
@@ -74,6 +76,8 @@ public interface OrderService {
 
     /** 一张订单一行，条件同列表，多一个 ids */
     byte[] export(OrderQuery query);
+
+    ExcelExport exportPlan(OrderQuery query);
 
     /** 单据公共接口用：不存在、不在数据范围 404 */
     void checkVisible(long id);

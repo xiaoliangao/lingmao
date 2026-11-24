@@ -68,6 +68,7 @@ public class SupplierController extends IdempotencyReplayGuard {
     private final SupplierCertService certService;
     private final SupplierExcelService excelService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     @Operation(summary = "分页查询（不出账号）")
     @GetMapping
@@ -302,8 +303,8 @@ public class SupplierController extends IdempotencyReplayGuard {
     @Operation(summary = "导出（不出账号、户名、开户行）")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('supplier:supplier:export')")
-    public ResponseEntity<byte[]> export(@Valid SupplierQuery query) {
-        return Excel.download(Excel.exportFileName("供应商", LocalDate.now(clock)), excelService.export(query));
+    public void export(@Valid SupplierQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("供应商", LocalDate.now(clock)), () -> excelService.exportPlan(query));
     }
     @Override
     public void authorizeReplay(String operation, Object[] arguments, JsonNode result) {

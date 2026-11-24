@@ -5,6 +5,7 @@ import com.lingmao.scm.common.idempotency.IdempotencyReplayGuard;
 import tools.jackson.databind.JsonNode;
 
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.ExcelDownloads;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.result.R;
@@ -50,7 +51,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -85,6 +85,7 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
     }
 
     private final ProductionOrderService productionOrderService;
+    private final ExcelDownloads excelDownloads;
     private final ScheduleService scheduleService;
     private final ProductionNodeService nodeService;
     private final ProductionIssueService issueService;
@@ -204,10 +205,10 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，加 ids；一张单一行")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('production:order:export')")
-    public ResponseEntity<byte[]> export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("productionQuery") ProductionQuery query) {
-        byte[] data = productionOrderService.export(query);
-        String name = ProductionKind.valueOf(query.getKind().strip()).getLabel();
-        return Excel.download(Excel.exportFileName(name, LocalDate.now(clock)), data);
+    public void export(@Valid @org.springframework.web.bind.annotation.ModelAttribute("productionQuery") ProductionQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        String name = ProductionKind.BUY.name().equals(query.getKind())
+                ? ProductionKind.BUY.getLabel() : ProductionKind.OUTSOURCE.getLabel();
+        excelDownloads.write(response, Excel.exportFileName(name, LocalDate.now(clock)), () -> productionOrderService.exportPlan(query));
     }
 
     // ---------- 排单（界面在订单详情，02 §3.7） ----------

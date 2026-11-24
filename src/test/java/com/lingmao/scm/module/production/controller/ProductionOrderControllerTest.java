@@ -56,6 +56,9 @@ class ProductionOrderControllerTest {
     @MockitoBean
     private DocCommonService docCommonService;
     @MockitoBean
+    private com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
+
+    @MockitoBean
     private Clock clock;
     @MockitoBean
     private JwtUtil jwtUtil;

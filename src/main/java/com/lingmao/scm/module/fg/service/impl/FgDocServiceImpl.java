@@ -1063,23 +1063,61 @@ public class FgDocServiceImpl implements FgDocService {
     // ---------- 导出 ----------
 
     @Override
-    public byte[] export(FgDocQuery query) {
+    public byte[] export(FgDocQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(FgDocQuery query) {
         tagFilters.prepare(query);
         BusinessDateRange.validate(query.getDocDateFrom(), query.getDocDateTo());
-        Page<FgDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<FgDocRowVO> docs = docMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine()), FgScope.company(query.getCompanyId())).getRecords();
-        ExportScope.check(query.getIds(), docs, FgDocRowVO::getId, FgDocRowVO::getCompanyId);
-        BoundedExportRows.requireWithinLimit(docs.size(), Excel.MAX_EXPORT_ROWS, "成品单据");
-        Map<Long, List<FgDocItem>> items = BoundedExportRows.read(docs.stream().map(FgDocRowVO::getId).toList(),
-                1000, Excel.MAX_EXPORT_ROWS, "成品单据明细", (ids, limit) -> itemMapper.selectList(new LambdaQueryWrapper<FgDocItem>()
-                        .in(FgDocItem::getDocId, ids).orderByAsc(FgDocItem::getDocId, FgDocItem::getSeq, FgDocItem::getId)
-                        .last("LIMIT " + limit))).stream().collect(Collectors.groupingBy(FgDocItem::getDocId));
-
-        Set<Long> skuIds = new HashSet<>();
-        items.values().forEach(list -> list.forEach(i -> skuIds.add(i.getStyleSkuId())));
-        Set<Long> userIds = docs.stream().map(FgDocRowVO::getCreateBy).filter(Objects::nonNull).collect(Collectors.toSet());
-        return excel.exportDocs(query.getKind(), docs, items, styles.bySku(skuIds), userService.nicknames(userIds));
+        var codes = Keywords.codes(query.getKeyword());
+        var dataScope = DataScope.current(query.isMine());
+        long company = FgScope.company(query.getCompanyId());
+        List<Long> parentIds = new java.util.ArrayList<>();
+        var selected = com.lingmao.scm.common.scope.ExportScope.accumulate(query.getIds(), FgDocRowVO::getId, FgDocRowVO::getCompanyId);
+        for (int page = 1; ; page++) {
+            var heads = docMapper.selectExportHeads(new Page<>(page, 500, false), query, codes, dataScope, company).getRecords();
+            selected.accept(heads);
+            BoundedExportRows.requireWithinLimit(parentIds.size() + heads.size(), Excel.MAX_EXPORT_ROWS, "成品单据");
+            heads.forEach(head -> parentIds.add(head.getId()));
+            if (heads.size() < 500) break;
+        }
+        selected.finish();
+        int detailCount = 0;
+        for (int from = 0; from < parentIds.size(); from += 500) {
+            detailCount += itemMapper.countExportRows(parentIds.subList(from, Math.min(parentIds.size(), from + 500)),
+                    Excel.MAX_EXPORT_ROWS - detailCount + 1);
+            BoundedExportRows.requireWithinLimit(detailCount, Excel.MAX_EXPORT_ROWS, "成品单据明细");
+        }
+        var reasons = excel.docReasons(query.getKind());
+        return Excel.exportBook().sheet(excel.exportDocSchema(query.getKind()), sink -> {
+            var scope = ExportScope.accumulate(query.getIds(), FgDocRowVO::getId, FgDocRowVO::getCompanyId);
+            int parents = 0, children = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<FgDocRowVO> docs = docMapper.selectRowPage(new Page<>(page, 500, false), query, codes, dataScope, company).getRecords();
+                scope.accept(docs);
+                parents += docs.size();
+                BoundedExportRows.requireWithinLimit(parents, Excel.MAX_EXPORT_ROWS, "成品单据");
+                if (docs.isEmpty()) break;
+                List<Long> ids = docs.stream().map(FgDocRowVO::getId).toList();
+                sink.flush();
+                Map<Long, String> names = userService.nicknames(docs.stream().map(FgDocRowVO::getCreateBy)
+                        .filter(Objects::nonNull).collect(Collectors.toSet()));
+                for (long offset = 0; ; offset += 500) {
+                    sink.flush();
+                    List<FgDocItem> fetched = itemMapper.selectExportPage(ids, offset);
+                    children += fetched.size();
+                    BoundedExportRows.requireWithinLimit(children, Excel.MAX_EXPORT_ROWS, "成品单据明细");
+                    sink.flush();
+                    var bySku = styles.bySku(fetched.stream().map(FgDocItem::getStyleSkuId).toList());
+                    var items = fetched.stream().collect(Collectors.groupingBy(FgDocItem::getDocId));
+                    for (var row : excel.docRows(query.getKind(), docs, items, bySku, names, reasons)) sink.row(row);
+                    if (fetched.size() < 500) break;
+                }
+                if (docs.size() < 500) break;
+            }
+            scope.finish();
+        });
     }
 
     private static String blankToNull(String s) {

@@ -72,6 +72,13 @@ public class GlobalExceptionHandler {
      */
     private final ObjectProvider<TableComments> tableComments;
 
+    @ExceptionHandler(com.lingmao.scm.common.excel.ExcelDownloads.InterruptedDownload.class)
+    public void handleInterruptedExcel(com.lingmao.scm.common.excel.ExcelDownloads.InterruptedDownload e,
+                                       jakarta.servlet.http.HttpServletResponse response) {
+        log.warn("Excel download interrupted type={}", e.getCause().getClass().getSimpleName());
+        try { response.getOutputStream().close(); } catch (java.io.IOException ignored) { /* disconnected client */ }
+    }
+
     /** 业务异常：预期内的失败，记 warn，msg 直接给前端看；导入错误清单这类附加数据放在 data 里 */
     @ExceptionHandler(BizException.class)
     public R<Object> handleBiz(BizException e) {

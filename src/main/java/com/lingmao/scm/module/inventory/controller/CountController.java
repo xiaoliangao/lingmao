@@ -61,6 +61,7 @@ public class CountController extends IdempotencyReplayGuard {
     private final CountService countService;
     private final DocCommonService docCommonService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     @Operation(summary = "列表，新的在前")
     @GetMapping
@@ -182,8 +183,9 @@ public class CountController extends IdempotencyReplayGuard {
     @Operation(summary = "导出盘点表（也是导回实盘数的模板）")
     @GetMapping("/{id:\\d+}/sheet")
     @PreAuthorize("hasAuthority('inventory:count:export')")
-    public ResponseEntity<byte[]> sheet(@PathVariable("id") long id) {
-        return Excel.download("盘点表-" + countService.no(id) + ".xlsx", countService.sheet(id));
+    public void sheet(@PathVariable("id") long id, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, () -> "盘点表-" + countService.no(id) + ".xlsx", () -> countService.sheetPlan(id),
+                () -> countService.recordSheetExport(id));
     }
 
     @Operation(summary = "导回实盘数（草稿）")
@@ -197,8 +199,8 @@ public class CountController extends IdempotencyReplayGuard {
     @Operation(summary = "导出列表：一行一张单")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('inventory:count:export')")
-    public ResponseEntity<byte[]> export(@Valid CountQuery query) {
-        return Excel.download(Excel.exportFileName("物料盘点单", LocalDate.now(clock)), countService.export(query));
+    public void export(@Valid CountQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("物料盘点单", LocalDate.now(clock)), () -> countService.exportPlan(query));
     }
 
     // ---------- 单据公共接口（README §4.3） ----------

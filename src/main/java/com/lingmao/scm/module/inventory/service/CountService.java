@@ -41,6 +41,12 @@ public interface CountService {
     /** 盘点表（Excel），也是导回实盘数的模板 */
     byte[] sheet(long id);
 
+    com.lingmao.scm.common.excel.ExcelExport sheetPlan(long id);
+
+    void recordSheetExport(long id);
+
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(CountQuery query);
+
     ImportResult importSheet(long id, MultipartFile file);
 
     byte[] export(CountQuery query);

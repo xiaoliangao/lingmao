@@ -78,6 +78,12 @@ public final class ExcelSchema<R> {
         return name;
     }
 
+    /** 返回当前可见列的位置，供分页聚合在构建过长单元格前报告准确位置。 */
+    public int columnIndex(String header) {
+        for (int i = 0; i < columns.size(); i++) if (columns.get(i).header().equals(header)) return i;
+        throw new IllegalArgumentException("工作表没有这列: " + header);
+    }
+
     /** 在写出任何字节之前整列去掉（如没有看价权限的列）。 */
     public ExcelSchema<R> without(String... headers) {
         Set<String> excluded = Set.of(headers);

@@ -108,4 +108,6 @@ public interface MaterialService {
 
     /** 导出：一个物料一行、一个 SKU 一行，两张表，列和导入模板一样 */
     byte[] export(MaterialQuery query);
+
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(MaterialQuery query);
 }

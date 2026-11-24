@@ -67,6 +67,7 @@ public class InvDocController extends IdempotencyReplayGuard {
     private final InvDocService invDocService;
     private final DocCommonService docCommonService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     @Operation(summary = "列表（kind 必填），新的在前")
     @GetMapping
@@ -181,9 +182,9 @@ public class InvDocController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：一行一条明细")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('inventory:doc:export')")
-    public ResponseEntity<byte[]> export(@Valid InvDocQuery query) {
+    public void export(@Valid InvDocQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
         String name = query.getKind() == InvDocKind.IN ? "物料入库单" : "物料出库单";
-        return Excel.download(Excel.exportFileName(name, LocalDate.now(clock)), invDocService.export(query));
+        excelDownloads.write(response, Excel.exportFileName(name, LocalDate.now(clock)), () -> invDocService.exportPlan(query));
     }
 
     // ---------- 单据公共接口（README §4.3） ----------

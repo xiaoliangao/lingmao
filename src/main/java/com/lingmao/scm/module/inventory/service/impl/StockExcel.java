@@ -114,9 +114,17 @@ class StockExcel {
         return r;
     }
 
-    byte[] stocks(List<StockRowVO> stocks) {
-        Map<String, String> units = InvTexts.labels(dictDataService, "unit");
-        return Excel.export(STOCKS, stocks.stream().map(s -> {
+    ExcelSchema<Row> stockSchema() { return STOCKS; }
+    ExcelSchema<Row> summarySchema() { return SUMMARY; }
+
+    byte[] stocks(List<StockRowVO> stocks) { return Excel.export(STOCKS, stockRows(stocks)); }
+
+    Map<String, String> units() { return Map.copyOf(InvTexts.labels(dictDataService, "unit")); }
+
+    List<Row> stockRows(List<StockRowVO> stocks) { return stockRows(stocks, units()); }
+
+    List<Row> stockRows(List<StockRowVO> stocks, Map<String, String> units) {
+        return stocks.stream().map(s -> {
             Row r = row(s, units);
             r.setWarehouse(s.getWarehouseName());
             r.setWarehouseType(WAREHOUSE_TYPE.getOrDefault(s.getWarehouseType(), s.getWarehouseType()));
@@ -124,19 +132,22 @@ class StockExcel {
             r.setSafetyStock(s.getSafetyStock());
             r.setTime(s.getUpdateTime() == null ? null : TIME.format(s.getUpdateTime()));
             return r;
-        }).toList());
+        }).toList();
     }
 
-    byte[] summary(List<StockSummaryRowVO> rows) {
-        Map<String, String> units = InvTexts.labels(dictDataService, "unit");
-        return Excel.export(SUMMARY, rows.stream().map(s -> {
+    byte[] summary(List<StockSummaryRowVO> rows) { return Excel.export(SUMMARY, summaryRows(rows)); }
+
+    List<Row> summaryRows(List<StockSummaryRowVO> rows) { return summaryRows(rows, units()); }
+
+    List<Row> summaryRows(List<StockSummaryRowVO> rows, Map<String, String> units) {
+        return rows.stream().map(s -> {
             Row r = row(s, units);
             r.setMaterialQty(s.getMaterialQty());
             r.setFactoryQty(s.getFactoryQty());
             r.setQty(s.getTotalQty());
             r.setSafetyStock(s.getSafetyStock());
             return r;
-        }).toList());
+        }).toList();
     }
 
     ExcelSchema<Row> logSchema(boolean financialColumns) { return financialColumns ? LOGS : LOGS.without("单价", "金额"); }

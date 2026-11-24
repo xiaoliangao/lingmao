@@ -35,6 +35,30 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
             + "GROUP BY order_id, style_id ORDER BY order_id, min(seq)</script>")
     List<OrderStyle> selectStyles(@Param("orderIds") Collection<Long> orderIds);
 
+    @Select("""
+            <script>
+            SELECT COUNT(*) FROM (
+                SELECT 1 FROM ord_order_item WHERE qty &gt; 0 AND order_id IN
+                <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+                GROUP BY order_id, style_id LIMIT #{limit}
+            ) bounded
+            </script>
+            """)
+    int countExportStyles(@Param("orderIds") List<Long> orderIds, @Param("limit") int limit);
+
+    /** 导出逐页聚合款式关联；即使一张订单有很多款式，每次仍最多取内部指定的批量。 */
+    @Select("""
+            <script>
+            SELECT order_id, style_id FROM ord_order_item
+            WHERE qty &gt; 0 AND order_id IN
+            <foreach collection="orderIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            GROUP BY order_id, style_id ORDER BY order_id, MIN(seq), style_id
+            OFFSET #{offset} LIMIT #{limit}
+            </script>
+            """)
+    List<OrderStyle> selectExportStyles(@Param("orderIds") List<Long> orderIds,
+                                       @Param("offset") int offset, @Param("limit") int limit);
+
     /** 这几张订单里还有 SKU 没排满的（已排产 < 件数）：列表、详情的"排单"按钮 */
     @Select("<script>SELECT DISTINCT order_id FROM ord_order_item WHERE scheduled_qty &lt; qty AND order_id IN "
             + "<foreach collection='orderIds' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")

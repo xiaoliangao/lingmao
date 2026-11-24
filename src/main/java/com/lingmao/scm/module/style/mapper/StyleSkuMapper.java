@@ -11,6 +11,26 @@ import java.util.List;
 
 @Mapper
 public interface StyleSkuMapper extends BaseMapper<StyleSku> {
+    @org.apache.ibatis.annotations.Select("""
+            <script>SELECT k.* FROM sty_style_sku k JOIN sty_style s ON s.id=k.style_id
+            LEFT JOIN sty_style_color c ON c.style_id=k.style_id AND c.color_id=k.color_id
+            LEFT JOIN bas_size_group_item z ON z.size_group_id=s.size_group_id AND z.size_code=k.size_code
+            WHERE k.style_id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            ORDER BY s.code,s.id,COALESCE(c.seq,2147483647),COALESCE(z.seq,2147483647),k.code,k.id
+            LIMIT #{limit} OFFSET #{offset}</script>
+            """)
+    java.util.List<StyleSku> selectExportPage(@org.apache.ibatis.annotations.Param("ids") java.util.List<Long> ids,
+                                            @org.apache.ibatis.annotations.Param("offset") int offset,
+                                            @org.apache.ibatis.annotations.Param("limit") int limit);
+
+    @org.apache.ibatis.annotations.Select("""
+            <script>SELECT count(*) FROM (SELECT 1 FROM sty_style_sku WHERE style_id IN
+            <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+            LIMIT #{limit}) bounded</script>
+            """)
+    int countExportRows(@org.apache.ibatis.annotations.Param("ids") java.util.List<Long> ids,
+                        @org.apache.ibatis.annotations.Param("limit") int limit);
+
 
     /**
      * 一键生成（RFC 005 §5）：按给的顺序插入，同一款式同一颜色同一尺码已有的跳过，返回新建了几个。

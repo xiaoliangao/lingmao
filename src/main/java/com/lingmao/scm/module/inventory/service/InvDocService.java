@@ -42,6 +42,8 @@ public interface InvDocService {
 
     byte[] export(InvDocQuery query);
 
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(InvDocQuery query);
+
     /** 详情的公共页签（logs、attachments……）先过它：不存在、不在数据范围里 404 */
     void checkVisible(long id);
 }

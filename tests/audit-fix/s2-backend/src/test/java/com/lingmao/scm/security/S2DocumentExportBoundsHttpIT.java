@@ -258,23 +258,24 @@ class S2DocumentExportBoundsHttpIT extends A2BusinessFixture {
     private static List<String> sql(SqlStatementCapture.Captured<?> capture) { return capture.statements().stream().map(s -> normalize(s.getSql())).toList(); }
     private static void assertLiteralLimit(SqlStatementCapture.Captured<?> capture, String table, String order) {
         assertThat(Excel.MAX_EXPORT_ROWS).isEqualTo(50_000);
-        assertThat(sql(capture).stream().filter(s -> s.contains("from " + table + " where"))
-                .filter(s -> !table.equals("ord_order_item") || s.contains("group by order_id,style_id"))).singleElement()
-                .satisfies(s -> assertThat(s).endsWith("limit 50001").contains(order));
+        assertThat(capture.statements().stream().filter(bound -> normalize(bound.getSql()).contains("from " + table + " ")))
+                .singleElement().satisfies(bound -> {
+                    assertThat(normalize(bound.getSql())).startsWith("select count(*) from (").containsPattern("limit \\?\\s*\\)");
+                    assertThat(limitValue(bound)).isEqualTo(50_001L);
+                });
     }
     private static void assertBoundPage(SqlStatementCapture.Captured<?> capture, String from) {
-        assertThat(capture.statements().stream().filter(s -> normalize(s.getSql()).contains(from))).singleElement().satisfies(bound -> {
-            assertThat(normalize(bound.getSql())).endsWith("limit ?");
-            assertThat(limitValue(bound)).isEqualTo(50_001L);
+        var statements = capture.statements().stream().filter(s -> normalize(s.getSql()).contains(from)).toList();
+        assertThat(statements).isNotEmpty();
+        assertThat(statements).allSatisfy(bound -> {
+            Long limit = limitValue(bound); assertThat(limit).isNotNull();
+            if (normalize(bound.getSql()).startsWith("select o.id,o.company_id from ")) {
+                assertThat(limit).isEqualTo(50_001L); // only the bounded visibility projection may exceed a data page
+            } else assertThat(limit).isBetween(1L, 500L);
         });
+        assertThat(statements.stream().filter(bound -> limitValue(bound) <= 500).count()).isGreaterThanOrEqualTo(2);
     }
-    private static Long limitValue(BoundSql bound) {
-        if (!normalize(bound.getSql()).endsWith("limit ?") || bound.getParameterMappings().isEmpty()) return null;
-        String property = bound.getParameterMappings().getLast().getProperty();
-        Object value = bound.hasAdditionalParameter(property) ? bound.getAdditionalParameter(property)
-                : SystemMetaObject.forObject(bound.getParameterObject()).getValue(property);
-        return value instanceof Number number ? number.longValue() : null;
-    }
+    private static Long limitValue(BoundSql bound) { return ExportSqlLimits.limit(bound); }
     private void sqlEvidence(String name, SqlStatementCapture.Captured<Attempt> capture, int parents, int children) throws Exception {
         write(name + "-sql.json", map("database", jdbc.queryForObject("SELECT current_database()", String.class),
                 "parentRows", parents, "relatedRows", children, "limit", Excel.MAX_EXPORT_ROWS, "attempt", capture.result(),

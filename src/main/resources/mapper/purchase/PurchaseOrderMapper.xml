@@ -156,6 +156,13 @@
         </choose>
     </sql>
 
+    <select id="selectExportHeads" resultType="com.lingmao.scm.module.purchase.mapper.PurchaseOrderMapper$ExportHead">
+        <include refid="keywordCtes"/>
+        SELECT o.id, o.company_id FROM pur_order o
+        <include refid="where"/>
+        ORDER BY o.id LIMIT #{limit}
+    </select>
+
     <select id="selectRowPage" resultType="com.lingmao.scm.module.purchase.dto.PurchaseRowVO">
         <include refid="listCtes"/>
         <include refid="rowColumns"/>

@@ -38,6 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(SupplierController.class)
 @Import({SecurityConfig.class, SuperAdminCheck.class})
 class SupplierControllerTest {
+    @MockitoBean private com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     @Autowired
     private MockMvc mockMvc;

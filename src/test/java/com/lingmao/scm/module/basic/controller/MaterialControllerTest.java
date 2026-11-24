@@ -35,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(MaterialController.class)
 @Import(SecurityConfig.class)
 class MaterialControllerTest {
+    @MockitoBean private com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     private static final String BODY = """
             {"name": "%s", "categoryId": 5, "materialType": "FABRIC", "stockUnit": "M", "colorIds": [1, 2]}

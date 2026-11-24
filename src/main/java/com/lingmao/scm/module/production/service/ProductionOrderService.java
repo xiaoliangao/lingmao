@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.production.service;
 
+import com.lingmao.scm.common.excel.ExcelExport;
+
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.production.dto.IssueOptionQuery;
@@ -39,6 +41,8 @@ public interface ProductionOrderService {
     void act(long id, String action, DocActionReq req);
 
     byte[] export(ProductionQuery query);
+
+    ExcelExport exportPlan(ProductionQuery query);
 
     /** 单据公共接口用：不存在、不在数据范围 404 */
     void checkVisible(long id);

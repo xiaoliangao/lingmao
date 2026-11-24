@@ -61,6 +61,7 @@ public class MaterialController extends IdempotencyReplayGuard {
 
     private final MaterialService materialService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     @Operation(summary = "分页：分类（含下级）、物料类型、状态；关键字查编码（空格隔开查多个）、名称、货号、成分")
     @GetMapping
@@ -104,8 +105,8 @@ public class MaterialController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，ids 是导出选中的")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('basic:material:export')")
-    public ResponseEntity<byte[]> export(@Valid MaterialQuery query) {
-        return Excel.download(Excel.exportFileName("物料", LocalDate.now(clock)), materialService.export(query));
+    public void export(@Valid MaterialQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("物料", LocalDate.now(clock)), () -> materialService.exportPlan(query));
     }
 
     @Operation(summary = "详情：物料 + 全部 SKU + 图片 + 领猫附加属性")

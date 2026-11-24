@@ -46,6 +46,11 @@ public interface PurchaseOrderMapper extends BaseMapper<PurchaseOrder> {
     IPage<PurchaseRowVO> selectRowPage(IPage<PurchaseRowVO> page, @Param("q") PurchaseQuery query, @Param("codes") List<String> codes,
                                        @Param("scope") DataScope scope);
 
+    /** 预算预检只保留主键和主体，不读取整张头 DTO 或显示关联。 */
+    record ExportHead(Long id, Long companyId) { }
+    List<ExportHead> selectExportHeads(@Param("q") PurchaseQuery query, @Param("codes") List<String> codes,
+                                       @Param("scope") DataScope scope, @Param("limit") int limit);
+
     /** 导出：和列表一样的条件，不分页（PurchaseQuery.ids 有值时只导这几张） */
     List<PurchaseRowVO> selectRows(@Param("q") PurchaseQuery query, @Param("codes") List<String> codes, @Param("scope") DataScope scope);
 

@@ -14,6 +14,11 @@ import java.util.List;
 
 @Mapper
 public interface InvDocMapper extends BaseMapper<InvDoc> {
+    /** 预检只读编号和主体；每页不保留完整单头及聚合明细。 */
+    @org.apache.ibatis.annotations.Options(useCache = false, flushCache = org.apache.ibatis.annotations.Options.FlushCachePolicy.TRUE)
+    IPage<InvDocRowVO> selectExportHeads(IPage<InvDocRowVO> page, @Param("q") InvDocQuery query, @Param("codes") List<String> codes,
+                                  @Param("scope") DataScope scope);
+
 
     /** 列表（XML）：仓库名、往来名只读 JOIN；codes 是关键字里的几个单号（有空格时），没有是 null */
     IPage<InvDocRowVO> selectRowPage(IPage<InvDocRowVO> page, @Param("q") InvDocQuery query, @Param("codes") List<String> codes,

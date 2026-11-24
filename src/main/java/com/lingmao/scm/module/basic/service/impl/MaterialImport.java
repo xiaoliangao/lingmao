@@ -180,101 +180,145 @@ public class MaterialImport {
         return Excel.template(materialSchema(), skuSchema());
     }
 
-    /** ids 已经按编码排好、不超过导出上限 */
-    public byte[] export(List<Long> ids) {
+    /** 只保留有硬上限的轻量编号；每页实体和关联信息写完即可回收。 */
+    public byte[] export(List<Long> ids) { return exportPlan(ids).toBytes(); }
+
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(List<Long> selected) {
+        List<Long> ids = List.copyOf(selected);
         BoundedExportRows.requireWithinLimit(ids.size(), Excel.MAX_EXPORT_ROWS, MATERIAL_SHEET);
-        Map<Long, Material> byId = chunked(ids, materialMapper::selectByIds).stream()
-                .collect(Collectors.toMap(Material::getId, Function.identity()));
-        List<Material> materials = ids.stream().map(byId::get).filter(Objects::nonNull).toList();
-        List<MaterialSku> skus = BoundedExportRows.read(ids, CHUNK, Excel.MAX_EXPORT_ROWS, SKU_SHEET,
-                (chunk, limit) -> materialSkuMapper.selectList(new LambdaQueryWrapper<MaterialSku>()
-                        .in(MaterialSku::getMaterialId, chunk)
-                        .orderByAsc(MaterialSku::getMaterialId, MaterialSku::getId)
-                        // limit 是内部剩余预算，不接受请求提供的 SQL。
-                        .last("LIMIT " + limit)));
-        Map<Long, Color> colors = chunked(skus.stream().map(MaterialSku::getColorId).filter(Objects::nonNull).distinct().toList(),
-                colorMapper::selectByIds).stream().collect(Collectors.toMap(Color::getId, Function.identity()));
-        Map<Long, MaterialCategory> categories = materialCategoryMapper.selectList(null).stream()
-                .collect(Collectors.toMap(MaterialCategory::getId, Function.identity()));
-        Map<Long, SupplierBrief> suppliers = chunked(materials.stream().map(Material::getDefaultSupplierId)
-                .filter(Objects::nonNull).distinct().toList(), materialMapper::selectSuppliersByIds).stream()
-                .collect(Collectors.toMap(SupplierBrief::getId, Function.identity()));
-        Map<String, String> seasonLabels = labels(MaterialServiceImpl.SEASON_DICT);
-
-        List<MaterialRow> materialRows = new ArrayList<>();
-        Map<Long, Material> materialById = new HashMap<>();
-        for (Material m : materials) {
-            materialById.put(m.getId(), m);
-            MaterialRow row = new MaterialRow();
-            row.setMaterialType(m.getMaterialType());
-            row.setCategoryPath(categoryPath(m, categories));
-            row.setYear(m.getYear());
-            row.setSeason(m.getSeason() == null ? null : seasonLabels.getOrDefault(m.getSeason(), m.getSeason()));
-            row.setCode(m.getCode());
-            row.setSupplierItemNo(m.getSupplierItemNo());
-            row.setSource(MaterialSource.valueOf(m.getDefaultSource()).getLabel());
-            row.setName(m.getName());
-            SupplierBrief supplier = m.getDefaultSupplierId() == null ? null : suppliers.get(m.getDefaultSupplierId());
-            row.setSupplierCode(supplier == null ? null : supplier.getCode());
-            row.setSupplierName(supplier == null ? null : supplier.getName());
-            row.setRefPrice(m.getRefPrice());
-            row.setStockUnit(m.getStockUnit());
-            row.setDefaultLossPct(m.getDefaultLossPct());
-            row.setReservePct(m.getReservePct());
-            row.setMoq(m.getMoq());
-            row.setLeadDays(m.getLeadDays());
-            row.setFrozen(Statuses.enabled(m.getStatus()) ? "否" : "是");
-            row.setWidthCm(m.getWidthCm());
-            row.setWeightGsm(m.getWeightGsm());
-            row.setComposition(m.getComposition());
-            row.setRemark(m.getRemark());
-            row.setTexture(m.getTexture());
-            row.setPurchaseUnit(m.getPurchaseUnit());
-            row.setConversionFactor(m.getConversionFactor());
-            row.setMinPackQty(m.getMinPackQty());
-            if (m.getLegacyAttrs() != null) {
-                row.getLegacy().putAll(m.getLegacyAttrs());
-            }
-            materialRows.add(row);
+        int children = 0;
+        for (int from = 0; from < ids.size(); from += 500) {
+            children += materialSkuMapper.countExportRows(ids.subList(from, Math.min(ids.size(), from + 500)),
+                    Excel.MAX_EXPORT_ROWS - children + 1);
+            BoundedExportRows.requireWithinLimit(children, Excel.MAX_EXPORT_ROWS, SKU_SHEET);
         }
-
-        Map<Long, Integer> order = new HashMap<>();
-        for (int i = 0; i < materials.size(); i++) {
-            order.put(materials.get(i).getId(), i);
-        }
-        List<SkuRow> skuRows = skus.stream()
-                .sorted((a, b) -> {
-                    int byMaterial = Integer.compare(order.get(a.getMaterialId()), order.get(b.getMaterialId()));
-                    return byMaterial != 0 ? byMaterial : a.getCode().compareTo(b.getCode());
-                })
-                .map(k -> {
-                    Material m = materialById.get(k.getMaterialId());
-                    Color color = k.getColorId() == null ? null : colors.get(k.getColorId());
-                    SkuRow row = new SkuRow();
-                    row.setMaterialCode(m.getCode());
-                    row.setMaterialName(m.getName());
-                    row.setCode(k.getCode());
-                    row.setColorCode(color == null ? null : color.getCode());
-                    row.setColorName(color == null ? null : color.getName());
-                    row.setSupplierColorNo(k.getSupplierColorNo());
-                    row.setSpecCode(k.getSpecCode());
-                    row.setSpec(k.getSpec());
-                    row.setSupplierItemNo(k.getSupplierItemNo());
-                    row.setStatus(Statuses.enabled(k.getStatus()) ? "启用" : "停用");
-                    row.setWidthCm(m.getWidthCm());
-                    row.setWeightGsm(m.getWeightGsm());
-                    row.setSafetyStock(k.getSafetyStock());
-                    row.setPrice(k.getPrice());
-                    row.setRemark(k.getRemark());
-                    return row;
-                }).toList();
-
+        List<Long> skuIds = orderedExportSkuIds(ids);
         boolean cost = FieldPermissions.has(FieldPermissions.COST);
+        Map<String, String> seasonLabels = labels(MaterialServiceImpl.SEASON_DICT);
         return Excel.exportBook()
-                .sheet(cost ? materialSchema() : materialSchema().without("成本价", "其他价格", "倍率"), materialRows)
-                .sheet(cost ? skuSchema() : skuSchema().without("SKU成本价"), skuRows)
-                .toBytes();
+                .sheet(cost ? materialSchema() : materialSchema().without("成本价", "其他价格", "倍率"), sink -> {
+                    for (int from = 0; from < ids.size(); from += 500) {
+                        sink.flush();
+                        List<Long> batch = ids.subList(from, Math.min(ids.size(), from + 500));
+                        Map<Long, Material> materials = materialMapper.selectByIds(batch).stream()
+                                .collect(Collectors.toMap(Material::getId, Function.identity()));
+                        List<Long> categoryIds = materials.values().stream().map(Material::getCategoryId).filter(Objects::nonNull).distinct().toList();
+                        Map<Long, MaterialCategory> categories = new HashMap<>();
+                        if (!categoryIds.isEmpty()) materialCategoryMapper.selectByIds(categoryIds).forEach(c -> categories.put(c.getId(), c));
+                        List<Long> parents = categories.values().stream().map(MaterialCategory::getParentId).filter(Objects::nonNull).distinct().toList();
+                        if (!parents.isEmpty()) materialCategoryMapper.selectByIds(parents).forEach(c -> categories.put(c.getId(), c));
+                        Map<Long, SupplierBrief> suppliers = chunked(materials.values().stream().map(Material::getDefaultSupplierId)
+                                .filter(Objects::nonNull).distinct().toList(), materialMapper::selectSuppliersByIds).stream()
+                                .collect(Collectors.toMap(SupplierBrief::getId, Function.identity()));
+                        for (Long id : batch) {
+                            Material material = materials.get(id);
+                            if (material != null) sink.row(materialRow(material, categories, suppliers, seasonLabels));
+                        }
+                    }
+                    sink.flush();
+                })
+                .sheet(cost ? skuSchema() : skuSchema().without("SKU成本价"), sink -> {
+                    for (int from = 0; from < skuIds.size(); from += 500) {
+                        sink.flush();
+                        List<Long> batch = skuIds.subList(from, Math.min(skuIds.size(), from + 500));
+                        Map<Long, MaterialSku> skus = materialSkuMapper.selectByIds(batch).stream()
+                                .collect(Collectors.toMap(MaterialSku::getId, Function.identity()));
+                        BoundedExportRows.requireWithinLimit((int) sink.rows() + skus.size(), Excel.MAX_EXPORT_ROWS, SKU_SHEET);
+                        if (skus.isEmpty()) continue;
+                        sink.flush();
+                        Map<Long, Material> materials = materialMapper.selectByIds(skus.values().stream()
+                                        .map(MaterialSku::getMaterialId).distinct().toList()).stream()
+                                .collect(Collectors.toMap(Material::getId, Function.identity()));
+                        sink.flush();
+                        Map<Long, Color> colors = chunked(skus.values().stream().map(MaterialSku::getColorId)
+                                        .filter(Objects::nonNull).distinct().toList(), colorMapper::selectByIds).stream()
+                                .collect(Collectors.toMap(Color::getId, Function.identity()));
+                        for (Long id : batch) {
+                            MaterialSku sku = skus.get(id);
+                            if (sku != null) sink.row(skuRow(sku, materials.get(sku.getMaterialId()), colors.get(sku.getColorId())));
+                        }
+                    }
+                    sink.flush();
+                });
     }
+
+    /** 保留原来的父表顺序和 Java UTF-16 编码排序，避免依赖数据库 locale；最多保存 5 万条轻量排序键。 */
+    private List<Long> orderedExportSkuIds(List<Long> materialIds) {
+        Map<Long, Integer> parentOrder = new HashMap<>();
+        for (int i = 0; i < materialIds.size(); i++) parentOrder.put(materialIds.get(i), i);
+        List<MaterialSkuMapper.ExportOrder> keys = new ArrayList<>();
+        for (int from = 0; from < materialIds.size(); from += 500) {
+            List<Long> batch = materialIds.subList(from, Math.min(materialIds.size(), from + 500));
+            Long afterId = null;
+            while (true) {
+                var page = materialSkuMapper.selectExportOrderPage(batch, afterId);
+                BoundedExportRows.requireWithinLimit(keys.size() + page.size(), Excel.MAX_EXPORT_ROWS, SKU_SHEET);
+                keys.addAll(page);
+                if (page.size() < 500) break;
+                afterId = page.getLast().id();
+            }
+        }
+        keys.sort(java.util.Comparator.comparingInt((MaterialSkuMapper.ExportOrder key) -> parentOrder.get(key.materialId()))
+                .thenComparing(MaterialSkuMapper.ExportOrder::code));
+        // 生产者只捕获排好序的 ID；编码和其他排序键在 planFactory 返回前即可回收。
+        return keys.stream().map(MaterialSkuMapper.ExportOrder::id).toList();
+    }
+
+    private MaterialRow materialRow(Material m, Map<Long, MaterialCategory> categories,
+                                    Map<Long, SupplierBrief> suppliers, Map<String, String> seasonLabels) {
+        MaterialRow row = new MaterialRow();
+        row.setMaterialType(m.getMaterialType());
+        row.setCategoryPath(categoryPath(m, categories));
+        row.setYear(m.getYear());
+        row.setSeason(m.getSeason() == null ? null : seasonLabels.getOrDefault(m.getSeason(), m.getSeason()));
+        row.setCode(m.getCode());
+        row.setSupplierItemNo(m.getSupplierItemNo());
+        row.setSource(MaterialSource.valueOf(m.getDefaultSource()).getLabel());
+        row.setName(m.getName());
+        SupplierBrief supplier = m.getDefaultSupplierId() == null ? null : suppliers.get(m.getDefaultSupplierId());
+        row.setSupplierCode(supplier == null ? null : supplier.getCode());
+        row.setSupplierName(supplier == null ? null : supplier.getName());
+        row.setRefPrice(m.getRefPrice());
+        row.setStockUnit(m.getStockUnit());
+        row.setDefaultLossPct(m.getDefaultLossPct());
+        row.setReservePct(m.getReservePct());
+        row.setMoq(m.getMoq());
+        row.setLeadDays(m.getLeadDays());
+        row.setFrozen(Statuses.enabled(m.getStatus()) ? "否" : "是");
+        row.setWidthCm(m.getWidthCm());
+        row.setWeightGsm(m.getWeightGsm());
+        row.setComposition(m.getComposition());
+        row.setRemark(m.getRemark());
+        row.setTexture(m.getTexture());
+        row.setPurchaseUnit(m.getPurchaseUnit());
+        row.setConversionFactor(m.getConversionFactor());
+        row.setMinPackQty(m.getMinPackQty());
+        if (m.getLegacyAttrs() != null) {
+            row.getLegacy().putAll(m.getLegacyAttrs());
+        }
+        return row;
+    }
+
+    private SkuRow skuRow(MaterialSku k, Material m, Color color) {
+        SkuRow row = new SkuRow();
+        row.setMaterialCode(m.getCode());
+        row.setMaterialName(m.getName());
+        row.setCode(k.getCode());
+        row.setColorCode(color == null ? null : color.getCode());
+        row.setColorName(color == null ? null : color.getName());
+        row.setSupplierColorNo(k.getSupplierColorNo());
+        row.setSpecCode(k.getSpecCode());
+        row.setSpec(k.getSpec());
+        row.setSupplierItemNo(k.getSupplierItemNo());
+        row.setStatus(Statuses.enabled(k.getStatus()) ? "启用" : "停用");
+        row.setWidthCm(m.getWidthCm());
+        row.setWeightGsm(m.getWeightGsm());
+        row.setSafetyStock(k.getSafetyStock());
+        row.setPrice(k.getPrice());
+        row.setRemark(k.getRemark());
+        return row;
+    }
+
 
     // ---------- 导入 ----------
 

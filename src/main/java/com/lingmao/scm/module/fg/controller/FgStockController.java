@@ -33,6 +33,7 @@ public class FgStockController {
 
     private final FgStockService fgStockService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     @Operation(summary = "库存明细：一个仓一个 SKU 一行")
     @GetMapping("/api/fg-stocks")
@@ -58,15 +59,15 @@ public class FgStockController {
     @Operation(summary = "导出库存明细")
     @GetMapping("/api/fg-stocks/export")
     @PreAuthorize("hasAuthority('fg:stock:export')")
-    public ResponseEntity<byte[]> export(@Valid FgStockQuery query) {
-        return Excel.download(Excel.exportFileName("成品库存", LocalDate.now(clock)), fgStockService.export(query));
+    public void export(@Valid FgStockQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("成品库存", LocalDate.now(clock)), () -> fgStockService.exportPlan(query));
     }
 
     @Operation(summary = "导出按款（尺码横排）")
     @GetMapping("/api/fg-stocks/by-style/export")
     @PreAuthorize("hasAuthority('fg:stock:export')")
-    public ResponseEntity<byte[]> exportByStyle(@Valid FgStockQuery query) {
-        return Excel.download(Excel.exportFileName("成品库存按款", LocalDate.now(clock)), fgStockService.exportByStyle(query));
+    public void exportByStyle(@Valid FgStockQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("成品库存按款", LocalDate.now(clock)), () -> fgStockService.exportByStylePlan(query));
     }
 
     @Operation(summary = "库存日志，按创建时间及 ID 向前翻页，不隐式统计总数")
@@ -79,7 +80,7 @@ public class FgStockController {
     @Operation(summary = "导出库存日志（最多 1 万行）")
     @GetMapping("/api/fg-stock-logs/export")
     @PreAuthorize("hasAuthority('fg:stock:export')")
-    public ResponseEntity<byte[]> exportLogs(@Valid FgStockLogQuery query) {
-        return Excel.download(Excel.exportFileName("成品库存日志", LocalDate.now(clock)), fgStockService.exportLogs(query));
+    public void exportLogs(@Valid FgStockLogQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("成品库存日志", LocalDate.now(clock)), () -> fgStockService.exportLogsPlan(query));
     }
 }

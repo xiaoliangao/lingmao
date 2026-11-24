@@ -72,6 +72,7 @@ public class FgDocController extends IdempotencyReplayGuard {
     private final FgDocService fgDocService;
     private final DocCommonService docCommonService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     @Operation(summary = "列表（kind 必填），新的在前")
     @GetMapping
@@ -222,9 +223,9 @@ public class FgDocController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：一行一条明细")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('fg:doc:export')")
-    public ResponseEntity<byte[]> export(@Valid FgDocQuery query) {
+    public void export(@Valid FgDocQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
         String name = query.getKind() == FgDocKind.IN ? "成品入库单" : "成品出库单";
-        return Excel.download(Excel.exportFileName(name, LocalDate.now(clock)), fgDocService.export(query));
+        excelDownloads.write(response, Excel.exportFileName(name, LocalDate.now(clock)), () -> fgDocService.exportPlan(query));
     }
 
     // ---------- 给上游页面 ----------

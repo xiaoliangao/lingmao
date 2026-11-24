@@ -121,6 +121,8 @@ public interface StyleService {
     /** 导出：款式一张表 + SKU 一张表，条件同列表 */
     byte[] export(StyleQuery query);
 
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(StyleQuery query);
+
     // ---------- 给别的域 ----------
 
     /**

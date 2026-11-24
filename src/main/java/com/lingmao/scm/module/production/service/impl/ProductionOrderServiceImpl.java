@@ -328,21 +328,45 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public byte[] export(ProductionQuery query) {
+        return exportPlan(query).toBytes();
+    }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(ProductionQuery query) {
         tagFilters.prepare(query);
         query.setApprovalIds(List.of());
         query.setApprovalScope(query.isAuditForMe() ? approvalService.waitingScope(BizType.PRODUCTION_ORDER) : null);
         ProductionKind kind = requireKind(query);
         query.setCard(null);
-        List<ProductionRowVO> rows = prdMapper.selectRowPage(new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false),
-                query, Keywords.codes(query.getKeyword()), DataScope.current(query.isMine()),
-                support.today(), support.nearUntil()).getRecords();
-        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), rows, ProductionRowVO::getId, ProductionRowVO::getCompanyId);
-        BoundedExportRows.requireWithinLimit(rows.size(), Excel.MAX_EXPORT_ROWS, "生产单");
-        // 导出没有节点、缩略图和操作列；只补实际输出的人名，避免加载全量关联节点。
-        Map<Long, String> names = userService.nicknames(rows.stream().map(ProductionRowVO::getMerchId)
-                .filter(Objects::nonNull).collect(Collectors.toSet()));
-        rows.forEach(row -> row.setMerchName(names.get(row.getMerchId())));
-        return excel.export(kind, rows);
+        var scope = DataScope.current(query.isMine());
+        var codes = Keywords.codes(query.getKeyword());
+        var today = support.today();
+        var nearUntil = support.nearUntil();
+        var convert = excel.exportMapper();
+        return Excel.exportBook().sheet(excel.exportSchema(kind), sink -> {
+            var selected = com.lingmao.scm.common.scope.ExportScope.accumulate(
+                    query.getIds(), ProductionRowVO::getId, ProductionRowVO::getCompanyId);
+            int count = 0;
+            while (true) {
+                sink.flush();
+                int size = Math.min(500, Excel.MAX_EXPORT_ROWS - count + 1);
+                List<ProductionRowVO> rows = prdMapper.selectRowPage(new Page<>(count / size + 1, size, false),
+                        query, codes, scope, today, nearUntil).getRecords();
+                BoundedExportRows.requireWithinLimit(count + rows.size(), Excel.MAX_EXPORT_ROWS, "生产单");
+                selected.accept(rows);
+                if (rows.isEmpty()) break;
+                // 导出只补实际输出的人名，不加载节点、缩略图或操作列。
+                Map<Long, String> names = userService.nicknames(rows.stream().map(ProductionRowVO::getMerchId)
+                        .filter(Objects::nonNull).collect(Collectors.toSet()));
+                for (var row : rows) {
+                    row.setMerchName(names.get(row.getMerchId()));
+                    sink.row(convert.apply(row));
+                }
+                count += rows.size();
+                if (rows.size() < size) break;
+            }
+            selected.finish();
+        });
     }
 
     @Override

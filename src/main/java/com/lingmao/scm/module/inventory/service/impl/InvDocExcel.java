@@ -90,11 +90,34 @@ class InvDocExcel {
                 ExcelColumn.text("制单时间", Row::getCreateTime, Row::setCreateTime));
     }
 
+    ExcelSchema<Row> exportSchema(InvDocKind kind) {
+        var columns = schema(kind);
+        return com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST)
+                ? columns : columns.without("单价", "金额");
+    }
+
     byte[] export(InvDocKind kind, List<InvDocRowVO> docs, Map<Long, List<InvDocItem>> items,
                   Map<Long, MaterialSkuBrief> briefs, Map<Long, String> userNames) {
-        Map<String, String> units = InvTexts.labels(dictDataService, "unit");
-        Map<String, String> inReasons = InvTexts.labels(dictDataService, "stock_in_reason");
-        Map<String, String> outReasons = InvTexts.labels(dictDataService, "stock_out_reason");
+        return Excel.export(exportSchema(kind), rows(kind, docs, items, briefs, userNames));
+    }
+
+    record Texts(Map<String, String> units, Map<String, String> inReasons, Map<String, String> outReasons) { }
+    Texts texts() {
+        return new Texts(Map.copyOf(InvTexts.labels(dictDataService, "unit")),
+                Map.copyOf(InvTexts.labels(dictDataService, "stock_in_reason")),
+                Map.copyOf(InvTexts.labels(dictDataService, "stock_out_reason")));
+    }
+
+    List<Row> rows(InvDocKind kind, List<InvDocRowVO> docs, Map<Long, List<InvDocItem>> items,
+                  Map<Long, MaterialSkuBrief> briefs, Map<Long, String> userNames) {
+        return rows(kind, docs, items, briefs, userNames, texts());
+    }
+
+    List<Row> rows(InvDocKind kind, List<InvDocRowVO> docs, Map<Long, List<InvDocItem>> items,
+                  Map<Long, MaterialSkuBrief> briefs, Map<Long, String> userNames, Texts texts) {
+        var units = texts.units();
+        var inReasons = texts.inReasons();
+        var outReasons = texts.outReasons();
         List<Row> rows = new ArrayList<>();
         for (InvDocRowVO d : docs) {
             for (InvDocItem i : items.getOrDefault(d.getId(), List.of())) {
@@ -133,8 +156,6 @@ class InvDocExcel {
                 rows.add(r);
             }
         }
-        var columns = schema(kind);
-        return Excel.export(com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST)
-                ? columns : columns.without("单价", "金额"), rows);
+        return rows;
     }
 }

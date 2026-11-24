@@ -13,6 +13,22 @@ import java.util.List;
 
 @Mapper
 public interface InvDocItemMapper extends BaseMapper<InvDocItem> {
+    /** 行数预算先于关联内容查询，返回一个计数而不是 5 万个 DTO。 */
+    @org.apache.ibatis.annotations.Options(useCache = false, flushCache = org.apache.ibatis.annotations.Options.FlushCachePolicy.TRUE)
+    @org.apache.ibatis.annotations.Select("<script>SELECT count(*) FROM (SELECT 1 FROM inv_doc_item WHERE doc_id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "LIMIT #{limit}) bounded</script>")
+    int countExportRows(@org.apache.ibatis.annotations.Param("ids") java.util.List<Long> ids,
+                        @org.apache.ibatis.annotations.Param("limit") int limit);
+
+    /** 每次只读 500 条明细；父顺序由已通过数据范围过滤的列表页给定。 */
+    @org.apache.ibatis.annotations.Select("<script>SELECT * FROM inv_doc_item WHERE doc_id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
+            + "ORDER BY CASE doc_id <foreach collection='ids' item='id' index='position'>WHEN #{id} THEN #{position} </foreach> END, seq, id "
+            + "LIMIT 500 OFFSET #{offset}</script>")
+    java.util.List<InvDocItem> selectExportPage(@org.apache.ibatis.annotations.Param("ids") java.util.List<Long> ids,
+                                             @org.apache.ibatis.annotations.Param("offset") long offset);
+
 
     @Select("SELECT * FROM inv_doc_item WHERE doc_id = #{docId} ORDER BY seq, id")
     List<InvDocItem> selectByDoc(@Param("docId") long docId);

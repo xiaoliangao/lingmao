@@ -60,6 +60,7 @@ public class StyleController extends IdempotencyReplayGuard {
 
     private final StyleService styleService;
     private final Clock clock;
+    private final com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
 
     // ---------- 列表、选款式、导入导出 ----------
 
@@ -102,8 +103,8 @@ public class StyleController extends IdempotencyReplayGuard {
     @Operation(summary = "导出：和列表一样的条件，ids 是导出选中的；款式一张表、SKU 一张表")
     @GetMapping("/export")
     @PreAuthorize("hasAuthority('style:style:export')")
-    public ResponseEntity<byte[]> export(@Valid StyleQuery query) {
-        return Excel.download(Excel.exportFileName("款式", LocalDate.now(clock)), styleService.export(query));
+    public void export(@Valid StyleQuery query, jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        excelDownloads.write(response, Excel.exportFileName("款式", LocalDate.now(clock)), () -> styleService.exportPlan(query));
     }
 
     // ---------- 款式 ----------

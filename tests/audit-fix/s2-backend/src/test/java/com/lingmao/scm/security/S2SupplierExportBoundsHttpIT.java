@@ -77,9 +77,9 @@ class S2SupplierExportBoundsHttpIT extends A2BusinessFixture {
             List<BoundSql> relationQueries = capture.statements().stream()
                     .filter(s -> normalized(s.getSql()).contains("from " + table + " ")).toList();
             assertThat(relationQueries).isNotEmpty();
-            assertThat(relationQueries).allSatisfy(s -> assertThat(normalized(s.getSql())).endsWith("limit ?"));
+            assertThat(relationQueries).allSatisfy(s -> assertThat(normalized(s.getSql())).startsWith("select count(*) from (select 1").contains("limit ?) bounded"));
             assertThat(relationQueries.stream().map(S2SupplierExportBoundsHttpIT::limitValue).toList())
-                    .containsExactly(50_001L, 2L);
+                    .containsExactly(50_001L, 25_001L, 2L);
             assertThat(capture.result().code()).isEqualTo(1000);
             if (!goodAt) assertThat(capture.statements()).noneMatch(s -> normalized(s.getSql()).contains("from sup_supplier_good_at "));
             var response = raw(reader, "GET", "/api/suppliers/export?keyword=" + prefix, null, null, null);
@@ -195,13 +195,7 @@ class S2SupplierExportBoundsHttpIT extends A2BusinessFixture {
         });
     }
     private static String normalized(String sql) { return sql.replaceAll("\\s+", " ").replaceAll("\\s*,\\s*", ",").strip().toLowerCase(Locale.ROOT); }
-    private static Long limitValue(BoundSql bound) {
-        if (!normalized(bound.getSql()).endsWith("limit ?") || bound.getParameterMappings().isEmpty()) return null;
-        String property = bound.getParameterMappings().getLast().getProperty();
-        Object value = bound.hasAdditionalParameter(property) ? bound.getAdditionalParameter(property)
-                : SystemMetaObject.forObject(bound.getParameterObject()).getValue(property);
-        return value instanceof Number number ? number.longValue() : null;
-    }
+    private static Long limitValue(BoundSql bound) { return ExportSqlLimits.limit(bound); }
     private void sqlEvidence(String name, SqlStatementCapture.Captured<Attempt> capture, int parents, int children) throws Exception {
         write(name + "-sql.json", map("database", database(), "parentRows", parents, "relatedRows", children,
                 "limit", 50_000, "attempt", capture.result(), "statements", capture.statements().stream()

@@ -1,7 +1,5 @@
 package com.lingmao.scm.common.excel;
 
-import com.lingmao.scm.common.exception.BizException;
-import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.DataValidation;
@@ -16,32 +14,22 @@ import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.ss.util.CellReference;
-import org.apache.poi.ss.util.WorkbookUtil;
-import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 写模板（RFC 001 §9.2）和导出文件（§9.4）。对外的入口是 Excel.template、Excel.export 和它们几张表的版本 */
+/** 写导入模板（RFC 001 §9.2）；业务数据导出由 StreamingExcel 逐行写出。 */
 final class ExcelWriter {
-
-    /** 导出时内存里只留这么多行，再往下写的先落到临时文件（SXSSF） */
-    private static final int EXPORT_WINDOW = 100;
 
     private static final String[] GUIDE_HEADERS = {"列", "必填", "怎么填", "例子"};
     private static final int[] GUIDE_WIDTHS = {18, 8, 64, 24};
     private static final int GUIDE_SHEET_WIDTH = 16;
 
     private ExcelWriter() {
-    }
-
-    /** 导出时的一张表：列定义 + 数据 */
-    record SheetRows<R>(ExcelSchema<R> schema, List<R> rows) {
     }
 
     /**
@@ -94,79 +82,6 @@ final class ExcelWriter {
             }
         }
         data.createFreezePane(0, 1);
-    }
-
-    /**
-     * 导出：每张表一个工作表，表名用列定义的 name；表头（不带 *，导出的文件改了还能导回来）+ 每行一条。
-     * 用 SXSSF 流式写，内存里只留 100 行（RFC 001 §9.4）。
-     * 数字写成数字单元格（能求和），日期写成日期单元格，编码写成文本，选项写显示的文字
-     */
-    static byte[] export(List<SheetRows<?>> sheets) {
-        // close() 会删掉 SXSSF 落在磁盘上的临时文件
-        try (SXSSFWorkbook workbook = new SXSSFWorkbook(EXPORT_WINDOW)) {
-            Styles styles = new Styles(workbook);
-            for (SheetRows<?> sheet : sheets) {
-                writeExportSheet(workbook, sheet, styles);
-            }
-            return toBytes(workbook);
-        } catch (IOException e) {
-            throw new UncheckedIOException("生成导出文件失败: " + sheets.getFirst().schema().name(), e);
-        }
-    }
-
-    private static <R> void writeExportSheet(Workbook workbook, SheetRows<R> data, Styles styles) {
-        Sheet sheet = workbook.createSheet(WorkbookUtil.createSafeSheetName(data.schema().name()));
-        List<ExcelColumn<R, ?>> columns = data.schema().columns();
-        Row header = sheet.createRow(0);
-        for (int i = 0; i < columns.size(); i++) {
-            Cell cell = header.createCell(i);
-            cell.setCellValue(checkedText(header, i, columns.get(i).header(), columns.get(i).header()));
-            cell.setCellStyle(styles.header);
-            sheet.setColumnWidth(i, width(columns.get(i).header()));
-        }
-        sheet.createFreezePane(0, 1);
-        List<R> rows = data.rows();
-        for (int r = 0; r < rows.size(); r++) {
-            Row row = sheet.createRow(r + 1);
-            for (int i = 0; i < columns.size(); i++) {
-                writeCell(row, i, columns.get(i), columns.get(i).exportValue(rows.get(r)), styles);
-            }
-        }
-    }
-
-    private static <R> void writeCell(Row row, int index, ExcelColumn<R, ?> column, Object value, Styles styles) {
-        if (value == null) {
-            return;
-        }
-        Cell cell = row.createCell(index);
-        switch (value) {
-            // Excel 的数字单元格本身存的就是 double；只是写出去，15 位有效数字以内的 BigDecimal 转过去显示不变
-            case Number number -> cell.setCellValue(number.doubleValue());
-            case LocalDate date -> {
-                cell.setCellValue(date);
-                cell.setCellStyle(styles.date);
-            }
-            default -> {
-                cell.setCellValue(checkedText(row, index, column.header(), value.toString()));
-                if (column.isCode()) {
-                    cell.setCellStyle(styles.text);
-                }
-            }
-        }
-    }
-
-    /** 按实际写入的文本检查，公式转义新增的前导引号也占一位；不把单元格内容放进错误报文。 */
-    private static String checkedText(Row row, int index, String column, String value) {
-        String text = StreamingExcel.safeText(value);
-        int maxLength = SpreadsheetVersion.EXCEL2007.getMaxTextLength();
-        if (text.length() > maxLength) {
-            int labelEnd = column.offsetByCodePoints(0, Math.min(64, column.codePointCount(0, column.length())));
-            String label = column.substring(0, labelEnd) + (labelEnd < column.length() ? "…" : "");
-            throw new BizException("工作表「" + row.getSheet().getSheetName() + "」第 " + (row.getRowNum() + 1)
-                    + " 行第 " + (index + 1) + " 列（" + label + "）超过 " + maxLength
-                    + " 字符，请减少该单元格的关联内容后重试");
-        }
-        return text;
     }
 
     /** 选项列的下拉：只能从下拉里选，填别的 Excel 当场提示（复制粘贴进来的拦不住，导入时还会再查一遍） */

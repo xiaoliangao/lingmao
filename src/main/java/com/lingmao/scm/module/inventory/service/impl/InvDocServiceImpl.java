@@ -874,24 +874,58 @@ public class InvDocServiceImpl implements InvDocService {
     // ---------- 导出 ----------
 
     @Override
-    public byte[] export(InvDocQuery query) {
+    public byte[] export(InvDocQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public com.lingmao.scm.common.excel.ExcelExport exportPlan(InvDocQuery query) {
         tagFilters.prepare(query);
-        Page<InvDocRowVO> all = new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
-        List<InvDocRowVO> docs = invDocMapper.selectRowPage(all, query, Keywords.codes(query.getKeyword()),
-                DataScope.current(query.isMine())).getRecords();
-        com.lingmao.scm.common.scope.ExportScope.check(query.getIds(), docs, InvDocRowVO::getId, InvDocRowVO::getCompanyId);
-        BoundedExportRows.requireWithinLimit(docs.size(), Excel.MAX_EXPORT_ROWS, "物料出入库单");
-        Map<Long, List<InvDocItem>> items = BoundedExportRows.read(docs.stream().map(InvDocRowVO::getId).toList(),
-                1000, Excel.MAX_EXPORT_ROWS, "物料出入库明细", (ids, limit) ->
-                        itemMapper.selectList(new LambdaQueryWrapper<InvDocItem>()
-                                .in(InvDocItem::getDocId, ids)
-                                .orderByAsc(InvDocItem::getDocId, InvDocItem::getSeq, InvDocItem::getId)
-                                .last("LIMIT " + limit))).stream()
-                .collect(Collectors.groupingBy(InvDocItem::getDocId));
-        Set<Long> skuIds = new HashSet<>();
-        items.values().forEach(list -> list.forEach(i -> skuIds.add(i.getMaterialSkuId())));
-        Map<Long, String> names = userService.nicknames(docs.stream().map(InvDocRowVO::getCreateBy)
-                .filter(Objects::nonNull).collect(Collectors.toSet()));
-        return excel.export(query.getKind(), docs, items, materialService.skuBriefs(skuIds), names);
+        var codes = Keywords.codes(query.getKeyword());
+        var dataScope = DataScope.current(query.isMine());
+        List<Long> parentIds = new java.util.ArrayList<>();
+        var selected = com.lingmao.scm.common.scope.ExportScope.accumulate(query.getIds(), InvDocRowVO::getId, InvDocRowVO::getCompanyId);
+        for (int page = 1; ; page++) {
+            var heads = invDocMapper.selectExportHeads(new Page<>(page, 500, false), query, codes, dataScope).getRecords();
+            selected.accept(heads);
+            BoundedExportRows.requireWithinLimit(parentIds.size() + heads.size(), Excel.MAX_EXPORT_ROWS, "物料出入库单");
+            heads.forEach(head -> parentIds.add(head.getId()));
+            if (heads.size() < 500) break;
+        }
+        selected.finish();
+        int detailCount = 0;
+        for (int from = 0; from < parentIds.size(); from += 500) {
+            detailCount += itemMapper.countExportRows(parentIds.subList(from, Math.min(parentIds.size(), from + 500)),
+                    Excel.MAX_EXPORT_ROWS - detailCount + 1);
+            BoundedExportRows.requireWithinLimit(detailCount, Excel.MAX_EXPORT_ROWS, "物料出入库明细");
+        }
+        var texts = excel.texts();
+        return Excel.exportBook().sheet(excel.exportSchema(query.getKind()), sink -> {
+            var scope = com.lingmao.scm.common.scope.ExportScope.accumulate(query.getIds(), InvDocRowVO::getId, InvDocRowVO::getCompanyId);
+            int parents = 0, children = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<InvDocRowVO> docs = invDocMapper.selectRowPage(new Page<>(page, 500, false), query, codes, dataScope).getRecords();
+                scope.accept(docs);
+                parents += docs.size();
+                BoundedExportRows.requireWithinLimit(parents, Excel.MAX_EXPORT_ROWS, "物料出入库单");
+                if (docs.isEmpty()) break;
+                List<Long> ids = docs.stream().map(InvDocRowVO::getId).toList();
+                sink.flush();
+                Map<Long, String> names = userService.nicknames(docs.stream().map(InvDocRowVO::getCreateBy)
+                        .filter(Objects::nonNull).collect(Collectors.toSet()));
+                for (long offset = 0; ; offset += 500) {
+                    sink.flush();
+                    List<InvDocItem> fetched = itemMapper.selectExportPage(ids, offset);
+                    children += fetched.size();
+                    BoundedExportRows.requireWithinLimit(children, Excel.MAX_EXPORT_ROWS, "物料出入库明细");
+                    sink.flush();
+                    var briefs = materialService.skuBriefs(fetched.stream().map(InvDocItem::getMaterialSkuId).toList());
+                    var items = fetched.stream().collect(Collectors.groupingBy(InvDocItem::getDocId));
+                    for (var row : excel.rows(query.getKind(), docs, items, briefs, names, texts)) sink.row(row);
+                    if (fetched.size() < 500) break;
+                }
+                if (docs.size() < 500) break;
+            }
+            scope.finish();
+        });
     }
 }

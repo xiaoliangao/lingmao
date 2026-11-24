@@ -42,6 +42,9 @@ class InvDocControllerTest {
     private InvDocService invDocService;
 
     @MockitoBean
+    private com.lingmao.scm.common.excel.ExcelDownloads excelDownloads;
+
+    @MockitoBean
     private DocCommonService docCommonService;
 
     @MockitoBean

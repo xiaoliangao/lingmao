@@ -3,6 +3,7 @@ package com.lingmao.scm.module.inventory.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.ExcelExport;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.common.page.BusinessDateRange;
@@ -108,22 +109,48 @@ public class StockServiceImpl implements StockService {
         rows.forEach(r -> r.fillFrom(briefs.get(r.getMaterialSkuId())));
     }
 
-    private static <T> Page<T> all() {
-        return new Page<>(1, Excel.MAX_EXPORT_ROWS + 1, false);
+    @Override
+    public byte[] export(StockQuery query) { return exportPlan(query).toBytes(); }
+
+    @Override
+    public ExcelExport exportPlan(StockQuery query) {
+        var codes = Keywords.codes(query.getKeyword());
+        var units = excel.units();
+        return Excel.exportBook().sheet(excel.stockSchema(), sink -> {
+            int total = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<StockRowVO> rows = stockMapper.selectRowPage(new Page<>(page, 500, false), query, codes).getRecords();
+                total += rows.size();
+                com.lingmao.scm.common.excel.BoundedExportRows.requireWithinLimit(total, Excel.MAX_EXPORT_ROWS, "库存");
+                sink.flush();
+                fillBriefs(rows);
+                for (var row : excel.stockRows(rows, units)) sink.row(row);
+                if (rows.size() < 500) break;
+            }
+        });
     }
 
     @Override
-    public byte[] export(StockQuery query) {
-        List<StockRowVO> rows = stockMapper.selectRowPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
-        fillBriefs(rows);
-        return excel.stocks(rows);
-    }
+    public byte[] exportSummary(StockQuery query) { return exportSummaryPlan(query).toBytes(); }
 
     @Override
-    public byte[] exportSummary(StockQuery query) {
-        List<StockSummaryRowVO> rows = stockMapper.selectSummaryPage(all(), query, Keywords.codes(query.getKeyword())).getRecords();
-        fillBriefs(rows);
-        return excel.summary(rows);
+    public ExcelExport exportSummaryPlan(StockQuery query) {
+        var codes = Keywords.codes(query.getKeyword());
+        var units = excel.units();
+        return Excel.exportBook().sheet(excel.summarySchema(), sink -> {
+            int total = 0;
+            for (int page = 1; ; page++) {
+                sink.flush();
+                List<StockSummaryRowVO> rows = stockMapper.selectSummaryPage(new Page<>(page, 500, false), query, codes).getRecords();
+                total += rows.size();
+                com.lingmao.scm.common.excel.BoundedExportRows.requireWithinLimit(total, Excel.MAX_EXPORT_ROWS, "库存汇总");
+                sink.flush();
+                fillBriefs(rows);
+                for (var row : excel.summaryRows(rows, units)) sink.row(row);
+                if (rows.size() < 500) break;
+            }
+        });
     }
 
     @Override

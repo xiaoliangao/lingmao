@@ -21,4 +21,6 @@ public interface SupplierExcelService {
 
     /** 和列表一样的条件，一行一家；不出账号、户名、开户行 */
     byte[] export(SupplierQuery query);
+
+    com.lingmao.scm.common.excel.ExcelExport exportPlan(SupplierQuery query);
 }
