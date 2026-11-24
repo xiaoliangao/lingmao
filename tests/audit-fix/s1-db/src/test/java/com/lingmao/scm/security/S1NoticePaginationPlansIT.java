@@ -1,5 +1,6 @@
 package com.lingmao.scm.security;
 
+import com.lingmao.scm.common.scope.DeploymentNamespace;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.mapper.DocNoticeMapper;
 import com.lingmao.scm.module.biz.mapper.DocNoticeMapper.PendingGroup;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
@@ -34,11 +36,11 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * P33: compare the real production group query with two test-only SQL candidates.
- * No production mapper, index or planner setting is changed. Every candidate reuses the
- * production query's rendered ACL and bound parameters. Results are checked against fixture
- * facts, not just against another SQL implementation. EXPLAIN results are measurements, not
- * timing assertions on a shared CI worker.
+ * P33: retain the real legacy group query and its two historical SQL candidates, and
+ * compare them with the real synchronous-summary mapper. Count and bounded previews are
+ * measured separately. All rows, triggers, ACL predicates and statement budgets remain real;
+ * no planner setting is changed. Results are checked against fixture facts, not just against
+ * another SQL implementation. EXPLAIN results are measurements, not a production timing SLA.
  */
 class S1NoticePaginationPlansIT extends A2BusinessFixture {
     private static final String STATEMENT = "com.lingmao.scm.module.biz.mapper.DocNoticeMapper.selectPendingGroups";
@@ -51,6 +53,7 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
     @Autowired DocNoticeMapper notices;
     @Autowired SqlSessionFactory sessions;
     @Autowired TransactionTemplate transactions;
+    @Autowired DeploymentNamespace namespace;
 
     @Test void uniformFiveThousandGroupsAndHandledHistory() throws Exception {
         scenario("uniform-5001", data -> {
@@ -107,6 +110,9 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
             Query allOwner = query(data.all, data.other.id(), null, false, 51, TYPES);
             assertThat(expected(data, allOwner)).hasSize(5002);
             probe(data, "all-current-owner", allOwner);
+            Query allWithoutOwner = query(data.all, null, null, false, 51, TYPES);
+            assertThat(expected(data, allWithoutOwner)).hasSize(5008);
+            isolatedAllProbe(data, allWithoutOwner);
             probe(data, "no-modules", query(data.self, null, null, false, 51, List.of()));
             probe(data, "anonymous", query(null, null, null, false, 51, TYPES));
         });
@@ -171,19 +177,31 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
         long order = sourceOrder(fixture, other, "APPROVED", fixture.company());
         Dataset data = new Dataset(name, fixture, self, other, all, order);
         System.out.println("P33 scenario start: " + name);
-        try {
+        try (SqlCleanup fixtureCleanup = () -> {
+            SecurityContextHolder.clearContext();
+            analyze();
+        }) {
             // This is a read-model benchmark, not a transaction/concurrency simulation.
             // Real tables, constraints and audit triggers remain enabled; large anonymous
             // fixtures and their audit events are removed by rollback, never by a bypass.
             transactions.executeWithoutResult(status -> {
                 status.setRollbackOnly();
                 run.accept(data);
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM biz_doc_notice WHERE source_type='ORDER' "
+                        + "AND source_id=? AND content='P33 synthetic notification' AND handled_time IS NULL",
+                        Long.class, data.sourceOrder)).isEqualTo(data.pending);
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM biz_doc_notice WHERE source_type='ORDER' "
+                        + "AND source_id=? AND content='P33 synthetic notification' AND handled_time IS NOT NULL",
+                        Long.class, data.sourceOrder)).isEqualTo(data.handled);
                 write(name + "/fixture.json", Map.of("headers", data.headers, "pending", data.pending,
                         "handled", data.handled, "groups", data.facts.size(), "status", "semantic checks passed"));
+                write(name + "/maintenance.json", Map.of("insertStatements", data.insertSamples.size(),
+                        "samples", data.insertSamples,
+                        "measurementLimit", "Each raw plan executed the actual fixture INSERT once with EXPLAIN ANALYZE. "
+                                + "Wall time includes instrumentation and all active triggers; node WAL is reported as emitted "
+                                + "by PostgreSQL, not an isolated summary-maintenance cost or a production SLA. "
+                                + "Revision changes count logical per-key updates; first initialization also inserts a lock row."));
             });
-        } finally {
-            SecurityContextHolder.clearContext();
-            analyze();
         }
         System.out.println("P33 scenario completed and fixture rolled back: " + name);
     }
@@ -233,7 +251,9 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
                 int firstEvent = eventStart, lastEvent = Math.min(eventStart + 9999, perDoc - 1);
                 jdbc.execute((ConnectionCallback<Void>) connection -> {
                     var ids = connection.createArrayOf("bigint", batch.stream().map(Document::id).toArray());
+                    String planPath = d.name + "/write-plans/insert-" + d.insertSamples.size() + ".json";
                     try (var statement = connection.prepareStatement("""
+                            EXPLAIN (ANALYZE, BUFFERS, WAL, VERBOSE, FORMAT JSON)
                             INSERT INTO biz_doc_notice(doc_type,doc_id,source_type,source_id,content,owner_id,create_time,handled_time)
                             SELECT ?,doc.id,'ORDER',?,'P33 synthetic notification',?,
                                    CAST(? AS timestamptz) + (doc.seq - 1) * ? * interval '1 second'
@@ -242,11 +262,42 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
                             FROM unnest(CAST(? AS bigint[])) WITH ORDINALITY doc(id,seq)
                             CROSS JOIN generate_series(?,?) event(seq)
                             """)) {
+                        Map<Long, Long> before = revisions(connection, ids, docs.getFirst().type());
                         statement.setString(1, docs.getFirst().type().name()); statement.setLong(2, d.sourceOrder);
                         statement.setLong(3, snapshotOwner); statement.setObject(4, batchTime);
                         statement.setInt(5, groupStep); statement.setInt(6, noticeStep); statement.setBoolean(7, handled);
                         statement.setArray(8, ids); statement.setInt(9, firstEvent); statement.setInt(10, lastEvent);
-                        statement.executeUpdate();
+                        long started = System.nanoTime();
+                        String plan;
+                        try (var rows = statement.executeQuery()) {
+                            assertThat(rows.next()).isTrue(); plan = rows.getString(1); assertThat(rows.next()).isFalse();
+                        }
+                        double elapsedMs = (System.nanoTime() - started) / 1_000_000.0;
+                        writeText(planPath, plan);
+                        Map<Long, Long> after = revisions(connection, ids, docs.getFirst().type());
+                        if (handled) assertThat(after).as("handled history must not create or change summary rows").isEqualTo(before);
+                        else assertThat(after.keySet()).containsExactlyInAnyOrderElementsOf(batch.stream().map(Document::id).toList());
+                        List<Map<String, Object>> keyRevisions = new ArrayList<>(batch.size());
+                        for (Document document : batch) {
+                            long previous = before.getOrDefault(document.id(), 0L);
+                            long current = after.getOrDefault(document.id(), 0L);
+                            assertThat(current - previous).as("revision delta for actual document key %s", document.id())
+                                    .isEqualTo(handled ? 0 : 1);
+                            keyRevisions.add(Map.of("docId", Long.toString(document.id()),
+                                    "before", previous, "after", current, "delta", current - previous));
+                        }
+                        long revisionBefore = before.values().stream().mapToLong(Long::longValue).sum();
+                        long revisionAfter = after.values().stream().mapToLong(Long::longValue).sum();
+                        long delta = revisionAfter - revisionBefore;
+                        // Every real pending key changes once per statement, including first initialization.
+                        // Inserting handled history must not touch the pending summary at all.
+                        assertThat(delta).as("one logical revision per affected key, not per notice")
+                                .isEqualTo(handled ? 0 : batch.size());
+                        d.insertSamples.add(Map.of("planPath", planPath,
+                                "insertedRows", (long) batch.size() * (lastEvent - firstEvent + 1),
+                                "documentKeys", batch.size(), "handled", handled,
+                                "revisionBefore", revisionBefore, "revisionAfter", revisionAfter,
+                                "revisionDelta", delta, "revisions", keyRevisions, "statementWallMs", elapsedMs));
                     } finally { ids.free(); }
                     return null;
                 });
@@ -263,13 +314,27 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
         }
     }
 
+    private Map<Long, Long> revisions(Connection connection, java.sql.Array ids, BizType type) throws SQLException {
+        try (var statement = connection.prepareStatement("SELECT doc_id,revision "
+                + "FROM biz_doc_notice_pending WHERE tenant_key=? AND doc_type=? AND doc_id=ANY(CAST(? AS bigint[])) ORDER BY doc_id")) {
+            statement.setString(1, namespace.tenant()); statement.setString(2, type.name()); statement.setArray(3, ids);
+            try (var rows = statement.executeQuery()) {
+                Map<Long, Long> result = new LinkedHashMap<>();
+                while (rows.next()) assertThat(result.put(rows.getLong("doc_id"), rows.getLong("revision"))).isNull();
+                return result;
+            }
+        }
+    }
+
     private Query query(Account actor, Long owner, Cursor cursor, boolean oldest, int limit, List<BizType> types) {
         if (actor == null) SecurityContextHolder.clearContext(); else authenticate(actor);
         return new Query(DataScope.current(false), types, owner, cursor, oldest, limit);
     }
 
     private void analyze() {
-        for (String table : List.of("pur_order", "prd_order", "mrp_calc", "biz_doc_notice")) jdbc.execute("ANALYZE " + table);
+        for (String table : List.of("pur_order", "prd_order", "mrp_calc", "biz_doc_notice", "biz_doc_notice_pending")) {
+            jdbc.execute("ANALYZE " + table);
+        }
     }
 
     private List<PendingGroup> expected(Dataset data, Query q) {
@@ -292,29 +357,133 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
                 .limit(Math.max(1, Math.min(q.limit(), 101))).toList();
     }
 
+    private void isolatedAllProbe(Dataset data, Query q) {
+        assertThat(q.scope().isAll()).isTrue();
+        assertThat(q.owner()).isNull();
+        jdbc.execute((ConnectionCallback<Void>) connection -> {
+            assertThat(connection.getAutoCommit()).as("ALL probe uses the existing rollback-only fixture transaction").isFalse();
+            // ALL has no fixture/user filter in production. Other integration tests may have
+            // left real pending rows, so isolate only this extra probe with ordinary DELETE.
+            // These full-row temporary snapshots are created before the savepoint; rollback
+            // must restore both source rows and every affected summary tuple, including its
+            // revision/initialized flag and absence of any newly created zero-count anchor.
+            String outside = "handled_time IS NULL AND doc_type IN ('MRP_CALC','PRODUCTION_ORDER','PURCHASE_ORDER') "
+                    + "AND (source_type,source_id) IS DISTINCT FROM ('ORDER',?)";
+            jdbc.execute("CREATE TEMP TABLE p33_all_notice_before ON COMMIT DROP AS SELECT * FROM biz_doc_notice WHERE false");
+            long outsideRows = jdbc.update("INSERT INTO pg_temp.p33_all_notice_before SELECT * FROM biz_doc_notice WHERE "
+                    + outside, data.sourceOrder);
+            String affectedSummaries = "SELECT g.* FROM biz_doc_notice_pending g WHERE EXISTS "
+                    + "(SELECT 1 FROM pg_temp.p33_all_notice_before n WHERE n.doc_type=g.doc_type AND n.doc_id=g.doc_id)";
+            jdbc.execute("CREATE TEMP TABLE p33_all_summary_before ON COMMIT DROP AS " + affectedSummaries);
+            long summaryRows = jdbc.queryForObject("SELECT COUNT(*) FROM pg_temp.p33_all_summary_before", Long.class);
+            var savepoint = connection.setSavepoint();
+            Map<String, Object> evidence = new LinkedHashMap<>();
+            evidence.put("method", "savepoint-normal-delete");
+            evidence.put("scope", "ALL");
+            evidence.put("ownerFilter", false);
+            evidence.put("outsidePendingBefore", outsideRows);
+            evidence.put("affectedSummaryRowsBefore", summaryRows);
+            evidence.put("probeCompleted", false);
+            // try-with-resources preserves a query/assertion failure as primary if rollback,
+            // restoration checks or evidence writing also fail. The outer transaction remains
+            // rollback-only on every path; no source or summary rows are committed here.
+            try (SqlCleanup restoration = () -> {
+                connection.rollback(savepoint);
+                long noticeDifferences = jdbc.queryForObject("SELECT COUNT(*) FROM ((TABLE pg_temp.p33_all_notice_before "
+                        + "EXCEPT ALL SELECT * FROM biz_doc_notice WHERE " + outside + ") UNION ALL "
+                        + "(SELECT * FROM biz_doc_notice WHERE " + outside
+                        + " EXCEPT ALL TABLE pg_temp.p33_all_notice_before)) differences", Long.class,
+                        data.sourceOrder, data.sourceOrder);
+                long summaryDifferences = jdbc.queryForObject("SELECT COUNT(*) FROM ((TABLE pg_temp.p33_all_summary_before "
+                        + "EXCEPT ALL " + affectedSummaries + ") UNION ALL (" + affectedSummaries
+                        + " EXCEPT ALL TABLE pg_temp.p33_all_summary_before)) differences", Long.class);
+                evidence.put("restoredNoticeDifferences", noticeDifferences);
+                evidence.put("restoredSummaryDifferences", summaryDifferences);
+                write(data.name + "/all-no-owner-isolation.json", evidence);
+                assertThat(noticeDifferences).as("full source rows restored after ALL probe").isZero();
+                assertThat(summaryDifferences).as("all affected summary tuples restored after ALL probe").isZero();
+                connection.releaseSavepoint(savepoint);
+                jdbc.execute("DROP TABLE pg_temp.p33_all_notice_before, pg_temp.p33_all_summary_before");
+            }) {
+                int removed = jdbc.update("DELETE FROM biz_doc_notice n USING pg_temp.p33_all_notice_before saved WHERE n.id=saved.id");
+                evidence.put("outsidePendingDeleted", removed);
+                assertThat((long) removed).isEqualTo(outsideRows);
+                long remaining = jdbc.queryForObject("SELECT COUNT(*) FROM biz_doc_notice WHERE " + outside,
+                        Long.class, data.sourceOrder);
+                evidence.put("outsidePendingDuringProbe", remaining);
+                assertThat(remaining).isZero();
+                long fixturePending = jdbc.queryForObject("SELECT COUNT(*) FROM biz_doc_notice WHERE source_type='ORDER' "
+                        + "AND source_id=? AND handled_time IS NULL", Long.class, data.sourceOrder);
+                evidence.put("fixturePendingDuringProbe", fixturePending);
+                assertThat(fixturePending).isEqualTo(data.pending);
+                probe(data, "all-no-owner", q);
+                evidence.put("probeCompleted", true);
+            }
+            return null;
+        });
+    }
+
+    @FunctionalInterface
+    private interface SqlCleanup extends AutoCloseable {
+        @Override void close() throws SQLException;
+    }
+
     private void probe(Dataset data, String label, Query q) {
         List<PendingGroup> expected = expectedPage(data, q);
-        assertThat(notices.countPendingGroups(q.types(), q.owner(), q.scope())).isEqualTo(expected(data, q).size());
+        long expectedTotal = expected(data, q).size();
+        assertThat(notices.countPendingGroups(q.types(), q.owner(), q.scope())).isEqualTo(expectedTotal);
         assertThat(production(q)).as(data.name + " / " + label + " actual mapper").containsExactlyElementsOf(expected);
         Map<String, BoundSql> candidates = candidates(q);
         for (var entry : candidates.entrySet()) {
             assertThat(execute(entry.getValue())).as(entry.getKey()).containsExactlyElementsOf(expected);
             writeText(data.name + "/" + label + "/" + entry.getKey() + ".sql", entry.getValue().getSql());
         }
+        // The page query includes one lookahead group. Production trims it before loading previews.
+        int pageSize = q.limit() - 1;
+        List<PendingGroup> previewGroups = expected.subList(0, Math.min(pageSize, expected.size()));
+        Map<String, BoundSql> auxiliary = auxiliary(q, previewGroups);
+        assertThat(scalar(auxiliary.get("legacy-total"))).isEqualTo(expectedTotal);
+        assertThat(scalar(auxiliary.get("summary-total"))).isEqualTo(expectedTotal);
+        int previewLimit = q.oldest() ? 1 : 100;
+        long expectedPreviews = previewGroups.stream().mapToLong(g -> Math.min(g.noticesTotal(), previewLimit)).sum();
+        var previews = notices.selectPendingPreviews(previewGroups, q.owner(), q.scope(), previewLimit);
+        assertThat(previews).hasSize(Math.toIntExact(expectedPreviews));
+        assertThat(new HashSet<>(previews.stream().map(n -> n.getId()).toList())).hasSize(previews.size());
+        for (var notice : previews) {
+            assertThat(notice.getHandledTime()).isNull();
+            assertThat(previewGroups.stream().anyMatch(g -> g.docType() == notice.getDocType()
+                    && g.docId().equals(notice.getDocId()))).isTrue();
+        }
+        Map<String, Long> auxiliaryRows = Map.of("legacy-total", 1L, "summary-total", 1L,
+                "bounded-previews", expectedPreviews);
+        for (var entry : auxiliary.entrySet()) {
+            writeText(data.name + "/" + label + "/" + entry.getKey() + ".sql", entry.getValue().getSql());
+        }
         Map<String, List<Map<String, Object>>> samples = new LinkedHashMap<>();
-        List<String> names = new ArrayList<>(candidates.keySet());
-        // Rotate candidate order after equal warm-ups; retain all samples instead of a
+        Map<String, List<Map<String, Object>>> auxiliarySamples = new LinkedHashMap<>();
+        Map<String, BoundSql> allQueries = new LinkedHashMap<>(candidates);
+        allQueries.putAll(auxiliary);
+        List<String> names = new ArrayList<>(allQueries.keySet());
+        // Rotate candidate order after semantic checks have warmed every query; retain all samples instead of a
         // single favorable timing. No forced index, planner GUC, VACUUM or disabled trigger.
         for (int round = 0; round < 3; round++) {
             for (int slot = 0; slot < names.size(); slot++) {
                 String name = names.get((round + slot) % names.size());
-                String plan = explain(candidates.get(name));
+                String plan = explain(allQueries.get(name));
                 writeText(data.name + "/" + label + "/" + name + "-" + round + ".json", plan);
-                samples.computeIfAbsent(name, ignored -> new ArrayList<>()).add(metrics(plan));
+                long rows = auxiliaryRows.getOrDefault(name, (long) expected.size());
+                assertThat(json.readTree(plan).get(0).path("Plan").path("Actual Rows").longValue()).isEqualTo(rows);
+                var destination = auxiliary.containsKey(name) ? auxiliarySamples : samples;
+                destination.computeIfAbsent(name, ignored -> new ArrayList<>()).add(metrics(plan));
             }
         }
-        write(data.name + "/" + label + "/summary.json", Map.of("resultCount", expected.size(),
-                "oldest", q.oldest(), "cursor", q.cursor() == null ? "first" : q.cursor().toString(), "samples", samples));
+        write(data.name + "/" + label + "/summary.json", Map.ofEntries(
+                Map.entry("resultCount", expected.size()), Map.entry("oldest", q.oldest()),
+                Map.entry("cursor", q.cursor() == null ? "first" : q.cursor().toString()),
+                Map.entry("measurementVersion", 2), Map.entry("samples", samples), Map.entry("totalGroups", expectedTotal),
+                Map.entry("pageSize", pageSize), Map.entry("previewGroups", previewGroups.size()),
+                Map.entry("previewRows", expectedPreviews), Map.entry("auxiliaryRows", auxiliaryRows),
+                Map.entry("auxiliarySamples", auxiliarySamples)));
         System.out.println("P33 compared " + data.name + " / " + label + ": " + samples);
     }
 
@@ -343,12 +512,7 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
     }
 
     private Map<String, BoundSql> candidates(Query q) {
-        Map<String, Object> args = new HashMap<>();
-        args.put("types", q.types()); args.put("ownerId", q.owner()); args.put("scope", q.scope());
-        args.put("cursorTime", q.cursor() == null ? null : q.cursor().time());
-        args.put("cursorType", q.cursor() == null ? null : q.cursor().type());
-        args.put("cursorId", q.cursor() == null ? null : q.cursor().id());
-        args.put("oldest", q.oldest()); args.put("limit", q.limit());
+        Map<String, Object> args = parameters(q);
         BoundSql original = mapped().getBoundSql(args);
         String sql = original.getSql().replaceAll("\\s+", " ").strip();
         String grouped = replaceOnce(sql, "MAX(n.create_time) AS latest, COUNT(*) AS notices_total", "MAX(n.create_time) AS latest");
@@ -368,6 +532,28 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
         result.put("production-group-count", original);
         result.put("group-count-after-page", copy(original, withPageCount(grouped, q.oldest())));
         result.put("visible-head-lateral", copy(original, withPageCount(lateral, q.oldest())));
+        result.put("synchronous-summary", mapped("selectSummaryPendingGroups").getBoundSql(args));
+        return result;
+    }
+
+    private Map<String, Object> parameters(Query q) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("types", q.types()); args.put("ownerId", q.owner()); args.put("scope", q.scope());
+        args.put("cursorTime", q.cursor() == null ? null : q.cursor().time());
+        args.put("cursorType", q.cursor() == null ? null : q.cursor().type());
+        args.put("cursorId", q.cursor() == null ? null : q.cursor().id());
+        args.put("oldest", q.oldest()); args.put("limit", q.limit()); args.put("tenantKey", namespace.tenant());
+        return args;
+    }
+
+    private Map<String, BoundSql> auxiliary(Query q, List<PendingGroup> page) {
+        Map<String, Object> args = parameters(q);
+        Map<String, BoundSql> result = new LinkedHashMap<>();
+        result.put("legacy-total", mapped("countPendingGroups").getBoundSql(args));
+        result.put("summary-total", mapped("countSummaryPendingGroups").getBoundSql(args));
+        Map<String, Object> previewArgs = new HashMap<>(args);
+        previewArgs.put("groups", page); previewArgs.put("limit", q.oldest() ? 1 : 100);
+        result.put("bounded-previews", mapped("selectPendingPreviews").getBoundSql(previewArgs));
         return result;
     }
 
@@ -398,6 +584,25 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
     }
 
     private MappedStatement mapped() { return sessions.getConfiguration().getMappedStatement(STATEMENT); }
+
+    private MappedStatement mapped(String method) {
+        return sessions.getConfiguration().getMappedStatement("com.lingmao.scm.module.biz.mapper.DocNoticeMapper." + method);
+    }
+
+    private long scalar(BoundSql sql) {
+        return jdbc.execute((ConnectionCallback<Long>) connection -> {
+            try (var statement = connection.prepareStatement(sql.getSql())) {
+                new DefaultParameterHandler(mapped(), sql.getParameterObject(), sql).setParameters(statement);
+                try (var rows = statement.executeQuery()) {
+                    assertThat(rows.next()).isTrue();
+                    long result = rows.getLong(1);
+                    assertThat(rows.wasNull()).isFalse();
+                    assertThat(rows.next()).isFalse();
+                    return result;
+                }
+            }
+        });
+    }
 
     private List<PendingGroup> execute(BoundSql sql) {
         return jdbc.execute((ConnectionCallback<List<PendingGroup>>) connection -> {
@@ -471,6 +676,7 @@ class S1NoticePaginationPlansIT extends A2BusinessFixture {
         final Account all;
         final long sourceOrder;
         final Map<Document, Fact> facts = new LinkedHashMap<>();
+        final List<Map<String, Object>> insertSamples = new ArrayList<>();
         long headers;
         long pending;
         long handled;

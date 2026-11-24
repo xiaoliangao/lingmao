@@ -10,6 +10,7 @@ import com.lingmao.scm.module.biz.dto.DocRef;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.entity.DocNotice;
 import com.lingmao.scm.module.biz.mapper.DocNoticeMapper;
+import com.lingmao.scm.module.biz.repository.NoticeSummaryMaintenance;
 import com.lingmao.scm.module.biz.service.DocNoticeService;
 import com.lingmao.scm.module.biz.service.ReferenceService;
 import com.lingmao.scm.module.system.service.UserService;
@@ -44,6 +45,7 @@ public class DocNoticeServiceImpl implements DocNoticeService {
     private final ReferenceService referenceService;
     private final UserService userService;
     private final Clock clock;
+    private final NoticeSummaryMaintenance summaryMaintenance;
 
     @Override
     public void add(BizType docType, long docId, BizType sourceType, long sourceId, String content, Long ownerId) {
@@ -148,10 +150,15 @@ public class DocNoticeServiceImpl implements DocNoticeService {
         if (requested != null) types.retainAll(requested);
         if (types.isEmpty()) return new com.lingmao.scm.module.biz.dto.PendingNoticePage(List.of(), 0, false);
         var scope = com.lingmao.scm.security.DataScope.current(false);
-        long total = noticeMapper.countPendingGroups(types, ownerId, scope);
-        var found = noticeMapper.selectPendingGroups(types, ownerId, scope,
+        String tenant = summaryMaintenance.readNamespace().orElse(null);
+        long total = tenant == null ? noticeMapper.countPendingGroups(types, ownerId, scope)
+                : noticeMapper.countSummaryPendingGroups(types, ownerId, scope, tenant);
+        var found = tenant == null ? noticeMapper.selectPendingGroups(types, ownerId, scope,
                 after == null ? null : after.latest(), after == null ? null : after.docType(),
-                after == null ? null : after.docId(), oldest, limit + 1);
+                after == null ? null : after.docId(), oldest, limit + 1)
+                : noticeMapper.selectSummaryPendingGroups(types, ownerId, scope,
+                after == null ? null : after.latest(), after == null ? null : after.docType(),
+                after == null ? null : after.docId(), oldest, limit + 1, tenant);
         boolean hasMore = found.size() > limit;
         var groups = found.subList(0, Math.min(limit, found.size()));
         if (groups.isEmpty()) return new com.lingmao.scm.module.biz.dto.PendingNoticePage(List.of(), total, false);

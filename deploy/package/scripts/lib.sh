@@ -187,7 +187,7 @@ copy_package_files() {
     return 0     # 就在安装目录里执行的（重复执行 install.sh），没有要复制的
   fi
   install -m 644 "$PKG_DIR"/VERSION "$PKG_DIR"/ARCH "$PKG_DIR"/compose.yml "$PKG_DIR"/web-http.yml \
-    "$PKG_DIR"/web-https.yml "$PKG_DIR"/env.example "$TARGET"/
+    "$PKG_DIR"/web-https.yml "$PKG_DIR"/env.example "$PKG_DIR"/notice-summary.sql "$TARGET"/
   install -d -m 755 "$TARGET"/nginx "$TARGET"/scripts "$TARGET"/docs
   for f in "$PKG_DIR"/nginx/*; do
     if [ "${f##*/}" = trusted-proxies.conf ] && [ -e "$TARGET"/nginx/trusted-proxies.conf ]; then

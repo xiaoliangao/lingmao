@@ -769,7 +769,9 @@ public class OrderChangeServiceImpl implements OrderChangeService {
         ChangeTexts.Names n = changeTexts.names(items);
         String content = "上游订单 " + orderMapper.selectById(c.getOrderId()).getNo() + " 于 " + LocalDate.now(clock).format(MONTH_DAY)
                 + " 变更（" + c.getNo() + "）：" + ChangeTexts.summary(false, items.stream().map(ci -> ChangeTexts.text(ci, n, null)).toList());
-        for (DocRef d : refs) {
+        // 同一事务可能通知多张下游单据；与摘要语句级触发器使用同一真实键顺序。
+        for (DocRef d : refs.stream().sorted(java.util.Comparator.comparing((DocRef ref) -> ref.type().name())
+                .thenComparing(DocRef::id)).toList()) {
             docNoticeService.add(d.type(), d.id(), BizType.ORDER_CHANGE, c.getId(), content, d.ownerId());
         }
     }

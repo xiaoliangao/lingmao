@@ -57,6 +57,86 @@
         SELECT COUNT(*) FROM (<include refid="pendingGroups"/>) g
     </select>
 
+    <!-- g 已是待处理摘要键或本页预览键。按当前头主键校验存在性和权限，避免先枚举所有空头。
+         三种类型互斥且各表 id 唯一；LIMIT 1 只表达存在性，不裁剪可见提醒或真实总数。 -->
+    <sql id="visibleCurrentKey">
+        SELECT 1
+        FROM prd_order p
+        WHERE g.doc_type = 'PRODUCTION_ORDER' AND p.id = g.doc_id
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="ownerId != null">AND p.merch_id = #{ownerId}</if>
+        UNION ALL
+        SELECT 1
+        FROM pur_order p
+        WHERE g.doc_type = 'PURCHASE_ORDER' AND p.id = g.doc_id
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.buyer_id = #{scope.userId})</if>
+        <if test="ownerId != null">AND p.buyer_id = #{ownerId}</if>
+        UNION ALL
+        SELECT 1
+        FROM mrp_calc p
+        WHERE g.doc_type = 'MRP_CALC' AND p.id = g.doc_id
+        <if test="scope.self">AND p.create_by = #{scope.userId}</if>
+        <if test="ownerId != null">AND p.create_by = #{ownerId}</if>
+        LIMIT 1
+    </sql>
+
+    <sql id="summaryConditions">
+        AND g.tenant_key = #{tenantKey} AND g.initialized AND g.pending_count &gt; 0
+        <choose>
+            <when test="types != null and types.size() > 0">
+                AND g.doc_type IN <foreach collection="types" item="type" open="(" separator="," close=")">#{type}</foreach>
+            </when>
+            <otherwise>AND false</otherwise>
+        </choose>
+    </sql>
+
+    <!-- 摘要不保存 owner/company 快照，权限始终连接当前真实单据头。
+         各类型直接连接，允许按选择性从头或摘要开始；分支不提前限量，游标和排序在合并后统一应用。 -->
+    <sql id="typedSummaryRows">
+        SELECT g.doc_type, g.doc_id, g.latest_time AS latest, g.pending_count AS notices_total
+        FROM biz_doc_notice_pending g
+        JOIN prd_order p ON p.id = g.doc_id
+        WHERE g.doc_type = 'PRODUCTION_ORDER'
+        <include refid="summaryConditions"/>
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="ownerId != null">AND p.merch_id = #{ownerId}</if>
+        UNION ALL
+        SELECT g.doc_type, g.doc_id, g.latest_time AS latest, g.pending_count AS notices_total
+        FROM biz_doc_notice_pending g
+        JOIN pur_order p ON p.id = g.doc_id
+        WHERE g.doc_type = 'PURCHASE_ORDER'
+        <include refid="summaryConditions"/>
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.buyer_id = #{scope.userId})</if>
+        <if test="ownerId != null">AND p.buyer_id = #{ownerId}</if>
+        UNION ALL
+        SELECT g.doc_type, g.doc_id, g.latest_time AS latest, g.pending_count AS notices_total
+        FROM biz_doc_notice_pending g
+        JOIN mrp_calc p ON p.id = g.doc_id
+        WHERE g.doc_type = 'MRP_CALC'
+        <include refid="summaryConditions"/>
+        <if test="scope.self">AND p.create_by = #{scope.userId}</if>
+        <if test="ownerId != null">AND p.create_by = #{ownerId}</if>
+    </sql>
+
+    <select id="selectSummaryPendingGroups" resultType="com.lingmao.scm.module.biz.mapper.DocNoticeMapper$PendingGroup">
+        SELECT g.doc_type, g.doc_id, g.latest, g.notices_total
+        FROM (<include refid="typedSummaryRows"/>) g
+        <if test="cursorTime != null and cursorType != null and cursorId != null">
+            WHERE (g.latest, g.doc_type, g.doc_id)
+            <choose><when test="oldest">&gt;</when><otherwise>&lt;</otherwise></choose>
+            (#{cursorTime}, CAST(#{cursorType} AS text), #{cursorId})
+        </if>
+        <choose>
+            <when test="oldest">ORDER BY g.latest, g.doc_type, g.doc_id</when>
+            <otherwise>ORDER BY g.latest DESC, g.doc_type DESC, g.doc_id DESC</otherwise>
+        </choose>
+        LIMIT LEAST(GREATEST(#{limit}, 1), 101)
+    </select>
+
+    <select id="countSummaryPendingGroups" resultType="long">
+        SELECT COUNT(*) FROM (<include refid="typedSummaryRows"/>) g
+    </select>
+
     <select id="selectPendingPreviews" resultType="com.lingmao.scm.module.biz.entity.DocNotice">
         <choose>
             <when test="groups != null and groups.size() > 0">
@@ -64,8 +144,7 @@
                 FROM (VALUES <foreach collection="groups" item="g" separator=",">
                     (CAST(#{g.docType} AS text), CAST(#{g.docId} AS bigint))
                 </foreach>) g(doc_type, doc_id)
-                JOIN (<include refid="visibleDocs"/>) visible
-                  ON visible.doc_type = g.doc_type AND visible.doc_id = g.doc_id
+                JOIN LATERAL (<include refid="visibleCurrentKey"/>) visible ON true
                 JOIN LATERAL (
                     SELECT dn.* FROM biz_doc_notice dn
                     WHERE dn.doc_type = g.doc_type AND dn.doc_id = g.doc_id AND dn.handled_time IS NULL

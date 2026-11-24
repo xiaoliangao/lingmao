@@ -192,6 +192,71 @@ DEAD_LETTER 先按 request ID 定位安全错误码、尝试次数和当前权�
 
 应记录请求 p50/p95/p99、实际 SQL 访问行数、池等待、锁等待、Outbox 租约/失败/队龄、导出大小/耗时、磁盘与备份恢复时间。日志字段和状态接口已经提供排障基础，本轮没有部署完整时序监控/告警平台，也没有声称完成千万行线上压测。
 
+### 7.2.1 P33 同库同步摘要候选：实现与验收
+
+以下设计承接 P33 已确认的容量边界，不替换 §3.2 的历史测量，也不表示 P33 已通过。业务真值仍是 `biz_doc_notice`；同事务维护派生摘要，保持精确计数、当前头权限、实时游标语义。没有引入异步延迟、公司隔离或新的前端接口。
+
+**结构与读路径。** V61 仅追加 `biz_doc_notice_pending`、`biz_doc_notice_pending_state` 及维护函数/触发器。编写时已核对审计分支最高 V60、remote main `c04e3b4` 最高 V56，不修改已发布迁移。摘要以可信部署 `tenant_key + doc_type + doc_id` 为键，保存 `pending_count/latest_time/latest_notice_id/revision/initialized`；计数为 0 的记录保留为锁定记录，latest 两列必须同时为空。正数行建立 `(tenant_key, latest_time DESC, doc_type DESC, doc_id DESC)` 部分索引。它不保存 owner、company 或通知正文，读取继续连接现存生产/采购/算料头的权限条件。
+
+保留 `DocNoticeMapper.selectPendingGroups/countPendingGroups` 为显式旧查询，新增 `selectSummaryPendingGroups/countSummaryPendingGroups`，额外 namespace 参数只来自服务器配置。`pendingPage` 在本次调用开始时统一决定读路径，只有状态 `ready && use_summary` 才读摘要；SQL 失败直接暴露为受控失败，不捕获异常后悄悄执行旧查询。total 仍是独立、与游标无关的完整授权组数；摘要页和独立 COUNT 按三种真实单据类型分别直接 JOIN 当前头，再 UNION ALL；每支保留原 SELF、owner、类型及摘要条件，合并后统一 seek、排序和限量，分支不提前裁剪。预览先按本页键 LATERAL 复查当前头，再从来源读取最新最多 100 条；首页仍为最早 20 组、每组 1 条。DTO、游标排序及 HMAC 格式保持。精确 total 仍可能访问完整授权组，计划受权限选择性影响，不能宣称任意分布下 O(pageSize)。
+
+**同步维护与并发边界。** INSERT、UPDATE、DELETE 各有一个 `AFTER STATEMENT` transition-table 触发器。真实变化先按单据键合并：pending 新增为正增量，删除/处理为负增量；UPDATE 比较旧/新 `(id, doc_type, doc_id, create_time, pending)`，正文等无关修改不反复写摘要。每个键按固定顺序取锁，再执行一次更新；净增量为 0 的真实成员/排序变化也推进 revision，保证 RR 的并发更新冲突可被检测。原 100000 热点 fixture 分成 10 次 10000 行 INSERT，不得退化为 100000 次摘要 UPDATE。多单据 `notifyDownstream` 同样固定真实键顺序。
+
+触发器用 VOLATILE PL/pgSQL。取得摘要锁与 latest 重取是分开的 SQL：在 READ_COMMITTED 下等待结束后，第二条语句才取得新的快照；不能把锁和重算塞进同一个 CTE 后假设快照已更新。处理/删除当前 latest 时，使用已有 `(doc_type, doc_id, create_time DESC, id DESC) WHERE handled_time IS NULL` 索引重取一条，普通 SELECT 不再锁通知行。初次接触未初始化键则在锁内按来源重建，来源已经包含本语句修改，因此不再次叠加该语句 delta。其他键不重算完整 COUNT。
+
+`latest_notice_id` 是派生指针，不加源行 FK：即使延迟到提交检查，KEY SHARE 仍可能等待另一事务已删除但尚未提交的通知行，而该事务又在等待摘要锁。该例外须在 `SchemaConventionsIT` 逐列说明；namespace 仍有真实 FK，通用约束检查不放宽。实际不变量由同步维护和对账验证。RR 下旧事务不能刷新快照，冲突必须让整个业务事务以 40001 回滚；若重试，应在既有业务/幂等边界重新开始完整事务，不能在触发器中吞错重算。当前候选不增加隐藏自动重试。
+
+父单删除原有 `deleteByDoc` 会同步清理 pending；即使存在原有孤儿通知，当前头 JOIN 也不返回它。变更负责人立即按现头重新授权。公司仍按当前共享公司模型及领域规则处理，不把公司快照变成新 ACL。
+
+**有界回填、对账与切换。** `NoticeSummaryMaintenance` 明确依赖 `DeploymentNamespaceGuard`；启动只创建单行维护状态，不读全通知表、不自动跑长回填事务。运维入口为 `deploy/package/notice-summary.sql`，每次只执行一个动作；Java 和 SQL 均提供：
+
+| Java 接口 | SQL 函数/动作 | 边界 |
+|---|---|---|
+| `state()` | 状态表查询 / `status` | 只读本部署单行状态 |
+| `restartBackfill()` | `scm_notice_pending_restart()` / `restart` | 立即关闭摘要读取、清除 ready 与进度；不删除源表或摘要 |
+| `backfillBatch(limit)` | `scm_notice_pending_backfill(limit)` / `backfill` | 每批 1–500 个真实键，独立短 READ_COMMITTED 事务 |
+| `startReconciliation()` | `scm_notice_pending_start_reconciliation()` / `check-start` | 回填完成后开启新一轮逐键对账，先撤销 ready |
+| `reconcileBatch(limit)` | `scm_notice_pending_reconcile(limit)` / `check` | 同样按 1–500 个键；不自动覆盖差异；完成且零差异才 ready |
+| `setUseSummary(boolean)` | `scm_notice_pending_set_use_summary(boolean)` / `enable`、`fallback` | enable 必须 ready；fallback 只切读路径，维护触发器始终运行 |
+
+回填与对账都枚举来源 pending 键和所有摘要键的并集，因此包含零摘要及多余摘要记录；按持久化游标续跑。来源触发器同步初始化新键，游标之后才出现或插到游标之前的新键也走相同维护协议。每个键先锁摘要再从来源一致读取；回填覆盖该键并推进 revision，对账只比较 initialized/count/latest 元组并累计差异。**这是逐键锁内一致读加持续同步维护的保证，不是跨批次全库单一快照。** 不得跳过触发器写入、单独清空摘要或在 ready 状态直接修改派生数据。
+
+维护批次限制 lock_timeout 2 秒、statement_timeout 5 秒、Java 事务 10 秒；热点单键的精确初始化仍须读该键全部 pending，超预算整批失败、游标不前进，不能返回假完成。暂停就是停止调用下一批；恢复沿用已提交游标；重启回填须显式 `restart`，ready 立即失效。对账发现差异后保留旧读路径，通过重新回填再完整对账修复。运维先回填至 complete，再开启并完成对账，最后显式 enable；只迁移或只启动应用不会启用未经核验的摘要。回退使用 fallback，不移除触发器、不回退源业务写入。数据库恢复或异常维护后同样先 restart，不复用旧 ready。
+
+**验收口径。** 原六种分布、19 个探针及两个历史 SQL 候选完整保留，追加 ALL 且 owner 为空的第 20 点。原候选继续从旧 Mapper 渲染，新增摘要 Mapper 的实际 BoundSql，另测 COUNT/预览。当前严格汇总要求 20 × 7 × 3 = 420 份真实读计划、140 份实际读 SQL，以及 56 份实际 INSERT 的 EXPLAIN ANALYZE/BUFFERS/WAL/VERBOSE；不能把原 171 份计划改名作为新证据。每个 pending 键逐项核对每语句 revision +1，handled 历史 +0，不能只比较合计；预览先去掉 lookahead。批量写入成本、WAL、真实锁等待与混合读写的测量范围分开记录。
+
+并发用例至少包括：READ_COMMITTED 下更早/更晚/同时间插入与处理/删除 latest 的双向交错；例如 t10/t5 原数据中，先插 t7 再释放摘要锁，等待处理 t10 的事务必须重取 t7；三人处理同一条只有一个成功；净 0 成员替换、最后一条清零再新增、业务回滚、多键锁序；RR 冲突整事务回滚及完整重新发起；父单删除、当前负责人/公司变化的 HTTP 权限；回填中新增/处理/删除、游标之外新键、零摘要、暂停续跑/重启、差异拒启及实际回退。现有六分布单事务 fixture 不是这些并发场景的替代证据。
+
+**本地已完成的定向验证，完整云端仍待核验。** 当前 typed JOIN 候选的 14 个单测、35 个真实 IT 全部通过（0失败/错误/跳过）；这是一次定向组，不是全项目总数，也不与此前重叠组相加。包含迁移/结构、真实通知服务、六分布、8项首页HTTP、9项维护并发和1项实际psql运维。并发原件覆盖12种RC插入与处理/删除latest交错、首次锚点RC/RR竞争、三处理者只有一次CAS生效、40001整事务回滚、503键按500分批回填、2秒锁超时整批回滚、差异拒启用及回退后继续维护。同类型已有双键的批量INSERT还验证了两种输入顺序：writer等待低键时，第三后端NOWAIT仍可取得高键；此证据不外推为所有UPDATE/DELETE或跨类型入口的实测。
+
+运维测试直接调用随包psql脚本的全部7个动作；合法批次、非法参数/注入式输入、未完成与差异拒启用、暂停续跑、真实修复及清理均检查独立连接的已提交状态。原生timestamp参与等价断言，原件另外保留UTC六位微秒文本。
+
+混合读写另用真实HTTP验证：单键100000条已提交pending，固定一次预热；独立RC事务实际新增500条并处理200条旧通知，在未提交状态停留。三次HTTP完成后都从PG观察到同一writer PID/XID仍为`idle in transaction`，返回原100000及原100条预览，完成时间均早于reader释放和writer提交；提交后来源、摘要及HTTP精确为100300，revision增加2。该次HTTP耗时99.494/81.203/74.046ms；INSERT为5.738ms、UPDATE为29.824ms、提交0.856ms，人为持事务310.062ms另列，不能算成写SQL成本。原HTTP25秒/连接5秒、写锁2秒/SQL5秒均保持；清理按500来源行分批，最后来源和摘要零残留并恢复维护状态。原件为`test-artifacts/full-audit/s2/notice-summary-mixed-http.json`，仅描述本次本地样本，不外推为生产SLA。
+
+第20点确实运行 ALL 且 owner 为空，不给生产查询增加夹具过滤。为不依赖其他IT的执行顺序，只在该探针的保存点内用普通DELETE临时排除外部pending；本次实有148条外部通知/124个摘要，来源触发器保持启用。测量后回滚保存点，对完整来源行及受影响摘要做双向EXCEPT ALL，差异均为0，原19点的环境恢复。两个相同时间戳遍历均为192组/12页，断言零漏重并核对实际身份顺序。
+
+下面是同次运行三轮计划的中位数，单位ms，**分页SQL、独立COUNT与预览分开列出**。它们不是HTTP端到端时延或生产SLA；完整20点与原始计划写入`test-artifacts/full-audit/s1/notice-pagination/`，完整CI运行后须核验其上传Artifact；汇总器不得只接受这些摘要数字。
+
+| 分布/查询点 | 旧分页SQL | 摘要分页SQL | 旧COUNT | 摘要COUNT | 本页预览 |
+|---|---:|---:|---:|---:|---:|
+| 均匀5001组，第一页 | 70.624 | 10.615 | 69.371 | 9.682 | 1.745 |
+| 单组100000条，含热点第一页 | 25.746 | 0.380 | 25.060 | 0.345 | 0.446 |
+| 稀疏SELF，全部模块 | 0.089 | 0.075 | 0.077 | 0.075 | 0.096 |
+| ALL，无负责人筛选 | 38.269 | 7.092 | 34.203 | 7.019 | 1.607 |
+| 100000空头，第一页 | 25.132 | 0.255 | 26.974 | 0.291 | 0.770 |
+| 深游标，末页17组 | 39.087 | 0.089 | 35.479 | 7.550 | 0.549 |
+
+原计划确认：稀疏SELF读取8个摘要及8个可见头；空头场景读取149个正数摘要并按头主键校验（本夹具25个、其他IT124个），预览仅校验本页25个头，没有先扫描10万个空头。精确COUNT仍有完整组集合成本，均匀分布也仍可能读取全部组后排序，没有把总请求写成O(pageSize)。
+
+**保留两个未采用候选。** 首个摘要方案仍连接完整可见头集合，空头分页14.325→14.625ms、12.694→17.242ms，未解决该瓶颈。随后统一按摘要键LATERAL查询虽改善空头，却使稀疏SELF分页0.129→8.593ms、COUNT0.100→8.763ms，实际扫描5132个摘要键（5008夹具键及124外部键）；匿名空结果也仍扫描摘要。因这项退化未采用，改为上述typed JOIN；不能把该候选的局部快路径写成最终结论。另一次typed定向复验中，稀疏SELF的独立COUNT为0.082→0.087ms，不能声称所有阶段都更快；本表本次复验也不替换该原件。所有原件均保留在运行证据中，不提交Git。P33仍须相同候选的完整云端结果与Artifact核验后才能销项。
+
+**完整本地回归仍失败。** 候选 `6c60dc0` 的 `-Pprod-readiness,ci-export-capacity clean verify` 已完整执行552单测及534IT：单测全部通过，IT为527通过、3 failure、4 error、0 skipped；运行27分56秒、退出1。通用组523项包含7个失败，容量组11项全部通过；通用verify失败后容量verify未执行。恢复全库审计记录到第4,147,643行时，PostgreSQL原日志记录磁盘耗尽、checkpointer PANIC及自动重启；另6项上传/文件存储用例明确因空间不足失败。恢复专用JSON/日志为空、子进程退出120的事实保留，不将其推定为原60秒超时，也不由后来释放空间或局部通过覆盖。
+
+本轮P33的35项IT通过，结束后原严格汇总器再次核对20个探针、420份读计划；这些是失败全量运行内的局部结果。原始快照 `p33-evidence/full-local-01` 及失败详情见本节和 PR #9，旧定向组与上表的样本值仍分别保留，不混用不同运行的测量。本段为提交前的本地验证快照，后续发布与云端状态见PR #9；P33和全项目门禁P21均继续开放；没有放宽测试预算或改写原失败。
+
+**完整环境仍有头表扫描。** 本轮 `empty-headers-100000/first` 的旧分页中位数151.364ms、摘要分页25.078ms；摘要计划实际读取5,150个摘要并扫描105,162个采购头，不能把上表定向环境的149个主键探测当作普遍保证。ALL无owner探针隔离前实际有100,273条外部pending和5,125个摘要，回滚后的来源及摘要双向EXCEPT差异均为0。优化消除了旧pending聚合路径，但计划仍受实际背景及选择性影响，精确total也不保证O(pageSize)。
+
+
 ## 8. T01–T12 可复现门禁和 CI
 
 统一入口是现有 `.github/workflows/ci.yml`，没有另建绑定阶段分支的工作流。CI 使用 PostgreSQL 16、Redis 7、JDK 21、固定 Node/pnpm 与 Playwright；先在空 CI 数据库上初始化私有 collector，再完成实际数据库 IT，最后给临时 PostgreSQL/Redis 配置 SCRAM/密码，执行生产 JAR 门禁。双 JVM 使用随机空 `_test` 库和共享私有导出目录，读 PG 日志之前写入并等待唯一 SQL marker，确保私有文件 follower 真正送达全部待计数语句。取消回归使用真实 CI PostgreSQL / Docker / collector，只将耗时 JVM 工作负载替换成故意不响应 TERM 的进程；它验证数据库级配置、真实日志送达、进程组终止、删库和两侧私有文件清理。

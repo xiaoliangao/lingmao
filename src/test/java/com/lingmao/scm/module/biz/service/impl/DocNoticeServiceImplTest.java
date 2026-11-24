@@ -8,6 +8,7 @@ import com.lingmao.scm.module.biz.dto.DocNoticeVO;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.entity.DocNotice;
 import com.lingmao.scm.module.biz.mapper.DocNoticeMapper;
+import com.lingmao.scm.module.biz.repository.NoticeSummaryMaintenance;
 import com.lingmao.scm.module.biz.service.ReferenceService;
 import com.lingmao.scm.module.system.service.UserService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -44,6 +45,8 @@ class DocNoticeServiceImplTest {
     private ReferenceService referenceService;
     @Mock
     private UserService userService;
+    @Mock
+    private NoticeSummaryMaintenance summaryMaintenance;
 
     private DocNoticeServiceImpl service;
 
@@ -55,7 +58,7 @@ class DocNoticeServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new DocNoticeServiceImpl(noticeMapper, referenceService, userService,
-                Clock.fixed(Instant.parse("2026-11-17T02:00:00Z"), ZoneId.of("Asia/Shanghai")));
+                Clock.fixed(Instant.parse("2026-11-17T02:00:00Z"), ZoneId.of("Asia/Shanghai")), summaryMaintenance);
     }
 
     /** 规则：已经被别人处理了（条件更新改 0 行，提醒是这张单的）→ 1002 */
