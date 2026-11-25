@@ -378,7 +378,7 @@ function emptyText() {
             <template #default="{ row }">{{ (row as User).productLines.map((l) => lineDict.labelOf(l)).join('、') }}</template>
           </el-table-column>
           <el-table-column v-if="cols.show.createTime" prop="createTime" label="创建时间" width="170" class-name="num" />
-          <el-table-column label="状态" width="150" fixed="right">
+          <el-table-column label="状态" width="164">
             <template #default="{ row }">
               <StatusTag :tone="row.status === 1 ? 'active' : 'off'">{{ row.status === 1 ? '启用' : '停用' }}</StatusTag>
               <StatusTag v-if="row.pwdMustChange" tone="pending" class="must-change" title="还在用管理员给的密码，登录后要先改密码">
@@ -386,7 +386,7 @@ function emptyText() {
               </StatusTag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="290" align="right" fixed="right">
+          <el-table-column label="操作" width="268" align="right" fixed="right">
             <template #default="{ row }">
               <el-button v-perm="'system:user:edit'" link @click="openEdit(row as User)">编辑</el-button>
               <el-button v-perm="'system:user:edit'" link @click="openRoles(row as User)">分配角色</el-button>
