@@ -77,11 +77,13 @@ function onVisible(visible: boolean) {
  * 原来那家的名字不能安到新 id 上，也不能显示成"供应商 3"
  */
 const labelFor = ref<string | null>(null)
-watch(() => props.label, (label) => {
-  labelFor.value = label ? (model.value ?? null) : null
-}, { immediate: true })
-/** 给了一个没见过名字的 id：按 includeId 取一批，名字就有了 */
-watch(model, (id) => {
+/**
+ * id 和名字放在一个 watch 里看：父组件同时换了两样（打开另一张单据）时，名字就是新 id 的；
+ * 分成两个 watch 的话谁先跑说不准，会把新 id 当成没名字、多查一次。
+ * 只换了 id、名字没动：名字还是原来那个 id 的。给了一个没见过名字的 id，按 includeId 取一批，名字就有了
+ */
+watch([model, () => props.label], ([id, label], previous) => {
+  if (!previous || label !== previous[1]) labelFor.value = label ? (id ?? null) : null
   if (id && !names.has(id) && id !== labelFor.value) void search()
 }, { immediate: true })
 
