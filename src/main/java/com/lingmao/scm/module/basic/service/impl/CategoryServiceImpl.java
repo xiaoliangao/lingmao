@@ -65,6 +65,7 @@ public class CategoryServiceImpl implements CategoryService {
         category.setParentId(req.getParentId());
         category.setLevel(level);
         category.setName(name);
+        category.setCode(code(req.getCode()));
         category.setSort(req.getSort());
         categoryMapper.insert(category);
         return category.getId();
@@ -80,6 +81,7 @@ public class CategoryServiceImpl implements CategoryService {
         String name = Texts.trim(req.getName());
         ensureNameUnique(category.getParentId(), name, id);
         category.setName(name);
+        category.setCode(code(req.getCode()));
         category.setSort(req.getSort());
         categoryMapper.update(category, Updates.replaceById(category));
     }
@@ -140,6 +142,11 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     private static TreeNode node(Category c) {
-        return new TreeNode(c.getId(), c.getParentId(), null, c.getName(), c.getLevel(), c.getSort(), c.getStatus());
+        return new TreeNode(c.getId(), c.getParentId(), c.getCode(), c.getName(), c.getLevel(), c.getSort(), c.getStatus());
+    }
+
+    /** 品类编码：空的存 null，字母转大写 */
+    private static String code(String text) {
+        return text == null || text.isBlank() ? null : text.strip().toUpperCase(java.util.Locale.ROOT);
     }
 }

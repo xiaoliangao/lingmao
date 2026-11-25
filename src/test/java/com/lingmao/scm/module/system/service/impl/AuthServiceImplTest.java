@@ -211,7 +211,24 @@ class AuthServiceImplTest {
         UserInfoVO info = authService.me(1L);
 
         assertThat(info).isEqualTo(new UserInfoVO(1L, "admin", null,
-                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体"), new FeaturesVO(true), false));
+                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体"), new FeaturesVO(true), false, false));
+    }
+
+    /** 规则（RFC 018 §2）：要先改密码的，me 不给权限和菜单，带上 mustChangePassword，前端据此只放改密码页 */
+    @Test
+    void me_mustChangePassword_noPermsNoMenus() {
+        SysUser user = admin();
+        user.setPwdMustChange(true);
+        when(sysUserMapper.selectById(1L)).thenReturn(user);
+        when(permissionService.loadRoleCodes(1L)).thenReturn(List.of("admin"));
+
+        UserInfoVO info = authService.me(1L);
+
+        assertThat(info.mustChangePassword()).isTrue();
+        assertThat(info.perms()).isEmpty();
+        assertThat(info.menus()).isEmpty();
+        verify(permissionService, never()).loadPermissions(1L);
+        verify(permissionService, never()).loadMenuTree(1L);
     }
 
     @Test

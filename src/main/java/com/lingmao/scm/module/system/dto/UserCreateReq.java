@@ -32,8 +32,9 @@ public class UserCreateReq {
     /** 默认主体（bas_company.id），下拉调 /api/companies/options；空 = 单据上取唯一启用的主体 */
     private Long defaultCompanyId;
 
-    @Size(max = 64, message = "部门最长 64")
-    private String dept;
+    /** 在哪几个部门（sys_dept.id），空 = 不在任何部门（RFC 018 §1） */
+    @Size(max = 20, message = "部门最多 20 个")
+    private List<Long> deptIds;
 
     @Size(max = 64, message = "岗位最长 64")
     private String post;

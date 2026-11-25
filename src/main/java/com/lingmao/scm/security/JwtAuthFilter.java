@@ -30,6 +30,9 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
     public static final String ASSISTANT_PERM = "assistant:chat:use";
     /** 助手令牌的请求不带的权限：供应商联系方式、银行信息不发给外部模型（用户 11-22 定，PRD §12 Q45） */
     static final Set<String> WITHHELD_FROM_ASSISTANT = Set.of(FieldPermissions.CONTACT, FieldPermissions.BANK);
+    /** 要先改密码的账号能调的接口（RFC 018 §2）：看自己是谁、改密码、退出、看版本 */
+    static final Set<String> MUST_CHANGE_ALLOWED = Set.of("/api/auth/me", "/api/auth/password", "/api/auth/logout", "/api/auth/refresh", "/api/version");
+    public static final String MUST_CHANGE_MESSAGE = "请先修改管理员给的初始密码";
 
     private final JwtUtil jwtUtil;
     private final LoginSessionStore loginSessionStore;
@@ -51,7 +54,7 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
                                     FilterChain chain) throws ServletException, IOException {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith(PREFIX)) {
-            String denied = authenticate(header.substring(PREFIX.length()), request.getMethod());
+            String denied = authenticate(header.substring(PREFIX.length()), request.getMethod(), request.getRequestURI());
             if (denied != null) {
                 SecurityContextHolder.clearContext();
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
@@ -69,7 +72,7 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
      * AI 功能关着（包括关之前发出去、还没过期的）、不是 GET、没有使用助手的权限。
      * 返回文件的 GET（导出、下载、模板）由 AssistantScopeInterceptor 拦，这里还不知道是哪个接口
      */
-    private String authenticate(String token, String method) {
+    private String authenticate(String token, String method, String uri) {
         Claims claims;
         try {
             claims = jwtUtil.parse(token);
@@ -103,6 +106,10 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
         }
         if (scope != null && !perms.contains(ASSISTANT_PERM)) {
             return "没有使用智能助手的权限";
+        }
+        // 管理员给的密码还没改（RFC 018 §2）：只能看自己、改密码、退出；别的接口一律 403，不靠每个接口的权限码挡
+        if (perms.contains(CallerScope.MUST_CHANGE_PASSWORD) && (scope != null || !MUST_CHANGE_ALLOWED.contains(uri))) {
+            return MUST_CHANGE_MESSAGE;
         }
         // scope: 开头的是这里按令牌用途放的标识，不认库里的：菜单上就算有人填了同名权限码，普通登录也不会被当成助手。
         // 助手令牌不带供应商联系方式、银行信息这两个权限：这两样不发给外部模型（用户 11-22 定），

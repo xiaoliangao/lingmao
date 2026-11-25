@@ -14,6 +14,8 @@ import { STANDALONE_PAGES, isStandalone } from './standalone'
  */
 const routes: RouteRecordRaw[] = [
   { path: '/login', component: () => import('@/views/login/index.vue'), meta: { public: true, title: '登录' } },
+  // 管理员给的密码还没改（RFC 018 §2）：登录后只能到这一页，改完重新登录。要登录，不是 public
+  { path: '/change-password', component: () => import('@/views/login/change-password.vue'), meta: { title: '修改初始密码' } },
   {
     path: '/',
     name: 'workbench',
@@ -166,6 +168,10 @@ router.beforeEach(async (to) => {
       // 401 时拦截器已经在跳登录页，其他错误也弹过消息了，这一次跳转取消
       return false
     }
+    // 还在用管理员给的密码：只放改密码这一页（后端别的接口也都是 403）。菜单路由先不加，改完重新登录时整页重新加载再加
+    if (store.info?.mustChangePassword) {
+      return to.path === '/change-password' ? true : { path: '/change-password', replace: true }
+    }
     addMenuRoutes('workbench', store.workbenchMenus)
     addDetailRoutes('workbench')
     if (store.isAdmin) {
@@ -185,6 +191,8 @@ router.beforeEach(async (to) => {
     // 这一次跳转是按加路由之前的表匹配的（菜单页会落到 404），按新表重新跳一次
     return phoneHome(to) ?? to.fullPath
   }
+  // 密码早就改过了还打开改初始密码这一页：回首页（自己改密码在侧边栏底下）
+  if (to.path === '/change-password') return '/'
   return phoneHome(to) ?? true
 })
 

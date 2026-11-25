@@ -14,4 +14,10 @@ public interface DefaultCompanyProvider {
      * 单据上必须自己选
      */
     CompanyBrief resolve(Long preferredId);
+
+    /**
+     * 按编码、简称或全称找启用的主体（账号导入的"默认主体"一列，RFC 018 §3.2）：编码不分大小写；
+     * 找不到、对上不止一个返回 null
+     */
+    Long findEnabledId(String text);
 }

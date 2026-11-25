@@ -45,6 +45,19 @@ class PermissionServiceImplTest {
         verify(sysMenuMapper, never()).selectPermsByUserId(any());
     }
 
+    /** 规则（RFC 018 §2）：要先改密码的账号一个业务权限都不给，只有"要改密码"的标识，也不去查菜单 */
+    @Test
+    void loadPermissions_mustChangePassword_onlyMarker() {
+        SysUser user = new SysUser();
+        user.setId(2L);
+        user.setStatus(1);
+        user.setPwdMustChange(true);
+        when(sysUserMapper.selectById(2L)).thenReturn(user);
+
+        assertThat(permissionService.loadPermissions(2L)).containsExactly(com.lingmao.scm.common.auth.CallerScope.MUST_CHANGE_PASSWORD);
+        verify(sysMenuMapper, never()).selectPermsByUserId(any());
+    }
+
     /** 规则：启用的用户返回他的权限标识 */
     @Test
     void loadPermissions_enabledUser_returnsPerms() {

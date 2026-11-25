@@ -13,10 +13,13 @@ import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.dto.UserVO;
 import com.lingmao.scm.module.system.entity.SysRole;
 import com.lingmao.scm.module.system.entity.SysUser;
+import com.lingmao.scm.module.system.entity.SysUserDept;
 import com.lingmao.scm.module.system.entity.SysUserRole;
 import com.lingmao.scm.module.system.mapper.SysRoleMapper;
+import com.lingmao.scm.module.system.mapper.SysUserDeptMapper;
 import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.mapper.SysUserRoleMapper;
+import com.lingmao.scm.module.system.service.DeptService;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.LineScope;
@@ -27,7 +30,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -46,19 +53,77 @@ public class UserServiceImpl implements UserService {
     private final SysRoleMapper sysRoleMapper;
     private final LoginFailCounter loginFailCounter;
     private final DictDataService dictDataService;
+    private final SysUserDeptMapper userDeptMapper;
+    private final DeptService deptService;
 
     @Override
     public PageResult<UserVO> page(UserQuery query) {
+        String kw = StringUtils.hasText(query.getKeyword()) ? query.getKeyword().strip() : null;
+        List<Long> deptUserIds = null;
+        if (query.getDeptId() != null) {
+            List<Long> deptIds = deptService.withDescendants(query.getDeptId());
+            deptUserIds = deptIds.isEmpty() ? List.of() : userDeptMapper.selectList(new LambdaQueryWrapper<SysUserDept>()
+                    .in(SysUserDept::getDeptId, deptIds)).stream().map(SysUserDept::getUserId).distinct().toList();
+            if (deptUserIds.isEmpty()) {
+                return new PageResult<>(List.of(), 0);
+            }
+        }
+        List<Long> roleUserIds = null;
+        if (query.getRoleId() != null) {
+            roleUserIds = sysUserRoleMapper.selectList(new LambdaQueryWrapper<SysUserRole>()
+                    .eq(SysUserRole::getRoleId, query.getRoleId())).stream().map(SysUserRole::getUserId).toList();
+            if (roleUserIds.isEmpty()) {
+                return new PageResult<>(List.of(), 0);
+            }
+        }
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<SysUser>()
                 .like(StringUtils.hasText(query.getUsername()), SysUser::getUsername, query.getUsername())
+                .and(kw != null, w -> w.like(SysUser::getUsername, kw).or().like(SysUser::getNickname, kw)
+                        .or().like(SysUser::getPhone, kw))
                 .eq(query.getStatus() != null, SysUser::getStatus, query.getStatus())
+                .in(deptUserIds != null, SysUser::getId, deptUserIds)
+                .in(roleUserIds != null, SysUser::getId, roleUserIds)
                 .orderByDesc(SysUser::getId);
-        return PageResult.of(sysUserMapper.selectPage(query.toPage(), wrapper).convert(UserVO::from));
+        var page = sysUserMapper.selectPage(query.toPage(), wrapper);
+        return new PageResult<>(toVOs(page.getRecords()), page.getTotal());
     }
 
     @Override
     public UserVO getById(Long id) {
-        return UserVO.from(getEntity(id));
+        return toVOs(List.of(getEntity(id))).getFirst();
+    }
+
+    /** 实体 → VO，部门、角色一次查出来填上 */
+    private List<UserVO> toVOs(List<SysUser> users) {
+        if (users.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = users.stream().map(SysUser::getId).toList();
+        Map<Long, List<UserVO.DeptBrief>> depts = deptsOf(ids);
+        Map<Long, List<UserVO.RoleBrief>> roles = new HashMap<>();
+        sysUserRoleMapper.selectRoleNames(ids).forEach(r -> roles.computeIfAbsent(r.userId(), k -> new ArrayList<>())
+                .add(new UserVO.RoleBrief(r.roleId(), r.roleName())));
+        return users.stream().map(u -> UserVO.from(u, depts.getOrDefault(u.getId(), List.of()),
+                roles.getOrDefault(u.getId(), List.of()))).toList();
+    }
+
+    /** 这几个人各在哪些部门，按全路径排 */
+    private Map<Long, List<UserVO.DeptBrief>> deptsOf(Collection<Long> userIds) {
+        List<SysUserDept> links = userDeptMapper.selectByUserIds(userIds);
+        if (links.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> paths = deptService.paths();
+        Map<Long, List<UserVO.DeptBrief>> out = new HashMap<>();
+        for (SysUserDept link : links) {
+            String path = paths.get(link.getDeptId());
+            if (path != null) {
+                out.computeIfAbsent(link.getUserId(), k -> new ArrayList<>()).add(new UserVO.DeptBrief(link.getDeptId(),
+                        path.substring(path.lastIndexOf(DeptServiceImpl.SEPARATOR) + 1), path));
+            }
+        }
+        out.values().forEach(list -> list.sort(Comparator.comparing(UserVO.DeptBrief::path)));
+        return out;
     }
 
     @Override
@@ -70,8 +135,13 @@ public class UserServiceImpl implements UserService {
                 .and(kw != null, w -> w.like(SysUser::getUsername, kw).or().like(SysUser::getNickname, kw))
                 .orderByAsc(SysUser::getUsername);
         // 只取前 20 个，不查总数（第三个参数 false）
-        return sysUserMapper.selectPage(new Page<>(1, OPTIONS_LIMIT, false), wrapper)
-                .getRecords().stream().map(UserOption::from).toList();
+        List<SysUser> users = sysUserMapper.selectPage(new Page<>(1, OPTIONS_LIMIT, false), wrapper).getRecords();
+        Map<Long, List<UserVO.DeptBrief>> depts = users.isEmpty() ? Map.of() : deptsOf(users.stream().map(SysUser::getId).toList());
+        return users.stream().map(u -> {
+            List<UserVO.DeptBrief> mine = depts.get(u.getId());
+            String names = mine == null ? null : mine.stream().map(UserVO.DeptBrief::name).collect(Collectors.joining("、"));
+            return new UserOption(u.getId(), u.getUsername(), u.getNickname(), names);
+        }).toList();
     }
 
     @Override
@@ -102,13 +172,17 @@ public class UserServiceImpl implements UserService {
         user.setNickname(req.getNickname());
         user.setPhone(req.getPhone());
         user.setDefaultCompanyId(req.getDefaultCompanyId());
-        user.setDept(trimToNull(req.getDept()));
         user.setPost(trimToNull(req.getPost()));
         user.setProductLines(dictDataService.requireValues(LineScope.DICT_TYPE, req.getProductLines(), null, "品类线"));
         String designerNo = trimToNull(req.getDesignerNo());
         ensureDesignerNoFree(designerNo, null);
         user.setDesignerNo(designerNo);
+        // 管理员定的初始密码他知道：本人第一次登录要先改（RFC 018 §2）
+        user.setPwdMustChange(true);
+        List<Long> deptIds = distinct(req.getDeptIds());
+        deptService.requireExisting(deptIds);
         sysUserMapper.insert(user);   // 同时给两个人同一个编号：uk_sys_user_designer_no 拦住后一个（1000）
+        insertDepts(user.getId(), deptIds);
         return user.getId();
     }
 
@@ -124,12 +198,26 @@ public class UserServiceImpl implements UserService {
         user.setPhone(req.getPhone());
         user.setStatus(req.getStatus());
         user.setDefaultCompanyId(req.getDefaultCompanyId());
-        user.setDept(trimToNull(req.getDept()));
         user.setPost(trimToNull(req.getPost()));
         user.setProductLines(dictDataService.requireValues(LineScope.DICT_TYPE, req.getProductLines(), user.getProductLines(), "品类线"));
-        // 整体覆盖：手机号传 null 就是清空（bug 005）。密码、设计师编号标了 NEVER，这里不会碰它们
+        List<Long> deptIds = distinct(req.getDeptIds());
+        deptService.requireExisting(deptIds);
+        // 整体覆盖：手机号传 null 就是清空（bug 005）。密码、设计师编号、要不要改密码标了 NEVER，这里不会碰它们
         sysUserMapper.update(user, Updates.replaceById(user));
         changeDesignerNo(user, trimToNull(req.getDesignerNo()));
+        // 部门也整体覆盖：不传（null）和传空表一样，是不在任何部门
+        userDeptMapper.delete(new LambdaQueryWrapper<SysUserDept>().eq(SysUserDept::getUserId, id));
+        insertDepts(id, deptIds);
+    }
+
+    private void insertDepts(Long userId, List<Long> deptIds) {
+        if (!deptIds.isEmpty()) {
+            userDeptMapper.insert(deptIds.stream().map(d -> new SysUserDept(userId, d)).toList());
+        }
+    }
+
+    private static List<Long> distinct(List<Long> ids) {
+        return ids == null ? List.of() : List.copyOf(new LinkedHashSet<>(ids.stream().filter(Objects::nonNull).toList()));
     }
 
     @Override
@@ -143,6 +231,8 @@ public class UserServiceImpl implements UserService {
         // 账号是逻辑删除，角色关联真删：不然他的角色一直"已分配给用户"、删不掉（和删角色时去掉菜单关联一样）
         sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
                 .eq(SysUserRole::getUserId, id));
+        // 部门关联同理：不然部门里一直"还有人"，删不掉（RFC 018 §1.2）
+        userDeptMapper.delete(new LambdaQueryWrapper<SysUserDept>().eq(SysUserDept::getUserId, id));
     }
 
     @Override

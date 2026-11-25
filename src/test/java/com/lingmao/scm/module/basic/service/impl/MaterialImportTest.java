@@ -103,7 +103,8 @@ class MaterialImportTest {
     @BeforeEach
     void setUp() {
         materialImport = new MaterialImport(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
-                dictDataService, serialNoGenerator, new TradeFeature(false), docLogService, com.lingmao.scm.DirectFileImports.INSTANCE,
+                dictDataService, new MaterialCodes(serialNoGenerator, materialMapper, new com.lingmao.scm.TestCodeRules(java.time.Clock.systemDefaultZone())),
+                new TradeFeature(false), docLogService, com.lingmao.scm.DirectFileImports.INSTANCE,
                 fileService, attachmentService);
         lenient().when(dictDataService.listByType("material_type")).thenReturn(List.of(new DictOption("面料", "FABRIC", 1)));
         lenient().when(dictDataService.listByType("unit")).thenReturn(List.of(new DictOption("米", "M", 1)));
@@ -135,7 +136,7 @@ class MaterialImportTest {
         sheets.put("物料信息", new Object[][]{MATERIAL_HEADERS,
                 {"面料", "面料>梭织", "夏季", "ML0007", "自购", "全棉府绸", "米", 145, "张三", "广东", "防水", "是"},
                 {"面料", "面料 > 梭织 > 府绸", null, "ML0012", "客供", "涤纶里布", "米", 0, null, null, null, null}});
-        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101", "ML0102");
+        when(serialNoGenerator.nextSeq("ML")).thenReturn(101, 102);
         sheets.put("物料信息SKU", new Object[][]{SKU_HEADERS,
                 {"ML0007", "ML0007-KQ", "KQ", "卡其", null},
                 {"ML0007", null, "zq", "藏青", null}});
@@ -246,7 +247,7 @@ class MaterialImportTest {
         String[] headers = {"物料类型", "物料分类", "物料编码", "物料名称", "单位", "是否带吊牌", "吊牌名称"};
         Map<String, Object[][]> ok = new LinkedHashMap<>();
         ok.put("物料信息", new Object[][]{headers, {"面料", "面料>梭织", "ML0007", "全棉府绸", "米", "是", "coolmax 吊牌"}});
-        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101");
+        when(serialNoGenerator.nextSeq("ML")).thenReturn(101);
 
         materialImport.importFile(xlsx(ok));
 
@@ -302,7 +303,7 @@ class MaterialImportTest {
                 {null, "面料", "面料>梭织", "ML0012", "涤纶里布", "米"}});
         sheets.put("物料信息SKU", new Object[][]{{"图片", "物料编码", "物料SKU编码", "颜色编码", "颜色名称"},
                 {null, "ML0007", "ML0007-KQ", "KQ", "卡其"}});
-        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101", "ML0102");
+        when(serialNoGenerator.nextSeq("ML")).thenReturn(101, 102);
         AtomicLong files = new AtomicLong();
         when(fileService.save(anyString(), any())).thenAnswer(inv -> {
             long n = files.incrementAndGet();
@@ -348,7 +349,7 @@ class MaterialImportTest {
                 {null, "面料", "面料>梭织", "ML0007", "全棉府绸", "米"}});
         sheets.put("物料信息SKU", new Object[][]{{"图片", "物料编码", "物料SKU编码", "颜色编码", "颜色名称"},
                 {null, "ML0007", "ML0007-KQ", "KQ", "卡其"}});
-        when(serialNoGenerator.next("ML", MaterialServiceImpl.CODE_WIDTH)).thenReturn("ML0101");
+        when(serialNoGenerator.nextSeq("ML")).thenReturn(101);
         when(fileService.save(anyString(), any())).thenAnswer(inv -> {
             if (inv.<byte[]>getArgument(1)[0] == 'a') throw new BizException("图片打不开：内容坏了，或者和扩展名不是一种格式");
             return new FileVO("/files/2026/11/b.png", "/files/2026/11/b_s.png", inv.getArgument(0), 3);

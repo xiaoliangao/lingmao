@@ -74,7 +74,7 @@ class SupplierFlowTest {
 
     @BeforeEach
     void setUp() {
-        service = new SupplierServiceImpl(supplierMapper, certMapper, changeMapper, changeService, serialNoGenerator,
+        service = new SupplierServiceImpl(supplierMapper, certMapper, changeMapper, changeService, serialNoGenerator, new com.lingmao.scm.TestCodeRules(SupplierFixtures.CLOCK),
                 docLogService, attachmentService, userService, dicts, new SupplierViews(dicts), lists, goodAtCategories, warehouseService,
                 SupplierFixtures.CLOCK);
     }

@@ -16,6 +16,10 @@ public class CategorySaveReq {
     @Size(max = 50, message = "名称最长 50 个字")
     private String name;
 
+    /** 品类编码，选填，1-8 位字母和数字，存成大写；款号的编码规则里有"品类编码"一段时用（RFC 018 §4.4） */
+    @jakarta.validation.constraints.Pattern(regexp = "^$|^[A-Za-z0-9]{1,8}$", message = "品类编码是 1-8 位字母和数字")
+    private String code;
+
     /** 同级顺序，越小越靠前 */
     @NotNull(message = "排序不能为空")
     private Integer sort = 0;

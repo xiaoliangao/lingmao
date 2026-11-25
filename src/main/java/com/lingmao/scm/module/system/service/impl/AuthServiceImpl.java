@@ -87,13 +87,15 @@ public class AuthServiceImpl implements AuthService {
         if (user == null) {
             throw new BizException(404, "用户不存在: " + userId);
         }
+        boolean mustChange = Boolean.TRUE.equals(user.getPwdMustChange());
         return new UserInfoVO(user.getId(), user.getUsername(), user.getNickname(),
                 permissionService.loadRoleCodes(userId),
-                permissionService.loadPermissions(userId),
-                permissionService.loadMenuTree(userId),
+                mustChange ? java.util.Set.of() : permissionService.loadPermissions(userId),
+                mustChange ? java.util.List.of() : permissionService.loadMenuTree(userId),
                 defaultCompanyProvider.resolve(user.getDefaultCompanyId()),
                 new FeaturesVO(aiSwitchService.enabled()),
-                com.lingmao.scm.security.DataScope.current(false).isAll());
+                com.lingmao.scm.security.DataScope.current(false).isAll(),
+                mustChange);
     }
 
     @Override

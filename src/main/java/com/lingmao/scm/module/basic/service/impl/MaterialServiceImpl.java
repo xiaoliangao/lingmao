@@ -8,7 +8,6 @@ import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
 import com.lingmao.scm.common.page.Keywords;
 import com.lingmao.scm.common.page.PageResult;
-import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.config.TradeFeature;
 import com.lingmao.scm.module.basic.dto.MaterialCreateReq;
 import com.lingmao.scm.module.basic.dto.MaterialDetailVO;
@@ -86,10 +85,8 @@ public class MaterialServiceImpl implements MaterialService {
 
     /** 面料、里料：只有它们填面料功能（RFC 012 §5.1） */
     static final Set<String> FABRIC_TYPES = Set.of("FABRIC", "LINING");
-    /** 物料编码 = 分类码 + 4 位流水 */
+    /** 预置的物料编码规则是 分类码 + 4 位流水：导入时按它估 SKU 码的长度（编码规则见 MaterialCodes） */
     static final int CODE_WIDTH = 4;
-    /** 取到的号已经被导入的老编码占了，最多再取几次（RFC 003 §7.1） */
-    static final int MAX_TRIES = 100;
     /** 当场加的物料类型，字典值 = CUSTOM_ + 序号（PRD §6.1.5 规则 6） */
     static final String CUSTOM_TYPE = "CUSTOM_";
 
@@ -97,13 +94,13 @@ public class MaterialServiceImpl implements MaterialService {
     private final MaterialSkuMapper materialSkuMapper;
     private final MaterialCategoryMapper materialCategoryMapper;
     private final ColorMapper colorMapper;
-    private final SerialNoGenerator serialNoGenerator;
     private final DictChecks dictChecks;
     private final TradeFeature tradeFeature;
     private final AttachmentService attachmentService;
     private final DocLogService docLogService;
     private final MaterialImport materialImport;
     private final DictDataService dictDataService;
+    private final MaterialCodes materialCodes;
 
     // ---------- 物料 ----------
 
@@ -135,6 +132,15 @@ public class MaterialServiceImpl implements MaterialService {
     }
 
     @Override
+    public String codePreview(Long categoryId, String materialType) {
+        MaterialCategory category = requireLeafCategory(categoryId);
+        if (materialType == null || materialType.isBlank()) {
+            throw new BizException(400, "先选物料类型：按物料类型找编码规则");
+        }
+        return materialCodes.preview(materialType.strip(), category.getCode());
+    }
+
+    @Override
     @Transactional
     public Long create(MaterialCreateReq req) {
         MaterialCategory category = requireLeafCategory(req.getCategoryId());
@@ -142,7 +148,7 @@ public class MaterialServiceImpl implements MaterialService {
         material.setCategoryId(category.getId());
         material.setStockUnit(Texts.trim(req.getStockUnit()));
         fill(material, req, null);
-        material.setCode(nextCode(category.getCode()));
+        material.setCode(materialCodes.next(material.getMaterialType(), category.getCode()));
         materialMapper.insert(material);
         List<MaterialSku> skus = insertSkus(material, req.getColorIds(), req.getSpecs());
         docLogService.add(BizType.MATERIAL, material.getId(), "create", skuCodes(skus));
@@ -630,24 +636,6 @@ public class MaterialServiceImpl implements MaterialService {
         return category;
     }
 
-    /**
-     * 分类码 + 4 位流水。取到的号已经有了（11-18 以前导入的照用领猫编码）就再取下一个，最多试 100 次。
-     * 先查后插在同一个事务里：sys_serial 这一行的锁持有到提交，同一分类的新建本来就排队；和导入撞上由唯一索引兜底（1000）
-     */
-    private String nextCode(String categoryCode) {
-        return nextCode(serialNoGenerator, materialMapper, categoryCode);
-    }
-
-    /** 同上；导入也按它发编码（RFC 012 §4.2）。甲方的新编码规则到了改这里 */
-    static String nextCode(SerialNoGenerator serialNoGenerator, MaterialMapper materialMapper, String categoryCode) {
-        for (int i = 0; i < MAX_TRIES; i++) {
-            String code = serialNoGenerator.next(categoryCode, CODE_WIDTH);
-            if (!materialMapper.exists(new LambdaQueryWrapper<Material>().eq(Material::getCode, code))) {
-                return code;
-            }
-        }
-        throw new BizException("分类 " + categoryCode + " 连着 " + MAX_TRIES + " 个编码都被占了，请联系管理员");
-    }
 
     /**
      * 颜色 × 规格两两组合建 SKU（RFC 003 §7.2）：没选颜色的只按规格建，都没有就是一个不带颜色、规格的 SKU；

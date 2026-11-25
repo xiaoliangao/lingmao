@@ -198,7 +198,7 @@ watch(
   },
 )
 
-// ---------- 款号预览：自动编号时，大类、设计师一变就问后端；不占号，编不出来的原因写在下面 ----------
+// ---------- 款号预览：自动编号时，大类、设计师、品牌、品类、年份一变就问后端（编码规则可能用到其中几样）；不占号，编不出来的原因写在下面 ----------
 const preview = reactive({ code: '', error: '', loading: false })
 let previewSeq = 0
 let previewTimer: ReturnType<typeof setTimeout> | undefined
@@ -211,7 +211,9 @@ async function refreshPreview() {
   }
   preview.loading = true
   try {
-    const code = await styleApi.codePreview(form.styleClass, form.designerId)
+    const code = await styleApi.codePreview({
+      styleClass: form.styleClass, designerId: form.designerId, brand: form.brand, categoryId: form.categoryId, year: form.year,
+    })
     if (current === previewSeq) Object.assign(preview, { code, error: '' })
   } catch (e) {
     if (current === previewSeq) Object.assign(preview, { code: '', error: e instanceof Error ? e.message : '编不出款号，请手填' })
@@ -221,7 +223,7 @@ async function refreshPreview() {
 }
 
 watch(
-  () => [form.codeMode, form.styleClass, form.designerId] as const,
+  () => [form.codeMode, form.styleClass, form.designerId, form.brand, form.categoryId, form.year] as const,
   ([mode]) => {
     if (editing || mode !== 'AUTO') return
     clearTimeout(previewTimer)

@@ -245,6 +245,32 @@ class JwtAuthFilterTest {
         return request;
     }
 
+    /** 规则（RFC 018 §2）：管理员给的密码还没改，业务接口一律 403（不往下走）；改密码、看自己的照样过，但不带任何权限 */
+    @Test
+    void mustChangePassword_onlyAllowlistPasses() throws Exception {
+        when(jwtUtil.parse("good-token")).thenReturn(Jwts.claims().id("jti-1").subject("1").build());
+        when(loginSessionStore.lookup("jti-1")).thenReturn(new LoginSessionStore.Session(1L, null));
+        when(permissionService.loadPermissions(1L)).thenReturn(Set.of(CallerScope.MUST_CHANGE_PASSWORD));
+
+        MockHttpServletRequest business = requestWithToken("good-token");
+        business.setRequestURI("/api/styles");
+        MockHttpServletResponse denied = new MockHttpServletResponse();
+        MockFilterChain blocked = new MockFilterChain();
+        filter.doFilter(business, denied, blocked);
+        assertThat(denied.getStatus()).isEqualTo(403);
+        assertThat(denied.getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).contains(JwtAuthFilter.MUST_CHANGE_MESSAGE);
+        assertThat(blocked.getRequest()).isNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+
+        MockHttpServletRequest password = requestWithToken("good-token");
+        password.setMethod("PUT");
+        password.setRequestURI("/api/auth/password");
+        MockFilterChain passed = new MockFilterChain();
+        filter.doFilter(password, new MockHttpServletResponse(), passed);
+        assertThat(passed.getRequest()).isNotNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities()).isEmpty();
+    }
+
     private MockHttpServletRequest requestWithToken(String token) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer " + token);

@@ -40,10 +40,10 @@ public interface StyleService {
     StyleDetailVO detail(long id);
 
     /**
-     * 自动编号的预览（RFC 005 §3.1）：只看不取，跳过已经被手填占了的号。
-     * 设计师没选、没有设计师编号、今天的流水用完了 → 1000，提示可以手填
+     * 自动编号的预览（RFC 005 §3.1）：只看不取，跳过已经被手填占了的号。按适用于这个大类的编码规则（RFC 018 §4），
+     * 规则里有哪一段才要哪一个参数：设计师没选、没有设计师编号、品类没填编码、今天的流水用完了 → 1000，提示可以手填
      */
-    String codePreview(String styleClass, Long designerId);
+    String codePreview(String styleClass, Long designerId, String brand, Long categoryId, Integer year);
 
     /** 新建，状态是草稿。带了颜色的同时生成 SKU。返回实际的款号 */
     StyleCreateResult create(StyleCreateReq req);

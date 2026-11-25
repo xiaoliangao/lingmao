@@ -10,7 +10,13 @@ import com.lingmao.scm.module.system.dto.UserPasswordReq;
 import com.lingmao.scm.module.system.dto.UserQuery;
 import com.lingmao.scm.module.system.dto.UserUpdateReq;
 import com.lingmao.scm.module.system.dto.UserVO;
+import com.lingmao.scm.module.system.service.UserImportService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.common.excel.Excel;
+import com.lingmao.scm.common.excel.ImportResult;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MultipartFile;
 import com.lingmao.scm.security.LoginUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,8 +43,9 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+    private final UserImportService userImportService;
 
-    @Operation(summary = "分页查询")
+    @Operation(summary = "分页查询：关键字查登录名、昵称、手机号；按部门（含下级）、角色、状态筛；每人带部门、角色")
     @GetMapping
     @PreAuthorize("hasAuthority('system:user:list')")
     public R<PageResult<UserVO>> page(@Valid UserQuery query) {
@@ -96,6 +103,26 @@ public class UserController {
     public R<Void> resetPassword(@PathVariable("id") Long id, @Valid @RequestBody UserPasswordReq req) {
         userService.resetPassword(id, req.getPassword());
         return R.ok();
+    }
+
+    @Operation(summary = "账号导入模板：领猫用户导出的列名，加角色、品类线、设计师编号、默认主体（RFC 018 §3）")
+    @GetMapping("/import-template")
+    @PreAuthorize("hasAuthority('system:user:import')")
+    public ResponseEntity<byte[]> importTemplate() {
+        return Excel.download("账号导入模板.xlsx", userImportService.template());
+    }
+
+    /**
+     * 初始密码放在表单里，不放地址里：地址会进 Nginx 的访问日志。操作日志只记参数名，不记值
+     */
+    @Operation(summary = "导入账号：一批人一个初始密码，第一次登录必须改；登录名已有的跳过（RFC 018 §3）")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('system:user:import')")
+    @OperLog(module = "用户管理", action = "导入")
+    public R<ImportResult> importExcel(@RequestParam("file") MultipartFile file,
+                                       @io.swagger.v3.oas.annotations.Parameter(description = "这一批人共用的初始密码，8-32 位")
+                                       @RequestParam("password") String password) {
+        return R.ok(userImportService.importExcel(file, password));
     }
 
     @Operation(summary = "用户的角色 id")

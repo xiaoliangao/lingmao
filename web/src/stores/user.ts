@@ -41,11 +41,18 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  /** 只清本地、不调退出接口：改了密码以后这次登录在后端已经作废了，再调退出只会 401 */
+  function forget() {
+    clearToken()
+    token.value = ''
+    info.value = null
+  }
+
   /** 有没有某个权限标识：按钮显不显示就看它 */
   function hasPerm(perm: string) {
     return perms.value.has(perm)
   }
   setFieldPermissionCheck(hasPerm)
 
-  return { token, info, isAdmin, defaultCompanyId, canSeeAll, workbenchMenus, adminMenus, login, fetchMe, logout, hasPerm }
+  return { token, info, isAdmin, defaultCompanyId, canSeeAll, workbenchMenus, adminMenus, login, fetchMe, logout, forget, hasPerm }
 })

@@ -66,12 +66,19 @@ function nameOf(id: string) {
     <template #label="{ value }">{{ nameOf(value) }}</template>
     <el-option v-for="user in options" :key="user.id" :label="user.nickname" :value="user.id">
       <span>{{ user.nickname }}</span>
+      <!-- 带上部门：同名、花名相近的人好分（RFC 018 §1.4） -->
+      <span v-if="user.depts" class="dept"> · {{ user.depts }}</span>
       <span class="username code">{{ user.username }}</span>
     </el-option>
   </el-select>
 </template>
 
 <style scoped>
+.dept {
+  font-size: 12px;
+  color: var(--lm-muted);
+}
+
 .username {
   float: right;
   margin-left: 16px;

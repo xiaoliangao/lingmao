@@ -102,7 +102,28 @@ const categoryCode = computed(() => {
   }
   return ''
 })
-const codePreview = computed(() => (categoryCode.value ? `${categoryCode.value}····` : '选了分类才有'))
+// 编码预览：按编码规则（RFC 018，可能按物料类型分），选了分类和类型就问后端；只看不取，保存时才编
+const previewCode = ref('')
+let previewSeq = 0
+watch(
+  () => [form.categoryId, form.materialType, categoryCode.value] as const,
+  async ([categoryId, materialType, code]) => {
+    const current = ++previewSeq
+    previewCode.value = ''
+    if (detail.value || !categoryId || !code || !materialType) return
+    try {
+      const preview = await materialApi.codePreview(categoryId, materialType)
+      if (current === previewSeq) previewCode.value = preview
+    } catch (e) {
+      if (current === previewSeq) previewCode.value = e instanceof Error ? e.message : ''
+    }
+  },
+)
+const codePreview = computed(() => {
+  if (!categoryCode.value) return '选了分类才有'
+  if (!form.materialType) return '选了物料类型才有'
+  return previewCode.value || '…'
+})
 
 async function openCreate(categoryId?: string | null) {
   categories.value = await materialCategoryApi.enabledTree()

@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 品类、物料分类的树节点（el-tree、el-tree-select 直接能用）。品类没有编码，code 是 null、不出现在 JSON 里。
+ * 品类、物料分类的树节点（el-tree、el-tree-select 直接能用）。品类的编码选填（RFC 018），没填的 code 是 null、不出现在 JSON 里。
  * children 没有下级时是空数组
  */
 @Data

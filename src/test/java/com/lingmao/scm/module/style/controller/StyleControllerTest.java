@@ -75,13 +75,13 @@ class StyleControllerTest {
                         .with(loginAs("style:style:list")))
                 .andExpect(jsonPath("$.code").value(403));
 
-        verify(styleService, never()).codePreview(anyString(), anyLong());
+        verify(styleService, never()).codePreview(anyString(), anyLong(), any(), any(), any());
     }
 
     /** 规则：有新增权限能预览 */
     @Test
     void codePreview_withAddPermission_ok() throws Exception {
-        when(styleService.codePreview("FS", 21L)).thenReturn("FS2611080701");
+        when(styleService.codePreview("FS", 21L, null, null, null)).thenReturn("FS2611080701");
 
         mockMvc.perform(get("/api/styles/code-preview").param("styleClass", "FS").param("designerId", "21")
                         .with(loginAs("style:style:add")))

@@ -44,7 +44,10 @@ export interface ColorOption {
   hex: string | null
 }
 
-/** 品类、物料分类的树（物料分类的二级有 code，品类没有）。后端不发 null 字段：顶层没有 parentId */
+/**
+ * 品类、物料分类的树。物料分类的二级必有 code（物料编码的前缀）；品类的 code 选填（款号规则里有"品类编码"一段时用，RFC 018）。
+ * 后端不发 null 字段：顶层没有 parentId，没填编码的没有 code
+ */
 export interface TreeNode {
   id: string
   parentId?: string | null

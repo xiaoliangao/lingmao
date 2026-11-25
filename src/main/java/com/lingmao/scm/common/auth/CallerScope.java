@@ -13,6 +13,11 @@ public final class CallerScope {
     public static final String RESERVED_PREFIX = "scope:";
     /** 助手令牌的请求带的权限标识 */
     public static final String ASSISTANT_AUTHORITY = RESERVED_PREFIX + "ASSISTANT";
+    /**
+     * 这个账号要先改密码（RFC 018 §2）：PermissionService 加载权限时只给这一个，JwtAuthFilter 见了它只放行看自己、改密码、退出。
+     * 不会变成请求的权限（以 RESERVED_PREFIX 开头的都不放进去）
+     */
+    public static final String MUST_CHANGE_PASSWORD = RESERVED_PREFIX + "MUST_CHANGE_PASSWORD";
 
     private CallerScope() {
     }

@@ -172,7 +172,7 @@ abstract class StyleTestBase {
     /** 重新装一遍：trade 是代工开关 */
     void build(boolean trade) {
         TradeFeature tradeFeature = new TradeFeature(trade);
-        codes = new StyleCodes(styleMapper, serialNoGenerator, userService, CLOCK);
+        codes = new StyleCodes(styleMapper, serialNoGenerator, userService, new com.lingmao.scm.TestCodeRules(CLOCK), categoryService);
         dicts = new StyleDicts(dictDataService);
         categories = new StyleCategories(categoryService);
         skuGenerator = new SkuGenerator(styleSkuMapper, CLOCK);
@@ -260,23 +260,17 @@ abstract class StyleTestBase {
     }
 
     static UserVO designer(long id, String nickname, String designerNo, boolean locked) {
-        return new UserVO(id, "user" + id, nickname, null, 1, null, null, null, null, designerNo, locked, List.of("APPAREL"));
+        return new UserVO(id, "user" + id, nickname, null, 1, null, null, List.of(), null, designerNo, locked, List.of("APPAREL"),
+                List.of(), false);
     }
 
     private static TreeNode node(long id, Long parentId, String name) {
         return new TreeNode(id, parentId, null, name, parentId == null ? 1 : 2, 0, 1);
     }
 
-    /** 让 serialNoGenerator.next 像真的一样按 key 递增，超过 99 报"流水号用完了" */
+    /** 让 serialNoGenerator.nextSeq 像真的一样按 key 递增（位数由 StyleCodes 按规则判断） */
     void serialFrom(Map<String, Integer> current) {
-        lenient().when(serialNoGenerator.next(anyString(), eq(StyleCodes.SEQ_WIDTH))).thenAnswer(inv -> {
-            String key = inv.getArgument(0);
-            int seq = current.merge(key, 1, Integer::sum);
-            if (seq > 99) {
-                throw new BizException("编号 " + key + " 的流水号用完了（最多 2 位）");
-            }
-            return SerialNoGenerator.format(key, seq, StyleCodes.SEQ_WIDTH);
-        });
+        lenient().when(serialNoGenerator.nextSeq(anyString())).thenAnswer(inv -> current.merge(inv.<String>getArgument(0), 1, Integer::sum));
         lenient().when(serialNoGenerator.peek(anyString())).thenAnswer(inv -> current.getOrDefault(inv.<String>getArgument(0), 0) + 1);
     }
 

@@ -33,9 +33,9 @@ class StyleCodeTest extends StyleTestBase {
         serialFrom(new HashMap<>());
         codesTaken();
 
-        assertThat(codes.take("FS", DESIGNER_07)).isEqualTo("FS2611080701");
-        assertThat(codes.take("FS", DESIGNER_07)).isEqualTo("FS2611080702");
-        assertThat(codes.take("FS", DESIGNER_12)).isEqualTo("FS2611081201");
+        assertThat(codes.take(in("FS", DESIGNER_07))).isEqualTo("FS2611080701");
+        assertThat(codes.take(in("FS", DESIGNER_07))).isEqualTo("FS2611080702");
+        assertThat(codes.take(in("FS", DESIGNER_12))).isEqualTo("FS2611081201");
         verify(userService, times(2)).lockDesignerNo(DESIGNER_07, "07");
         verify(userService, never()).lockDesignerNo(DESIGNER_12, "12");
     }
@@ -47,21 +47,21 @@ class StyleCodeTest extends StyleTestBase {
         serialFrom(serial);
         codesTaken("FS2611080703");
 
-        assertThat(codes.preview("FS", DESIGNER_07)).isEqualTo("FS2611080704");
+        assertThat(codes.preview(in("FS", DESIGNER_07))).isEqualTo("FS2611080704");
         assertThat(serial.get("FS26110807")).isEqualTo(2);                      // 预览没动流水
         verify(userService, never()).lockDesignerNo(anyLong(), anyString());
 
-        assertThat(codes.take("FS", DESIGNER_07)).isEqualTo("FS2611080704");
+        assertThat(codes.take(in("FS", DESIGNER_07))).isEqualTo("FS2611080704");
     }
 
     /** 规则：设计师没有编号编不了，提示去管理后台填或者手填（PRD §6.2 规则 5） */
     @Test
     void take_designerWithoutNumber_rejected() {
-        assertThatThrownBy(() -> codes.take("FS", DESIGNER_NONE))
+        assertThatThrownBy(() -> codes.take(in("FS", DESIGNER_NONE)))
                 .isInstanceOf(BizException.class)
                 .hasMessage("设计师丙某还没有设计师编号，请超级管理员在 管理后台 › 用户 里填；也可以手填款号")
                 .extracting(e -> ((BizException) e).getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
-        verify(serialNoGenerator, never()).next(anyString(), anyInt());
+        verify(serialNoGenerator, never()).nextSeq(anyString());
     }
 
     /** 规则：一个设计师一天最多 99 款，超过了报 1000、提示手填；预览同样 */
@@ -70,11 +70,11 @@ class StyleCodeTest extends StyleTestBase {
         serialFrom(new HashMap<>(Map.of("FS26110807", 99)));
         codesTaken();
 
-        assertThatThrownBy(() -> codes.take("FS", DESIGNER_07))
+        assertThatThrownBy(() -> codes.take(in("FS", DESIGNER_07)))
                 .isInstanceOf(BizException.class)
                 .hasMessage(StyleCodes.USED_UP)
                 .extracting(e -> ((BizException) e).getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
-        assertThatThrownBy(() -> codes.preview("FS", DESIGNER_07)).hasMessage(StyleCodes.USED_UP);
+        assertThatThrownBy(() -> codes.preview(in("FS", DESIGNER_07))).hasMessage(StyleCodes.USED_UP);
     }
 
     /** 规则：手填转大写、3-20 位字母数字横杠；已有的报"款号重复" */
@@ -86,5 +86,9 @@ class StyleCodeTest extends StyleTestBase {
         assertThatThrownBy(() -> codes.manual("27cf001")).hasMessage(StyleCodes.DUPLICATE);
         assertThatThrownBy(() -> codes.manual("款号 1"))
                 .extracting(e -> ((BizException) e).getCode()).isEqualTo(400);
+    }
+
+    private static StyleCodes.Input in(String styleClass, Long designerId) {
+        return new StyleCodes.Input(styleClass, designerId, null, null, null);
     }
 }

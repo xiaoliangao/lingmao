@@ -83,7 +83,7 @@ class SupplierChangeTest {
     @BeforeEach
     void setUp() {
         SupplierViews views = new SupplierViews(dicts);
-        supplierService = new SupplierServiceImpl(supplierMapper, certMapper, changeMapper, changeService, serialNoGenerator,
+        supplierService = new SupplierServiceImpl(supplierMapper, certMapper, changeMapper, changeService, serialNoGenerator, new com.lingmao.scm.TestCodeRules(SupplierFixtures.CLOCK),
                 docLogService, attachmentService, userService, dicts, views, lists, goodAtCategories, warehouseService,
                 SupplierFixtures.CLOCK);
         approvals = new SupplierChangeServiceImpl(changeMapper, supplierMapper, docLogService, userService, views,

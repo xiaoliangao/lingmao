@@ -62,6 +62,19 @@ public class CompanyServiceImpl implements CompanyService, DefaultCompanyProvide
     }
 
     @Override
+    public Long findEnabledId(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String t = text.strip();
+        List<Company> found = companyMapper.selectList(new LambdaQueryWrapper<Company>()
+                .eq(Company::getStatus, Statuses.ENABLED)
+                .and(w -> w.eq(Company::getCode, Texts.upper(t)).or().eq(Company::getShortName, t).or().eq(Company::getName, t))
+                .last("LIMIT 2"));
+        return found.size() == 1 ? found.getFirst().getId() : null;
+    }
+
+    @Override
     @Transactional
     public Long create(CompanySaveReq req) {
         String code = Texts.upper(req.getCode());

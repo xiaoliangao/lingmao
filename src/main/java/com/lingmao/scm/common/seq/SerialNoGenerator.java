@@ -71,6 +71,16 @@ public class SerialNoGenerator {
     }
 
     /**
+     * 只取流水的数字，不拼编码（编码规则拼，RFC 018 §4.5：流水不一定在最后）。位数由调用方判断，
+     * 超了抛异常让这次 +1 跟着事务回滚
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int nextSeq(String key) {
+        Integer seq = jdbcTemplate.queryForObject(TAKE, Integer.class, key);
+        return seq == null ? 1 : seq;
+    }
+
+    /**
      * 下一个号是几，只看不取（不加锁、不用在事务里）：款号预览用（RFC 005 §3.1），点几次都不跳号。
      * 返回数字不返回编码：预览要跳过已经被手填占了的号，调用方从这个数往上试，拼编码用 format。
      * 预览出来的号保存时不一定还是它（同一时间别人也建了），以 next 真取到的为准

@@ -112,7 +112,7 @@ public class MaterialImport {
     private final MaterialCategoryMapper materialCategoryMapper;
     private final ColorMapper colorMapper;
     private final DictDataService dictDataService;
-    private final SerialNoGenerator serialNoGenerator;
+    private final MaterialCodes materialCodes;
     private final TradeFeature tradeFeature;
     private final DocLogService docLogService;
     private final com.lingmao.scm.module.system.service.FileImportService imports;
@@ -715,7 +715,7 @@ public class MaterialImport {
         plan.newColors.forEach(colorMapper::insert);
         for (Map.Entry<String, Material> e : plan.materials.entrySet()) {
             Material m = e.getValue();
-            m.setCode(MaterialServiceImpl.nextCode(serialNoGenerator, materialMapper, plan.categoryOf.get(e.getKey()).getCode()));
+            m.setCode(materialCodes.next(m.getMaterialType(), plan.categoryOf.get(e.getKey()).getCode()));
             materialMapper.insert(m);
             for (PlannedSku planned : plan.skus.getOrDefault(e.getKey(), List.of())) {
                 MaterialSku sku = planned.sku();

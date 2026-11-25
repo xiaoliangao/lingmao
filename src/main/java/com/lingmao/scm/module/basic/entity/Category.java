@@ -19,6 +19,9 @@ public class Category extends AuditEntity {
 
     private String name;
 
+    /** 品类编码，选填，大写字母和数字（RFC 018 §4.4）：款号规则里有"品类编码"一段时用 */
+    private String code;
+
     /** 1-3，由上级算 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Integer level;

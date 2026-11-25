@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.service.impl;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.module.system.dto.MenuVO;
 import com.lingmao.scm.module.system.entity.RoleDataScope;
 import com.lingmao.scm.module.system.entity.SysUser;
@@ -28,6 +29,10 @@ public class PermissionServiceImpl implements PermissionService {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null || user.getStatus() != 1) {
             return null;
+        }
+        // 管理员给的密码还没改：一个业务权限都不给，只有这个标识（RFC 018 §2）
+        if (Boolean.TRUE.equals(user.getPwdMustChange())) {
+            return Set.of(CallerScope.MUST_CHANGE_PASSWORD);
         }
         Set<String> perms = new LinkedHashSet<>(sysMenuMapper.selectPermsByUserId(userId));
         // 数据范围是"全部"的多给一个 data:all（RFC 001 §8）：过滤器每个请求都调这里，以后查单据时看权限就知道，不用另外查库。

@@ -1,5 +1,9 @@
 package com.lingmao.scm.module.supplier.service.impl;
 
+import com.lingmao.scm.module.system.dto.CodeContext;
+import com.lingmao.scm.module.system.dto.CodeTarget;
+import com.lingmao.scm.module.system.dto.CodeTemplate;
+import com.lingmao.scm.module.system.service.CodeRuleService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -120,6 +124,7 @@ public class SupplierServiceImpl implements SupplierService {
     private final SupplierChangeMapper changeMapper;
     private final SupplierChangeService changeService;
     private final SerialNoGenerator serialNoGenerator;
+    private final CodeRuleService codeRuleService;
     private final DocLogService docLogService;
     private final AttachmentService attachmentService;
     private final UserService userService;
@@ -221,14 +226,23 @@ public class SupplierServiceImpl implements SupplierService {
         return new SupplierSaveResult(id, List.of(), List.of());
     }
 
-    /** GYS + 4 位流水；取到的号被导入的领猫编码占了，再取下一个（RFC 001 §6.1） */
+    /**
+     * 按管理后台 › 编码规则 的供应商编码规则编（RFC 018 §4），预置的是 GYS + 4 位流水；
+     * 取到的号被导入的领猫编码占了，再取下一个（RFC 001 §6.1）
+     */
     private String nextCode() {
-        while (true) {
-            String code = serialNoGenerator.next(BizType.SUPPLIER.getPrefix(), 4);
+        CodeTemplate t = codeRuleService.resolve(CodeTarget.SUPPLIER, CodeContext.of(null));
+        for (int tries = 0; tries <= t.maxSeq(); tries++) {
+            int seq = serialNoGenerator.nextSeq(t.key());
+            if (seq > t.maxSeq()) {
+                break;
+            }
+            String code = t.format(seq);
             if (!supplierMapper.exists(new LambdaQueryWrapper<Supplier>().eq(Supplier::getCode, code))) {
                 return code;
             }
         }
+        throw new BizException("供应商编码规则「" + t.ruleName() + "」的流水用完了，请超级管理员在 管理后台 › 编码规则 里给流水加一位");
     }
 
     @Override

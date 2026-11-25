@@ -20,6 +20,7 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
     default int updatePassword(Long userId, String encodedPassword) {
         return update(new SysUser(), new LambdaUpdateWrapper<SysUser>()
                 .set(SysUser::getPassword, encodedPassword)
+                .set(SysUser::getPwdMustChange, true)   // 管理员定的密码他知道：本人登录后要先改（RFC 018 §2）
                 .eq(SysUser::getId, userId));
     }
 
@@ -27,6 +28,7 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
     default int changePasswordIfCurrent(Long userId, String expectedHash, String encodedPassword) {
         return update(new SysUser(), new LambdaUpdateWrapper<SysUser>()
                 .set(SysUser::getPassword, encodedPassword)
+                .set(SysUser::getPwdMustChange, false)
                 .eq(SysUser::getId, userId).eq(SysUser::getPassword, expectedHash).eq(SysUser::getStatus, 1));
     }
 
@@ -48,6 +50,15 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
      */
     @Select("SELECT id, nickname, deleted FROM sys_user WHERE designer_no = #{designerNo}")
     SysUser selectByDesignerNo(@Param("designerNo") String designerNo);
+
+    /** 这几个设计师编号谁用着，删了的人也算（账号导入一次查完，RFC 018 §3.2）；同 selectByDesignerNo 绕开逻辑删除 */
+    @Select("""
+            <script>
+            SELECT id, nickname, designer_no FROM sys_user WHERE designer_no IN
+            <foreach collection="nos" item="no" open="(" separator="," close=")">#{no}</foreach>
+            </script>
+            """)
+    List<SysUser> selectDesignerNoOwners(@Param("nos") Collection<String> nos);
 
     /**
      * 用户页改、清空设计师编号（RFC 005 §3.3）：条件带 designer_no_locked = false，锁了的（编过款号的）改不动，返回 0 行。

@@ -79,8 +79,9 @@ class MaterialServiceImplTest {
     @BeforeEach
     void setUp() {
         materialService = new MaterialServiceImpl(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
-                serialNoGenerator, new DictChecks(dictDataService), new TradeFeature(false),
-                attachmentService, docLogService, materialImport, dictDataService);
+                new DictChecks(dictDataService), new TradeFeature(false),
+                attachmentService, docLogService, materialImport, dictDataService,
+                new MaterialCodes(serialNoGenerator, materialMapper, new com.lingmao.scm.TestCodeRules(java.time.Clock.systemDefaultZone())));
     }
 
     /**
@@ -91,7 +92,7 @@ class MaterialServiceImplTest {
     void create_codeSkipsTaken_threeColorsMakeThreeSkus() {
         stubLeafCategory();
         stubDict();
-        when(serialNoGenerator.next("ML", 4)).thenReturn("ML0001", "ML0002");
+        when(serialNoGenerator.nextSeq("ML")).thenReturn(1, 2);
         when(materialMapper.exists(any())).thenReturn(true, false);           // ML0001 被导入的占了
         doAnswer(inv -> {
             inv.<Material>getArgument(0).setId(100L);

@@ -30,8 +30,7 @@ public class SysUser extends BaseEntity {
     /** 默认主体 bas_company.id：新建单据带出（RFC 003 §3.2）。system 不能调 basic，存在由外键保证；停用的主体照样能留着 */
     private Long defaultCompanyId;
 
-    /** 部门、岗位：自由填 */
-    private String dept;
+    /** 岗位：自由填。部门 V57 起在 sys_user_dept（RFC 018 §1），sys_user.dept 列不再用 */
     private String post;
 
     /**
@@ -47,6 +46,13 @@ public class SysUser extends BaseEntity {
      */
     @TableField(typeHandler = StringArrayTypeHandler.class)
     private List<String> productLines;
+
+    /**
+     * 要先改密码（RFC 018 §2）：导入建的、管理员新建的、管理员重置密码的是 true，本人改了密码变 false。
+     * 只由这几个动作改（SysUserMapper 的条件更新），保存资料不写它
+     */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Boolean pwdMustChange;
 
     /** 第一次用编号自动编款号时由 style 置 true（RFC 005 §3.3）；用户页不改它 */
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)

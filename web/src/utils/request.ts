@@ -573,9 +573,15 @@ export const http = {
 }
 
 /** 上传一个文件：multipart，字段名 file（后端约定）。filename 不传就用文件自己的名字 */
-export function upload<T>(url: string, file: Blob, options: { filename?: string; silent?: boolean } = {}): Promise<T> {
+export function upload<T>(
+  url: string,
+  file: Blob,
+  options: { filename?: string; silent?: boolean; fields?: Record<string, string> } = {},
+): Promise<T> {
   const form = new FormData()
   form.append('file', file, options.filename ?? (file instanceof File ? file.name : 'file'))
+  // 别的表单字段（账号导入的初始密码）：放在请求体里，不拼进地址
+  Object.entries(options.fields ?? {}).forEach(([key, value]) => form.append(key, value))
   const timeout = Math.max(TRANSFER_TIMEOUT, (file.size / SLOW_BYTES_PER_SECOND) * 1000)
   return request<T>({ url, method: 'post', data: form, timeout, silent: options.silent })
 }

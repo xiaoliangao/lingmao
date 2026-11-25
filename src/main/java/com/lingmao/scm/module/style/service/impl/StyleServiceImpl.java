@@ -194,9 +194,9 @@ public class StyleServiceImpl implements StyleService {
     }
 
     @Override
-    public String codePreview(String styleClass, Long designerId) {
+    public String codePreview(String styleClass, Long designerId, String brand, Long categoryId, Integer year) {
         dicts.require(StyleDicts.STYLE_CLASS, trim(styleClass), null, "大类");
-        return codes.preview(trim(styleClass), designerId);
+        return codes.preview(new StyleCodes.Input(trim(styleClass), designerId, trim(brand), categoryId, year));
     }
 
     @Override
@@ -218,7 +218,7 @@ public class StyleServiceImpl implements StyleService {
         // 字段都查过了再取号：前面报错时不碰流水那一行的锁
         String code = req.getCodeMode() == StyleCreateReq.CodeMode.MANUAL
                 ? codes.manual(req.getCode())
-                : codes.take(s.getStyleClass(), s.getDesignerId());
+                : codes.take(new StyleCodes.Input(s.getStyleClass(), s.getDesignerId(), s.getBrand(), s.getCategoryId(), s.getYear()));
         s.setCode(code);
         s.setStatus(DRAFT);
         s.setTechPackStatus(TechPackStatus.NONE);

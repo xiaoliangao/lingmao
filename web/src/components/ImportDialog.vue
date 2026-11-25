@@ -36,10 +36,22 @@ interface ImportResult {
  *   </ImportDialog>
  *
  * 导进一张单据里（成品其他入库的明细）：company-id 给这张单的主体，上传带上它（后端核对页面主体和单据一致）
+ *
+ * 不该进地址栏的（账号导入的初始密码）放 fields，和文件一起放在表单里传：
+ *
+ *   <ImportDialog … :fields="{ password: head.password }" :ready="head.password.length >= 8" />
  */
-const props = withDefaults(defineProps<{ title: string; templateUrl: string; importUrl: string; ready?: boolean; companyId?: string }>(), {
+const props = withDefaults(defineProps<{
+  title: string
+  templateUrl: string
+  importUrl: string
+  ready?: boolean
+  companyId?: string
+  fields?: Record<string, string>
+}>(), {
   ready: true,
   companyId: undefined,
+  fields: undefined,
 })
 const emit = defineEmits<{ success: [total: number] }>()
 const visible = defineModel<boolean>({ required: true })
@@ -104,7 +116,7 @@ async function submit() {
   errors.value = []
   try {
     const picked = file.value
-    const send = () => upload<ImportResult>(props.importUrl, picked, { silent: true })
+    const send = () => upload<ImportResult>(props.importUrl, picked, { silent: true, fields: props.fields })
     const result = await (props.companyId ? withCompanyScope(props.companyId, send) : send())
     notes.value = result.notes ?? []
     imported.value = result.total

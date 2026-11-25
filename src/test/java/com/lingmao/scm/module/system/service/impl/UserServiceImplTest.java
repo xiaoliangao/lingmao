@@ -64,6 +64,12 @@ class UserServiceImplTest {
     @Mock
     private DictDataService dictDataService;
 
+    @Mock
+    private com.lingmao.scm.module.system.mapper.SysUserDeptMapper userDeptMapper;
+
+    @Mock
+    private com.lingmao.scm.module.system.service.DeptService deptService;
+
     @InjectMocks
     private UserServiceImpl userService;
 
@@ -82,6 +88,8 @@ class UserServiceImplTest {
     static void initTableInfo() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SysRole.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SysUser.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), com.lingmao.scm.module.system.entity.SysUserDept.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), com.lingmao.scm.module.system.entity.SysUserRole.class);
     }
 
     /** 规则：用户名已存在，不能新增，也不能走到 insert */
@@ -185,7 +193,7 @@ class UserServiceImplTest {
         assertThat(wrapper.getValue().getSqlSegment())
                 .containsPattern("status = #\\{.+\\} AND \\(username LIKE #\\{.+\\} OR nickname LIKE #\\{.+\\}\\)");
         assertThat(wrapper.getValue().getParamNameValuePairs().values()).contains(1, "%张%");
-        assertThat(options).containsExactly(new UserOption(2L, "zhangsan", "张三"));
+        assertThat(options).containsExactly(new UserOption(2L, "zhangsan", "张三", null));
     }
 
     /** 规则：没有关键字时只按启用筛，不拼 LIKE */
@@ -298,13 +306,13 @@ class UserServiceImplTest {
         when(sysUserMapper.selectById(2L)).thenReturn(old);
         UserUpdateReq req = updateReq(1);
         req.setDesignerNo("07");
-        req.setDept("设计部");
+        req.setPost("设计师");
 
         userService.update(2L, req, 1L);
 
         verify(sysUserMapper, never()).selectByDesignerNo(any());
         verify(sysUserMapper, never()).updateDesignerNo(any(), any());
-        assertThat(old.getDept()).isEqualTo("设计部");
+        assertThat(old.getPost()).isEqualTo("设计师");
     }
 
     /**

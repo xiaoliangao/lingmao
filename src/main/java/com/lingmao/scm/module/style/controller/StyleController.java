@@ -70,8 +70,11 @@ public class StyleController extends IdempotencyReplayGuard {
     @GetMapping("/code-preview")
     @PreAuthorize("hasAuthority('style:style:add')")
     public R<String> codePreview(@Parameter(description = "大类（字典 style_class 的值）：按它预览下一个款号") @RequestParam("styleClass") String styleClass,
-                                 @Parameter(description = "设计师的用户 id：款号里带设计师编号") @RequestParam(name = "designerId", required = false) Long designerId) {
-        return R.ok(styleService.codePreview(styleClass, designerId));
+                                 @Parameter(description = "设计师的用户 id：规则里有设计师编号时要") @RequestParam(name = "designerId", required = false) Long designerId,
+                                 @Parameter(description = "品牌（字典 brand 的值）：规则里有品牌编码时要") @RequestParam(name = "brand", required = false) String brand,
+                                 @Parameter(description = "品类 id：规则里有品类编码时要") @RequestParam(name = "categoryId", required = false) Long categoryId,
+                                 @Parameter(description = "款式年份，如 2027：规则里有款式年份时要") @RequestParam(name = "year", required = false) Integer year) {
+        return R.ok(styleService.codePreview(styleClass, designerId, brand, categoryId, year));
     }
 
     @Operation(summary = "选款式：启用的款式，分页（登录即可）")

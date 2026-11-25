@@ -136,6 +136,15 @@ function clear() {
   props.table?.clearSelection()
   emit('clear')
 }
+
+/**
+ * 要先选个值的批量操作（加哪个角色、设哪几条品类线）：页面在自己的小对话框里选好，再拼一个 action 交给 run，
+ * 确认、逐条调、进度、失败清单都和按钮一样。actions 里不放它，按钮放插槽里
+ *
+ *   const batchRef = ref<{ run: (action: BatchAction<User>) => Promise<void> }>()
+ *   batchRef.value?.run({ label: '加角色', confirm: `给选中的人加上「${role.name}」。`, run: (u, o) => … })
+ */
+defineExpose({ run })
 </script>
 
 <template>

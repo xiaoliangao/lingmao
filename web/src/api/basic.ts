@@ -69,7 +69,7 @@ export interface CategoryForm {
   parentId: string | null
   name: string
   sort: number
-  /** 只有物料分类的二级有：2 位字母，物料编码的前缀 */
+  /** 物料分类的二级必填：2 位字母，物料编码的前缀。品类选填：1-8 位字母数字，款号规则里有"品类编码"一段时用 */
   code?: string | null
 }
 
@@ -188,6 +188,12 @@ export const materialApi = {
   /** 选 SKU 的弹窗：启用物料的启用 SKU。关键字查 SKU 码、物料编码、名称、货号、颜色名；分类含下级 */
   pick: (params: PageParams & { keyword?: string; categoryId?: string }) =>
     http.get<PageResult<MaterialPickRow>>('/api/materials/pick', params),
+  /**
+   * 新建物料的编码预览（RFC 018 §4.6）：按适用于这个物料类型的编码规则，只看不取，保存时以真取到的为准。
+   * 分类要是二级；规则编不出来回 1000（静默，表单上写原因）
+   */
+  codePreview: (categoryId: string, materialType: string) =>
+    http.get<string>('/api/materials/code-preview', { categoryId, materialType }, { silent: true }),
   /** 建档查重：同分类同名、同默认供应商同货号，只提示不拦 */
   dupCheck: (params: { categoryId?: string | null; name?: string; defaultSupplierId?: string | null; supplierItemNo?: string | null; excludeId?: string }) =>
     http.get<MaterialDup[]>('/api/materials/dup-check', params),

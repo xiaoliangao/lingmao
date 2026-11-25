@@ -87,6 +87,8 @@ const guard = useUnsavedChanges(form, visible)
 /** 正在建、改的是第几级：物料分类的二级要编码 */
 const formLevel = computed(() => (editing.value ? editing.value.level : levelOf(form.parentId)))
 const needCode = computed(() => isMaterial.value && formLevel.value === 2)
+/** 品类的编码选填（RFC 018）：款号的编码规则里有"品类编码"一段时才要 */
+const optionalCode = computed(() => !isMaterial.value)
 const rules = computed<FormRules>(() => ({
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   code: needCode.value
@@ -94,7 +96,9 @@ const rules = computed<FormRules>(() => ({
         { required: true, message: '请输入编码', trigger: 'blur' },
         { pattern: /^\s*[A-Za-z]{2}\s*$/, message: '2 位字母', trigger: 'blur' },
       ]
-    : [],
+    : optionalCode.value
+      ? [{ pattern: /^\s*[A-Za-z0-9]{0,8}\s*$/, message: '1-8 位字母、数字', trigger: 'blur' }]
+      : [],
 }))
 
 function openCreate(parent: TreeNode | null) {
@@ -115,7 +119,7 @@ async function save() {
     parentId: form.parentId,
     name: form.name.trim(),
     sort: form.sort ?? 0,
-    code: needCode.value ? orNull(form.code)?.toUpperCase() ?? null : null,
+    code: needCode.value || optionalCode.value ? orNull(form.code)?.toUpperCase() ?? null : null,
   }
   if (editing.value) {
     await api.value.update(editing.value.id, data)
@@ -165,7 +169,7 @@ async function remove(row: TreeNode) {
         <span :class="{ dim: row.status !== 1 }">{{ row.name }}</span>
       </template>
     </el-table-column>
-    <el-table-column v-if="isMaterial" label="编码" width="100" class-name="code">
+    <el-table-column label="编码" width="100" class-name="code">
       <template #default="{ row }">{{ row.code ?? '' }}</template>
     </el-table-column>
     <el-table-column label="层级" width="80" class-name="num">
@@ -214,6 +218,9 @@ async function remove(row: TreeNode) {
       </el-form-item>
       <el-form-item v-if="needCode" label="编码" prop="code">
         <el-input v-model="form.code" class="code" maxlength="2" :disabled="!!editing" placeholder="2 位字母，物料编码的前缀" />
+      </el-form-item>
+      <el-form-item v-else-if="optionalCode" label="编码（选填）" prop="code">
+        <el-input v-model="form.code" class="code" maxlength="8" placeholder="字母、数字；款号规则里用到品类编码时才要填" />
       </el-form-item>
       <el-form-item label="排序">
         <el-input-number v-model="form.sort" :min="0" :max="9999" controls-position="right" />

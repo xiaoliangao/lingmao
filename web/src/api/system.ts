@@ -1,7 +1,7 @@
-import { http, request, upload } from '@/utils/request'
+import { http, request, upload, type RequestOptions } from '@/utils/request'
 import type {
-  AiSwitch, BackupStatus, DataScope, DictData, DictOption, DictType, FileVO, MenuNode, OperLog, PageResult, Role, User, UserOption,
-  VersionInfo,
+  AiSwitch, BackupStatus, CodeRule, CodeSegment, CodeTarget, DataScope, Dept, DictData, DictOption, DictType, FileVO, MenuNode, OperLog,
+  PageResult, Role, User, UserOption, VersionInfo,
 } from '@/types/system'
 
 export interface PageParams {
@@ -12,7 +12,8 @@ export interface PageParams {
 /** 用户的工作资料（RFC 003 §4.3） */
 export interface UserProfileForm {
   defaultCompanyId?: string | null
-  dept?: string | null
+  /** 在哪几个部门（RFC 018 §1），最多 20 个；空 = 不挂部门 */
+  deptIds: string[]
   post?: string | null
   /** 两位数字 01-99；编过款号以后不能改、清空 */
   designerNo?: string | null
@@ -20,18 +21,81 @@ export interface UserProfileForm {
   productLines: string[]
 }
 
+export interface UserQuery extends PageParams {
+  /** 查用户名、昵称、手机号 */
+  keyword?: string
+  status?: number
+  /** 这个部门和它全部下级部门的人 */
+  deptId?: string
+  roleId?: string
+}
+
+export type UserUpdateForm = { nickname: string; phone?: string | null; status: number } & UserProfileForm
+
 export const userApi = {
-  page: (params: PageParams & { username?: string; status?: number }) => http.get<PageResult<User>>('/api/users', params),
+  page: (params: UserQuery) => http.get<PageResult<User>>('/api/users', params),
   create: (data: { username: string; password: string; nickname: string; phone?: string } & UserProfileForm) => http.post<string>('/api/users', data),
-  /** 整体覆盖：没传的资料（部门、设计师编号……）会被清空，表单要把原来的值带上 */
-  update: (id: string, data: { nickname: string; phone?: string | null; status: number } & UserProfileForm) =>
-    http.put<void>(`/api/users/${id}`, data),
+  /** 整体覆盖：没传的资料（部门、设计师编号……）会被清空，表单要把原来的值带上（批量改时用 userUpdateForm(row) 拼） */
+  update: (id: string, data: UserUpdateForm, options?: RequestOptions) => http.put<void>(`/api/users/${id}`, data, options),
   remove: (id: string) => http.delete<void>(`/api/users/${id}`),
   resetPassword: (id: string, password: string) => http.post<void>(`/api/users/${id}/reset-password`, { password }),
-  roleIds: (id: string) => http.get<string[]>(`/api/users/${id}/roles`),
-  assignRoles: (id: string, ids: string[]) => http.put<void>(`/api/users/${id}/roles`, { ids }),
+  roleIds: (id: string, options?: RequestOptions) => http.get<string[]>(`/api/users/${id}/roles`, undefined, options),
+  assignRoles: (id: string, ids: string[], options?: RequestOptions) => http.put<void>(`/api/users/${id}/roles`, { ids }, options),
+  /**
+   * 按领猫的用户列表导账号（RFC 018 §3），给 ImportDialog 用。初始密码放在表单字段 password 里传
+   * （ImportDialog 的 fields），不进地址栏；所有导进来的人共用，第一次登录必须改
+   */
+  importUrl: '/api/users/import',
+  importTemplateUrl: '/api/users/import-template',
   /** 下拉框选人（UserSelect）：启用的账号，用户名或昵称包含关键字，最多 20 个。登录就能调，不要用户管理的权限 */
   search: (keyword: string) => http.get<UserOption[]>('/api/users/options', { keyword: keyword || undefined }),
+}
+
+/** 整体覆盖的修改接口要带上全部资料：批量设品类线、启用、停用时，从列表的一行拼出来再改一项 */
+export function userUpdateForm(user: User): UserUpdateForm {
+  return {
+    nickname: user.nickname,
+    phone: user.phone,
+    status: user.status,
+    defaultCompanyId: user.defaultCompanyId,
+    deptIds: user.depts.map((d) => d.id),
+    post: user.post,
+    designerNo: user.designerNo,
+    productLines: [...user.productLines],
+  }
+}
+
+export interface DeptForm {
+  parentId: string | null
+  name: string
+  sort: number
+}
+
+/** 部门（RFC 018 §1）：看要用户查看权限，改要用户编辑权限 */
+export const deptApi = {
+  tree: () => http.get<Dept[]>('/api/depts'),
+  create: (data: DeptForm) => http.post<string>('/api/depts', data),
+  /** 能换上级；不能挪到自己或自己的下级下面，最多 5 级 */
+  update: (id: string, data: DeptForm) => http.put<void>(`/api/depts/${id}`, data),
+  /** 有下级、有人 → 1005 */
+  remove: (id: string) => http.delete<void>(`/api/depts/${id}`),
+}
+
+export interface CodeRuleForm {
+  target: CodeTarget
+  name: string
+  /** 通用规则传空数组 */
+  scopeValues: string[]
+  segments: CodeSegment[]
+}
+
+/** 编码规则（RFC 018 §4）：只有超级管理员能调 */
+export const codeRuleApi = {
+  list: (target: CodeTarget) => http.get<CodeRule[]>('/api/code-rules', { target }),
+  create: (data: CodeRuleForm) => http.post<string>('/api/code-rules', data),
+  update: (id: string, data: CodeRuleForm) => http.put<void>(`/api/code-rules/${id}`, data),
+  /** 通用规则不能删 */
+  remove: (id: string) => http.delete<void>(`/api/code-rules/${id}`),
 }
 
 export interface RoleForm {

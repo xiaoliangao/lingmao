@@ -59,9 +59,9 @@ class UserDesignerNoIT {
         assertThat(designerNo(id)).isEqualTo(other);
 
         UserUpdateReq sameNo = updateReq(other);
-        sameNo.setDept("设计部");
+        sameNo.setPost("设计师");
         userService.update(id, sameNo, OPERATOR);                      // 编号没变，别的照样能改
-        assertThat(jdbcTemplate.queryForObject("SELECT dept FROM sys_user WHERE id = ?", String.class, id)).isEqualTo("设计部");
+        assertThat(jdbcTemplate.queryForObject("SELECT post FROM sys_user WHERE id = ?", String.class, id)).isEqualTo("设计师");
     }
 
     /** 规则：查重和插入之间别人抢先用了这个编号，唯一索引 uk_sys_user_designer_no 拦住 */

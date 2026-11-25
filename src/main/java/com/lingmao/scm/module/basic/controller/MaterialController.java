@@ -65,6 +65,14 @@ public class MaterialController extends IdempotencyReplayGuard {
         return R.ok(materialService.page(query));
     }
 
+    @Operation(summary = "新建物料的编码预览：按适用于这个物料类型的编码规则，只看不取（RFC 018）")
+    @GetMapping("/code-preview")
+    @PreAuthorize("hasAuthority('basic:material:add')")
+    public R<String> codePreview(@Parameter(description = "物料分类 id，要是最末一级") @RequestParam("categoryId") Long categoryId,
+                                 @Parameter(description = "物料类型（字典 material_type 的值）：按它找编码规则") @RequestParam("materialType") String materialType) {
+        return R.ok(materialService.codePreview(categoryId, materialType));
+    }
+
     @Operation(summary = "建档查重：同分类同名、同默认供应商同货号，只提示不拦")
     @GetMapping("/dup-check")
     @PreAuthorize("hasAnyAuthority('basic:material:add', 'basic:material:edit')")

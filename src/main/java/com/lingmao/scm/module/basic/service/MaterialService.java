@@ -117,4 +117,10 @@ public interface MaterialService {
 
     /** 导出：一个物料一行、一个 SKU 一行，两张表，列和导入模板一样 */
     byte[] export(MaterialQuery query);
+
+    /**
+     * 新建物料的编码预览（RFC 018 §4.6）：按适用于这个物料类型的编码规则，只看不取，保存时以真取到的为准。
+     * 分类要是最末一级
+     */
+    String codePreview(Long categoryId, String materialType);
 }

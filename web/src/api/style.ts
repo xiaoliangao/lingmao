@@ -70,9 +70,18 @@ export const styleApi = {
   page: (params: PageParams & StyleQuery, options?: RequestOptions) => http.get<PageResult<StyleRow>>(base, params, options),
   get: (id: string) => http.get<StyleDetail>(`${base}/${id}`),
   logs: (id: string) => http.get<DocLog[]>(`${base}/${id}/logs`),
-  /** 自动款号预览：不占号，保存时才取。设计师没编号、今天流水满了回 1000，消息说清楚怎么办 */
-  codePreview: (styleClass: string, designerId: string | null) =>
-    http.get<string>(`${base}/code-preview`, { styleClass, designerId: designerId ?? undefined }, { silent: true }),
+  /**
+   * 自动款号预览：不占号，保存时才取。按管理后台 › 编码规则 里适用于这个大类的规则编（RFC 018 §4），
+   * 规则里有哪一段后端才用哪个参数，都带上就行。设计师没编号、品类没填编码、今天流水满了回 1000，消息说清楚怎么办
+   */
+  codePreview: (p: { styleClass: string; designerId: string | null; brand: string; categoryId: string | null; year: number | null }) =>
+    http.get<string>(`${base}/code-preview`, {
+      styleClass: p.styleClass,
+      designerId: p.designerId ?? undefined,
+      brand: p.brand || undefined,
+      categoryId: p.categoryId ?? undefined,
+      year: p.year ?? undefined,
+    }, { silent: true }),
   /** 选款式的弹窗：启用的款式（includeDraft 时草稿也列，录加工价用），关键字查款号、名称、花名、品牌；品类含下级（登录即可） */
   /** productLine：只列这条品类线的（订单已经有款了、计划用于的款） */
   pick: (params: PageParams & { keyword?: string; categoryId?: string; includeDraft?: boolean; productLine?: string }) =>

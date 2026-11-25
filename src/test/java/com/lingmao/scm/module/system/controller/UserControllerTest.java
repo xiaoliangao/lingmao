@@ -32,6 +32,9 @@ class UserControllerTest {
     @MockitoBean
     private UserService userService;
 
+    @MockitoBean
+    private com.lingmao.scm.module.system.service.UserImportService userImportService;
+
     /** 规则：密码太短，在入口就返回 400，Service 不会被调用 */
     @Test
     void create_shortPassword_returns400AndServiceNotCalled() throws Exception {
@@ -81,7 +84,7 @@ class UserControllerTest {
     /** 规则（RFC 001 §18 1d）：选人下拉的接口，关键字传给 Service，只返回 id、用户名、昵称；/options 不会被当成 /{id} */
     @Test
     void options_returnsIdUsernameNickname() throws Exception {
-        when(userService.options("zh")).thenReturn(List.of(new UserOption(2L, "zhangsan", "张三")));
+        when(userService.options("zh")).thenReturn(List.of(new UserOption(2L, "zhangsan", "张三", "设计组")));
 
         mockMvc.perform(get("/api/users/options").param("keyword", "zh"))
                 .andExpect(jsonPath("$.code").value(0))
@@ -94,7 +97,7 @@ class UserControllerTest {
     /** 规则：列表返回的每个用户里都没有 password 字段 */
     @Test
     void page_noPasswordInResponse() throws Exception {
-        UserVO zhangsan = new UserVO(2L, "zhangsan", "张三", null, 1, null, null, null, null, null, false, List.of("APPAREL"));
+        UserVO zhangsan = new UserVO(2L, "zhangsan", "张三", null, 1, null, null, List.of(), null, null, false, List.of("APPAREL"), List.of(), false);
         when(userService.page(any())).thenReturn(new PageResult<>(List.of(zhangsan), 1));
 
         mockMvc.perform(get("/api/users"))

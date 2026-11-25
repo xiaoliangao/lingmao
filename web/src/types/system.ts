@@ -22,6 +22,11 @@ export interface UserInfo {
   features: { ai: boolean }
   /** 数据范围是"全部"（PRD §3.2）：只有这样的人，单据列表上才出"我的 / 全部"切换；"本人"范围的切了也只看得到自己的 */
   canSeeAll: boolean
+  /**
+   * 管理员给的密码还没改（RFC 018 §2）：true 时 perms、menus 是空的，业务接口全是 403，
+   * 路由守卫只放 /change-password 这一页，改完重新登录
+   */
+  mustChangePassword: boolean
 }
 
 /**
@@ -60,7 +65,8 @@ export interface User {
   createTime: string
   /** 默认主体公司：新建单据时带出来 */
   defaultCompanyId: string | null
-  dept: string | null
+  /** 在哪几个部门（RFC 018 §1），path 是"产品部/设计组"这样的全路径 */
+  depts: { id: string; name: string; path: string }[]
   post: string | null
   /** 设计师编号，两位数字 01-99，进款号；不是设计师的为空 */
   designerNo: string | null
@@ -68,6 +74,53 @@ export interface User {
   designerNoLocked: boolean
   /** 能看的品类线（字典 product_line 的 value，按字典顺序）；超级管理员不看这个，看全部（RFC 013 §2） */
   productLines: string[]
+  /** 角色（名称），列表直接显示 */
+  roles: { id: string; name: string }[]
+  /** 管理员给的密码还没改：导入、新建、重置密码后是 true，本人改了以后 false */
+  pwdMustChange: boolean
+}
+
+/** 部门树的一个节点（GET /api/depts） */
+export interface Dept {
+  id: string
+  parentId: string | null
+  name: string
+  sort: number
+  /** "产品部/设计组" */
+  path: string
+  /** 直属的人数（不含下级部门的） */
+  userCount: number
+  children: Dept[]
+}
+
+/** 哪种编码（RFC 018 §4.2） */
+export type CodeTarget = 'STYLE' | 'MATERIAL' | 'SUPPLIER'
+
+/** 编码的一段（RFC 018 §4.4） */
+export type CodeSegmentType =
+  | 'TEXT' | 'STYLE_CLASS' | 'BRAND' | 'CATEGORY' | 'STYLE_YEAR' | 'DATE' | 'DESIGNER' | 'MAT_CATEGORY' | 'SEQ'
+
+export interface CodeSegment {
+  type: CodeSegmentType
+  /** 固定文字（TEXT）：1-8 位大写字母、数字、横杠 */
+  text?: string | null
+  /** 日期格式（DATE）：yy / yyMM / yyMMdd / yyyy */
+  format?: string | null
+  /** 流水位数（SEQ）：2-6 */
+  width?: number | null
+}
+
+export interface CodeRule {
+  id: string
+  target: CodeTarget
+  name: string
+  /** 通用规则：没单独定规则的都按它编，不能删、不能选"按什么分" */
+  general: boolean
+  /** 按什么分：款号是大类（字典 style_class）的值，物料是物料类型（material_type）的值；通用规则是空的 */
+  scopeValues: string[]
+  segments: CodeSegment[]
+  sort: number
+  updateTime: string
 }
 
 /** 角色的数据范围：ALL 全部 / SELF 本人（PRD §3.2）。有"全部"角色的人，权限里多一个 data:all */
@@ -134,6 +187,8 @@ export interface UserOption {
   id: string
   username: string
   nickname: string
+  /** 在哪几个部门（名字，"、"隔开），同名、花名相近的人好分；没挂部门是 null */
+  depts: string | null
 }
 
 export interface OperLog {
