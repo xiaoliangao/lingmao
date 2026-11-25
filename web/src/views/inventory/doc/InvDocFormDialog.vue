@@ -16,6 +16,7 @@ import { INV_DOC_TYPE, type InvDocDetail, type InvDocItemForm, type InvDocType }
 import type { IssueOption } from '@/types/production'
 import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatQty } from '@/utils/format'
+import { lineAmount as amountOf } from '@/utils/money'
 import { orNull } from '@/views/basic/common'
 import PickProductionDialog from './PickProductionDialog.vue'
 import { bindCompanyApi } from '@/utils/companyScope'
@@ -100,7 +101,8 @@ const isPurchaseDoc = computed(() => activeType.value === 'PURCHASE_IN' || activ
 /** 退料入库新建时能挂源生产单（选了就走生成接口） */
 const canPickSource = computed(() => !props.editingDoc && meta.value.source === 'PRODUCTION_ORDER' && !meta.value.sourceRequired)
 const showOverReason = computed(() => activeType.value === 'ISSUE_OUT')
-const lineAmount = (l: LineRow) => (l.qty != null && l.price != null ? l.qty * l.price : null)
+/** 和后端存的一样到分（utils/money），浮点直接乘会差一分 */
+const lineAmount = (l: LineRow) => amountOf(l.qty, l.price)
 const short = (l: LineRow) => l.fromStockQty !== null && (l.qty ?? 0) > l.fromStockQty
 
 const fromOptions = computed(() => {

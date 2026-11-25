@@ -21,6 +21,7 @@ import type { CompanyOption, MaterialPickRow, WarehouseOption } from '@/types/ba
 import { PURCHASE_TYPE_LABEL, type PurchaseForm, type PurchaseItemForm, type PurchaseType } from '@/types/purchase'
 import type { StylePickRow } from '@/types/style'
 import { formatMoney, formatPrice } from '@/utils/format'
+import { lineAmount, sumLineAmounts } from '@/utils/money'
 import { ApiError } from '@/utils/request'
 import { orNull } from '@/views/basic/common'
 import { bindCompanyApi } from '@/utils/companyScope'
@@ -118,7 +119,8 @@ const TYPE_OPTIONS = Object.entries(PURCHASE_TYPE_LABEL).map(([value, label]) =>
 const warehouseOptions = computed(() => warehouses.value.filter((w) => w.type === 'MATERIAL' || w.type === 'FACTORY'))
 const haveSkuIds = computed(() => lines.value.map((l) => l.materialSkuId))
 const haveStyleIds = computed(() => head.planStyles.map((s) => s.id))
-const totalAmount = computed(() => lines.value.reduce((sum, l) => sum + (l.qty ?? 0) * (l.price ?? 0), 0))
+/** 各行到分再相加，和后端存的合计一样（utils/money） */
+const totalAmount = computed(() => sumLineAmounts(lines.value))
 
 function priceChanged(l: LineDraft): boolean {
   if (!canSeeCost.value || l.archivePrice == null || l.price == null) return false
@@ -549,7 +551,7 @@ const backTo = editing ? `/purchases/${id}` : '/purchases'
           </template>
         </el-table-column>
         <el-table-column v-if="canSeeCost" label="金额" width="100" class-name="num" align="right">
-          <template #default="{ row }">{{ row.qty && row.price !== null ? formatMoney(row.qty * row.price) : '—' }}</template>
+          <template #default="{ row }">{{ row.qty && row.price !== null ? formatMoney(lineAmount(row.qty, row.price)) : '—' }}</template>
         </el-table-column>
         <el-table-column label="行交期" width="140">
           <template #default="{ row }">

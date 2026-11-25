@@ -20,6 +20,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.MDC;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -34,12 +35,20 @@ import java.util.Map;
 /**
  * 操作日志切面：所有贴了 @OperLog 的方法，执行前后由这里统一记一条日志。
  * 业务代码里一行日志代码都不用写；写日志失败也不影响业务（只打一条 warn）。
+ * <p>
+ * 顺序 450：在 @PreAuthorize（200）里面，没权限被拦的请求照旧不记；在幂等事务（{@code HttpIdempotencyAspect}，500）外面。
+ * 原来没定顺序，排在最里层：新建失败时这条"失败"日志写在幂等事务里，跟着业务一起回滚，日志里看不到失败的新建。
+ * 现在业务事务提交或回滚完了再写，失败的也留得下。
  */
 @Slf4j
 @Aspect
 @Component
+@Order(OperLogAspect.ORDER)
 @RequiredArgsConstructor
 public class OperLogAspect {
+
+    /** 比 HttpIdempotencyAspect 的 500 小（更靠外） */
+    public static final int ORDER = 450;
 
 
     private final SysOperLogMapper sysOperLogMapper;

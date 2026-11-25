@@ -72,8 +72,21 @@ function onVisible(visible: boolean) {
   if (visible && options.value.length === 0) void search()
 }
 
+/**
+ * label 是哪个 id 的名字：父组件只改了 id、没改名字（退料入库按仓库自动带出加工厂）时，
+ * 原来那家的名字不能安到新 id 上，也不能显示成"供应商 3"
+ */
+const labelFor = ref<string | null>(null)
+watch(() => props.label, (label) => {
+  labelFor.value = label ? (model.value ?? null) : null
+}, { immediate: true })
+/** 给了一个没见过名字的 id：按 includeId 取一批，名字就有了 */
+watch(model, (id) => {
+  if (id && !names.has(id) && id !== labelFor.value) void search()
+}, { immediate: true })
+
 function nameOf(id: string) {
-  return names.get(id) ?? (props.label || `供应商 ${id}`)
+  return names.get(id) ?? (id === labelFor.value && props.label ? props.label : `供应商 ${id}`)
 }
 
 function onChange(id: string | null | undefined) {

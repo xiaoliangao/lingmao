@@ -51,6 +51,10 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
     @Select("SELECT id, nickname, deleted FROM sys_user WHERE designer_no = #{designerNo}")
     SysUser selectByDesignerNo(@Param("designerNo") String designerNo);
 
+    /** 有没有过这个登录名的账号，删了的也算（AdminInitializer：admin 删了以后重启不再建回来）；同 selectByDesignerNo 绕开逻辑删除 */
+    @Select("SELECT EXISTS (SELECT 1 FROM sys_user WHERE username = #{username})")
+    boolean existsEverByUsername(@Param("username") String username);
+
     /** 这几个设计师编号谁用着，删了的人也算（账号导入一次查完，RFC 018 §3.2）；同 selectByDesignerNo 绕开逻辑删除 */
     @Select("""
             <script>
