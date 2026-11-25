@@ -11,8 +11,8 @@ import { confirmRemove, orNull, toggleStatus } from '../common'
 /**
  * 基础 › 品类、物料分类（RFC 003 §5.1、§5.4），两个页签共用：
  * - 品类：三级，只有名称；款式只能挂在叶子上
- * - 物料分类：两级，一级只有名称，二级要 2 位字母编码（物料编码的前缀）；物料只能挂在二级上
- * 上级、编码建好不改（不挪节点）；同一上级下不重名；有下级的删不掉，先删下级
+ * - 物料分类：两级；编码是 2 位字母或数字，二级必填、一级选填（RFC 018 §8），同一上级下不重复；物料只能挂在二级上
+ * 上级建好不改（不挪节点）；编码能改，只影响以后新编的；同一上级下不重名；有下级的删不掉，先删下级
  */
 const props = defineProps<{ kind: 'category' | 'material' }>()
 
@@ -87,18 +87,18 @@ const guard = useUnsavedChanges(form, visible)
 /** 正在建、改的是第几级：物料分类的二级要编码 */
 const formLevel = computed(() => (editing.value ? editing.value.level : levelOf(form.parentId)))
 const needCode = computed(() => isMaterial.value && formLevel.value === 2)
-/** 品类的编码选填（RFC 018）：款号的编码规则里有"品类编码"一段时才要 */
-const optionalCode = computed(() => !isMaterial.value)
+/** 选填编码：品类（款号规则里有"品类编码"时才要，RFC 018）；物料的一级（物料编码规则里有"一级分类编码"时才要） */
+const optionalCode = computed(() => !isMaterial.value || formLevel.value === 1)
 const rules = computed<FormRules>(() => ({
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   code: needCode.value
     ? [
         { required: true, message: '请输入编码', trigger: 'blur' },
-        { pattern: /^\s*[A-Za-z]{2}\s*$/, message: '2 位字母', trigger: 'blur' },
+        { pattern: /^\s*[A-Za-z0-9]{2}\s*$/, message: '2 位字母或数字', trigger: 'blur' },
       ]
-    : optionalCode.value
-      ? [{ pattern: /^\s*[A-Za-z0-9]{0,8}\s*$/, message: '1-8 位字母、数字', trigger: 'blur' }]
-      : [],
+    : isMaterial.value
+      ? [{ pattern: /^\s*([A-Za-z0-9]{2})?\s*$/, message: '2 位字母或数字', trigger: 'blur' }]
+      : [{ pattern: /^\s*[A-Za-z0-9]{0,8}\s*$/, message: '1-8 位字母、数字', trigger: 'blur' }],
 }))
 
 function openCreate(parent: TreeNode | null) {
@@ -217,10 +217,11 @@ async function remove(row: TreeNode) {
         <el-input v-model="form.name" maxlength="50" />
       </el-form-item>
       <el-form-item v-if="needCode" label="编码" prop="code">
-        <el-input v-model="form.code" class="code" maxlength="2" :disabled="!!editing" placeholder="2 位字母，物料编码的前缀" />
+        <el-input v-model="form.code" class="code" maxlength="2" placeholder="2 位字母或数字；改了只影响以后新编的物料" />
       </el-form-item>
       <el-form-item v-else-if="optionalCode" label="编码（选填）" prop="code">
-        <el-input v-model="form.code" class="code" maxlength="8" placeholder="字母、数字；款号规则里用到品类编码时才要填" />
+        <el-input v-if="isMaterial" v-model="form.code" class="code" maxlength="2" placeholder="2 位字母或数字；物料编码规则里用到一级分类编码时才要填" />
+        <el-input v-else v-model="form.code" class="code" maxlength="8" placeholder="字母、数字；款号规则里用到品类编码时才要填" />
       </el-form-item>
       <el-form-item label="排序">
         <el-input-number v-model="form.sort" :min="0" :max="9999" controls-position="right" />

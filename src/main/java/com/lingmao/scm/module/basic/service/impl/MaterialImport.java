@@ -715,7 +715,7 @@ public class MaterialImport {
         plan.newColors.forEach(colorMapper::insert);
         for (Map.Entry<String, Material> e : plan.materials.entrySet()) {
             Material m = e.getValue();
-            m.setCode(materialCodes.next(m.getMaterialType(), plan.categoryOf.get(e.getKey()).getCode()));
+            m.setCode(materialCodes.next(m.getMaterialType(), plan.categoryOf.get(e.getKey())));
             materialMapper.insert(m);
             for (PlannedSku planned : plan.skus.getOrDefault(e.getKey(), List.of())) {
                 MaterialSku sku = planned.sku();

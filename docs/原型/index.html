@@ -11365,7 +11365,7 @@ function addCategory(f) {
 function addMatCategory(f) {
   const code = (f.code || '').trim().toUpperCase(), name = (f.name || '').trim()
   if (!MAT_GROUPS.includes(f.parent)) fail('选一个大类')
-  if (!/^[A-Z]{2}$/.test(code)) fail('物料分类编码是 2 位字母，会作为物料编码的前缀（如 ML0012）')
+  if (!/^[A-Z0-9]{2}$/.test(code)) fail('物料分类编码是 2 位字母或数字，会编进物料编码（如 ML0012、26LL03-001）')
   if (!name) fail('名称要填')
   if (db.materialCategories.some((c) => c.code === code)) fail('编码 ' + code + ' 已经有了')
   if (db.materialCategories.some((c) => c.parent === f.parent && c.name === name)) fail(f.parent + ' 下已经有「' + name + '」')

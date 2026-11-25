@@ -47,14 +47,14 @@ class MaterialCategoryServiceImplTest {
         verify(materialCategoryMapper, never()).insert(any(MaterialCategory.class));
     }
 
-    /** 规则：二级要填编码（物料编码的前缀），存大写 */
+    /** 规则：二级要填编码（物料编码里用），存大写 */
     @Test
     void create_level2_codeRequiredAndUppercased() {
         when(materialCategoryMapper.selectById(1L)).thenReturn(category(1L, null, 1, null));
 
         assertThatThrownBy(() -> materialCategoryService.create(req(1L, " ", "面料")))
                 .isInstanceOf(BizException.class)
-                .hasMessageContaining("二级分类要填 2 位字母的编码");
+                .hasMessageContaining("二级分类要填 2 位编码");
 
         when(materialCategoryMapper.exists(any())).thenReturn(false);
         materialCategoryService.create(req(1L, "ml", "面料"));
@@ -65,15 +65,43 @@ class MaterialCategoryServiceImplTest {
         assertThat(saved.getValue().getLevel()).isEqualTo(2);
     }
 
-    /** 规则：二级的编码建好不能改 */
+    /**
+     * 规则（RFC 018 §8.3）：编码能改，只影响以后新编的；同一个上级下不能重复（查重时带上级、排除自己），
+     * 改出来的存大写
+     */
     @Test
-    void update_codeChanged_rejected() {
+    void update_codeChangeable_uniqueUnderSameParent() {
         when(materialCategoryMapper.selectById(5L)).thenReturn(category(5L, 1L, 2, "ML"));
+        when(materialCategoryMapper.exists(any())).thenReturn(true);
 
-        assertThatThrownBy(() -> materialCategoryService.update(5L, req(1L, "FL", "面料")))
+        assertThatThrownBy(() -> materialCategoryService.update(5L, req(1L, "03", "梭织")))
                 .isInstanceOf(BizException.class)
-                .hasMessageContaining("分类编码建好就不能改");
+                .hasMessageContaining("在这个上级下已经有了");
         verify(materialCategoryMapper, never()).update(any(), any());
+
+        when(materialCategoryMapper.exists(any())).thenReturn(false);
+        materialCategoryService.update(5L, req(1L, "03", "梭织"));
+        ArgumentCaptor<MaterialCategory> saved = ArgumentCaptor.captor();
+        verify(materialCategoryMapper).update(saved.capture(), any());
+        assertThat(saved.getValue().getCode()).isEqualTo("03");
+    }
+
+    /** 规则：一级的编码选填：不填照样建，填了存大写、一级之间不重复 */
+    @Test
+    void create_level1_codeOptional() {
+        materialCategoryService.create(req(null, null, "面料"));
+        when(materialCategoryMapper.exists(any())).thenReturn(false);
+        materialCategoryService.create(req(null, "ll", "里料"));
+
+        ArgumentCaptor<MaterialCategory> saved = ArgumentCaptor.captor();
+        verify(materialCategoryMapper, org.mockito.Mockito.times(2)).insert(saved.capture());
+        assertThat(saved.getAllValues()).extracting(MaterialCategory::getCode).containsExactly(null, "LL");
+        assertThat(saved.getAllValues()).extracting(MaterialCategory::getLevel).containsOnly(1);
+
+        when(materialCategoryMapper.exists(any())).thenReturn(true);
+        assertThatThrownBy(() -> materialCategoryService.create(req(null, "LL", "另一个")))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("已经有一级分类用了");
     }
 
     private static MaterialCategory category(Long id, Long parentId, int level, String code) {

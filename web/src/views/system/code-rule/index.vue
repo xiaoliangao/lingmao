@@ -24,12 +24,13 @@ const TARGETS: { value: CodeTarget; label: string; scopeDict: string | null; sco
 const SEGMENTS: Record<CodeSegmentType, { label: string; targets: CodeTarget[]; hint: string; sample: string }> = {
   TEXT: { label: '固定文字', targets: ['STYLE', 'MATERIAL', 'SUPPLIER'], hint: '1-8 位大写字母、数字、横杠', sample: '' },
   STYLE_CLASS: { label: '大类编码', targets: ['STYLE'], hint: '字典「款式大类」的值', sample: 'FS' },
-  BRAND: { label: '品牌编码', targets: ['STYLE'], hint: '字典「品牌」的值，要是字母数字', sample: 'AB' },
+  BRAND: { label: '品牌编码', targets: ['STYLE'], hint: '字典「品牌」上填的编码；没填的用品牌的值（要是字母数字）', sample: 'S' },
   CATEGORY: { label: '品类编码', targets: ['STYLE'], hint: '资料 › 品类 上填的编码；没填的品类编不了', sample: '03' },
   STYLE_YEAR: { label: '款式年份', targets: ['STYLE'], hint: '款式上"年份"的后两位', sample: '27' },
   DATE: { label: '日期', targets: ['STYLE', 'MATERIAL', 'SUPPLIER'], hint: '建档那天', sample: '' },
   DESIGNER: { label: '设计师编号', targets: ['STYLE'], hint: '设计师的两位编号；用过就锁住', sample: '07' },
-  MAT_CATEGORY: { label: '物料分类编码', targets: ['MATERIAL'], hint: '物料分类的 2 位码', sample: 'ML' },
+  MAT_PARENT_CATEGORY: { label: '一级分类编码', targets: ['MATERIAL'], hint: '物料所在一级分类的 2 位码；一级没填的编不了', sample: 'LL' },
+  MAT_CATEGORY: { label: '二级分类编码', targets: ['MATERIAL'], hint: '物料所在二级分类的 2 位码', sample: 'ML' },
   SEQ: { label: '流水', targets: ['STYLE', 'MATERIAL', 'SUPPLIER'], hint: '流水以外的部分一样的，接着往下编', sample: '' },
 }
 const DATE_FORMATS = ['yy', 'yyMM', 'yyMMdd', 'yyyy']

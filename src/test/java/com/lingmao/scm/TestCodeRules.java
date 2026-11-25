@@ -12,17 +12,31 @@ import com.lingmao.scm.module.system.service.impl.CodeRuleServiceImpl;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 单测用的编码规则：只有 V57 预置的三条通用规则，拼法用真的 CodeRuleServiceImpl.render。
- * 款号 = 大类 + yyMMdd + 设计师编号 + 2 位流水，物料 = 分类码 + 4 位，供应商 = GYS + 4 位（RFC 018 §4.4）
+ * 款号 = 大类 + yyMMdd + 设计师编号 + 2 位流水，物料 = 分类码 + 4 位，供应商 = GYS + 4 位（RFC 018 §4.4）。
+ * 要测别的规则用 {@link #with}
  */
 public final class TestCodeRules implements CodeRuleService {
 
     private final Clock clock;
+    /** 换掉某种编码的规则（测甲方 11-25 的规则用）；没换的用预置的 */
+    private final Map<CodeTarget, List<CodeSegment>> custom;
 
     public TestCodeRules(Clock clock) {
+        this(clock, Map.of());
+    }
+
+    private TestCodeRules(Clock clock, Map<CodeTarget, List<CodeSegment>> custom) {
         this.clock = clock;
+        this.custom = custom;
+    }
+
+    /** 这种编码按给的段编，别的照预置 */
+    public static TestCodeRules with(Clock clock, CodeTarget target, List<CodeSegment> segments) {
+        return new TestCodeRules(clock, Map.of(target, segments));
     }
 
     public static List<CodeSegment> presetSegments(CodeTarget target) {
@@ -41,7 +55,8 @@ public final class TestCodeRules implements CodeRuleService {
 
     @Override
     public CodeTemplate resolve(CodeTarget target, CodeContext context) {
-        return CodeRuleServiceImpl.render(target, "通用规则", presetSegments(target), context, LocalDate.now(clock));
+        return CodeRuleServiceImpl.render(target, "通用规则", custom.getOrDefault(target, presetSegments(target)), context,
+                LocalDate.now(clock));
     }
 
     @Override

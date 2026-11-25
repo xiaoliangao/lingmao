@@ -137,7 +137,7 @@ public class MaterialServiceImpl implements MaterialService {
         if (materialType == null || materialType.isBlank()) {
             throw new BizException(400, "先选物料类型：按物料类型找编码规则");
         }
-        return materialCodes.preview(materialType.strip(), category.getCode());
+        return materialCodes.preview(materialType.strip(), category);
     }
 
     @Override
@@ -148,7 +148,7 @@ public class MaterialServiceImpl implements MaterialService {
         material.setCategoryId(category.getId());
         material.setStockUnit(Texts.trim(req.getStockUnit()));
         fill(material, req, null);
-        material.setCode(materialCodes.next(material.getMaterialType(), category.getCode()));
+        material.setCode(materialCodes.next(material.getMaterialType(), category));
         materialMapper.insert(material);
         List<MaterialSku> skus = insertSkus(material, req.getColorIds(), req.getSpecs());
         docLogService.add(BizType.MATERIAL, material.getId(), "create", skuCodes(skus));

@@ -103,7 +103,7 @@ class MaterialImportTest {
     @BeforeEach
     void setUp() {
         materialImport = new MaterialImport(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
-                dictDataService, new MaterialCodes(serialNoGenerator, materialMapper, new com.lingmao.scm.TestCodeRules(java.time.Clock.systemDefaultZone())),
+                dictDataService, new MaterialCodes(serialNoGenerator, materialMapper, new com.lingmao.scm.TestCodeRules(java.time.Clock.systemDefaultZone()), materialCategoryMapper),
                 new TradeFeature(false), docLogService, com.lingmao.scm.DirectFileImports.INSTANCE,
                 fileService, attachmentService);
         lenient().when(dictDataService.listByType("material_type")).thenReturn(List.of(new DictOption("面料", "FABRIC", 1)));

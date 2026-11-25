@@ -2,11 +2,16 @@ package com.lingmao.scm.module.style.service.impl;
 
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
+import com.lingmao.scm.module.basic.entity.Category;
+import com.lingmao.scm.module.system.dto.CodeSegment;
+import com.lingmao.scm.module.system.dto.CodeTarget;
+import com.lingmao.scm.module.system.dto.DictOption;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 款号（RFC 005 §3、§12 StyleCodeTest；PRD §6.2 验收 1、4 前半）。"今天"是 2026-11-08，日期段 261108
@@ -86,6 +92,40 @@ class StyleCodeTest extends StyleTestBase {
         assertThatThrownBy(() -> codes.manual("27cf001")).hasMessage(StyleCodes.DUPLICATE);
         assertThatThrownBy(() -> codes.manual("款号 1"))
                 .extracting(e -> ((BizException) e).getCode()).isEqualTo(400);
+    }
+
+    /**
+     * 规则（RFC 018 §8）：甲方 11-25 的款号规则 F + 品牌编码 + 年份 + 设计师 + Z + 品类编码 + - + 3 位流水。
+     * 品牌编码取字典「品牌」上填的编码（导入时建的品牌值是中文名）；没填编码的中文品牌报清楚去哪填
+     */
+    @Test
+    void take_clientRule1125_brandCodeFromDict() {
+        serialFrom(new HashMap<>());
+        codesTaken();
+        StyleCodes client = new StyleCodes(styleMapper, serialNoGenerator, userService, com.lingmao.scm.TestCodeRules.with(CLOCK,
+                CodeTarget.STYLE, List.of(text("F"), seg(CodeSegment.Type.BRAND), seg(CodeSegment.Type.STYLE_YEAR),
+                        seg(CodeSegment.Type.DESIGNER), text("Z"), seg(CodeSegment.Type.CATEGORY), text("-"),
+                        new CodeSegment(CodeSegment.Type.SEQ, null, null, 3))), categoryService, dicts);
+        when(dictDataService.listByType("brand")).thenReturn(List.of(
+                new DictOption("测试品牌", "测试品牌", 1, "S"), new DictOption("没编码的品牌", "没编码的品牌", 1)));
+        Category leaf = new Category();
+        leaf.setId(77L);
+        leaf.setName("长裤");
+        leaf.setCode("33");
+        when(categoryService.getById(77L)).thenReturn(leaf);
+
+        assertThat(client.take(new StyleCodes.Input("FS", DESIGNER_07, "测试品牌", 77L, 2026))).isEqualTo("FS2607Z33-001");
+        assertThat(client.take(new StyleCodes.Input("TS", DESIGNER_07, "测试品牌", 77L, 2026))).isEqualTo("FS2607Z33-002");
+        assertThatThrownBy(() -> client.take(new StyleCodes.Input("FS", DESIGNER_07, "没编码的品牌", 77L, 2026)))
+                .isInstanceOf(BizException.class).hasMessageContaining("还没填编码").hasMessageContaining("字典管理");
+    }
+
+    private static CodeSegment seg(CodeSegment.Type type) {
+        return new CodeSegment(type, null, null, null);
+    }
+
+    private static CodeSegment text(String text) {
+        return new CodeSegment(CodeSegment.Type.TEXT, text, null, null);
     }
 
     private static StyleCodes.Input in(String styleClass, Long designerId) {

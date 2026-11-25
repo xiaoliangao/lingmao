@@ -11,6 +11,7 @@ import com.lingmao.scm.module.system.dto.CodeContext;
 import com.lingmao.scm.module.system.dto.CodeSegment;
 import com.lingmao.scm.module.system.dto.CodeTarget;
 import com.lingmao.scm.module.system.dto.CodeTemplate;
+import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.dto.UserVO;
 import com.lingmao.scm.module.system.service.CodeRuleService;
 import com.lingmao.scm.module.system.service.UserService;
@@ -35,6 +36,9 @@ class StyleCodes {
     static final Pattern MANUAL = Pattern.compile("^[A-Z0-9-]{3,20}$");
 
     static final String USED_UP = "今天的流水用完了，请手填款号";
+
+    /** 品牌的值本身能直接当编码用的：字母、数字、横杠 */
+    private static final Pattern BRAND_VALUE = Pattern.compile("^[A-Za-z0-9-]+$");
     static final String DUPLICATE = "款号重复";
 
     private final StyleMapper styleMapper;
@@ -42,6 +46,7 @@ class StyleCodes {
     private final UserService userService;
     private final CodeRuleService codeRuleService;
     private final CategoryService categoryService;
+    private final StyleDicts dicts;
 
     /** 自动编号用到的款式字段：规则里有哪一段才用哪一个 */
     record Input(String styleClass, Long designerId, String brand, Long categoryId, Integer year) {
@@ -117,7 +122,7 @@ class StyleCodes {
         UserVO[] designer = new UserVO[1];
         CodeContext context = CodeContext.of(styleClass)
                 .with(CodeSegment.Type.STYLE_CLASS, () -> styleClass)
-                .with(CodeSegment.Type.BRAND, in::brand)
+                .with(CodeSegment.Type.BRAND, () -> brandCode(in.brand()))
                 .with(CodeSegment.Type.CATEGORY, () -> categoryCode(in.categoryId()))
                 .with(CodeSegment.Type.STYLE_YEAR, () -> in.year() == null ? null : String.format("%02d", Math.floorMod(in.year(), 100)))
                 .with(CodeSegment.Type.DESIGNER, () -> {
@@ -126,6 +131,26 @@ class StyleCodes {
                 });
         CodeTemplate template = codeRuleService.resolve(CodeTarget.STYLE, context);
         return new Resolved(template, designer[0]);
+    }
+
+    /**
+     * 品牌编码（RFC 018 §8.3）：字典「品牌」上填的编码（text_value）；没填的、值本身是字母数字的用值（以前就这样）。
+     * 导入款式时建的品牌，值是中文名、又不能改，所以另给一列编码
+     */
+    private String brandCode(String brand) {
+        if (brand == null || brand.isBlank()) {
+            throw new BizException("编码规则里有品牌编码，要先选品牌；也可以手填款号");
+        }
+        String value = brand.strip();
+        DictOption option = dicts.options(StyleDicts.BRAND).stream().filter(o -> o.value().equals(value)).findFirst().orElse(null);
+        if (option != null && option.textValue() != null && !option.textValue().isBlank()) {
+            return option.textValue();
+        }
+        if (!BRAND_VALUE.matcher(value).matches()) {
+            throw new BizException("品牌「" + (option == null ? value : option.label())
+                    + "」还没填编码，编码规则里要用它：请超级管理员在 管理后台 › 系统管理 › 字典管理 › 品牌 填上；也可以手填款号");
+        }
+        return value;
     }
 
     private String categoryCode(Long categoryId) {

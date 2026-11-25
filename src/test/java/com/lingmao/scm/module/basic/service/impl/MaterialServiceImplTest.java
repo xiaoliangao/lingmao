@@ -81,7 +81,7 @@ class MaterialServiceImplTest {
         materialService = new MaterialServiceImpl(materialMapper, materialSkuMapper, materialCategoryMapper, colorMapper,
                 new DictChecks(dictDataService), new TradeFeature(false),
                 attachmentService, docLogService, materialImport, dictDataService,
-                new MaterialCodes(serialNoGenerator, materialMapper, new com.lingmao.scm.TestCodeRules(java.time.Clock.systemDefaultZone())));
+                new MaterialCodes(serialNoGenerator, materialMapper, new com.lingmao.scm.TestCodeRules(java.time.Clock.systemDefaultZone()), materialCategoryMapper));
     }
 
     /**

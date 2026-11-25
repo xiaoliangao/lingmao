@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,6 +87,32 @@ class CodeRuleServiceImplTest {
         assertThat(shoes.key()).isEqualTo("X27#AB");
         assertThat(shoes.format(12)).isEqualTo("X27012AB");
         assertThat(shoes.used()).doesNotContain(CodeSegment.Type.DESIGNER);
+    }
+
+    /**
+     * 规则（RFC 018 §8）：甲方 11-25 的两条规则，用现有的段加"一级分类编码"能拼出来；
+     * 横杠是固定文字，算在流水的 key 里（同一个品牌、年份、设计师、品类的接着往下编）。款号的服装规则里没有大类编码，不去取
+     */
+    @Test
+    void render_clientRules1125() {
+        rules.add(rule(2, "服装", List.of("TS", "FS"), text("F"), seg(CodeSegment.Type.BRAND), seg(CodeSegment.Type.STYLE_YEAR),
+                seg(CodeSegment.Type.DESIGNER), text("Z"), seg(CodeSegment.Type.CATEGORY), text("-"), seq(3)));
+        CodeTemplate style = service.resolve(CodeTarget.STYLE, CodeContext.of("TS")
+                .with(CodeSegment.Type.BRAND, () -> "s").with(CodeSegment.Type.STYLE_YEAR, () -> "26")
+                .with(CodeSegment.Type.DESIGNER, () -> "22").with(CodeSegment.Type.CATEGORY, () -> "33")
+                .with(CodeSegment.Type.STYLE_CLASS, () -> {
+                    throw new AssertionError("服装规则里没有大类编码，不该去取");
+                }));
+        assertThat(style.key()).isEqualTo("FS2622Z33-");
+        assertThat(style.format(1)).isEqualTo("FS2622Z33-001");
+
+        CodeTemplate material = CodeRuleServiceImpl.render(CodeTarget.MATERIAL, "通用规则",
+                List.of(date("yy"), seg(CodeSegment.Type.MAT_PARENT_CATEGORY), seg(CodeSegment.Type.MAT_CATEGORY), text("-"), seq(3)),
+                CodeContext.of("FABRIC").with(CodeSegment.Type.MAT_PARENT_CATEGORY, () -> "ll").with(CodeSegment.Type.MAT_CATEGORY, () -> "03"),
+                LocalDate.now(CLOCK));
+        assertThat(material.key()).isEqualTo("26LL03-");
+        assertThat(material.format(3)).isEqualTo("26LL03-003");
+        assertThat(CodeSegment.Type.MAT_PARENT_CATEGORY.allowedIn(CodeTarget.STYLE)).isFalse();
     }
 
     /** 规则：规则要用的值没给、或者有字母数字横杠以外的字（中文品牌），编不了，报清楚 */

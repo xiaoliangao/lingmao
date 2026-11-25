@@ -63,8 +63,9 @@ public class MaterialCategoryServiceImpl implements MaterialCategoryService {
     public Long create(MaterialCategorySaveReq req) {
         MaterialCategory category = new MaterialCategory();
         String name = Texts.trim(req.getName());
+        String code = Texts.upper(req.getCode());
         if (req.getParentId() == null) {
-            category.setLevel(1);   // 一级只有名称，编码不收
+            category.setLevel(1);   // 一级的编码选填：编码规则里用了"一级分类编码"才要
         } else {
             MaterialCategory parent = materialCategoryMapper.selectById(req.getParentId());
             if (parent == null) {
@@ -73,17 +74,14 @@ public class MaterialCategoryServiceImpl implements MaterialCategoryService {
             if (parent.getLevel() != 1) {
                 throw new BizException("物料分类只有两级，二级下面不能再加");
             }
-            String code = Texts.upper(req.getCode());
             if (code == null) {
-                throw new BizException(400, "二级分类要填 2 位字母的编码：它是物料编码的前缀");
-            }
-            if (materialCategoryMapper.exists(new LambdaQueryWrapper<MaterialCategory>().eq(MaterialCategory::getCode, code))) {
-                throw new BizException("分类编码 " + code + " 已经有了");
+                throw new BizException(400, "二级分类要填 2 位编码（字母或数字）：物料编码里要用");
             }
             category.setParentId(parent.getId());
             category.setLevel(2);
-            category.setCode(code);
         }
+        ensureCodeUnique(category.getParentId(), code, null);
+        category.setCode(code);
         ensureNameUnique(category.getParentId(), name, null);
         category.setName(name);
         category.setSort(req.getSort());
@@ -98,9 +96,13 @@ public class MaterialCategoryServiceImpl implements MaterialCategoryService {
         if (!Objects.equals(category.getParentId(), req.getParentId())) {
             throw new BizException("上级建好就不能改：要挪到别的上级下面，在那里新建一个，再把这个停用或删掉");
         }
-        if (category.getLevel() == 2 && !Objects.equals(category.getCode(), Texts.upper(req.getCode()))) {
-            throw new BizException("分类编码建好就不能改：它是物料编码的前缀。录错了而且没用过的，删掉重建");
+        // 编码能改（RFC 018 §8.3）：物料编码的格式由编码规则定，改了只影响以后新编的，已有的物料编码不变
+        String code = Texts.upper(req.getCode());
+        if (category.getLevel() == 2 && code == null) {
+            throw new BizException(400, "二级分类要填 2 位编码（字母或数字）：物料编码里要用");
         }
+        ensureCodeUnique(category.getParentId(), code, id);
+        category.setCode(code);
         String name = Texts.trim(req.getName());
         ensureNameUnique(category.getParentId(), name, id);
         category.setName(name);
@@ -130,6 +132,19 @@ public class MaterialCategoryServiceImpl implements MaterialCategoryService {
     @Transactional
     public void disable(long id) {
         Statuses.set(materialCategoryMapper, MaterialCategory::new, id, Statuses.DISABLED, "物料分类");
+    }
+
+    /** 同一个上级下编码不重复（一级之间也不重复）；不同一级下面的二级可以都叫 03 */
+    private void ensureCodeUnique(Long parentId, String code, Long excludeId) {
+        if (code == null) {
+            return;
+        }
+        LambdaQueryWrapper<MaterialCategory> q = new LambdaQueryWrapper<MaterialCategory>().eq(MaterialCategory::getCode, code)
+                .ne(excludeId != null, MaterialCategory::getId, excludeId);
+        q = parentId == null ? q.isNull(MaterialCategory::getParentId) : q.eq(MaterialCategory::getParentId, parentId);
+        if (materialCategoryMapper.exists(q)) {
+            throw new BizException("分类编码 " + code + (parentId == null ? " 已经有一级分类用了" : " 在这个上级下已经有了"));
+        }
     }
 
     private void ensureNameUnique(Long parentId, String name, Long excludeId) {

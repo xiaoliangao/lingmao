@@ -25,7 +25,10 @@ public record CodeSegment(@NotNull(message = "段的种类不能为空") Type ty
         STYLE_YEAR("款式年份", EnumSet.of(CodeTarget.STYLE), 2),
         DATE("日期", EnumSet.allOf(CodeTarget.class), 6),
         DESIGNER("设计师编号", EnumSet.of(CodeTarget.STYLE), 2),
-        MAT_CATEGORY("物料分类编码", EnumSet.of(CodeTarget.MATERIAL), 2),
+        /** 物料所在二级分类的上级（一级）的编码（RFC 018 §8.3） */
+        MAT_PARENT_CATEGORY("一级分类编码", EnumSet.of(CodeTarget.MATERIAL), 2),
+        /** 物料所在二级分类的编码；原来叫"物料分类编码" */
+        MAT_CATEGORY("二级分类编码", EnumSet.of(CodeTarget.MATERIAL), 2),
         SEQ("流水", EnumSet.allOf(CodeTarget.class), 6);
 
         private final String label;

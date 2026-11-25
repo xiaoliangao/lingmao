@@ -98,7 +98,7 @@ export type CodeTarget = 'STYLE' | 'MATERIAL' | 'SUPPLIER'
 
 /** 编码的一段（RFC 018 §4.4） */
 export type CodeSegmentType =
-  | 'TEXT' | 'STYLE_CLASS' | 'BRAND' | 'CATEGORY' | 'STYLE_YEAR' | 'DATE' | 'DESIGNER' | 'MAT_CATEGORY' | 'SEQ'
+  | 'TEXT' | 'STYLE_CLASS' | 'BRAND' | 'CATEGORY' | 'STYLE_YEAR' | 'DATE' | 'DESIGNER' | 'MAT_PARENT_CATEGORY' | 'MAT_CATEGORY' | 'SEQ'
 
 export interface CodeSegment {
   type: CodeSegmentType

@@ -27,10 +27,10 @@ class MaterialCategoryControllerTest {
     @MockitoBean
     private MaterialCategoryService materialCategoryService;
 
-    /** 规则：二级分类的编码是 2 位字母（物料编码的前缀），填 3 位、带数字在入口返回 400 */
+    /** 规则（RFC 018 §8.3）：分类编码是 2 位字母或数字（03 也行），填 3 位、1 位、带横杠在入口返回 400 */
     @Test
     void create_badCode_returns400() throws Exception {
-        for (String code : new String[]{"MLX", "M1"}) {
+        for (String code : new String[]{"MLX", "M", "M-"}) {
             mockMvc.perform(post("/api/material-categories")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""

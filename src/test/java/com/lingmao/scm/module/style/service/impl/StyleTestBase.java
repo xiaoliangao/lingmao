@@ -172,8 +172,8 @@ abstract class StyleTestBase {
     /** 重新装一遍：trade 是代工开关 */
     void build(boolean trade) {
         TradeFeature tradeFeature = new TradeFeature(trade);
-        codes = new StyleCodes(styleMapper, serialNoGenerator, userService, new com.lingmao.scm.TestCodeRules(CLOCK), categoryService);
         dicts = new StyleDicts(dictDataService);
+        codes = new StyleCodes(styleMapper, serialNoGenerator, userService, new com.lingmao.scm.TestCodeRules(CLOCK), categoryService, dicts);
         categories = new StyleCategories(categoryService);
         skuGenerator = new SkuGenerator(styleSkuMapper, CLOCK);
         styleExcel = new StyleExcel(styleMapper, styleColorMapper, styleSkuMapper, dicts, categories, skuGenerator,

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.seq.SerialNoGenerator;
 import com.lingmao.scm.module.basic.entity.Material;
+import com.lingmao.scm.module.basic.entity.MaterialCategory;
+import com.lingmao.scm.module.basic.mapper.MaterialCategoryMapper;
 import com.lingmao.scm.module.basic.mapper.MaterialMapper;
 import com.lingmao.scm.module.system.dto.CodeContext;
 import com.lingmao.scm.module.system.dto.CodeSegment;
@@ -15,7 +17,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 物料编码（RFC 012 §4.2、RFC 018 §4）：按管理后台 › 编码规则 里适用于这个物料类型的规则编，
- * 预置的通用规则是 物料分类码 + 4 位流水（ML0012），和改成规则以前一样。新建、导入都走这里。
+ * 预置的通用规则是 二级分类码 + 4 位流水（ML0012），和改成规则以前一样；甲方 11-25 的是 年份 + 一级分类码 + 二级分类码 + "-" + 3 位流水
+ * （RFC 018 §8）。新建、导入都走这里。
  * 取到的号已经有了（11-18 以前导入的照用领猫编码）就再取下一个，最多试 100 次。
  * 先查后插在同一个事务里：sys_serial 这一行的锁持有到提交，同一前缀的新建本来就排队；和导入撞上由唯一索引兜底（1000）
  */
@@ -28,10 +31,11 @@ class MaterialCodes {
     private final SerialNoGenerator serialNoGenerator;
     private final MaterialMapper materialMapper;
     private final CodeRuleService codeRuleService;
+    private final MaterialCategoryMapper materialCategoryMapper;
 
     /** 真取号，要在新建、导入的事务里 */
-    String next(String materialType, String categoryCode) {
-        CodeTemplate t = template(materialType, categoryCode);
+    String next(String materialType, MaterialCategory category) {
+        CodeTemplate t = template(materialType, category);
         for (int i = 0; i < MAX_TRIES; i++) {
             int seq = serialNoGenerator.nextSeq(t.key());
             if (seq > t.maxSeq()) {
@@ -46,8 +50,8 @@ class MaterialCodes {
     }
 
     /** 预览：下一个大概是几，只看不取；被占了的跳过。保存时以真取到的为准 */
-    String preview(String materialType, String categoryCode) {
-        CodeTemplate t = template(materialType, categoryCode);
+    String preview(String materialType, MaterialCategory category) {
+        CodeTemplate t = template(materialType, category);
         int start = serialNoGenerator.peek(t.key());
         for (int seq = start; seq <= t.maxSeq() && seq < start + MAX_TRIES; seq++) {
             String code = t.format(seq);
@@ -58,8 +62,19 @@ class MaterialCodes {
         throw new BizException("编码规则「" + t.ruleName() + "」的流水用完了，请超级管理员给流水加一位");
     }
 
-    private CodeTemplate template(String materialType, String categoryCode) {
+    /** category 是物料挂的二级分类；规则里有"一级分类编码"才去查上级 */
+    private CodeTemplate template(String materialType, MaterialCategory category) {
         return codeRuleService.resolve(CodeTarget.MATERIAL, CodeContext.of(materialType)
-                .with(CodeSegment.Type.MAT_CATEGORY, () -> categoryCode));
+                .with(CodeSegment.Type.MAT_CATEGORY, category::getCode)
+                .with(CodeSegment.Type.MAT_PARENT_CATEGORY, () -> parentCode(category)));
+    }
+
+    private String parentCode(MaterialCategory category) {
+        MaterialCategory parent = category.getParentId() == null ? null : materialCategoryMapper.selectById(category.getParentId());
+        if (parent == null || parent.getCode() == null || parent.getCode().isBlank()) {
+            String name = parent == null ? "" : "「" + parent.getName() + "」";
+            throw new BizException("一级分类" + name + "还没填编码，编码规则里要用它：去 资料 › 基础 › 物料分类 填上");
+        }
+        return parent.getCode();
     }
 }

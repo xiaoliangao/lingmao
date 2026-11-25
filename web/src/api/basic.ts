@@ -69,7 +69,7 @@ export interface CategoryForm {
   parentId: string | null
   name: string
   sort: number
-  /** 物料分类的二级必填：2 位字母，物料编码的前缀。品类选填：1-8 位字母数字，款号规则里有"品类编码"一段时用 */
+  /** 物料分类：2 位字母或数字，二级必填、一级选填，同一上级下不重复（RFC 018 §8）。品类选填：1-8 位字母数字，款号规则里有"品类编码"一段时用 */
   code?: string | null
 }
 
