@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.basic.service.impl;
 
+import com.lingmao.scm.common.excel.ImportResult;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
@@ -11,6 +12,7 @@ import com.lingmao.scm.module.basic.service.MaterialCategoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Collection;
@@ -23,6 +25,7 @@ import java.util.stream.Collectors;
 public class MaterialCategoryServiceImpl implements MaterialCategoryService {
 
     private final MaterialCategoryMapper materialCategoryMapper;
+    private final CategoryTreeImport treeImport;
 
     @Override
     public List<TreeNode> tree() {
@@ -160,5 +163,15 @@ public class MaterialCategoryServiceImpl implements MaterialCategoryService {
 
     private static TreeNode node(MaterialCategory c) {
         return new TreeNode(c.getId(), c.getParentId(), c.getCode(), c.getName(), c.getLevel(), c.getSort(), c.getStatus());
+    }
+
+    @Override
+    public byte[] importTemplate() {
+        return treeImport.template(CategoryTreeImport.Kind.MATERIAL);
+    }
+
+    @Override
+    public ImportResult importExcel(MultipartFile file) {
+        return treeImport.importExcel(CategoryTreeImport.Kind.MATERIAL, file);
     }
 }

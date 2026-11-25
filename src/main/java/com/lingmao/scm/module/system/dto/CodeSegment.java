@@ -21,6 +21,9 @@ public record CodeSegment(@NotNull(message = "段的种类不能为空") Type ty
         TEXT("固定文字", EnumSet.allOf(CodeTarget.class), 8),
         STYLE_CLASS("大类编码", EnumSet.of(CodeTarget.STYLE), 4),
         BRAND("品牌编码", EnumSet.of(CodeTarget.STYLE), 8),
+        /** 款式所在品类往上找到的一级品类的编码（甲方的服装 F、通勤裤 T，RFC 018 §8.2） */
+        TOP_CATEGORY("一级品类编码", EnumSet.of(CodeTarget.STYLE), 8),
+        /** 款式所在品类（一般是三级）的编码 */
         CATEGORY("品类编码", EnumSet.of(CodeTarget.STYLE), 8),
         STYLE_YEAR("款式年份", EnumSet.of(CodeTarget.STYLE), 2),
         DATE("日期", EnumSet.allOf(CodeTarget.class), 6),

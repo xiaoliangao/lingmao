@@ -1,8 +1,11 @@
 package com.lingmao.scm.module.basic.service;
 
+import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.module.basic.dto.CategorySaveReq;
 import com.lingmao.scm.module.basic.dto.TreeNode;
 import com.lingmao.scm.module.basic.entity.Category;
+
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -34,4 +37,10 @@ public interface CategoryService {
      * 不能选报 1000，说清为什么
      */
     void checkSelectable(long id);
+
+    /** 导入模板：领猫"基础档案"类目导出的列（RFC 018 §8.7） */
+    byte[] importTemplate();
+
+    /** 导入品类：按路径对，已有的改编码、状态，没有的建上；有一行不对整批不导（RFC 018 §8.7） */
+    ImportResult importExcel(MultipartFile file);
 }

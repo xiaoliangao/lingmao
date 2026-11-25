@@ -11356,7 +11356,7 @@ const liveMatCats = () => db.materialCategories.filter((c) => c.status !== '停�
 function addCategory(f) {
   const code = (f.code || '').trim().toUpperCase(), name = (f.name || '').trim(), path = (f.path || '').trim().replace(/\s*\/\s*/g, ' / ')
   if (!/^[^/]+ \/ [^/]+$/.test(path)) fail('上级写成「大类 / 中类」，如 女装 / 外套')
-  if (!/^[A-Z0-9]$/.test(code)) fail('品类编码是 1 位字母或数字（如 F = 风衣）')
+  if (!/^[A-Z0-9]{1,8}$/.test(code)) fail('品类编码是 1-8 位字母或数字（如 一级 F、三级 33）')
   if (!name) fail('名称要填')
   if (db.categories.some((c) => c.code === code)) fail('编码 ' + code + ' 已经有了')
   if (db.categories.some((c) => c.path === path && c.name === name)) fail(path + ' 下已经有「' + name + '」')

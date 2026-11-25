@@ -178,12 +178,14 @@ class CodeRuleIT {
         List<Long> leaves = new ArrayList<>();
         Long styleCategory = null;
         try {
-            // 款号：F + 品牌编码 + 年份 + Z + 品类编码 + - + 3 位流水
-            rulesMade.add(codeRuleService.create(rule(cls, text("F"), seg(CodeSegment.Type.BRAND), seg(CodeSegment.Type.STYLE_YEAR),
-                    text("Z"), seg(CodeSegment.Type.CATEGORY), text("-"), seq(3))));
-            styleCategory = jdbc.queryForObject("INSERT INTO bas_category (name, level, code) VALUES (?, 1, '33') RETURNING id", Long.class,
+            // 款号：一级品类编码 + 品牌编码 + 年份 + Z + 品类编码 + - + 3 位流水
+            rulesMade.add(codeRuleService.create(rule(cls, seg(CodeSegment.Type.TOP_CATEGORY), seg(CodeSegment.Type.BRAND),
+                    seg(CodeSegment.Type.STYLE_YEAR), text("Z"), seg(CodeSegment.Type.CATEGORY), text("-"), seq(3))));
+            styleCategory = jdbc.queryForObject("INSERT INTO bas_category (name, level, code) VALUES (?, 1, 'F') RETURNING id", Long.class,
                     "编码测试" + suffix);
-            assertThat(styleService.codePreview(cls, null, "编码测试品牌" + suffix, styleCategory, 2026)).isEqualTo("FS26Z33-001");
+            Long styleLeaf = jdbc.queryForObject("INSERT INTO bas_category (parent_id, name, level, code) VALUES (?, ?, 2, '33') RETURNING id",
+                    Long.class, styleCategory, "编码测试下级" + suffix);
+            assertThat(styleService.codePreview(cls, null, "编码测试品牌" + suffix, styleLeaf, 2026)).isEqualTo("FS26Z33-001");
 
             // 物料编码：两个一级（LL 这种），下面各一个 03；第三个一级不填编码
             String top1 = freeTopCode();
@@ -220,6 +222,7 @@ class CodeRuleIT {
             leaves.forEach(id -> jdbc.update("DELETE FROM bas_material_category WHERE id = ?", id));
             tops.forEach(id -> jdbc.update("DELETE FROM bas_material_category WHERE id = ?", id));
             if (styleCategory != null) {
+                jdbc.update("DELETE FROM bas_category WHERE parent_id = ?", styleCategory);
                 jdbc.update("DELETE FROM bas_category WHERE id = ?", styleCategory);
             }
             dictDataService.delete(typeId);

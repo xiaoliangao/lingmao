@@ -1,5 +1,7 @@
 package com.lingmao.scm.module.basic.controller;
 
+import com.lingmao.scm.common.excel.ImportError;
+import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.module.basic.service.MaterialCategoryService;
 import org.junit.jupiter.api.Test;
@@ -7,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -14,6 +17,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
@@ -53,5 +57,18 @@ class MaterialCategoryControllerTest {
                                 """))
                 .andExpect(jsonPath("$.code").value(1000))
                 .andExpect(jsonPath("$.msg").value("物料分类只有两级，二级下面不能再加"));
+    }
+
+    /** 规则（RFC 018 §8.7）：导入收 multipart 的 file，结果（条数 + 提示）原样返回 */
+    @Test
+    void importExcel_returnsTotalAndNotes() throws Exception {
+        when(materialCategoryService.importExcel(any())).thenReturn(ImportResult.of(114,
+                java.util.List.of(new ImportError(0, null, "第 3 行和系统里已有的一样，没改"))));
+
+        mockMvc.perform(multipart("/api/material-categories/import")
+                        .file(new MockMultipartFile("file", "物料类目.xlsx", "application/octet-stream", new byte[]{1})))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(114))
+                .andExpect(jsonPath("$.data.notes[0].message").value("第 3 行和系统里已有的一样，没改"));
     }
 }

@@ -81,6 +81,9 @@ export const categoryApi = {
   create: (data: CategoryForm) => http.post<string>('/api/categories', data),
   update: (id: string, data: CategoryForm) => http.put<void>(`/api/categories/${id}`, data),
   ...statusApi('/api/categories'),
+  /** 导入：领猫「基础档案 › 产品类目」导出的表直接能导（RFC 018 §8.7） */
+  importTemplateUrl: '/api/categories/import-template',
+  importUrl: '/api/categories/import',
 }
 
 export const materialCategoryApi = {
@@ -89,6 +92,9 @@ export const materialCategoryApi = {
   create: (data: CategoryForm) => http.post<string>('/api/material-categories', data),
   update: (id: string, data: CategoryForm) => http.put<void>(`/api/material-categories/${id}`, data),
   ...statusApi('/api/material-categories'),
+  /** 导入：领猫「基础档案 › 物料类目」导出的表直接能导（RFC 018 §8.7） */
+  importTemplateUrl: '/api/material-categories/import-template',
+  importUrl: '/api/material-categories/import',
 }
 
 // ---------- 尺码组 ----------

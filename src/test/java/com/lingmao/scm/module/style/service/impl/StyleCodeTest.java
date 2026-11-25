@@ -95,29 +95,45 @@ class StyleCodeTest extends StyleTestBase {
     }
 
     /**
-     * 规则（RFC 018 §8）：甲方 11-25 的款号规则 F + 品牌编码 + 年份 + 设计师 + Z + 品类编码 + - + 3 位流水。
-     * 品牌编码取字典「品牌」上填的编码（导入时建的品牌值是中文名）；没填编码的中文品牌报清楚去哪填
+     * 规则（RFC 018 §8）：甲方 11-25 的款号规则 一级品类编码 + 品牌编码 + 年份 + 设计师 + Z + 品类编码 + - + 3 位流水。
+     * 一级品类往上找（服装 F、通勤裤 T，跟着品类走、不看大类）；品牌编码取字典「品牌」上填的编码（导入时建的品牌值是中文名）；
+     * 没填编码的报清楚去哪填
      */
     @Test
     void take_clientRule1125_brandCodeFromDict() {
         serialFrom(new HashMap<>());
         codesTaken();
         StyleCodes client = new StyleCodes(styleMapper, serialNoGenerator, userService, com.lingmao.scm.TestCodeRules.with(CLOCK,
-                CodeTarget.STYLE, List.of(text("F"), seg(CodeSegment.Type.BRAND), seg(CodeSegment.Type.STYLE_YEAR),
+                CodeTarget.STYLE, List.of(seg(CodeSegment.Type.TOP_CATEGORY), seg(CodeSegment.Type.BRAND), seg(CodeSegment.Type.STYLE_YEAR),
                         seg(CodeSegment.Type.DESIGNER), text("Z"), seg(CodeSegment.Type.CATEGORY), text("-"),
                         new CodeSegment(CodeSegment.Type.SEQ, null, null, 3))), categoryService, dicts);
         when(dictDataService.listByType("brand")).thenReturn(List.of(
                 new DictOption("测试品牌", "测试品牌", 1, "S"), new DictOption("没编码的品牌", "没编码的品牌", 1)));
-        Category leaf = new Category();
-        leaf.setId(77L);
-        leaf.setName("长裤");
-        leaf.setCode("33");
-        when(categoryService.getById(77L)).thenReturn(leaf);
+        category(1L, null, "服装", "F");
+        category(2L, 1L, "裤子", "20");
+        category(77L, 2L, "长裤", "33");
+        category(5L, null, "通勤裤", "T");
+        category(6L, 5L, "西裤", "40");
+        category(88L, 6L, "直筒", "33");
+        category(9L, null, "没编码的一级", null);
+        category(99L, 9L, "下面的", "33");
 
         assertThat(client.take(new StyleCodes.Input("FS", DESIGNER_07, "测试品牌", 77L, 2026))).isEqualTo("FS2607Z33-001");
-        assertThat(client.take(new StyleCodes.Input("TS", DESIGNER_07, "测试品牌", 77L, 2026))).isEqualTo("FS2607Z33-002");
+        assertThat(client.take(new StyleCodes.Input("FS", DESIGNER_07, "测试品牌", 77L, 2026))).isEqualTo("FS2607Z33-002");
+        assertThat(client.take(new StyleCodes.Input("TS", DESIGNER_07, "测试品牌", 88L, 2026))).isEqualTo("TS2607Z33-001");
         assertThatThrownBy(() -> client.take(new StyleCodes.Input("FS", DESIGNER_07, "没编码的品牌", 77L, 2026)))
                 .isInstanceOf(BizException.class).hasMessageContaining("还没填编码").hasMessageContaining("字典管理");
+        assertThatThrownBy(() -> client.take(new StyleCodes.Input("FS", DESIGNER_07, "测试品牌", 99L, 2026)))
+                .isInstanceOf(BizException.class).hasMessageContaining("一级品类「没编码的一级」还没填编码");
+    }
+
+    private void category(long id, Long parentId, String name, String code) {
+        Category c = new Category();
+        c.setId(id);
+        c.setParentId(parentId);
+        c.setName(name);
+        c.setCode(code);
+        when(categoryService.getById(id)).thenReturn(c);
     }
 
     private static CodeSegment seg(CodeSegment.Type type) {

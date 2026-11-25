@@ -1,8 +1,11 @@
 package com.lingmao.scm.module.basic.service;
 
+import com.lingmao.scm.common.excel.ImportResult;
 import com.lingmao.scm.module.basic.dto.MaterialCategorySaveReq;
 import com.lingmao.scm.module.basic.dto.TreeNode;
 import com.lingmao.scm.module.basic.entity.MaterialCategory;
+
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Collection;
@@ -33,4 +36,10 @@ public interface MaterialCategoryService {
     void enable(long id);
 
     void disable(long id);
+
+    /** 导入模板：领猫"基础档案"类目导出的列（RFC 018 §8.7） */
+    byte[] importTemplate();
+
+    /** 导入物料分类：按路径对，已有的改编码、状态，没有的建上；有一行不对整批不导（RFC 018 §8.7） */
+    ImportResult importExcel(MultipartFile file);
 }

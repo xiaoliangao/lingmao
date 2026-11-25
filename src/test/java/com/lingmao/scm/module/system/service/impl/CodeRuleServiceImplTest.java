@@ -90,14 +90,15 @@ class CodeRuleServiceImplTest {
     }
 
     /**
-     * 规则（RFC 018 §8）：甲方 11-25 的两条规则，用现有的段加"一级分类编码"能拼出来；
+     * 规则（RFC 018 §8）：甲方 11-25 的两条规则，用现有的段加"一级品类编码""一级分类编码"能拼出来；
      * 横杠是固定文字，算在流水的 key 里（同一个品牌、年份、设计师、品类的接着往下编）。款号的服装规则里没有大类编码，不去取
      */
     @Test
     void render_clientRules1125() {
-        rules.add(rule(2, "服装", List.of("TS", "FS"), text("F"), seg(CodeSegment.Type.BRAND), seg(CodeSegment.Type.STYLE_YEAR),
+        rules.add(rule(2, "服装", List.of("TS", "FS"), seg(CodeSegment.Type.TOP_CATEGORY), seg(CodeSegment.Type.BRAND), seg(CodeSegment.Type.STYLE_YEAR),
                 seg(CodeSegment.Type.DESIGNER), text("Z"), seg(CodeSegment.Type.CATEGORY), text("-"), seq(3)));
         CodeTemplate style = service.resolve(CodeTarget.STYLE, CodeContext.of("TS")
+                .with(CodeSegment.Type.TOP_CATEGORY, () -> "F")
                 .with(CodeSegment.Type.BRAND, () -> "s").with(CodeSegment.Type.STYLE_YEAR, () -> "26")
                 .with(CodeSegment.Type.DESIGNER, () -> "22").with(CodeSegment.Type.CATEGORY, () -> "33")
                 .with(CodeSegment.Type.STYLE_CLASS, () -> {

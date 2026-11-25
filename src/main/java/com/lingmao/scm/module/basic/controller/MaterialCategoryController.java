@@ -1,6 +1,12 @@
 package com.lingmao.scm.module.basic.controller;
 
 import com.lingmao.scm.common.log.OperLog;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import com.lingmao.scm.common.excel.ImportResult;
+import com.lingmao.scm.common.excel.Excel;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.basic.dto.MaterialCategorySaveReq;
 import com.lingmao.scm.module.basic.dto.TreeNode;
@@ -93,5 +99,23 @@ public class MaterialCategoryController {
     public R<Void> disable(@PathVariable("id") Long id) {
         materialCategoryService.disable(id);
         return R.ok();
+    }
+
+    @Operation(summary = "导入模板：领猫「基础档案 › 物料类目」导出的列（分类名称、分类编码、状态、排序），RFC 018 §8.7")
+    @GetMapping("/import-template")
+    @PreAuthorize("hasAuthority('basic:basics:add')")
+    public ResponseEntity<byte[]> importTemplate() {
+        return Excel.download("物料分类导入模板.xlsx", materialCategoryService.importTemplate());
+    }
+
+    /**
+     * 领猫导出的表直接能导：分类名称是用 > 连起来的路径；扩展一到扩展七、描述认得、不导
+     */
+    @Operation(summary = "导入物料分类：按路径对，已有的改编码和状态，没有的建上；有一行不对整批不导（RFC 018 §8.7）")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('basic:basics:add') and hasAuthority('basic:basics:edit')")
+    @OperLog(module = "物料分类", action = "导入")
+    public R<ImportResult> importExcel(@RequestParam("file") MultipartFile file) {
+        return R.ok(materialCategoryService.importExcel(file));
     }
 }

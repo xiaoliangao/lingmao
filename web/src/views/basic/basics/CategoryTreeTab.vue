@@ -4,8 +4,10 @@ import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { categoryApi, materialCategoryApi } from '@/api/basic'
 import type { TreeNode } from '@/types/basic'
 import FilterBar from '@/components/FilterBar.vue'
+import ImportDialog from '@/components/ImportDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useUserStore } from '@/stores/user'
 import { confirmRemove, orNull, toggleStatus } from '../common'
 
 /**
@@ -21,6 +23,11 @@ const api = computed(() => (isMaterial.value ? materialCategoryApi : categoryApi
 const maxLevel = computed(() => (isMaterial.value ? 2 : 3))
 const noun = computed(() => (isMaterial.value ? '物料分类' : '品类'))
 const usedBy = computed(() => (isMaterial.value ? '物料' : '款式'))
+/** 导入领猫导出的类目表：按路径对，已有的改编码和状态，没有的建上（RFC 018 §8.7） */
+const importVisible = ref(false)
+const userStore = useUserStore()
+/** 导入会新建、也会改已有的编码和状态：新增、修改两个权限都要有（后端一样） */
+const canImport = computed(() => userStore.hasPerm('basic:basics:add') && userStore.hasPerm('basic:basics:edit'))
 
 const tree = ref<TreeNode[]>([])
 const loading = ref(false)
@@ -151,6 +158,7 @@ async function remove(row: TreeNode) {
 <template>
   <FilterBar>
     <template #right>
+      <el-button v-if="canImport" icon="Upload" @click="importVisible = true">导入</el-button>
       <el-button v-perm="'basic:basics:add'" type="primary" icon="Plus" @click="openCreate(null)">
         {{ isMaterial ? '新增一级分类' : '新增一级品类' }}
       </el-button>
@@ -232,4 +240,12 @@ async function remove(row: TreeNode) {
       <el-button type="primary" @click="save">{{ editing ? '保存' : `新增${noun}` }}</el-button>
     </template>
   </el-dialog>
+
+  <ImportDialog
+    v-model="importVisible"
+    :title="`导入${noun}`"
+    :template-url="api.importTemplateUrl"
+    :import-url="api.importUrl"
+    @success="load"
+  />
 </template>

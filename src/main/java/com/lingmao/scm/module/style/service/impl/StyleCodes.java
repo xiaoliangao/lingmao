@@ -123,6 +123,7 @@ class StyleCodes {
         CodeContext context = CodeContext.of(styleClass)
                 .with(CodeSegment.Type.STYLE_CLASS, () -> styleClass)
                 .with(CodeSegment.Type.BRAND, () -> brandCode(in.brand()))
+                .with(CodeSegment.Type.TOP_CATEGORY, () -> topCategoryCode(in.categoryId()))
                 .with(CodeSegment.Type.CATEGORY, () -> categoryCode(in.categoryId()))
                 .with(CodeSegment.Type.STYLE_YEAR, () -> in.year() == null ? null : String.format("%02d", Math.floorMod(in.year(), 100)))
                 .with(CodeSegment.Type.DESIGNER, () -> {
@@ -162,6 +163,21 @@ class StyleCodes {
             throw new BizException("品类「" + category.getName() + "」还没填编码，编码规则里要用它：去 资料 › 品类 填上，或者手填款号");
         }
         return category.getCode();
+    }
+
+    /** 品类往上找到一级；款式选的就是一级的，用它自己 */
+    private String topCategoryCode(Long categoryId) {
+        if (categoryId == null) {
+            throw new BizException("编码规则里有一级品类编码，要先选品类；也可以手填款号");
+        }
+        Category top = categoryService.getById(categoryId);
+        for (int depth = 0; top.getParentId() != null && depth < 5; depth++) {
+            top = categoryService.getById(top.getParentId());
+        }
+        if (top.getCode() == null || top.getCode().isBlank()) {
+            throw new BizException("一级品类「" + top.getName() + "」还没填编码，编码规则里要用它：去 资料 › 基础 › 品类 填上，或者手填款号");
+        }
+        return top.getCode();
     }
 
     private UserVO designer(Long designerId) {

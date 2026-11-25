@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.basic.service.impl;
 
+import com.lingmao.scm.common.excel.ImportResult;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.mybatis.Updates;
@@ -11,6 +12,7 @@ import com.lingmao.scm.module.basic.service.CategoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Objects;
@@ -23,6 +25,7 @@ public class CategoryServiceImpl implements CategoryService {
     static final int MAX_LEVEL = 3;
 
     private final CategoryMapper categoryMapper;
+    private final CategoryTreeImport treeImport;
 
     @Override
     public List<TreeNode> tree() {
@@ -148,5 +151,15 @@ public class CategoryServiceImpl implements CategoryService {
     /** 品类编码：空的存 null，字母转大写 */
     private static String code(String text) {
         return text == null || text.isBlank() ? null : text.strip().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    @Override
+    public byte[] importTemplate() {
+        return treeImport.template(CategoryTreeImport.Kind.CATEGORY);
+    }
+
+    @Override
+    public ImportResult importExcel(MultipartFile file) {
+        return treeImport.importExcel(CategoryTreeImport.Kind.CATEGORY, file);
     }
 }
