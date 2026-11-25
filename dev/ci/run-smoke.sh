@@ -64,8 +64,11 @@ if [[ $phase == before ]]; then
   python "$repo/dev/ci/ui/prepare_before.py"
   python "$repo/dev/ci/ui/capture_baseline.py"
 else
-  python "$repo/dev/ci/ui/prepare_fixtures.py"
-  cp "$work/fixture-evidence.json" "$artifacts/fixture-evidence.json"
-  (cd "$repo/dev/ci/ui" && python -m unittest -v test_audit_ui)
+  # 整套浏览器回归（dev/ci/ui）11-25 起默认不跑，原因写在 ci.yml 的 SCM_CI_UI_AUDIT 上
+  if [[ ${SCM_CI_UI_AUDIT:-0} == 1 ]]; then
+    python "$repo/dev/ci/ui/prepare_fixtures.py"
+    cp "$work/fixture-evidence.json" "$artifacts/fixture-evidence.json"
+    (cd "$repo/dev/ci/ui" && python -m unittest -v test_audit_ui)
+  fi
   python "$repo/tests/prod-readiness/a3-browser/real-session.py"
 fi

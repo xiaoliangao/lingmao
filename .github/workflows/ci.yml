@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 65
     env:
       JAVA_TOOL_OPTIONS: -Xmx1200m -XX:ActiveProcessorCount=4 -Dspring.test.context.cache.maxSize=4
+      # dev/ci/ui 的整套浏览器回归是按 11-17 的代码写的（准备数据还在建 11-18 去掉的研发阶段资料包），
+      # 11-25 用户定先不跑、文件留着，一期页面定下来再按现在的页面重写一套小的。改成 '1' 就又跑（run-smoke.sh）
+      SCM_CI_UI_AUDIT: '0'
     services:
       postgres:
         image: postgres:16
@@ -132,12 +135,12 @@ jobs:
           mkdir -p test-artifacts/operations
           sudo --preserve-env=GITHUB_ACTIONS bash dev/ci/check-restore.sh | tee test-artifacts/operations/restore.log
       - name: Capture the original PR base in the same browser
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.runtime.outcome == 'success' && steps.web.outcome == 'success' }}
+        if: ${{ !cancelled() && env.SCM_CI_UI_AUDIT == '1' && github.event_name == 'pull_request' && steps.runtime.outcome == 'success' && steps.web.outcome == 'success' }}
         env:
           SCM_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: bash dev/ci/capture-before.sh "$SCM_PR_BASE_SHA"
-      - name: Start services, health/API smoke and real Playwright regressions
+      - name: Start services, health/API smoke and real cookie session (dev/ci/ui regressions only when SCM_CI_UI_AUDIT=1)
         if: ${{ !cancelled() && steps.runtime.outcome == 'success' && steps.web.outcome == 'success' }}
         env:
           SCM_CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
