@@ -24,7 +24,7 @@ import type { OrderChangeDetail, OrderDetail } from '@/types/order'
 
 const mode = new URLSearchParams(location.search).get('mode')
 const user = useUserStore()
-user.info = { id: '9007199254740993', username: 'synthetic', nickname: '权限回归', roles: [], perms: mode === 'purchase-retry' ? ['purchase:order:submit'] : [], menus: [], defaultCompany: { id: '1', name: '测试主体' } }
+user.info = { id: '9007199254740993', username: 'synthetic', nickname: '权限回归', roles: [], perms: mode === 'purchase-retry' ? ['purchase:order:submit'] : mode === 'pack-edit' ? ['techpack:bom:dev'] : [], menus: [], defaultCompany: { id: '1', name: '测试主体' } }
 setSessionSubject(user.info.id)
 const router = useRouter()
 const supplier = ref<InstanceType<typeof SupplierFormDialog>>()

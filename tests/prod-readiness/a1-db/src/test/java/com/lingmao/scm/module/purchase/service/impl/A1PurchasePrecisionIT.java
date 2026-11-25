@@ -89,7 +89,7 @@ class A1PurchasePrecisionIT {
                 TestIdentity.company(f.company());
                 ready.countDown();
                 assertThat(start.await(10, TimeUnit.SECONDS)).isTrue();
-                try { inventory.act(id, "audit", new DocActionReq(0, null)); return null; }
+                try { audit(id, new DocActionReq(0, null)); return null; }
                 finally { TestIdentity.clear(); }
             }));
             assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
@@ -104,7 +104,8 @@ class A1PurchasePrecisionIT {
     @Test
     void multiDyeLotsOnOneSourceLineAllocateInStableSequence() {
         Fixture f = fixture("0.333333", "0.0050", "3");
-        long doc = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, InvDocType.PURCHASE_IN, true, List.of("1", "1", "1"))).id();
+        long doc = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, InvDocType.PURCHASE_IN, false, List.of("1", "1", "1"))).id();
+        audit(doc, new DocActionReq(0, null));
         assertThat(jdbc.queryForList("SELECT qty FROM inv_doc_item WHERE doc_id=? ORDER BY seq", BigDecimal.class, doc))
                 .usingElementComparator(BigDecimal::compareTo).containsExactly(new BigDecimal("0.333"), new BigDecimal("0.334"), new BigDecimal("0.333"));
         assertThat(jdbc.queryForList("SELECT amount FROM inv_doc_item WHERE doc_id=? ORDER BY seq", BigDecimal.class, doc))
@@ -126,7 +127,7 @@ class A1PurchasePrecisionIT {
                 WHERE o.id=? AND r.change_qty=-o.change_qty AND r.amount=-o.amount
                   AND r.purchase_rounding_version=o.purchase_rounding_version
                 """, Integer.class, original)).isEqualTo(1);
-        inventory.act(middle, "audit", new DocActionReq(inventory.detail(middle).getVersion(), null));
+        audit(middle, new DocActionReq(inventory.detail(middle).getVersion(), null));
         assertThat(stock(f)).isEqualByComparingTo("1.000");
         assertThat(netAmount(f)).isEqualByComparingTo("0.02");
         assertThat(jdbc.queryForObject("SELECT change_qty FROM inv_stock_log WHERE id=?", BigDecimal.class, original)).isEqualByComparingTo("0.334");
@@ -142,7 +143,7 @@ class A1PurchasePrecisionIT {
         long first = post(f, InvDocType.PURCHASE_IN, "1");
         jdbc.update("UPDATE inv_stock_log SET purchase_rounding_version=NULL WHERE inv_doc_id=?", first);
         long next = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, InvDocType.PURCHASE_IN, false, List.of("1"))).id();
-        assertThatThrownBy(() -> inventory.act(next, "audit", new DocActionReq(0, null)))
+        assertThatThrownBy(() -> audit(next, new DocActionReq(0, null)))
                 .isInstanceOfSatisfying(BizException.class, failure -> assertThat(failure.getCode()).isEqualTo(1002))
                 .hasMessageContaining("历史账");
         assertThat(stock(f)).isEqualByComparingTo("0.333");
@@ -157,7 +158,7 @@ class A1PurchasePrecisionIT {
         Fixture f = fixture("0.333333", "0.0050", "3");
         long draft = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, InvDocType.PURCHASE_IN, false, List.of("1"))).id();
         jdbc.update("UPDATE inv_doc_item SET purchase_price=NULL WHERE doc_id=?", draft);
-        assertThatThrownBy(() -> inventory.act(draft, "audit", new DocActionReq(0, null))).isInstanceOf(BizException.class).hasMessageContaining("重新载入来源");
+        assertThatThrownBy(() -> audit(draft, new DocActionReq(0, null))).isInstanceOf(BizException.class).hasMessageContaining("重新载入来源");
         var detail = inventory.detail(draft);
         InvDocItemReq line = new InvDocItemReq();
         line.setId(detail.getItems().getFirst().getId());
@@ -171,7 +172,7 @@ class A1PurchasePrecisionIT {
         saved.setToWarehouseId(f.warehouse());
         saved.setItems(List.of(line));
         int version = inventory.update(draft, saved);
-        inventory.act(draft, "audit", new DocActionReq(version, null));
+        audit(draft, new DocActionReq(version, null));
         assertThat(jdbc.queryForObject("SELECT purchase_price FROM inv_doc_item WHERE doc_id=?", BigDecimal.class, draft)).isEqualByComparingTo("0.0050");
         assertThat(stock(f)).isEqualByComparingTo("0.333");
     }
@@ -180,7 +181,7 @@ class A1PurchasePrecisionIT {
     void tailAdjustmentCannotCreateZeroOrReverseQuantity() {
         Fixture f = fixture("0.500000", "0.0050", "0.002");
         long draft = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, InvDocType.PURCHASE_IN, false, List.of("0.001", "0.001"))).id();
-        assertThatThrownBy(() -> inventory.act(draft, "audit", new DocActionReq(0, null))).isInstanceOf(BizException.class).hasMessageContaining("合并小批");
+        assertThatThrownBy(() -> audit(draft, new DocActionReq(0, null))).isInstanceOf(BizException.class).hasMessageContaining("合并小批");
         assertThat(jdbc.queryForObject("SELECT received_qty FROM pur_order_item WHERE id=?", BigDecimal.class, f.sourceItem())).isEqualByComparingTo("0");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM inv_stock_log WHERE material_sku_id=?", Integer.class, f.sku())).isZero();
         assertThat(inventory.detail(draft).getStatus()).isEqualTo("DRAFT");
@@ -220,7 +221,7 @@ class A1PurchasePrecisionIT {
         req.setItems(List.of(line));
         long purchase = purchases.create(req).id();
         purchases.act(purchase, "submit", new DocActionReq(0, null));
-        purchases.act(purchase, "audit", new DocActionReq(1, null));
+        TestIdentity.asAuditor(jdbc, () -> purchases.act(purchase, "audit", new DocActionReq(1, null)));
         long sourceItem = purchases.detail(purchase).getItems().getFirst().getId();
         return new Fixture(company, user, warehouse, sku, purchase, sourceItem);
     }
@@ -247,7 +248,14 @@ class A1PurchasePrecisionIT {
         return lines;
     }
 
-    private long post(Fixture f, InvDocType type, String qty) { return inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, type, true, List.of(qty))).id(); }
+    /** 按源单建一张草稿，换审核人审：建单时顺手过账（post）是自己审自己，甲方 11-21 答 Q10 起不行 */
+    private long post(Fixture f, InvDocType type, String qty) {
+        long id = inventory.fromSource(BizType.PURCHASE_ORDER, f.purchase(), request(f, type, false, List.of(qty))).id();
+        audit(id, new DocActionReq(0, null));
+        return id;
+    }
+
+    private void audit(long id, DocActionReq req) { TestIdentity.asAuditor(jdbc, () -> inventory.act(id, "audit", req)); }
     private BigDecimal stock(Fixture f) { return jdbc.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id=? AND material_sku_id=?", BigDecimal.class, f.warehouse(), f.sku()); }
     private BigDecimal netAmount(Fixture f) { return jdbc.queryForObject("SELECT sum(amount) FROM inv_stock_log WHERE material_sku_id=?", BigDecimal.class, f.sku()); }
     private static void login(long user) { SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(user, "a1-precision"), null, TestIdentity.withLines(PERMISSIONS).stream().map(SimpleGrantedAuthority::new).toList())); }

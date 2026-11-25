@@ -112,6 +112,7 @@ class A1DatabaseProductionIT {
         user = jdbc.queryForObject("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 真实事务') RETURNING id",
                 Long.class, "a1-" + UUID.randomUUID());
         TestIdentity.grant(jdbc, user, PERMISSIONS);
+        TestIdentity.auditorOf(jdbc, user);   // 先建好审核人，并发审核的线程不用同时建
         login(user);
     }
 
@@ -511,7 +512,10 @@ class A1DatabaseProductionIT {
     }
 
     private long create(Fixture f, InvDocType type, List<InvDocItemReq> items) { return documents.create(createRequest(f, type, items)).id(); }
-    private void audit(long id) { documents.act(id, "audit", new DocActionReq(documents.detail(id).getVersion(), null)); }
+    /** 自己建的单不能自己审（甲方 11-21 答 Q10）：换审核人审 */
+    private void audit(long id) {
+        TestIdentity.asAuditor(jdbc, () -> documents.act(id, "audit", new DocActionReq(documents.detail(id).getVersion(), null)));
+    }
     private int tryAudit(long id) { try { audit(id); return 0; } catch (BizException failure) { return failure.getCode(); } }
     private int trySave(long id, InvDocSaveReq req) { try { documents.update(id, req); return 0; } catch (BizException failure) { return failure.getCode(); } }
     private int count(String query, Object... args) { return jdbc.queryForObject(query, Integer.class, args); }

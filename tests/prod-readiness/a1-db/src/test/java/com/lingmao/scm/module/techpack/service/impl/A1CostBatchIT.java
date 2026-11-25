@@ -3,6 +3,7 @@ package com.lingmao.scm.module.techpack.service.impl;
 import com.lingmao.scm.IntegrationTest;
 import com.lingmao.scm.SqlStatementCapture;
 import com.lingmao.scm.TestColors;
+import com.lingmao.scm.TestIdentity;
 import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.price.dto.ProcessPriceKey;
 import com.lingmao.scm.module.price.service.PriceService;
@@ -10,19 +11,17 @@ import com.lingmao.scm.module.techpack.dto.StyleCostQuery;
 import com.lingmao.scm.module.techpack.dto.StyleCostRowVO;
 import com.lingmao.scm.module.techpack.mapper.TechPackMapper;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
-import com.lingmao.scm.security.LoginUser;
 import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.scripting.defaults.DefaultParameterHandler;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ConnectionCallback;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.JsonNode;
@@ -60,13 +59,13 @@ class A1CostBatchIT {
     private final List<Long> groups = new ArrayList<>();
     private final List<Long> colors = new ArrayList<>();
     private String prefix;
+    private long user;
 
     @BeforeAll
     void seedDifferentCostInputs() {
         prefix = "CB" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        long user = id("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 cost') RETURNING id", prefix);
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser(user, "A1 cost"), null,
-                List.of(new SimpleGrantedAuthority("data:all"), new SimpleGrantedAuthority("techpack:cost:query"))));
+        user = id("INSERT INTO sys_user(username,password,nickname) VALUES (?,'x','A1 cost') RETURNING id", prefix);
+        login();
         long category = id("INSERT INTO bas_category(name,level) VALUES (?,1) RETURNING id", prefix);
         long materialCategory = id("INSERT INTO bas_material_category(name,level) VALUES (?,1) RETURNING id", prefix);
         LocalDate today = LocalDate.now(clock);
@@ -120,6 +119,12 @@ class A1CostBatchIT {
                 jdbc.update("UPDATE bas_size_group SET base_size='L' WHERE id=?", group);
             }
         }
+    }
+
+    /** 每个用例前都登录：Spring 的测试监听器在每个用例后清掉登录，只在 @BeforeAll 登录，第二个用例就是没登录（看不见任何品类线） */
+    @BeforeEach
+    void login() {
+        TestIdentity.login(user, List.of("data:all", "techpack:cost:query"));   // TestIdentity 带上三条品类线（V44）
     }
 
     @Test
