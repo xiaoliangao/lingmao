@@ -14,6 +14,7 @@ import { formatDateTime } from './format'
 import { currentCompanyScope } from './companyScope'
 import { canReplayWrite } from './writePolicy'
 import { visibleWriteBody } from './fieldAccess'
+import { isDismissed, isFormValidationError } from './expectedError'
 
 /** 后端所有接口的统一返回体 */
 export interface R<T> {
@@ -70,6 +71,14 @@ export class ApiError extends Error {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+/**
+ * 没接住、但属于正常流程的"错误"：接口错误（消息已经弹过）、请求被取消、确认框点了取消或关闭、表单校验没过。
+ * 全局 errorHandler 不打红，ModuleBoundary 不把整页换成"暂时无法显示"（见 expectedError.ts）
+ */
+export function isExpectedError(err: unknown): boolean {
+  return err instanceof ApiError || axios.isCancel(err) || isDismissed(err) || isFormValidationError(err)
 }
 
 /** 上传文件的大小上限，和后端 FileServiceImpl 一致：一般 10MB；设计源文件 AI、PSD 100MB（只有款式的设计附件收） */

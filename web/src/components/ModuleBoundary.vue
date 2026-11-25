@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { onErrorCaptured, ref } from 'vue'
-import { isCancel } from 'axios'
-import { ApiError } from '@/utils/request'
+import { isExpectedError } from '@/utils/request'
 import { clientActionUuid } from '@/utils/clientAction'
 const failed = ref(false)
 const trace = ref('')
 const generation = ref(0)
 const copied = ref(false)
 onErrorCaptured((error) => {
-  if (error instanceof ApiError || isCancel(error)) return false
+  // 接口错误、取消、确认框点了取消、表单校验没过是正常流程（事件处理里常直接 await 不 catch），不换掉整页
+  if (isExpectedError(error)) return false
   trace.value = clientActionUuid()
   failed.value = true
   // 错误内容可能带服务端数据，控制台只记一个本地关联编号。
