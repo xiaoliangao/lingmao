@@ -320,7 +320,7 @@ const loadLogs = () => statementApiBase.logs(id)
           <el-table :data="detail.items" row-key="id" scrollbar-always-on
             empty-text="这张对账单没有明细：点「刷新」把这段时间里后来审核的单据加进来，或者作废" @selection-change="selected = $event">
             <el-table-column v-if="canRemove" type="selection" width="40" fixed="left" />
-            <el-table-column label="类型" width="84">
+            <el-table-column label="类型" width="96">
               <template #default="{ row }">
                 <StatusTag :tone="STATEMENT_SOURCE[(row as StatementItem).sourceType].tone">{{ STATEMENT_SOURCE[(row as StatementItem).sourceType].label }}</StatusTag>
               </template>
