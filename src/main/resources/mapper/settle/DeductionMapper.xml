@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 扣款登记列表（RFC 019 §5.2）：主体、供应商只读 JOIN；进了哪张没作废的对账单查 stl_statement_item -->
+<mapper namespace="com.lingmao.scm.module.settle.mapper.DeductionMapper">
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.settle.dto.DeductionRowVO">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword)"/>
+        SELECT d.id, d.company_id, COALESCE(c.short_name, c.name) AS company_name, d.partner_id, p.code AS partner_code,
+               COALESCE(p.short_name, p.name) AS partner_name, d.biz_date, d.amount, d.reason, d.ref_no, d.version,
+               st.id AS statement_id, st.no AS statement_no, st.status AS statement_status, d.create_by, d.create_time
+        FROM stl_deduction d
+        JOIN bas_company c ON c.id = d.company_id
+        JOIN sup_supplier p ON p.id = d.partner_id
+        LEFT JOIN stl_statement_item i ON i.source_type = 'DEDUCTION' AND i.source_id = d.id AND i.active
+        LEFT JOIN stl_statement st ON st.id = i.statement_id
+        WHERE true
+        <if test="scope.self">AND d.create_by = #{scope.userId}</if>
+        <if test="q.companyId != null">AND d.company_id = #{q.companyId}</if>
+        <if test="q.partnerId != null">AND d.partner_id = #{q.partnerId}</if>
+        <if test="q.dateFrom != null">AND d.biz_date &gt;= #{q.dateFrom}</if>
+        <if test="q.dateTo != null">AND d.biz_date &lt;= #{q.dateTo}</if>
+        <if test="q.settled != null and q.settled">AND i.id IS NOT NULL</if>
+        <if test="q.settled != null and !q.settled">AND i.id IS NULL</if>
+        <if test="kw != null">
+            AND (d.reason LIKE #{kw} OR d.ref_no ILIKE #{kw} OR p.code ILIKE #{kw} OR p.name LIKE #{kw} OR p.short_name LIKE #{kw})
+        </if>
+        ORDER BY d.biz_date DESC, d.id DESC
+    </select>
+</mapper>

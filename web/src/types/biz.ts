@@ -70,6 +70,7 @@ export type BizType =
   | 'PRODUCTION_ISSUE'
   | 'PRODUCTION_NODE_REPORT'
   | 'FG_DOC'
+  | 'STATEMENT'
 
 /**
  * 单据的通用状态（后端 common.doc.DocStatus，架构 §4.2）。各单据只用其中一部分；中文按单据类型叫

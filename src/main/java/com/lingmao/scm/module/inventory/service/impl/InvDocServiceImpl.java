@@ -261,7 +261,12 @@ public class InvDocServiceImpl implements InvDocService {
         boolean posted = !postedItems.isEmpty();
         vo.setPosted(posted);
         boolean inScope = DataScope.current(false).canSee(doc.getCreateBy());
-        vo.setActions(actions(doc.getStatus(), posted, doc.getCreateBy(), !inScope));
+        List<String> actions = actions(doc.getStatus(), posted, doc.getCreateBy(), !inScope);
+        if (actions.contains("unaudit") && isPurchase(doc.getDocType())
+                && !referenceService.referrers(BizType.INV_DOC, doc.getId()).isEmpty()) {
+            actions = actions.stream().filter(a -> !a.equals("unaudit")).toList();   // 进了对账单（RFC 019 §5.1）
+        }
+        vo.setActions(actions);
         vo.setFilesEditable(inScope && LoginUser.hasAuthority(PERM + "edit"));
         return vo;
     }
@@ -651,6 +656,9 @@ public class InvDocServiceImpl implements InvDocService {
                 .set(InvDoc::getAuditTime, null)
                 .setSql("version = version + 1")
                 .eq(InvDoc::getVersion, req.version()));
+        // 先改状态（锁住单头）再查引用：进了没作废的对账单的采购入库、采购退货不能反审核（RFC 019 §5.1，1005）。
+        // 生成对账单时 FOR SHARE 锁着入库单，这里等它提交以后查得到
+        referenceService.assertNoReferrer(BizType.INV_DOC, doc.getId(), "反审核");
         List<InvDocItem> items = itemMapper.selectByDoc(doc.getId());
         if (doc.getSourceType() != null) {
             handler(BizType.valueOf(doc.getSourceType())).preparePosting(sourcePosting(doc, items), true);

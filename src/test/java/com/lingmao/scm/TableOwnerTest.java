@@ -78,6 +78,7 @@ class TableOwnerTest {
             entry("contract", List.of("ctr_")),
             entry("dev", List.of("dev_")),
             entry("fg", List.of("fg_")),
+            entry("settle", List.of("stl_")),
             entry("board", List.of()));
 
     /** Mapper XML 放在这里（application.yaml 的 mybatis-plus.mapper-locations）。测试的工作目录是项目根目录 */

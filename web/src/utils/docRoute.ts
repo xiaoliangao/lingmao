@@ -28,6 +28,8 @@ export function docRoute(ref: Pick<DocRef, 'type' | 'kind' | 'id' | 'parentId'>)
       return `/stock-takes/${ref.id}`
     case 'FG_DOC':
       return ref.kind === 'OUT' ? `/fg-out/${ref.id}` : `/fg-in/${ref.id}`
+    case 'STATEMENT':
+      return `/statements/${ref.id}`
     case 'PRODUCTION_ORDER':
       return ref.kind === 'BUY' ? `/fp-purchases/${ref.id}` : `/production/${ref.id}`
     // 挂在生产单详情里，打开对应的页签（05 §1.4）；不知道是哪种生产单，先去外发加工单的地址，详情页按 kind 自己纠正

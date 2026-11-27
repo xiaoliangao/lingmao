@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  对账单（RFC 019 §5.1，docs/api/09）：主体、供应商只读 JOIN；拉单据只读 inv_doc(_item)、prd_receipt(_item)、prd_order、物料（架构 §3.2 规则 4）。
+  "还没进对账单" = stl_statement_item 里没有 active 的这一条（和唯一索引 uk_stl_item_source 一个口径）。
+  拉单据时 FOR SHARE 锁住源单：和入库单反审核、回货单作废排队（它们先改状态再查引用，等这里提交以后就查得到对账单）
+-->
+<mapper namespace="com.lingmao.scm.module.settle.mapper.StatementMapper">
+
+    <sql id="rowColumns">
+        s.id, s.no, s.company_id, COALESCE(c.short_name, c.name) AS company_name, s.partner_id, p.code AS partner_code,
+        COALESCE(p.short_name, p.name) AS partner_name, s.period_start, s.period_end, s.statement_date, s.status,
+        s.total_amount, s.deduct_amount, s.payable_amount, s.their_amount,
+        (SELECT COUNT(*) FROM jsonb_array_elements(s.compare_result -> 'rows') e WHERE e ->> 'outcome' &lt;&gt; 'MATCH') AS diff_count,
+        (SELECT COUNT(*) FROM stl_statement_item i WHERE i.statement_id = s.id) AS item_count,
+        s.remark, s.create_by, s.create_time
+    </sql>
+
+    <select id="selectRowPage" resultType="com.lingmao.scm.module.settle.dto.StatementRowVO">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword)"/>
+        SELECT <include refid="rowColumns"/>
+        FROM stl_statement s
+        JOIN bas_company c ON c.id = s.company_id
+        JOIN sup_supplier p ON p.id = s.partner_id
+        WHERE true
+        <if test="scope.self">AND s.create_by = #{scope.userId}</if>
+        <if test="q.status != null and q.status.size() > 0">
+            AND s.status IN <foreach collection="q.status" item="st" open="(" separator="," close=")">#{st}</foreach>
+        </if>
+        <if test="q.companyId != null">AND s.company_id = #{q.companyId}</if>
+        <if test="q.partnerId != null">AND s.partner_id = #{q.partnerId}</if>
+        <if test="q.periodFrom != null">AND s.period_end &gt;= #{q.periodFrom}</if>
+        <if test="q.periodTo != null">AND s.period_start &lt;= #{q.periodTo}</if>
+        <if test="kw != null">
+            AND (s.no ILIKE #{kw} OR p.code ILIKE #{kw} OR p.name LIKE #{kw} OR p.short_name LIKE #{kw})
+        </if>
+        ORDER BY s.id DESC
+    </select>
+
+    <select id="selectRow" resultType="com.lingmao.scm.module.settle.dto.StatementRowVO">
+        SELECT <include refid="rowColumns"/>
+        FROM stl_statement s
+        JOIN bas_company c ON c.id = s.company_id
+        JOIN sup_supplier p ON p.id = s.partner_id
+        WHERE s.id = #{id}
+    </select>
+
+    <!-- 采购入库、采购退货：一行一条明细，按采购单位（供应商按采购单位开单）。数量、金额都是正的 -->
+    <select id="selectPurchaseLines" resultType="com.lingmao.scm.module.settle.entity.StatementItem">
+        SELECT d.doc_type AS source_type, d.id AS source_id, i.id AS source_item_id, d.no AS source_no,
+               d.source_no AS order_no, d.supplier_delivery_no AS delivery_no, d.doc_date AS biz_date,
+               left(concat_ws(' ', m.name, cl.name, NULLIF(k.spec, '')), 255) AS description,
+               COALESCE(i.purchase_unit, m.stock_unit) AS unit, COALESCE(i.purchase_qty, i.qty) AS qty,
+               COALESCE(i.purchase_price, i.price) AS price, COALESCE(i.amount, 0) AS amount, 0 AS deduct_amount
+        FROM inv_doc d
+        JOIN inv_doc_item i ON i.doc_id = d.id
+        JOIN bas_material_sku k ON k.id = i.material_sku_id
+        JOIN bas_material m ON m.id = k.material_id
+        LEFT JOIN bas_color cl ON cl.id = k.color_id
+        WHERE d.status = 'APPROVED' AND d.doc_type IN ('PURCHASE_IN', 'PURCHASE_RETURN')
+          AND d.company_id = #{companyId} AND d.partner_id = #{partnerId}
+          AND d.doc_date BETWEEN #{from} AND #{to}
+          AND NOT EXISTS (SELECT 1 FROM stl_statement_item x
+                          WHERE x.active AND x.source_type = d.doc_type AND COALESCE(x.source_item_id, x.source_id) = i.id)
+        ORDER BY d.doc_date, d.id, i.seq
+        FOR SHARE OF d
+    </select>
+
+    <!-- 回货：一张回货单一行，件数含次品，单价取生产单的；deduct_amount 先放次品件数 -->
+    <select id="selectReceipts" resultType="com.lingmao.scm.module.settle.entity.StatementItem">
+        SELECT 'PRODUCTION_RECEIPT' AS source_type, r.id AS source_id, r.no AS source_no, o.no AS order_no,
+               r.logistics_no AS delivery_no, r.receipt_date AS biz_date,
+               left(concat_ws(' ', st.code, st.name), 255) AS description,
+               t.qty, o.unit_price AS price, t.defect_qty AS deduct_amount
+        FROM prd_receipt r
+        JOIN prd_order o ON o.id = r.prd_order_id
+        JOIN sty_style st ON st.id = o.style_id
+        JOIN LATERAL (SELECT SUM(ri.qty) AS qty, SUM(ri.defect_qty) AS defect_qty
+                      FROM prd_receipt_item ri WHERE ri.receipt_id = r.id) t ON true
+        WHERE r.status = 'APPROVED' AND r.company_id = #{companyId} AND o.factory_id = #{partnerId}
+          AND r.receipt_date BETWEEN #{from} AND #{to}
+          AND NOT EXISTS (SELECT 1 FROM stl_statement_item x
+                          WHERE x.active AND x.source_type = 'PRODUCTION_RECEIPT' AND COALESCE(x.source_item_id, x.source_id) = r.id)
+        ORDER BY r.receipt_date, r.id
+        FOR SHARE OF r
+    </select>
+
+    <!-- 扣款登记：FOR UPDATE 和改、删扣款排队（改、删先锁再查进没进对账单） -->
+    <select id="selectDeductions" resultType="com.lingmao.scm.module.settle.entity.StatementItem">
+        SELECT 'DEDUCTION' AS source_type, d.id AS source_id, d.ref_no AS source_no, d.biz_date,
+               left(d.reason, 255) AS description, 0 AS amount, d.amount AS deduct_amount
+        FROM stl_deduction d
+        WHERE d.company_id = #{companyId} AND d.partner_id = #{partnerId}
+          AND d.biz_date BETWEEN #{from} AND #{to}
+          AND NOT EXISTS (SELECT 1 FROM stl_statement_item x
+                          WHERE x.active AND x.source_type = 'DEDUCTION' AND COALESCE(x.source_item_id, x.source_id) = d.id)
+        ORDER BY d.biz_date, d.id
+        FOR UPDATE OF d
+    </select>
+
+    <!-- 待对账：三种单据各自算到"主体 × 往来 × 月份"，一张单据算一张；金额是实付（货款 − 扣款） -->
+    <select id="selectPending" resultType="com.lingmao.scm.module.settle.dto.PendingStatementRow">
+        SELECT x.company_id, COALESCE(c.short_name, c.name) AS company_name, x.partner_id, p.code AS partner_code,
+               COALESCE(p.short_name, p.name) AS partner_name, to_char(x.month, 'YYYY-MM') AS month,
+               x.month::date AS period_start, (x.month + interval '1 month' - interval '1 day')::date AS period_end,
+               COUNT(DISTINCT x.doc_key) AS doc_count, SUM(x.amount) AS amount
+        FROM (
+            SELECT d.company_id, d.partner_id, date_trunc('month', d.doc_date) AS month, 'I' || d.id AS doc_key,
+                   CASE WHEN d.doc_type = 'PURCHASE_RETURN' THEN -COALESCE(i.amount, 0) ELSE COALESCE(i.amount, 0) END AS amount
+            FROM inv_doc d
+            JOIN inv_doc_item i ON i.doc_id = d.id
+            WHERE d.status = 'APPROVED' AND d.doc_type IN ('PURCHASE_IN', 'PURCHASE_RETURN') AND d.partner_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM stl_statement_item s
+                              WHERE s.active AND s.source_type = d.doc_type AND COALESCE(s.source_item_id, s.source_id) = i.id)
+            UNION ALL
+            SELECT r.company_id, o.factory_id, date_trunc('month', r.receipt_date), 'R' || r.id,
+                   round((t.qty - t.defect_qty) * o.unit_price, 2)
+            FROM prd_receipt r
+            JOIN prd_order o ON o.id = r.prd_order_id
+            JOIN LATERAL (SELECT SUM(ri.qty) AS qty, SUM(ri.defect_qty) AS defect_qty
+                          FROM prd_receipt_item ri WHERE ri.receipt_id = r.id) t ON true
+            WHERE r.status = 'APPROVED'
+              AND NOT EXISTS (SELECT 1 FROM stl_statement_item s
+                              WHERE s.active AND s.source_type = 'PRODUCTION_RECEIPT' AND COALESCE(s.source_item_id, s.source_id) = r.id)
+            UNION ALL
+            SELECT d.company_id, d.partner_id, date_trunc('month', d.biz_date), 'D' || d.id, -d.amount
+            FROM stl_deduction d
+            WHERE NOT EXISTS (SELECT 1 FROM stl_statement_item s
+                              WHERE s.active AND s.source_type = 'DEDUCTION' AND COALESCE(s.source_item_id, s.source_id) = d.id)
+        ) x
+        JOIN bas_company c ON c.id = x.company_id
+        JOIN sup_supplier p ON p.id = x.partner_id
+        WHERE true
+        <if test="q.companyId != null">AND x.company_id = #{q.companyId}</if>
+        <if test="q.partnerId != null">AND x.partner_id = #{q.partnerId}</if>
+        GROUP BY x.company_id, c.short_name, c.name, x.partner_id, p.code, p.short_name, p.name, x.month
+        ORDER BY x.month DESC, p.code, x.company_id
+        LIMIT 500
+    </select>
+</mapper>

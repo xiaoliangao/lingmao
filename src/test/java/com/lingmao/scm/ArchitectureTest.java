@@ -45,6 +45,7 @@ class ArchitectureTest {
             entry("board", Set.of("production", "purchase", "dev", "fg")),
             entry("contract", Set.of("production", "purchase")),
             entry("fg", Set.of("production")),
+            entry("settle", Set.of("production")),
             entry("dev", Set.of("techpack")),
             entry("production", Set.of("purchase", "order", "inventory", "price")),
             entry("purchase", Set.of("order", "inventory", "supplier", "price")),

@@ -81,6 +81,7 @@ const DETAIL_ROUTES: { parent: string; file: string; title: string; path?: strin
   // 二期成品（docs/api/07 §1.1）
   { parent: '/fg-in', file: 'fg/doc/detail', title: '成品入库单' },
   { parent: '/fg-out', file: 'fg/doc/detail', title: '成品出库单' },
+  { parent: '/statements', file: 'settle/statement/detail', title: '对账单' },
 ]
 const detailPages = import.meta.glob('../views/**/{detail,form}.vue')
 /** 加过的菜单页面：地址 → 所在目录名，挂详情路由时查 */
