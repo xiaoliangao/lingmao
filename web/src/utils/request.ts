@@ -41,14 +41,20 @@ export interface RequestOptions {
   /** 内部用：异步查主体之前先记下的登录周期。 */
   authEpoch?: string
 }
-/** quietTransient：写操作遇到暂时故障先自己重试，拦截器不弹提示，最后由 performWrite 说一句 */
-type RequestConfig = AxiosRequestConfig<unknown> & RequestOptions & { replayed?: boolean; quietTransient?: boolean }
+/**
+ * quietTransient：写操作遇到暂时故障先自己重试，拦截器不弹提示，最后由 performWrite 说一句。
+ * quietBusy：upload 遇到 429（服务器忙）先自己等着重试，拦截器不弹提示；别的错误照常弹
+ */
+type RequestConfig = AxiosRequestConfig<unknown> & RequestOptions & { replayed?: boolean; quietTransient?: boolean; quietBusy?: boolean }
 
 function isSilent(config: AxiosRequestConfig<unknown> | undefined): boolean {
   return !!config && 'silent' in config && config.silent === true
 }
 function isQuietTransient(config: AxiosRequestConfig<unknown> | undefined): boolean {
   return !!config && 'quietTransient' in config && config.quietTransient === true
+}
+function isQuietBusy(config: AxiosRequestConfig<unknown> | undefined): boolean {
+  return !!config && 'quietBusy' in config && config.quietBusy === true
 }
 
 /** 接口出错。消息已经在下面的拦截器里弹过了（silent 的除外），调用方不用再提示 */
@@ -251,7 +257,7 @@ function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
         location.replace(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`)
       }
     }
-  } else if (!isSilent(response.config) && !(transient && isQuietTransient(response.config))) {
+  } else if (!isSilent(response.config) && !(transient && isQuietTransient(response.config)) && !(body.code === 429 && isQuietBusy(response.config))) {
     if (LIST_ERROR_CODES.includes(body.code) && Array.isArray(body.data) && body.data.length > 0) {
       showBizError(body.code, body.msg, body.data)
     } else {
@@ -581,8 +587,15 @@ export const http = {
   delete: <T>(url: string, options?: RequestOptions) => request<T>({ url, method: 'delete', ...options }),
 }
 
+/**
+ * 服务器同时只处理两个大文件（上传、导入、导出，后端 HeavyIoFilter），多的当场回 429 + Retry-After。
+ * 429 时文件还没被收下，原样重发是安全的：等它说的秒数再试，最多 BUSY_RETRIES 次（约 15 秒），中间不提示，最后一次还忙才报错。
+ * 别的错误（格式不对、太大）第一次就照常弹、照常抛
+ */
+const BUSY_RETRIES = 5
+
 /** 上传一个文件：multipart，字段名 file（后端约定）。filename 不传就用文件自己的名字 */
-export function upload<T>(
+export async function upload<T>(
   url: string,
   file: Blob,
   options: { filename?: string; silent?: boolean; fields?: Record<string, string> } = {},
@@ -592,7 +605,15 @@ export function upload<T>(
   // 别的表单字段（账号导入的初始密码）：放在请求体里，不拼进地址
   Object.entries(options.fields ?? {}).forEach(([key, value]) => form.append(key, value))
   const timeout = Math.max(TRANSFER_TIMEOUT, (file.size / SLOW_BYTES_PER_SECOND) * 1000)
-  return request<T>({ url, method: 'post', data: form, timeout, silent: options.silent })
+  for (let tries = 0; ; tries++) {
+    const last = tries >= BUSY_RETRIES
+    try {
+      return await request<T>({ url, method: 'post', data: form, timeout, silent: options.silent, quietBusy: !last })
+    } catch (error) {
+      if (last || !(error instanceof ApiError && error.code === 429)) throw error
+      await sleep(error.retryAfter ?? 3000)
+    }
+  }
 }
 
 /**

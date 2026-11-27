@@ -5,8 +5,9 @@ import { computed } from 'vue'
  * 错误清单表格。1003 的每一项是 {sheet?, row, column, message}，显示成"工作表 / 行 / 列 / 问题"：
  * sheet 只在一个文件几张表的导入里有，没有就不出这一列；row 是 0 说的是整张表、整个文件，显示"—"。
  * 导入成功时的提示清单格式一样，传 message-label="说明"。
- * 1001、1004、1005 是"对象数组"：每个字段一列，表头查 LABELS，不认识的字段用字段名当表头（一眼看得出漏了哪个）。
- * 各种清单有哪些字段见 docs/api：库存不足、超收超退 04 §3.4，超排 02 §3.12，1005 是 DocRef（README §4.5）
+ * 1001、1004 是"对象数组"：每个字段一列，表头查 LABELS，不认识的字段用字段名当表头（一眼看得出漏了哪个）。
+ * 各种清单有哪些字段见 docs/api：库存不足、超收超退 04 §3.4，超排 02 §3.12。1005 是 DocRef（README §4.5），不走这里，
+ * BizErrorDialog 用 DocRefTable 显示
  */
 const props = withDefaults(defineProps<{ items: unknown[]; messageLabel?: string }>(), { messageLabel: '问题' })
 

@@ -22,7 +22,7 @@ const model = defineModel<FileVO[]>({ default: () => [] })
 interface Pending {
   id: number
   name: string
-  status: '压缩中' | '上传中'
+  status: '排队中' | '压缩中' | '上传中'
 }
 const pending = ref<Pending[]>([])
 let lastId = 0
@@ -57,25 +57,26 @@ async function onPick(event: Event) {
 async function add(files: File[]) {
   const task = uploads.begin()
   const current = () => mounted && task.current()
-  const batch = files.map((file) => reactive<Pending>({ id: ++lastId, name: file.name, status: '压缩中' }))
+  const batch = files.map((file) => reactive<Pending>({ id: ++lastId, name: file.name, status: '排队中' }))
   pending.value.push(...batch)
   let success = false
   try {
-    const requests: Promise<FileVO | null>[] = []
+    // 一张传完再传下一张：服务器同时只收两个文件，一次选几张全发出去，多的会被 429 退回（2d 走查发现）。
+    // 手机上一张一张传也不会几张一起卡在弱网里
+    const uploaded: FileVO[] = []
     for (const [index, file] of files.entries()) {
+      batch[index]!.status = '压缩中'
       const compressed = await compressImage(file)
       if (!current()) return
       if (compressed.size > MAX_UPLOAD_SIZE) {
         ElMessage.error(`${file.name} 超过 ${MAX_UPLOAD_SIZE / 1024 / 1024}MB，传不了`)
-        requests.push(Promise.resolve(null))
         continue
       }
       batch[index]!.status = '上传中'
-      requests.push(fileApi.upload(compressed).catch(() => null))
+      const result = await fileApi.upload(compressed).catch(() => null)
+      if (!current()) return
+      if (result) uploaded.push(result)
     }
-    const results = await Promise.all(requests)
-    if (!current()) return
-    const uploaded = results.filter((file): file is FileVO => file !== null)
     if (uploaded.length) await applyImages((files) => [...files, ...uploaded], current)
     success = uploaded.length === files.length
   } catch {
