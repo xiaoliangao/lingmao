@@ -31,6 +31,7 @@ public class DocLogServiceImpl implements DocLogService {
 
     private final DocLogMapper docLogMapper;
     private final UserService userService;
+    private final RejectNotifier rejectNotifier;
 
     @Override
     public void add(BizType type, long docId, String action, String remark) {
@@ -80,6 +81,10 @@ public class DocLogServiceImpl implements DocLogService {
         log.setOperatorId(LoginUser.currentUserId());
         log.setExtra(extra);
         docLogMapper.insert(log);
+        // 驳回：钉钉告诉提交的人（RFC 019 §4），和驳回同一个事务入队
+        if (RejectNotifier.isReject(action)) {
+            rejectNotifier.rejected(type, docId, action, remark, log.getId());
+        }
     }
 
     @Override

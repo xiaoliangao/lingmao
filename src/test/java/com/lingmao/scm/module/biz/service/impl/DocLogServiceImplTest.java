@@ -45,6 +45,9 @@ class DocLogServiceImplTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private RejectNotifier rejectNotifier;
+
     @InjectMocks
     private DocLogServiceImpl service;
 

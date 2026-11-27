@@ -6,6 +6,8 @@
 export const STANDALONE_PAGES: Record<string, { detail: string }> = {
   // 手机报工（docs/api/05 §1.4）：给跟单员在手机上用，手机上登录后直接进这里（router 的 phoneHome）
   '/mobile': { detail: 'production/mobile/detail' },
+  // 手机待办（RFC 019 §4）：待我审核、预警；钉钉消息的"打开"到这里。详情 /mobile-todo/:id?type=ORDER
+  '/mobile-todo': { detail: 'report/mobile/detail' },
 }
 
 export function isStandalone(path: string) {

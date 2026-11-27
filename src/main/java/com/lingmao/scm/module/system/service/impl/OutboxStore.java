@@ -31,7 +31,7 @@ public class OutboxStore implements OutboxService {
 
     @Override @Transactional
     public long enqueue(String kind, String dedupeKey, String payload, Long actor, String requestId) {
-        if (!List.of("CACHE_INVALIDATE", "STOCK_LOG_EXPORT").contains(kind) || dedupeKey.length() > 200)
+        if (!List.of("CACHE_INVALIDATE", "STOCK_LOG_EXPORT", "DINGTALK_MESSAGE").contains(kind) || dedupeKey.length() > 200)
             throw new IllegalArgumentException("Unsupported job kind/key");
         String trace = com.lingmao.scm.common.log.TraceIdFilter.normalized(requestId);
         List<Long> inserted = jdbc.queryForList("""

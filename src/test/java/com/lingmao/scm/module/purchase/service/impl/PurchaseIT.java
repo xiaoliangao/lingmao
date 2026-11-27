@@ -92,6 +92,8 @@ class PurchaseIT {
     @Autowired
     private com.lingmao.scm.module.board.service.ReportService reportService;
     @Autowired
+    private com.lingmao.scm.module.board.mapper.DueWarningMapper dueWarningMapper;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private DataSource dataSource;
@@ -868,6 +870,14 @@ class PurchaseIT {
             assertThat(r.getAvgLateDays()).isEqualByComparingTo("2.5");
         });
         assertThat(perf.total().getLineCount()).isEqualTo(3);
+
+        // 每天的货期预警（钉钉，RFC 019 §4）：采购员名下到料逾期的行，到齐了的（late 已收齐）不算；预计到货没有用交期（和待到料一样）
+        jdbcTemplate.update("UPDATE pur_order_item SET expect_date = NULL WHERE purchase_order_id = ?", missing);
+        long buyer = jdbcTemplate.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES (?, 'x', '采购') RETURNING id",
+                Long.class, "it-buyer-" + code);
+        jdbcTemplate.update("UPDATE pur_order SET buyer_id = ? WHERE id IN (?, ?, ?)", buyer, onTime, late, missing);
+        assertThat(dueWarningMapper.selectArrival(today)).filteredOn(d -> d.userId() == buyer).singleElement()
+                .satisfies(d -> assertThat(d.late()).isEqualTo(1));
 
         jdbcTemplate.update("UPDATE inv_stock_log SET biz_date = ? WHERE warehouse_id = ?", today.minusDays(200), f.warehouse());
         com.lingmao.scm.module.board.dto.StaleMaterialQuery sq = new com.lingmao.scm.module.board.dto.StaleMaterialQuery();

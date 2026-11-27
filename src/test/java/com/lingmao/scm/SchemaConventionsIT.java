@@ -356,9 +356,9 @@ class SchemaConventionsIT {
             ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("production:capacity:list", "production:capacity:edit")));
         }
         ROLE_PERMS.put("manager", union(ROLE_PERMS.get("manager"), Set.of("production:capacity:list")));
-        // V63：报表和预警中心（RFC 019 §3）
+        // V63：报表和预警中心（RFC 019 §3）；V64：手机待办和预警中心给同样的岗位（RFC 019 §4）
         for (String code : List.of("dev", "dev_lead", "sales", "sales_lead", "merchandiser", "buyer", "warehouse", "finance", "manager", "prod_manager", "order_clerk")) {
-            ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("report:alert:list")));
+            ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("report:alert:list", "report:mobile:list")));
         }
         for (String code : List.of("manager", "prod_manager", "buyer", "merchandiser", "order_clerk", "finance")) {
             ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("report:supplier:list")));
@@ -389,21 +389,21 @@ class SchemaConventionsIT {
     private static final List<String> MAKE_CAPACITY = List.of("外发加工单", "成品采购单", "工厂料账", "工厂产能", "看板");
     private static final List<String> MAKE_LEDGER_MOBILE = List.of("外发加工单", "成品采购单", "工厂料账", "工厂产能", "看板", "手机报工");
     private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.ofEntries(
-            Map.entry("dev", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心"))),
-            Map.entry("dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心"))),
-            Map.entry("sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心"))),
-            Map.entry("sales_lead", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "在做件数"))),
+            Map.entry("dev", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "手机待办"))),
+            Map.entry("dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "手机待办"))),
+            Map.entry("sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "手机待办"))),
+            Map.entry("sales_lead", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "在做件数", "手机待办"))),
             Map.entry("merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
                     "物料", List.of("算料", "采购", "物料入库单", "物料出库单", "库存"),
-                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数"))),
-            Map.entry("buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "呆滞料"))),
-            Map.entry("warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER, "报表", List.of("预警中心", "呆滞料"))),
-            Map.entry("finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "订单毛利", "呆滞料"))),
-            Map.entry("manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_CAPACITY, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "订单毛利", "呆滞料"))),
+                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "手机待办"))),
+            Map.entry("buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "呆滞料", "手机待办"))),
+            Map.entry("warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER, "报表", List.of("预警中心", "呆滞料", "手机待办"))),
+            Map.entry("finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "订单毛利", "呆滞料", "手机待办"))),
+            Map.entry("manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_CAPACITY, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "订单毛利", "呆滞料", "手机待办"))),
             Map.entry("prod_manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料"))),
+                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料", "手机待办"))),
             Map.entry("order_clerk", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料"))),
+                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料", "手机待办"))),
             Map.entry("stock_auditor", Map.of("物料", List.of("物料入库单", "物料出库单", "物料盘点单", "库存"))));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */

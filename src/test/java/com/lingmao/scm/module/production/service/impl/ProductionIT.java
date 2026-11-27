@@ -109,6 +109,8 @@ class ProductionIT {
     @Autowired
     private com.lingmao.scm.module.board.service.ReportService reportService;
     @Autowired
+    private com.lingmao.scm.module.board.mapper.DueWarningMapper dueWarningMapper;
+    @Autowired
     private ReferenceService referenceService;
     @Autowired
     private NeedDateSource needDateSource;
@@ -349,6 +351,34 @@ class ProductionIT {
         assertThat(foreign.list().getFirst().getMargin()).isNull();
         assertThat(foreign.foreignOrders()).isEqualTo(1);
         assertThat(foreign.salesAmount()).isZero();
+    }
+
+    /**
+     * 每天的货期预警（钉钉，RFC 019 §4）按跟单员数：逾期、7 天内到期、节点延期各几张，口径和 riskJoin 一样（预计交期没有用约定交期）；
+     * 停用的人不数
+     */
+    @Test
+    void dueWarningDigest() {
+        Fixture f = fixture();
+        LocalDate today = LocalDate.now();
+        long late = approvedProduction(f);
+        long near = approvedProduction(f);
+        long later = approvedProduction(f);
+        jdbcTemplate.update("UPDATE prd_order SET merch_id = ?, expect_date = NULL, due_date = ? WHERE id = ?", f.user(), today.minusDays(1), late);
+        jdbcTemplate.update("UPDATE prd_order SET merch_id = ?, expect_date = ?, due_date = ? WHERE id = ?", f.user(), today.plusDays(3),
+                today.plusDays(30), near);
+        jdbcTemplate.update("UPDATE prd_order SET merch_id = ?, expect_date = NULL, due_date = ? WHERE id = ?", f.user(), today.plusDays(30), later);
+        jdbcTemplate.update("UPDATE prd_node SET plan_start = ?, plan_finish = ?, actual_finish = NULL WHERE id = (SELECT id FROM prd_node "
+                + "WHERE prd_order_id = ? ORDER BY seq LIMIT 1)", today.minusDays(1), today.minusDays(1), later);
+
+        assertThat(dueWarningMapper.selectProduction(today, today.plusDays(7))).filteredOn(d -> d.userId() == f.user()).singleElement()
+                .satisfies(d -> {
+                    assertThat(d.late()).isEqualTo(1);
+                    assertThat(d.near()).isEqualTo(1);
+                    assertThat(d.nodeLate()).isEqualTo(1);
+                });
+        jdbcTemplate.update("UPDATE sys_user SET status = 0 WHERE id = ?", f.user());
+        assertThat(dueWarningMapper.selectProduction(today, today.plusDays(7))).noneMatch(d -> d.userId() == f.user());
     }
 
     /** 二次加工按单选（甲方 11-27 答 Q61）：勾了的单审核后多一个"二次加工"节点，排在车缝后面；别的单没有 */

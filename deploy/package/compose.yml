@@ -71,6 +71,10 @@ services:
       EXPORT_DIR: /data/exports
       LINGMAO_PROXY_TRUSTED_CIDRS: ${SCM_EDGE_WEB_IP:-172.30.250.2}/32
       BACKUP_DIR: /backups
+      SCM_PUBLIC_URL: ${SCM_PUBLIC_URL:-}
+      SCM_DINGTALK_APP_KEY: ${SCM_DINGTALK_APP_KEY:-}
+      SCM_DINGTALK_APP_SECRET: ${SCM_DINGTALK_APP_SECRET:-}
+      SCM_DINGTALK_AGENT_ID: ${SCM_DINGTALK_AGENT_ID:-}
     volumes:
       - ./data/uploads:/data/uploads
       - ./data/exports:/data/exports   # 私有导出不挂给 Nginx；下载必须重新校验账号和当前权限

@@ -29,5 +29,8 @@ public record SessionHousekeeping(JdbcTemplate jdbc, DeploymentNamespace namespa
         jdbc.update("DELETE FROM sys_refresh_session WHERE id IN (SELECT id FROM sys_refresh_session WHERE tenant_id=? AND expires_at<clock_timestamp()-interval '1 day' LIMIT 1000)", namespace.tenant());
         if (stopping.getAsBoolean()) return;
         jdbc.update("DELETE FROM sys_outbox WHERE id IN (SELECT id FROM sys_outbox WHERE tenant_key=? AND kind='CACHE_INVALIDATE' AND status='SUCCEEDED' AND updated_at<clock_timestamp()-interval '7 days' LIMIT 1000)", namespace.tenant());
+        if (stopping.getAsBoolean()) return;
+        // 钉钉消息（RFC 019 §4）：发出去的、发不出去的都留 90 天，管理后台"消息推送"看最近的；没有别的表引用它
+        jdbc.update("DELETE FROM sys_outbox WHERE id IN (SELECT id FROM sys_outbox WHERE tenant_key=? AND kind='DINGTALK_MESSAGE' AND status IN ('SUCCEEDED','DEAD_LETTER','CANCELLED','EXPIRED') AND updated_at<clock_timestamp()-interval '90 days' LIMIT 1000)", namespace.tenant());
     }
 }

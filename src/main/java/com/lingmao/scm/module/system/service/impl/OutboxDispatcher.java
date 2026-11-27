@@ -96,6 +96,14 @@ public final class OutboxDispatcher implements SmartLifecycle, DrainParticipant 
             for (int i = 0; i < 4 && accepting && handlers.containsKey("CACHE_INVALIDATE"); i++) {
                 var lease = store.claim("CACHE_INVALIDATE"); if (lease == null) break; execute(lease);
             }
+            // 钉钉消息（RFC 019 §4）：要调外网，和导出一样放到 worker 上，不卡轮询（缓存失效还要一秒一轮）；一天几十条，一秒一条够了
+            if (accepting && handlers.containsKey("DINGTALK_MESSAGE") && slots.tryAcquire()) {
+                boolean submitted = false;
+                try {
+                    var lease = store.claim("DINGTALK_MESSAGE");
+                    if (lease != null) { workers.execute(new SubmittedWork(lease)); submitted = true; }
+                } finally { if (!submitted) slots.release(); }
+            }
             if (accepting && handlers.containsKey("STOCK_LOG_EXPORT") && slots.tryAcquire()) {
                 boolean submitted = false;
                 try {

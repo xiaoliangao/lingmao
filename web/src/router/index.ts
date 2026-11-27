@@ -145,12 +145,13 @@ function addMenuRoutes(parentName: string, menus: MenuNode[], parentPath = '', g
 let menuRoutesAdded = false
 
 /**
- * 手机上（屏宽 < 600px）打开 / 时（登录后就是），有手机报工菜单的直接进手机报工（docs/api/05 §1.2），别的照常去首页。
+ * 手机上（屏宽 < 600px）打开 / 时（登录后就是），有手机报工菜单的直接进手机报工（docs/api/05 §1.2），没有的进手机待办（RFC 019 §4），都没有照常去首页。
  * 守卫里改道以后，下一次跳转的 redirectedFrom 还是 /，已经在 /mobile 了就不再改，不然一直改道（vue-router 报 Infinite redirect）
  */
 function phoneHome(to: RouteLocationNormalized): string | undefined {
-  if (to.redirectedFrom?.path !== '/' || to.path === '/mobile' || !window.matchMedia('(max-width: 599px)').matches) return undefined
-  return menuGroups.has('/mobile') ? '/mobile' : undefined
+  if (to.redirectedFrom?.path !== '/' || isStandalone(to.path) || !window.matchMedia('(max-width: 599px)').matches) return undefined
+  // 跟单员进手机报工；没有手机报工的（审核的人、采购员）进手机待办（RFC 019 §4）
+  return ['/mobile', '/mobile-todo'].find((p) => menuGroups.has(p))
 }
 
 router.beforeEach(async (to) => {

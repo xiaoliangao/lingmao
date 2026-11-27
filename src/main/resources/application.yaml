@@ -78,3 +78,12 @@ lingmao:
     sign-key: ${FILE_SIGN_KEY:}
   backup:
     dir: ${BACKUP_DIR:}            # 备份目录（部署包里只读挂载），管理后台据此显示最近备份；开发环境不配
+
+scm:
+  # 系统给用户打开的地址（如 https://scm.example.com），钉钉消息里的"打开"按钮用它拼链接；空着消息不带按钮
+  public-url: ${SCM_PUBLIC_URL:}
+  # 钉钉推送（RFC 019 §4）：企业内部应用的 AppKey、AppSecret、AgentId，三个都有才发；开发环境不配，什么都不发
+  dingtalk:
+    app-key: ${SCM_DINGTALK_APP_KEY:}
+    app-secret: ${SCM_DINGTALK_APP_SECRET:}
+    agent-id: ${SCM_DINGTALK_AGENT_ID:}
