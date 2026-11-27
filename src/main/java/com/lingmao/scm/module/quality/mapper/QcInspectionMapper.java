@@ -70,6 +70,10 @@ public interface QcInspectionMapper extends BaseMapper<QcInspection> {
     QcInspection lockById(@Param("id") long id);
 
     /** 这张回货单最近一次尾期验货，锁住：和安排返修、返修完成、别人同时验排队 */
+    /** 回货单还有效（已审核）：作废了的回货不用再返修（agy T-e035d4 #7） */
+    @Select("SELECT EXISTS (SELECT 1 FROM prd_receipt WHERE id = #{receiptId} AND status = 'APPROVED')")
+    boolean receiptApproved(@Param("receiptId") long receiptId);
+
     @Select("SELECT * FROM qc_inspection WHERE prd_receipt_id = #{receiptId} AND kind = 'FINAL' ORDER BY attempt_no DESC LIMIT 1 FOR UPDATE")
     @ResultMap("mybatis-plus_QcInspection")
     QcInspection lockLatestFinal(@Param("receiptId") long receiptId);

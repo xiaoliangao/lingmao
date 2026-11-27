@@ -14,6 +14,15 @@ import java.util.List;
 @Mapper
 public interface FactoryCapacityMapper extends BaseMapper<FactoryCapacity> {
 
+    /**
+     * 按加工厂加事务级咨询锁：同一家厂的排单、改草稿、取消结案、改产能排成一队，后一个等前一个提交了再算负荷
+     * （不然两人同时给同一家厂排单，都读到同样的余量，一起放行，叠起来超产）。
+     * 键 = (7501 &lt;&lt; 32) | factoryId，和别处的咨询锁错开；从小到大加，免得互相等。调用方在锁完自己的单据之后再调
+     */
+    @Select("<script>SELECT count(pg_advisory_xact_lock((7501::bigint &lt;&lt; 32) | k)) FROM "
+            + "(SELECT k FROM unnest(ARRAY[<foreach collection='ids' item='i' separator=','>#{i}</foreach>]::bigint[]) k ORDER BY k) s</script>")
+    long lockFactories(@Param("ids") Collection<Long> factoryIds);
+
     @Select("<script>SELECT * FROM prd_factory_capacity WHERE factory_id IN "
             + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY start_month</script>")
     List<FactoryCapacity> selectByFactories(@Param("ids") Collection<Long> factoryIds);

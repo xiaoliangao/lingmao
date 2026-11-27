@@ -119,6 +119,18 @@ class GlobalExceptionHandlerIT {
         assertThat(r.getCode()).isEqualTo(ErrorCodes.BIZ_ERROR);
     }
 
+    /** 规则：两个人同时做同一件事撞的唯一索引（同一批记两次质检），不说"编码重复"，返回 1002 说清是什么 */
+    @Test
+    void duplicateKey_concurrentAction_returns1002() {
+        DuplicateKeyException e = new DuplicateKeyException("insert qc_inspection", new java.sql.SQLException(
+                "ERROR: duplicate key value violates unique constraint \"uk_qc_incoming\""));
+
+        R<Void> r = handler.handleDuplicateKey(e);
+
+        assertThat(r.getCode()).isEqualTo(ErrorCodes.STATE_CHANGED);
+        assertThat(r.getMsg()).contains("别人刚验过");
+    }
+
     /**
      * 规则：数据库判了死锁（40P01），返回 1002"有人同时在改，请重试"，不是 500（RFC 014 §6）。
      * 两个事务反着顺序锁两行，真造一次死锁，看 Spring 翻译出来的是哪种异常、会不会落到兜底方法里认出来

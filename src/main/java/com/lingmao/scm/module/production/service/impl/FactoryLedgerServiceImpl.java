@@ -220,6 +220,6 @@ public class FactoryLedgerServiceImpl implements FactoryLedgerService {
 
     @Override
     public long toSettleCount() {
-        return ledgerMapper.countToSettle();
+        return ledgerMapper.countToSettle(DataScope.current(false));
     }
 }

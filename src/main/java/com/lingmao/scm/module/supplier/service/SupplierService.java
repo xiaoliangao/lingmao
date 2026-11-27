@@ -106,6 +106,9 @@ public interface SupplierService {
     /** 供应商做哪几条品类线（字典 product_line 的 value），没有是空列表；不存在抛 404。对账按它判断谁能对这家的账（RFC 019 §5.1） */
     List<String> productLines(long id);
 
+    /** 一批供应商各自做的品类线；不存在的不在结果里 */
+    Map<Long, List<String>> productLinesOf(Collection<Long> ids);
+
     /** 不做这条品类线抛 1000，见 lineProblem */
     default void checkServes(long id, String productLine) {
         String problem = lineProblem(id, productLine);

@@ -10,7 +10,8 @@
              ELSE 'TO_SETTLE' END
     </sql>
 
-    <!-- 进料账的生产单：资料包里有自购的料；在制的都算，做完的要领过料或者有良品（一件没做、也没领料的不算） -->
+    <!-- 进料账的生产单：资料包里有自购的料；在制的都算，做完的要净领过料（领了全退回来的不算，agy T-e035d4 #14）或者有良品
+         （一件没做、也没领料的不算）。FactoryLedgerMapper.countToSettle、ProductionOrderMapper.selectIssueOptions 同一个口径 -->
     <sql id="base">
         FROM prd_order p
         JOIN sup_supplier f ON f.id = p.factory_id
@@ -19,8 +20,10 @@
              AND sd.status &lt;&gt; 'VOIDED'
         WHERE p.issue_status IS NOT NULL AND p.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED')
           AND (p.status IN ('APPROVED', 'RUNNING') OR sd.id IS NOT NULL
-               OR EXISTS (SELECT 1 FROM inv_doc d WHERE d.source_type = 'PRODUCTION_ORDER' AND d.source_id = p.id
-                          AND d.doc_type = 'ISSUE_OUT' AND d.status = 'APPROVED')
+               OR EXISTS (SELECT 1 FROM inv_doc d JOIN inv_doc_item di ON di.doc_id = d.id
+                          WHERE d.source_type = 'PRODUCTION_ORDER' AND d.source_id = p.id AND d.status = 'APPROVED'
+                            AND d.doc_type IN ('ISSUE_OUT', 'RETURN_IN')
+                          GROUP BY di.material_sku_id HAVING SUM(CASE WHEN d.doc_type = 'ISSUE_OUT' THEN di.qty ELSE -di.qty END) &lt;&gt; 0)
                OR EXISTS (SELECT 1 FROM prd_order_item i WHERE i.prd_order_id = p.id AND i.returned_qty &gt; i.defect_qty))
         <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
         <if test="scope.lines.limited">AND p.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>

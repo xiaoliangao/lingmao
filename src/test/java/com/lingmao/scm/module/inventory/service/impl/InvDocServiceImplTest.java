@@ -184,7 +184,7 @@ class InvDocServiceImplTest {
         SourceDraft.Item other = new SourceDraft.Item(502L, 11L, "METER", BigDecimal.ONE, new BigDecimal("12"),
                 new BigDecimal("5"), new BigDecimal("5.25"), new BigDecimal("5"), BigDecimal.ZERO, BigDecimal.ZERO, null, null);
         DocRef po = new DocRef(BizType.PURCHASE_ORDER, null, null, "采购单", 88L, "CG202611150001", "APPROVED", "已审核", null, 1L, null);
-        when(purchaseHandler.prefill(InvDocType.PURCHASE_IN, 88L, List.of(501L, 502L), null))
+        when(purchaseHandler.prefill(InvDocType.PURCHASE_IN, 88L, List.of(501L, 502L), null, null))
                 .thenReturn(new SourceDraft(3L, po, 40L, null, 2L, List.of(roll, other)));
         WarehouseVO material = new WarehouseVO();
         material.setId(2L);

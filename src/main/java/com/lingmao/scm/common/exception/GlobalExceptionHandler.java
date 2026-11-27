@@ -28,6 +28,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tools.jackson.core.JacksonException;
 
 import java.sql.SQLException;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -171,9 +172,23 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(DuplicateKeyException.class)
     public R<Void> handleDuplicateKey(DuplicateKeyException e) {
-        log.warn("唯一约束冲突: {}", constraintName(e));
+        String constraint = constraintName(e);
+        log.warn("唯一约束冲突: {}", constraint);
+        String raced = RACED.get(constraint);
+        if (raced != null) {
+            return R.fail(ErrorCodes.STATE_CHANGED, raced);
+        }
         return R.fail(ErrorCodes.BIZ_ERROR, "数据重复，可能别人刚建了同样的编码，请刷新后再试");
     }
+
+    /**
+     * 不是"编码重复"、是两个人同时做了同一件事的唯一索引：后提交的报 1002，说清是什么（V60、V68 的注释，agy T-e035d4 #10）
+     */
+    private static final Map<String, String> RACED = Map.of(
+            "uk_inv_doc_consume", "别人刚给这张生产单开了耗料核销单，请刷新后再看",
+            "uk_qc_incoming", "别人刚验过这张入库单，请刷新后再看",
+            "uk_qc_receipt_attempt", "别人刚记了这张回货单的验货，请刷新后再看",
+            "uk_qc_order_attempt", "别人刚记了这张生产单的同一种检验，请刷新后再看");
 
     /**
      * 数据库约束拦住了（唯一冲突是它的子类，由上面的方法接）。只认外键冲突：

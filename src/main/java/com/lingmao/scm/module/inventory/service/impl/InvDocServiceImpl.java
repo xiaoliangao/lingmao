@@ -72,6 +72,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -723,7 +724,7 @@ public class InvDocServiceImpl implements InvDocService {
     @Override
     public InvDocDraftVO prefill(BizType source, long sourceId, InvDocType docType, List<Long> itemIds, Long fromWarehouseId) {
         checkSource(source, docType);
-        SourceDraft d = handler(source).prefill(docType, sourceId, itemIds, fromWarehouseId);
+        SourceDraft d = handler(source).prefill(docType, sourceId, itemIds, fromWarehouseId, null);
         com.lingmao.scm.common.scope.CompanyContext.target(d.companyId());
         Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(d.items().stream().map(SourceDraft.Item::materialSkuId).toList());
         InvDocDraftVO vo = new InvDocDraftVO();
@@ -777,7 +778,7 @@ public class InvDocServiceImpl implements InvDocService {
         StockSourceHandler handler = handler(source);
         List<Long> itemIds = req.getItems() == null ? req.getItemIds()
                 : nullIfEmpty(req.getItems().stream().map(InvDocFromSourceReq.Item::getSourceItemId).filter(Objects::nonNull).toList());
-        SourceDraft d = handler.prefill(type, sourceId, itemIds, req.getFromWarehouseId());
+        SourceDraft d = handler.prefill(type, sourceId, itemIds, req.getFromWarehouseId(), null);
         com.lingmao.scm.common.scope.CompanyContext.target(d.companyId());
 
         InvDoc doc = new InvDoc();
@@ -800,11 +801,21 @@ public class InvDocServiceImpl implements InvDocService {
 
         List<InvDocItem> items = new ArrayList<>();
         if (req.getItems() != null) {
+            List<SourceDraft.Item> matched = new ArrayList<>();
+            Map<SourceDraft.Item, BigDecimal> totals = new IdentityHashMap<>();
             for (int n = 0; n < req.getItems().size(); n++) {
                 InvDocFromSourceReq.Item r = req.getItems().get(n);
                 SourceDraft.Item s = match(d, r.getSourceItemId(), r.getMaterialSkuId(), n + 1);
+                matched.add(s);
                 if (r.getQty().signum() > 0) {
-                    InvDocItem item = sourceItem(type, s, r.getQty(), items.size() + 1, r.getOverReason());
+                    totals.merge(s, r.getQty(), BigDecimal::add);
+                }
+            }
+            for (int n = 0; n < req.getItems().size(); n++) {
+                InvDocFromSourceReq.Item r = req.getItems().get(n);
+                SourceDraft.Item s = matched.get(n);
+                if (r.getQty().signum() > 0) {
+                    InvDocItem item = sourceItem(type, s, r.getQty(), totals.get(s), items.size() + 1, r.getOverReason());
                     item.setDyeLot(InvTexts.blankToNull(r.getDyeLot()));
                     item.setRolls(r.getRolls());
                     item.setRemark(InvTexts.blankToNull(r.getRemark()));
@@ -814,7 +825,7 @@ public class InvDocServiceImpl implements InvDocService {
         } else {
             for (SourceDraft.Item s : d.items()) {
                 if (s.suggestQty() != null && s.suggestQty().signum() > 0) {
-                    items.add(sourceItem(type, s, s.suggestQty(), items.size() + 1, null));
+                    items.add(sourceItem(type, s, s.suggestQty(), s.suggestQty(), items.size() + 1, null));
                 }
             }
         }
@@ -844,9 +855,11 @@ public class InvDocServiceImpl implements InvDocService {
                                          Map<Long, InvDocItem> existing, Set<Long> posted) {
         InvDocType type = doc.getDocType();
         List<Long> itemIds = nullIfEmpty(reqs.stream().map(InvDocItemReq::getSourceItemId).filter(Objects::nonNull).toList());
-        SourceDraft d = handler.prefill(type, doc.getSourceId(), itemIds, doc.getFromWarehouseId());
+        SourceDraft d = handler.prefill(type, doc.getSourceId(), itemIds, doc.getFromWarehouseId(), doc.getId());
         com.lingmao.scm.common.scope.CompanyContext.target(d.companyId());
         List<InvDocItem> items = new ArrayList<>();
+        List<SourceDraft.Item> matched = new ArrayList<>();
+        Map<SourceDraft.Item, BigDecimal> totals = new IdentityHashMap<>();
         for (int n = 0; n < reqs.size(); n++) {
             InvDocItemReq r = reqs.get(n);
             int seq = n + 1;
@@ -855,7 +868,15 @@ public class InvDocServiceImpl implements InvDocService {
             if (qty == null) {
                 throw new BizException(400, "第 " + seq + " 行要填数量");
             }
-            InvDocItem built = sourceItem(type, s, qty, seq, r.getOverReason());
+            matched.add(s);
+            totals.merge(s, qty, BigDecimal::add);
+        }
+        for (int n = 0; n < reqs.size(); n++) {
+            InvDocItemReq r = reqs.get(n);
+            int seq = n + 1;
+            SourceDraft.Item s = matched.get(n);
+            BigDecimal qty = isPurchase(type) ? r.getPurchaseQty() : r.getQty();
+            InvDocItem built = sourceItem(type, s, qty, totals.get(s), seq, r.getOverReason());
             com.lingmao.scm.security.FieldPermissions.price(com.lingmao.scm.security.FieldPermissions.COST, built.getPrice(), r.getPrice());
             InvDocItem item = keptOrNew(r, seq, existing, posted);
             item.setSourceItemId(built.getSourceItemId());
@@ -890,9 +911,10 @@ public class InvDocServiceImpl implements InvDocService {
 
     /**
      * 按源单的一行建明细（docs/api/04 §3.3）。采购的两种：qty 是采购单位，换成库存单位（三位小数），单价换成元 / 库存单位（四位小数），
-     * 金额 = 采购数量 × 采购单价；领料、退料不记单价。领料超过还差的数要写超领原因
+     * 金额 = 采购数量 × 采购单价；领料、退料不记单价。领料超过还差的数要写超领原因。
+     * skuTotal：这张单上同一行源单（同一种料）几行的合计，超领、超耗按它比：一种料拆成几行（不同缸号）也绕不过原因（agy T-e035d4 #13）
      */
-    private static InvDocItem sourceItem(InvDocType type, SourceDraft.Item s, BigDecimal qty, int seq, String overReason) {
+    private static InvDocItem sourceItem(InvDocType type, SourceDraft.Item s, BigDecimal qty, BigDecimal skuTotal, int seq, String overReason) {
         InvDocItem item = new InvDocItem();
         item.setSeq(seq);
         item.setMaterialSkuId(s.materialSkuId());
@@ -919,9 +941,10 @@ public class InvDocServiceImpl implements InvDocService {
         NumericLimits.price(item.getPrice(), "第 " + seq + " 行换算后：");
         NumericLimits.amount(item.getAmount(), "第 " + seq + " 行：");
         boolean consume = type == InvDocType.CONSUME_OUT;
-        if ((type == InvDocType.ISSUE_OUT || consume) && s.suggestQty() != null && qty.compareTo(s.suggestQty()) > 0) {
+        if ((type == InvDocType.ISSUE_OUT || consume) && s.suggestQty() != null && skuTotal.compareTo(s.suggestQty()) > 0) {
             if (overReason == null || overReason.isBlank()) {
-                throw new BizException(400, "第 " + seq + " 行" + (consume ? "比应耗多（超耗）" : "领多了") + "，要写原因");
+                throw new BizException(400, "第 " + seq + " 行" + (skuTotal.compareTo(qty) == 0 ? "" : "（这种料几行合计 " + skuTotal.stripTrailingZeros().toPlainString() + "）")
+                        + (consume ? "比应耗多（超耗）" : "领多了") + "，要写原因");
             }
             item.setOverReason(overReason.strip());
         }

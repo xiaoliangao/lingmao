@@ -30,6 +30,10 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
     @Select("SELECT * FROM prd_order WHERE id = #{id} FOR UPDATE")
     ProductionOrder lockById(@Param("id") long id);
 
+    /** 记过质检（产前样、中检）没有：反审核回草稿的单有了它就删不掉（外键），只能作废 */
+    @Select("SELECT EXISTS (SELECT 1 FROM qc_inspection WHERE prd_order_id = #{id})")
+    boolean hasQc(@Param("id") long id);
+
     IPage<ProductionRowVO> selectRowPage(IPage<ProductionRowVO> page, @Param("q") ProductionQuery query, @Param("codes") List<String> codes,
                                          @Param("scope") DataScope scope, @Param("today") LocalDate today,
                                          @Param("nearUntil") LocalDate nearUntil);

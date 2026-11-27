@@ -14,6 +14,7 @@ import com.lingmao.scm.module.production.service.FactoryCapacityService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.UserService;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +53,11 @@ public class FactoryCapacityServiceImpl implements FactoryCapacityService {
         YearMonth ym = query.getMonth() == null ? YearMonth.now(clock) : parseMonth(query.getMonth());
         List<FactoryCapacity> rows = capacityMapper.selectEffective(ym.atDay(1)).stream()
                 .filter(r -> query.getFactoryId() == null || query.getFactoryId().equals(r.getFactoryId())).toList();
+        LineScope lines = LineScope.current();
+        if (lines.isLimited() && !rows.isEmpty()) {
+            Map<Long, List<String>> served = supplierService.productLinesOf(rows.stream().map(FactoryCapacity::getFactoryId).collect(Collectors.toSet()));
+            rows = rows.stream().filter(r -> lines.canSeeAny(served.get(r.getFactoryId()))).toList();
+        }
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -105,6 +111,8 @@ public class FactoryCapacityServiceImpl implements FactoryCapacityService {
         if (f == null) {
             throw new BizException(404, "加工厂不存在");
         }
+        checkFactoryVisible(f.id());
+        capacityMapper.lockFactories(List.of(f.id()));   // 两人同时登记同一家厂同一个月的，后一个看得到前一个的，改成更新（#10）
         if (supplierService.categories(List.of(f.id())).getOrDefault(f.id(), List.of()).stream().noneMatch(FACTORY_TYPES::contains)) {
             throw new BizException(400, f.shortName() + " 不是成衣厂、加工厂，不用登记产能");
         }
@@ -137,13 +145,24 @@ public class FactoryCapacityServiceImpl implements FactoryCapacityService {
     @Override
     @Transactional
     public void delete(long id) {
-        if (capacityMapper.deleteById(id) == 0) {
+        FactoryCapacity c = capacityMapper.selectById(id);
+        if (c == null) {
             throw new BizException(404, "这条产能已经删了");
+        }
+        checkFactoryVisible(c.getFactoryId());
+        capacityMapper.deleteById(id);
+    }
+
+    /** 品类线（RFC 013 §2）：加工厂做的线和我的有交集，才看得到、改得了它的产能（agy T-e035d4 #6） */
+    private void checkFactoryVisible(long factoryId) {
+        if (!LineScope.current().canSeeAny(supplierService.productLines(factoryId))) {
+            throw new BizException(404, "加工厂不存在");
         }
     }
 
     @Override
     public List<CapacityPreviewVO> preview(long factoryId, long styleId, LocalDate dueDate, Long excludeId) {
+        checkFactoryVisible(factoryId);
         Plan plan = plan(Set.of(factoryId), Set.of(styleId), excludeId == null ? List.of() : List.of(excludeId));
         LocalDate today = LocalDate.now(clock);
         return plan.lines(factoryId, styleId).stream().map(line -> {
@@ -159,8 +178,9 @@ public class FactoryCapacityServiceImpl implements FactoryCapacityService {
         if (todo.isEmpty()) {
             return List.of();
         }
-        Plan plan = plan(todo.stream().map(Demand::factoryId).collect(Collectors.toSet()),
-                todo.stream().map(Demand::styleId).collect(Collectors.toSet()), exclude);
+        Set<Long> factoryIds = todo.stream().map(Demand::factoryId).collect(Collectors.toSet());
+        capacityMapper.lockFactories(factoryIds);   // 同一家厂的排单排成一队（agy T-e035d4 #2）
+        Plan plan = plan(factoryIds, todo.stream().map(Demand::styleId).collect(Collectors.toSet()), exclude);
         if (plan.capacities().isEmpty()) {
             return List.of();
         }

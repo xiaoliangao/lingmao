@@ -246,6 +246,9 @@ public class QcInspectionServiceImpl implements QcInspectionService {
     @Override
     @Transactional
     public int update(long id, QcReq req) {
+        if (req.version() == null) {
+            throw changed();   // 改要带版本号：不带就跳过了比对，会悄悄盖掉别人刚改的（agy T-e035d4 #11）
+        }
         QcInspection q = lock(id, req.version());
         if (q.getReworkTime() != null && req.result() != QcResult.FAIL) {
             throw new BizException("已经安排了返修，结论不能再改：返修回来点「返修完成」再验一次，记新的结论");
@@ -299,6 +302,9 @@ public class QcInspectionServiceImpl implements QcInspectionService {
         }
         if (q.getReworkTime() != null) {
             throw new BizException(ErrorCodes.STATE_CHANGED, "已经安排过返修了，请刷新");
+        }
+        if (!qcMapper.receiptApproved(q.getPrdReceiptId())) {
+            throw new BizException(ErrorCodes.STATE_CHANGED, "这张回货单已经作废了，不用再安排返修，请刷新");
         }
         if (req.note() == null || req.note().isBlank()) {
             throw new BizException(400, "要写返修说明：返修什么、多少件、工厂哪天送回");

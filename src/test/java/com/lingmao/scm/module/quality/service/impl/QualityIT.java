@@ -169,6 +169,16 @@ class QualityIT {
         pq.setKeyword(f.tag);
         assertThat(qcService.pending(pq).getList()).isEmpty();
         assertThatThrownBy(() -> qcService.source(QcKind.FINAL, receipt)).isInstanceOf(BizException.class).hasMessage("回货单不存在");
+
+        // 来料检验谁都能记，但扣款是供应商的钱：供应商不在我的线里，不能带扣款（agy T-e035d4 #4）
+        jdbc.update("UPDATE sup_supplier SET product_lines = '{APPAREL}' WHERE id = ?", f.supplier);
+        TestIdentity.login(f.user, TestIdentity.withLines(List.of("quality:inspection:list", "quality:inspection:edit",
+                "settle:deduction:list", "settle:deduction:edit", "line:FOOTWEAR")));
+        long doc2 = purchaseIn(f, "RK2" + f.tag, today.minusDays(1));
+        assertThatThrownBy(() -> qcService.create(new QcReq(null, QcKind.INCOMING, doc2, today, new BigDecimal("3"), BigDecimal.ONE,
+                QcResult.CONCESSION, List.of("COLOR"), "色差", null, new BigDecimal("20"))))
+                .hasMessageContaining("不在你管的品类线里");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM qc_inspection WHERE inv_doc_id = ?", Long.class, doc2)).isZero();
     }
 
     record Fixture(String tag, long company, long user, long supplier, long factory, long warehouse, long materialSku,

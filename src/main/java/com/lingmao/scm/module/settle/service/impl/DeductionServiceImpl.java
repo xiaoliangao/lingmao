@@ -123,6 +123,7 @@ public class DeductionServiceImpl implements DeductionService {
     @Override
     @Transactional
     public long createSourced(Sourced src) {
+        checkSourcedPartner(src.partnerId());
         Deduction d = new Deduction();
         d.setCompanyId(src.companyId());
         d.setPartnerId(src.partnerId());
@@ -145,6 +146,9 @@ public class DeductionServiceImpl implements DeductionService {
         if (!money && reason.equals(d.getReason())) {
             return;
         }
+        if (money) {
+            checkSourcedPartner(d.getPartnerId());
+        }
         if (itemMapper.statementOfDeduction(id) != null) {
             if (money) {
                 checkNotInStatement(id, "改金额、日期");
@@ -166,6 +170,7 @@ public class DeductionServiceImpl implements DeductionService {
         if (d == null) {
             return;
         }
+        checkSourcedPartner(d.getPartnerId());
         checkNotInStatement(id, "删");
         deductionMapper.deleteById(d.getId());
     }
@@ -185,6 +190,16 @@ public class DeductionServiceImpl implements DeductionService {
     }
 
     /** 品类线（RFC 013 §2）：和供应商下拉一样，这家做的线里有我能看的才行，不然当不存在 */
+    /**
+     * 质检带出的扣款也按供应商的品类线管（和手工登记一样）：来料检验没有品类线、谁都看得到，
+     * 但扣款是那家供应商的钱，线外的人不能加、改金额、删（agy T-e035d4 #4）。质检记录上已经显示了供应商，所以不报 404
+     */
+    private void checkSourcedPartner(long partnerId) {
+        if (!LineScope.current().canSeeAny(supplierService.productLines(partnerId))) {
+            throw new BizException("这家供应商不在你管的品类线里，它的质量扣款要请管那条线的人登记、修改");
+        }
+    }
+
     private void checkPartnerVisible(long partnerId, String notFound) {
         if (!LineScope.current().canSeeAny(supplierService.productLines(partnerId))) {
             throw new BizException(404, notFound);

@@ -76,7 +76,7 @@ class PurchaseStockHandler implements StockSourceHandler {
     }
 
     @Override
-    public SourceDraft prefill(InvDocType docType, long sourceId, List<Long> itemIds, Long fromWarehouseId) {
+    public SourceDraft prefill(InvDocType docType, long sourceId, List<Long> itemIds, Long fromWarehouseId, Long editingDocId) {
         PurchaseOrder po = poMapper.selectById(sourceId);
         if (po == null) {
             throw new BizException(404, "采购单不存在");

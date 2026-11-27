@@ -524,7 +524,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
             }
         }
         List<String> what = changedFields(p, req, mode, settle, price);
-        String nodes = checkOptionalNodes(req.getOptionalNodes());
+        String nodes = checkOptionalNodes(req.getOptionalNodes(), ProductionRules.splitNodes(p.getOptionalNodes()));
         if (!Objects.equals(nodes, p.getOptionalNodes())) {
             what.add("加的节点");
         }
@@ -605,6 +605,10 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         ProductionSupport.Locked l = support.lockWithOrder(id);
         ProductionOrder p = l.prd();
         FLOW.next("remove", p.getStatus());
+        if (prdMapper.hasQc(id)) {
+            // 审过、记了产前样或中检、又反审核回草稿的单：质检记录挂着它，不删（agy T-e035d4 #7）
+            throw new BizException(ProductionSupport.label(p) + " 记过质检（产前样、中检），不能删：不用了请作废");
+        }
         int refunded = refundScheduled(p);
         itemMapper.deleteByOrder(id);
         attachmentService.deleteByDoc(BizType.PRODUCTION_ORDER, id);
@@ -737,8 +741,12 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
             docLogService.add(BizType.PRODUCTION_ORDER, id, "audit", "这一级审过了，等下一级审");
             return;
         }
+        // 改价快照（V70）按审核这一刻的档案现价重记：审核前详情按现价比，审过按快照比，两边对得上（agy T-e035d4 #8）
+        BigDecimal archiveNow = priceService.currentProcess(p.getFactoryId(), p.getStyleId(), p.getProcessMode(), p.getOrderDate())
+                .map(PriceRef::price).filter(a -> p.getUnitPrice().compareTo(a) != 0).orElse(null);
         StatusCas.update(prdMapper, new ProductionOrder(), StatusCas.of(ProductionOrder::getId, id, ProductionOrder::getStatus,
                         PENDING, APPROVED)
+                .set(ProductionOrder::getArchivePrice, archiveNow)
                 .set(ProductionOrder::getAuditBy, LoginUser.currentUserId())
                 .set(ProductionOrder::getAuditTime, OffsetDateTime.now(clock))
                 .setSql("version = version + 1")
@@ -767,17 +775,19 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
     }
 
     /** 改草稿时选的按单选节点：要是启用的按单选节点，去重；返回存库的写法（逗号分隔，按字典顺序），一个都没选是 null */
-    private String checkOptionalNodes(List<String> codes) {
+    private String checkOptionalNodes(List<String> codes, List<String> before) {
         if (codes == null || codes.isEmpty()) {
             return null;
         }
         List<String> allowed = optionalNodeOptions().stream().map(com.lingmao.scm.module.system.dto.DictOption::value).toList();
         for (String c : codes) {
-            if (!allowed.contains(c)) {
+            // 草稿原来勾的、后来字典里停用了或改成每张单都有的：悄悄去掉，不然草稿再也存不了（agy T-e035d4 #15）
+            if (!allowed.contains(c) && !before.contains(c)) {
                 throw new BizException(400, "节点 " + c + " 不是能按单加的节点（在字典「生产节点」里把它的用法设成按单选）");
             }
         }
-        return String.join(",", allowed.stream().filter(codes::contains).toList());
+        List<String> kept = allowed.stream().filter(codes::contains).toList();
+        return kept.isEmpty() ? null : String.join(",", kept);
     }
 
     /** 按字典 prod_node 的启用项从交期往前倒排（§3.3.1），返回生成了几个。按单选的节点只有这张单选了才加（甲方 11-27 答 Q61） */

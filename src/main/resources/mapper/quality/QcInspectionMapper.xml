@@ -79,7 +79,7 @@
     <select id="selectReworks" resultMap="row">
         SELECT <include refid="rowColumns"/>
         <include refid="rowFrom"/>
-        WHERE q.kind = 'FINAL' AND q.result = 'FAIL' AND q.rework_done_time IS NULL
+        WHERE q.kind = 'FINAL' AND q.result = 'FAIL' AND q.rework_done_time IS NULL AND r.status = 'APPROVED'
         <include refid="lineFilter"/>
         <if test="companyId != null">AND q.company_id = #{companyId}</if>
         ORDER BY q.inspect_date, q.id
@@ -145,6 +145,7 @@
 
     <select id="countReworkPending" resultType="long">
         SELECT COUNT(*) FROM qc_inspection q
+        JOIN prd_receipt r ON r.id = q.prd_receipt_id AND r.status = 'APPROVED'
         WHERE q.kind = 'FINAL' AND q.result = 'FAIL' AND q.rework_time IS NULL
         <include refid="lineFilter"/>
     </select>

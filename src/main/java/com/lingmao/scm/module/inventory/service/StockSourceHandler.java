@@ -27,8 +27,9 @@ public interface StockSourceHandler {
      *
      * @param itemIds         只带这些源单明细（采购明细 id），给了就带，哪怕已经入满（改草稿时按它核对）；null = 还能入（能退、还差）的全部行
      * @param fromWarehouseId 领料指定的出仓，null = 默认的
+     * @param editingDocId    改草稿时是这张草稿自己（"一张源单只能有一张"这类检查不算它），新建 null
      */
-    SourceDraft prefill(InvDocType docType, long sourceId, List<Long> itemIds, Long fromWarehouseId);
+    SourceDraft prefill(InvDocType docType, long sourceId, List<Long> itemIds, Long fromWarehouseId, Long editingDocId);
 
     /** 按源单最新的数查上限：超了抛 1004（data 是 InvOverRow[]），源单状态不让入、不让领抛 1000 */
     void check(SourcePosting posting);

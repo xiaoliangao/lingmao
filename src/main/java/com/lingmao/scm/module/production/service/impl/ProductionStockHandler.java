@@ -70,13 +70,11 @@ class ProductionStockHandler implements StockSourceHandler {
     }
 
     @Override
-    public SourceDraft prefill(InvDocType docType, long sourceId, List<Long> itemIds, Long fromWarehouseId) {
-        ProductionOrder p = prdMapper.selectById(sourceId);
-        if (p == null) {
-            throw new BizException(404, ProductionSupport.NOT_FOUND);
-        }
+    public SourceDraft prefill(InvDocType docType, long sourceId, List<Long> itemIds, Long fromWarehouseId, Long editingDocId) {
+        // 和选生产单的下拉（issue-options）同一个范围：品类线、本人；看不到的当不存在（agy T-e035d4 #3）
+        ProductionOrder p = support.visible(prdMapper.selectById(sourceId));
         if (docType == InvDocType.CONSUME_OUT) {
-            return prefillConsume(p);
+            return prefillConsume(p, editingDocId);
         }
         boolean issue = docType == InvDocType.ISSUE_OUT;
         checkStatus(p, issue);
@@ -116,8 +114,8 @@ class ProductionStockHandler implements StockSourceHandler {
     }
 
     /** 耗料核销：每种应耗或已领不是 0 的料一行，本次默认 = 应耗（needQty 也放应耗，前端显示成"应耗"），出仓是工厂仓、没有入仓 */
-    private SourceDraft prefillConsume(ProductionOrder p) {
-        checkSettle(p, null);
+    private SourceDraft prefillConsume(ProductionOrder p, Long editingDocId) {
+        checkSettle(p, editingDocId);
         long id = p.getId();
         Map<Long, BigDecimal> consume = support.consumes(List.of(id)).getOrDefault(id, Map.of());
         Map<Long, BigDecimal> issued = support.issued(List.of(id), null).getOrDefault(id, Map.of());
@@ -276,6 +274,8 @@ class ProductionStockHandler implements StockSourceHandler {
                     + "」，领料、退料单不能反审核");
         }
         if (posting.docType() == InvDocType.ISSUE_OUT) {
+            // 核销过的单，领的料已经按实耗扣掉了；再反审核领料，会把同一工厂仓里别的单的料扣走，料账结余变负
+            support.checkNoSettle(p, "反审核领料单");
             Map<Long, BigDecimal> issued = support.issued(List.of(p.getId()), null).getOrDefault(p.getId(), Map.of());
             if (issued.values().stream().anyMatch(q -> q.signum() < 0)) {
                 throw new BizException("这张领料单的料有的已经退回来了：先反审核对应的退料入库单");

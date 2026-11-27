@@ -699,6 +699,16 @@ public class SupplierServiceImpl implements SupplierService {
     }
 
     @Override
+    public Map<Long, List<String>> productLinesOf(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<String>> out = new HashMap<>();
+        supplierMapper.selectByIds(ids).forEach(s -> out.put(s.getId(), s.getProductLines() == null ? List.of() : List.copyOf(s.getProductLines())));
+        return out;
+    }
+
+    @Override
     public String lineProblem(long id, String productLine) {
         Supplier s = supplierMapper.selectById(id);
         if (s == null) {

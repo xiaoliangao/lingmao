@@ -13,7 +13,10 @@ import com.lingmao.scm.module.biz.dto.DocRef;
 import com.lingmao.scm.module.biz.entity.BizType;
 import com.lingmao.scm.module.biz.service.ReferenceService;
 import com.lingmao.scm.module.inventory.dto.InvDocCreatedVO;
+import com.lingmao.scm.module.inventory.dto.InvDocDetailVO;
 import com.lingmao.scm.module.inventory.dto.InvDocFromSourceReq;
+import com.lingmao.scm.module.inventory.dto.InvDocItemReq;
+import com.lingmao.scm.module.inventory.dto.InvDocSaveReq;
 import com.lingmao.scm.module.inventory.entity.InvDocType;
 import com.lingmao.scm.module.inventory.service.InvDocService;
 import com.lingmao.scm.module.order.dto.OrderAuditReq;
@@ -523,10 +526,35 @@ class ProductionIT {
         InvDocFromSourceReq consume = stockReq(InvDocType.CONSUME_OUT, f, "147");
         assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, consume))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+        // 拆成两行（100 + 47）也按合计比，绕不过原因（agy T-e035d4 #13）
+        InvDocFromSourceReq split = stockReq(InvDocType.CONSUME_OUT, f, "100");
+        InvDocFromSourceReq.Item more = new InvDocFromSourceReq.Item();
+        more.setMaterialSkuId(f.sku);
+        more.setQty(new BigDecimal("47"));
+        split.setItems(List.of(split.getItems().getFirst(), more));
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, split))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("合计 147", "超耗"));
         consume.setClientActionId(java.util.UUID.randomUUID());
         consume.getItems().getFirst().setOverReason("色差重裁 2 件");
         InvDocCreatedVO doc = invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, consume);
         assertThat(productionOrderService.materials(prdId).ledgerStatus()).isEqualTo(LedgerStatus.SETTLING);
+        // 改草稿：不把自己当成"已经有耗料核销单"（agy T-e035d4 #1）
+        InvDocDetailVO draft = invDocService.detail(doc.id());
+        InvDocItemReq row = new InvDocItemReq();
+        row.setId(draft.getItems().getFirst().getId());
+        row.setSourceItemId(draft.getItems().getFirst().getSourceItemId());
+        row.setMaterialSkuId(f.sku);
+        row.setQty(new BigDecimal("147"));
+        row.setOverReason("色差重裁 2 件（改过）");
+        InvDocSaveReq edit = new InvDocSaveReq();
+        edit.setVersion(draft.getVersion());
+        edit.setCompanyId(draft.getCompanyId());
+        edit.setDocDate(draft.getDocDate());
+        edit.setFromWarehouseId(draft.getFromWarehouseId());
+        edit.setToWarehouseId(draft.getToWarehouseId());
+        edit.setReason(draft.getReason());
+        edit.setItems(List.of(row));
+        int edited = invDocService.update(doc.id(), edit);
         // 第二张：1000
         InvDocFromSourceReq again = stockReq(InvDocType.CONSUME_OUT, f, "1");
         assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, again))
@@ -535,9 +563,15 @@ class ProductionIT {
         assertThatThrownBy(() -> receiptService.voidReceipt(prdId, receipt.id(), "数点错了"))
                 .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("耗料核销单"));
 
-        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc.id(), "audit", new DocActionReq(doc.version(), null)));
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc.id(), "audit", new DocActionReq(edited, null)));
         assertThat(jdbcTemplate.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id = ? AND material_sku_id = ?",
                 BigDecimal.class, factoryWh, f.sku)).isEqualByComparingTo("3");
+        // 核销过的单不能反审核领料单：不然会把同一工厂仓里别的单的料扣走（#5）
+        Map<String, Object> issueDoc = jdbcTemplate.queryForMap(
+                "SELECT id, version FROM inv_doc WHERE source_id = ? AND doc_type = 'ISSUE_OUT' AND status = 'APPROVED'", prdId);
+        assertThatThrownBy(() -> TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(((Number) issueDoc.get("id")).longValue(),
+                "unaudit", new DocActionReq(((Number) issueDoc.get("version")).intValue(), "领错了"))))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("耗料核销单"));
         m = productionOrderService.materials(prdId);
         assertThat(m.ledgerStatus()).isEqualTo(LedgerStatus.SETTLED);
         assertThat(m.settleDoc().no()).isEqualTo(doc.no());
@@ -555,7 +589,7 @@ class ProductionIT {
 
         // 反审核、作废核销单以后，又能作废回货单了
         TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc.id(), "unaudit",
-                new DocActionReq(doc.version() + 1, "实耗填错了")));
+                new DocActionReq(edited + 1, "实耗填错了")));
         int v = jdbcTemplate.queryForObject("SELECT version FROM inv_doc WHERE id = ?", Integer.class, doc.id());
         invDocService.act(doc.id(), "void", new DocActionReq(v, "重开"));
         assertThat(productionOrderService.materials(prdId).ledgerStatus()).isEqualTo(LedgerStatus.TO_SETTLE);

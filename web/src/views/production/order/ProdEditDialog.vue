@@ -154,7 +154,8 @@ function init() {
     taxIncluded: d.taxIncluded,
     terms: d.terms ?? '',
     remark: d.remark ?? '',
-    optionalNodes: [...(d.optionalNodes ?? [])],
+    // 字典里停用了、改成每张单都有的节点不在选项里，也不带上（勾不掉，存的时候后端也会去掉）
+    optionalNodes: (d.optionalNodes ?? []).filter((code) => d.optionalNodeOptions?.some((n) => n.value === code)),
   })
   guard.markSaved()
   void requote(false)

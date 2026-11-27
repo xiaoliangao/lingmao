@@ -238,7 +238,13 @@
         WHERE p.issue_status IS NOT NULL
         <choose>
             <when test="q.settle">AND p.status IN ('DONE', 'CLOSED') AND NOT EXISTS (SELECT 1 FROM inv_doc sd WHERE sd.source_type = 'PRODUCTION_ORDER'
-                AND sd.source_id = p.id AND sd.doc_type = 'CONSUME_OUT' AND sd.status &lt;&gt; 'VOIDED')</when>
+                AND sd.source_id = p.id AND sd.doc_type = 'CONSUME_OUT' AND sd.status &lt;&gt; 'VOIDED')
+                <!-- 和料账"待核销"一个口径（FactoryLedgerMapper.xml base）：净领过料或者有良品 -->
+                AND (EXISTS (SELECT 1 FROM inv_doc d JOIN inv_doc_item di ON di.doc_id = d.id
+                             WHERE d.source_type = 'PRODUCTION_ORDER' AND d.source_id = p.id AND d.status = 'APPROVED'
+                               AND d.doc_type IN ('ISSUE_OUT', 'RETURN_IN')
+                             GROUP BY di.material_sku_id HAVING SUM(CASE WHEN d.doc_type = 'ISSUE_OUT' THEN di.qty ELSE -di.qty END) &lt;&gt; 0)
+                     OR EXISTS (SELECT 1 FROM prd_order_item i WHERE i.prd_order_id = p.id AND i.returned_qty &gt; i.defect_qty))</when>
             <when test="q.returnable">AND p.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED') AND p.issue_status IN ('PARTIAL', 'DONE')</when>
             <otherwise>AND p.status IN ('APPROVED', 'RUNNING') AND p.issue_status IN ('NONE', 'PARTIAL')</otherwise>
         </choose>

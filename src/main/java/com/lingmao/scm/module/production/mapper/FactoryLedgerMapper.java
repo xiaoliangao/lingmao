@@ -46,14 +46,19 @@ public interface FactoryLedgerMapper {
     record StatusCount(String status, long count) {
     }
 
-    /** 待核销的生产单几张（首页提醒，不按人筛） */
-    @Select("SELECT COUNT(*) FROM prd_order p WHERE p.issue_status IS NOT NULL AND p.status IN ('DONE', 'CLOSED') "
+    /** 待核销的生产单几张（首页提醒，不跟"只看我的"走）；范围和料账列表一样（品类线、角色的数据范围），点过去数对得上 */
+    @Select("<script>SELECT COUNT(*) FROM prd_order p WHERE p.issue_status IS NOT NULL AND p.status IN ('DONE', 'CLOSED') "
             + "AND NOT EXISTS (SELECT 1 FROM inv_doc sd WHERE sd.source_type = 'PRODUCTION_ORDER' AND sd.source_id = p.id "
-            + "AND sd.doc_type = 'CONSUME_OUT' AND sd.status <> 'VOIDED') "
-            + "AND (EXISTS (SELECT 1 FROM inv_doc d WHERE d.source_type = 'PRODUCTION_ORDER' AND d.source_id = p.id "
-            + "AND d.doc_type = 'ISSUE_OUT' AND d.status = 'APPROVED') "
-            + "OR EXISTS (SELECT 1 FROM prd_order_item i WHERE i.prd_order_id = p.id AND i.returned_qty > i.defect_qty))")
-    long countToSettle();
+            + "AND sd.doc_type = 'CONSUME_OUT' AND sd.status &lt;&gt; 'VOIDED') "
+            + "AND (EXISTS (SELECT 1 FROM inv_doc d JOIN inv_doc_item di ON di.doc_id = d.id "
+            + "WHERE d.source_type = 'PRODUCTION_ORDER' AND d.source_id = p.id AND d.status = 'APPROVED' "
+            + "AND d.doc_type IN ('ISSUE_OUT', 'RETURN_IN') "
+            + "GROUP BY di.material_sku_id HAVING SUM(CASE WHEN d.doc_type = 'ISSUE_OUT' THEN di.qty ELSE -di.qty END) &lt;&gt; 0) "
+            + "OR EXISTS (SELECT 1 FROM prd_order_item i WHERE i.prd_order_id = p.id AND i.returned_qty &gt; i.defect_qty)) "
+            + "<if test='scope.self'>AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if> "
+            + "<if test='scope.lines.limited'>AND p.product_line = ANY(#{scope.lines.values, "
+            + "typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if></script>")
+    long countToSettle(@Param("scope") DataScope scope);
 
     /** 还没核销的生产单（在制、待核销、核销中）：id、加工厂。factoryId 是 null 时全部工厂 */
     @Select("<script>SELECT p.id, p.factory_id FROM prd_order p WHERE p.issue_status IS NOT NULL "
