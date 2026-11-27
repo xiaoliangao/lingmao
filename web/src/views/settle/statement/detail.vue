@@ -270,13 +270,17 @@ const unitText = (it: StatementItem) => (it.unit ? units.labelOf(it.unit) : it.s
 const missingPrice = (it: StatementItem) => it.sourceType !== 'DEDUCTION' && it.price == null
 const canRemove = computed(() => can('removeItems'))
 const diffText = (r: CompareRow) => (r.outcome === 'MATCH' ? '' : `${r.diffAmount > 0 ? '+' : ''}${formatMoney(r.diffAmount)}`)
+const headerSub = computed(() => {
+  const d = detail.value
+  return d ? `${d.partnerName} · ${formatDate(d.periodStart)} ~ ${formatDate(d.periodEnd)}` : undefined
+})
 const LOG_STATUSES = Object.fromEntries(Object.entries(STATEMENT_STATUS).map(([k, v]) => [k, v.label]))
 const loadLogs = () => statementApiBase.logs(id)
 </script>
 
 <template>
   <div>
-    <PageHeader :title="detail?.no ?? '对账单'" :back="{ label: '供应商对账', to: '/statements' }">
+    <PageHeader :title="detail?.no ?? '对账单'" :sub="headerSub" :back="{ label: '供应商对账', to: '/statements' }">
       <template v-if="detail" #title>
         <StatusTag :tone="STATEMENT_STATUS[detail.status].tone">{{ STATEMENT_STATUS[detail.status].label }}</StatusTag>
       </template>
@@ -316,12 +320,12 @@ const loadLogs = () => statementApiBase.logs(id)
           <el-table :data="detail.items" row-key="id" scrollbar-always-on
             empty-text="这张对账单没有明细：点「刷新」把这段时间里后来审核的单据加进来，或者作废" @selection-change="selected = $event">
             <el-table-column v-if="canRemove" type="selection" width="40" fixed="left" />
-            <el-table-column label="类型" width="72">
+            <el-table-column label="类型" width="84">
               <template #default="{ row }">
                 <StatusTag :tone="STATEMENT_SOURCE[(row as StatementItem).sourceType].tone">{{ STATEMENT_SOURCE[(row as StatementItem).sourceType].label }}</StatusTag>
               </template>
             </el-table-column>
-            <el-table-column label="日期" width="100" class-name="num">
+            <el-table-column label="日期" width="108" class-name="num">
               <template #default="{ row }">{{ formatDate(row.bizDate) }}</template>
             </el-table-column>
             <el-table-column label="单号" width="150">
@@ -383,8 +387,8 @@ const loadLogs = () => statementApiBase.logs(id)
               <template #default="{ row }">
                 <template v-if="(row as CompareRow).their">
                   <span class="code">{{ row.their.no || '—' }}</span>
-                  <span class="dim small"> {{ formatDate(row.their.date) }} {{ row.their.description }}</span>
-                  <span class="dim small"> 第 {{ row.their.rowNos.join('、') }} 行</span>
+                  <span class="dim small gap">{{ formatDate(row.their.date) }} {{ row.their.description }}</span>
+                  <span class="dim small gap">第 {{ row.their.rowNos.join('、') }} 行</span>
                 </template>
                 <span v-else class="dim">—</span>
               </template>
@@ -396,7 +400,7 @@ const loadLogs = () => statementApiBase.logs(id)
               <template #default="{ row }">
                 <template v-if="(row as CompareRow).ours">
                   <span class="code">{{ row.ours.no || '—' }}</span>
-                  <span class="dim small"> {{ formatDate(row.ours.date) }} {{ row.ours.description }}</span>
+                  <span class="dim small gap">{{ formatDate(row.ours.date) }} {{ row.ours.description }}</span>
                 </template>
                 <span v-else class="dim">—</span>
               </template>
@@ -421,7 +425,7 @@ const loadLogs = () => statementApiBase.logs(id)
         </p>
       </div>
 
-      <aside class="doc-aside">
+      <div class="panels">
         <section class="panel">
           <div class="panel-head">对账单信息</div>
           <div class="panel-body">
@@ -470,7 +474,7 @@ const loadLogs = () => statementApiBase.logs(id)
             <DocLogList ref="logRef" :load="loadLogs" :actions="STATEMENT_LOG_ACTION" :statuses="LOG_STATUSES" />
           </div>
         </section>
-      </aside>
+      </div>
     </div>
 
     <el-dialog v-model="dedVisible" :title="`加扣款 · ${detail?.partnerName ?? ''}`" width="min(520px, 94vw)" :before-close="dedGuard.beforeClose">
@@ -497,17 +501,12 @@ const loadLogs = () => statementApiBase.logs(id)
 </template>
 
 <style scoped>
-.detail {
+/* 明细、比对两张表都宽：占满整页，对账单信息、原件、操作记录排在下面一行 */
+.panels {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
   align-items: start;
-}
-
-@media (max-width: 1180px) {
-  .detail {
-    grid-template-columns: 1fr;
-  }
 }
 
 .body {
@@ -550,6 +549,10 @@ const loadLogs = () => statementApiBase.logs(id)
 
 .grow {
   flex: 1;
+}
+
+.gap {
+  margin-left: 8px;
 }
 
 .sub {

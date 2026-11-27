@@ -33,7 +33,8 @@ const SETTLED_OPTIONS = [
 ]
 
 const { query, page, size, pageSizes, list, total, loading, load, search } = useTable({
-  normalize: ({ settledTab, ...rest }) => ({ ...rest, settled: settledTab === '' ? undefined : settledTab === 'yes' }),
+  // 空值在这之前已经去掉了：「全部」到这里是 undefined，不能当成 false（只看没对账的）
+  normalize: ({ settledTab, ...rest }) => ({ ...rest, settled: settledTab ? settledTab === 'yes' : undefined }),
   fetch: deductionApi.page,
   query: {
     keyword: '',

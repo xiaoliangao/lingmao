@@ -12,6 +12,12 @@ public final class FieldPermissions {
     public static final String PRODUCTION = "production:price:query";
     public static final String CONTACT = "supplier:supplier:contact";
     public static final String BANK = "supplier:supplier:bank";
+    /**
+     * 对账单、扣款登记上的金额跟着对账的权限走（RFC 019 §5.1）：对账就是对钱，能看对账单的就看得到金额。
+     * 对账单上有物料采购价，预置角色里只给本来就看得到采购价、加工价的角色（V66 收回了跟单的）
+     */
+    public static final String SETTLE = "settle:statement:list";
+    public static final String SETTLE_DEDUCTION = "settle:deduction:list";
     private FieldPermissions() { }
 
     public static boolean has(String permission) {
@@ -43,6 +49,7 @@ public final class FieldPermissions {
             case PRODUCTION -> "生产成交价";
             case CONTACT -> "供应商联系方式";
             case BANK -> "供应商银行信息";
+            case SETTLE, SETTLE_DEDUCTION -> "对账金额";
             default -> "成本与参考价";
         };
     }

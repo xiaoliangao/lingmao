@@ -75,6 +75,31 @@ class FieldProjectionTest {
         assertThat(items.toString()).doesNotContain("6222", "0571");
     }
 
+    /**
+     * 规则（RFC 019 §5.1）：对账单的金额跟着 settle:statement:list，扣款登记的跟着 settle:deduction:list，
+     * 不看成本、加工价的权限（只有对账权限的也看得到）；没有对账权限的去掉
+     */
+    @Test
+    void settle_amountsFollowSettlePermission() {
+        com.lingmao.scm.module.settle.dto.StatementItemVO item = new com.lingmao.scm.module.settle.dto.StatementItemVO();
+        item.setPrice(new java.math.BigDecimal("20"));
+        item.setAmount(new java.math.BigDecimal("200"));
+        com.lingmao.scm.module.settle.dto.DeductionRowVO ded = new com.lingmao.scm.module.settle.dto.DeductionRowVO();
+        ded.setAmount(new java.math.BigDecimal("50"));
+        FieldProjection projection = new FieldProjection(JsonMapper.builder().build());
+        String statements = "com.lingmao.scm.module.settle.controller.StatementController";
+        String deductions = "com.lingmao.scm.module.settle.controller.DeductionController";
+
+        as(FieldPermissions.SETTLE);
+        assertThat(projection.project(item, statements).get("amount").decimalValue()).isEqualByComparingTo("200");
+        assertThat(projection.project(item, statements).get("price").decimalValue()).isEqualByComparingTo("20");
+        assertThat(projection.project(ded, deductions).has("amount")).isFalse();
+
+        as(FieldPermissions.SETTLE_DEDUCTION, FieldPermissions.PRODUCTION);
+        assertThat(projection.project(ded, deductions).get("amount").decimalValue()).isEqualByComparingTo("50");
+        assertThat(projection.project(item, statements).has("amount") || projection.project(item, statements).has("price")).isFalse();
+    }
+
     private static void as(String... authorities) {
         SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
                 "u", null, java.util.Arrays.stream(authorities).map(org.springframework.security.core.authority.SimpleGrantedAuthority::new).toList()));

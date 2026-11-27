@@ -119,6 +119,9 @@ public class FieldProjection {
         // 成品发货的单价、金额抄的是订单的（RFC 008 §3.4）
         if (className.contains(".module.order.") || className.contains(".module.fg.")) return FieldPermissions.ORDER;
         if (className.contains(".module.production.")) return FieldPermissions.PRODUCTION;
+        if (className.contains(".module.settle.")) {
+            return className.contains("Deduction") ? FieldPermissions.SETTLE_DEDUCTION : FieldPermissions.SETTLE;
+        }
         if (className.contains(".module.techpack.") || className.contains(".module.inventory.")
                 || className.contains(".module.purchase.") || className.contains(".module.basic.")
                 || className.contains(".module.style.")) return FieldPermissions.COST;
