@@ -336,7 +336,17 @@ class SchemaConventionsIT {
         ROLE_PERMS.put("prod_manager", union(ROLE_PERMS.get("merchandiser"), COUNT_VIEW, Set.of("order:order:audit", "order:change:audit",
                 "purchase:order:audit", "inventory:count:audit", "production:order:audit"), ORDER_PRICE, COST));
         // V48（甲方 11-21）：业务主管 = 业务，数据范围全部
-        ROLE_PERMS.put("sales_lead", ROLE_PERMS.get("sales"));
+        // V59（甲方 11-27 答 Q14）：业务主管审需求订单、订单变更；生产经理审供应商准入；仓管审盘点单
+        ROLE_PERMS.put("sales_lead", union(ROLE_PERMS.get("sales"), Set.of("order:order:audit", "order:change:audit")));
+        ROLE_PERMS.put("prod_manager", union(ROLE_PERMS.get("prod_manager"), Set.of("supplier:supplier:admit")));
+        ROLE_PERMS.put("warehouse", union(ROLE_PERMS.get("warehouse"), Set.of("inventory:count:audit")));
+        // V59：理单 = 生产跟单 + 采购（不看银行全号），加物料入库单、出库单的新建编辑删除，不审
+        Set<String> clerk = new java.util.HashSet<>(union(ROLE_PERMS.get("merchandiser"), ROLE_PERMS.get("buyer"),
+                Set.of("inventory:doc:add", "inventory:doc:edit", "inventory:doc:remove")));
+        clerk.removeAll(BANK);
+        ROLE_PERMS.put("order_clerk", Set.copyOf(clerk));
+        // V59：物料单审核 = 看物料单、盘点单、库存，审物料单和盘点单（按人勾给甲方点名审核的人）
+        ROLE_PERMS.put("stock_auditor", union(STOCK_VIEW, COUNT_VIEW, Set.of("inventory:doc:audit", "inventory:count:audit")));
     }
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现（"工艺标准" V39 去掉了） */
@@ -344,30 +354,33 @@ class SchemaConventionsIT {
     private static final List<String> ORDERS = List.of("需求订单", "变更", "进度总览");
     private static final List<String> SUPPLY_ALL = List.of("算料", "采购", "物料入库单", "物料出库单", "物料盘点单", "库存");
     private static final List<String> MAKE = List.of("外发加工单", "成品采购单", "看板");
-    private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.of(
-            "dev", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
-            "dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER),
-            "sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER),
-            "sales_lead", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER),
-            "merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
+    private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.ofEntries(
+            Map.entry("dev", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER)),
+            Map.entry("dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER)),
+            Map.entry("sales", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER)),
+            Map.entry("sales_lead", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER)),
+            Map.entry("merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
                     "物料", List.of("算料", "采购", "物料入库单", "物料出库单", "库存"),
-                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER),
-            "buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
-            "warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
-            "finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
-            "manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER),
-            "prod_manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER));
+                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER)),
+            Map.entry("buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
+            Map.entry("warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
+            Map.entry("finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
+            Map.entry("manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
+            Map.entry("prod_manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
+                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER)),
+            Map.entry("order_clerk", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
+                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER)),
+            Map.entry("stock_auditor", Map.of("物料", List.of("物料入库单", "物料出库单", "物料盘点单", "库存"))));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */
-    private static final Map<String, RoleDataScope> ROLE_SCOPES = Map.of(
-            "dev", RoleDataScope.ALL, "dev_lead", RoleDataScope.ALL, "sales", RoleDataScope.SELF,
-            "merchandiser", RoleDataScope.SELF, "buyer", RoleDataScope.SELF, "warehouse", RoleDataScope.ALL,
-            "finance", RoleDataScope.ALL, "manager", RoleDataScope.ALL, "prod_manager", RoleDataScope.ALL,
-            "sales_lead", RoleDataScope.ALL);
+    private static final Map<String, RoleDataScope> ROLE_SCOPES = Map.ofEntries(
+            Map.entry("dev", RoleDataScope.ALL), Map.entry("dev_lead", RoleDataScope.ALL), Map.entry("sales", RoleDataScope.SELF),
+            Map.entry("merchandiser", RoleDataScope.SELF), Map.entry("buyer", RoleDataScope.SELF), Map.entry("warehouse", RoleDataScope.ALL),
+            Map.entry("finance", RoleDataScope.ALL), Map.entry("manager", RoleDataScope.ALL), Map.entry("prod_manager", RoleDataScope.ALL),
+            Map.entry("sales_lead", RoleDataScope.ALL), Map.entry("order_clerk", RoleDataScope.SELF), Map.entry("stock_auditor", RoleDataScope.SELF));
 
     /**
-     * 规则：十个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
+     * 规则：十二个角色模板都在，数据范围对；只给一个人这一个角色，他拿到的业务权限码正好是 PRD §3.1 那一行
      * （第 2 批 RFC 003 §13.2，第 3、4 批 V17），data:all 跟着数据范围走；侧边栏正好是 ROLE_SIDEBARS 那样（目录也授了才挂得上），
      * 没有"价格档案""资料包"（visible = false，只为在角色页里勾），也没有管理后台的"审批规则"。走的是登录时真正用的 PermissionService
      */
