@@ -97,7 +97,7 @@ class UserControllerTest {
     /** 规则：列表返回的每个用户里都没有 password 字段 */
     @Test
     void page_noPasswordInResponse() throws Exception {
-        UserVO zhangsan = new UserVO(2L, "zhangsan", "张三", null, 1, null, null, List.of(), null, null, false, List.of("APPAREL"), List.of(), false);
+        UserVO zhangsan = new UserVO(2L, "zhangsan", "张三", null, 1, null, null, List.of(), null, null, false, List.of("APPAREL"), List.of(), false, null, null);
         when(userService.page(any())).thenReturn(new PageResult<>(List.of(zhangsan), 1));
 
         mockMvc.perform(get("/api/users"))

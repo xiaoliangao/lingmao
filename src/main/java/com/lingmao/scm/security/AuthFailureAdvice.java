@@ -24,6 +24,11 @@ public class AuthFailureAdvice {
         return ResponseEntity.status(403).body(R.fail(403, failure.getMessage()));
     }
 
+    @ExceptionHandler(FactoryDenied.class)
+    public ResponseEntity<R<Void>> factoryDenied(FactoryDenied failure) {
+        return ResponseEntity.status(403).body(R.fail(403, failure.getMessage()));
+    }
+
     @ExceptionHandler(FieldPermissionDenied.class)
     public ResponseEntity<R<Void>> forbidden(FieldPermissionDenied failure) {
         return ResponseEntity.status(403).body(R.fail(403, failure.getMessage()));

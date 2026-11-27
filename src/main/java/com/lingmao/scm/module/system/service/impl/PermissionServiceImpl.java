@@ -34,6 +34,10 @@ public class PermissionServiceImpl implements PermissionService {
         if (Boolean.TRUE.equals(user.getPwdMustChange())) {
             return Set.of(CallerScope.MUST_CHANGE_PASSWORD);
         }
+        // 工厂账号（RFC 019 §7）：不看角色（也分不了角色），只有这一个标识，能调哪些接口由 @FactoryAccess 定
+        if (user.getPartnerId() != null) {
+            return Set.of(CallerScope.factory(user.getPartnerId()));
+        }
         Set<String> perms = new LinkedHashSet<>(sysMenuMapper.selectPermsByUserId(userId));
         // 数据范围是"全部"的多给一个 data:all（RFC 001 §8）：过滤器每个请求都调这里，以后查单据时看权限就知道，不用另外查库。
         // 品类线同理（RFC 013 §2）：超级管理员 line:all，别人每条线一个 line:XXX

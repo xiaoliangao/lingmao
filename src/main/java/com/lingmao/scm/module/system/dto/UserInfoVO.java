@@ -9,7 +9,8 @@ import java.util.Set;
  * defaultCompany 默认主体，新建需求订单、采购单、盘点单时主体默认填它，没有（没设、停用了又不止一个启用的）是 null；
  * features 功能开关（FeaturesVO），只决定入口显示不显示；
  * canSeeAll 数据范围是"全部"（PRD §3.2）：只有这样的人，单据列表上才出"我的 / 全部"切换；
- * mustChangePassword 管理员给的密码还没改（RFC 018 §2）：这时 perms、menus 都是空的，前端只显示改密码，别的接口回 403
+ * mustChangePassword 管理员给的密码还没改（RFC 018 §2）：这时 perms、menus 都是空的，前端只显示改密码，别的接口回 403；
+ * factory 工厂账号对应的那家（RFC 019 §7），内部账号是 null：工厂账号 roles、perms、menus 都是空的，前端只开手机报工
  */
 public record UserInfoVO(Long id,
                          String username,
@@ -20,5 +21,6 @@ public record UserInfoVO(Long id,
                          CompanyBrief defaultCompany,
                          FeaturesVO features,
                          boolean canSeeAll,
-                         boolean mustChangePassword) {
+                         boolean mustChangePassword,
+                         FactoryBrief factory) {
 }

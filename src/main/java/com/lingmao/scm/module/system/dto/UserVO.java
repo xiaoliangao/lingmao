@@ -12,6 +12,8 @@ import java.util.List;
  * @param depts         在哪几个部门（RFC 018 §1），按部门树的顺序
  * @param roles         分了哪些角色
  * @param pwdMustChange 还没改过管理员给的密码：登录后要先改（RFC 018 §2）
+ * @param partnerId     工厂账号对应的加工厂（RFC 019 §7）；内部账号是 null
+ * @param partnerName   那家的简称
  */
 public record UserVO(Long id,
                      String username,
@@ -29,7 +31,9 @@ public record UserVO(Long id,
                      /** 能看的品类线（RFC 013 §2），按字典顺序 */
                      List<String> productLines,
                      List<RoleBrief> roles,
-                     Boolean pwdMustChange) {
+                     Boolean pwdMustChange,
+                     Long partnerId,
+                     String partnerName) {
 
     /** 部门：name 是本级的名字，path 是全路径"产品部/设计组" */
     public record DeptBrief(Long id, String name, String path) {
@@ -39,11 +43,11 @@ public record UserVO(Long id,
     }
 
     /** 实体 → VO：一个字段一个字段挑，挑剩下的（密码、删除标记）就不会出去。部门、角色另外填 */
-    public static UserVO from(SysUser user, List<DeptBrief> depts, List<RoleBrief> roles) {
+    public static UserVO from(SysUser user, List<DeptBrief> depts, List<RoleBrief> roles, String partnerName) {
         return new UserVO(user.getId(), user.getUsername(), user.getNickname(),
                 user.getPhone(), user.getStatus(), user.getCreateTime(),
                 user.getDefaultCompanyId(), depts, user.getPost(), user.getDesignerNo(),
                 Boolean.TRUE.equals(user.getDesignerNoLocked()), user.getProductLines(), roles,
-                Boolean.TRUE.equals(user.getPwdMustChange()));
+                Boolean.TRUE.equals(user.getPwdMustChange()), user.getPartnerId(), partnerName);
     }
 }

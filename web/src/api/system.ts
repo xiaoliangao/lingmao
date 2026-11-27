@@ -17,8 +17,10 @@ export interface UserProfileForm {
   post?: string | null
   /** 两位数字 01-99；编过款号以后不能改、清空 */
   designerNo?: string | null
-  /** 能看的品类线，至少一条（RFC 013 §2） */
+  /** 能看的品类线，内部账号至少一条（RFC 013 §2）；工厂账号传空 */
   productLines: string[]
+  /** 工厂账号（RFC 019 §7）对应的加工厂、成衣厂；内部账号不传或 null。建了以后不能在内部、工厂之间互转 */
+  partnerId?: string | null
 }
 
 export interface UserQuery extends PageParams {
@@ -62,6 +64,7 @@ export function userUpdateForm(user: User): UserUpdateForm {
     post: user.post,
     designerNo: user.designerNo,
     productLines: [...user.productLines],
+    partnerId: user.partnerId,
   }
 }
 

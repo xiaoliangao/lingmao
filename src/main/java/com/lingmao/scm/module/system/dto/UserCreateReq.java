@@ -2,7 +2,6 @@ package com.lingmao.scm.module.system.dto;
 
 import com.lingmao.scm.common.validation.MaxBytes;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -43,8 +42,13 @@ public class UserCreateReq {
     @Pattern(regexp = "^$|^(0[1-9]|[1-9][0-9])$", message = "设计师编号是 01-99 的两位数字")
     private String designerNo;
 
-    /** 能看的品类线（字典 product_line 的 value），至少一条（RFC 013 §2）；超级管理员不看它 */
-    @NotEmpty(message = "品类线至少选一条")
+    /** 能看的品类线（字典 product_line 的 value），内部账号至少一条（RFC 013 §2，Service 里查）；超级管理员、工厂账号不看它 */
     @Size(max = 20, message = "品类线最多 20 条")
     private List<String> productLines;
+
+    /**
+     * 工厂账号（RFC 019 §7）：对应的加工厂、成衣厂（sup_supplier.id，要合作中）；空 = 内部账号。
+     * 工厂账号不填品类线、部门、岗位、设计师编号、默认主体，建了以后不能改成内部账号
+     */
+    private Long partnerId;
 }

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.production.service.impl;
 
 import com.lingmao.scm.module.biz.service.DocActions;
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.exception.BizException;
@@ -119,6 +120,16 @@ class ProductionSupport {
      * 品类线（RFC 013 §2）不在我的线里一律 404，审批人也一样
      */
     ProductionOrder visible(ProductionOrder p) {
+        // 工厂账号（RFC 019 §7）：只看本厂下了单的，不看品类线和本人范围（它一个权限都没有）。
+        // 能走到这里的只有标了 @FactoryAccess 的接口：工厂的列表、详情，报进度，登记裁床数
+        Long factory = CallerScope.factoryId();
+        if (factory != null) {
+            if (p == null || !factory.equals(p.getFactoryId()) || !ProductionRules.FACTORY_VISIBLE.contains(p.getStatus())) {
+                throw new BizException(404, NOT_FOUND);
+            }
+            com.lingmao.scm.common.scope.CompanyContext.target(p.getCompanyId());
+            return p;
+        }
         if (p == null || !LineScope.current().canSee(p.getProductLine())) {
             throw new BizException(404, NOT_FOUND);
         }

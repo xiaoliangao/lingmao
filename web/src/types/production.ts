@@ -794,6 +794,36 @@ export interface MobileOrderRow {
   risk: ProductionRisk
 }
 
+/**
+ * 工厂账号看的一张单（RFC 019 §7，GET /api/factory-orders/{id}）：手机报工页要的那几样，字段名和 ProductionDetail 一样。
+ * 不给单价、金额、订单、审批、异常；actions 只有 report（报进度）、cut（登记裁床数）
+ */
+export interface FactoryOrderDetail {
+  id: string
+  no: string
+  kind: ProductionKind
+  status: ProductionStatus
+  companyId: string
+  styleCode: string
+  styleName: string
+  image: Attachment | null
+  factoryShortName: string
+  totalQty: number
+  /** 已回货件数（含次品） */
+  returnedQty: number
+  dueDate: string
+  expectDate: string | null
+  daysLeft: number | null
+  risk: ProductionRisk
+  currentNodeName: string | null
+  /** 生产跟单：有事找谁 */
+  merchName: string | null
+  sizes: string[]
+  items: ProductionItem[]
+  nodes: ProductionNode[]
+  actions: ProductionAction[]
+}
+
 // ---------------------------------------------------------------- 工厂产能（PRD 08.02，甲方 11-27 答 Q60）
 
 /** 工厂产能列表的一行：某家厂、某个品类在看的这个月用的产能 */

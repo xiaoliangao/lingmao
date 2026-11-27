@@ -2,7 +2,7 @@
 import ThumbImage from '@/components/ThumbImage.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { productionApi } from '@/api/production'
+import { factoryOrderApi, productionApi } from '@/api/production'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
 import NodeDots from '@/components/doc/NodeDots.vue'
 import { useUserStore } from '@/stores/user'
@@ -12,17 +12,19 @@ import { useLatestRequest } from '@/composables/useLatestRequest'
 
 /**
  * 手机报工"我的跟单"（/mobile，docs/api/05 §1.4、§3.8）：按 360px 宽做，卡片 44px 以上好点。
- * 生产跟单是我、已下单或生产中的单，后端按风险排；剩余天数的颜色按后端的 risk
+ * 生产跟单是我、已下单或生产中的单，后端按风险排；剩余天数的颜色按后端的 risk。
+ * 工厂账号（RFC 019 §7）看的是本厂已下单、生产中的单（factoryOrderApi），标题是厂名，不标异常
  */
 const router = useRouter()
 const user = useUserStore()
+const factory = computed(() => user.info?.factory ?? null)
 
 const rows = ref<MobileOrderRow[]>([])
 /** 口径和看板一样：生产中算"在制"，已下单还没开工算"待开工"（走查 T-7d453c：原来全算在制） */
 const countText = computed(() => {
   const running = rows.value.filter((r) => r.status === 'RUNNING').length
   const waiting = rows.value.length - running
-  return [running && `在制 ${running} 单`, waiting && `待开工 ${waiting} 单`].filter(Boolean).join(' · ') || '没有跟的单'
+  return [running && `在制 ${running} 单`, waiting && `待开工 ${waiting} 单`].filter(Boolean).join(' · ') || (factory.value ? '没有在做的单' : '没有跟的单')
 })
 const loading = ref(false)
 
@@ -31,7 +33,7 @@ async function load() {
   const read = listRequest.begin()
   loading.value = true
   try {
-    const result = await read.run(() => productionApi.myFollow())
+    const result = await read.run(() => (factory.value ? factoryOrderApi.list() : productionApi.myFollow()))
     if (read.current()) rows.value = result
   } catch (error) {
     if (read.current()) throw error
@@ -48,7 +50,7 @@ onMounted(load)
   <div v-loading="loading" class="m-shell">
     <header class="m-top">
       <div class="title-box">
-        <h1>我的跟单</h1>
+        <h1>{{ factory ? factory.shortName : '我的跟单' }}</h1>
         <span class="dim">{{ user.info?.nickname ?? '' }} · {{ countText }}</span>
       </div>
       <button type="button" class="refresh-btn" @click="load">刷新</button>
@@ -70,7 +72,7 @@ onMounted(load)
         <div class="info">
           <div class="line1">
             <span class="code style-code">{{ r.styleCode }}</span>
-            <span v-if="r.risk.issue" class="issue-bang" title="有没关闭的异常">!</span>
+            <span v-if="r.risk.issue && !factory" class="issue-bang" title="有没关闭的异常">!</span>
             <span class="gap" />
             <span class="num due">{{ formatDate(r.expectDate ?? r.dueDate) }}</span>
             <DaysLeftTag :days-left="r.daysLeft" :risk="r.risk" />

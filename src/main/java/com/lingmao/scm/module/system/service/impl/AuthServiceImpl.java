@@ -12,6 +12,8 @@ import com.lingmao.scm.module.system.mapper.SysUserMapper;
 import com.lingmao.scm.module.system.service.AiSwitchService;
 import com.lingmao.scm.module.system.service.AuthService;
 import com.lingmao.scm.module.system.service.DefaultCompanyProvider;
+import com.lingmao.scm.module.system.service.FactoryDirectory;
+import com.lingmao.scm.module.system.dto.FactoryBrief;
 import com.lingmao.scm.module.system.service.PermissionService;
 import com.lingmao.scm.security.JwtUtil;
 import com.lingmao.scm.security.LoginFailCounter;
@@ -42,6 +44,7 @@ public class AuthServiceImpl implements AuthService {
     private final PermissionService permissionService;
     private final LoginFailCounter loginFailCounter;
     private final DefaultCompanyProvider defaultCompanyProvider;
+    private final FactoryDirectory factoryDirectory;
     private final RefreshSessionService refreshSessions;
     private final AiSwitchService aiSwitchService;
     private final Clock clock;
@@ -88,14 +91,18 @@ public class AuthServiceImpl implements AuthService {
             throw new BizException(404, "用户不存在: " + userId);
         }
         boolean mustChange = Boolean.TRUE.equals(user.getPwdMustChange());
+        // 工厂账号（RFC 019 §7）：没有角色、菜单、权限码，前端看 factory 只开手机报工页
+        FactoryBrief factory = user.getPartnerId() == null ? null : factoryDirectory.find(user.getPartnerId());
+        boolean bare = mustChange || user.getPartnerId() != null;
         return new UserInfoVO(user.getId(), user.getUsername(), user.getNickname(),
-                permissionService.loadRoleCodes(userId),
-                mustChange ? java.util.Set.of() : permissionService.loadPermissions(userId),
-                mustChange ? java.util.List.of() : permissionService.loadMenuTree(userId),
-                defaultCompanyProvider.resolve(user.getDefaultCompanyId()),
+                user.getPartnerId() != null ? java.util.List.of() : permissionService.loadRoleCodes(userId),
+                bare ? java.util.Set.of() : permissionService.loadPermissions(userId),
+                bare ? java.util.List.of() : permissionService.loadMenuTree(userId),
+                user.getPartnerId() != null ? null : defaultCompanyProvider.resolve(user.getDefaultCompanyId()),
                 new FeaturesVO(aiSwitchService.enabled()),
                 com.lingmao.scm.security.DataScope.current(false).isAll(),
-                mustChange);
+                mustChange,
+                factory);
     }
 
     @Override

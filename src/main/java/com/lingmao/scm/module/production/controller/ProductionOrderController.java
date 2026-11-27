@@ -52,6 +52,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import com.lingmao.scm.security.FactoryAccess;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -243,7 +244,8 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
 
     @Operation(summary = "报进度（电脑、手机共用）：报开始 / 报完成；前面还有节点没报完成时照样报上，返回 warning")
     @PostMapping("/{id:\\d+}/nodes/{nodeId:\\d+}/reports")
-    @PreAuthorize("hasAuthority('production:node:edit')")
+    @PreAuthorize("hasAnyAuthority('production:node:edit', 'scope:FACTORY')")
+    @FactoryAccess
     @OperLog(module = "生产单", action = "报进度")
     @IdempotentCreate("PRODUCTION_NODE_REPORT")
     public R<NodeReportResult> report(@PathVariable("id") long id, @PathVariable("nodeId") long nodeId,
@@ -253,7 +255,8 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
 
     @Operation(summary = "一个节点的汇报记录，新的在前")
     @GetMapping("/{id:\\d+}/nodes/{nodeId:\\d+}/reports")
-    @PreAuthorize("hasAnyAuthority('production:order:list', 'production:mobile:list')")
+    @PreAuthorize("hasAnyAuthority('production:order:list', 'production:mobile:list', 'scope:FACTORY')")
+    @FactoryAccess
     public R<List<NodeReportVO>> nodeReports(@PathVariable("id") long id, @PathVariable("nodeId") long nodeId) {
         return R.ok(nodeService.reports(id, nodeId));
     }
@@ -322,7 +325,8 @@ public class ProductionOrderController extends IdempotencyReplayGuard {
 
     @Operation(summary = "登记裁床数（已下单、生产中）：按 SKU 填，null = 清掉；登记了的回货上限、完成判定按裁床数")
     @PutMapping("/{id:\\d+}/cut-qty")
-    @PreAuthorize("hasAuthority('production:node:edit')")
+    @PreAuthorize("hasAnyAuthority('production:node:edit', 'scope:FACTORY')")
+    @FactoryAccess
     @OperLog(module = "生产单", action = "登记裁床数")
     public R<Void> registerCut(@PathVariable("id") long id, @Valid @RequestBody CutQtyReq req) {
         receiptService.registerCut(id, req);

@@ -27,6 +27,20 @@ export interface UserInfo {
    * 路由守卫只放 /change-password 这一页，改完重新登录
    */
   mustChangePassword: boolean
+  /**
+   * 工厂账号（RFC 019 §7）对应的那家，内部账号是 null。工厂账号 roles、perms、menus 都是空的：
+   * 路由守卫只开手机报工（/mobile），列本厂的单、报进度、登记实裁数；别的接口后端一律 403
+   */
+  factory?: FactoryBrief | null
+}
+
+/** 工厂账号对应的加工厂、成衣厂（RFC 019 §7）。factory：是加工厂或成衣厂；active：合作中 */
+export interface FactoryBrief {
+  id: string
+  code: string
+  shortName: string
+  factory: boolean
+  active: boolean
 }
 
 /**
@@ -78,6 +92,10 @@ export interface User {
   roles: { id: string; name: string }[]
   /** 管理员给的密码还没改：导入、新建、重置密码后是 true，本人改了以后 false */
   pwdMustChange: boolean
+  /** 工厂账号（RFC 019 §7）对应的加工厂；内部账号是 null */
+  partnerId: string | null
+  /** 那家的简称 */
+  partnerName: string | null
 }
 
 /** 部门树的一个节点（GET /api/depts） */

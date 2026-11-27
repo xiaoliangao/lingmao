@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.controller;
 
+import com.lingmao.scm.security.FactoryAccess;
 import com.lingmao.scm.common.log.OperLog;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.AssistantTokenVO;
@@ -30,6 +31,7 @@ public class AuthController {
 
     @Operation(summary = "登录，返回 token")
     @PostMapping("/login")
+    @FactoryAccess
     @OperLog(module = "认证", action = "登录")
     public R<String> login(@Valid @RequestBody LoginReq req, HttpServletRequest request, HttpServletResponse response) {
         var tokens = authService.login(req);
@@ -39,6 +41,7 @@ public class AuthController {
 
     @Operation(summary = "使用 HttpOnly Cookie 原子刷新会话")
     @PostMapping("/refresh")
+    @FactoryAccess
     public R<String> refresh(HttpServletRequest request, HttpServletResponse response) {
         cookies.requireRefreshHeader(request);
         var tokens = authService.refresh(cookies.read(request, SessionCookies.REFRESH), cookies.read(request, SessionCookies.BROWSER));
@@ -48,6 +51,7 @@ public class AuthController {
 
     @Operation(summary = "当前登录用户")
     @GetMapping("/me")
+    @FactoryAccess
     public R<UserInfoVO> me(@AuthenticationPrincipal LoginUser loginUser){
         return R.ok(authService.me(loginUser.userId()));
     }
@@ -61,6 +65,7 @@ public class AuthController {
 
     @Operation(summary = "退出登录")
     @PostMapping("/logout")
+    @FactoryAccess
     @OperLog(module = "认证", action = "退出")
     public R<Void> logout(@AuthenticationPrincipal LoginUser loginUser, HttpServletRequest request, HttpServletResponse response){
         cookies.requireRefreshHeader(request);
@@ -72,6 +77,7 @@ public class AuthController {
 
     @Operation(summary = "改自己的密码（登录了就能改，不要额外的权限）")
     @PutMapping("/password")
+    @FactoryAccess
     @OperLog(module = "认证", action = "改密码")
     public R<Void> changePassword(@AuthenticationPrincipal LoginUser loginUser,
                                   @Valid @RequestBody PasswordChangeReq req, HttpServletRequest request, HttpServletResponse response) {

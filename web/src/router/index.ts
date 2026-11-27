@@ -155,6 +155,11 @@ function phoneHome(to: RouteLocationNormalized): string | undefined {
   return ['/mobile', '/mobile-todo'].find((p) => menuGroups.has(p))
 }
 
+/** 工厂账号能去的：手机报工的列表和单子 */
+function isFactoryPath(path: string) {
+  return path === '/mobile' || /^\/mobile\/\d+$/.test(path)
+}
+
 router.beforeEach(async (to) => {
   const title = to.meta.title as string | undefined
   document.title = title ? `${title} - ${APP_NAME}` : APP_NAME
@@ -173,6 +178,13 @@ router.beforeEach(async (to) => {
     // 还在用管理员给的密码：只放改密码这一页（后端别的接口也都是 403）。菜单路由先不加，改完重新登录时整页重新加载再加
     if (store.info?.mustChangePassword) {
       return to.path === '/change-password' ? true : { path: '/change-password', replace: true }
+    }
+    // 工厂账号（RFC 019 §7）：没有菜单，只开手机报工（列本厂的单、报进度、登记实裁数），别的地址都回 /mobile。
+    // 电脑上也是这一页（居中、最宽 560px）；后端别的接口对工厂账号一律 403
+    if (store.info?.factory) {
+      addStandaloneRoute('/mobile', '报工', pages['../views/production/mobile/index.vue'] ?? building)
+      menuRoutesAdded = true
+      return isFactoryPath(to.path) ? to.fullPath : { path: '/mobile', replace: true }
     }
     addMenuRoutes('workbench', store.workbenchMenus)
     addDetailRoutes('workbench')
@@ -193,6 +205,7 @@ router.beforeEach(async (to) => {
     // 这一次跳转是按加路由之前的表匹配的（菜单页会落到 404），按新表重新跳一次
     return phoneHome(to) ?? to.fullPath
   }
+  if (store.info?.factory && !isFactoryPath(to.path)) return { path: '/mobile', replace: true }
   // 密码早就改过了还打开改初始密码这一页：回首页（自己改密码在侧边栏底下）
   if (to.path === '/change-password') return '/'
   return phoneHome(to) ?? true

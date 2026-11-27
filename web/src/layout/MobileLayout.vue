@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { ElMessageBox } from 'element-plus'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import PasswordDialog from './PasswordDialog.vue'
 import { APP_MARK, APP_NAME } from '@/config'
 import { useTabsStore } from '@/stores/tabs'
 import { useUserStore } from '@/stores/user'
 
 /**
  * 手机报工的外框（/mobile、/mobile/:id，router 里的 STANDALONE_PAGES）：单独一页，没有侧边栏、页签，
- * 顶上一窄条只有系统名、当前用户和退出。手机上登录后直接进这里；电脑上点侧边栏的"手机报工"在浏览器新标签里打开
+ * 顶上一窄条只有系统名、当前用户、改密码和退出。手机上登录后直接进这里；电脑上点侧边栏的"手机报工"在浏览器新标签里打开。
+ * 工厂账号（RFC 019 §7）手机、电脑都只有这一页，没有侧边栏，改密码只能在这里
  */
 const router = useRouter()
 const store = useUserStore()
 const tabs = useTabsStore()
+const passwordVisible = ref(false)
 
 async function logout() {
   await ElMessageBox.confirm('退出后要重新输入用户名和密码才能进来。', '退出登录', {
@@ -30,9 +34,11 @@ async function logout() {
       <b class="mark" aria-hidden="true">{{ APP_MARK }}</b>
       <span class="name">{{ APP_NAME }}</span>
       <span class="who">{{ store.info?.nickname }}</span>
+      <button type="button" class="logout" @click="passwordVisible = true">改密码</button>
       <button type="button" class="logout" @click="logout">退出</button>
     </header>
     <router-view />
+    <PasswordDialog v-model="passwordVisible" />
   </div>
 </template>
 

@@ -71,6 +71,17 @@ public final class DataScope {
     }
 
     /**
+     * 工厂账号（RFC 019 §7）查本厂的单：不按本人、不按品类线（工厂账号没有这两样）。调用的地方必须自己按
+     * CallerScope.factoryId() 筛加工厂；不是工厂账号调就抛 403，免得被当成"看全部"误用
+     */
+    public static DataScope forFactory() {
+        if (com.lingmao.scm.common.auth.CallerScope.factoryId() == null) {
+            throw new com.lingmao.scm.common.exception.BizException(403, "只有工厂账号能这样查");
+        }
+        return new DataScope(LoginUser.currentUserId(), true, LineScope.all());
+    }
+
+    /**
      * 审核不受数据范围限制（PRD §3.2，用户 11-21 定）：角色勾了这个（权限里有 data:audit-any），又有这种单的审核权限，
      * 待审的单和自己审过的单不按本人筛（品类线照旧）。只给单级审核的变更单、物料出入库单、盘点单用；
      * 多级审批的单另有例外（轮到我审的能看，ApprovalService）。

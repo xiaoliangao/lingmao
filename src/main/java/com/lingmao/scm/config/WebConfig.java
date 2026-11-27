@@ -1,6 +1,7 @@
 package com.lingmao.scm.config;
 
 import com.lingmao.scm.security.AssistantScopeInterceptor;
+import com.lingmao.scm.security.FactoryScopeInterceptor;
 import com.lingmao.scm.common.log.TraceIdFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -24,10 +25,14 @@ public class WebConfig implements WebMvcConfigurer {
         this.uploadLocation = Paths.get(uploadDir).toAbsolutePath().normalize().toUri().toString();
     }
 
-    /** 助手令牌只能调返回数据的接口（RFC 017 §13），导出、下载、模板、预览回 403 */
+    /**
+     * 助手令牌只能调返回数据的接口（RFC 017 §13），导出、下载、模板、预览回 403；
+     * 工厂账号只能调标了 @FactoryAccess 的接口（RFC 019 §7）
+     */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new AssistantScopeInterceptor());
+        registry.addInterceptor(new FactoryScopeInterceptor());
     }
 
     @Override

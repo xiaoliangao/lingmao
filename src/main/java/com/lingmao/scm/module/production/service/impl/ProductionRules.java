@@ -77,6 +77,12 @@ final class ProductionRules {
     /** 货期预警、报进度、上报异常只看这两个状态 */
     static final Set<DocStatus> LIVE = Set.of(APPROVED, RUNNING);
 
+    /**
+     * 工厂账号（RFC 019 §7）能看到的本厂生产单：下了单以后的。草稿、待审核还没给工厂，作废的不给看；
+     * 列表只列 LIVE（要报进度的），做完的点进来还能看
+     */
+    static final Set<DocStatus> FACTORY_VISIBLE = Set.of(APPROVED, RUNNING, DONE, CLOSED);
+
     /** 溢装 %（甲方 11-18 答 Q09）：每个 SKU 排产不超过 ⌊订单件数 × 1.05⌋，回货的良品不超过 ⌊件数 × 1.05⌋，登记了裁床数按裁床数 */
     static final BigDecimal OVER_PCT = BigDecimal.valueOf(5);
 

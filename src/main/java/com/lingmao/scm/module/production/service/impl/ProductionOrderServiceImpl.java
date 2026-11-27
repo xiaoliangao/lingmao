@@ -2,6 +2,7 @@ package com.lingmao.scm.module.production.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.exception.BizException;
@@ -34,6 +35,7 @@ import com.lingmao.scm.module.price.service.PriceService;
 import com.lingmao.scm.module.production.dto.IssueOptionQuery;
 import com.lingmao.scm.module.production.dto.IssueOptionVO;
 import com.lingmao.scm.module.production.dto.MaterialPlanRowVO;
+import com.lingmao.scm.module.production.dto.FactoryOrderVO;
 import com.lingmao.scm.module.production.dto.MobileOrderRow;
 import com.lingmao.scm.module.production.dto.OpenIssueBrief;
 import com.lingmao.scm.module.production.dto.ProductionDetailVO;
@@ -341,11 +343,57 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         ProductionQuery q = new ProductionQuery();
         q.setStatus(List.of(APPROVED, RUNNING));
         q.setMerchId(LoginUser.currentUserId());
-        List<ProductionRowVO> rows = prdMapper.selectRows(q, null, DataScope.current(false), support.today(), support.nearUntil());
+        return mobileRows(q, DataScope.current(false));
+    }
+
+    @Override
+    public List<MobileOrderRow> factoryOrders() {
+        ProductionQuery q = new ProductionQuery();
+        q.setStatus(List.of(APPROVED, RUNNING));
+        q.setFactoryId(requireFactory());
+        return mobileRows(q, DataScope.forFactory());
+    }
+
+    private List<MobileOrderRow> mobileRows(ProductionQuery q, DataScope scope) {
+        List<ProductionRowVO> rows = prdMapper.selectRows(q, null, scope, support.today(), support.nearUntil());
         support.fillRows(rows, false);
         return rows.stream().map(r -> new MobileOrderRow(r.getId(), r.getNo(), r.getKind(), r.getStatus(), r.getStyleCode(),
                 r.getStyleName(), r.getImage(), r.getFactoryShortName(), r.getTotalQty(), r.getDueDate(), r.getExpectDate(),
                 r.getDaysLeft(), r.getNodes(), r.getCurrentNodeName(), r.getRisk())).toList();
+    }
+
+    @Override
+    public FactoryOrderVO factoryDetail(long id) {
+        requireFactory();
+        ProductionOrder p = support.getVisible(id);   // 工厂账号：只认本厂下了单的（ProductionSupport.visible）
+        List<ProductionOrderItem> items = itemMapper.selectByOrder(id);
+        List<ProductionNode> nodes = nodeMapper.selectByOrder(id);
+        List<NodeReport> reports = reportMapper.selectByOrder(id);
+        StyleOrderInfo style = styleService.orderInfos(List.of(p.getStyleId())).get(p.getStyleId());
+        ProductionOrderMapper.RiskRow risk = prdMapper.selectRisk(id, support.today(), support.nearUntil());
+        List<String> actions = new ArrayList<>();
+        if (ProductionRules.LIVE.contains(p.getStatus())) {
+            actions.add("report");
+        }
+        if (ProductionRules.FLOW.allows("cut", p.getStatus())) {
+            actions.add("cut");
+        }
+        return new FactoryOrderVO(p.getId(), p.getNo(), p.getKind().name(), p.getStatus().name(), p.getCompanyId(),
+                style.code(), style.name(), style.image(), supplierService.getRef(p.getFactoryId()).shortName(), p.getTotalQty(),
+                items.stream().mapToInt(ProductionOrderItem::getReturnedQty).sum(), p.getDueDate(), p.getExpectDate(),
+                ProductionRules.daysLeft(p.getStatus(), p.getDueDate(), p.getExpectDate(), support.today()),
+                new RiskVO(risk.late(), risk.near(), risk.nodeLate(), risk.issue(), risk.upstream()),
+                ProductionRules.currentNodeName(nodes), userService.nicknames(List.of(p.getMerchId())).get(p.getMerchId()),
+                style.sizes(), itemVOs(items, style), nodeVOs(nodes, reports), actions);
+    }
+
+    /** 当前请求的工厂（供应商 id）；内部账号调工厂的接口 403 */
+    private static long requireFactory() {
+        Long factory = CallerScope.factoryId();
+        if (factory == null) {
+            throw new BizException(403, "这是工厂账号用的接口");
+        }
+        return factory;
     }
 
     @Override

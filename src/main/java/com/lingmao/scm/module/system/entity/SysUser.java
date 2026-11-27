@@ -57,4 +57,10 @@ public class SysUser extends BaseEntity {
     /** 第一次用编号自动编款号时由 style 置 true（RFC 005 §3.3）；用户页不改它 */
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
     private Boolean designerNoLocked;
+
+    /**
+     * 工厂账号对应的加工厂、成衣厂（sup_supplier.id，V69、RFC 019 §7）；null = 内部账号。
+     * 不空时 PermissionServiceImpl 只给 scope:FACTORY:&lt;id&gt;，角色、品类线、部门都不看
+     */
+    private Long partnerId;
 }

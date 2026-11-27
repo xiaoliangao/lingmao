@@ -4,6 +4,7 @@ import type {
   BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, CapacityForm, CapacityPreview, CapacityQuery, CapacityRow, CutQtyForm, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
   LedgerMaterialQuery, LedgerMaterialRow, LedgerOrderQuery, LedgerOrderRow, LedgerStatus, MobileOrderRow, NodePlanReq, NodeReport, NodeReportForm, NodeReportResult, ProductionCounts, ProductionDetail, ProductionForm,
   ProductionIssue, ProductionMaterials, ProductionQuery, ProductionReceipt, ProductionRow, ReceiptCreated, ReceiptForm,
+  FactoryOrderDetail,
 } from '@/types/production'
 import { attachmentBody } from './basic'
 import { docApi, documentOptions } from './biz'
@@ -78,6 +79,16 @@ export const productionApi = {
 
   /** 我的跟单：生产跟单是我、已下单或生产中，按风险排（要 production:mobile:list）。点进去用 get 取详情 */
   myFollow: () => http.get<MobileOrderRow[]>(`${base}/my-follow`),
+}
+
+/**
+ * 工厂账号（RFC 019 §7，docs/api/05 §8）：本厂的单。只有工厂账号能调；报进度、登记裁床数还是 productionApi.report、registerCut
+ */
+export const factoryOrderApi = {
+  /** 本厂已下单、生产中的单，按风险排 */
+  list: () => http.get<MobileOrderRow[]>('/api/factory-orders'),
+  /** 一张单：节点、颜色尺码明细、能做的（report、cut）；别家的 404 */
+  get: (id: string) => http.get<FactoryOrderDetail>(`/api/factory-orders/${id}`),
 }
 
 /** 生产看板（要 production:board:list）。列表的行和外发加工单列表一样，表格组件共用 */

@@ -121,6 +121,13 @@ public class JwtAuthFilter extends OncePerRequestFilter { //OncePerRequestFilter
         if (scope != null) {
             authorities.add(new SimpleGrantedAuthority(CallerScope.ASSISTANT_AUTHORITY));
         }
+        // 工厂账号（RFC 019 §7）：标识是 PermissionService 按 sys_user.partner_id 给的（库里的菜单权限码不能以 scope: 开头），
+        // 上面滤掉了，这里放回去；能调哪些接口由 FactoryScopeInterceptor 按 @FactoryAccess 管
+        Long factory = CallerScope.factoryOf(perms);
+        if (factory != null) {
+            authorities.add(new SimpleGrantedAuthority(CallerScope.FACTORY_AUTHORITY));
+            authorities.add(new SimpleGrantedAuthority(CallerScope.factory(factory)));
+        }
         LoginUser loginUser = new LoginUser(session.userId(), claims.getId(), scope);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(loginUser, null, authorities));

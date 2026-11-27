@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.controller;
 
+import com.lingmao.scm.security.FactoryAccess;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.FileVO;
 import com.lingmao.scm.module.system.service.FileService;
@@ -23,6 +24,7 @@ public class FileController {
 
     @Operation(summary = "上传一个文件（登录即可），返回访问地址")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @FactoryAccess
     public R<FileVO> upload(@RequestParam("file") MultipartFile file) {
         return R.ok(fileService.upload(file));
     }

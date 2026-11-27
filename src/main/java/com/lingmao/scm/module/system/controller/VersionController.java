@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.controller;
 
+import com.lingmao.scm.security.FactoryAccess;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.system.dto.VersionVO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +29,7 @@ public class VersionController {
     /** 不用登录（SecurityConfig 放行）：升级脚本在登录之前就要用它判断新版本起来了没有 */
     @Operation(summary = "当前版本号和打包时间（不用登录）")
     @GetMapping
+    @FactoryAccess
     public R<VersionVO> version() {
         return R.ok(version);
     }

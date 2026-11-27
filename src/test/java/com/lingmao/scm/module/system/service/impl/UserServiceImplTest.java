@@ -70,6 +70,9 @@ class UserServiceImplTest {
     @Mock
     private com.lingmao.scm.module.system.service.DeptService deptService;
 
+    @Mock
+    private com.lingmao.scm.module.system.service.FactoryDirectory factoryDirectory;
+
     @InjectMocks
     private UserServiceImpl userService;
 
@@ -191,7 +194,7 @@ class UserServiceImplTest {
         assertThat(page.getValue().getSize()).isEqualTo(20);
         assertThat(page.getValue().searchCount()).isFalse();
         assertThat(wrapper.getValue().getSqlSegment())
-                .containsPattern("status = #\\{.+\\} AND \\(username LIKE #\\{.+\\} OR nickname LIKE #\\{.+\\}\\)");
+                .containsPattern("status = #\\{.+\\} AND partner_id IS NULL AND \\(username LIKE #\\{.+\\} OR nickname LIKE #\\{.+\\}\\)");
         assertThat(wrapper.getValue().getParamNameValuePairs().values()).contains(1, "%张%");
         assertThat(options).containsExactly(new UserOption(2L, "zhangsan", "张三", null));
     }
@@ -339,11 +342,56 @@ class UserServiceImplTest {
         verify(sysUserMapper).lockDesignerNo(2L, "07");
     }
 
+    /** 规则（RFC 019 §7）：工厂账号只认合作中的加工厂、成衣厂，不要品类线、部门；不是加工厂、不在合作中的开不了 */
+    @Test
+    void create_factoryAccount_needsActiveFactoryNotLines() {
+        when(factoryDirectory.find(9L)).thenReturn(new com.lingmao.scm.module.system.dto.FactoryBrief(9L, "F01", "华东制衣", true, true));
+        UserCreateReq req = createReq("huadong", "Abcd1234");
+        req.setPartnerId(9L);
+        req.setProductLines(null);
+        req.setDeptIds(List.of(3L));
+        req.setDesignerNo("07");
+
+        userService.create(req);
+
+        ArgumentCaptor<SysUser> saved = ArgumentCaptor.forClass(SysUser.class);
+        verify(sysUserMapper).insert(saved.capture());
+        assertThat(saved.getValue().getPartnerId()).isEqualTo(9L);
+        assertThat(saved.getValue().getProductLines()).isEmpty();
+        assertThat(saved.getValue().getDesignerNo()).as("工厂账号不要设计师编号").isNull();
+        verify(userDeptMapper, never()).insert(org.mockito.ArgumentMatchers.<List<com.lingmao.scm.module.system.entity.SysUserDept>>any());
+
+        when(factoryDirectory.find(8L)).thenReturn(new com.lingmao.scm.module.system.dto.FactoryBrief(8L, "S01", "面料行", false, true));
+        req.setPartnerId(8L);
+        assertThatThrownBy(() -> userService.create(req)).hasMessageContaining("不是加工厂");
+        when(factoryDirectory.find(7L)).thenReturn(new com.lingmao.scm.module.system.dto.FactoryBrief(7L, "F02", "停了的厂", true, false));
+        req.setPartnerId(7L);
+        assertThatThrownBy(() -> userService.create(req)).hasMessageContaining("不是合作中");
+    }
+
+    /** 规则：内部账号和工厂账号不能互转；工厂账号不能分角色 */
+    @Test
+    void factoryAccount_cannotConvertOrGetRoles() {
+        SysUser factory = user(5L, "huadong");
+        factory.setPartnerId(9L);
+        when(sysUserMapper.selectById(5L)).thenReturn(factory);
+        UserUpdateReq toInternal = updateReq(1);
+        assertThatThrownBy(() -> userService.update(5L, toInternal, 1L)).hasMessageContaining("不能改成内部账号");
+        assertThatThrownBy(() -> userService.assignRoles(5L, List.of(2L), 1L)).hasMessageContaining("工厂账号不分角色");
+
+        when(sysUserMapper.selectById(6L)).thenReturn(user(6L, "zhangsan"));
+        UserUpdateReq toFactory = updateReq(1);
+        toFactory.setPartnerId(9L);
+        assertThatThrownBy(() -> userService.update(6L, toFactory, 1L)).hasMessageContaining("内部账号不能改成工厂账号");
+        verify(sysUserMapper, never()).update(any(SysUser.class), any());
+    }
+
     private UserCreateReq createReq(String username, String password) {
         UserCreateReq req = new UserCreateReq();
         req.setUsername(username);
         req.setPassword(password);
         req.setNickname("张三");
+        req.setProductLines(List.of("APPAREL"));
         return req;
     }
 
@@ -351,6 +399,7 @@ class UserServiceImplTest {
         UserUpdateReq req = new UserUpdateReq();
         req.setNickname("管理员");
         req.setStatus(status);
+        req.setProductLines(List.of("APPAREL"));
         return req;
     }
 

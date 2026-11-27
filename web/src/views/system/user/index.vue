@@ -12,6 +12,7 @@ import FilterBar from '@/components/FilterBar.vue'
 import FilterItem from '@/components/FilterItem.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import DictSelect from '@/components/DictSelect.vue'
+import SupplierSelect from '@/components/SupplierSelect.vue'
 import BatchBar from '@/components/BatchBar.vue'
 import ImportDialog from '@/components/ImportDialog.vue'
 import DeptTree from './DeptTree.vue'
@@ -102,8 +103,11 @@ onMounted(async () => {
 const dialogVisible = ref(false)
 const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
+/** 账号类型（RFC 019 §7）：工厂账号给加工厂、成衣厂的人，只能看本厂的单、报进度、登记实裁数；建了以后不能互转 */
+type AccountKind = 'INTERNAL' | 'FACTORY'
 const EMPTY_FORM = {
-  username: '', password: '', nickname: '', phone: '', status: 1,
+  username: '', password: '', nickname: '', phone: '', status: 1, kind: 'INTERNAL' as AccountKind,
+  partnerId: null as string | null, partnerName: null as string | null,
   defaultCompanyId: null as string | null, deptIds: [] as string[], post: '', designerNo: '', productLines: [] as string[],
 }
 const form = reactive({ ...EMPTY_FORM })
@@ -111,7 +115,7 @@ const form = reactive({ ...EMPTY_FORM })
 const designerNoLocked = ref(false)
 const companies = ref<CompanyOption[]>([])
 const guard = useUnsavedChanges(form, dialogVisible)
-const rules: FormRules = {
+const rules = computed<FormRules>(() => ({
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
     { pattern: /^[a-z0-9_]{3,32}$/, message: '3-32 位小写字母、数字、下划线', trigger: 'blur' },
@@ -122,8 +126,9 @@ const rules: FormRules = {
   ],
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
   designerNo: [{ pattern: /^(0[1-9]|[1-9][0-9])$/, message: '两位数字 01-99', trigger: 'blur' }],
-  productLines: [{ type: 'array', required: true, min: 1, message: '至少选一条品类线', trigger: 'change' }],
-}
+  productLines: form.kind === 'INTERNAL' ? [{ type: 'array', required: true, min: 1, message: '至少选一条品类线', trigger: 'change' }] : [],
+  partnerId: form.kind === 'FACTORY' ? [{ required: true, message: '选是哪家厂', trigger: 'change' }] : [],
+}))
 
 /** 主体公司下拉：每次打开对话框取一次（停用的不列；原来选的停用了，显示"已停用"） */
 async function loadCompanies() {
@@ -145,6 +150,7 @@ async function openEdit(row: User) {
   designerNoLocked.value = row.designerNoLocked
   Object.assign(form, {
     username: row.username, password: '', nickname: row.nickname, phone: row.phone ?? '', status: row.status,
+    kind: row.partnerId ? 'FACTORY' : 'INTERNAL', partnerId: row.partnerId, partnerName: row.partnerName,
     defaultCompanyId: row.defaultCompanyId, deptIds: row.depts.map((d) => d.id), post: row.post ?? '',
     designerNo: row.designerNo ?? '', productLines: [...row.productLines],
   })
@@ -159,13 +165,17 @@ function companyLabel(id: string | null) {
 
 async function save() {
   await formRef.value?.validate()
-  const profile = {
-    defaultCompanyId: form.defaultCompanyId,
-    deptIds: form.deptIds,
-    post: form.post.trim() || null,
-    designerNo: form.designerNo.trim() || null,
-    productLines: form.productLines,
-  }
+  // 工厂账号不要部门、岗位、品类线、设计师编号、默认主体（后端也不收）
+  const profile = form.kind === 'FACTORY'
+    ? { partnerId: form.partnerId, defaultCompanyId: null, deptIds: [], post: null, designerNo: null, productLines: [] }
+    : {
+        partnerId: null,
+        defaultCompanyId: form.defaultCompanyId,
+        deptIds: form.deptIds,
+        post: form.post.trim() || null,
+        designerNo: form.designerNo.trim() || null,
+        productLines: form.productLines,
+      }
   if (editingId.value === null) {
     await userApi.create({ username: form.username, password: form.password, nickname: form.nickname, phone: form.phone || undefined, ...profile })
   } else {
@@ -282,7 +292,7 @@ function runPick() {
     batchRef.value?.run({
       label: '设品类线',
       confirm: `选中的人只能看「${text}」的款式、单据、供应商，原来的品类线换掉。`,
-      can: (u) => u.productLines.join() !== lines.join(),
+      can: (u) => !u.partnerId && u.productLines.join() !== lines.join(),
       run: (u, o) => userApi.update(u.id, { ...userUpdateForm(u), productLines: lines }, o),
     })
     return
@@ -295,7 +305,7 @@ function runPick() {
     ? {
         label: '加角色',
         confirm: `给选中的人加上「${role.name}」，原来的角色不动。`,
-        can: (u) => !has(u),
+        can: (u) => !u.partnerId && !has(u),
         run: async (u, o) => {
           const ids = await userApi.roleIds(u.id, o)
           if (!ids.includes(role.id)) await userApi.assignRoles(u.id, [...ids, role.id], o)
@@ -304,7 +314,7 @@ function runPick() {
     : {
         label: '去角色',
         confirm: `去掉选中的人的「${role.name}」，别的角色不动。`,
-        can: has,
+        can: (u) => !u.partnerId && has(u),
         run: async (u, o) => {
           const ids = await userApi.roleIds(u.id, o)
           await userApi.assignRoles(u.id, ids.filter((id) => id !== role.id), o)
@@ -367,7 +377,8 @@ function emptyText() {
           </el-table-column>
           <el-table-column v-if="cols.show.roles" label="角色" min-width="130">
             <template #default="{ row }">
-              <span v-if="(row as User).roles.length">{{ (row as User).roles.map((r) => r.name).join('、') }}</span>
+              <span v-if="(row as User).partnerId">工厂账号 · {{ (row as User).partnerName }}</span>
+              <span v-else-if="(row as User).roles.length">{{ (row as User).roles.map((r) => r.name).join('、') }}</span>
               <span v-else class="warn">没有角色</span>
             </template>
           </el-table-column>
@@ -389,7 +400,7 @@ function emptyText() {
           <el-table-column label="操作" width="268" align="right" fixed="right">
             <template #default="{ row }">
               <el-button v-perm="'system:user:edit'" link @click="openEdit(row as User)">编辑</el-button>
-              <el-button v-perm="'system:user:edit'" link @click="openRoles(row as User)">分配角色</el-button>
+              <el-button v-if="!(row as User).partnerId" v-perm="'system:user:edit'" link @click="openRoles(row as User)">分配角色</el-button>
               <el-button v-perm="'system:user:resetPwd'" link @click="resetPassword(row as User)">重置密码</el-button>
               <el-button v-perm="'system:user:remove'" link type="danger" @click="remove(row as User)">删除</el-button>
             </template>
@@ -430,7 +441,8 @@ function emptyText() {
       width="min(560px, 94vw)"
       :before-close="guard.beforeClose"
     >
-      <el-form ref="formRef" class="form-grid" :model="form" :rules="rules" label-position="top">
+      <!-- 规则随账号类型变：换类型时不要马上校验（不然一切到工厂账号就报"选是哪家厂"） -->
+      <el-form ref="formRef" class="form-grid" :model="form" :rules="rules" label-position="top" :validate-on-rule-change="false">
         <el-form-item label="用户名" prop="username">
           <el-input v-model="form.username" :disabled="editingId !== null" placeholder="登录用，小写字母、数字、下划线" />
         </el-form-item>
@@ -444,6 +456,21 @@ function emptyText() {
         <el-form-item label="手机号">
           <el-input v-model="form.phone" />
         </el-form-item>
+        <el-form-item label="账号类型" class="full">
+          <el-radio-group v-model="form.kind" :disabled="editingId !== null">
+            <el-radio value="INTERNAL">内部账号</el-radio>
+            <el-radio value="FACTORY">工厂账号（只看本厂的单，报进度、登记实裁数）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="form.kind === 'FACTORY'" label="哪家厂" prop="partnerId" class="full">
+          <SupplierSelect
+            v-model="form.partnerId"
+            v-model:label="form.partnerName"
+            :category="['GARMENT', 'PROCESSOR']"
+            usage="BULK"
+          />
+        </el-form-item>
+        <template v-if="form.kind === 'INTERNAL'">
         <el-form-item label="部门" class="full">
           <el-tree-select
             v-model="form.deptIds"
@@ -485,6 +512,7 @@ function emptyText() {
         <el-form-item label="品类线" prop="productLines" class="full">
           <DictSelect v-model="form.productLines" :type="PRODUCT_LINE_DICT" multiple placeholder="能看哪几条线的款式、单据、供应商" />
         </el-form-item>
+        </template>
         <el-form-item v-if="editingId !== null" label="状态" class="full">
           <el-radio-group v-model="form.status">
             <el-radio :value="1">启用</el-radio>

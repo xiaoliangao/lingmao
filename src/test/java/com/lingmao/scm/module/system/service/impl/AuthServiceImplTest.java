@@ -73,6 +73,9 @@ class AuthServiceImplTest {
     @Mock
     private Clock clock;
 
+    @Mock
+    private com.lingmao.scm.module.system.service.FactoryDirectory factoryDirectory;
+
     @InjectMocks
     private AuthServiceImpl authService;
 
@@ -211,7 +214,7 @@ class AuthServiceImplTest {
         UserInfoVO info = authService.me(1L);
 
         assertThat(info).isEqualTo(new UserInfoVO(1L, "admin", null,
-                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体"), new FeaturesVO(true), false, false));
+                List.of("admin"), Set.of("system:user:list"), List.of(), new CompanyBrief(3L, "测试主体"), new FeaturesVO(true), false, false, null));
     }
 
     /** 规则（RFC 018 §2）：要先改密码的，me 不给权限和菜单，带上 mustChangePassword，前端据此只放改密码页 */

@@ -3,7 +3,6 @@ package com.lingmao.scm.module.system.dto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -41,8 +40,13 @@ public class UserUpdateReq {
     @Pattern(regexp = "^$|^(0[1-9]|[1-9][0-9])$", message = "设计师编号是 01-99 的两位数字")
     private String designerNo;
 
-    /** 能看的品类线（字典 product_line 的 value），至少一条（RFC 013 §2）；超级管理员不看它 */
-    @NotEmpty(message = "品类线至少选一条")
+    /** 能看的品类线（字典 product_line 的 value），内部账号至少一条（RFC 013 §2，Service 里查）；超级管理员、工厂账号不看它 */
     @Size(max = 20, message = "品类线最多 20 条")
     private List<String> productLines;
+
+    /**
+     * 工厂账号对应的加工厂、成衣厂（RFC 019 §7）：工厂账号必填、可以换一家；内部账号必须空着。
+     * 内部账号和工厂账号不能互转（400），要换就另建一个
+     */
+    private Long partnerId;
 }

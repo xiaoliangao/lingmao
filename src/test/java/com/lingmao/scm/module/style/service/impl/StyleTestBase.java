@@ -261,7 +261,7 @@ abstract class StyleTestBase {
 
     static UserVO designer(long id, String nickname, String designerNo, boolean locked) {
         return new UserVO(id, "user" + id, nickname, null, 1, null, null, List.of(), null, designerNo, locked, List.of("APPAREL"),
-                List.of(), false);
+                List.of(), false, null, null);
     }
 
     private static TreeNode node(long id, Long parentId, String name) {

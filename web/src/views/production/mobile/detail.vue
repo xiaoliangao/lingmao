@@ -4,7 +4,7 @@ import { routeId } from '@/utils/entityId'
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { productionApi as productionApiBase } from '@/api/production'
+import { factoryOrderApi, productionApi as productionApiBase } from '@/api/production'
 import DictSelect from '@/components/DictSelect.vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import DaysLeftTag from '@/components/doc/DaysLeftTag.vue'
@@ -16,9 +16,11 @@ import { RESPONSIBLE_PARTY, type ResponsibleParty } from '@/types/order'
 import {
   NODE_STATE,
   PRODUCTION_KIND,
+  type FactoryOrderDetail,
   type NodeReportAction,
   type ProductionAction,
   type ProductionDetail,
+  type ProductionItem,
   type ProductionNode,
 } from '@/types/production'
 import type { FileVO } from '@/types/system'
@@ -34,16 +36,20 @@ const productionApi = bindCompanyApi(productionApiBase, () => detail.value?.comp
  * - 节点按钮按 state 上色，下面小字"完成 11-20 / 进行中 / 计划 11-25"；没有 report 动作时点不了
  * - 报进度、上报异常的规则和电脑上一样（实际完成不预填；责任方默认我方，不列"客户"；照片必传）
  * - 单子不存在或不归我看：写一句、给回列表的按钮；页签切回来重新取
+ * - 登记实裁数（actions 有 cut）：按颜色尺码一行一个数，只发改了的；超出上下限的标红，后端会拦
+ * - 工厂账号（RFC 019 §7）：详情走 factoryOrderApi（不带单价、订单、异常），没有上报异常；字典不取（工厂账号调不了）
  */
 const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
 const id = routeId(route.params.id)
-const issueTypes = useDict('issue_type')
+const factory = computed(() => user.info?.factory ?? null)
+const issueTypes = user.info?.factory ? null : useDict('issue_type')
 
-type View = 'overview' | 'report' | 'issue'
+type View = 'overview' | 'report' | 'issue' | 'cut'
 const view = ref<View>('overview')
-const detail = ref<ProductionDetail | null>(null)
+const detail = ref<ProductionDetail | FactoryOrderDetail | null>(null)
+const openIssues = computed(() => (detail.value && 'openIssues' in detail.value ? detail.value.openIssues : []))
 const notFound = ref(false)
 const loading = ref(false)
 const submitting = ref(false)
@@ -70,9 +76,12 @@ const issueForm = reactive({
   impactDelivery: false,
   newExpectDate: '',
 })
-// 两个表单各记"打开时的样子"：切进表单那一刻（view 变）记下
+/** 实裁数：明细 id → 填的数，空 = 没登记 */
+const cutForm = reactive<Record<string, number | null>>({})
+// 三个表单各记"打开时的样子"：切进表单那一刻（view 变）记下
 const reportGuard = useUnsavedChanges(reportForm, computed(() => view.value === 'report'))
 const issueGuard = useUnsavedChanges(issueForm, computed(() => view.value === 'issue'))
+const cutGuard = useUnsavedChanges(cutForm, computed(() => view.value === 'cut'))
 
 const can = (a: ProductionAction) => detail.value?.actions.includes(a) ?? false
 
@@ -81,7 +90,7 @@ async function load() {
   const read = detailRequest.begin()
   loading.value = true
   try {
-    const fetched = await read.run(() => productionApi.get(id))
+    const fetched = await read.run(() => (factory.value ? factoryOrderApi.get(id) : productionApi.get(id)))
     if (!read.current()) return
     detail.value = fetched
     notFound.value = false
@@ -108,6 +117,7 @@ onActivated(() => {
 function onBack() {
   if (view.value === 'report') reportGuard.beforeClose(() => (view.value = 'overview'))
   else if (view.value === 'issue') issueGuard.beforeClose(() => (view.value = 'overview'))
+  else if (view.value === 'cut') cutGuard.beforeClose(() => (view.value = 'overview'))
   else void router.push('/mobile')
 }
 
@@ -146,6 +156,7 @@ const finished = computed(() => !!selectedNode.value?.actualFinish)
 const titleText = computed(() => {
   if (view.value === 'report') return selectedNode.value?.nodeName ?? '报进度'
   if (view.value === 'issue') return '上报异常'
+  if (view.value === 'cut') return '登记实裁数'
   return detail.value?.styleCode ?? ''
 })
 const lastReportText = computed(() => {
@@ -204,6 +215,37 @@ async function submitIssue() {
   }
 }
 
+function openCut() {
+  if (!can('cut') || !detail.value) return
+  for (const key of Object.keys(cutForm)) delete cutForm[key]
+  for (const item of detail.value.items) cutForm[item.id] = item.cutQty ?? null
+  view.value = 'cut'
+}
+
+/** 超出能填的范围（件数的 105%、已回良品）：标红，不拦，后端回 400 说哪个 SKU */
+function cutOut(item: ProductionItem): boolean {
+  const v = cutForm[item.id]
+  return v != null && (v > item.maxCutQty || v < item.minCutQty)
+}
+
+async function submitCut() {
+  if (!detail.value) return
+  const changed = detail.value.items
+    .filter((i) => (cutForm[i.id] ?? null) !== (i.cutQty ?? null))
+    .map((i) => ({ prdOrderItemId: i.id, cutQty: cutForm[i.id] ?? null }))
+  if (!changed.length) return void ElMessage.info('没有改动')
+  submitting.value = true
+  try {
+    await productionApi.registerCut(id, { items: changed })
+    ElMessage.success(`登记了 ${changed.length} 个颜色尺码的实裁数`)
+    cutGuard.markSaved()
+    view.value = 'overview'
+    await load()
+  } finally {
+    submitting.value = false
+  }
+}
+
 function openDesktopPage() {
   if (detail.value && user.hasPerm('production:order:list')) void router.push(`${PRODUCTION_KIND[detail.value.kind].path}/${id}`)
 }
@@ -234,6 +276,7 @@ function openDesktopPage() {
             <span>交期 {{ formatDate(detail.expectDate ?? detail.dueDate) }}</span>
             <DaysLeftTag :days-left="detail.daysLeft" :risk="detail.risk" />
           </div>
+          <div v-if="detail.merchName" class="s-line2">跟单 {{ detail.merchName }}</div>
         </section>
 
         <p v-if="!detail.nodes.length" class="sub-hint dim">审核下单后才有节点</p>
@@ -255,14 +298,15 @@ function openDesktopPage() {
           </button>
         </div>
 
-        <section v-if="detail.openIssues.length" class="open-issues">
-          <h3>没关闭的异常 {{ detail.openIssues.length }}</h3>
-          <div v-for="iss in detail.openIssues" :key="iss.id" class="iss-item">
-            <strong>{{ issueTypes.labelOf(iss.issueType) }}：</strong>{{ iss.description }}
+        <section v-if="openIssues.length" class="open-issues">
+          <h3>没关闭的异常 {{ openIssues.length }}</h3>
+          <div v-for="iss in openIssues" :key="iss.id" class="iss-item">
+            <strong>{{ issueTypes?.labelOf(iss.issueType) }}：</strong>{{ iss.description }}
           </div>
         </section>
 
         <div class="bottom-actions">
+          <button v-if="can('cut')" type="button" class="full-btn" @click="openCut">登记实裁数</button>
           <button v-if="can('reportIssue')" type="button" class="full-btn danger-outline" @click="openIssueForm">上报异常</button>
           <button v-if="user.hasPerm('production:order:list')" type="button" class="full-btn" @click="openDesktopPage">在电脑上打开</button>
         </div>
@@ -273,7 +317,9 @@ function openDesktopPage() {
           计划 {{ formatDate(selectedNode.planStart).slice(5) }} ~ {{ formatDate(selectedNode.planFinish).slice(5) }}{{ lastReportText }}
         </p>
         <p v-if="finished" class="sub-hint warn-text">这个节点已经报过完成</p>
-        <p v-else-if="selectedNode.nodeCode === 'CUT'" class="sub-hint dim">裁完了在电脑上的生产单"更多 › 登记裁床数"按尺码登记，回货按裁床数算</p>
+        <p v-else-if="selectedNode.nodeCode === 'CUT' && can('cut')" class="sub-hint dim">
+          裁完了按颜色尺码<button type="button" class="link-btn" @click="openCut">登记实裁数</button>，回货按实裁数算
+        </p>
 
         <label class="m-field">
           <span>实际开始</span>
@@ -304,6 +350,27 @@ function openDesktopPage() {
           <button type="button" class="act-btn" :disabled="finished || submitting" @click="submitNode('START')">只报开始</button>
           <button type="button" class="act-btn primary" :disabled="submitting" @click="submitNode('FINISH')">报完成</button>
         </div>
+      </div>
+
+      <div v-else-if="view === 'cut'" class="m-body">
+        <p class="sub-hint dim">每个颜色尺码实际裁了多少件；空着 = 还没登记。回货的良品按实裁数算上限</p>
+        <div v-for="item in detail.items" :key="item.id" class="cut-row" :class="{ out: cutOut(item) }">
+          <div class="cut-label">
+            <strong>{{ item.colorName }} · {{ item.sizeCode }}</strong>
+            <span class="dim num">件数 {{ formatQty(item.qty) }}<template v-if="item.returnedQty"> · 已回 {{ formatQty(item.returnedQty) }}</template></span>
+          </div>
+          <el-input-number
+            v-model="cutForm[item.id]"
+            :min="0"
+            :precision="0"
+            :controls="false"
+            :value-on-clear="null"
+            :placeholder="String(item.qty)"
+            class="cut-input"
+          />
+          <span v-if="cutOut(item)" class="cut-hint">能填 {{ item.minCutQty }} ~ {{ item.maxCutQty }}</span>
+        </div>
+        <button type="button" class="full-btn primary" :disabled="submitting" @click="submitCut">保存实裁数</button>
       </div>
 
       <div v-else-if="view === 'issue'" class="m-body">
@@ -608,6 +675,57 @@ function openDesktopPage() {
   width: 22px;
   height: 22px;
   accent-color: var(--lm-accent);
+}
+
+.cut-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--lm-paper);
+  border: 1px solid var(--lm-line);
+  border-radius: var(--lm-radius-panel);
+}
+
+.cut-row.out {
+  border-color: var(--lm-danger-line);
+}
+
+.cut-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+}
+
+.cut-label .dim {
+  font-size: 12px;
+}
+
+.cut-input {
+  width: 120px;
+}
+
+.cut-input :deep(.el-input__wrapper) {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.cut-hint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--lm-danger-text);
+}
+
+.link-btn {
+  padding: 0 2px;
+  font: inherit;
+  color: var(--lm-accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  text-decoration: underline;
 }
 
 .dual-btns {

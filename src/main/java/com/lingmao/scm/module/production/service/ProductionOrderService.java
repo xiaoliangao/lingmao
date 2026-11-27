@@ -4,6 +4,7 @@ import com.lingmao.scm.common.page.PageResult;
 import com.lingmao.scm.module.biz.dto.DocActionReq;
 import com.lingmao.scm.module.production.dto.IssueOptionQuery;
 import com.lingmao.scm.module.production.dto.IssueOptionVO;
+import com.lingmao.scm.module.production.dto.FactoryOrderVO;
 import com.lingmao.scm.module.production.dto.MobileOrderRow;
 import com.lingmao.scm.module.production.dto.ProductionDetailVO;
 import com.lingmao.scm.module.production.dto.ProductionMaterialsVO;
@@ -45,6 +46,12 @@ public interface ProductionOrderService {
 
     /** 手机"我的跟单"：生产跟单是我、已下单或生产中，按风险排，不分页 */
     List<MobileOrderRow> myFollow();
+
+    /** 工厂账号（RFC 019 §7）：本厂已下单、生产中的单，按风险排，不分页。不是工厂账号 403 */
+    List<MobileOrderRow> factoryOrders();
+
+    /** 工厂账号（RFC 019 §7）：本厂的一张单，只给报工要的；别家的、没下单的、作废的 404 */
+    FactoryOrderVO factoryDetail(long id);
 
     /** 给 04 选生产单 */
     PageResult<IssueOptionVO> issueOptions(IssueOptionQuery query);
