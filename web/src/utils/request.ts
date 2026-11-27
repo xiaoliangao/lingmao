@@ -262,7 +262,9 @@ function fail(body: R<unknown>, response: AxiosResponse<unknown>): ApiError {
       showBizError(body.code, body.msg, body.data)
     } else {
       const trace = response.headers['x-request-id'] ?? response.headers['x-trace-id']
-      ElMessage.error(`${body.msg || '请求失败'}${typeof trace === 'string' ? `（追踪码 ${trace}）` : ''}`)
+      const msg = body.msg || '请求失败'
+      // 500 的消息里已经有"错误编号 <同一个编号>"（TraceIdFilter.serverErrorMsg），再拼一遍追踪码，看着像两个不同的编号
+      ElMessage.error(`${msg}${typeof trace === 'string' && !msg.includes(trace) ? `（追踪码 ${trace}）` : ''}`)
     }
   }
   const traceId = response.headers['x-request-id'] ?? response.headers['x-trace-id']
