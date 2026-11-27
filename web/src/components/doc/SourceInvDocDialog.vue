@@ -112,6 +112,9 @@ const guard = useUnsavedChanges(
 
 const meta = computed(() => INV_DOC_TYPE[props.docType])
 const isPurchase = computed(() => props.sourceKind === 'PURCHASE')
+/** 生产单生成的：工厂那一头就是加工厂的工厂仓（领料的入仓，退料、核销的出仓），不能改（RFC 015 §3，后端也不认改了的） */
+const fromLocked = computed(() => !isPurchase.value && (props.docType === 'RETURN_IN' || props.docType === 'CONSUME_OUT'))
+const toLocked = computed(() => !isPurchase.value && props.docType === 'ISSUE_OUT')
 
 const fromOptions = computed(() => {
   const allowed = meta.value.from
@@ -428,12 +431,12 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
           <el-date-picker v-model="head.docDate" type="date" value-format="YYYY-MM-DD" :disabled-date="disableFutureDate" :clearable="false" />
         </el-form-item>
         <el-form-item v-if="meta.from" label="从哪个仓出">
-          <el-select v-model="head.fromWarehouseId" filterable placeholder="选出库仓库" @change="onFromWarehouseChange">
+          <el-select v-model="head.fromWarehouseId" filterable placeholder="选出库仓库" :disabled="fromLocked" @change="onFromWarehouseChange">
             <el-option v-for="w in fromOptions" :key="w.id" :label="w.name" :value="w.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="meta.to" label="入哪个仓">
-          <el-select v-model="head.toWarehouseId" filterable placeholder="选入库仓库">
+          <el-select v-model="head.toWarehouseId" filterable placeholder="选入库仓库" :disabled="toLocked">
             <el-option v-for="w in toOptions" :key="w.id" :label="w.name" :value="w.id" />
           </el-select>
         </el-form-item>
@@ -523,7 +526,7 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
     </div>
 
     <template #footer>
-      <span v-if="blockedTip && rows.length" class="foot-tip">{{ blockedTip }}</span>
+      <span v-if="blockedTip" class="foot-tip">{{ blockedTip }}</span>
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" :loading="submitting" :disabled="!!blockedTip" @click="submit()">存草稿</el-button>
     </template>

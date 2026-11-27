@@ -14,6 +14,9 @@ import { docRoute } from '@/utils/docRoute'
 defineProps<{ rows: DocRef[]; loading?: boolean; emptyText?: string; maxHeight?: number }>()
 const emit = defineEmits<{ open: [row: DocRef] }>()
 
+/** 不同种类的单据 id 会重（采购单 1、生产单 1），行键带上种类（agy T-e19e38 #14） */
+const rowKey = (row: DocRef) => `${row.type}-${row.id}`
+
 const router = useRouter()
 function open(row: DocRef) {
   const to = docRoute(row)
@@ -24,7 +27,7 @@ function open(row: DocRef) {
 </script>
 
 <template>
-  <el-table v-loading="loading" :data="rows" row-key="id" :max-height="maxHeight" :empty-text="emptyText ?? '还没有关联的下游单据'">
+  <el-table v-loading="loading" :data="rows" :row-key="rowKey" :max-height="maxHeight" :empty-text="emptyText ?? '还没有关联的下游单据'">
     <el-table-column label="单据类型" prop="typeLabel" width="140" />
     <el-table-column label="单号" min-width="180" class-name="code">
       <template #default="{ row }">

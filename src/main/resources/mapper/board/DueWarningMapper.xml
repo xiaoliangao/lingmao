@@ -3,6 +3,15 @@
 <!-- 每天的货期预警按负责人数（RFC 019 §4）：条件照 ProductionOrderMapper 的 riskJoin、待到料的 LATE，改了那边这里跟着改 -->
 <mapper namespace="com.lingmao.scm.module.board.mapper.DueWarningMapper">
 
+    <!-- 发给谁（agy T-e19e38 #7）：内部账号（工厂账号不发）、有手机号（没有的钉钉找不到人，天天进失败）、
+         单子在他现在的品类线里（调了线的人不再收旧线的数，点开也看不到）；超级管理员看全部线 -->
+    <sql id="recipient">
+        AND u.partner_id IS NULL AND COALESCE(btrim(u.phone), '') &lt;&gt; ''
+        AND (${line} = ANY(u.product_lines)
+             OR EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id
+                        WHERE ur.user_id = u.id AND r.code = 'admin' AND r.status = 1 AND r.deleted = false))
+    </sql>
+
     <select id="selectProduction" resultType="com.lingmao.scm.module.board.mapper.DueWarningMapper$ProductionDigest">
         SELECT p.merch_id AS user_id,
                COUNT(*) FILTER (WHERE COALESCE(p.expect_date, p.due_date) &lt; #{today}) AS late,
@@ -12,6 +21,7 @@
         FROM prd_order p
         JOIN sys_user u ON u.id = p.merch_id AND u.deleted = false AND u.status = 1
         WHERE p.status IN ('APPROVED', 'RUNNING')
+          <include refid="recipient"><property name="line" value="p.product_line"/></include>
         GROUP BY p.merch_id
     </select>
 
@@ -23,6 +33,7 @@
         WHERE o.status IN ('APPROVED', 'RUNNING')
           AND i.received_qty - i.returned_qty + i.offset_in_qty - i.offset_out_qty &lt; i.qty
           AND COALESCE(i.expect_date, i.line_due_date, o.delivery_date) &lt; #{today}
+          <include refid="recipient"><property name="line" value="o.product_line"/></include>
         GROUP BY o.buyer_id
     </select>
 </mapper>

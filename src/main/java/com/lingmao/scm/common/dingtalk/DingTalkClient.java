@@ -106,7 +106,11 @@ public class DingTalkClient {
         }
         String url = baseUrl + "/gettoken?appkey=" + enc(appKey) + "&appsecret=" + enc(appSecret);
         JsonNode body = call(HttpRequest.newBuilder(URI.create(url)).GET());
-        token = body.path("access_token").asString();
+        String got = body.path("access_token").asString("");
+        if (got.isBlank()) {
+            throw new DingTalkException(-1, "钉钉没给 access_token");   // 不缓存空的（agy T-e19e38 #12）
+        }
+        token = got;
         tokenUntil = now.plusSeconds(body.path("expires_in").asLong(7200));
         return token;
     }
@@ -144,7 +148,13 @@ public class DingTalkClient {
         if (res.statusCode() != 200) {
             throw new DingTalkException(-1, "钉钉返回 HTTP " + res.statusCode());
         }
-        JsonNode body = json.readTree(res.body());
+        JsonNode body;
+        try {
+            body = json.readTree(res.body());
+        } catch (RuntimeException e) {
+            // 代理、防火墙拦了钉钉的域名会回 200 的网页：按发送失败算，不成 500（#12）
+            throw new DingTalkException(-1, "钉钉返回的不是 JSON");
+        }
         int errcode = body.path("errcode").asInt(0);
         if (errcode != 0) {
             throw new DingTalkException(errcode, body.path("errmsg").asString(""));

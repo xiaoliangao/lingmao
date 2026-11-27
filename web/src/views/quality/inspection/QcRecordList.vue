@@ -26,6 +26,11 @@ const emit = defineEmits<{ edit: [row: QcRow] }>()
 const user = useUserStore()
 const canEdit = computed(() => user.hasPerm('quality:inspection:edit'))
 const defectLabel = useDict('qc_defect_type').labelOf
+/** 问题一栏放不下：鼠标移上去看全文（没有改的权限的人也看得到） */
+function problemTitle(r: QcRow): string {
+  const types = r.defectTypes.map(defectLabel).join('、')
+  return [types, r.note, r.reworkNote ? `返修：${r.reworkNote}` : ''].filter(Boolean).join('\n')
+}
 const unitLabel = useDict('unit').labelOf
 const partnerName = ref<string | null>(null)
 const dates = ref<[string, string] | null>(null)
@@ -150,7 +155,7 @@ defineExpose({ reload: load })
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="cols.show.result" label="结论" width="96">
+      <el-table-column v-if="cols.show.result" label="结论" width="112">
         <template #default="{ row }">
           <StatusTag :tone="QC_RESULT[(row as QcRow).result].tone">{{ qcResultLabel(row.kind, row.result) }}</StatusTag>
         </template>
@@ -160,7 +165,8 @@ defineExpose({ reload: load })
           <div class="problem">
             <el-image v-for="(p, i) in (row as QcRow).photos.slice(0, 2)" :key="p.id" class="pic" :src="p.thumbUrl ?? p.url" fit="cover"
               :preview-src-list="(row as QcRow).photos.map((x) => x.url)" :initial-index="i" preview-teleported />
-            <div class="problem-text">
+            <span v-if="(row as QcRow).photos.length > 2" class="dim small more">+{{ (row as QcRow).photos.length - 2 }}</span>
+            <div class="problem-text" :title="problemTitle(row as QcRow)">
               <div class="ell">
                 <span v-if="(row as QcRow).defectTypes.length" class="types">{{ (row as QcRow).defectTypes.map(defectLabel).join('、') }}</span>
                 {{ row.note || (row.defectTypes.length ? '' : '—') }}
@@ -179,7 +185,7 @@ defineExpose({ reload: load })
           <span v-else class="dim">—</span>
         </template>
       </el-table-column>
-      <el-table-column v-if="cols.show.inspector" label="检验" width="150">
+      <el-table-column v-if="cols.show.inspector" label="检验" width="190">
         <template #default="{ row }">{{ row.inspectorName ?? '—' }} <span class="dim">{{ formatDate(row.inspectDate) }}</span></template>
       </el-table-column>
       <el-table-column v-if="cols.show.company" label="主体" width="120" prop="companyName" />
@@ -200,6 +206,10 @@ defineExpose({ reload: load })
 </template>
 
 <style scoped>
+.more {
+  align-self: center;
+}
+
 .link {
   color: var(--lm-accent);
   text-decoration: none;

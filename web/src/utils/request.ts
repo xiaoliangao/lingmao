@@ -607,10 +607,14 @@ export async function upload<T>(
   // 别的表单字段（账号导入的初始密码）：放在请求体里，不拼进地址
   Object.entries(options.fields ?? {}).forEach(([key, value]) => form.append(key, value))
   const timeout = Math.max(TRANSFER_TIMEOUT, (file.size / SLOW_BYTES_PER_SECOND) * 1000)
+  // 先记下页面的主体和登录周期：等过 429 以后同步的主体作用域已经退出了，重发会丢 X-Company-Id；
+  // 中间退出、换了账号的，prepareRequest 按 authEpoch 拦下（409），不拿新账号的令牌发旧页面的文件
+  const companyId = currentCompanyScope()
+  const authEpoch = sessionEpoch()
   for (let tries = 0; ; tries++) {
     const last = tries >= BUSY_RETRIES
     try {
-      return await request<T>({ url, method: 'post', data: form, timeout, silent: options.silent, quietBusy: !last })
+      return await request<T>({ url, method: 'post', data: form, timeout, silent: options.silent, quietBusy: !last, companyId, authEpoch })
     } catch (error) {
       if (last || !(error instanceof ApiError && error.code === 429)) throw error
       await sleep(error.retryAfter ?? 3000)

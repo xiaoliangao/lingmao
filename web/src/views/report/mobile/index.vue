@@ -14,7 +14,9 @@ import { TODO_COUNT, TODO_GROUP, type HomeTodos, type TodoCountKey, type TodoGro
  * - 预警：首页待办里预警类的几组和数（和预警中心一样），钉钉的"货期预警"点开到这里（?tab=alerts）
  * 数据就是首页待办的接口，权限、数据范围和首页一样
  */
-const ALERT_COUNTS: TodoCountKey[] = ['PRODUCTION_LATE', 'PRODUCTION_NEAR', 'PRODUCTION_NODE_LATE', 'PRODUCTION_ISSUE', 'ARRIVAL_LATE', 'ARRIVAL_CUT']
+// 只显示数（不跳页），和预警中心同一批：手机上处理不了的也让人知道有多少
+const ALERT_COUNTS: TodoCountKey[] = ['PRODUCTION_LATE', 'PRODUCTION_NEAR', 'PRODUCTION_NODE_LATE', 'PRODUCTION_ISSUE', 'ARRIVAL_LATE', 'ARRIVAL_CUT',
+  'QC_PENDING', 'QC_REWORK', 'CONSUME_PENDING', 'STALE_MATERIAL', 'CERT_EXPIRING']
 
 const route = useRoute()
 const router = useRouter()
@@ -57,6 +59,10 @@ function switchTab(t: 'audit' | 'alerts') {
 }
 
 function open(item: TodoItem) {
+  // 生产异常：手机报工里就能看那张生产单（异常在那里登记、关闭），有报工页的直接去
+  if (item.ref.type === 'PRODUCTION_ISSUE' && item.ref.parentId && router.getRoutes().some((r) => r.path === '/mobile')) {
+    return void router.push(`/mobile/${item.ref.parentId}`)
+  }
   const q: Record<string, string> = { type: item.ref.type }
   if (item.ref.kind) q.kind = item.ref.kind
   if (item.ref.parentId) q.parentId = String(item.ref.parentId)

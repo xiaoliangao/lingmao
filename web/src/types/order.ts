@@ -1,7 +1,7 @@
 // order 域（需求订单、订单变更单）的返回，和后端 module/order/dto 对应（docs/api/02-需求订单.md）。
 // 另外放了两块界面在订单里、后端不在 order 域的：排单（production 域）、审核对话框的评审信息（board 域）。
 // 字段名照数据库设计 §10 的列名转 camelCase；可能为 null 的地方都写了。件数是整数，单价、金额是 JSON 数字
-import { DOC_STATUS, type Attachment, type DocAction, type DocActionReq, type DocHeader, type DocRef, type DocStatus, type StatusTone } from '@/types/biz'
+import { DOC_STATUS, type Attachment, type DocAction, type DocHeader, type DocRef, type DocStatus, type StatusTone } from '@/types/biz'
 import type { ColorOption, EnableStatus } from '@/types/basic'
 import type { StyleStatus, TechPackStatus } from '@/types/style'
 import type { FileVO } from '@/types/system'
@@ -330,8 +330,9 @@ export interface OrderImportHead {
 // ---------------------------------------------------------------- 需求订单：审核
 
 /** 审核（POST /api/orders/{id}/audit）：每一级都要填承诺交期，带出上一级填的，以最后一级的为准 */
-export interface OrderAuditReq extends DocActionReq {
-  /** yyyy-MM-dd */
+export interface OrderAuditReq {
+  version: number
+  /** yyyy-MM-dd。后端只收这两个字段（多传会被拒，400） */
   commitDate: string
 }
 

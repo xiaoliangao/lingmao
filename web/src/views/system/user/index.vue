@@ -163,7 +163,10 @@ function companyLabel(id: string | null) {
   return found ? `${found.code} ${found.shortName}` : '已停用的主体'
 }
 
+/** 保存中：按钮转圈，双击不重发（agy T-77e556 P1-8） */
+const saving = ref(false)
 async function save() {
+  if (saving.value) return
   await formRef.value?.validate()
   // 工厂账号不要部门、岗位、品类线、设计师编号、默认主体（后端也不收）
   const profile = form.kind === 'FACTORY'
@@ -176,10 +179,15 @@ async function save() {
         designerNo: form.designerNo.trim() || null,
         productLines: form.productLines,
       }
-  if (editingId.value === null) {
-    await userApi.create({ username: form.username, password: form.password, nickname: form.nickname, phone: form.phone || undefined, ...profile })
-  } else {
-    await userApi.update(editingId.value, { nickname: form.nickname, phone: form.phone || null, status: form.status, ...profile })
+  saving.value = true
+  try {
+    if (editingId.value === null) {
+      await userApi.create({ username: form.username, password: form.password, nickname: form.nickname, phone: form.phone || undefined, ...profile })
+    } else {
+      await userApi.update(editingId.value, { nickname: form.nickname, phone: form.phone || null, status: form.status, ...profile })
+    }
+  } finally {
+    saving.value = false
   }
   ElMessage.success('已保存')
   dialogVisible.value = false
@@ -232,7 +240,13 @@ async function openRoles(row: User) {
 }
 
 async function saveRoles() {
-  await userApi.assignRoles(roleUser.value!.id, checkedRoleIds.value)
+  if (saving.value) return
+  saving.value = true
+  try {
+    await userApi.assignRoles(roleUser.value!.id, checkedRoleIds.value)
+  } finally {
+    saving.value = false
+  }
   ElMessage.success('角色已更新')
   roleDialogVisible.value = false
   load()
@@ -345,8 +359,8 @@ function emptyText() {
           <template #left>
             <el-segmented v-model="query.status" :options="STATUS_OPTIONS" @change="search" />
           </template>
-          <FilterItem label="角色" :text="roleName" @clear="query.roleId = ''; search()">
-            <el-select v-model="query.roleId" filterable clearable placeholder="全部角色" @change="search">
+          <FilterItem label="角色" :text="roleName" @clear="query.roleId = ''">
+            <el-select v-model="query.roleId" filterable clearable placeholder="全部角色">
               <el-option v-for="r in roleOptions" :key="r.id" :label="r.name" :value="r.id" />
             </el-select>
           </FilterItem>
@@ -524,7 +538,7 @@ function emptyText() {
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save">{{ editingId === null ? '新增用户' : '保存' }}</el-button>
+        <el-button type="primary" :loading="saving" @click="save">{{ editingId === null ? '新增用户' : '保存' }}</el-button>
       </template>
     </el-dialog>
 
@@ -540,7 +554,7 @@ function emptyText() {
       <p v-else class="dim">暂无角色，先在角色管理里新增</p>
       <template #footer>
         <el-button @click="roleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveRoles">保存角色</el-button>
+        <el-button type="primary" :loading="saving" @click="saveRoles">保存角色</el-button>
       </template>
     </el-dialog>
 

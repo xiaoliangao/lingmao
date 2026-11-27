@@ -793,6 +793,7 @@ public class InvDocServiceImpl implements InvDocService {
         doc.setDocDate(req.getDocDate() == null ? LocalDate.now(clock) : req.getDocDate());
         doc.setFromWarehouseId(req.getFromWarehouseId() == null ? d.fromWarehouseId() : req.getFromWarehouseId());
         doc.setToWarehouseId(req.getToWarehouseId() == null ? d.toWarehouseId() : req.getToWarehouseId());
+        pinFactoryWarehouse(doc, d);
         doc.setReason(InvTexts.blankToNull(req.getReason()));
         doc.setSupplierDeliveryNo(InvTexts.blankToNull(req.getSupplierDeliveryNo()));
         doc.setLogisticsNo(InvTexts.blankToNull(req.getLogisticsNo()));
@@ -848,6 +849,22 @@ public class InvDocServiceImpl implements InvDocService {
     }
 
     /**
+     * 生产单生成的：工厂那一头就是这家加工厂的工厂仓（领料的入仓，退料、耗料核销的出仓，RFC 015 §3），不能改，前端传的不信。
+     * 不然选成别家的工厂仓，会扣、加到别家的料账上（agy T-77e556 P0-6）
+     */
+    private static void pinFactoryWarehouse(InvDoc doc, SourceDraft d) {
+        if (!BizType.PRODUCTION_ORDER.name().equals(doc.getSourceType())) {
+            return;
+        }
+        switch (doc.getDocType()) {
+            case ISSUE_OUT -> doc.setToWarehouseId(d.toWarehouseId());
+            case RETURN_IN, CONSUME_OUT -> doc.setFromWarehouseId(d.fromWarehouseId());
+            default -> {
+            }
+        }
+    }
+
+    /**
      * 改源单生成的草稿：每行要对得上源单（不能加源单以外的行），数量按源单的单位换算、单价按源单的取，前端传的不信。
      * 带 id 的行沿用，过过账的行不能换物料
      */
@@ -857,6 +874,7 @@ public class InvDocServiceImpl implements InvDocService {
         List<Long> itemIds = nullIfEmpty(reqs.stream().map(InvDocItemReq::getSourceItemId).filter(Objects::nonNull).toList());
         SourceDraft d = handler.prefill(type, doc.getSourceId(), itemIds, doc.getFromWarehouseId(), doc.getId());
         com.lingmao.scm.common.scope.CompanyContext.target(d.companyId());
+        pinFactoryWarehouse(doc, d);
         List<InvDocItem> items = new ArrayList<>();
         List<SourceDraft.Item> matched = new ArrayList<>();
         Map<SourceDraft.Item, BigDecimal> totals = new IdentityHashMap<>();

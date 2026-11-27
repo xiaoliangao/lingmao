@@ -206,8 +206,11 @@ onMounted(load)
 }
 
 .due {
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--lm-ink-2);
+  /* 360px 宽的手机上别把日期断成两行 */
+  white-space: nowrap;
 }
 
 .line2 {

@@ -54,11 +54,14 @@ async function load() {
   try {
     const d = await read.run(() => statementApiBase.get(id))
     if (!read.current()) return
+    // 写了还没存的说明不丢：切页签回来、别的操作后重取，照样放回去（还算没保存）
+    const mine = notesDirty.value ? { ...notes } : null
     detail.value = d
     selected.value = []
     Object.keys(notes).forEach((k) => delete notes[k])
     d.compare?.rows.forEach((r) => (notes[r.key] = r.note ?? ''))
     notesGuard.markSaved()
+    if (mine) Object.entries(mine).forEach(([k, v]) => { if (k in notes) notes[k] = v })
     tabs.rename(path, `对账 ${d.no}`)
     theirFiles.value = d.compare ? await statementApiBase.theirFiles(id) : []
   } catch (e) {
@@ -118,6 +121,10 @@ async function act(action: 'send' | 'withdraw' | 'confirm' | 'void') {
     reason = await promptReason(`作废 ${d.no}`, '写一句原因：作废后里面的单据、扣款回到「待对账」，能重新生成', '作废')
     if (reason === null) return
   } else if (action === 'confirm') {
+    if (notesDirty.value) {
+      ElMessage.warning('有说明写了还没保存：先点「保存说明」再确认')
+      return
+    }
     try {
       const res = await ElMessageBox.prompt('双方对上了就确认，确认后不能改、不能作废；差错另开单冲回，进下个月的对账单。', `确认 ${d.no}`, {
         confirmButtonText: '确认', cancelButtonText: '取消', inputPlaceholder: '选填：怎么对上的（电话、微信、盖章回传）',
@@ -247,7 +254,16 @@ const compareRows = computed(() => {
   return onlyDiff.value ? rows.filter((r) => r.outcome !== 'MATCH') : rows
 })
 const diffCount = computed(() => detail.value?.compare?.rows.filter((r) => r.outcome !== 'MATCH').length ?? 0)
-const unexplained = computed(() => detail.value?.compare?.rows.filter((r) => r.outcome !== 'MATCH' && !notes[r.key]?.trim()).length ?? 0)
+/** 两边的数量：一眼看出是件数对不上还是单价对不上；两边都没数量就空着 */
+function qtyText(r: CompareRow): string {
+  const t = r.their?.qty
+  const o = r.ours?.qty
+  if (t == null && o == null) return ''
+  return `${t == null ? '—' : formatQty(t)} / ${o == null ? '—' : formatQty(o)}`
+}
+
+/** 按存上了的算（确认时后端也按存上的查）：写了没存的不算写了 */
+const unexplained = computed(() => detail.value?.compare?.rows.filter((r) => r.outcome !== 'MATCH' && !r.note?.trim()).length ?? 0)
 const notesDirty = computed(() => (detail.value?.compare?.rows ?? []).some((r) => (r.note ?? '') !== (notes[r.key] ?? '')))
 
 /** 存说明时对账单被别人改过（1002）：载入最新，没存的说明还放回去，用户检查后再存；比对结果清掉了（明细变过）就说一声 */
@@ -395,9 +411,10 @@ const loadLogs = () => statementApiBase.logs(id)
             对方实付 <b class="num">{{ formatMoney(detail.compare.theirTotal) }}</b>，我方 <b class="num">{{ formatMoney(detail.compare.ourTotal) }}</b>，
             差 <b class="num" :class="{ danger: Math.abs(detail.compare.diff) > 0.01 }">{{ formatMoney(detail.compare.diff) }}</b>
             <template v-if="diffCount">；还有 <b>{{ unexplained }}</b> 处没写说明（每处都写了才能确认）</template>
+            <template v-if="notesDirty">；<span class="warn-text">改的说明还没保存</span></template>
           </p>
           <el-table :data="compareRows" row-key="key" scrollbar-always-on :empty-text="onlyDiff ? '全部一致' : '对方的表里没有能比的行'">
-            <el-table-column label="结果" width="130" fixed="left">
+            <el-table-column label="结果" width="168" fixed="left">
               <template #default="{ row }">
                 <StatusTag :tone="COMPARE_OUTCOME[(row as CompareRow).outcome].tone">{{ COMPARE_OUTCOME[(row as CompareRow).outcome].label }}</StatusTag>
               </template>
@@ -426,6 +443,11 @@ const loadLogs = () => statementApiBase.logs(id)
             </el-table-column>
             <el-table-column label="我方金额" width="110" class-name="num" align="right">
               <template #default="{ row }">{{ row.ours ? formatMoney(row.ours.amount) : '' }}</template>
+            </el-table-column>
+            <el-table-column label="数量（对方 / 我方）" width="150" class-name="num" align="right">
+              <template #default="{ row }">
+                <span :class="{ danger: (row as CompareRow).diffQty != null && (row as CompareRow).diffQty !== 0 }">{{ qtyText(row as CompareRow) }}</span>
+              </template>
             </el-table-column>
             <el-table-column label="差额" width="100" class-name="num" align="right">
               <template #default="{ row }"><span :class="{ danger: row.outcome !== 'MATCH' }">{{ diffText(row as CompareRow) }}</span></template>
@@ -520,6 +542,10 @@ const loadLogs = () => statementApiBase.logs(id)
 </template>
 
 <style scoped>
+.warn-text {
+  color: var(--lm-pending-text);
+}
+
 /* 明细、比对两张表都宽：占满整页，对账单信息、原件、操作记录排在下面一行 */
 .panels {
   display: grid;

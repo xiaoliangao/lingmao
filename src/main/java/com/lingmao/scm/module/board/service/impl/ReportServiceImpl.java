@@ -29,6 +29,7 @@ import com.lingmao.scm.module.system.dto.DictOption;
 import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.SysConfigService;
 import com.lingmao.scm.module.techpack.service.TechPackCostService;
+import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LineScope;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -317,7 +318,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public long staleCount() {
-        return reportMapper.selectStale(LocalDate.now(clock).minusDays(staleDays()), null).size();
+        return reportMapper.selectStale(LocalDate.now(clock).minusDays(staleDays()), null, false).size();
     }
 
     @Override
@@ -331,7 +332,7 @@ public class ReportServiceImpl implements ReportService {
     private List<StaleMaterialRow> staleRows(StaleMaterialQuery query) {
         LocalDate today = LocalDate.now(clock);
         int days = query.getDays() != null ? query.getDays() : staleDays();
-        List<ReportMapper.StaleFact> facts = reportMapper.selectStale(today.minusDays(days), query.getWarehouseId());
+        List<ReportMapper.StaleFact> facts = reportMapper.selectStale(today.minusDays(days), query.getWarehouseId(), true);
         Map<Long, MaterialSkuBrief> briefs = materialService.skuBriefs(facts.stream().map(ReportMapper.StaleFact::skuId)
                 .collect(Collectors.toSet()));
         String kw = query.getKeyword() == null || query.getKeyword().isBlank() ? null : query.getKeyword().strip().toLowerCase(Locale.ROOT);
@@ -389,7 +390,9 @@ public class ReportServiceImpl implements ReportService {
     public byte[] exportStaleMaterials(StaleMaterialQuery query) {
         Map<String, String> units = dictDataService.listByType("unit").stream()
                 .collect(Collectors.toMap(DictOption::value, DictOption::label, (a, b) -> a));
-        return Excel.export(STALE, staleRows(query).stream().limit(Excel.MAX_EXPORT_ROWS + 1L).map(r -> {
+        // 导出不走 FieldProjection：没有看成本权限的（仓管）不出单价、估算金额两列，和页面一样（agy T-e19e38 #1）
+        boolean cost = com.lingmao.scm.security.FieldPermissions.has(com.lingmao.scm.security.FieldPermissions.COST);
+        return Excel.export(cost ? STALE : STALE.without("单价", "估算金额"), staleRows(query).stream().limit(Excel.MAX_EXPORT_ROWS + 1L).map(r -> {
             StaleExcelRow e = new StaleExcelRow();
             e.setWarehouse(r.getWarehouseName());
             e.setSkuCode(r.getSkuCode());
@@ -400,8 +403,8 @@ public class ReportServiceImpl implements ReportService {
             e.setQty(r.getQty());
             e.setLastDate(r.getLastDate());
             e.setIdleDays(r.getIdleDays());
-            e.setUnitPrice(r.getUnitPrice());
-            e.setAmount(r.getAmount());
+            e.setUnitPrice(cost ? r.getUnitPrice() : null);
+            e.setAmount(cost ? r.getAmount() : null);
             return e;
         }).toList());
     }
@@ -412,7 +415,7 @@ public class ReportServiceImpl implements ReportService {
     public OrderMarginPage orderMargins(OrderMarginQuery query) {
         checkRange(query.getFrom(), query.getTo());
         List<OrderMarginRow> all = reportMapper.selectOrders(query.getFrom(), query.getTo(), Keywords.contains(query.getKeyword()),
-                query.getProductLine(), LineScope.current(), MAX_MARGIN_ORDERS + 1);
+                query.getProductLine(), LineScope.current(), DataScope.current(false), MAX_MARGIN_ORDERS + 1);
         if (all.size() > MAX_MARGIN_ORDERS) {
             throw new BizException("这段时间的订单超过 " + MAX_MARGIN_ORDERS + " 张，请缩小日期范围");
         }

@@ -61,7 +61,7 @@ defineExpose({ reload: load })
           <span v-else class="code">{{ row.sourceNo }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="类型" width="120">
+      <el-table-column label="类型" width="148">
         <template #default="{ row }">
           {{ QC_KIND[(row as QcPendingRow).kind] }}
           <span v-if="(row as QcPendingRow).attemptNo > 1" class="flag">第 {{ row.attemptNo }} 次</span>

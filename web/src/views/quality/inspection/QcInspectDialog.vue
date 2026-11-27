@@ -132,7 +132,13 @@ function onPickOrder(id: string | null) {
   if (id) void loadSource(orderKind.value, id)
 }
 
-watch(orderKind, () => {
+watch(orderKind, (k) => {
+  // 产前样只有合格、不合格，也不按 AQL 抽检：切过来把中检时选的让步接收、带出的抽检数清掉
+  if (k === 'PRE_PRODUCTION') {
+    if (form.result === 'CONCESSION') form.result = 'FAIL'
+    form.sampleQty = null
+    form.defectQty = null
+  }
   if (pickedOrder.value) void loadSource(orderKind.value, pickedOrder.value)
 })
 
@@ -164,6 +170,8 @@ function check(): string | null {
 async function save() {
   const problem = check()
   if (problem) return void ElMessage.warning(problem)
+  // 照片还在传就点了保存：等传完，不然记录上少图（agy T-77e556 P1-4）
+  if (!(await guard.waitForUploads())) return
   const body = {
     inspectDate: form.inspectDate,
     sampleQty: form.sampleQty,

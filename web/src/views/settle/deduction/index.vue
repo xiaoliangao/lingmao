@@ -167,7 +167,7 @@ async function remove(row: DeductionRow) {
     </FilterBar>
 
     <el-table v-loading="loading" :data="list" row-key="id" scrollbar-always-on :empty-text="emptyText">
-      <el-table-column label="日期" width="104" class-name="num" fixed="left">
+      <el-table-column label="日期" width="120" class-name="num" fixed="left">
         <template #default="{ row }">{{ formatDate(row.bizDate) }}</template>
       </el-table-column>
       <el-table-column label="扣谁的" min-width="140">
@@ -178,7 +178,7 @@ async function remove(row: DeductionRow) {
         <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
       </el-table-column>
       <el-table-column label="原因" min-width="200" prop="reason" />
-      <el-table-column label="相关单号" width="140">
+      <el-table-column label="相关单号" width="180">
         <template #default="{ row }">
           <span v-if="(row as DeductionRow).sourceType === 'QC_INSPECTION'" class="dim">质检 </span><span class="code">{{ row.refNo || '—' }}</span>
         </template>
@@ -193,7 +193,7 @@ async function remove(row: DeductionRow) {
           <span v-else class="dim">没对账</span>
         </template>
       </el-table-column>
-      <el-table-column label="登记" width="190">
+      <el-table-column label="登记" width="220">
         <template #default="{ row }">{{ row.creatorName ?? '—' }} <span class="dim small">{{ formatDateTime(row.createTime) }}</span></template>
       </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">

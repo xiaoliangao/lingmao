@@ -174,11 +174,18 @@ async function create() {
   }
 }
 
-/** 待对账一行直接生成：不弹框 */
+/** 待对账一行直接生成：不弹框。生成中的那一行按钮转圈，连点不会建两张 */
+const creatingRow = ref<PendingStatementRow | null>(null)
 async function createFrom(row: PendingStatementRow) {
-  const created = await statementApi.create({ companyId: row.companyId, partnerId: row.partnerId, periodStart: row.periodStart, periodEnd: row.periodEnd })
-  ElMessage.success(`生成了 ${created.no}，${created.added} 行`)
-  await router.push(`/statements/${created.id}`)
+  if (creatingRow.value) return
+  creatingRow.value = row
+  try {
+    const created = await statementApi.create({ companyId: row.companyId, partnerId: row.partnerId, periodStart: row.periodStart, periodEnd: row.periodEnd })
+    ElMessage.success(`生成了 ${created.no}，${created.added} 行`)
+    await router.push(`/statements/${created.id}`)
+  } finally {
+    creatingRow.value = null
+  }
 }
 </script>
 
@@ -243,7 +250,7 @@ async function createFrom(row: PendingStatementRow) {
         <el-table-column v-if="cols.show.remark" label="备注" min-width="140">
           <template #default="{ row }">{{ row.remark || '—' }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="96" fixed="right">
+        <el-table-column label="状态" width="112" fixed="right">
           <template #default="{ row }">
             <StatusTag :tone="STATEMENT_STATUS[(row as StatementRow).status].tone">{{ STATEMENT_STATUS[(row as StatementRow).status].label }}</StatusTag>
           </template>
@@ -282,10 +289,11 @@ async function createFrom(row: PendingStatementRow) {
         <el-table-column label="实付（估）" width="130" class-name="num" align="right">
           <template #default="{ row }">{{ formatMoney((row as PendingStatementRow).amount) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="236" fixed="right" :show-overflow-tooltip="false">
           <template #default="{ row }">
             <template v-if="canEdit">
-              <el-button link type="primary" @click="createFrom(row as PendingStatementRow)">生成对账单</el-button>
+              <el-button link type="primary" :loading="creatingRow === row" :disabled="creatingRow !== null && creatingRow !== row"
+                         @click="createFrom(row as PendingStatementRow)">生成对账单</el-button>
               <el-button link @click="openCreate(row as PendingStatementRow)">改期间再生成</el-button>
             </template>
             <span v-else class="dim">—</span>

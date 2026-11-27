@@ -319,7 +319,7 @@ function openDesktopPage() {
         </p>
         <p v-if="finished" class="sub-hint warn-text">这个节点已经报过完成</p>
         <p v-else-if="selectedNode.nodeCode === 'CUT' && can('cut')" class="sub-hint dim">
-          裁完了按颜色尺码<button type="button" class="link-btn" @click="openCut">登记实裁数</button>，回货按实裁数算
+          裁完了按颜色尺码<button type="button" class="link-btn" @click="reportGuard.beforeClose(openCut)">登记实裁数</button>，回货按实裁数算
         </p>
 
         <label class="m-field">

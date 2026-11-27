@@ -185,8 +185,15 @@ class BomImporter {
 
         Draft(Line line) {
             this.line = line;
-            this.usage = line.usage();
-            this.price = line.price();
+            // 0、负数用量和负单价（多半是公式出错）不导：预览就标出来，不等保存整版时才报 400（agy T-e19e38 #11）
+            this.usage = line.usage() != null && line.usage().signum() > 0 ? line.usage() : null;
+            this.price = line.price() != null && line.price().signum() >= 0 ? line.price() : null;
+            if (line.usage() != null && usage == null) {
+                notes.add("单件用量 " + line.usage().stripTrailingZeros().toPlainString() + " 要大于 0，没导，要填");
+            }
+            if (line.price() != null && price == null) {
+                notes.add("单价 " + line.price().stripTrailingZeros().toPlainString() + " 是负数，没导，用了默认单价");
+            }
         }
     }
 
@@ -324,6 +331,10 @@ class BomImporter {
             }
             return;
         }
+        if (v.signum() < 0) {
+            d.notes.add("损耗 " + line.lossText() + " 是负数，没导，用了物料的默认损耗");
+            return;
+        }
         if (factor) {
             d.loss = v.signum() == 0 ? BigDecimal.ZERO : v.subtract(BigDecimal.ONE).movePointRight(2);
         } else {
@@ -334,6 +345,11 @@ class BomImporter {
             }
         }
         d.loss = d.loss.setScale(2, RoundingMode.HALF_UP);
+        if (d.loss.signum() < 0) {
+            d.notes.add("损耗系数 " + line.lossText() + " 小于 1，没导，用了物料的默认损耗");
+            d.loss = null;
+            return;
+        }
         if (d.loss.compareTo(new BigDecimal(1000)) >= 0) {
             d.notes.add("损耗 " + line.lossText() + " 太大了，没导，用了物料的默认损耗");
             d.loss = null;
@@ -413,7 +429,7 @@ class BomImporter {
         vo.setMaterialStatus(m.status());
         vo.setSkuMode(d.skuMode);
         vo.setUsageMode(BomUsageMode.UNIFORM);
-        if (d.usage == null) {
+        if (d.usage == null && d.line.usage() == null) {
             d.notes.add("单件用量「" + d.line.usageText() + "」不是数，要填");
         } else {
             vo.setUsageQty(d.usage.setScale(6, RoundingMode.HALF_UP).stripTrailingZeros());
@@ -437,7 +453,7 @@ class BomImporter {
                 d.notes.add("表里的单价 " + price.stripTrailingZeros().toPlainString() + "，价格档案是 "
                         + archive.stripTrailingZeros().toPlainString() + "：导进去的是表里的");
             }
-            if (d.price == null && !d.line.priceText().isEmpty()) {
+            if (d.price == null && d.line.price() == null && !d.line.priceText().isEmpty()) {
                 d.notes.add("单价「" + d.line.priceText() + "」不是数，用了默认单价");
             }
             // 表里没写单价时，和页面上加一行一样：哪个 SKU 单独有价（档案、SKU 价和行上的不一样）就配上；表里写了就都用表里的

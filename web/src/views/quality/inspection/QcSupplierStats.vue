@@ -36,9 +36,9 @@ async function load() {
 }
 onMounted(load)
 
+// 弹层里的条件改了、去掉了，FilterBar 自己会 @search：这里只改条件，再查就重复发了（agy T-77e556 P1-8）
 function onDates(val: [string, string] | null | undefined) {
   dates.value = val ?? null
-  void load()
 }
 
 const pct = (n: number | null | undefined, d: number | null | undefined) => (n != null && d ? `${((n / d) * 100).toFixed(1)}%` : '—')

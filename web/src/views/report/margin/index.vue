@@ -29,7 +29,7 @@ const lines = useProductLines()
 const allowed = computed(() => user.hasPerm('order:price:query') && user.hasPerm('techpack:cost:query'))
 const totals = ref<Omit<OrderMarginPage, 'list' | 'total'> | null>(null)
 
-const { query, page, size, pageSizes, list, total, loading, search } = useTable({
+const { query, page, size, pageSizes, list, total, loading, search, load } = useTable({
   fetch: async (params: PageParams & OrderMarginQuery) => {
     const r = await reportApi.orderMargins(params)
     totals.value = r
@@ -42,18 +42,26 @@ const { query, page, size, pageSizes, list, total, loading, search } = useTable(
   },
   immediate: false,
 })
+// 第一次进来查；切回来按原来的页码刷新，看完订单回来不跳回第 1 页（agy T-77e556 P1-7）
+let searched = false
 onActivated(() => {
-  if (allowed.value) search()
+  if (!allowed.value) return
+  if (searched) void load()
+  else search()
+  searched = true
 })
 
-function onPeriod(p: Period) {
+function setPeriod(p: Period) {
   query.period = p
   if (p !== 'CUSTOM') query.range = periodRange(p)
+}
+function onPeriod(p: Period) {
+  setPeriod(p)
   search()
 }
+// 弹层里的条件改了、去掉了，FilterBar 自己会 @search：这里只改条件，再查就重复发了（agy T-77e556 P1-8）
 function onRange() {
   query.period = 'CUSTOM'
-  search()
 }
 const rangeText = computed(() => formatDateRange(query.period === 'CUSTOM' ? query.range : periodRange(query.period)))
 const pct = (v: number | null) => (v == null ? '—' : `${v}%`)
@@ -72,7 +80,7 @@ const marginClass = (v: number | null) => (v != null && v < 0 ? 'neg' : '')
         <template #left>
           <el-segmented :model-value="query.period" :options="PERIOD_OPTIONS" @change="(p: Period) => onPeriod(p)" />
         </template>
-        <FilterItem label="下单日期" :text="query.period === 'CUSTOM' ? rangeText : ''" @clear="onPeriod('LAST_WEEK')">
+        <FilterItem label="下单日期" :text="query.period === 'CUSTOM' ? rangeText : ''" @clear="setPeriod('LAST_WEEK')">
           <DateRange v-model="query.range" :clearable="false" @change="onRange" />
         </FilterItem>
         <FilterItem v-if="lines.multi.value" label="品类线" :text="lines.labelOf(query.productLine)" @clear="query.productLine = ''">
@@ -126,7 +134,7 @@ const marginClass = (v: number | null) => (v != null && v < 0 ? 'neg' : '')
         <el-table-column label="毛利率" width="90" class-name="num" align="right">
           <template #default="{ row }">{{ pct((row as OrderMarginRow).marginRate) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="100" fixed="right">
+        <el-table-column label="状态" width="112" fixed="right">
           <template #default="{ row }">
             <StatusTag :tone="ORDER_STATUS[(row as OrderMarginRow).status as OrderStatus]?.tone ?? 'off'">
               {{ ORDER_STATUS[(row as OrderMarginRow).status as OrderStatus]?.label ?? (row as OrderMarginRow).status }}
@@ -146,7 +154,8 @@ const marginClass = (v: number | null) => (v != null && v < 0 ? 'neg' : '')
   flex-wrap: wrap;
   gap: 6px 16px;
   align-items: center;
-  padding: 10px 0 12px;
+  /* 和筛选条、表头对齐（铺满页面的表格两头留 --lm-table-edge） */
+  padding: 10px var(--lm-table-edge, 24px) 12px;
   font-size: 13px;
 }
 

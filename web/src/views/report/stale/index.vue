@@ -27,7 +27,7 @@ const cols = useColumns('staleMaterials', [
 const defaultDays = ref<number | null>(null)
 const warehouses = ref<WarehouseOption[]>([])
 
-const { query, page, size, pageSizes, list, total, loading, search, exporting, exportFile } = useTable({
+const { query, page, size, pageSizes, list, total, loading, search, load, exporting, exportFile } = useTable({
   fetch: (params) => reportApi.staleMaterials(params),
   query: { keyword: '', days: undefined as number | undefined, warehouseId: undefined as string | undefined },
   exportUrl: '/api/reports/stale-materials/export',
@@ -35,15 +35,15 @@ const { query, page, size, pageSizes, list, total, loading, search, exporting, e
   immediate: false,
 })
 
+// 默认天数取到了才算开始过：第一次取失败，切回来再取；切回来按原来的页码刷新（agy T-77e556 P1-7）
 let started = false
 onActivated(async () => {
-  if (!started) {
-    started = true
-    const [days, options] = await Promise.all([reportApi.staleDays(), warehouseApi.options('MATERIAL')])
-    defaultDays.value = days
-    query.days ??= days
-    warehouses.value = options
-  }
+  if (started) return void load()
+  const [days, options] = await Promise.all([reportApi.staleDays(), warehouseApi.options('MATERIAL')])
+  defaultDays.value = days
+  query.days ??= days
+  warehouses.value = options
+  started = true
   search()
 })
 
@@ -89,11 +89,11 @@ async function saveDefault() {
 
     <el-table v-loading="loading" :data="list" :row-key="(r: StaleMaterialRow) => `${r.warehouseId}-${r.materialSkuId}`" scrollbar-always-on
       :empty-text="query.keyword || query.warehouseId ? '没有符合条件的：清空筛选再看' : `物料仓里没有超过 ${query.days ?? defaultDays ?? ''} 天没动的料`">
-      <el-table-column label="仓库" prop="warehouseName" width="120" fixed="left" />
+      <el-table-column label="仓库" prop="warehouseName" width="156" fixed="left" />
       <el-table-column label="物料" min-width="220">
         <template #default="{ row }">
-          <span class="code">{{ (row as StaleMaterialRow).skuCode }}</span>
-          <span class="dim"> {{ (row as StaleMaterialRow).materialName }}<template v-if="(row as StaleMaterialRow).colorName"> · {{ (row as StaleMaterialRow).colorName }}</template></span>
+          <span class="code sku">{{ (row as StaleMaterialRow).skuCode }}</span>
+          <span class="dim">{{ (row as StaleMaterialRow).materialName }}<template v-if="(row as StaleMaterialRow).colorName"> · {{ (row as StaleMaterialRow).colorName }}</template></span>
         </template>
       </el-table-column>
       <el-table-column v-if="cols.show.spec" label="规格" prop="spec" width="100" />
@@ -119,6 +119,11 @@ async function saveDefault() {
 </template>
 
 <style scoped>
+/* 模板里 SKU 码后面的空格会被去掉，用间距隔开名称 */
+.sku {
+  margin-right: 6px;
+}
+
 .days {
   display: inline-flex;
   align-items: center;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, reactive, ref } from 'vue'
+import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ledgerApi } from '@/api/production'
 import FilterBar from '@/components/FilterBar.vue'
@@ -153,6 +153,15 @@ onActivated(() => {
   if (view.value === 'orders') void orders.load()
   else void materials.load()
 })
+
+// 页签开着时再从首页、预警点"待核销耗料"（?status=TO_SETTLE）进来：切回按生产单的那一段（agy T-77e556 P1-7）
+watch(() => route.query.status, (s) => {
+  const status = (['IN_PROGRESS', 'TO_SETTLE', 'SETTLING', 'SETTLED'] as const).find((x) => x === s)
+  if (!status || (view.value === 'orders' && orders.query.status === status)) return
+  view.value = 'orders'
+  orders.query.status = status
+  orders.search()
+})
 </script>
 
 <template>
@@ -182,7 +191,7 @@ onActivated(() => {
       <el-table v-loading="orders.loading" :data="orders.list" row-key="id" row-class-name="clickable" scrollbar-always-on
         :empty-text="orderEmpty" @row-click="openOrder">
         <el-table-column label="生产单号" prop="no" width="150" fixed="left" class-name="code" />
-        <el-table-column v-if="orderCols.show.kind" label="种类" width="90">
+        <el-table-column v-if="orderCols.show.kind" label="种类" width="110">
           <template #default="{ row }">{{ PRODUCTION_KIND[(row as LedgerOrderRow).kind].label }}</template>
         </el-table-column>
         <el-table-column v-if="orderCols.show.factory" label="加工厂" prop="factoryShortName" min-width="110" />
@@ -216,7 +225,7 @@ onActivated(() => {
             <span v-else class="dim">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="料账" width="96" fixed="right">
+        <el-table-column label="料账" width="112" fixed="right">
           <template #default="{ row }">
             <StatusTag :tone="LEDGER_STATUS[(row as LedgerOrderRow).ledgerStatus].tone">{{ LEDGER_STATUS[(row as LedgerOrderRow).ledgerStatus].label }}</StatusTag>
           </template>

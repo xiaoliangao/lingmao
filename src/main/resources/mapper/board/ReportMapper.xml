@@ -6,7 +6,8 @@
         <if test="lines.limited">AND ${alias}.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
     </sql>
 
-    <!-- 采购到货及时率（RFC 019 §3.1）：入库单（采购入库、已审核）按日累计，够了的那天就是到齐日。数量用采购单位（旧行没有按换算系数折） -->
+    <!-- 采购到货及时率（RFC 019 §3.1）：入库单（采购入库、已审核）按日累计，够了的那天就是到齐日。数量用采购单位（旧行没有按换算系数折）。
+         采购退货按负数算（agy T-e19e38 #2）：到齐日是累计够了、之后再没退到不够的最早那天；退了没补齐的算没到齐 -->
     <select id="selectPurchaseLines" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$PurchaseLineFact">
         WITH l AS (
             SELECT i.id, o.supplier_id, COALESCE(i.line_due_date, o.delivery_date) AS due_date, o.status,
@@ -18,18 +19,21 @@
               <include refid="lineOf"><property name="alias" value="o"/></include>
         ), r AS (
             SELECT di.source_item_id AS line_id, d.doc_date,
-                   SUM(COALESCE(di.purchase_qty, di.qty / NULLIF(di.conversion_factor, 0), di.qty)) AS qty
+                   SUM(CASE WHEN d.doc_type = 'PURCHASE_RETURN' THEN -1 ELSE 1 END
+                       * COALESCE(di.purchase_qty, di.qty / NULLIF(di.conversion_factor, 0), di.qty)) AS qty,
+                   bool_or(d.doc_type = 'PURCHASE_IN') AS arrived
             FROM inv_doc d
             JOIN inv_doc_item di ON di.doc_id = d.id
-            WHERE d.doc_type = 'PURCHASE_IN' AND d.status = 'APPROVED' AND d.source_type = 'PURCHASE_ORDER'
+            WHERE d.doc_type IN ('PURCHASE_IN', 'PURCHASE_RETURN') AND d.status = 'APPROVED' AND d.source_type = 'PURCHASE_ORDER'
               AND di.source_item_id IN (SELECT id FROM l)
             GROUP BY di.source_item_id, d.doc_date
         ), c AS (
             SELECT line_id, doc_date, SUM(qty) OVER (PARTITION BY line_id ORDER BY doc_date) AS total FROM r
         )
         SELECT l.id AS line_id, l.supplier_id, l.due_date, l.status, l.need,
-               (SELECT MIN(c.doc_date) FROM c WHERE c.line_id = l.id AND c.total &gt;= l.need) AS full_date,
-               (SELECT MAX(r.doc_date) FROM r WHERE r.line_id = l.id) AS last_date
+               (SELECT MIN(c.doc_date) FROM c WHERE c.line_id = l.id AND c.total &gt;= l.need
+                  AND NOT EXISTS (SELECT 1 FROM c c2 WHERE c2.line_id = l.id AND c2.doc_date &gt; c.doc_date AND c2.total &lt; l.need)) AS full_date,
+               (SELECT MAX(r.doc_date) FROM r WHERE r.line_id = l.id AND r.arrived) AS last_date
         FROM l
     </select>
 
@@ -100,7 +104,9 @@
         GROUP BY p.product_line, s.category_id
     </select>
 
-    <!-- 呆滞料（RFC 019 §3.3）：只看自己的物料仓（工厂仓里的料归工厂料账管）；盘点的流水不算"动过" -->
+    <!-- 呆滞料（RFC 019 §3.3）：只看自己的物料仓（工厂仓里的料归工厂料账管）；盘点的流水不算"动过"；
+         反审核冲掉的一对流水（原流水和冲销流水）也不算动过，单价取最近一次没被冲掉的入库（agy T-e19e38 #5）。
+         首页只要条数（withPrice = false），不跑单价子查询（#6） -->
     <select id="selectStale" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$StaleFact">
         WITH s AS (
             SELECT st.warehouse_id, st.material_sku_id, SUM(st.qty) AS qty
@@ -115,13 +121,21 @@
             SELECT l.warehouse_id, l.material_sku_id, MAX(l.biz_date) AS last_date
             FROM inv_stock_log l
             JOIN s ON s.warehouse_id = l.warehouse_id AND s.material_sku_id = l.material_sku_id
-            WHERE l.count_id IS NULL
+            WHERE l.count_id IS NULL AND l.reversal_of_log_id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM inv_stock_log rv WHERE rv.reversal_of_log_id = l.id)
             GROUP BY l.warehouse_id, l.material_sku_id
         )
         SELECT s.warehouse_id, w.name AS warehouse_name, s.material_sku_id AS sku_id, s.qty, m.last_date,
-               (SELECT l2.unit_price FROM inv_stock_log l2
-                WHERE l2.material_sku_id = s.material_sku_id AND l2.unit_price IS NOT NULL
-                ORDER BY l2.id DESC LIMIT 1) AS unit_price
+               <choose>
+                   <when test="withPrice">
+                       (SELECT l2.unit_price FROM inv_stock_log l2
+                        WHERE l2.material_sku_id = s.material_sku_id AND l2.unit_price IS NOT NULL AND l2.change_qty &gt; 0
+                          AND l2.reversal_of_log_id IS NULL
+                          AND NOT EXISTS (SELECT 1 FROM inv_stock_log rv WHERE rv.reversal_of_log_id = l2.id)
+                        ORDER BY l2.id DESC LIMIT 1)
+                   </when>
+                   <otherwise>NULL::numeric</otherwise>
+               </choose> AS unit_price
         FROM s
         JOIN bas_warehouse w ON w.id = s.warehouse_id
         LEFT JOIN m ON m.warehouse_id = s.warehouse_id AND m.material_sku_id = s.material_sku_id
@@ -137,6 +151,7 @@
         WHERE o.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED') AND o.order_date BETWEEN #{from} AND #{to}
           <include refid="lineOf"><property name="alias" value="o"/></include>
           <if test="productLine != null and productLine != ''">AND o.product_line = #{productLine}</if>
+          <if test="scope.self">AND (o.create_by = #{scope.userId} OR o.sales_id = #{scope.userId} OR o.merch_id = #{scope.userId})</if>
           <if test="keyword != null and keyword != ''">
               AND (o.no ILIKE #{keyword} OR o.customer_order_no ILIKE #{keyword} OR o.brand ILIKE #{keyword})
           </if>

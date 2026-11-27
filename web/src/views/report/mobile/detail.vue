@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { orderApi, orderChangeApi } from '@/api/order'
 import { productionApi } from '@/api/production'
@@ -199,7 +199,15 @@ async function auditOrder(v: View): Promise<boolean> {
   }
   const next = nextApprover(v.approval)
   try {
-    await orderApi.audit(id, { version: v.version, reason: null, commitDate: commitDate.value }, { silent: true })
+    // 手机上单手容易点错：和其他三种单据一样先确认
+    await ElMessageBox.confirm(`承诺交期 ${formatDate(commitDate.value)}，确定审核通过？`, `审核 ${v.typeLabel} ${v.no}`, {
+      confirmButtonText: '审核', cancelButtonText: '取消',
+    })
+  } catch {
+    return false
+  }
+  try {
+    await orderApi.audit(id, { version: v.version, commitDate: commitDate.value }, { silent: true })
   } catch (e) {
     if (!(e instanceof ApiError)) throw e
     showSilentError(e)

@@ -410,6 +410,9 @@ class ProductionIT {
         jdbcTemplate.update("UPDATE prd_node SET plan_start = ?, plan_finish = ?, actual_finish = NULL WHERE id = (SELECT id FROM prd_node "
                 + "WHERE prd_order_id = ? ORDER BY seq LIMIT 1)", today.minusDays(1), today.minusDays(1), later);
 
+        // 没手机号的不发（钉钉找不到人，天天进失败，agy T-e19e38 #7）
+        assertThat(dueWarningMapper.selectProduction(today, today.plusDays(7))).noneMatch(d -> d.userId() == f.user());
+        jdbcTemplate.update("UPDATE sys_user SET phone = '13800000000' WHERE id = ?", f.user());
         assertThat(dueWarningMapper.selectProduction(today, today.plusDays(7))).filteredOn(d -> d.userId() == f.user()).singleElement()
                 .satisfies(d -> {
                     assertThat(d.late()).isEqualTo(1);

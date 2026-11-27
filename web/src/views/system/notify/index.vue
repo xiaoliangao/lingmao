@@ -19,10 +19,19 @@ const saving = ref(false)
 const testing = ref(false)
 
 const settingsRequest = useLatestRequest()
+/** 没取到（网络断了、500）：不一直转圈，给一个重试 */
+const settingsFailed = ref(false)
 async function loadSettings() {
   const read = settingsRequest.begin()
-  const s = await read.run(() => notifyApi.settings())
-  if (read.current()) settings.value = s
+  try {
+    const s = await read.run(() => notifyApi.settings())
+    if (read.current()) {
+      settings.value = s
+      settingsFailed.value = false
+    }
+  } catch {
+    if (read.current()) settingsFailed.value = true
+  }
 }
 onMounted(() => void loadSettings())
 
@@ -58,10 +67,21 @@ function switchFailed(v: boolean) {
   void search()
 }
 
+const retrying = ref<string | null>(null)
 async function retry(row: NotifyMessageRow) {
-  await notifyApi.retry(row.id)
-  ElMessage.success('已放回发件箱，几秒内重发')
-  await Promise.all([search(), loadSettings()])
+  if (retrying.value) return
+  retrying.value = row.id
+  try {
+    await notifyApi.retry(row.id)
+    ElMessage.success('已放回发件箱，几秒内重发：过一会儿点"刷新"看发出去没有')
+    await Promise.all([search(), loadSettings()])
+  } finally {
+    retrying.value = null
+  }
+}
+function refresh() {
+  void search()
+  void loadSettings()
 }
 
 function errorText(row: NotifyMessageRow) {
@@ -75,8 +95,12 @@ function errorText(row: NotifyMessageRow) {
     <PageHeader title="消息推送" sub="单据被驳回、货期预警发到钉钉；钉钉的参数在部署配置里" />
 
     <div class="page">
-      <section v-loading="!settings" class="panel">
+      <section v-loading="!settings && !settingsFailed" class="panel">
         <div class="panel-head">钉钉</div>
+        <div v-if="!settings && settingsFailed" class="panel-body status">
+          <span class="dim">没取到钉钉的设置</span>
+          <el-button @click="loadSettings">重试</el-button>
+        </div>
         <div v-if="settings" class="panel-body status">
           <div class="row">
             <StatusTag :tone="settings.configured ? 'done' : 'off'">{{ settings.configured ? '已配置' : '没配置' }}</StatusTag>
@@ -109,6 +133,7 @@ function errorText(row: NotifyMessageRow) {
           :options="[{ label: '全部', value: false }, { label: `没发出去的 ${settings?.failedCount ?? ''}`, value: true }]"
           @change="switchFailed"
         />
+        <el-button class="refresh" icon="Refresh" :loading="loading" @click="refresh">刷新</el-button>
       </div>
       <el-table v-loading="loading" :data="list" scrollbar-always-on
         :empty-text="failedOnly ? '没有发失败的消息' : '还没发过消息：钉钉配好、有单据被驳回或者每天早上有预警时才发'">
@@ -128,7 +153,8 @@ function errorText(row: NotifyMessageRow) {
             <StatusTag :tone="NOTIFY_MESSAGE_STATUS[row.status as keyof typeof NOTIFY_MESSAGE_STATUS]?.tone ?? 'off'">
               {{ NOTIFY_MESSAGE_STATUS[row.status as keyof typeof NOTIFY_MESSAGE_STATUS]?.label ?? row.status }}
             </StatusTag>
-            <el-button v-if="row.status === 'DEAD_LETTER' || row.status === 'CANCELLED'" link type="primary" @click="retry(row as NotifyMessageRow)">重发</el-button>
+            <el-button v-if="row.status === 'DEAD_LETTER' || row.status === 'CANCELLED'" link type="primary"
+              :loading="retrying === row.id" :disabled="retrying !== null && retrying !== row.id" @click="retry(row as NotifyMessageRow)">重发</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -171,11 +197,13 @@ function errorText(row: NotifyMessageRow) {
 }
 .list-head {
   display: flex;
+  gap: 12px;
   align-items: center;
-  justify-content: space-between;
   margin: 8px 0 10px;
 }
+
 .list-head h3 {
+  flex: 1;
   margin: 0;
   font-size: 15px;
 }

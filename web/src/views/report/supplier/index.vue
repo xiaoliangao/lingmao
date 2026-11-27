@@ -45,14 +45,17 @@ async function load() {
 }
 onActivated(load)
 
-function onPeriod(p: Period) {
+function setPeriod(p: Period) {
   query.period = p
   if (p !== 'CUSTOM') query.range = periodRange(p)
+}
+function onPeriod(p: Period) {
+  setPeriod(p)
   void load()
 }
+// 弹层里的条件改了、去掉了，FilterBar 自己会 @search：这里只改条件，再查就重复发了（agy T-77e556 P1-8）
 function onRange() {
   query.period = 'CUSTOM'
-  void load()
 }
 function switchView(v: View) {
   view.value = v
@@ -79,7 +82,7 @@ const emptyText = computed(() =>
       <template #left>
         <el-segmented :model-value="query.period" :options="PERIOD_OPTIONS" @change="(p: Period) => onPeriod(p)" />
       </template>
-      <FilterItem label="交期" :text="query.period === 'CUSTOM' ? rangeText : ''" @clear="onPeriod('LAST_WEEK')">
+      <FilterItem label="交期" :text="query.period === 'CUSTOM' ? rangeText : ''" @clear="setPeriod('LAST_WEEK')">
         <DateRange v-model="query.range" :clearable="false" @change="onRange" />
       </FilterItem>
     </FilterBar>
@@ -98,13 +101,13 @@ const emptyText = computed(() =>
         <el-table-column label="供应商" min-width="160" fixed="left">
           <template #default="{ row }">
             <span>{{ (row as PurchasePerfRow).supplierShortName }}</span>
-            <span class="code dim"> {{ (row as PurchasePerfRow).supplierCode }}</span>
+            <span class="code dim ml-6">{{ (row as PurchasePerfRow).supplierCode }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="算进来的行" prop="lineCount" width="110" class-name="num" />
-        <el-table-column label="准时" prop="onTimeCount" width="80" class-name="num" />
-        <el-table-column label="逾期" prop="lateCount" width="80" class-name="num" />
-        <el-table-column label="及时率" width="100" class-name="num">
+        <el-table-column label="算进来的行" prop="lineCount" width="110" class-name="num" align="right" />
+        <el-table-column label="准时" prop="onTimeCount" width="80" class-name="num" align="right" />
+        <el-table-column label="逾期" prop="lateCount" width="80" class-name="num" align="right" />
+        <el-table-column label="及时率" width="100" class-name="num" align="right">
           <template #default="{ row }">
             <StatusTag v-if="rateTone((row as PurchasePerfRow).onTimeRate, 95, 80)" :tone="rateTone((row as PurchasePerfRow).onTimeRate, 95, 80) || undefined">
               {{ pct((row as PurchasePerfRow).onTimeRate) }}
@@ -112,10 +115,10 @@ const emptyText = computed(() =>
             <span v-else>{{ pct((row as PurchasePerfRow).onTimeRate) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="逾期平均晚（天）" width="140" class-name="num">
+        <el-table-column label="逾期平均晚（天）" width="140" class-name="num" align="right">
           <template #default="{ row }">{{ (row as PurchasePerfRow).avgLateDays ?? '—' }}</template>
         </el-table-column>
-        <el-table-column label="还没到期" prop="pendingCount" width="110" class-name="num" />
+        <el-table-column label="还没到期" prop="pendingCount" width="110" class-name="num" align="right" />
       </el-table>
     </template>
 
@@ -132,13 +135,13 @@ const emptyText = computed(() =>
         <el-table-column label="加工厂" min-width="150" fixed="left">
           <template #default="{ row }">
             <span>{{ (row as FactoryPerfRow).factoryShortName }}</span>
-            <span class="code dim"> {{ (row as FactoryPerfRow).factoryCode }}</span>
+            <span class="code dim ml-6">{{ (row as FactoryPerfRow).factoryCode }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="算进来的单" prop="orderCount" width="110" class-name="num" />
-        <el-table-column label="按期" prop="onTimeCount" width="70" class-name="num" />
-        <el-table-column label="逾期" prop="lateCount" width="70" class-name="num" />
-        <el-table-column label="达成率" width="100" class-name="num">
+        <el-table-column label="算进来的单" prop="orderCount" width="110" class-name="num" align="right" />
+        <el-table-column label="按期" prop="onTimeCount" width="70" class-name="num" align="right" />
+        <el-table-column label="逾期" prop="lateCount" width="70" class-name="num" align="right" />
+        <el-table-column label="达成率" width="100" class-name="num" align="right">
           <template #default="{ row }">
             <StatusTag v-if="rateTone((row as FactoryPerfRow).onTimeRate, 95, 80)" :tone="rateTone((row as FactoryPerfRow).onTimeRate, 95, 80) || undefined">
               {{ pct((row as FactoryPerfRow).onTimeRate) }}
@@ -146,22 +149,22 @@ const emptyText = computed(() =>
             <span v-else>{{ pct((row as FactoryPerfRow).onTimeRate) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="应交件数" width="100" class-name="num">
+        <el-table-column label="应交件数" width="100" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty((row as FactoryPerfRow).dueQty) }}</template>
         </el-table-column>
-        <el-table-column label="交期前回的良品" width="130" class-name="num">
+        <el-table-column label="交期前回的良品" width="130" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty((row as FactoryPerfRow).qtyByDue) }}</template>
         </el-table-column>
-        <el-table-column label="按件达成" width="100" class-name="num">
+        <el-table-column label="按件达成" width="100" class-name="num" align="right">
           <template #default="{ row }">{{ pct((row as FactoryPerfRow).qtyRate) }}</template>
         </el-table-column>
-        <el-table-column label="回货" width="90" class-name="num">
+        <el-table-column label="回货" width="90" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty((row as FactoryPerfRow).receiptQty) }}</template>
         </el-table-column>
-        <el-table-column label="次品" width="80" class-name="num">
+        <el-table-column label="次品" width="80" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty((row as FactoryPerfRow).defectQty) }}</template>
         </el-table-column>
-        <el-table-column label="次品率" width="100" class-name="num">
+        <el-table-column label="次品率" width="100" class-name="num" align="right">
           <template #default="{ row }">
             <StatusTag v-if="rateTone((row as FactoryPerfRow).defectRate, 2, 5, true)" :tone="rateTone((row as FactoryPerfRow).defectRate, 2, 5, true) || undefined">
               {{ pct((row as FactoryPerfRow).defectRate) }}
@@ -169,19 +172,25 @@ const emptyText = computed(() =>
             <span v-else>{{ pct((row as FactoryPerfRow).defectRate) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="还没到期" prop="pendingCount" width="110" class-name="num" />
+        <el-table-column label="还没到期" prop="pendingCount" width="110" class-name="num" align="right" />
       </el-table>
     </template>
   </div>
 </template>
 
 <style scoped>
+/* 模板里编码前的空格会被去掉，用间距隔开名称 */
+.ml-6 {
+  margin-left: 6px;
+}
+
 .summary {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
   align-items: center;
-  padding: 10px 0 12px;
+  /* 和筛选条、表头对齐（铺满页面的表格两头留 --lm-table-edge） */
+  padding: 10px var(--lm-table-edge, 24px) 12px;
   font-size: 13px;
 }
 </style>

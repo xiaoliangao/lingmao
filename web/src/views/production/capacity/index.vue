@@ -12,6 +12,7 @@ import { useLatestRequest } from '@/composables/useLatestRequest'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import type { TreeNode } from '@/types/basic'
 import type { CapacityRow } from '@/types/production'
+import { businessToday } from '@/utils/businessDate'
 import { formatDateTime, formatQty } from '@/utils/format'
 import { confirmRemove } from '@/views/basic/common'
 
@@ -20,10 +21,8 @@ import { confirmRemove } from '@/views/basic/common'
  * 哪个月没再登记，沿用前面最近一次的（标"本月没更新"）。排单、改草稿的加工厂或交期时，交期前还没做完的 + 这次的
  * 超过 日产能 × 天数 就拦住；没登记产能的厂不查
  */
-const thisMonth = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
+/** 这个月按东八区算（电脑时区不对、零点前后也不会错月） */
+const thisMonth = () => businessToday().slice(0, 7)
 const query = reactive({ month: thisMonth(), keyword: '', factoryId: undefined as string | undefined })
 const factoryName = ref<string | null>(null)
 const rows = ref<CapacityRow[]>([])
@@ -155,22 +154,22 @@ async function remove(row: CapacityRow) {
           <span v-else class="dim">不分品类</span>
         </template>
       </el-table-column>
-      <el-table-column label="日产能（件）" width="110" class-name="num">
+      <el-table-column label="日产能（件）" width="110" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty((row as CapacityRow).dailyQty) }}</template>
       </el-table-column>
-      <el-table-column label="从哪月起" width="150">
+      <el-table-column label="从哪月起" width="210">
         <template #default="{ row }">
           <span>{{ shortMonth((row as CapacityRow).startMonth) }}</span>
           <StatusTag v-if="(row as CapacityRow).startMonth !== query.month" tone="pending" class="ml-8">本月没更新</StatusTag>
         </template>
       </el-table-column>
-      <el-table-column label="本月能做" width="110" class-name="num">
+      <el-table-column label="本月能做" width="110" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty((row as CapacityRow).monthCapacity) }}</template>
       </el-table-column>
-      <el-table-column label="本月交期没做完" width="130" class-name="num">
+      <el-table-column label="本月交期没做完" width="130" class-name="num" align="right">
         <template #default="{ row }">{{ formatQty((row as CapacityRow).monthLoad) }}</template>
       </el-table-column>
-      <el-table-column label="占用" width="100" class-name="num">
+      <el-table-column label="占用" width="100" class-name="num" align="right">
         <template #default="{ row }">
           <StatusTag v-if="usage(row as CapacityRow).tone" :tone="usage(row as CapacityRow).tone || undefined">
             {{ usage(row as CapacityRow).pct }}%
@@ -179,7 +178,7 @@ async function remove(row: CapacityRow) {
         </template>
       </el-table-column>
       <el-table-column label="备注" prop="remark" min-width="140" />
-      <el-table-column label="最后改" width="170">
+      <el-table-column label="最后改" width="230">
         <template #default="{ row }">{{ (row as CapacityRow).updateByName ?? '' }} {{ formatDateTime((row as CapacityRow).updateTime) }}</template>
       </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">

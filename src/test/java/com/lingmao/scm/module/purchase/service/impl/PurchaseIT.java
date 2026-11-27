@@ -870,10 +870,17 @@ class PurchaseIT {
             assertThat(r.getAvgLateDays()).isEqualByComparingTo("2.5");
         });
         assertThat(perf.total().getLineCount()).isEqualTo(3);
+        // 到了又全退回去的不算到齐（agy T-e19e38 #2）：交期没到，既不算准时也不算逾期，准时还是 1 张
+        long returned = approvedStockPo(f, "100", today.plusDays(5));
+        receive(f, returned, "100");
+        postFromPo(returned, stockReq(f, returned, InvDocType.PURCHASE_RETURN, "100"));
+        jdbcTemplate.update("UPDATE pur_order_item SET line_due_date = ? WHERE purchase_order_id = ?", today.plusDays(5), returned);
+        assertThat(reportService.purchasePerf(q).rows()).singleElement().satisfies(r -> assertThat(r.getOnTimeCount()).isEqualTo(1));
 
         // 每天的货期预警（钉钉，RFC 019 §4）：采购员名下到料逾期的行，到齐了的（late 已收齐）不算；预计到货没有用交期（和待到料一样）
         jdbcTemplate.update("UPDATE pur_order_item SET expect_date = NULL WHERE purchase_order_id = ?", missing);
-        long buyer = jdbcTemplate.queryForObject("INSERT INTO sys_user (username, password, nickname) VALUES (?, 'x', '采购') RETURNING id",
+        long buyer = jdbcTemplate.queryForObject(
+                "INSERT INTO sys_user (username, password, nickname, phone) VALUES (?, 'x', '采购', '13800000000') RETURNING id",
                 Long.class, "it-buyer-" + code);
         jdbcTemplate.update("UPDATE pur_order SET buyer_id = ? WHERE id IN (?, ?, ?)", buyer, onTime, late, missing);
         assertThat(dueWarningMapper.selectArrival(today)).filteredOn(d -> d.userId() == buyer).singleElement()

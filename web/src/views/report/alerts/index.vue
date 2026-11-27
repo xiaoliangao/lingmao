@@ -16,7 +16,7 @@ import { docRoute } from '@/utils/docRoute'
  * 每组列出具体单据（最多 20 条），多的去对应列表。权限、数据范围和首页一样
  */
 const COUNT_SECTIONS: { title: string; keys: TodoCountKey[] }[] = [
-  { title: '生产', keys: ['PRODUCTION_LATE', 'PRODUCTION_NODE_LATE', 'PRODUCTION_NEAR', 'PRODUCTION_ISSUE', 'UNSCHEDULED', 'QC_REWORK'] },
+  { title: '生产', keys: ['PRODUCTION_LATE', 'PRODUCTION_NODE_LATE', 'PRODUCTION_NEAR', 'PRODUCTION_ISSUE', 'UNSCHEDULED', 'QC_PENDING', 'QC_REWORK'] },
   { title: '物料', keys: ['ARRIVAL_LATE', 'ARRIVAL_CUT', 'REORDER', 'STALE_MATERIAL', 'CONSUME_PENDING'] },
   { title: '订单和供应商', keys: ['UPSTREAM', 'CERT_EXPIRING'] },
 ]

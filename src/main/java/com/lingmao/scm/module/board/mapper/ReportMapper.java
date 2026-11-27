@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.board.mapper;
 
 import com.lingmao.scm.module.board.dto.OrderMarginRow;
+import com.lingmao.scm.security.DataScope;
 import com.lingmao.scm.security.LineScope;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -53,18 +54,23 @@ public interface ReportMapper {
     record LineQtyFact(String productLine, Long categoryId, long qty) {
     }
 
-    /** 物料仓里有库存、最后一次出入库（盘点不算）在 before 当天或之前、或者从没出入过的；unitPrice 是这个 SKU 最近一条有单价的流水 */
-    List<StaleFact> selectStale(@Param("before") LocalDate before, @Param("warehouseId") Long warehouseId);
+    /**
+     * 物料仓里有库存、最后一次出入库（盘点、反审核冲掉的不算）在 before 当天或之前、或者从没出入过的；
+     * unitPrice 是这个 SKU 最近一次没被冲掉的入库单价，withPrice = false 时不查（只要条数）
+     */
+    List<StaleFact> selectStale(@Param("before") LocalDate before, @Param("warehouseId") Long warehouseId, @Param("withPrice") boolean withPrice);
 
     record StaleFact(long warehouseId, String warehouseName, long skuId, BigDecimal qty, LocalDate lastDate, BigDecimal unitPrice) {
     }
 
     /**
      * 已审核以后的需求订单，下单日期在 from ~ to；最多 limit 条（超了页面提示缩小范围）。
-     * keyword 是 Keywords.contains 包好的（%…%，转义过），查订单号、客户订单号、品牌
+     * keyword 是 Keywords.contains 包好的（%…%，转义过），查订单号、客户订单号、品牌。
+     * 逐单列销售额、毛利，所以和订单列表一样按数据范围（本人 = 建的、销售、跟单是自己）筛，品类线在 lines 里
      */
     List<OrderMarginRow> selectOrders(@Param("from") LocalDate from, @Param("to") LocalDate to, @Param("keyword") String keyword,
-                                      @Param("productLine") String productLine, @Param("lines") LineScope lines, @Param("limit") int limit);
+                                      @Param("productLine") String productLine, @Param("lines") LineScope lines,
+                                      @Param("scope") DataScope scope, @Param("limit") int limit);
 
     /** 这些订单每版资料包多少件（没锁资料包的 techPackId 是 null） */
     List<PackQty> selectOrderPackQty(@Param("ids") Collection<Long> orderIds);

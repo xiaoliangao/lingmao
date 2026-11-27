@@ -101,12 +101,26 @@ public class TechPackCostServiceImpl implements TechPackCostService {
             if (owners.get(pack.getStyleId()) == null || ctx == null) {
                 continue;
             }
-            java.math.BigDecimal total = costCalculator.computePrepared(pack, ctx, inputs.get(pack.getId())).getSummary().total();
-            if (total != null) {
+            TechPackCostVO vo = costCalculator.computePrepared(pack, ctx, inputs.get(pack.getId()));
+            java.math.BigDecimal total = vo.getSummary().total();
+            if (total != null && !incomplete(pack, vo)) {
                 out.put(pack.getId(), total);
             }
         }
         return out;
+    }
+
+    /**
+     * 核价算不全：要算的自购料有没填用量、单价的；按外发算没填加工费，按成品采购算没有成品价。
+     * 缺的那些计算器按 0 算，合计照样有数；订单毛利拿它会算出偏高的毛利，所以算不全的不给数，报表当"算不出成本"（agy T-e19e38 #3）
+     */
+    private static boolean incomplete(TechPack pack, TechPackCostVO vo) {
+        boolean rowMissing = java.util.stream.Stream.concat(vo.getFabricRows().stream(), vo.getTrimRows().stream())
+                .anyMatch(r -> r.isCounted() && (r.getUsageQty() == null || r.getPrice() == null));
+        boolean laborMissing = pack.getCostMode() == com.lingmao.scm.module.techpack.entity.CostMode.BUY
+                ? pack.getBuyPrice() == null && vo.getBuyPriceDefault() == null
+                : pack.getLaborPrice() == null;
+        return rowMissing || laborMissing;
     }
 
     /** 品类连同下级的 id（品类就几十个，整棵取了在内存里找）；不筛是 null */
