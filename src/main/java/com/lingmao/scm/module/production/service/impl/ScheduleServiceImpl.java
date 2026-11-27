@@ -28,6 +28,7 @@ import com.lingmao.scm.module.production.mapper.ProductionOrderItemMapper;
 import com.lingmao.scm.module.production.mapper.ProductionOrderMapper;
 import com.lingmao.scm.module.production.service.ScheduleService;
 import com.lingmao.scm.module.style.dto.StyleOrderInfo;
+import com.lingmao.scm.module.production.service.FactoryCapacityService;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
 import com.lingmao.scm.module.supplier.service.SupplierService;
@@ -71,6 +72,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     private final ProductionSupport support;
     private final OrderService orderService;
     private final StyleService styleService;
+    private final FactoryCapacityService capacityService;
     private final TechPackService techPackService;
     private final SupplierService supplierService;
     private final PriceService priceService;
@@ -209,6 +211,7 @@ public class ScheduleServiceImpl implements ScheduleService {
         LocalDate today = support.today();
         List<String> problems = new ArrayList<>();
         List<ProductionOrder> heads = new ArrayList<>();
+        List<FactoryCapacityService.Demand> demands = new ArrayList<>();
         for (Block blk : blocks) {
             ScheduleReq.Block b = blk.req();
             StyleOrderInfo style = infos.get(b.getStyleId());
@@ -276,7 +279,12 @@ public class ScheduleServiceImpl implements ScheduleService {
             p.setTotalQty(total);
             p.setTotalAmount(NumericLimits.amount(price == null ? null : Num.amount(BigDecimal.valueOf(total), price), where));
             heads.add(p);
+            if (b.getDueDate() != null) {
+                demands.add(new FactoryCapacityService.Demand(where, f.id(), b.getStyleId(), b.getDueDate(), total));
+            }
         }
+        // 工厂产能（PRD 08.02，甲方 11-27 答 Q60）：排满了拦住；没登记产能的厂不查
+        problems.addAll(capacityService.check(demands, List.of()));
         if (!problems.isEmpty()) {
             throw new BizException(ErrorCodes.BIZ_ERROR, "排不了：有 " + problems.size() + " 处要先处理", problems);
         }

@@ -1,7 +1,7 @@
 import { download, http, snapshotRequestBody, type RequestOptions } from '@/utils/request'
 import type { PageResult } from '@/types/system'
 import type {
-  BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, CutQtyForm, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
+  BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, CapacityForm, CapacityPreview, CapacityQuery, CapacityRow, CutQtyForm, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
   LedgerMaterialQuery, LedgerMaterialRow, LedgerOrderQuery, LedgerOrderRow, LedgerStatus, MobileOrderRow, NodePlanReq, NodeReport, NodeReportForm, NodeReportResult, ProductionCounts, ProductionDetail, ProductionForm,
   ProductionIssue, ProductionMaterials, ProductionQuery, ProductionReceipt, ProductionRow, ReceiptCreated, ReceiptForm,
 } from '@/types/production'
@@ -99,4 +99,14 @@ export const ledgerApi = {
   /** 按工厂物料：账面、未核销的耗料、估计手上 */
   materials: (params: PageParams & LedgerMaterialQuery) => http.get<PageResult<LedgerMaterialRow>>('/api/factory-ledger/materials', params),
   exportMaterials: (params: LedgerMaterialQuery) => download('/api/factory-ledger/materials/export', params, '工厂料账.xlsx'),
+}
+
+/** 工厂产能（PRD 08.02）：理单、生产跟单每月登记；排单、改草稿的加工厂或交期时排满了拦住 */
+export const capacityApi = {
+  list: (params: CapacityQuery) => http.get<CapacityRow[]>('/api/factory-capacities', params),
+  save: (data: CapacityForm) => http.post<string>('/api/factory-capacities', data),
+  remove: (id: string) => http.delete<void>(`/api/factory-capacities/${id}`),
+  /** 排单时看还能排多少；这家厂没登记产能是 [] */
+  preview: (params: { factoryId: string; styleId: string; dueDate: string; excludeId?: string }, options?: RequestOptions) =>
+    http.get<CapacityPreview[]>('/api/factory-capacities/preview', params, options),
 }

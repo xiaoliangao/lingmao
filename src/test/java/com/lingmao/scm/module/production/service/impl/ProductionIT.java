@@ -105,6 +105,8 @@ class ProductionIT {
     @Autowired
     private com.lingmao.scm.module.production.service.FactoryLedgerService factoryLedgerService;
     @Autowired
+    private com.lingmao.scm.module.production.service.FactoryCapacityService capacityService;
+    @Autowired
     private ReferenceService referenceService;
     @Autowired
     private NeedDateSource needDateSource;
@@ -247,6 +249,44 @@ class ProductionIT {
             assertThat(row.getWipQty()).isEqualTo(100);
         });
         assertThat(productionOrderService.myFollow()).extracting(row -> row.id()).contains(prdId);
+    }
+
+    /**
+     * 工厂产能（PRD 08.02，甲方 11-27 答 Q60）：这家厂登记每天 1 件（不分品类），交期前五十来天能做 50 件左右，排 100 件拦住、
+     * 一张都不建；改成每天 10 件就能排。草稿把交期提到后天（3 天 × 10 = 30 件 < 100）拦住；草稿自己不算进已排的
+     */
+    @Test
+    void factoryCapacityBlocksSchedule() {
+        Fixture f = fixture();
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long order = approvedOrder(f, commit);
+        com.lingmao.scm.module.production.dto.CapacitySaveReq cap = new com.lingmao.scm.module.production.dto.CapacitySaveReq();
+        cap.setFactoryId(f.factory());
+        cap.setMonth(java.time.YearMonth.now().toString());
+        cap.setDailyQty(1);
+        long capId = capacityService.save(cap);
+        var req = scheduleReq(f, order, commit.minusDays(10), Map.of(orderLine(order, f.skuM()), 60, orderLine(order, f.skuL()), 40));
+        assertThatThrownBy(() -> scheduleService.schedule(req))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getData()).asString().contains("排满了", "这次 100 件"));
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM prd_order WHERE order_id = ?", Long.class, order)).isZero();
+
+        cap.setDailyQty(10);
+        assertThat(capacityService.save(cap)).isEqualTo(capId);
+        long id = scheduleService.schedule(req).getFirst().id();
+        assertThat(capacityService.preview(f.factory(), f.style(), commit.minusDays(10), null)).singleElement()
+                .satisfies(p -> assertThat(p.load()).isEqualTo(100));
+        assertThat(capacityService.preview(f.factory(), f.style(), commit.minusDays(10), id)).singleElement()
+                .satisfies(p -> assertThat(p.load()).isZero());
+
+        ProductionSaveReq edit = saveReq(productionOrderService.detail(id));
+        edit.setDueDate(LocalDate.now().plusDays(2));
+        assertThatThrownBy(() -> productionOrderService.update(id, edit))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("排满了", "能做 30 件"));
+        edit.setDueDate(commit.minusDays(12));
+        productionOrderService.update(id, edit);
+        assertThat(capacityService.list(new com.lingmao.scm.module.production.dto.CapacityQuery()))
+                .anySatisfy(r -> assertThat(r.getId()).isEqualTo(capId));
+        capacityService.delete(capId);
     }
 
     /** 二次加工按单选（甲方 11-27 答 Q61）：勾了的单审核后多一个"二次加工"节点，排在车缝后面；别的单没有 */

@@ -61,6 +61,7 @@ import com.lingmao.scm.module.production.mapper.ProductionOrderItemMapper;
 import com.lingmao.scm.module.production.mapper.FactoryLedgerMapper;
 import com.lingmao.scm.module.production.mapper.ProductionOrderMapper;
 import com.lingmao.scm.module.production.mapper.ProductionReceiptMapper;
+import com.lingmao.scm.module.production.service.FactoryCapacityService;
 import com.lingmao.scm.module.production.service.ProductionOrderService;
 import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.service.StyleService;
@@ -106,6 +107,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     private final ProductionOrderMapper prdMapper;
     private final FactoryLedgerMapper ledgerMapper;
+    private final FactoryCapacityService capacityService;
     private final ProductionOrderItemMapper itemMapper;
     private final ProductionNodeMapper nodeMapper;
     private final NodeReportMapper reportMapper;
@@ -447,6 +449,14 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
             throw new BizException(400, "单价和档案现价 " + ProdTexts.money(archive.price()) + " 不一样，要写改价原因");
         }
 
+        if (!Objects.equals(req.getFactoryId(), p.getFactoryId()) || !Objects.equals(req.getDueDate(), p.getDueDate())) {
+            // 换了加工厂、改了交期：查产能（PRD 08.02），这张单自己不算进已排的
+            List<String> full = capacityService.check(List.of(new FactoryCapacityService.Demand("", req.getFactoryId(), p.getStyleId(),
+                    req.getDueDate(), p.getTotalQty())), List.of(id));
+            if (!full.isEmpty()) {
+                throw new BizException(full.getFirst());
+            }
+        }
         List<String> what = changedFields(p, req, mode, settle, price);
         String nodes = checkOptionalNodes(req.getOptionalNodes());
         if (!Objects.equals(nodes, p.getOptionalNodes())) {

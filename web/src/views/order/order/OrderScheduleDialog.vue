@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { scheduleApi as scheduleApiBase } from '@/api/order'
+import { capacityApi } from '@/api/production'
 import DictSelect from '@/components/DictSelect.vue'
 import SkuMatrix from '@/components/SkuMatrix.vue'
 import SupplierSelect from '@/components/SupplierSelect.vue'
@@ -9,7 +10,8 @@ import UserSelect from '@/components/UserSelect.vue'
 import { useDict } from '@/composables/useDict'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
 import { PROCESS_MODE_FULL, type ScheduleBlock, type SchedulePrefill, type ScheduleQuote, type ScheduleStyle } from '@/types/order'
-import { formatMoney, formatPrice } from '@/utils/format'
+import type { CapacityPreview } from '@/types/production'
+import { formatDate, formatMoney, formatPrice, formatQty } from '@/utils/format'
 import { orNull } from '@/views/basic/common'
 import { bindCompanyApi } from '@/utils/companyScope'
 import { createLatestRequest } from '@/utils/requestScope'
@@ -167,6 +169,7 @@ watch(visible, async (on) => {
   cancelQuotes()
   if (!on) return
   blocks.value = []
+  capacities.value = new Map()
   prefill.value = null
   loading.value = true
   try {
@@ -215,6 +218,34 @@ const remainSub = (itemId: string) => {
 }
 
 const blockQty = (b: BlockDraft) => Object.values(b.qtys).reduce((s, q) => s + (q > 0 ? q : 0), 0)
+
+// ---------- 工厂产能（PRD 08.02）：选了加工厂、交期，看这家厂做这个款到交期还能排多少；排满了提交时后端拦住 ----------
+/** 加工厂|款|交期 → 管它的产能（没登记是 []）；读不到不显示 */
+const capacities = ref(new Map<string, CapacityPreview[]>())
+const capacityKey = (b: BlockDraft) => (b.factoryId && b.dueDate ? `${b.factoryId}|${b.style.styleId}|${b.dueDate}` : '')
+watch(
+  () => blocks.value.map(capacityKey).filter((k) => k && !capacities.value.has(k)),
+  (keys) => {
+    for (const key of new Set(keys)) {
+      const [factoryId, styleId, dueDate] = key.split('|')
+      capacities.value.set(key, [])
+      capacityApi.preview({ factoryId, styleId, dueDate }, { silent: true })
+        .then((rows) => capacities.value.set(key, rows))
+        .catch(() => capacities.value.delete(key))
+    }
+  },
+)
+/** 这块的产能提示：这块的件数超了哪条，就说哪条 */
+function capacityHint(b: BlockDraft): { text: string; over: boolean } | null {
+  const rows = capacities.value.get(capacityKey(b)) ?? []
+  if (!rows.length) return null
+  const qty = blockQty(b)
+  const tight = rows.reduce((a, r) => (r.free < a.free ? r : a))
+  const name = tight.categoryName ? `「${tight.categoryName}」` : ''
+  const free = Math.max(tight.free, 0)
+  if (qty > free) return { text: `排不下：这家厂${name}到 ${formatDate(tight.until)} 只能再排 ${formatQty(free)} 件，这块 ${formatQty(qty)} 件。改交期、换工厂，或先改工厂产能`, over: true }
+  return { text: `产能：这家厂${name}到 ${formatDate(tight.until)} 还能排 ${formatQty(free)} 件（每天 ${formatQty(tight.dailyQty)} 件）`, over: false }
+}
 const activeBlocks = computed(() => blocks.value.filter((b) => blockQty(b) > 0))
 const footText = computed(() => {
   const n = activeBlocks.value.length
@@ -331,6 +362,7 @@ async function submit() {
           </el-form-item>
           <el-form-item label="交期" required>
             <el-date-picker v-model="b.dueDate" type="date" value-format="YYYY-MM-DD" :clearable="false" />
+            <span v-if="capacityHint(b)" class="field-tip" :class="capacityHint(b)!.over ? 'danger-text' : 'dim'">{{ capacityHint(b)!.text }}</span>
           </el-form-item>
           <el-form-item label="生产跟单" required>
             <UserSelect v-model="b.merchId" :label="b.merchName" />
@@ -398,6 +430,10 @@ async function submit() {
 .field-tip {
   font-size: 11.5px;
   line-height: 1.5;
+}
+
+.danger-text {
+  color: var(--lm-danger-text);
 }
 
 .terms-pick {

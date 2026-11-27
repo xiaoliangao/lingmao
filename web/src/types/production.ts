@@ -793,3 +793,61 @@ export interface MobileOrderRow {
   currentNodeName: string | null
   risk: ProductionRisk
 }
+
+// ---------------------------------------------------------------- 工厂产能（PRD 08.02，甲方 11-27 答 Q60）
+
+/** 工厂产能列表的一行：某家厂、某个品类在看的这个月用的产能 */
+export interface CapacityRow {
+  id: string
+  factoryId: string
+  factoryCode: string | null
+  factoryShortName: string
+  /** null = 不分品类，这家厂所有款合计 */
+  categoryId: string | null
+  /** 带上级："女装 / 外套" */
+  categoryName: string | null
+  /** 这条从哪个月起，yyyy-MM；和看的月份不一样 = 这个月没更新，沿用前面登记的 */
+  startMonth: string
+  /** 件 / 天 */
+  dailyQty: number
+  /** 看的这个月一共能做多少：日产能 × 天数 */
+  monthCapacity: number
+  /** 看的这个月交期、还没做完的件数（草稿也算） */
+  monthLoad: number
+  remark: string | null
+  updateByName: string | null
+  updateTime: string | null
+}
+
+export interface CapacityQuery {
+  /** yyyy-MM，不填是这个月 */
+  month?: string
+  factoryId?: string
+  /** 加工厂简称、名称、编码、品类名 */
+  keyword?: string
+}
+
+/** 登记产能：同一家厂、同一个品类、同一个月已经有就覆盖 */
+export interface CapacityForm {
+  factoryId: string
+  categoryId: string | null
+  /** 从哪个月起，yyyy-MM */
+  month: string
+  dailyQty: number
+  remark: string | null
+}
+
+/** 排单时看：这家厂做这个款、交期这天还能排多少（每条管它的产能一行） */
+export interface CapacityPreview {
+  /** null = 不分品类 */
+  categoryName: string | null
+  dailyQty: number
+  /** 卡住的那天 */
+  until: string
+  /** 从今天到 until 能做多少 */
+  capacity: number
+  /** 交期在 until 及之前、还没做完的（不含这次） */
+  load: number
+  /** 这次最多能排多少，≤ 0 是排满了 */
+  free: number
+}

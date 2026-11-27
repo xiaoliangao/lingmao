@@ -12,6 +12,7 @@ import com.lingmao.scm.module.production.dto.ScheduleOverRow;
 import com.lingmao.scm.module.production.dto.ScheduleReq;
 import com.lingmao.scm.module.production.mapper.ProductionOrderItemMapper;
 import com.lingmao.scm.module.production.mapper.ProductionOrderMapper;
+import com.lingmao.scm.module.production.service.FactoryCapacityService;
 import com.lingmao.scm.module.style.dto.StyleOrderInfo;
 import com.lingmao.scm.module.style.service.StyleService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
@@ -73,6 +74,8 @@ class ScheduleServiceImplTest {
     private DocLogService docLogService;
     @Mock
     private SerialNoGenerator serialNoGenerator;
+    @Mock
+    private FactoryCapacityService capacityService;
 
     @InjectMocks
     private ScheduleServiceImpl service;
