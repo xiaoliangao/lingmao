@@ -21,6 +21,7 @@ import com.lingmao.scm.module.board.dto.TodoItem;
 import com.lingmao.scm.module.board.dto.UpstreamList;
 import com.lingmao.scm.module.board.dto.UpstreamQuery;
 import com.lingmao.scm.module.board.dto.UpstreamRow;
+import com.lingmao.scm.module.board.service.ReportService;
 import com.lingmao.scm.module.board.service.HomeService;
 import com.lingmao.scm.module.inventory.dto.CountQuery;
 import com.lingmao.scm.module.inventory.dto.CountRowVO;
@@ -131,7 +132,7 @@ public class HomeServiceImpl implements HomeService {
     static final List<String> COUNT_KEYS = List.of("ORDER_PENDING", "CHANGE_PENDING", "PURCHASE_PENDING", "OUTSOURCE_PENDING",
             "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "FG_PENDING", "CONSUME_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
             "PRODUCTION_NEAR", "PRODUCTION_NODE_LATE", "PRODUCTION_ISSUE", "ARRIVAL_LATE", "ARRIVAL_CUT", "UPSTREAM", "CERT_EXPIRING",
-            "REORDER");
+            "REORDER", "STALE_MATERIAL");
 
     /** 供应商的状态叫法、颜色（和前端 SUPPLIER_STATUS 一样）：待办里的供应商没有 ReferenceService 能描述，这里自己造 DocRef */
     static final StatusLabels<SupplierStatus> SUPPLIER_STATUS = StatusLabels.of(SupplierStatus.class)
@@ -155,6 +156,7 @@ public class HomeServiceImpl implements HomeService {
     private final CountService countService;
     private final FgDocService fgDocService;
     private final FactoryLedgerService factoryLedgerService;
+    private final ReportService reportService;
     private final SupplierService supplierService;
     private final ReferenceService referenceService;
     private final AttachmentService attachmentService;
@@ -296,6 +298,9 @@ public class HomeServiceImpl implements HomeService {
         }
         if (can("inventory:doc:add") && can("production:ledger:list")) {
             counts.put("CONSUME_PENDING", factoryLedgerService.toSettleCount());   // 待核销耗料（RFC 015 §4.3）
+        }
+        if (can("report:stale:list")) {
+            counts.put("STALE_MATERIAL", reportService.staleCount());   // 呆滞料（RFC 019 §3.3）
         }
         List<TodoCount> out = COUNT_KEYS.stream().filter(k -> counts.getOrDefault(k, 0L) > 0)
                 .map(k -> new TodoCount(k, counts.get(k))).toList();

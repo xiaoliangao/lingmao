@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.board.mapper.ReportMapper">
+
+    <sql id="lineOf">
+        <if test="lines.limited">AND ${alias}.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
+    </sql>
+
+    <!-- 采购到货及时率（RFC 019 §3.1）：入库单（采购入库、已审核）按日累计，够了的那天就是到齐日。数量用采购单位（旧行没有按换算系数折） -->
+    <select id="selectPurchaseLines" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$PurchaseLineFact">
+        WITH l AS (
+            SELECT i.id, o.supplier_id, COALESCE(i.line_due_date, o.delivery_date) AS due_date, o.status,
+                   i.qty - i.offset_in_qty AS need
+            FROM pur_order_item i
+            JOIN pur_order o ON o.id = i.purchase_order_id
+            WHERE o.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED')
+              AND COALESCE(i.line_due_date, o.delivery_date) BETWEEN #{from} AND #{to}
+              <include refid="lineOf"><property name="alias" value="o"/></include>
+        ), r AS (
+            SELECT di.source_item_id AS line_id, d.doc_date,
+                   SUM(COALESCE(di.purchase_qty, di.qty / NULLIF(di.conversion_factor, 0), di.qty)) AS qty
+            FROM inv_doc d
+            JOIN inv_doc_item di ON di.doc_id = d.id
+            WHERE d.doc_type = 'PURCHASE_IN' AND d.status = 'APPROVED' AND d.source_type = 'PURCHASE_ORDER'
+              AND di.source_item_id IN (SELECT id FROM l)
+            GROUP BY di.source_item_id, d.doc_date
+        ), c AS (
+            SELECT line_id, doc_date, SUM(qty) OVER (PARTITION BY line_id ORDER BY doc_date) AS total FROM r
+        )
+        SELECT l.id AS line_id, l.supplier_id, l.due_date, l.status, l.need,
+               (SELECT MIN(c.doc_date) FROM c WHERE c.line_id = l.id AND c.total &gt;= l.need) AS full_date,
+               (SELECT MAX(r.doc_date) FROM r WHERE r.line_id = l.id) AS last_date
+        FROM l
+    </select>
+
+    <!-- 工厂交期达成率（RFC 019 §3.1）：回货单（没作废）按回货日累计良品 -->
+    <select id="selectFactoryOrders" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$FactoryOrderFact">
+        WITH p AS (
+            SELECT p.id, p.factory_id, p.due_date, p.status, p.total_qty
+            FROM prd_order p
+            WHERE p.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED') AND p.due_date BETWEEN #{from} AND #{to}
+              <include refid="lineOf"><property name="alias" value="p"/></include>
+        ), r AS (
+            SELECT r.prd_order_id, r.receipt_date, SUM(ri.qty - ri.defect_qty) AS good
+            FROM prd_receipt r
+            JOIN prd_receipt_item ri ON ri.receipt_id = r.id
+            WHERE r.status &lt;&gt; 'VOIDED' AND r.prd_order_id IN (SELECT id FROM p)
+            GROUP BY r.prd_order_id, r.receipt_date
+        ), c AS (
+            SELECT prd_order_id, receipt_date, SUM(good) OVER (PARTITION BY prd_order_id ORDER BY receipt_date) AS total FROM r
+        )
+        SELECT p.id AS prd_order_id, p.factory_id, p.due_date, p.status, p.total_qty AS qty,
+               (SELECT MIN(c.receipt_date) FROM c WHERE c.prd_order_id = p.id AND c.total &gt;= p.total_qty) AS full_date,
+               (SELECT MAX(r.receipt_date) FROM r WHERE r.prd_order_id = p.id) AS last_date,
+               (SELECT COALESCE(SUM(r.good), 0) FROM r WHERE r.prd_order_id = p.id AND r.receipt_date &lt;= p.due_date) AS good_by_due
+        FROM p
+    </select>
+
+    <select id="selectDefects" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$DefectFact">
+        SELECT p.factory_id, SUM(ri.qty) AS qty, SUM(ri.defect_qty) AS defect
+        FROM prd_receipt r
+        JOIN prd_receipt_item ri ON ri.receipt_id = r.id
+        JOIN prd_order p ON p.id = r.prd_order_id
+        WHERE r.status &lt;&gt; 'VOIDED' AND r.receipt_date BETWEEN #{from} AND #{to}
+          <include refid="lineOf"><property name="alias" value="p"/></include>
+        GROUP BY p.factory_id
+    </select>
+
+    <!-- 各品类线在做件数（RFC 019 §3.2） -->
+    <select id="selectWip" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$WipFact">
+        SELECT p.product_line, s.category_id, COUNT(DISTINCT p.id) AS order_count,
+               SUM(GREATEST(pi.qty - (pi.returned_qty - pi.defect_qty), 0)) AS wip_qty,
+               SUM(CASE WHEN COALESCE(p.expect_date, p.due_date) &lt; #{today}
+                        THEN GREATEST(pi.qty - (pi.returned_qty - pi.defect_qty), 0) ELSE 0 END) AS late_qty
+        FROM prd_order p
+        JOIN prd_order_item pi ON pi.prd_order_id = p.id
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE p.status IN ('DRAFT', 'PENDING', 'APPROVED', 'RUNNING')
+          <include refid="lineOf"><property name="alias" value="p"/></include>
+        GROUP BY p.product_line, s.category_id
+    </select>
+
+    <select id="selectNewQty" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$LineQtyFact">
+        SELECT p.product_line, s.category_id, SUM(p.total_qty) AS qty
+        FROM prd_order p
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE p.status &lt;&gt; 'VOIDED' AND p.order_date BETWEEN #{from} AND #{to}
+          <include refid="lineOf"><property name="alias" value="p"/></include>
+        GROUP BY p.product_line, s.category_id
+    </select>
+
+    <select id="selectGoodQty" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$LineQtyFact">
+        SELECT p.product_line, s.category_id, SUM(ri.qty - ri.defect_qty) AS qty
+        FROM prd_receipt r
+        JOIN prd_receipt_item ri ON ri.receipt_id = r.id
+        JOIN prd_order p ON p.id = r.prd_order_id
+        JOIN sty_style s ON s.id = p.style_id
+        WHERE r.status &lt;&gt; 'VOIDED' AND r.receipt_date BETWEEN #{from} AND #{to}
+          <include refid="lineOf"><property name="alias" value="p"/></include>
+        GROUP BY p.product_line, s.category_id
+    </select>
+
+    <!-- 呆滞料（RFC 019 §3.3）：只看自己的物料仓（工厂仓里的料归工厂料账管）；盘点的流水不算"动过" -->
+    <select id="selectStale" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$StaleFact">
+        WITH s AS (
+            SELECT st.warehouse_id, st.material_sku_id, SUM(st.qty) AS qty
+            FROM inv_stock st
+            JOIN bas_warehouse w ON w.id = st.warehouse_id AND w.type = 'MATERIAL'
+            <where>
+                <if test="warehouseId != null">st.warehouse_id = #{warehouseId}</if>
+            </where>
+            GROUP BY st.warehouse_id, st.material_sku_id
+            HAVING SUM(st.qty) &gt; 0
+        ), m AS (
+            SELECT l.warehouse_id, l.material_sku_id, MAX(l.biz_date) AS last_date
+            FROM inv_stock_log l
+            JOIN s ON s.warehouse_id = l.warehouse_id AND s.material_sku_id = l.material_sku_id
+            WHERE l.count_id IS NULL
+            GROUP BY l.warehouse_id, l.material_sku_id
+        )
+        SELECT s.warehouse_id, w.name AS warehouse_name, s.material_sku_id AS sku_id, s.qty, m.last_date,
+               (SELECT l2.unit_price FROM inv_stock_log l2
+                WHERE l2.material_sku_id = s.material_sku_id AND l2.unit_price IS NOT NULL
+                ORDER BY l2.id DESC LIMIT 1) AS unit_price
+        FROM s
+        JOIN bas_warehouse w ON w.id = s.warehouse_id
+        LEFT JOIN m ON m.warehouse_id = s.warehouse_id AND m.material_sku_id = s.material_sku_id
+        WHERE m.last_date IS NULL OR m.last_date &lt;= #{before}
+        ORDER BY m.last_date NULLS FIRST, s.material_sku_id
+    </select>
+
+    <!-- 订单毛利（RFC 019 §3.4） -->
+    <select id="selectOrders" resultType="com.lingmao.scm.module.board.dto.OrderMarginRow">
+        SELECT o.id, o.no, o.brand, o.product_line, o.order_date, o.status, COALESCE(o.total_qty, 0) AS total_qty, o.currency,
+               (SELECT COALESCE(SUM(i.amount), 0) FROM ord_order_item i WHERE i.order_id = o.id) AS sales_amount
+        FROM ord_order o
+        WHERE o.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED') AND o.order_date BETWEEN #{from} AND #{to}
+          <include refid="lineOf"><property name="alias" value="o"/></include>
+          <if test="productLine != null and productLine != ''">AND o.product_line = #{productLine}</if>
+          <if test="keyword != null and keyword != ''">
+              AND (o.no ILIKE #{keyword} OR o.customer_order_no ILIKE #{keyword} OR o.brand ILIKE #{keyword})
+          </if>
+        ORDER BY o.order_date DESC, o.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectOrderPackQty" resultType="com.lingmao.scm.module.board.mapper.ReportMapper$PackQty">
+        SELECT order_id, tech_pack_id, SUM(qty) AS qty
+        FROM ord_order_item
+        WHERE order_id IN <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY order_id, tech_pack_id
+    </select>
+</mapper>

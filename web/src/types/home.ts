@@ -129,6 +129,7 @@ export type TodoCountKey =
   | 'UPSTREAM'
   | 'CERT_EXPIRING'
   | 'REORDER'
+  | 'STALE_MATERIAL'
 
 /** 叫法、点了去哪、数字什么颜色（danger 红、pending 琥珀、null 不上色）。地址参数各模块文档里定好了；待审核的几块带 auditForMe=1，和首页的数一样（不含自己建的） */
 export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone: StatusTone | null }> = {
@@ -153,6 +154,7 @@ export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone:
   UPSTREAM: { label: '上游订单已变更，待处理', to: '/upstream', tone: 'pending' },
   CERT_EXPIRING: { label: '供应商证照 30 天内到期', to: '/suppliers?certExpiring=1', tone: null },
   REORDER: { label: '物料低于最小库存', to: '/reorder', tone: null },
+  STALE_MATERIAL: { label: '呆滞料', to: '/stale-materials', tone: 'pending' },
 }
 
 export interface TodoCount {

@@ -16,4 +16,7 @@ public interface TechPackCostService {
 
     /** 按款看成本：每个款取已生效的生产 BOM，按款式第一个颜色算 */
     PageResult<StyleCostRowVO> styleCosts(StyleCostQuery query);
+
+    /** 这几版资料包的单件成本（核价合计，按款式第一个颜色算）：订单毛利用（RFC 019 §3）。款式看不到、算不了的不在结果里 */
+    java.util.Map<Long, java.math.BigDecimal> unitCosts(java.util.Collection<Long> techPackIds);
 }

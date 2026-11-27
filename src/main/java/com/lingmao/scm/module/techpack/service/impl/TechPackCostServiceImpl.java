@@ -86,6 +86,29 @@ public class TechPackCostServiceImpl implements TechPackCostService {
         return PageResult.of(page);
     }
 
+    @Override
+    public Map<Long, java.math.BigDecimal> unitCosts(java.util.Collection<Long> techPackIds) {
+        if (techPackIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, TechPack> packs = CostCalculator.byId(techPackMapper.selectByIds(techPackIds), TechPack::getId);
+        Map<Long, PackOwner> owners = packOwners.styles(packs.values().stream().map(TechPack::getStyleId).distinct().toList());
+        Map<Long, Ctx> contexts = packOwners.contexts(packs.values(), owners);
+        Map<Long, CostCalculator.Inputs> inputs = costCalculator.preload(packs.values(), contexts);
+        Map<Long, java.math.BigDecimal> out = new java.util.HashMap<>();
+        for (TechPack pack : packs.values()) {
+            Ctx ctx = contexts.get(pack.getId());
+            if (owners.get(pack.getStyleId()) == null || ctx == null) {
+                continue;
+            }
+            java.math.BigDecimal total = costCalculator.computePrepared(pack, ctx, inputs.get(pack.getId())).getSummary().total();
+            if (total != null) {
+                out.put(pack.getId(), total);
+            }
+        }
+        return out;
+    }
+
     /** 品类连同下级的 id（品类就几十个，整棵取了在内存里找）；不筛是 null */
     private List<Long> withDescendants(Long categoryId) {
         if (categoryId == null) {

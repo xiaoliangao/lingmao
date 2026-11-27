@@ -90,6 +90,8 @@ class PurchaseIT {
     @Autowired
     private ReferenceService referenceService;
     @Autowired
+    private com.lingmao.scm.module.board.service.ReportService reportService;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private DataSource dataSource;
@@ -836,6 +838,50 @@ class PurchaseIT {
     }
 
     /** 物料库存页的在途（库存单位，所有仓合计） */
+    /**
+     * 报表（RFC 019 §3）：采购到货及时率按采购行。三张单：交期前到齐（准时）、到齐比交期晚 3 天、交期过了 2 天还没到
+     * → 准时 1、逾期 2、及时率 33.3%、平均晚 2.5 天。呆滞料按最后一次出入库：这个仓的流水改到 200 天前，90 天算呆滞就列出来，365 天不列
+     */
+    @Test
+    void reportsPurchasePerfAndStale() {
+        Fixture f = fixture(null);
+        LocalDate today = LocalDate.now();
+        long onTime = approvedStockPo(f, "100", today.plusDays(5));
+        receive(f, onTime, "100");
+        long late = approvedStockPo(f, "100", today.plusDays(5));
+        receive(f, late, "100");
+        long missing = approvedStockPo(f, "50", today.plusDays(5));
+        jdbcTemplate.update("UPDATE pur_order_item SET line_due_date = ? WHERE purchase_order_id = ?", today.plusDays(5), onTime);
+        jdbcTemplate.update("UPDATE pur_order_item SET line_due_date = ? WHERE purchase_order_id = ?", today.minusDays(3), late);
+        jdbcTemplate.update("UPDATE pur_order_item SET line_due_date = ? WHERE purchase_order_id = ?", today.minusDays(2), missing);
+
+        String code = jdbcTemplate.queryForObject("SELECT code FROM sup_supplier WHERE id = ?", String.class, f.supplier());
+        com.lingmao.scm.module.board.dto.PerfQuery q = new com.lingmao.scm.module.board.dto.PerfQuery();
+        q.setFrom(today.minusDays(10));
+        q.setTo(today.plusDays(10));
+        q.setKeyword(code);
+        var perf = reportService.purchasePerf(q);
+        assertThat(perf.rows()).singleElement().satisfies(r -> {
+            assertThat(r.getOnTimeCount()).isEqualTo(1);
+            assertThat(r.getLateCount()).isEqualTo(2);
+            assertThat(r.getOnTimeRate()).isEqualByComparingTo("33.3");
+            assertThat(r.getAvgLateDays()).isEqualByComparingTo("2.5");
+        });
+        assertThat(perf.total().getLineCount()).isEqualTo(3);
+
+        jdbcTemplate.update("UPDATE inv_stock_log SET biz_date = ? WHERE warehouse_id = ?", today.minusDays(200), f.warehouse());
+        com.lingmao.scm.module.board.dto.StaleMaterialQuery sq = new com.lingmao.scm.module.board.dto.StaleMaterialQuery();
+        sq.setDays(90);
+        sq.setWarehouseId(f.warehouse());
+        assertThat(reportService.staleMaterials(sq).getList()).isNotEmpty().allSatisfy(r -> {
+            assertThat(r.getIdleDays()).isEqualTo(200);
+            assertThat(r.getQty()).isPositive();
+            assertThat(r.getSkuCode()).isNotBlank();
+        });
+        sq.setDays(365);
+        assertThat(reportService.staleMaterials(sq).getList()).isEmpty();
+    }
+
     private BigDecimal transit(Fixture f) {
         return transitByWarehouse(f).values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
     }

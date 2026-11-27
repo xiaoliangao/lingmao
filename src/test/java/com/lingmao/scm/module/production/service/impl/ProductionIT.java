@@ -107,6 +107,8 @@ class ProductionIT {
     @Autowired
     private com.lingmao.scm.module.production.service.FactoryCapacityService capacityService;
     @Autowired
+    private com.lingmao.scm.module.board.service.ReportService reportService;
+    @Autowired
     private ReferenceService referenceService;
     @Autowired
     private NeedDateSource needDateSource;
@@ -287,6 +289,66 @@ class ProductionIT {
         assertThat(capacityService.list(new com.lingmao.scm.module.production.dto.CapacityQuery()))
                 .anySatisfy(r -> assertThat(r.getId()).isEqualTo(capId));
         capacityService.delete(capId);
+    }
+
+    /**
+     * 报表（RFC 019 §3）：加工厂交期达成率、次品率，在做件数，订单毛利。两张生产单（各 100 件）：
+     * 第一张今天回齐，交期改到前天 → 逾期；第二张今天回 100 件里次品 2，良品 98 在回齐的范围里、单子已完成 → 按最后一次回货算准时。
+     * 达成率 1/2 = 50%，件数达成 98/200 = 49%；次品率按今天的回货 2/200 = 1.0%
+     */
+    @Test
+    void reportsFromProduction() {
+        Fixture f = fixture();
+        LocalDate today = LocalDate.now();
+        long late = approvedProduction(f);
+        long orderId = jdbcTemplate.queryForObject("SELECT order_id FROM prd_order WHERE id = ?", Long.class, late);
+        receiptService.receive(late, receiptReq(Map.of(prdItem(late, orderLine(orderId, f.skuM())), 60,
+                prdItem(late, orderLine(orderId, f.skuL())), 40), prdItem(late, orderLine(orderId, f.skuL())), 0));
+        jdbcTemplate.update("UPDATE prd_order SET due_date = ? WHERE id = ?", today.minusDays(2), late);
+        long pending = approvedProduction(f);
+        long order2 = jdbcTemplate.queryForObject("SELECT order_id FROM prd_order WHERE id = ?", Long.class, pending);
+        long l2 = prdItem(pending, orderLine(order2, f.skuL()));
+        receiptService.receive(pending, receiptReq(Map.of(prdItem(pending, orderLine(order2, f.skuM())), 60, l2, 40), l2, 2));
+
+        String code = jdbcTemplate.queryForObject("SELECT code FROM sup_supplier WHERE id = ?", String.class, f.factory());
+        com.lingmao.scm.module.board.dto.PerfQuery q = new com.lingmao.scm.module.board.dto.PerfQuery();
+        q.setFrom(today.minusDays(10));
+        q.setTo(today.plusDays(90));
+        q.setKeyword(code);
+        assertThat(reportService.factoryPerf(q).rows()).singleElement().satisfies(r -> {
+            assertThat(r.getOrderCount()).isEqualTo(2);
+            assertThat(r.getLateCount()).isEqualTo(1);
+            assertThat(r.getPendingCount()).isZero();
+            assertThat(r.getOnTimeRate()).isEqualByComparingTo("50.0");
+            assertThat(r.getDueQty()).isEqualTo(200);
+            assertThat(r.getQtyByDue()).isEqualTo(98);
+            assertThat(r.getQtyRate()).isEqualByComparingTo("49.0");
+            assertThat(r.getReceiptQty()).isEqualTo(200);
+            assertThat(r.getDefectQty()).isEqualTo(2);
+            assertThat(r.getDefectRate()).isEqualByComparingTo("1.0");
+        });
+
+        // 在做件数、这个月回货：跑得通，这个月回的良品里有今天这两张
+        assertThat(reportService.lineWip(null)).anySatisfy(r -> assertThat(r.getMonthGoodQty()).isGreaterThanOrEqualTo(198));
+        // 订单毛利：两张订单都在今天下的里
+        String no = jdbcTemplate.queryForObject("SELECT no FROM ord_order WHERE id = ?", String.class, orderId);
+        com.lingmao.scm.module.board.dto.OrderMarginQuery mq = new com.lingmao.scm.module.board.dto.OrderMarginQuery();
+        mq.setFrom(today.minusDays(1));
+        mq.setTo(today.plusDays(1));
+        mq.setKeyword(no);
+        var margin = reportService.orderMargins(mq);
+        assertThat(margin.list()).singleElement().satisfies(r -> {
+            assertThat(r.getTotalQty()).isEqualTo(100);
+            assertThat(r.getSalesAmount()).isNotNull();
+            assertThat(r.getMargin()).isEqualByComparingTo(r.getSalesAmount().subtract(r.getCostAmount()));
+        });
+        assertThat(margin.salesAmount()).isEqualByComparingTo(margin.list().getFirst().getSalesAmount());
+        // 外币单：不算毛利、不进合计
+        jdbcTemplate.update("UPDATE ord_order SET currency = 'USD' WHERE id = ?", orderId);
+        var foreign = reportService.orderMargins(mq);
+        assertThat(foreign.list().getFirst().getMargin()).isNull();
+        assertThat(foreign.foreignOrders()).isEqualTo(1);
+        assertThat(foreign.salesAmount()).isZero();
     }
 
     /** 二次加工按单选（甲方 11-27 答 Q61）：勾了的单审核后多一个"二次加工"节点，排在车缝后面；别的单没有 */
