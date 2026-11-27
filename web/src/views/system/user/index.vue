@@ -463,11 +463,13 @@ function emptyText() {
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.kind === 'FACTORY'" label="哪家厂" prop="partnerId" class="full">
+          <!-- 建了以后不能换厂：原来那家知道密码（换厂另建一个账号） -->
           <SupplierSelect
             v-model="form.partnerId"
             v-model:label="form.partnerName"
             :category="['GARMENT', 'PROCESSOR']"
             usage="BULK"
+            :disabled="editingId !== null"
           />
         </el-form-item>
         <template v-if="form.kind === 'INTERNAL'">

@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.biz.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.module.biz.dto.AttachmentReq;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -71,6 +73,9 @@ public class AttachmentServiceImpl implements AttachmentService {
         for (int i = 0; i < files.size(); i++) {
             rows.add(toRow(type, docId, category, i, files.get(i)));
         }
+        if (CallerScope.factoryId() != null) {
+            requireOwnUploads(rows, list(type, docId, category));
+        }
         attachmentMapper.lockDoc("biz_attachment:" + type.name() + ":" + docId);
         attachmentMapper.delete(new LambdaQueryWrapper<Attachment>()
                 .eq(Attachment::getDocType, type)
@@ -116,6 +121,25 @@ public class AttachmentServiceImpl implements AttachmentService {
             throw new BizException(400, "只能用本系统上传的文件，这个地址不行：" + url);
         }
         return path;
+    }
+
+    /**
+     * 工厂账号（外部的人，agy 审查 T-6c00a7）：新挂的文件只能是自己传的。不然把见过的、别人的 /files 地址挂到报工照片上，
+     * 再看详情就拿到新签名的地址（续签），文件也一直被引用着、清不掉。这条记录上原来就有的照样留着
+     */
+    private void requireOwnUploads(List<Attachment> rows, List<AttachmentVO> existing) {
+        Set<String> kept = existing.stream().map(v -> signer.strip(v.url())).collect(Collectors.toSet());
+        long me = LoginUser.currentUserId();
+        for (Attachment row : rows) {
+            if (kept.contains(row.getFileUrl())) {
+                continue;
+            }
+            List<String> thumb = attachmentMapper.selectOwnUpload(row.getFileUrl(), me);
+            boolean thumbOk = row.getThumbUrl() == null || (!thumb.isEmpty() && row.getThumbUrl().equals(thumb.getFirst()));
+            if (thumb.isEmpty() || !thumbOk) {
+                throw new BizException(400, "只能用自己刚传的照片：" + row.getFileName());
+            }
+        }
     }
 
     @Override

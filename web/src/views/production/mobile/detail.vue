@@ -231,8 +231,9 @@ function cutOut(item: ProductionItem): boolean {
 async function submitCut() {
   if (!detail.value) return
   const changed = detail.value.items
-    .filter((i) => (cutForm[i.id] ?? null) !== (i.cutQty ?? null))
-    .map((i) => ({ prdOrderItemId: i.id, cutQty: cutForm[i.id] ?? null }))
+    .filter((i) => (cutForm[i.id] || null) !== (i.cutQty ?? null))
+    // 0 和空一样当"没登记"，和电脑上的登记裁床数一样
+    .map((i) => ({ prdOrderItemId: i.id, cutQty: cutForm[i.id] || null }))
   if (!changed.length) return void ElMessage.info('没有改动')
   submitting.value = true
   try {
@@ -354,10 +355,11 @@ function openDesktopPage() {
 
       <div v-else-if="view === 'cut'" class="m-body">
         <p class="sub-hint dim">每个颜色尺码实际裁了多少件；空着 = 还没登记。回货的良品按实裁数算上限</p>
+        <p v-if="factory" class="sub-hint dim">裁得比件数少很多、某个颜色尺码不做了，找跟单在电脑上登记</p>
         <div v-for="item in detail.items" :key="item.id" class="cut-row" :class="{ out: cutOut(item) }">
           <div class="cut-label">
             <strong>{{ item.colorName }} · {{ item.sizeCode }}</strong>
-            <span class="dim num">件数 {{ formatQty(item.qty) }}<template v-if="item.returnedQty"> · 已回 {{ formatQty(item.returnedQty) }}</template></span>
+            <span class="dim num">件数 {{ formatQty(item.qty) }}<template v-if="item.returnedQty - item.defectQty > 0"> · 已回良品 {{ formatQty(item.returnedQty - item.defectQty) }}</template></span>
           </div>
           <el-input-number
             v-model="cutForm[item.id]"

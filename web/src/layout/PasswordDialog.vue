@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { reactive, ref, useId, watch } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { authApi } from '@/api/auth'
 import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { useUserStore } from '@/stores/user'
+import { useTabsStore } from '@/stores/tabs'
 
-// 自己改密码：旧密码对不对后端判断（错了弹"旧密码不对"，对话框不关，改了再提交）；新密码 8-32 位，和后端规则一样
+// 自己改密码：旧密码对不对后端判断（错了弹"旧密码不对"，对话框不关，改了再提交）；新密码 8-32 位，和后端规则一样。
+// 改好后端就作废了这次登录（所有设备），这里清掉本地、回登录页；别的页签有没保存的先问一声（agy 审查 T-6c00a7）
 const visible = defineModel<boolean>({ required: true })
 
 const formId = useId()
@@ -41,16 +45,32 @@ const saving = ref(false)
 // 填了一半按 Esc、点 ×：先问一声
 const guard = useUnsavedChanges(form, visible)
 
+const router = useRouter()
+const store = useUserStore()
+const tabs = useTabsStore()
+
 async function submit() {
   await formRef.value?.validate()
+  const dirty = tabs.dirtyTitles()
+  if (dirty.length) {
+    await ElMessageBox.confirm(`「${dirty.join('」「')}」还没保存。改好密码要重新登录，没保存的会丢。`, '改密码', {
+      confirmButtonText: '还是改',
+      cancelButtonText: '先去保存',
+      confirmButtonClass: 'el-button--danger',
+    })
+  }
   saving.value = true
   try {
     await authApi.changePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword })
-    visible.value = false
-    ElMessage.success('密码已修改，下次登录用新密码')
   } finally {
     saving.value = false
   }
+  guard.markSaved()
+  visible.value = false
+  store.forget()
+  tabs.reset()
+  ElMessage.success('密码改好了，请用新密码重新登录')
+  router.replace('/login')
 }
 
 // 关掉就清空，密码不留在页面里

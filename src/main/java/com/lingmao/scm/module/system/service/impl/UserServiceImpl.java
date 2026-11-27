@@ -1,6 +1,7 @@
 package com.lingmao.scm.module.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.exception.ErrorCodes;
@@ -224,11 +225,10 @@ public class UserServiceImpl implements UserService {
         user.setStatus(req.getStatus());
         List<Long> deptIds;
         if (factory) {
-            // 工厂账号换一家厂：新的那家也要是合作中的加工厂
+            // 不能换厂（agy 审查 T-6c00a7）：原来那家知道密码、手上还有登录，一换就能看新那家的单。换厂另建一个，把这个停用
             if (!Objects.equals(user.getPartnerId(), req.getPartnerId())) {
-                requireFactory(req.getPartnerId());
+                throw new BizException(400, "工厂账号不能换厂：原来那家知道密码。给新的厂另建一个账号，这个停用或删除");
             }
-            user.setPartnerId(req.getPartnerId());
             deptIds = List.of();
         } else {
             user.setDefaultCompanyId(req.getDefaultCompanyId());
@@ -263,7 +263,11 @@ public class UserServiceImpl implements UserService {
         if (Objects.equals(id, currentUserId)) {
             throw new BizException("不能删除自己");
         }
-        getEntity(id);
+        SysUser user = getEntity(id);
+        // 账号是逻辑删除：工厂账号的 partner_id 先清掉，不然删了的账号一直引用着那家供应商，供应商就删不掉了（V69 外键）
+        if (user.getPartnerId() != null) {
+            sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>().eq(SysUser::getId, id).set(SysUser::getPartnerId, null));
+        }
         sysUserMapper.deleteById(id);
         // 账号是逻辑删除，角色关联真删：不然他的角色一直"已分配给用户"、删不掉（和删角色时去掉菜单关联一样）
         sysUserRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()

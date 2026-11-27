@@ -126,6 +126,55 @@ class FactoryAccountIT {
     }
 
     /**
+     * agy 审查（T-6c00a7）后加的几道：只能传照片、只能挂自己传的文件；弱网报工后能核对提交结果；
+     * 实裁数不能填 0、不能一填就把单子变成已完成；详情不带内部的订单行 id
+     */
+    @Test
+    void factoryGuards() throws Exception {
+        String s = tag();
+        Shop mine = shop(s + "A");
+        String token = factoryLogin(mine.factory(), s);
+
+        Reply pdf = upload(token, "a.pdf", "%PDF-1.4\n%%EOF\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        assertThat(pdf.body().path("msg").stringValue()).as(pdf.body().toString()).contains("只能传照片");
+        assertThat(upload(token, "a.pdf", "%PDF-1.4\n%%EOF\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).code())
+                .as("工厂账号只能传照片").isEqualTo(400);
+        Reply png = upload(token, "a.png", tinyPng());
+        assertThat(png.code()).as(png.body().toString()).isZero();
+        JsonNode file = png.body().path("data");
+
+        String tenant = jdbc.queryForObject("SELECT tenant_key FROM sys_upload_file WHERE file_url = ?", String.class,
+                stripSignature(file.path("url").stringValue()));
+        String others = "/files/it-factory-other-" + s + ".png";
+        jdbc.update("INSERT INTO sys_upload_file (file_url, tenant_key, owner_user_id, status) VALUES (?, ?, NULL, 'READY')", others, tenant);
+        String reports = "/api/production-orders/" + mine.order() + "/nodes/" + mine.node() + "/reports";
+        String start = java.time.LocalDate.now().minusDays(1).toString();
+        Reply stolen = send(token, "POST", reports, Map.of("action", "START", "actualStart", start, "photos",
+                List.of(Map.of("url", others, "name", "x.png", "size", 1))), mine.company());
+        assertThat(stolen.code()).as("别人传的文件挂不上：" + stolen.body()).isEqualTo(400);
+        assertThat(stolen.body().path("msg").stringValue()).contains("自己刚传的");
+        Reply own = send(token, "POST", reports, Map.of("action", "START", "actualStart", start, "photos", List.of(Map.of("url", file.path("url").stringValue(),
+                "thumbUrl", file.path("thumbUrl").stringValue(), "name", "a.png", "size", file.path("size").longValue()))), mine.company());
+        assertThat(own.code()).as(own.body().toString()).isZero();
+
+        Reply state = send(token, "GET", "/api/http-actions/" + UUID.randomUUID(), null, null);
+        assertThat(state.code()).as("弱网报工后核对提交结果：" + state.body()).isZero();
+
+        String cut = "/api/production-orders/" + mine.order() + "/cut-qty";
+        assertThat(send(token, "PUT", cut, Map.of("items", List.of(Map.of("prdOrderItemId", mine.item(), "cutQty", 0))), mine.company()).code())
+                .as("实裁数不能填 0").isEqualTo(400);
+        jdbc.update("UPDATE prd_order_item SET returned_qty = 150 WHERE id = ?", mine.item());
+        Reply finish = send(token, "PUT", cut, Map.of("items", List.of(Map.of("prdOrderItemId", mine.item(), "cutQty", 150))), mine.company());
+        assertThat(finish.code()).as("一填就完成的不让工厂填：" + finish.body()).isEqualTo(400);
+        assertThat(finish.body().path("msg").stringValue()).contains("回齐");
+        assertThat(jdbc.queryForObject("SELECT status FROM prd_order WHERE id = ?", String.class, mine.order())).isEqualTo("RUNNING");
+        assertThat(jdbc.queryForObject("SELECT cut_qty FROM prd_order_item WHERE id = ?", Integer.class, mine.item())).isNull();
+
+        JsonNode item = send(token, "GET", "/api/factory-orders/" + mine.order(), null, null).body().path("data").path("items").get(0);
+        assertThat(item.path("orderItemId").isNull() || item.path("orderItemId").isMissingNode()).as("不带订单行 id：" + item).isTrue();
+    }
+
+    /**
      * 路由表里每个没标 @FactoryAccess 的接口，工厂账号调都是 403：不只是带权限码的，"登录就能调"的也一样
      */
     @Test
@@ -239,6 +288,35 @@ class FactoryAccountIT {
         Reply login = send(null, "POST", "/api/auth/login", Map.of("username", name, "password", secret), null);
         assertThat(login.code()).as(login.body().toString()).isZero();
         return login.body().path("data").stringValue();
+    }
+
+    /** 2×2 的 PNG：上传要过文件头校验、生成缩略图 */
+    private static byte[] tinyPng() throws Exception {
+        java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(image, "png", out);
+        return out.toByteArray();
+    }
+
+    private static String stripSignature(String url) {
+        int q = url.indexOf('?');
+        return q < 0 ? url : url.substring(0, q);
+    }
+
+    private Reply upload(String token, String name, byte[] content) throws Exception {
+        String boundary = "itfactory" + UUID.randomUUID().toString().replace("-", "");
+        java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + name + "\"\r\n"
+                + "Content-Type: application/octet-stream\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        body.write(content);
+        body.write(("\r\n--" + boundary + "--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/files")).timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .header("Authorization", "Bearer " + token)
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build();
+        HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        return new Reply(response.statusCode(), json.readTree(response.body()));
     }
 
     /** id 在 JSON 里是字符串（前端 JS 精度），转回 long */

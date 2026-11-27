@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.production.service.impl;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.doc.DocStatus;
 import com.lingmao.scm.common.doc.StatusCas;
 import com.lingmao.scm.common.exception.BizException;
@@ -277,6 +278,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         StyleOrderInfo style = styleService.orderInfos(List.of(p.getStyleId())).get(p.getStyleId());
         Set<Long> seen = new HashSet<>();
         List<String> changed = new ArrayList<>();
+        boolean factory = CallerScope.factoryId() != null;
         for (CutQtyReq.Item r : req.getItems()) {
             ProductionOrderItem line = lines.get(r.getPrdOrderItemId());
             if (line == null || !seen.add(r.getPrdOrderItemId())) {
@@ -285,6 +287,9 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             Integer cut = r.getCutQty();
             if (Objects.equals(cut, line.getCutQty())) {
                 continue;
+            }
+            if (factory && cut != null && cut == 0) {
+                throw new BizException(400, "实裁数不能填 0：没裁的空着，整个颜色尺码不做了找跟单改单");
             }
             String sku = skuCode(style, line.getStyleSkuId());
             if (cut != null && cut > ProductionRules.maxPieces(line.getQty())) {
@@ -302,6 +307,11 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         }
         DocStatus before = p.getStatus();
         DocStatus to = support.refreshStatus(p, "cut", "登记裁床数：" + String.join("，", changed));
+        // 工厂账号登记的实裁数不能一下子把单子变成"已完成"（agy 审查 T-6c00a7）：外面的人一填，单和需求订单就都完了，
+        // 填错了已完成的单还改不回来。真裁少了由跟单在电脑上登记。整个事务回滚，数和操作记录都不留
+        if (factory && to == DocStatus.DONE && before != DocStatus.DONE) {
+            throw new BizException(400, "这样登记后这张单就算回齐、完成了：裁少了请找跟单登记");
+        }
         if (to != before) {
             support.syncOrder(p.getOrderId(), ProductionSupport.label(p) + " 登记裁床数");
         }

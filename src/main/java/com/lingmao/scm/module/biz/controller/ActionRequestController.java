@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.biz.controller;
 
+import com.lingmao.scm.security.FactoryAccess;
 import com.lingmao.scm.common.result.R;
 import com.lingmao.scm.module.biz.dto.ActionStateVO;
 import com.lingmao.scm.module.biz.service.ActionRequestService;
@@ -28,6 +29,7 @@ public class ActionRequestController {
 
     @Operation(summary = "这次提交成功了没有（只查自己的）")
     @GetMapping("/{key}")
+    @FactoryAccess   // 工厂账号弱网报工后要靠它核对（agy 审查 T-6c00a7）；只查自己的、只回 done
     public R<ActionStateVO> state(@Parameter(description = "提交编号：提交时请求头 Idempotency-Key 里带的那个 UUID") @PathVariable UUID key) {
         return R.ok(new ActionStateVO(actionRequestService.completed(key)));
     }

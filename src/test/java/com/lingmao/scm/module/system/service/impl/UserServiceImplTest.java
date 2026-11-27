@@ -133,6 +133,20 @@ class UserServiceImplTest {
         verify(sysUserRoleMapper).delete(any());
     }
 
+    /** 规则：删工厂账号先清掉 partner_id（逻辑删除的账号一直引用着那家，供应商就删不掉了），再删 */
+    @Test
+    void delete_factoryAccount_clearsPartnerFirst() {
+        SysUser user = user(5L, "huadong");
+        user.setPartnerId(9L);
+        when(sysUserMapper.selectById(5L)).thenReturn(user);
+
+        userService.delete(5L, 1L);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(sysUserMapper);
+        order.verify(sysUserMapper).update(org.mockito.ArgumentMatchers.<SysUser>isNull(), any());
+        order.verify(sysUserMapper).deleteById(5L);
+    }
+
     /** 规则：不能删除自己，而且不去查库、不发 delete */
     @Test
     void delete_self_throwsAndNotDelete() {
@@ -369,7 +383,7 @@ class UserServiceImplTest {
         assertThatThrownBy(() -> userService.create(req)).hasMessageContaining("不是合作中");
     }
 
-    /** 规则：内部账号和工厂账号不能互转；工厂账号不能分角色 */
+    /** 规则：内部账号和工厂账号不能互转、工厂账号不能换厂；工厂账号不能分角色 */
     @Test
     void factoryAccount_cannotConvertOrGetRoles() {
         SysUser factory = user(5L, "huadong");
@@ -378,6 +392,9 @@ class UserServiceImplTest {
         UserUpdateReq toInternal = updateReq(1);
         assertThatThrownBy(() -> userService.update(5L, toInternal, 1L)).hasMessageContaining("不能改成内部账号");
         assertThatThrownBy(() -> userService.assignRoles(5L, List.of(2L), 1L)).hasMessageContaining("工厂账号不分角色");
+        UserUpdateReq otherFactory = updateReq(1);
+        otherFactory.setPartnerId(8L);
+        assertThatThrownBy(() -> userService.update(5L, otherFactory, 1L)).as("不能换厂：原来那家知道密码").hasMessageContaining("不能换厂");
 
         when(sysUserMapper.selectById(6L)).thenReturn(user(6L, "zhangsan"));
         UserUpdateReq toFactory = updateReq(1);

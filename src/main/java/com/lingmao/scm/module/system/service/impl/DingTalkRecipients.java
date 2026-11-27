@@ -25,17 +25,19 @@ class DingTalkRecipients {
         }
     }
 
-    private record UserRow(String nickname, String phone, int status, boolean deleted, String dingtalkUserId, String dingtalkMobile) {
+    /** unreachable：删了，或者是工厂账号（RFC 019 §7，工厂账号不推钉钉） */
+    private record UserRow(String nickname, String phone, int status, boolean unreachable, String dingtalkUserId, String dingtalkMobile) {
     }
 
     /** 钉钉 userid；发不了抛 NoRecipient，钉钉报错抛 DingTalkException */
     String resolve(long userId) {
         List<UserRow> rows = jdbc.query("""
-                SELECT nickname, phone, status, deleted, dingtalk_user_id, dingtalk_mobile FROM sys_user WHERE id = ?
+                SELECT nickname, phone, status, deleted OR partner_id IS NOT NULL AS unreachable, dingtalk_user_id, dingtalk_mobile
+                FROM sys_user WHERE id = ?
                 """, (rs, n) -> new UserRow(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getBoolean(4), rs.getString(5),
                 rs.getString(6)), userId);
-        if (rows.isEmpty() || rows.getFirst().deleted() || rows.getFirst().status() != 1) {
-            throw new NoRecipient("收件人已停用或删除");
+        if (rows.isEmpty() || rows.getFirst().unreachable() || rows.getFirst().status() != 1) {
+            throw new NoRecipient("收件人已停用、删除，或是工厂账号（工厂账号不推钉钉）");
         }
         UserRow u = rows.getFirst();
         String mobile = mobile(u.phone());

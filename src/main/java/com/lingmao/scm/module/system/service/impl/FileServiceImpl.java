@@ -1,5 +1,6 @@
 package com.lingmao.scm.module.system.service.impl;
 
+import com.lingmao.scm.common.auth.CallerScope;
 import com.lingmao.scm.common.exception.BizException;
 import com.lingmao.scm.common.file.FileUrlSigner;
 import com.lingmao.scm.module.system.dto.FileVO;
@@ -32,6 +33,8 @@ public class FileServiceImpl implements FileService {
     private static final Set<String> ALLOWED = Set.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "xls", "xlsx", "doc", "docx", "ai", "psd", "prj", "plt");
     /** 设计源文件、打版文件（资料包的纸样 .prj、.plt，RFC 011 §2.2、Q48）：大，100MB 以内 */
     private static final Set<String> DESIGN_SOURCE = Set.of("ai", "psd", "prj", "plt");
+    /** 工厂账号（RFC 019 §7）只传报工照片：只收图片，10MB 以内 */
+    private static final Set<String> IMAGES = Set.of("jpg", "jpeg", "png", "gif", "webp");
     static final long MAX_BYTES = 10L * 1024 * 1024;
     static final long MAX_DESIGN_SOURCE_BYTES = 100L * 1024 * 1024;
     /** 导入存图最多等多久（两把信号量合计） */
@@ -59,6 +62,9 @@ public class FileServiceImpl implements FileService {
         String ext = StringUtils.getFilenameExtension(original);
         if (ext == null || !ALLOWED.contains(ext.toLowerCase(Locale.ROOT))) throw new BizException("不支持的文件类型: " + original);
         ext = ext.toLowerCase(Locale.ROOT);
+        if (!bulkSave && CallerScope.factoryId() != null && !IMAGES.contains(ext)) {
+            throw new BizException(400, "工厂账号只能传照片（JPG、PNG、WEBP、GIF）：" + original);
+        }
         boolean source = DESIGN_SOURCE.contains(ext);
         long limit = source ? MAX_DESIGN_SOURCE_BYTES : MAX_BYTES;
         if (file.getSize() > limit) throw new BizException(400, original + " 太大：" + (source ? "AI、PSD、PRJ、PLT 最大 100MB" : "图片、PDF、Word、Excel 最大 10MB"));

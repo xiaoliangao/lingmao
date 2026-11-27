@@ -351,7 +351,20 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         ProductionQuery q = new ProductionQuery();
         q.setStatus(List.of(APPROVED, RUNNING));
         q.setFactoryId(requireFactory());
-        return mobileRows(q, DataScope.forFactory());
+        // 工厂不看异常、订单变更（agy 审查 T-6c00a7）：两个标志清掉，按清掉以后的分数重排，排序上也看不出来
+        return mobileRows(q, DataScope.forFactory()).stream()
+                .map(r -> new MobileOrderRow(r.id(), r.no(), r.kind(), r.status(), r.styleCode(), r.styleName(), r.image(),
+                        r.factoryShortName(), r.totalQty(), r.dueDate(), r.expectDate(), r.daysLeft(), r.nodes(), r.currentNodeName(),
+                        forFactory(r.risk())))
+                .sorted(java.util.Comparator.comparingInt((MobileOrderRow r) -> -r.risk().score())
+                        .thenComparing(r -> r.expectDate() != null ? r.expectDate() : r.dueDate())
+                        .thenComparing(MobileOrderRow::id, java.util.Comparator.reverseOrder()))
+                .toList();
+    }
+
+    /** 工厂看的风险：逾期、临期、节点延期照给，异常、订单变更不给 */
+    private static RiskVO forFactory(RiskVO risk) {
+        return new RiskVO(risk.late(), risk.near(), risk.nodeLate(), false, false);
     }
 
     private List<MobileOrderRow> mobileRows(ProductionQuery q, DataScope scope) {
@@ -371,6 +384,8 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         List<NodeReport> reports = reportMapper.selectByOrder(id);
         StyleOrderInfo style = styleService.orderInfos(List.of(p.getStyleId())).get(p.getStyleId());
         ProductionOrderMapper.RiskRow risk = prdMapper.selectRisk(id, support.today(), support.nearUntil());
+        List<ProductionItemVO> itemList = itemVOs(items, style);
+        itemList.forEach(v -> v.setOrderItemId(null));   // 内部的订单行 id 不给工厂
         List<String> actions = new ArrayList<>();
         if (ProductionRules.LIVE.contains(p.getStatus())) {
             actions.add("report");
@@ -382,9 +397,9 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
                 style.code(), style.name(), style.image(), supplierService.getRef(p.getFactoryId()).shortName(), p.getTotalQty(),
                 items.stream().mapToInt(ProductionOrderItem::getReturnedQty).sum(), p.getDueDate(), p.getExpectDate(),
                 ProductionRules.daysLeft(p.getStatus(), p.getDueDate(), p.getExpectDate(), support.today()),
-                new RiskVO(risk.late(), risk.near(), risk.nodeLate(), risk.issue(), risk.upstream()),
+                new RiskVO(risk.late(), risk.near(), risk.nodeLate(), false, false),
                 ProductionRules.currentNodeName(nodes), userService.nicknames(List.of(p.getMerchId())).get(p.getMerchId()),
-                style.sizes(), itemVOs(items, style), nodeVOs(nodes, reports), actions);
+                style.sizes(), itemList, nodeVOs(nodes, reports), actions);
     }
 
     /** 当前请求的工厂（供应商 id）；内部账号调工厂的接口 403 */

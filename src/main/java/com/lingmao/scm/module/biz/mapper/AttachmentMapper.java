@@ -34,6 +34,13 @@ public interface AttachmentMapper extends BaseMapper<Attachment> {
     List<Attachment> selectFirsts(@Param("type") BizType type, @Param("docIds") Collection<Long> docIds,
                                   @Param("category") String category);
 
+    /**
+     * 这个人自己传的、传完了的文件，返回它的缩略图地址（没有缩略图是空串）；不是他传的返回空。
+     * 工厂账号挂照片时用（RFC 019 §7）：只能挂自己刚传的，不能把见过的别的 /files 地址挂上来续签
+     */
+    @Select("SELECT COALESCE(thumb_url, '') FROM sys_upload_file WHERE file_url = #{url} AND owner_user_id = #{userId} AND status = 'READY'")
+    List<String> selectOwnUpload(@Param("url") String url, @Param("userId") long userId);
+
     /** 一条记录的附件整批抄给另一条，顺序、分类、文件都一样 */
     @Insert("""
             INSERT INTO biz_attachment (doc_type, doc_id, category, sort, file_url, thumb_url, file_name, file_size,
