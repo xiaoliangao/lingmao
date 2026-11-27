@@ -93,6 +93,7 @@ class HomeServiceImplTest {
     @Mock private InvDocService invDocService;
     @Mock private CountService countService;
     @Mock private FgDocService fgDocService;
+    @Mock private com.lingmao.scm.module.production.service.FactoryLedgerService factoryLedgerService;
     @Mock private SupplierService supplierService;
     @Mock private ReferenceService referenceService;
     @Mock private AttachmentService attachmentService;
@@ -105,7 +106,7 @@ class HomeServiceImplTest {
     void setUp() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(ZoneId.of("Asia/Shanghai")).toInstant(), ZoneId.of("Asia/Shanghai"));
         service = new HomeServiceImpl(styleService, techPackService, orderService, changeService, productionService, productionBoardService,
-                issueService, purchaseService, mrpService, supplyService, invDocService, countService, fgDocService, supplierService, referenceService,
+                issueService, purchaseService, mrpService, supplyService, invDocService, countService, fgDocService, factoryLedgerService, supplierService, referenceService,
                 attachmentService, dictDataService, upstreamRows, clock);
     }
 

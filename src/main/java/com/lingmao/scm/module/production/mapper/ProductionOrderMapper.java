@@ -87,9 +87,9 @@ public interface ProductionOrderMapper extends BaseMapper<ProductionOrder> {
 
     /**
      * 应领的原料：锁定的生产 BOM 里物料来源 = 自购的行，每个明细 SKU 对上的物料 SKU、件数、单件用量、损耗率（和算料 MrpCalcMapper.selectDemand
-     * 同一种对法）。按尺码配用量但这个尺码没填的，usage 是 null
+     * 同一种对法）。按尺码配用量但这个尺码没填的，usage 是 null。good = true 时件数是良品（已回 − 次品），算应耗用（RFC 015 §2）
      */
-    List<NeedRow> selectNeeds(@Param("ids") Collection<Long> prdOrderIds);
+    List<NeedRow> selectNeeds(@Param("ids") Collection<Long> prdOrderIds, @Param("good") boolean good);
 
     record NeedRow(long prdOrderId, long skuId, int qty, BigDecimal usage, BigDecimal lossPct) {
     }

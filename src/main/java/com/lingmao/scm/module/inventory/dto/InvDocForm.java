@@ -1,7 +1,6 @@
 package com.lingmao.scm.module.inventory.dto;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -28,6 +27,7 @@ public class InvDocForm {
     private String logisticsNo;
     @Size(max = 500, message = "备注最多 500 个字")
     private String remark;
-    @NotEmpty(message = "明细至少一行")
+    /** 明细：至少一行；只有耗料核销能一行都不留（要在原因里写为什么，RFC 015 §3） */
+    @NotNull(message = "明细至少一行")
     private List<@Valid InvDocItemReq> items;
 }

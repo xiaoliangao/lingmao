@@ -49,6 +49,7 @@ import {
   type ProductionNode,
   type ProductionReceipt,
   type ProductionStockDoc,
+  LEDGER_STATUS,
 } from '@/types/production'
 import { KITTING_STATUS, type OrderKitting } from '@/types/purchase'
 import type { FileVO } from '@/types/system'
@@ -125,7 +126,7 @@ const receiveCreateVisible = ref(false)
 const receiveDetailVisible = ref(false)
 const viewingReceipt = ref<ProductionReceipt | null>(null)
 const invDocVisible = ref(false)
-const invDocType = ref<'ISSUE_OUT' | 'RETURN_IN'>('ISSUE_OUT')
+const invDocType = ref<'ISSUE_OUT' | 'RETURN_IN' | 'CONSUME_OUT'>('ISSUE_OUT')
 
 const can = (a: ProductionAction) => detail.value?.actions.includes(a) ?? false
 
@@ -263,9 +264,17 @@ function onNodeClick(node: ProductionNode) {
   if (can('report')) openReport(node)
 }
 
-function openMatDoc(docType: 'ISSUE_OUT' | 'RETURN_IN') {
+function openMatDoc(docType: 'ISSUE_OUT' | 'RETURN_IN' | 'CONSUME_OUT') {
   invDocType.value = docType
   invDocVisible.value = true
+}
+
+/** 核销耗料（RFC 015 §4.1）：已完成、已结案，还没开核销单，有新建出入库单的权限 */
+const canSettle = computed(() => matData.value?.ledgerStatus === 'TO_SETTLE' && user.hasPerm('inventory:doc:add'))
+
+function goSettleDoc() {
+  const d = matData.value?.settleDoc
+  if (d) void router.push(`/stock-out/${d.id}`)
 }
 
 function onInvCreated() {
@@ -506,10 +515,17 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
             <SkuMatrix :model-value="matrixQtys" :sizes="detail.sizes" :colors="matrixColors" :skus="matrixCells" readonly :sub="lineSub" />
           </el-tab-pane>
 
-          <el-tab-pane :label="`领料 ${detail.stockDocCount || ''}`" name="materials">
+          <el-tab-pane :label="`领料 · 料账 ${detail.stockDocCount || ''}`" name="materials">
             <BlankState v-if="detail.issueStatus === null" title="资料包里没有标「自购」的料，不用领料" />
             <template v-else>
-              <el-table :data="matData?.rows ?? []" row-key="materialSkuId" empty-text="资料包里没有自购的料">
+              <div v-if="matData?.ledgerStatus" class="ledger-line">
+                <span>良品 <strong class="num">{{ matData.goodQty }}</strong> 件</span>
+                <StatusTag :tone="LEDGER_STATUS[matData.ledgerStatus].tone">{{ LEDGER_STATUS[matData.ledgerStatus].label }}</StatusTag>
+                <a v-if="matData.settleDoc" class="code link" @click="goSettleDoc">{{ matData.settleDoc.no }}</a>
+                <span class="dim small">应耗 = 良品 × 用量 ×（1 + 损耗）；结余大于 0 是该退回来的</span>
+                <el-button v-if="canSettle" size="small" type="primary" class="ledger-btn" @click="openMatDoc('CONSUME_OUT')">核销耗料</el-button>
+              </div>
+              <el-table :data="matData?.rows ?? []" row-key="materialSkuId" scrollbar-always-on empty-text="资料包里没有自购的料">
                 <el-table-column label="物料" min-width="200">
                   <template #default="{ row }">
                     <span class="code">{{ row.skuCode }}</span>
@@ -534,11 +550,28 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
                 <el-table-column label="物料仓库存" width="110" class-name="num" align="right">
                   <template #default="{ row }">{{ formatQty(row.stockQty) }}</template>
                 </el-table-column>
+                <el-table-column label="应耗" width="100" class-name="num" align="right">
+                  <template #default="{ row }">{{ formatQty(row.consumeQty) }}</template>
+                </el-table-column>
+                <el-table-column label="实耗" width="100" class-name="num" align="right">
+                  <template #default="{ row }">
+                    <span v-if="row.settledQty == null" class="dim">—</span>
+                    <strong v-else-if="row.settledQty > row.consumeQty" class="warn" :title="`超耗 ${formatQty(row.settledQty - row.consumeQty)}`">{{ formatQty(row.settledQty) }}</strong>
+                    <template v-else>{{ formatQty(row.settledQty) }}</template>
+                  </template>
+                </el-table-column>
+                <el-table-column label="结余" width="120" class-name="num" align="right">
+                  <template #default="{ row }">
+                    <span v-if="row.balanceQty > 0" class="warn">该退 {{ formatQty(row.balanceQty) }}</span>
+                    <span v-else-if="row.balanceQty < 0" class="dim">多用 {{ formatQty(-row.balanceQty) }}</span>
+                    <span v-else class="dim">0</span>
+                  </template>
+                </el-table-column>
               </el-table>
 
-              <h4 class="sub-h">领料、退料单</h4>
+              <h4 class="sub-h">领料、退料、耗料核销单</h4>
               <!-- 日期、状态放得下，列多了横滚（走查 T-7d453c：日期截成"2026-11-..."、状态被切） -->
-              <el-table :data="matData?.docs ?? []" row-key="id" row-class-name="clickable" scrollbar-always-on empty-text="还没有领料、退料单" @row-click="goStockDoc">
+              <el-table :data="matData?.docs ?? []" row-key="id" row-class-name="clickable" scrollbar-always-on empty-text="还没有领料、退料、核销单" @row-click="goStockDoc">
                 <el-table-column label="单号" prop="no" width="150" class-name="code" fixed="left" />
                 <el-table-column label="类型" width="100">
                   <template #default="{ row }">{{ INV_DOC_TYPE[(row as ProductionStockDoc).docType].label }}</template>
@@ -1112,5 +1145,21 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
 
 .fg-link + .fg-link {
   margin-left: 8px;
+}
+.ledger-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.ledger-line .link {
+  color: var(--lm-accent);
+  cursor: pointer;
+}
+
+.ledger-btn {
+  margin-left: auto;
 }
 </style>

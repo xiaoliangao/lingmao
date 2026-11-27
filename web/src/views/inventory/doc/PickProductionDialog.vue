@@ -19,8 +19,10 @@ const visible = defineModel<boolean>({ required: true })
 const props = withDefaults(
   defineProps<{
     returnable?: boolean
+    /** 耗料核销用：列已完成、已结案、还没核销的（RFC 015 §3） */
+    settle?: boolean
   }>(),
-  { returnable: false },
+  { returnable: false, settle: false },
 )
 
 const emit = defineEmits<{
@@ -41,6 +43,7 @@ async function load() {
       size: 60,
       keyword: keyword.value.trim() || undefined,
       returnable: props.returnable,
+      settle: props.settle,
     }))
     if (!read.current()) return
     rows.value = res.list
@@ -65,7 +68,7 @@ function choose(row: IssueOption) {
 </script>
 
 <template>
-  <el-dialog v-model="visible" :title="returnable ? '选择生产单退料入库' : '选择生产单领料出库'" width="620px">
+  <el-dialog v-model="visible" :title="settle ? '选择生产单核销耗料' : returnable ? '选择生产单退料入库' : '选择生产单领料出库'" width="620px">
     <div class="search-row">
       <el-input v-model="keyword" placeholder="搜索生产单号、款号或加工厂" clearable @keyup.enter="load" />
       <el-button @click="load">搜索</el-button>
@@ -77,7 +80,7 @@ function choose(row: IssueOption) {
       row-key="id"
       max-height="360"
       row-class-name="clickable"
-      :empty-text="returnable ? '没有已领料可退的生产单' : '没有待领料的在制生产单'"
+      :empty-text="settle ? '没有待核销耗料的生产单（做完货的才能核销）' : returnable ? '没有已领料可退的生产单' : '没有待领料的在制生产单'"
       @row-click="choose"
     >
       <el-table-column label="生产单号" prop="no" width="150" class-name="code" />

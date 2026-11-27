@@ -56,7 +56,7 @@ export const invDocApi = {
     return http.post<InvDocCreated>(url, frozen, await sourceOptions(url, frozen, options))
   },
   /** 领料出库、退料入库：带出明细（生产单那边算的应领、已领）。领料的 fromWarehouseId 不传 = 第一个启用的物料仓 */
-  prefillFromProduction: (productionOrderId: string, params: { docType: 'ISSUE_OUT' | 'RETURN_IN'; fromWarehouseId?: string }) =>
+  prefillFromProduction: (productionOrderId: string, params: { docType: 'ISSUE_OUT' | 'RETURN_IN' | 'CONSUME_OUT'; fromWarehouseId?: string }) =>
     http.get<InvDocDraft>(`${docBase}/from-production/${productionOrderId}`, params),
   fromProduction: async (productionOrderId: string, data: InvDocFromSourceReq, options?: RequestOptions) => {
     const url = `${docBase}/from-production/${productionOrderId}`

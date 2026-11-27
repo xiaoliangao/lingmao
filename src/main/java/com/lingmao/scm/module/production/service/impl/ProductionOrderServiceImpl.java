@@ -38,7 +38,9 @@ import com.lingmao.scm.module.production.dto.MobileOrderRow;
 import com.lingmao.scm.module.production.dto.OpenIssueBrief;
 import com.lingmao.scm.module.production.dto.ProductionDetailVO;
 import com.lingmao.scm.module.production.dto.ProductionItemVO;
+import com.lingmao.scm.module.production.dto.LedgerStatus;
 import com.lingmao.scm.module.production.dto.ProductionMaterialsVO;
+import com.lingmao.scm.module.production.dto.SettleDocVO;
 import com.lingmao.scm.module.production.dto.ProductionNodeVO;
 import com.lingmao.scm.module.production.dto.ProductionQuery;
 import com.lingmao.scm.module.production.dto.ProductionRowVO;
@@ -56,6 +58,7 @@ import com.lingmao.scm.module.production.mapper.NodeReportMapper;
 import com.lingmao.scm.module.production.mapper.ProductionIssueMapper;
 import com.lingmao.scm.module.production.mapper.ProductionNodeMapper;
 import com.lingmao.scm.module.production.mapper.ProductionOrderItemMapper;
+import com.lingmao.scm.module.production.mapper.FactoryLedgerMapper;
 import com.lingmao.scm.module.production.mapper.ProductionOrderMapper;
 import com.lingmao.scm.module.production.mapper.ProductionReceiptMapper;
 import com.lingmao.scm.module.production.service.ProductionOrderService;
@@ -102,6 +105,7 @@ import static com.lingmao.scm.module.production.service.impl.ProductionRules.FLO
 public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     private final ProductionOrderMapper prdMapper;
+    private final FactoryLedgerMapper ledgerMapper;
     private final ProductionOrderItemMapper itemMapper;
     private final ProductionNodeMapper nodeMapper;
     private final NodeReportMapper reportMapper;
@@ -348,10 +352,15 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
 
     @Override
     public ProductionMaterialsVO materials(long id) {
-        support.getVisible(id);
+        ProductionOrder p = support.getVisible(id);
         Map<Long, BigDecimal> need = support.needs(List.of(id)).getOrDefault(id, Map.of());
         Map<Long, BigDecimal> issued = support.issued(List.of(id), null).getOrDefault(id, Map.of());
+        Map<Long, BigDecimal> consume = support.consumes(List.of(id)).getOrDefault(id, Map.of());
+        FactoryLedgerMapper.SettleDocRow settleDoc = support.settleDoc(id);
+        boolean settledDone = settleDoc != null && "APPROVED".equals(settleDoc.status());
+        Map<Long, BigDecimal> settled = settledDone ? support.settled(List.of(id)).getOrDefault(id, Map.of()) : Map.of();
         Set<Long> skuIds = new HashSet<>(need.keySet());
+        skuIds.addAll(settled.keySet());
         issued.forEach((sku, qty) -> {
             if (qty.signum() != 0) {
                 skuIds.add(sku);
@@ -371,11 +380,22 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
                 r.setIssuedQty(Num.qty(got));
                 r.setRemainQty(Num.qty(n.subtract(got).max(BigDecimal.ZERO)));
                 r.setStockQty(Num.qty(stock.getOrDefault(sku, BigDecimal.ZERO)));
+                BigDecimal c = consume.getOrDefault(sku, BigDecimal.ZERO);
+                r.setConsumeQty(Num.qty(c));
+                BigDecimal used = c;
+                if (settledDone) {
+                    used = settled.getOrDefault(sku, BigDecimal.ZERO);
+                    r.setSettledQty(Num.qty(used));
+                }
+                r.setBalanceQty(Num.qty(got.subtract(used)));
                 rows.add(r);
             }
             rows.sort(Comparator.comparing(MaterialPlanRowVO::getSkuCode, Comparator.nullsLast(Comparator.naturalOrder())));
         }
-        return new ProductionMaterialsVO(rows, prdMapper.selectStockDocs(id));
+        LedgerStatus ledgerStatus = p.getIssueStatus() == null ? null
+                : LedgerStatus.of(p.getStatus(), settleDoc == null ? null : settleDoc.status());
+        return new ProductionMaterialsVO(rows, prdMapper.selectStockDocs(id), ledgerMapper.goodQty(id), ledgerStatus,
+                settleDoc == null ? null : new SettleDocVO(settleDoc.id(), settleDoc.no(), settleDoc.status()));
     }
 
     // ---------- 改草稿、删除 ----------
@@ -557,6 +577,7 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
                 support.syncOrder(p.getOrderId(), ProductionSupport.label(p) + " 结案");
             }
             case "reopen" -> {
+                support.checkNoSettle(p, "取消结案");
                 DocStatus to = ProductionRules.byProgress(itemMapper.selectByOrder(id), nodeMapper.selectByOrder(id));
                 change(p, "reopen", to, req, ProdTexts.blankToNull(req.reason()));
                 support.syncOrder(p.getOrderId(), ProductionSupport.label(p) + " 取消结案");

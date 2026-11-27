@@ -36,7 +36,7 @@ export const INV_DOC_KIND_LABEL: Record<InvDocKind, string> = { IN: '物料入�
 /**
  * 类型（PRD §6.6.5 的两张表）。TRADE 开时入库单多一种 CUSTOMER_IN 客供入库，关着时后端不收、不返回，这里不列
  */
-export type InvDocType = 'PURCHASE_IN' | 'RETURN_IN' | 'OTHER_IN' | 'ISSUE_OUT' | 'PURCHASE_RETURN' | 'TRANSFER' | 'OTHER_OUT'
+export type InvDocType = 'PURCHASE_IN' | 'RETURN_IN' | 'OTHER_IN' | 'ISSUE_OUT' | 'PURCHASE_RETURN' | 'TRANSFER' | 'OTHER_OUT' | 'CONSUME_OUT'
 
 /** 一种类型在表单上长什么样：出仓、入仓能选哪种仓库（null = 没有这一格），往来单位，源单，能不能在页头手工新建，原因怎么填 */
 export interface InvDocTypeMeta {
@@ -68,6 +68,8 @@ export const INV_DOC_TYPE: Record<InvDocType, InvDocTypeMeta> = {
   PURCHASE_RETURN: { label: '采购退货', kind: 'OUT', from: ['MATERIAL', 'FACTORY'], to: null, partner: 'SUPPLIER', source: 'PURCHASE_ORDER', sourceRequired: true, reasonDict: null },
   TRANSFER: { label: '调拨', kind: 'OUT', from: ['MATERIAL', 'FACTORY'], to: ['MATERIAL', 'FACTORY'], partner: null, source: null, sourceRequired: false, reasonDict: null },
   OTHER_OUT: { label: '其他出库', kind: 'OUT', from: ['MATERIAL'], to: null, partner: null, source: null, sourceRequired: false, reasonDict: 'stock_out_reason' },
+  // 耗料核销（RFC 015 §3）：做完货后从工厂仓扣掉这张生产单用掉的料，只能从生产单的"领料 · 料账"或出库单页的"耗料核销（选生产单）"来
+  CONSUME_OUT: { label: '耗料核销', kind: 'OUT', from: ['FACTORY'], to: null, partner: 'FACTORY', source: 'PRODUCTION_ORDER', sourceRequired: true, reasonDict: null },
 }
 
 /**
@@ -647,6 +649,7 @@ export const STOCK_CHANGE_TYPE_LABEL: Record<StockChangeType, string> = {
   PURCHASE_RETURN: '采购退货',
   TRANSFER: '调拨',
   OTHER_OUT: '其他出库',
+  CONSUME_OUT: '耗料核销',
   COUNT_GAIN: '盘盈',
   COUNT_LOSS: '盘亏',
   OPENING: '期初',

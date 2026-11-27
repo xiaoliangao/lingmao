@@ -11,7 +11,7 @@ import PickProductionDialog from '../doc/PickProductionDialog.vue'
 
 /**
  * 物料出库单（/stock-out，docs/api/04 §1.5）：出库单列表（和入库单共用 DocList，认 ?status=DRAFT）。
- * 页头"新建"下拉：调拨、其他出库（能手建的），另加"领料出库（选生产单）"——先选生产单，再走生成接口
+ * 页头"新建"下拉：调拨、其他出库（能手建的），另加"领料出库（选生产单）""耗料核销（选生产单）"——先选生产单，再走生成接口
  */
 const router = useRouter()
 const listRef = ref<InstanceType<typeof DocList>>()
@@ -22,9 +22,12 @@ const formType = ref<InvDocType>('OTHER_OUT')
 const pickVisible = ref(false)
 const issueVisible = ref(false)
 const issueProdId = ref<string | null>(null)
+/** 选生产单是为了领料还是核销耗料 */
+const pickFor = ref<'ISSUE_OUT' | 'CONSUME_OUT'>('ISSUE_OUT')
 
-function onNew(command: InvDocType | 'ISSUE') {
-  if (command === 'ISSUE') {
+function onNew(command: InvDocType | 'ISSUE' | 'CONSUME') {
+  if (command === 'ISSUE' || command === 'CONSUME') {
+    pickFor.value = command === 'ISSUE' ? 'ISSUE_OUT' : 'CONSUME_OUT'
     pickVisible.value = true
     return
   }
@@ -53,6 +56,7 @@ function openDoc(id: string) {
             <el-dropdown-menu>
               <el-dropdown-item v-for="t in NEW_TYPES" :key="t" :command="t">{{ INV_DOC_TYPE[t].label }}</el-dropdown-item>
               <el-dropdown-item command="ISSUE" divided>领料出库（选生产单）</el-dropdown-item>
+              <el-dropdown-item command="CONSUME">耗料核销（选生产单）</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -62,7 +66,7 @@ function openDoc(id: string) {
     <DocList ref="listRef" kind="OUT" />
 
     <InvDocFormDialog v-model="formVisible" :doc-type="formType" @saved="openDoc" />
-    <PickProductionDialog v-model="pickVisible" @pick="onPicked" />
-    <SourceInvDocDialog v-model="issueVisible" source-kind="PRODUCTION" :source-id="issueProdId" doc-type="ISSUE_OUT" @created="listRef?.reload()" />
+    <PickProductionDialog v-model="pickVisible" :settle="pickFor === 'CONSUME_OUT'" @pick="onPicked" />
+    <SourceInvDocDialog v-model="issueVisible" source-kind="PRODUCTION" :source-id="issueProdId" :doc-type="pickFor" @created="listRef?.reload()" />
   </div>
 </template>

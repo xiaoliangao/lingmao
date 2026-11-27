@@ -202,7 +202,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(INV_DOC_STATUS).map(([k, 
           <el-table-column label="卷数" width="64" class-name="num" align="right">
             <template #default="{ row }">{{ row.rolls ?? '—' }}</template>
           </el-table-column>
-          <el-table-column v-if="detail.docType === 'ISSUE_OUT'" label="超领原因" min-width="120">
+          <el-table-column v-if="detail.docType === 'ISSUE_OUT' || detail.docType === 'CONSUME_OUT'" :label="detail.docType === 'CONSUME_OUT' ? '超耗原因' : '超领原因'" min-width="120">
             <template #default="{ row }"><span :class="row.overReason ? 'warn' : 'dim'">{{ row.overReason || '—' }}</span></template>
           </el-table-column>
           <el-table-column label="备注" min-width="120">

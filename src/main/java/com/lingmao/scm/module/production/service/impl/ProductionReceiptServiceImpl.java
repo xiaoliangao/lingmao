@@ -166,6 +166,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
             throw new BizException(ProductionSupport.label(p) + " 现在是「" + ProductionRules.STATUS.label(p.getStatus()).text()
                     + "」，不能登记回货");
         }
+        support.checkNoSettle(p, "再登记回货");
         if (req.getReceiptDate().isAfter(support.today())) {
             throw new BizException(400, "回货日期不能晚于今天");
         }
@@ -347,6 +348,7 @@ public class ProductionReceiptServiceImpl implements ProductionReceiptService {
         if (p.getStatus() == CLOSED || p.getStatus() == VOIDED) {
             throw new BizException(ProductionSupport.label(p) + " 已结案，回货不能作废");
         }
+        support.checkNoSettle(p, "作废回货单");
         // 先改状态（锁住回货单）再查引用（RFC 008 §6.2）：正在建的成品入库单拿着回货单的锁，这里等它提交以后查得到它（1005）；
         // 反过来成品那边等这里提交以后看到的是已作废
         StatusCas.update(receiptMapper, new ProductionReceipt(), StatusCas.of(ProductionReceipt::getId, receiptId,

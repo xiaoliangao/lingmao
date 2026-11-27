@@ -347,6 +347,10 @@ class SchemaConventionsIT {
         ROLE_PERMS.put("order_clerk", Set.copyOf(clerk));
         // V59：物料单审核 = 看物料单、盘点单、库存，审物料单和盘点单（按人勾给甲方点名审核的人）
         ROLE_PERMS.put("stock_auditor", union(STOCK_VIEW, COUNT_VIEW, Set.of("inventory:doc:audit", "inventory:count:audit")));
+        // V60：工厂料账（看、导出）给生产经理、生产跟单、仓管、管理层、财务、理单
+        for (String code : List.of("prod_manager", "merchandiser", "warehouse", "manager", "finance", "order_clerk")) {
+            ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("production:ledger:list", "production:ledger:export")));
+        }
     }
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现（"工艺标准" V39 去掉了） */
@@ -354,6 +358,8 @@ class SchemaConventionsIT {
     private static final List<String> ORDERS = List.of("需求订单", "变更", "进度总览");
     private static final List<String> SUPPLY_ALL = List.of("算料", "采购", "物料入库单", "物料出库单", "物料盘点单", "库存");
     private static final List<String> MAKE = List.of("外发加工单", "成品采购单", "看板");
+    private static final List<String> MAKE_LEDGER = List.of("外发加工单", "成品采购单", "工厂料账", "看板");
+    private static final List<String> MAKE_LEDGER_MOBILE = List.of("外发加工单", "成品采购单", "工厂料账", "看板", "手机报工");
     private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.ofEntries(
             Map.entry("dev", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER)),
             Map.entry("dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER)),
@@ -361,15 +367,15 @@ class SchemaConventionsIT {
             Map.entry("sales_lead", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER)),
             Map.entry("merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
                     "物料", List.of("算料", "采购", "物料入库单", "物料出库单", "库存"),
-                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER)),
+                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER)),
             Map.entry("buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
-            Map.entry("warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
-            Map.entry("finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
-            Map.entry("manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER)),
+            Map.entry("warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER)),
+            Map.entry("finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER)),
+            Map.entry("manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER)),
             Map.entry("prod_manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER)),
+                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER)),
             Map.entry("order_clerk", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", List.of("外发加工单", "成品采购单", "看板", "手机报工"), "资料", MASTER)),
+                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER)),
             Map.entry("stock_auditor", Map.of("物料", List.of("物料入库单", "物料出库单", "物料盘点单", "库存"))));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */

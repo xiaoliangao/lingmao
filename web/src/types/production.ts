@@ -62,6 +62,7 @@ export const PRODUCTION_LOG_ACTION: Record<string, string> = {
   cut: '登记裁床数',
   'issue-material': '领料',
   'return-material': '退料',
+  'consume-material': '耗料核销',
   // 11-18 以前导出工艺单 PDF 留下的操作记录
   'export-pdf': '导出工艺单',
 }
@@ -422,6 +423,12 @@ export interface MaterialPlanRow extends MaterialSkuBrief {
   remainQty: number
   /** 物料仓（所有启用的物料仓）现在的库存合计 */
   stockQty: number
+  /** 应耗 = Σ 良品 × BOM 用量 ×（1 + 损耗率）（RFC 015 §2） */
+  consumeQty: number
+  /** 实耗：已审核的耗料核销单上的数；还没核销是 null */
+  settledQty: number | null
+  /** 结余 = 已领 − 实耗（没核销用应耗估）：大于 0 该退回来，小于 0 多用了 */
+  balanceQty: number
 }
 
 /** 挂在这张生产单上的领料出库单、退料入库单 */
@@ -444,6 +451,80 @@ export interface ProductionMaterials {
   rows: MaterialPlanRow[]
   /** 草稿也列，作废的不列；新的在前 */
   docs: ProductionStockDoc[]
+  /** 良品 = 已回 − 次品 */
+  goodQty: number
+  /** 料账状态；不进料账（资料包里没有自购的料）是 null */
+  ledgerStatus: LedgerStatus | null
+  /** 没作废的耗料核销单；没有是 null */
+  settleDoc: { id: string; no: string; status: 'DRAFT' | 'APPROVED' } | null
+}
+
+// ---------------------------------------------------------------- 工厂料账（RFC 015）
+
+/** 料账状态：不存，查询时算 */
+export type LedgerStatus = 'IN_PROGRESS' | 'TO_SETTLE' | 'SETTLING' | 'SETTLED'
+
+export const LEDGER_STATUS: Record<LedgerStatus, { label: string; tone: StatusTone }> = {
+  IN_PROGRESS: { label: '在制', tone: 'progress' },
+  TO_SETTLE: { label: '待核销', tone: 'pending' },
+  SETTLING: { label: '核销中', tone: 'progress' },
+  SETTLED: { label: '已核销', tone: 'done' },
+}
+
+/** 工厂料账 · 按生产单的一行（GET /api/factory-ledger/orders） */
+export interface LedgerOrderRow {
+  id: string
+  no: string
+  kind: ProductionKind
+  factoryId: string
+  factoryShortName: string
+  styleId: string
+  styleCode: string
+  styleName: string
+  /** 加工数 */
+  totalQty: number
+  /** 良品 = 已回 − 次品 */
+  goodQty: number
+  status: ProductionStatus
+  dueDate: string | null
+  ledgerStatus: LedgerStatus
+  settleDocId: string | null
+  settleDocNo: string | null
+  settleDocStatus: 'DRAFT' | 'APPROVED' | null
+  /** 几种料超耗了 */
+  overCount: number
+  /** 几种料还有结余（该退回来的） */
+  returnCount: number
+}
+
+export interface LedgerOrderQuery {
+  /** 生产单号、款号 */
+  keyword?: string
+  status?: LedgerStatus | null
+  factoryId?: string | null
+  kind?: ProductionKind | null
+}
+
+/** 工厂料账 · 按工厂物料的一行（GET /api/factory-ledger/materials）：一个工厂仓 × 一个物料 SKU */
+export interface LedgerMaterialRow extends MaterialSkuBrief {
+  factoryId: string
+  factoryShortName: string | null
+  /** 这个工厂的工厂仓（点一行去库存日志）；还没建是 null */
+  warehouseId: string | null
+  /** 账面：工厂仓现在的库存 */
+  bookQty: number
+  /** 未核销的耗料：这个工厂还没核销的单按目前良品算的应耗合计 */
+  pendingQty: number
+  /** 估计手上 = 账面 − 未核销的耗料；小于 0 说明工厂用的比账上多 */
+  estimateQty: number
+  /** 涉及几张没核销的单 */
+  orderCount: number
+}
+
+export interface LedgerMaterialQuery {
+  factoryId?: string | null
+  /** 物料 SKU 码、编码、名称 */
+  keyword?: string
 }
 
 /** 给 04 用：出库单页"领料出库（选生产单）"、退料表单的"源生产单"（GET /api/production-orders/issue-options） */
@@ -466,6 +547,8 @@ export interface IssueOptionQuery {
   factoryId?: string | null
   /** true：退料用，列已领 > 0 的；不传或 false：领料用，列还有没领齐的 */
   returnable?: boolean
+  /** true：耗料核销用，列已完成、已结案、还没核销的（优先于 returnable） */
+  settle?: boolean
 }
 
 // ---------------------------------------------------------------- 异常（prd_issue）

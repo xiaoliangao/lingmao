@@ -20,6 +20,10 @@ import com.lingmao.scm.module.order.dto.OrderAuditReq;
 import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
 import com.lingmao.scm.module.order.service.OrderService;
+import com.lingmao.scm.module.production.dto.LedgerMaterialQuery;
+import com.lingmao.scm.module.production.dto.LedgerOrderQuery;
+import com.lingmao.scm.module.production.dto.LedgerStatus;
+import com.lingmao.scm.module.production.dto.ProductionMaterialsVO;
 import com.lingmao.scm.module.production.dto.BoardQuery;
 import com.lingmao.scm.module.production.mapper.ProductionOrderItemMapper;
 import com.lingmao.scm.module.production.dto.IssueCloseReq;
@@ -97,6 +101,8 @@ class ProductionIT {
     private OrderService orderService;
     @Autowired
     private InvDocService invDocService;
+    @Autowired
+    private com.lingmao.scm.module.production.service.FactoryLedgerService factoryLedgerService;
     @Autowired
     private ReferenceService referenceService;
     @Autowired
@@ -240,6 +246,108 @@ class ProductionIT {
             assertThat(row.getWipQty()).isEqualTo(100);
         });
         assertThat(productionOrderService.myFollow()).extracting(row -> row.id()).contains(prdId);
+    }
+
+    /**
+     * 工厂料账（RFC 015 §10）：领 150 → 回货良品 97（L 次品 2）→ 应耗 97 × 1.5 = 145.5 → 实耗写 147（超耗要写原因）→
+     * 别人审核，工厂仓 150 − 147 = 3 → 核销后不能再登记回货、作废回货单 → 退料上限 = 已领 − 实耗 → 反审核、作废后又能改回货
+     */
+    @Test
+    void factoryLedgerConsumeOut() {
+        Fixture f = fixture();
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long orderId = approvedOrder(f, commit);
+        long lineM = orderLine(orderId, f.skuM);
+        long lineL = orderLine(orderId, f.skuL);
+        long prdId = scheduleService.schedule(scheduleReq(f, orderId, commit.minusDays(10), Map.of(lineM, 60, lineL, 40))).getFirst().id();
+        productionOrderService.act(prdId, "submit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(prdId, "audit",
+                new DocActionReq(productionOrderService.detail(prdId).getVersion(), null)));
+        jdbcTemplate.update("INSERT INTO inv_stock (warehouse_id, material_sku_id, qty) VALUES (?, ?, 500)", f.warehouse, f.sku);
+        long factoryWh = jdbcTemplate.queryForObject("SELECT id FROM bas_warehouse WHERE factory_id = ? AND type = 'FACTORY'", Long.class,
+                f.factory);
+        postStock(prdId, stockReq(InvDocType.ISSUE_OUT, f, "150"));
+
+        // 还在生产：不能核销；料账状态"在制"
+        assertThatThrownBy(() -> invDocService.prefill(BizType.PRODUCTION_ORDER, prdId, InvDocType.CONSUME_OUT, null, null))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("还没完成"));
+        assertThat(productionOrderService.materials(prdId).ledgerStatus()).isEqualTo(LedgerStatus.IN_PROGRESS);
+
+        var receipt = receiptService.receive(prdId, receiptReq(Map.of(prdItem(prdId, lineM), 60, prdItem(prdId, lineL), 39),
+                prdItem(prdId, lineL), 2));
+        assertThat(receipt.status()).isEqualTo("DONE");
+        ProductionMaterialsVO m = productionOrderService.materials(prdId);
+        assertThat(m.goodQty()).isEqualTo(97);
+        assertThat(m.ledgerStatus()).isEqualTo(LedgerStatus.TO_SETTLE);
+        assertThat(m.rows()).singleElement().satisfies(r -> {
+            assertThat(r.getConsumeQty()).isEqualByComparingTo("145.5");
+            assertThat(r.getSettledQty()).isNull();
+            assertThat(r.getBalanceQty()).isEqualByComparingTo("4.5");
+        });
+        LedgerOrderQuery lq = new LedgerOrderQuery();
+        lq.setKeyword(productionOrderService.detail(prdId).getNo());
+        assertThat(factoryLedgerService.counts(lq)).containsEntry("TO_SETTLE", 1L);
+        assertThat(factoryLedgerService.orders(lq).getList()).singleElement().satisfies(r -> {
+            assertThat(r.getLedgerStatus()).isEqualTo(LedgerStatus.TO_SETTLE);
+            assertThat(r.getGoodQty()).isEqualTo(97);
+            assertThat(r.getReturnCount()).isEqualTo(1);
+        });
+        LedgerMaterialQuery mq = new LedgerMaterialQuery();
+        mq.setFactoryId(f.factory);
+        assertThat(factoryLedgerService.materials(mq).getList()).singleElement().satisfies(r -> {
+            assertThat(r.getBookQty()).isEqualByComparingTo("150");
+            assertThat(r.getPendingQty()).isEqualByComparingTo("145.5");
+            assertThat(r.getEstimateQty()).isEqualByComparingTo("4.5");
+            assertThat(r.getOrderCount()).isEqualTo(1);
+        });
+
+        // 带出：本次默认 = 应耗；实耗 147 > 应耗，不写原因 400
+        assertThat(invDocService.prefill(BizType.PRODUCTION_ORDER, prdId, InvDocType.CONSUME_OUT, null, null).getItems())
+                .singleElement().satisfies(i -> {
+                    assertThat(i.getSuggestQty()).isEqualByComparingTo("145.5");
+                    assertThat(i.getIssuedQty()).isEqualByComparingTo("150");
+                });
+        InvDocFromSourceReq consume = stockReq(InvDocType.CONSUME_OUT, f, "147");
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, consume))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+        consume.setClientActionId(java.util.UUID.randomUUID());
+        consume.getItems().getFirst().setOverReason("色差重裁 2 件");
+        InvDocCreatedVO doc = invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, consume);
+        assertThat(productionOrderService.materials(prdId).ledgerStatus()).isEqualTo(LedgerStatus.SETTLING);
+        // 第二张：1000
+        InvDocFromSourceReq again = stockReq(InvDocType.CONSUME_OUT, f, "1");
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, again))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("已经有耗料核销单"));
+        // 有草稿核销单就不能再登记回货
+        assertThatThrownBy(() -> receiptService.voidReceipt(prdId, receipt.id(), "数点错了"))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getMessage()).contains("耗料核销单"));
+
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc.id(), "audit", new DocActionReq(doc.version(), null)));
+        assertThat(jdbcTemplate.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id = ? AND material_sku_id = ?",
+                BigDecimal.class, factoryWh, f.sku)).isEqualByComparingTo("3");
+        m = productionOrderService.materials(prdId);
+        assertThat(m.ledgerStatus()).isEqualTo(LedgerStatus.SETTLED);
+        assertThat(m.settleDoc().no()).isEqualTo(doc.no());
+        assertThat(m.rows().getFirst().getSettledQty()).isEqualByComparingTo("147");
+        assertThat(m.rows().getFirst().getBalanceQty()).isEqualByComparingTo("3");
+        assertThat(factoryLedgerService.orders(lq).getList().getFirst().getOverCount()).isEqualTo(1);
+
+        // 退料：上限 = 已领 150 − 实耗 147 = 3
+        assertThatThrownBy(() -> invDocService.fromSource(BizType.PRODUCTION_ORDER, prdId, stockReq(InvDocType.RETURN_IN, f, "4")))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.OVER_LIMIT));
+        postStock(prdId, stockReq(InvDocType.RETURN_IN, f, "3"));
+        assertThat(jdbcTemplate.queryForObject("SELECT qty FROM inv_stock WHERE warehouse_id = ? AND material_sku_id = ?",
+                BigDecimal.class, factoryWh, f.sku)).isEqualByComparingTo("0");
+        assertThat(factoryLedgerService.materials(mq).getList()).isEmpty();
+
+        // 反审核、作废核销单以后，又能作废回货单了
+        TestIdentity.asAuditor(jdbcTemplate, () -> invDocService.act(doc.id(), "unaudit",
+                new DocActionReq(doc.version() + 1, "实耗填错了")));
+        int v = jdbcTemplate.queryForObject("SELECT version FROM inv_doc WHERE id = ?", Integer.class, doc.id());
+        invDocService.act(doc.id(), "void", new DocActionReq(v, "重开"));
+        assertThat(productionOrderService.materials(prdId).ledgerStatus()).isEqualTo(LedgerStatus.TO_SETTLE);
+        receiptService.voidReceipt(prdId, receipt.id(), "数点错了");
+        assertThat(productionOrderService.detail(prdId).getStatus()).isEqualTo("APPROVED");
     }
 
     /**

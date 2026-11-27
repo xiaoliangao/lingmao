@@ -100,7 +100,7 @@ const isSourceDoc = computed(() => Boolean(props.editingDoc?.source))
 const isPurchaseDoc = computed(() => activeType.value === 'PURCHASE_IN' || activeType.value === 'PURCHASE_RETURN')
 /** 退料入库新建时能挂源生产单（选了就走生成接口） */
 const canPickSource = computed(() => !props.editingDoc && meta.value.source === 'PRODUCTION_ORDER' && !meta.value.sourceRequired)
-const showOverReason = computed(() => activeType.value === 'ISSUE_OUT')
+const showOverReason = computed(() => activeType.value === 'ISSUE_OUT' || activeType.value === 'CONSUME_OUT')
 /** 和后端存的一样到分（utils/money），浮点直接乘会差一分 */
 const lineAmount = (l: LineRow) => amountOf(l.qty, l.price)
 const short = (l: LineRow) => l.fromStockQty !== null && (l.qty ?? 0) > l.fromStockQty
@@ -261,7 +261,9 @@ async function save() {
   if (meta.value.to && !head.toWarehouseId) return void ElMessage.warning('先选入仓')
   if (activeType.value === 'TRANSFER' && head.fromWarehouseId === head.toWarehouseId) return void ElMessage.warning('调拨的出仓、入仓不能是同一个')
   if (meta.value.reasonDict && !head.reason) return void ElMessage.warning('先选原因')
-  if (!lines.value.length) return void ElMessage.warning('至少加一行物料')
+  // 耗料核销可以一种料都不扣，但要在原因里写为什么（RFC 015 §3）
+  if (!lines.value.length && activeType.value !== 'CONSUME_OUT') return void ElMessage.warning('至少加一行物料')
+  if (!lines.value.length && !head.reason?.trim()) return void ElMessage.warning('一种料都不扣的话，在原因里写为什么')
   const noQty = lines.value.findIndex((l) => !(isPurchaseDoc.value ? l.purchaseQty : l.qty))
   if (noQty >= 0) return void ElMessage.warning(`第 ${noQty + 1} 行没填数量`)
 
@@ -426,7 +428,7 @@ async function save() {
         </template>
       </el-table-column>
 
-      <el-table-column v-if="showOverReason" label="超领原因" min-width="130">
+      <el-table-column v-if="showOverReason" :label="activeType === 'CONSUME_OUT' ? '超耗原因' : '超领原因'" min-width="130">
         <template #default="{ row }">
           <el-input v-model="row.overReason" size="small" maxlength="100" placeholder="领多了才填" />
         </template>

@@ -15,6 +15,7 @@ public enum StockChangeType {
     PURCHASE_RETURN("采购退货"),
     TRANSFER("调拨"),
     OTHER_OUT("其他出库"),
+    CONSUME_OUT("耗料核销"),
     COUNT_GAIN("盘盈"),
     COUNT_LOSS("盘亏"),
     OPENING("期初");

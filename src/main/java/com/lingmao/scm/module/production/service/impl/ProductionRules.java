@@ -49,7 +49,7 @@ final class ProductionRules {
             .on("receive", APPROVED, RUNNING, DONE).to(RUNNING, DONE)
             .on("cut", APPROVED, RUNNING).to(APPROVED, RUNNING, DONE)
             .on("issue", APPROVED, RUNNING).to(APPROVED, RUNNING)
-            .on("returnMaterial", APPROVED, RUNNING, DONE).to(APPROVED, RUNNING, DONE)
+            .on("returnMaterial", APPROVED, RUNNING, DONE, CLOSED).to(APPROVED, RUNNING, DONE, CLOSED)
             .on("close", APPROVED, RUNNING, DONE).to(CLOSED)
             .on("reopen", CLOSED).to(APPROVED, RUNNING, DONE)
             .on("void", DRAFT, PENDING).to(VOIDED)

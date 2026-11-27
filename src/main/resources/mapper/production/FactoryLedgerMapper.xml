@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lingmao.scm.module.production.mapper.FactoryLedgerMapper">
+
+    <!-- 料账状态（RFC 015 §2，和 LedgerStatus.of 一样） -->
+    <sql id="ledgerStatus">
+        CASE WHEN p.status IN ('APPROVED', 'RUNNING') THEN 'IN_PROGRESS'
+             WHEN sd.status = 'APPROVED' THEN 'SETTLED'
+             WHEN sd.status = 'DRAFT' THEN 'SETTLING'
+             ELSE 'TO_SETTLE' END
+    </sql>
+
+    <!-- 进料账的生产单：资料包里有自购的料；在制的都算，做完的要领过料或者有良品（一件没做、也没领料的不算） -->
+    <sql id="base">
+        FROM prd_order p
+        JOIN sup_supplier f ON f.id = p.factory_id
+        JOIN sty_style s ON s.id = p.style_id
+        LEFT JOIN inv_doc sd ON sd.source_type = 'PRODUCTION_ORDER' AND sd.source_id = p.id AND sd.doc_type = 'CONSUME_OUT'
+             AND sd.status &lt;&gt; 'VOIDED'
+        WHERE p.issue_status IS NOT NULL AND p.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED')
+          AND (p.status IN ('APPROVED', 'RUNNING') OR sd.id IS NOT NULL
+               OR EXISTS (SELECT 1 FROM inv_doc d WHERE d.source_type = 'PRODUCTION_ORDER' AND d.source_id = p.id
+                          AND d.doc_type = 'ISSUE_OUT' AND d.status = 'APPROVED')
+               OR EXISTS (SELECT 1 FROM prd_order_item i WHERE i.prd_order_id = p.id AND i.returned_qty &gt; i.defect_qty))
+        <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
+        <if test="scope.lines.limited">AND p.product_line = ANY(#{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
+        <if test="q.factoryId != null">AND p.factory_id = #{q.factoryId}</if>
+        <if test="q.kind != null and q.kind != ''">AND p.kind = #{q.kind}</if>
+        <if test="q.keyword != null and q.keyword.trim() != ''">
+            <bind name="keywordCode" value="@com.lingmao.scm.common.page.Keywords@codeContains(q.keyword)"/>
+            AND (upper(p.no) LIKE #{keywordCode} OR upper(s.code) LIKE #{keywordCode})
+        </if>
+    </sql>
+
+    <select id="selectOrders" resultType="com.lingmao.scm.module.production.dto.LedgerOrderRowVO">
+        SELECT p.id, p.no, p.kind, p.factory_id, f.short_name AS factory_short_name, p.style_id, s.code AS style_code,
+               s.name AS style_name, p.total_qty, p.status, p.due_date,
+               (SELECT COALESCE(SUM(i.returned_qty - i.defect_qty), 0) FROM prd_order_item i WHERE i.prd_order_id = p.id) AS good_qty,
+               <include refid="ledgerStatus"/> AS ledger_status,
+               sd.id AS settle_doc_id, sd.no AS settle_doc_no, sd.status AS settle_doc_status
+        <include refid="base"/>
+        <if test="q.status != null">AND <include refid="ledgerStatus"/> = #{q.status}</if>
+        ORDER BY p.id DESC
+    </select>
+
+    <select id="selectCounts" resultType="com.lingmao.scm.module.production.mapper.FactoryLedgerMapper$StatusCount">
+        SELECT <include refid="ledgerStatus"/> AS status, COUNT(*) AS count
+        <include refid="base"/>
+        GROUP BY 1
+    </select>
+</mapper>

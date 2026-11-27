@@ -24,6 +24,7 @@ import com.lingmao.scm.module.production.entity.ProductionOrder;
 import com.lingmao.scm.module.production.entity.ProductionOrderItem;
 import com.lingmao.scm.module.production.mapper.ProductionNodeMapper;
 import com.lingmao.scm.module.production.mapper.ProductionOrderItemMapper;
+import com.lingmao.scm.module.production.mapper.FactoryLedgerMapper;
 import com.lingmao.scm.module.production.mapper.ProductionOrderMapper;
 import com.lingmao.scm.module.purchase.service.MrpService;
 import com.lingmao.scm.module.supplier.dto.SupplierRef;
@@ -66,6 +67,7 @@ class ProductionSupport {
     static final String STALE = "这张单已经被别人改过，请刷新后再操作";
 
     private final ProductionOrderMapper prdMapper;
+    private final FactoryLedgerMapper ledgerMapper;
     private final ProductionOrderItemMapper itemMapper;
     private final ProductionNodeMapper nodeMapper;
     private final OrderService orderService;
@@ -204,11 +206,20 @@ class ProductionSupport {
 
     /** 应领：生产单 → 物料 SKU → 数量（库存单位）。算法同算料（MrpCalculator：件数 × 用量 ×（1 + 损耗率）），按尺码配用量没填的行不算 */
     Map<Long, Map<Long, BigDecimal>> needs(Collection<Long> prdOrderIds) {
+        return demand(prdOrderIds, false);
+    }
+
+    /** 应耗（RFC 015 §2）：和应领一样算，件数换成良品（已回 − 次品）。良品还是 0 的料也在里面，数是 0 */
+    Map<Long, Map<Long, BigDecimal>> consumes(Collection<Long> prdOrderIds) {
+        return demand(prdOrderIds, true);
+    }
+
+    private Map<Long, Map<Long, BigDecimal>> demand(Collection<Long> prdOrderIds, boolean good) {
         Map<Long, Map<Long, BigDecimal>> out = new HashMap<>();
         if (prdOrderIds.isEmpty()) {
             return out;
         }
-        for (ProductionOrderMapper.NeedRow r : prdMapper.selectNeeds(prdOrderIds)) {
+        for (ProductionOrderMapper.NeedRow r : prdMapper.selectNeeds(prdOrderIds, good)) {
             if (r.usage() == null) {
                 continue;
             }
@@ -228,6 +239,35 @@ class ProductionSupport {
         prdMapper.selectIssued(prdOrderIds, excludeDocId).forEach(r ->
                 out.computeIfAbsent(r.prdOrderId(), k -> new HashMap<>()).put(r.skuId(), Num.qty(r.qty())));
         return out;
+    }
+
+    /** 实耗：生产单 → 物料 SKU → 已审核的耗料核销单上的数（RFC 015 §2） */
+    Map<Long, Map<Long, BigDecimal>> settled(Collection<Long> prdOrderIds) {
+        Map<Long, Map<Long, BigDecimal>> out = new HashMap<>();
+        if (prdOrderIds.isEmpty()) {
+            return out;
+        }
+        ledgerMapper.selectSettled(prdOrderIds).forEach(r ->
+                out.computeIfAbsent(r.prdOrderId(), k -> new HashMap<>()).put(r.skuId(), Num.qty(r.qty())));
+        return out;
+    }
+
+    /** 这张生产单没作废的耗料核销单，没有是 null */
+    FactoryLedgerMapper.SettleDocRow settleDoc(long prdOrderId) {
+        List<FactoryLedgerMapper.SettleDocRow> docs = ledgerMapper.selectSettleDocs(List.of(prdOrderId));
+        return docs.isEmpty() ? null : docs.getFirst();
+    }
+
+    /**
+     * 开了耗料核销单（草稿、已审核）以后，不能再改良品数：登记回货、作废回货单、取消结案（RFC 015 §3）。
+     * 这几件事都会让应耗变，核销单上的数就不对了。调之前已经锁住生产单
+     */
+    void checkNoSettle(ProductionOrder p, String what) {
+        FactoryLedgerMapper.SettleDocRow d = settleDoc(p.getId());
+        if (d != null) {
+            throw new BizException(label(p) + " 已经开了耗料核销单 " + d.no() + "，不能" + what
+                    + "：草稿先删掉，已审核的先反审核再作废");
+        }
     }
 
     /** 排单时定的领料状态：锁定的生产 BOM 里有自购的料是 NONE，没有是 null（不用领料） */

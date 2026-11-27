@@ -44,6 +44,7 @@ import com.lingmao.scm.module.production.dto.NodeDot;
 import com.lingmao.scm.module.production.dto.OpenIssueVO;
 import com.lingmao.scm.module.production.dto.ProductionQuery;
 import com.lingmao.scm.module.production.dto.ProductionRowVO;
+import com.lingmao.scm.module.production.service.FactoryLedgerService;
 import com.lingmao.scm.module.production.service.ProductionBoardService;
 import com.lingmao.scm.module.production.service.ProductionIssueService;
 import com.lingmao.scm.module.production.service.ProductionOrderService;
@@ -128,7 +129,7 @@ public class HomeServiceImpl implements HomeService {
 
     /** "其他提醒"按这个顺序给（前端 TodoCountKey） */
     static final List<String> COUNT_KEYS = List.of("ORDER_PENDING", "CHANGE_PENDING", "PURCHASE_PENDING", "OUTSOURCE_PENDING",
-            "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "FG_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
+            "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "FG_PENDING", "CONSUME_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
             "PRODUCTION_NEAR", "PRODUCTION_NODE_LATE", "PRODUCTION_ISSUE", "ARRIVAL_LATE", "ARRIVAL_CUT", "UPSTREAM", "CERT_EXPIRING",
             "REORDER");
 
@@ -153,6 +154,7 @@ public class HomeServiceImpl implements HomeService {
     private final InvDocService invDocService;
     private final CountService countService;
     private final FgDocService fgDocService;
+    private final FactoryLedgerService factoryLedgerService;
     private final SupplierService supplierService;
     private final ReferenceService referenceService;
     private final AttachmentService attachmentService;
@@ -291,6 +293,9 @@ public class HomeServiceImpl implements HomeService {
         }
         if (can(FG_ADD)) {
             counts.put("FG_PENDING", fgDocService.pendingReceiptCount());
+        }
+        if (can("inventory:doc:add") && can("production:ledger:list")) {
+            counts.put("CONSUME_PENDING", factoryLedgerService.toSettleCount());   // 待核销耗料（RFC 015 §4.3）
         }
         List<TodoCount> out = COUNT_KEYS.stream().filter(k -> counts.getOrDefault(k, 0L) > 0)
                 .map(k -> new TodoCount(k, counts.get(k))).toList();

@@ -38,6 +38,7 @@ const invDocApi = bindCompanyApi(invDocApiBase, () => sourceCompanyId.value)
  * - 打开时调 prefill 带出单头默认值和明细，"本次"默认 suggestQty，旁边一列是可入 / 可退 / 还差
  * - 采购入库超过未入库、没超上限：琥珀色"超收 n"；超过 maxQty 标红、按钮灰掉（后端也会回 1004）
  * - 领料超过还差：琥珀色，超领原因必填。领料换了出仓重新带出（还差、出仓库存跟着出仓变）
+ * - 耗料核销（RFC 015 §3）：出仓是工厂仓，"本次"默认应耗，超过应耗要写超耗原因；一种料都不扣时在原因里写为什么
  * - 有出仓的显示出仓库存（库存单位）。采购退货的"本次"是采购单位，乘换算系数再和库存比；不够标红但不拦（审核时会失败）
  * - 本次是 0 的行不建，全是 0 时按钮灰掉；只能存草稿：自己建的单不能自己审核过账，要别人审（甲方 11-21 答 Q10，后端 SelfAudit 也拦）
  * - 建好发 created（{ id, no }），页面刷新自己
@@ -47,7 +48,7 @@ const visible = defineModel<boolean>({ required: true })
 const props = defineProps<{
   sourceKind: 'PURCHASE' | 'PRODUCTION'
   sourceId: string | null
-  docType: Extract<InvDocType, 'PURCHASE_IN' | 'PURCHASE_RETURN' | 'ISSUE_OUT' | 'RETURN_IN'>
+  docType: Extract<InvDocType, 'PURCHASE_IN' | 'PURCHASE_RETURN' | 'ISSUE_OUT' | 'RETURN_IN' | 'CONSUME_OUT'>
   /** 采购单上只处理这几行（待到料、采购单详情勾的）；不传 = 能处理的全部行 */
   itemIds?: string[]
 }>()
@@ -131,10 +132,13 @@ const dialogTitle = computed(() => {
 const verb = computed(() => meta.value.label.slice(-2))
 
 /** 可入 / 可退 / 还差这一列 */
-const LIMIT_LABEL: Record<typeof props.docType, string> = { PURCHASE_IN: '可入', PURCHASE_RETURN: '可退', ISSUE_OUT: '还差', RETURN_IN: '可退' }
+const LIMIT_LABEL: Record<typeof props.docType, string> = { PURCHASE_IN: '可入', PURCHASE_RETURN: '可退', ISSUE_OUT: '还差', RETURN_IN: '可退', CONSUME_OUT: '应耗' }
+/** 领料、耗料核销：超过建议数（还差、应耗）要写原因 */
+const needsOverReason = computed(() => props.docType === 'ISSUE_OUT' || props.docType === 'CONSUME_OUT')
+const consume = computed(() => props.docType === 'CONSUME_OUT')
 function limitOf(row: DraftRow): number | null {
-  // 采购入库的"可入"是未入库、领料的"还差"是还没领的（都是默认的本次）；退货、退料是上限
-  return props.docType === 'PURCHASE_IN' || props.docType === 'ISSUE_OUT' ? row.suggestQty : row.maxQty
+  // 采购入库的"可入"是未入库、领料的"还差"是还没领的、核销的"应耗"（都是默认的本次）；退货、退料是上限
+  return props.docType === 'PURCHASE_IN' || needsOverReason.value ? row.suggestQty : row.maxQty
 }
 
 /** 出仓库存：选了出仓、换了仓都重新取；取不到显示"—"，不影响建单 */
@@ -160,7 +164,7 @@ function prefill(sourceId: string, fromWarehouseId?: string): Promise<InvDocDraf
   if (props.sourceKind === 'PURCHASE') {
     return invDocApi.prefillFromPurchase(sourceId, { docType: props.docType as 'PURCHASE_IN' | 'PURCHASE_RETURN', itemIds: props.itemIds })
   }
-  return invDocApi.prefillFromProduction(sourceId, { docType: props.docType as 'ISSUE_OUT' | 'RETURN_IN', fromWarehouseId })
+  return invDocApi.prefillFromProduction(sourceId, { docType: props.docType as 'ISSUE_OUT' | 'RETURN_IN' | 'CONSUME_OUT', fromWarehouseId })
 }
 
 function toRows(d: InvDocDraft): DraftRow[] {
@@ -274,7 +278,7 @@ function isOverMax(row: DraftRow): boolean {
 }
 
 function isNeedOverReason(row: DraftRow): boolean {
-  return props.docType === 'ISSUE_OUT' && row.thisQty > row.suggestQty + EPS
+  return needsOverReason.value && row.thisQty > row.suggestQty + EPS
 }
 
 /**
@@ -299,7 +303,10 @@ function disableFutureDate(d: Date) {
 const activeRows = computed(() => rows.value.filter((r) => r.thisQty > 0))
 /** 全是 0、有超上限的：按钮灰掉，悬停说为什么 */
 const blockedTip = computed(() => {
-  if (!activeRows.value.length) return '本次都是 0，没有要建的行'
+  if (!activeRows.value.length) {
+    if (!consume.value) return '本次都是 0，没有要建的行'
+    if (!head.reason.trim()) return '一种料都不扣的话，在原因里写为什么'
+  }
   const over = rows.value.find(isOverMax)
   return over ? `${over.skuCode} 超过上限 ${formatQty(over.maxQty)}` : ''
 })
@@ -341,7 +348,7 @@ async function submit() {
   }
   const missingOver = activeRows.value.find((r) => isNeedOverReason(r) && !r.overReasonInput.trim())
   if (missingOver) {
-    ElMessage.warning(`${missingOver.skuCode} 领多了，要写超领原因`)
+    ElMessage.warning(consume.value ? `${missingOver.skuCode} 比应耗多，要写超耗原因` : `${missingOver.skuCode} 领多了，要写超领原因`)
     return
   }
 
@@ -439,8 +446,8 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
         <el-form-item label="物流单号">
           <el-input v-model="head.logisticsNo" maxlength="60" placeholder="选填" />
         </el-form-item>
-        <el-form-item v-if="docType === 'PURCHASE_RETURN' || docType === 'RETURN_IN'" label="原因">
-          <el-input v-model="head.reason" maxlength="120" placeholder="选填" />
+        <el-form-item v-if="docType === 'PURCHASE_RETURN' || docType === 'RETURN_IN' || consume" label="原因">
+          <el-input v-model="head.reason" maxlength="120" :placeholder="consume ? '一种料都不扣时必填' : '选填'" />
         </el-form-item>
         <el-form-item label="备注" class="span-2">
           <el-input v-model="head.remark" maxlength="200" placeholder="选填" />
@@ -460,6 +467,9 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
 
         <el-table-column v-if="isPurchase" label="采购 / 已入 / 已退" width="150" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.orderedQty) }} / {{ formatQty(row.receivedQty) }} / {{ formatQty(row.returnedQty) }}</template>
+        </el-table-column>
+        <el-table-column v-else-if="consume" label="已领" width="100" class-name="num" align="right">
+          <template #default="{ row }">{{ formatQty(row.issuedQty) }}</template>
         </el-table-column>
         <el-table-column v-else label="应领 / 已领" width="120" class-name="num" align="right">
           <template #default="{ row }">{{ formatQty(row.needQty) }} / {{ formatQty(row.issuedQty) }}</template>
@@ -502,9 +512,10 @@ watch(visible, (on) => { if (!on) { stockRequest.cancel(); prefillRequest.cancel
           </template>
         </el-table-column>
 
-        <el-table-column :label="docType === 'ISSUE_OUT' ? '超领原因 / 备注' : '备注'" min-width="150">
+        <el-table-column :label="docType === 'ISSUE_OUT' ? '超领原因 / 备注' : consume ? '超耗原因 / 备注' : '备注'" min-width="150">
           <template #default="{ row }">
-            <el-input v-if="isNeedOverReason(row as DraftRow)" v-model="row.overReasonInput" size="small" maxlength="100" placeholder="超领原因（必填）" class="over-input" />
+            <el-input v-if="isNeedOverReason(row as DraftRow)" v-model="row.overReasonInput" size="small" maxlength="100"
+              :placeholder="consume ? '超耗原因（必填）' : '超领原因（必填）'" class="over-input" />
             <el-input v-else v-model="row.remarkInput" size="small" maxlength="100" placeholder="选填" />
           </template>
         </el-table-column>

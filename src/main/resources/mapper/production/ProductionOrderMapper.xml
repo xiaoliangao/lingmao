@@ -237,7 +237,9 @@
         JOIN sty_style s ON s.id = p.style_id
         WHERE p.issue_status IS NOT NULL
         <choose>
-            <when test="q.returnable">AND p.status IN ('APPROVED', 'RUNNING', 'DONE') AND p.issue_status IN ('PARTIAL', 'DONE')</when>
+            <when test="q.settle">AND p.status IN ('DONE', 'CLOSED') AND NOT EXISTS (SELECT 1 FROM inv_doc sd WHERE sd.source_type = 'PRODUCTION_ORDER'
+                AND sd.source_id = p.id AND sd.doc_type = 'CONSUME_OUT' AND sd.status &lt;&gt; 'VOIDED')</when>
+            <when test="q.returnable">AND p.status IN ('APPROVED', 'RUNNING', 'DONE', 'CLOSED') AND p.issue_status IN ('PARTIAL', 'DONE')</when>
             <otherwise>AND p.status IN ('APPROVED', 'RUNNING') AND p.issue_status IN ('NONE', 'PARTIAL')</otherwise>
         </choose>
         <if test="scope.self">AND (p.create_by = #{scope.userId} OR p.merch_id = #{scope.userId})</if>
@@ -268,7 +270,8 @@
 
     <!-- 和算料 MrpCalcMapper.selectDemand 同一种对法：按款色 / 按尺码 / 按款色尺码配的物料 SKU -->
     <select id="selectNeeds" resultType="com.lingmao.scm.module.production.mapper.ProductionOrderMapper$NeedRow">
-        SELECT p.id AS prd_order_id, bs.material_sku_id AS sku_id, pi.qty,
+        SELECT p.id AS prd_order_id, bs.material_sku_id AS sku_id,
+               <choose><when test="good">GREATEST(pi.returned_qty - pi.defect_qty, 0)</when><otherwise>pi.qty</otherwise></choose> AS qty,
                CASE WHEN b.usage_mode = 'BY_SIZE' THEN bz.usage_qty ELSE b.usage_qty END AS usage, b.loss_pct
         FROM prd_order p
         JOIN prd_order_item pi ON pi.prd_order_id = p.id

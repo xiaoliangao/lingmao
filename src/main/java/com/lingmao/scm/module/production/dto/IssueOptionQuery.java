@@ -13,4 +13,6 @@ public class IssueOptionQuery extends PageQuery {
     private Long factoryId;
     /** true：选可以退料的（已审核、发过料的）；false：选还能发料的（已审核、还没发完的） */
     private boolean returnable;
+    /** true：选待核销耗料的（已完成、已结案，还没有耗料核销单，RFC 015 §3）；优先于 returnable */
+    private boolean settle;
 }

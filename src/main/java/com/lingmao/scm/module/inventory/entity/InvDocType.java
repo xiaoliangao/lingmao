@@ -19,7 +19,9 @@ public enum InvDocType {
     ISSUE_OUT("领料出库", InvDocKind.OUT, Set.of("MATERIAL"), Set.of("FACTORY"), Partner.FACTORY, BizType.PRODUCTION_ORDER, true, null),
     PURCHASE_RETURN("采购退货", InvDocKind.OUT, Set.of("MATERIAL", "FACTORY"), Set.of(), Partner.SUPPLIER, BizType.PURCHASE_ORDER, true, null),
     TRANSFER("调拨", InvDocKind.OUT, Set.of("MATERIAL", "FACTORY"), Set.of("MATERIAL", "FACTORY"), null, null, false, null),
-    OTHER_OUT("其他出库", InvDocKind.OUT, Set.of("MATERIAL"), Set.of(), null, null, false, "stock_out_reason");
+    OTHER_OUT("其他出库", InvDocKind.OUT, Set.of("MATERIAL"), Set.of(), null, null, false, "stock_out_reason"),
+    /** 耗料核销（RFC 015 §3）：做完货后从工厂仓扣掉这张生产单用掉的料，只能从生产单生成；一张单同时只有一张没作废的 */
+    CONSUME_OUT("耗料核销", InvDocKind.OUT, Set.of("FACTORY"), Set.of(), Partner.FACTORY, BizType.PRODUCTION_ORDER, true, null);
 
     /** 往来单位：供应商（采购的两种）、加工厂（领料、退料，由源单或工厂仓带出） */
     public enum Partner { SUPPLIER, FACTORY }

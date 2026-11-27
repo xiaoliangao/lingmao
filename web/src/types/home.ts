@@ -117,6 +117,7 @@ export type TodoCountKey =
   | 'STOCK_OUT_DRAFT'
   | 'COUNT_PENDING'
   | 'FG_PENDING'
+  | 'CONSUME_PENDING'
   | 'SUPPLIER_APPROVE'
   | 'UNSCHEDULED'
   | 'PRODUCTION_LATE'
@@ -140,6 +141,7 @@ export const TODO_COUNT: Record<TodoCountKey, { label: string; to: string; tone:
   STOCK_OUT_DRAFT: { label: '物料出库单待审核', to: '/stock-out?status=DRAFT&auditForMe=1', tone: null },
   COUNT_PENDING: { label: '物料盘点单待审核', to: '/stock-takes?status=PENDING&auditForMe=1', tone: null },
   FG_PENDING: { label: '回货待入成品仓', to: '/fg-in?tab=pending', tone: 'pending' },
+  CONSUME_PENDING: { label: '待核销耗料', to: '/factory-ledger?status=TO_SETTLE', tone: 'pending' },
   SUPPLIER_APPROVE: { label: '供应商待审批', to: '/suppliers?toApprove=1', tone: null },
   UNSCHEDULED: { label: '已审核还没排单的需求订单', to: '/orders?unscheduled=1', tone: 'pending' },
   PRODUCTION_LATE: { label: '生产单已逾期', to: '/board?card=LATE', tone: 'danger' },

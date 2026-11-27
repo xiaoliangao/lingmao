@@ -2,7 +2,7 @@ import { download, http, snapshotRequestBody, type RequestOptions } from '@/util
 import type { PageResult } from '@/types/system'
 import type {
   BoardCardKey, BoardCards, BoardFactoryRow, BoardQuery, CutQtyForm, IssueCloseForm, IssueCreated, IssueForm, IssueOption, IssueOptionQuery,
-  MobileOrderRow, NodePlanReq, NodeReport, NodeReportForm, NodeReportResult, ProductionCounts, ProductionDetail, ProductionForm,
+  LedgerMaterialQuery, LedgerMaterialRow, LedgerOrderQuery, LedgerOrderRow, LedgerStatus, MobileOrderRow, NodePlanReq, NodeReport, NodeReportForm, NodeReportResult, ProductionCounts, ProductionDetail, ProductionForm,
   ProductionIssue, ProductionMaterials, ProductionQuery, ProductionReceipt, ProductionRow, ReceiptCreated, ReceiptForm,
 } from '@/types/production'
 import { attachmentBody } from './basic'
@@ -88,4 +88,15 @@ export const boardApi = {
     http.get<PageResult<ProductionRow>>('/api/production-board/orders', params),
   /** 按工厂看：factoryId 不看（点一行再筛进去）；合作中的成衣厂、加工厂都列，手上没活的也列 */
   factories: (params: Omit<BoardQuery, 'factoryId'>) => http.get<BoardFactoryRow[]>('/api/production-board/factories', params),
+}
+
+/** 工厂料账（RFC 015，要 production:ledger:list；导出要 production:ledger:export）。核销单本身走 04 的 invDocApi（docType CONSUME_OUT） */
+export const ledgerApi = {
+  /** 按生产单：进料账的生产单，带料账状态、良品、超耗和该退几种料 */
+  orders: (params: PageParams & LedgerOrderQuery) => http.get<PageResult<LedgerOrderRow>>('/api/factory-ledger/orders', params),
+  /** 每种料账状态各几张（不按 status 筛） */
+  counts: (params: Omit<LedgerOrderQuery, 'status'>) => http.get<Record<LedgerStatus, number>>('/api/factory-ledger/orders/counts', params),
+  /** 按工厂物料：账面、未核销的耗料、估计手上 */
+  materials: (params: PageParams & LedgerMaterialQuery) => http.get<PageResult<LedgerMaterialRow>>('/api/factory-ledger/materials', params),
+  exportMaterials: (params: LedgerMaterialQuery) => download('/api/factory-ledger/materials/export', params, '工厂料账.xlsx'),
 }

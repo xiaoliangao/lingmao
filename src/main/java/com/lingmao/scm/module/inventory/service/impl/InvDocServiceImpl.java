@@ -348,6 +348,7 @@ public class InvDocServiceImpl implements InvDocService {
         checkCompany(req.getCompanyId());
         checkHeader(doc);
         List<InvDocItem> items = manualItems(req.getItems(), Map.of(), Set.of());
+        checkNotEmpty(doc, items);
         insert(doc, items);
         docLogService.add(BizType.INV_DOC, doc.getId(), "create", null);
         return new InvDocCreatedVO(doc.getId(), doc.getNo(), 0, DRAFT.name());
@@ -379,6 +380,7 @@ public class InvDocServiceImpl implements InvDocService {
         List<InvDocItem> items = fromSource
                 ? sourceItems(doc, handler(BizType.valueOf(doc.getSourceType())), req.getItems(), existing, posted)
                 : manualItems(req.getItems(), existing, posted);
+        checkNotEmpty(doc, items);
         Set<Long> kept = items.stream().map(InvDocItem::getId).filter(Objects::nonNull).collect(Collectors.toSet());
         List<InvDocItem> removed = existing.values().stream().filter(i -> !kept.contains(i.getId())).toList();
         for (InvDocItem r : removed) {
@@ -427,6 +429,22 @@ public class InvDocServiceImpl implements InvDocService {
     }
 
     /** 单头上能改的字段抄到实体上（新建、改草稿共用）。类型、kind、源单不在这里 */
+    /**
+     * 明细至少一行。耗料核销可以一行都不留（这张单没有要扣的料，比如结案时一件没做、料全留给下一张单），
+     * 但要在原因里写为什么（RFC 015 §3）
+     */
+    static void checkNotEmpty(InvDoc doc, List<InvDocItem> items) {
+        if (!items.isEmpty()) {
+            return;
+        }
+        if (doc.getDocType() != InvDocType.CONSUME_OUT) {
+            throw new BizException(400, "明细至少一行");
+        }
+        if (doc.getReason() == null) {
+            throw new BizException(400, "一种料都不扣的话，要在原因里写为什么");
+        }
+    }
+
     private void applyForm(InvDoc doc, InvDocForm form) {
         doc.setCompanyId(form.getCompanyId());
         doc.setDocDate(form.getDocDate());
@@ -792,9 +810,10 @@ public class InvDocServiceImpl implements InvDocService {
                 }
             }
         }
-        if (items.isEmpty()) {
+        if (items.isEmpty() && type != InvDocType.CONSUME_OUT) {
             throw new BizException(400, "没有要" + (type.getKind() == InvDocKind.IN ? "入库" : "出库") + "的数");
         }
+        checkNotEmpty(doc, items);
         insert(doc, items);
         if (!req.isPost()) {
             // 马上过账的不在这里先查：check 只锁源单这一张，过账时采购还要按 id 顺序锁同组别的单（RFC 014 §6），
@@ -891,9 +910,10 @@ public class InvDocServiceImpl implements InvDocService {
         NumericLimits.quantity(item.getQty(), "第 " + seq + " 行：");
         NumericLimits.price(item.getPrice(), "第 " + seq + " 行换算后：");
         NumericLimits.amount(item.getAmount(), "第 " + seq + " 行：");
-        if (type == InvDocType.ISSUE_OUT && s.suggestQty() != null && qty.compareTo(s.suggestQty()) > 0) {
+        boolean consume = type == InvDocType.CONSUME_OUT;
+        if ((type == InvDocType.ISSUE_OUT || consume) && s.suggestQty() != null && qty.compareTo(s.suggestQty()) > 0) {
             if (overReason == null || overReason.isBlank()) {
-                throw new BizException(400, "第 " + seq + " 行领多了，要写原因");
+                throw new BizException(400, "第 " + seq + " 行" + (consume ? "比应耗多（超耗）" : "领多了") + "，要写原因");
             }
             item.setOverReason(overReason.strip());
         }
