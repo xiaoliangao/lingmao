@@ -62,8 +62,9 @@ class NeedDates {
     }
 
     private List<Node> nodes() {
+        // 按单选的节点（如二次加工，text_value = OPTIONAL）不算：还没排单，不知道这张单加不加
         return dictDataService.listWithText("prod_node").stream()
-                .filter(d -> Integer.valueOf(1).equals(d.getStatus()))
+                .filter(d -> Integer.valueOf(1).equals(d.getStatus()) && !"OPTIONAL".equals(d.getTextValue()))
                 .map(d -> new Node(d.getValue(), days(d)))
                 .toList();
     }

@@ -57,6 +57,17 @@ final class ProductionRules {
 
     static final String PERM = "production:order:";
 
+    /** 字典 prod_node 的 text_value（用法，字典 node_usage）：OPTIONAL = 按单选，下单时勾了才有；别的（空、ALWAYS）每张单都有 */
+    static final String OPTIONAL_NODE = "OPTIONAL";
+
+    /** prd_order.optional_nodes 拆成编码列表；null、空串是 [] */
+    static List<String> splitNodes(String nodes) {
+        if (nodes == null || nodes.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(nodes.split(",")).map(String::strip).filter(s -> !s.isEmpty()).toList();
+    }
+
     /** 和前端 types/production.ts 的 PRODUCTION_STATUS 一样（部分回货不是单独的状态） */
     static final StatusLabels<DocStatus> STATUS = StatusLabels.DOC.rename(APPROVED, "已下单").rename(RUNNING, "生产中");
 

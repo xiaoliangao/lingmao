@@ -20,6 +20,7 @@ import com.lingmao.scm.module.order.dto.OrderAuditReq;
 import com.lingmao.scm.module.order.dto.OrderCreateReq;
 import com.lingmao.scm.module.order.dto.OrderItemReq;
 import com.lingmao.scm.module.order.service.OrderService;
+import com.lingmao.scm.module.production.dto.ProductionSaveReq;
 import com.lingmao.scm.module.production.dto.LedgerMaterialQuery;
 import com.lingmao.scm.module.production.dto.LedgerOrderQuery;
 import com.lingmao.scm.module.production.dto.LedgerStatus;
@@ -246,6 +247,50 @@ class ProductionIT {
             assertThat(row.getWipQty()).isEqualTo(100);
         });
         assertThat(productionOrderService.myFollow()).extracting(row -> row.id()).contains(prdId);
+    }
+
+    /** 二次加工按单选（甲方 11-27 答 Q61）：勾了的单审核后多一个"二次加工"节点，排在车缝后面；别的单没有 */
+    @Test
+    void optionalSecondaryNode() {
+        Fixture f = fixture();
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long order = approvedOrder(f, commit);
+        long id = scheduleService.schedule(scheduleReq(f, order, commit.minusDays(10),
+                Map.of(orderLine(order, f.skuM), 60, orderLine(order, f.skuL), 40))).getFirst().id();
+        ProductionDetailVO d = productionOrderService.detail(id);
+        assertThat(d.getOptionalNodeOptions()).extracting(o -> o.value()).containsExactly("SECONDARY");
+        assertThat(d.getOptionalNodes()).isEmpty();
+
+        ProductionSaveReq req = saveReq(d);
+        req.setOptionalNodes(List.of("CUT"));
+        assertThatThrownBy(() -> productionOrderService.update(id, req))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getCode()).isEqualTo(400));
+        req.setOptionalNodes(List.of("SECONDARY"));
+        productionOrderService.update(id, req);
+        assertThat(productionOrderService.detail(id).getOptionalNodes()).containsExactly("SECONDARY");
+
+        productionOrderService.act(id, "submit", new DocActionReq(productionOrderService.detail(id).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(id, "audit",
+                new DocActionReq(productionOrderService.detail(id).getVersion(), null)));
+        assertThat(productionOrderService.detail(id).getNodes()).extracting(ProductionNodeVO::getNodeCode)
+                .containsExactly("MATERIAL", "CUT", "SEW", "SECONDARY", "FINISH", "PACK", "WAREHOUSE");
+        assertThat(productionOrderService.detail(approvedProduction(f)).getNodes()).extracting(ProductionNodeVO::getNodeCode)
+                .doesNotContain("SECONDARY");
+    }
+
+    private static ProductionSaveReq saveReq(ProductionDetailVO d) {
+        ProductionSaveReq r = new ProductionSaveReq();
+        r.setVersion(d.getVersion());
+        r.setCompanyId(d.getCompanyId());
+        r.setFactoryId(d.getFactoryId());
+        r.setProcessMode(d.getProcessMode());
+        r.setUnitPrice(d.getUnitPrice());
+        r.setDueDate(d.getDueDate());
+        r.setMerchId(d.getMerchId());
+        r.setSettleMethod(d.getSettleMethod());
+        r.setTaxPct(d.getTaxPct());
+        r.setTaxIncluded(d.isTaxIncluded());
+        return r;
     }
 
     /**

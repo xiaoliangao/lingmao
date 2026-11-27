@@ -69,6 +69,9 @@ public class ProductionOrder extends DocEntity {
 
     private String terms;
 
+    /** 这张单加的"按单选"节点（字典 prod_node 里用法是 OPTIONAL 的，如二次加工），逗号分隔；null = 没加（甲方 11-27 答 Q61） */
+    private String optionalNodes;
+
     /** null = 不用领料（资料包里没有自购的料） */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private MaterialIssueStatus issueStatus;

@@ -367,6 +367,10 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   /** 字典 settle_method */
   settleMethod: string
   terms: string | null
+  /** 这张单加的按单选节点（编码，如 SECONDARY 二次加工，甲方 11-27 答 Q61） */
+  optionalNodes: string[]
+  /** 能加的按单选节点（字典"生产节点"里启用、用法是按单选的） */
+  optionalNodeOptions: { label: string; value: string }[]
   issueStatus: MaterialIssueStatus | null
   returnedQty: number
   defectQty: number
@@ -409,6 +413,8 @@ export interface ProductionForm {
   taxIncluded: boolean
   terms: string | null
   remark: string | null
+  /** 加哪些按单选节点：审核时和每张单都有的节点一起从交期倒排；[] = 不加 */
+  optionalNodes?: string[]
 }
 
 // ---------------------------------------------------------------- 领料（"领料"页签）

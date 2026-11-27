@@ -10,6 +10,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /** 改草稿（PUT /api/production-orders/{id}，前端 ProductionForm）：单头整体覆盖，明细不能改 */
 @Data
@@ -44,4 +45,7 @@ public class ProductionSaveReq {
     private String terms;
     @Size(max = 500, message = "备注最长 500 个字")
     private String remark;
+    /** 加哪些按单选节点（编码，如 SECONDARY 二次加工）：审核时和每张单都有的节点一起倒排；null、[] = 不加（甲方 11-27 答 Q61） */
+    @Size(max = 10, message = "最多加 10 个节点")
+    private List<String> optionalNodes;
 }

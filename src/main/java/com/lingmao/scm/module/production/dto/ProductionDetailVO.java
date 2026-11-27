@@ -52,6 +52,10 @@ public class ProductionDetailVO extends DocHeaderVO {
     private String merchName;
     private String settleMethod;
     private String terms;
+    /** 这张单加的按单选节点（编码，如 SECONDARY 二次加工） */
+    private List<String> optionalNodes;
+    /** 能加的按单选节点（字典 prod_node 里启用、用法是按单选的）：value 编码、label 名字；改草稿时打勾用 */
+    private List<com.lingmao.scm.module.system.dto.DictOption> optionalNodeOptions;
     private String issueStatus;
     /** 已回货，含次品；良品 = returnedQty − defectQty（上限、回齐、未回都按良品，甲方 11-19） */
     private int returnedQty;

@@ -62,6 +62,7 @@ const form = reactive({
   taxIncluded: true,
   terms: '',
   remark: '',
+  optionalNodes: [] as string[],
 })
 
 const guard = useUnsavedChanges(form, visible)
@@ -153,6 +154,7 @@ function init() {
     taxIncluded: d.taxIncluded,
     terms: d.terms ?? '',
     remark: d.remark ?? '',
+    optionalNodes: [...(d.optionalNodes ?? [])],
   })
   guard.markSaved()
   void requote(false)
@@ -206,6 +208,7 @@ async function save() {
       taxIncluded: form.taxIncluded,
       terms: orNull(form.terms),
       remark: orNull(form.remark),
+      optionalNodes: form.optionalNodes,
     })
     ElMessage.success(`${props.doc.no} 存好了`)
     guard.markSaved()
@@ -299,6 +302,13 @@ async function save() {
         >
           <el-option v-for="t in prodTerms.enabled.value" :key="t.value" :label="t.label" :value="t.value" />
         </el-select>
+      </el-form-item>
+
+      <el-form-item v-if="doc.optionalNodeOptions?.length" label="加节点" class="span-all">
+        <el-checkbox-group v-model="form.optionalNodes">
+          <el-checkbox v-for="n in doc.optionalNodeOptions" :key="n.value" :value="n.value">{{ n.label }}</el-checkbox>
+        </el-checkbox-group>
+        <div class="dim small">工厂要做印花、绣花、洗水这类二次加工时勾上：审核时多一个节点，前面的节点跟着往前排</div>
       </el-form-item>
 
       <el-form-item label="备注" class="span-all">

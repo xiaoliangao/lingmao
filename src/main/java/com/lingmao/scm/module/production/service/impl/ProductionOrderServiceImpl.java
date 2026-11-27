@@ -221,6 +221,8 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         vo.setMerchName(userService.nicknames(List.of(p.getMerchId())).get(p.getMerchId()));
         vo.setSettleMethod(p.getSettleMethod());
         vo.setTerms(p.getTerms());
+        vo.setOptionalNodes(ProductionRules.splitNodes(p.getOptionalNodes()));
+        vo.setOptionalNodeOptions(optionalNodeOptions());
         vo.setIssueStatus(p.getIssueStatus() == null ? null : p.getIssueStatus().name());
         vo.setReturnedQty(items.stream().mapToInt(ProductionOrderItem::getReturnedQty).sum());
         vo.setDefectQty(items.stream().mapToInt(ProductionOrderItem::getDefectQty).sum());
@@ -446,6 +448,11 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         }
 
         List<String> what = changedFields(p, req, mode, settle, price);
+        String nodes = checkOptionalNodes(req.getOptionalNodes());
+        if (!Objects.equals(nodes, p.getOptionalNodes())) {
+            what.add("加的节点");
+        }
+        p.setOptionalNodes(nodes);
         p.setCompanyId(req.getCompanyId());
         p.setFactoryId(req.getFactoryId());
         p.setProcessMode(mode);
@@ -672,10 +679,36 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         support.syncOrder(p.getOrderId(), ProductionSupport.label(p) + " 审核");
     }
 
-    /** 按字典 prod_node 的启用项从交期往前倒排（§3.3.1），返回生成了几个 */
+    /** 字典 prod_node 里启用、用法是按单选（text_value = OPTIONAL）的节点：value、label */
+    private List<com.lingmao.scm.module.system.dto.DictOption> optionalNodeOptions() {
+        return dictDataService.listWithText("prod_node").stream()
+                .filter(d -> Integer.valueOf(1).equals(d.getStatus()) && ProductionRules.OPTIONAL_NODE.equals(d.getTextValue()))
+                .map(d -> new com.lingmao.scm.module.system.dto.DictOption(d.getLabel(), d.getValue(), d.getStatus()))
+                .toList();
+    }
+
+    /** 改草稿时选的按单选节点：要是启用的按单选节点，去重；返回存库的写法（逗号分隔，按字典顺序），一个都没选是 null */
+    private String checkOptionalNodes(List<String> codes) {
+        if (codes == null || codes.isEmpty()) {
+            return null;
+        }
+        List<String> allowed = optionalNodeOptions().stream().map(com.lingmao.scm.module.system.dto.DictOption::value).toList();
+        for (String c : codes) {
+            if (!allowed.contains(c)) {
+                throw new BizException(400, "节点 " + c + " 不是能按单加的节点（在字典「生产节点」里把它的用法设成按单选）");
+            }
+        }
+        return String.join(",", allowed.stream().filter(codes::contains).toList());
+    }
+
+    /** 按字典 prod_node 的启用项从交期往前倒排（§3.3.1），返回生成了几个。按单选的节点只有这张单选了才加（甲方 11-27 答 Q61） */
     private int createNodes(ProductionOrder p) {
         List<ProductionRules.NodeDef> defs = new ArrayList<>();
+        List<String> chosen = ProductionRules.splitNodes(p.getOptionalNodes());
         for (DictData d : dictDataService.listWithText("prod_node")) {
+            if (ProductionRules.OPTIONAL_NODE.equals(d.getTextValue()) && !chosen.contains(d.getValue())) {
+                continue;
+            }
             if (Integer.valueOf(1).equals(d.getStatus())) {
                 int days = d.getNumValue() == null ? ProductionRules.DEFAULT_NODE_DAYS : d.getNumValue().intValue();
                 defs.add(new ProductionRules.NodeDef(d.getValue(), d.getLabel(), days));
