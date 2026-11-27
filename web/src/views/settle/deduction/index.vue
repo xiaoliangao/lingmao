@@ -196,7 +196,7 @@ async function remove(row: DeductionRow) {
       <el-table-column label="登记" width="190">
         <template #default="{ row }">{{ row.creatorName ?? '—' }} <span class="dim small">{{ formatDateTime(row.createTime) }}</span></template>
       </el-table-column>
-      <el-table-column label="操作" width="110" fixed="right">
+      <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <router-link v-if="(row as DeductionRow).sourceType === 'QC_INSPECTION'" class="link small" to="/qc?tab=records"
             title="质检记录登记的扣款，到质检记录里改、删">到质检改</router-link>
@@ -226,10 +226,10 @@ async function remove(row: DeductionRow) {
         <el-form-item label="金额（元）" prop="amount">
           <el-input-number v-model="form.amount" :min="0.01" :max="999999999999" :precision="2" controls-position="right" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="原因" prop="reason" class="span-all">
+        <el-form-item label="原因" prop="reason" class="full">
           <el-input v-model="form.reason" maxlength="500" placeholder="延期几天、什么质量问题" />
         </el-form-item>
-        <el-form-item label="相关单号" class="span-all">
+        <el-form-item label="相关单号" class="full">
           <el-input v-model="form.refNo" maxlength="64" placeholder="选填：生产单号、回货单号，写字就行" />
         </el-form-item>
       </el-form>

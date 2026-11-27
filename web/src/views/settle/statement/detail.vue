@@ -504,10 +504,10 @@ const loadLogs = () => statementApiBase.logs(id)
         <el-form-item label="金额（元）" prop="amount">
           <el-input-number v-model="ded.amount" :min="0.01" :max="999999999999" :precision="2" controls-position="right" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="原因" prop="reason" class="span-all">
+        <el-form-item label="原因" prop="reason" class="full">
           <el-input v-model="ded.reason" maxlength="500" placeholder="延期几天、什么质量问题" />
         </el-form-item>
-        <el-form-item label="相关单号" class="span-all">
+        <el-form-item label="相关单号" class="full">
           <el-input v-model="ded.refNo" maxlength="64" placeholder="选填" />
         </el-form-item>
       </el-form>

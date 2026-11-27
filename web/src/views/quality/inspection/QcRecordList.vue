@@ -183,7 +183,7 @@ defineExpose({ reload: load })
         <template #default="{ row }">{{ row.inspectorName ?? '—' }} <span class="dim">{{ formatDate(row.inspectDate) }}</span></template>
       </el-table-column>
       <el-table-column v-if="cols.show.company" label="主体" width="120" prop="companyName" />
-      <el-table-column label="操作" width="110" fixed="right">
+      <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <template v-if="canEdit">
             <el-button link @click="emit('edit', row as QcRow)">改</el-button>

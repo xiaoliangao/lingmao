@@ -260,17 +260,17 @@ const info = computed(() => {
         <el-form-item label="不合格数">
           <el-input-number v-model="form.defectQty" :min="0" :precision="0" controls-position="right" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="问题类型" class="span-all">
+        <el-form-item label="问题类型" class="full">
           <DictSelect v-model="form.defectTypes" type="qc_defect_type" multiple clearable placeholder="选填，可以多选" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="问题" class="span-all" :required="form.result !== 'PASS'">
+        <el-form-item label="问题" class="full" :required="form.result !== 'PASS'">
           <el-input v-model="form.note" type="textarea" :rows="2" maxlength="1000"
             :placeholder="form.result === 'PASS' ? '选填' : '哪里不合格、多少件'" />
         </el-form-item>
-        <el-form-item label="照片" class="span-all">
+        <el-form-item label="照片" class="full">
           <ImageUpload v-model="form.photos" :max="9" />
         </el-form-item>
-        <el-form-item v-if="canDeduct && form.result !== 'PASS'" label="质量扣款（元）" class="span-all">
+        <el-form-item v-if="canDeduct && form.result !== 'PASS'" label="质量扣款（元）" class="full">
           <el-input-number v-model="form.deductAmount" :min="0.01" :max="999999999999" :precision="2" controls-position="right"
             :disabled="locked" placeholder="不扣钱就空着" style="width: 240px" />
           <span class="dim hint">

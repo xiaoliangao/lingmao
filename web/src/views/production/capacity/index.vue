@@ -206,7 +206,7 @@ async function remove(row: CapacityRow) {
         <el-form-item label="日产能（件 / 天）" prop="dailyQty">
           <el-input-number v-model="form.dailyQty" :min="1" :max="1000000" :step="10" :precision="0" controls-position="right" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="备注" class="span-all">
+        <el-form-item label="备注" class="full">
           <el-input v-model="form.remark" maxlength="255" />
         </el-form-item>
       </el-form>

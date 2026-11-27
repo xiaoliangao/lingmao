@@ -302,10 +302,10 @@ async function createFrom(row: PendingStatementRow) {
         <el-form-item label="供应商或加工厂" prop="partnerId">
           <SupplierSelect v-model="form.partnerId" v-model:label="form.partnerName" placeholder="选一家" />
         </el-form-item>
-        <el-form-item label="期间" prop="period" class="span-all">
+        <el-form-item label="期间" prop="period" class="full">
           <DateRange v-model="form.period" :clearable="false" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="备注" class="span-all">
+        <el-form-item label="备注" class="full">
           <el-input v-model="form.remark" maxlength="500" placeholder="选填" />
         </el-form-item>
       </el-form>
