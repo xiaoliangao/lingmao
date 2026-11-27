@@ -255,6 +255,9 @@ export interface DeductionRow {
   amount: number
   reason: string
   refNo: string | null
+  /** QC_INSPECTION = 质检记录登记的（refNo 是质检单号）：这里不给改、删，到 生产 › 质检 里改；手工登记的 null */
+  sourceType: 'QC_INSPECTION' | null
+  sourceId: string | null
   /** 进了哪张没作废的对账单；还没对是 null */
   statementId: string | null
   statementNo: string | null

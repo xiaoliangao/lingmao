@@ -19,7 +19,8 @@ import { confirmRemove } from '@/views/basic/common'
 
 /**
  * 扣款登记（/deductions，RFC 019 §5.2）：延期、质量问题这类要扣的钱，发生了就登记；月底生成对账单时按日期拉进去。
- * 进了没作废的对账单的不能改、删（后端 1000 说是哪张），表格里也不给按钮
+ * 进了没作废的对账单的不能改、删（后端 1000 说是哪张），表格里也不给按钮；
+ * 质检记录登记的（sourceType = QC_INSPECTION，RFC 019 §6.2）这里不给改、删，到 生产 › 质检 的记录上改
  */
 const user = useUserStore()
 const canEdit = computed(() => user.hasPerm('settle:deduction:edit'))
@@ -178,7 +179,9 @@ async function remove(row: DeductionRow) {
       </el-table-column>
       <el-table-column label="原因" min-width="200" prop="reason" />
       <el-table-column label="相关单号" width="140">
-        <template #default="{ row }"><span class="code">{{ row.refNo || '—' }}</span></template>
+        <template #default="{ row }">
+          <span v-if="(row as DeductionRow).sourceType === 'QC_INSPECTION'" class="dim">质检 </span><span class="code">{{ row.refNo || '—' }}</span>
+        </template>
       </el-table-column>
       <el-table-column label="对账单" width="190">
         <template #default="{ row }">
@@ -195,7 +198,9 @@ async function remove(row: DeductionRow) {
       </el-table-column>
       <el-table-column label="操作" width="110" fixed="right">
         <template #default="{ row }">
-          <template v-if="canEdit && !(row as DeductionRow).statementId">
+          <router-link v-if="(row as DeductionRow).sourceType === 'QC_INSPECTION'" class="link small" to="/qc?tab=records"
+            title="质检记录登记的扣款，到质检记录里改、删">到质检改</router-link>
+          <template v-else-if="canEdit && !(row as DeductionRow).statementId">
             <el-button link @click="openEdit(row as DeductionRow)">改</el-button>
             <el-button link type="danger" @click="remove(row as DeductionRow)">删除</el-button>
           </template>

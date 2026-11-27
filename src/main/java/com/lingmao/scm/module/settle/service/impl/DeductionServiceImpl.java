@@ -37,6 +37,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DeductionServiceImpl implements DeductionService {
 
+    /** stl_deduction.source_type：质检记录登记的 */
+    static final String SOURCE_QC = "QC_INSPECTION";
+
     private final DeductionMapper deductionMapper;
     private final StatementItemMapper itemMapper;
     private final StatementMapper statementMapper;
@@ -90,7 +93,7 @@ public class DeductionServiceImpl implements DeductionService {
         deductionMapper.deleteById(id);
     }
 
-    /** 锁住，查范围，进了没作废的对账单的报 1000（说是哪张、怎么办） */
+    /** 锁住，查范围；别的单据登记的、进了没作废的对账单的报 1000（说是哪张、怎么办） */
     private Deduction lockFree(long id, String what) {
         Deduction d = deductionMapper.lockById(id);
         if (d == null) {
@@ -99,13 +102,86 @@ public class DeductionServiceImpl implements DeductionService {
         DataScope.current(false).check(d.getCreateBy());
         checkPartnerVisible(d.getPartnerId(), "这条扣款不存在");
         CompanyContext.target(d.getCompanyId());
+        if (SOURCE_QC.equals(d.getSourceType())) {
+            throw new BizException("这条扣款是质检记录 " + d.getRefNo() + " 登记的，到 生产 › 质检 的这条记录上" + what);
+        }
+        checkNotInStatement(id, what);
+        return d;
+    }
+
+    private void checkNotInStatement(long id, String what) {
         Long statementId = itemMapper.statementOfDeduction(id);
         if (statementId != null) {
             Statement s = statementMapper.selectById(statementId);
             throw new BizException("这条扣款已经进了对账单 " + s.getNo() + "，不能" + what
                     + "：对账单还是草稿的，在对账单上移出这一行或者作废对账单以后再" + what);
         }
+    }
+
+    // ---------------------------------------------------------------- 质检记录登记的（RFC 019 §6.2）
+
+    @Override
+    @Transactional
+    public long createSourced(Sourced src) {
+        Deduction d = new Deduction();
+        d.setCompanyId(src.companyId());
+        d.setPartnerId(src.partnerId());
+        d.setBizDate(src.bizDate());
+        d.setAmount(src.amount());
+        d.setReason(reason(src.reason()));
+        d.setRefNo(src.refNo());
+        d.setSourceType(src.sourceType());
+        d.setSourceId(src.sourceId());
+        deductionMapper.insert(d);
+        return d.getId();
+    }
+
+    @Override
+    @Transactional
+    public void updateSourced(long id, Sourced src) {
+        Deduction d = lockSourced(id, src);
+        boolean money = d.getAmount().compareTo(src.amount()) != 0 || !d.getBizDate().equals(src.bizDate());
+        String reason = reason(src.reason());
+        if (!money && reason.equals(d.getReason())) {
+            return;
+        }
+        if (itemMapper.statementOfDeduction(id) != null) {
+            if (money) {
+                checkNotInStatement(id, "改金额、日期");
+            }
+            return;   // 只改了原因：对账单上已经抄过去了，不动
+        }
+        deductionMapper.update(null, new LambdaUpdateWrapper<Deduction>()
+                .eq(Deduction::getId, id)
+                .set(Deduction::getAmount, src.amount())
+                .set(Deduction::getBizDate, src.bizDate())
+                .set(Deduction::getReason, reason)
+                .setSql("version = version + 1"));
+    }
+
+    @Override
+    @Transactional
+    public void deleteSourced(long id) {
+        Deduction d = deductionMapper.lockById(id);
+        if (d == null) {
+            return;
+        }
+        checkNotInStatement(id, "删");
+        deductionMapper.deleteById(d.getId());
+    }
+
+    private Deduction lockSourced(long id, Sourced src) {
+        Deduction d = deductionMapper.lockById(id);
+        if (d == null || !src.sourceType().equals(d.getSourceType()) || d.getSourceId() != src.sourceId()) {
+            throw new BizException(404, "这条扣款不存在");
+        }
         return d;
+    }
+
+    /** 原因最多 500 字（stl_deduction.reason） */
+    private static String reason(String text) {
+        String s = text.strip();
+        return s.length() > 500 ? s.substring(0, 499) + "…" : s;
     }
 
     /** 品类线（RFC 013 §2）：和供应商下拉一样，这家做的线里有我能看的才行，不然当不存在 */

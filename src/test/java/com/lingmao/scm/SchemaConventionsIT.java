@@ -72,6 +72,7 @@ class SchemaConventionsIT {
             Map.entry("inv_doc_item.source_item_id", "源单明细，源单类型不固定"),
             Map.entry("stl_statement_item.source_id", "类型 + id：入库单、退货单、回货单、扣款（RFC 019 §5.1）"),
             Map.entry("stl_statement_item.source_item_id", "入库、退货的明细，源单类型不固定"),
+            Map.entry("stl_deduction.source_id", "类型 + id：登记它的单据（质检记录，V68），质检记录用 deduction_id 外键指回来"),
             Map.entry("inv_doc_item.owner_id", "物权方：自有存 0，0 加不了外键（数据库设计 §1.5）"),
             Map.entry("inv_stock.owner_id", "同上"),
             Map.entry("inv_stock.location_id", "货位：0 = 不分货位，二期才有货位表（数据库设计 §13.3）"),
@@ -206,7 +207,7 @@ class SchemaConventionsIT {
                 .contains("style_class", "season", "wave", "style_tag", "brand", "series", "gender", "style_source",
                         "exec_standard", "safety_category", "color_family", "unit", "currency", "tax_rate",
                         "settle_method", "invoice_type", "material_type", "supplier_category", "order_type",
-                        "process_mode", "prod_node", "issue_type", "bom_part", "cert_type", "stock_in_reason", "stock_out_reason")
+                        "process_mode", "prod_node", "issue_type", "bom_part", "cert_type", "stock_in_reason", "stock_out_reason", "qc_defect_type")
                 // 工序分类、尺寸部位、包装方式跟着工序、尺寸指示、工艺标准去掉了（V39，RFC 011）
                 .doesNotContain("process_category", "size_point", "packing_mode");
 
@@ -390,6 +391,13 @@ class SchemaConventionsIT {
             ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("settle:statement:edit", "settle:statement:confirm", "settle:deduction:edit")));
         }
         ROLE_PERMS.put("merchandiser", union(ROLE_PERMS.get("merchandiser"), Set.of("settle:deduction:edit")));
+        // V68：质检（RFC 019 §6），跟单、仓管、生产经理、理单、总经理验货，财务、采购只看
+        for (String code : List.of("merchandiser", "warehouse", "prod_manager", "order_clerk", "manager", "finance", "buyer")) {
+            ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("quality:inspection:list")));
+        }
+        for (String code : List.of("merchandiser", "warehouse", "prod_manager", "order_clerk", "manager")) {
+            ROLE_PERMS.put(code, union(ROLE_PERMS.get(code), Set.of("quality:inspection:edit")));
+        }
     }
 
     /** 各角色的侧边栏：目录 → 下面看得到的页面（按 sort）。"价格档案""资料包"是 visible = false 的，不出现（"工艺标准" V39 去掉了） */
@@ -400,6 +408,10 @@ class SchemaConventionsIT {
     private static final List<String> MAKE_LEDGER = List.of("外发加工单", "成品采购单", "工厂料账", "看板");
     private static final List<String> MAKE_CAPACITY = List.of("外发加工单", "成品采购单", "工厂料账", "工厂产能", "看板");
     private static final List<String> MAKE_LEDGER_MOBILE = List.of("外发加工单", "成品采购单", "工厂料账", "工厂产能", "看板", "手机报工");
+    /** V68 质检排在生产目录最后 */
+    private static List<String> qc(List<String> make) {
+        return java.util.stream.Stream.concat(make.stream(), java.util.stream.Stream.of("质检")).toList();
+    }
     private static final Map<String, Map<String, List<String>>> ROLE_SIDEBARS = Map.ofEntries(
             Map.entry("dev", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "手机待办"))),
             Map.entry("dev_lead", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "手机待办"))),
@@ -407,15 +419,15 @@ class SchemaConventionsIT {
             Map.entry("sales_lead", Map.of("开发", List.of("款式"), "订单", ORDERS, "物料", List.of("算料", "采购"), "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "在做件数", "手机待办"))),
             Map.entry("merchandiser", Map.of("开发", List.of("款式"), "订单", ORDERS,
                     "物料", List.of("算料", "采购", "物料入库单", "物料出库单", "库存"),
-                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "手机待办"), "对账结算", List.of("扣款登记"))),
-            Map.entry("buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "呆滞料", "手机待办"))),
-            Map.entry("warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER, "报表", List.of("预警中心", "呆滞料", "手机待办"))),
-            Map.entry("finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_LEDGER, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "订单毛利", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
-            Map.entry("manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", MAKE_CAPACITY, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "订单毛利", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
+                    "生产", qc(MAKE_LEDGER_MOBILE), "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "手机待办"), "对账结算", List.of("扣款登记"))),
+            Map.entry("buyer", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", qc(MAKE), "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "呆滞料", "手机待办"))),
+            Map.entry("warehouse", Map.of("开发", List.of("款式"), "物料", SUPPLY_ALL, "生产", qc(MAKE_LEDGER), "资料", MASTER, "报表", List.of("预警中心", "呆滞料", "手机待办"))),
+            Map.entry("finance", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", qc(MAKE_LEDGER), "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "订单毛利", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
+            Map.entry("manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL, "生产", qc(MAKE_CAPACITY), "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "订单毛利", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
             Map.entry("prod_manager", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
+                    "生产", qc(MAKE_LEDGER_MOBILE), "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
             Map.entry("order_clerk", Map.of("开发", List.of("款式", "核价"), "订单", ORDERS, "物料", SUPPLY_ALL,
-                    "生产", MAKE_LEDGER_MOBILE, "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
+                    "生产", qc(MAKE_LEDGER_MOBILE), "资料", MASTER, "报表", List.of("预警中心", "供应商绩效", "在做件数", "呆滞料", "手机待办"), "对账结算", List.of("供应商对账", "扣款登记"))),
             Map.entry("stock_auditor", Map.of("物料", List.of("物料入库单", "物料出库单", "物料盘点单", "库存"))));
 
     /** 数据范围照 PRD §3.2；开发、开发主管给"全部"（RFC 003 §13.2、§17 第 3 条） */
@@ -449,7 +461,7 @@ class SchemaConventionsIT {
                     userId, role.getKey());
 
             Set<String> perms = permissionService.loadPermissions(userId);
-            assertThat(perms.stream().filter(p -> p.matches("(basic|supplier|style|price|techpack|order|purchase|inventory|production|fg|biz|report|settle):.*"))
+            assertThat(perms.stream().filter(p -> p.matches("(basic|supplier|style|price|techpack|order|purchase|inventory|production|fg|biz|report|settle|quality):.*"))
                     .collect(Collectors.toSet()))
                     .as(role.getKey() + " 的权限码").isEqualTo(role.getValue());
             assertThat(perms.contains(RoleDataScope.ALL_AUTHORITY))

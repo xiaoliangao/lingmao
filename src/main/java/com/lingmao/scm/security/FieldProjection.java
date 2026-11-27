@@ -89,7 +89,8 @@ public class FieldProjection {
         }
         for (String name : new ArrayList<>(object.propertyNames())) {
             if (blocked(name, permission, supplier, path)
-                    || typeName.contains(".module.settle.") && SETTLE_MONEY.contains(name) && !FieldPermissions.has(permission)
+                    || (typeName.contains(".module.settle.") || typeName.contains(".module.quality.")) && SETTLE_MONEY.contains(name)
+                       && !FieldPermissions.has(permission)
                     || typeName.contains(".techpack.") && COST_TOTALS.contains(name) && !FieldPermissions.has(FieldPermissions.COST)
                     || typeName.contains(".price.") && Set.of("reason", "remark").contains(name) && !FieldPermissions.has(permission)
                     || (name.equals("summary") || name.equals("feeNote")) && typeName.contains(".order.") && !FieldPermissions.has(FieldPermissions.ORDER)) {
@@ -129,6 +130,8 @@ public class FieldProjection {
         if (className.contains(".module.settle.")) {
             return className.contains("Deduction") ? FieldPermissions.SETTLE_DEDUCTION : FieldPermissions.SETTLE;
         }
+        // 质检记录上的质量扣款，和扣款登记一个权限（RFC 019 §6.2）
+        if (className.contains(".module.quality.")) return FieldPermissions.SETTLE_DEDUCTION;
         if (className.contains(".module.techpack.") || className.contains(".module.inventory.")
                 || className.contains(".module.purchase.") || className.contains(".module.basic.")
                 || className.contains(".module.style.")) return FieldPermissions.COST;

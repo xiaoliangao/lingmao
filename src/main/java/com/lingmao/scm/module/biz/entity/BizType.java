@@ -39,7 +39,9 @@ public enum BizType {
     PRODUCTION_NODE_REPORT("报工", null),
     FG_DOC("成品出入库单", null, new Kind("IN", "成品入库单", "CR"), new Kind("OUT", "成品出库单", "CC")),
     /** 供应商对账单（RFC 019 §5）：引用了采购入库、采购退货、回货单 */
-    STATEMENT("对账单", "DZ");
+    STATEMENT("对账单", "DZ"),
+    /** 质检记录（RFC 019 §6）：来料检验、产前样、中检、尾期验货，单号 ZJ… */
+    QC_INSPECTION("质检记录", "ZJ");
 
     /** 一张表两种单据里的一种：kind 的值、中文名、单号前缀 */
     public record Kind(String code, String label, String prefix) {

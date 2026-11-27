@@ -118,6 +118,30 @@ class FieldProjectionTest {
         assertThat(shown.get("rows").get(0).get("diffAmount").decimalValue()).isEqualByComparingTo("10");
     }
 
+    /** 规则（RFC 019 §6.2）：质检记录、供应商质量上的质量扣款跟着扣款登记的查看权限；批量、抽检数这些数量不动 */
+    @Test
+    void quality_deductAmountFollowsDeductionPermission() {
+        com.lingmao.scm.module.quality.dto.QcRowVO row = new com.lingmao.scm.module.quality.dto.QcRowVO();
+        row.setLotQty(new java.math.BigDecimal("200"));
+        row.setDeductAmount(new java.math.BigDecimal("150"));
+        row.setDeductStatementNo("DZ202611300001");
+        com.lingmao.scm.module.quality.dto.QcSupplierStat stat = new com.lingmao.scm.module.quality.dto.QcSupplierStat();
+        stat.setDeductAmount(new java.math.BigDecimal("150"));
+        FieldProjection projection = new FieldProjection(JsonMapper.builder().build());
+        String qc = "com.lingmao.scm.module.quality.controller.QcInspectionController";
+
+        as("quality:inspection:list", FieldPermissions.COST, FieldPermissions.PRODUCTION);
+        JsonNode hidden = projection.project(List.of(row), qc).get(0);
+        assertThat(hidden.has("deductAmount")).isFalse();
+        assertThat(hidden.get("lotQty").decimalValue()).isEqualByComparingTo("200");
+        assertThat(hidden.get("deductStatementNo").asString()).isEqualTo("DZ202611300001");
+        assertThat(projection.project(stat, qc).has("deductAmount")).isFalse();
+
+        as("quality:inspection:list", FieldPermissions.SETTLE_DEDUCTION);
+        assertThat(projection.project(row, qc).get("deductAmount").decimalValue()).isEqualByComparingTo("150");
+        assertThat(projection.project(stat, qc).get("deductAmount").decimalValue()).isEqualByComparingTo("150");
+    }
+
     private static void as(String... authorities) {
         SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
                 "u", null, java.util.Arrays.stream(authorities).map(org.springframework.security.core.authority.SimpleGrantedAuthority::new).toList()));

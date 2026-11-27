@@ -46,6 +46,7 @@ import com.lingmao.scm.module.production.dto.OpenIssueVO;
 import com.lingmao.scm.module.production.dto.ProductionQuery;
 import com.lingmao.scm.module.production.dto.ProductionRowVO;
 import com.lingmao.scm.module.production.service.FactoryLedgerService;
+import com.lingmao.scm.module.quality.service.QcInspectionService;
 import com.lingmao.scm.module.production.service.ProductionBoardService;
 import com.lingmao.scm.module.production.service.ProductionIssueService;
 import com.lingmao.scm.module.production.service.ProductionOrderService;
@@ -132,7 +133,7 @@ public class HomeServiceImpl implements HomeService {
     static final List<String> COUNT_KEYS = List.of("ORDER_PENDING", "CHANGE_PENDING", "PURCHASE_PENDING", "OUTSOURCE_PENDING",
             "BUY_PENDING", "STOCK_IN_DRAFT", "STOCK_OUT_DRAFT", "COUNT_PENDING", "FG_PENDING", "CONSUME_PENDING", "SUPPLIER_APPROVE", "UNSCHEDULED", "PRODUCTION_LATE",
             "PRODUCTION_NEAR", "PRODUCTION_NODE_LATE", "PRODUCTION_ISSUE", "ARRIVAL_LATE", "ARRIVAL_CUT", "UPSTREAM", "CERT_EXPIRING",
-            "REORDER", "STALE_MATERIAL");
+            "REORDER", "STALE_MATERIAL", "QC_PENDING", "QC_REWORK");
 
     /** 供应商的状态叫法、颜色（和前端 SUPPLIER_STATUS 一样）：待办里的供应商没有 ReferenceService 能描述，这里自己造 DocRef */
     static final StatusLabels<SupplierStatus> SUPPLIER_STATUS = StatusLabels.of(SupplierStatus.class)
@@ -157,6 +158,7 @@ public class HomeServiceImpl implements HomeService {
     private final FgDocService fgDocService;
     private final FactoryLedgerService factoryLedgerService;
     private final ReportService reportService;
+    private final QcInspectionService qcService;
     private final SupplierService supplierService;
     private final ReferenceService referenceService;
     private final AttachmentService attachmentService;
@@ -301,6 +303,10 @@ public class HomeServiceImpl implements HomeService {
         }
         if (can("report:stale:list")) {
             counts.put("STALE_MATERIAL", reportService.staleCount());   // 呆滞料（RFC 019 §3.3）
+        }
+        if (can("quality:inspection:edit")) {   // 质检（RFC 019 §6）：待检的回货和来料、回货不合格待安排返修
+            counts.put("QC_PENDING", qcService.pendingCount());
+            counts.put("QC_REWORK", qcService.reworkPendingCount());
         }
         List<TodoCount> out = COUNT_KEYS.stream().filter(k -> counts.getOrDefault(k, 0L) > 0)
                 .map(k -> new TodoCount(k, counts.get(k))).toList();

@@ -42,10 +42,11 @@ class ArchitectureTest {
      * biz 可以用 system；system 在最底下，不依赖别的域
      */
     private static final Map<String, Set<String>> DIRECT = Map.ofEntries(
-            entry("board", Set.of("production", "purchase", "dev", "fg")),
+            entry("board", Set.of("production", "purchase", "dev", "fg", "quality")),
             entry("contract", Set.of("production", "purchase")),
             entry("fg", Set.of("production")),
             entry("settle", Set.of("production")),
+            entry("quality", Set.of("settle")),
             entry("dev", Set.of("techpack")),
             entry("production", Set.of("purchase", "order", "inventory", "price")),
             entry("purchase", Set.of("order", "inventory", "supplier", "price")),

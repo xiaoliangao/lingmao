@@ -29,8 +29,13 @@ public class Deduction extends AuditEntity {
 
     private String reason;
 
-    /** 相关单号（选填，写字） */
+    /** 相关单号（选填，写字）；质检登记的是质检单号 */
     private String refNo;
+
+    /** 谁登记的：QC_INSPECTION 质检记录；手工登记的空（V68，RFC 019 §6.2） */
+    private String sourceType;
+
+    private Long sourceId;
 
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Integer version;

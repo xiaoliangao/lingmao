@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  质检记录（RFC 019 §6，docs/api/10）。来源单 inv_doc(_item)、prd_receipt(_item)、prd_order、款式、物料、供应商、主体，
+  扣款 stl_deduction 和它进了哪张对账单，都是只读 JOIN（架构 §3.2 规则 4）。
+  品类线：q.product_line 空的（来料检验）大家都能看；生产单的按线过滤，和生产单列表一个口径
+-->
+<mapper namespace="com.lingmao.scm.module.quality.mapper.QcInspectionMapper">
+
+    <resultMap id="row" type="com.lingmao.scm.module.quality.dto.QcRowVO" autoMapping="true">
+        <result column="defect_types" property="defectTypes" typeHandler="com.lingmao.scm.common.mybatis.StringArrayTypeHandler"/>
+    </resultMap>
+
+    <sql id="lineFilter">
+        <if test="lines.limited">
+            AND (q.product_line IS NULL OR q.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler}))
+        </if>
+    </sql>
+
+    <sql id="rowColumns">
+        q.id, q.no, q.company_id, COALESCE(c.short_name, c.name) AS company_name, q.kind, q.inv_doc_id, q.prd_receipt_id,
+        q.prd_order_id, o.kind AS prd_order_kind, o.no AS prd_order_no, COALESCE(d.no, r.no, o.no) AS source_no, q.attempt_no,
+        q.partner_id, p.code AS partner_code, COALESCE(p.short_name, p.name) AS partner_name, q.product_line, q.target_desc,
+        q.lot_qty, q.unit, q.inspect_date, q.sample_qty, q.defect_qty, q.accept_qty, q.result, q.defect_types, q.note,
+        q.rework_note, q.rework_by, q.rework_time, q.rework_done_by, q.rework_done_time,
+        q.deduction_id, sd.amount AS deduct_amount, st.no AS deduct_statement_no, q.version, q.create_by, q.create_time
+    </sql>
+
+    <sql id="rowFrom">
+        FROM qc_inspection q
+        JOIN bas_company c ON c.id = q.company_id
+        JOIN sup_supplier p ON p.id = q.partner_id
+        LEFT JOIN inv_doc d ON d.id = q.inv_doc_id
+        LEFT JOIN prd_receipt r ON r.id = q.prd_receipt_id
+        LEFT JOIN prd_order o ON o.id = q.prd_order_id
+        LEFT JOIN stl_deduction sd ON sd.id = q.deduction_id
+        LEFT JOIN stl_statement_item si ON si.source_type = 'DEDUCTION' AND si.source_id = q.deduction_id AND si.active
+        LEFT JOIN stl_statement st ON st.id = si.statement_id
+    </sql>
+
+    <select id="selectRowPage" resultMap="row">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword)"/>
+        SELECT <include refid="rowColumns"/>
+        <include refid="rowFrom"/>
+        WHERE true
+        <include refid="lineFilter"/>
+        <if test="q.kind != null">AND q.kind = #{q.kind}</if>
+        <if test="q.result != null">AND q.result = #{q.result}</if>
+        <if test="q.companyId != null">AND q.company_id = #{q.companyId}</if>
+        <if test="q.partnerId != null">AND q.partner_id = #{q.partnerId}</if>
+        <if test="q.prdOrderId != null">AND q.prd_order_id = #{q.prdOrderId}</if>
+        <if test="q.dateFrom != null">AND q.inspect_date &gt;= #{q.dateFrom}</if>
+        <if test="q.dateTo != null">AND q.inspect_date &lt;= #{q.dateTo}</if>
+        <if test="kw != null">
+            AND (q.no ILIKE #{kw} OR d.no ILIKE #{kw} OR r.no ILIKE #{kw} OR o.no ILIKE #{kw} OR q.target_desc ILIKE #{kw}
+                 OR p.code ILIKE #{kw} OR p.name LIKE #{kw} OR p.short_name LIKE #{kw})
+        </if>
+        ORDER BY q.inspect_date DESC, q.id DESC
+    </select>
+
+    <select id="selectRow" resultMap="row">
+        SELECT <include refid="rowColumns"/>
+        <include refid="rowFrom"/>
+        WHERE q.id = #{id}
+    </select>
+
+    <select id="selectHistory" resultMap="row">
+        SELECT <include refid="rowColumns"/>
+        <include refid="rowFrom"/>
+        WHERE q.kind = #{kind}
+        <choose>
+            <when test="kind == 'INCOMING'">AND q.inv_doc_id = #{sourceId}</when>
+            <when test="kind == 'FINAL'">AND q.prd_receipt_id = #{sourceId}</when>
+            <otherwise>AND q.prd_order_id = #{sourceId}</otherwise>
+        </choose>
+        ORDER BY q.attempt_no, q.id
+    </select>
+
+    <select id="selectReworks" resultMap="row">
+        SELECT <include refid="rowColumns"/>
+        <include refid="rowFrom"/>
+        WHERE q.kind = 'FINAL' AND q.result = 'FAIL' AND q.rework_done_time IS NULL
+        <include refid="lineFilter"/>
+        <if test="companyId != null">AND q.company_id = #{companyId}</if>
+        ORDER BY q.inspect_date, q.id
+        LIMIT 500
+    </select>
+
+    <!-- 待检的来源：采购入库单一张一行（批量 = 采购数量合计，单位不止一种时空）；回货单一张一行（件数含次品） -->
+    <sql id="pendingSources">
+        SELECT 'INCOMING' AS kind, d.id AS source_id, d.no AS source_no, d.doc_date AS source_date, d.company_id,
+               d.partner_id, NULL::bigint AS prd_order_id, NULL AS prd_order_kind, NULL AS prd_order_no, NULL AS product_line,
+               t.target_desc, t.lot_qty, t.unit, 1 AS attempt_no
+        FROM inv_doc d
+        JOIN LATERAL (
+            SELECT left(string_agg(DISTINCT m.name, '、'), 255) AS target_desc,
+                   CASE WHEN COUNT(DISTINCT COALESCE(i.purchase_unit, m.stock_unit)) = 1 THEN SUM(COALESCE(i.purchase_qty, i.qty)) END AS lot_qty,
+                   CASE WHEN COUNT(DISTINCT COALESCE(i.purchase_unit, m.stock_unit)) = 1 THEN MIN(COALESCE(i.purchase_unit, m.stock_unit)) END AS unit
+            FROM inv_doc_item i
+            JOIN bas_material_sku k ON k.id = i.material_sku_id
+            JOIN bas_material m ON m.id = k.material_id
+            WHERE i.doc_id = d.id
+        ) t ON true
+        WHERE d.doc_type = 'PURCHASE_IN' AND d.status = 'APPROVED' AND d.partner_id IS NOT NULL AND d.doc_date &gt;= #{since}
+          AND NOT EXISTS (SELECT 1 FROM qc_inspection x WHERE x.inv_doc_id = d.id AND x.kind = 'INCOMING')
+        UNION ALL
+        SELECT 'FINAL', r.id, r.no, r.receipt_date, r.company_id, o.factory_id, o.id, o.kind, o.no, o.product_line,
+               left(concat_ws(' ', st.code, st.name), 255), (SELECT SUM(ri.qty) FROM prd_receipt_item ri WHERE ri.receipt_id = r.id),
+               'PIECE', COALESCE(lq.attempt_no, 0) + 1
+        FROM prd_receipt r
+        JOIN prd_order o ON o.id = r.prd_order_id
+        JOIN sty_style st ON st.id = o.style_id
+        LEFT JOIN LATERAL (SELECT x.attempt_no, x.rework_done_time FROM qc_inspection x
+                           WHERE x.prd_receipt_id = r.id AND x.kind = 'FINAL' ORDER BY x.attempt_no DESC LIMIT 1) lq ON true
+        WHERE r.status = 'APPROVED'
+          AND (lq.attempt_no IS NULL AND r.receipt_date &gt;= #{since} OR lq.rework_done_time IS NOT NULL)
+    </sql>
+
+    <select id="selectPending" resultType="com.lingmao.scm.module.quality.dto.QcPendingRow">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@contains(q.keyword)"/>
+        SELECT x.*, COALESCE(c.short_name, c.name) AS company_name, p.code AS partner_code, COALESCE(p.short_name, p.name) AS partner_name
+        FROM (<include refid="pendingSources"/>) x
+        JOIN bas_company c ON c.id = x.company_id
+        JOIN sup_supplier p ON p.id = x.partner_id
+        WHERE true
+        <if test="lines.limited">
+            AND (x.product_line IS NULL OR x.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler}))
+        </if>
+        <if test="q.kind != null">AND x.kind = #{q.kind}</if>
+        <if test="q.companyId != null">AND x.company_id = #{q.companyId}</if>
+        <if test="kw != null">
+            AND (x.source_no ILIKE #{kw} OR x.prd_order_no ILIKE #{kw} OR x.target_desc ILIKE #{kw}
+                 OR p.code ILIKE #{kw} OR p.name LIKE #{kw} OR p.short_name LIKE #{kw})
+        </if>
+        ORDER BY x.attempt_no DESC, x.source_date DESC, x.source_id DESC
+    </select>
+
+    <select id="countPending" resultType="long">
+        SELECT COUNT(*) FROM (<include refid="pendingSources"/>) x
+        WHERE true
+        <if test="lines.limited">
+            AND (x.product_line IS NULL OR x.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler}))
+        </if>
+    </select>
+
+    <select id="countReworkPending" resultType="long">
+        SELECT COUNT(*) FROM qc_inspection q
+        WHERE q.kind = 'FINAL' AND q.result = 'FAIL' AND q.rework_time IS NULL
+        <include refid="lineFilter"/>
+    </select>
+
+    <!-- 来源：采购入库单（批量、单位同待检） -->
+    <select id="selectIncomingSource" resultType="com.lingmao.scm.module.quality.dto.QcSourceVO">
+        SELECT 'INCOMING' AS kind, d.id AS source_id, d.no AS source_no, d.status AS source_status, d.company_id,
+               COALESCE(c.short_name, c.name) AS company_name, d.partner_id, COALESCE(p.short_name, p.name) AS partner_name,
+               t.target_desc, t.lot_qty, t.unit
+        FROM inv_doc d
+        JOIN bas_company c ON c.id = d.company_id
+        LEFT JOIN sup_supplier p ON p.id = d.partner_id
+        JOIN LATERAL (
+            SELECT left(string_agg(DISTINCT m.name, '、'), 255) AS target_desc,
+                   CASE WHEN COUNT(DISTINCT COALESCE(i.purchase_unit, m.stock_unit)) = 1 THEN SUM(COALESCE(i.purchase_qty, i.qty)) END AS lot_qty,
+                   CASE WHEN COUNT(DISTINCT COALESCE(i.purchase_unit, m.stock_unit)) = 1 THEN MIN(COALESCE(i.purchase_unit, m.stock_unit)) END AS unit
+            FROM inv_doc_item i
+            JOIN bas_material_sku k ON k.id = i.material_sku_id
+            JOIN bas_material m ON m.id = k.material_id
+            WHERE i.doc_id = d.id
+        ) t ON true
+        WHERE d.id = #{id} AND d.doc_type = 'PURCHASE_IN'
+    </select>
+
+    <select id="selectReceiptSource" resultType="com.lingmao.scm.module.quality.dto.QcSourceVO">
+        SELECT 'FINAL' AS kind, r.id AS source_id, r.no AS source_no, r.status AS source_status, r.company_id,
+               COALESCE(c.short_name, c.name) AS company_name, o.factory_id AS partner_id, COALESCE(p.short_name, p.name) AS partner_name,
+               o.id AS prd_order_id, o.kind AS prd_order_kind, o.no AS prd_order_no, o.product_line,
+               left(concat_ws(' ', st.code, st.name), 255) AS target_desc,
+               (SELECT SUM(ri.qty) FROM prd_receipt_item ri WHERE ri.receipt_id = r.id) AS lot_qty, 'PIECE' AS unit
+        FROM prd_receipt r
+        JOIN prd_order o ON o.id = r.prd_order_id
+        JOIN sty_style st ON st.id = o.style_id
+        JOIN bas_company c ON c.id = r.company_id
+        JOIN sup_supplier p ON p.id = o.factory_id
+        WHERE r.id = #{id}
+    </select>
+
+    <select id="selectOrderSource" resultType="com.lingmao.scm.module.quality.dto.QcSourceVO">
+        SELECT o.id AS source_id, o.no AS source_no, o.status AS source_status, o.company_id,
+               COALESCE(c.short_name, c.name) AS company_name, o.factory_id AS partner_id, COALESCE(p.short_name, p.name) AS partner_name,
+               o.id AS prd_order_id, o.kind AS prd_order_kind, o.no AS prd_order_no, o.product_line,
+               left(concat_ws(' ', st.code, st.name), 255) AS target_desc, o.total_qty AS lot_qty, 'PIECE' AS unit
+        FROM prd_order o
+        JOIN sty_style st ON st.id = o.style_id
+        JOIN bas_company c ON c.id = o.company_id
+        JOIN sup_supplier p ON p.id = o.factory_id
+        WHERE o.id = #{id}
+    </select>
+
+    <select id="selectOrderOptions" resultType="com.lingmao.scm.module.quality.dto.QcOrderOption">
+        <bind name="kw" value="@com.lingmao.scm.common.page.Keywords@contains(keyword)"/>
+        SELECT o.id, o.no, o.kind, o.status, o.company_id, st.code AS style_code, st.name AS style_name,
+               o.factory_id AS partner_id, COALESCE(p.short_name, p.name) AS partner_name, o.total_qty
+        FROM prd_order o
+        JOIN sty_style st ON st.id = o.style_id
+        JOIN sup_supplier p ON p.id = o.factory_id
+        WHERE o.status IN ('APPROVED', 'RUNNING', 'DONE')
+        <if test="lines.limited">
+            AND o.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})
+        </if>
+        <if test="kw != null">
+            AND (o.no ILIKE #{kw} OR st.code ILIKE #{kw} OR st.name LIKE #{kw} OR p.code ILIKE #{kw} OR p.name LIKE #{kw} OR p.short_name LIKE #{kw})
+        </if>
+        ORDER BY o.id DESC
+        LIMIT 20
+    </select>
+
+    <sql id="statFilter">
+        WHERE q.inspect_date BETWEEN #{q.dateFrom} AND #{q.dateTo}
+        <include refid="lineFilter"/>
+        <if test="q.companyId != null">AND q.company_id = #{q.companyId}</if>
+        <if test="q.kind != null">AND q.kind = #{q.kind}</if>
+    </sql>
+
+    <select id="selectSupplierStats" resultType="com.lingmao.scm.module.quality.dto.QcSupplierStat">
+        SELECT q.partner_id, p.code AS partner_code, COALESCE(p.short_name, p.name) AS partner_name,
+               COUNT(*) AS inspect_count,
+               COUNT(*) FILTER (WHERE q.result = 'PASS') AS pass_count,
+               COUNT(*) FILTER (WHERE q.result = 'CONCESSION') AS concession_count,
+               COUNT(*) FILTER (WHERE q.result = 'FAIL') AS fail_count,
+               SUM(q.sample_qty) AS sample_qty, SUM(q.defect_qty) FILTER (WHERE q.sample_qty IS NOT NULL) AS defect_qty,
+               SUM(sd.amount) AS deduct_amount
+        FROM qc_inspection q
+        JOIN sup_supplier p ON p.id = q.partner_id
+        LEFT JOIN stl_deduction sd ON sd.id = q.deduction_id
+        <include refid="statFilter"/>
+        GROUP BY q.partner_id, p.code, p.short_name, p.name
+        ORDER BY COUNT(*) FILTER (WHERE q.result = 'FAIL') DESC, COUNT(*) DESC, p.code
+        LIMIT 500
+    </select>
+
+    <select id="selectDefectCounts" resultType="map">
+        SELECT q.partner_id AS "partnerId", t.v AS "defectType", COUNT(*) AS "n"
+        FROM qc_inspection q
+        CROSS JOIN LATERAL unnest(q.defect_types) AS t(v)
+        <include refid="statFilter"/>
+        GROUP BY q.partner_id, t.v
+        ORDER BY q.partner_id, COUNT(*) DESC, t.v
+    </select>
+</mapper>
