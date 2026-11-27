@@ -114,7 +114,7 @@ class StatementServiceImplTest {
         when(statementMapper.selectPurchaseLines(1L, 9L, FROM, TO)).thenReturn(List.of(
                 line(StatementSourceType.PURCHASE_IN, 11, LocalDate.of(2026, 10, 5), "10", "20", "200", null),
                 line(StatementSourceType.PURCHASE_RETURN, 12, LocalDate.of(2026, 10, 20), "2", "20", "40", null)));
-        when(statementMapper.selectReceipts(1L, 9L, FROM, TO)).thenReturn(List.of(
+        when(statementMapper.selectReceipts(eq(1L), eq(9L), eq(FROM), eq(TO), any())).thenReturn(List.of(
                 line(StatementSourceType.PRODUCTION_RECEIPT, 21, LocalDate.of(2026, 10, 15), "100", "38", null, "2")));
         when(statementMapper.selectDeductions(1L, 9L, FROM, TO)).thenReturn(List.of(
                 line(StatementSourceType.DEDUCTION, 31, LocalDate.of(2026, 10, 25), null, null, "0", "100")));
@@ -195,6 +195,7 @@ class StatementServiceImplTest {
         Statement s = new Statement();
         s.setId(5L);
         s.setNo("DZ202611280001");
+        s.setPartnerId(9L);
         s.setStatus(status);
         s.setVersion(3);
         s.setCreateBy(USER);

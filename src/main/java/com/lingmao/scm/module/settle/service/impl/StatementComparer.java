@@ -13,10 +13,12 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BiPredicate;
 
 /**
@@ -142,7 +144,18 @@ final class StatementComparer {
         }
         List<OurDoc> ours = new ArrayList<>(ourMap.values());
 
-        // 对方：有单号的按单号合起来，没单号的一行一张；扣款合计
+        // 对方：有单号的按单号合起来，没单号的一行一张；扣款合计。
+        // 对方写的是我方的采购单号、生产单号（不是哪张入库单、回货单的单号）时，一张订单分几次送货：按单号 + 日期分开，
+        // 不然几次送货合成一张，只对上我方一张入库单（agy 复查 T-adeaba #7）
+        Set<String> ourDocNos = new HashSet<>();
+        Set<String> ourOrderNos = new HashSet<>();
+        for (OurDoc o : ours) {
+            ourDocNos.add(norm(o.no));
+            ourDocNos.add(norm(o.deliveryNo));
+            ourOrderNos.add(norm(o.orderNo));
+        }
+        ourDocNos.remove("");
+        ourOrderNos.remove("");
         Map<String, TheirDoc> byNo = new LinkedHashMap<>();
         List<TheirDoc> theirs = new ArrayList<>();
         BigDecimal theirGoods = BigDecimal.ZERO;
@@ -160,7 +173,11 @@ final class StatementComparer {
                 d.add(r);
                 theirs.add(d);
             } else {
-                byNo.computeIfAbsent(norm(r.no()), k -> {
+                String key = norm(r.no());
+                if (!ourDocNos.contains(key) && ourOrderNos.contains(key)) {
+                    key = key + "@" + r.date();
+                }
+                byNo.computeIfAbsent(key, k -> {
                     TheirDoc d = new TheirDoc(r.no());
                     theirs.add(d);
                     return d;

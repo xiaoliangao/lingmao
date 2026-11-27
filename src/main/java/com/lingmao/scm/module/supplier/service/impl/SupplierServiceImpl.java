@@ -690,6 +690,15 @@ public class SupplierServiceImpl implements SupplierService {
     }
 
     @Override
+    public List<String> productLines(long id) {
+        Supplier s = supplierMapper.selectById(id);
+        if (s == null) {
+            throw new BizException(404, NOT_FOUND);
+        }
+        return s.getProductLines() == null ? List.of() : List.copyOf(s.getProductLines());
+    }
+
+    @Override
     public String lineProblem(long id, String productLine) {
         Supplier s = supplierMapper.selectById(id);
         if (s == null) {

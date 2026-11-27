@@ -103,6 +103,9 @@ public interface SupplierService {
     /** 供应商做不做这条品类线（RFC 013 §2）：采购单、生产单的线要在供应商的线里。做是 null，不做是原因；不存在抛 404 */
     String lineProblem(long id, String productLine);
 
+    /** 供应商做哪几条品类线（字典 product_line 的 value），没有是空列表；不存在抛 404。对账按它判断谁能对这家的账（RFC 019 §5.1） */
+    List<String> productLines(long id);
+
     /** 不做这条品类线抛 1000，见 lineProblem */
     default void checkServes(long id, String productLine) {
         String problem = lineProblem(id, productLine);

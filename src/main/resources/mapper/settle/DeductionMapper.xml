@@ -15,6 +15,8 @@
         LEFT JOIN stl_statement st ON st.id = i.statement_id
         WHERE true
         <if test="scope.self">AND d.create_by = #{scope.userId}</if>
+        <!-- 品类线：和供应商一样，这家做的线里有我能看的就列（RFC 013 §2） -->
+        <if test="scope.lines.limited">AND p.product_lines &amp;&amp; #{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler}::varchar[]</if>
         <if test="q.companyId != null">AND d.company_id = #{q.companyId}</if>
         <if test="q.partnerId != null">AND d.partner_id = #{q.partnerId}</if>
         <if test="q.dateFrom != null">AND d.biz_date &gt;= #{q.dateFrom}</if>

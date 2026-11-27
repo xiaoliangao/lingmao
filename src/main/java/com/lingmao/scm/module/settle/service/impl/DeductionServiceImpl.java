@@ -19,6 +19,7 @@ import com.lingmao.scm.module.settle.service.DeductionService;
 import com.lingmao.scm.module.supplier.service.SupplierService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,6 +97,7 @@ public class DeductionServiceImpl implements DeductionService {
             throw new BizException(404, "这条扣款不存在");
         }
         DataScope.current(false).check(d.getCreateBy());
+        checkPartnerVisible(d.getPartnerId(), "这条扣款不存在");
         CompanyContext.target(d.getCompanyId());
         Long statementId = itemMapper.statementOfDeduction(id);
         if (statementId != null) {
@@ -106,12 +108,20 @@ public class DeductionServiceImpl implements DeductionService {
         return d;
     }
 
+    /** 品类线（RFC 013 §2）：和供应商下拉一样，这家做的线里有我能看的才行，不然当不存在 */
+    private void checkPartnerVisible(long partnerId, String notFound) {
+        if (!LineScope.current().canSeeAny(supplierService.productLines(partnerId))) {
+            throw new BizException(404, notFound);
+        }
+    }
+
     private void fill(Deduction d, DeductionReq req) {
         if (req.bizDate().isAfter(LocalDate.now(clock))) {
             throw new BizException(400, "扣款日期不能晚于今天");
         }
         companyService.getById(req.companyId());
         supplierService.getRef(req.partnerId());
+        checkPartnerVisible(req.partnerId(), "供应商不存在");
         d.setCompanyId(req.companyId());
         d.setPartnerId(req.partnerId());
         d.setBizDate(req.bizDate());

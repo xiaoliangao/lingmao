@@ -12,7 +12,9 @@ import com.lingmao.scm.module.biz.service.ReferenceService;
 import com.lingmao.scm.module.inventory.service.InvDocService;
 import com.lingmao.scm.module.settle.dto.CompareNotesReq;
 import com.lingmao.scm.module.settle.dto.CompareResult;
+import com.lingmao.scm.module.settle.dto.DeductionQuery;
 import com.lingmao.scm.module.settle.dto.DeductionReq;
+import com.lingmao.scm.module.settle.dto.DeductionRowVO;
 import com.lingmao.scm.module.settle.dto.PendingStatementQuery;
 import com.lingmao.scm.module.settle.dto.PendingStatementRow;
 import com.lingmao.scm.module.settle.dto.StatementCreateReq;
@@ -20,6 +22,8 @@ import com.lingmao.scm.module.settle.dto.StatementCreatedVO;
 import com.lingmao.scm.module.settle.dto.StatementDetailVO;
 import com.lingmao.scm.module.settle.dto.StatementItemVO;
 import com.lingmao.scm.module.settle.dto.StatementItemsReq;
+import com.lingmao.scm.module.settle.dto.StatementQuery;
+import com.lingmao.scm.module.settle.dto.StatementRowVO;
 import com.lingmao.scm.module.settle.entity.StatementSourceType;
 import com.lingmao.scm.module.settle.entity.StatementStatus;
 import com.lingmao.scm.module.settle.service.DeductionService;
@@ -178,6 +182,52 @@ class SettleIT {
                 .filteredOn(p -> p.getCompanyId() == f.company && p.getPartnerId() == f.factory && p.getPeriodStart().equals(from))
                 .extracting(PendingStatementRow::getDocCount).containsExactly(2);
         assertThat(ret).isPositive();
+    }
+
+    /**
+     * 品类线（agy 复查 T-adeaba #1）：对账单是整家的账，这家做的线我都能看才看得到、能生成（数组 &lt;@ 我的线）；
+     * 扣款登记和供应商一样，有交集就行（&amp;&amp;）。面料厂只做服装，加工厂做服装 + 鞋类
+     */
+    @Test
+    void lineScope_wholeSupplierOnly() {
+        Fixture f = fixture();
+        LocalDate from = LocalDate.now().withDayOfMonth(1).minusMonths(1);
+        LocalDate to = from.plusMonths(1).minusDays(1);
+        jdbc.update("UPDATE sup_supplier SET product_lines = '{APPAREL}' WHERE id = ?", f.supplier);
+        jdbc.update("UPDATE sup_supplier SET product_lines = '{APPAREL,FOOTWEAR}' WHERE id = ?", f.factory);
+        purchaseDoc(f, "PURCHASE_IN", "RK" + f.tag, from.plusDays(4), null, new String[][]{{"10", "20", "200"}});
+        receipt(f, "HH" + f.tag, from.plusDays(14), 100, 0, "38");
+        StatementQuery mine = new StatementQuery();
+        mine.setCompanyId(f.company);
+
+        // 只看服装的：面料厂能对；加工厂还做鞋类，待对账里没有，生成报 1000 说清楚
+        TestIdentity.login(f.user, withLine("APPAREL"));
+        assertThat(statementService.pending(new PendingStatementQuery())).filteredOn(p -> p.getCompanyId() == f.company)
+                .extracting(PendingStatementRow::getPartnerId).containsExactly(f.supplier);
+        assertThatThrownBy(() -> statementService.create(new StatementCreateReq(f.company, f.factory, from, to, null)))
+                .isInstanceOf(BizException.class).hasMessageContaining("还做鞋类");
+        StatementCreatedVO sup = statementService.create(new StatementCreateReq(f.company, f.supplier, from, to, null));
+        assertThat(statementService.page(mine).getList()).extracting(StatementRowVO::getId).containsExactly(sup.id());
+
+        // 只看鞋类的：只做服装的面料厂的对账单列表里没有、详情 404，也不能给它登记扣款；加工厂有鞋类，扣款能登记、能看
+        TestIdentity.login(f.user, withLine("FOOTWEAR"));
+        assertThat(statementService.page(mine).getList()).isEmpty();
+        assertThatThrownBy(() -> statementService.detail(sup.id()))
+                .isInstanceOf(BizException.class).extracting(e -> ((BizException) e).getCode()).isEqualTo(404);
+        assertThatThrownBy(() -> deductionService.create(new DeductionReq(null, f.company, f.supplier, from.plusDays(3), BigDecimal.TEN, "延期", null)))
+                .isInstanceOf(BizException.class).extracting(e -> ((BizException) e).getCode()).isEqualTo(404);
+        Long ded = deductionService.create(new DeductionReq(null, f.company, f.factory, from.plusDays(3), BigDecimal.TEN, "延期", null));
+        DeductionQuery dq = new DeductionQuery();
+        dq.setCompanyId(f.company);
+        assertThat(deductionService.page(dq).getList()).extracting(DeductionRowVO::getId).containsExactly(ded);
+        // 加工厂还做服装，鞋类的人也对不了它的账
+        assertThat(statementService.pending(new PendingStatementQuery())).filteredOn(p -> p.getCompanyId() == f.company).isEmpty();
+    }
+
+    private static List<String> withLine(String line) {
+        List<String> perms = new ArrayList<>(PERMS);
+        perms.add("line:" + line);
+        return perms;
     }
 
     /** 两个人同时生成同一家同一个月的：只有一张成功，另一个报 1002（唯一索引兜底）或者"没有要对的单据" */

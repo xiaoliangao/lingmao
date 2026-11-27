@@ -24,6 +24,12 @@ public class FieldProjection {
     private static final Set<String> MONEY = Set.of("price", "unitPrice", "purchasePrice", "amount", "totalAmount", "archivePrice", "prevPrice", "nextPrice",
             "fromPrice", "toPrice", "prices", "priceSourceId", "priceChangeReason", "priceFrom", "priceEffectiveDate",
             "priceTaxIncluded", "priceFreightIncluded");
+    /**
+     * 对账（module.settle）里另外几个金额字段（agy 复查 T-adeaba #10）：单头的扣款、实付、对方合计，比对结果的合计和差额。
+     * 只在 settle 的类上认（别处的 diff 是操作记录的改动项），跟着那个类的对账权限走
+     */
+    private static final Set<String> SETTLE_MONEY = Set.of("deductAmount", "payableAmount", "theirAmount", "theirGoods", "theirDeduct",
+            "theirTotal", "ourTotal", "diff", "diffAmount");
     private static final Set<String> CONTACT = Set.of("contact", "phone", "wechat", "address", "supplierContact", "supplierPhone", "factoryContact", "factoryPhone");
     private static final Set<String> BANK = Set.of("bankName", "bankAccount", "bankAccountName");
     /**
@@ -83,6 +89,7 @@ public class FieldProjection {
         }
         for (String name : new ArrayList<>(object.propertyNames())) {
             if (blocked(name, permission, supplier, path)
+                    || typeName.contains(".module.settle.") && SETTLE_MONEY.contains(name) && !FieldPermissions.has(permission)
                     || typeName.contains(".techpack.") && COST_TOTALS.contains(name) && !FieldPermissions.has(FieldPermissions.COST)
                     || typeName.contains(".price.") && Set.of("reason", "remark").contains(name) && !FieldPermissions.has(permission)
                     || (name.equals("summary") || name.equals("feeNote")) && typeName.contains(".order.") && !FieldPermissions.has(FieldPermissions.ORDER)) {

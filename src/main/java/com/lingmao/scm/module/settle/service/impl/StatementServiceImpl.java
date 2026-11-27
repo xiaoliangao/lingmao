@@ -46,6 +46,7 @@ import com.lingmao.scm.module.system.service.DictDataService;
 import com.lingmao.scm.module.system.service.FileService;
 import com.lingmao.scm.module.system.service.UserService;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import com.lingmao.scm.security.LoginUser;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -141,7 +142,7 @@ public class StatementServiceImpl implements StatementService {
 
     @Override
     public List<PendingStatementRow> pending(PendingStatementQuery query) {
-        return statementMapper.selectPending(query);
+        return statementMapper.selectPending(query, LineScope.current());
     }
 
     @Override
@@ -193,12 +194,34 @@ public class StatementServiceImpl implements StatementService {
         return visible(statementMapper.selectById(id));
     }
 
-    private static Statement visible(Statement s) {
+    /** 制单人范围 + 品类线：这家供应商做的线我都要能看（对账单是整家的账，里面有各条线的单价），不然当不存在（404） */
+    private Statement visible(Statement s) {
         if (s == null) {
             throw new BizException(404, "对账单不存在");
         }
         DataScope.current(false).check(s.getCreateBy());
+        if (!LineScope.current().canSeeAll(supplierService.productLines(s.getPartnerId()))) {
+            throw new BizException(404, "对账单不存在");
+        }
         return s;
+    }
+
+    /**
+     * 生成前查品类线（RFC 019 §5.1）：对账是对整家的账，这家做的线我都能看才能对。
+     * 有一条能看（下拉里选得到）报 1000 说清楚；一条都看不到当不存在
+     */
+    private void checkCovers(SupplierRef partner) {
+        LineScope mine = LineScope.current();
+        List<String> lines = supplierService.productLines(partner.id());
+        if (mine.canSeeAll(lines)) {
+            return;
+        }
+        if (!mine.canSeeAny(lines)) {
+            throw new BizException(404, "供应商不存在");
+        }
+        Map<String, String> labels = dictDataService.labels(LineScope.DICT_TYPE);
+        String others = lines.stream().filter(l -> !mine.canSee(l)).map(l -> labels.getOrDefault(l, l)).collect(Collectors.joining("、"));
+        throw new BizException(partnerName(partner) + " 还做" + others + "，你看不到这几条线的单据：对这家的账，要找能看它全部品类线的人来生成");
     }
 
     /** 改之前：锁住单头、查范围、查状态、对版本号 */
@@ -230,6 +253,7 @@ public class StatementServiceImpl implements StatementService {
         }
         companyService.getById(req.companyId());
         SupplierRef partner = supplierService.getRef(req.partnerId());
+        checkCovers(partner);
         List<StatementItem> lines = collect(req.companyId(), req.partnerId(), from, to);
         if (lines.isEmpty()) {
             throw new BizException(partnerName(partner) + " 在 " + from + " 到 " + to
@@ -286,9 +310,14 @@ public class StatementServiceImpl implements StatementService {
     @Transactional
     public int addDeduction(long id, StatementDeductionReq req) {
         Statement s = lockFor(id, "addDeduction", req.version());
-        LocalDate date = req.bizDate() == null ? s.getPeriodEnd() : req.bizDate();
+        LocalDate today = LocalDate.now(clock);
+        // 不传日期取期间止；当月的对账单期间止还没到，取今天（和扣款登记一样不能晚于今天）
+        LocalDate date = req.bizDate() != null ? req.bizDate() : s.getPeriodEnd().isAfter(today) ? today : s.getPeriodEnd();
         if (date.isBefore(s.getPeriodStart()) || date.isAfter(s.getPeriodEnd())) {
             throw new BizException(400, "扣款日期要在对账期间里（" + s.getPeriodStart() + " 到 " + s.getPeriodEnd() + "）");
+        }
+        if (date.isAfter(today)) {
+            throw new BizException(400, "扣款日期不能晚于今天");
         }
         Deduction d = new Deduction();
         d.setCompanyId(s.getCompanyId());
@@ -322,7 +351,7 @@ public class StatementServiceImpl implements StatementService {
             }
             out.add(i);
         }
-        for (StatementItem r : statementMapper.selectReceipts(companyId, partnerId, from, to)) {
+        for (StatementItem r : statementMapper.selectReceipts(companyId, partnerId, from, to, LineScope.current())) {
             BigDecimal defects = r.getDeductAmount() == null ? BigDecimal.ZERO : r.getDeductAmount();
             r.setAmount(r.getQty().multiply(r.getPrice()).setScale(2, RoundingMode.HALF_UP));
             r.setDeductAmount(defects.multiply(r.getPrice()).setScale(2, RoundingMode.HALF_UP));
@@ -379,6 +408,8 @@ public class StatementServiceImpl implements StatementService {
                 }
                 cas.set(Statement::getSentBy, me).set(Statement::getSentTime, now);
             }
+            // 撤回到草稿：发送人、时间清掉（详情不再显示"发送"），发过、撤过的经过在操作记录里
+            case "withdraw" -> cas.setSql("sent_by = NULL, sent_time = NULL");
             case "confirm" -> {
                 CompareResult compare = s.getCompareResult();
                 List<CompareResult.Row> open = compare == null ? List.of() : compare.unexplained();

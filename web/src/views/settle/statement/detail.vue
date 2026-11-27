@@ -83,12 +83,20 @@ onActivated(() => {
   if (!notFound.value) void refreshAll()
 })
 
-/** 带 version 的请求出错：1002 重取，别的照常显示（1000 带清单的弹表格） */
-async function guarded<T>(run: () => Promise<T>): Promise<T | undefined> {
+/**
+ * 带 version 的请求（都传 { silent: true }，错误只在这里显示一次）：1002 重取，别的照常显示（1000 带清单的弹表格）。
+ * onConflict 给了就不重取，交给它（写说明：重取会冲掉没存的说明）
+ */
+const SILENT = { silent: true } as const
+async function guarded<T>(run: () => Promise<T>, onConflict?: () => Promise<void>): Promise<T | undefined> {
   try {
     return await run()
   } catch (e) {
     if (!(e instanceof ApiError)) throw e
+    if (e.code === ErrorCode.STATE_CHANGED && onConflict) {
+      await onConflict()
+      return undefined
+    }
     showSilentError(e)
     if (e.code === ErrorCode.STATE_CHANGED) void refreshAll()
     return undefined
@@ -126,7 +134,7 @@ async function act(action: 'send' | 'withdraw' | 'confirm' | 'void') {
       return
     }
   }
-  const done = await guarded(() => statementApi.act(id, action, { version: d.version, reason }, { silent: true }).then(() => true))
+  const done = await guarded(() => statementApi.act(id, action, { version: d.version, reason }, SILENT).then(() => true))
   if (!done) return
   ElMessage.success(`${docLabel.value} 已${action === 'send' ? '发送' : action === 'withdraw' ? '撤回' : action === 'confirm' ? '确认' : '作废'}`)
   await refreshAll()
@@ -135,7 +143,7 @@ async function act(action: 'send' | 'withdraw' | 'confirm' | 'void') {
 async function refreshItems() {
   const d = detail.value
   if (!d) return
-  const r = await guarded(() => statementApi.refresh(id, { version: d.version }))
+  const r = await guarded(() => statementApi.refresh(id, { version: d.version }, SILENT))
   if (!r) return
   ElMessage.success(r.added ? `加进来 ${r.added} 行` : '没有新审核的单据')
   await refreshAll()
@@ -150,7 +158,7 @@ async function removeSelected() {
   } catch {
     return
   }
-  const v = await guarded(() => statementApi.removeItems(id, { version: d.version, itemIds: selected.value.map((i) => i.id) }))
+  const v = await guarded(() => statementApi.removeItems(id, { version: d.version, itemIds: selected.value.map((i) => i.id) }, SILENT))
   if (v == null) return
   ElMessage.success('移出了')
   await refreshAll()
@@ -193,7 +201,7 @@ async function saveDeduction() {
   try {
     const v = await guarded(() => statementApi.addDeduction(id, {
       version: d.version, bizDate: ded.bizDate, amount: ded.amount!, reason: ded.reason.trim(), refNo: ded.refNo.trim() || null,
-    }))
+    }, SILENT))
     if (v == null) return
     ElMessage.success('扣款加上了，也记进了「扣款登记」')
     dedGuard.markSaved()
@@ -223,7 +231,7 @@ async function onFile(event: Event) {
   if (!file || !d) return
   comparing.value = true
   try {
-    const r = await guarded(() => statementApi.compare(id, d.version, file))
+    const r = await guarded(() => statementApi.compare(id, d.version, file, SILENT))
     if (!r) return
     const differs = r.rows.filter((x) => x.outcome !== 'MATCH').length
     ElMessage.success(differs ? `比对完了：${differs} 处不一致，逐条写说明` : '比对完了：全部一致')
@@ -242,6 +250,17 @@ const diffCount = computed(() => detail.value?.compare?.rows.filter((r) => r.out
 const unexplained = computed(() => detail.value?.compare?.rows.filter((r) => r.outcome !== 'MATCH' && !notes[r.key]?.trim()).length ?? 0)
 const notesDirty = computed(() => (detail.value?.compare?.rows ?? []).some((r) => (r.note ?? '') !== (notes[r.key] ?? '')))
 
+/** 存说明时对账单被别人改过（1002）：载入最新，没存的说明还放回去，用户检查后再存；比对结果清掉了（明细变过）就说一声 */
+async function keepNotesOnConflict(mine: { key: string; note: string | null }[]) {
+  await refreshAll()
+  const rows = detail.value?.compare?.rows ?? []
+  const keys = new Set(rows.map((r) => r.key))
+  const kept = mine.filter((n) => keys.has(n.key))
+  kept.forEach((n) => (notes[n.key] = n.note ?? ''))
+  if (!rows.length) ElMessage.warning('对账单刚被别人改过，比对结果已经清掉了，写的说明没存上：重新上传对方的对账单再写')
+  else ElMessage.warning(`对账单刚被别人改过，已载入最新；你写的 ${kept.length} 处说明还在，看一下再点「保存说明」`)
+}
+
 async function saveNotes() {
   const d = detail.value
   if (!d?.compare) return
@@ -249,7 +268,7 @@ async function saveNotes() {
   if (!changed.length) return
   savingNotes.value = true
   try {
-    const v = await guarded(() => statementApi.saveNotes(id, { version: d.version, notes: changed }))
+    const v = await guarded(() => statementApi.saveNotes(id, { version: d.version, notes: changed }, SILENT), () => keepNotesOnConflict(changed))
     if (v == null) return
     ElMessage.success(`存好了 ${changed.length} 处说明`)
     notesGuard.markSaved()
@@ -374,7 +393,7 @@ const loadLogs = () => statementApiBase.logs(id)
           </div>
           <p class="sub">
             对方实付 <b class="num">{{ formatMoney(detail.compare.theirTotal) }}</b>，我方 <b class="num">{{ formatMoney(detail.compare.ourTotal) }}</b>，
-            差 <b class="num" :class="{ danger: Math.abs(detail.compare.diff) >= 0.01 }">{{ formatMoney(detail.compare.diff) }}</b>
+            差 <b class="num" :class="{ danger: Math.abs(detail.compare.diff) > 0.01 }">{{ formatMoney(detail.compare.diff) }}</b>
             <template v-if="diffCount">；还有 <b>{{ unexplained }}</b> 处没写说明（每处都写了才能确认）</template>
           </p>
           <el-table :data="compareRows" row-key="key" scrollbar-always-on :empty-text="onlyDiff ? '全部一致' : '对方的表里没有能比的行'">

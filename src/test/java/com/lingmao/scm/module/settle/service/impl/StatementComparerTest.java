@@ -7,6 +7,7 @@ import com.lingmao.scm.module.settle.entity.StatementSourceType;
 import com.lingmao.scm.module.settle.service.impl.TheirSheetReader.TheirRow;
 import org.apache.poi.ss.usermodel.Row.MissingCellPolicy;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 
@@ -44,10 +45,77 @@ class StatementComparerTest {
             assertThat(p.rows()).extracting(TheirRow::rowNo, TheirRow::no, TheirRow::date, TheirRow::description, TheirRow::qty,
                     TheirRow::amount, TheirRow::deduct).containsExactly(
                     tuple(4, "SH1005", LocalDate.of(2026, 10, 5), "树脂纽扣 18L", new BigDecimal("100"), new BigDecimal("50"), false),
-                    tuple(5, "SH1008", LocalDate.of(2026, 10, 8), "织带", new BigDecimal("20"), new BigDecimal("60.00"), false),
+                    tuple(5, "SH1008", LocalDate.of(2026, 10, 8), "织带", new BigDecimal("20"), new BigDecimal("60"), false),
                     tuple(6, "TH1012", LocalDate.of(2026, 10, 12), "织带", new BigDecimal("-2"), new BigDecimal("-6"), false),
                     tuple(7, "", LocalDate.of(2026, 10, 20), "质量扣款", null, new BigDecimal("30"), true));
         }
+    }
+
+    /**
+     * agy 复查 T-adeaba #2、#3、#6、#8、#9：合计写在单号列跳过；单号、日期纵向合并的取合并区第一行；
+     * "扣款原因"是备注、"扣款金额"才是扣款，"Note""客户编号"不当单号；金额负、数量正的退货数量记负；
+     * 有单号、有数量、金额 0 的行留着；公式算出来的金额按分落地
+     */
+    @Test
+    void readsTotalsInNoColumn_mergedCells_oddHeaders() throws Exception {
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            Sheet sh = wb.createSheet("对账");
+            row(sh, 0, "送货单号", "送货日期", "品名", "数量", "金额", "扣款原因", "扣款金额", "Note", "客户编号");
+            row(sh, 1, "SH1", "2026-10-05", "面料", 10, 200, null, null, "first", "C001");
+            row(sh, 2, null, null, "里布", 5, 150, null, null, null, "C001");
+            sh.addMergedRegion(new CellRangeAddress(1, 2, 0, 0));
+            sh.addMergedRegion(new CellRangeAddress(1, 2, 1, 1));
+            row(sh, 3, "TH2", "10-20", "面料 退回", 2, -40);
+            row(sh, 4, "SH3", "10-25", "延期", null, null, "延期两天", 30);
+            row(sh, 5, "RK9", "10-26", "缺单价的料", 3, 0);
+            row(sh, 6, "SH4", "10-27", "辅料", 3, 0.1 + 0.2);
+            row(sh, 7, "合计", "", "", 23, 310.3, null, 30);
+            TheirSheetReader.Parsed p = TheirSheetReader.read(wb, END);
+
+            assertThat(p.rows()).extracting(TheirRow::rowNo, TheirRow::no, TheirRow::date, TheirRow::description, TheirRow::qty,
+                    TheirRow::amount, TheirRow::deduct).containsExactly(
+                    tuple(2, "SH1", LocalDate.of(2026, 10, 5), "面料", new BigDecimal("10"), new BigDecimal("200"), false),
+                    tuple(3, "SH1", LocalDate.of(2026, 10, 5), "里布", new BigDecimal("5"), new BigDecimal("150"), false),
+                    tuple(4, "TH2", LocalDate.of(2026, 10, 20), "面料 退回", new BigDecimal("-2"), new BigDecimal("-40"), false),
+                    tuple(5, "SH3", LocalDate.of(2026, 10, 25), "延期", null, new BigDecimal("30"), true),
+                    tuple(6, "RK9", LocalDate.of(2026, 10, 26), "缺单价的料", new BigDecimal("3"), new BigDecimal("0"), false),
+                    tuple(7, "SH4", LocalDate.of(2026, 10, 27), "辅料", new BigDecimal("3"), new BigDecimal("0.3"), false));
+        }
+    }
+
+    /** 没写年份的日期取离对账期间止最近的一年：12 月的账里"1-2"是下一年，1 月的账里"12-30"是上一年 */
+    @Test
+    void shortDate_takesNearestYear() {
+        assertThat(TheirSheetReader.parseDate("1-2", LocalDate.of(2026, 12, 31))).isEqualTo(LocalDate.of(2027, 1, 2));
+        assertThat(TheirSheetReader.parseDate("12月30日", LocalDate.of(2027, 1, 31))).isEqualTo(LocalDate.of(2026, 12, 30));
+        assertThat(TheirSheetReader.parseDate("10.5", END)).isEqualTo(LocalDate.of(2026, 10, 5));
+        assertThat(TheirSheetReader.parseDate("2-29", LocalDate.of(2028, 3, 31))).isEqualTo(LocalDate.of(2028, 2, 29));
+    }
+
+    /**
+     * agy 复查 T-adeaba #7：对方单号写的是我方采购单号，一张采购单分三次送：按单号 + 日期分开，三张入库单各自对上，
+     * 不合成一张只对上第一张
+     */
+    @Test
+    void orderNoAcrossDeliveries_matchesEachReceipt() {
+        List<StatementItem> ours = List.of(
+                ordered(item(StatementSourceType.PURCHASE_IN, 1, "RK1", null, LocalDate.of(2026, 10, 5), "10", "1000", "0")),
+                ordered(item(StatementSourceType.PURCHASE_IN, 2, "RK2", null, LocalDate.of(2026, 10, 12), "10", "1000", "0")),
+                ordered(item(StatementSourceType.PURCHASE_IN, 3, "RK3", null, LocalDate.of(2026, 10, 20), "10", "1000", "0")));
+        List<TheirRow> theirs = List.of(
+                their(2, "CG1", LocalDate.of(2026, 10, 5), "10", "1000", false),
+                their(3, "CG1", LocalDate.of(2026, 10, 12), "10", "1000", false),
+                their(4, "CG1", LocalDate.of(2026, 10, 20), "10", "1000", false));
+
+        StatementComparer.Compared c = StatementComparer.compare(theirs, ours);
+
+        assertThat(c.rows()).extracting(Row::outcome, r -> r.ours().no())
+                .containsExactly(tuple(Outcome.MATCH, "RK1"), tuple(Outcome.MATCH, "RK2"), tuple(Outcome.MATCH, "RK3"));
+    }
+
+    private static StatementItem ordered(StatementItem i) {
+        i.setOrderNo("CG1");
+        return i;
     }
 
     @Test

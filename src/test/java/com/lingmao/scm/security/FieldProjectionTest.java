@@ -98,6 +98,24 @@ class FieldProjectionTest {
         as(FieldPermissions.SETTLE_DEDUCTION, FieldPermissions.PRODUCTION);
         assertThat(projection.project(ded, deductions).get("amount").decimalValue()).isEqualByComparingTo("50");
         assertThat(projection.project(item, statements).has("amount") || projection.project(item, statements).has("price")).isFalse();
+
+        // agy 复查 T-adeaba #10：单头的扣款、实付、对方合计，比对结果的合计、差额也是钱；别的类上的 diff（操作记录的改动项）不动
+        com.lingmao.scm.module.settle.dto.CompareResult compare = new com.lingmao.scm.module.settle.dto.CompareResult("对方.xlsx", null, 1L, "甲",
+                "表", 1, new java.math.BigDecimal("380"), java.math.BigDecimal.ZERO, new java.math.BigDecimal("380"),
+                new java.math.BigDecimal("260"), new java.math.BigDecimal("120"), List.of(new com.lingmao.scm.module.settle.dto.CompareResult.Row(
+                "1", com.lingmao.scm.module.settle.dto.CompareResult.Outcome.DIFF, null, null, null, new java.math.BigDecimal("10"), "说明")));
+        JsonNode hidden = projection.project(compare, statements);
+        assertThat(java.util.stream.Stream.of("theirGoods", "theirDeduct", "theirTotal", "ourTotal", "diff").filter(hidden::has)).isEmpty();
+        assertThat(hidden.get("rows").get(0).has("diffAmount")).isFalse();
+        assertThat(hidden.get("rows").get(0).get("note").asString()).isEqualTo("说明");
+        DocLogVO log = new DocLogVO(1L, "update", null, null, null, 1L, "甲", OffsetDateTime.now(), List.of(
+                new FieldChangeVO("remark", "备注", "旧", "新", false)));
+        assertThat(projection.project(List.of(log), statements).get(0).has("diff")).isTrue();
+
+        as(FieldPermissions.SETTLE);
+        JsonNode shown = projection.project(compare, statements);
+        assertThat(shown.get("diff").decimalValue()).isEqualByComparingTo("120");
+        assertThat(shown.get("rows").get(0).get("diffAmount").decimalValue()).isEqualByComparingTo("10");
     }
 
     private static void as(String... authorities) {

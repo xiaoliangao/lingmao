@@ -9,6 +9,7 @@ import com.lingmao.scm.module.settle.dto.StatementRowVO;
 import com.lingmao.scm.module.settle.entity.Statement;
 import com.lingmao.scm.module.settle.entity.StatementItem;
 import com.lingmao.scm.security.DataScope;
+import com.lingmao.scm.security.LineScope;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.ResultMap;
@@ -37,16 +38,19 @@ public interface StatementMapper extends BaseMapper<Statement> {
     @ResultMap("mybatis-plus_Statement")
     Statement lockById(@Param("id") long id);
 
-    /** 待对账（XML）：按主体 × 供应商 × 月份合计还没进对账单的单据 */
-    List<PendingStatementRow> selectPending(@Param("q") PendingStatementQuery query);
+    /** 待对账（XML）：按主体 × 供应商 × 月份合计还没进对账单的单据；只列做的线我都能看的供应商，回货只算我能看的线 */
+    List<PendingStatementRow> selectPending(@Param("q") PendingStatementQuery query, @Param("lines") LineScope lines);
 
     /** 这段时间里这家还没进对账单的采购入库、采购退货明细（XML）；数量、金额都是正的，退货由 Service 记负数 */
     List<StatementItem> selectPurchaseLines(@Param("companyId") long companyId, @Param("partnerId") long partnerId,
                                             @Param("from") LocalDate from, @Param("to") LocalDate to);
 
-    /** 这段时间里这家（加工厂）还没进对账单的回货单（XML）：一张一行，qty 是件数，deductAmount 先放次品数，Service 再乘单价 */
+    /**
+     * 这段时间里这家（加工厂）还没进对账单的回货单（XML）：一张一行，qty 是件数，deductAmount 先放次品数，Service 再乘单价。
+     * 只拉生产单在我的品类线里的（供应商后来去掉了某条线，那条线的旧单留给能看的人对）
+     */
     List<StatementItem> selectReceipts(@Param("companyId") long companyId, @Param("partnerId") long partnerId,
-                                       @Param("from") LocalDate from, @Param("to") LocalDate to);
+                                       @Param("from") LocalDate from, @Param("to") LocalDate to, @Param("lines") LineScope lines);
 
     /** 这段时间里这家还没进对账单的扣款登记（XML） */
     List<StatementItem> selectDeductions(@Param("companyId") long companyId, @Param("partnerId") long partnerId,

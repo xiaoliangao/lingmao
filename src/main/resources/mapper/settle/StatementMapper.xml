@@ -11,7 +11,9 @@
         s.id, s.no, s.company_id, COALESCE(c.short_name, c.name) AS company_name, s.partner_id, p.code AS partner_code,
         COALESCE(p.short_name, p.name) AS partner_name, s.period_start, s.period_end, s.statement_date, s.status,
         s.total_amount, s.deduct_amount, s.payable_amount, s.their_amount,
-        (SELECT COUNT(*) FROM jsonb_array_elements(s.compare_result -> 'rows') e WHERE e ->> 'outcome' &lt;&gt; 'MATCH') AS diff_count,
+        CASE WHEN s.compare_result IS NOT NULL
+             THEN (SELECT COUNT(*) FROM jsonb_array_elements(s.compare_result -> 'rows') e WHERE e ->> 'outcome' &lt;&gt; 'MATCH')
+        END AS diff_count,
         (SELECT COUNT(*) FROM stl_statement_item i WHERE i.statement_id = s.id) AS item_count,
         s.remark, s.create_by, s.create_time
     </sql>
@@ -24,6 +26,8 @@
         JOIN sup_supplier p ON p.id = s.partner_id
         WHERE true
         <if test="scope.self">AND s.create_by = #{scope.userId}</if>
+        <!-- 品类线：这家做的线我都能看（对账单是整家的账） -->
+        <if test="scope.lines.limited">AND p.product_lines &lt;@ #{scope.lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler}::varchar[]</if>
         <if test="q.status != null and q.status.size() > 0">
             AND s.status IN <foreach collection="q.status" item="st" open="(" separator="," close=")">#{st}</foreach>
         </if>
@@ -45,13 +49,18 @@
         WHERE s.id = #{id}
     </select>
 
-    <!-- 采购入库、采购退货：一行一条明细，按采购单位（供应商按采购单位开单）。数量、金额都是正的 -->
+    <!-- 采购入库、采购退货：一行一条明细，按采购单位（供应商按采购单位开单）。数量、金额都是正的。
+         V29 以前的明细没存采购单价（purchase_price 空）：按金额 ÷ 采购数量倒算，免得采购数量配上库存单位的单价 -->
     <select id="selectPurchaseLines" resultType="com.lingmao.scm.module.settle.entity.StatementItem">
         SELECT d.doc_type AS source_type, d.id AS source_id, i.id AS source_item_id, d.no AS source_no,
                d.source_no AS order_no, d.supplier_delivery_no AS delivery_no, d.doc_date AS biz_date,
                left(concat_ws(' ', m.name, cl.name, NULLIF(k.spec, '')), 255) AS description,
                COALESCE(i.purchase_unit, m.stock_unit) AS unit, COALESCE(i.purchase_qty, i.qty) AS qty,
-               COALESCE(i.purchase_price, i.price) AS price, COALESCE(i.amount, 0) AS amount, 0 AS deduct_amount
+               CASE WHEN i.purchase_price IS NOT NULL THEN i.purchase_price
+                    WHEN i.purchase_qty IS NOT NULL AND i.purchase_qty &lt;&gt; 0 AND i.amount IS NOT NULL THEN round(i.amount / i.purchase_qty, 4)
+                    WHEN i.purchase_qty IS NULL THEN i.price
+               END AS price,
+               COALESCE(i.amount, 0) AS amount, 0 AS deduct_amount
         FROM inv_doc d
         JOIN inv_doc_item i ON i.doc_id = d.id
         JOIN bas_material_sku k ON k.id = i.material_sku_id
@@ -79,6 +88,7 @@
                       FROM prd_receipt_item ri WHERE ri.receipt_id = r.id) t ON true
         WHERE r.status = 'APPROVED' AND r.company_id = #{companyId} AND o.factory_id = #{partnerId}
           AND r.receipt_date BETWEEN #{from} AND #{to}
+          <if test="lines.limited">AND o.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
           AND NOT EXISTS (SELECT 1 FROM stl_statement_item x
                           WHERE x.active AND x.source_type = 'PRODUCTION_RECEIPT' AND COALESCE(x.source_item_id, x.source_id) = r.id)
         ORDER BY r.receipt_date, r.id
@@ -114,12 +124,13 @@
                               WHERE s.active AND s.source_type = d.doc_type AND COALESCE(s.source_item_id, s.source_id) = i.id)
             UNION ALL
             SELECT r.company_id, o.factory_id, date_trunc('month', r.receipt_date), 'R' || r.id,
-                   round((t.qty - t.defect_qty) * o.unit_price, 2)
+                   round(t.qty * o.unit_price, 2) - round(t.defect_qty * o.unit_price, 2)
             FROM prd_receipt r
             JOIN prd_order o ON o.id = r.prd_order_id
             JOIN LATERAL (SELECT SUM(ri.qty) AS qty, SUM(ri.defect_qty) AS defect_qty
                           FROM prd_receipt_item ri WHERE ri.receipt_id = r.id) t ON true
             WHERE r.status = 'APPROVED'
+              <if test="lines.limited">AND o.product_line = ANY(#{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler})</if>
               AND NOT EXISTS (SELECT 1 FROM stl_statement_item s
                               WHERE s.active AND s.source_type = 'PRODUCTION_RECEIPT' AND COALESCE(s.source_item_id, s.source_id) = r.id)
             UNION ALL
@@ -131,6 +142,7 @@
         JOIN bas_company c ON c.id = x.company_id
         JOIN sup_supplier p ON p.id = x.partner_id
         WHERE true
+        <if test="lines.limited">AND p.product_lines &lt;@ #{lines.values, typeHandler=com.lingmao.scm.common.mybatis.StringArrayTypeHandler}::varchar[]</if>
         <if test="q.companyId != null">AND x.company_id = #{q.companyId}</if>
         <if test="q.partnerId != null">AND x.partner_id = #{q.partnerId}</if>
         GROUP BY x.company_id, c.short_name, c.name, x.partner_id, p.code, p.short_name, p.name, x.month

@@ -125,6 +125,11 @@ public final class LineScope {
         return values == null || lines != null && lines.stream().anyMatch(this::canSee);
     }
 
+    /** 这几条线是不是我全都能看（对账单：供应商做的线都要能看，RFC 019 §5.1）；空的算全都能看 */
+    public boolean canSeeAll(Collection<String> lines) {
+        return values == null || lines == null || values.containsAll(lines);
+    }
+
     /** 单据详情、动作前查：不在我的线里抛 404，和"不存在"一样不区分（同 DataScope.check） */
     public void check(String line) {
         if (!canSee(line)) {

@@ -22,22 +22,24 @@ export const statementApi = {
   get: (id: string) => http.get<StatementDetail>(`${base}/${id}`),
   /** 生成：这段时间里这家还没对过的单据一张都没有报 1000 */
   create: (data: StatementCreateForm) => http.post<StatementCreated>(base, snapshotRequestBody(data)),
-  /** 草稿刷新：后来审核的单据加进来（added 是几行） */
-  refresh: (id: string, body: DocActionReq) => http.post<StatementCreated>(`${base}/${id}/refresh`, snapshotRequestBody(body)),
+  /** 草稿刷新：后来审核的单据加进来（added 是几行）。详情页自己显示错误时传 { silent: true }，下同 */
+  refresh: (id: string, body: DocActionReq, options?: RequestOptions) =>
+    http.post<StatementCreated>(`${base}/${id}/refresh`, snapshotRequestBody(body), options),
   /** 草稿移出几行，返回新的 version */
-  removeItems: (id: string, body: { version: number; itemIds: string[] }) =>
-    http.post<number>(`${base}/${id}/remove-items`, snapshotRequestBody(body)),
+  removeItems: (id: string, body: { version: number; itemIds: string[] }, options?: RequestOptions) =>
+    http.post<number>(`${base}/${id}/remove-items`, snapshotRequestBody(body), options),
   /** 草稿加一笔扣款（同时登记到扣款登记），返回新的 version */
-  addDeduction: (id: string, body: StatementDeductionForm) => http.post<number>(`${base}/${id}/deductions`, snapshotRequestBody(body)),
+  addDeduction: (id: string, body: StatementDeductionForm, options?: RequestOptions) =>
+    http.post<number>(`${base}/${id}/deductions`, snapshotRequestBody(body), options),
   /** send 发送、withdraw 撤回、confirm 确认（reason 是确认时写的一句）、void 作废（reason 是原因）。批量、自己显示错误时传 { silent: true } */
   act: (id: string, action: 'send' | 'withdraw' | 'confirm' | 'void', body: DocActionReq, options?: RequestOptions) =>
     http.post<void>(`${base}/${id}/${action}`, snapshotRequestBody(body), options),
   /** 上传对方的 Excel 比对；认不出表头报 1000 */
-  compare: (id: string, version: number, file: File) =>
-    upload<CompareResult>(`${base}/${id}/compare`, file, { fields: { version: String(version) } }),
+  compare: (id: string, version: number, file: File, options?: { silent?: boolean }) =>
+    upload<CompareResult>(`${base}/${id}/compare`, file, { fields: { version: String(version) }, silent: options?.silent }),
   /** 写差异说明，只改传了的几处；note 传空串是清掉。返回新的 version */
-  saveNotes: (id: string, body: { version: number; notes: { key: string; note: string | null }[] }) =>
-    http.put<number>(`${base}/${id}/compare/notes`, snapshotRequestBody(body)),
+  saveNotes: (id: string, body: { version: number; notes: { key: string; note: string | null }[] }, options?: RequestOptions) =>
+    http.put<number>(`${base}/${id}/compare/notes`, snapshotRequestBody(body), options),
   /** 对方对账单的原件（最近一次比对传的） */
   theirFiles: (id: string) => http.get<Attachment[]>(`${base}/${id}/their-files`),
   export: (id: string, no: string) => download(`${base}/${id}/export`, undefined, `对账单-${no}.xlsx`),
