@@ -25,14 +25,20 @@ state=/backups/.daily-done      # 最近一次定时备份成功的日期。手�
 retry_at=0
 tables_since=0                  # 第一次看到库里有表的时间（db_ready）
 waiting_said=''
+loop_started=$(date +%s)        # 容器起来的时间（db_ready：开机后数据库要一会儿才接受连接）
 
 # db_ready <现在>：库里有没有应用的表。刚装好时 backup 容器和应用一起启动，应用要过一会儿才建好表，
 # 这时备份出来的是个空库：没用，还让人以为装完就有了一份好备份（11-14 装试用环境时就是这样）。所以等表建好再备份。
 # 看到表以后再等一分钟：应用第一次启动时在一张张建表，碰巧那一刻备份的话只有一半的表。
-# 查不了（数据库没起来）时照常去备份：让 backup.sh 报错、记进 backup.log，有人看得到
+# 连不上数据库：容器起来 5 分钟内算"还没好"，下一分钟再看。服务器重启、Docker 重启时 backup 和数据库一起起来，
+# 数据库要几秒到一两分钟才接受连接，过了 BACKUP_TIME 的补备份一上来就去连，会白记一条失败、一小时后才补上（11-27 试用环境）。
+# 过了 5 分钟还连不上照常去备份：让 backup.sh 报错、记进 backup.log，有人看得到
 db_ready() {
   local r
-  r=$(psql -XAtq -c "SELECT to_regclass('public.flyway_schema_history') IS NOT NULL" 2>/dev/null < /dev/null) || return 0
+  if ! r=$(psql -XAtq -c "SELECT to_regclass('public.flyway_schema_history') IS NOT NULL" 2>/dev/null < /dev/null); then
+    [ $(($1 - loop_started)) -ge 300 ]
+    return
+  fi
   if [ "$r" != t ]; then
     tables_since=0
     if [ -z "$waiting_said" ]; then

@@ -226,6 +226,9 @@ services:
       PGUSER: scm
       PGDATABASE: scm
       PGPASSWORD: ${POSTGRES_PASSWORD:?.env 里没有 POSTGRES_PASSWORD}
+      # 连库最多等 15 秒。开机时数据库容器还没起来，名字解析到别处（公司 DNS、代理软件）时 psql 会一直等下去，
+      # 备份循环就卡住、再也不备份（11-27 在装了代理的 Mac 上试出来的）
+      PGCONNECT_TIMEOUT: "15"
       BACKUP_TIME: ${BACKUP_TIME:-02:30}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
       SCM_BACKUP_CONTAINER: "1"         # 告诉 backup.sh 它是在容器里执行的
