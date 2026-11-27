@@ -21,6 +21,10 @@ import java.util.Set;
  *   <li>表头下面，物料名称有字、用量单位单价至少写了一样的是一行物料；物料名称空着、只写了规格的是上一行的另一种规格
  *       （门襟拉链按尺码分长短），记在上一行的 variants 里</li>
  *   <li>汇总块：写着"加工费"的取它的数，写着"…运费"的带成其他费用；小计、合计、各种成本不要，系统自己算</li>
+ *   <li>费用块（鞋类 BOM，PRD Q49）：表头有"项目名称"和"单价"或"金额"、没有"物料名称"的一行开始一块，上面那行只写了一格字的是块名
+ *       （"冲裁及手工（加工）""针车价格（加工）""包装资料"）。块的数取小计行上"价格…"那格右边的数，没有就取"小计"右边的，
+ *       都没有按各项的金额加起来。块名带"加工"的合成加工费（几块的明细写进 laborNote），别的带成其他费用。
+ *       费用块开始以后，物料清单就结束了（下面再有物料表头才接着认物料）</li>
  *   <li>数取格子里存的值，不取显示的（显示可能只到两位小数）；公式取 Excel 存下的结果。设成百分比格式的 3% 读成 3</li>
  * </ul>
  */
@@ -28,7 +32,7 @@ final class BomSheetReader {
 
     /** 一张 sheet。bom = 认出了表头；code、name 是第 1 行写的款号、款名（没有是 null） */
     record SheetData(int index, String sheetName, String title, String code, String name, boolean bom, List<Line> lines,
-                     BigDecimal laborPrice, List<Fee> fees) {
+                     BigDecimal laborPrice, String laborNote, List<Fee> fees) {
     }
 
     /** 一行物料。row 是 Excel 里的行号（从 1 起）；数字列各有原样的字（给人看）和读出来的数（读不出是 null） */
@@ -70,18 +74,57 @@ final class BomSheetReader {
     private static SheetData sheet(Sheet sheet, int index, DataFormatter f) {
         String title = null;
         Columns cols = null;
+        boolean bom = false;
         List<Line> lines = new ArrayList<>();
         BigDecimal labor = null;
         List<Fee> fees = new ArrayList<>();
+        // 费用块（鞋类）：blockTitle 是最近一行只写了一格字的（块名候选），block 是正在读的块
+        String blockTitle = null;
+        FeeBlock block = null;
+        List<FeeBlock> blocks = new ArrayList<>();
         for (Row row : sheet) {
             Columns header = header(row, f);
             if (header != null) {
                 cols = header;
+                bom = true;
+                block = closeBlock(block, null, blocks);
                 continue;
             }
+            int feeAmountCol = feeHeader(row, f);
+            if (bom && feeAmountCol >= 0) {
+                closeBlock(block, null, blocks);
+                block = new FeeBlock(blockTitle, feeAmountCol);
+                blockTitle = null;
+                cols = null;
+                continue;
+            }
+            String single = singleText(row, f);
             if (cols == null) {
-                if (title == null) {
-                    title = firstText(row, f);
+                if (!bom) {
+                    if (title == null) {
+                        title = firstText(row, f);
+                    }
+                    continue;
+                }
+                if (block == null) {
+                    if (single != null) {
+                        blockTitle = single;
+                    }
+                    continue;
+                }
+                BigDecimal subtotal = blockSubtotal(row, f);
+                String first = firstText(row, f);
+                if (subtotal != null || (first != null && isTotal(first))) {
+                    block = closeBlock(block, subtotal, blocks);
+                } else if (single != null) {
+                    // 没有小计行就到了下一块的块名：这一块按各项加
+                    block = closeBlock(block, null, blocks);
+                    blockTitle = single;
+                } else {
+                    BigDecimal item = number(row, block.amountCol, f);
+                    if (item != null) {
+                        block.items = block.items.add(item);
+                    }
                 }
                 continue;
             }
@@ -102,6 +145,9 @@ final class BomSheetReader {
                 lines.getLast().variants().add(spec);
                 continue;
             }
+            if (single != null) {
+                blockTitle = single;
+            }
             // 汇总块：一行里找写着加工费、运费的格子
             for (Cell cell : row) {
                 String label = label(f.formatCellValue(cell));
@@ -115,6 +161,14 @@ final class BomSheetReader {
                 }
             }
         }
+        closeBlock(block, null, blocks);
+        String laborNote = null;
+        List<FeeBlock> laborBlocks = blocks.stream().filter(FeeBlock::labor).toList();
+        if (!laborBlocks.isEmpty() && labor == null) {
+            labor = laborBlocks.stream().map(b -> b.amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            laborNote = String.join(" + ", laborBlocks.stream().map(b -> b.name() + " " + b.amount.stripTrailingZeros().toPlainString()).toList());
+        }
+        blocks.stream().filter(b -> !b.labor()).forEach(b -> fees.add(new Fee(b.name(), b.amount)));
         String code = null;
         String name = null;
         if (title != null) {
@@ -130,7 +184,90 @@ final class BomSheetReader {
                 name = name.isEmpty() ? null : name;
             }
         }
-        return new SheetData(index, sheet.getSheetName(), title, code, name, cols != null, lines, labor, fees);
+        return new SheetData(index, sheet.getSheetName(), title, code, name, bom, lines, labor, laborNote, fees);
+    }
+
+    /** 一个费用块：title 是块名那一行的原字，amountCol 是表头上"金额"（没有用"单价"）那一列，items 是各项金额加起来，amount 是定下来的数 */
+    private static final class FeeBlock {
+        final String title;
+        final int amountCol;
+        BigDecimal items = BigDecimal.ZERO;
+        BigDecimal amount;
+
+        FeeBlock(String title, int amountCol) {
+            this.title = title;
+            this.amountCol = amountCol;
+        }
+
+        /** "冲裁及手工（加工）" → "冲裁及手工"，"针车价格（加工）：" → "针车" */
+        String name() {
+            return title.replaceAll("[（(]\\s*加工\\s*[)）]", "").replaceAll("价格$", "").strip();
+        }
+
+        boolean labor() {
+            return title.contains("加工");
+        }
+    }
+
+    /** 收一个块：小计行的数优先，没有按各项加；没名字的块（如下面的采购明细表）、数是 0 的不要。返回 null（块读完了） */
+    private static FeeBlock closeBlock(FeeBlock block, BigDecimal subtotal, List<FeeBlock> blocks) {
+        if (block == null || block.title == null) {
+            return null;
+        }
+        BigDecimal amount = subtotal != null ? subtotal : block.items;
+        if (amount != null && amount.signum() > 0 && !block.name().isEmpty()) {
+            block.amount = amount;
+            blocks.add(block);
+        }
+        return null;
+    }
+
+    /** 费用块的表头："项目名称"加上"金额"或"单价"（没有"物料名称"，那是物料表头）。返回金额那一列，不是表头返回 -1 */
+    private static int feeHeader(Row row, DataFormatter f) {
+        boolean item = false;
+        int amount = -1;
+        int price = -1;
+        for (Cell cell : row) {
+            String h = f.formatCellValue(cell).replaceAll("\\s+", "");
+            if (h.contains("项目名称")) item = true;
+            else if (h.contains("金额") && amount < 0) amount = cell.getColumnIndex();
+            else if (h.contains("单价") && price < 0) price = cell.getColumnIndex();
+        }
+        return item ? (amount >= 0 ? amount : price) : -1;
+    }
+
+    /** 费用块的小计行：写着"价格…"（"价格/含税运（增值税13%）"）那格右边的数 */
+    private static BigDecimal blockSubtotal(Row row, DataFormatter f) {
+        for (Cell cell : row) {
+            if (label(f.formatCellValue(cell)).startsWith("价格")) {
+                return valueRightOf(row, cell.getColumnIndex(), -1, f);
+            }
+        }
+        String first = firstText(row, f);
+        if (first != null && label(first).contains("小计")) {
+            for (Cell cell : row) {
+                if (label(f.formatCellValue(cell)).contains("小计")) {
+                    return valueRightOf(row, cell.getColumnIndex(), -1, f);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 这一行只写了一格字（块名、分段标题）：返回去掉冒号的字，不是返回 null */
+    private static String singleText(Row row, DataFormatter f) {
+        String only = null;
+        for (Cell cell : row) {
+            String v = f.formatCellValue(cell).strip();
+            if (v.isEmpty()) {
+                continue;
+            }
+            if (only != null) {
+                return null;
+            }
+            only = v;
+        }
+        return only == null || only.matches("[\\d.\\-￥¥,]+") ? null : label(only);
     }
 
     /** 这一行是表头：认出各列；不是表头返回 null */

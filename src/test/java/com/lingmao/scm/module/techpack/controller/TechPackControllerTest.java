@@ -103,7 +103,7 @@ class TechPackControllerTest {
         verify(techPackService, never()).bomImport(anyLong(), any(), any(), anyMap());
 
         when(techPackService.bomImport(eq(7L), any(), eq(1), eq(Map.of(7, 12L, 9, 15L))))
-                .thenReturn(new BomImportVO(List.of(), 1, List.of(), null, List.of()));
+                .thenReturn(new BomImportVO(List.of(), 1, List.of(), null, null, List.of()));
         mockMvc.perform(multipart("/api/tech-packs/7/bom-import").file(file).param("sheet", "1").param("picks", "7:12, 9:15")
                         .with(loginAs("techpack:pack:edit")))
                 .andExpect(jsonPath("$.code").value(0))

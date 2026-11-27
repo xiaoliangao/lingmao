@@ -10,10 +10,11 @@ import java.util.List;
  * @param sheets     文件里的每一张 sheet
  * @param sheet      用的是哪一张（Sheet.index）：自动对上的或者指定的
  * @param rows       这张 sheet 上的每一行物料，按表里的顺序
- * @param laborPrice 汇总块的加工费；没写、没有看成本权限是 null
- * @param fees       汇总块里的运费，带成核价的其他费用；没有看成本权限是空的
+ * @param laborPrice 汇总块的加工费；鞋类 BOM 是几个"（加工）"块（冲裁、针车、成型）加起来。没写、没有看成本权限是 null
+ * @param laborNote  加工费是几块合起来的时候，各块的数，如"冲裁及手工 2 + 针车 8 + 成型 10"，填进核价的加工费备注；别的是 null
+ * @param fees       汇总块里的运费、鞋类 BOM 的包装这种费用块，带成核价的其他费用；没有看成本权限是空的
  */
-public record BomImportVO(List<Sheet> sheets, Integer sheet, List<Row> rows, BigDecimal laborPrice, List<Fee> fees) {
+public record BomImportVO(List<Sheet> sheets, Integer sheet, List<Row> rows, BigDecimal laborPrice, String laborNote, List<Fee> fees) {
 
     /** 一张 sheet：title 是第 1 行写的款号款名；bom = 认出了表头，能导 */
     public record Sheet(int index, String name, String title, boolean bom) {

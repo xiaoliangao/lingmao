@@ -78,7 +78,7 @@ class BomImporter {
         List<BomImportVO.Sheet> options = sheets.stream()
                 .map(s -> new BomImportVO.Sheet(s.index(), s.sheetName(), s.title(), s.bom())).toList();
         List<BomImportVO.Row> rows = rows(sheet, ctx, picks, cost);
-        return new BomImportVO(options, sheet.index(), rows, cost ? sheet.laborPrice() : null,
+        return new BomImportVO(options, sheet.index(), rows, cost ? sheet.laborPrice() : null, cost ? sheet.laborNote() : null,
                 cost ? sheet.fees().stream().map(f -> new BomImportVO.Fee(f.name(), Num.money(f.amount()))).toList() : List.of());
     }
 

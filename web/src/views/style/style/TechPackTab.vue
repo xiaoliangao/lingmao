@@ -699,6 +699,8 @@ async function onImport(payload: BomImportApply) {
         }
         if (take) {
           draft.laborPrice = payload.laborPrice
+          // 鞋类 BOM：冲裁、针车、成型几块合成的加工费，明细写进加工费备注（备注本来有字就不动）
+          if (payload.laborNote && !draft.laborNote.trim()) draft.laborNote = payload.laborNote
           notes.push('加工费填进了核价')
         }
       }

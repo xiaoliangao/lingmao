@@ -19,6 +19,8 @@ export interface BomImportApply {
   items: NonNullable<BomImportRow['item']>[]
   mode: 'replace' | 'append'
   laborPrice: number | null
+  /** 鞋类 BOM 的加工费是几块合起来的：各块的数 */
+  laborNote: string | null
   fees: { name: string; amount: number }[]
   file: FileVO | null
 }
@@ -184,6 +186,7 @@ async function apply() {
     items: importable.value.map((r) => r.item!),
     mode,
     laborPrice: props.canSeeCost ? (result.value?.laborPrice ?? null) : null,
+    laborNote: props.canSeeCost ? (result.value?.laborNote ?? null) : null,
     fees: props.canSeeCost ? (result.value?.fees ?? []) : [],
     file: saved,
   })
@@ -278,7 +281,7 @@ function skuText(item: NonNullable<BomImportRow['item']>) {
       </el-table>
 
       <p v-if="result && canSeeCost && (result.laborPrice != null || result.fees.length)" class="dim extra">
-        一起带进核价：<span v-if="result.laborPrice != null" class="fee">加工费 ¥{{ result.laborPrice }}</span>
+        一起带进核价：<span v-if="result.laborPrice != null" class="fee">加工费 ¥{{ result.laborPrice }}<template v-if="result.laborNote">（{{ result.laborNote }}）</template></span>
         <span v-for="f in result.fees" :key="f.name" class="fee">{{ f.name }} ¥{{ f.amount }}</span>
       </p>
     </div>

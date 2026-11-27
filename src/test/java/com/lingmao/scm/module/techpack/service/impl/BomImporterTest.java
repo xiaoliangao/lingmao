@@ -191,6 +191,6 @@ class BomImporterTest {
     }
 
     private static SheetData sheet(int index, String code, String name, boolean bom) {
-        return new SheetData(index, "S" + index, null, code, name, bom, List.of(), null, List.of());
+        return new SheetData(index, "S" + index, null, code, name, bom, List.of(), null, null, List.of());
     }
 }

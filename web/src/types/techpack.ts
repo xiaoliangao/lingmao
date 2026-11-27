@@ -454,9 +454,11 @@ export interface BomImport {
   /** 用的是哪一张（自动对上的或者指定的） */
   sheet: number
   rows: BomImportRow[]
-  /** 汇总块的加工费；没写、没有看成本权限是 null */
+  /** 汇总块的加工费；鞋类 BOM 是几个"（加工）"块加起来。没写、没有看成本权限是 null */
   laborPrice?: number | null
-  /** 汇总块里的运费，带成核价的其他费用；没有看成本权限是 [] */
+  /** 加工费是几块合起来的：各块的数，如"冲裁及手工 2 + 针车 8 + 成型 10"，填进加工费备注；别的是 null */
+  laborNote?: string | null
+  /** 汇总块里的运费、鞋类 BOM 的包装这种费用块，带成核价的其他费用；没有看成本权限是 [] */
   fees: { name: string; amount: number }[]
 }
 
