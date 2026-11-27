@@ -268,6 +268,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             p.setUnitPrice(price);
             p.setPriceSourceId(archive != null && !changed ? archive.id() : null);
             p.setPriceChangeReason(reason);
+            p.setArchivePrice(changed ? archive.price() : null);
             p.setTaxPct(f.taxPct() != null ? f.taxPct() : BigDecimal.ZERO);
             p.setTaxIncluded(true);
             p.setMerchId(b.getMerchId());

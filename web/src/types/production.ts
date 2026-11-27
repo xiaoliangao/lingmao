@@ -354,7 +354,10 @@ export interface ProductionDetail extends DocHeader<ProductionStatus, Production
   unitPrice?: number
   /** 默认单价取自哪条价格档案；手填的是 null */
   priceSourceId: string | null
-  /** 价格档案里这家工厂 × 这个款 × 这种加工方式现在的价（按下单日期）；没有是 null。和 unitPrice 不一样时页面标"改价" */
+  /**
+   * 价格档案的价，和 unitPrice 不一样时页面标"改价"。草稿、待审核：这家工厂 × 这个款 × 这种加工方式现在的价（按下单日期），没有是 null；
+   * 审核以后：改价时记下的档案价（V70 快照，新价已经记进档案了），没改过价、11-27 以前的单是 null
+   */
   archivePrice?: number | null
   priceChangeReason: string | null
   /** 税率 %，默认带工厂 */

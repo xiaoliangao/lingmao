@@ -54,6 +54,9 @@ public class ProductionOrder extends DocEntity {
 
     private String priceChangeReason;
 
+    /** 改价时价格档案的现价（V70 快照）：审核后新价记进档案，详情还能看出原来档案是多少；没改价、没档案为空 */
+    private BigDecimal archivePrice;
+
     private BigDecimal taxPct;
 
     private Boolean taxIncluded;

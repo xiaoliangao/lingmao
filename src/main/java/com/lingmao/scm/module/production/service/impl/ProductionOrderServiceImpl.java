@@ -214,8 +214,11 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         vo.setDaysLeft(ProductionRules.daysLeft(p.getStatus(), p.getDueDate(), p.getExpectDate(), support.today()));
         vo.setUnitPrice(p.getUnitPrice());
         vo.setPriceSourceId(p.getPriceSourceId());
-        vo.setArchivePrice(priceService.currentProcess(p.getFactoryId(), p.getStyleId(), p.getProcessMode(), p.getOrderDate())
-                .map(PriceRef::price).orElse(null));
+        // 审核前按档案现价比（审核时提示偏离）；审核后新价已经记进档案，按改价时的快照比（V70），没改过价是空
+        vo.setArchivePrice(p.getStatus() == DRAFT || p.getStatus() == PENDING
+                ? priceService.currentProcess(p.getFactoryId(), p.getStyleId(), p.getProcessMode(), p.getOrderDate())
+                        .map(PriceRef::price).orElse(null)
+                : p.getArchivePrice());
         vo.setPriceChangeReason(p.getPriceChangeReason());
         vo.setTaxPct(p.getTaxPct());
         vo.setTaxIncluded(Boolean.TRUE.equals(p.getTaxIncluded()));
@@ -530,7 +533,10 @@ public class ProductionOrderServiceImpl implements ProductionOrderService {
         p.setFactoryId(req.getFactoryId());
         p.setProcessMode(mode);
         p.setUnitPrice(price);
-        if (priceVisible) p.setPriceSourceId(archive != null && !changed ? archive.id() : null);
+        if (priceVisible) {
+            p.setPriceSourceId(archive != null && !changed ? archive.id() : null);
+            p.setArchivePrice(changed ? archive.price() : null);
+        }
         p.setPriceChangeReason(reason);
         p.setDueDate(req.getDueDate());
         p.setMerchId(req.getMerchId());

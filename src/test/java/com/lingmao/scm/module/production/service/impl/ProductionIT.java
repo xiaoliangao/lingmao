@@ -259,6 +259,42 @@ class ProductionIT {
      * 工厂产能（PRD 08.02，甲方 11-27 答 Q60）：这家厂登记每天 1 件（不分品类），交期前五十来天能做 50 件左右，排 100 件拦住、
      * 一张都不建；改成每天 10 件就能排。草稿把交期提到后天（3 天 × 10 = 30 件 < 100）拦住；草稿自己不算进已排的
      */
+    /**
+     * 改价的档案价快照（V70）：A 单 38 审核后档案是 38；B 单改成 40（写原因），草稿时比档案现价 38，
+     * 审核后 40 记进档案，详情还是"原来档案 38"（按快照），不是现价 40
+     */
+    @Test
+    void archivePriceSnapshotSurvivesAudit() {
+        Fixture f = fixture();
+        LocalDate commit = LocalDate.now().plusDays(60);
+        long orderA = approvedOrder(f, commit);
+        long a = scheduleService.schedule(scheduleReq(f, orderA, commit.minusDays(10),
+                Map.of(orderLine(orderA, f.skuM), 60, orderLine(orderA, f.skuL), 40))).getFirst().id();
+        approve(a);
+
+        long orderB = approvedOrder(f, commit);
+        ScheduleReq req = scheduleReq(f, orderB, commit.minusDays(10), Map.of(orderLine(orderB, f.skuM), 60, orderLine(orderB, f.skuL), 40));
+        req.getBlocks().getFirst().setUnitPrice(new BigDecimal("40"));
+        req.getBlocks().getFirst().setPriceChangeReason("加急");
+        long b = scheduleService.schedule(req).getFirst().id();
+        ProductionDetailVO d = productionOrderService.detail(b);
+        assertThat(d.getArchivePrice()).isEqualByComparingTo("38");
+        assertThat(jdbcTemplate.queryForObject("SELECT archive_price FROM prd_order WHERE id = ?", BigDecimal.class, b)).isEqualByComparingTo("38");
+
+        approve(b);
+        d = productionOrderService.detail(b);
+        assertThat(d.getUnitPrice()).isEqualByComparingTo("40");
+        assertThat(d.getArchivePrice()).as("审核后按改价时的快照").isEqualByComparingTo("38");
+        assertThat(d.getPriceChangeReason()).isEqualTo("加急");
+        assertThat(productionOrderService.detail(a).getArchivePrice()).as("没改过价的单审核后是空").isNull();
+    }
+
+    private void approve(long prdId) {
+        productionOrderService.act(prdId, "submit", new DocActionReq(productionOrderService.detail(prdId).getVersion(), null));
+        TestIdentity.asAuditor(jdbcTemplate, () -> productionOrderService.act(prdId, "audit",
+                new DocActionReq(productionOrderService.detail(prdId).getVersion(), null)));
+    }
+
     @Test
     void factoryCapacityBlocksSchedule() {
         Fixture f = fixture();

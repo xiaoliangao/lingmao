@@ -714,8 +714,11 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(PRODUCTION_STATUS).map(([
               <template v-if="canSeeProductionPrice"><dt>{{ kindMeta.priceLabel }}</dt>
               <dd class="num">
                 {{ formatPrice(detail.unitPrice) }}
-                <div v-if="priceChanged" class="warn small">改价：{{ detail.priceChangeReason ?? '—' }}（档案 {{ formatPrice(detail.archivePrice) }}）</div>
-                <!-- 审核后新价记进了档案，和档案一样了，原因照样留着（走查 T-7d453c：原来审完就看不到为什么改价） -->
+                <!-- 审核后比的是改价时记下的档案价（V70）：新价已经记进档案了，写"原来档案" -->
+                <div v-if="priceChanged" class="warn small">
+                  改价：{{ detail.priceChangeReason ?? '—' }}（{{ audited ? '原来档案' : '档案' }} {{ formatPrice(detail.archivePrice) }}）
+                </div>
+                <!-- 11-27 以前审核的单没有快照：只留原因（走查 T-7d453c：原来审完就看不到为什么改价） -->
                 <div v-else-if="detail.priceChangeReason" class="dim small">改价：{{ detail.priceChangeReason }}</div>
               </dd>
               <dt>金额</dt>
