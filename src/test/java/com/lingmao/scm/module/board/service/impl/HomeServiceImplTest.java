@@ -17,9 +17,11 @@ import com.lingmao.scm.module.board.dto.TodoItem;
 import com.lingmao.scm.module.fg.service.FgDocService;
 import com.lingmao.scm.module.inventory.service.CountService;
 import com.lingmao.scm.module.inventory.service.InvDocService;
+import com.lingmao.scm.module.order.dto.OrderChangeRowVO;
 import com.lingmao.scm.module.order.dto.OrderQuery;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
 import com.lingmao.scm.module.order.dto.OrderTotals;
+import com.lingmao.scm.module.order.entity.ChangeType;
 import com.lingmao.scm.module.order.service.OrderChangeService;
 import com.lingmao.scm.module.order.service.OrderService;
 import com.lingmao.scm.module.production.dto.ProductionQuery;
@@ -255,6 +257,28 @@ class HomeServiceImplTest {
         TodoGroup cut = todos.groups().stream().filter(g -> g.key().equals("CUT_RISK")).findFirst().orElseThrow();
         assertThat(cut.total()).isEqualTo(1);
         assertThat(cut.items()).singleElement().satisfies(i -> assertThat(i.sub()).contains("卡其布"));
+    }
+
+    /** 规则：待审的订单变更单，副标题写订单号和中文的变更类型（演示视频里出现过 "DD… · QTY"） */
+    @Test
+    void todos_changeSubtitleUsesTypeLabels() {
+        login("order:change:list", "order:change:audit");
+        OrderChangeRowVO change = new OrderChangeRowVO();
+        change.setId(30L);
+        change.setNo("BG2611180001");
+        change.setOrderNo("DD2611180001");
+        change.setChangeTypes(List.of(ChangeType.QTY, ChangeType.DUE));
+        change.setChangeTypesText("QTY,DUE");
+        when(changeService.page(any())).thenReturn(new PageResult<>(List.of(change), 1));
+        when(referenceService.describe(any(), anyCollection())).thenAnswer(inv -> refs(inv.getArgument(0), inv.getArgument(1)));
+
+        HomeTodos todos = service.todos(new HomeTodoQuery());
+
+        TodoGroup audit = todos.groups().stream().filter(g -> g.key().equals("AUDIT")).findFirst().orElseThrow();
+        assertThat(audit.items()).singleElement().satisfies(i -> {
+            assertThat(i.title()).isEqualTo("订单变更单 BG2611180001");
+            assertThat(i.sub()).isEqualTo("DD2611180001 · 数量、交期");
+        });
     }
 
     // ---------------------------------------------------------------- 数据

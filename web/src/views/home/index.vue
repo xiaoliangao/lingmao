@@ -383,7 +383,7 @@ const backupLine = computed(() => {
       <div class="columns">
         <section v-loading="loadingTodos" class="panel todo-panel">
           <div class="panel-head">
-            <span>待处理事项<span v-if="todoTotal" class="dim num"> {{ todoTotal }}</span></span>
+            <span>待处理事项<span v-if="todoTotal" class="dim num todo-total">{{ todoTotal }}</span></span>
             <div v-if="todos?.canSeeAll" class="acts">
               <el-segmented v-model="todoFilter.scope" size="small" :options="SCOPE_OPTIONS" @change="onScopeChange" />
               <div class="owner-pick">
@@ -555,6 +555,10 @@ const backupLine = computed(() => {
   line-height: 1.25;
   color: var(--lm-ink);
   transition: color 0.15s var(--lm-ease);
+}
+
+.todo-total {
+  margin-left: 6px;
 }
 
 .kpi-num small {

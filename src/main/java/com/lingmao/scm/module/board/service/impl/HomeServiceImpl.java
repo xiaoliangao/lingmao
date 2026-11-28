@@ -37,6 +37,7 @@ import com.lingmao.scm.module.order.dto.OrderQuery;
 import com.lingmao.scm.module.order.dto.OrderRowVO;
 import com.lingmao.scm.module.order.dto.OrderStyleRef;
 import com.lingmao.scm.module.order.dto.OrderTotals;
+import com.lingmao.scm.module.order.entity.ChangeType;
 import com.lingmao.scm.module.order.service.OrderChangeService;
 import com.lingmao.scm.module.order.service.OrderService;
 import com.lingmao.scm.module.production.dto.BoardCards;
@@ -390,7 +391,9 @@ public class HomeServiceImpl implements HomeService {
             total += put(counts, "CHANGE_PENDING", page.getTotal());
             Map<Long, DocRef> refs = refs(BizType.ORDER_CHANGE, page.getList(), OrderChangeRowVO::getId);
             for (OrderChangeRowVO c : page.getList()) {
-                items.add(ranked(refs.get(c.getId()), "订单变更单 " + c.getNo(), BoardTexts.dot(c.getOrderNo(), c.getChangeTypesText()),
+                // 写中文的变更类型（数量、交期），不写库里的 QTY,DUE
+                String types = c.getChangeTypes().stream().map(ChangeType::getLabel).collect(Collectors.joining("、"));
+                items.add(ranked(refs.get(c.getId()), "订单变更单 " + c.getNo(), BoardTexts.dot(c.getOrderNo(), types),
                         null, c.getCreateTime()));
             }
         }

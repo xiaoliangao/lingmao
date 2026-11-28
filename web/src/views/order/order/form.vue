@@ -656,6 +656,12 @@ const backTo = editing ? `/orders/${id}` : copySource ? `/orders/${copySource.fr
   min-width: 200px;
 }
 
+/* 输入框挤的时候标签不折成两行（"行备 / 注"） */
+.ctrl > .dim {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .price-row :deep(.el-input-number) {
   width: 76px;
 }
