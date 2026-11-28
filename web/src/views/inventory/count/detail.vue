@@ -461,6 +461,7 @@ const LOG_STATUSES = Object.fromEntries(Object.entries(COUNT_STATUS).map(([k, v]
       title="导回实盘数"
       :template-url="countApi.sheetUrl(id)"
       :import-url="countApi.importUrl(id)"
+      :company-id="detail.companyId"
       @success="refresh"
     />
   </div>
