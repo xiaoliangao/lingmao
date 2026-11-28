@@ -223,17 +223,27 @@ chmod 755 "$PKG"/scripts/*.sh
 docker save --platform "linux/$ARCH" -o "$PKG/images/scm-app.tar" "scm-app:$VERSION"
 docker save --platform "linux/$ARCH" -o "$PKG/images/scm-web.tar" "scm-web:$VERSION"
 docker save --platform "linux/$ARCH" -o "$PKG/images/scm-assistant.tar" "scm-assistant:$VERSION"
+# 拉镜像：连 Docker Hub 时好时坏（11-27 打完整包时断过一次，前面二十分钟白跑），断了等几秒重试
+pull() {
+  local i
+  for i in 1 2 3 4 5; do
+    if docker pull -q "$@" > /dev/null; then return 0; fi
+    echo "  没拉下来（第 $i 次），5 秒后再试" >&2
+    sleep 5
+  done
+  die "拉不下来：$*。多半是连不上 Docker Hub，过一会儿再打"
+}
 if [ "$FULL" = 1 ]; then
   for img in postgres:16 redis:7; do
     echo "  拉 ${img}（linux/${ARCH}）"
-    docker pull -q --platform "linux/$ARCH" "$img" > /dev/null
+    pull --platform "linux/$ARCH" "$img"
     docker save --platform "linux/$ARCH" -o "$PKG/images/$(echo "$img" | tr ':' '-').tar" "$img"
   done
   case $(uname -m) in arm64 | aarch64) NATIVE=arm64 ;; *) NATIVE=amd64 ;; esac
   if [ "$ARCH" != "$NATIVE" ]; then
     # Docker 没开 containerd 镜像存储时，同一个标签只能指向一个架构：拉回本机架构的，免得本机开发库下次用模拟的镜像起
-    docker pull -q postgres:16 > /dev/null
-    docker pull -q redis:7 > /dev/null
+    pull postgres:16
+    pull redis:7
   fi
 fi
 
